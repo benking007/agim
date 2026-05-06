@@ -53,7 +53,9 @@ export class ILinkClient {
    */
   async getQRCode(): Promise<QRCodeResponse> {
     const url = `${this.baseUrl}/ilink/bot/get_bot_qrcode?bot_type=3`
-    const response = await fetch(url)
+    // L6: every outbound fetch wears the same FETCH_TIMEOUT so a stalled
+    // network connection can never wedge a long-poll / login flow forever.
+    const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) })
     if (!response.ok) {
       throw new Error(`getQRCode failed: ${response.status}`)
     }
@@ -69,6 +71,7 @@ export class ILinkClient {
       headers: {
         'iLink-App-ClientVersion': '1',
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
     })
     if (!response.ok) {
       throw new Error(`getQRCodeStatus failed: ${response.status}`)
@@ -201,6 +204,7 @@ export class ILinkClient {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
     })
 
     if (!response.ok) {
@@ -265,6 +269,7 @@ export class ILinkClient {
         method: 'POST',
         headers: this.getAuthHeaders(),
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT),
       })
 
       if (!response.ok) {
@@ -305,6 +310,7 @@ export class ILinkClient {
         method: 'POST',
         headers: this.getAuthHeaders(),
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT),
       })
 
       if (!response.ok) {

@@ -150,8 +150,11 @@ export function checkMessengerConfig(config: Config): OnboardingResult {
 let agentCheckCache: { result: AgentCheckResult; timestamp: number } | null = null
 const AGENT_CHECK_CACHE_TTL = 2 * 60 * 1000 // 2 minutes
 
-/** Per-agent cached `isAvailable()` results — bypasses the bulk cache when
- * a freshly-registered agent isn't represented in it yet. */
+/** Per-agent cached `isAvailable()` results — fall-through cache for
+ * `isAgentAvailableCached` when an agent isn't represented in the bulk
+ * snapshot (e.g. registered after the last refresh, or the bulk hasn't
+ * run yet). The bulk cache is consulted first; this Map only matters for
+ * the fallback probe path. */
 const perAgentCache = new Map<string, { ok: boolean; timestamp: number }>()
 
 /**

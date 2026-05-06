@@ -200,6 +200,12 @@ export function stopRetentionSweep(): void {
   }
 }
 
+/** Close the underlying SQLite handle. Pairs with stopRetentionSweep on
+ *  graceful shutdown so WAL is checkpointed cleanly (L2). */
+export function closeAuditDb(): void {
+  helper.close()
+}
+
 export function getStats(): { total: number; byAgent: Record<string, number>; totalCost: number } {
   const d = getDb()
   if (!d) return { total: 0, byAgent: {}, totalCost: 0 }

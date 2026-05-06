@@ -291,9 +291,17 @@ export async function routeMessage(
         intent = classification.triggeredBy
         ruleScore = classification.score
         ctx.logger.info({ event: 'router.intent', agent: agentName, intent, score: classification.score, reason: classification.reason })
-      } catch {
+      } catch (err) {
+        // L12: don't swallow the error silently — operators tracking down
+        // an intent-classifier bug otherwise see a `router.intent.failed`
+        // line with no signal about which input or which line threw.
         agentName = stickyAgent || ctx.defaultAgent
-        ctx.logger.warn({ event: 'router.intent.failed', fallback: agentName })
+        ctx.logger.warn({
+          event: 'router.intent.failed',
+          fallback: agentName,
+          err: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        })
       }
 
       // P2-H: when the rule-based classifier produced a low-confidence

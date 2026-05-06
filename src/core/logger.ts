@@ -47,7 +47,11 @@ const root = pino({
 })
 
 export function generateTraceId(): string {
-  return randomUUID().replace(/-/g, '').slice(0, 12)
+  // 16 hex chars (≈ 2^64). 12 hex (≈ 2^48) collides ~once per 16M ids on
+  // average — visible at sustained > 1 K req/s. 16 hex pushes the
+  // expectation past the realistic lifetime of any single im-hub process
+  // without burning much log volume (4 extra chars per line).
+  return randomUUID().replace(/-/g, '').slice(0, 16)
 }
 
 export function createLogger(bindings: Record<string, unknown> = {}): pino.Logger {

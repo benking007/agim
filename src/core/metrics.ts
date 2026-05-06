@@ -111,6 +111,43 @@ const platformCounter = new Map<string, number>()
 const startedAt = Date.now()
 
 /**
+ * Operational counters that aren't tied to a specific invocation. Today:
+ *   - auditPruneFailures: every time pruneExpired() in audit-log catches.
+ *     A non-zero value here means retention is silently failing — alert
+ *     on `rate(im_hub_audit_prune_failed_total[1h]) > 0`.
+ */
+const internalCounters = {
+  auditPruneFailures: 0,
+}
+
+/** Increment when audit-log retention sweep fails. Exposed as a Prometheus
+ *  counter; ops should alert on any non-zero rate. */
+export function recordAuditPruneFailure(): void {
+  internalCounters.auditPruneFailures++
+}
+
+/** Type for the optional approval-bus metrics snapshot pulled in at scrape
+ *  time. Kept structural to avoid importing approval-bus at module load
+ *  (would risk a circular). */
+export interface ApprovalBusMetricsLike {
+  pending: number
+  totalRequests: number
+  totalResolved: number
+  totalTimedOut: number
+  totalDenied: number
+}
+
+/**
+ * Optional snapshot provider for the approval-bus. Set once at startup
+ * (cli wires it after instantiating ApprovalBus). Lazy decoupling avoids
+ * the metrics module importing approval-bus directly.
+ */
+let approvalBusSnapshot: (() => ApprovalBusMetricsLike) | null = null
+export function setApprovalBusSnapshotProvider(fn: (() => ApprovalBusMetricsLike) | null): void {
+  approvalBusSnapshot = fn
+}
+
+/**
  * Allowlist of intent names emitted as Prometheus labels. Anything outside
  * this set buckets into 'other' so a malicious or buggy caller can't
  * explode label cardinality (every distinct user-supplied intent string
@@ -263,6 +300,29 @@ export function toPrometheus(): string {
     lines.push(`im_hub_platform_total{platform="${esc(platform)}"} ${n}`)
   }
 
+  // Internal operational counters (M7).
+  lines.push('# HELP im_hub_audit_prune_failed_total Audit retention sweep failure count')
+  lines.push('# TYPE im_hub_audit_prune_failed_total counter')
+  lines.push(`im_hub_audit_prune_failed_total ${internalCounters.auditPruneFailures}`)
+
+  // Approval-bus snapshot (M14). Pulled lazily so metrics scrapes pick up
+  // the latest live counts. When no provider is wired (early startup,
+  // tests) we omit the family entirely instead of emitting zeros.
+  const ab = approvalBusSnapshot?.()
+  if (ab) {
+    lines.push('# HELP im_hub_approval_pending Currently pending approval requests')
+    lines.push('# TYPE im_hub_approval_pending gauge')
+    lines.push(`im_hub_approval_pending ${ab.pending}`)
+    lines.push('# HELP im_hub_approval_requests_total Lifetime approval requests received')
+    lines.push('# TYPE im_hub_approval_requests_total counter')
+    lines.push(`im_hub_approval_requests_total ${ab.totalRequests}`)
+    lines.push('# HELP im_hub_approval_resolved_total Lifetime approval resolutions')
+    lines.push('# TYPE im_hub_approval_resolved_total counter')
+    lines.push(`im_hub_approval_resolved_total{result="allow"} ${ab.totalResolved - ab.totalDenied - ab.totalTimedOut}`)
+    lines.push(`im_hub_approval_resolved_total{result="deny"} ${ab.totalDenied}`)
+    lines.push(`im_hub_approval_resolved_total{result="timeout"} ${ab.totalTimedOut}`)
+  }
+
   return lines.join('\n') + '\n'
 }
 
@@ -271,6 +331,7 @@ export function reset(): void {
   agentBuckets.clear()
   intentCounter.clear()
   platformCounter.clear()
+  internalCounters.auditPruneFailures = 0
 }
 
 function esc(s: string): string {

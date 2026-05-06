@@ -177,6 +177,19 @@ export class ApprovalBus {
    *  (called from session.resetConversation) and on stop(). */
   private autoAllowByThread = new Map<string, Set<string>>()
 
+  /**
+   * Lifetime counters surfaced via {@link getMetrics}. Help ops detect
+   * leaks (pending growing unbounded), spikes (totalRequests rate), and
+   * approval skew (deny:allow ratio). Reset on stop() so the gauge for a
+   * fresh process starts at zero.
+   */
+  private metricsSnapshot = {
+    totalRequests: 0,
+    totalResolved: 0,
+    totalTimedOut: 0,
+    totalDenied: 0,
+  }
+
   constructor(opts: ApprovalBusOptions = {}) {
     this.approvalTimeoutMs = opts.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS
     this.autoAllowGraceMs = opts.autoAllowGraceMs ?? DEFAULT_AUTO_ALLOW_GRACE_MS
@@ -243,6 +256,10 @@ export class ApprovalBus {
     this.pendingById.clear()
     this.pendingByThread.clear()
     this.autoAllowByThread.clear()
+    // Reset lifetime counters so a restarted process starts at 0 — keeps
+    // `rate(im_hub_approval_requests_total)` correct without ops needing
+    // to track process restarts in the alert query.
+    this.metricsSnapshot = { totalRequests: 0, totalResolved: 0, totalTimedOut: 0, totalDenied: 0 }
 
     // server.close() doesn't terminate existing connections. Half-close each
     // (so the deny payload buffered above gets flushed) and fall back to
@@ -338,6 +355,28 @@ export class ApprovalBus {
 
   /** 测试用：当前 socket 路径。 */
   getSocketPath(): string | null { return this.socketPath }
+
+  /**
+   * Operational metrics snapshot used by /api/metrics (M14). `pending` is
+   * a live count; the four totals are lifetime counters that monotonically
+   * increase until stop(). Cheap to call — no allocations beyond the
+   * returned object.
+   */
+  getMetrics(): {
+    pending: number
+    totalRequests: number
+    totalResolved: number
+    totalTimedOut: number
+    totalDenied: number
+  } {
+    return {
+      pending: this.pendingById.size,
+      totalRequests: this.metricsSnapshot.totalRequests,
+      totalResolved: this.metricsSnapshot.totalResolved,
+      totalTimedOut: this.metricsSnapshot.totalTimedOut,
+      totalDenied: this.metricsSnapshot.totalDenied,
+    }
+  }
 
   // --- internals ---
 
@@ -549,6 +588,7 @@ export class ApprovalBus {
     const q = this.pendingByThread.get(args.ctx.threadId) ?? []
     q.push(pending)
     this.pendingByThread.set(args.ctx.threadId, q)
+    this.metricsSnapshot.totalRequests++
 
     log.info({
       event: 'approval.bus.request',
@@ -573,6 +613,14 @@ export class ApprovalBus {
     if (p.resolved) return
     p.resolved = true
     clearTimeout(p.timer)
+
+    // M14: account for the resolution. Order matters — we always count an
+    // overall resolve, plus a finer-grained bucket. Timeouts in auto-allow
+    // grace mode resolve as 'allow' on the wire, but cause stays 'timeout'
+    // so we can distinguish "user said yes" from "we said yes by default".
+    this.metricsSnapshot.totalResolved++
+    if (cause === 'timeout') this.metricsSnapshot.totalTimedOut++
+    if (decision.behavior === 'deny') this.metricsSnapshot.totalDenied++
 
     // The "register on allow+all" side-effect lives here (covers any path
     // through cancelPending — both resolvePending and the grace timer).

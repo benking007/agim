@@ -96,6 +96,11 @@ program
         console.warn(`⚠️ Approval bus failed to start (${msg}); claude-code will fall back to dontAsk mode`)
       }
     }
+    // Wire the bus's lifetime counters into /api/metrics (M14). Done even
+    // when the bus failed to start — getMetrics() returns zeros, which is
+    // the correct Prometheus snapshot for "no approvals processed".
+    const { setApprovalBusSnapshotProvider } = await import('./core/metrics.js')
+    setApprovalBusSnapshotProvider(() => approvalBus.getMetrics())
 
     // Load plugins FIRST (agents won't be registered until this runs)
     await registry.loadBuiltInPlugins()

@@ -587,7 +587,15 @@ export class TelegramAdapter implements MessengerAdapter {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // M12: cover quote characters too. Most usages place the value in a text
+  // node where `'` and `"` are harmless, but the approval-card template
+  // builds attributes like <a href="..."> with user-derived values, where
+  // an unescaped quote could close the attribute and inject markup.
+  return s.replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function formatHm(d: Date): string {

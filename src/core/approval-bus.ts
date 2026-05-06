@@ -42,10 +42,20 @@ const MAX_LINE_BYTES = 256 * 1024
 const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
 
 /** Length of the input prefix used to fingerprint an auto-allow rule.
- *  `(toolName, input-prefix)` is the dedup key. Short enough to cover
- *  benign repeats (`git status` ≈ `git s`) without granting blanket
- *  authority over a whole tool family (`rm -r…` ≠ `git s…`). */
-const AUTO_ALLOW_PREFIX_LEN = 5
+ *  `(toolName, input-prefix)` is the dedup key.
+ *
+ *  Bumped from 5 → 10 (M13). 5 collapsed `bash::git s` so the rule
+ *  matched `git status` AND `git stash` AND `git submodule update` — far
+ *  broader than users meant when they OK'd a single command. 10 keeps
+ *  the three common families distinct (`git status` ≠ `git stash` ≠
+ *  `git submo`) while still grouping benign variations of the same
+ *  operation (e.g. `git status` ≈ `git status -s`).
+ *
+ *  Why not longer? Most realistic commands are 6–14 chars, and pushing
+ *  past 10 means even `git status` vs `git status -s` are treated as
+ *  distinct, defeating the "approve once for variants" UX. 10 is the
+ *  sweet spot per CR-2026-05-06. */
+const AUTO_ALLOW_PREFIX_LEN = 10
 
 export interface RunContext {
   threadId: string

@@ -154,7 +154,10 @@ describe('ApprovalBus', () => {
     const resolved = bus.resolvePending('thread-A', { behavior: 'allow' })
     expect(resolved).not.toBeNull()
     expect(resolved?.toolName).toBe('Bash')
-    expect(resolved?.fingerprint).toBe('git p')
+    // M13: fingerprint length bumped 5 → 10 to reduce false matches
+    // (`git p` would alias to `git push` AND `git pull` AND `git pr…`;
+    //  at 10 chars `git push` stays distinct from `git pull` family).
+    expect(resolved?.fingerprint).toBe('git push')
     expect(resolved?.platform).toBe('feishu')
     expect(resolved?.wasAutoAllow).toBe(false)
     expect(bus.hasPendingFor('thread-A')).toBe(false)
@@ -424,7 +427,7 @@ describe('ApprovalBus', () => {
       expect(d1.behavior).toBe('allow')
       // Wire payload must NOT carry autoAllowFurther — that's internal-only.
       expect(d1.autoAllowFurther).toBeUndefined()
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::git s'])
+      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::git status'])
 
       // Second call — same tool + same prefix → grace mode
       client.send({
@@ -457,17 +460,19 @@ describe('ApprovalBus', () => {
       // Seed a rule directly via the public path (allow+autoAllowFurther).
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-seed',
-        toolName: 'Bash', input: { command: 'rm -rf x' }, toolUseId: 'tu-1',
+        // Long enough for the 10-char prefix to land on a shared region
+        // with the second call below (`rm -rf /tm` is the fingerprint).
+        toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu-1',
       })
       await sleep(20)
       fastBus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
       await client.next()
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::rm -r'])
+      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::rm -rf /tm'])
 
       // Second call hits the rule → grace mode. User explicitly denies.
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-2',
-        toolName: 'Bash', input: { command: 'rm -rf y' }, toolUseId: 'tu-2',
+        toolName: 'Bash', input: { command: 'rm -rf /tmp/y' }, toolUseId: 'tu-2',
       })
       await sleep(20)
       fastBus.resolvePending('thread-A', { behavior: 'deny', message: '不行' })
@@ -493,16 +498,18 @@ describe('ApprovalBus', () => {
       const client = await connectClient(fastPath)
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-1',
-        toolName: 'Bash', input: { command: 'ls -la' }, toolUseId: 'tu-1',
+        toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-foo' }, toolUseId: 'tu-1',
       })
       await sleep(20)
       fastBus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
       await client.next()
 
-      // Open a 2nd request that hits the rule (auto-allow grace).
+      // Open a 2nd request that hits the rule (auto-allow grace). Both
+      // commands share the first 10 chars (`ls -la /tm`) so they map to
+      // the same fingerprint after the AUTO_ALLOW_PREFIX_LEN bump.
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-2',
-        toolName: 'Bash', input: { command: 'ls -lh' }, toolUseId: 'tu-2',
+        toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-other' }, toolUseId: 'tu-2',
       })
       await sleep(20)
 
@@ -511,7 +518,7 @@ describe('ApprovalBus', () => {
       fastBus.unregisterRun('run-1')
       const d = await client.next()
       expect(d.behavior).toBe('deny')
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::ls -l'])
+      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::ls -la /tm'])
 
       await client.close()
     } finally {

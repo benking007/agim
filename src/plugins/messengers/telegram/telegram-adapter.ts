@@ -351,11 +351,16 @@ export class TelegramAdapter implements MessengerAdapter {
     const chatId = ctx.chat.id
     const msgId = ctx.message.message_id
     let attachmentLine: string
+    const botToken = this.config!.botToken
+    // Scrub the bot token from any string before it reaches a log line or a
+    // user-facing chat reply. The token rides inside the file URL we hand to
+    // curl, and curl's stderr can echo the URL on TLS / DNS failures.
+    const scrub = (s: string): string => botToken ? s.split(botToken).join('[REDACTED]') : s
     try {
       const file = await this.bot.api.getFile(fileId)
       if (!file.file_path) throw new Error('TG returned no file_path')
       const ext = pickExtension(file.file_path, mime)
-      const url = `https://api.telegram.org/file/bot${this.config!.botToken}/${file.file_path}`
+      const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
       const { path } = await downloadToMediaRoot({
         url,
         subdir: `telegram/${chatId}`,
@@ -363,7 +368,7 @@ export class TelegramAdapter implements MessengerAdapter {
       })
       attachmentLine = `[图片附件：${path}]`
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = scrub(err instanceof Error ? err.message : String(err))
       log.warn({ event: 'telegram.media.download_failed', err: msg, chatId, msgId }, 'media download failed')
       attachmentLine = `[图片附件下载失败：${msg}]`
     }
@@ -420,11 +425,13 @@ export class TelegramAdapter implements MessengerAdapter {
 
     let savedPath: string | null = null
     let downloadErr: string | null = null
+    const botToken = this.config!.botToken
+    const scrub = (s: string): string => botToken ? s.split(botToken).join('[REDACTED]') : s
     try {
       const file = await this.bot.api.getFile(fileId)
       if (!file.file_path) throw new Error('TG returned no file_path')
       const ext = pickExtension(file.file_path, mime)
-      const url = `https://api.telegram.org/file/bot${this.config!.botToken}/${file.file_path}`
+      const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
       const { path } = await downloadToMediaRoot({
         url,
         subdir: `telegram/${chatId}`,
@@ -432,7 +439,7 @@ export class TelegramAdapter implements MessengerAdapter {
       })
       savedPath = path
     } catch (err) {
-      downloadErr = err instanceof Error ? err.message : String(err)
+      downloadErr = scrub(err instanceof Error ? err.message : String(err))
       log.warn({ event: 'telegram.voice.download_failed', err: downloadErr, chatId, msgId }, 'voice download failed')
     }
 

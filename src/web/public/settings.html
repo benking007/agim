@@ -718,26 +718,20 @@
             const res = await authFetch('/api/agents/acp/test', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ endpoint, auth }),
+              body: JSON.stringify({ endpoint: agent.endpoint, auth: agent.auth }),
             });
-            // ...
-            // Second occurrence:
-          const res = await authFetch('/api/agents/acp/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint, auth }),
-          });
-          const data = await res.json();
-          if (data.ok) {
-            toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success');
-          } else {
-            toast(`${t('failed')}: ${data.error}`, 'error');
+            const data = await res.json();
+            if (data.ok) {
+              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success');
+            } else {
+              toast(`${t('failed')}: ${data.error}`, 'error');
+            }
+          } catch (err) {
+            toast(`${t('error')}: ${err.message}`, 'error');
           }
-        } catch (err) {
-          toast(`${t('error')}: ${err.message}`, 'error');
-        }
-        btn.disabled = false;
-        btn.textContent = t('testConn');
+          btn.disabled = false;
+          btn.textContent = t('testConn');
+        });
       });
 
       // Add ACP

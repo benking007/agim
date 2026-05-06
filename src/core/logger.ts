@@ -28,6 +28,22 @@ const root = pino({
     app_secret: () => '[REDACTED]',
     password: () => '[REDACTED]',
   },
+  // serializers above only apply to top-level keys passed to log methods.
+  // redact.paths walks nested structures (config objects, error contexts)
+  // and is the line of defense against tokens that leaked into wrapped
+  // payloads, e.g. `log.info({ config: { botToken: '...' } })` or
+  // `log.warn({ err: { url: '...?token=...' } })`.
+  redact: {
+    paths: [
+      '*.token', '*.botToken', '*.bot_token',
+      '*.apiKey', '*.api_key',
+      '*.appSecret', '*.app_secret',
+      '*.password', '*.secret',
+      'headers.authorization',
+      'headers["x-im-hub-token"]',
+    ],
+    censor: '[REDACTED]',
+  },
 })
 
 export function generateTraceId(): string {

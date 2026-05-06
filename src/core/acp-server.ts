@@ -8,7 +8,7 @@
 // Runs on a separate port (default 9090). Reuses web token for auth.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
-import { randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes } from 'crypto'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -16,6 +16,7 @@ import { parseMessage, routeMessage, type RouteContext } from './router.js'
 import { generateTraceId, createLogger, logger as rootLogger } from './logger.js'
 import { registry } from './registry.js'
 import { createJob, getJob, runJob } from './job-board.js'
+import { safeEqual } from '../utils/safe-equal.js'
 
 const DEFAULT_ACP_PORT = 9090
 const WEB_TOKEN_DIR = join(homedir(), '.im-hub')
@@ -25,14 +26,6 @@ const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
 
 function getToken(): string | null {
   try { return readFileSync(WEB_TOKEN_FILE, 'utf-8').trim() } catch { return null }
-}
-
-/** Constant-time string compare. Returns false if lengths differ. */
-function safeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return timingSafeEqual(bufA, bufB)
 }
 
 function parseAuth(req: IncomingMessage): { ok: boolean; error?: string } {

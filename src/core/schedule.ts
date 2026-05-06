@@ -19,10 +19,61 @@ import { createSqliteHelper } from './sqlite-helper.js'
 
 const SCHED_DB = join(homedir(), '.im-hub', 'schedules.db')
 const TICK_INTERVAL_MS = 30 * 1000
+const NOTIFY_TIMEOUT_MS = 10 * 1000
+/** Hard cap on webhook response body — we only read a small ack. */
+const NOTIFY_MAX_RESPONSE_BYTES = 64 * 1024
 
 const log = rootLogger.child({ component: 'schedule' })
 
 let tickTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * Validate a user-supplied webhook URL before the scheduler POSTs to it.
+ * Defends against accidental misconfig and basic SSRF: no protocols other
+ * than http(s); no loopback / RFC1918 / link-local destinations unless the
+ * operator explicitly opts in via IMHUB_ALLOW_PRIVATE_WEBHOOKS=1.
+ *
+ * Note: this is a lexical check (IP literals + "localhost"). DNS-rebinding
+ * mitigation requires an at-fetch-time guard; tracked separately.
+ */
+export function validateWebhookUrl(raw: string): { ok: true; url: URL } | { ok: false; reason: string } {
+  let u: URL
+  try { u = new URL(raw) } catch {
+    return { ok: false, reason: 'malformed URL' }
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    return { ok: false, reason: `protocol ${u.protocol} not allowed (use http: or https:)` }
+  }
+  if (process.env.IMHUB_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true, url: u }
+  const host = u.hostname.toLowerCase()
+  if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '[::]') {
+    return { ok: false, reason: `host ${host} not allowed` }
+  }
+  // IPv4 literals
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (v4) {
+    const o = v4.slice(1, 5).map(Number)
+    if (o.some((b) => !Number.isFinite(b) || b < 0 || b > 255)) {
+      return { ok: false, reason: 'malformed IPv4 literal' }
+    }
+    const [a, b] = o
+    // 127/8 loopback, 10/8, 192.168/16, 172.16-31/12, 169.254/16 link-local,
+    // 0/8 "this network", 100.64/10 CGNAT.
+    if (a === 127 || a === 10 || a === 0
+      || (a === 192 && b === 168)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 169 && b === 254)
+      || (a === 100 && b >= 64 && b <= 127)) {
+      return { ok: false, reason: `private/loopback IPv4 ${host} not allowed` }
+    }
+  }
+  // IPv6 literals come wrapped in [] in URL.hostname strips them; bracket
+  // forms still surface in u.host though. Block well-known unsafe prefixes.
+  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
+    return { ok: false, reason: `private/loopback IPv6 ${host} not allowed` }
+  }
+  return { ok: true, url: u }
+}
 
 export interface Schedule {
   id: number
@@ -77,6 +128,10 @@ export function createSchedule(input: CreateScheduleInput): number {
   const spec = parseCron(input.cron)  // throws on bad expr
   const next = nextOccurrence(spec, new Date())
   if (!next) throw new Error('Cron expression has no future occurrence')
+  if (input.notifyUrl) {
+    const v = validateWebhookUrl(input.notifyUrl)
+    if (!v.ok) throw new Error(`notifyUrl rejected: ${v.reason}`)
+  }
   const info = d.prepare(
     'INSERT INTO schedules (name, agent, prompt, cron, enabled, next_run, notify_url) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(input.name, input.agent, input.prompt, input.cron,
@@ -161,26 +216,53 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
       }
     }
   }, logger).then(async () => {
-    if (s.notify_url) {
+    if (!s.notify_url) return
+    // Defense in depth: re-validate at fire time in case the row was edited
+    // out-of-band (manual SQL, future v0.x importer) — never trust DB content
+    // as an authorization bypass for the SSRF gate.
+    const v = validateWebhookUrl(s.notify_url)
+    if (!v.ok) {
+      logger.warn({ scheduleId: s.id, reason: v.reason, event: 'schedule.notify.rejected' },
+        'Schedule notify webhook rejected by URL validator')
+      return
+    }
+    try {
+      const job = (await import('./job-board.js')).getJob(jobId)
+      if (!job) return
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), NOTIFY_TIMEOUT_MS)
       try {
-        const job = (await import('./job-board.js')).getJob(jobId)
-        if (job) {
-          await fetch(s.notify_url, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              scheduleId: s.id,
-              jobId,
-              status: job.status,
-              result: job.result,
-              error: job.error,
-            }),
-          })
+        const resp = await fetch(v.url.toString(), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            scheduleId: s.id,
+            jobId,
+            status: job.status,
+            result: job.result,
+            error: job.error,
+          }),
+          signal: ctrl.signal,
+          // Drop redirects so a 30x can't pivot us back to a private host.
+          redirect: 'manual',
+        })
+        // Drain (capped) so the connection can be reused / closed cleanly.
+        if (resp.body) {
+          let read = 0
+          const reader = resp.body.getReader()
+          while (read < NOTIFY_MAX_RESPONSE_BYTES) {
+            const { done, value } = await reader.read()
+            if (done) break
+            read += value?.byteLength ?? 0
+          }
+          await reader.cancel().catch(() => {})
         }
-      } catch (err) {
-        logger.warn({ scheduleId: s.id, err: err instanceof Error ? err.message : String(err) },
-          'Schedule notify webhook failed')
+      } finally {
+        clearTimeout(timer)
       }
+    } catch (err) {
+      logger.warn({ scheduleId: s.id, err: err instanceof Error ? err.message : String(err) },
+        'Schedule notify webhook failed')
     }
   }).catch(() => { /* runJob already logged */ })
 }

@@ -12,6 +12,7 @@ import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
+import { safeEqual } from '../utils/safe-equal.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 import {
@@ -82,7 +83,7 @@ export async function startWebServer(options: {
     // REST API — require auth token
     if (url.pathname.startsWith('/api/')) {
       const token = req.headers['x-im-hub-token'] as string || ''
-      if (token !== webToken) {
+      if (!safeEqual(token, webToken)) {
         res.writeHead(401)
         res.end(JSON.stringify({ error: 'Unauthorized' }))
         return
@@ -170,8 +171,8 @@ export async function startWebServer(options: {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     // Verify token from URL query before accepting connection
     const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
-    const wsToken = wsUrl.searchParams.get('token')
-    if (wsToken !== webToken) {
+    const wsToken = wsUrl.searchParams.get('token') || ''
+    if (!safeEqual(wsToken, webToken)) {
       ws.close(1008, 'Unauthorized')
       return
     }
@@ -891,7 +892,9 @@ function serveIndexHtml(res: ServerResponse, filePath: string, token: string): v
     return
   }
   let html = readFileSync(filePath, 'utf-8')
-  html = html.replace('</head>', `<script>window.IMHUB_TOKEN='${token}';</script></head>`)
+  // JSON.stringify produces a safely quoted JS string literal — prevents
+  // breakout if the token ever contains ' or </script>.
+  html = html.replace('</head>', `<script>window.IMHUB_TOKEN=${JSON.stringify(token)};</script></head>`)
   // No-cache so dashboard updates land for users without forcing a hard refresh.
   // The HTML is small (<30KB) and the round-trip is cheap; correctness wins.
   res.writeHead(200, {

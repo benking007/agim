@@ -18,6 +18,7 @@ import {
   pickExtension,
 } from './media-download.js'
 import { splitMessage } from '../../../utils/message-split.js'
+import { Backoff } from '../../../utils/backoff.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
 
@@ -251,23 +252,52 @@ export class TelegramAdapter implements MessengerAdapter {
   }
 
   private async runPollingLoop(): Promise<void> {
+    // M9: exponential backoff with jitter replaces the previous fixed 2s
+    // (unexpected resolve) / 5s (error) delays. Auth-revoked states no
+    // longer hammer the API at a fixed cadence, and fleet-wide network
+    // recovery doesn't lock-step its reconnects.
+    //
+    // baseMs = 2_000 preserves the previous "first error → ~2s" feel so
+    // operators eyeballing logs during normal restarts see the same
+    // ballpark; capMs = 60_000 prevents indefinite drift past 1 minute.
+    const backoff = new Backoff({ baseMs: 2_000, capMs: 60_000, jitter: 0.5 })
+    /** Reset the backoff if bot.start() ran healthy for at least this long
+     *  before erroring. Without this, a single transient error at hour 12
+     *  of operation would still queue the same exponential tail as a
+     *  startup-time crash loop. 30 s is comfortably longer than any
+     *  realistic handshake / first-fetch round-trip. */
+    const HEALTHY_RUN_THRESHOLD_MS = 30_000
+
     while (this.isRunning && this.bot) {
+      const startedAt = Date.now()
       try {
         await this.bot.start()
-        if (this.isRunning) {
-          log.warn({ event: 'telegram.polling.unexpected_stop' },
-            'bot.start() resolved while still running; restarting in 2s')
-          await new Promise((r) => setTimeout(r, 2000))
-        } else {
+        if (!this.isRunning) {
           log.info('Bot stopped gracefully')
           return
         }
+        // bot.start() resolved while we still want to be running — that's
+        // grammy's silent-wedge mode (or an internal early return). Treat
+        // it as a fault and back off before restarting.
+        if (Date.now() - startedAt >= HEALTHY_RUN_THRESHOLD_MS) backoff.reset()
+        const delayMs = backoff.nextDelayMs()
+        log.warn({
+          event: 'telegram.polling.unexpected_stop',
+          attempt: backoff.currentAttempt(),
+          delayMs,
+        }, 'bot.start() resolved while still running; restarting after backoff')
+        await new Promise((r) => setTimeout(r, delayMs))
       } catch (err) {
         if (!this.isRunning) return
-        log.error(
-          { err: err instanceof Error ? err.message : String(err), event: 'telegram.polling.error' },
-          'Bot polling error; restarting in 5s')
-        await new Promise((r) => setTimeout(r, 5000))
+        if (Date.now() - startedAt >= HEALTHY_RUN_THRESHOLD_MS) backoff.reset()
+        const delayMs = backoff.nextDelayMs()
+        log.error({
+          err: err instanceof Error ? err.message : String(err),
+          event: 'telegram.polling.error',
+          attempt: backoff.currentAttempt(),
+          delayMs,
+        }, 'Bot polling error; restarting after backoff')
+        await new Promise((r) => setTimeout(r, delayMs))
       }
     }
   }

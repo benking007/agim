@@ -9,6 +9,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { readFile, writeFile, mkdir, stat } from 'fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { Backoff } from '../../../utils/backoff.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
 
@@ -237,13 +238,23 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     let consecutiveFailures = 0
     let lastHeartbeatTime = Date.now()
     const HEARTBEAT_INTERVAL_MS = 60 * 1000 // 60 seconds
+    // M9: shared exponential-with-jitter helper. The previous inline
+    // `1000 * Math.pow(2, n - 1)` was deterministic, so a fleet of im-hub
+    // instances recovering from a shared network event would all
+    // reconnect in lock-step. Backoff(jitter=0.5) spreads the storm
+    // across a ±50% window without changing the underlying cadence.
+    // Base 2_000 / cap 30_000 preserves the prior schedule's ballpark
+    // (2s, 4s, 8s, 16s, 30s capped) — first failure still has no
+    // extra wait via the `consecutiveFailures > 1` gate below.
+    const backoff = new Backoff({ baseMs: 2_000, capMs: 30_000, jitter: 0.5 })
 
     while (this.isRunning) {
       try {
         const response = await this.client.getUpdates(this.pollState.getUpdatesBuf)
 
-        // Success — reset failure counter
+        // Success — reset failure counter and backoff
         consecutiveFailures = 0
+        backoff.reset()
 
         if (response.msgs?.length) {
           log.debug({ count: response.msgs.length }, 'Received messages')
@@ -277,13 +288,13 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
         consecutiveFailures++
         log.error({ err: errMsg, consecutiveFailures }, 'Poll error')
 
-        // Exponential backoff on consecutive failures.
-        //   1st failure: no extra wait, just the regular 1s tail sleep
-        //   2nd: 2s   3rd: 4s   4th: 8s   5th: 16s   6th+: 30s (capped)
+        // First failure: no extra wait, just the regular 1s tail sleep.
+        // From the second consecutive failure on, draw the next delay
+        // from the jittered exponential schedule (2s/4s/8s/16s/30s ±50%).
         if (consecutiveFailures > 1) {
-          const delay = Math.min(1000 * Math.pow(2, consecutiveFailures - 1), 30000)
-          log.warn({ delayMs: delay }, `Backing off after ${consecutiveFailures} consecutive failures`)
-          await new Promise((resolve) => setTimeout(resolve, delay))
+          const delayMs = backoff.nextDelayMs()
+          log.warn({ delayMs }, `Backing off after ${consecutiveFailures} consecutive failures`)
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
           continue
         }
       }

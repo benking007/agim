@@ -80,6 +80,13 @@ export async function startWebServer(options: {
       return serveIndexHtml(res, join(PUBLIC_DIR, 'tasks.html'), webToken)
     }
 
+    // M4: /api/health is intentionally public (k8s liveness probe friendly)
+    // — declare it BEFORE the /api/* token gate so callers don't need to
+    // know the web token. Returns only operational status, not config.
+    if (url.pathname === '/api/health' && req.method === 'GET') {
+      return handleHealth(req, res)
+    }
+
     // REST API — require auth token
     if (url.pathname.startsWith('/api/')) {
       const token = req.headers['x-im-hub-token'] as string || ''
@@ -151,9 +158,8 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
       return handleMetrics(req, res, url)
     }
-    if (url.pathname === '/api/health' && req.method === 'GET') {
-      return handleHealth(req, res)
-    }
+    // /api/health handled above the token gate (M4) — keep this comment so
+    // future contributors don't re-add the route inside the auth block.
     if (url.pathname === '/api/notify' && req.method === 'POST') {
       return handleNotify(req, res)
     }
@@ -168,7 +174,31 @@ export async function startWebServer(options: {
   // WebSocket server
   const wss = new WebSocketServer({ server: httpServer })
 
+  // M3: cap concurrent WS clients so a leaked / shared web token can't OOM
+  // the host by opening unbounded connections. Default 100 is generous for
+  // a single-user / small-team setup; production multi-tenant should set
+  // IMHUB_MAX_WS_CLIENTS to a higher value.
+  const maxWsClients = (() => {
+    const raw = process.env.IMHUB_MAX_WS_CLIENTS
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 100
+  })()
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    if (clients.size >= maxWsClients) {
+      // 1013 = "Try Again Later" per RFC 6455. Slightly nicer than a flat
+      // close — clients with reconnect logic will back off.
+      webLog.warn({
+        event: 'ws.cap_reached',
+        active: clients.size,
+        cap: maxWsClients,
+      }, 'WS connection refused (cap)')
+      ws.close(1013, 'Server too busy')
+      return
+    }
     // Verify token from URL query before accepting connection
     const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
     const wsToken = wsUrl.searchParams.get('token') || ''
@@ -665,11 +695,25 @@ async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Pro
 async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const body = await readBody(req, res)
-    const { endpoint, auth } = JSON.parse(body)
+    // M11: bare JSON.parse threw a SyntaxError that bubbled out into the
+    // outer catch and surfaced as a "500-ish 400" with the parser's raw
+    // message. Validate explicitly so malformed bodies get a clean 400.
+    let parsed: { endpoint?: string; auth?: unknown }
+    try {
+      parsed = JSON.parse(body) as { endpoint?: string; auth?: unknown }
+    } catch {
+      sendJson(res, 400, { ok: false, error: 'Invalid JSON body' })
+      return
+    }
+    const { endpoint, auth } = parsed
+    if (!endpoint || typeof endpoint !== 'string') {
+      sendJson(res, 400, { ok: false, error: 'Missing or invalid "endpoint"' })
+      return
+    }
 
     // Dynamic import to avoid circular deps
     const { ACPClient } = await import('../plugins/agents/acp/acp-client.js')
-    const client = new ACPClient({ name: 'test', endpoint, auth })
+    const client = new ACPClient({ name: 'test', endpoint, auth: auth as never })
     const manifest = await client.fetchManifest()
 
     sendJson(res, 200, {
@@ -897,9 +941,30 @@ function serveIndexHtml(res: ServerResponse, filePath: string, token: string): v
   html = html.replace('</head>', `<script>window.IMHUB_TOKEN=${JSON.stringify(token)};</script></head>`)
   // No-cache so dashboard updates land for users without forcing a hard refresh.
   // The HTML is small (<30KB) and the round-trip is cheap; correctness wins.
+  //
+  // M1: defense-in-depth response headers. CSP keeps 'unsafe-inline' on
+  // script/style because the IMHUB_TOKEN bootstrap and a few inline event
+  // handlers in the static pages still rely on it; tightening to a nonce
+  // is tracked separately. Outside that, lock everything down: no framing,
+  // no MIME sniffing, no Referer leak to third parties, no third-party
+  // resources at all.
   res.writeHead(200, {
-    'Content-Type': 'text/html',
+    'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache, must-revalidate',
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "connect-src 'self' ws: wss:",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; '),
   })
   res.end(html)
 }

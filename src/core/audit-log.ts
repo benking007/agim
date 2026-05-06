@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3'
 import { homedir } from 'os'
 import { join } from 'path'
 import { logger as rootLogger } from './logger.js'
-import { recordInvocation } from './metrics.js'
+import { recordInvocation, recordAuditPruneFailure } from './metrics.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
 const log = rootLogger.child({ component: 'audit-log' })
@@ -185,6 +185,9 @@ export function pruneExpired(d: Database.Database = getDb()!): number {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.warn({ event: 'audit-log.prune.failed', error: msg }, 'audit-log retention sweep failed')
+    // M7: surface as Prometheus counter so a stuck retention loop becomes
+    // observable beyond a stderr warn line. Alert on any non-zero rate.
+    recordAuditPruneFailure()
     return 0
   }
 }

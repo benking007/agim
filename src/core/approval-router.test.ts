@@ -309,7 +309,7 @@ describe('install / uninstall — full loop with fake messenger', () => {
     expect(sent.length).toBe(2)
     expect(sent[1].text).toContain('已批准并启用自动放行')
     expect(sent[1].text).toContain('Bash')
-    expect(sent[1].text).toContain('git s') // 5-char prefix
+    expect(sent[1].text).toContain('git status') // 10-char prefix (M13)
 
     sock.end()
     uninstall()

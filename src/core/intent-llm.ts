@@ -9,6 +9,7 @@
 // Caching: identical prompt+candidate-list pairs are memoized within a
 // 10-minute window so repeated chat-room banter doesn't burn budget.
 
+import { createHash } from 'crypto'
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'
 
@@ -98,8 +99,23 @@ function autoFromEnv(): void {
 }
 autoFromEnv()
 
+/** Hard cap on the prompt portion of the LRU key. Past this length the
+ *  key collapses, which is fine for a memo cache (occasional re-call is
+ *  cheap and doesn't affect correctness — the LLM judge runs again). It
+ *  matters because the key was previously the full prompt concatenated
+ *  with `|`-joined candidates, so a 100KB prompt + many candidates blew
+ *  the LRU's per-entry memory cost. */
+const MAX_KEY_TEXT_LEN = 256
+
 function makeKey(text: string, candidates: string[]): string {
-  return candidates.slice().sort().join('|') + '||' + text
+  // Hash the candidate list so the key length is bounded regardless of
+  // how many ACP agents are registered. SHA-256/16-hex (64 bits) gives
+  // 1-in-2^64 collision probability across the LRU window — irrelevant.
+  const candHash = createHash('sha256')
+    .update(candidates.slice().sort().join('|'))
+    .digest('hex').slice(0, 16)
+  const textKey = text.length > MAX_KEY_TEXT_LEN ? text.slice(0, MAX_KEY_TEXT_LEN) : text
+  return `${candHash}||${textKey}`
 }
 
 function buildPrompt(text: string, candidates: string[]): string {

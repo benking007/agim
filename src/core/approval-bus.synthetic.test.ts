@@ -95,10 +95,12 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(firstDispatched[0]).toEqual({ behavior: 'allow', autoAllowFurther: true })
 
     // Now a second call with the same fingerprint enters auto-allow mode.
+    // "git status" and "git status -s" share the 10-char prefix `git status`
+    // (M13: AUTO_ALLOW_PREFIX_LEN bumped 5 → 10).
     const secondDispatched: Decision[] = []
     await bus.registerSyntheticPending({
       runId: 'oc-1', reqId: 'perm-2', toolName: 't',
-      input: { command: 'git stash' },  // shares "git s" prefix with the rule
+      input: { command: 'git status -s' },
       ctx: RUN_CTX, dispatch: (d) => secondDispatched.push(d),
     })
 

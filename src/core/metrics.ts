@@ -110,6 +110,34 @@ const intentCounter = new Map<string, number>()
 const platformCounter = new Map<string, number>()
 const startedAt = Date.now()
 
+/**
+ * Allowlist of intent names emitted as Prometheus labels. Anything outside
+ * this set buckets into 'other' so a malicious or buggy caller can't
+ * explode label cardinality (every distinct user-supplied intent string
+ * would otherwise produce a new metric series, growing memory and scrape
+ * cost without bound). Mirrors the values produced by router.ts and
+ * intent.ts; if you add a new triggeredBy reason there, add it here too.
+ */
+const KNOWN_INTENTS: ReadonlySet<string> = new Set([
+  'default', 'explicit', 'fallback', 'llm',
+  'topic', 'keyword', 'sticky',
+])
+
+/**
+ * Allowlist of platform names. Each adapter pins its own platform string
+ * (telegram / feishu / wechat / discord / web / acp / acp-server / rest /
+ * rest-msg). Anything else funnels to 'other' to bound cardinality.
+ */
+const KNOWN_PLATFORMS: ReadonlySet<string> = new Set([
+  'telegram', 'feishu', 'wechat', 'discord',
+  'web', 'acp', 'acp-server', 'rest', 'rest-msg',
+])
+
+function bucketLabel(known: ReadonlySet<string>, value: string): string {
+  if (!value) return 'other'
+  return known.has(value) ? value : 'other'
+}
+
 function getBucket(agent: string): AgentBucket {
   let b = agentBuckets.get(agent)
   if (!b) {
@@ -137,8 +165,10 @@ export function recordInvocation(rec: RecordedInvocation): void {
   if (Number.isFinite(rec.durationMs) && rec.durationMs >= 0) {
     b.latency.push(rec.durationMs)
   }
-  intentCounter.set(rec.intent, (intentCounter.get(rec.intent) || 0) + 1)
-  platformCounter.set(rec.platform, (platformCounter.get(rec.platform) || 0) + 1)
+  const intentLabel = bucketLabel(KNOWN_INTENTS, rec.intent)
+  const platformLabel = bucketLabel(KNOWN_PLATFORMS, rec.platform)
+  intentCounter.set(intentLabel, (intentCounter.get(intentLabel) || 0) + 1)
+  platformCounter.set(platformLabel, (platformCounter.get(platformLabel) || 0) + 1)
 }
 
 export interface MetricsSnapshot {

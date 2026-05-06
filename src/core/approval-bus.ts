@@ -196,8 +196,9 @@ export class ApprovalBus {
   private metricsSnapshot = {
     totalRequests: 0,
     totalResolved: 0,
-    totalTimedOut: 0,
+    totalAllowed: 0,
     totalDenied: 0,
+    totalTimedOut: 0,
   }
 
   constructor(opts: ApprovalBusOptions = {}) {
@@ -269,7 +270,7 @@ export class ApprovalBus {
     // Reset lifetime counters so a restarted process starts at 0 — keeps
     // `rate(im_hub_approval_requests_total)` correct without ops needing
     // to track process restarts in the alert query.
-    this.metricsSnapshot = { totalRequests: 0, totalResolved: 0, totalTimedOut: 0, totalDenied: 0 }
+    this.metricsSnapshot = { totalRequests: 0, totalResolved: 0, totalAllowed: 0, totalDenied: 0, totalTimedOut: 0 }
 
     // server.close() doesn't terminate existing connections. Half-close each
     // (so the deny payload buffered above gets flushed) and fall back to
@@ -368,23 +369,27 @@ export class ApprovalBus {
 
   /**
    * Operational metrics snapshot used by /api/metrics (M14). `pending` is
-   * a live count; the four totals are lifetime counters that monotonically
-   * increase until stop(). Cheap to call — no allocations beyond the
-   * returned object.
+   * a live count; the totals are lifetime counters that monotonically
+   * increase until stop(). The three result buckets (allowed / denied /
+   * timedOut) are mutually exclusive and sum to totalResolved — see
+   * cancelPending for the bucketing rule. Cheap to call — no allocations
+   * beyond the returned object.
    */
   getMetrics(): {
     pending: number
     totalRequests: number
     totalResolved: number
-    totalTimedOut: number
+    totalAllowed: number
     totalDenied: number
+    totalTimedOut: number
   } {
     return {
       pending: this.pendingById.size,
       totalRequests: this.metricsSnapshot.totalRequests,
       totalResolved: this.metricsSnapshot.totalResolved,
-      totalTimedOut: this.metricsSnapshot.totalTimedOut,
+      totalAllowed: this.metricsSnapshot.totalAllowed,
       totalDenied: this.metricsSnapshot.totalDenied,
+      totalTimedOut: this.metricsSnapshot.totalTimedOut,
     }
   }
 
@@ -624,13 +629,22 @@ export class ApprovalBus {
     p.resolved = true
     clearTimeout(p.timer)
 
-    // M14: account for the resolution. Order matters — we always count an
-    // overall resolve, plus a finer-grained bucket. Timeouts in auto-allow
-    // grace mode resolve as 'allow' on the wire, but cause stays 'timeout'
-    // so we can distinguish "user said yes" from "we said yes by default".
+    // M14: account for the resolution. Bucket into exactly ONE of
+    // allowed / denied / timedOut so the three sub-counters sum to
+    // totalResolved (Prometheus counters must monotonically increase;
+    // double-counting could push a derived "allow = resolved-deny-timeout"
+    // negative, which Prom interprets as a counter reset). Timeouts win
+    // over the wire decision so an auto-allow grace expiry counts as
+    // "timeout" (we said yes by default), distinct from "user said yes",
+    // and a normal timeout-deny counts as "timeout", not "deny".
     this.metricsSnapshot.totalResolved++
-    if (cause === 'timeout') this.metricsSnapshot.totalTimedOut++
-    if (decision.behavior === 'deny') this.metricsSnapshot.totalDenied++
+    if (cause === 'timeout') {
+      this.metricsSnapshot.totalTimedOut++
+    } else if (decision.behavior === 'deny') {
+      this.metricsSnapshot.totalDenied++
+    } else {
+      this.metricsSnapshot.totalAllowed++
+    }
 
     // The "register on allow+all" side-effect lives here (covers any path
     // through cancelPending — both resolvePending and the grace timer).

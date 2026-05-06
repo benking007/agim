@@ -566,4 +566,44 @@ describe('ApprovalBus', () => {
 
     await client.close()
   })
+
+  // M14 follow-up: each resolution must increment exactly ONE of
+  // allowed/denied/timedOut. If two buckets fire on the same call
+  // (e.g. cause='timeout' + decision.behavior='deny'), the Prometheus
+  // "allow = resolved - deny - timeout" math would go negative — counters
+  // must be monotonic, so this invariant is load-bearing for the metrics
+  // exposition.
+  it('metrics: resolution buckets are mutually exclusive', async () => {
+    bus.registerRun('run-1', RUN_CTX)
+    bus.setNotifier(async () => {})
+    const client = await connectClient(path)
+
+    // 1. user allow
+    client.send({ v: 1, type: 'approval', runId: 'run-1', reqId: 'r1', toolName: 'Bash', input: {}, toolUseId: 'tu-1' })
+    await sleep(20)
+    bus.resolvePending('thread-A', { behavior: 'allow' })
+    await client.next()
+
+    // 2. user deny
+    client.send({ v: 1, type: 'approval', runId: 'run-1', reqId: 'r2', toolName: 'Bash', input: {}, toolUseId: 'tu-2' })
+    await sleep(20)
+    bus.resolvePending('thread-A', { behavior: 'deny', message: 'no' })
+    await client.next()
+
+    // 3. timeout (no auto-allow grace, fires deny on the wire but counts as timeout)
+    client.send({ v: 1, type: 'approval', runId: 'run-1', reqId: 'r3', toolName: 'Bash', input: {}, toolUseId: 'tu-3' })
+    const timeoutDecision = await client.next(2000)
+    expect(timeoutDecision.behavior).toBe('deny')
+
+    const m = bus.getMetrics()
+    expect(m.totalRequests).toBe(3)
+    expect(m.totalResolved).toBe(3)
+    expect(m.totalAllowed).toBe(1)
+    expect(m.totalDenied).toBe(1)
+    expect(m.totalTimedOut).toBe(1)
+    // Invariant — buckets sum to totalResolved.
+    expect(m.totalAllowed + m.totalDenied + m.totalTimedOut).toBe(m.totalResolved)
+
+    await client.close()
+  })
 })

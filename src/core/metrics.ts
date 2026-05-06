@@ -133,8 +133,9 @@ export interface ApprovalBusMetricsLike {
   pending: number
   totalRequests: number
   totalResolved: number
-  totalTimedOut: number
+  totalAllowed: number
   totalDenied: number
+  totalTimedOut: number
 }
 
 /**
@@ -318,7 +319,7 @@ export function toPrometheus(): string {
     lines.push(`im_hub_approval_requests_total ${ab.totalRequests}`)
     lines.push('# HELP im_hub_approval_resolved_total Lifetime approval resolutions')
     lines.push('# TYPE im_hub_approval_resolved_total counter')
-    lines.push(`im_hub_approval_resolved_total{result="allow"} ${ab.totalResolved - ab.totalDenied - ab.totalTimedOut}`)
+    lines.push(`im_hub_approval_resolved_total{result="allow"} ${ab.totalAllowed}`)
     lines.push(`im_hub_approval_resolved_total{result="deny"} ${ab.totalDenied}`)
     lines.push(`im_hub_approval_resolved_total{result="timeout"} ${ab.totalTimedOut}`)
   }

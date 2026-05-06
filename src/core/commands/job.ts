@@ -5,6 +5,7 @@ import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { AgentBase } from '../agent-base.js'
 import { createJob, getJob, listJobs, cancelJob, runJob, getJobStats, type Job } from '../job-board.js'
+import { workspaceRegistry } from '../workspace.js'
 
 function formatJob(j: Job): string {
   const icon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', cancelled: '🚫' }[j.status] || '❓'
@@ -21,11 +22,17 @@ export async function handleJobCommand(
   const sub = parts[0] || 'list'
   const rest = parts.slice(1).join(' ')
 
+  // Per-user scoping: when ctx.userId is set (the IM-driven path), every read /
+  // mutate is restricted to rows whose creator_id matches OR is '' (legacy).
+  // When userId is unset (REST/system caller via the same handler) all rows
+  // are visible — that's the historical behavior.
+  const ownerOpts = ctx.userId ? { creatorId: ctx.userId } : {}
+
   switch (sub) {
     case 'list':
     case 'ls': {
       const filter = parts[1] as Job['status'] | undefined
-      const jobs = listJobs(10, filter)
+      const jobs = listJobs(10, filter, ownerOpts)
       if (!jobs.length) return '📋 暂无任务。\n\n使用 /job create <agent> <prompt> 创建新任务。'
       const stats = getJobStats()
       return `📋 **任务列表** (总 ${stats.total} · 待 ${stats.pending} · 运行 ${stats.running} · 完 ${stats.completed} · 败 ${stats.failed})
@@ -50,7 +57,18 @@ ${jobs.map(formatJob).join('\n')}
       const agent = registry.findAgent(agentName)
       if (!agent) return `❌ Agent "${agentName}" not found.`
 
-      const id = createJob(agent.name, prompt)
+      // M6: workspace whitelist applies to direct command paths too. Without
+      // this, a member of a workspace whose `agents: ['opencode']` whitelist
+      // allows only opencode could still smuggle in a `/job create claude-code`.
+      const ws = workspaceRegistry.resolve(ctx.userId || 'unknown')
+      if (!ws.hasAgent(agent.name)) {
+        return `❌ Agent "${agent.name}" 不在 workspace "${ws.name}" 的白名单内。`
+      }
+
+      const id = createJob(agent.name, prompt, {
+        creatorId: ctx.userId || '',
+        workspaceId: ws.id,
+      })
       return `✅ 任务 #${id} 已创建
 
 Agent: ${agent.name}
@@ -64,7 +82,7 @@ Agent: ${agent.name}
     case 'g': {
       const id = parseInt(parts[1] || '', 10)
       if (isNaN(id)) return '用法: /job check <id>'
-      const job = getJob(id)
+      const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       const statusLabel = { pending: '⏳ 待执行', running: '🔄 运行中', completed: '✅ 已完成', failed: '❌ 失败', cancelled: '🚫 已取消' }
       let msg = `📋 **任务 #${job.id}**
@@ -85,7 +103,7 @@ Agent: ${job.agent}
     case 'r': {
       const id = parseInt(parts[1] || '', 10)
       if (isNaN(id)) return '用法: /job run <id>'
-      const job = getJob(id)
+      const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       if (job.status === 'running') return `🔄 任务 #${id} 已在运行中。`
 
@@ -117,8 +135,8 @@ Agent: ${job.agent}
     case 'x': {
       const id = parseInt(parts[1] || '', 10)
       if (isNaN(id)) return '用法: /job cancel <id>'
-      if (cancelJob(id)) return `🚫 任务 #${id} 已取消。`
-      return `❌ 无法取消任务 #${id}。可能不存在或已结束。`
+      if (cancelJob(id, ownerOpts)) return `🚫 任务 #${id} 已取消。`
+      return `❌ 无法取消任务 #${id}。可能不存在、已结束、或不是你创建的任务。`
     }
 
     case 'switch':
@@ -131,7 +149,7 @@ Agent: ${job.agent}
       }
       const id = parseInt(arg, 10)
       if (isNaN(id)) return '用法: /job switch <id>  或  /job switch main'
-      const job = getJob(id)
+      const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       await sessionManager.setActiveSubtask(ctx.platform, ctx.channelId, ctx.threadId, id)
       // Also create/update subtask metadata in session
@@ -146,7 +164,7 @@ Agent: ${job.agent}
     case 'cl': {
       const id = parseInt(parts[1] || '', 10)
       if (isNaN(id)) return '用法: /job collect <id>'
-      const job = getJob(id)
+      const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       if (!job.result) return `⚠️ 任务 #${id} (${job.status}) 暂无结果。`
 

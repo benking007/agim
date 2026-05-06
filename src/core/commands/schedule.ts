@@ -14,18 +14,24 @@ import {
   createSchedule, listSchedules, getSchedule, deleteSchedule, setEnabled,
 } from '../schedule.js'
 import { parseCron, nextOccurrence } from '../cron.js'
+import { registry } from '../registry.js'
+import { workspaceRegistry } from '../workspace.js'
 
 export async function handleScheduleCommand(
   args: string,
-  _ctx: RouteContext
+  ctx: RouteContext
 ): Promise<string> {
   const parts = args.trim().split(/\s+/).filter(Boolean)
   const sub = parts[0] || 'list'
 
+  // Same per-user scoping rule as /job. ctx.userId set → see only own rows;
+  // ctx.userId unset → unrestricted (back-compat for non-IM callers).
+  const ownerOpts = ctx.userId ? { creatorId: ctx.userId } : {}
+
   switch (sub) {
     case 'list':
     case 'ls': {
-      const all = listSchedules()
+      const all = listSchedules(50, ownerOpts)
       if (!all.length) return '🗓️ 暂无定时任务。\n\n用法: /schedule create <name> <agent> "<cron>" <prompt>'
       const lines = all.map((s) => {
         const flag = s.enabled ? '✅' : '⏸️'
@@ -41,7 +47,7 @@ export async function handleScheduleCommand(
         return '用法: /schedule create <name> <agent> "<cron expr>" <prompt>\n\n例如: /schedule create daily-report opencode "0 9 * * 1-5" 生成今天的销售日报'
       }
       const name = parts[1]
-      const agent = parts[2]
+      const agentName = parts[2]
       // The cron expression may be quoted — try to extract.
       const restJoined = parts.slice(3).join(' ')
       let cron: string
@@ -58,12 +64,24 @@ export async function handleScheduleCommand(
         prompt = tokens.slice(5).join(' ')
       }
 
+      // M6: workspace whitelist + agent existence check before we touch SQL.
+      const agent = registry.findAgent(agentName)
+      if (!agent) return `❌ Agent "${agentName}" not found.`
+      const ws = workspaceRegistry.resolve(ctx.userId || 'unknown')
+      if (!ws.hasAgent(agent.name)) {
+        return `❌ Agent "${agent.name}" 不在 workspace "${ws.name}" 的白名单内。`
+      }
+
       try {
         // Validate before insert so we get a clean error.
         parseCron(cron)
-        const id = createSchedule({ name, agent, cron, prompt })
+        const id = createSchedule({
+          name, agent: agent.name, cron, prompt,
+          creatorId: ctx.userId || '',
+          workspaceId: ws.id,
+        })
         const next = nextOccurrence(parseCron(cron))
-        return `✅ 定时任务 #${id} 已创建\n\nName: ${name}\nAgent: ${agent}\nCron: \`${cron}\`\n下次执行: ${next?.toISOString() || 'unknown'}`
+        return `✅ 定时任务 #${id} 已创建\n\nName: ${name}\nAgent: ${agent.name}\nCron: \`${cron}\`\n下次执行: ${next?.toISOString() || 'unknown'}`
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         return `❌ 创建失败: ${msg}`
@@ -74,34 +92,34 @@ export async function handleScheduleCommand(
     case 'rm': {
       const id = parseInt(parts[1] || '', 10)
       if (!Number.isFinite(id)) return '用法: /schedule delete <id>'
-      return deleteSchedule(id)
+      return deleteSchedule(id, ownerOpts)
         ? `✅ 定时任务 #${id} 已删除。`
-        : `❌ 未找到 #${id}。`
+        : `❌ 未找到 #${id}，或不是你创建的。`
     }
 
     case 'enable':
     case 'on': {
       const id = parseInt(parts[1] || '', 10)
       if (!Number.isFinite(id)) return '用法: /schedule enable <id>'
-      return setEnabled(id, true)
+      return setEnabled(id, true, ownerOpts)
         ? `✅ 定时任务 #${id} 已启用。`
-        : `❌ 未找到 #${id}。`
+        : `❌ 未找到 #${id}，或不是你创建的。`
     }
 
     case 'disable':
     case 'off': {
       const id = parseInt(parts[1] || '', 10)
       if (!Number.isFinite(id)) return '用法: /schedule disable <id>'
-      return setEnabled(id, false)
+      return setEnabled(id, false, ownerOpts)
         ? `⏸️ 定时任务 #${id} 已暂停。`
-        : `❌ 未找到 #${id}。`
+        : `❌ 未找到 #${id}，或不是你创建的。`
     }
 
     case 'check':
     case 'show': {
       const id = parseInt(parts[1] || '', 10)
       if (!Number.isFinite(id)) return '用法: /schedule check <id>'
-      const s = getSchedule(id)
+      const s = getSchedule(id, ownerOpts)
       if (!s) return `❌ 未找到 #${id}。`
       return `🗓️ **定时任务 #${s.id}** (${s.name})\n\nAgent: ${s.agent}\n状态: ${s.enabled ? '✅ 启用' : '⏸️ 已暂停'}\nCron: \`${s.cron}\`\n下次执行: ${s.next_run}\n上次执行: ${s.last_run || '从未'}\n通知 URL: ${s.notify_url || '无'}\n\nPrompt: ${s.prompt}`
     }

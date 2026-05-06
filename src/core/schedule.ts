@@ -86,6 +86,32 @@ export interface Schedule {
   last_run: string | null
   notify_url: string | null
   created_at: string
+  /** IM userId of the originating caller, or '' for legacy / system rows. */
+  creator_id: string
+  /** Workspace this schedule was created under, or '' if unknown. */
+  workspace_id: string
+}
+
+/** Filter / scoping options for owner-sensitive schedule APIs. Identical
+ *  semantics to {@link OwnerOpts} on job-board.ts. */
+export interface OwnerOpts {
+  creatorId?: string
+}
+
+/**
+ * Idempotent column-add for ownership tracking. Same shape as job-board's
+ * migrateOwnership — survive multiple boots without breaking.
+ */
+function migrateOwnership(d: Database.Database): void {
+  for (const col of ['creator_id', 'workspace_id'] as const) {
+    try {
+      d.prepare(`ALTER TABLE schedules ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`).run()
+      rootLogger.info({ component: 'schedule', column: col, event: 'schedule.migration' },
+        `Added ${col} column to schedules table`)
+    } catch {
+      // duplicate column — already migrated
+    }
+  }
 }
 
 const helper = createSqliteHelper({
@@ -94,19 +120,23 @@ const helper = createSqliteHelper({
   logger: rootLogger,
   schema: `
     CREATE TABLE IF NOT EXISTS schedules (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL,
-      agent       TEXT    NOT NULL,
-      prompt      TEXT    NOT NULL,
-      cron        TEXT    NOT NULL,
-      enabled     INTEGER NOT NULL DEFAULT 1,
-      next_run    TEXT    NOT NULL,
-      last_run    TEXT,
-      notify_url  TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT    NOT NULL,
+      agent         TEXT    NOT NULL,
+      prompt        TEXT    NOT NULL,
+      cron          TEXT    NOT NULL,
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      next_run      TEXT    NOT NULL,
+      last_run      TEXT,
+      notify_url    TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      creator_id    TEXT    NOT NULL DEFAULT '',
+      workspace_id  TEXT    NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_sched_next ON schedules(next_run, enabled);
+    CREATE INDEX IF NOT EXISTS idx_sched_creator ON schedules(creator_id);
   `,
+  init: (d) => migrateOwnership(d),
 })
 
 function getDb(): Database.Database | null {
@@ -120,6 +150,10 @@ export interface CreateScheduleInput {
   cron: string
   notifyUrl?: string
   enabled?: boolean
+  /** IM userId of the originating caller. Empty / undefined → '' (legacy). */
+  creatorId?: string
+  /** Workspace this schedule was created under. */
+  workspaceId?: string
 }
 
 export function createSchedule(input: CreateScheduleInput): number {
@@ -133,34 +167,52 @@ export function createSchedule(input: CreateScheduleInput): number {
     if (!v.ok) throw new Error(`notifyUrl rejected: ${v.reason}`)
   }
   const info = d.prepare(
-    'INSERT INTO schedules (name, agent, prompt, cron, enabled, next_run, notify_url) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO schedules (name, agent, prompt, cron, enabled, next_run, notify_url, creator_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(input.name, input.agent, input.prompt, input.cron,
-    input.enabled === false ? 0 : 1, next.toISOString(), input.notifyUrl || null)
+    input.enabled === false ? 0 : 1, next.toISOString(), input.notifyUrl || null,
+    input.creatorId || '', input.workspaceId || '')
   return Number(info.lastInsertRowid)
 }
 
-export function listSchedules(limit = 50): Schedule[] {
+export function listSchedules(limit = 50, opts: OwnerOpts = {}): Schedule[] {
   const d = getDb()
   if (!d) return []
+  if (opts.creatorId !== undefined) {
+    return d.prepare(
+      "SELECT * FROM schedules WHERE (creator_id = ? OR creator_id = '') ORDER BY id DESC LIMIT ?"
+    ).all(opts.creatorId, limit) as Schedule[]
+  }
   return d.prepare('SELECT * FROM schedules ORDER BY id DESC LIMIT ?').all(limit) as Schedule[]
 }
 
-export function getSchedule(id: number): Schedule | null {
+export function getSchedule(id: number, opts: OwnerOpts = {}): Schedule | null {
   const d = getDb()
   if (!d) return null
-  const row = d.prepare('SELECT * FROM schedules WHERE id = ?').get(id) as Schedule | undefined
+  const row = (opts.creatorId !== undefined
+    ? d.prepare("SELECT * FROM schedules WHERE id = ? AND (creator_id = ? OR creator_id = '')")
+        .get(id, opts.creatorId)
+    : d.prepare('SELECT * FROM schedules WHERE id = ?').get(id)) as Schedule | undefined
   return row || null
 }
 
-export function deleteSchedule(id: number): boolean {
+export function deleteSchedule(id: number, opts: OwnerOpts = {}): boolean {
   const d = getDb()
   if (!d) return false
+  if (opts.creatorId !== undefined) {
+    return d.prepare("DELETE FROM schedules WHERE id = ? AND (creator_id = ? OR creator_id = '')")
+      .run(id, opts.creatorId).changes > 0
+  }
   return d.prepare('DELETE FROM schedules WHERE id = ?').run(id).changes > 0
 }
 
-export function setEnabled(id: number, enabled: boolean): boolean {
+export function setEnabled(id: number, enabled: boolean, opts: OwnerOpts = {}): boolean {
   const d = getDb()
   if (!d) return false
+  if (opts.creatorId !== undefined) {
+    return d.prepare(
+      "UPDATE schedules SET enabled = ? WHERE id = ? AND (creator_id = ? OR creator_id = '')"
+    ).run(enabled ? 1 : 0, id, opts.creatorId).changes > 0
+  }
   return d.prepare('UPDATE schedules SET enabled = ? WHERE id = ?')
     .run(enabled ? 1 : 0, id).changes > 0
 }

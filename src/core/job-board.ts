@@ -2,6 +2,22 @@
 //
 // Jobs survive restarts. Each job executes an agent invocation and stores the result.
 // Supports: create, list, get, cancel.
+//
+// Ownership (H5/M6/H7, code-review-2026-05-06):
+//   - Each row carries `creator_id` (the IM userId that originated the job)
+//     and `workspace_id`. Commands that the user runs through IM
+//     (`/job list|check|cancel|run`) MUST pass the caller's userId via
+//     opts.creatorId so users can't peek at or stomp on each others' jobs.
+//     Internal callers (REST `/api/jobs`, ACP server, scheduler) pass no
+//     filter and see every row — that's intentional, those entry-points
+//     are guarded by the web / API token.
+//   - Legacy rows (created before the migration) have creator_id = ''.
+//     They're treated as "ownerless / system" and visible to every owner-
+//     scoped query (so an upgrade doesn't appear to vanish the user's
+//     prior history).
+//   - pruneOldJobs() walks completed/failed/cancelled rows older than
+//     `IM_HUB_JOB_RETENTION_DAYS` (default 30) and deletes them; runs every
+//     6h via setInterval, mirroring audit-log.
 
 import type Database from 'better-sqlite3'
 import { homedir } from 'os'
@@ -78,11 +94,48 @@ export interface Job {
   error: string | null
   created_at: string
   completed_at: string | null
+  /** IM userId of the originating caller, or '' for legacy / system rows. */
+  creator_id: string
+  /** Workspace this job was created under, or '' if unknown. */
+  workspace_id: string
 }
 
 interface JobRunner {
   (job: Job, logger: Logger, signal: AbortSignal): AsyncGenerator<string>
 }
+
+/**
+ * Idempotent column-add for ownership tracking. Run on every helper init —
+ * SQLite's ALTER TABLE ADD COLUMN throws "duplicate column name" if the
+ * column already exists, which we silently swallow. Cheaper than the full
+ * pragma table_info() inspection round-trip.
+ */
+function migrateOwnership(d: Database.Database): void {
+  for (const col of ['creator_id', 'workspace_id'] as const) {
+    try {
+      d.prepare(`ALTER TABLE jobs ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`).run()
+      rootLogger.info({ component: 'job-board', column: col, event: 'job-board.migration' },
+        `Added ${col} column to jobs table`)
+    } catch {
+      // duplicate column — already migrated
+    }
+  }
+}
+
+/** Default number of days a completed/failed/cancelled job is retained. */
+function resolveRetentionDays(): number {
+  const raw = process.env.IM_HUB_JOB_RETENTION_DAYS
+  if (raw) {
+    const n = parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 30
+}
+
+/** How often pruneOldJobs() is fired by the auto-sweep timer. 0 disables. */
+const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+let retentionSweepTimer: ReturnType<typeof setInterval> | null = null
 
 const helper = createSqliteHelper({
   file: BOARD_DB,
@@ -90,49 +143,106 @@ const helper = createSqliteHelper({
   logger: rootLogger,
   schema: `
     CREATE TABLE IF NOT EXISTS jobs (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent       TEXT    NOT NULL,
-      prompt      TEXT    NOT NULL,
-      status      TEXT    NOT NULL DEFAULT 'pending',
-      result      TEXT,
-      error       TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      completed_at TEXT
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent         TEXT    NOT NULL,
+      prompt        TEXT    NOT NULL,
+      status        TEXT    NOT NULL DEFAULT 'pending',
+      result        TEXT,
+      error         TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      completed_at  TEXT,
+      creator_id    TEXT    NOT NULL DEFAULT '',
+      workspace_id  TEXT    NOT NULL DEFAULT ''
     );
+    CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_jobs_creator ON jobs(creator_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
   `,
-  // First-time / cold-start cleanup: any 'running' rows are leftover
-  // from a prior process that didn't get to finalize.
-  init: (d) => reapStaleRunning(d),
+  init: (d) => {
+    migrateOwnership(d)
+    // First-time / cold-start cleanup: any 'running' rows are leftover from a
+    // prior process that didn't get to finalize.
+    reapStaleRunning(d)
+    // Initial retention sweep + periodic timer. Mirrors audit-log shape so
+    // both tables stay bounded without operator intervention.
+    pruneOldJobs(d)
+    if (RETENTION_SWEEP_INTERVAL_MS > 0 && retentionSweepTimer === null) {
+      retentionSweepTimer = setInterval(() => {
+        const live = helper.get()
+        if (live) pruneOldJobs(live)
+      }, RETENTION_SWEEP_INTERVAL_MS)
+      if (typeof retentionSweepTimer === 'object' && retentionSweepTimer && 'unref' in retentionSweepTimer) {
+        (retentionSweepTimer as { unref: () => void }).unref()
+      }
+    }
+  },
 })
+
+/** Stop the retention sweep (used by tests + graceful shutdown). */
+export function stopJobRetentionSweep(): void {
+  if (retentionSweepTimer) {
+    clearInterval(retentionSweepTimer)
+    retentionSweepTimer = null
+  }
+}
 
 function getDb(): Database.Database | null {
   return helper.get()
 }
 
-export function createJob(agent: string, prompt: string): number {
+/**
+ * Filter / scoping options accepted by every owner-sensitive job-board API.
+ *
+ * - When `creatorId` is set, the query is scoped to rows whose `creator_id`
+ *   matches the caller OR whose `creator_id` is '' (legacy / ownerless).
+ *   This preserves visibility of pre-migration jobs while preventing one
+ *   user from poking at another's freshly-created ones.
+ * - When `creatorId` is unset (undefined), no ownership filter is applied
+ *   — used by REST / ACP / scheduler entry-points that are guarded by the
+ *   web token, not by per-user identity.
+ */
+export interface OwnerOpts {
+  creatorId?: string
+}
+
+export interface CreateJobOpts {
+  creatorId?: string
+  workspaceId?: string
+}
+
+export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {}): number {
   const d = getDb()
   if (!d) throw new Error('Job board unavailable (SQLite not initialized)')
-  const row = d.prepare('INSERT INTO jobs (agent, prompt, status) VALUES (?, ?, ?)')
-    .run(agent, prompt, 'pending')
+  const row = d.prepare(
+    'INSERT INTO jobs (agent, prompt, status, creator_id, workspace_id) VALUES (?, ?, ?, ?, ?)'
+  ).run(agent, prompt, 'pending', opts.creatorId || '', opts.workspaceId || '')
   return Number(row.lastInsertRowid)
 }
 
-export function getJob(id: number): Job | null {
+export function getJob(id: number, opts: OwnerOpts = {}): Job | null {
   const d = getDb()
   if (!d) return null
-  const row = d.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Job | undefined
+  const row = (opts.creatorId !== undefined
+    ? d.prepare("SELECT * FROM jobs WHERE id = ? AND (creator_id = ? OR creator_id = '')")
+        .get(id, opts.creatorId)
+    : d.prepare('SELECT * FROM jobs WHERE id = ?').get(id)) as Job | undefined
   return row || null
 }
 
-export function listJobs(limit = 20, status?: JobStatus): Job[] {
+export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): Job[] {
   const d = getDb()
   if (!d) return []
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 1000) : 20
-  if (status) {
-    return d.prepare('SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?')
-      .all(status, safeLimit) as Job[]
+  const conditions: string[] = []
+  const params: unknown[] = []
+  if (status) { conditions.push('status = ?'); params.push(status) }
+  if (opts.creatorId !== undefined) {
+    conditions.push("(creator_id = ? OR creator_id = '')")
+    params.push(opts.creatorId)
   }
-  return d.prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?').all(safeLimit) as Job[]
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  return d.prepare(`SELECT * FROM jobs ${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params, safeLimit) as Job[]
 }
 
 function updateJob(id: number, fields: Partial<Job>): void {
@@ -237,8 +347,8 @@ export function _waitQueueDepth(): number { return waitQueue.length }
 /** Test-only: directly exercise the concurrency gate without SQLite. */
 export const _testSlot = { acquire: acquireSlot, release: releaseSlot }
 
-export function cancelJob(id: number): boolean {
-  const job = getJob(id)
+export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
+  const job = getJob(id, opts)
   if (!job || (job.status !== 'pending' && job.status !== 'running')) return false
   const ctrl = runningControllers.get(id)
   if (ctrl) {
@@ -247,6 +357,36 @@ export function cancelJob(id: number): boolean {
   }
   updateJob(id, { status: 'cancelled', completed_at: new Date().toISOString() })
   return true
+}
+
+/**
+ * Delete jobs that finished (completed / failed / cancelled) more than
+ * `daysRetention` days ago. 'pending' / 'running' rows are never pruned —
+ * a stalled-but-resumable job is the operator's call. Returns the row
+ * count so callers / tests can assert.
+ */
+export function pruneOldJobs(d: Database.Database = getDb()!, daysRetention: number = resolveRetentionDays()): number {
+  if (!d) return 0
+  try {
+    const info = d.prepare(`
+      DELETE FROM jobs
+      WHERE status IN ('completed', 'failed', 'cancelled')
+        AND completed_at IS NOT NULL
+        AND completed_at < datetime('now', ?)
+    `).run(`-${daysRetention} days`)
+    if (info.changes > 0) {
+      rootLogger.info({
+        component: 'job-board', event: 'job-board.pruned',
+        deleted: info.changes, days: daysRetention,
+      }, `Pruned ${info.changes} job row(s) older than ${daysRetention}d`)
+    }
+    return info.changes
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    rootLogger.warn({ component: 'job-board', event: 'job-board.prune.failed', error: msg },
+      'job-board retention sweep failed')
+    return 0
+  }
 }
 
 export function getJobStats(): { total: number; pending: number; running: number; completed: number; failed: number } {

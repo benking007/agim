@@ -76,6 +76,22 @@ function messagesStale(s: { lastActivity: Date }, now: number = Date.now()): boo
 class SessionManager {
   private sessions = new Map<string, Session>()
   private cleanupTimer?: ReturnType<typeof setInterval>
+  /**
+   * Per-key promise chain used to serialize writes that perform a
+   * read-modify-write on the in-memory session + persistent JSONL log.
+   *
+   * Without this, two concurrent {@link addMessage} calls on the same key
+   * could interleave: A reads cached session, B reads cached session, both
+   * push a different message into the same array, then both write — the
+   * later write wins and the earlier message is lost from disk (the
+   * in-memory copy is fine because both pushes happened on the same object
+   * reference, but the JSONL log only reflects the most recent appendFile +
+   * meta save).
+   *
+   * The lock is keyed by `${platform}:${channelId}:${threadId}`; different
+   * threads still proceed in parallel.
+   */
+  private writeQueues = new Map<string, Promise<unknown>>()
 
   async start(): Promise<void> {
     // Ensure sessions directory exists
@@ -90,6 +106,29 @@ class SessionManager {
   stop(): void {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer)
+    }
+  }
+
+  /**
+   * Run `fn` while holding a per-key serial lock. Subsequent calls with the
+   * same key wait until prior ones settle (success OR failure). Returns the
+   * value of `fn`. Internal use only — keeps {@link addMessage} race-free
+   * without introducing an external dep like p-queue.
+   */
+  private async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.writeQueues.get(key) ?? Promise.resolve()
+    // Chain even on failure so a thrown error in one segment doesn't poison
+    // subsequent waiters with that same rejection.
+    const next = prev.then(fn, fn)
+    this.writeQueues.set(key, next)
+    try {
+      return await next
+    } finally {
+      // Only clear if we're still the tail; another caller may have queued
+      // behind us in the meantime and we shouldn't drop their reference.
+      if (this.writeQueues.get(key) === next) {
+        this.writeQueues.delete(key)
+      }
     }
   }
 
@@ -255,6 +294,11 @@ class SessionManager {
    * Performance: instead of re-serializing the entire session JSON every
    * turn, the message body is appended to a JSONL log file alongside the
    * metadata (which gets a tiny atomic update for `lastActivity`).
+   *
+   * Concurrency: the entire read-modify-write is serialized per session key
+   * via {@link withLock} so two concurrent calls on the same thread (e.g.
+   * the IM message landing event AND a tool-result event arriving within
+   * the same ms) cannot lose either message to a lost-update race.
    */
   async addMessage(
     platform: string,
@@ -263,9 +307,10 @@ class SessionManager {
     message: ChatMessage
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return
 
-    if (session) {
       session.messages.push(message)
       session.lastActivity = new Date()
       this.sessions.set(key, session)
@@ -277,7 +322,7 @@ class SessionManager {
       }
       // Persist metadata only (now small & cheap).
       await this.saveSessionMeta(key, session)
-    }
+    })
   }
 
   /**

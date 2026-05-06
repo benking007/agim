@@ -7,7 +7,7 @@ import type { Credentials, WeixinMessage, ContextTokenCache } from './ilink-type
 import { ILINK_ERRORS } from './ilink-types.js'
 import { homedir } from 'os'
 import { join } from 'path'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, stat } from 'fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
@@ -461,6 +461,19 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
   private async loadCredentials(): Promise<Credentials | null> {
     try {
       const data = await readFile(CREDENTIALS_FILE, 'utf-8')
+      // Defense in depth: nag in logs if the file isn't 0o600. We can't
+      // safely chmod it on the user's behalf at load time (concurrent ops,
+      // odd ownership) but the warning prompts an operator to fix legacy
+      // credentials files written before H9.
+      try {
+        const st = await stat(CREDENTIALS_FILE)
+        if (process.platform !== 'win32' && (st.mode & 0o077) !== 0) {
+          log.warn({
+            file: CREDENTIALS_FILE,
+            mode: (st.mode & 0o777).toString(8),
+          }, 'Credentials file is group/world readable — chmod 600 recommended')
+        }
+      } catch { /* stat failure is non-fatal */ }
       return JSON.parse(data) as Credentials
     } catch {
       return null
@@ -469,8 +482,12 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
   private async saveCredentials(credentials: Credentials): Promise<void> {
     const dir = join(CREDENTIALS_FILE, '..')
-    await mkdir(dir, { recursive: true })
-    await writeFile(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2))
+    // Restrict the parent dir to the current user. recursive:true is a no-op
+    // when the dir already exists with looser perms — accept that compromise
+    // (we don't want to chmod existing dirs out from under the operator) and
+    // rely on the file-level 0o600 below as the primary line of defense.
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    await writeFile(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), { mode: 0o600 })
     log.info({ file: CREDENTIALS_FILE }, 'Credentials saved')
   }
 

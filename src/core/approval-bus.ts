@@ -14,9 +14,10 @@
 // 单实例 export approvalBus；测试可 new ApprovalBus({approvalTimeoutMs}) 调小超时。
 
 import { createServer, type Server, type Socket } from 'net'
-import { unlink } from 'fs/promises'
+import { unlink, stat as fsStat, chmod } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { randomBytes } from 'crypto'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
@@ -209,6 +210,24 @@ export class ApprovalBus {
         server.removeListener('error', onErr)
         this.server = server
         this.socketPath = path
+        // Harden file permissions: net.Server.listen creates the socket file
+        // with the current umask (typically 0022 → 0644 / 0666). chmod 0o600
+        // ensures only the current user can connect, and the post-chmod stat
+        // surfaces a warning if (somehow) it's still loose — useful in shared
+        // hosts where umask was relaxed at some startup script.
+        void (async (): Promise<void> => {
+          try {
+            await chmod(path, 0o600)
+            const st = await fsStat(path)
+            if (process.platform !== 'win32' && (st.mode & 0o077) !== 0) {
+              log.warn({
+                event: 'approval.bus.socket_perms_loose',
+                mode: (st.mode & 0o777).toString(8),
+                path,
+              }, 'Approval socket file is group/world accessible — set umask=0077 to harden')
+            }
+          } catch { /* non-fatal */ }
+        })()
         log.info({ event: 'approval.bus.started', path })
         resolve(path)
       })
@@ -670,7 +689,12 @@ function inputFingerprint(input: Record<string, unknown>): string {
 }
 
 function defaultSocketPath(): string {
-  return join(tmpdir(), `imhub-approval-${process.pid}-${Date.now().toString(36)}.sock`)
+  // 16 random bytes (32 hex chars) — defeats path prediction attacks that the
+  // earlier `${pid}-${Date.now().toString(36)}` form was vulnerable to in
+  // multi-tenant containers where pid is often 1 and the timestamp window
+  // is small. With 128 bits of entropy a TOCTOU pre-occupy attempt is
+  // statistically infeasible.
+  return join(tmpdir(), `imhub-approval-${randomBytes(16).toString('hex')}.sock`)
 }
 
 /** 进程级单例。im-hub 启动时 await approvalBus.start() 一次。 */

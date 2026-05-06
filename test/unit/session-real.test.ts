@@ -2,6 +2,7 @@
 //
 // Verifies:
 //   - addMessage appends to the JSONL log (no full rewrite per turn)
+//   - addMessage on the same key does not lose messages under concurrency (H12)
 //   - metadata file is atomic (no .tmp leftover after a write)
 //   - nextSubtaskId increments durably across calls (P1-C fix)
 //   - resetConversation truncates messages but preserves session id
@@ -62,6 +63,49 @@ describe('SessionManager (real, on-disk)', () => {
       expect(lines.length).toBe(2)
       expect(JSON.parse(lines[0]).role).toBe('user')
       expect(JSON.parse(lines[1]).role).toBe('assistant')
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
+  // H12: read-modify-write race. Two concurrent addMessage calls on the same
+  // session key would previously both load the in-memory session, both push,
+  // both append to the JSONL log; the metadata save races would interleave
+  // but on disk the JSONL log was an append-file, so it was actually safe.
+  // The bug manifested when the in-memory cache was empty and BOTH calls had
+  // to hit loadSession concurrently — they each rebuilt the messages array
+  // from disk, pushed independently, and the second saveSessionMeta clobbered
+  // the first's messageCount. The withLock fix serializes the entire R-M-W.
+  it('addMessage on the same key does not lose messages under concurrency (H12)', async () => {
+    const k = uniqueKey('addmsg-race')
+    try {
+      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'opencode')
+      // 50 concurrent addMessage calls on the same key — well above what a
+      // realistic IM thread emits, but enough to expose any interleave.
+      const N = 50
+      await Promise.all(Array.from({ length: N }, (_, i) =>
+        sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+          role: i % 2 === 0 ? 'user' : 'assistant',
+          content: `msg-${i}`,
+          timestamp: new Date(),
+        })
+      ))
+
+      // In-memory state must reflect every push.
+      const data = await sessionManager.getSessionWithHistory(k.platform, k.channelId, k.threadId)
+      expect(data?.messages.length).toBe(N)
+
+      // JSONL log on disk must contain every message exactly once. Order
+      // within a serialized batch is preserved relative to acquisition order;
+      // we only check completeness (no duplicates, no losses).
+      const log = await readFile(join(SESSIONS_DIR, `${fileStem(k)}.log`), 'utf-8')
+      const lines = log.split('\n').filter(Boolean)
+      expect(lines.length).toBe(N)
+      const contents = new Set(lines.map((l) => JSON.parse(l).content as string))
+      expect(contents.size).toBe(N)
+      for (let i = 0; i < N; i++) {
+        expect(contents.has(`msg-${i}`)).toBe(true)
+      }
     } finally {
       await cleanupKey(k)
     }

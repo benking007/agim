@@ -3,6 +3,52 @@
 import { describe, it, expect } from 'bun:test'
 import { RateLimiter } from '../../src/core/rate-limiter'
 
+describe('RateLimiter cleanup behavior (H4)', () => {
+  it('size() reflects the bucket map after distinct keys are tracked', () => {
+    const rl = new RateLimiter(10, 60_000, 5)
+    expect(rl.size()).toBe(0)
+    rl.allow('a')
+    rl.allow('b')
+    rl.allow('c')
+    expect(rl.size()).toBe(3)
+  })
+
+  it('cleanup(idleMs) drops buckets idle longer than the threshold', () => {
+    const rl = new RateLimiter(10, 60_000, 5)
+    rl.allow('a')
+    rl.allow('b')
+    expect(rl.size()).toBe(2)
+    // -1ms threshold → "anything not actively in the future is idle". The
+    // strict `>` means cleanup(0) on freshly-touched buckets is a no-op
+    // (zero ms have elapsed yet); cleanup(-1) is the "force flush" knob.
+    const dropped = rl.cleanup(-1)
+    expect(dropped).toBe(2)
+    expect(rl.size()).toBe(0)
+  })
+
+  it('cleanup spares a bucket touched within the idle window', () => {
+    const rl = new RateLimiter(10, 60_000, 5)
+    rl.allow('still-active')
+    expect(rl.size()).toBe(1)
+    // 60s threshold against a bucket touched ms ago → no drop.
+    const dropped = rl.cleanup(60_000)
+    expect(dropped).toBe(0)
+    expect(rl.size()).toBe(1)
+  })
+
+  it('rapid allow() calls do not trigger an unintended sweep within the window', () => {
+    // The opportunistic sweep only fires after AUTO_CLEANUP_EVERY_MS (30 min).
+    // 200 allow() calls in microseconds must not drop any buckets — otherwise
+    // a fresh user would be served from a freshly-created bucket on every
+    // second call, defeating the rate limit.
+    const rl = new RateLimiter(1000, 60_000, 1000)
+    for (let i = 0; i < 200; i++) {
+      rl.allow(`user-${i}`)
+    }
+    expect(rl.size()).toBe(200)
+  })
+})
+
 describe('RateLimiter', () => {
   it('starts at full burst capacity', () => {
     const rl = new RateLimiter(10, 60_000, 5)

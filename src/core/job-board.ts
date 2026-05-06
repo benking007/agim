@@ -12,6 +12,21 @@ import { createSqliteHelper } from './sqlite-helper.js'
 
 const BOARD_DB = join(homedir(), '.im-hub', 'jobs.db')
 
+/** Hard cap on a single job's accumulated result. A misbehaving agent (or a
+ * runaway tool that dumps a giant file) could otherwise keep filling the
+ * Buffer in {@link runJob} until the host OOMs and rage-stuff the SQLite TEXT
+ * column with the same payload. We cap at 1 MiB by default; chunks that would
+ * push past the cap are dropped and a truncation footer is appended. Override
+ * via env IMHUB_JOB_RESULT_MAX_BYTES. */
+function resolveMaxResultBytes(): number {
+  const raw = process.env.IMHUB_JOB_RESULT_MAX_BYTES
+  if (raw) {
+    const n = parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 1 * 1024 * 1024
+}
+
 /** Hard cap on concurrent runJob() invocations. Spawning more than this
  * would let a few /job run X requests OOM the host (each agent process
  * carries hundreds of MB). Override via env IM_HUB_MAX_CONCURRENT_JOBS. */
@@ -171,15 +186,35 @@ export async function runJob(
   logger.info({ event: 'job.start', jobId: id, agent: job.agent, active: activeJobs })
 
   let fullText = ''
+  let bytes = 0
+  let droppedBytes = 0
+  let truncated = false
+  const cap = resolveMaxResultBytes()
   try {
     for await (const chunk of runner(job, logger, controller.signal)) {
       if (controller.signal.aborted) break
+      const chunkBytes = Buffer.byteLength(chunk, 'utf-8')
+      if (truncated) { droppedBytes += chunkBytes; continue }
+      if (bytes + chunkBytes > cap) {
+        // Drop the entire over-cap chunk to keep the boundary on a UTF-8 /
+        // line boundary the producer chose; partial slicing risks splitting
+        // a multibyte char or a JSON object mid-event.
+        truncated = true
+        droppedBytes += chunkBytes
+        continue
+      }
       fullText += chunk
+      bytes += chunkBytes
+    }
+    if (truncated) {
+      const note = `\n\n[im-hub: result truncated — ${droppedBytes} bytes dropped after ${cap}-byte cap; raise IMHUB_JOB_RESULT_MAX_BYTES if needed]`
+      fullText += note
+      logger.warn({ event: 'job.result.truncated', jobId: id, droppedBytes, cap })
     }
     // Only update if not cancelled
     if (!controller.signal.aborted) {
       updateJob(id, { status: 'completed', result: fullText, completed_at: new Date().toISOString() })
-      logger.info({ event: 'job.complete', jobId: id, resultLen: fullText.length })
+      logger.info({ event: 'job.complete', jobId: id, resultLen: fullText.length, truncated })
     } else {
       updateJob(id, { status: 'cancelled', result: fullText || null, completed_at: new Date().toISOString() })
       logger.info({ event: 'job.cancelled', jobId: id })

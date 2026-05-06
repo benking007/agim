@@ -8,12 +8,22 @@ interface Bucket {
 const DEFAULT_RATE = 10        // tokens per interval
 const DEFAULT_INTERVAL_MS = 60_000 // 1 minute
 const DEFAULT_BURST = 15       // max tokens in bucket
+/**
+ * Threshold for the opportunistic bucket-map sweep performed inside
+ * {@link RateLimiter.allow}. Keeps the in-memory map bounded under bursty
+ * workloads with high user diversity (one bucket per `user:agent` key,
+ * unbounded if never pruned) without needing an external scheduler.
+ */
+const AUTO_CLEANUP_EVERY_MS = 30 * 60 * 1000
+/** Buckets idle for at least this long are dropped on a sweep. */
+const DEFAULT_IDLE_MS = 30 * 60 * 1000
 
 export class RateLimiter {
   private buckets = new Map<string, Bucket>()
   private rate: number
   private intervalMs: number
   private burst: number
+  private lastSweepAt: number = Date.now()
 
   constructor(rate = DEFAULT_RATE, intervalMs = DEFAULT_INTERVAL_MS, burst = DEFAULT_BURST) {
     this.rate = rate
@@ -23,6 +33,7 @@ export class RateLimiter {
 
   /** Check if a request is allowed. Returns true if within limit. */
   allow(key: string): boolean {
+    this.maybeSweep()
     const b = this.getBucket(key)
     if (b.tokens > 0) {
       b.tokens--
@@ -69,8 +80,11 @@ export class RateLimiter {
   /**
    * Drop buckets that have been idle for at least `idleMs` milliseconds.
    * Run periodically to bound memory under bursty workloads.
+   *
+   * Called automatically by {@link allow} every {@link AUTO_CLEANUP_EVERY_MS},
+   * but exposed publicly so ops / tests can force a sweep.
    */
-  cleanup(idleMs = 30 * 60 * 1000): number {
+  cleanup(idleMs = DEFAULT_IDLE_MS): number {
     const now = Date.now()
     let dropped = 0
     for (const [key, b] of this.buckets) {
@@ -80,6 +94,16 @@ export class RateLimiter {
       }
     }
     return dropped
+  }
+
+  /** Test/diagnostic accessor: how many distinct keys are tracked. */
+  size(): number { return this.buckets.size }
+
+  private maybeSweep(): void {
+    const now = Date.now()
+    if (now - this.lastSweepAt < AUTO_CLEANUP_EVERY_MS) return
+    this.lastSweepAt = now
+    this.cleanup()
   }
 
   private getBucket(key: string): Bucket {

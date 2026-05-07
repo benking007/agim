@@ -4,7 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>im-hub — Tasks</title>
+  <!-- Shared utilities: theme manager applies before first paint, error
+       boundary surfaces silent script failures, i18n + api helpers are
+       used by the page-specific script below. -->
+  <script src="/_app.js"></script>
   <script>
+    // Wrapped in an IIFE so `const T` / `LANGS` / `savedLang` / `browserLang`
+    // stay out of the global script scope. Without this, the second
+    // <script> tag below also declares `const T = window.__t`, and classic
+    // (non-module) `<script>` tags share the same top-level lexical scope —
+    // which made the page silently die with "Identifier 'T' has already
+    // been declared" before any tab labels / buttons could be filled.
+    (() => {
     const LANGS = { en: 'English', zh: '中文' };
     const savedLang = localStorage.getItem('im-hub-lang');
     const browserLang = navigator.language.startsWith('zh') ? 'zh' : 'en';
@@ -162,8 +173,13 @@
       },
     };
     window.__t = T[window.__lang];
+    })();
   </script>
   <style>
+    /* Three-state theming. `:root` is the light default; explicit
+       data-theme="light"|"dark" forces a mode regardless of OS pref;
+       `prefers-color-scheme: dark` only applies when the attribute is
+       absent (i.e. mode === 'system' in _app.js). */
     :root {
       color-scheme: light dark;
       --bg: #fafafa;
@@ -177,8 +193,15 @@
       --info: #17a2b8;
       --card: #fff;
     }
+    :root[data-theme="dark"] {
+      --bg: #0e0e10;
+      --fg: #e6e6e6;
+      --muted: #888;
+      --border: #2a2a2e;
+      --card: #1a1a1d;
+    }
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme]) {
         --bg: #0e0e10;
         --fg: #e6e6e6;
         --muted: #888;
@@ -352,6 +375,7 @@
 <body>
   <header>
     <h1 id="page-title"></h1>
+    <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
     <a href="/">↩ <span id="lbl-chat"></span></a>
     <a href="/settings"><span id="lbl-settings"></span></a>
   </header>
@@ -452,6 +476,11 @@
   <script>
     const T = window.__t;
     const TOKEN = window.IMHUB_TOKEN;
+
+    // Theme toggle (light / dark / system). _app.js applied the theme
+    // synchronously in <head>; here we wire the button so clicks cycle
+    // and the label re-renders.
+    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
 
     // i18n string fills
     document.title = T.title;

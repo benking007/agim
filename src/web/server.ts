@@ -15,6 +15,18 @@ import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
 
 const webLog = rootLogger.child({ component: 'web' })
+
+/**
+ * Module-level reference to the button-callback handler that approval-router
+ * registers on our synthetic web messenger. The WS message switch dispatches
+ * `approval-action` events through this so an in-page approval button click
+ * flows back into approvalBus.resolvePending(), same path as a Telegram
+ * inline-button tap. Set by the web messenger's `onButtonCallback`; remains
+ * undefined until approval-router installs (which happens before this file's
+ * exported startWebServer is called from cli.ts).
+ */
+let webButtonHandler: ((cb: import('../core/types.js').ButtonCallback) => Promise<void>) | undefined
+
 import {
   isAgentAvailableCached,
   loadConfig,
@@ -85,6 +97,14 @@ export async function startWebServer(options: {
     // know the web token. Returns only operational status, not config.
     if (url.pathname === '/api/health' && req.method === 'GET') {
       return handleHealth(req, res)
+    }
+
+    // Shared web-console utilities (theme manager + i18n + error boundary
+    // + auth-aware fetch). Loaded synchronously by every static page in
+    // <head> so the theme can apply before first paint. No secrets — safe
+    // to serve un-authenticated.
+    if (url.pathname === '/_app.js' && req.method === 'GET') {
+      return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 
     // REST API — require auth token
@@ -230,6 +250,28 @@ export async function startWebServer(options: {
     ws.on('message', async (data: Buffer) => {
       try {
         const msg = JSON.parse(data.toString())
+        // Approval-button click intercept. The user tapped an in-page
+        // approval card button; route it through the web messenger's
+        // button handler (registered by approval-router on install) the
+        // same way a Telegram inline-keyboard tap is routed. We don't
+        // call handleClientMessage for these — they're not chat input.
+        if (msg && msg.type === 'approval-action' && webButtonHandler) {
+          const data: string = String(msg.data || '')
+          const messageId: string = String(msg.messageId || '')
+          if (!data || !messageId) {
+            sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
+            return
+          }
+          // Most messengers' ButtonCallback#ack updates a platform-native
+          // toast / loading spinner. The web client doesn't have one, so
+          // ack is a no-op resolving to the in-page status the page itself
+          // chose to render after click.
+          await webButtonHandler({
+            data, threadId: clientId, userId: `web:${clientId}`,
+            userDisplay: 'Web', messageId, ack: async () => {},
+          })
+          return
+        }
         await handleClientMessage(client, msg, options.defaultAgent)
       } catch (err) {
         webLog.error({ clientId, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
@@ -255,6 +297,50 @@ export async function startWebServer(options: {
   })
 
   webLog.info({ port }, `Chat UI available at http://localhost:${port}`)
+
+  // ============================================================
+  // Web messenger registration (HITL approval bridge)
+  // ============================================================
+  // Register a synthetic messenger named 'web' so approval-router (which
+  // resolves the target messenger by platform name) can deliver approval
+  // prompts AND outcome edits to the matching browser tab over the
+  // existing WebSocket. Chat ingress is unaffected — incoming chat
+  // messages still flow through handleClientMessage / routeMessage as
+  // before; this messenger only forwards what the bus wants to push.
+  //
+  // threadId is the WS clientId (RouteContext.threadId === client.id for
+  // the web platform). We resolve the matching client at delivery time;
+  // if the client has disconnected the send is a no-op and the bus's own
+  // auto-deny / sidecar-disconnect path takes over.
+  let cardSeq = 0
+  const webMessenger: import('../core/types.js').MessengerAdapter = {
+    name: 'web',
+    start: async () => {},
+    stop: async () => {},
+    onMessage: () => { /* chat ingress is handled by the WS-message switch above */ },
+    async sendMessage(threadId, text) {
+      const c = clients.get(threadId)
+      if (!c || c.ws.readyState !== c.ws.OPEN) return
+      sendToClient(c.ws, { type: 'approval-text', text })
+    },
+    async sendApprovalCard(threadId, prompt) {
+      const c = clients.get(threadId)
+      const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
+      if (c && c.ws.readyState === c.ws.OPEN) {
+        sendToClient(c.ws, { type: 'approval-card', messageId, prompt })
+      }
+      return { messageId }
+    },
+    async editApprovalCard(threadId, messageId, outcome) {
+      const c = clients.get(threadId)
+      if (!c || c.ws.readyState !== c.ws.OPEN) return
+      sendToClient(c.ws, { type: 'approval-card-edit', messageId, outcome })
+    },
+    onButtonCallback(handler) {
+      webButtonHandler = handler
+    },
+  }
+  registry.registerMessenger(webMessenger)
 
   return {
     port,

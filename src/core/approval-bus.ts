@@ -145,6 +145,14 @@ interface PendingApproval {
   platform: string
   /** Truncated input fingerprint used for auto-allow lookups + revocation. */
   fingerprint: string
+  /** Original tool input — kept verbatim so dashboard / `listPending` can
+   *  surface a useful preview to operators. Never sent over the wire by
+   *  the bus itself; sidecar already has the original. */
+  input: Record<string, unknown>
+  /** Wall-clock ms when the pending was registered. Used by listPending
+   *  to compute age; zero in pre-existing rehydrated state (impossible
+   *  in practice — bus is process-local). */
+  registeredAt: number
   /** Set when the pending was created from a unix-socket sidecar (Claude
    *  path). cancelPending writes the decision back over this socket. Either
    *  `socket` or `dispatch` must be set, never both. */
@@ -393,6 +401,50 @@ export class ApprovalBus {
     }
   }
 
+  /**
+   * Snapshot of every currently-pending approval, sanitized for surface
+   * to the operator dashboard. Used by the web `/api/approvals` endpoint
+   * (and any future ops tooling). Returns a stable JSON shape — input
+   * is included verbatim so the UI can render the same preview the
+   * IM-side card would; sockets / dispatch closures / timer handles are
+   * intentionally omitted.
+   *
+   * Sorted oldest-first so the queue head is at index 0 (matches the
+   * head-of-thread queue semantics used by resolvePending).
+   */
+  listPending(): Array<{
+    reqId: string
+    runId: string
+    threadId: string
+    platform: string
+    toolName: string
+    input: Record<string, unknown>
+    fingerprint: string
+    autoAllow: boolean
+    registeredAt: number
+    ageMs: number
+  }> {
+    const now = Date.now()
+    const out: ReturnType<ApprovalBus['listPending']> = []
+    for (const p of this.pendingById.values()) {
+      if (p.resolved) continue
+      out.push({
+        reqId: p.reqId,
+        runId: p.runId,
+        threadId: p.threadId,
+        platform: p.platform,
+        toolName: p.toolName,
+        input: p.input,
+        fingerprint: p.fingerprint,
+        autoAllow: p.autoAllow,
+        registeredAt: p.registeredAt,
+        ageMs: now - p.registeredAt,
+      })
+    }
+    out.sort((a, b) => a.registeredAt - b.registeredAt)
+    return out
+  }
+
   // --- internals ---
 
   private handleConnection(socket: Socket): void {
@@ -599,6 +651,8 @@ export class ApprovalBus {
       threadId: args.ctx.threadId,
       platform: args.ctx.platform,
       fingerprint,
+      input: args.input,
+      registeredAt: Date.now(),
       socket: 'socket' in transport ? transport.socket : undefined,
       dispatch: 'dispatch' in transport ? transport.dispatch : undefined,
       resolved: false,

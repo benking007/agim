@@ -33,7 +33,33 @@
         tabsSubtasks: 'Subtasks',
         tabsSchedules: 'Schedules',
         tabsAudit: 'Audit',
+        tabsHealth: 'Health',
+        tabsApprovals: 'Approvals',
         loading: 'Loading...',
+        // Health tab
+        healthBreaker: 'Breaker',
+        healthRate: 'Rate limit',
+        healthLatency: 'Latency',
+        healthInvocations: 'Invocations',
+        healthSuccessRate: 'Success rate',
+        healthCost: 'Cost',
+        healthCooldown: 'Cooldown',
+        healthEmpty: 'No agents registered yet.',
+        healthSparklineLabel: 'p95 latency over last 60 polls',
+        breakerClosed: 'Closed',
+        breakerOpen: 'Open',
+        breakerHalfOpen: 'Half-open',
+        // Approvals tab
+        approvalsEmpty: 'No pending approvals.',
+        approvalsCount: '{n} pending',
+        approvalsAge: 'Age',
+        approvalsTool: 'Tool',
+        approvalsThread: 'Thread',
+        approvalsAllow: 'Allow',
+        approvalsDeny: 'Deny',
+        approvalsAllowAll: 'Allow + auto',
+        approvalsResolveErr: 'Failed to resolve',
+        approvalsAutoMode: 'auto-allow grace mode',
         statsTotal: 'Total',
         statsPending: 'Pending',
         statsRunning: 'Running',
@@ -107,7 +133,33 @@
         tabsBackground: '后台脚本',
         tabsSubtasks: '子任务',
         tabsSchedules: '定时',
+        tabsHealth: '健康',
+        tabsApprovals: '审批',
         loading: '加载中...',
+        // Health tab
+        healthBreaker: '断路器',
+        healthRate: '限流',
+        healthLatency: '延迟',
+        healthInvocations: '调用次数',
+        healthSuccessRate: '成功率',
+        healthCost: '成本',
+        healthCooldown: '冷却',
+        healthEmpty: '尚未注册任何 Agent。',
+        healthSparklineLabel: '最近 60 次轮询的 p95 延迟',
+        breakerClosed: '正常',
+        breakerOpen: '熔断',
+        breakerHalfOpen: '半开',
+        // Approvals tab
+        approvalsEmpty: '当前无待审批请求。',
+        approvalsCount: '待审批 {n} 条',
+        approvalsAge: '等待',
+        approvalsTool: '工具',
+        approvalsThread: '会话',
+        approvalsAllow: '批准',
+        approvalsDeny: '拒绝',
+        approvalsAllowAll: '批准并自动放行',
+        approvalsResolveErr: '处理失败',
+        approvalsAutoMode: '自动放行宽限期',
         statsTotal: '总计',
         statsPending: '待执行',
         statsRunning: '运行中',
@@ -370,6 +422,79 @@
     .modal textarea { min-height: 100px; resize: vertical; }
     code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; }
     .truncate { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* PR-B: Health tab — per-agent operational card */
+    .health-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .health-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .health-agent { font-size: 14px; font-weight: 600; }
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px 20px;
+    }
+    .health-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .health-val { font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .health-spark { margin-top: 3px; }
+
+    /* PR-B: Approvals tab — global pending list */
+    .approval-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .approval-head {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .approval-head code { font-size: 13px; font-weight: 600; }
+    .approval-meta {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .approval-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font: 12px/1.5 'SF Mono', Menlo, Consolas, monospace;
+      max-height: 180px;
+      overflow: auto;
+      margin: 6px 0 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .approval-actions { display: flex; gap: 8px; }
+    .approval-actions button {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--fg);
+      padding: 5px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .approval-actions button:hover { border-color: var(--primary); }
+    .approval-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .approval-actions .btn-allow { background: var(--success); border-color: var(--success); color: #fff; }
+    .approval-actions .btn-deny { background: var(--danger); border-color: var(--danger); color: #fff; }
   </style>
 </head>
 <body>
@@ -385,6 +510,8 @@
       <button class="tab" data-tab="background" id="tab-background"></button>
       <button class="tab" data-tab="subtasks" id="tab-subtasks"></button>
       <button class="tab" data-tab="schedules" id="tab-schedules"></button>
+      <button class="tab" data-tab="approvals" id="tab-approvals"></button>
+      <button class="tab" data-tab="health" id="tab-health"></button>
       <button class="tab" data-tab="audit" id="tab-audit"></button>
     </div>
 
@@ -447,6 +574,24 @@
       <div id="schedules-list"></div>
     </section>
 
+    <section id="approvals-pane" hidden>
+      <div class="toolbar">
+        <button id="btn-approvals-refresh">Refresh</button>
+        <label><input type="checkbox" id="approvals-auto-refresh" checked> <span id="lbl-approvals-auto"></span></label>
+        <span id="approvals-summary" style="margin-left:auto;color:var(--muted);font-size:13px"></span>
+      </div>
+      <div id="approvals-list"></div>
+    </section>
+
+    <section id="health-pane" hidden>
+      <div class="toolbar">
+        <button id="btn-health-refresh">Refresh</button>
+        <label><input type="checkbox" id="health-auto-refresh" checked> <span id="lbl-health-auto"></span></label>
+        <span id="health-uptime" style="margin-left:auto;color:var(--muted);font-size:13px"></span>
+      </div>
+      <div id="health-list"></div>
+    </section>
+
     <section id="audit-pane" hidden>
       <div class="toolbar">
         <select id="audit-agent-filter" data-agent-filter>
@@ -492,9 +637,15 @@
     document.getElementById('tab-subtasks').textContent = T.tabsSubtasks;
     document.getElementById('tab-schedules').textContent = T.tabsSchedules;
     document.getElementById('tab-audit').textContent = T.tabsAudit;
+    document.getElementById('tab-approvals').textContent = T.tabsApprovals;
+    document.getElementById('tab-health').textContent = T.tabsHealth;
     document.getElementById('btn-bg-refresh').textContent = T.refresh;
     document.getElementById('btn-sub-refresh').textContent = T.refresh;
+    document.getElementById('btn-approvals-refresh').textContent = T.refresh;
+    document.getElementById('btn-health-refresh').textContent = T.refresh;
     document.getElementById('lbl-bg-auto').textContent = T.autoRefresh;
+    document.getElementById('lbl-approvals-auto').textContent = T.autoRefresh;
+    document.getElementById('lbl-health-auto').textContent = T.autoRefresh;
     document.getElementById('btn-refresh').textContent = T.refresh;
     document.getElementById('btn-new').textContent = T.newJob;
     document.getElementById('lbl-auto').textContent = T.autoRefresh;
@@ -518,13 +669,19 @@
         document.getElementById('subtasks-pane').hidden = tab !== 'subtasks';
         document.getElementById('schedules-pane').hidden = tab !== 'schedules';
         document.getElementById('audit-pane').hidden = tab !== 'audit';
+        document.getElementById('approvals-pane').hidden = tab !== 'approvals';
+        document.getElementById('health-pane').hidden = tab !== 'health';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
         if (tab === 'subtasks') loadSubtasks();
         if (tab === 'audit') loadAudit();
+        if (tab === 'approvals') loadApprovals();
+        if (tab === 'health') loadHealth();
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
+        setupApprovalsAutoRefresh();
+        setupHealthAutoRefresh();
       };
     });
 
@@ -980,6 +1137,233 @@
     // toolbar (was previously bare-list); keeps parity with other tabs.
     const btnSchedRefresh = document.getElementById('btn-sched-refresh');
     if (btnSchedRefresh) btnSchedRefresh.onclick = loadSchedules;
+
+    // ============================================================
+    // Health tab (PR-B)
+    // ============================================================
+    // Per-agent operational snapshot. Polled every 5 s when the tab is
+    // visible (auto-refresh checkbox controls). The sparkline buffer is
+    // kept client-side — each poll appends current p95 to a 60-sample
+    // ring per agent, rendered as a tiny inline SVG. Stays in memory
+    // only; no localStorage persistence.
+
+    const HEALTH_POLL_MS = 5_000;
+    const SPARKLINE_LEN = 60;
+    const sparkBuffers = new Map();   // agent → number[] (p95 history)
+    let healthTimer = null;
+
+    function pushSpark(agent, value) {
+      let buf = sparkBuffers.get(agent);
+      if (!buf) { buf = []; sparkBuffers.set(agent, buf); }
+      buf.push(Number(value) || 0);
+      while (buf.length > SPARKLINE_LEN) buf.shift();
+    }
+
+    function renderSparkline(values, w = 120, h = 28) {
+      if (!values.length) return '';
+      const max = Math.max(1, ...values);
+      const step = w / Math.max(1, SPARKLINE_LEN - 1);
+      const points = values.map((v, i) =>
+        `${(i * step).toFixed(1)},${(h - (v / max) * h * 0.92 - 1).toFixed(1)}`
+      ).join(' ');
+      const last = values[values.length - 1];
+      const dotX = ((values.length - 1) * step).toFixed(1);
+      const dotY = (h - (last / max) * h * 0.92 - 1).toFixed(1);
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <polyline fill="none" stroke="var(--primary)" stroke-width="1.5" points="${points}" />
+        <circle cx="${dotX}" cy="${dotY}" r="2" fill="var(--primary)" />
+      </svg>`;
+    }
+
+    function breakerPill(phase) {
+      const map = {
+        closed: { label: T.breakerClosed, bg: 'var(--success)' },
+        open: { label: T.breakerOpen, bg: 'var(--danger)' },
+        'half-open': { label: T.breakerHalfOpen, bg: 'var(--warning)' },
+      };
+      const o = map[phase] || { label: phase, bg: 'var(--muted)' };
+      return `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;
+        background:${o.bg};color:#fff">${o.label}</span>`;
+    }
+
+    function renderHealth(payload) {
+      const list = document.getElementById('health-list');
+      const uptime = document.getElementById('health-uptime');
+      const days = Math.floor(payload.uptimeSec / 86400);
+      const hours = Math.floor((payload.uptimeSec % 86400) / 3600);
+      const mins = Math.floor((payload.uptimeSec % 3600) / 60);
+      uptime.textContent = `uptime ${days > 0 ? days + 'd ' : ''}${hours}h ${mins}m`;
+      if (!payload.agents.length) {
+        list.innerHTML = `<div class="empty">${T.healthEmpty}</div>`;
+        return;
+      }
+      list.innerHTML = payload.agents.map((a) => {
+        const inv = a.invocations;
+        const p95 = inv ? inv.p95Ms : 0;
+        pushSpark(a.agent, p95);
+        const buf = sparkBuffers.get(a.agent) || [];
+        const cooldownLine = a.breaker.phase !== 'closed'
+          ? `<div class="ac-row"><b>${T.healthCooldown}:</b> ${(a.breaker.cooldownRemainingMs / 1000).toFixed(0)}s</div>`
+          : '';
+        const successPct = inv && inv.total > 0 ? (inv.successRate * 100).toFixed(1) + '%' : '—';
+        const cost = inv && inv.costSum ? '$' + inv.costSum.toFixed(4) : '—';
+        return `
+          <div class="health-card">
+            <div class="health-head">
+              <code class="health-agent">${esc(a.agent)}</code>
+              ${breakerPill(a.breaker.phase)}
+            </div>
+            <div class="health-grid">
+              <div>
+                <div class="health-label">${T.healthBreaker}</div>
+                <div class="health-val">${esc(a.breaker.phase)}${a.breaker.failures > 0 ? ` · ${a.breaker.failures} fail` : ''}</div>
+              </div>
+              <div>
+                <div class="health-label">${T.healthRate}</div>
+                <div class="health-val">${a.rate.remaining}/${a.rate.rate}/${a.rate.intervalSec}s</div>
+              </div>
+              <div>
+                <div class="health-label">${T.healthLatency} p50/p95/p99</div>
+                <div class="health-val">${inv ? `${inv.p50Ms}/${inv.p95Ms}/${inv.p99Ms}ms` : '—'}</div>
+              </div>
+              <div>
+                <div class="health-label">${T.healthInvocations}</div>
+                <div class="health-val">${inv ? inv.total : 0} · ${T.healthSuccessRate} ${successPct}</div>
+              </div>
+              <div>
+                <div class="health-label">${T.healthCost}</div>
+                <div class="health-val">${cost}</div>
+              </div>
+              <div title="${T.healthSparklineLabel}">
+                <div class="health-label">p95 (${buf.length}/${SPARKLINE_LEN})</div>
+                <div class="health-spark">${renderSparkline(buf)}</div>
+              </div>
+            </div>
+            ${cooldownLine}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function loadHealth() {
+      try {
+        const data = await api('/api/agent-health');
+        renderHealth(data);
+      } catch (e) {
+        document.getElementById('health-list').innerHTML =
+          `<div class="empty">${T.error}: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function setupHealthAutoRefresh() {
+      const isHealth = !document.getElementById('health-pane').hidden;
+      const on = document.getElementById('health-auto-refresh').checked && isHealth;
+      if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
+      if (on) healthTimer = setInterval(loadHealth, HEALTH_POLL_MS);
+    }
+
+    document.getElementById('btn-health-refresh').onclick = loadHealth;
+    document.getElementById('health-auto-refresh').onchange = setupHealthAutoRefresh;
+
+    // ============================================================
+    // Approvals tab (PR-B)
+    // ============================================================
+    // Global view of every currently-pending HITL approval. Operator can
+    // resolve from here without needing access to the original IM thread
+    // — useful when an approval lands while the requester is offline. The
+    // server validates the reqId still exists; if not (already resolved /
+    // timed out) we get a 404 + refresh.
+
+    const APPROVALS_POLL_MS = 3_000;
+    let approvalsTimer = null;
+
+    function fmtAge(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ' + (s % 60) + 's';
+      const h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
+
+    function renderApprovals(payload) {
+      const list = document.getElementById('approvals-list');
+      const summary = document.getElementById('approvals-summary');
+      const pending = payload.pending || [];
+      summary.textContent = T.approvalsCount.replace('{n}', pending.length);
+      if (!pending.length) {
+        list.innerHTML = `<div class="empty">${T.approvalsEmpty}</div>`;
+        return;
+      }
+      list.innerHTML = pending.map((p) => {
+        let inputPreview = '';
+        try { inputPreview = JSON.stringify(p.input, null, 2); } catch { inputPreview = '(unserializable)'; }
+        if (inputPreview.length > 600) inputPreview = inputPreview.slice(0, 600) + '\n...';
+        const autoTag = p.autoAllow
+          ? `<span style="color:var(--warning);font-size:11px;margin-left:6px">⏱ ${T.approvalsAutoMode}</span>`
+          : '';
+        return `
+          <div class="approval-item" data-req-id="${esc(p.reqId)}">
+            <div class="approval-head">
+              <code>${esc(p.toolName)}</code>${autoTag}
+              <span class="approval-meta">${esc(p.platform)} · ${T.approvalsThread}: ${esc(String(p.threadId).slice(0, 24))} · ${T.approvalsAge}: ${fmtAge(p.ageMs)}</span>
+            </div>
+            <pre class="approval-input">${esc(inputPreview)}</pre>
+            <div class="approval-actions">
+              <button data-act="allow" class="btn-allow">${T.approvalsAllow}</button>
+              <button data-act="deny" class="btn-deny">${T.approvalsDeny}</button>
+              <button data-act="allowAll">${T.approvalsAllowAll}</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      list.querySelectorAll('.approval-item').forEach((item) => {
+        const reqId = item.dataset.reqId;
+        item.querySelector('[data-act="allow"]').onclick = () => resolveApproval(reqId, 'allow', false);
+        item.querySelector('[data-act="deny"]').onclick = () => resolveApproval(reqId, 'deny', false);
+        item.querySelector('[data-act="allowAll"]').onclick = () => resolveApproval(reqId, 'allow', true);
+      });
+    }
+
+    async function resolveApproval(reqId, behavior, autoAllowFurther) {
+      const item = document.querySelector(`.approval-item[data-req-id="${reqId}"]`);
+      if (item) item.querySelectorAll('button').forEach((b) => (b.disabled = true));
+      try {
+        await api(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, {
+          method: 'POST',
+          body: JSON.stringify({ behavior, autoAllowFurther }),
+        });
+        loadApprovals();
+      } catch (e) {
+        if (item) {
+          const err = document.createElement('div');
+          err.style.cssText = 'color:var(--danger);font-size:12px;margin-top:6px';
+          err.textContent = `${T.approvalsResolveErr}: ${e.message}`;
+          item.appendChild(err);
+          item.querySelectorAll('button').forEach((b) => (b.disabled = false));
+        }
+      }
+    }
+
+    async function loadApprovals() {
+      try {
+        const data = await api('/api/approvals');
+        renderApprovals(data);
+      } catch (e) {
+        document.getElementById('approvals-list').innerHTML =
+          `<div class="empty">${T.error}: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function setupApprovalsAutoRefresh() {
+      const isApprovals = !document.getElementById('approvals-pane').hidden;
+      const on = document.getElementById('approvals-auto-refresh').checked && isApprovals;
+      if (approvalsTimer) { clearInterval(approvalsTimer); approvalsTimer = null; }
+      if (on) approvalsTimer = setInterval(loadApprovals, APPROVALS_POLL_MS);
+    }
+
+    document.getElementById('btn-approvals-refresh').onclick = loadApprovals;
+    document.getElementById('approvals-auto-refresh').onchange = setupApprovalsAutoRefresh;
 
     // Initial load
     loadJobs();

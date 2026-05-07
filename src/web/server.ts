@@ -181,6 +181,19 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/audit' && req.method === 'GET') {
       return handleAudit(req, res, url)
     }
+    // PR-B: agent health snapshot (circuit breaker + rate-limiter remaining
+    // + latency p50/95/99) consumed by the Health tab in /tasks.
+    if (url.pathname === '/api/agent-health' && req.method === 'GET') {
+      return handleAgentHealth(req, res)
+    }
+    // PR-B: HITL approvals — global pending list + per-reqId resolve.
+    if (url.pathname === '/api/approvals' && req.method === 'GET') {
+      return handleListApprovals(req, res)
+    }
+    const approvalResolveMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/resolve$/)
+    if (approvalResolveMatch && req.method === 'POST') {
+      return handleResolveApproval(req, res, approvalResolveMatch[1])
+    }
     // /api/health handled above the token gate (M4) — keep this comment so
     // future contributors don't re-add the route inside the auth block.
     if (url.pathname === '/api/notify' && req.method === 'POST') {
@@ -820,6 +833,123 @@ async function handleAudit(_req: IncomingMessage, res: ServerResponse, url: URL)
     sendJson(res, 200, { invocations: rows, stats })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * Per-agent operational health snapshot. Drives the Health tab in /tasks.
+ *
+ * Combines three independent live data sources:
+ *   - circuit breaker phase / cooldown remaining     (core/circuit-breaker.ts)
+ *   - rate-limiter remaining tokens & config          (core/rate-limiter.ts agentLimiter)
+ *   - latency p50 / p95 / p99 + invocation totals     (core/metrics.ts snapshot)
+ *
+ * No persistence — pure read of in-memory state. Cheap to call (<1 ms for
+ * a typical agent fleet) so the page is happy to poll on a 5 s tick.
+ */
+async function handleAgentHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { circuitBreaker } = await import('../core/circuit-breaker.js')
+    const { agentLimiter } = await import('../core/rate-limiter.js')
+    const { snapshot } = await import('../core/metrics.js')
+    const snap = snapshot()
+    const now = Date.now()
+    const agents = registry.listAgents().map((name) => {
+      const breaker = circuitBreaker.getStatus(name)
+      const cooldownRemainingMs = breaker.openedAt && breaker.phase !== 'closed'
+        ? Math.max(0, breaker.cooldownMs - (now - breaker.openedAt))
+        : 0
+      const rate = agentLimiter.status(name)
+      const m = snap.agents.find((a) => a.agent === name)
+      return {
+        agent: name,
+        breaker: {
+          phase: breaker.phase,
+          failures: breaker.failures,
+          cooldownMs: breaker.cooldownMs,
+          cooldownRemainingMs,
+        },
+        rate: {
+          remaining: rate.remaining,
+          rate: rate.rate,
+          intervalSec: rate.intervalSec,
+        },
+        invocations: m
+          ? {
+              total: m.total,
+              success: m.success,
+              failure: m.failure,
+              successRate: m.successRate,
+              costSum: m.costSum,
+              sampleCount: m.sampleCount,
+              p50Ms: m.p50Ms,
+              p95Ms: m.p95Ms,
+              p99Ms: m.p99Ms,
+            }
+          : null,
+      }
+    })
+    sendJson(res, 200, { agents, uptimeSec: snap.uptimeSec })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * List every currently-pending HITL approval across all sessions /
+ * platforms. Used by the global Approvals tab in /tasks so the operator
+ * can see at a glance whether something is waiting on a y/n that nobody
+ * is around to give.
+ */
+async function handleListApprovals(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { approvalBus } = await import('../core/approval-bus.js')
+    const pending = approvalBus.listPending()
+    const metrics = approvalBus.getMetrics()
+    sendJson(res, 200, { pending, metrics })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * Resolve an approval by reqId (admin / dashboard path). Body:
+ *   { behavior: 'allow' | 'deny', autoAllowFurther?: boolean, message?: string }
+ *
+ * resolvePending operates on threadId, not reqId, so we walk listPending
+ * to find the matching pending and forward to the bus. The web token is
+ * the access gate — anyone with it can resolve any pending. Multi-tenant
+ * scoping is tracked separately with the rest of cross-cutting #3.1.
+ */
+async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, reqId: string): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    let parsed: { behavior?: string; autoAllowFurther?: boolean; message?: string }
+    try { parsed = JSON.parse(body) as typeof parsed } catch {
+      sendJson(res, 400, { ok: false, error: 'Invalid JSON body' })
+      return
+    }
+    if (parsed.behavior !== 'allow' && parsed.behavior !== 'deny') {
+      sendJson(res, 400, { ok: false, error: 'behavior must be "allow" or "deny"' })
+      return
+    }
+    const { approvalBus } = await import('../core/approval-bus.js')
+    const target = approvalBus.listPending().find((p) => p.reqId === reqId)
+    if (!target) {
+      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
+      return
+    }
+    const decision = parsed.behavior === 'allow'
+      ? { behavior: 'allow' as const, autoAllowFurther: parsed.autoAllowFurther === true }
+      : { behavior: 'deny' as const, message: parsed.message || 'denied via dashboard' }
+    const resolved = approvalBus.resolvePending(target.threadId, decision)
+    if (!resolved) {
+      sendJson(res, 409, { ok: false, error: 'Race: pending vanished between list and resolve' })
+      return
+    }
+    sendJson(res, 200, { ok: true, resolved })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
 

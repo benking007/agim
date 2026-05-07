@@ -19,14 +19,19 @@
 // forward input/output tokens via opts.onUsage so /stats reflects real codex
 // usage. costUsd stays undefined until codex surfaces pricing.
 //
-// NOT in v1 (deferred):
-//   - Per-tool approval routing. `codex exec` has no external approval hook;
-//     it only takes the OS sandbox flag `-s read-only|workspace-write|
-//     danger-full-access`. We currently pass `--full-auto` (= workspace-write
-//     + auto-approve) to match prior behavior. A future iteration will route
-//     approval like the claude-code MCP sidecar or the opencode SSE bus.
-//   - planMode. Tied to the approval discussion — once we have a clean
-//     read-only switch, we'll plumb opts.planMode → `-s read-only`.
+// Approval / sandbox model (current):
+//   - `codex exec` has NO external approval hook (no --ask-for-approval
+//     equivalent). Confirmed against codex CLI 0.x — only `-s` sandbox
+//     mode + `--dangerously-bypass-approvals-and-sandbox` exist. So we
+//     CANNOT route per-tool approvals through approval-bus the way
+//     claude-code (MCP sidecar) and opencode (SSE bus) do.
+//   - Best we can do today: pin sandbox to `workspace-write` by default
+//     (cwd-scoped writes only, NO auto-approval — codex's internal policy
+//     decides each call), and flip to `read-only` when session.planMode
+//     is on. This gives us a "safety floor" rather than a true gate.
+//   - True per-tool approval would require running codex via `codex
+//     mcp-server` (stdio MCP) and putting our own approval-bus shim
+//     between the MCP client and codex. Tracked as a future iteration.
 
 import { execSync } from 'child_process'
 import { existsSync, realpathSync } from 'fs'
@@ -141,7 +146,20 @@ interface CodexEvent {
   error_message?: string
 }
 
-const BASE_FLAGS = ['--json', '--full-auto', '--skip-git-repo-check'] as const
+/**
+ * Common flags every spawn carries. Sandbox mode is intentionally absent
+ * here — it's added per-spawn by buildArgs based on opts.planMode so plan
+ * runs go read-only and normal runs land at workspace-write.
+ *
+ * Why not `--full-auto`?  --full-auto = `-s workspace-write` + auto-approval
+ * of every internal prompt. That's stronger than we want for an IM-driven
+ * agent — codex's own policy engine can still ask the user "do this risky
+ * thing?" and we'd rather see those prompts surface (codex emits them as
+ * `turn.message` events on the JSON stream) than have them silently
+ * answered yes. workspace-write WITHOUT --full-auto preserves codex's
+ * internal decisioning while keeping the OS-level write fence.
+ */
+const BASE_FLAGS = ['--json', '--skip-git-repo-check'] as const
 
 export class CodexAdapter extends AgentBase {
   readonly name = 'codex'
@@ -160,12 +178,18 @@ export class CodexAdapter extends AgentBase {
   }
 
   protected buildArgs(prompt: string, opts: AgentSendOpts): string[] {
+    // session.planMode → -s read-only sandbox. Best-available approximation
+    // of "agent only plans, doesn't act"; codex still emits write attempts
+    // as events but the OS layer rejects them. See file header for the
+    // approval-model discussion.
+    const sandboxMode = opts.planMode ? 'read-only' : 'workspace-write'
+    const sandboxFlags = ['-s', sandboxMode] as const
     if (opts.agentSessionId && opts.agentSessionResume) {
       // `codex exec resume <UUID> [OPTIONS] [PROMPT]` — the SESSION_ID
       // positional has to come immediately after `resume`, before flags.
-      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, prompt]
+      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, ...sandboxFlags, prompt]
     }
-    return ['exec', ...BASE_FLAGS, prompt]
+    return ['exec', ...BASE_FLAGS, ...sandboxFlags, prompt]
   }
 
   /**

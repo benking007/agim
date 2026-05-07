@@ -47,13 +47,39 @@ describe('CodexAdapter buildArgs', () => {
     expect(args[0]).toBe('exec')
   })
 
-  it('keeps --full-auto and --skip-git-repo-check on every call', () => {
+  it('keeps --skip-git-repo-check on every call (post --full-auto removal)', () => {
+    // --full-auto was dropped in favor of explicit `-s workspace-write`
+    // (without auto-approval) — see codex/index.ts BASE_FLAGS comment.
     const adapter = new CodexAdapter()
-    expect(buildArgs(adapter, 'p', {})).toContain('--full-auto')
     expect(buildArgs(adapter, 'p', {})).toContain('--skip-git-repo-check')
+    expect(buildArgs(adapter, 'p', {})).not.toContain('--full-auto')
     expect(buildArgs(adapter, 'p', {
       agentSessionId: 'abc', agentSessionResume: true,
-    })).toContain('--full-auto')
+    })).toContain('--skip-git-repo-check')
+  })
+
+  it('passes -s workspace-write by default (no plan mode)', () => {
+    const adapter = new CodexAdapter()
+    const args = buildArgs(adapter, 'p', {})
+    expect(args).toContain('-s')
+    expect(args).toContain('workspace-write')
+  })
+
+  it('passes -s read-only when planMode is true', () => {
+    const adapter = new CodexAdapter()
+    const args = buildArgs(adapter, 'p', { planMode: true })
+    expect(args).toContain('-s')
+    expect(args).toContain('read-only')
+    expect(args).not.toContain('workspace-write')
+  })
+
+  it('passes -s read-only on a resume turn when planMode is set', () => {
+    const adapter = new CodexAdapter()
+    const args = buildArgs(adapter, 'p', {
+      agentSessionId: 'abc', agentSessionResume: true, planMode: true,
+    })
+    expect(args).toContain('-s')
+    expect(args).toContain('read-only')
   })
 })
 

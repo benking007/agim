@@ -37,19 +37,25 @@ im-hub config wechat   # 扫码登录微信
 im-hub start           # 启动桥接 + Web UI（:3000）
 ```
 
-## 0.2.13 → 0.2.18 主要升级
+## 0.2.13 → 0.2.23 主要升级
 
 - **Discord 适配器**（基于 `discord.js` 的 Gateway WebSocket）
-- **工具调用人审（HITL）** — Claude 调工具时自动暂停，IM 同一会话回复 `y`/`n` 即可
-- **任务仪表盘** `/tasks`，新增 **Background**（Claude/opencode bgjobs）与 **Subtasks** 两个标签
-- **多租户 Workspace** — 每个工作区独立的 Agent 白名单 + 限流；`/job` `/schedule` `/audit` 命令也按 creator/workspace 隔离（每个用户只看到自己的）
+- **工具调用人审（HITL）** — Claude 调工具时自动暂停，IM 同一会话回复 `y`/`n` 即可，**或在 Web 对话界面点弹出的审批卡**
+- **任务仪表盘** `/tasks`，标签覆盖 **Jobs · Background · Subtasks · Schedules · Approvals · Health · Files · Audit**（每个 tab 支持 agent 过滤、Jobs 多选批量、SSE 实时刷新）
+- **多租户 Workspace** — 每个工作区独立的 Agent 白名单 + 限流，**Settings 页加完整 CRUD UI**；`/job` `/schedule` `/audit` 命令也按 creator/workspace 隔离（每个用户只看到自己的）
 - **ACP Server 模式** — im-hub 自身作为 ACP 兼容 Agent（`POST /tasks`，sync + SSE）
 - **持久化 Job Board** + Cron 调度器（SQLite 落地，重启不丢，30 天自动修剪）
 - **智能路由**：意图分类（中英文）、断路器、Sticky 会话
 - **结构化日志**（`pino`）+ 全链路 `traceId` + 审计日志 + Prometheus `/api/metrics`
+- **三态主题**（浅色 / 深色 / 跟随系统），所有页面在首屏前同步应用，无闪烁
 - **v0.2.16 — 安全收口（P0 + P1）**：REST/WS token 常量时比较、Schedule `notify_url` SSRF 防护、日志级别 secret redact、approval socket 路径熵 + 权限校验、`Session.addMessage` per-key 互斥
 - **v0.2.17 — 可观测 + IM 文本边界（P2 + P3）**：静态页 CSP / `X-Frame-Options` / `X-Content-Type-Options`，WebSocket 连接上限 + 背压，Prometheus 标签基数白名单，新增 counter（`im_hub_audit_prune_failed_total` / `im_hub_agent_cleanup_failed_total` / `im_hub_approval_*`），UTF-16 代理对安全切分，auto-allow 指纹 5 → 10 字符，SIGINT 关停时 SQLite WAL 干净 checkpoint
 - **v0.2.18 — IM 重连退避（M9）**：抽公共 `Backoff` 助手（指数 + ±50% jitter），替换 Telegram + WeChat polling 的固定 2s / 5s 重连间隔；多实例从同一次网络抖动恢复时不再锁步打 IM 平台
+- **v0.2.19 — Codex sandbox + Dashboard 过滤 / Audit tab**：codex 接入 `session.planMode`（默认 sandbox 改为显式 `-s workspace-write`，关闭 auto-approval）；Jobs/Subtasks/Schedules tab 加 agent 过滤；新增 Audit tab 把 SQLite 审计日志拉到 UI
+- **v0.2.20 — Web 控制台 PR-A**：三态主题管理 + 全局错误边界 + 对话内审批卡（在 Web 聊天界面直接 Allow / Deny / Allow + Auto）
+- **v0.2.21 — Web 控制台 PR-B**：Health tab（每个 agent 的 breaker / 限流余量 / p50/95/99 / sparkline）+ Approvals tab（浏览并解决所有 pending HITL 审批）
+- **v0.2.22 — Web 控制台 PR-C**：SSE 事件流（`/events`）替代轮询，audit / approval / job / metrics 实时推送；Settings 页加 Workspace 完整 CRUD UI
+- **v0.2.23 — Web 控制台 PR-D**：Files tab 只读浏览 `~/.im-hub-workspaces/<agent>/`；Jobs tab 多选 + 批量取消/重跑；Settings 页 header / 容器重新调整布局
 
 完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -57,15 +63,17 @@ im-hub start           # 启动桥接 + Web UI（:3000）
 
 ```
 im-hub start           # 启动后访问 http://localhost:3000
-                       #   /          对话
-                       #   /tasks     jobs · 调度 · bgjobs · subtasks
-                       #   /settings  Agent · 通道 · ACP
+                       #   /          对话（支持对话内审批卡）
+                       #   /tasks     jobs · background · subtasks · schedules
+                       #              · approvals · health · files · audit
+                       #   /settings  Agent · 通道 · ACP · 工作区
 ```
 
-- WebSocket 实时流式响应
+- WebSocket 实时流式响应；**仪表盘走 SSE `/events`** 推送（audit / approval / job / metrics）
 - Agent 切换与对话历史
+- **三态主题**（浅色 / 深色 / 跟随系统），按 tab 持久化 + 全局错误边界
 - 中英双语界面，自动检测浏览器语言
-- `/tasks` 同时展示持久化任务、cron 调度、**`~/.claude/bgjobs`** + **`~/.config/opencode/bgjobs`** 的后台任务（可用 `IMHUB_BGJOB_ROOTS` 覆盖）以及所有会话中的 subtask 平铺列表
+- `/tasks` 同时展示持久化任务、cron 调度、**`~/.claude/bgjobs`** + **`~/.config/opencode/bgjobs`** + **`~/.codex/bgjobs`** 的后台任务（可用 `IMHUB_BGJOB_ROOTS` 覆盖）、所有会话的 subtask 平铺、agent 健康（breaker · 限流 · p50/95/99 · sparkline）、待审批列表（浏览器直接处理）以及 `~/.im-hub-workspaces/<agent>/` 的只读文件浏览器
 
 ## 核心特性
 
@@ -446,11 +454,44 @@ npm start
 - [x] Telegram `runPollingLoop`：固定 2s / 5s setTimeout → `Backoff(2s, 60s, 0.5)`；30s 健康运行阈值会重置 backoff
 - [x] WeChat ilink `pollLoop`：内联 `Math.pow(2,n-1)` → `Backoff(2s, 30s, 0.5)`；getUpdates 成功路径调用 reset
 
+### v0.2.19 — Codex sandbox + Dashboard 过滤 / Audit tab
+- [x] Codex 接入 `session.planMode`；默认 sandbox 从 `--full-auto` 改为显式 `-s workspace-write`
+- [x] Jobs / Subtasks / Schedules 三个 tab 加 agent 下拉过滤（`OwnerOpts.agent` 全链路下沉）
+- [x] 新增 Audit tab，把 SQLite 审计日志拉到 UI；`GET /api/audit?agent=&days=&user=&intent=`
+
+### v0.2.20 — Web 控制台 PR-A：主题 + 错误边界 + 对话内审批
+- [x] 三态主题（浅色 / 深色 / 跟随系统），`<head>` 同步应用避免闪烁
+- [x] `_app.js` 共享工具：`window.imhub.{theme,i18n,api,showError}` + 自动安装的错误边界
+- [x] `/` 对话内审批卡（Allow / Deny / Allow + Auto），点击走 WS `approval-action` 回 `approvalBus.resolvePending()`，跟 Telegram inline-button 同一条路径
+- [x] `approval-router` 导出 `bindButtonHandlerForPlatform(platform)`，给延迟注册的 messenger（web 是其中之一）调用，避免 install-before-register 时序问题
+
+### v0.2.21 — Web 控制台 PR-B：Health + Approvals tab
+- [x] Health tab：每个 agent 的 breaker 状态（closed/open/half-open）、限流余量、p50/95/99 延迟、调用次数 / 成功率 / 成本 / 冷却 + 60 次轮询的 p95 sparkline
+- [x] Approvals tab：列出所有 pending HITL 审批（reqId / threadId / tool / 等待时长 / registeredAt），浏览器侧直接 Allow / Deny / Allow + Auto
+- [x] 后端：`GET /api/agent-health` / `GET /api/approvals` / `POST /api/approvals/:reqId/resolve`
+- [x] `approval-bus.PendingApproval` 增 `input` + `registeredAt`；register / cancel 时 emit `'approval'` 事件给 SSE 用
+
+### v0.2.22 — Web 控制台 PR-C：SSE 事件流 + Workspace CRUD UI
+- [x] `src/core/event-bus.ts` — 类型化 publish/subscribe（audit / approval / job / metrics）+ 200 条 ring buffer
+- [x] `GET /events` SSE 端点 — token 走 `?token=`，25s 心跳，listener 错误吞掉
+- [x] Dashboard 接 `EventSource('/events?token=...')`，事件触发只刷可见 tab；轮询保留作为 fallback；`approval requested` 事件让 Approvals tab 标签闪一下高亮
+- [x] Settings 页 Workspace 卡 — 列表 + 新增 / 编辑 / 删除（编辑时 id 锁定，default 行不可编辑/删除）
+- [x] 后端 `GET/POST/PATCH/DELETE /api/workspaces` + `WorkspaceRegistry.{remove(id), listFull()}`；mutation persist 回 `~/.im-hub/config.json`
+
+### v0.2.23 — Web 控制台 PR-D：Files tab + Jobs 批量 + Settings 美化
+- [x] Files tab — 只读浏览 `~/.im-hub-workspaces/<agent>/`，左目录树 / 右内容窗，1 MiB 上限，NUL byte 探测二进制 → base64
+- [x] 路径 traversal 防御：agent 名必须在 `registry.listAgents()` 白名单；resolve 后路径必须等于或位于 `defaultAgentCwd(agent)` base 之下
+- [x] Jobs tab 多选 + 全选 + 隐藏式批量工具栏；选中态跨刷新保留
+- [x] `POST /api/jobs/batch-cancel` / `batch-run` 接受 `{ ids: number[] }`（最多 100），per-id 失败不互相阻断
+- [x] Settings header 重写（`.brand` + `.controls` 双分组）— 修复语言 `<select>` 拉伸成满屏宽问题；容器 720→880，header sticky，toast / `.btn-danger:hover` 改主题变量
+
 ### v0.3.0
 - [ ] 钉钉适配器
 - [ ] Slack 适配器
 - [ ] 飞书 / Discord 卡片按钮版审批（替代纯文本）
 - [ ] Cron `nextOccurrence` 内部 UTC 化（DST 安全，CR-2026-05-06 的 M5）
+- [ ] 多实例事件总线（Redis Streams / NATS）让 SSE 在多副本间也能跨进程
+- [ ] Workspace 成员选择 UI（当前 CSV 输入对运维好用但易错）
 
 ## 社区 <a name="wechat-group"></a>
 

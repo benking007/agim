@@ -255,21 +255,42 @@ export async function startWebServer(options: {
         // button handler (registered by approval-router on install) the
         // same way a Telegram inline-keyboard tap is routed. We don't
         // call handleClientMessage for these — they're not chat input.
-        if (msg && msg.type === 'approval-action' && webButtonHandler) {
-          const data: string = String(msg.data || '')
+        if (msg && msg.type === 'approval-action') {
+          const actionData: string = String(msg.data || '')
           const messageId: string = String(msg.messageId || '')
-          if (!data || !messageId) {
+          webLog.info({
+            event: 'approval.web.click_received',
+            clientId, data: actionData, messageId,
+            handlerBound: !!webButtonHandler,
+          })
+          if (!actionData || !messageId) {
             sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
             return
           }
-          // Most messengers' ButtonCallback#ack updates a platform-native
-          // toast / loading spinner. The web client doesn't have one, so
-          // ack is a no-op resolving to the in-page status the page itself
-          // chose to render after click.
-          await webButtonHandler({
-            data, threadId: clientId, userId: `web:${clientId}`,
-            userDisplay: 'Web', messageId, ack: async () => {},
-          })
+          if (!webButtonHandler) {
+            // Without the handler, a click would silently no-op forever — the
+            // failure mode that PR-A's fix patches. Tell the user and the
+            // operator (via log) instead of dropping the click.
+            const why = 'approval handler not bound (router not installed?). Restart im-hub to rebind.'
+            webLog.warn({ event: 'approval.web.no_handler', clientId, data: actionData, messageId }, why)
+            sendToClient(ws, { type: 'error', message: why })
+            return
+          }
+          try {
+            // Most messengers' ButtonCallback#ack updates a platform-native
+            // toast / loading spinner. The web client doesn't have one, so
+            // ack is a no-op resolving to the in-page status the page itself
+            // chose to render after click.
+            await webButtonHandler({
+              data: actionData, threadId: clientId, userId: `web:${clientId}`,
+              userDisplay: 'Web', messageId, ack: async () => {},
+            })
+            webLog.info({ event: 'approval.web.click_resolved', clientId, data: actionData })
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err)
+            webLog.error({ event: 'approval.web.click_failed', clientId, data: actionData, err: errMsg })
+            sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
+          }
           return
         }
         await handleClientMessage(client, msg, options.defaultAgent)
@@ -338,6 +359,8 @@ export async function startWebServer(options: {
     },
     onButtonCallback(handler) {
       webButtonHandler = handler
+      webLog.info({ event: 'approval.web.handler_bound' },
+        'web messenger button-callback handler attached')
     },
   }
   registry.registerMessenger(webMessenger)
@@ -351,9 +374,17 @@ export async function startWebServer(options: {
   try {
     const { bindButtonHandlerForPlatform } = await import('../core/approval-router.js')
     bindButtonHandlerForPlatform('web')
+    if (!webButtonHandler) {
+      // bindButtonHandlerForPlatform is a silent no-op when `installed` is
+      // null on the router (bus failed to start, or cli skipped install).
+      // Log so an operator who's confused why approval clicks don't work
+      // sees a clear breadcrumb at startup.
+      webLog.warn({ event: 'approval.web.bind_skipped' },
+        'approval-router not installed — web approval clicks will fail until restart')
+    }
   } catch (err) {
-    webLog.warn({ err: err instanceof Error ? err.message : String(err) },
-      'approval-router button-handler binding skipped (router not installed)')
+    webLog.warn({ event: 'approval.web.bind_error', err: err instanceof Error ? err.message : String(err) },
+      'approval-router button-handler binding threw')
   }
 
   return {

@@ -173,7 +173,17 @@ export async function startWebServer(options: {
       return handleListSchedules(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
-      return handleListWorkspaces(req, res)
+      return handleListWorkspaces(req, res, url)
+    }
+    if (url.pathname === '/api/workspaces' && req.method === 'POST') {
+      return handleCreateOrUpdateWorkspace(req, res)
+    }
+    const workspaceIdMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/)
+    if (workspaceIdMatch && req.method === 'PATCH') {
+      return handleCreateOrUpdateWorkspace(req, res, workspaceIdMatch[1])
+    }
+    if (workspaceIdMatch && req.method === 'DELETE') {
+      return handleDeleteWorkspace(req, res, workspaceIdMatch[1])
     }
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
       return handleMetrics(req, res, url)
@@ -193,6 +203,20 @@ export async function startWebServer(options: {
     const approvalResolveMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/resolve$/)
     if (approvalResolveMatch && req.method === 'POST') {
       return handleResolveApproval(req, res, approvalResolveMatch[1])
+    }
+    // PR-C: SSE event stream — audit / approval / job / metrics events
+    // pushed real-time so the dashboard stops polling. EventSource has no
+    // header API, so the token rides in `?token=<webToken>` (same shape
+    // the WS upgrade uses). Auth is validated inside the handler since
+    // /events is outside the /api/* token gate above.
+    if (url.pathname === '/events' && req.method === 'GET') {
+      const evToken = url.searchParams.get('token') || ''
+      if (!safeEqual(evToken, webToken)) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' })
+        res.end('Unauthorized')
+        return
+      }
+      return handleEventsSSE(req, res)
     }
     // /api/health handled above the token gate (M4) — keep this comment so
     // future contributors don't re-add the route inside the auth block.
@@ -400,6 +424,30 @@ export async function startWebServer(options: {
       'approval-router button-handler binding threw')
   }
 
+  // PR-C: periodic metrics tick. Publishes a per-agent snapshot every 5s
+  // so the dashboard's Health sparkline can advance even when there are
+  // no audit events firing. The bus's recent buffer keeps the latest
+  // tick available to fresh SSE connections, so a tab opened mid-cycle
+  // sees current data without waiting up to 5 s.
+  const metricsTick = setInterval(async () => {
+    try {
+      const { eventBus } = await import('../core/event-bus.js')
+      const { snapshot } = await import('../core/metrics.js')
+      const snap = snapshot()
+      eventBus.publish({
+        type: 'metrics',
+        ts: new Date().toISOString(),
+        agents: snap.agents.map((a) => ({
+          agent: a.agent, total: a.total, success: a.success, failure: a.failure,
+          p50Ms: a.p50Ms, p95Ms: a.p95Ms, p99Ms: a.p99Ms,
+        })),
+      })
+    } catch { /* swallow — metrics tick must never break the web server */ }
+  }, 5_000)
+  if (typeof metricsTick === 'object' && metricsTick && 'unref' in metricsTick) {
+    (metricsTick as { unref: () => void }).unref()
+  }
+
   return {
     port,
     close: () => {
@@ -518,13 +566,113 @@ async function handleAgentsStatus(_req: IncomingMessage, res: ServerResponse): P
   }
 }
 
-async function handleListWorkspaces(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleListWorkspaces(_req: IncomingMessage, res: ServerResponse, url?: URL): Promise<void> {
   try {
     const { workspaceRegistry } = await import('../core/workspace.js')
-    sendJson(res, 200, { workspaces: workspaceRegistry.list() })
+    // ?full=1 returns the full WorkspaceConfig (including member IDs)
+    // for the settings editor; default is the summary shape (member count
+    // only) used elsewhere.
+    const wantFull = url?.searchParams.get('full') === '1'
+    sendJson(res, 200, {
+      workspaces: wantFull ? workspaceRegistry.listFull() : workspaceRegistry.list(),
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     sendJson(res, 500, { error: msg })
+  }
+}
+
+/**
+ * Validate + sanitize an incoming WorkspaceConfig from the settings
+ * editor. Returns a clean object on success or a string error message
+ * on failure. Reused by POST and PATCH so behavior is identical.
+ */
+function validateWorkspacePayload(raw: unknown, expectedId?: string): { ok: true; cfg: import('../core/workspace.js').WorkspaceConfig } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'body must be a JSON object' }
+  const o = raw as Record<string, unknown>
+  const id = String(o.id || '').trim()
+  if (!id) return { ok: false, error: 'id is required' }
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) return { ok: false, error: 'id must match [a-zA-Z0-9_-]+' }
+  if (id === 'default' && expectedId !== 'default') {
+    return { ok: false, error: '"default" workspace is reserved (use PATCH to edit)' }
+  }
+  if (expectedId && expectedId !== id) {
+    return { ok: false, error: `id mismatch: URL is ${expectedId}, body is ${id}` }
+  }
+  const name = String(o.name || id)
+  const agents = Array.isArray(o.agents) ? o.agents.filter((a): a is string => typeof a === 'string') : []
+  const members = Array.isArray(o.members) ? o.members.filter((m): m is string => typeof m === 'string') : undefined
+  let rateLimit: { rate: number; intervalSec: number; burst: number } | undefined
+  if (o.rateLimit && typeof o.rateLimit === 'object') {
+    const r = o.rateLimit as Record<string, unknown>
+    const rate = Number(r.rate)
+    const intervalSec = Number(r.intervalSec)
+    const burst = Number(r.burst)
+    if (!Number.isFinite(rate) || rate <= 0
+      || !Number.isFinite(intervalSec) || intervalSec <= 0
+      || !Number.isFinite(burst) || burst <= 0) {
+      return { ok: false, error: 'rateLimit.rate / intervalSec / burst must be positive numbers' }
+    }
+    rateLimit = { rate, intervalSec, burst }
+  }
+  return { ok: true, cfg: { id, name, agents, members, rateLimit } }
+}
+
+/**
+ * Persist the workspaces array back to ~/.im-hub/config.json so changes
+ * survive a restart. We do not touch other config fields — settings.html
+ * has its own /api/config PUT for that. Best-effort: a write failure is
+ * logged but the in-memory registry has already been updated, so the
+ * change is live until the next process boot.
+ */
+async function persistWorkspacesToConfig(workspaces: import('../core/workspace.js').WorkspaceConfig[]): Promise<void> {
+  const config = await loadConfig()
+  ;(config as Record<string, unknown>).workspaces = workspaces
+  await saveConfig(config)
+}
+
+async function handleCreateOrUpdateWorkspace(req: IncomingMessage, res: ServerResponse, expectedId?: string): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    let parsed: unknown
+    try { parsed = JSON.parse(body) } catch {
+      sendJson(res, 400, { ok: false, error: 'Invalid JSON body' })
+      return
+    }
+    const v = validateWorkspacePayload(parsed, expectedId)
+    if (!v.ok) {
+      sendJson(res, 400, { ok: false, error: v.error })
+      return
+    }
+    const { workspaceRegistry } = await import('../core/workspace.js')
+    workspaceRegistry.add(v.cfg)
+    await persistWorkspacesToConfig(
+      workspaceRegistry.listFull().filter((w) => w.id !== 'default')
+    )
+    sendJson(res, 200, { ok: true, workspace: v.cfg })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleDeleteWorkspace(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+  try {
+    const { workspaceRegistry } = await import('../core/workspace.js')
+    if (id === 'default') {
+      sendJson(res, 400, { ok: false, error: 'cannot delete the default workspace' })
+      return
+    }
+    const removed = workspaceRegistry.remove(id)
+    if (!removed) {
+      sendJson(res, 404, { ok: false, error: `workspace "${id}" not found` })
+      return
+    }
+    await persistWorkspacesToConfig(
+      workspaceRegistry.listFull().filter((w) => w.id !== 'default')
+    )
+    sendJson(res, 200, { ok: true })
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -951,6 +1099,64 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
+}
+
+/**
+ * Server-Sent Events stream for real-time dashboard updates. Subscribes
+ * to the in-process event-bus and forwards every event as an SSE frame.
+ *
+ * On connect we replay the last ~200 events from the bus's recent ring
+ * so a freshly-opened tab doesn't have to wait for the next event to
+ * have any context.
+ *
+ * Heartbeats every 25 s — Node's default keepalive isn't enough for some
+ * proxies (nginx default is 60s idle close, browsers reconnect EventSource
+ * automatically but we'd rather avoid the churn).
+ *
+ * Token-gated like every other /api endpoint via the upstream guard.
+ */
+async function handleEventsSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const { eventBus } = await import('../core/event-bus.js')
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  })
+  // Tell the client what we count as "now" so it can disambiguate replay
+  // from live events.
+  res.write(`event: hello\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`)
+
+  // Replay recent buffer.
+  for (const e of eventBus.getRecent()) {
+    res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+  }
+
+  const onEvent = (e: import('../core/event-bus.js').ImhubEvent): void => {
+    try {
+      res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+    } catch {
+      // Likely socket closed. The 'close' handler below will clean up;
+      // swallow here so a downstream listener error doesn't propagate.
+    }
+  }
+  eventBus.on('event', onEvent)
+
+  // Periodic keepalive comment so proxies don't close idle connections.
+  // SSE comments start with ':' and are ignored by EventSource clients.
+  const heartbeat = setInterval(() => {
+    try { res.write(': keepalive\n\n') } catch { /* socket closed */ }
+  }, 25_000)
+  if (typeof heartbeat === 'object' && heartbeat && 'unref' in heartbeat) {
+    (heartbeat as { unref: () => void }).unref()
+  }
+
+  const cleanup = (): void => {
+    clearInterval(heartbeat)
+    eventBus.off('event', onEvent)
+  }
+  req.on('close', cleanup)
+  req.on('error', cleanup)
 }
 
 async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Promise<void> {

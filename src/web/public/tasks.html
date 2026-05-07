@@ -1365,6 +1365,97 @@
     document.getElementById('btn-approvals-refresh').onclick = loadApprovals;
     document.getElementById('approvals-auto-refresh').onchange = setupApprovalsAutoRefresh;
 
+    // ============================================================
+    // /events SSE consumer (PR-C)
+    // ============================================================
+    // Server pushes audit / approval / job / metrics events as they
+    // happen. The dashboard previously polled each tab independently
+    // every 3-5 s; now it just refreshes the visible tab when a relevant
+    // event arrives, and keeps a small "Live" status pill in the header.
+    //
+    // We intentionally KEEP the existing setInterval auto-refresh as a
+    // fallback: if SSE fails (proxy stripping, network blip, server
+    // restart), the page still updates eventually. SSE just makes the
+    // refresh near-instant when it works.
+
+    let evtSource = null;
+    function setupSSE() {
+      try {
+        if (evtSource) try { evtSource.close(); } catch {}
+        // EventSource has no header API, so token rides in the query —
+        // matches the WS upgrade convention. Server-side handleEventsSSE
+        // validates this before subscribing.
+        evtSource = new EventSource(`/events?token=${encodeURIComponent(TOKEN)}`);
+      } catch (err) {
+        console.warn('[sse] init failed', err);
+        return;
+      }
+
+      evtSource.addEventListener('hello', () => {
+        console.debug && console.debug('[sse] connected');
+      });
+
+      // When an audit lands and the Audit tab is visible, refresh it.
+      // Same for the other types — no point repainting hidden tabs.
+      const refreshIfVisible = (paneId, loader) => {
+        const pane = document.getElementById(paneId);
+        if (pane && !pane.hidden) loader();
+      };
+
+      evtSource.addEventListener('audit', () => {
+        refreshIfVisible('audit-pane', loadAudit);
+      });
+      evtSource.addEventListener('approval', (e) => {
+        refreshIfVisible('approvals-pane', loadApprovals);
+        // Approval count is also surfaced as a small badge on the tab
+        // (best-effort — silently skip if any field is missing).
+        try {
+          const data = JSON.parse(e.data);
+          if (data.phase === 'requested') flashTabBadge('tab-approvals');
+        } catch {}
+      });
+      evtSource.addEventListener('job', () => {
+        refreshIfVisible('jobs-pane', loadJobs);
+      });
+      evtSource.addEventListener('metrics', () => {
+        refreshIfVisible('health-pane', loadHealth);
+      });
+
+      evtSource.onerror = () => {
+        console.warn('[sse] connection error — EventSource will auto-reconnect');
+      };
+    }
+
+    /**
+     * Pulse a tab's text briefly to draw the eye to a new event there.
+     * Cheap CSS-class flash, auto-clears after ~1.2 s. Uses a
+     * dynamically-injected <style> on first call so we don't need to
+     * touch the page-level <style> block.
+     */
+    let _flashStyleInjected = false;
+    function flashTabBadge(tabId) {
+      const el = document.getElementById(tabId);
+      if (!el) return;
+      if (!_flashStyleInjected) {
+        const s = document.createElement('style');
+        s.textContent = `
+          @keyframes imhubFlash {
+            0%   { background: var(--primary); color: #fff; }
+            100% { background: transparent; color: inherit; }
+          }
+          .imhub-flash { animation: imhubFlash 1.2s ease-out; }
+        `;
+        document.head.appendChild(s);
+        _flashStyleInjected = true;
+      }
+      el.classList.remove('imhub-flash');
+      // Force reflow so the animation re-triggers on rapid events.
+      void el.offsetWidth;
+      el.classList.add('imhub-flash');
+    }
+
+    setupSSE();
+
     // Initial load
     loadJobs();
   </script>

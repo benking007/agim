@@ -24,6 +24,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
+import { eventBus } from './event-bus.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
 const BOARD_DB = join(homedir(), '.im-hub', 'jobs.db')
@@ -227,7 +228,9 @@ export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {
   const row = d.prepare(
     'INSERT INTO jobs (agent, prompt, status, creator_id, workspace_id) VALUES (?, ?, ?, ?, ?)'
   ).run(agent, prompt, 'pending', opts.creatorId || '', opts.workspaceId || '')
-  return Number(row.lastInsertRowid)
+  const id = Number(row.lastInsertRowid)
+  eventBus.publish({ type: 'job', phase: 'created', jobId: id, agent })
+  return id
 }
 
 export function getJob(id: number, opts: OwnerOpts = {}): Job | null {
@@ -305,6 +308,7 @@ export async function runJob(
   runningControllers.set(id, controller)
 
   updateJob(id, { status: 'running' })
+  eventBus.publish({ type: 'job', phase: 'started', jobId: id, agent: job.agent })
   logger.info({ event: 'job.start', jobId: id, agent: job.agent, active: activeJobs })
 
   let fullText = ''
@@ -336,15 +340,18 @@ export async function runJob(
     // Only update if not cancelled
     if (!controller.signal.aborted) {
       updateJob(id, { status: 'completed', result: fullText, completed_at: new Date().toISOString() })
+      eventBus.publish({ type: 'job', phase: 'completed', jobId: id, agent: job.agent })
       logger.info({ event: 'job.complete', jobId: id, resultLen: fullText.length, truncated })
     } else {
       updateJob(id, { status: 'cancelled', result: fullText || null, completed_at: new Date().toISOString() })
+      eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })
       logger.info({ event: 'job.cancelled', jobId: id })
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack : undefined
     updateJob(id, { status: 'failed', error: msg, completed_at: new Date().toISOString() })
+    eventBus.publish({ type: 'job', phase: 'failed', jobId: id, agent: job.agent })
     logger.error({ event: 'job.failed', jobId: id, error: msg, stack })
   } finally {
     runningControllers.delete(id)
@@ -368,6 +375,7 @@ export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
     runningControllers.delete(id)
   }
   updateJob(id, { status: 'cancelled', completed_at: new Date().toISOString() })
+  eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })
   return true
 }
 

@@ -68,6 +68,17 @@ export class WorkspaceRegistry {
     this.workspaces.set(cfg.id, new Workspace(cfg))
   }
 
+  /**
+   * Remove a workspace by id. Returns true on success, false if the id
+   * doesn't exist or refers to the default workspace (which is created
+   * by the constructor and used as a fallback — removing it would break
+   * `resolve()` for users without an explicit assignment).
+   */
+  remove(id: string): boolean {
+    if (id === 'default') return false
+    return this.workspaces.delete(id)
+  }
+
   get(id: string): Workspace | undefined {
     return this.workspaces.get(id)
   }
@@ -106,6 +117,21 @@ export class WorkspaceRegistry {
       name: ws.name,
       agents: Array.from(ws.agentWhitelist),
       members: ws.memberSet ? ws.memberSet.size : null,
+      rateLimit: ws.limiter.config(),
+    }))
+  }
+
+  /**
+   * Full config snapshot for the settings UI, including the original
+   * member list. Distinct from `list()`'s summary shape (which exposes
+   * only a member count to preserve callers that don't need the IDs).
+   */
+  listFull(): WorkspaceConfig[] {
+    return Array.from(this.workspaces.values()).map((ws) => ({
+      id: ws.id,
+      name: ws.name,
+      agents: Array.from(ws.agentWhitelist),
+      members: ws.memberSet ? Array.from(ws.memberSet) : [],
       rateLimit: ws.limiter.config(),
     }))
   }

@@ -8,6 +8,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { logger as rootLogger } from './logger.js'
 import { recordInvocation, recordAuditPruneFailure } from './metrics.js'
+import { eventBus } from './event-bus.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
 const log = rootLogger.child({ component: 'audit-log' })
@@ -98,6 +99,22 @@ export function logInvocation(rec: AuditRecord): void {
     durationMs: rec.durationMs,
     cost: rec.cost,
     success: rec.success,
+  })
+
+  // Real-time fan-out for the dashboard's SSE consumer. Best-effort —
+  // event-bus swallows listener errors so a buggy subscriber can't break
+  // the audit hot path.
+  eventBus.publish({
+    type: 'audit',
+    ts: new Date().toISOString(),
+    agent: rec.agent,
+    intent: rec.intent,
+    platform: rec.platform,
+    durationMs: rec.durationMs,
+    cost: rec.cost,
+    success: rec.success,
+    traceId: rec.traceId,
+    userId: rec.userId,
   })
 
   const d = getDb()

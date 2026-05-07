@@ -51,7 +51,7 @@ async function saveConfig(config: Config): Promise<void> {
 program
   .name('im-hub')
   .description('Universal messenger-to-agent bridge')
-  .version('0.0.1.0')
+  .version('0.2.18')
 
 program
   .command('start')

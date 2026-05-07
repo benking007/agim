@@ -21,6 +21,7 @@
         tabsBackground: 'Background',
         tabsSubtasks: 'Subtasks',
         tabsSchedules: 'Schedules',
+        tabsAudit: 'Audit',
         loading: 'Loading...',
         statsTotal: 'Total',
         statsPending: 'Pending',
@@ -74,12 +75,23 @@
         subPrompt: 'Prompt',
         subCreated: 'Created',
         subEmpty: 'No subtasks recorded. Use /job switch <id> in IM to spawn one.',
+        auditDays: 'Days',
+        auditTime: 'Time',
+        auditUser: 'User',
+        auditPlatform: 'Platform',
+        auditIntent: 'Intent',
+        auditDuration: 'Duration',
+        auditCost: 'Cost',
+        auditOk: 'OK',
+        auditError: 'Error',
+        auditEmpty: 'No invocations recorded yet for this filter.',
       },
       zh: {
         title: 'im-hub — 任务',
         h1: '任务与定时',
         backToChat: '对话',
         toSettings: '设置',
+        tabsAudit: '审计',
         tabsJobs: '任务',
         tabsBackground: '后台脚本',
         tabsSubtasks: '子任务',
@@ -137,6 +149,16 @@
         subPrompt: '内容',
         subCreated: '创建',
         subEmpty: '暂无子任务。在 IM 内 /job switch <id> 可派生。',
+        auditDays: '天数',
+        auditTime: '时间',
+        auditUser: '用户',
+        auditPlatform: '平台',
+        auditIntent: '意图',
+        auditDuration: '耗时',
+        auditCost: '成本',
+        auditOk: '成功',
+        auditError: '错误',
+        auditEmpty: '当前过滤下暂无调用记录。',
       },
     };
     window.__t = T[window.__lang];
@@ -339,6 +361,7 @@
       <button class="tab" data-tab="background" id="tab-background"></button>
       <button class="tab" data-tab="subtasks" id="tab-subtasks"></button>
       <button class="tab" data-tab="schedules" id="tab-schedules"></button>
+      <button class="tab" data-tab="audit" id="tab-audit"></button>
     </div>
 
     <section id="jobs-pane">
@@ -351,6 +374,12 @@
           <option value="completed"></option>
           <option value="failed"></option>
           <option value="cancelled"></option>
+        </select>
+        <select id="jobs-agent-filter" data-agent-filter>
+          <option value="">All agents</option>
+          <option value="claude-code">claude-code</option>
+          <option value="opencode">opencode</option>
+          <option value="codex">codex</option>
         </select>
         <button id="btn-refresh"></button>
         <label><input type="checkbox" id="auto-refresh" checked> <span id="lbl-auto"></span></label>
@@ -370,13 +399,49 @@
 
     <section id="subtasks-pane" hidden>
       <div class="toolbar">
+        <select id="subtasks-agent-filter" data-agent-filter>
+          <option value="">All agents</option>
+          <option value="claude-code">claude-code</option>
+          <option value="opencode">opencode</option>
+          <option value="codex">codex</option>
+        </select>
         <button id="btn-sub-refresh"></button>
       </div>
       <div id="sub-list"></div>
     </section>
 
     <section id="schedules-pane" hidden>
+      <div class="toolbar">
+        <select id="schedules-agent-filter" data-agent-filter>
+          <option value="">All agents</option>
+          <option value="claude-code">claude-code</option>
+          <option value="opencode">opencode</option>
+          <option value="codex">codex</option>
+        </select>
+        <button id="btn-sched-refresh">Refresh</button>
+      </div>
       <div id="schedules-list"></div>
+    </section>
+
+    <section id="audit-pane" hidden>
+      <div class="toolbar">
+        <select id="audit-agent-filter" data-agent-filter>
+          <option value="">All agents</option>
+          <option value="claude-code">claude-code</option>
+          <option value="opencode">opencode</option>
+          <option value="codex">codex</option>
+        </select>
+        <select id="audit-days-filter">
+          <option value="1">1d</option>
+          <option value="7" selected>7d</option>
+          <option value="30">30d</option>
+          <option value="90">90d</option>
+        </select>
+        <input type="text" id="audit-user-filter" placeholder="user id (optional)" style="min-width:160px">
+        <button id="btn-audit-refresh">Refresh</button>
+      </div>
+      <div class="stats" id="audit-stats"></div>
+      <div id="audit-list"></div>
     </section>
   </main>
 
@@ -397,6 +462,7 @@
     document.getElementById('tab-background').textContent = T.tabsBackground;
     document.getElementById('tab-subtasks').textContent = T.tabsSubtasks;
     document.getElementById('tab-schedules').textContent = T.tabsSchedules;
+    document.getElementById('tab-audit').textContent = T.tabsAudit;
     document.getElementById('btn-bg-refresh').textContent = T.refresh;
     document.getElementById('btn-sub-refresh').textContent = T.refresh;
     document.getElementById('lbl-bg-auto').textContent = T.autoRefresh;
@@ -422,10 +488,12 @@
         document.getElementById('background-pane').hidden = tab !== 'background';
         document.getElementById('subtasks-pane').hidden = tab !== 'subtasks';
         document.getElementById('schedules-pane').hidden = tab !== 'schedules';
+        document.getElementById('audit-pane').hidden = tab !== 'audit';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
         if (tab === 'subtasks') loadSubtasks();
+        if (tab === 'audit') loadAudit();
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
       };
@@ -514,9 +582,12 @@
 
     async function loadJobs() {
       const status = document.getElementById('filter-status').value;
-      const params = status ? `?status=${status}&limit=100` : '?limit=100';
+      const agent = document.getElementById('jobs-agent-filter').value;
+      const qs = new URLSearchParams({ limit: '100' });
+      if (status) qs.set('status', status);
+      if (agent) qs.set('agent', agent);
       try {
-        const { jobs, stats } = await api('/api/jobs' + params);
+        const { jobs, stats } = await api('/api/jobs?' + qs.toString());
         renderStats(stats);
         renderJobs(jobs);
       } catch (e) {
@@ -604,8 +675,10 @@
     async function loadSchedules() {
       const el = document.getElementById('schedules-list');
       el.innerHTML = `<div class="empty">${T.loading}</div>`;
+      const agent = document.getElementById('schedules-agent-filter').value;
+      const qs = agent ? '?agent=' + encodeURIComponent(agent) : '';
       try {
-        const { schedules } = await api('/api/schedules');
+        const { schedules } = await api('/api/schedules' + qs);
         if (!schedules.length) { el.innerHTML = `<div class="empty">${T.emptySchedules}</div>`; return; }
         el.innerHTML = `
           <table>
@@ -762,8 +835,10 @@
     async function loadSubtasks() {
       const el = document.getElementById('sub-list');
       el.innerHTML = `<div class="empty">${T.loading}</div>`;
+      const agent = document.getElementById('subtasks-agent-filter').value;
+      const qs = agent ? '?agent=' + encodeURIComponent(agent) : '';
       try {
-        const { subtasks } = await api('/api/subtasks');
+        const { subtasks } = await api('/api/subtasks' + qs);
         if (!subtasks.length) { el.innerHTML = `<div class="empty">${T.subEmpty}</div>`; return; }
         el.innerHTML = `
           <table>
@@ -797,6 +872,85 @@
     }
 
     document.getElementById('btn-sub-refresh').onclick = loadSubtasks;
+
+    // ============================================
+    // Audit tab — invocations history with agent / days / user filter
+    // ============================================
+
+    async function loadAudit() {
+      const el = document.getElementById('audit-list');
+      el.innerHTML = `<div class="empty">${T.loading}</div>`;
+      const agent = document.getElementById('audit-agent-filter').value;
+      const days = document.getElementById('audit-days-filter').value || '7';
+      const user = document.getElementById('audit-user-filter').value.trim();
+      const qs = new URLSearchParams({ days, limit: '200' });
+      if (agent) qs.set('agent', agent);
+      if (user) qs.set('user', user);
+      try {
+        const { invocations, stats } = await api('/api/audit?' + qs.toString());
+        // Stats strip
+        const statsEl = document.getElementById('audit-stats');
+        if (stats && typeof stats.total === 'number') {
+          const top = Object.entries(stats.byAgent || {})
+            .sort((a, b) => b[1] - a[1]).slice(0, 4)
+            .map(([a, n]) => `${esc(a)}=${n}`).join(' · ');
+          statsEl.innerHTML = `Total: <strong>${stats.total}</strong> · ` +
+            `Cost: $${(stats.totalCost || 0).toFixed(4)} · By agent: ${top || '—'}`;
+        } else {
+          statsEl.innerHTML = '';
+        }
+        if (!invocations.length) {
+          el.innerHTML = `<div class="empty">${T.auditEmpty}</div>`;
+          return;
+        }
+        el.innerHTML = `
+          <table>
+            <thead><tr>
+              <th>${T.auditTime}</th>
+              <th>${T.agent}</th>
+              <th>${T.auditPlatform}</th>
+              <th>${T.auditUser}</th>
+              <th>${T.auditIntent}</th>
+              <th>${T.auditDuration}</th>
+              <th>${T.auditCost}</th>
+              <th>${T.status}</th>
+            </tr></thead>
+            <tbody>
+              ${invocations.map(r => `
+                <tr title="trace: ${esc(r.trace_id || '')}${r.error ? '\n' + esc(r.error) : ''}">
+                  <td>${fmtTime(r.ts)}</td>
+                  <td><code>${esc(r.agent)}</code></td>
+                  <td>${esc(r.platform)}</td>
+                  <td><code>${esc(r.user_id || '-')}</code></td>
+                  <td>${esc(r.intent || '-')}</td>
+                  <td>${(r.duration_ms / 1000).toFixed(2)}s</td>
+                  <td>${r.cost ? '$' + Number(r.cost).toFixed(4) : '-'}</td>
+                  <td>${r.success ? '✅' : '❌'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (e) {
+        el.innerHTML = `<div class="empty">${T.error}: ${esc(e.message)}</div>`;
+      }
+    }
+
+    // Agent-filter change handlers per tab. Each dropdown re-runs its tab's
+    // loader; tabs that haven't been opened yet still hold the selection.
+    document.getElementById('jobs-agent-filter').addEventListener('change', loadJobs);
+    document.getElementById('subtasks-agent-filter').addEventListener('change', loadSubtasks);
+    document.getElementById('schedules-agent-filter').addEventListener('change', loadSchedules);
+    document.getElementById('audit-agent-filter').addEventListener('change', loadAudit);
+    document.getElementById('audit-days-filter').addEventListener('change', loadAudit);
+    // User filter is debounced — refresh on blur / Enter, not on every keystroke.
+    document.getElementById('audit-user-filter').addEventListener('change', loadAudit);
+    document.getElementById('btn-audit-refresh').onclick = loadAudit;
+
+    // Schedules tab also gets an explicit refresh button now that it has a
+    // toolbar (was previously bare-list); keeps parity with other tabs.
+    const btnSchedRefresh = document.getElementById('btn-sched-refresh');
+    if (btnSchedRefresh) btnSchedRefresh.onclick = loadSchedules;
 
     // Initial load
     loadJobs();

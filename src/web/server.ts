@@ -145,18 +145,21 @@ export async function startWebServer(options: {
 
     // Subtasks (flattened view of session.subtasks across all conversations)
     if (url.pathname === '/api/subtasks' && req.method === 'GET') {
-      return handleListSubtasks(req, res)
+      return handleListSubtasks(req, res, url)
     }
 
     // Schedules
     if (url.pathname === '/api/schedules' && req.method === 'GET') {
-      return handleListSchedules(req, res)
+      return handleListSchedules(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res)
     }
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
       return handleMetrics(req, res, url)
+    }
+    if (url.pathname === '/api/audit' && req.method === 'GET') {
+      return handleAudit(req, res, url)
     }
     // /api/health handled above the token gate (M4) — keep this comment so
     // future contributors don't re-add the route inside the auth block.
@@ -521,7 +524,8 @@ async function handleListJobs(_req: IncomingMessage, res: ServerResponse, url: U
     const { listJobs, getJobStats } = await import('../core/job-board.js')
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
     const status = url.searchParams.get('status') as 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
-    const jobs = listJobs(limit, status || undefined)
+    const agent = url.searchParams.get('agent') || undefined
+    const jobs = listJobs(limit, status || undefined, agent ? { agent } : {})
     const stats = getJobStats()
     sendJson(res, 200, { jobs, stats })
   } catch (err) {
@@ -601,10 +605,11 @@ async function handleCreateJob(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-async function handleListSchedules(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const { listSchedules } = await import('../core/schedule.js')
-    sendJson(res, 200, { schedules: listSchedules() })
+    const agent = url.searchParams.get('agent') || undefined
+    sendJson(res, 200, { schedules: listSchedules(50, agent ? { agent } : {}) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -659,11 +664,29 @@ async function handleGetBgjob(_req: IncomingMessage, res: ServerResponse, id: st
   }
 }
 
-async function handleListSubtasks(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleListSubtasks(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const { sessionManager } = await import('../core/session.js')
-    const subtasks = await sessionManager.listAllSubtasks()
+    const agent = url.searchParams.get('agent') || undefined
+    const subtasks = await sessionManager.listAllSubtasks(agent ? { agent } : {})
     sendJson(res, 200, { subtasks })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleAudit(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { queryInvocations, getStats } = await import('../core/audit-log.js')
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 1000)
+    const days = parseInt(url.searchParams.get('days') || '7', 10) || 7
+    const agent = url.searchParams.get('agent') || undefined
+    const platform = url.searchParams.get('platform') || undefined
+    const userId = url.searchParams.get('user') || undefined
+    const intent = url.searchParams.get('intent') || undefined
+    const rows = queryInvocations({ limit, days, agent, platform, userId, intent })
+    const stats = getStats()
+    sendJson(res, 200, { invocations: rows, stats })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

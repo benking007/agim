@@ -563,7 +563,7 @@ class SessionManager {
    * cannot reverse it — but each session file preserves the original
    * platform/channelId/threadId fields, which is what we need.
    */
-  async listAllSubtasks(): Promise<Array<SubtaskMeta & {
+  async listAllSubtasks(opts: { agent?: string } = {}): Promise<Array<SubtaskMeta & {
     platform: string
     channelId: string
     threadId: string
@@ -589,6 +589,10 @@ class SessionManager {
         const raw = await readFile(join(SESSIONS_DIR, name), 'utf-8')
         const parsed = JSON.parse(raw) as Partial<Session>
         if (!parsed.subtasks?.length) continue
+        // Filter by parent-agent up-front so we don't allocate items we'll
+        // discard. Subtasks inherit the parent session's agent — there is
+        // no per-subtask agent override today.
+        if (opts.agent && (parsed.agent || '') !== opts.agent) continue
         for (const st of parsed.subtasks) {
           out.push({
             ...st,

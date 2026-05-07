@@ -96,6 +96,8 @@ export interface Schedule {
  *  semantics to {@link OwnerOpts} on job-board.ts. */
 export interface OwnerOpts {
   creatorId?: string
+  /** Optional agent-name filter, mirrors job-board.OwnerOpts.agent. */
+  agent?: string
 }
 
 /**
@@ -177,12 +179,16 @@ export function createSchedule(input: CreateScheduleInput): number {
 export function listSchedules(limit = 50, opts: OwnerOpts = {}): Schedule[] {
   const d = getDb()
   if (!d) return []
+  const conditions: string[] = []
+  const params: unknown[] = []
   if (opts.creatorId !== undefined) {
-    return d.prepare(
-      "SELECT * FROM schedules WHERE (creator_id = ? OR creator_id = '') ORDER BY id DESC LIMIT ?"
-    ).all(opts.creatorId, limit) as Schedule[]
+    conditions.push("(creator_id = ? OR creator_id = '')")
+    params.push(opts.creatorId)
   }
-  return d.prepare('SELECT * FROM schedules ORDER BY id DESC LIMIT ?').all(limit) as Schedule[]
+  if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  return d.prepare(`SELECT * FROM schedules ${where} ORDER BY id DESC LIMIT ?`)
+    .all(...params, limit) as Schedule[]
 }
 
 export function getSchedule(id: number, opts: OwnerOpts = {}): Schedule | null {

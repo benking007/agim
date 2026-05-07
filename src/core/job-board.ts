@@ -209,6 +209,11 @@ function getDb(): Database.Database | null {
  */
 export interface OwnerOpts {
   creatorId?: string
+  /** Optional agent-name filter. When set, only rows whose `agent` column
+   *  matches are returned. Used by the dashboard to give per-agent views
+   *  (claude-code / opencode / codex tabs); IM commands generally don't
+   *  pass it (they want the user's full job history). */
+  agent?: string
 }
 
 export interface CreateJobOpts {
@@ -246,6 +251,7 @@ export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): 
     conditions.push("(creator_id = ? OR creator_id = '')")
     params.push(opts.creatorId)
   }
+  if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   return d.prepare(`SELECT * FROM jobs ${where} ORDER BY created_at DESC LIMIT ?`)
     .all(...params, safeLimit) as Job[]

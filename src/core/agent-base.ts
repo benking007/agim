@@ -412,6 +412,10 @@ export abstract class AgentBase implements AgentAdapter {
       if (signal) signal.removeEventListener('abort', onAbort)
       if (plan.cleanup) {
         try { await plan.cleanup() } catch (err) {
+          // L13: surface to /api/metrics in addition to pino so ops can
+          // alert on cumulative cleanup failures (orphan tmpdir leakage).
+          const { recordAgentCleanupFailure } = await import('./metrics.js')
+          recordAgentCleanupFailure()
           rootLogger.warn({ component: `agent.${this.name}`, agent: this.name, err: String(err) },
             `[${this.name}] cleanup hook threw`)
         }

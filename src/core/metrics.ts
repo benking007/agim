@@ -115,15 +115,26 @@ const startedAt = Date.now()
  *   - auditPruneFailures: every time pruneExpired() in audit-log catches.
  *     A non-zero value here means retention is silently failing — alert
  *     on `rate(im_hub_audit_prune_failed_total[1h]) > 0`.
+ *   - agentCleanupFailures: every time AgentBase's per-spawn cleanup hook
+ *     throws (mcp-config tmpdir unlink, etc.). Surfaces tmpdir leakage
+ *     that would otherwise only appear in scattered warn lines.
  */
 const internalCounters = {
   auditPruneFailures: 0,
+  agentCleanupFailures: 0,
 }
 
 /** Increment when audit-log retention sweep fails. Exposed as a Prometheus
  *  counter; ops should alert on any non-zero rate. */
 export function recordAuditPruneFailure(): void {
   internalCounters.auditPruneFailures++
+}
+
+/** Increment when an agent's per-spawn cleanup hook throws. Exposed as a
+ *  Prometheus counter so leaked tmpdirs (mcp-config etc.) become visible
+ *  on /api/metrics rather than only in warn-level pino output. */
+export function recordAgentCleanupFailure(): void {
+  internalCounters.agentCleanupFailures++
 }
 
 /** Type for the optional approval-bus metrics snapshot pulled in at scrape
@@ -306,6 +317,10 @@ export function toPrometheus(): string {
   lines.push('# TYPE im_hub_audit_prune_failed_total counter')
   lines.push(`im_hub_audit_prune_failed_total ${internalCounters.auditPruneFailures}`)
 
+  lines.push('# HELP im_hub_agent_cleanup_failed_total Per-spawn cleanup hook failures (e.g. mcp-config tmpdir unlink)')
+  lines.push('# TYPE im_hub_agent_cleanup_failed_total counter')
+  lines.push(`im_hub_agent_cleanup_failed_total ${internalCounters.agentCleanupFailures}`)
+
   // Approval-bus snapshot (M14). Pulled lazily so metrics scrapes pick up
   // the latest live counts. When no provider is wired (early startup,
   // tests) we omit the family entirely instead of emitting zeros.
@@ -333,6 +348,7 @@ export function reset(): void {
   intentCounter.clear()
   platformCounter.clear()
   internalCounters.auditPruneFailures = 0
+  internalCounters.agentCleanupFailures = 0
 }
 
 function esc(s: string): string {

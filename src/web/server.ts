@@ -847,6 +847,12 @@ async function handleClientMessage(
         let fullText = ''
         for await (const chunk of result) {
           fullText += chunk
+          // L1: defer when the per-socket send buffer is full. Without
+          // this, a slow client lets the chunk producer keep allocating
+          // frames into the kernel + ws-internal queue, which can grow
+          // to GBs for a long agent response.
+          await awaitWsDrain(ws)
+          if (ws.readyState !== ws.OPEN) break
           sendToClient(ws, { type: 'chunk', text: chunk })
         }
         sendToClient(ws, { type: 'done', text: fullText })
@@ -903,12 +909,49 @@ async function sendSessionHistory(ws: WebSocket, clientId: string, defaultAgent:
   }
 }
 
+/** L1: backpressure threshold for the WS send path. When `ws.bufferedAmount`
+ *  exceeds this, the streaming chunk loop awaits a tick instead of piling up
+ *  more frames. 4 MiB tolerates a few seconds of slow client without
+ *  unbounded memory growth — Node's WebSocket impl honors the kernel
+ *  send buffer behind this number. */
+const WS_BACKPRESSURE_HIGHWATER_BYTES = 4 * 1024 * 1024
+
 /**
  * Send a JSON message to a WebSocket client
  */
 function sendToClient(ws: WebSocket, data: Record<string, unknown>): void {
   if (ws.readyState === ws.OPEN) {
     ws.send(JSON.stringify(data))
+  }
+}
+
+/**
+ * Wait until `ws.bufferedAmount` drops below the highwater mark, or the
+ * socket closes, or the timeout fires. Used by the streaming chunk loop to
+ * stop piling up frames at slow clients.
+ *
+ * Polls every 50 ms — node's `ws` doesn't emit a `drain` event we can hook,
+ * but the buffered amount drops monotonically once the kernel ACKs flush.
+ * Bounded by IMHUB_WS_BACKPRESSURE_TIMEOUT_MS (default 5 s) so a frozen
+ * client can't wedge the agent's chunk producer indefinitely.
+ */
+async function awaitWsDrain(ws: WebSocket): Promise<void> {
+  if (ws.bufferedAmount < WS_BACKPRESSURE_HIGHWATER_BYTES) return
+  const timeoutMs = (() => {
+    const raw = process.env.IMHUB_WS_BACKPRESSURE_TIMEOUT_MS
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 5_000
+  })()
+  const startedAt = Date.now()
+  while (
+    ws.readyState === ws.OPEN
+    && ws.bufferedAmount >= WS_BACKPRESSURE_HIGHWATER_BYTES
+    && Date.now() - startedAt < timeoutMs
+  ) {
+    await new Promise((r) => setTimeout(r, 50))
   }
 }
 

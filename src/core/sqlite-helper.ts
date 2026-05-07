@@ -13,6 +13,11 @@ export interface SqliteHelper {
   get(): Database.Database | null
   /** Wrap a DB call with a try/catch that returns `fallback` on error. */
   safe<T>(fn: (d: Database.Database) => T, fallback: T): T
+  /** Close the underlying handle if open. Idempotent — subsequent get()
+   *  attempts will re-open a fresh connection. Used by graceful shutdown
+   *  in cli.ts so WAL is checkpointed cleanly instead of leaving the
+   *  next startup to recover from -wal/-shm.  */
+  close(): void
   /** Mark the DB broken (test hook). */
   _markBroken(reason: string): void
 }
@@ -75,6 +80,21 @@ export function createSqliteHelper(opts: CreateOptions): SqliteHelper {
         log?.warn({ event: 'sqlite.query.failed', error: err instanceof Error ? err.message : String(err) },
           'SQLite query failed')
         return fallback
+      }
+    },
+
+    close(): void {
+      if (!db) return
+      try {
+        // better-sqlite3 .close() does an implicit WAL checkpoint and
+        // releases the file handles — no async, throws synchronously on
+        // double-close (we guard with the null check above).
+        db.close()
+        log?.info({ event: 'sqlite.closed', file: opts.file })
+      } catch (err) {
+        log?.warn({ event: 'sqlite.close.failed', error: err instanceof Error ? err.message : String(err) })
+      } finally {
+        db = null
       }
     },
 

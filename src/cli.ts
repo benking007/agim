@@ -292,6 +292,25 @@ program
       // processes don't hang. Always called even if start() failed earlier.
       try { await approvalBus.stop() } catch { /* ignore */ }
 
+      // L2: stop background sweepers and checkpoint SQLite WAL files before
+      // exiting. Without these, the next startup has to recover the WAL
+      // (cheap but visible in logs and slows boot).
+      try {
+        const { stopRetentionSweep, closeAuditDb } = await import('./core/audit-log.js')
+        stopRetentionSweep()
+        closeAuditDb()
+      } catch { /* ignore */ }
+      try {
+        const { stopJobRetentionSweep, closeJobBoardDb } = await import('./core/job-board.js')
+        stopJobRetentionSweep()
+        closeJobBoardDb()
+      } catch { /* ignore */ }
+      try {
+        const { stopScheduler, closeScheduleDb } = await import('./core/schedule.js')
+        stopScheduler()
+        closeScheduleDb()
+      } catch { /* ignore */ }
+
       process.exit(0)
     })
 

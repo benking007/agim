@@ -349,3 +349,9 @@ export function stopScheduler(): void {
     tickTimer = null
   }
 }
+
+/** Close the underlying SQLite handle. Called by cli.ts on graceful
+ *  shutdown so the WAL is checkpointed before exit (L2). */
+export function closeScheduleDb(): void {
+  helper.close()
+}

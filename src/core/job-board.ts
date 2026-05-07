@@ -186,6 +186,12 @@ export function stopJobRetentionSweep(): void {
   }
 }
 
+/** Close the underlying SQLite handle. Called by cli.ts on graceful
+ *  shutdown so the WAL is checkpointed before exit (L2). */
+export function closeJobBoardDb(): void {
+  helper.close()
+}
+
 function getDb(): Database.Database | null {
   return helper.get()
 }

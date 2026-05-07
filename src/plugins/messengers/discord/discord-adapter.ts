@@ -28,6 +28,10 @@ export class DiscordAdapter implements MessengerAdapter {
   private messageHandler?: (ctx: MessageContext) => Promise<void>
   private isRunning = false
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>()
+  /** L7: companion AbortController per typing thread. Lets the periodic
+   *  refresh callback bail BEFORE invoking sendTyping when stop() has
+   *  fired, instead of racing against client.destroy(). */
+  private typingAbortControllers = new Map<string, AbortController>()
 
   async start(): Promise<void> {
     // Load config
@@ -91,7 +95,15 @@ export class DiscordAdapter implements MessengerAdapter {
   async stop(): Promise<void> {
     this.isRunning = false
 
-    // Clean up all typing intervals
+    // L7: abort first (signal in-flight refresh callbacks to bail) then
+    // clearInterval (prevent new ticks). Doing it in the other order would
+    // leave one tick that already entered the callback racing with
+    // client.destroy(); even though sendTyping errors are caught, the
+    // log line is noise and the API call wastes a request.
+    for (const ac of this.typingAbortControllers.values()) {
+      ac.abort()
+    }
+    this.typingAbortControllers.clear()
     for (const interval of this.typingIntervals.values()) {
       clearInterval(interval)
     }
@@ -149,14 +161,19 @@ export class DiscordAdapter implements MessengerAdapter {
         // Ignore errors during typing
       }
 
-      // Clear any existing interval
+      // Clear any existing interval + abort signal — both per-thread.
       const existing = this.typingIntervals.get(threadId)
-      if (existing) {
-        clearInterval(existing)
-      }
+      if (existing) clearInterval(existing)
+      const existingAc = this.typingAbortControllers.get(threadId)
+      if (existingAc) existingAc.abort()
 
-      // Discord typing indicator lasts ~10 seconds, refresh every 8 seconds
+      // Discord typing indicator lasts ~10 seconds, refresh every 8 seconds.
+      // L7: AbortController gates each tick — when stop() (or a subsequent
+      // sendTyping(false)) aborts, in-flight callbacks bail early instead
+      // of racing client.destroy().
+      const ac = new AbortController()
       const interval = setInterval(async () => {
+        if (ac.signal.aborted) return
         try {
           await channel.sendTyping()
         } catch {
@@ -165,12 +182,18 @@ export class DiscordAdapter implements MessengerAdapter {
       }, 8000)
 
       this.typingIntervals.set(threadId, interval)
+      this.typingAbortControllers.set(threadId, ac)
     } else {
-      // Clear the refresh interval
+      // Clear the refresh interval + abort signal
       const interval = this.typingIntervals.get(threadId)
       if (interval) {
         clearInterval(interval)
         this.typingIntervals.delete(threadId)
+      }
+      const ac = this.typingAbortControllers.get(threadId)
+      if (ac) {
+        ac.abort()
+        this.typingAbortControllers.delete(threadId)
       }
       // Note: Discord has no "cancel typing" API - it just expires naturally
     }

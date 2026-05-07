@@ -404,7 +404,19 @@ export class ApprovalBus {
       buf += chunk
       if (buf.length > MAX_BUFFER_BYTES) {
         log.warn({ event: 'approval.bus.buffer_overflow', bytes: buf.length })
-        socket.destroy()
+        // L10: best-effort signal to the sidecar BEFORE we close. The
+        // legacy `socket.destroy()` left the sidecar's pending request
+        // hanging on its own timeout (Claude's MCP layer typically
+        // 30 min). A wire-shaped 'fatal' line gives the sidecar a
+        // recognizable reason; if it doesn't parse the new type it still
+        // observes the socket close and bails through its disconnect
+        // handler — strictly better than the silent destroy.
+        try {
+          socket.write(JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' }) + '\n')
+          socket.end()
+        } catch {
+          socket.destroy()
+        }
         return
       }
       let nl: number

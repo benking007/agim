@@ -295,6 +295,9 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
         this.sendHeartbeat().catch(err =>
           log.warn({ err: err instanceof Error ? err.message : String(err) }, 'Heartbeat error')
         )
+        // L14: piggyback context-token sweep on the heartbeat tick (1/min).
+        // Cheap full scan — bounded by active user count.
+        this.cleanupExpiredContextTokens()
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -450,6 +453,23 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     for (const [msgId, timestamp] of this.processedMessages) {
       if (now - timestamp > PROCESSED_MESSAGES_TTL) {
         this.processedMessages.delete(msgId)
+      }
+    }
+  }
+
+  /**
+   * L14: drop expired context-token entries. The original implementation
+   * only removed an entry on read (`getContextToken` checked TTL), so a
+   * userId that messaged once and never came back left its row in the
+   * Map indefinitely. Called from the polling loop at the same cadence
+   * as cleanupProcessedMessages so memory stays bounded under big group
+   * sizes / churning user populations.
+   */
+  private cleanupExpiredContextTokens(): void {
+    const now = Date.now()
+    for (const [userId, cached] of this.contextTokens) {
+      if (now - cached.timestamp > CONTEXT_TOKEN_TTL) {
+        this.contextTokens.delete(userId)
       }
     }
   }

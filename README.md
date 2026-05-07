@@ -37,18 +37,21 @@ im-hub config wechat   # Scan QR to login
 im-hub start           # Start the bridge + web UI on :3000
 ```
 
-## What's new in v0.2.13 → v0.2.15
+## What's new in v0.2.13 → v0.2.18
 
 - **Discord adapter** (Gateway WebSocket via `discord.js`)
 - **Human-in-the-loop tool approval** — Claude pauses on tool calls; you reply `y`/`n` in the same IM thread
 - **Tasks dashboard** at `/tasks` with **Background** (Claude/opencode bgjobs) and **Subtasks** tabs
-- **Multi-tenant workspaces** — per-workspace agent whitelist + rate limits
+- **Multi-tenant workspaces** — per-workspace agent whitelist + rate limits, plus command-level ACL on `/job` `/schedule` `/audit` (each user only sees their own)
 - **ACP server mode** — im-hub itself is an ACP-compatible agent (`POST /tasks` sync + SSE)
-- **Persistent Job Board** + cron scheduler (SQLite, survives restarts)
+- **Persistent Job Board** + cron scheduler (SQLite, survives restarts) with 30-day retention sweep
 - **Smart routing**: intent classifier (CJK + ASCII), circuit breaker, sticky sessions
 - **Structured logging** (`pino`) with `traceId` end-to-end + audit log + Prometheus `/api/metrics`
+- **v0.2.16 — Security hardening (P0 + P1)**: timing-safe token compare, Schedule `notify_url` SSRF guard, secret redaction in logs, approval-socket entropy + perms, `Session.addMessage` per-key mutex
+- **v0.2.17 — Observability & IM polish (P2 + P3)**: static-page CSP / `X-Frame-Options` / `X-Content-Type-Options`, WebSocket connection cap + backpressure, Prometheus label-cardinality whitelist, new counters (`im_hub_audit_prune_failed_total` / `im_hub_agent_cleanup_failed_total` / `im_hub_approval_*`), UTF-16 surrogate-safe message split, auto-allow fingerprint 5→10 chars, SQLite WAL clean checkpoint on SIGINT
+- **v0.2.18 — IM reconnect backoff (M9)**: shared `Backoff` helper (exponential + ±50% jitter) replaces fixed 2s / 5s reconnect delays in Telegram + WeChat polling; defeats thundering-herd on shared network recovery
 
-See [CHANGELOG.md](CHANGELOG.md) for the full list.
+See [CHANGELOG.md](CHANGELOG.md) and [docs/code-review-2026-05-06-main.md](docs/code-review-2026-05-06-main.md) for the full list.
 
 ## Web Chat & Tasks Dashboard
 
@@ -407,10 +410,48 @@ npm start
 - [x] Tasks dashboard surfaces Claude / opencode bgjobs
 - [x] Flattened subtasks tab
 
+### v0.2.16 — Security hardening (P0 + P1)
+- [x] Timing-safe REST + WS token compare (shared `safe-equal`)
+- [x] Schedule `notify_url` SSRF gate (http(s) only, RFC1918 / loopback / IPv6 ULA blocked) + 10s fetch timeout + redirect:'manual'
+- [x] HTML token injection: `JSON.stringify` instead of single-quote splice
+- [x] Telegram bot-token redaction in logs (pino `redact.paths` + adapter-level scrub)
+- [x] WeChat credential file `0o600` + parent dir `0o700`
+- [x] Approval socket path uses 128-bit random + post-listen `chmod 0o600` + stat verification
+- [x] Job result size cap (`IMHUB_JOB_RESULT_MAX_BYTES`, default 1 MiB) + UTF-8/JSON safe truncation
+- [x] Job-board retention + 6h sweep + `creator_id` / `workspace_id` schema migration
+- [x] Multi-tenant ACL on `/job` `/schedule` `/audit` commands (each user sees only their own rows; legacy ownerless rows stay visible for safe upgrades)
+- [x] Workspace whitelist enforced on direct command paths, not just routing
+- [x] Rate-limiter opportunistic auto-cleanup (no setInterval timer)
+- [x] `Session.addMessage` per-key mutex (defeats concurrent read-modify-write race)
+
+### v0.2.17 — Observability & IM polish (P2 + P3)
+- [x] Static-page security headers (`X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` / CSP)
+- [x] `/api/health` declared public (k8s liveness friendly)
+- [x] WebSocket connection cap (`IMHUB_MAX_WS_CLIENTS`, default 100) + `bufferedAmount` backpressure (4 MiB highwater)
+- [x] Prometheus label-cardinality whitelist (`intent` / `platform` → `'other'` for unknowns)
+- [x] New counters: `im_hub_audit_prune_failed_total`, `im_hub_agent_cleanup_failed_total`, `im_hub_approval_pending` / `im_hub_approval_requests_total` / `im_hub_approval_resolved_total{result=allow|deny|timeout}`
+- [x] `intent-llm` cache key SHA-256 + 256-char prompt cap (defeats LRU memory bloat)
+- [x] Auto-allow fingerprint 5 → 10 chars (`git status` ≠ `git stash` ≠ `git submo`)
+- [x] UTF-16 surrogate-safe message split (emoji at boundary no longer renders as `□`)
+- [x] Telegram HTML escape covers `'` / `"` (approval-card `<a href="...">` safety)
+- [x] approval-bus over-cap deny instead of silent socket destroy
+- [x] SQLite WAL clean checkpoint on SIGINT
+- [x] traceId 12 hex → 16 hex (`~2^48` → `~2^64`)
+- [x] WeChat ilink-client fetch timeouts on remaining 4 callsites
+- [x] Discord typing interval companion `AbortController` (no race with `client.destroy()`)
+- [x] WeChat `contextTokens` periodic cleanup on heartbeat tick
+- [x] CI lockfile fix (Tencent mirror URLs → `https://registry.npmjs.org/`)
+
+### v0.2.18 — IM reconnect backoff (M9)
+- [x] Shared `Backoff` helper (exponential + ±jitter, RNG-injectable for tests)
+- [x] Telegram `runPollingLoop`: fixed 2s / 5s setTimeouts → `Backoff(2s, 60s, 0.5)`; 30s healthy-run threshold resets backoff
+- [x] WeChat ilink `pollLoop`: inline `Math.pow(2,n-1)` → `Backoff(2s, 30s, 0.5)`; success path resets
+
 ### v0.3.0
 - [ ] DingTalk adapter
 - [ ] Slack adapter
 - [ ] Approval cards (Feishu/Discord buttons) instead of plain text
+- [ ] Cron `nextOccurrence` internal UTC normalization (DST safety, M5 from CR-2026-05-06)
 
 ## Community <a name="wechat-group"></a>
 

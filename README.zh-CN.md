@@ -37,16 +37,19 @@ im-hub config wechat   # 扫码登录微信
 im-hub start           # 启动桥接 + Web UI（:3000）
 ```
 
-## 0.2.13 → 0.2.15 主要升级
+## 0.2.13 → 0.2.18 主要升级
 
 - **Discord 适配器**（基于 `discord.js` 的 Gateway WebSocket）
 - **工具调用人审（HITL）** — Claude 调工具时自动暂停，IM 同一会话回复 `y`/`n` 即可
 - **任务仪表盘** `/tasks`，新增 **Background**（Claude/opencode bgjobs）与 **Subtasks** 两个标签
-- **多租户 Workspace** — 每个工作区独立的 Agent 白名单 + 限流
+- **多租户 Workspace** — 每个工作区独立的 Agent 白名单 + 限流；`/job` `/schedule` `/audit` 命令也按 creator/workspace 隔离（每个用户只看到自己的）
 - **ACP Server 模式** — im-hub 自身作为 ACP 兼容 Agent（`POST /tasks`，sync + SSE）
-- **持久化 Job Board** + Cron 调度器（SQLite 落地，重启不丢）
+- **持久化 Job Board** + Cron 调度器（SQLite 落地，重启不丢，30 天自动修剪）
 - **智能路由**：意图分类（中英文）、断路器、Sticky 会话
 - **结构化日志**（`pino`）+ 全链路 `traceId` + 审计日志 + Prometheus `/api/metrics`
+- **v0.2.16 — 安全收口（P0 + P1）**：REST/WS token 常量时比较、Schedule `notify_url` SSRF 防护、日志级别 secret redact、approval socket 路径熵 + 权限校验、`Session.addMessage` per-key 互斥
+- **v0.2.17 — 可观测 + IM 文本边界（P2 + P3）**：静态页 CSP / `X-Frame-Options` / `X-Content-Type-Options`，WebSocket 连接上限 + 背压，Prometheus 标签基数白名单，新增 counter（`im_hub_audit_prune_failed_total` / `im_hub_agent_cleanup_failed_total` / `im_hub_approval_*`），UTF-16 代理对安全切分，auto-allow 指纹 5 → 10 字符，SIGINT 关停时 SQLite WAL 干净 checkpoint
+- **v0.2.18 — IM 重连退避（M9）**：抽公共 `Backoff` 助手（指数 + ±50% jitter），替换 Telegram + WeChat polling 的固定 2s / 5s 重连间隔；多实例从同一次网络抖动恢复时不再锁步打 IM 平台
 
 完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -406,10 +409,48 @@ npm start
 - [x] 任务面板接入 Claude / opencode bgjobs
 - [x] Subtask 平铺列表
 
+### v0.2.16 — 安全收口（P0 + P1）
+- [x] REST + WS token 常量时比较（共享 `safe-equal`）
+- [x] Schedule `notify_url` SSRF 防护（仅 http(s)；屏蔽 RFC1918 / loopback / IPv6 ULA）+ 10s fetch 超时 + `redirect:'manual'`
+- [x] HTML 注入 token：用 `JSON.stringify` 取代单引号拼接
+- [x] Telegram bot token 日志脱敏（pino `redact.paths` + adapter 级 scrub）
+- [x] WeChat 凭证文件 `0o600`、父目录 `0o700`
+- [x] Approval socket 路径用 128-bit 随机 + listen 后 `chmod 0o600` + stat 校验
+- [x] Job 结果大小上限（`IMHUB_JOB_RESULT_MAX_BYTES`，默认 1 MiB）+ UTF-8 / JSON 安全截断
+- [x] Job Board 30 天保留 + 6h 修剪 + `creator_id` / `workspace_id` 库内迁移
+- [x] `/job` `/schedule` `/audit` 命令按 creator/workspace 隔离（老库 ownerless 行仍对所有人可见，平稳升级）
+- [x] Workspace 白名单从路由层下沉到命令层
+- [x] 限流器机会式自清扫（不引 setInterval）
+- [x] `Session.addMessage` per-key 互斥（修读改写并发竞态）
+
+### v0.2.17 — 可观测 + IM 文本边界（P2 + P3）
+- [x] 静态页安全响应头（`X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` / CSP）
+- [x] `/api/health` 公开（k8s liveness 友好）
+- [x] WebSocket 连接上限（`IMHUB_MAX_WS_CLIENTS`，默认 100）+ `bufferedAmount` 背压（4 MiB highwater）
+- [x] Prometheus 标签基数白名单（`intent` / `platform` 命中外归 `'other'`）
+- [x] 新增 counter：`im_hub_audit_prune_failed_total`、`im_hub_agent_cleanup_failed_total`、`im_hub_approval_pending` / `im_hub_approval_requests_total` / `im_hub_approval_resolved_total{result=allow|deny|timeout}`
+- [x] `intent-llm` 缓存键 SHA-256 + prompt 截 256 字符（防 LRU 内存膨胀）
+- [x] auto-allow 指纹长度 5 → 10（`git status` ≠ `git stash` ≠ `git submo`）
+- [x] UTF-16 代理对安全切分（emoji 在切点上不再渲染成 `□`）
+- [x] Telegram HTML 转义补 `'` / `"`（approval-card `<a href="...">` 防御）
+- [x] approval-bus 缓冲溢出回 `{type:"fatal"}` 而非静默 destroy
+- [x] SIGINT 关停时 SQLite WAL 干净 checkpoint
+- [x] traceId 12 hex → 16 hex（`~2^48` → `~2^64`）
+- [x] WeChat ilink-client 剩余 4 处 fetch 加超时
+- [x] Discord 输入提示 interval 配 `AbortController`（不再与 `client.destroy()` 抢 channel）
+- [x] WeChat `contextTokens` 在心跳 tick 上周期清扫
+- [x] CI 锁文件修复（腾讯镜像 URL → `https://registry.npmjs.org/`）
+
+### v0.2.18 — IM 重连退避（M9）
+- [x] 抽公共 `Backoff` 助手（指数 + ±jitter，RNG 可注入做确定性测试）
+- [x] Telegram `runPollingLoop`：固定 2s / 5s setTimeout → `Backoff(2s, 60s, 0.5)`；30s 健康运行阈值会重置 backoff
+- [x] WeChat ilink `pollLoop`：内联 `Math.pow(2,n-1)` → `Backoff(2s, 30s, 0.5)`；getUpdates 成功路径调用 reset
+
 ### v0.3.0
 - [ ] 钉钉适配器
 - [ ] Slack 适配器
 - [ ] 飞书 / Discord 卡片按钮版审批（替代纯文本）
+- [ ] Cron `nextOccurrence` 内部 UTC 化（DST 安全，CR-2026-05-06 的 M5）
 
 ## 社区 <a name="wechat-group"></a>
 

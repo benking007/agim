@@ -711,10 +711,27 @@ class SessionManager {
     }
   }
 
-  /** Crash-safe write: tmp file + atomic rename. */
+  /** Crash-safe write: tmp file + atomic rename.
+   *
+   *  Recovers from ENOENT (parent dir missing) by mkdir-recursive + retry
+   *  exactly once. This keeps the manager robust to environments where
+   *  start() wasn't called yet — tests in particular tend to import
+   *  sessionManager without going through the start() lifecycle, and
+   *  saveSessionMeta's outer try/catch would otherwise swallow the ENOENT
+   *  and silently produce a no-op write (the bug that caused
+   *  session-subtasks.test.ts to fail on a fresh CI runner). */
   private async atomicWrite(filePath: string, contents: string): Promise<void> {
     const tmp = `${filePath}.${randomBytes(4).toString('hex')}.tmp`
-    await writeFile(tmp, contents)
+    try {
+      await writeFile(tmp, contents)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        await mkdir(SESSIONS_DIR, { recursive: true })
+        await writeFile(tmp, contents)
+      } else {
+        throw err
+      }
+    }
     try {
       await rename(tmp, filePath)
     } catch (err) {

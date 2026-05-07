@@ -6,10 +6,10 @@
 // We use a unique platform/channelId/threadId triple so we don't collide with
 // any real sessions and we delete them afterwards.
 
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, beforeAll, afterEach } from 'bun:test'
 import { homedir } from 'os'
 import { join } from 'path'
-import { unlink, readdir } from 'fs/promises'
+import { mkdir, unlink, readdir } from 'fs/promises'
 import { sessionManager } from './session.js'
 
 const PLATFORM = 'subtest'
@@ -17,6 +17,16 @@ const CHANNEL = 'c-' + Math.random().toString(36).slice(2, 8)
 const THREAD = 't-' + Math.random().toString(36).slice(2, 8)
 
 const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
+
+// CI runs on a fresh runner where ~/.im-hub/sessions/ doesn't exist yet.
+// Without this beforeAll, saveSessionMeta's atomicWrite hits ENOENT, the
+// outer try/catch swallows it (correct for runtime — never crash the
+// session manager on a disk hiccup) and the test sees 0 subtasks instead
+// of 2. Local boxes happened to have the dir from prior runs, masking
+// the issue until a clean CI environment surfaced it.
+beforeAll(async () => {
+  await mkdir(SESSIONS_DIR, { recursive: true })
+})
 
 async function cleanupTestSessions(): Promise<void> {
   // The session manager sanitizes the key, so we can't compute the filename.

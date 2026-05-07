@@ -204,13 +204,9 @@ export function install(opts: InstallOptions): void {
     log.info({ event: 'approval.router.prompt_sent', platform: n.ctx.platform, threadId: n.ctx.threadId, reqId: n.reqId })
   })
 
-  const platforms = opts.buttonCallbackPlatforms ?? ['telegram', 'feishu', 'wechat']
+  const platforms = opts.buttonCallbackPlatforms ?? ['telegram', 'feishu', 'wechat', 'discord', 'web']
   for (const platform of platforms) {
-    const m = opts.resolveMessenger(platform)
-    if (m?.onButtonCallback) {
-      m.onButtonCallback(async (cb) => handleButtonCallback(platform, cb))
-      log.info({ event: 'approval.router.button_handler_bound', platform })
-    }
+    bindButtonHandlerForPlatform(platform)
   }
 
   // Listen for non-user resolutions (timeout, sidecar disconnect, run
@@ -230,6 +226,27 @@ export function uninstall(): void {
   // Note: we don't unsubscribe button handlers from messengers — tests that
   // re-install will overwrite via onButtonCallback's "replace previous"
   // contract. Production never uninstalls.
+}
+
+/**
+ * Bind the inline-button handler for a single platform's messenger. The
+ * install() loop calls this for every default platform at boot; callers
+ * (e.g. web/server.ts) that register their messenger AFTER install have
+ * to call this themselves to get button-click → resolvePending wiring.
+ *
+ * Idempotent at the messenger level — onButtonCallback's contract is
+ * "replace previous handler", so re-calling this on the same platform
+ * just rewires.
+ *
+ * Silent no-op when the messenger isn't registered yet, has no
+ * onButtonCallback, or the router hasn't been install()'d.
+ */
+export function bindButtonHandlerForPlatform(platform: string): void {
+  if (!installed) return
+  const m = installed.resolveMessenger(platform)
+  if (!m?.onButtonCallback) return
+  m.onButtonCallback(async (cb) => handleButtonCallback(platform, cb))
+  log.info({ event: 'approval.router.button_handler_bound', platform })
 }
 
 /**

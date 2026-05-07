@@ -341,6 +341,20 @@ export async function startWebServer(options: {
     },
   }
   registry.registerMessenger(webMessenger)
+  // approval-router's install() loop bound buttonCallback only for messengers
+  // registered BEFORE install. Our web messenger was just registered (after
+  // install), so we have to wire it ourselves — otherwise in-page approval
+  // card clicks fire WS 'approval-action' messages with no handler on the
+  // server side and silently do nothing. bindButtonHandlerForPlatform is a
+  // no-op if approval-router hasn't been install()'d yet (e.g. degraded
+  // mode where the bus failed to start).
+  try {
+    const { bindButtonHandlerForPlatform } = await import('../core/approval-router.js')
+    bindButtonHandlerForPlatform('web')
+  } catch (err) {
+    webLog.warn({ err: err instanceof Error ? err.message : String(err) },
+      'approval-router button-handler binding skipped (router not installed)')
+  }
 
   return {
     port,

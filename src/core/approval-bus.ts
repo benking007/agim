@@ -19,6 +19,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { logger as rootLogger } from './logger.js'
+import { eventBus } from './event-bus.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
@@ -671,6 +672,18 @@ export class ApprovalBus {
     this.pendingByThread.set(args.ctx.threadId, q)
     this.metricsSnapshot.totalRequests++
 
+    // Event-bus fan-out so the dashboard's /events SSE consumer can pop
+    // up an "approval pending" indicator without waiting on /api/approvals
+    // poll. publish() swallows listener errors — never breaks the bus.
+    eventBus.publish({
+      type: 'approval',
+      phase: 'requested',
+      reqId: args.reqId,
+      threadId: args.ctx.threadId,
+      platform: args.ctx.platform,
+      toolName: args.toolName,
+    })
+
     log.info({
       event: 'approval.bus.request',
       runId: args.runId, reqId: args.reqId, toolName: args.toolName,
@@ -704,13 +717,30 @@ export class ApprovalBus {
     // "timeout" (we said yes by default), distinct from "user said yes",
     // and a normal timeout-deny counts as "timeout", not "deny".
     this.metricsSnapshot.totalResolved++
+    let outcome: 'allow' | 'deny' | 'timeout'
     if (cause === 'timeout') {
       this.metricsSnapshot.totalTimedOut++
+      outcome = 'timeout'
     } else if (decision.behavior === 'deny') {
       this.metricsSnapshot.totalDenied++
+      outcome = 'deny'
     } else {
       this.metricsSnapshot.totalAllowed++
+      outcome = 'allow'
     }
+
+    // Event-bus fan-out (dashboard SSE). Publish post-counter-update so a
+    // metrics-snapshot consumer that reads on a 'resolved' event sees the
+    // already-incremented counter.
+    eventBus.publish({
+      type: 'approval',
+      phase: 'resolved',
+      reqId: p.reqId,
+      threadId: p.threadId,
+      platform: p.platform,
+      toolName: p.toolName,
+      outcome,
+    })
 
     // The "register on allow+all" side-effect lives here (covers any path
     // through cancelPending — both resolvePending and the grace timer).

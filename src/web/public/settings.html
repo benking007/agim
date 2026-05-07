@@ -70,6 +70,25 @@
         nameRequired: 'Agent name is required',
         endpointRequired: 'Endpoint URL is required',
         installHint: 'npm i -g',
+        workspacesTitle: 'Workspaces',
+        workspacesNone: 'Only the default workspace exists. Add one to scope agents/rate-limits per team.',
+        workspaceId: 'ID',
+        workspaceName: 'Name',
+        workspaceAgents: 'Agents (comma)',
+        workspaceMembers: 'Members (comma userIds, blank = open)',
+        workspaceRateLimit: 'Rate limit',
+        workspaceRate: 'Rate / interval',
+        workspaceInterval: 'Interval (sec)',
+        workspaceBurst: 'Burst',
+        workspaceAdd: 'Add or update workspace',
+        workspaceEdit: 'Edit',
+        workspaceDelete: 'Delete',
+        workspaceReset: 'Reset',
+        workspaceConfirmDelete: 'Delete workspace "{id}"?',
+        workspaceSaved: 'Workspace saved',
+        workspaceDeleted: 'Workspace deleted',
+        workspaceIdHelp: 'Letters / digits / _ / - only',
+        workspaceDefaultLocked: 'default (locked)',
       },
       zh: {
         title: 'im-hub — 设置',
@@ -126,6 +145,25 @@
         nameRequired: 'Agent 名称为必填项',
         endpointRequired: '端点 URL 为必填项',
         installHint: '安装命令：npm i -g',
+        workspacesTitle: '工作区',
+        workspacesNone: '仅有默认工作区。新增工作区可以为不同团队限定 agent 白名单与限流。',
+        workspaceId: 'ID',
+        workspaceName: '名称',
+        workspaceAgents: 'Agent（逗号分隔）',
+        workspaceMembers: '成员（逗号分隔 userId；空 = 开放）',
+        workspaceRateLimit: '限流',
+        workspaceRate: '速率 / 间隔',
+        workspaceInterval: '间隔（秒）',
+        workspaceBurst: '突发上限',
+        workspaceAdd: '新增 / 更新工作区',
+        workspaceEdit: '编辑',
+        workspaceDelete: '删除',
+        workspaceReset: '清空',
+        workspaceConfirmDelete: '确认删除工作区 "{id}" ？',
+        workspaceSaved: '工作区已保存',
+        workspaceDeleted: '工作区已删除',
+        workspaceIdHelp: '仅支持字母 / 数字 / _ / -',
+        workspaceDefaultLocked: '默认（不可改）',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -443,6 +481,10 @@
 
     // State
     let config = null;
+    /** Workspace list pulled from /api/workspaces?full=1. Null until first
+     *  fetch completes; render falls through with empty rows in that case
+     *  and refetch happens after init() completes. */
+    let workspaceList = null;
     let agentStatus = {};
 
     // DOM
@@ -477,10 +519,27 @@
         const data = await res.json();
         config = data;
         agentStatus = data.agentStatus || {};
+        // Workspaces come from a separate endpoint so the registry's
+        // runtime state (which may include extra/removed entries via
+        // REST CRUD since process start) is the source of truth.
+        try {
+          const wres = await authFetch('/api/workspaces?full=1');
+          if (wres.ok) workspaceList = (await wres.json()).workspaces || [];
+        } catch { /* fall through with workspaceList = null */ }
         render();
       } catch (err) {
         app.innerHTML = `<div class="loading" style="color:var(--red)">${t('loadFailed')}: ${err.message}</div>`;
       }
+    }
+
+    /** Refetch the workspace list and re-render just the workspaces card.
+     *  Cheaper than a full settings re-render for create/update/delete. */
+    async function reloadWorkspaces() {
+      try {
+        const wres = await authFetch('/api/workspaces?full=1');
+        if (wres.ok) workspaceList = (await wres.json()).workspaces || [];
+      } catch { /* keep stale list, surface via toast on next save */ }
+      render();
     }
 
     function render() {
@@ -489,6 +548,7 @@
         ${renderAgentsCard()}
         ${renderMessengersCard()}
         ${renderAcpCard()}
+        ${renderWorkspacesCard()}
         ${renderGeneralCard()}
       `;
       bindEvents();
@@ -701,6 +761,109 @@
     }
 
     // ==========================================
+    // Workspaces card (PR-C)
+    // ==========================================
+    function renderWorkspacesCard() {
+      const list = workspaceList || [];
+      // Surface default at the top, locked. Custom workspaces follow.
+      const sorted = list.slice().sort((a, b) => {
+        if (a.id === 'default') return -1;
+        if (b.id === 'default') return 1;
+        return a.id.localeCompare(b.id);
+      });
+
+      const escHtml = (s) => String(s || '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+
+      const rows = sorted.length ? sorted.map((w) => {
+        const isDefault = w.id === 'default';
+        const rl = w.rateLimit
+          ? `${w.rateLimit.rate}/${w.rateLimit.intervalSec}s · burst ${w.rateLimit.burst}`
+          : '—';
+        const agents = (w.agents && w.agents.length) ? escHtml(w.agents.join(', ')) : '<span style="color:var(--text-dim)">*</span>';
+        const members = (w.members && w.members.length) ? w.members.length : `<span style="color:var(--text-dim)">*</span>`;
+        return `
+          <tr data-ws-id="${escHtml(w.id)}">
+            <td>
+              <strong>${escHtml(w.id)}</strong>
+              ${isDefault ? `<br><span class="badge">${t('workspaceDefaultLocked')}</span>` : ''}
+              <br><span style="font-size:11px;color:var(--text-dim)">${escHtml(w.name || w.id)}</span>
+            </td>
+            <td style="font-family:monospace;font-size:12px;max-width:240px;word-break:break-word">${agents}</td>
+            <td>${members}</td>
+            <td style="font-size:12px">${rl}</td>
+            <td>
+              ${isDefault ? '' : `
+                <button class="btn btn-sm" data-edit-ws="${escHtml(w.id)}">${t('workspaceEdit')}</button>
+                <button class="btn btn-sm btn-danger" data-del-ws="${escHtml(w.id)}">${t('workspaceDelete')}</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('') : `<tr><td colspan="5" style="color:var(--text-dim);text-align:center;padding:20px">${t('workspacesNone')}</td></tr>`;
+
+      return `
+        <div class="card">
+          <h2>${t('workspacesTitle')} <span class="badge">${list.length}</span></h2>
+          <table class="acp-table">
+            <thead>
+              <tr>
+                <th>${t('workspaceId')}</th>
+                <th>${t('workspaceAgents')}</th>
+                <th>${t('workspaceMembers')}</th>
+                <th>${t('workspaceRateLimit')}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          <hr class="divider">
+          <div style="font-size:13px;font-weight:600;margin-bottom:10px">${t('workspaceAdd')}</div>
+          <div class="row">
+            <div>
+              <label>${t('workspaceId')} <span style="font-weight:400;color:var(--text-dim);font-size:11px">(${t('workspaceIdHelp')})</span></label>
+              <input type="text" id="wsId" placeholder="team-data">
+            </div>
+            <div>
+              <label>${t('workspaceName')}</label>
+              <input type="text" id="wsName" placeholder="Data team">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>${t('workspaceAgents')}</label>
+              <input type="text" id="wsAgents" placeholder="opencode, claude-code">
+            </div>
+            <div>
+              <label>${t('workspaceMembers')}</label>
+              <input type="text" id="wsMembers" placeholder="user-1, user-2">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>${t('workspaceRate')}</label>
+              <input type="number" id="wsRate" placeholder="10" min="1">
+            </div>
+            <div>
+              <label>${t('workspaceInterval')}</label>
+              <input type="number" id="wsInterval" placeholder="60" min="1">
+            </div>
+            <div>
+              <label>${t('workspaceBurst')}</label>
+              <input type="number" id="wsBurst" placeholder="15" min="1">
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" id="resetWs">${t('workspaceReset')}</button>
+            <button class="btn btn-primary" id="saveWs">${t('save')}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // ==========================================
     // General card
     // ==========================================
     function renderGeneralCard() {
@@ -797,6 +960,110 @@
       document.getElementById('saveGeneral')?.addEventListener('click', async () => {
         config.webPort = parseInt(document.getElementById('webPort').value) || 3000;
         await saveConfig();
+      });
+
+      // ==========================================
+      // Workspaces (PR-C)
+      // ==========================================
+
+      // Click "Edit" on a row → pre-fill the form. The same form's Save
+      // button always POSTs, which the server-side handler treats as
+      // upsert (workspaceRegistry.add overwrites by id).
+      document.querySelectorAll('[data-edit-ws]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-edit-ws');
+          const w = (workspaceList || []).find((x) => x.id === id);
+          if (!w) return;
+          const set = (elId, v) => { const el = document.getElementById(elId); if (el) el.value = v; };
+          set('wsId', w.id);
+          set('wsName', w.name || w.id);
+          set('wsAgents', (w.agents || []).join(', '));
+          set('wsMembers', (w.members || []).join(', '));
+          set('wsRate', w.rateLimit?.rate ?? '');
+          set('wsInterval', w.rateLimit?.intervalSec ?? '');
+          set('wsBurst', w.rateLimit?.burst ?? '');
+          // Lock the id field on edit so a typo can't accidentally create
+          // a parallel row instead of updating the chosen one.
+          const idInput = document.getElementById('wsId');
+          if (idInput) idInput.readOnly = true;
+          // Scroll the form into view so the user sees what was filled.
+          document.getElementById('saveWs')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      });
+
+      // Click "Delete" on a row → confirm + DELETE.
+      document.querySelectorAll('[data-del-ws]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-del-ws');
+          if (!id) return;
+          if (!confirm(t('workspaceConfirmDelete').replace('{id}', id))) return;
+          try {
+            const res = await authFetch(`/api/workspaces/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error || res.statusText);
+            }
+            toast(t('workspaceDeleted'), 'success');
+            await reloadWorkspaces();
+          } catch (err) {
+            toast(`${t('error')}: ${err.message}`, 'error');
+          }
+        });
+      });
+
+      // Reset the form (clear inputs + unlock id field).
+      document.getElementById('resetWs')?.addEventListener('click', () => {
+        ['wsId', 'wsName', 'wsAgents', 'wsMembers', 'wsRate', 'wsInterval', 'wsBurst'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            if (id === 'wsId') el.readOnly = false;
+          }
+        });
+      });
+
+      // Save (create or upsert) workspace.
+      document.getElementById('saveWs')?.addEventListener('click', async () => {
+        const id = document.getElementById('wsId').value.trim();
+        if (!id) { toast(t('workspaceId') + ' required', 'error'); return; }
+        if (id === 'default') { toast('"default" is reserved', 'error'); return; }
+        const splitCsv = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+        const payload = {
+          id,
+          name: document.getElementById('wsName').value.trim() || id,
+          agents: splitCsv(document.getElementById('wsAgents').value),
+          members: splitCsv(document.getElementById('wsMembers').value),
+        };
+        const rate = parseInt(document.getElementById('wsRate').value, 10);
+        const intervalSec = parseInt(document.getElementById('wsInterval').value, 10);
+        const burst = parseInt(document.getElementById('wsBurst').value, 10);
+        if (Number.isFinite(rate) || Number.isFinite(intervalSec) || Number.isFinite(burst)) {
+          payload.rateLimit = {
+            rate: Number.isFinite(rate) ? rate : 10,
+            intervalSec: Number.isFinite(intervalSec) ? intervalSec : 60,
+            burst: Number.isFinite(burst) ? burst : 15,
+          };
+        }
+        try {
+          const res = await authFetch('/api/workspaces', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || res.statusText);
+          }
+          toast(t('workspaceSaved'), 'success');
+          // Reset form for next use; reloadWorkspaces re-renders so the
+          // new row appears immediately.
+          document.getElementById('resetWs')?.click();
+          await reloadWorkspaces();
+        } catch (err) {
+          toast(`${t('error')}: ${err.message}`, 'error');
+        }
       });
     }
 

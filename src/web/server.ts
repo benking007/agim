@@ -2,7 +2,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { readdir, stat, readFile } from 'fs/promises'
+import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 import { randomBytes } from 'crypto'
@@ -203,6 +204,21 @@ export async function startWebServer(options: {
     const approvalResolveMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/resolve$/)
     if (approvalResolveMatch && req.method === 'POST') {
       return handleResolveApproval(req, res, approvalResolveMatch[1])
+    }
+    // PR-D: Agent workspace file browser. Read-only inspection of
+    // ~/.im-hub-workspaces/<agent>/ contents — list dirs, peek small
+    // text files. Edits / writes intentionally not exposed; ops use ssh.
+    if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
+      return handleWorkspaceFiles(req, res, url)
+    }
+    // PR-D: Job batch operations. Same semantics as /api/jobs/:id/cancel
+    // and /run but accepts an array of ids in one request — saves N
+    // round-trips when the user multi-selects a long list.
+    if (url.pathname === '/api/jobs/batch-cancel' && req.method === 'POST') {
+      return handleBatchJob(req, res, 'cancel')
+    }
+    if (url.pathname === '/api/jobs/batch-run' && req.method === 'POST') {
+      return handleBatchJob(req, res, 'run', options.defaultAgent)
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
     // pushed real-time so the dashboard stops polling. EventSource has no
@@ -1098,6 +1114,219 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
     sendJson(res, 200, { ok: true, resolved })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** Hard cap on file content we'll ship over the wire — avoids OOM and keeps
+ *  the browser responsive. Matches the soft limit our log-tail endpoints use. */
+const WORKSPACE_FILE_MAX_BYTES = 1 * 1024 * 1024
+/** Bytes scanned for a binary heuristic. Null byte in this window → binary. */
+const BINARY_PROBE_BYTES = 8 * 1024
+
+/**
+ * Read-only view of `~/.im-hub-workspaces/<agent>/`. The Files tab in /tasks
+ * uses it to inspect what an IM-context agent is reading and writing into its
+ * pinned workspace (CLAUDE.md, AGENTS.md, scratch notes, etc.).
+ *
+ * Query params:
+ *   agent — required, MUST match a registered agent name. We reject anything
+ *           else to keep `agent` from sneaking traversal segments past the
+ *           join (e.g. `?agent=../../etc`).
+ *   path  — optional relative path under the agent's workspace. Defaults to ''.
+ *
+ * Response shape:
+ *   { type:'dir', entries:[{name,isDir,size,mtime}] }
+ *   { type:'file', content, size, encoding:'utf-8'|'base64', truncated }
+ *
+ * Path-traversal defense: after `resolvePath(base, userPath)` we verify the
+ * result is exactly `base` or starts with `base + sep`. A `..`-laden path
+ * collapses outside the base and gets rejected before any read.
+ *
+ * Edits / writes intentionally not exposed; ops use plain ssh.
+ */
+async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const agent = url.searchParams.get('agent') || ''
+    const userPath = url.searchParams.get('path') || ''
+
+    if (!agent) {
+      sendJson(res, 400, { error: 'Missing required ?agent=' })
+      return
+    }
+    // Whitelist agent against the registry. Even an empty registry won't
+    // expose anything because a non-registered name fails this check.
+    const known = new Set(registry.listAgents())
+    if (!known.has(agent)) {
+      sendJson(res, 404, { error: `Unknown agent "${agent}"` })
+      return
+    }
+
+    const { defaultAgentCwd } = await import('../core/agent-cwd.js')
+    const base = resolvePath(defaultAgentCwd(agent))
+    const target = resolvePath(base, userPath)
+    // The base itself is allowed; anything else must live strictly below it.
+    if (target !== base && !target.startsWith(base + pathSep)) {
+      sendJson(res, 400, { error: 'Path escapes workspace root' })
+      return
+    }
+
+    let st
+    try {
+      st = await stat(target)
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === 'ENOENT') {
+        sendJson(res, 404, { error: 'Not found', path: relativePath(base, target) })
+        return
+      }
+      throw err
+    }
+
+    if (st.isDirectory()) {
+      const names = await readdir(target)
+      const entries = await Promise.all(names.map(async (name) => {
+        try {
+          const sub = await stat(join(target, name))
+          return {
+            name,
+            isDir: sub.isDirectory(),
+            size: sub.isDirectory() ? null : sub.size,
+            mtime: sub.mtime.toISOString(),
+          }
+        } catch {
+          // Broken symlink or race-deleted entry — surface but mark unknown.
+          return { name, isDir: false, size: null, mtime: null, broken: true }
+        }
+      }))
+      // Dirs first, then case-insensitive name sort — matches the convention
+      // most file-managers use. Stable in practice (Intl.Collator sort).
+      entries.sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      })
+      sendJson(res, 200, {
+        type: 'dir',
+        agent,
+        path: relativePath(base, target),
+        base,
+        entries,
+      })
+      return
+    }
+
+    if (!st.isFile()) {
+      sendJson(res, 400, { error: 'Not a regular file' })
+      return
+    }
+
+    // For files larger than the cap, we still return metadata + a note —
+    // user can ssh in for the rest. Avoids surprising the browser with
+    // a 50 MB log dump.
+    const truncated = st.size > WORKSPACE_FILE_MAX_BYTES
+    const buf = await readFile(target)
+    const slice = truncated ? buf.subarray(0, WORKSPACE_FILE_MAX_BYTES) : buf
+    // Binary detection: a NUL byte in the first 8 KB is a strong signal.
+    // Cheaper than full UTF-8 validation and matches grep's heuristic.
+    const probe = slice.subarray(0, Math.min(slice.length, BINARY_PROBE_BYTES))
+    const isBinary = probe.includes(0)
+    sendJson(res, 200, {
+      type: 'file',
+      agent,
+      path: relativePath(base, target),
+      size: st.size,
+      mtime: st.mtime.toISOString(),
+      encoding: isBinary ? 'base64' : 'utf-8',
+      content: isBinary ? slice.toString('base64') : slice.toString('utf-8'),
+      truncated,
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * Run cancel/run across an array of job ids in one request. Saves N round
+ * trips when the user multi-selects a long list in the Jobs tab.
+ *
+ * Body: { ids: number[] }
+ * Response: { results: Array<{ id, ok, error?, traceId? }> }
+ *
+ * Per-id failures don't fail the whole request — each entry carries its own
+ * status so the UI can mark partial success.
+ */
+async function handleBatchJob(
+  req: IncomingMessage,
+  res: ServerResponse,
+  action: 'cancel' | 'run',
+  defaultAgent?: string,
+): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    let parsed: { ids?: unknown }
+    try { parsed = JSON.parse(body) as typeof parsed } catch {
+      sendJson(res, 400, { error: 'Invalid JSON body' })
+      return
+    }
+    if (!Array.isArray(parsed.ids) || parsed.ids.length === 0) {
+      sendJson(res, 400, { error: 'ids must be a non-empty array of numbers' })
+      return
+    }
+    // Cap so a runaway client can't queue thousands of spawns at once. Same
+    // ceiling we use elsewhere for batched ops.
+    if (parsed.ids.length > 100) {
+      sendJson(res, 400, { error: 'Maximum 100 ids per batch' })
+      return
+    }
+    const ids = parsed.ids
+      .map((x) => (typeof x === 'number' ? x : parseInt(String(x), 10)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    if (ids.length === 0) {
+      sendJson(res, 400, { error: 'No valid ids in array' })
+      return
+    }
+
+    const { getJob, cancelJob, runJob } = await import('../core/job-board.js')
+    const { AgentBase } = await import('../core/agent-base.js')
+
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        if (action === 'cancel') {
+          return { id, ok: cancelJob(id) }
+        }
+        const job = getJob(id)
+        if (!job) return { id, ok: false, error: 'Job not found' }
+        const agent = registry.findAgent(job.agent)
+        if (!agent) return { id, ok: false, error: `Agent "${job.agent}" not registered` }
+
+        const traceId = generateTraceId()
+        const log = createLogger({ traceId, platform: 'web', component: 'job-run-batch' })
+        // Same fire-and-forget pattern as handleRunJob — the dashboard
+        // streams status from /events / /api/jobs.
+        void runJob(id, async function* (j, _logger, signal) {
+          if (agent instanceof AgentBase) {
+            const text = await agent.spawnAndCollect(j.prompt, signal)
+            if (text) yield text
+          } else {
+            for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [])) {
+              if (signal.aborted) break
+              yield chunk
+            }
+          }
+        }, log).catch(() => { /* job-board logs */ })
+        return { id, ok: true, traceId }
+      } catch (err) {
+        return { id, ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }))
+
+    // defaultAgent isn't used directly — runJob reads job.agent — but we
+    // accept it to keep the call-site symmetric with handleInvoke.
+    void defaultAgent
+    sendJson(res, 200, { results })
+  } catch (err) {
+    const e = err as Error & { handled?: boolean; statusCode?: number }
+    if (e?.handled) return
+    if (!res.headersSent) sendJson(res, e?.statusCode || 500, { error: e instanceof Error ? e.message : String(err) })
   }
 }
 

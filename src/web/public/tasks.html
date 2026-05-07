@@ -122,6 +122,26 @@
         auditOk: 'OK',
         auditError: 'Error',
         auditEmpty: 'No invocations recorded yet for this filter.',
+        // Files tab — read-only browser of ~/.im-hub-workspaces/<agent>/
+        tabsFiles: 'Files',
+        filesAgent: 'Agent',
+        filesPath: 'Path',
+        filesEmpty: 'Empty directory.',
+        filesNoAgent: 'No agents registered yet.',
+        filesUp: '⬆ up',
+        filesRoot: '(root)',
+        filesSize: 'Size',
+        filesMtime: 'Modified',
+        filesBinary: 'Binary file — content shown as base64.',
+        filesTruncated: 'File too large — showing first 1 MiB.',
+        filesNotFound: 'Not found.',
+        filesLoad: 'Load',
+        // Jobs batch toolbar
+        jobsSelectAll: 'Select all',
+        jobsBatchCancel: 'Cancel selected',
+        jobsBatchRun: 'Run selected',
+        jobsBatchEmpty: 'No jobs selected.',
+        jobsBatchResult: 'Batch result: {ok} ok, {fail} failed',
       },
       zh: {
         title: 'im-hub — 任务',
@@ -222,6 +242,26 @@
         auditOk: '成功',
         auditError: '错误',
         auditEmpty: '当前过滤下暂无调用记录。',
+        // Files tab — read-only browser of ~/.im-hub-workspaces/<agent>/
+        tabsFiles: '工作区',
+        filesAgent: 'Agent',
+        filesPath: '路径',
+        filesEmpty: '空目录。',
+        filesNoAgent: '尚未注册任何 Agent。',
+        filesUp: '⬆ 上一级',
+        filesRoot: '(根)',
+        filesSize: '大小',
+        filesMtime: '修改时间',
+        filesBinary: '二进制文件 — 以 base64 显示。',
+        filesTruncated: '文件过大 — 仅显示前 1 MiB。',
+        filesNotFound: '未找到。',
+        filesLoad: '加载',
+        // Jobs batch toolbar
+        jobsSelectAll: '全选',
+        jobsBatchCancel: '批量取消',
+        jobsBatchRun: '批量运行',
+        jobsBatchEmpty: '未选择任何任务。',
+        jobsBatchResult: '批量结果：成功 {ok}，失败 {fail}',
       },
     };
     window.__t = T[window.__lang];
@@ -512,6 +552,7 @@
       <button class="tab" data-tab="schedules" id="tab-schedules"></button>
       <button class="tab" data-tab="approvals" id="tab-approvals"></button>
       <button class="tab" data-tab="health" id="tab-health"></button>
+      <button class="tab" data-tab="files" id="tab-files"></button>
       <button class="tab" data-tab="audit" id="tab-audit"></button>
     </div>
 
@@ -535,6 +576,11 @@
         <button id="btn-refresh"></button>
         <label><input type="checkbox" id="auto-refresh" checked> <span id="lbl-auto"></span></label>
         <button id="btn-new" class="primary"></button>
+      </div>
+      <div class="toolbar" id="batch-toolbar" style="display:none">
+        <span id="batch-summary" style="color:var(--muted);font-size:13px"></span>
+        <button id="btn-batch-run"></button>
+        <button id="btn-batch-cancel" class="danger"></button>
       </div>
       <div id="jobs-list"></div>
     </section>
@@ -592,6 +638,21 @@
       <div id="health-list"></div>
     </section>
 
+    <section id="files-pane" hidden>
+      <div class="toolbar">
+        <label><span id="lbl-files-agent"></span>
+          <select id="files-agent" data-agent-filter></select>
+        </label>
+        <button id="btn-files-up"></button>
+        <code id="files-current" style="color:var(--muted);font-size:13px"></code>
+        <button id="btn-files-refresh" style="margin-left:auto"></button>
+      </div>
+      <div class="files-layout" style="display:flex;gap:12px;align-items:flex-start">
+        <div id="files-tree" style="flex:0 0 320px;max-height:60vh;overflow:auto"></div>
+        <div id="files-content" style="flex:1 1 auto;min-width:0"></div>
+      </div>
+    </section>
+
     <section id="audit-pane" hidden>
       <div class="toolbar">
         <select id="audit-agent-filter" data-agent-filter>
@@ -639,6 +700,7 @@
     document.getElementById('tab-audit').textContent = T.tabsAudit;
     document.getElementById('tab-approvals').textContent = T.tabsApprovals;
     document.getElementById('tab-health').textContent = T.tabsHealth;
+    document.getElementById('tab-files').textContent = T.tabsFiles;
     document.getElementById('btn-bg-refresh').textContent = T.refresh;
     document.getElementById('btn-sub-refresh').textContent = T.refresh;
     document.getElementById('btn-approvals-refresh').textContent = T.refresh;
@@ -649,6 +711,11 @@
     document.getElementById('btn-refresh').textContent = T.refresh;
     document.getElementById('btn-new').textContent = T.newJob;
     document.getElementById('lbl-auto').textContent = T.autoRefresh;
+    document.getElementById('lbl-files-agent').textContent = T.filesAgent;
+    document.getElementById('btn-files-up').textContent = T.filesUp;
+    document.getElementById('btn-files-refresh').textContent = T.refresh;
+    document.getElementById('btn-batch-run').textContent = T.jobsBatchRun;
+    document.getElementById('btn-batch-cancel').textContent = T.jobsBatchCancel;
     {
       const fs = document.getElementById('filter-status');
       fs.options[0].textContent = T.filterAll;
@@ -671,6 +738,7 @@
         document.getElementById('audit-pane').hidden = tab !== 'audit';
         document.getElementById('approvals-pane').hidden = tab !== 'approvals';
         document.getElementById('health-pane').hidden = tab !== 'health';
+        document.getElementById('files-pane').hidden = tab !== 'files';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
@@ -678,6 +746,7 @@
         if (tab === 'audit') loadAudit();
         if (tab === 'approvals') loadApprovals();
         if (tab === 'health') loadHealth();
+        if (tab === 'files') ensureFilesAgentLoaded().then(() => loadFiles(filesPath));
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
         setupApprovalsAutoRefresh();
@@ -719,13 +788,30 @@
       ).join('');
     }
 
+    // Selection state for batch ops. Lives outside renderJobs so a refresh
+    // after a successful batch run/cancel can reconcile against still-visible
+    // rows without forgetting the user's prior selection.
+    const jobSelection = new Set();
+
     function renderJobs(jobs) {
       const el = document.getElementById('jobs-list');
-      if (!jobs.length) { el.innerHTML = `<div class="empty">${T.empty}</div>`; return; }
+      if (!jobs.length) {
+        el.innerHTML = `<div class="empty">${T.empty}</div>`;
+        updateBatchToolbar();
+        return;
+      }
+      // Drop ids that disappeared since last render so the toolbar count
+      // stays accurate even after the server sweeps completed jobs.
+      const visible = new Set(jobs.map(j => j.id));
+      for (const id of Array.from(jobSelection)) {
+        if (!visible.has(id)) jobSelection.delete(id);
+      }
+      const allSelected = jobs.length > 0 && jobs.every(j => jobSelection.has(j.id));
       el.innerHTML = `
         <table>
           <thead>
             <tr>
+              <th><input type="checkbox" id="job-select-all" ${allSelected ? 'checked' : ''} title="${T.jobsSelectAll}"></th>
               <th>#</th>
               <th>${T.agent}</th>
               <th>${T.prompt}</th>
@@ -737,6 +823,7 @@
           <tbody>
             ${jobs.map(j => `
               <tr data-id="${j.id}">
+                <td><input type="checkbox" data-sel="${j.id}" ${jobSelection.has(j.id) ? 'checked' : ''}></td>
                 <td>#${j.id}</td>
                 <td><code>${j.agent}</code></td>
                 <td class="truncate">${esc(j.prompt)}</td>
@@ -759,8 +846,53 @@
         tr.querySelector('[data-act="view"]')?.addEventListener('click', () => showJob(id));
         tr.querySelector('[data-act="run"]')?.addEventListener('click', () => runJob(id));
         tr.querySelector('[data-act="cancel"]')?.addEventListener('click', () => cancelJob(id));
+        tr.querySelector('[data-sel]')?.addEventListener('change', (e) => {
+          if (e.target.checked) jobSelection.add(id);
+          else jobSelection.delete(id);
+          updateBatchToolbar();
+        });
       });
+      const sa = el.querySelector('#job-select-all');
+      if (sa) {
+        sa.addEventListener('change', () => {
+          if (sa.checked) for (const j of jobs) jobSelection.add(j.id);
+          else for (const j of jobs) jobSelection.delete(j.id);
+          renderJobs(jobs);
+        });
+      }
+      updateBatchToolbar();
     }
+
+    function updateBatchToolbar() {
+      const bar = document.getElementById('batch-toolbar');
+      const summary = document.getElementById('batch-summary');
+      const n = jobSelection.size;
+      bar.style.display = n > 0 ? '' : 'none';
+      summary.textContent = n > 0 ? `${n} selected` : '';
+    }
+
+    async function batchRun() {
+      const ids = Array.from(jobSelection);
+      if (!ids.length) { alert(T.jobsBatchEmpty); return; }
+      const r = await api('/api/jobs/batch-run', { method: 'POST', body: JSON.stringify({ ids }) });
+      const ok = r.results.filter(x => x.ok).length;
+      const fail = r.results.length - ok;
+      alert(T.jobsBatchResult.replace('{ok}', ok).replace('{fail}', fail));
+      jobSelection.clear();
+      loadJobs();
+    }
+    async function batchCancel() {
+      const ids = Array.from(jobSelection);
+      if (!ids.length) { alert(T.jobsBatchEmpty); return; }
+      const r = await api('/api/jobs/batch-cancel', { method: 'POST', body: JSON.stringify({ ids }) });
+      const ok = r.results.filter(x => x.ok).length;
+      const fail = r.results.length - ok;
+      alert(T.jobsBatchResult.replace('{ok}', ok).replace('{fail}', fail));
+      jobSelection.clear();
+      loadJobs();
+    }
+    document.getElementById('btn-batch-run').onclick = batchRun;
+    document.getElementById('btn-batch-cancel').onclick = batchCancel;
 
     function esc(s) {
       return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -1364,6 +1496,161 @@
 
     document.getElementById('btn-approvals-refresh').onclick = loadApprovals;
     document.getElementById('approvals-auto-refresh').onchange = setupApprovalsAutoRefresh;
+
+    // ============================================================
+    // Files tab (PR-D) — read-only browser of ~/.im-hub-workspaces/<agent>/
+    // ============================================================
+    // Pure pull model: list directory or peek a file via /api/workspace-files.
+    // No write/edit affordances by design; ops use ssh.
+
+    let filesAgent = '';      // currently-selected agent
+    let filesPath = '';       // current relative path under that agent's root
+    let filesAgentsLoaded = false;
+
+    async function ensureFilesAgentLoaded() {
+      if (filesAgentsLoaded) return;
+      filesAgentsLoaded = true;
+      try {
+        const agentsRes = await fetch('/api/agents/status', {
+          headers: { 'X-IM-Hub-Token': TOKEN },
+        }).then(r => r.json());
+        const names = Object.keys(agentsRes);
+        const sel = document.getElementById('files-agent');
+        sel.innerHTML = names.length
+          ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+          : '';
+        if (!names.length) {
+          document.getElementById('files-tree').innerHTML = `<div class="empty">${T.filesNoAgent}</div>`;
+          return;
+        }
+        filesAgent = sel.value = names[0];
+      } catch {
+        filesAgentsLoaded = false; // allow retry next time
+      }
+    }
+
+    function fmtBytes(n) {
+      if (n == null) return '-';
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function loadFiles(path) {
+      filesPath = path || '';
+      const tree = document.getElementById('files-tree');
+      const content = document.getElementById('files-content');
+      const cur = document.getElementById('files-current');
+      cur.textContent = filesPath || T.filesRoot;
+      if (!filesAgent) { tree.innerHTML = `<div class="empty">${T.filesNoAgent}</div>`; return; }
+      tree.innerHTML = `<div class="empty">${T.loading}</div>`;
+      try {
+        const qs = new URLSearchParams({ agent: filesAgent, path: filesPath });
+        const data = await api('/api/workspace-files?' + qs.toString());
+        if (data.type === 'dir') {
+          if (!data.entries.length) {
+            tree.innerHTML = `<div class="empty">${T.filesEmpty}</div>`;
+          } else {
+            tree.innerHTML = `
+              <table>
+                <thead><tr><th>${T.filesPath}</th><th>${T.filesSize}</th><th>${T.filesMtime}</th></tr></thead>
+                <tbody>
+                  ${data.entries.map(e => `
+                    <tr data-name="${esc(e.name)}" data-isdir="${e.isDir ? '1' : '0'}" style="cursor:pointer">
+                      <td>${e.isDir ? '📁 ' : '📄 '}${esc(e.name)}${e.broken ? ' ⚠' : ''}</td>
+                      <td>${e.isDir ? '-' : fmtBytes(e.size)}</td>
+                      <td>${e.mtime ? fmtTime(e.mtime) : '-'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `;
+            tree.querySelectorAll('tr[data-name]').forEach(tr => {
+              tr.addEventListener('click', () => {
+                const name = tr.dataset.name;
+                const isDir = tr.dataset.isdir === '1';
+                const next = filesPath ? filesPath + '/' + name : name;
+                if (isDir) loadFiles(next);
+                else loadFiles(next); // file path → server returns type:'file'
+              });
+            });
+          }
+          content.innerHTML = '';
+        } else if (data.type === 'file') {
+          // Re-render directory listing for the parent so the user keeps
+          // context after clicking a file. Cheap: same path -1 segment.
+          const parent = filesPath.includes('/') ? filesPath.slice(0, filesPath.lastIndexOf('/')) : '';
+          // Don't recurse — load parent listing without overwriting filesPath.
+          await loadDirOnly(parent);
+          renderFileContent(data);
+        } else {
+          tree.innerHTML = `<div class="empty">${T.filesNotFound}</div>`;
+          content.innerHTML = '';
+        }
+      } catch (e) {
+        tree.innerHTML = `<div class="empty">${T.error}: ${esc(e.message)}</div>`;
+      }
+    }
+
+    // Load a parent dir listing into the tree without changing filesPath
+    // (which we want to stay on the file the user opened so the breadcrumb
+    // and the up-button still target the right place).
+    async function loadDirOnly(path) {
+      const tree = document.getElementById('files-tree');
+      try {
+        const qs = new URLSearchParams({ agent: filesAgent, path });
+        const data = await api('/api/workspace-files?' + qs.toString());
+        if (data.type !== 'dir') return;
+        tree.innerHTML = `
+          <table>
+            <thead><tr><th>${T.filesPath}</th><th>${T.filesSize}</th><th>${T.filesMtime}</th></tr></thead>
+            <tbody>
+              ${data.entries.map(e => `
+                <tr data-name="${esc(e.name)}" data-isdir="${e.isDir ? '1' : '0'}" style="cursor:pointer">
+                  <td>${e.isDir ? '📁 ' : '📄 '}${esc(e.name)}${e.broken ? ' ⚠' : ''}</td>
+                  <td>${e.isDir ? '-' : fmtBytes(e.size)}</td>
+                  <td>${e.mtime ? fmtTime(e.mtime) : '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        tree.querySelectorAll('tr[data-name]').forEach(tr => {
+          tr.addEventListener('click', () => {
+            const name = tr.dataset.name;
+            const next = path ? path + '/' + name : name;
+            loadFiles(next);
+          });
+        });
+      } catch { /* keep prior tree */ }
+    }
+
+    function renderFileContent(data) {
+      const content = document.getElementById('files-content');
+      const banner = data.truncated ? `<div class="empty">${T.filesTruncated}</div>` : '';
+      const binary = data.encoding === 'base64' ? `<div class="empty">${T.filesBinary}</div>` : '';
+      // Pre-tags preserve whitespace; whitelist content to avoid injection.
+      content.innerHTML = `
+        <div style="margin-bottom:8px">
+          <code>${esc(data.path)}</code>
+          <span style="color:var(--muted);font-size:12px"> · ${fmtBytes(data.size)} · ${fmtTime(data.mtime)}</span>
+        </div>
+        ${banner}${binary}
+        <pre style="max-height:55vh;overflow:auto;background:var(--card);border:1px solid var(--border);padding:8px;border-radius:6px">${esc(data.content)}</pre>
+      `;
+    }
+
+    document.getElementById('files-agent').addEventListener('change', (e) => {
+      filesAgent = e.target.value;
+      filesPath = '';
+      loadFiles('');
+    });
+    document.getElementById('btn-files-refresh').onclick = () => loadFiles(filesPath);
+    document.getElementById('btn-files-up').onclick = () => {
+      if (!filesPath) return;
+      const parent = filesPath.includes('/') ? filesPath.slice(0, filesPath.lastIndexOf('/')) : '';
+      loadFiles(parent);
+    };
 
     // ============================================================
     // /events SSE consumer (PR-C)

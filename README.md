@@ -37,19 +37,25 @@ im-hub config wechat   # Scan QR to login
 im-hub start           # Start the bridge + web UI on :3000
 ```
 
-## What's new in v0.2.13 → v0.2.18
+## What's new in v0.2.13 → v0.2.23
 
 - **Discord adapter** (Gateway WebSocket via `discord.js`)
-- **Human-in-the-loop tool approval** — Claude pauses on tool calls; you reply `y`/`n` in the same IM thread
-- **Tasks dashboard** at `/tasks` with **Background** (Claude/opencode bgjobs) and **Subtasks** tabs
-- **Multi-tenant workspaces** — per-workspace agent whitelist + rate limits, plus command-level ACL on `/job` `/schedule` `/audit` (each user only sees their own)
+- **Human-in-the-loop tool approval** — Claude pauses on tool calls; you reply `y`/`n` in the same IM thread, **or click an in-page card from the web chat**
+- **Tasks dashboard** at `/tasks` with **Jobs · Background · Subtasks · Schedules · Approvals · Health · Files · Audit** tabs (per-agent filtering, multi-select batch ops, real-time SSE updates)
+- **Multi-tenant workspaces** — per-workspace agent whitelist + rate limits, **with full CRUD UI in /settings**, plus command-level ACL on `/job` `/schedule` `/audit` (each user only sees their own)
 - **ACP server mode** — im-hub itself is an ACP-compatible agent (`POST /tasks` sync + SSE)
 - **Persistent Job Board** + cron scheduler (SQLite, survives restarts) with 30-day retention sweep
 - **Smart routing**: intent classifier (CJK + ASCII), circuit breaker, sticky sessions
 - **Structured logging** (`pino`) with `traceId` end-to-end + audit log + Prometheus `/api/metrics`
+- **Three-state theme** (light / dark / system) on every page — applied before first paint to avoid flash
 - **v0.2.16 — Security hardening (P0 + P1)**: timing-safe token compare, Schedule `notify_url` SSRF guard, secret redaction in logs, approval-socket entropy + perms, `Session.addMessage` per-key mutex
 - **v0.2.17 — Observability & IM polish (P2 + P3)**: static-page CSP / `X-Frame-Options` / `X-Content-Type-Options`, WebSocket connection cap + backpressure, Prometheus label-cardinality whitelist, new counters (`im_hub_audit_prune_failed_total` / `im_hub_agent_cleanup_failed_total` / `im_hub_approval_*`), UTF-16 surrogate-safe message split, auto-allow fingerprint 5→10 chars, SQLite WAL clean checkpoint on SIGINT
 - **v0.2.18 — IM reconnect backoff (M9)**: shared `Backoff` helper (exponential + ±50% jitter) replaces fixed 2s / 5s reconnect delays in Telegram + WeChat polling; defeats thundering-herd on shared network recovery
+- **v0.2.19 — Codex sandbox-mode plan + Dashboard filter / Audit tab**: codex now honors `session.planMode` (default sandbox switched to explicit `-s workspace-write`); jobs / subtasks / schedules tabs gain per-agent filter; new Audit tab pulls the SQLite audit log into the dashboard
+- **v0.2.20 — Web console PR-A**: three-state theme manager + global error boundary + in-page approval cards (click Allow / Deny / Allow + Auto from the chat UI itself)
+- **v0.2.21 — Web console PR-B**: Health tab (per-agent breaker / rate-limiter / latency p50/95/99 / sparkline) + Approvals tab (browse and resolve every pending HITL approval from the dashboard)
+- **v0.2.22 — Web console PR-C**: SSE event stream (`/events`) replaces polling for audit / approval / job / metrics events; full Workspace CRUD UI in /settings
+- **v0.2.23 — Web console PR-D**: Files tab — read-only browser of `~/.im-hub-workspaces/<agent>/`; Jobs tab gains multi-select + batch cancel / run; settings page header / container restyled
 
 See [CHANGELOG.md](CHANGELOG.md) and [docs/code-review-2026-05-06-main.md](docs/code-review-2026-05-06-main.md) for the full list.
 
@@ -57,15 +63,17 @@ See [CHANGELOG.md](CHANGELOG.md) and [docs/code-review-2026-05-06-main.md](docs/
 
 ```
 im-hub start           # Web UI at http://localhost:3000
-                       #   /          chat
-                       #   /tasks     jobs · schedules · bgjobs · subtasks
-                       #   /settings  agents · messengers · ACP
+                       #   /          chat (with in-page approval cards)
+                       #   /tasks     jobs · background · subtasks · schedules
+                       #              · approvals · health · files · audit
+                       #   /settings  agents · messengers · ACP · workspaces
 ```
 
-- Real-time streaming via WebSocket
+- Real-time streaming via WebSocket; **dashboard pushed via SSE `/events`** (audit / approval / job / metrics)
 - Agent switching and chat history
+- **Three-state theme** (light / dark / system) with per-tab persistence + global error boundary
 - Bilingual UI (English / 中文) — auto-detects browser language
-- `/tasks` surfaces persistent jobs, cron schedules, **`~/.claude/bgjobs`** + **`~/.config/opencode/bgjobs`** background tasks (override via `IMHUB_BGJOB_ROOTS`), and a flat list of every subtask in every session
+- `/tasks` surfaces persistent jobs, cron schedules, **`~/.claude/bgjobs`** + **`~/.config/opencode/bgjobs`** + **`~/.codex/bgjobs`** background tasks (override via `IMHUB_BGJOB_ROOTS`), every subtask in every session, agent health (breaker · rate-limiter · p50/95/99 · sparkline), pending HITL approvals (resolve from the browser), and a read-only file browser into `~/.im-hub-workspaces/<agent>/`
 
 ## Features
 
@@ -447,11 +455,44 @@ npm start
 - [x] Telegram `runPollingLoop`: fixed 2s / 5s setTimeouts → `Backoff(2s, 60s, 0.5)`; 30s healthy-run threshold resets backoff
 - [x] WeChat ilink `pollLoop`: inline `Math.pow(2,n-1)` → `Backoff(2s, 30s, 0.5)`; success path resets
 
+### v0.2.19 — Codex sandbox + Dashboard filter / Audit tab
+- [x] Codex now honors `session.planMode`; default sandbox `--full-auto` → explicit `-s workspace-write`
+- [x] Per-agent filter on Jobs / Subtasks / Schedules tabs (`OwnerOpts.agent` plumbed through)
+- [x] New Audit tab in `/tasks` pulling SQLite audit log + `GET /api/audit?agent=&days=&user=&intent=`
+
+### v0.2.20 — Web console PR-A: theme + error boundary + in-page approval
+- [x] Three-state theme (light / dark / system) applied synchronously in `<head>` to defeat flash
+- [x] `_app.js` shared utility: `window.imhub.{theme,i18n,api,showError}` + auto-installed error boundary
+- [x] In-chat approval cards on `/` (Allow / Deny / Allow + Auto), routed through the same `approvalBus.resolvePending()` path as Telegram
+- [x] `approval-router` `bindButtonHandlerForPlatform(platform)` exported so late-registered messengers (web is one) can wire their button handler
+
+### v0.2.21 — Web console PR-B: Health + Approvals tabs
+- [x] Health tab: per-agent breaker phase (closed/open/half-open) + rate-limiter remaining + p50/95/99 latency + invocations / success rate / cost / cooldown + 60-poll p95 sparkline
+- [x] Approvals tab: list every pending HITL approval (reqId / threadId / tool / age / registeredAt) with browser-side Allow / Deny / Allow + Auto buttons
+- [x] Backend: `GET /api/agent-health` / `GET /api/approvals` / `POST /api/approvals/:reqId/resolve`
+- [x] `approval-bus.PendingApproval` now carries `input` + `registeredAt`; emits `'approval'` events for SSE
+
+### v0.2.22 — Web console PR-C: SSE event stream + Workspace CRUD UI
+- [x] `src/core/event-bus.ts` — typed publish/subscribe (audit / approval / job / metrics) with 200-entry replay ring buffer
+- [x] `GET /events` SSE endpoint — token via `?token=`, 25s heartbeat, listener-error swallow
+- [x] Dashboard `EventSource('/events?token=...')` refreshes only the visible tab; polling kept as fallback; `approval requested` flashes the tab badge
+- [x] Settings page Workspace card — list + create / edit / delete (id locked on edit; default row uneditable + undeletable)
+- [x] Backend `GET/POST/PATCH/DELETE /api/workspaces` + `WorkspaceRegistry.{remove(id), listFull()}`; mutations persisted back to `~/.im-hub/config.json`
+
+### v0.2.23 — Web console PR-D: Files tab + Jobs batch ops + settings polish
+- [x] Files tab — read-only browse of `~/.im-hub-workspaces/<agent>/`, two-pane (dir tree + content), 1 MiB cap, NUL-byte binary detect → base64
+- [x] Path-traversal defense: agent name whitelisted against `registry.listAgents()`; resolved path must equal or live below `defaultAgentCwd(agent)`
+- [x] Jobs tab multi-select + select-all + hidden-until-needed batch toolbar; selection state survives refresh
+- [x] `POST /api/jobs/batch-cancel` / `batch-run` accept `{ ids: number[] }` (max 100); per-id failures don't fail the whole request
+- [x] Settings header restyle (`.brand` + `.controls` flex groups) — fixes language `<select>` stretching across the bar; container 720→880, sticky header, theme-aware toast / `.btn-danger:hover`
+
 ### v0.3.0
 - [ ] DingTalk adapter
 - [ ] Slack adapter
 - [ ] Approval cards (Feishu/Discord buttons) instead of plain text
 - [ ] Cron `nextOccurrence` internal UTC normalization (DST safety, M5 from CR-2026-05-06)
+- [ ] Multi-instance event bus (Redis Streams / NATS) so SSE works across replicas
+- [ ] Workspace member picker UI (current CSV input is ops-friendly but error-prone)
 
 ## Community <a name="wechat-group"></a>
 

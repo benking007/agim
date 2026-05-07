@@ -21,8 +21,9 @@ import {
   install,
   uninstall,
   tryHandleApprovalReply,
+  bindButtonHandlerForPlatform,
 } from './approval-router.js'
-import type { MessengerAdapter } from './types.js'
+import type { MessengerAdapter, ButtonCallback } from './types.js'
 
 const RUN_CTX: RunContext = { threadId: 'thread-A', platform: 'feishu', userId: 'u1', channelId: 'c1' }
 
@@ -402,5 +403,66 @@ describe('install / uninstall — full loop with fake messenger', () => {
     sock.end()
     uninstall()
     await approvalBus.stop()
+  })
+})
+
+// Regression: web messenger registers AFTER installApprovalRouter in cli.ts
+// (router needs the registry, but the web adapter needs the WS server to
+// exist — chicken-and-egg). install()'s default platform-loop runs ONCE
+// at install time and silently skips platforms whose messenger isn't yet
+// registered. Without bindButtonHandlerForPlatform, in-page approval card
+// clicks fired WS 'approval-action' but had no handler on the server side
+// — the card just sat there and the user gave up. This test pins the
+// "register late, then bind" pattern that web/server.ts now uses.
+describe('bindButtonHandlerForPlatform — late-registered messenger', () => {
+  beforeEach(async () => {
+    await approvalBus.start(uniqueSocketPath())
+    approvalBus.registerRun('run-late', { threadId: 'thread-late', platform: 'web', userId: 'u', channelId: 'c' })
+  })
+  afterEach(async () => {
+    uninstall()
+    await approvalBus.stop()
+  })
+
+  it('binds the click handler when the messenger appears post-install', async () => {
+    // No messenger registered yet — install picks up nothing for 'web'.
+    const messengers = new Map<string, MessengerAdapter>()
+    install({ resolveMessenger: (p) => messengers.get(p) })
+
+    let buttonHandler: ((cb: ButtonCallback) => Promise<void>) | undefined
+    const fakeWeb: MessengerAdapter = {
+      name: 'web',
+      start: async () => {},
+      stop: async () => {},
+      onMessage: () => {},
+      sendMessage: async () => {},
+      onButtonCallback: (h) => { buttonHandler = h },
+    }
+    expect(buttonHandler).toBeUndefined() // not bound yet
+
+    // Late-register, then call the public binder — exactly the cli.ts /
+    // server.ts sequence post-fix.
+    messengers.set('web', fakeWeb)
+    bindButtonHandlerForPlatform('web')
+    expect(buttonHandler).toBeDefined()
+  })
+
+  it('is a safe no-op when router is not installed', () => {
+    // No install() call here — bindButtonHandlerForPlatform must not throw.
+    expect(() => bindButtonHandlerForPlatform('web')).not.toThrow()
+  })
+
+  it('is a safe no-op when the messenger has no onButtonCallback', () => {
+    const messengers = new Map<string, MessengerAdapter>([
+      ['no-buttons', {
+        name: 'no-buttons',
+        start: async () => {},
+        stop: async () => {},
+        onMessage: () => {},
+        sendMessage: async () => {},
+      }],
+    ])
+    install({ resolveMessenger: (p) => messengers.get(p) })
+    expect(() => bindButtonHandlerForPlatform('no-buttons')).not.toThrow()
   })
 })

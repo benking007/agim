@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>im-hub — Settings</title>
+  <!-- Shared utilities: theme manager (applies before first paint), error
+       boundary (surfaces silent script failures), i18n + api helpers. -->
+  <script src="/_app.js"></script>
   <script>
     const LANGS = { en: 'English', zh: '中文' };
     const savedLang = localStorage.getItem('im-hub-lang');
@@ -129,7 +132,26 @@
     document.addEventListener('DOMContentLoaded', () => { document.title = t('title'); });
   </script>
   <style>
+    /* Three-state theming. `:root` defaults to light; explicit
+       data-theme="dark" forces dark; `prefers-color-scheme: dark` only
+       applies when the attribute is absent (mode === 'system'). */
     :root {
+      color-scheme: light dark;
+      /* light defaults */
+      --bg: #f8f9fb;
+      --surface: #ffffff;
+      --surface2: #f1f3f6;
+      --border: #e1e4e8;
+      --text: #1a1f2e;
+      --text-dim: #6b7280;
+      --accent: #6366f1;
+      --accent-dim: #818cf8;
+      --green: #16a34a;
+      --red: #dc2626;
+      --yellow: #ca8a04;
+      --radius: 8px;
+    }
+    :root[data-theme="dark"] {
       --bg: #0a0a0a;
       --surface: #141414;
       --surface2: #1e1e1e;
@@ -141,7 +163,20 @@
       --green: #22c55e;
       --red: #ef4444;
       --yellow: #eab308;
-      --radius: 8px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) {
+        --bg: #0a0a0a;
+        --surface: #141414;
+        --surface2: #1e1e1e;
+        --border: #2a2a2a;
+        --text: #e5e5e5;
+        --text-dim: #888;
+        --accent-dim: #4f46e5;
+        --green: #22c55e;
+        --red: #ef4444;
+        --yellow: #eab308;
+      }
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -373,6 +408,8 @@
       <option value="en">EN</option>
       <option value="zh">中文</option>
     </select>
+    <button id="theme-toggle" type="button" aria-label="Toggle color theme"
+      style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none"></button>
   </div>
 
   <div class="container" id="app">
@@ -389,6 +426,10 @@
       document.getElementById('backToChat').textContent = t('backToChat');
       document.getElementById('settingsTitle').textContent = t('settingsTitle');
     }
+
+    // Theme toggle (light / dark / system). _app.js applied theme already;
+    // here we wire the click handler so cycling re-renders the icon/label.
+    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
 
     // Language selector
     const langSelect = document.getElementById('langSelect');

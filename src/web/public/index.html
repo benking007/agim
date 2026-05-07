@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>im-hub — Agent Chat</title>
+  <!-- Shared utilities: theme manager (applies before first paint), error
+       boundary (surfaces silent script failures), i18n + api helpers. -->
+  <script src="/_app.js"></script>
   <script>
     // i18n — detect browser language, store preference in localStorage
     const LANGS = { en: 'English', zh: '中文' };
@@ -27,6 +30,18 @@
         send: 'Send',
         you: 'You',
         assistant: 'Assistant',
+        approvalTitle: 'Tool approval request',
+        approvalToolLabel: 'Tool',
+        approvalInputLabel: 'Input',
+        approvalAllow: 'Allow',
+        approvalDeny: 'Deny',
+        approvalAllowAll: 'Allow + auto for similar',
+        approvalAutoAllowing: 'Auto-allowing in {s}s — click Deny to reject',
+        approvalAllowed: '✅ Allowed',
+        approvalAllowedPinned: '✅ Allowed (auto-allow rule pinned)',
+        approvalDenied: '❌ Denied',
+        approvalDeniedRevoked: '❌ Denied (auto-allow rule revoked)',
+        approvalExpired: '⏱ Timed out (auto-denied)',
       },
       zh: {
         title: 'im-hub — Agent 对话',
@@ -42,13 +57,46 @@
         send: '发送',
         you: '你',
         assistant: '助手',
+        approvalTitle: '工具调用审批',
+        approvalToolLabel: '工具',
+        approvalInputLabel: '入参',
+        approvalAllow: '批准',
+        approvalDeny: '拒绝',
+        approvalAllowAll: '批准并自动放行后续同类',
+        approvalAutoAllowing: '将在 {s}s 内自动放行 — 点击拒绝可阻止',
+        approvalAllowed: '✅ 已批准',
+        approvalAllowedPinned: '✅ 已批准（已启用自动放行）',
+        approvalDenied: '❌ 已拒绝',
+        approvalDeniedRevoked: '❌ 已拒绝（已撤销自动放行）',
+        approvalExpired: '⏱ 已超时（自动拒绝）',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
     document.addEventListener('DOMContentLoaded', () => { document.title = t('title'); });
   </script>
   <style>
+    /* Three-state theming. `:root` defaults to light; explicit
+       data-theme="dark" forces dark; `prefers-color-scheme: dark` only
+       applies when the attribute is absent (mode === 'system'). */
     :root {
+      color-scheme: light dark;
+      /* light defaults */
+      --bg: #f8f9fb;
+      --surface: #ffffff;
+      --surface2: #f1f3f6;
+      --border: #e1e4e8;
+      --text: #1a1f2e;
+      --text-dim: #6b7280;
+      --accent: #6366f1;
+      --accent-dim: #818cf8;
+      --user-bg: #eef2ff;
+      --assistant-bg: #ffffff;
+      --code-bg: #f1f5f9;
+      --green: #16a34a;
+      --red: #dc2626;
+      --yellow: #ca8a04;
+    }
+    :root[data-theme="dark"] {
       --bg: #0a0a0a;
       --surface: #141414;
       --surface2: #1e1e1e;
@@ -63,6 +111,23 @@
       --green: #22c55e;
       --red: #ef4444;
       --yellow: #eab308;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) {
+        --bg: #0a0a0a;
+        --surface: #141414;
+        --surface2: #1e1e1e;
+        --border: #2a2a2a;
+        --text: #e5e5e5;
+        --text-dim: #888;
+        --accent-dim: #4f46e5;
+        --user-bg: #1a1a2e;
+        --assistant-bg: #1e1e1e;
+        --code-bg: #0d0d0d;
+        --green: #22c55e;
+        --red: #ef4444;
+        --yellow: #eab308;
+      }
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -278,6 +343,69 @@
     .messages::-webkit-scrollbar { width: 6px; }
     .messages::-webkit-scrollbar-track { background: transparent; }
     .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* In-chat HITL approval card. Mirrors the IM card's structure (Telegram
+       inline-keyboard variant) so the cross-platform UX is consistent. */
+    .approval-card {
+      border: 1px solid var(--accent);
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 8px 0;
+      max-width: 720px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .approval-card.auto-allow { border-color: var(--yellow); }
+    .approval-card.resolved { opacity: .85; }
+    .approval-card .ac-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .approval-card .ac-row { font-size: 13px; margin: 4px 0; color: var(--text-dim); }
+    .approval-card .ac-row b { color: var(--text); margin-right: 6px; }
+    .approval-card .ac-input {
+      background: var(--code-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: 12px/1.5 'SF Mono', Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 180px;
+      overflow: auto;
+      margin: 6px 0 10px;
+      color: var(--text);
+    }
+    .approval-card .ac-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .approval-card .ac-btn {
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .approval-card .ac-btn:hover { border-color: var(--accent); }
+    .approval-card .ac-btn.allow { background: var(--green); border-color: var(--green); color: #fff; }
+    .approval-card .ac-btn.deny  { background: var(--red);   border-color: var(--red);   color: #fff; }
+    .approval-card .ac-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .approval-card .ac-grace {
+      color: var(--yellow);
+      font-size: 13px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    .approval-card .ac-outcome {
+      font-size: 13px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+    }
   </style>
 </head>
 <body>
@@ -296,6 +424,7 @@
         <option value=""></option>
       </select>
       <button class="btn" id="newChatBtn"></button>
+      <button class="btn" id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
       <a class="btn" href="/tasks" title="Tasks" style="text-decoration:none;font-size:16px;line-height:1">&#9776;</a>
       <a class="btn" href="/settings" title="Settings" style="text-decoration:none;font-size:16px;line-height:1">&#9881;</a>
     </div>
@@ -354,6 +483,11 @@
     const statusText = document.getElementById('statusText');
     const newChatBtn = document.getElementById('newChatBtn');
     const langSelect = document.getElementById('langSelect');
+
+    // Theme toggle (light / dark / system). _app.js applied the theme
+    // synchronously in <head>; here we wire the button so clicks cycle
+    // through the three modes and the icon/label re-renders.
+    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
 
     // Language selector
     langSelect.value = window.__lang;
@@ -462,6 +596,25 @@
           currentAgent = msg.agent;
           agentSelect.value = msg.agent;
           break;
+
+        // HITL approval messages relayed by the synthetic 'web' messenger
+        // (registered on the server in startWebServer). approval-router
+        // calls our messenger.sendApprovalCard / sendMessage / editApprovalCard
+        // — those become the three WS message types below.
+        case 'approval-text':
+          // Fallback / receipt path. Render as a system message.
+          hideWelcome();
+          addSystemMessage(msg.text);
+          scrollToBottom();
+          break;
+        case 'approval-card':
+          hideWelcome();
+          renderApprovalCard(msg.messageId, msg.prompt);
+          scrollToBottom();
+          break;
+        case 'approval-card-edit':
+          editApprovalCard(msg.messageId, msg.outcome);
+          break;
       }
     }
 
@@ -511,6 +664,144 @@
     }
 
     // Message helpers
+    /**
+     * System / receipt-style message bubble. Used for `approval-text` so the
+     * "✅ Allowed" / "⏱ Timed out" notices the bus emits show up in the
+     * conversation flow without a "user / assistant" label.
+     */
+    function addSystemMessage(text) {
+      hideWelcome();
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'margin:6px 0; color:var(--text-dim); font-size:13px;';
+      wrapper.textContent = text;
+      messagesEl.appendChild(wrapper);
+    }
+
+    /** Active approval cards keyed by server-issued messageId, so the
+     *  `approval-card-edit` handler can find the same DOM node and
+     *  collapse it to an outcome stamp. */
+    const approvalCards = new Map();
+
+    function renderApprovalCard(messageId, prompt) {
+      const isAuto = prompt.mode === 'auto-allow';
+      const card = document.createElement('div');
+      card.className = 'approval-card' + (isAuto ? ' auto-allow' : '');
+      card.dataset.cardId = messageId;
+      card.innerHTML = `
+        <div class="ac-title">🔐 <span data-slot="title"></span></div>
+        ${isAuto ? `<div class="ac-grace" data-slot="grace"></div>` : ''}
+        <div class="ac-row"><b data-slot="tool-label"></b><code data-slot="tool"></code></div>
+        <div class="ac-row"><b data-slot="input-label"></b></div>
+        <pre class="ac-input" data-slot="input"></pre>
+        <div class="ac-actions" data-slot="actions"></div>
+      `;
+      card.querySelector('[data-slot="title"]').textContent = t('approvalTitle');
+      card.querySelector('[data-slot="tool-label"]').textContent = t('approvalToolLabel') + ':';
+      card.querySelector('[data-slot="tool"]').textContent = prompt.toolName;
+      card.querySelector('[data-slot="input-label"]').textContent = t('approvalInputLabel') + ':';
+      card.querySelector('[data-slot="input"]').textContent = prompt.inputJson;
+
+      const send = (choice) => {
+        // Soft disable: dim and ignore further clicks for 800 ms while the
+        // server round-trips. We deliberately do NOT hard-disable — if the
+        // server returns an error (e.g. 'approval handler not bound'), the
+        // card stays usable so the user can retry once they fix it. The
+        // success path replaces the buttons via `approval-card-edit` anyway.
+        card.querySelectorAll('button').forEach((b) => {
+          b.style.opacity = '0.6';
+          b.style.pointerEvents = 'none';
+        });
+        setTimeout(() => {
+          card.querySelectorAll('button').forEach((b) => {
+            b.style.opacity = '';
+            b.style.pointerEvents = '';
+          });
+        }, 800);
+        const payload = { type: 'approval-action', messageId, data: `apv:${prompt.reqId}:${choice}` };
+        try { console.debug && console.debug('[approval] click', payload); } catch {}
+        if (ws.readyState !== WebSocket.OPEN) {
+          imhub?.showError?.('WebSocket not connected — click ignored');
+          return;
+        }
+        ws.send(JSON.stringify(payload));
+      };
+
+      const actions = card.querySelector('[data-slot="actions"]');
+      if (isAuto) {
+        // Auto-allow grace mode: only Deny is meaningful (Allow happens
+        // automatically on grace expiry).
+        const denyBtn = document.createElement('button');
+        denyBtn.className = 'ac-btn deny';
+        denyBtn.textContent = t('approvalDeny');
+        denyBtn.onclick = () => send('n');
+        actions.appendChild(denyBtn);
+
+        // Live countdown.
+        let s = Number(prompt.graceSeconds) || 5;
+        const grace = card.querySelector('[data-slot="grace"]');
+        const refreshGrace = () => { grace.textContent = t('approvalAutoAllowing').replace('{s}', String(s)); };
+        refreshGrace();
+        const tick = setInterval(() => {
+          s = Math.max(0, s - 1);
+          refreshGrace();
+          if (s <= 0) clearInterval(tick);
+        }, 1000);
+        card._graceTimer = tick;
+      } else {
+        const allowBtn = document.createElement('button');
+        allowBtn.className = 'ac-btn allow';
+        allowBtn.textContent = t('approvalAllow');
+        allowBtn.onclick = () => send('y');
+
+        const denyBtn = document.createElement('button');
+        denyBtn.className = 'ac-btn deny';
+        denyBtn.textContent = t('approvalDeny');
+        denyBtn.onclick = () => send('n');
+
+        const allowAllBtn = document.createElement('button');
+        allowAllBtn.className = 'ac-btn';
+        allowAllBtn.textContent = t('approvalAllowAll');
+        allowAllBtn.onclick = () => send('a');
+
+        actions.appendChild(allowBtn);
+        actions.appendChild(denyBtn);
+        actions.appendChild(allowAllBtn);
+      }
+
+      messagesEl.appendChild(card);
+      approvalCards.set(messageId, card);
+    }
+
+    function editApprovalCard(messageId, outcome) {
+      const card = approvalCards.get(messageId);
+      if (!card) return;
+      card.classList.add('resolved');
+      // Stop any countdown if this was an auto-allow card.
+      if (card._graceTimer) { clearInterval(card._graceTimer); card._graceTimer = null; }
+      const grace = card.querySelector('[data-slot="grace"]');
+      if (grace) grace.remove();
+      // Disable any remaining live buttons.
+      card.querySelectorAll('.ac-actions button').forEach(b => b.disabled = true);
+      const actions = card.querySelector('[data-slot="actions"]');
+      if (actions) actions.remove();
+      const stamp = document.createElement('div');
+      stamp.className = 'ac-outcome';
+      const KEY = {
+        allowed: 'approvalAllowed',
+        'allowed-pinned': 'approvalAllowedPinned',
+        denied: 'approvalDenied',
+        'denied-revoked': 'approvalDeniedRevoked',
+        expired: 'approvalExpired',
+      };
+      const text = t(KEY[outcome.decision] || 'approvalAllowed');
+      const by = outcome.byUserDisplay ? ` · ${outcome.byUserDisplay}` : '';
+      stamp.textContent = `${text}${by}`;
+      card.appendChild(stamp);
+      // Keep the card around for visual continuity, but free the map slot
+      // so a same-id replay doesn't double-edit it.
+      approvalCards.delete(messageId);
+    }
+
     function addMessage(role, content, save = true) {
       hideWelcome();
 

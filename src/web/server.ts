@@ -67,6 +67,15 @@ interface ClientConnection {
   agent: string
 }
 
+export function createSerialQueue(): (fn: () => Promise<void>) => void {
+  let queue: Promise<void> = Promise.resolve()
+  return (fn: () => Promise<void>): void => {
+    const run = queue.then(fn, fn)
+    queue = run.catch(() => {})
+    void run
+  }
+}
+
 /**
  * Start the web chat server
  */
@@ -75,6 +84,7 @@ export async function startWebServer(options: {
   defaultAgent: string
 }): Promise<{ close: () => void; port: number }> {
   const port = options.port || DEFAULT_PORT
+  const bindHost = process.env.IMHUB_WEB_BIND || '127.0.0.1'
   const webToken = getOrCreateWebToken()
   const clients = new Map<string, ClientConnection>()
 
@@ -304,57 +314,61 @@ export async function startWebServer(options: {
     // Load existing session history if available
     sendSessionHistory(ws, clientId, options.defaultAgent)
 
-    ws.on('message', async (data: Buffer) => {
-      try {
-        const msg = JSON.parse(data.toString())
-        // Approval-button click intercept. The user tapped an in-page
-        // approval card button; route it through the web messenger's
-        // button handler (registered by approval-router on install) the
-        // same way a Telegram inline-keyboard tap is routed. We don't
-        // call handleClientMessage for these — they're not chat input.
-        if (msg && msg.type === 'approval-action') {
-          const actionData: string = String(msg.data || '')
-          const messageId: string = String(msg.messageId || '')
-          webLog.info({
-            event: 'approval.web.click_received',
-            clientId, data: actionData, messageId,
-            handlerBound: !!webButtonHandler,
-          })
-          if (!actionData || !messageId) {
-            sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
-            return
-          }
-          if (!webButtonHandler) {
-            // Without the handler, a click would silently no-op forever — the
-            // failure mode that PR-A's fix patches. Tell the user and the
-            // operator (via log) instead of dropping the click.
-            const why = 'approval handler not bound (router not installed?). Restart im-hub to rebind.'
-            webLog.warn({ event: 'approval.web.no_handler', clientId, data: actionData, messageId }, why)
-            sendToClient(ws, { type: 'error', message: why })
-            return
-          }
-          try {
-            // Most messengers' ButtonCallback#ack updates a platform-native
-            // toast / loading spinner. The web client doesn't have one, so
-            // ack is a no-op resolving to the in-page status the page itself
-            // chose to render after click.
-            await webButtonHandler({
-              data: actionData, threadId: clientId, userId: `web:${clientId}`,
-              userDisplay: 'Web', messageId, ack: async () => {},
+    const enqueueInbound = createSerialQueue()
+
+    ws.on('message', (data: Buffer) => {
+      enqueueInbound(async () => {
+        try {
+          const msg = JSON.parse(data.toString())
+          // Approval-button click intercept. The user tapped an in-page
+          // approval card button; route it through the web messenger's
+          // button handler (registered by approval-router on install) the
+          // same way a Telegram inline-keyboard tap is routed. We don't
+          // call handleClientMessage for these — they're not chat input.
+          if (msg && msg.type === 'approval-action') {
+            const actionData: string = String(msg.data || '')
+            const messageId: string = String(msg.messageId || '')
+            webLog.info({
+              event: 'approval.web.click_received',
+              clientId, data: actionData, messageId,
+              handlerBound: !!webButtonHandler,
             })
-            webLog.info({ event: 'approval.web.click_resolved', clientId, data: actionData })
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err)
-            webLog.error({ event: 'approval.web.click_failed', clientId, data: actionData, err: errMsg })
-            sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
+            if (!actionData || !messageId) {
+              sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
+              return
+            }
+            if (!webButtonHandler) {
+              // Without the handler, a click would silently no-op forever — the
+              // failure mode that PR-A's fix patches. Tell the user and the
+              // operator (via log) instead of dropping the click.
+              const why = 'approval handler not bound (router not installed?). Restart im-hub to rebind.'
+              webLog.warn({ event: 'approval.web.no_handler', clientId, data: actionData, messageId }, why)
+              sendToClient(ws, { type: 'error', message: why })
+              return
+            }
+            try {
+              // Most messengers' ButtonCallback#ack updates a platform-native
+              // toast / loading spinner. The web client doesn't have one, so
+              // ack is a no-op resolving to the in-page status the page itself
+              // chose to render after click.
+              await webButtonHandler({
+                data: actionData, threadId: clientId, userId: `web:${clientId}`,
+                userDisplay: 'Web', messageId, ack: async () => {},
+              })
+              webLog.info({ event: 'approval.web.click_resolved', clientId, data: actionData })
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err)
+              webLog.error({ event: 'approval.web.click_failed', clientId, data: actionData, err: errMsg })
+              sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
+            }
+            return
           }
-          return
+          await handleClientMessage(client, msg, options.defaultAgent)
+        } catch (err) {
+          webLog.error({ clientId, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
+          sendToClient(ws, { type: 'error', message: 'Invalid message format' })
         }
-        await handleClientMessage(client, msg, options.defaultAgent)
-      } catch (err) {
-        webLog.error({ clientId, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
-        sendToClient(ws, { type: 'error', message: 'Invalid message format' })
-      }
+      })
     })
 
     ws.on('close', () => {
@@ -368,13 +382,14 @@ export async function startWebServer(options: {
     })
   })
 
-  // Start listening on all interfaces
+  // Default to loopback; operators can opt into LAN/public exposure with
+  // IMHUB_WEB_BIND=0.0.0.0 behind their firewall/reverse proxy.
   await new Promise<void>((resolve, reject) => {
     httpServer.on('error', reject)
-    httpServer.listen(port, '0.0.0.0', () => resolve())
+    httpServer.listen(port, bindHost, () => resolve())
   })
 
-  webLog.info({ port }, `Chat UI available at http://localhost:${port}`)
+  webLog.info({ port, bindHost }, `Chat UI available at http://${bindHost === '0.0.0.0' ? 'localhost' : bindHost}:${port}`)
 
   // ============================================================
   // Web messenger registration (HITL approval bridge)

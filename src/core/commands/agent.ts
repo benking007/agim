@@ -5,7 +5,8 @@ import type { RouteContext } from '../router.js'
 import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from '../onboarding.js'
-import { callAgentWithHistory } from '../router.js'
+import { getJob } from '../job-board.js'
+import { callAgentWithHistory, prepareSubtaskAgentCallOptions } from '../router.js'
 
 export async function handleAgentCommand(
   command: string,
@@ -13,6 +14,35 @@ export async function handleAgentCommand(
   ctx: RouteContext
 ): Promise<string | ReturnType<typeof callAgentWithHistory>> {
   const existingSession = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
+  const fullPrompt = `/${command} ${prompt}`.trim()
+
+  if (existingSession?.activeSubtaskId) {
+    const tid = existingSession.activeSubtaskId
+    const job = getJob(tid)
+    if (!job) {
+      return `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`
+    }
+
+    const subtaskAgent = registry.findAgent(job.agent)
+    if (!subtaskAgent) {
+      return `❌ 任务 #${tid} 的 Agent "${job.agent}" 不可用。`
+    }
+
+    if (!(await isAgentAvailableCached(subtaskAgent.name))) {
+      return formatAgentNotAvailableError(subtaskAgent.name)
+    }
+
+    const subThreadId = `${ctx.threadId}:sub:${tid}`
+    const subSession = await sessionManager.getOrCreateSubSession(
+      ctx.platform, ctx.channelId, ctx.threadId, tid, subtaskAgent.name,
+    )
+    const callOptions = await prepareSubtaskAgentCallOptions(subtaskAgent.name, ctx, subThreadId, subSession)
+    return callAgentWithHistory(
+      subtaskAgent, subSession.id, fullPrompt, subSession.messages, ctx,
+      subSession.model, subSession.variant, subSession.planMode, callOptions,
+    )
+  }
+
   const agentName = existingSession?.agent || ctx.defaultAgent
 
   const agent = registry.findAgent(agentName)
@@ -23,8 +53,6 @@ export async function handleAgentCommand(
   if (!(await isAgentAvailableCached(agent.name))) {
     return formatAgentNotAvailableError(agent.name)
   }
-
-  const fullPrompt = `/${command} ${prompt}`.trim()
 
   const session = await sessionManager.getOrCreateSession(
     ctx.platform, ctx.channelId, ctx.threadId, agent.name

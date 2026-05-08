@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
-    "lint": "biome check .",
+    "lint": "biome lint --changed --files-ignore-unknown=true --vcs-enabled=true --vcs-client-kind=git --vcs-default-branch=main",
     "format": "biome format . --write",
     "prepublishOnly": "npm run build"
   },

@@ -5,7 +5,6 @@ import { parseMessage, routeMessage, type RouteContext } from '../../src/core/ro
 import { registry } from '../../src/core/registry'
 import { workspaceRegistry } from '../../src/core/workspace'
 import { sessionManager } from '../../src/core/session'
-import { createJob } from '../../src/core/job-board'
 import type { AgentAdapter } from '../../src/core/types'
 import type { Logger } from 'pino'
 
@@ -304,8 +303,14 @@ describe('routeMessage', () => {
     it('routes active subtask turns into the sub-session only', async () => {
       const threadId = `subtask-default-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const subtaskCtx = makeCtx({ threadId, userId: `user-${threadId}` })
-      const jobId = createJob('test-agent', 'parent job')
+      const jobId = Math.floor(Date.now() + Math.random() * 1000)
       await sessionManager.getOrCreateSession(subtaskCtx.platform, subtaskCtx.channelId, threadId, 'test-agent')
+      await sessionManager.updateSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId, {
+        agent: 'test-agent',
+        prompt: 'parent job',
+        status: 'running',
+        createdAt: new Date(),
+      })
       await sessionManager.setActiveSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId)
 
       const result = await routeMessage({ type: 'default', prompt: 'continue subtask' }, subtaskCtx)
@@ -426,8 +431,14 @@ describe('routeMessage', () => {
     it('routes agent commands to the active subtask session', async () => {
       const threadId = `subtask-command-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const subtaskCtx = makeCtx({ threadId, userId: `user-${threadId}` })
-      const jobId = createJob('test-agent', 'parent job')
+      const jobId = Math.floor(Date.now() + Math.random() * 1000)
       await sessionManager.getOrCreateSession(subtaskCtx.platform, subtaskCtx.channelId, threadId, 'test-agent')
+      await sessionManager.updateSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId, {
+        agent: 'test-agent',
+        prompt: 'parent job',
+        status: 'running',
+        createdAt: new Date(),
+      })
       await sessionManager.setActiveSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId)
 
       const result = await routeMessage(

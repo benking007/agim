@@ -18,7 +18,7 @@ export async function handleAgentCommand(
 
   if (existingSession?.activeSubtaskId) {
     const tid = existingSession.activeSubtaskId
-    const job = getJob(tid)
+    const job = getJob(tid) ?? existingSession.subtasks?.find((subtask) => subtask.id === tid)
     if (!job) {
       return `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`
     }

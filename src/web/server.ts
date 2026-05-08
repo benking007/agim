@@ -1189,7 +1189,7 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       return
     }
 
-    let st
+    let st: Awaited<ReturnType<typeof stat>>
     try {
       st = await stat(target)
     } catch (err) {

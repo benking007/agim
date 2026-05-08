@@ -268,7 +268,7 @@ export async function routeMessage(
       // If active subtask, route message to subtask's independent session
       if (existingSession?.activeSubtaskId) {
         const tid = existingSession.activeSubtaskId
-        const job = getJob(tid)
+        const job = getJob(tid) ?? existingSession.subtasks?.find((subtask) => subtask.id === tid)
         if (!job) {
           return `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`
         }
@@ -389,6 +389,10 @@ export async function callAgentWithHistory(
   planMode?: boolean,
   options: AgentCallOptions = {},
 ): Promise<AsyncGenerator<string>> {
+  if (!agent) {
+    throw new Error('callAgentWithHistory called without a configured agent')
+  }
+
   const storageThreadId = options.storageThreadId ?? ctx.threadId
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
   const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
@@ -400,7 +404,7 @@ export async function callAgentWithHistory(
   })
 
   const startTime = Date.now()
-  ctx.logger.info({ event: 'agent.invoke.start', agent: agent!.name, promptLen: prompt.length, historyLen: history.length })
+  ctx.logger.info({ event: 'agent.invoke.start', agent: agent.name, promptLen: prompt.length, historyLen: history.length })
 
   // When we're resuming an existing claude session, claude already has the
   // conversation log on disk — feeding history again would duplicate every
@@ -416,7 +420,7 @@ export async function callAgentWithHistory(
     // Persist the adapter-reported id on first sighting so the next turn can
     // pass it back via --session / exec resume. Setters are idempotent.
     // Routed by agent name so each adapter writes to its own session column.
-    const name = agent!.name
+    const name = agent.name
     if (name === 'opencode') {
       void sessionManager.setOpencodeSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
         .catch((err) => ctx.logger.debug({ err: String(err) }, 'setOpencodeSessionId failed'))
@@ -435,7 +439,7 @@ export async function callAgentWithHistory(
   // var that short-circuits the /plan command itself.
   const effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
 
-  const generator = agent!.sendPrompt(sessionId, prompt, effectiveHistory, {
+  const generator = agent.sendPrompt(sessionId, prompt, effectiveHistory, {
     model,
     variant,
     threadId: ctx.threadId,
@@ -471,7 +475,7 @@ export async function callAgentWithHistory(
       }
       ctx.logger.info({
         event: 'agent.invoke.end',
-        agent: agent!.name,
+        agent: agent.name,
         durationMs,
         responseLen: fullResponse.length,
       })
@@ -488,7 +492,7 @@ export async function callAgentWithHistory(
         traceId: ctx.traceId,
         userId: ctx.userId || 'unknown',
         platform: ctx.platform,
-        agent: agent!.name,
+        agent: agent.name,
         // Carry the intent the router picked (or 'explicit' for /<agent>
         // commands which set ctx.intent='explicit' upstream).
         intent: ctx.intent || 'default',
@@ -501,9 +505,9 @@ export async function callAgentWithHistory(
       })
 
       if (invocationError) {
-        circuitBreaker.recordFailure(agent!.name)
+        circuitBreaker.recordFailure(agent.name)
       } else {
-        circuitBreaker.recordSuccess(agent!.name)
+        circuitBreaker.recordSuccess(agent.name)
         // Roll up into the session-level usage so /stats reflects reality.
         await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,

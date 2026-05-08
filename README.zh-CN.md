@@ -4,39 +4,6 @@
 
 **IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / Telegram / **Discord** 接入 Claude Code / Codex / Copilot / OpenCode，**或通过 ACP 接入任意自定义 Agent**。单 Node.js 进程，无需 Docker / Redis；自带浏览器仪表盘、持久化任务、多租户工作区，IM 端真正的"工具调用人审"。
 
-<p align="center">
-  <img src="assets/banner.jpg" alt="im-hub banner" width="800">
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/im-hub"><img src="https://img.shields.io/npm/dw/im-hub?style=for-the-badge&logo=npm&color=green"></a>
-  <a href="https://github.com/ceociocto/im-hub/actions/workflows/release.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/ceociocto/im-hub/release.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://www.npmjs.com/package/im-hub"><img src="https://img.shields.io/npm/v/im-hub?style=for-the-badge" alt="npm version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/R83CXYz5"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  &nbsp;
-  <a href="https://x.com/lijieisme"><img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a>
-</p>
-
-<p align="center">
-  <img src="assets/screenshot-telegram.png" alt="Telegram" width="400">
-  &nbsp;&nbsp;
-  <img src="assets/screenshot-wechat.png" alt="WeChat" width="400">
-</p>
-
-<p align="center">
-  <b>Telegram</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>微信</b>
-</p>
-
-```
-npm install -g im-hub
-im-hub config wechat   # 扫码登录微信
-im-hub start           # 启动桥接 + Web UI（:3000）
-```
-
 ## 0.2.13 → 0.2.23 主要升级
 
 - **Discord 适配器**（基于 `discord.js` 的 Gateway WebSocket）

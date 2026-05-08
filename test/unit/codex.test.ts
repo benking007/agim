@@ -3,13 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
 import type { ChildProcess } from 'child_process'
 
-// Create a mock module
 const mockSpawn = mock(() => ({} as ChildProcess))
-
-// Mock the module
-mock.module('child_process', () => ({
-  spawn: mockSpawn,
-}))
 
 describe('CodexAdapter', () => {
   // Create a fresh adapter class for testing

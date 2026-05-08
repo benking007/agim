@@ -10,7 +10,10 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc && rm -rf dist/web/public && cp -r src/web/public dist/web/public && chmod +x dist/cli.js",

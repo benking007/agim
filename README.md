@@ -4,39 +4,6 @@
 
 **Universal messenger-to-agent bridge** — connect WeChat / Feishu / Telegram / **Discord** to Claude Code / Codex / Copilot / OpenCode, **or any custom agent via ACP**. Single Node.js process, no Docker, no Redis. Browser dashboard, persistent jobs, multi-tenant workspaces, and real human-in-the-loop tool approval over IM.
 
-<p align="center">
-  <img src="assets/banner.jpg" alt="im-hub banner" width="800">
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/im-hub"><img src="https://img.shields.io/npm/dw/im-hub?style=for-the-badge&logo=npm&color=green"></a>
-  <a href="https://github.com/ceociocto/im-hub/actions/workflows/release.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/ceociocto/im-hub/release.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://www.npmjs.com/package/im-hub"><img src="https://img.shields.io/npm/v/im-hub?style=for-the-badge" alt="npm version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/R83CXYz5"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  &nbsp;
-  <a href="https://x.com/lijieisme"><img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a>
-</p>
-
-<p align="center">
-  <img src="assets/screenshot-telegram.png" alt="Telegram" width="400">
-  &nbsp;&nbsp;
-  <img src="assets/screenshot-wechat.png" alt="WeChat" width="400">
-</p>
-
-<p align="center">
-  <b>Telegram</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>WeChat</b>
-</p>
-
-```
-npm install -g im-hub
-im-hub config wechat   # Scan QR to login
-im-hub start           # Start the bridge + web UI on :3000
-```
-
 ## What's new in v0.2.13 → v0.2.23
 
 - **Discord adapter** (Gateway WebSocket via `discord.js`)

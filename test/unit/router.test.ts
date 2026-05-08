@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'bun:test'
 import { parseMessage, routeMessage, type RouteContext } from '../../src/core/router'
 import { registry } from '../../src/core/registry'
 import { workspaceRegistry } from '../../src/core/workspace'
+import { sessionManager } from '../../src/core/session'
 import type { AgentAdapter } from '../../src/core/types'
 import type { Logger } from 'pino'
 
@@ -299,6 +300,32 @@ describe('routeMessage', () => {
       expect(text).toContain('test response')
     })
 
+    it('routes active subtask turns into the sub-session only', async () => {
+      const threadId = `subtask-default-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const subtaskCtx = makeCtx({ threadId, userId: `user-${threadId}` })
+      const jobId = Math.floor(Date.now() + Math.random() * 1000)
+      await sessionManager.getOrCreateSession(subtaskCtx.platform, subtaskCtx.channelId, threadId, 'test-agent')
+      await sessionManager.updateSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId, {
+        agent: 'test-agent',
+        prompt: 'parent job',
+        status: 'running',
+        createdAt: new Date(),
+      })
+      await sessionManager.setActiveSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId)
+
+      const result = await routeMessage({ type: 'default', prompt: 'continue subtask' }, subtaskCtx)
+      let text = ''
+      for await (const chunk of result as AsyncGenerator<string>) {
+        text += chunk
+      }
+
+      expect(text).toContain('test response')
+      const parent = await sessionManager.getExistingSession(subtaskCtx.platform, subtaskCtx.channelId, threadId)
+      const sub = await sessionManager.getExistingSession(subtaskCtx.platform, subtaskCtx.channelId, `${threadId}:sub:${jobId}`)
+      expect(parent?.messages.map((m) => m.content)).toEqual([])
+      expect(sub?.messages.map((m) => m.content)).toEqual(['continue subtask', 'test response'])
+    })
+
     it('should fall through to intent-classified agent even when default not configured', async () => {
       // With Phase 2 intent routing the default-agent name only matters as a
       // fallback when classifyIntent throws. As long as any agent is
@@ -399,6 +426,35 @@ describe('routeMessage', () => {
         text += chunk
       }
       expect(text).toContain('test response')
+    })
+
+    it('routes agent commands to the active subtask session', async () => {
+      const threadId = `subtask-command-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const subtaskCtx = makeCtx({ threadId, userId: `user-${threadId}` })
+      const jobId = Math.floor(Date.now() + Math.random() * 1000)
+      await sessionManager.getOrCreateSession(subtaskCtx.platform, subtaskCtx.channelId, threadId, 'test-agent')
+      await sessionManager.updateSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId, {
+        agent: 'test-agent',
+        prompt: 'parent job',
+        status: 'running',
+        createdAt: new Date(),
+      })
+      await sessionManager.setActiveSubtask(subtaskCtx.platform, subtaskCtx.channelId, threadId, jobId)
+
+      const result = await routeMessage(
+        { type: 'agentCommand', command: 'review', prompt: 'the diff' },
+        subtaskCtx,
+      )
+      let text = ''
+      for await (const chunk of result as AsyncGenerator<string>) {
+        text += chunk
+      }
+
+      expect(text).toContain('test response')
+      const parent = await sessionManager.getExistingSession(subtaskCtx.platform, subtaskCtx.channelId, threadId)
+      const sub = await sessionManager.getExistingSession(subtaskCtx.platform, subtaskCtx.channelId, `${threadId}:sub:${jobId}`)
+      expect(parent?.messages.map((m) => m.content)).toEqual([])
+      expect(sub?.messages.map((m) => m.content)).toEqual(['/review the diff', 'test response'])
     })
   })
 })

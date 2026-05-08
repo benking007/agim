@@ -143,56 +143,58 @@ class SessionManager {
     agent: string
   ): Promise<Session> {
     const key = `${platform}:${channelId}:${threadId}`
-    const now = new Date()
+    return this.withLock(key, async () => {
+      const now = new Date()
 
-    // Check memory cache
-    let session = this.sessions.get(key)
+      // Check memory cache
+      let session = this.sessions.get(key)
 
-    if (session) {
-      if (metaStale(session, now.getTime())) {
-        session = undefined  // fully expired → create new below
-      } else {
+      if (session) {
+        if (metaStale(session, now.getTime())) {
+          session = undefined  // fully expired → create new below
+        } else {
+          if (messagesStale(session, now.getTime()) && session.messages.length > 0) {
+            session.messages = []
+            try { await unlink(sessionLogPath(key)) } catch { /* no log to drop */ }
+          }
+          session.lastActivity = now
+          await this.saveSessionMeta(key, session)
+          return session
+        }
+      }
+
+      // Try loading from disk
+      session = await this.loadSession(key)
+
+      if (session && !metaStale(session, now.getTime())) {
         if (messagesStale(session, now.getTime()) && session.messages.length > 0) {
           session.messages = []
           try { await unlink(sessionLogPath(key)) } catch { /* no log to drop */ }
         }
         session.lastActivity = now
+        this.sessions.set(key, session)
         await this.saveSessionMeta(key, session)
         return session
       }
-    }
 
-    // Try loading from disk
-    session = await this.loadSession(key)
-
-    if (session && !metaStale(session, now.getTime())) {
-      if (messagesStale(session, now.getTime()) && session.messages.length > 0) {
-        session.messages = []
-        try { await unlink(sessionLogPath(key)) } catch { /* no log to drop */ }
+      // Create new session
+      session = {
+        id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
+        channelId,
+        threadId,
+        platform,
+        agent,
+        createdAt: now,
+        lastActivity: now,
+        ttl: DEFAULT_TTL,
+        messages: [],
       }
-      session.lastActivity = now
+
       this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
+      await this.saveSession(key, session)
+
       return session
-    }
-
-    // Create new session
-    session = {
-      id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
-      channelId,
-      threadId,
-      platform,
-      agent,
-      createdAt: now,
-      lastActivity: now,
-      ttl: DEFAULT_TTL,
-      messages: [],
-    }
-
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
-
-    return session
+    })
   }
 
   /**
@@ -256,36 +258,38 @@ class SessionManager {
     newAgent: string
   ): Promise<Session> {
     const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
 
-    // Get existing session or create new
-    const existing = this.sessions.get(key) || await this.loadSession(key)
+      // Get existing session or create new
+      const existing = this.sessions.get(key) || await this.loadSession(key)
 
-    const now = new Date()
-    const session: Session = {
-      id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
-      channelId,
-      threadId,
-      platform,
-      agent: newAgent,
-      createdAt: existing?.createdAt || now,
-      lastActivity: now,
-      ttl: DEFAULT_TTL,
-      messages: existing?.messages || [],
-      usage: existing?.usage,
-      activeSubtaskId: existing?.activeSubtaskId,
-      subtasks: existing?.subtasks,
-      subtaskCounter: existing?.subtaskCounter,
-      claudeSessionId: existing?.claudeSessionId,
-      claudeSessionPrimed: existing?.claudeSessionPrimed,
-      opencodeSessionId: existing?.opencodeSessionId,
-      codexSessionId: existing?.codexSessionId,
-      planMode: existing?.planMode,
-    }
+      const now = new Date()
+      const session: Session = {
+        id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
+        channelId,
+        threadId,
+        platform,
+        agent: newAgent,
+        createdAt: existing?.createdAt || now,
+        lastActivity: now,
+        ttl: DEFAULT_TTL,
+        messages: existing?.messages || [],
+        usage: existing?.usage,
+        activeSubtaskId: existing?.activeSubtaskId,
+        subtasks: existing?.subtasks,
+        subtaskCounter: existing?.subtaskCounter,
+        claudeSessionId: existing?.claudeSessionId,
+        claudeSessionPrimed: existing?.claudeSessionPrimed,
+        opencodeSessionId: existing?.opencodeSessionId,
+        codexSessionId: existing?.codexSessionId,
+        planMode: existing?.planMode,
+      }
 
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
 
-    return session
+      return session
+    })
   }
 
   /**
@@ -335,22 +339,24 @@ class SessionManager {
     patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode'>>,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return undefined
-    if (patch.model !== undefined) session.model = patch.model || undefined
-    if (patch.variant !== undefined) session.variant = patch.variant || undefined
-    if (patch.agent !== undefined) session.agent = patch.agent
-    if (patch.planMode !== undefined) {
-      // Normalize to canonical shape: true keeps the flag, false drops it.
-      // Storing only the truthy state keeps the on-disk JSON small and lets
-      // a missing field unambiguously mean "off".
-      if (patch.planMode) session.planMode = true
-      else delete session.planMode
-    }
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
-    return session
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (patch.model !== undefined) session.model = patch.model || undefined
+      if (patch.variant !== undefined) session.variant = patch.variant || undefined
+      if (patch.agent !== undefined) session.agent = patch.agent
+      if (patch.planMode !== undefined) {
+        // Normalize to canonical shape: true keeps the flag, false drops it.
+        // Storing only the truthy state keeps the on-disk JSON small and lets
+        // a missing field unambiguously mean "off".
+        if (patch.planMode) session.planMode = true
+        else delete session.planMode
+      }
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
   }
 
   /**
@@ -363,25 +369,29 @@ class SessionManager {
     claudeSessionId: string,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return undefined
-    session.claudeSessionId = claudeSessionId
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
-    return session
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      session.claudeSessionId = claudeSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
   }
 
   async markClaudeSessionPrimed(
     platform: string, channelId: string, threadId: string,
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session || session.claudeSessionPrimed) return
-    session.claudeSessionPrimed = true
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session || session.claudeSessionPrimed) return
+      session.claudeSessionPrimed = true
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+    })
   }
 
   /**
@@ -394,14 +404,16 @@ class SessionManager {
     opencodeSessionId: string,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return undefined
-    if (session.opencodeSessionId === opencodeSessionId) return session
-    session.opencodeSessionId = opencodeSessionId
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
-    return session
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.opencodeSessionId === opencodeSessionId) return session
+      session.opencodeSessionId = opencodeSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
   }
 
   /**
@@ -414,14 +426,16 @@ class SessionManager {
     codexSessionId: string,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return undefined
-    if (session.codexSessionId === codexSessionId) return session
-    session.codexSessionId = codexSessionId
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
-    return session
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.codexSessionId === codexSessionId) return session
+      session.codexSessionId = codexSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
   }
 
   /**
@@ -433,26 +447,28 @@ class SessionManager {
     delta: { costUsd: number; promptChars: number; responseChars: number; durationMs: number },
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return
-    if (!session.usage) {
-      session.usage = {
-        turns: 0,
-        costUsd: 0,
-        promptChars: 0,
-        responseChars: 0,
-        durationMsTotal: 0,
-        startedAt: new Date().toISOString(),
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return
+      if (!session.usage) {
+        session.usage = {
+          turns: 0,
+          costUsd: 0,
+          promptChars: 0,
+          responseChars: 0,
+          durationMsTotal: 0,
+          startedAt: new Date().toISOString(),
+        }
       }
-    }
-    session.usage.turns += 1
-    session.usage.costUsd += Number.isFinite(delta.costUsd) ? delta.costUsd : 0
-    session.usage.promptChars += Number.isFinite(delta.promptChars) ? delta.promptChars : 0
-    session.usage.responseChars += Number.isFinite(delta.responseChars) ? delta.responseChars : 0
-    session.usage.durationMsTotal += Number.isFinite(delta.durationMs) ? delta.durationMs : 0
-    session.lastActivity = new Date()
-    this.sessions.set(key, session)
-    await this.saveSessionMeta(key, session)
+      session.usage.turns += 1
+      session.usage.costUsd += Number.isFinite(delta.costUsd) ? delta.costUsd : 0
+      session.usage.promptChars += Number.isFinite(delta.promptChars) ? delta.promptChars : 0
+      session.usage.responseChars += Number.isFinite(delta.responseChars) ? delta.responseChars : 0
+      session.usage.durationMsTotal += Number.isFinite(delta.durationMs) ? delta.durationMs : 0
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+    })
   }
 
   /**
@@ -464,31 +480,33 @@ class SessionManager {
     threadId: string
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
 
-    if (session) {
-      session.messages = []
-      session.lastActivity = new Date()
-      session.id = `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}` // New session ID
-      // Forget the old per-agent CLI sessions — /new should give a clean slate
-      // for both Claude (`--resume`) and opencode (`--session`).
-      delete session.claudeSessionId
-      delete session.claudeSessionPrimed
-      delete session.opencodeSessionId
-      delete session.codexSessionId
-      // Plan mode is per-conversation intent ("先规划再动手") — a fresh
-      // conversation always starts at "off" so users don't get a surprising
-      // read-only run after /new.
-      delete session.planMode
-      // Drop any per-thread auto-allow approval rules so the new conversation
-      // starts back at "ask every time".
-      try { approvalBus.clearAutoAllowForThread(threadId) } catch { /* ignore */ }
-      this.sessions.set(key, session)
-      await this.saveSession(key, session)
-      return session
-    }
+      if (session) {
+        session.messages = []
+        session.lastActivity = new Date()
+        session.id = `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}` // New session ID
+        // Forget the old per-agent CLI sessions — /new should give a clean slate
+        // for both Claude (`--resume`) and opencode (`--session`).
+        delete session.claudeSessionId
+        delete session.claudeSessionPrimed
+        delete session.opencodeSessionId
+        delete session.codexSessionId
+        // Plan mode is per-conversation intent ("先规划再动手") — a fresh
+        // conversation always starts at "off" so users don't get a surprising
+        // read-only run after /new.
+        delete session.planMode
+        // Drop any per-thread auto-allow approval rules so the new conversation
+        // starts back at "ask every time".
+        try { approvalBus.clearAutoAllowForThread(threadId) } catch { /* ignore */ }
+        this.sessions.set(key, session)
+        await this.saveSession(key, session)
+        return session
+      }
 
-    return undefined
+      return undefined
+    })
   }
 
   /**
@@ -515,19 +533,22 @@ class SessionManager {
   ): Promise<Session> {
     const key = `${platform}:${channelId}:${threadId}:sub:${subtaskId}`
     const now = new Date()
-    let session = this.sessions.get(key) || await this.loadSession(key)
-    if (session) {
-      session.lastActivity = now
+    return this.withLock(key, async () => {
+      let session = this.sessions.get(key) || await this.loadSession(key)
+      if (session) {
+        session.lastActivity = now
+        await this.saveSessionMeta(key, session)
+        return session
+      }
+      session = {
+        id: `sub-${platform}-${channelId}-${threadId}-${subtaskId}`,
+        channelId, threadId, platform, agent,
+        createdAt: now, lastActivity: now, ttl: DEFAULT_TTL, messages: [],
+      }
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
       return session
-    }
-    session = {
-      id: `sub-${platform}-${channelId}-${threadId}-${subtaskId}`,
-      channelId, threadId, platform, agent,
-      createdAt: now, lastActivity: now, ttl: DEFAULT_TTL, messages: [],
-    }
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
-    return session
+    })
   }
 
   /**
@@ -537,11 +558,13 @@ class SessionManager {
     platform: string, channelId: string, threadId: string, taskId: number | null
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return
-    session.activeSubtaskId = taskId
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return
+      session.activeSubtaskId = taskId
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+    })
   }
 
   /**
@@ -622,17 +645,19 @@ class SessionManager {
     taskId: number, patch: Partial<SubtaskMeta>
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
-    const session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) return
-    if (!session.subtasks) { session.subtasks = [] }
-    const idx = session.subtasks.findIndex(s => s.id === taskId)
-    if (idx >= 0) {
-      session.subtasks[idx] = { ...session.subtasks[idx], ...patch }
-    } else {
-      session.subtasks.push({ id: taskId, ...patch } as SubtaskMeta)
-    }
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return
+      if (!session.subtasks) { session.subtasks = [] }
+      const idx = session.subtasks.findIndex(s => s.id === taskId)
+      if (idx >= 0) {
+        session.subtasks[idx] = { ...session.subtasks[idx], ...patch }
+      } else {
+        session.subtasks.push({ id: taskId, ...patch } as SubtaskMeta)
+      }
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+    })
   }
 
   /**
@@ -647,20 +672,22 @@ class SessionManager {
     platform: string, channelId: string, threadId: string, agent = ''
   ): Promise<number> {
     const key = `${platform}:${channelId}:${threadId}`
-    let session = this.sessions.get(key) || await this.loadSession(key)
-    if (!session) {
-      const now = new Date()
-      session = {
-        id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
-        channelId, threadId, platform, agent,
-        createdAt: now, lastActivity: now, ttl: DEFAULT_TTL, messages: [],
-        subtaskCounter: 0,
+    return this.withLock(key, async () => {
+      let session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) {
+        const now = new Date()
+        session = {
+          id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
+          channelId, threadId, platform, agent,
+          createdAt: now, lastActivity: now, ttl: DEFAULT_TTL, messages: [],
+          subtaskCounter: 0,
+        }
       }
-    }
-    session.subtaskCounter = (session.subtaskCounter || 0) + 1
-    this.sessions.set(key, session)
-    await this.saveSession(key, session)
-    return session.subtaskCounter
+      session.subtaskCounter = (session.subtaskCounter || 0) + 1
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+      return session.subtaskCounter
+    })
   }
 
   /**

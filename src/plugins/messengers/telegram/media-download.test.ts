@@ -12,7 +12,7 @@ const TEST_ROOT = join(tmpdir(), `imhub-media-test-${process.pid}-${Math.random(
 process.env.IMHUB_MEDIA_ROOT = TEST_ROOT
 
 // Import AFTER setting env so MEDIA_ROOT picks it up at module-eval time.
-const { MEDIA_ROOT, MAX_BYTES, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
+const { MEDIA_ROOT, MAX_BYTES, buildCurlArgs, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
 
 describe('media-download — pickExtension', () => {
   it('extracts ext from file_path', () => {
@@ -74,6 +74,12 @@ describe('media-download — safety guards', () => {
         filename: '1.jpg',
       }),
     ).rejects.toThrow(/api\.telegram\.org/)
+  })
+
+  it('passes curl flags that reject redirects', () => {
+    const args = buildCurlArgs('https://api.telegram.org/file/botTOKEN/photos/file.jpg', '/tmp/file.jpg')
+    expect(args).toContain('--location')
+    expect(args.slice(args.indexOf('--max-redirs'), args.indexOf('--max-redirs') + 2)).toEqual(['--max-redirs', '0'])
   })
 })
 

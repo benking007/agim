@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.30] - 2026-05-08
+
+### Fixed — strict production code review follow-up
+
+- **子任务会话隔离**：active subtask 下的普通消息与 `/test` / `/review` / `/diff` 等 agentCommand 现在都会写入 `${threadId}:sub:${jobId}` 子会话，不再把用户消息、assistant 回复、usage 和 adapter-native session id 混写到父会话。
+- **native Agent session 隔离**：Claude Code / OpenCode / Codex 在子任务内使用子会话自己的 `claudeSessionId` / `opencodeSessionId` / `codexSessionId`；避免主会话与子任务在 CLI 原生会话层串线。
+- **WebSocket 入站串行化**：Web Chat 同一浏览器连接上的多条消息按顺序逐条进入 `routeMessage`，降低快速连发时 Agent 子进程并行、历史乱序和流式回复交错风险。
+- **Session 元数据写锁**：`patchSession`、usage roll-up、Claude/OpenCode/Codex session id setters、subtask counter/update、agent switch/reset 等读改写路径纳入 per-key lock；`nextSubtaskId` 并发调用保持唯一递增。
+- **安全默认值**：
+  - Web 控制台默认监听 `127.0.0.1`；需要对外暴露时显式设置 `IMHUB_WEB_BIND=0.0.0.0`，建议放在 HTTPS 反代后。
+  - `~/.im-hub/config.json` 写入时强制 `0600`，目录创建使用 `0700`。
+  - Telegram 媒体下载的 `curl` 保留 `--location` 但加 `--max-redirs 0`，拒绝跟随重定向到任意主机。
+- **CLI 版本号**：`im-hub-pro --version` 改为读取包内 `package.json`，不再硬编码旧值（之前可能输出 `0.2.18`）。
+
+### Build / release
+
+- Release workflow 中 `npm test` 失败不再 `continue-on-error`，避免测试红仍发布 npm。
+- CI 增加 `npm run lint`；补齐 `@biomejs/biome` devDependency。
+- `lint` 当前只检查相对 `main` 的变更文件，避免仓库既有 Biome 基线问题一次性阻断所有 PR。
+
+### Tests
+
+- 新增/补齐回归覆盖：active subtask 默认消息与 agentCommand 路由、并发 `nextSubtaskId`、Telegram curl redirect 参数、`config.json` 权限、WebSocket serial queue。
+
+---
+
 ## [0.2.26] - 2026-05-08
 
 ### Changed — Rebrand to `im-hub-pro`

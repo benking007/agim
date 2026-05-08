@@ -1,7 +1,8 @@
 // Message router — parses commands and routes to agents
 
-import type { ParsedMessage, ChatMessage } from './types.js'
+import type { ParsedMessage, ChatMessage, Session } from './types.js'
 import type { Logger } from 'pino'
+import { randomUUID } from 'crypto'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
@@ -45,6 +46,15 @@ export interface RouteContext {
   agentSessionId?: string
   /** True when the adapter should --resume an existing session under
    *  agentSessionId instead of creating a new one. */
+  agentSessionResume?: boolean
+}
+
+export interface AgentCallOptions {
+  /** Session key suffix used for history/user/assistant/usage persistence. */
+  storageThreadId?: string
+  /** Adapter-native session id override for this invocation. */
+  agentSessionId?: string
+  /** Adapter-native resume flag override for this invocation. */
   agentSessionResume?: boolean
 }
 
@@ -258,7 +268,7 @@ export async function routeMessage(
       // If active subtask, route message to subtask's independent session
       if (existingSession?.activeSubtaskId) {
         const tid = existingSession.activeSubtaskId
-        const job = getJob(tid)
+        const job = getJob(tid) ?? existingSession.subtasks?.find((subtask) => subtask.id === tid)
         if (!job) {
           return `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`
         }
@@ -272,11 +282,12 @@ export async function routeMessage(
         if (!parsed.prompt) {
           return `💬 继续对话（任务 #${tid}, ${job.agent}）`
         }
-        // Use sub-session for this turn
-        await sessionManager.addMessage(ctx.platform, ctx.channelId, `${ctx.threadId}:sub:${tid}`, {
-          role: 'user', content: parsed.prompt, timestamp: new Date()
-        })
-        return callAgentWithHistory(tAgent, subSession.id, parsed.prompt, subSession.messages, ctx, subSession.model, subSession.variant, subSession.planMode)
+        const subThreadId = `${ctx.threadId}:sub:${tid}`
+        const callOptions = await prepareSubtaskAgentCallOptions(tAgent.name, ctx, subThreadId, subSession)
+        return callAgentWithHistory(
+          tAgent, subSession.id, parsed.prompt, subSession.messages, ctx,
+          subSession.model, subSession.variant, subSession.planMode, callOptions,
+        )
       }
 
       // Use intent classifier to pick best agent
@@ -375,22 +386,31 @@ export async function callAgentWithHistory(
   ctx: RouteContext,
   model?: string,
   variant?: string,
-  planMode?: boolean
+  planMode?: boolean,
+  options: AgentCallOptions = {},
 ): Promise<AsyncGenerator<string>> {
-  await sessionManager.addMessage(ctx.platform, ctx.channelId, ctx.threadId, {
+  if (!agent) {
+    throw new Error('callAgentWithHistory called without a configured agent')
+  }
+
+  const storageThreadId = options.storageThreadId ?? ctx.threadId
+  const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
+  const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
+
+  await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
     role: 'user',
     content: prompt,
     timestamp: new Date()
   })
 
   const startTime = Date.now()
-  ctx.logger.info({ event: 'agent.invoke.start', agent: agent!.name, promptLen: prompt.length, historyLen: history.length })
+  ctx.logger.info({ event: 'agent.invoke.start', agent: agent.name, promptLen: prompt.length, historyLen: history.length })
 
   // When we're resuming an existing claude session, claude already has the
   // conversation log on disk — feeding history again would duplicate every
   // prior turn in the model's view. Pass an empty history in that case so
   // claude relies purely on its native session memory.
-  const effectiveHistory = ctx.agentSessionResume ? [] : history
+  const effectiveHistory = agentSessionResume ? [] : history
 
   // Per-call accumulators for adapters that surface usage / session-id
   // inline (currently opencode). Closure-bound so concurrent runs can't
@@ -400,12 +420,12 @@ export async function callAgentWithHistory(
     // Persist the adapter-reported id on first sighting so the next turn can
     // pass it back via --session / exec resume. Setters are idempotent.
     // Routed by agent name so each adapter writes to its own session column.
-    const name = agent!.name
+    const name = agent.name
     if (name === 'opencode') {
-      void sessionManager.setOpencodeSessionId(ctx.platform, ctx.channelId, ctx.threadId, id)
+      void sessionManager.setOpencodeSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
         .catch((err) => ctx.logger.debug({ err: String(err) }, 'setOpencodeSessionId failed'))
     } else if (name === 'codex') {
-      void sessionManager.setCodexSessionId(ctx.platform, ctx.channelId, ctx.threadId, id)
+      void sessionManager.setCodexSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
         .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCodexSessionId failed'))
     }
     // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
@@ -419,15 +439,15 @@ export async function callAgentWithHistory(
   // var that short-circuits the /plan command itself.
   const effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
 
-  const generator = agent!.sendPrompt(sessionId, prompt, effectiveHistory, {
+  const generator = agent.sendPrompt(sessionId, prompt, effectiveHistory, {
     model,
     variant,
     threadId: ctx.threadId,
     platform: ctx.platform,
     userId: ctx.userId,
     channelId: ctx.channelId,
-    agentSessionId: ctx.agentSessionId,
-    agentSessionResume: ctx.agentSessionResume,
+    agentSessionId,
+    agentSessionResume,
     onAgentSessionId,
     onUsage,
     planMode: effectivePlanMode || undefined,
@@ -447,7 +467,7 @@ export async function callAgentWithHistory(
     } finally {
       const durationMs = Date.now() - startTime
       if (fullResponse.trim()) {
-        await sessionManager.addMessage(ctx.platform, ctx.channelId, ctx.threadId, {
+        await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
           role: 'assistant',
           content: fullResponse,
           timestamp: new Date()
@@ -455,7 +475,7 @@ export async function callAgentWithHistory(
       }
       ctx.logger.info({
         event: 'agent.invoke.end',
-        agent: agent!.name,
+        agent: agent.name,
         durationMs,
         responseLen: fullResponse.length,
       })
@@ -472,7 +492,7 @@ export async function callAgentWithHistory(
         traceId: ctx.traceId,
         userId: ctx.userId || 'unknown',
         platform: ctx.platform,
-        agent: agent!.name,
+        agent: agent.name,
         // Carry the intent the router picked (or 'explicit' for /<agent>
         // commands which set ctx.intent='explicit' upstream).
         intent: ctx.intent || 'default',
@@ -485,11 +505,11 @@ export async function callAgentWithHistory(
       })
 
       if (invocationError) {
-        circuitBreaker.recordFailure(agent!.name)
+        circuitBreaker.recordFailure(agent.name)
       } else {
-        circuitBreaker.recordSuccess(agent!.name)
+        circuitBreaker.recordSuccess(agent.name)
         // Roll up into the session-level usage so /stats reflects reality.
-        await sessionManager.recordUsage(ctx.platform, ctx.channelId, ctx.threadId, {
+        await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,
           promptChars: prompt.length,
           responseChars: fullResponse.length,
@@ -498,4 +518,42 @@ export async function callAgentWithHistory(
       }
     }
   })()
+}
+
+export async function prepareSubtaskAgentCallOptions(
+  agentName: string,
+  ctx: RouteContext,
+  storageThreadId: string,
+  subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId'>,
+): Promise<AgentCallOptions> {
+  if (agentName === 'claude-code') {
+    let claudeId = subSession.claudeSessionId
+    if (!claudeId) {
+      claudeId = randomUUID()
+      await sessionManager.setClaudeSessionId(ctx.platform, ctx.channelId, storageThreadId, claudeId)
+    }
+    const resume = !!subSession.claudeSessionPrimed
+    if (!resume) {
+      await sessionManager.markClaudeSessionPrimed(ctx.platform, ctx.channelId, storageThreadId)
+    }
+    return { storageThreadId, agentSessionId: claudeId, agentSessionResume: resume }
+  }
+
+  if (agentName === 'opencode') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.opencodeSessionId,
+      agentSessionResume: !!subSession.opencodeSessionId,
+    }
+  }
+
+  if (agentName === 'codex') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.codexSessionId,
+      agentSessionResume: !!subSession.codexSessionId,
+    }
+  }
+
+  return { storageThreadId }
 }

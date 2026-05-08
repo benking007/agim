@@ -139,6 +139,20 @@ describe('SessionManager (real, on-disk)', () => {
     }
   })
 
+  it('nextSubtaskId remains unique under concurrent calls', async () => {
+    const k = uniqueKey('subtask-concurrent')
+    try {
+      const ids = await Promise.all(
+        Array.from({ length: 20 }, () => sessionManager.nextSubtaskId(k.platform, k.channelId, k.threadId)),
+      )
+      expect([...ids].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: 20 }, (_, i) => i + 1),
+      )
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
   it('reads legacy one-file format that contains messages inline', async () => {
     // Manually write a legacy-shaped session file (no .log companion).
     const k = uniqueKey('legacy')

@@ -117,17 +117,22 @@ export async function downloadToMediaRoot(params: DownloadParams): Promise<Downl
  *
  * Exposed only inside this module — callers stick to {@link downloadToMediaRoot}.
  */
-async function runCurl(url: string, outPath: string): Promise<void> {
-  const args = [
+export function buildCurlArgs(url: string, outPath: string): string[] {
+  return [
     '--silent',
     '--show-error',
     '--fail',                                  // non-2xx → exit code 22
-    '--location',                              // follow redirects
+    '--location',                              // needed so --max-redirs rejects redirects
+    '--max-redirs', '0',                       // do not follow Telegram redirects to another host
     '--max-time', '60',
     '--max-filesize', String(MAX_BYTES),
     '--output', outPath,
     url,
   ]
+}
+
+async function runCurl(url: string, outPath: string): Promise<void> {
+  const args = buildCurlArgs(url, outPath)
   return new Promise<void>((resolve, reject) => {
     const child = spawn('curl', args, { stdio: ['ignore', 'ignore', 'pipe'] })
     const stderr: Buffer[] = []

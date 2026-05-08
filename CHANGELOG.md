@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.31] - 2026-05-08
+
+### Release
+
+- 重新发布生产硬化修复到 npm，确保生产环境通过 `npm install -g im-hub-pro@0.2.31` 可以拿到 v0.2.30 严格代码审查后的全部修复。
+- 包含子任务会话隔离、WebSocket 入站串行化、session 元数据写锁、安全默认值加固、release/CI 门禁收紧，以及 `im-hub-pro --version` 跟随 `package.json` 的修复。
+
+---
+
 ## [0.2.30] - 2026-05-08
 
 ### Fixed — strict production code review follow-up

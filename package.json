@@ -1,10 +1,10 @@
 {
-  "name": "im-hub",
-  "version": "0.2.25",
-  "description": "Universal messenger-to-agent bridge — connect WeChat/Feishu/Telegram to Claude Code/Codex/Copilot",
+  "name": "im-hub-pro",
+  "version": "0.2.26",
+  "description": "Universal messenger-to-agent bridge — connect WeChat/Feishu/Telegram/Discord to Claude Code/Codex/Copilot/OpenCode (productized fork of im-hub)",
   "type": "module",
   "bin": {
-    "im-hub": "./dist/cli.js"
+    "im-hub-pro": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,7 +36,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ceociocto/im-hub"
+    "url": "git+https://github.com/benking007/imhub.git"
+  },
+  "homepage": "https://github.com/benking007/imhub#readme",
+  "bugs": {
+    "url": "https://github.com/benking007/imhub/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.59.0",

@@ -1,8 +1,10 @@
-# im-hub
+# im-hub-pro
 
 [English](README.md)
 
 **IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / Telegram / **Discord** 接入 Claude Code / Codex / Copilot / OpenCode，**或通过 ACP 接入任意自定义 Agent**。单 Node.js 进程，无需 Docker / Redis；自带浏览器仪表盘、持久化任务、多租户工作区，IM 端真正的"工具调用人审"。
+
+> 原 [`im-hub`](https://www.npmjs.com/package/im-hub) 包的产品化分支。落盘配置（`~/.im-hub/`）、环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）保持不变 —— 老部署可以无缝切换，详见下方[迁移指南](#从-im-hub-迁移)。
 
 ## 0.2.13 → 0.2.23 主要升级
 
@@ -10,7 +12,7 @@
 - **工具调用人审（HITL）** — Claude 调工具时自动暂停，IM 同一会话回复 `y`/`n` 即可，**或在 Web 对话界面点弹出的审批卡**
 - **任务仪表盘** `/tasks`，标签覆盖 **Jobs · Background · Subtasks · Schedules · Approvals · Health · Files · Audit**（每个 tab 支持 agent 过滤、Jobs 多选批量、SSE 实时刷新）
 - **多租户 Workspace** — 每个工作区独立的 Agent 白名单 + 限流，**Settings 页加完整 CRUD UI**；`/job` `/schedule` `/audit` 命令也按 creator/workspace 隔离（每个用户只看到自己的）
-- **ACP Server 模式** — im-hub 自身作为 ACP 兼容 Agent（`POST /tasks`，sync + SSE）
+- **ACP Server 模式** — im-hub-pro 自身作为 ACP 兼容 Agent（`POST /tasks`，sync + SSE）
 - **持久化 Job Board** + Cron 调度器（SQLite 落地，重启不丢，30 天自动修剪）
 - **智能路由**：意图分类（中英文）、断路器、Sticky 会话
 - **结构化日志**（`pino`）+ 全链路 `traceId` + 审计日志 + Prometheus `/api/metrics`
@@ -29,7 +31,7 @@
 ## Web 对话与任务仪表盘
 
 ```
-im-hub start           # 启动后访问 http://localhost:3000
+im-hub-pro start       # 启动后访问 http://localhost:3000
                        #   /          对话（支持对话内审批卡）
                        #   /tasks     jobs · background · subtasks · schedules
                        #              · approvals · health · files · audit
@@ -55,28 +57,38 @@ im-hub start           # 启动后访问 http://localhost:3000
 ## 安装
 
 ```bash
-npm install -g im-hub
+npm install -g im-hub-pro
 ```
 
 需要 **Node.js ≥ 18**（生产推荐 ≥ 22 LTS，详见 [`docs/deployment.md`](docs/deployment.md)）。
+
+### 从 `im-hub` 迁移
+
+`~/.im-hub/` 配置目录、`IMHUB_*` 环境变量、`X-IM-Hub-Token` 请求头、ACP 协议标识（`im-hub-gateway`）全部保持不变 —— 这是纯品牌改名。
+
+```bash
+npm uninstall -g im-hub
+npm install -g im-hub-pro
+im-hub-pro start
+```
 
 ## 快速开始
 
 ```bash
 # 1. 配置至少一个 IM
-im-hub config wechat        # 扫码登录
-im-hub config feishu        # 飞书 App ID + Secret，无需 webhook
-im-hub config telegram      # @BotFather 拿 Token
-im-hub config discord       # Bot Token，详见 docs/discord-setup.md
+im-hub-pro config wechat        # 扫码登录
+im-hub-pro config feishu        # 飞书 App ID + Secret，无需 webhook
+im-hub-pro config telegram      # @BotFather 拿 Token
+im-hub-pro config discord       # Bot Token，详见 docs/discord-setup.md
 
 # 2. （可选）配置 Agent CLI，多数能自动检测
-im-hub config claude
+im-hub-pro config claude
 
 # 3. （可选）通过 ACP 接入远端自定义 Agent
-im-hub config agent
+im-hub-pro config agent
 
 # 4. 启动
-im-hub start
+im-hub-pro start
 ```
 
 ### 飞书（WebSocket 长连接）
@@ -92,10 +104,10 @@ im-hub start
 
 ### 接入你自己的 Agent
 
-im-hub 支持 **ACP（Agent Communication Protocol）**，只要你的 Agent 暴露一个标准 HTTP 端点就能接入——业务机器人、内部工具、云服务，皆可。
+im-hub-pro 支持 **ACP（Agent Communication Protocol）**，只要你的 Agent 暴露一个标准 HTTP 端点就能接入——业务机器人、内部工具、云服务，皆可。
 
 ```bash
-im-hub config agent
+im-hub-pro config agent
 # 交互式：名称、端点、认证（无 / Bearer / API Key），自动验证连接 + /.well-known/acp 自动发现
 ```
 
@@ -105,24 +117,24 @@ im-hub config agent
 /myagent 分析一下一季度的销售报告
 ```
 
-### 把 im-hub 当作 Agent 用
+### 把 im-hub-pro 当作 Agent 用
 
-im-hub 同时暴露 ACP 服务端，任何 ACP 客户端都可以以 `POST http://localhost:3000/tasks`（同步）或加 `?mode=stream`（SSE）调用，鉴权同 Web Token：`Authorization: Bearer <token>`。
+im-hub-pro 同时暴露 ACP 服务端，任何 ACP 客户端都可以以 `POST http://localhost:3000/tasks`（同步）或加 `?mode=stream`（SSE）调用，鉴权同 Web Token：`Authorization: Bearer <token>`。
 
 ## CLI 命令
 
 ```
-im-hub                 # 等同 start
-im-hub start           # 启动桥接 + Web UI
-im-hub config wechat   # 配置微信
-im-hub config feishu   # 配置飞书
-im-hub config telegram # 配置 Telegram
-im-hub config discord  # 配置 Discord
-im-hub config claude   # 配置 Claude Code
-im-hub config agent    # 接入自定义 ACP Agent
-im-hub agents          # 列出可用 Agent
-im-hub messengers      # 列出可用 IM
-im-hub help
+im-hub-pro                 # 等同 start
+im-hub-pro start           # 启动桥接 + Web UI
+im-hub-pro config wechat   # 配置微信
+im-hub-pro config feishu   # 配置飞书
+im-hub-pro config telegram # 配置 Telegram
+im-hub-pro config discord  # 配置 Discord
+im-hub-pro config claude   # 配置 Claude Code
+im-hub-pro config agent    # 接入自定义 ACP Agent
+im-hub-pro agents          # 列出可用 Agent
+im-hub-pro messengers      # 列出可用 IM
+im-hub-pro help
 ```
 
 ## 聊天命令
@@ -150,7 +162,7 @@ im-hub help
 
 ## 工具调用人审（Human-in-the-loop）
 
-当你从 IM 启动的 Claude 任务尝试调用工具时，im-hub 会暂停它，并在同一 IM 会话发送审批卡片：
+当你从 IM 启动的 Claude 任务尝试调用工具时，im-hub-pro 会暂停它，并在同一 IM 会话发送审批卡片：
 
 ```
 🔐 工具调用审批请求
@@ -229,7 +241,7 @@ req: a3f1c0d2
 ## 项目结构
 
 ```
-im-hub/
+im-hub-pro/
 ├── src/
 │   ├── core/
 │   │   ├── types.ts              # 插件接口
@@ -335,7 +347,7 @@ im-hub/
 
 ```bash
 git clone https://github.com/benking007/imhub.git
-cd im-hub
+cd imhub
 npm install
 npm run build      # tsc + 拷贝 public/
 npm run dev        # tsc --watch

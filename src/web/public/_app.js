@@ -1,4 +1,4 @@
-// im-hub web console — shared utilities (theme / i18n / error boundary / api).
+// im-hub-pro web console — shared utilities (theme / i18n / error boundary / api).
 //
 // Loaded as a CLASSIC script in <head> by every page before any page-specific
 // code, so it sits in the same global lexical scope. Wrapped in an IIFE so the
@@ -73,7 +73,7 @@
   // Applied as early as possible (before first paint) so the page doesn't
   // flash the wrong theme on load. This file is loaded synchronously in
   // <head> precisely for that reason.
-  const THEME_KEY = 'im-hub-theme'
+  const THEME_KEY = 'im-hub-pro-theme'
   const VALID_MODES = ['system', 'light', 'dark']
 
   function getThemeMode() {

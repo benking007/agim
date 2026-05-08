@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.26] - 2026-05-08
+
+### Changed — Rebrand to `im-hub-pro`
+
+- **npm 包名**：`im-hub` → `im-hub-pro`（产品化分支）。
+- **CLI 命令**：`im-hub` → `im-hub-pro`（`bin` 字段同步更新）。
+- **仓库 URL**：`package.json.repository.url` 从原作者 `ceociocto/im-hub` 切到当前仓库 `benking007/imhub`，新增 `homepage` / `bugs` / `publishConfig{access:public,provenance:true}` 字段。
+- **Web 控制台品牌**：`/`、`/tasks`、`/settings` 三个静态页的浏览器标题、欢迎语、左上角 logo、Settings 卡里的 `im-hub config wechat` 提示文案，全部改为 `im-hub-pro`。
+- **README + README.zh-CN**：`What's new` / 安装命令 / Quick Start / CLI 命令表 / Project Structure ASCII 树标签，全部改为新品牌；新增「Migrating from `im-hub`」回退指引。
+- **LICENSE 文件**：补齐 MIT 全文（之前 `package.json` 声明 MIT 但根目录无 LICENSE 文件），版权归属保持 `Jerry`。
+- **`THEME_KEY`**：localStorage 主题 key 从 `im-hub-theme` → `im-hub-pro-theme`（用户在升级后第一次访问会丢失主题偏好；其他 localStorage key `im-hub-lang` / `im-hub-history` 保留以保住语言与对话历史）。
+
+### Unchanged — drop-in compat
+
+为了让老用户 `npm uninstall -g im-hub && npm install -g im-hub-pro` 后零迁移成本运行：
+- **配置目录**：`~/.im-hub/`、`~/.im-hub-workspaces/<agent>/` 路径不变
+- **环境变量**：60+ 处 `IMHUB_*` 前缀不变
+- **HTTP 头**：`X-IM-Hub-Token` / `x-im-hub-token` 不变
+- **Window 全局**：`window.IMHUB_TOKEN` 不变
+- **ACP 服务名**：`im-hub-gateway` 不变（线上 ACP 客户端通过这个名字 discover）
+- **MCP 测试 fixture**：`mcpServers.imhub` 不变
+- **内部 client ID**：`im-hub:${ts}` 格式不变
+
+### Notes
+
+- 发布走 npm OIDC trusted publishing（`release.yml` 不需要改），首次发布前需在 npmjs.com 上为 `im-hub-pro` 配置 trusted publisher 指向 `benking007/imhub` 仓库 + `release.yml` workflow。
+- 老 `im-hub@0.2.25` 包在 npmjs.com 上保持不动，可继续安装。
+
+---
+
 ## [0.2.23] - 2026-05-07
 
 ### Added — Web console PR-D

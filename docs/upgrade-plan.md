@@ -1,6 +1,6 @@
-# im-hub → 智能网关 · 升级路线图
+# im-hub-pro → 智能网关 · 升级路线图
 
-> 目标：将 im-hub 从"IM → 多 Agent 桥接器"升级为 **IM 前端 + 多 Agent 后端的智能路由层**
+> 目标：将 im-hub-pro 从"IM → 多 Agent 桥接器"升级为 **IM 前端 + 多 Agent 后端的智能路由层**
 > 最后更新：2026-04-30
 > 当前分支：feat/gateway-phase1
 >
@@ -93,7 +93,7 @@
 
 ### 3.1 ACP 深化
 
-- [x] ACP Server 模式：im-hub 本身可作为 Agent 被上游调用
+- [x] ACP Server 模式：im-hub-pro 本身可作为 Agent 被上游调用
 - [ ] ACP Client session 保持（跨越 HTTP 无状态）
 - [ ] ACP agent 发现与自动注册
 
@@ -111,7 +111,7 @@
 
 ### 3.4 下游网关
 
-- [ ] Outgoing webhook：外部系统 → im-hub → Agent → IM 回复
+- [ ] Outgoing webhook：外部系统 → im-hub-pro → Agent → IM 回复
 - [ ] REST API（带鉴权）供第三方系统调用
 
 ---

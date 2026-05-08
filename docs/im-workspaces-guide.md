@@ -1,7 +1,7 @@
 # IM 工作区使用指南
 
 > 适用：v2 升级后（A/D/B 已落地，C 自然就位）
-> 角色：im-hub 用户 / 接入方 / 运维
+> 角色：im-hub-pro 用户 / 接入方 / 运维
 > 关联：[`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md) · [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)
 
 本文档面向"已经在用 IM 跟 Claude Code / opencode 聊天"的用户，讲 v2 之后的新能力怎么用：
@@ -55,7 +55,7 @@
 ## 项目背景
 
 主要协助 ben.wangzj@gmail.com 维护：
-- im-hub（IM 网关，本目录是它的 IM 工作区）
+- im-hub-pro（IM 网关，本目录是它的 IM 工作区）
 - 其他项目按需
 
 ## 长期偏好
@@ -102,15 +102,15 @@ opencode 启动时会读 cwd 下的 `AGENTS.md`，行为与 Claude 类似。
 vim ~/.im-hub-workspaces/codex/AGENTS.md
 ```
 
-Codex 启动时同样会读 cwd 下的 `AGENTS.md`。**与 opencode 同名但目录分离**：im-hub
+Codex 启动时同样会读 cwd 下的 `AGENTS.md`。**与 opencode 同名但目录分离**：im-hub-pro
 spawn codex 时把 cwd 钉在 `~/.im-hub-workspaces/codex/`，所以它只读这个目录下的
 `AGENTS.md`，永远不会撞到 opencode 的那一份。
 
 Codex 会话连续性的关键事实：
-- im-hub 监听 `thread.started` 事件捕获 codex 自生成的 thread UUID，存到
+- im-hub-pro 监听 `thread.started` 事件捕获 codex 自生成的 thread UUID，存到
   `Session.codexSessionId`。
 - 后续每轮 spawn `codex exec resume <uuid> …`，codex 从 `~/.codex/sessions/`
-  读出完整历史，**im-hub 不再把消息历史拼进 prompt**。
+  读出完整历史，**im-hub-pro 不再把消息历史拼进 prompt**。
 - `/new` 会清掉 `codexSessionId`，下一轮起新 codex thread。
 
 记忆框架：codex 没有 Claude 那种 auto-memory，也没有 opencode 的 PROJECT.md
@@ -146,7 +146,7 @@ Claude Code 在 `--session-id` / `--resume` 模式下把每次对话整段存成
 ~/.claude/projects/-root-im-hub-workspaces-claude-code/<uuid>.jsonl
 ```
 
-文件名 = im-hub 给该 thread 分配的 `claudeSessionId`。**v2 升级后该 id 在 META TTL（默
+文件名 = im-hub-pro 给该 thread 分配的 `claudeSessionId`。**v2 升级后该 id 在 META TTL（默
 认 7d）内不丢**，所以你 IM 里短暂离开几天回来，Claude 仍能续上完整上下文。
 
 ### 4.3 opencode 的项目档案（手写）
@@ -158,7 +158,7 @@ cat >> ~/.im-hub-workspaces/opencode/PROJECT.md <<'EOF'
 # IM 入口 opencode 项目档案
 
 ## 项目清单
-- im-hub: /root/workspace/im-hub
+- im-hub-pro: /root/workspace/imhub
 
 ## 用户偏好
 - 中文沟通
@@ -239,7 +239,7 @@ Environment="IMHUB_SESSION_META_TTL_MS=86400000"   # 1 天
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart im-hub
+sudo systemctl restart im-hub-pro
 ```
 
 ---
@@ -264,11 +264,11 @@ sudo systemctl restart im-hub
 说明工作区注入没生效。逐步检查：
 
 ```bash
-systemctl status im-hub --no-pager
-ls -la /root/workspace/im-hub/dist/core/agent-cwd.js
+systemctl status im-hub-pro --no-pager
+ls -la /root/workspace/imhub/dist/core/agent-cwd.js
 ls -la ~/.im-hub-workspaces/claude-code/CLAUDE.md
-journalctl -u im-hub --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
-systemctl cat im-hub | grep IMHUB
+journalctl -u im-hub-pro --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
+systemctl cat im-hub-pro | grep IMHUB
 ```
 
 最常见原因：升级后没重启服务。
@@ -306,7 +306,7 @@ mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
 
 可能原因：
 1. cwd 与原会话不一致（v2 升级前后路径变了：旧 jsonl 在 `~/.claude/projects/-/`，新 jsonl 在 `~/.claude/projects/-root-im-hub-workspaces-claude-code/`）
-2. META TTL 已过，im-hub 把 claudeSessionId 删了，但用户手动 `/resume` 旧 id
+2. META TTL 已过，im-hub-pro 把 claudeSessionId 删了，但用户手动 `/resume` 旧 id
 
 **升级后冷启动**：第一次升级后所有 thread 的 `claudeSessionId` 仍指向旧路径 jsonl，
 而 cwd 已切。最稳的做法：第一次升级后让 Claude 跑一条新对话（自然生成新 id 落到新
@@ -338,6 +338,6 @@ mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
 | 看 IM Claude jsonl 历史 | `~/.claude/projects/-root-im-hub-workspaces-claude-code/*.jsonl` |
 | 看 IM Codex 会话历史 | `~/.codex/sessions/YYYY/MM/DD/*` |
 | Codex bgjob 工作目录 | `~/.codex/bgjobs/`（独立 wrapper：`/root/.codex/scripts/bgjob`） |
-| 看 im-hub session 状态 | `~/.im-hub/sessions/*.json` |
-| 看 im-hub 审计日志 | `sqlite3 ~/.im-hub/audit.db` |
-| 看 im-hub 服务日志 | `journalctl -u im-hub -f` |
+| 看 im-hub-pro session 状态 | `~/.im-hub/sessions/*.json` |
+| 看 im-hub-pro 审计日志 | `sqlite3 ~/.im-hub/audit.db` |
+| 看 im-hub-pro 服务日志 | `journalctl -u im-hub-pro -f` |

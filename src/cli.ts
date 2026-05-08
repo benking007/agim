@@ -9,7 +9,9 @@
 
 import { program } from 'commander'
 import { homedir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+import { readFileSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { registry } from './core/registry.js'
@@ -43,6 +45,7 @@ function formatMissingAgentHint(missing: string[]): string {
 
 const CONFIG_DIR = join(homedir(), '.im-hub')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
+const PACKAGE_JSON = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
 
 type Config = OnboardingConfig
 
@@ -54,10 +57,22 @@ async function saveConfig(config: Config): Promise<void> {
   return saveOnboardingConfig(config)
 }
 
+function readPackageVersion(): string {
+  try {
+    const parsed = JSON.parse(readFileSync(PACKAGE_JSON, 'utf-8')) as { version?: unknown }
+    if (typeof parsed.version === 'string' && parsed.version.trim()) {
+      return parsed.version
+    }
+  } catch {
+    // Keep --help/--version usable even in unusual source-tree layouts.
+  }
+  return '0.0.0'
+}
+
 program
   .name('im-hub-pro')
   .description('Universal messenger-to-agent bridge')
-  .version('0.2.18')
+  .version(readPackageVersion())
 
 program
   .command('start')

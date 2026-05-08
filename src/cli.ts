@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// im-hub CLI
+// im-hub-pro CLI
+//
+// NOTE: brand string "im-hub-pro" is user-visible (CLI program name, console
+// banners, help text). On-disk paths (~/.im-hub/, ~/.im-hub-workspaces/),
+// env vars (IMHUB_*), and HTTP headers (X-IM-Hub-Token) intentionally
+// retain the legacy "im-hub" identifier for drop-in compatibility with
+// existing installations. Do not "fix" them.
 
 import { program } from 'commander'
 import { homedir } from 'os'
@@ -49,15 +55,15 @@ async function saveConfig(config: Config): Promise<void> {
 }
 
 program
-  .name('im-hub')
+  .name('im-hub-pro')
   .description('Universal messenger-to-agent bridge')
   .version('0.2.18')
 
 program
   .command('start')
-  .description('Start the im-hub server')
+  .description('Start the im-hub-pro server')
   .action(async () => {
-    console.log('🚀 Starting im-hub...')
+    console.log('🚀 Starting im-hub-pro...')
 
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
@@ -69,7 +75,7 @@ program
       for (const err of validation.errors) {
         console.warn(`   - ${err}`)
       }
-      console.warn('   im-hub will continue with defaults for invalid fields.\n')
+      console.warn('   im-hub-pro will continue with defaults for invalid fields.\n')
     }
     config = validation.ok ? validation.config as unknown as Config : config
 
@@ -116,7 +122,7 @@ program
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn(`⚠️ Agent workspace bootstrap failed: ${msg}`)
-      console.warn('   Agents will fall back to im-hub cwd ("/" under systemd)')
+      console.warn('   Agents will fall back to im-hub-pro cwd ("/" under systemd)')
     }
 
     // Load ACP (remote) agents from config
@@ -145,7 +151,7 @@ program
       const newConfig = await runMessengerOnboarding(config)
       if (!newConfig) {
         console.log('\n❌ Onboarding cancelled.')
-        console.log('Run "im-hub config <messenger>" to configure manually.')
+        console.log('Run "im-hub-pro config <messenger>" to configure manually.')
         process.exit(1)
       }
       config = newConfig
@@ -157,7 +163,7 @@ program
     if (agentResult.allMissing) {
       console.log('\n⚠️ No coding agents found!')
       console.log(formatAgentInstallHint(agentResult.missing))
-      console.log('\nInstall at least one agent, then run im-hub start again.')
+      console.log('\nInstall at least one agent, then run im-hub-pro start again.')
       process.exit(1)
     } else if (agentResult.missing.length > 0) {
       console.log('⚠️ Some agents not available:', agentResult.missing.join(', '))
@@ -408,7 +414,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         agentForRun = stickySession?.agent || defaultAgent
       }
       if (agentForRun === 'claude-code') {
-        // Reuse the same UUID across every claude turn in this im-hub
+        // Reuse the same UUID across every claude turn in this im-hub-pro
         // session — that's what keeps the displayed id stable AND what
         // gives the user a single `claude --resume <uuid>` they can run
         // any time during the conversation.
@@ -554,7 +560,7 @@ program
       console.log('  copilot  - GitHub Copilot CLI agent')
       console.log('\nRemote Agents:')
       console.log('  agent    - Add a remote ACP agent')
-      console.log('\nUsage: im-hub config <component>')
+      console.log('\nUsage: im-hub-pro config <component>')
       return
     }
 
@@ -935,7 +941,7 @@ program
 
       default:
         console.log(`Unknown component: ${component}`)
-        console.log('Run "im-hub config" to see available components.')
+        console.log('Run "im-hub-pro config" to see available components.')
         return
     }
 
@@ -955,8 +961,8 @@ program
     const agents = registry.listAgents()
     if (agents.length === 0) {
       console.log('No agents registered yet.')
-      console.log('Run "im-hub config claude" to configure Claude Code.')
-      console.log('Run "im-hub config agent" to add a remote ACP agent.')
+      console.log('Run "im-hub-pro config claude" to configure Claude Code.')
+      console.log('Run "im-hub-pro config agent" to add a remote ACP agent.')
       return
     }
 
@@ -1001,7 +1007,7 @@ program
     const messengers = registry.listMessengers()
     if (messengers.length === 0) {
       console.log('No messengers registered yet.')
-      console.log('Run "im-hub config wechat" to configure WeChat.')
+      console.log('Run "im-hub-pro config wechat" to configure WeChat.')
       return
     }
     console.log('📱 Available Messengers:\n')

@@ -23,7 +23,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          # 注意：这里去掉了 registry-url，因为我们要走 OIDC 原生发布流
+          # 双通道：
+          # - 优先 OIDC trusted publishing（npmjs.com 上为 im-hub-pro 配置好后自动启用）
+          # - 兜底 NPM_TOKEN（automation token，配 id-token:write 同样可带 provenance）
+          # registry-url 让 setup-node 把 NODE_AUTH_TOKEN 注入到 ~/.npmrc
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Check version changed
         id: version
@@ -52,8 +56,13 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        # --provenance 会生成可信供应链证明，完美配合 OIDC
+        # --provenance 走 sigstore 签名供应链证明；OIDC trusted 与 automation
+        # token 两条路径都支持（automation token 需配 id-token:write 权限，
+        # 上面 permissions 块已给）。NODE_AUTH_TOKEN 仅当配置了 NPM_TOKEN
+        # secret 时才有值，trusted publishing 启用后可以删掉 secret。
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         if: steps.version.outputs.changed == 'true'

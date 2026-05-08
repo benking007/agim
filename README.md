@@ -1,8 +1,10 @@
-# im-hub
+# im-hub-pro
 
 [中文文档](README.zh-CN.md)
 
 **Universal messenger-to-agent bridge** — connect WeChat / Feishu / Telegram / **Discord** to Claude Code / Codex / Copilot / OpenCode, **or any custom agent via ACP**. Single Node.js process, no Docker, no Redis. Browser dashboard, persistent jobs, multi-tenant workspaces, and real human-in-the-loop tool approval over IM.
+
+> Productized fork of the original [`im-hub`](https://www.npmjs.com/package/im-hub). On-disk config (`~/.im-hub/`), env vars (`IMHUB_*`), and HTTP headers (`X-IM-Hub-Token`) are unchanged — drop-in compatible. See [Migrating from `im-hub`](#migrating-from-im-hub) below.
 
 ## What's new in v0.2.13 → v0.2.23
 
@@ -10,7 +12,7 @@
 - **Human-in-the-loop tool approval** — Claude pauses on tool calls; you reply `y`/`n` in the same IM thread, **or click an in-page card from the web chat**
 - **Tasks dashboard** at `/tasks` with **Jobs · Background · Subtasks · Schedules · Approvals · Health · Files · Audit** tabs (per-agent filtering, multi-select batch ops, real-time SSE updates)
 - **Multi-tenant workspaces** — per-workspace agent whitelist + rate limits, **with full CRUD UI in /settings**, plus command-level ACL on `/job` `/schedule` `/audit` (each user only sees their own)
-- **ACP server mode** — im-hub itself is an ACP-compatible agent (`POST /tasks` sync + SSE)
+- **ACP server mode** — im-hub-pro itself is an ACP-compatible agent (`POST /tasks` sync + SSE)
 - **Persistent Job Board** + cron scheduler (SQLite, survives restarts) with 30-day retention sweep
 - **Smart routing**: intent classifier (CJK + ASCII), circuit breaker, sticky sessions
 - **Structured logging** (`pino`) with `traceId` end-to-end + audit log + Prometheus `/api/metrics`
@@ -29,7 +31,7 @@ See [CHANGELOG.md](CHANGELOG.md) and [docs/code-review-2026-05-06-main.md](docs/
 ## Web Chat & Tasks Dashboard
 
 ```
-im-hub start           # Web UI at http://localhost:3000
+im-hub-pro start       # Web UI at http://localhost:3000
                        #   /          chat (with in-page approval cards)
                        #   /tasks     jobs · background · subtasks · schedules
                        #              · approvals · health · files · audit
@@ -45,7 +47,7 @@ im-hub start           # Web UI at http://localhost:3000
 ## Features
 
 - **Universal multiplexer** — one instance, multiple messengers, multiple agents
-- **Custom agent support** — connect any agent via [ACP](https://agentcommunicationprotocol.dev) with `im-hub config agent`, or auto-discover via `/.well-known/acp`
+- **Custom agent support** — connect any agent via [ACP](https://agentcommunicationprotocol.dev) with `im-hub-pro config agent`, or auto-discover via `/.well-known/acp`
 - **Built-in IMs** — WeChat (iLink), Feishu (WebSocket long-poll), Telegram (grammy), **Discord** (discord.js)
 - **Built-in CLI agents** — Claude Code, Codex, Copilot, OpenCode (all via shared `AgentBase` adapter)
 - **Plugin architecture** — easy to add new messengers / agents
@@ -55,28 +57,38 @@ im-hub start           # Web UI at http://localhost:3000
 ## Installation
 
 ```bash
-npm install -g im-hub
+npm install -g im-hub-pro
 ```
 
 Requires **Node.js ≥ 18** (production deployments use ≥ 22 LTS — see [`docs/deployment.md`](docs/deployment.md)).
+
+### Migrating from `im-hub`
+
+Your `~/.im-hub/` config dir, `IMHUB_*` env vars, `X-IM-Hub-Token` header, and ACP wire identifiers (`im-hub-gateway`) are unchanged — this is a brand rename only.
+
+```bash
+npm uninstall -g im-hub
+npm install -g im-hub-pro
+im-hub-pro start
+```
 
 ## Quick Start
 
 ```bash
 # 1. Configure at least one messenger
-im-hub config wechat        # QR-code login
-im-hub config feishu        # App ID + Secret (no webhook needed)
-im-hub config telegram      # @BotFather token
-im-hub config discord       # Bot token; see docs/discord-setup.md
+im-hub-pro config wechat        # QR-code login
+im-hub-pro config feishu        # App ID + Secret (no webhook needed)
+im-hub-pro config telegram      # @BotFather token
+im-hub-pro config discord       # Bot token; see docs/discord-setup.md
 
 # 2. (Optional) Configure a CLI agent — most are auto-detected
-im-hub config claude
+im-hub-pro config claude
 
 # 3. (Optional) Connect a custom remote agent over ACP
-im-hub config agent
+im-hub-pro config agent
 
 # 4. Start the bridge
-im-hub start
+im-hub-pro start
 ```
 
 ### Feishu (WebSocket Long Polling)
@@ -92,10 +104,10 @@ See [`docs/discord-setup.md`](docs/discord-setup.md) for the full bot-token / in
 
 ### Connect Your Own Agent
 
-im-hub speaks **ACP (Agent Communication Protocol)**, so you can plug in any agent that exposes a standard HTTP endpoint — your own business bots, internal tools, cloud services, anything.
+im-hub-pro speaks **ACP (Agent Communication Protocol)**, so you can plug in any agent that exposes a standard HTTP endpoint — your own business bots, internal tools, cloud services, anything.
 
 ```bash
-im-hub config agent
+im-hub-pro config agent
 # Interactive setup: name, endpoint URL, auth (none / Bearer / API key)
 # Connection is validated automatically; /.well-known/acp is auto-discovered
 ```
@@ -106,24 +118,24 @@ After setup, chat with it the same way as built-in agents:
 /myagent analyze the Q1 sales report
 ```
 
-### Use im-hub *as* an agent
+### Use im-hub-pro *as* an agent
 
-im-hub also exposes an ACP server — point any ACP-compliant client at `POST http://localhost:3000/tasks` (sync) or with `?mode=stream` (SSE). Auth is the same `Authorization: Bearer <web-token>`.
+im-hub-pro also exposes an ACP server — point any ACP-compliant client at `POST http://localhost:3000/tasks` (sync) or with `?mode=stream` (SSE). Auth is the same `Authorization: Bearer <web-token>`.
 
 ## CLI Commands
 
 ```
-im-hub                 # Same as 'start'
-im-hub start           # Start the bridge + web UI
-im-hub config wechat   # Configure WeChat
-im-hub config feishu   # Configure Feishu
-im-hub config telegram # Configure Telegram
-im-hub config discord  # Configure Discord
-im-hub config claude   # Configure Claude Code
-im-hub config agent    # Connect a custom ACP agent
-im-hub agents          # List available agents
-im-hub messengers      # List available messengers
-im-hub help
+im-hub-pro                 # Same as 'start'
+im-hub-pro start           # Start the bridge + web UI
+im-hub-pro config wechat   # Configure WeChat
+im-hub-pro config feishu   # Configure Feishu
+im-hub-pro config telegram # Configure Telegram
+im-hub-pro config discord  # Configure Discord
+im-hub-pro config claude   # Configure Claude Code
+im-hub-pro config agent    # Connect a custom ACP agent
+im-hub-pro agents          # List available agents
+im-hub-pro messengers      # List available messengers
+im-hub-pro help
 ```
 
 ## Chat Commands
@@ -151,7 +163,7 @@ Send these as messages to the bot. Responses are streamed back in the same threa
 
 ## Human-in-the-loop Tool Approval
 
-When a Claude run launched from IM tries to use a tool, im-hub pauses it and posts an approval card to the same IM thread:
+When a Claude run launched from IM tries to use a tool, im-hub-pro pauses it and posts an approval card to the same IM thread:
 
 ```
 🔐 Tool approval request
@@ -230,7 +242,7 @@ For the full deep-dive see [`docs/architecture/current.md`](docs/architecture/cu
 ## Project Structure
 
 ```
-im-hub/
+im-hub-pro/
 ├── src/
 │   ├── core/
 │   │   ├── types.ts              # Plugin interfaces
@@ -336,7 +348,7 @@ The schema is enforced by `zod` at startup and on every PUT `/api/config` — ba
 
 ```bash
 git clone https://github.com/benking007/imhub.git
-cd im-hub
+cd imhub
 npm install
 npm run build      # tsc + copy public/
 npm run dev        # tsc --watch

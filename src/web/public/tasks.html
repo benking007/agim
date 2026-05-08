@@ -136,6 +136,13 @@
         filesTruncated: 'File too large — showing first 1 MiB.',
         filesNotFound: 'Not found.',
         filesLoad: 'Load',
+        filesEdit: 'Edit',
+        filesEditing: 'editing…',
+        filesSave: 'Save',
+        filesSaving: 'Saving…',
+        filesCancel: 'Cancel',
+        filesSaved: 'Saved.',
+        filesSaveFailed: 'Save failed',
         // Jobs batch toolbar
         jobsSelectAll: 'Select all',
         jobsBatchCancel: 'Cancel selected',
@@ -256,6 +263,13 @@
         filesTruncated: '文件过大 — 仅显示前 1 MiB。',
         filesNotFound: '未找到。',
         filesLoad: '加载',
+        filesEdit: '编辑',
+        filesEditing: '编辑中…',
+        filesSave: '保存',
+        filesSaving: '保存中…',
+        filesCancel: '取消',
+        filesSaved: '已保存。',
+        filesSaveFailed: '保存失败',
         // Jobs batch toolbar
         jobsSelectAll: '全选',
         jobsBatchCancel: '批量取消',
@@ -1629,15 +1643,78 @@
       const content = document.getElementById('files-content');
       const banner = data.truncated ? `<div class="empty">${T.filesTruncated}</div>` : '';
       const binary = data.encoding === 'base64' ? `<div class="empty">${T.filesBinary}</div>` : '';
-      // Pre-tags preserve whitespace; whitelist content to avoid injection.
+      // Editable iff text + not truncated (truncated edits would discard
+      // bytes past the 1 MiB cap, which is a footgun). Both checks here.
+      const canEdit = data.encoding === 'utf-8' && !data.truncated;
       content.innerHTML = `
-        <div style="margin-bottom:8px">
+        <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <code>${esc(data.path)}</code>
           <span style="color:var(--muted);font-size:12px"> · ${fmtBytes(data.size)} · ${fmtTime(data.mtime)}</span>
+          ${canEdit ? `<button class="primary" id="btn-file-edit" style="margin-left:auto;background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesEdit}</button>` : ''}
         </div>
         ${banner}${binary}
-        <pre style="max-height:55vh;overflow:auto;background:var(--card);border:1px solid var(--border);padding:8px;border-radius:6px">${esc(data.content)}</pre>
+        <pre id="file-pre" style="max-height:55vh;overflow:auto;background:var(--card);border:1px solid var(--border);padding:8px;border-radius:6px">${esc(data.content)}</pre>
       `;
+      if (canEdit) {
+        document.getElementById('btn-file-edit').onclick = () => enterFileEditMode(data);
+      }
+    }
+
+    function enterFileEditMode(data) {
+      const content = document.getElementById('files-content');
+      // Stash original so Cancel can roll back without re-fetching.
+      content.innerHTML = `
+        <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <code>${esc(data.path)}</code>
+          <span style="color:var(--muted);font-size:12px"> · ${T.filesEditing}</span>
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button id="btn-file-cancel">${T.filesCancel}</button>
+            <button id="btn-file-save" class="primary" style="background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesSave}</button>
+          </span>
+        </div>
+        <textarea id="file-editor" spellcheck="false"
+          style="width:100%;min-height:55vh;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:13px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;outline:none;resize:vertical"></textarea>
+      `;
+      const ta = document.getElementById('file-editor');
+      ta.value = data.content;
+      ta.focus();
+      document.getElementById('btn-file-cancel').onclick = () => renderFileContent(data);
+      document.getElementById('btn-file-save').onclick = async () => {
+        const newContent = ta.value;
+        const saveBtn = document.getElementById('btn-file-save');
+        saveBtn.disabled = true;
+        saveBtn.textContent = T.filesSaving;
+        try {
+          // Bypass api() helper here so we can surface the server's
+          // structured error body (e.g. "Content exceeds 1 MiB cap")
+          // rather than just the HTTP statusText.
+          const qs = new URLSearchParams({ agent: data.agent, path: data.path });
+          const res = await fetch('/api/workspace-files?' + qs.toString(), {
+            method: 'PUT',
+            headers: { 'X-IM-Hub-Token': TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: newContent }),
+          });
+          if (!res.ok) {
+            let msg = res.status + ' ' + res.statusText;
+            try { const j = await res.json(); if (j && j.error) msg = j.error; } catch {}
+            throw new Error(msg);
+          }
+          const r = await res.json();
+          // Re-render from the server's authoritative reply (size/mtime
+          // change on success) rather than trusting the local string.
+          renderFileContent({
+            ...data,
+            content: newContent,
+            size: r.size,
+            mtime: r.mtime,
+          });
+          alert(T.filesSaved);
+        } catch (e) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = T.filesSave;
+          alert(T.filesSaveFailed + ': ' + (e && e.message ? e.message : e));
+        }
+      };
     }
 
     document.getElementById('files-agent').addEventListener('change', (e) => {

@@ -2,7 +2,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { readdir, stat, readFile } from 'fs/promises'
+import { readdir, stat, readFile, writeFile, rename, unlink } from 'fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
@@ -207,9 +207,13 @@ export async function startWebServer(options: {
     }
     // PR-D: Agent workspace file browser. Read-only inspection of
     // ~/.im-hub-workspaces/<agent>/ contents — list dirs, peek small
-    // text files. Edits / writes intentionally not exposed; ops use ssh.
+    // text files. PUT path supports inline editing (annotate CLAUDE.md,
+    // AGENTS.md, etc.) — same traversal/size guards as GET.
     if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
       return handleWorkspaceFiles(req, res, url)
+    }
+    if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
+      return handleWorkspaceFileWrite(req, res, url)
     }
     // PR-D: Job batch operations. Same semantics as /api/jobs/:id/cancel
     // and /run but accepts an array of ids in one request — saves N
@@ -1241,6 +1245,133 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * Inline edit of a workspace file. UI use-case: annotate the agent's
+ * CLAUDE.md / AGENTS.md / scratch notes from the dashboard without
+ * shelling into the host.
+ *
+ * Body: { content: string }   — UTF-8 text only (binary writes refused).
+ * Response: { ok: true, size, mtime } on success.
+ *
+ * Safety:
+ * - Same agent + path traversal guards as the GET handler.
+ * - 1 MiB hard cap on `content` (matches the read cap so a roundtrip
+ *   edit can't grow a file beyond what the read can show).
+ * - Atomic write: stage to `<target>.tmp.<rand>` then `rename` so a
+ *   crash mid-write can't leave a half-truncated file. The .tmp file
+ *   is unlinked on any error path.
+ * - Refuses to overwrite a directory; refuses to create a parent dir
+ *   that doesn't exist (no implicit mkdir-p — keeps surprises out).
+ */
+async function handleWorkspaceFileWrite(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const agent = url.searchParams.get('agent') || ''
+    const userPath = url.searchParams.get('path') || ''
+
+    if (!agent) {
+      sendJson(res, 400, { error: 'Missing required ?agent=' })
+      return
+    }
+    if (!userPath) {
+      sendJson(res, 400, { error: 'Missing required ?path=' })
+      return
+    }
+    const known = new Set(registry.listAgents())
+    if (!known.has(agent)) {
+      sendJson(res, 404, { error: `Unknown agent "${agent}"` })
+      return
+    }
+
+    const { defaultAgentCwd } = await import('../core/agent-cwd.js')
+    const base = resolvePath(defaultAgentCwd(agent))
+    const target = resolvePath(base, userPath)
+    if (target !== base && !target.startsWith(base + pathSep)) {
+      sendJson(res, 400, { error: 'Path escapes workspace root' })
+      return
+    }
+    if (target === base) {
+      sendJson(res, 400, { error: 'Cannot overwrite workspace root' })
+      return
+    }
+
+    const body = await readBody(req, res)
+    let parsed: { content?: unknown }
+    try { parsed = JSON.parse(body) as typeof parsed } catch {
+      sendJson(res, 400, { error: 'Invalid JSON body' })
+      return
+    }
+    if (typeof parsed.content !== 'string') {
+      sendJson(res, 400, { error: 'content must be a string' })
+      return
+    }
+    const content = parsed.content
+    // Encode early so the size check is on bytes, not chars (a single
+    // CJK char is 3 bytes UTF-8 — char-count would lie about file size).
+    const buf = Buffer.from(content, 'utf-8')
+    if (buf.length > WORKSPACE_FILE_MAX_BYTES) {
+      sendJson(res, 413, { error: 'Content exceeds 1 MiB cap' })
+      return
+    }
+    // Reject content that contains a NUL byte. UTF-8 text never has one;
+    // accidental binary upload here would corrupt the editor on next read.
+    if (buf.includes(0)) {
+      sendJson(res, 400, { error: 'NUL byte in content — only UTF-8 text accepted' })
+      return
+    }
+
+    // Existing-target guards: must not be a directory; parent dir must
+    // exist (no implicit mkdir-p — too easy to typo a deep path and
+    // create a hidden mess).
+    try {
+      const st = await stat(target)
+      if (st.isDirectory()) {
+        sendJson(res, 400, { error: 'Target is a directory' })
+        return
+      }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code !== 'ENOENT') throw err
+      // Doesn't exist yet — that's fine for new-file writes, but the
+      // parent directory must be present.
+      const parent = dirname(target)
+      try {
+        const ps = await stat(parent)
+        if (!ps.isDirectory()) {
+          sendJson(res, 400, { error: 'Parent path is not a directory' })
+          return
+        }
+      } catch {
+        sendJson(res, 400, { error: 'Parent directory does not exist' })
+        return
+      }
+    }
+
+    // Atomic write. crypto.randomBytes is the cheapest unique suffix and
+    // already imported up top.
+    const tmp = `${target}.tmp.${randomBytes(6).toString('hex')}`
+    try {
+      await writeFile(tmp, buf, { mode: 0o600 })
+      await rename(tmp, target)
+    } catch (err) {
+      try { await unlink(tmp) } catch { /* tmp may not have been created */ }
+      throw err
+    }
+
+    const finalSt = await stat(target)
+    sendJson(res, 200, {
+      ok: true,
+      agent,
+      path: relativePath(base, target),
+      size: finalSt.size,
+      mtime: finalSt.mtime.toISOString(),
+    })
+  } catch (err) {
+    const e = err as Error & { handled?: boolean; statusCode?: number }
+    if (e?.handled) return
+    if (!res.headersSent) sendJson(res, e?.statusCode || 500, { error: e instanceof Error ? e.message : String(err) })
   }
 }
 

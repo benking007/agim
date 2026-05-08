@@ -1,6 +1,6 @@
-# im-hub v2 升级计划 · IM 网关稳态 + 长期记忆
+# im-hub-pro v2 升级计划 · IM 网关稳态 + 长期记忆
 
-> 目标：让 Claude Code / opencode 通过 im-hub 使用时，**Agent 不漂移、长期记忆不丢失、工作目录可独立配置、会话生命周期清晰可解释**。
+> 目标：让 Claude Code / opencode 通过 im-hub-pro 使用时，**Agent 不漂移、长期记忆不丢失、工作目录可独立配置、会话生命周期清晰可解释**。
 > 起始日期：2026-05-02
 > 当前分支：main
 > 维护人：ben.wangzj@gmail.com（用户） + Claude Code（执行）
@@ -9,9 +9,9 @@
 
 ## 背景
 
-用户日常通过两个 Agent 工作：**Claude Code** 和 **opencode**，入口都是 im-hub。在使用过程中暴露 4 个痛点：
+用户日常通过两个 Agent 工作：**Claude Code** 和 **opencode**，入口都是 im-hub-pro。在使用过程中暴露 4 个痛点：
 
-1. **工作目录共用** — 两个 Agent 都继承 im-hub 的 cwd（systemd 默认 `/`），无法分别定义角色与项目记忆。
+1. **工作目录共用** — 两个 Agent 都继承 im-hub-pro 的 cwd（systemd 默认 `/`），无法分别定义角色与项目记忆。
 2. **Agent 漂移** — 跨日 / 长停留后，正在用 Claude Code 会被切到 opencode，违背"非显式不切换"的预期。
 3. **记忆只到会话级** — 没有跨会话的项目记忆机制；只能靠会话 ID 翻旧 jsonl，做事缺乏延续性。
 4. **会话保持时间过短** — 同一 IM 会话 30 分钟空闲就过期，连带把 sticky agent 和 Claude resumable id 一起冲掉。
@@ -22,12 +22,12 @@
 
 | 事实 | 出处 | 影响 |
 |---|---|---|
-| im-hub.service cwd = `/`，`crossSpawn` 不传 cwd | `utils/cross-platform.ts:22-28` + systemd unit 无 `WorkingDirectory` | Claude / opencode 把 `/` 当项目，所有 IM 会话共用 `/root/.claude/projects/-/` 一份记忆 |
+| im-hub-pro.service cwd = `/`，`crossSpawn` 不传 cwd | `utils/cross-platform.ts:22-28` + systemd unit 无 `WorkingDirectory` | Claude / opencode 把 `/` 当项目，所有 IM 会话共用 `/root/.claude/projects/-/` 一份记忆 |
 | Session key = `${platform}:${channelId}:${threadId}`，TTL 30 min | `core/session.ts:38` | 跨日 / 久不说话必过期 |
 | stickyAgent 来源仅限 in-memory `existingSession?.agent` | `core/router.ts:274` | session 一过期 → stickyAgent 丢失 |
 | 无 stickyAgent 时跑 `classifyIntent`，opencode `weight=1.2` 与 claude-code `1.0` 关键字大量重叠 | `core/intent.ts:16-38` | 含 "代码/code/git/test/bug" 必偏 opencode |
 | `classifyIntent` 即使有 sticky 也会跑评分；多关键字可叠加超过 sticky `+3` 偏置 | `core/intent.ts:131-181` | 长消息能在 sticky 存在时反向覆盖（罕见但已发生） |
-| `claudeSessionId` / `claudeSessionPrimed` 跟着 session 一起被 cleanup 删除 | `core/session.ts:303-326`、`session.ts:617-619` | im-hub 会话过期 → Claude `--resume` 也接不回去了 |
+| `claudeSessionId` / `claudeSessionPrimed` 跟着 session 一起被 cleanup 删除 | `core/session.ts:303-326`、`session.ts:617-619` | im-hub-pro 会话过期 → Claude `--resume` 也接不回去了 |
 
 ### 漂移机制
 
@@ -101,12 +101,12 @@
 | `IMHUB_CLAUDE_CODE_CWD` | 单独覆盖 Claude 的 cwd | 计算自上面 |
 | `IMHUB_OPENCODE_CWD` | 单独覆盖 opencode 的 cwd | 计算自上面 |
 
-**预期效果（重启 im-hub 后）**：
+**预期效果（重启 im-hub-pro 后）**：
 
 - IM 给 Claude 发 `pwd` → `/root/.im-hub-workspaces/claude-code`（之前是 `/`）
 - IM 给 opencode 发 `pwd` → `/root/.im-hub-workspaces/opencode`
 - 终端直接 `claude` 不受影响（仍按当前终端 cwd）
-- web/scheduler/intent-llm 调 agent 不受影响（cwd undefined → 继承 im-hub `/`）
+- web/scheduler/intent-llm 调 agent 不受影响（cwd undefined → 继承 im-hub-pro `/`）
 
 详细设计见 `docs/architecture/agent-cwd-and-memory.md`，决策记录见 `docs/adr/0005-agent-cwd-isolation.md`。
 
@@ -114,7 +114,7 @@
 
 - 复用 Claude / opencode 已有的 per-project memory（`<cwd>/CLAUDE.md`、`<cwd>/AGENTS.md`、`<cwd>/memory/`）。
 - 在 B 落地的工作目录里手写 / 半自动维护项目档案。
-- （可选）im-hub 提供 `/memo add <text>` 命令，append 到对应工作目录的 MEMORY.md。
+- （可选）im-hub-pro 提供 `/memo add <text>` 命令，append 到对应工作目录的 MEMORY.md。
 
 **用户使用指南**：[`docs/im-workspaces-guide.md`](./im-workspaces-guide.md)
 讲怎么写角色书 / 验证 sticky / 调 TTL / 故障排查。
@@ -191,7 +191,7 @@ TS `Omit<Session, 'messages'>` 只在结构上要求字段类型，optional 字�
 3. 读 `docs/architecture/agent-cwd-and-memory.md` 了解 B+C 的方案
 4. 读 `docs/session-model.md` 了解三层 session 的关系
 5. 看 `git log --oneline -20 src/core/intent.ts src/core/session.ts` 确认 A+D 的提交是否还在
-6. 看 `systemctl status im-hub` 确认服务是否已经在用新 dist
+6. 看 `systemctl status im-hub-pro` 确认服务是否已经在用新 dist
 7. 验证健康度的一行体检：
    ```bash
    jq '{agent, cId: .claudeSessionId, primed: .claudeSessionPrimed, turns: .usage.turns}' \

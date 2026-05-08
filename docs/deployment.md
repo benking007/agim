@@ -1,8 +1,8 @@
-# im-hub 部署指南
+# im-hub-pro 部署指南
 
 > 适用版本：v0.2.13+（2026-05-02 v2 升级后包括 sticky-agent 绝对锁、双层 TTL、per-Agent 工作目录）
 
-本文档覆盖在 Linux 服务器上部署 im-hub 的完整流程：依赖、构建、systemd 守护、端口暴露、配置、平滑升级。Windows 与 macOS 部署路径相似（仅 systemd 部分需替换）。
+本文档覆盖在 Linux 服务器上部署 im-hub-pro 的完整流程：依赖、构建、systemd 守护、端口暴露、配置、平滑升级。Windows 与 macOS 部署路径相似（仅 systemd 部分需替换）。
 
 ---
 
@@ -34,16 +34,16 @@ npm i -g opencode-ai                  # OpenCode
 ### 2.1 全局安装（推荐生产）
 
 ```bash
-npm install -g im-hub
-im-hub --version    # 应该输出 0.2.13 或更新
+npm install -g im-hub-pro
+im-hub-pro --version    # 应该输出 0.2.29 或更新
 ```
 
 ### 2.2 从源码部署
 
 ```bash
 # 克隆 + 构建
-git clone https://github.com/benking007/imhub.git /opt/im-hub
-cd /opt/im-hub
+git clone https://github.com/benking007/imhub.git /opt/im-hub-pro
+cd /opt/im-hub-pro
 npm install
 npm run build
 
@@ -55,7 +55,7 @@ npm link
 
 ## 三、首次配置
 
-`im-hub` 把所有运行时数据放在 `~/.im-hub/`。结构如下：
+`im-hub-pro` 把所有运行时数据放在 `~/.im-hub/`。结构如下：
 
 ```
 ~/.im-hub/
@@ -72,9 +72,9 @@ npm link
 至少配一个：
 
 ```bash
-im-hub config telegram   # 输入 @BotFather 给的 bot token
-im-hub config feishu     # 输入飞书 App ID / App Secret
-im-hub config wechat     # 扫二维码登录
+im-hub-pro config telegram   # 输入 @BotFather 给的 bot token
+im-hub-pro config feishu     # 输入飞书 App ID / App Secret
+im-hub-pro config wechat     # 扫二维码登录
 ```
 
 > Web 控制台单独跑也行，不一定要接 IM。
@@ -82,7 +82,7 @@ im-hub config wechat     # 扫二维码登录
 ### 3.2 接入自定义 ACP Agent（可选）
 
 ```bash
-im-hub config agent
+im-hub-pro config agent
 # 交互式向导：name / endpoint / 鉴权方式
 ```
 
@@ -138,7 +138,7 @@ im-hub config agent
     └── memory/
 ```
 
-启动时 im-hub 会幂等创建这两个目录并种入初始模板。**已存在的 CLAUDE.md / AGENTS.md
+启动时 im-hub-pro 会幂等创建这两个目录并种入初始模板。**已存在的 CLAUDE.md / AGENTS.md
 不会被覆盖**，可以直接 vim 编辑当作"IM 入口的角色书"。
 
 **调整工作区位置**：
@@ -187,7 +187,7 @@ Environment="IMHUB_SESSION_META_TTL_MS=86400000"   # 1 天
 ### 4.1 直接前台运行（用于调试）
 
 ```bash
-im-hub start
+im-hub-pro start
 ```
 
 ### 4.2 systemd 服务（生产）
@@ -196,7 +196,7 @@ im-hub start
 
 ```ini
 [Unit]
-Description=im-hub — IM-to-Agent gateway
+Description=im-hub-pro — IM-to-Agent gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -236,14 +236,14 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd -m -s /bin/bash imhub
-sudo cp im-hub.service /etc/systemd/system/
+sudo cp im-hub-pro.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now im-hub
-sudo systemctl status im-hub
-sudo journalctl -u im-hub -f
+sudo systemctl enable --now im-hub-pro
+sudo systemctl status im-hub-pro
+sudo journalctl -u im-hub-pro -f
 ```
 
-> 全局安装的 `im-hub` 路径取决于你的 npm prefix。`which im-hub` 找一下，把 `ExecStart` 改成实际路径。
+> 全局安装的 `im-hub-pro` 路径取决于你的 npm prefix。`which im-hub-pro` 找一下，把 `ExecStart` 改成实际路径。
 
 ### 4.3 Docker（可选）
 
@@ -264,15 +264,15 @@ CMD ["node", "dist/cli.js", "start"]
 ```
 
 ```bash
-docker build -t im-hub .
+docker build -t im-hub-pro .
 docker run -d \
-  --name im-hub \
-  -v /opt/im-hub-data:/data \
+  --name im-hub-pro \
+  -v /opt/im-hub-pro-data:/data \
   -p 3000:3000 \
   -p 9090:9090 \
   -e LOG_LEVEL=info \
   -e LOG_FORMAT=json \
-  im-hub
+  im-hub-pro
 ```
 
 ---
@@ -287,7 +287,7 @@ docker run -d \
 > ⚠️ **Web 控制台默认对所有网络接口开放**（v0.2.13 起），方便容器/虚拟机网络环境直接访问。生产部署到公网时**必须**：
 > 1. 用防火墙（云厂商安全组 / iptables / ufw）只允许已知来源 IP；
 > 2. 用 nginx/Caddy 做 HTTPS 反代终端用户访问，**不要直接 HTTP 暴露**（web-token 在 header 里明文传，HTTP 等于交给中间路由）；
-> 3. 定期轮换 token：`rm ~/.im-hub/web-token && systemctl restart im-hub`。
+> 3. 定期轮换 token：`rm ~/.im-hub/web-token && systemctl restart im-hub-pro`。
 >
 > 如果只在私网用，建议改回回环监听（修改 `~/.im-hub/config.json`，加 `"webHost": "127.0.0.1"`，或者直接修改源码 `src/web/server.ts:206`）。
 
@@ -354,7 +354,7 @@ server {
 
 ```
 scrape_configs:
-  - job_name: im-hub
+  - job_name: im-hub-pro
     metrics_path: /api/metrics
     bearer_token: <web-token-content>
     static_configs:
@@ -403,9 +403,9 @@ curl -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
 
 ```bash
 # 停服 → 备份 → 起服（推荐：业务低峰）
-sudo systemctl stop im-hub
+sudo systemctl stop im-hub-pro
 tar czf imhub-$(date +%F).tgz -C /home/imhub .im-hub
-sudo systemctl start im-hub
+sudo systemctl start im-hub-pro
 
 # 或热备（SQLite WAL 模式安全）
 sqlite3 /home/imhub/.im-hub/audit.db ".backup /backup/audit.db"
@@ -421,17 +421,17 @@ cp -r /home/imhub/.im-hub/sessions /backup/
 
 ```bash
 # 全局安装
-sudo systemctl stop im-hub
-npm install -g im-hub@latest
-sudo systemctl start im-hub
+sudo systemctl stop im-hub-pro
+npm install -g im-hub-pro@latest
+sudo systemctl start im-hub-pro
 
 # 源码部署
 cd /opt/im-hub
-sudo systemctl stop im-hub
+sudo systemctl stop im-hub-pro
 git pull
 npm install
 npm run build
-sudo systemctl start im-hub
+sudo systemctl start im-hub-pro
 ```
 
 升级前看一下 `CHANGELOG.md`。配置文件向前兼容（新字段都是可选）。
@@ -459,7 +459,7 @@ apk add python3 make g++ sqlite-libs
 或装预编译 binary：
 
 ```bash
-npm install -g im-hub --build-from-source=false
+npm install -g im-hub-pro --build-from-source=false
 ```
 
 ### 启动后 Web 端 401
@@ -476,7 +476,7 @@ npm install -g im-hub --build-from-source=false
 export IM_HUB_AUDIT_RETENTION_DAYS=1   # 仍写入但只保留 1 天
 ```
 
-或者直接删 `~/.im-hub/audit.db`，im-hub 会重建空表（重启后生效）。
+或者直接删 `~/.im-hub/audit.db`，im-hub-pro 会重建空表（重启后生效）。
 
 ### 飞书 / Telegram bot 有时收不到消息
 
@@ -493,12 +493,12 @@ v0.2.15 + v2 升级后此问题应已修复（sticky-agent 绝对锁 + meta TTL 
 
 ### IM 给 Claude 发 `pwd` 仍返回 `/`
 
-说明 v2 升级后还没重启 im-hub，或 `~/.im-hub-workspaces/` 目录有权限问题。
+说明 v2 升级后还没重启 im-hub-pro，或 `~/.im-hub-workspaces/` 目录有权限问题。
 
 ```bash
-sudo systemctl restart im-hub
-ls -la ~/.im-hub-workspaces/      # 确认存在 + im-hub 可写
-ls /root/workspace/im-hub/dist/core/agent-cwd.js  # 确认新代码已编译
+sudo systemctl restart im-hub-pro
+ls -la ~/.im-hub-workspaces/      # 确认存在 + im-hub-pro 可写
+ls /root/workspace/imhub/dist/core/agent-cwd.js  # 确认新代码已编译
 ```
 
 ### 想关掉 IM 工作区隔离（回到全局共享）
@@ -528,8 +528,8 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ```bash
 # 1. 服务起来了
-systemctl status im-hub
-journalctl -u im-hub --since "5 min ago"
+systemctl status im-hub-pro
+journalctl -u im-hub-pro --since "5 min ago"
 
 # 2. 端口监听
 ss -lntp | grep -E ':(3000|9090)'
@@ -580,9 +580,9 @@ curl -fsS -X POST \
 ## 十三、卸载
 
 ```bash
-sudo systemctl disable --now im-hub
+sudo systemctl disable --now im-hub-pro
 sudo rm /etc/systemd/system/im-hub.service
 sudo systemctl daemon-reload
-npm uninstall -g im-hub
+npm uninstall -g im-hub-pro
 sudo userdel -r imhub          # 同时删 ~/.im-hub 数据
 ```

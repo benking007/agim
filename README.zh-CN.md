@@ -6,7 +6,7 @@
 
 > 原 [`im-hub`](https://www.npmjs.com/package/im-hub) 包的产品化分支。落盘配置（`~/.im-hub/`）、环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）保持不变 —— 老部署可以无缝切换，详见下方[迁移指南](#从-im-hub-迁移)。
 
-## 0.2.13 → 0.2.23 主要升级
+## 0.2.13 → 0.2.30 主要升级
 
 - **Discord 适配器**（基于 `discord.js` 的 Gateway WebSocket）
 - **工具调用人审（HITL）** — Claude 调工具时自动暂停，IM 同一会话回复 `y`/`n` 即可，**或在 Web 对话界面点弹出的审批卡**
@@ -25,6 +25,7 @@
 - **v0.2.21 — Web 控制台 PR-B**：Health tab（每个 agent 的 breaker / 限流余量 / p50/95/99 / sparkline）+ Approvals tab（浏览并解决所有 pending HITL 审批）
 - **v0.2.22 — Web 控制台 PR-C**：SSE 事件流（`/events`）替代轮询，audit / approval / job / metrics 实时推送；Settings 页加 Workspace 完整 CRUD UI
 - **v0.2.23 — Web 控制台 PR-D**：Files tab 只读浏览 `~/.im-hub-workspaces/<agent>/`；Jobs tab 多选 + 批量取消/重跑；Settings 页 header / 容器重新调整布局
+- **v0.2.30 — 生产硬化**：active subtask 普通消息与 agentCommand 都进入独立子会话和独立原生 Agent session；WebSocket 对话入口按浏览器连接串行处理；session 元数据写入加 per-key 锁；Web 控制台默认回环监听；配置文件强制 `0600`；Telegram 媒体下载拒绝重定向；`im-hub-pro --version` 跟随包版本
 
 完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 

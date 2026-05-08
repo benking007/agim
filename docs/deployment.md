@@ -35,8 +35,11 @@ npm i -g opencode-ai                  # OpenCode
 
 ```bash
 npm install -g im-hub-pro
-im-hub-pro --version    # 应该输出 0.2.29 或更新
+im-hub-pro --version    # 应该输出已安装 npm 包的版本，例如 0.2.30
 ```
+
+> 如果 `npm view im-hub-pro version` 仍低于仓库 `package.json`，说明对应 release commit
+> 还没有发布到 npm。生产全局安装只会拿到 npm 上的最新版本；需要先发布再升级。
 
 ### 2.2 从源码部署
 
@@ -216,7 +219,7 @@ Environment="IM_HUB_AUDIT_RETENTION_DAYS=60"
 # 可选：让 LLM 兜底参与意图路由
 # Environment="IM_HUB_LLM_JUDGE_AGENT=claude-code"
 
-ExecStart=/usr/bin/im-hub start
+ExecStart=/usr/bin/im-hub-pro start
 Restart=always
 RestartSec=5
 
@@ -281,15 +284,20 @@ docker run -d \
 
 | 端口 | 服务 | 默认绑定 | 暴露建议 |
 |---|---|---|---|
-| 3000 | Web 控制台 + REST API | **`0.0.0.0`**（全网监听） | 公网部署时必须配防火墙 + HTTPS 反代 |
+| 3000 | Web 控制台 + REST API | **`127.0.0.1`**（v0.2.30 起默认回环） | 公网部署时放在 HTTPS 反代后；需要直连时显式设置 `IMHUB_WEB_BIND=0.0.0.0` |
 | 9090 | ACP Server | `127.0.0.1` only | 仅 ACP 上游需要时 |
 
-> ⚠️ **Web 控制台默认对所有网络接口开放**（v0.2.13 起），方便容器/虚拟机网络环境直接访问。生产部署到公网时**必须**：
-> 1. 用防火墙（云厂商安全组 / iptables / ufw）只允许已知来源 IP；
-> 2. 用 nginx/Caddy 做 HTTPS 反代终端用户访问，**不要直接 HTTP 暴露**（web-token 在 header 里明文传，HTTP 等于交给中间路由）；
-> 3. 定期轮换 token：`rm ~/.im-hub/web-token && systemctl restart im-hub-pro`。
+> ⚠️ v0.2.30 起 Web 控制台默认只监听回环地址，避免新部署误暴露到公网。
+> 如需从局域网/公网访问，请在 systemd 或容器环境变量里显式声明：
 >
-> 如果只在私网用，建议改回回环监听（修改 `~/.im-hub/config.json`，加 `"webHost": "127.0.0.1"`，或者直接修改源码 `src/web/server.ts:206`）。
+> ```ini
+> Environment="IMHUB_WEB_BIND=0.0.0.0"
+> ```
+>
+> 对外暴露时仍建议：
+> 1. 用防火墙（云厂商安全组 / iptables / ufw）只允许已知来源 IP；
+> 2. 用 nginx/Caddy 做 HTTPS 反代终端用户访问，**不要直接 HTTP 暴露**（web-token 在 header/URL 中传输，HTTP 等于交给中间路由）；
+> 3. 定期轮换 token：`rm ~/.im-hub/web-token && systemctl restart im-hub-pro`。
 
 ### 5.1 nginx 反代示例
 

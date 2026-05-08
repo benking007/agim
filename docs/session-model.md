@@ -23,9 +23,9 @@ im-hub-pro 在一次 IM 对话里面其实有三层"会话"，但只有前两层
    │  生命周期：Claude 自己保留，无主动清理                  │
    └────────────────────────────────────────────────────────┘
 
-   ┌─ opencode session ─────────────────────────────────────┐
-   │  不存在。`opencode run` 每次都是全新进程，没有持久化。  │
-   │  上下文延续只能靠 im-hub-pro 把 messages[] 拼回 prompt。    │
+   ┌─ OpenCode / Codex native session ─────────────────────┐
+   │  opencodeSessionId / codexSessionId 记录在 session meta │
+   │  后续轮次优先走 CLI 原生 resume；没有 id 时才拼 history。 │
    └────────────────────────────────────────────────────────┘
 ```
 
@@ -63,6 +63,8 @@ interface Session {
 
   claudeSessionId?: string     // ← 把 im-hub-pro session 与 Claude session 粘在一起的索引
   claudeSessionPrimed?: boolean
+  opencodeSessionId?: string   // OpenCode 原生 session id（ses_...）
+  codexSessionId?: string      // Codex 原生 thread id
 
   usage?: { ... }              // /stats 看到的累计
   subtasks?, activeSubtaskId?  // 子任务独立会话
@@ -142,22 +144,31 @@ Claude 那边的 jsonl 永不过期（除非手动清）。但只要 im-hub-pro 
 
 ---
 
-## 四、opencode session：不存在
+## 四、OpenCode / Codex native session
 
-`opencode run --format json` 每次都是新进程，CLI 本身没有 resumable session 概念。上下文连续性的唯一来源是 im-hub-pro 把 `messages[]` 拼进 prompt（`agent-base.ts:buildContextualPrompt`）。
+OpenCode 与 Codex 会在 JSON 事件流里暴露自己的 session/thread id。im-hub-pro 捕获后分别写入：
+
+| Agent | 字段 | 后续调用 |
+|---|---|---|
+| OpenCode | `opencodeSessionId` | 传回 OpenCode adapter，并把 `agentSessionResume=true` |
+| Codex | `codexSessionId` | 使用 `codex exec resume <id>` |
+
+当 `agentSessionResume=true` 时，router 会把 `effectiveHistory` 置空，避免"CLI 原生历史 + im-hub 拼接历史"双喂上下文。
+
+如果还没有捕获到原生 id（例如首次调用或旧版本升级后的第一轮），才依赖 im-hub-pro 的 `messages[]` 拼接历史。
 
 后果：
 
 | 情形 | opencode 看到的 |
 |---|---|
-| 30 min 内连续对话 | 全量历史（im-hub-pro 拼回） |
-| **30 min 不说话再回来** | **空** — `MESSAGES_TTL` 已清，无可拼 |
-| sticky 仍在 | agent 不变，但等于换了个失忆的人继续聊 |
+| 首轮 / 尚未捕获 native session id | im-hub-pro 拼接的 `messages[]` |
+| 已捕获 `opencodeSessionId` | OpenCode 原生 session 历史 |
+| 30 min 不说话再回来 | im-hub 短历史可能清空，但 native session id 仍在 META TTL 内保留 |
 
-这是 opencode 这条腿固有的局限，im-hub-pro 层无法独立修。能做的折中：
+建议：
 
 - 在 `~/.im-hub-workspaces/opencode/PROJECT.md` 写"长期不变的项目档案"，让 opencode 启动时读
-- 把 `IMHUB_SESSION_MESSAGES_TTL_MS` 调大（例如 24 h）以延长上下文窗口
+- 把 `IMHUB_SESSION_META_TTL_MS` 调大，以延长 native session id 的可恢复窗口
 - 重要事实主动让用户复述，或建一个 prompt 前缀模板
 
 ---
@@ -166,7 +177,9 @@ Claude 那边的 jsonl 永不过期（除非手动清）。但只要 im-hub-pro 
 
 `/job` 创建的子任务有自己的独立会话，key 形如 `${platform}:${channelId}:${threadId}:sub:${jobId}`。父 session 的 `activeSubtaskId` 字段把当前焦点指向子任务；该字段非空时，无前缀消息打给子任务而非主会话。
 
-子任务会话也是 im-hub-pro session 的一种实例，TTL 规则一致。
+v0.2.30 起，`/test` / `/review` / `/diff` 等 agentCommand 也遵循同一焦点规则：active subtask 下会进入子会话，不再落回父会话。
+
+子任务会话也是 im-hub-pro session 的一种实例，TTL 规则一致，并且有自己的 `claudeSessionId` / `opencodeSessionId` / `codexSessionId`。这意味着主会话与子任务不会在 Agent CLI 原生 session 层串线。
 
 ---
 
@@ -207,7 +220,7 @@ env 钩子完整列表见 `im-workspaces-guide.md § 六`。
 | safe-key 怎么算 | `${platform}:${channelId}:${threadId}` 过 sanitizeKey |
 | 短 TTL 与长 TTL 各管什么 | 短管消息历史 / 长管 sticky agent + Claude UUID |
 | Claude 续接靠什么 | session 的 `claudeSessionId` + `--resume` |
-| opencode 续接靠什么 | 没有续接，只有 prompt 拼接 |
+| OpenCode/Codex 续接靠什么 | session 的 `opencodeSessionId` / `codexSessionId` + adapter resume |
 | sticky 怎么改 | `/cc` `/oc` 等显式命令或 `/new` 重置 |
 | 跨平台共享 sticky 吗 | 不共享，key 含 platform |
 | 重启进程会丢吗 | 不会，落盘的元数据会被 lazy 加载回来 |

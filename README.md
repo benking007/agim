@@ -6,7 +6,7 @@
 
 > Productized fork of the original [`im-hub`](https://www.npmjs.com/package/im-hub). On-disk config (`~/.im-hub/`), env vars (`IMHUB_*`), and HTTP headers (`X-IM-Hub-Token`) are unchanged — drop-in compatible. See [Migrating from `im-hub`](#migrating-from-im-hub) below.
 
-## What's new in v0.2.13 → v0.2.23
+## What's new in v0.2.13 → v0.2.30
 
 - **Discord adapter** (Gateway WebSocket via `discord.js`)
 - **Human-in-the-loop tool approval** — Claude pauses on tool calls; you reply `y`/`n` in the same IM thread, **or click an in-page card from the web chat**
@@ -25,6 +25,7 @@
 - **v0.2.21 — Web console PR-B**: Health tab (per-agent breaker / rate-limiter / latency p50/95/99 / sparkline) + Approvals tab (browse and resolve every pending HITL approval from the dashboard)
 - **v0.2.22 — Web console PR-C**: SSE event stream (`/events`) replaces polling for audit / approval / job / metrics events; full Workspace CRUD UI in /settings
 - **v0.2.23 — Web console PR-D**: Files tab — read-only browser of `~/.im-hub-workspaces/<agent>/`; Jobs tab gains multi-select + batch cancel / run; settings page header / container restyled
+- **v0.2.30 — Production hardening**: active subtask turns now use isolated sub-sessions and native agent sessions; WebSocket chat ingress is serialized per browser connection; session metadata writes use per-key locking; Web UI defaults to loopback binding; config files are written `0600`; Telegram media downloads reject redirects; `im-hub-pro --version` reads the package version
 
 See [CHANGELOG.md](CHANGELOG.md) and [docs/code-review-2026-05-06-main.md](docs/code-review-2026-05-06-main.md) for the full list.
 

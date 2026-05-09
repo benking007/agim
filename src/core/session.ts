@@ -321,8 +321,15 @@ class SessionManager {
       // Append-only log avoids rewriting the entire history per turn.
       try {
         await appendFile(sessionLogPath(key), JSON.stringify(message) + '\n')
-      } catch {
-        // Disk error → fall back to full save which will catch it again
+      } catch (appendErr) {
+        log.warn({ event: 'session.append_failed', key, err: String(appendErr) },
+          'JSONL append failed, falling back to full save')
+        try {
+          await this.saveSession(key, session)
+        } catch (saveErr) {
+          log.warn({ event: 'session.fullsave_failed', key, err: String(saveErr) },
+            'Full session save also failed — message persisted only in memory')
+        }
       }
       // Persist metadata only (now small & cheap).
       await this.saveSessionMeta(key, session)

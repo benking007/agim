@@ -499,7 +499,7 @@ class SessionManager {
         delete session.planMode
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
-        try { approvalBus.clearAutoAllowForThread(threadId) } catch { /* ignore */ }
+        try { approvalBus.clearAutoAllowForThread(key) } catch { /* ignore */ }
         this.sessions.set(key, session)
         await this.saveSession(key, session)
         return session

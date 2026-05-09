@@ -92,6 +92,7 @@ export type ApprovalNotifier = (n: ApprovalNotification) => Promise<void>
  *  send the user a confirmation receipt ("✅ 已批准并启用自动放行 …" or
  *  "❌ 已拒绝并撤销自动放行 …") without re-scanning bus internals. */
 export interface ResolvedInfo {
+  reqId: string
   runId: string
   threadId: string
   platform: string
@@ -135,11 +136,19 @@ export interface ResolutionEvent {
 
 export type ResolutionListener = (e: ResolutionEvent) => void
 
+/** Composite key that prevents cross-platform/channel thread collisions. */
+export function threadKey(platform: string, channelId: string, threadId: string): string {
+  return `${platform}:${channelId}:${threadId}`
+}
+
 interface PendingApproval {
   runId: string
   reqId: string
   toolName: string
   threadId: string
+  /** `platform:channelId:threadId` — used as the Map key for pendingByThread
+   *  and autoAllowByThread so different platforms/channels don't collide. */
+  compositeKey: string
   /** Cached at registration so cancelPending can fire ResolutionListener with
    *  a valid platform even when the underlying runContext has already been
    *  cleared (e.g. unregisterRun deletes the context BEFORE cancelling). */
@@ -191,9 +200,10 @@ export class ApprovalBus {
   private connections = new Set<Socket>()
   private notifier: ApprovalNotifier | null = null
   private resolutionListener: ResolutionListener | null = null
-  /** threadId → set of `${toolName}::${prefix}` keys the user has marked
+  /** compositeKey → set of `${toolName}::${prefix}` keys the user has marked
    *  as auto-allow within this conversation. Cleared by clearAutoAllowForThread
-   *  (called from session.resetConversation) and on stop(). */
+   *  (called from session.resetConversation) and on stop(). Key format is
+   *  `platform:channelId:threadId` to isolate across platforms/channels. */
   private autoAllowByThread = new Map<string, Set<string>>()
 
   /**
@@ -317,8 +327,9 @@ export class ApprovalBus {
     }
   }
 
-  hasPendingFor(threadId: string): boolean {
-    return (this.pendingByThread.get(threadId)?.length ?? 0) > 0
+  /** Check if there are pending approvals for the given key (composite or plain threadId for backward compat). */
+  hasPendingFor(key: string): boolean {
+    return (this.pendingByThread.get(key)?.length ?? 0) > 0
   }
 
   /** True iff a notifier has been installed (i.e. messenger layer has wired
@@ -342,35 +353,54 @@ export class ApprovalBus {
    * scoped to this user-path so sidecar disconnects / shutdown / run-
    * terminated denies don't accidentally clear rules the user still wants.
    */
-  resolvePending(threadId: string, decision: Decision): ResolvedInfo | null {
-    const q = this.pendingByThread.get(threadId)
+  /** Resolve the FIFO head for a thread key. Accepts either a composite key
+   *  (`platform:channelId:threadId`) or a plain threadId for backward compat. */
+  resolvePending(key: string, decision: Decision): ResolvedInfo | null {
+    const q = this.pendingByThread.get(key)
     const head = q?.[0]
     if (!head) return null
-    const platform = this.runContexts.get(head.runId)?.platform ?? ''
+    return this._resolveTarget(head, decision)
+  }
+
+  /**
+   * Resolve a specific pending approval identified by reqId. Used by button
+   * callbacks and the dashboard where the UI element carries the exact reqId,
+   * avoiding the FIFO head-of-thread ambiguity of resolvePending().
+   */
+  resolvePendingByReqId(reqId: string, decision: Decision): ResolvedInfo | null {
+    const target = this.pendingById.get(reqId)
+    if (!target || target.resolved) return null
+    return this._resolveTarget(target, decision)
+  }
+
+  private _resolveTarget(target: PendingApproval, decision: Decision): ResolvedInfo {
+    const platform = this.runContexts.get(target.runId)?.platform ?? ''
     const info: ResolvedInfo = {
-      runId: head.runId,
-      threadId: head.threadId,
+      reqId: target.reqId,
+      runId: target.runId,
+      threadId: target.threadId,
       platform,
-      toolName: head.toolName,
-      fingerprint: head.fingerprint,
-      wasAutoAllow: head.autoAllow,
+      toolName: target.toolName,
+      fingerprint: target.fingerprint,
+      wasAutoAllow: target.autoAllow,
     }
-    if (decision.behavior === 'deny' && head.autoAllow) {
-      this.removeAutoAllowRule(head.threadId, head.toolName, head.fingerprint)
+    if (decision.behavior === 'deny' && target.autoAllow) {
+      this.removeAutoAllowRule(target.compositeKey, target.toolName, target.fingerprint)
     }
-    this.cancelPending(head, decision, 'user')
+    this.cancelPending(target, decision, 'user')
     return info
   }
 
   /** Drop every auto-allow rule registered for this thread. Called from
-   *  session.resetConversation so `/new` truly returns to "ask every time". */
-  clearAutoAllowForThread(threadId: string): void {
-    this.autoAllowByThread.delete(threadId)
+   *  session.resetConversation so `/new` truly returns to "ask every time".
+   *  Accepts composite key or plain threadId for backward compat. */
+  clearAutoAllowForThread(key: string): void {
+    this.autoAllowByThread.delete(key)
   }
 
   /** Test/diagnostic helper — current rule keys for a thread. */
-  getAutoAllowKeys(threadId: string): string[] {
-    return [...(this.autoAllowByThread.get(threadId) ?? [])]
+  getAutoAllowKeys(key: string): string[] {
+    return [...(this.autoAllowByThread.get(key) ?? [])]
   }
 
   /** 测试用：当前 socket 路径。 */
@@ -640,8 +670,9 @@ export class ApprovalBus {
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.input)
+    const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
-    const isAutoAllow = this.autoAllowByThread.get(args.ctx.threadId)?.has(ruleKey) ?? false
+    const isAutoAllow = this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false
     const timeoutMs = isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs
 
     const transport = args.transport
@@ -650,6 +681,7 @@ export class ApprovalBus {
       reqId: args.reqId,
       toolName: args.toolName,
       threadId: args.ctx.threadId,
+      compositeKey: cKey,
       platform: args.ctx.platform,
       fingerprint,
       input: args.input,
@@ -667,9 +699,9 @@ export class ApprovalBus {
       }, timeoutMs),
     }
     this.pendingById.set(args.reqId, pending)
-    const q = this.pendingByThread.get(args.ctx.threadId) ?? []
+    const q = this.pendingByThread.get(cKey) ?? []
     q.push(pending)
-    this.pendingByThread.set(args.ctx.threadId, q)
+    this.pendingByThread.set(cKey, q)
     this.metricsSnapshot.totalRequests++
 
     // Event-bus fan-out so the dashboard's /events SSE consumer can pop
@@ -748,7 +780,7 @@ export class ApprovalBus {
     // so non-user denies (run terminated, sidecar disconnect, shutdown)
     // don't accidentally clear rules the user still wants.
     if (decision.behavior === 'allow' && decision.autoAllowFurther) {
-      this.addAutoAllowRule(p.threadId, p.toolName, p.fingerprint)
+      this.addAutoAllowRule(p.compositeKey, p.toolName, p.fingerprint)
     }
 
     if (p.dispatch) {
@@ -788,29 +820,29 @@ export class ApprovalBus {
     }
   }
 
-  private addAutoAllowRule(threadId: string, toolName: string, fingerprint: string): void {
+  private addAutoAllowRule(compositeKey: string, toolName: string, fingerprint: string): void {
     const key = autoAllowRuleKey(toolName, fingerprint)
-    let set = this.autoAllowByThread.get(threadId)
-    if (!set) { set = new Set(); this.autoAllowByThread.set(threadId, set) }
+    let set = this.autoAllowByThread.get(compositeKey)
+    if (!set) { set = new Set(); this.autoAllowByThread.set(compositeKey, set) }
     set.add(key)
-    log.info({ event: 'approval.bus.autoallow_added', threadId, toolName, fingerprint })
+    log.info({ event: 'approval.bus.autoallow_added', compositeKey, toolName, fingerprint })
   }
 
-  private removeAutoAllowRule(threadId: string, toolName: string, fingerprint: string): void {
+  private removeAutoAllowRule(compositeKey: string, toolName: string, fingerprint: string): void {
     const key = autoAllowRuleKey(toolName, fingerprint)
-    const set = this.autoAllowByThread.get(threadId)
+    const set = this.autoAllowByThread.get(compositeKey)
     if (!set) return
-    if (set.delete(key) && set.size === 0) this.autoAllowByThread.delete(threadId)
-    log.info({ event: 'approval.bus.autoallow_removed', threadId, toolName, fingerprint })
+    if (set.delete(key) && set.size === 0) this.autoAllowByThread.delete(compositeKey)
+    log.info({ event: 'approval.bus.autoallow_removed', compositeKey, toolName, fingerprint })
   }
 
   private removePending(p: PendingApproval): void {
     this.pendingById.delete(p.reqId)
-    const q = this.pendingByThread.get(p.threadId)
+    const q = this.pendingByThread.get(p.compositeKey)
     if (!q) return
     const idx = q.indexOf(p)
     if (idx >= 0) q.splice(idx, 1)
-    if (q.length === 0) this.pendingByThread.delete(p.threadId)
+    if (q.length === 0) this.pendingByThread.delete(p.compositeKey)
   }
 
   private sendDecision(socket: Socket, reqId: string, decision: Decision): void {

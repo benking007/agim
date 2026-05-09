@@ -1099,10 +1099,8 @@ async function handleListApprovals(_req: IncomingMessage, res: ServerResponse): 
  * Resolve an approval by reqId (admin / dashboard path). Body:
  *   { behavior: 'allow' | 'deny', autoAllowFurther?: boolean, message?: string }
  *
- * resolvePending operates on threadId, not reqId, so we walk listPending
- * to find the matching pending and forward to the bus. The web token is
- * the access gate — anyone with it can resolve any pending. Multi-tenant
- * scoping is tracked separately with the rest of cross-cutting #3.1.
+ * Uses resolvePendingByReqId for precise targeting — avoids the FIFO head
+ * ambiguity when multiple approvals are queued on the same thread.
  */
 async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, reqId: string): Promise<void> {
   try {
@@ -1117,17 +1115,12 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
       return
     }
     const { approvalBus } = await import('../core/approval-bus.js')
-    const target = approvalBus.listPending().find((p) => p.reqId === reqId)
-    if (!target) {
-      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
-      return
-    }
     const decision = parsed.behavior === 'allow'
       ? { behavior: 'allow' as const, autoAllowFurther: parsed.autoAllowFurther === true }
       : { behavior: 'deny' as const, message: parsed.message || 'denied via dashboard' }
-    const resolved = approvalBus.resolvePending(target.threadId, decision)
+    const resolved = approvalBus.resolvePendingByReqId(reqId, decision)
     if (!resolved) {
-      sendJson(res, 409, { ok: false, error: 'Race: pending vanished between list and resolve' })
+      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
       return
     }
     sendJson(res, 200, { ok: true, resolved })

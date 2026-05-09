@@ -23,7 +23,7 @@ import { generateTraceId, createLogger } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
 import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
-import { approvalBus } from './core/approval-bus.js'
+import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
 import {
   checkMessengerConfig,
@@ -220,7 +220,7 @@ program
         // reply, we resolve the approval and stop. Anything else routes
         // normally (with the side effect of auto-denying any stale pending —
         // see approval-router.ts).
-        if (tryHandleApprovalReply(ctx.message.threadId, ctx.message.text)) {
+        if (tryHandleApprovalReply(threadKey(ctx.platform, ctx.channelId, ctx.message.threadId), ctx.message.text)) {
           ctx.logger.info({ event: 'message.consumed_by_approval' })
           return
         }

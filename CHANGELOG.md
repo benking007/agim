@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.35] - 2026-05-09
+
+### Added — WeChat & Telegram rich media support
+
+- **WeChat 图片 / 文件 / 语音 / 视频接收**：`handleIncomingMessage` 现在处理 iLink `item_list` 的全部 5 种类型（TEXT=1, IMAGE=2, VOICE=3, FILE=4, VIDEO=5），此前只处理 TEXT。
+  - **图片**：通过 iLink CDN 下载到 `~/.im-hub/media/wechat/<userId>/`，转为 `[图片附件：/path]` 标记传递给 Agent
+  - **语音**：优先使用微信自带转写（`voice_item.text`），无转写时下载音频后走 OpenAI Whisper 或 whisper.cpp（复用 `src/core/transcribe.ts`）
+  - **文件**：下载并保留原始文件名，显示大小，转为 `[文件附件：/path (name, size)]`
+  - **视频**：下载并显示时长和大小，转为 `[视频附件：/path (duration, size)]`
+  - **混合消息**：同一条消息中的文本 + 媒体项按顺序拼接
+- **Telegram 图片 / 语音增强**：Telegram 适配器的图片下载和语音转写能力在本轮中同步维护和 bugfix。
+- **新文件**：`src/plugins/messengers/wechat/media-download.ts` — 媒体下载辅助，含路径安全检查（拒绝 `../` / `/`）和 20 MB 大小上限
+- **新类型**：`ilink-types.ts` 新增 `ITEM_TYPE` 常量和 `DownloadMediaRequest`
+- **新方法**：`ILinkClient.downloadMedia(cdnMedia)` — 通过 iLink CDN 端点下载二进制媒体
+
+### Tests
+
+- 53 个新测试：
+  - 31 集成测试（`test/integration/wechat-media-integration.test.ts`）— 端到端验证 `handleIncomingMessage` 对所有媒体类型的处理，含成功 / 失败 / 边界情况
+  - 15 单元测试（`test/unit/wechat-media-download.test.ts`）— 下载辅助函数、扩展名推断、CDN 提取、安全防护
+  - 8 单元测试（`test/unit/wechat-media-handling.test.ts`）— 类型常量和消息结构验证
+- 全量 950 pass / 0 fail
+
+---
+
 ## [0.2.33] - 2026-05-09
 
 ### Fixed — audit-fixes-7950 follow-up

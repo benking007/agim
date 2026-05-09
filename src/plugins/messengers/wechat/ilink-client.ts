@@ -5,6 +5,8 @@ import type {
   QRCodeResponse,
   QRCodeStatusResponse,
   Credentials,
+  CDNMedia,
+  DownloadMediaRequest,
   GetUpdatesRequest,
   GetUpdatesResponse,
   SendMessageRequest,
@@ -212,6 +214,51 @@ export class ILinkClient {
     }
 
     return response.json() as Promise<SendMessageResponse>
+  }
+
+  // ============================================
+  // Media Download
+  // ============================================
+
+  /**
+   * Download media content via the iLink CDN endpoint. Returns the raw binary
+   * as a Buffer. Throws on HTTP failure or non-OK response.
+   */
+  async downloadMedia(cdnMedia: CDNMedia): Promise<Buffer> {
+    if (!this.botToken) {
+      throw new Error('No credentials - need to login first')
+    }
+
+    const url = `${this.baseUrl}/ilink/bot/downloadmedia`
+    const body: DownloadMediaRequest = {
+      media: cdnMedia,
+      base_info: {
+        channel_version: CHANNEL_VERSION,
+      },
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    })
+
+    if (!response.ok) {
+      throw new Error(`downloadMedia failed: ${response.status} ${response.statusText}`)
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      const data = await response.json() as { ret?: number; errmsg?: string }
+      if (data.ret !== 0 && data.ret !== undefined) {
+        throw new Error(`downloadMedia error: ${data.errmsg || `ret=${data.ret}`}`)
+      }
+      throw new Error('downloadMedia returned JSON without binary payload')
+    }
+
+    const arrayBuf = await response.arrayBuffer()
+    return Buffer.from(arrayBuf)
   }
 
   // ============================================

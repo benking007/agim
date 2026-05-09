@@ -2,8 +2,10 @@
 
 import { z } from 'zod'
 
+const safeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
 const acpAgentSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).regex(safeNamePattern, 'Agent name must be alphanumeric (with . _ - allowed)'),
   aliases: z.array(z.string()).optional(),
   endpoint: z.string().min(1),
   auth: z.object({

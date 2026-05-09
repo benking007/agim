@@ -39,6 +39,7 @@ function validateEntry(raw: unknown): ACPAgentConfig | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   if (typeof r.name !== 'string' || r.name.length === 0) return null
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(r.name)) return null
   if (typeof r.endpoint !== 'string' || r.endpoint.length === 0) return null
 
   const out: ACPAgentConfig = {

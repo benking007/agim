@@ -191,6 +191,25 @@ export interface SendTypingResponse {
   errmsg?: string
 }
 
+export interface DownloadMediaRequest {
+  media: CDNMedia
+  base_info: {
+    channel_version: string
+  }
+}
+
+// ============================================
+// Media Item Type Constants
+// ============================================
+
+export const ITEM_TYPE = {
+  TEXT: 1,
+  IMAGE: 2,
+  VOICE: 3,
+  FILE: 4,
+  VIDEO: 5,
+} as const
+
 // ============================================
 // Error Codes
 // ============================================

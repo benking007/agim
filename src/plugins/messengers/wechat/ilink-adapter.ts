@@ -3,13 +3,22 @@
 
 import type { MessengerAdapter, Message, MessageContext } from '../../../core/types.js'
 import { ILinkClient } from './ilink-client.js'
-import type { Credentials, WeixinMessage, ContextTokenCache } from './ilink-types.js'
-import { ILINK_ERRORS } from './ilink-types.js'
+import type { Credentials, WeixinMessage, MessageItem, ContextTokenCache } from './ilink-types.js'
+import { ILINK_ERRORS, ITEM_TYPE } from './ilink-types.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { Backoff } from '../../../utils/backoff.js'
+import {
+  downloadWechatMedia,
+  extractCdnMedia,
+  pickExtensionForImage,
+  pickExtensionForVoice,
+  pickExtensionForFile,
+  pickExtensionForVideo,
+} from './media-download.js'
+import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
 
@@ -395,29 +404,36 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
       return
     }
 
-    const textItems = msg.item_list.filter((item) => item.type === 1 && item.text_item?.text)
-    if (!textItems.length) {
-      log.debug('No text items found')
-      return
-    }
-
-    const text = textItems.map((item) => item.text_item?.text).join('\n')
-    log.debug({
-      text,
-      fromUserId: msg.from_user_id,
-      contextToken: msg.context_token ? 'present' : 'missing',
-    }, 'Extracted message')
-
     // Store context token for replies
     if (msg.from_user_id && msg.context_token) {
       this.setContextToken(msg.from_user_id, msg.context_token)
     }
 
-    // Build message object - use accountId as channelId
+    const textParts: string[] = []
+    const userId = msg.from_user_id || 'unknown'
+
+    for (const item of msg.item_list) {
+      const part = await this.extractItemContent(item, msgId, userId)
+      if (part) textParts.push(part)
+    }
+
+    if (!textParts.length) {
+      log.debug('No extractable content in message items')
+      return
+    }
+
+    const text = textParts.join('\n')
+    log.debug({
+      text: text.substring(0, 200),
+      fromUserId: msg.from_user_id,
+      contextToken: msg.context_token ? 'present' : 'missing',
+      itemTypes: msg.item_list.map(i => i.type),
+    }, 'Extracted message content')
+
     const message: Message = {
       id: String(msg.message_id || Date.now()),
       threadId: msg.group_id ? `room:${msg.group_id}` : `user:${msg.from_user_id}`,
-      userId: msg.from_user_id || 'unknown',
+      userId,
       text,
       timestamp: new Date(msg.create_time_ms || Date.now()),
       channelId: this.client.getCredentials()?.accountId || 'default',
@@ -432,6 +448,189 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     log.debug('Calling message handler')
     await this.messageHandler(ctx)
     log.debug('Message handler completed')
+  }
+
+  // ============================================
+  // Media Item Handlers
+  // ============================================
+
+  /**
+   * Extract displayable text content from a single message item. Text items
+   * return their text directly; media items are downloaded and surfaced as
+   * path markers that downstream agents can read.
+   */
+  private async extractItemContent(
+    item: MessageItem,
+    msgId: string,
+    userId: string,
+  ): Promise<string | null> {
+    switch (item.type) {
+      case ITEM_TYPE.TEXT:
+        return item.text_item?.text || null
+
+      case ITEM_TYPE.IMAGE:
+        return this.handleImageItem(item, msgId, userId)
+
+      case ITEM_TYPE.VOICE:
+        return this.handleVoiceItem(item, msgId, userId)
+
+      case ITEM_TYPE.FILE:
+        return this.handleFileItem(item, msgId, userId)
+
+      case ITEM_TYPE.VIDEO:
+        return this.handleVideoItem(item, msgId, userId)
+
+      default:
+        log.debug({ type: item.type }, 'Ignoring unsupported item type')
+        return null
+    }
+  }
+
+  private async handleImageItem(
+    item: MessageItem,
+    msgId: string,
+    userId: string,
+  ): Promise<string> {
+    if (!item.image_item) return '[图片消息：无图片数据]'
+
+    const cdn = extractCdnMedia(item.image_item)
+    if (!cdn) {
+      log.debug({ msgId }, 'Image item has no downloadable CDN media')
+      return '[图片消息：无法下载]'
+    }
+
+    try {
+      const ext = pickExtensionForImage(item.image_item)
+      const { path } = await downloadWechatMedia(
+        this.client, cdn, userId, `${msgId}.${ext}`,
+      )
+      return `[图片附件：${path}]`
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn({ event: 'wechat.media.image_failed', err: reason, msgId }, 'image download failed')
+      return `[图片附件下载失败：${reason}]`
+    }
+  }
+
+  private async handleVoiceItem(
+    item: MessageItem,
+    msgId: string,
+    userId: string,
+  ): Promise<string> {
+    if (!item.voice_item) return '[语音消息：无语音数据]'
+
+    // WeChat may provide its own transcription via voice_item.text
+    if (item.voice_item.text) {
+      const dur = item.voice_item.playtime != null
+        ? `${Math.round(item.voice_item.playtime / 1000)}s, `
+        : ''
+      return `[语音转写（${dur}微信识别）：${item.voice_item.text}]`
+    }
+
+    // No built-in transcription — download and run STT ourselves
+    const cdn = extractCdnMedia(item.voice_item)
+    if (!cdn) {
+      log.debug({ msgId }, 'Voice item has no downloadable CDN media and no text')
+      return '[语音消息：无法下载且无转写文本]'
+    }
+
+    let savedPath: string | null = null
+    try {
+      const ext = pickExtensionForVoice(item.voice_item)
+      const { path } = await downloadWechatMedia(
+        this.client, cdn, userId, `${msgId}.${ext}`,
+      )
+      savedPath = path
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn({ event: 'wechat.media.voice_download_failed', err: reason, msgId }, 'voice download failed')
+      return `[语音附件下载失败：${reason}]`
+    }
+
+    if (detectProvider() === 'none') {
+      return `[语音附件未转写（未配置 OPENAI_API_KEY 或 IMHUB_WHISPERCPP_BIN）：${savedPath}]`
+    }
+
+    try {
+      const result = await transcribe(savedPath, { language: 'zh' })
+      const dur = item.voice_item.playtime != null
+        ? `${Math.round(item.voice_item.playtime / 1000)}s, `
+        : ''
+      return [
+        `[语音转写（${dur}provider=${result.provider}, ${result.elapsedMs}ms）：`,
+        result.text || '（空）',
+        `源文件：${savedPath}]`,
+      ].join('\n')
+    } catch (err) {
+      const reason = err instanceof TranscribeError
+        ? `${err.provider}: ${err.reason}`
+        : err instanceof Error ? err.message : String(err)
+      return `[语音转写失败（${reason}）\n源文件：${savedPath}]`
+    }
+  }
+
+  private async handleFileItem(
+    item: MessageItem,
+    msgId: string,
+    userId: string,
+  ): Promise<string> {
+    if (!item.file_item) return '[文件消息：无文件数据]'
+
+    const cdn = extractCdnMedia(item.file_item)
+    if (!cdn) {
+      log.debug({ msgId }, 'File item has no downloadable CDN media')
+      return `[文件消息：无法下载${item.file_item.file_name ? ` (${item.file_item.file_name})` : ''}]`
+    }
+
+    const displayName = item.file_item.file_name || '未命名文件'
+    try {
+      const ext = pickExtensionForFile(item.file_item)
+      const filename = item.file_item.file_name || `${msgId}.${ext}`
+      const safeName = filename.replace(/[/\\]/g, '_')
+      const { path, bytes } = await downloadWechatMedia(
+        this.client, cdn, userId, safeName,
+      )
+      const sizeStr = bytes >= 1024 * 1024
+        ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${(bytes / 1024).toFixed(0)} KB`
+      return `[文件附件：${path} (${displayName}, ${sizeStr})]`
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn({ event: 'wechat.media.file_failed', err: reason, msgId }, 'file download failed')
+      return `[文件附件下载失败：${reason} (${displayName})]`
+    }
+  }
+
+  private async handleVideoItem(
+    item: MessageItem,
+    msgId: string,
+    userId: string,
+  ): Promise<string> {
+    if (!item.video_item) return '[视频消息：无视频数据]'
+
+    const cdn = extractCdnMedia(item.video_item)
+    if (!cdn) {
+      log.debug({ msgId }, 'Video item has no downloadable CDN media')
+      return '[视频消息：无法下载]'
+    }
+
+    try {
+      const ext = pickExtensionForVideo(item.video_item)
+      const { path, bytes } = await downloadWechatMedia(
+        this.client, cdn, userId, `${msgId}.${ext}`,
+      )
+      const dur = item.video_item.play_length != null
+        ? `${item.video_item.play_length}s, `
+        : ''
+      const sizeStr = bytes >= 1024 * 1024
+        ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${(bytes / 1024).toFixed(0)} KB`
+      return `[视频附件：${path} (${dur}${sizeStr})]`
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn({ event: 'wechat.media.video_failed', err: reason, msgId }, 'video download failed')
+      return `[视频附件下载失败：${reason}]`
+    }
   }
 
   // ============================================

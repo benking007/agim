@@ -423,7 +423,7 @@
       <select class="agent-select" id="agentSelect" disabled>
         <option value=""></option>
       </select>
-      <button class="btn" id="newChatBtn"></button>
+      <button type="button" class="btn" id="newChatBtn"></button>
       <button class="btn" id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
       <a class="btn" href="/tasks" title="Tasks" style="text-decoration:none;font-size:16px;line-height:1">&#9776;</a>
       <a class="btn" href="/settings" title="Settings" style="text-decoration:none;font-size:16px;line-height:1">&#9881;</a>
@@ -444,7 +444,7 @@
         rows="1"
         disabled
       ></textarea>
-      <button class="send-btn" id="sendBtn" disabled></button>
+      <button type="button" class="send-btn" id="sendBtn" disabled></button>
     </div>
   </div>
 
@@ -471,7 +471,7 @@
     let isStreaming = false;
     let streamingEl = null;
     let streamingText = '';
-    let reconnectTimer = null;
+    let _reconnectTimer = null;
 
     // DOM
     const messagesEl = document.getElementById('messages');
@@ -517,7 +517,7 @@
         setStatus('disconnected', t('disconnected'));
         inputEl.disabled = true;
         sendBtn.disabled = true;
-        reconnectTimer = setTimeout(connect, 3000);
+        _reconnectTimer = setTimeout(connect, 3000);
       };
 
       ws.onerror = () => {
@@ -587,7 +587,7 @@
 
         case 'error':
           if (isStreaming) finishStreaming();
-          addMessage('assistant', '\u274c ' + msg.message);
+          addMessage('assistant', `\u274c ${msg.message}`);
           scrollToBottom();
           break;
 
@@ -684,7 +684,7 @@
     function renderApprovalCard(messageId, prompt) {
       const isAuto = prompt.mode === 'auto-allow';
       const card = document.createElement('div');
-      card.className = 'approval-card' + (isAuto ? ' auto-allow' : '');
+      card.className = `approval-card${isAuto ? ' auto-allow' : ''}`;
       card.dataset.cardId = messageId;
       card.innerHTML = `
         <div class="ac-title">🔐 <span data-slot="title"></span></div>
@@ -695,9 +695,9 @@
         <div class="ac-actions" data-slot="actions"></div>
       `;
       card.querySelector('[data-slot="title"]').textContent = t('approvalTitle');
-      card.querySelector('[data-slot="tool-label"]').textContent = t('approvalToolLabel') + ':';
+      card.querySelector('[data-slot="tool-label"]').textContent = `${t('approvalToolLabel')}:`;
       card.querySelector('[data-slot="tool"]').textContent = prompt.toolName;
-      card.querySelector('[data-slot="input-label"]').textContent = t('approvalInputLabel') + ':';
+      card.querySelector('[data-slot="input-label"]').textContent = `${t('approvalInputLabel')}:`;
       card.querySelector('[data-slot="input"]').textContent = prompt.inputJson;
 
       const send = (choice) => {
@@ -717,7 +717,7 @@
           });
         }, 800);
         const payload = { type: 'approval-action', messageId, data: `apv:${prompt.reqId}:${choice}` };
-        try { console.debug && console.debug('[approval] click', payload); } catch {}
+        try { console.debug?.('[approval] click', payload); } catch {}
         if (ws.readyState !== WebSocket.OPEN) {
           imhub?.showError?.('WebSocket not connected — click ignored');
           return;
@@ -780,7 +780,7 @@
       const grace = card.querySelector('[data-slot="grace"]');
       if (grace) grace.remove();
       // Disable any remaining live buttons.
-      card.querySelectorAll('.ac-actions button').forEach(b => b.disabled = true);
+      card.querySelectorAll('.ac-actions button').forEach(b => { b.disabled = true; });
       const actions = card.querySelector('[data-slot="actions"]');
       if (actions) actions.remove();
       const stamp = document.createElement('div');
@@ -830,7 +830,7 @@
       if (!text) return '';
       let html = escapeHtml(text);
 
-      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _lang, code) => {
         return `<pre><code>${code.trim()}</code></pre>`;
       });
 
@@ -884,7 +884,7 @@
           const msgs = JSON.parse(saved);
           if (msgs.length > 0) {
             hideWelcome();
-            msgs.forEach(m => addMessage(m.role, m.content, false));
+            msgs.forEach(m => { addMessage(m.role, m.content, false); });
             scrollToBottom();
           }
         }
@@ -894,7 +894,7 @@
     // Auto-resize textarea
     function autoResize() {
       inputEl.style.height = 'auto';
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + 'px';
+      inputEl.style.height = `${Math.min(inputEl.scrollHeight, 150)}px`;
     }
 
     // Event listeners

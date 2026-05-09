@@ -4,8 +4,8 @@
 // Reuses the traceId from structured logging.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'os'
-import { join } from 'path'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { recordInvocation, recordAuditPruneFailure } from './metrics.js'
 import { eventBus } from './event-bus.js'

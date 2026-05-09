@@ -1,7 +1,7 @@
 // Unit tests for /think — verifies the variant value is persisted via
 // sessionManager.patchSession (not just mutated in-memory).
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, } from 'bun:test'
 import { handleThinkCommand } from '../../src/core/commands/think'
 import { sessionManager } from '../../src/core/session'
 import type { RouteContext } from '../../src/core/router'
@@ -12,7 +12,7 @@ const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () 
 function makeCtx(suffix: string): RouteContext {
   const id = `${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   return {
-    platform: 'test', channelId: 'ch-' + id, threadId: 't-' + id,
+    platform: 'test', channelId: `ch-${id}`, threadId: `t-${id}`,
     defaultAgent: 'opencode', traceId: 'tr', logger: noopLogger, userId: 'u',
   }
 }

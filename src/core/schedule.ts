@@ -7,8 +7,8 @@
 // audit-log + job-board.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'os'
-import { join } from 'path'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
 import { parseCron, nextOccurrence } from './cron.js'
@@ -266,7 +266,7 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
   }
 
   // Run via Job Board so the result is persisted + bounded concurrency.
-  void runJob(jobId, async function* (job, jobLogger, signal) {
+  void runJob(jobId, async function* (job, _jobLogger, signal) {
     if (agent instanceof AgentBase) {
       const text = await agent.spawnAndCollect(job.prompt, signal)
       if (text) yield text

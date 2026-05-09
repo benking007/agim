@@ -14,8 +14,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { createConnection, type Socket } from 'net'
-import { randomUUID } from 'crypto'
+import { createConnection, type Socket } from 'node:net'
+import { randomUUID } from 'node:crypto'
 
 const SERVER_NAME = 'imhub'
 const TOOL_NAME = 'request'
@@ -71,8 +71,9 @@ class ApprovalClient {
 
   private onData(chunk: string): void {
     this.buf += chunk
-    let nl: number
-    while ((nl = this.buf.indexOf('\n')) !== -1) {
+    while (true) {
+      const nl = this.buf.indexOf('\n')
+      if (nl === -1) break
       const line = this.buf.slice(0, nl)
       this.buf = this.buf.slice(nl + 1)
       if (!line) continue
@@ -130,7 +131,7 @@ class ApprovalClient {
       return { behavior: 'deny', message: `approval bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
     }
     const reqId = randomUUID()
-    const payload = JSON.stringify({
+    const payload = `${JSON.stringify({
       v: 1,
       type: 'approval',
       runId: this.runId,
@@ -138,11 +139,11 @@ class ApprovalClient {
       toolName: args.toolName,
       input: args.input,
       toolUseId: args.toolUseId,
-    }) + '\n'
+    })}\n`
 
     return new Promise<Decision>((resolve) => {
       this.pending.set(reqId, { resolve, originalInput: args.input })
-      this.socket!.write(payload, (err) => {
+      this.socket?.write(payload, (err) => {
         if (err) {
           this.pending.delete(reqId)
           resolve({ behavior: 'deny', message: `write failed: ${err.message}` })
@@ -155,8 +156,8 @@ class ApprovalClient {
     this.closed = true
     if (this.socket && !this.socket.destroyed) {
       await new Promise<void>((resolve) => {
-        this.socket!.once('close', () => resolve())
-        this.socket!.end()
+        this.socket?.once('close', () => resolve())
+        this.socket?.end()
         setTimeout(() => { if (this.socket && !this.socket.destroyed) this.socket.destroy() }, 200).unref()
       })
     }

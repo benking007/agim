@@ -44,7 +44,7 @@ import { OpenCodeAdapter } from './opencode-stdio-adapter.js'
 import type { AgentSendOpts, ChatMessage } from '../../../core/types.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
-import { OpencodeServeManager, opencodeServe as defaultServe } from './serve-manager.js'
+import { type OpencodeServeManager, opencodeServe as defaultServe } from './serve-manager.js'
 import { approvalBus as defaultApprovalBus, type ApprovalBus, type Decision } from '../../../core/approval-bus.js'
 
 const log = rootLogger.child({ component: 'agent.opencode.http' })
@@ -335,7 +335,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     }
 
     const bus = this.approvalBus
-    const canBridge = bus !== null && bus.hasNotifier()
+    const canBridge = bus?.hasNotifier()
       && typeof opts.threadId === 'string' && opts.threadId.length > 0
       && typeof opts.platform === 'string' && opts.platform.length > 0
 
@@ -357,7 +357,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       })
     }
 
-    bus!.registerSyntheticPending({
+    bus?.registerSyntheticPending({
       runId: ocSessionID,  // opencode session id IS the run id from the bus's POV
       reqId,
       toolName: typeof props.permission === 'string' ? props.permission : 'permission',
@@ -603,8 +603,9 @@ export class EventStream implements AsyncIterable<OpencodeEvent> {
       if (done) return
       if (!value) continue
       this.buf += this.decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = this.buf.indexOf('\n\n')) !== -1) {
+      while (true) {
+        const idx = this.buf.indexOf('\n\n')
+        if (idx === -1) break
         const frame = this.buf.slice(0, idx)
         this.buf = this.buf.slice(idx + 2)
         const evt = parseSseFrame(frame)

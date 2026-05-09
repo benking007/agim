@@ -1,6 +1,6 @@
 // Tests for onboarding module
 
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, it, expect, } from 'bun:test'
 import {
   checkMessengerConfig,
   formatAgentInstallHint,

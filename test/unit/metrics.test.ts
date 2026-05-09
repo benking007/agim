@@ -14,11 +14,11 @@ describe('metrics', () => {
     const snap = snapshot()
     const oc = snap.agents.find((a) => a.agent === 'opencode')
     expect(oc).toBeDefined()
-    expect(oc!.total).toBe(3)
-    expect(oc!.success).toBe(2)
-    expect(oc!.failure).toBe(1)
-    expect(oc!.successRate).toBeCloseTo(2 / 3, 5)
-    expect(oc!.costSum).toBeCloseTo(0.03, 5)
+    expect(oc?.total).toBe(3)
+    expect(oc?.success).toBe(2)
+    expect(oc?.failure).toBe(1)
+    expect(oc?.successRate).toBeCloseTo(2 / 3, 5)
+    expect(oc?.costSum).toBeCloseTo(0.03, 5)
   })
 
   it('computes p50/p95/p99 latency quantiles', () => {

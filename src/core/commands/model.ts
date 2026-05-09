@@ -5,7 +5,7 @@
 // the active agent isn't opencode we surface a friendly "not supported"
 // message instead of querying the wrong CLI.
 
-import { spawn } from 'child_process'
+import { spawn } from 'node:child_process'
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
 
@@ -80,7 +80,7 @@ async function handleModelList(filter: string, ctx: RouteContext): Promise<strin
     const prov = parts.length >= 2 ? parts.slice(0, -1).join('/') : m
     const short = m.split('/').pop()!
     if (!groups.has(prov)) groups.set(prov, [])
-    groups.get(prov)!.push({ num: idx, short, full: m })
+    groups.get(prov)?.push({ num: idx, short, full: m })
     flat.push({ num: idx, full: m })
     idx++
   }
@@ -134,7 +134,7 @@ async function handleModelSwitch(input: string, ctx: RouteContext): Promise<stri
   }
 
   const models = await getModelList()
-  const exactMatch = models.find(m => m === input || m.endsWith('/' + input))
+  const exactMatch = models.find(m => m === input || m.endsWith(`/${input}`))
   if (!exactMatch && models.length > 0) {
     return `⚠️ 模型 "${input}" 不在列表中。\n\n先 /models 查看可用模型。`
   }
@@ -161,7 +161,7 @@ function getModelList(): Promise<string[]> {
     }
     const proc = spawn('opencode', ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
-    proc.stdout!.on('data', d => out += d.toString())
+    proc.stdout?.on('data', d => out += d.toString())
     proc.on('close', () => {
       const lines = out.trim().split('\n').filter(Boolean)
       modelListCache = { value: lines, ts: Date.now() }
@@ -179,9 +179,9 @@ async function resolveDefaultModel(): Promise<string> {
 
   // Read opencode.json to find the first configured model as the default
   try {
-    const { readFile } = await import('fs/promises')
-    const { homedir } = await import('os')
-    const { join } = await import('path')
+    const { readFile } = await import('node:fs/promises')
+    const { homedir } = await import('node:os')
+    const { join } = await import('node:path')
     const configPath = join(homedir(), '.config', 'opencode', 'opencode.json')
     const raw = await readFile(configPath, 'utf-8')
     const config = JSON.parse(raw) as Record<string, unknown>

@@ -21,7 +21,7 @@
 // in a hot path. We swallow listener errors here so a buggy subscriber
 // can't break the originating action.
 
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 
 /** Fired by audit-log.logInvocation after a successful (or failed) agent
  *  invocation has been recorded. Mirrors the shape audit-log already

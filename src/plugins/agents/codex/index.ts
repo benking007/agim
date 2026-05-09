@@ -33,9 +33,9 @@
 //     mcp-server` (stdio MCP) and putting our own approval-bus shim
 //     between the MCP client and codex. Tracked as a future iteration.
 
-import { execSync } from 'child_process'
-import { existsSync, realpathSync } from 'fs'
-import { dirname, join } from 'path'
+import { execSync } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { AgentBase, type SpawnPlan } from '../../../core/agent-base.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'

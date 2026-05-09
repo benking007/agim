@@ -7,14 +7,14 @@
 // any real sessions and we delete them afterwards.
 
 import { describe, it, expect, beforeAll, afterEach } from 'bun:test'
-import { homedir } from 'os'
-import { join } from 'path'
-import { mkdir, unlink, readdir } from 'fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { mkdir, unlink, readdir } from 'node:fs/promises'
 import { sessionManager } from './session.js'
 
 const PLATFORM = 'subtest'
-const CHANNEL = 'c-' + Math.random().toString(36).slice(2, 8)
-const THREAD = 't-' + Math.random().toString(36).slice(2, 8)
+const CHANNEL = `c-${Math.random().toString(36).slice(2, 8)}`
+const THREAD = `t-${Math.random().toString(36).slice(2, 8)}`
 
 const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
 
@@ -33,7 +33,7 @@ async function cleanupTestSessions(): Promise<void> {
   // Instead, scan and delete any file whose JSON has our test platform.
   let names: string[]
   try { names = await readdir(SESSIONS_DIR) } catch { return }
-  const { readFile } = await import('fs/promises')
+  const { readFile } = await import('node:fs/promises')
   for (const name of names) {
     if (!name.endsWith('.json')) continue
     try {

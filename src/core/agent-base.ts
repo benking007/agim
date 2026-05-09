@@ -9,7 +9,7 @@
 // Subclasses must implement: buildArgs(), extractText().
 // Optional override: handleError(), notAvailableMessage(), commandName.
 
-import { StringDecoder } from 'string_decoder'
+import { StringDecoder } from 'node:string_decoder'
 import type { AgentAdapter, AgentSendOpts, ChatMessage } from './types.js'
 import { crossSpawn } from '../utils/cross-platform.js'
 import { logger as rootLogger } from './logger.js'
@@ -62,8 +62,9 @@ class LineBuffer {
     const data = this.partial.length === 0 ? decoded : this.partial + decoded
     const out: string[] = []
     let start = 0
-    let nl: number
-    while ((nl = data.indexOf('\n', start)) !== -1) {
+    while (true) {
+      const nl = data.indexOf('\n', start)
+      if (nl === -1) break
       out.push(data.slice(start, nl))
       start = nl + 1
     }
@@ -79,8 +80,9 @@ class LineBuffer {
 
     const out: string[] = []
     let start = 0
-    let nl: number
-    while ((nl = data.indexOf('\n', start)) !== -1) {
+    while (true) {
+      const nl = data.indexOf('\n', start)
+      if (nl === -1) break
       if (nl > start) out.push(data.slice(start, nl))
       start = nl + 1
     }
@@ -238,11 +240,7 @@ export abstract class AgentBase implements AgentAdapter {
     // this.mcpConfigPath etc. between awaits, leading to two parallel claude
     // runs sharing one mcp.json and the second one finding it already deleted.)
     let plan: SpawnPlan
-    try {
       plan = await this.prepareCommand(prompt, opts)
-    } catch (err) {
-      throw err
-    }
 
     const proc = crossSpawn(this.commandName, plan.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -312,7 +310,7 @@ export abstract class AgentBase implements AgentAdapter {
           if (text) pendingChunks.push(text)
         } catch {
           // Non-JSON line — pass through verbatim with newline preserved
-          pendingChunks.push(line + '\n')
+          pendingChunks.push(`${line}\n`)
         }
       }
       if (pendingChunks.length > 0) ping()
@@ -404,7 +402,7 @@ export abstract class AgentBase implements AgentAdapter {
         if (!detail && stderrAccum.trim() && stderrAccum.trim().length < 200) {
           detail = stderrAccum.trim()
         }
-        yield `${this.name} failed (exit ${exitCode})${detail ? ': ' + detail : ''}`
+        yield `${this.name} failed (exit ${exitCode})${detail ? `: ${detail}` : ''}`
       }
     } finally {
       clearTimeout(timer)

@@ -3,7 +3,7 @@
 // override.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
-import { createServer, type Server } from 'http'
+import { createServer, type Server } from 'node:http'
 import { handleSessionsCommand } from '../../src/core/commands/sessions'
 import type { RouteContext } from '../../src/core/router'
 import type { Logger } from 'pino'
@@ -21,7 +21,7 @@ let mode: 'ok' | 'empty' | 'bad-json' | 'slow' | 'refused' = 'ok'
 const ORIG_URL = process.env.IM_HUB_DASHBOARD_URL
 
 beforeAll(async () => {
-  server = createServer((req, res) => {
+  server = createServer((_req, res) => {
     if (mode === 'slow') {
       // Never respond — let the client time out
       return

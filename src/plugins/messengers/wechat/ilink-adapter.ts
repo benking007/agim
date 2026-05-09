@@ -5,16 +5,16 @@ import type { MessengerAdapter, Message, MessageContext } from '../../../core/ty
 import { ILinkClient } from './ilink-client.js'
 import type { Credentials, WeixinMessage, ContextTokenCache } from './ilink-types.js'
 import { ILINK_ERRORS } from './ilink-types.js'
-import { homedir } from 'os'
-import { join } from 'path'
-import { readFile, writeFile, mkdir, stat } from 'fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { Backoff } from '../../../utils/backoff.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
 
 const CREDENTIALS_FILE = join(homedir(), '.im-hub', 'wechat-credentials.json')
-const POLL_TIMEOUT = 30000 // 30 seconds
+const _POLL_TIMEOUT = 30000 // 30 seconds
 const CONTEXT_TOKEN_TTL = 30 * 60 * 1000 // 30 minutes
 
 const PROCESSED_MESSAGES_TTL = 60 * 1000 // 1 minute
@@ -401,7 +401,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
       return
     }
 
-    const text = textItems.map((item) => item.text_item!.text).join('\n')
+    const text = textItems.map((item) => item.text_item?.text).join('\n')
     log.debug({
       text,
       fromUserId: msg.from_user_id,

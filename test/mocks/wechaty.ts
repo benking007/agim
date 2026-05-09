@@ -34,7 +34,7 @@ export function createMockWechaty(options: MockWechatyOptions = {}) {
       }
       // Simulate login event
       const loginHandlers = handlers.get('login') || new Set()
-      loginHandlers.forEach(h => h(mockContact))
+      loginHandlers.forEach(h => { h(mockContact) })
     }),
 
     stop: vi.fn().mockResolvedValue(undefined),
@@ -43,12 +43,12 @@ export function createMockWechaty(options: MockWechatyOptions = {}) {
       if (!handlers.has(event)) {
         handlers.set(event, new Set())
       }
-      handlers.get(event)!.add(handler)
+      handlers.get(event)?.add(handler)
     }),
 
     emit: vi.fn().mockImplementation((event: string, ...args: unknown[]) => {
       const eventHandlers = handlers.get(event) || new Set()
-      eventHandlers.forEach(h => h(...args))
+      eventHandlers.forEach(h => { h(...args) })
     }),
 
     say: vi.fn().mockResolvedValue(undefined),

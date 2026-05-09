@@ -3,9 +3,9 @@
 // ~/.config/opencode and never spawn the wrapper.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   resolveRoots,
   listJobsForRoot,
@@ -154,18 +154,18 @@ describe('getJobDetail', () => {
 
     const detail = await getJobDetail({ id: 't', path: tmp, label: 't' }, 'j1', 2)
     expect(detail).not.toBeNull()
-    expect(detail!.cmd).toEqual(['/usr/bin/python3', '-m', 'foo'])
-    expect(detail!.workdir).toBe('/tmp/work')
-    expect(detail!.restart_generation).toBe(2)
-    expect(detail!.log_tail).toBe('line3\nline4')
-    expect(detail!.resources?.rss_kb).toBe(8192)
+    expect(detail?.cmd).toEqual(['/usr/bin/python3', '-m', 'foo'])
+    expect(detail?.workdir).toBe('/tmp/work')
+    expect(detail?.restart_generation).toBe(2)
+    expect(detail?.log_tail).toBe('line3\nline4')
+    expect(detail?.resources?.rss_kb).toBe(8192)
   })
 
   it('returns null when log file is missing', async () => {
     await writeJob(tmp, 'j1', { id: 'j1', name: 'x', status: 'running' })
     const detail = await getJobDetail({ id: 't', path: tmp, label: 't' }, 'j1')
     expect(detail).not.toBeNull()
-    expect(detail!.log_tail).toBeNull()
+    expect(detail?.log_tail).toBeNull()
   })
 
   it('returns null for unknown id', async () => {
@@ -191,9 +191,9 @@ describe('listAllJobs + findRoot', () => {
     const all = await listAllJobs()
     expect(all.length).toBe(2)
     const byId = Object.fromEntries(all.map((g) => [g.root.id, g.jobs]))
-    expect(byId['aa'].length).toBe(1)
-    expect(byId['aa'][0].id).toBe('jA')
-    expect(byId['bb'][0].id).toBe('jB')
+    expect(byId.aa.length).toBe(1)
+    expect(byId.aa[0].id).toBe('jA')
+    expect(byId.bb[0].id).toBe('jB')
   })
 
   it('findRoot returns null for unknown id', () => {

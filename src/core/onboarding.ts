@@ -1,10 +1,10 @@
 // Onboarding module - friendly first-run experience
 // Handles messenger config checks, agent availability, and interactive setup
 
-import { createInterface } from 'readline'
-import { homedir } from 'os'
-import { join } from 'path'
-import { chmod, readFile, writeFile, mkdir } from 'fs/promises'
+import { createInterface } from 'node:readline'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { registry } from './registry.js'
 
 const CONFIG_DIR = join(homedir(), '.im-hub')
@@ -340,7 +340,6 @@ export async function runMessengerOnboarding(config: Config): Promise<Config | n
         rl.close()
         return null
       } else if (retry.toLowerCase() === 's') {
-        continue // Back to menu
       }
       // 'r' or anything else = retry same messenger (loop continues)
     }

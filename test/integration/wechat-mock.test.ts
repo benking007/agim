@@ -187,7 +187,7 @@ describe('WeChat Adapter', () => {
         if (!handlers.has(event)) {
           handlers.set(event, new Set())
         }
-        handlers.get(event)!.add(handler)
+        handlers.get(event)?.add(handler)
       }),
 
       Room: {
@@ -206,7 +206,7 @@ describe('WeChat Adapter', () => {
 
       emit: (event: string, ...args: unknown[]) => {
         const eventHandlers = handlers.get(event) || new Set()
-        eventHandlers.forEach(h => h(...args))
+        eventHandlers.forEach(h => { h(...args) })
       },
 
       handlers,
@@ -349,7 +349,7 @@ describe('WeChat Adapter', () => {
     it('should add continuation markers to split messages', async () => {
       await adapter.start()
 
-      const longText = 'A'.repeat(2500) + '\n' + 'B'.repeat(2500)
+      const longText = `${'A'.repeat(2500)}\n${'B'.repeat(2500)}`
       await adapter.sendMessage('user:contact-123', longText)
 
       const calls = (mockContact.say as ReturnType<typeof mock>).mock.calls

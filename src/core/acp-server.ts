@@ -7,11 +7,11 @@
 //
 // Runs on a separate port (default 9090). Reuses web token for auth.
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'http'
-import { randomBytes } from 'crypto'
-import { readFileSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { parseMessage, routeMessage, type RouteContext } from './router.js'
 import { generateTraceId, createLogger, logger as rootLogger } from './logger.js'
 import { registry } from './registry.js'
@@ -31,7 +31,7 @@ function getToken(): string | null {
 function parseAuth(req: IncomingMessage): { ok: boolean; error?: string } {
   const token = getToken()
   if (!token) return { ok: false, error: 'Server not configured' }
-  const auth = String(req.headers['authorization'] || '')
+  const auth = String(req.headers.authorization || '')
   if (auth.startsWith('Bearer ') && safeEqual(auth.slice(7), token)) return { ok: true }
 
   // Also accept X-IM-Hub-Token header

@@ -8,10 +8,10 @@
 // entire history on every chat turn (the old behavior was an O(N) write
 // per message). All metadata writes are atomic via writeFile→rename.
 
-import { createHash, randomBytes } from 'crypto'
-import { homedir } from 'os'
-import { join } from 'path'
-import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
 import { logger as rootLogger } from './logger.js'
@@ -320,7 +320,7 @@ class SessionManager {
       this.sessions.set(key, session)
       // Append-only log avoids rewriting the entire history per turn.
       try {
-        await appendFile(sessionLogPath(key), JSON.stringify(message) + '\n')
+        await appendFile(sessionLogPath(key), `${JSON.stringify(message)}\n`)
       } catch (appendErr) {
         log.warn({ event: 'session.append_failed', key, err: String(appendErr) },
           'JSONL append failed, falling back to full save')

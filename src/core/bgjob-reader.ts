@@ -14,9 +14,9 @@
 // Multiple roots are supported (claude / opencode are isolated by design).
 // Configurable via env IMHUB_BGJOB_ROOTS — comma-separated absolute paths.
 
-import { readFile, readdir, stat } from 'fs/promises'
-import { homedir } from 'os'
-import { join, isAbsolute, resolve, basename } from 'path'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join, isAbsolute, resolve, basename } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'bgjob-reader' })
@@ -66,7 +66,7 @@ const DEFAULT_ROOTS: BgjobRoot[] = [
  */
 export function resolveRoots(): BgjobRoot[] {
   const raw = process.env.IMHUB_BGJOB_ROOTS
-  if (!raw || !raw.trim()) return DEFAULT_ROOTS
+  if (!raw?.trim()) return DEFAULT_ROOTS
   const out: BgjobRoot[] = []
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
     const eq = part.indexOf('=')
@@ -214,7 +214,7 @@ async function readLogTail(path: string, lines: number): Promise<string | null> 
     // we still want responsiveness, so cap read at 2MB.
     const MAX_BYTES = 2 * 1024 * 1024
     if (st.size > MAX_BYTES) {
-      const fd = await import('fs/promises').then((m) => m.open(path, 'r'))
+      const fd = await import('node:fs/promises').then((m) => m.open(path, 'r'))
       try {
         const buf = Buffer.alloc(MAX_BYTES)
         await fd.read(buf, 0, MAX_BYTES, st.size - MAX_BYTES)
@@ -239,7 +239,7 @@ function takeLastLines(text: string, n: number, truncatedHead: boolean): string 
   // Drop trailing empty line(s) for cleaner output
   while (all.length && all[all.length - 1] === '') all.pop()
   const slice = all.slice(-n).join('\n')
-  return truncatedHead ? '…(truncated)\n' + slice : slice
+  return truncatedHead ? `…(truncated)\n${slice}` : slice
 }
 
 /**

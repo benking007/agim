@@ -3,10 +3,10 @@
 // download against the real TG API (network); a per-test override of `fetch`
 // drives the URL-fetcher behavior.
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
-import { mkdir, readdir, rm, stat, writeFile, utimes } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
+import { mkdir, readdir, rm, stat, writeFile, utimes } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `imhub-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
 process.env.IMHUB_MEDIA_ROOT = TEST_ROOT

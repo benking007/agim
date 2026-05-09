@@ -5,9 +5,9 @@
 // scrub our own files in afterEach without colliding with real sessions.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { homedir } from 'os'
-import { join } from 'path'
-import { unlink, readdir, readFile } from 'fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { unlink, readdir, readFile } from 'node:fs/promises'
 import { sessionManager } from '../session.js'
 import { handlePlanCommand } from './plan.js'
 import type { RouteContext } from '../router.js'

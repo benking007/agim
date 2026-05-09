@@ -62,7 +62,7 @@ export async function handleAuditCommand(
     const note = userOverrideAttempted
       ? '\n\n⚠️ user=<other> 已忽略：审计查询仅展示自己的调用记录。'
       : ''
-    return '📊 暂无审计记录。' + note
+    return `📊 暂无审计记录。${note}`
   }
 
   const lines = rows.map((r: InvocationRow) => {

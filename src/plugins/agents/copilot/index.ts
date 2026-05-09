@@ -6,9 +6,9 @@
 // 4. Homebrew (macOS): `brew install copilot-cli`
 // 5. WinGet (Windows): `winget install GitHub.Copilot`
 
-import { access, constants, readdir } from 'fs/promises'
-import { homedir } from 'os'
-import { join } from 'path'
+import { access, constants, readdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { AgentBase } from '../../../core/agent-base.js'
 import { crossSpawn, isWindows, isMac } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'

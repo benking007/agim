@@ -19,9 +19,9 @@
 // `IMHUB_CLAUDE_CODE_CWD=/srv/foo`). Useful for migration tests and for
 // future per-tenant deployments.
 
-import { homedir } from 'os'
-import { join } from 'path'
-import { mkdir, writeFile, access } from 'fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { mkdir, writeFile, access } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
 
 /** Root for all per-agent IM workspaces. Kept stable so memory persists. */

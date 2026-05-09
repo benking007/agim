@@ -19,11 +19,11 @@
 // discord.js types stay external.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { EventEmitter } from 'events'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
-import { Socket, createConnection } from 'net'
+import { EventEmitter } from 'node:events'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { type Socket, createConnection } from 'node:net'
 import { DiscordAdapter } from './discord-adapter.js'
 import {
   approvalBus,
@@ -306,10 +306,10 @@ describe('Discord × ApprovalBus × approval-router — end-to-end (offline)', (
       }
     })
 
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-discord-1', reqId: 'rd-1',
       toolName: 'Bash', input: { command: 'git status' }, toolUseId: 'tu-1',
-    }) + '\n')
+    })}\n`)
 
     // 4. Wait for the prompt to land in the Discord channel
     for (let i = 0; i < 50 && ch.sent.length === 0; i++) {
@@ -375,10 +375,10 @@ describe('Discord × ApprovalBus × approval-router — end-to-end (offline)', (
       }
     })
 
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-discord-2', reqId: 'rd-2',
       toolName: 'Write', input: { file_path: '/etc/passwd' }, toolUseId: 'tu-2',
-    }) + '\n')
+    })}\n`)
 
     for (let i = 0; i < 50 && ch.sent.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 10))

@@ -546,7 +546,7 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
 
     const replyHit = hits.find(h => h.url === 'http://test.local/permission/perm_d1/reply')
     expect(replyHit).toBeDefined()
-    const body = replyHit!.body as { reply?: string; message?: string }
+    const body = replyHit?.body as { reply?: string; message?: string }
     expect(body.reply).toBe('reject')
     expect(body.message).toBe('user said no')
   })
@@ -588,7 +588,7 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
 
     const createHit = hits.find(h => h.url === 'http://test.local/session' && h.method === 'POST')
     expect(createHit).toBeDefined()
-    const createBody = createHit!.body as Record<string, unknown>
+    const createBody = createHit?.body as Record<string, unknown>
     expect(createBody.agent).toBe('plan')
     // plan agent's own ruleset governs — we MUST NOT stack our medium gate.
     expect(createBody.permission).toBeUndefined()
@@ -597,7 +597,7 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
       h => h.url === `http://test.local/session/${sid}/message` && h.method === 'POST',
     )
     expect(messageHit).toBeDefined()
-    const messageBody = messageHit!.body as Record<string, unknown>
+    const messageBody = messageHit?.body as Record<string, unknown>
     expect(messageBody.agent).toBe('plan')
   })
 
@@ -628,6 +628,6 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
     const messageHit = hits.find(
       h => h.url === `http://test.local/session/${sid}/message` && h.method === 'POST',
     )
-    expect((messageHit!.body as Record<string, unknown>).agent).toBe('plan')
+    expect((messageHit?.body as Record<string, unknown>).agent).toBe('plan')
   })
 })

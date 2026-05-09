@@ -70,9 +70,9 @@ plan 模式下文件不会被修改，适合先讨论方案再动手。${agentNo
     : `\n\n⚠️ 当前 agent **${activeAgent}** 不读 planMode 标志位（claude-code / opencode 才支持）。标志会保存，但要切到上述 agent 才会生效。`
 
   if (ON_TOKENS.has(token)) {
-    if (existing?.planMode) return '✅ Plan 模式已开启（无变化）。' + capabilityNote
+    if (existing?.planMode) return `✅ Plan 模式已开启（无变化）。${capabilityNote}`
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { planMode: true })
-    return '✅ Plan 模式已开启 — 接下来 agent 只规划不动手。/plan off 恢复。' + capabilityNote
+    return `✅ Plan 模式已开启 — 接下来 agent 只规划不动手。/plan off 恢复。${capabilityNote}`
   }
 
   if (OFF_TOKENS.has(token)) {

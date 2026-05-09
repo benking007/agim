@@ -7,9 +7,9 @@
 // the suite run under bun (better-sqlite3 unavailable).
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
-import { homedir, tmpdir } from 'os'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir, } from 'node:os'
 import { startACPServer } from '../../src/core/acp-server'
 import { registry } from '../../src/core/registry'
 import type { AgentAdapter } from '../../src/core/types'
@@ -136,7 +136,7 @@ describe('ACP Server', () => {
 
   it('threads session_id across multiple POST /tasks calls (P2-C)', async () => {
     // First call seeds the session; second call should reuse it.
-    const sessionId = 'session-' + Math.random().toString(36).slice(2, 10)
+    const sessionId = `session-${Math.random().toString(36).slice(2, 10)}`
 
     const res1 = await fetch(url('/tasks'), {
       method: 'POST',

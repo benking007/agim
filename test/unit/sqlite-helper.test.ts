@@ -8,8 +8,8 @@
 import { describe, it, expect } from 'bun:test'
 import { createSqliteHelper } from '../../src/core/sqlite-helper'
 import { logger } from '../../src/core/logger'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const tmp = (name: string): string =>
   join(tmpdir(), `imhub-sqlite-helper-${name}-${Date.now()}.db`)

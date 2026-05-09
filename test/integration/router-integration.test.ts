@@ -1,7 +1,7 @@
 // Integration tests for message routing flow
 // Tests the full flow: message → parse → route → agent → response
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, it, expect, beforeEach, } from 'bun:test'
 
 // Types
 interface Message {
@@ -154,12 +154,13 @@ function createRouter(registry: TestRegistry) {
       case 'help':
         return `📖 IM hub Commands\n\n/agents - List available agents\n/status - Show status\n/<agent> <prompt> - Switch agent`
 
-      case 'agents':
+      case 'agents': {
         const agents = registry.listAgents()
         if (agents.length === 0) {
           return '⚠️ No agents registered.'
         }
         return `🤖 Available Agents\n\n${agents.map(a => `• ${a}`).join('\n')}`
+      }
     }
   }
 
@@ -167,7 +168,7 @@ function createRouter(registry: TestRegistry) {
 }
 
 // Mock agent that returns predictable responses
-function createMockAgent(name: string, aliases: string[], response: string): AgentAdapter {
+function createMockAgent(name: string, aliases: string[], _response: string): AgentAdapter {
   return {
     name,
     aliases,

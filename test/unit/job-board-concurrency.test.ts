@@ -11,7 +11,7 @@ import * as jobBoard from '../../src/core/job-board'
 import { logger as rootLogger } from '../../src/core/logger'
 import type { Logger } from 'pino'
 
-const logger: Logger = rootLogger
+const _logger: Logger = rootLogger
 
 const ORIG_LIMIT = process.env.IM_HUB_MAX_CONCURRENT_JOBS
 

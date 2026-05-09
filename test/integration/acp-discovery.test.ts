@@ -1,7 +1,7 @@
 // Integration tests for ACP agent discovery via /.well-known/acp (A-1).
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'http'
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
 import { discoverAgents, discoverMany } from '../../src/plugins/agents/acp/discovery'
 
 let server: Server
@@ -72,21 +72,21 @@ describe('discoverAgents', () => {
   })
 
   it('strips trailing slashes from baseUrl', async () => {
-    const result = await discoverAgents(base() + '////')
+    const result = await discoverAgents(`${base()}////`)
     expect(result.baseUrl).toBe(base())
   })
 
   it('handles empty agents array', async () => {
-    const result = await discoverAgents(base() + '/empty')
+    const result = await discoverAgents(`${base()}/empty`)
     expect(result.agents).toEqual([])
   })
 
   it('throws on missing agents key', async () => {
-    await expect(discoverAgents(base() + '/bad')).rejects.toThrow(/agents/i)
+    await expect(discoverAgents(`${base()}/bad`)).rejects.toThrow(/agents/i)
   })
 
   it('throws on non-2xx status', async () => {
-    await expect(discoverAgents(base() + '/500')).rejects.toThrow(/Discovery failed/)
+    await expect(discoverAgents(`${base()}/500`)).rejects.toThrow(/Discovery failed/)
   })
 
   it('throws on connection refused', async () => {
@@ -99,7 +99,7 @@ describe('discoverMany', () => {
     const results = await discoverMany([
       base(),
       'http://127.0.0.1:1',  // refused
-      base() + '/empty',
+      `${base()}/empty`,
     ])
     expect(results).toHaveLength(2)  // only successful ones
     const baseHit = results.find((r) => r.agents.length > 0)

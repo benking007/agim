@@ -72,18 +72,18 @@ function htmlToTelegramHtml(html: string): string {
     rows.forEach((row, rowIdx) => {
       const cells = row.map((cell, i) => {
         const width = cappedWidths[i] || 10
-        const truncated = cell.length > width ? cell.slice(0, width - 1) + '…' : cell
+        const truncated = cell.length > width ? `${cell.slice(0, width - 1)}…` : cell
         return truncated.padEnd(width)
       })
       // Pad missing cells
       while (cells.length < colCount) {
         cells.push(' '.repeat(cappedWidths[cells.length] || 10))
       }
-      lines.push('| ' + cells.join(' | ') + ' |')
+      lines.push(`| ${cells.join(' | ')} |`)
       // Add separator after header
       if (rowIdx === 0) {
         const separator = cappedWidths.map(w => '-'.repeat(w))
-        lines.push('| ' + separator.join(' | ') + ' |')
+        lines.push(`| ${separator.join(' | ')} |`)
       }
     })
 

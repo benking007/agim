@@ -1,7 +1,7 @@
 // Structured logging with trace id support
 
 import pino from 'pino'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 
 const level = process.env.LOG_LEVEL || 'info'
 const usePretty = process.env.LOG_FORMAT === 'pretty' || (

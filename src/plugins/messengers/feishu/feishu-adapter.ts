@@ -4,9 +4,9 @@
 import type { MessengerAdapter, Message, MessageContext } from '../../../core/types.js'
 import { FeishuClient } from './feishu-client.js'
 import type { FeishuConfig } from './types.js'
-import { homedir } from 'os'
-import { join } from 'path'
-import { readFile } from 'fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'feishu' })
@@ -47,7 +47,6 @@ export class FeishuAdapter implements MessengerAdapter {
   private client: FeishuClient | null = null
   private config: FeishuConfig | null = null
   private messageHandler?: (ctx: MessageContext) => Promise<void>
-  private isRunning = false
   /** message_id → first-seen timestamp (ms). LRU-ish: pruned on insert. */
   private seenMessages = new Map<string, number>()
 
@@ -76,13 +75,10 @@ export class FeishuAdapter implements MessengerAdapter {
     // Start WebSocket long polling
     await this.client.start()
 
-    this.isRunning = true
     log.info('Feishu adapter started (WebSocket long polling mode, no webhook needed)')
   }
 
   async stop(): Promise<void> {
-    this.isRunning = false
-
     if (this.client) {
       await this.client.stop()
     }
@@ -219,7 +215,7 @@ export class FeishuAdapter implements MessengerAdapter {
       threadId: message.chat_id || '',
       userId: sender.sender_id?.open_id || sender.sender_id?.user_id || 'unknown',
       text,
-      timestamp: new Date(parseInt(message.create_time || '0')),
+      timestamp: new Date(parseInt(message.create_time || '0', 10)),
       channelId: this.config?.channelId || 'default',
     }
 

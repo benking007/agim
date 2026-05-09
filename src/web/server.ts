@@ -1,12 +1,12 @@
 // Web chat server — HTTP + WebSocket for browser-based agent interaction
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'http'
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'fs/promises'
-import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
-import { fileURLToPath } from 'url'
-import { homedir } from 'os'
-import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
+import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
+import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
@@ -604,7 +604,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       webPort: config.webPort,
       agentStatus,
     })
-  } catch (err) {
+  } catch (_err) {
     sendJson(res, 500, { error: 'Failed to load config' })
   }
 }
@@ -675,7 +675,7 @@ async function handleAgentsStatus(_req: IncomingMessage, res: ServerResponse): P
   try {
     const agentStatus = await getAgentStatuses()
     sendJson(res, 200, agentStatus)
-  } catch (err) {
+  } catch (_err) {
     sendJson(res, 500, { error: 'Failed to check agents' })
   }
 }
@@ -959,7 +959,7 @@ async function handleCancelJob(_req: IncomingMessage, res: ServerResponse, id: n
   }
 }
 
-async function handleRunJob(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   try {
     const { getJob, runJob } = await import('../core/job-board.js')
     const { AgentBase } = await import('../core/agent-base.js')
@@ -1756,7 +1756,7 @@ async function getAgentStatuses(): Promise<Record<string, boolean>> {
 function mask(value: string | undefined): string {
   if (!value) return ''
   if (value.length <= 4) return '****'
-  return value.slice(0, 2) + '****' + value.slice(-2)
+  return `${value.slice(0, 2)}****${value.slice(-2)}`
 }
 
 /** Hard cap on inbound JSON bodies for the Web REST API. */
@@ -1902,7 +1902,7 @@ async function handleClientMessage(
 /**
  * Send session history to a client
  */
-async function sendSessionHistory(ws: WebSocket, clientId: string, defaultAgent: string): Promise<void> {
+async function sendSessionHistory(ws: WebSocket, clientId: string, _defaultAgent: string): Promise<void> {
   const history = await sessionManager.getSessionWithHistory('web', 'web', clientId)
   if (history && history.messages.length > 0) {
     sendToClient(ws, {

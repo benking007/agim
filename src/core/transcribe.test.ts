@@ -3,9 +3,9 @@
 // a real binary; we lean on the type-system + manual verification for it.
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
-import { mkdir, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `imhub-transcribe-test-${process.pid}`)
 

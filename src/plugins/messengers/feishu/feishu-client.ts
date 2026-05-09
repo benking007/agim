@@ -34,13 +34,10 @@ type MessageHandler = (event: MessageReceiveEvent) => Promise<void>
 export class FeishuClient {
   private client: Lark.Client
   private wsClient: Lark.WSClient
-  private config: FeishuConfig
   private eventDispatcher: Lark.EventDispatcher
   private messageHandler?: MessageHandler
 
   constructor(config: FeishuConfig) {
-    this.config = config
-
     // Create base config
     const baseConfig = {
       appId: config.appId,

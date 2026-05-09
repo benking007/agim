@@ -1,10 +1,10 @@
 // /approval command — list / clear in-session auto-allow rules.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { Socket, createConnection } from 'net'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
+import { type Socket, createConnection } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { approvalBus, threadKey, type RunContext } from '../approval-bus.js'
 import { handleApprovalCommand } from './approval.js'
 import type { RouteContext } from '../router.js'
@@ -37,10 +37,10 @@ async function seedRule(socketPath: string, runId: string, reqId: string, toolNa
   })
   sock.setEncoding('utf8')
   sock.on('data', () => { /* drain decisions */ })
-  sock.write(JSON.stringify({
+  sock.write(`${JSON.stringify({
     v: 1, type: 'approval', runId, reqId, toolName,
-    input: { command }, toolUseId: 'tu-' + reqId,
-  }) + '\n')
+    input: { command }, toolUseId: `tu-${reqId}`,
+  })}\n`)
   await sleep(20)
   approvalBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
   return sock

@@ -23,11 +23,11 @@
 // adapter instance. The adapter is a singleton and concurrent IM threads
 // would otherwise clobber each other's state mid-spawn.
 
-import { randomUUID } from 'crypto'
-import { mkdtemp, writeFile, rm } from 'fs/promises'
-import { tmpdir } from 'os'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { AgentBase, type SpawnPlan } from '../../../core/agent-base.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { approvalBus } from '../../../core/approval-bus.js'

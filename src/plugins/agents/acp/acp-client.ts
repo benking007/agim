@@ -106,8 +106,9 @@ export class ACPClient {
       buffer += decoder.decode(value, { stream: true })
 
       // Process complete lines
-      let newlineIdx: number
-      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+      while (true) {
+        const newlineIdx = buffer.indexOf('\n')
+        if (newlineIdx === -1) break
         const line = buffer.slice(0, newlineIdx).replace(/\r$/, '')
         buffer = buffer.slice(newlineIdx + 1)
 

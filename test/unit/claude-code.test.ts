@@ -1,7 +1,7 @@
 // Unit tests for Claude Code adapter
 
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 const mockSpawn = mock(() => ({} as ChildProcess))
 
@@ -149,11 +149,11 @@ describe('ClaudeCodeAdapter behavior', () => {
   })
 
   it('should format request as JSONL', () => {
-    const request = JSON.stringify({
+    const request = `${JSON.stringify({
       type: 'user_message',
       content: 'test prompt',
       session_id: 'test-session',
-    }) + '\n'
+    })}\n`
 
     expect(request).toContain('user_message')
     expect(request).toContain('test prompt')

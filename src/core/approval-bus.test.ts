@@ -1,15 +1,14 @@
 // approval-bus tests — 用真实 unix socket 模拟 sidecar 端，验证协议与 pending 生命周期。
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { Socket, createConnection } from 'net'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
+import { type Socket, createConnection } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import {
   ApprovalBus,
   threadKey,
   type ApprovalNotification,
-  type Decision,
   type RunContext,
 } from './approval-bus.js'
 
@@ -41,8 +40,9 @@ class TestClient {
     socket.setEncoding('utf8')
     socket.on('data', (chunk: string) => {
       this.buf += chunk
-      let nl: number
-      while ((nl = this.buf.indexOf('\n')) !== -1) {
+      while (true) {
+        const nl = this.buf.indexOf('\n')
+        if (nl === -1) break
         const line = this.buf.slice(0, nl)
         this.buf = this.buf.slice(nl + 1)
         if (!line) continue
@@ -55,12 +55,12 @@ class TestClient {
   }
 
   send(obj: unknown): void {
-    this.socket.write(JSON.stringify(obj) + '\n')
+    this.socket.write(`${JSON.stringify(obj)}\n`)
   }
 
   /** Send a raw line (no JSON validation) — used for bad-json tests. */
   sendRaw(line: string): void {
-    this.socket.write(line + '\n')
+    this.socket.write(`${line}\n`)
   }
 
   /** Resolve as soon as next NDJSON message arrives. Throws on timeout. */

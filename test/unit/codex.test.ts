@@ -1,7 +1,7 @@
 // Unit tests for Codex adapter
 
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 const mockSpawn = mock(() => ({} as ChildProcess))
 

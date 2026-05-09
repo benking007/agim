@@ -4,8 +4,8 @@
 // behavior consistent and one-place-to-fix.
 
 import Database from 'better-sqlite3'
-import { mkdirSync } from 'fs'
-import { dirname } from 'path'
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { Logger } from 'pino'
 
 export interface SqliteHelper {

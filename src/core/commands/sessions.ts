@@ -6,9 +6,9 @@
 // a clear "not configured" message instead of a confusing connection
 // refused.
 
-import http from 'http'
-import https from 'https'
-import { URL } from 'url'
+import http from 'node:http'
+import https from 'node:https'
+import { URL } from 'node:url'
 import type { RouteContext } from '../router.js'
 
 const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:8001'
@@ -88,7 +88,7 @@ export async function handleSessionsCommand(_args: string, _ctx: RouteContext): 
       ? new Date(s.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
       : '?'
     const age = typeof s.ageHours === 'number'
-      ? (s.ageHours < 1 ? '<1h' : s.ageHours < 24 ? Math.round(s.ageHours) + 'h' : Math.round(s.ageHours / 24) + 'd')
+      ? (s.ageHours < 1 ? '<1h' : s.ageHours < 24 ? `${Math.round(s.ageHours)}h` : `${Math.round(s.ageHours / 24)}d`)
       : '?'
     msg += `${i + 1}. ${s.title || '(无标题)'}\n   ${time} · ${s.msgCount || 0}条 · ${age}前\n`
   })

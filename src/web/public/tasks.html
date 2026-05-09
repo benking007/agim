@@ -556,18 +556,18 @@
     <h1 id="page-title"></h1>
     <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
     <a href="/">↩ <span id="lbl-chat"></span></a>
-    <a href="/settings"><span id="lbl-settings"></span></a>
+    <a href="/settings" aria-label="Settings"><span id="lbl-settings"></span></a>
   </header>
   <main>
     <div class="tabs">
-      <button class="tab active" data-tab="jobs" id="tab-jobs"></button>
-      <button class="tab" data-tab="background" id="tab-background"></button>
-      <button class="tab" data-tab="subtasks" id="tab-subtasks"></button>
-      <button class="tab" data-tab="schedules" id="tab-schedules"></button>
-      <button class="tab" data-tab="approvals" id="tab-approvals"></button>
-      <button class="tab" data-tab="health" id="tab-health"></button>
-      <button class="tab" data-tab="files" id="tab-files"></button>
-      <button class="tab" data-tab="audit" id="tab-audit"></button>
+      <button type="button" class="tab active" data-tab="jobs" id="tab-jobs"></button>
+      <button type="button" class="tab" data-tab="background" id="tab-background"></button>
+      <button type="button" class="tab" data-tab="subtasks" id="tab-subtasks"></button>
+      <button type="button" class="tab" data-tab="schedules" id="tab-schedules"></button>
+      <button type="button" class="tab" data-tab="approvals" id="tab-approvals"></button>
+      <button type="button" class="tab" data-tab="health" id="tab-health"></button>
+      <button type="button" class="tab" data-tab="files" id="tab-files"></button>
+      <button type="button" class="tab" data-tab="audit" id="tab-audit"></button>
     </div>
 
     <section id="jobs-pane">
@@ -587,14 +587,14 @@
           <option value="opencode">opencode</option>
           <option value="codex">codex</option>
         </select>
-        <button id="btn-refresh"></button>
+        <button type="button" id="btn-refresh"></button>
         <label><input type="checkbox" id="auto-refresh" checked> <span id="lbl-auto"></span></label>
-        <button id="btn-new" class="primary"></button>
+        <button type="button" id="btn-new" class="primary"></button>
       </div>
       <div class="toolbar" id="batch-toolbar" style="display:none">
         <span id="batch-summary" style="color:var(--muted);font-size:13px"></span>
-        <button id="btn-batch-run"></button>
-        <button id="btn-batch-cancel" class="danger"></button>
+        <button type="button" id="btn-batch-run"></button>
+        <button type="button" id="btn-batch-cancel" class="danger"></button>
       </div>
       <div id="jobs-list"></div>
     </section>
@@ -602,7 +602,7 @@
     <section id="background-pane" hidden>
       <div class="toolbar">
         <select id="bg-root-filter"></select>
-        <button id="btn-bg-refresh"></button>
+        <button type="button" id="btn-bg-refresh"></button>
         <label><input type="checkbox" id="bg-auto-refresh" checked> <span id="lbl-bg-auto"></span></label>
       </div>
       <div id="bg-list"></div>
@@ -616,7 +616,7 @@
           <option value="opencode">opencode</option>
           <option value="codex">codex</option>
         </select>
-        <button id="btn-sub-refresh"></button>
+        <button type="button" id="btn-sub-refresh"></button>
       </div>
       <div id="sub-list"></div>
     </section>
@@ -629,14 +629,14 @@
           <option value="opencode">opencode</option>
           <option value="codex">codex</option>
         </select>
-        <button id="btn-sched-refresh">Refresh</button>
+        <button type="button" id="btn-sched-refresh">Refresh</button>
       </div>
       <div id="schedules-list"></div>
     </section>
 
     <section id="approvals-pane" hidden>
       <div class="toolbar">
-        <button id="btn-approvals-refresh">Refresh</button>
+        <button type="button" id="btn-approvals-refresh">Refresh</button>
         <label><input type="checkbox" id="approvals-auto-refresh" checked> <span id="lbl-approvals-auto"></span></label>
         <span id="approvals-summary" style="margin-left:auto;color:var(--muted);font-size:13px"></span>
       </div>
@@ -645,7 +645,7 @@
 
     <section id="health-pane" hidden>
       <div class="toolbar">
-        <button id="btn-health-refresh">Refresh</button>
+        <button type="button" id="btn-health-refresh">Refresh</button>
         <label><input type="checkbox" id="health-auto-refresh" checked> <span id="lbl-health-auto"></span></label>
         <span id="health-uptime" style="margin-left:auto;color:var(--muted);font-size:13px"></span>
       </div>
@@ -657,9 +657,9 @@
         <label><span id="lbl-files-agent"></span>
           <select id="files-agent" data-agent-filter></select>
         </label>
-        <button id="btn-files-up"></button>
+        <button type="button" id="btn-files-up"></button>
         <code id="files-current" style="color:var(--muted);font-size:13px"></code>
-        <button id="btn-files-refresh" style="margin-left:auto"></button>
+        <button type="button" id="btn-files-refresh" style="margin-left:auto"></button>
       </div>
       <div class="files-layout" style="display:flex;gap:12px;align-items:flex-start">
         <div id="files-tree" style="flex:0 0 320px;max-height:60vh;overflow:auto"></div>
@@ -682,7 +682,7 @@
           <option value="90">90d</option>
         </select>
         <input type="text" id="audit-user-filter" placeholder="user id (optional)" style="min-width:160px">
-        <button id="btn-audit-refresh">Refresh</button>
+        <button type="button" id="btn-audit-refresh">Refresh</button>
       </div>
       <div class="stats" id="audit-stats"></div>
       <div id="audit-list"></div>
@@ -743,7 +743,7 @@
     // Tab switching
     document.querySelectorAll('.tab').forEach(t => {
       t.onclick = () => {
-        document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+        document.querySelectorAll('.tab').forEach(x => { x.classList.toggle('active', x === t); });
         const tab = t.dataset.tab;
         document.getElementById('jobs-pane').hidden = tab !== 'jobs';
         document.getElementById('background-pane').hidden = tab !== 'background';
@@ -770,7 +770,7 @@
 
     // API helper
     async function api(path, init) {
-      const headers = { 'Content-Type': 'application/json', ...(init && init.headers) };
+      const headers = { 'Content-Type': 'application/json', ...(init?.headers) };
       if (TOKEN) headers['X-IM-Hub-Token'] = TOKEN;
       const res = await fetch(path, { ...init, headers, credentials: 'same-origin' });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -779,12 +779,12 @@
 
     function fmtTime(s) {
       if (!s) return '-';
-      const d = new Date(s.endsWith('Z') ? s : s + 'Z');
+      const d = new Date(s.endsWith('Z') ? s : `${s}Z`);
       return d.toLocaleString();
     }
 
     function statusPill(status) {
-      return `<span class="pill ${esc(status)}">${T['filter' + status.charAt(0).toUpperCase() + status.slice(1)] || esc(status)}</span>`;
+      return `<span class="pill ${esc(status)}">${T[`filter${status.charAt(0).toUpperCase()}${status.slice(1)}`] || esc(status)}</span>`;
     }
 
     function renderStats(stats) {
@@ -797,7 +797,7 @@
         ['Failed', stats.failed],
       ];
       el.innerHTML = fields.map(([k, v]) =>
-        `<div class="stat"><div class="stat-label">${T['stats' + k]}</div><div class="stat-val">${v}</div></div>`
+        `<div class="stat"><div class="stat-label">${T[`stats${k}`]}</div><div class="stat-val">${v}</div></div>`
       ).join('');
     }
 
@@ -843,11 +843,11 @@
                 <td>${statusPill(j.status)}</td>
                 <td>${fmtTime(j.created_at)}</td>
                 <td class="row-actions">
-                  <button data-act="view">${T.view}</button>
+                  <button type="button" data-act="view">${T.view}</button>
                   ${j.status === 'pending' || j.status === 'completed' || j.status === 'failed'
-                    ? `<button data-act="run">${T.run}</button>` : ''}
+                    ? `<button type="button" data-act="run">${T.run}</button>` : ''}
                   ${j.status === 'pending' || j.status === 'running'
-                    ? `<button data-act="cancel" class="danger">${T.cancel}</button>` : ''}
+                    ? `<button type="button" data-act="cancel" class="danger">${T.cancel}</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -918,7 +918,7 @@
       if (status) qs.set('status', status);
       if (agent) qs.set('agent', agent);
       try {
-        const { jobs, stats } = await api('/api/jobs?' + qs.toString());
+        const { jobs, stats } = await api(`/api/jobs?${qs.toString()}`);
         renderStats(stats);
         renderJobs(jobs);
       } catch (e) {
@@ -928,7 +928,7 @@
     }
 
     async function showJob(id) {
-      const { job } = await api('/api/jobs/' + id);
+      const { job } = await api(`/api/jobs/${id}`);
       const m = document.getElementById('modal');
       m.innerHTML = `
         <h2>${T.details} #${job.id}</h2>
@@ -939,7 +939,7 @@
         ${job.result ? `<h3>${T.result}</h3><pre>${esc(job.result)}</pre>` : ''}
         ${job.error ? `<h3>${T.error}</h3><pre>${esc(job.error)}</pre>` : ''}
         <div class="modal-actions">
-          <button id="modal-close">${T.close}</button>
+          <button type="button" id="modal-close">${T.close}</button>
         </div>
       `;
       document.getElementById('modal-bg').classList.add('show');
@@ -948,12 +948,12 @@
     }
 
     async function runJob(id) {
-      await api('/api/jobs/' + id + '/run', { method: 'POST' });
+      await api(`/api/jobs/${id}/run`, { method: 'POST' });
       loadJobs();
     }
 
     async function cancelJob(id) {
-      await api('/api/jobs/' + id + '/cancel', { method: 'POST' });
+      await api(`/api/jobs/${id}/cancel`, { method: 'POST' });
       loadJobs();
     }
 
@@ -974,8 +974,8 @@
         </select></label>
         <label>${T.promptCreate}<textarea id="ji-prompt"></textarea></label>
         <div class="modal-actions">
-          <button id="modal-close">${T.close}</button>
-          <button class="primary" id="modal-create" style="background:var(--primary);color:#fff;border-color:var(--primary);">${T.newJob}</button>
+          <button type="button" id="modal-close">${T.close}</button>
+          <button type="button" class="primary" id="modal-create" style="background:var(--primary);color:#fff;border-color:var(--primary);">${T.newJob}</button>
         </div>
       `;
       document.getElementById('modal-bg').classList.add('show');
@@ -1009,9 +1009,9 @@
       const el = document.getElementById('schedules-list');
       el.innerHTML = `<div class="empty">${T.loading}</div>`;
       const agent = document.getElementById('schedules-agent-filter').value;
-      const qs = agent ? '?agent=' + encodeURIComponent(agent) : '';
+      const qs = agent ? `?agent=${encodeURIComponent(agent)}` : '';
       try {
-        const { schedules } = await api('/api/schedules' + qs);
+        const { schedules } = await api(`/api/schedules${qs}`);
         if (!schedules.length) { el.innerHTML = `<div class="empty">${T.emptySchedules}</div>`; return; }
         el.innerHTML = `
           <table>
@@ -1071,13 +1071,13 @@
     async function loadBgjobs() {
       await ensureBgRootsLoaded();
       const sel = document.getElementById('bg-root-filter');
-      const rootId = sel.value || (bgRoots[0] && bgRoots[0].id);
+      const rootId = sel.value || (bgRoots[0]?.id);
       if (!rootId) {
         document.getElementById('bg-list').innerHTML = `<div class="empty">${T.bgEmpty}</div>`;
         return;
       }
       try {
-        const { jobs } = await api('/api/bgjobs?root=' + encodeURIComponent(rootId));
+        const { jobs } = await api(`/api/bgjobs?root=${encodeURIComponent(rootId)}`);
         const el = document.getElementById('bg-list');
         if (!jobs.length) { el.innerHTML = `<div class="empty">${T.bgEmpty}</div>`; return; }
         el.innerHTML = `
@@ -1105,7 +1105,7 @@
                   <td>${fmtTime(j.ended_at)}</td>
                   <td>${j.exit_code === null || j.exit_code === undefined ? '-' : j.exit_code}</td>
                   <td class="row-actions">
-                    <button data-act="bg-view">${T.view}</button>
+                    <button type="button" data-act="bg-view">${T.view}</button>
                   </td>
                 </tr>
               `).join('')}
@@ -1124,7 +1124,7 @@
 
     async function showBgjob(rootId, id) {
       try {
-        const { job } = await api('/api/bgjobs/' + encodeURIComponent(id) + '?root=' + encodeURIComponent(rootId) + '&tail=200');
+        const { job } = await api(`/api/bgjobs/${encodeURIComponent(id)}?root=${encodeURIComponent(rootId)}&tail=200`);
         const m = document.getElementById('modal');
         m.innerHTML = `
           <h2>${T.details}</h2>
@@ -1139,7 +1139,7 @@
             ? `<h3>${T.bgLogTail}</h3><pre>${esc(job.log_tail) || '(empty)'}</pre>`
             : ''}
           <div class="modal-actions">
-            <button id="modal-close">${T.close}</button>
+            <button type="button" id="modal-close">${T.close}</button>
           </div>
         `;
         document.getElementById('modal-bg').classList.add('show');
@@ -1169,9 +1169,9 @@
       const el = document.getElementById('sub-list');
       el.innerHTML = `<div class="empty">${T.loading}</div>`;
       const agent = document.getElementById('subtasks-agent-filter').value;
-      const qs = agent ? '?agent=' + encodeURIComponent(agent) : '';
+      const qs = agent ? `?agent=${encodeURIComponent(agent)}` : '';
       try {
-        const { subtasks } = await api('/api/subtasks' + qs);
+        const { subtasks } = await api(`/api/subtasks${qs}`);
         if (!subtasks.length) { el.innerHTML = `<div class="empty">${T.subEmpty}</div>`; return; }
         el.innerHTML = `
           <table>
@@ -1192,7 +1192,7 @@
                   <td><code>${esc(s.agent || '')}</code></td>
                   <td class="truncate">${esc(s.prompt || '')}</td>
                   <td>${statusPill(s.status || 'pending')}</td>
-                  <td><code title="${esc(s.platform + ':' + s.channelId + ':' + s.threadId)}">${esc(s.platform)}/${esc(s.threadId).slice(0, 12)}</code></td>
+                  <td><code title="${esc(`${s.platform}:${s.channelId}:${s.threadId}`)}">${esc(s.platform)}/${esc(s.threadId).slice(0, 12)}</code></td>
                   <td>${fmtTime(s.createdAt)}</td>
                 </tr>
               `).join('')}
@@ -1220,7 +1220,7 @@
       if (agent) qs.set('agent', agent);
       if (user) qs.set('user', user);
       try {
-        const { invocations, stats } = await api('/api/audit?' + qs.toString());
+        const { invocations, stats } = await api(`/api/audit?${qs.toString()}`);
         // Stats strip
         const statsEl = document.getElementById('audit-stats');
         if (stats && typeof stats.total === 'number') {
@@ -1250,14 +1250,14 @@
             </tr></thead>
             <tbody>
               ${invocations.map(r => `
-                <tr title="trace: ${esc(r.trace_id || '')}${r.error ? '\n' + esc(r.error) : ''}">
+                <tr title="trace: ${esc(r.trace_id || '')}${r.error ? `\n${esc(r.error)}` : ''}">
                   <td>${fmtTime(r.ts)}</td>
                   <td><code>${esc(r.agent)}</code></td>
                   <td>${esc(r.platform)}</td>
                   <td><code>${esc(r.user_id || '-')}</code></td>
                   <td>${esc(r.intent || '-')}</td>
                   <td>${(r.duration_ms / 1000).toFixed(2)}s</td>
-                  <td>${r.cost ? '$' + Number(r.cost).toFixed(4) : '-'}</td>
+                  <td>${r.cost ? `$${Number(r.cost).toFixed(4)}` : '-'}</td>
                   <td>${r.success ? '✅' : '❌'}</td>
                 </tr>
               `).join('')}
@@ -1339,7 +1339,7 @@
       const days = Math.floor(payload.uptimeSec / 86400);
       const hours = Math.floor((payload.uptimeSec % 86400) / 3600);
       const mins = Math.floor((payload.uptimeSec % 3600) / 60);
-      uptime.textContent = `uptime ${days > 0 ? days + 'd ' : ''}${hours}h ${mins}m`;
+      uptime.textContent = `uptime ${days > 0 ? `${days}d ` : ''}${hours}h ${mins}m`;
       if (!payload.agents.length) {
         list.innerHTML = `<div class="empty">${T.healthEmpty}</div>`;
         return;
@@ -1352,8 +1352,8 @@
         const cooldownLine = a.breaker.phase !== 'closed'
           ? `<div class="ac-row"><b>${T.healthCooldown}:</b> ${(a.breaker.cooldownRemainingMs / 1000).toFixed(0)}s</div>`
           : '';
-        const successPct = inv && inv.total > 0 ? (inv.successRate * 100).toFixed(1) + '%' : '—';
-        const cost = inv && inv.costSum ? '$' + inv.costSum.toFixed(4) : '—';
+        const successPct = inv && inv.total > 0 ? `${(inv.successRate * 100).toFixed(1)}%` : '—';
+        const cost = inv?.costSum ? `$${inv.costSum.toFixed(4)}` : '—';
         return `
           <div class="health-card">
             <div class="health-head">
@@ -1426,11 +1426,11 @@
 
     function fmtAge(ms) {
       const s = Math.max(0, Math.floor(ms / 1000));
-      if (s < 60) return s + 's';
+      if (s < 60) return `${s}s`;
       const m = Math.floor(s / 60);
-      if (m < 60) return m + 'm ' + (s % 60) + 's';
+      if (m < 60) return `${m}m ${s % 60}s`;
       const h = Math.floor(m / 60);
-      return h + 'h ' + (m % 60) + 'm';
+      return `${h}h ${m % 60}m`;
     }
 
     function renderApprovals(payload) {
@@ -1445,7 +1445,7 @@
       list.innerHTML = pending.map((p) => {
         let inputPreview = '';
         try { inputPreview = JSON.stringify(p.input, null, 2); } catch { inputPreview = '(unserializable)'; }
-        if (inputPreview.length > 600) inputPreview = inputPreview.slice(0, 600) + '\n...';
+        if (inputPreview.length > 600) inputPreview = `${inputPreview.slice(0, 600)}\n...`;
         const autoTag = p.autoAllow
           ? `<span style="color:var(--warning);font-size:11px;margin-left:6px">⏱ ${T.approvalsAutoMode}</span>`
           : '';
@@ -1457,9 +1457,9 @@
             </div>
             <pre class="approval-input">${esc(inputPreview)}</pre>
             <div class="approval-actions">
-              <button data-act="allow" class="btn-allow">${T.approvalsAllow}</button>
-              <button data-act="deny" class="btn-deny">${T.approvalsDeny}</button>
-              <button data-act="allowAll">${T.approvalsAllowAll}</button>
+              <button type="button" data-act="allow" class="btn-allow">${T.approvalsAllow}</button>
+              <button type="button" data-act="deny" class="btn-deny">${T.approvalsDeny}</button>
+              <button type="button" data-act="allowAll">${T.approvalsAllowAll}</button>
             </div>
           </div>
         `;
@@ -1474,7 +1474,7 @@
 
     async function resolveApproval(reqId, behavior, autoAllowFurther) {
       const item = document.querySelector(`.approval-item[data-req-id="${reqId}"]`);
-      if (item) item.querySelectorAll('button').forEach((b) => (b.disabled = true));
+      if (item) item.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       try {
         await api(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, {
           method: 'POST',
@@ -1487,7 +1487,7 @@
           err.style.cssText = 'color:var(--danger);font-size:12px;margin-top:6px';
           err.textContent = `${T.approvalsResolveErr}: ${e.message}`;
           item.appendChild(err);
-          item.querySelectorAll('button').forEach((b) => (b.disabled = false));
+          item.querySelectorAll('button').forEach((b) => { b.disabled = false; });
         }
       }
     }
@@ -1548,9 +1548,9 @@
 
     function fmtBytes(n) {
       if (n == null) return '-';
-      if (n < 1024) return n + ' B';
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+      if (n < 1024) return `${n} B`;
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / (1024 * 1024)).toFixed(1)} MB`;
     }
 
     async function loadFiles(path) {
@@ -1563,7 +1563,7 @@
       tree.innerHTML = `<div class="empty">${T.loading}</div>`;
       try {
         const qs = new URLSearchParams({ agent: filesAgent, path: filesPath });
-        const data = await api('/api/workspace-files?' + qs.toString());
+        const data = await api(`/api/workspace-files?${qs.toString()}`);
         if (data.type === 'dir') {
           if (!data.entries.length) {
             tree.innerHTML = `<div class="empty">${T.filesEmpty}</div>`;
@@ -1586,7 +1586,7 @@
               tr.addEventListener('click', () => {
                 const name = tr.dataset.name;
                 const isDir = tr.dataset.isdir === '1';
-                const next = filesPath ? filesPath + '/' + name : name;
+                const next = filesPath ? `${filesPath}/${name}` : name;
                 if (isDir) loadFiles(next);
                 else loadFiles(next); // file path → server returns type:'file'
               });
@@ -1616,7 +1616,7 @@
       const tree = document.getElementById('files-tree');
       try {
         const qs = new URLSearchParams({ agent: filesAgent, path });
-        const data = await api('/api/workspace-files?' + qs.toString());
+        const data = await api(`/api/workspace-files?${qs.toString()}`);
         if (data.type !== 'dir') return;
         tree.innerHTML = `
           <table>
@@ -1635,7 +1635,7 @@
         tree.querySelectorAll('tr[data-name]').forEach(tr => {
           tr.addEventListener('click', () => {
             const name = tr.dataset.name;
-            const next = path ? path + '/' + name : name;
+            const next = path ? `${path}/${name}` : name;
             loadFiles(next);
           });
         });
@@ -1653,7 +1653,7 @@
         <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <code>${esc(data.path)}</code>
           <span style="color:var(--muted);font-size:12px"> · ${fmtBytes(data.size)} · ${fmtTime(data.mtime)}</span>
-          ${canEdit ? `<button class="primary" id="btn-file-edit" style="margin-left:auto;background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesEdit}</button>` : ''}
+          ${canEdit ? `<button type="button" class="primary" id="btn-file-edit" style="margin-left:auto;background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesEdit}</button>` : ''}
         </div>
         ${banner}${binary}
         <pre id="file-pre" style="max-height:55vh;overflow:auto;background:var(--card);border:1px solid var(--border);padding:8px;border-radius:6px">${esc(data.content)}</pre>
@@ -1671,8 +1671,8 @@
           <code>${esc(data.path)}</code>
           <span style="color:var(--muted);font-size:12px"> · ${T.filesEditing}</span>
           <span style="margin-left:auto;display:flex;gap:6px">
-            <button id="btn-file-cancel">${T.filesCancel}</button>
-            <button id="btn-file-save" class="primary" style="background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesSave}</button>
+            <button type="button" id="btn-file-cancel">${T.filesCancel}</button>
+            <button type="button" id="btn-file-save" class="primary" style="background:var(--primary);color:#fff;border-color:var(--primary)">${T.filesSave}</button>
           </span>
         </div>
         <textarea id="file-editor" spellcheck="false"
@@ -1694,14 +1694,14 @@
           const qs = new URLSearchParams({ agent: data.agent, path: data.path });
           const wHeaders = { 'Content-Type': 'application/json' };
           if (TOKEN) wHeaders['X-IM-Hub-Token'] = TOKEN;
-          const res = await fetch('/api/workspace-files?' + qs.toString(), {
+          const res = await fetch(`/api/workspace-files?${qs.toString()}`, {
             method: 'PUT',
             headers: wHeaders, credentials: 'same-origin',
             body: JSON.stringify({ content: newContent }),
           });
           if (!res.ok) {
-            let msg = res.status + ' ' + res.statusText;
-            try { const j = await res.json(); if (j && j.error) msg = j.error; } catch {}
+            let msg = `${res.status} ${res.statusText}`;
+            try { const j = await res.json(); if (j?.error) msg = j.error; } catch {}
             throw new Error(msg);
           }
           const r = await res.json();
@@ -1717,7 +1717,7 @@
         } catch (e) {
           saveBtn.disabled = false;
           saveBtn.textContent = T.filesSave;
-          alert(T.filesSaveFailed + ': ' + (e && e.message ? e.message : e));
+          alert(`${T.filesSaveFailed}: ${e?.message ? e.message : e}`);
         }
       };
     }
@@ -1762,7 +1762,7 @@
       }
 
       evtSource.addEventListener('hello', () => {
-        console.debug && console.debug('[sse] connected');
+        console.debug?.('[sse] connected');
       });
 
       // When an audit lands and the Audit tab is visible, refresh it.

@@ -56,7 +56,7 @@ export class Backoff {
    * Returns a non-negative integer.
    */
   nextDelayMs(): number {
-    const exp = Math.min(this.capMs, this.baseMs * Math.pow(2, this.attempt))
+    const exp = Math.min(this.capMs, this.baseMs * 2 ** this.attempt)
     this.attempt += 1
     if (this.jitter === 0) return Math.floor(exp)
     // Multiplicative jitter: factor ∈ [1 - jitter, 1 + jitter]

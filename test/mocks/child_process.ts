@@ -44,19 +44,19 @@ export function createMockClaudeProcess(options: MockProcessOptions = {}) {
                   type: 'assistant',
                   message: { content: chunk, role: 'assistant' },
                 })
-                dataHandlers.forEach(h => h(Buffer.from(msg + '\n')))
+                dataHandlers.forEach(h => { h(Buffer.from(`${msg}\n`)) })
               }, delay * (i + 1))
             })
 
             // Send result message
             setTimeout(() => {
               const msg = JSON.stringify({ type: 'result' })
-              dataHandlers.forEach(h => h(Buffer.from(msg + '\n')))
+              dataHandlers.forEach(h => { h(Buffer.from(`${msg}\n`)) })
 
               // Close after result
               setTimeout(() => {
                 const closeHandlers = processListeners.get('close') || new Set()
-                closeHandlers.forEach(h => h(exitCode))
+                closeHandlers.forEach(h => { h(exitCode) })
               }, delay)
             }, delay * (chunks.length + 1))
           }, delay)
@@ -71,7 +71,7 @@ export function createMockClaudeProcess(options: MockProcessOptions = {}) {
         if (!stdoutListeners.has(event)) {
           stdoutListeners.set(event, new Set())
         }
-        stdoutListeners.get(event)!.add(handler)
+        stdoutListeners.get(event)?.add(handler)
       }),
       destroy: vi.fn(),
     },
@@ -81,7 +81,7 @@ export function createMockClaudeProcess(options: MockProcessOptions = {}) {
         if (!stderrListeners.has(event)) {
           stderrListeners.set(event, new Set())
         }
-        stderrListeners.get(event)!.add(handler)
+        stderrListeners.get(event)?.add(handler)
       }),
       destroy: vi.fn(),
     },
@@ -90,7 +90,7 @@ export function createMockClaudeProcess(options: MockProcessOptions = {}) {
       if (!processListeners.has(event)) {
         processListeners.set(event, new Set())
       }
-      processListeners.get(event)!.add(handler)
+      processListeners.get(event)?.add(handler)
 
       // Immediately emit error if configured
       if (event === 'error' && shouldError) {
@@ -100,7 +100,7 @@ export function createMockClaudeProcess(options: MockProcessOptions = {}) {
 
     kill: vi.fn().mockImplementation(() => {
       const closeHandlers = processListeners.get('close') || new Set()
-      closeHandlers.forEach(h => h(0))
+      closeHandlers.forEach(h => { h(0) })
     }),
 
     // Expose for assertions

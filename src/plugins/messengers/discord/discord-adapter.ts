@@ -26,7 +26,6 @@ export class DiscordAdapter implements MessengerAdapter {
   private client: Client | null = null
   private config: DiscordConfig | null = null
   private messageHandler?: (ctx: MessageContext) => Promise<void>
-  private isRunning = false
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>()
   /** L7: companion AbortController per typing thread. Lets the periodic
    *  refresh callback bail BEFORE invoking sendTyping when stop() has
@@ -35,9 +34,9 @@ export class DiscordAdapter implements MessengerAdapter {
 
   async start(): Promise<void> {
     // Load config
-    const { readFile } = await import('fs/promises')
-    const { homedir } = await import('os')
-    const { join } = await import('path')
+    const { readFile } = await import('node:fs/promises')
+    const { homedir } = await import('node:os')
+    const { join } = await import('node:path')
 
     const configPath = join(homedir(), '.im-hub', 'config.json')
     try {
@@ -88,13 +87,10 @@ export class DiscordAdapter implements MessengerAdapter {
 
     // Login to Discord
     await this.client.login(this.config.botToken)
-    this.isRunning = true
     log.info('Discord adapter started')
   }
 
   async stop(): Promise<void> {
-    this.isRunning = false
-
     // L7: abort first (signal in-flight refresh callbacks to bail) then
     // clearInterval (prevent new ticks). Doing it in the other order would
     // leave one tick that already entered the callback racing with

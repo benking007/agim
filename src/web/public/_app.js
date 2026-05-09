@@ -56,7 +56,7 @@
     })
     window.addEventListener('unhandledrejection', (e) => {
       const r = e.reason
-      const msg = r && (r.message || r.toString && r.toString())
+      const msg = r && (r.message || r.toString?.())
       showError(`Unhandled rejection: ${msg ?? '(no message)'}`)
     })
   }
@@ -168,7 +168,7 @@
     const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`
-      try { const j = await res.json(); if (j && j.error) msg = j.error } catch { /* ignore */ }
+      try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* ignore */ }
       const err = new Error(msg)
       err.status = res.status
       throw err

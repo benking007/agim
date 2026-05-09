@@ -2,7 +2,7 @@
 
 import type { ParsedMessage, ChatMessage, Session } from './types.js'
 import type { Logger } from 'pino'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'

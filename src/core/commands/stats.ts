@@ -14,8 +14,8 @@ import { sessionManager } from '../session.js'
 
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return '0'
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
-  if (n >= 10_000) return (n / 1_000).toFixed(1) + 'K'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`
   return Math.round(n).toLocaleString('en-US')
 }
 

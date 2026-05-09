@@ -9,10 +9,10 @@
 // basis — same image may be referenced across turns within a 30-min imhub
 // session.
 
-import { spawn } from 'child_process'
-import { mkdir, readdir, rm, stat } from 'fs/promises'
-import { homedir } from 'os'
-import { join, resolve } from 'path'
+import { spawn } from 'node:child_process'
+import { mkdir, readdir, rm, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'telegram.media' })
@@ -78,7 +78,7 @@ export async function downloadToMediaRoot(params: DownloadParams): Promise<Downl
 
   const dir = resolve(MEDIA_ROOT, params.subdir)
   const path = resolve(dir, params.filename)
-  if (!path.startsWith(MEDIA_ROOT + '/')) {
+  if (!path.startsWith(`${MEDIA_ROOT}/`)) {
     throw new Error(`destination escapes MEDIA_ROOT: ${path}`)
   }
 

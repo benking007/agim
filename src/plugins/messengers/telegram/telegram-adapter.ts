@@ -1,7 +1,7 @@
 // Telegram Bot API Adapter using grammy
 // Implements MessengerAdapter interface with native typing indicator support
 
-import { Bot, Context } from 'grammy'
+import { Bot, type Context } from 'grammy'
 import type {
   MessengerAdapter,
   MessageContext,
@@ -45,9 +45,9 @@ export class TelegramAdapter implements MessengerAdapter {
 
   async start(): Promise<void> {
     // Load config
-    const { readFile } = await import('fs/promises')
-    const { homedir } = await import('os')
-    const { join } = await import('path')
+    const { readFile } = await import('node:fs/promises')
+    const { homedir } = await import('node:os')
+    const { join } = await import('node:path')
 
     const configPath = join(homedir(), '.im-hub', 'config.json')
     try {
@@ -381,7 +381,7 @@ export class TelegramAdapter implements MessengerAdapter {
     const chatId = ctx.chat.id
     const msgId = ctx.message.message_id
     let attachmentLine: string
-    const botToken = this.config!.botToken
+    const botToken = this.config?.botToken
     // Scrub the bot token from any string before it reaches a log line or a
     // user-facing chat reply. The token rides inside the file URL we hand to
     // curl, and curl's stderr can echo the URL on TLS / DNS failures.
@@ -455,7 +455,7 @@ export class TelegramAdapter implements MessengerAdapter {
 
     let savedPath: string | null = null
     let downloadErr: string | null = null
-    const botToken = this.config!.botToken
+    const botToken = this.config?.botToken
     const scrub = (s: string): string => botToken ? s.split(botToken).join('[REDACTED]') : s
     try {
       const file = await this.bot.api.getFile(fileId)
@@ -597,7 +597,7 @@ export class TelegramAdapter implements MessengerAdapter {
       // Set up periodic refresh every 4 seconds (Telegram expires after ~5s)
       const interval = setInterval(async () => {
         try {
-          await this.bot!.api.sendChatAction(threadId, 'typing')
+          await this.bot?.api.sendChatAction(threadId, 'typing')
         } catch {
           // Ignore errors during typing refresh
         }

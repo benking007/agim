@@ -8,12 +8,11 @@
 // existing installations. Do not "fix" them.
 
 import { program } from 'commander'
-import { homedir } from 'os'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
-import { readFileSync } from 'fs'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { randomUUID } from 'crypto'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { registry } from './core/registry.js'
 import { sessionManager } from './core/session.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
@@ -39,7 +38,7 @@ import { startWebServer } from './web/server.js'
 import { startACPServer } from './core/acp-server.js'
 
 // Helper to format agent install hint for missing agents
-function formatMissingAgentHint(missing: string[]): string {
+function _formatMissingAgentHint(missing: string[]): string {
   return formatAgentInstallHint(missing)
 }
 
@@ -183,7 +182,7 @@ program
       process.exit(1)
     } else if (agentResult.missing.length > 0) {
       console.log('⚠️ Some agents not available:', agentResult.missing.join(', '))
-      console.log('   ' + formatAgentInstallHint(agentResult.missing))
+      console.log(`   ${formatAgentInstallHint(agentResult.missing)}`)
       console.log('')
     }
 
@@ -557,7 +556,7 @@ program
     const config = await loadConfig()
 
     switch (component) {
-      case 'wechat':
+      case 'wechat': {
         console.log('📱 Configuring WeChat adapter...')
         console.log('Fetching QR code...\n')
 
@@ -595,8 +594,9 @@ program
           return
         }
         break
+      }
 
-      case 'claude':
+      case 'claude': {
         console.log('🤖 Configuring Claude Code agent...')
         // Check if claude CLI is available
         const checkClaude = crossSpawn('claude', ['--version'], { stdio: 'ignore' })
@@ -613,8 +613,9 @@ program
         }
         config.defaultAgent = 'claude-code'
         break
+      }
 
-      case 'codex':
+      case 'codex': {
         console.log('🤖 Configuring Codex agent...')
         const checkCodex = crossSpawn('codex', ['--version'], { stdio: 'ignore' })
         checkCodex.on('close', (code) => {
@@ -630,15 +631,16 @@ program
         }
         config.defaultAgent = 'codex'
         break
+      }
 
-      case 'telegram':
+      case 'telegram': {
         console.log('📱 Configuring Telegram adapter...')
         console.log('To get a bot token:')
         console.log('1. Open Telegram and search for @BotFather')
         console.log('2. Send /newbot and follow instructions')
         console.log('3. Copy the bot token\n')
 
-        const { createInterface } = await import('readline')
+        const { createInterface } = await import('node:readline')
         const rl = createInterface({
           input: process.stdin,
           output: process.stdout,
@@ -671,8 +673,9 @@ program
         console.log('✅ Telegram bot token saved')
         console.log(`   Channel ID: ${channelId}`)
         break
+      }
 
-      case 'feishu':
+      case 'feishu': {
         console.log('📱 Configuring Feishu adapter (WebSocket long polling mode)...')
         console.log('To create a Feishu bot:')
         console.log('1. Go to https://open.feishu.cn/app')
@@ -683,7 +686,7 @@ program
         console.log('6. Create a version and publish it')
         console.log('7. Copy App ID and App Secret\n')
 
-        const { createInterface: createRl } = await import('readline')
+        const { createInterface: createRl } = await import('node:readline')
         const feishuRl = createRl({
           input: process.stdin,
           output: process.stdout,
@@ -720,8 +723,9 @@ program
         console.log(`\n✅ Using WebSocket long polling mode - no webhook configuration needed!`)
         console.log(`   The bot will automatically connect to Feishu servers.`)
         break
+      }
 
-      case 'discord':
+      case 'discord': {
         console.log('📱 Configuring Discord adapter...')
         console.log('To create a Discord bot:')
         console.log('1. Go to https://discord.com/developers/applications')
@@ -731,7 +735,7 @@ program
         console.log('5. Click "Reset Token" to get your bot token')
         console.log('6. Use OAuth2 URL Generator to invite the bot to your server\n')
 
-        const { createInterface: createDiscordRl } = await import('readline')
+        const { createInterface: createDiscordRl } = await import('node:readline')
         const discordRl = createDiscordRl({
           input: process.stdin,
           output: process.stdout,
@@ -788,8 +792,9 @@ program
           console.log(`   Allowed channels: ${config.discord.allowedChannels.join(', ')}`)
         }
         break
+      }
 
-      case 'opencode':
+      case 'opencode': {
         console.log('🤖 Configuring OpenCode agent...')
         // Check if opencode CLI is available
         const openCodeAvailable = await new Promise<boolean>((resolve) => {
@@ -810,8 +815,9 @@ program
         }
         config.defaultAgent = 'opencode'
         break
+      }
 
-      case 'copilot':
+      case 'copilot': {
         console.log('🤖 Configuring GitHub Copilot CLI agent...')
         // Check if copilot CLI is available (multiple installation methods)
         const { copilotAdapter } = await import('./plugins/agents/copilot/index.js')
@@ -837,13 +843,14 @@ program
         }
         config.defaultAgent = 'copilot'
         break
+      }
 
-      case 'agent':
+      case 'agent': {
         console.log('🔌 Configuring remote ACP agent...')
         console.log('This adds a remote agent that speaks the Agent Communication Protocol.')
         console.log('ACP is an open standard (https://agentcommunicationprotocol.dev)\n')
 
-        const { createInterface: createAgentRl } = await import('readline')
+        const { createInterface: createAgentRl } = await import('node:readline')
         const agentRl = createAgentRl({ input: process.stdin, output: process.stdout })
 
         const agentName = await new Promise<string>((resolve) => {
@@ -910,6 +917,7 @@ program
           config.acpAgents.push(agentConfig)
         }
         break
+      }
 
       default:
         console.log(`Unknown component: ${component}`)

@@ -3,10 +3,10 @@
 // tryHandleApprovalReply → bus delivers Decision back to the caller.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
-import { Socket, createConnection } from 'net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { type Socket, createConnection } from 'node:net'
 import {
   ApprovalBus,
   approvalBus,
@@ -150,10 +150,10 @@ describe('tryHandleApprovalReply', () => {
       s.once('error', reject)
       s.once('connect', () => resolve(s))
     })
-    connectedSock.write(JSON.stringify({
+    connectedSock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-1', reqId: 'pending-1',
       toolName: 'Bash', input: { command: 'git status' }, toolUseId: 'tu',
-    }) + '\n')
+    })}\n`)
     // Give bus a tick to enqueue
     await new Promise((r) => setTimeout(r, 30))
     expect(bus.hasPendingFor(KEY)).toBe(true)
@@ -249,10 +249,10 @@ describe('install / uninstall — full loop with fake messenger', () => {
       }
     })
 
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-int', reqId: 'rint-1',
       toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu-int',
-    }) + '\n')
+    })}\n`)
 
     // Wait for messenger sendMessage
     for (let i = 0; i < 50 && !lastSentTo; i++) await new Promise((r) => setTimeout(r, 10))
@@ -298,10 +298,10 @@ describe('install / uninstall — full loop with fake messenger', () => {
     sock.setEncoding('utf8')
     sock.on('data', () => { /* don't care */ })
 
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-rcpt', reqId: 'r-rcpt-1',
       toolName: 'Bash', input: { command: 'git status -s' }, toolUseId: 'tu',
-    }) + '\n')
+    })}\n`)
 
     // Wait for approval prompt
     for (let i = 0; i < 50 && sent.length < 1; i++) await new Promise((r) => setTimeout(r, 10))
@@ -348,20 +348,20 @@ describe('install / uninstall — full loop with fake messenger', () => {
     sock.on('data', () => {})
 
     // Seed the rule
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-rev', reqId: 'rev-1',
       toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu',
-    }) + '\n')
+    })}\n`)
     for (let i = 0; i < 50 && sent.length < 1; i++) await new Promise((r) => setTimeout(r, 10))
     tryHandleApprovalReply(KEY, 'all')
     for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 10))
     expect(sent[1].text).toContain('已批准并启用自动放行')
 
     // Second request → should hit the rule (grace mode)
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-rev', reqId: 'rev-2',
       toolName: 'Bash', input: { command: 'rm -rf /tmp/y' }, toolUseId: 'tu2',
-    }) + '\n')
+    })}\n`)
     for (let i = 0; i < 50 && sent.length < 3; i++) await new Promise((r) => setTimeout(r, 10))
     expect(sent[2].text).toContain('自动放行中')
 
@@ -395,10 +395,10 @@ describe('install / uninstall — full loop with fake messenger', () => {
       }
     })
 
-    sock.write(JSON.stringify({
+    sock.write(`${JSON.stringify({
       v: 1, type: 'approval', runId: 'run-empty', reqId: 'r-empty',
       toolName: 'Bash', input: {}, toolUseId: 'tu',
-    }) + '\n')
+    })}\n`)
 
     for (let i = 0; i < 50 && got.length === 0; i++) await new Promise((r) => setTimeout(r, 10))
     expect(got.length).toBe(1)

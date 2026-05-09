@@ -13,11 +13,11 @@
 //
 // 单实例 export approvalBus；测试可 new ApprovalBus({approvalTimeoutMs}) 调小超时。
 
-import { createServer, type Server, type Socket } from 'net'
-import { unlink, stat as fsStat, chmod } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
+import { createServer, type Server, type Socket } from 'node:net'
+import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
 
@@ -500,15 +500,16 @@ export class ApprovalBus {
         // observes the socket close and bails through its disconnect
         // handler — strictly better than the silent destroy.
         try {
-          socket.write(JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' }) + '\n')
+          socket.write(`${JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' })}\n`)
           socket.end()
         } catch {
           socket.destroy()
         }
         return
       }
-      let nl: number
-      while ((nl = buf.indexOf('\n')) !== -1) {
+      while (true) {
+        const nl = buf.indexOf('\n')
+        if (nl === -1) break
         const line = buf.slice(0, nl)
         buf = buf.slice(nl + 1)
         if (line.length === 0) continue
@@ -729,7 +730,7 @@ export class ApprovalBus {
     })
 
     try {
-      await this.notifier!({
+      await this.notifier?.({
         runId: args.runId, reqId: args.reqId, toolName: args.toolName,
         input: args.input, toolUseId: args.toolUseId, ctx: args.ctx,
         ...(isAutoAllow ? { autoAllow: { graceMs: this.autoAllowGraceMs } } : {}),
@@ -860,7 +861,7 @@ export class ApprovalBus {
     } else if (decision.behavior === 'deny' && decision.message) {
       wire.message = decision.message
     }
-    const payload = JSON.stringify(wire) + '\n'
+    const payload = `${JSON.stringify(wire)}\n`
     socket.write(payload, (err) => {
       if (err) log.warn({ event: 'approval.bus.write_failed', reqId, err: String(err) })
     })

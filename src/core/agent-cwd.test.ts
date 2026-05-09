@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, readFile, writeFile, rm, access } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   resolveAgentCwd,
   defaultAgentCwd,
@@ -148,7 +148,7 @@ describe('bootstrapAgentWorkspaces', () => {
     const result = await bootstrapAgentWorkspaces()
     const byAgent = Object.fromEntries(result.map((r) => [r.agent, r.dir]))
     expect(byAgent['claude-code']).toBe(join(tmpRoot, 'claude-code'))
-    expect(byAgent['opencode']).toBe(join(tmpRoot, 'opencode'))
+    expect(byAgent.opencode).toBe(join(tmpRoot, 'opencode'))
     expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain('Claude Code')
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain('OpenCode')
   })

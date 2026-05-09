@@ -20,8 +20,8 @@
 //     6h via setInterval, mirroring audit-log.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'os'
-import { join } from 'path'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
@@ -101,9 +101,7 @@ export interface Job {
   workspace_id: string
 }
 
-interface JobRunner {
-  (job: Job, logger: Logger, signal: AbortSignal): AsyncGenerator<string>
-}
+type JobRunner = (job: Job, logger: Logger, signal: AbortSignal) => AsyncGenerator<string>
 
 /**
  * Idempotent column-add for ownership tracking. Run on every helper init —

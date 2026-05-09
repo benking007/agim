@@ -497,7 +497,7 @@
 <body>
   <div class="header">
     <div class="brand">
-      <a href="/" id="backToChat"></a>
+      <a href="/" id="backToChat" aria-label="Back to chat"></a>
       <span class="title" id="settingsTitle"></span>
     </div>
     <div class="controls">
@@ -633,7 +633,7 @@
               <span class="dot ${available ? 'dot-on' : 'dot-off'}"></span>
               <div>
                 <div class="name">${name}</div>
-                <div class="aliases">${info.aliases.map(a => '/' + a).join(', ')}</div>
+                <div class="aliases">${info.aliases.map(a => `/${a}`).join(', ')}</div>
                 ${!available ? `<div class="hint">${t('installHint')} ${info.pkg}</div>` : ''}
               </div>
             </div>
@@ -654,7 +654,7 @@
             ).join('')}
           </select>
           <div class="actions">
-            <button class="btn btn-primary" id="saveAgents">${t('saveAgents')}</button>
+            <button type="button" class="btn btn-primary" id="saveAgents">${t('saveAgents')}</button>
           </div>
         </div>
       `;
@@ -741,7 +741,7 @@
           </div>
 
           <div class="actions">
-            <button class="btn btn-primary" id="saveMessengers">${t('saveMessengers')}</button>
+            <button type="button" class="btn btn-primary" id="saveMessengers">${t('saveMessengers')}</button>
           </div>
         </div>
       `;
@@ -760,8 +760,8 @@
           <td>${a.auth?.type || t('none')}</td>
           <td><div class="toggle ${a.enabled !== false ? 'active' : ''}" data-toggle-acp="${i}"></div></td>
           <td>
-            <button class="btn btn-sm" data-test-acp="${i}">${t('test')}</button>
-            <button class="btn btn-sm btn-danger" data-del-acp="${i}">${t('del')}</button>
+            <button type="button" class="btn btn-sm" data-test-acp="${i}">${t('test')}</button>
+            <button type="button" class="btn btn-sm btn-danger" data-del-acp="${i}">${t('del')}</button>
           </td>
         </tr>
       `).join('') : `<tr><td colspan="5" style="color:var(--text-dim);text-align:center;padding:20px">${t('acpNone')}</td></tr>`;
@@ -813,8 +813,8 @@
             <div></div>
           </div>
           <div class="actions">
-            <button class="btn" id="testAcpNew">${t('testConn')}</button>
-            <button class="btn btn-primary" id="addAcp">${t('add')}</button>
+            <button type="button" class="btn" id="testAcpNew">${t('testConn')}</button>
+            <button type="button" class="btn btn-primary" id="addAcp">${t('add')}</button>
           </div>
         </div>
       `;
@@ -841,8 +841,8 @@
         const rl = w.rateLimit
           ? `${w.rateLimit.rate}/${w.rateLimit.intervalSec}s · burst ${w.rateLimit.burst}`
           : '—';
-        const agents = (w.agents && w.agents.length) ? escHtml(w.agents.join(', ')) : '<span style="color:var(--text-dim)">*</span>';
-        const members = (w.members && w.members.length) ? w.members.length : `<span style="color:var(--text-dim)">*</span>`;
+        const agents = (w.agents?.length) ? escHtml(w.agents.join(', ')) : '<span style="color:var(--text-dim)">*</span>';
+        const members = (w.members?.length) ? w.members.length : `<span style="color:var(--text-dim)">*</span>`;
         return `
           <tr data-ws-id="${escHtml(w.id)}">
             <td>
@@ -855,8 +855,8 @@
             <td style="font-size:12px">${rl}</td>
             <td>
               ${isDefault ? '' : `
-                <button class="btn btn-sm" data-edit-ws="${escHtml(w.id)}">${t('workspaceEdit')}</button>
-                <button class="btn btn-sm btn-danger" data-del-ws="${escHtml(w.id)}">${t('workspaceDelete')}</button>
+                <button type="button" class="btn btn-sm" data-edit-ws="${escHtml(w.id)}">${t('workspaceEdit')}</button>
+                <button type="button" class="btn btn-sm btn-danger" data-del-ws="${escHtml(w.id)}">${t('workspaceDelete')}</button>
               `}
             </td>
           </tr>
@@ -916,8 +916,8 @@
             </div>
           </div>
           <div class="actions">
-            <button class="btn" id="resetWs">${t('workspaceReset')}</button>
-            <button class="btn btn-primary" id="saveWs">${t('save')}</button>
+            <button type="button" class="btn" id="resetWs">${t('workspaceReset')}</button>
+            <button type="button" class="btn btn-primary" id="saveWs">${t('save')}</button>
           </div>
         </div>
       `;
@@ -933,7 +933,7 @@
           <label>${t('webPort')}</label>
           <input type="number" id="webPort" value="${config.webPort || 3000}" min="1024" max="65535" style="max-width:200px">
           <div class="actions">
-            <button class="btn btn-primary" id="saveGeneral">${t('save')}</button>
+            <button type="button" class="btn btn-primary" id="saveGeneral">${t('save')}</button>
           </div>
         </div>
       `;
@@ -964,7 +964,7 @@
       // ACP delete buttons
       document.querySelectorAll('[data-del-acp]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          const idx = parseInt(btn.dataset.delAcp);
+          const idx = parseInt(btn.dataset.delAcp, 10);
           config.acpAgents.splice(idx, 1);
           await saveConfig();
           render();
@@ -974,7 +974,7 @@
       // ACP test existing
       document.querySelectorAll('[data-test-acp]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          const idx = parseInt(btn.dataset.testAcp);
+          const idx = parseInt(btn.dataset.testAcp, 10);
           const agent = config.acpAgents[idx];
           btn.disabled = true;
           btn.textContent = t('testing');
@@ -986,7 +986,7 @@
             });
             const data = await res.json();
             if (data.ok) {
-              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success');
+              toast(`${t('connected')}: ${data.name}${data.description ? ` — ${data.description}` : ''}`, 'success');
             } else {
               toast(`${t('failed')}: ${data.error}`, 'error');
             }
@@ -1018,7 +1018,7 @@
 
       // Save general
       document.getElementById('saveGeneral')?.addEventListener('click', async () => {
-        config.webPort = parseInt(document.getElementById('webPort').value) || 3000;
+        config.webPort = parseInt(document.getElementById('webPort').value, 10) || 3000;
         await saveConfig();
       });
 
@@ -1087,7 +1087,7 @@
       // Save (create or upsert) workspace.
       document.getElementById('saveWs')?.addEventListener('click', async () => {
         const id = document.getElementById('wsId').value.trim();
-        if (!id) { toast(t('workspaceId') + ' required', 'error'); return; }
+        if (!id) { toast(`${t('workspaceId')} required`, 'error'); return; }
         if (id === 'default') { toast('"default" is reserved', 'error'); return; }
         const splitCsv = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
         const payload = {

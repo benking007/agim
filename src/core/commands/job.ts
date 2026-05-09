@@ -9,7 +9,7 @@ import { workspaceRegistry } from '../workspace.js'
 
 function formatJob(j: Job): string {
   const icon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', cancelled: '🚫' }[j.status] || '❓'
-  const ts = new Date(j.created_at + 'Z').toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  const ts = new Date(`${j.created_at}Z`).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   const preview = j.prompt.substring(0, 50) + (j.prompt.length > 50 ? '...' : '')
   return `${icon} #${j.id} ${j.agent}: ${preview} [${j.status}] · ${ts}`
 }
@@ -81,7 +81,7 @@ Agent: ${agent.name}
     case 'get':
     case 'g': {
       const id = parseInt(parts[1] || '', 10)
-      if (isNaN(id)) return '用法: /job check <id>'
+      if (Number.isNaN(id)) return '用法: /job check <id>'
       const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       const statusLabel = { pending: '⏳ 待执行', running: '🔄 运行中', completed: '✅ 已完成', failed: '❌ 失败', cancelled: '🚫 已取消' }
@@ -92,7 +92,7 @@ Agent: ${job.agent}
 创建: ${job.created_at}`
       if (job.completed_at) msg += `\n完成: ${job.completed_at}`
       msg += `\n\n内容: ${job.prompt}`
-      if (job.result) msg += `\n\n---\n结果:\n${job.result.length > 500 ? job.result.slice(0, 500) + '...' : job.result}`
+      if (job.result) msg += `\n\n---\n结果:\n${job.result.length > 500 ? `${job.result.slice(0, 500)}...` : job.result}`
       if (job.error) msg += `\n\n错误: ${job.error}`
       if (job.status === 'completed') msg += `\n\n/job run ${job.id} 重新执行`
       if (job.status === 'pending') msg += `\n\n/job run ${job.id} 开始执行`
@@ -102,7 +102,7 @@ Agent: ${job.agent}
     case 'run':
     case 'r': {
       const id = parseInt(parts[1] || '', 10)
-      if (isNaN(id)) return '用法: /job run <id>'
+      if (Number.isNaN(id)) return '用法: /job run <id>'
       const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       if (job.status === 'running') return `🔄 任务 #${id} 已在运行中。`
@@ -112,7 +112,7 @@ Agent: ${job.agent}
 
       // Fire and forget with signal support for cancellation
       const isAgentBaseAgent = agent instanceof AgentBase
-      runJob(id, async function* (j, logger, signal) {
+      runJob(id, async function* (j, _logger, signal) {
         if (isAgentBaseAgent) {
           const ba = agent as unknown as AgentBase
           const result = await ba.spawnAndCollect(j.prompt, signal)
@@ -134,7 +134,7 @@ Agent: ${job.agent}
     case 'cancel':
     case 'x': {
       const id = parseInt(parts[1] || '', 10)
-      if (isNaN(id)) return '用法: /job cancel <id>'
+      if (Number.isNaN(id)) return '用法: /job cancel <id>'
       if (cancelJob(id, ownerOpts)) return `🚫 任务 #${id} 已取消。`
       return `❌ 无法取消任务 #${id}。可能不存在、已结束、或不是你创建的任务。`
     }
@@ -148,7 +148,7 @@ Agent: ${job.agent}
         return '✅ 已返回主会话。'
       }
       const id = parseInt(arg, 10)
-      if (isNaN(id)) return '用法: /job switch <id>  或  /job switch main'
+      if (Number.isNaN(id)) return '用法: /job switch <id>  或  /job switch main'
       const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       await sessionManager.setActiveSubtask(ctx.platform, ctx.channelId, ctx.threadId, id)
@@ -163,7 +163,7 @@ Agent: ${job.agent}
     case 'collect':
     case 'cl': {
       const id = parseInt(parts[1] || '', 10)
-      if (isNaN(id)) return '用法: /job collect <id>'
+      if (Number.isNaN(id)) return '用法: /job collect <id>'
       const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
       if (!job.result) return `⚠️ 任务 #${id} (${job.status}) 暂无结果。`

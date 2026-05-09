@@ -15,11 +15,11 @@
 // (TG adapter) catches and surfaces a "[语音转写失败：...]" marker so the
 // user's interaction isn't silently dropped.
 
-import { spawn } from 'child_process'
-import { readFile, rm } from 'fs/promises'
-import { tmpdir } from 'os'
-import { basename, join } from 'path'
-import { randomBytes } from 'crypto'
+import { spawn } from 'node:child_process'
+import { readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'transcribe' })

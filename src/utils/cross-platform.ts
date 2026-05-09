@@ -1,8 +1,8 @@
 // Cross-platform utilities for Windows compatibility
 
-import { spawn, SpawnOptions, ChildProcess } from 'child_process'
-import { platform, homedir } from 'os'
-import { join } from 'path'
+import { spawn, type SpawnOptions, type ChildProcess } from 'node:child_process'
+import { platform, homedir } from 'node:os'
+import { join } from 'node:path'
 
 export const isWindows = platform() === 'win32'
 export const isMac = platform() === 'darwin'

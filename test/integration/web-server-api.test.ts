@@ -8,9 +8,9 @@
 //   POST /api/invoke            third-party agent invocation
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { startWebServer } from '../../src/web/server'
 import { registry } from '../../src/core/registry'
 import { recordInvocation, reset as resetMetrics } from '../../src/core/metrics'
@@ -301,9 +301,9 @@ describe('Web REST API', () => {
     const ORIGINAL = process.env.IMHUB_BGJOB_ROOTS
 
     beforeAll(async () => {
-      const { mkdtempSync, writeFileSync, mkdirSync } = await import('fs')
-      const { tmpdir } = await import('os')
-      const { join: pjoin } = await import('path')
+      const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+      const { tmpdir } = await import('node:os')
+      const { join: pjoin } = await import('node:path')
       bgTmpA = mkdtempSync(pjoin(tmpdir(), 'bgjobs-A-'))
       bgTmpB = mkdtempSync(pjoin(tmpdir(), 'bgjobs-B-'))
       // root A: 2 jobs in index
@@ -333,7 +333,7 @@ describe('Web REST API', () => {
     })
 
     afterAll(async () => {
-      const { rmSync } = await import('fs')
+      const { rmSync } = await import('node:fs')
       rmSync(bgTmpA, { recursive: true, force: true })
       rmSync(bgTmpB, { recursive: true, force: true })
       if (ORIGINAL === undefined) delete process.env.IMHUB_BGJOB_ROOTS

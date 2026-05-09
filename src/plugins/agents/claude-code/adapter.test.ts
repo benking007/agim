@@ -8,10 +8,10 @@
 // other still produce two distinct configs with no shared state.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { readFile, access } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
+import { readFile, access } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { ApprovalBus, approvalBus } from '../../../core/approval-bus.js'
 import { ClaudeCodeAdapter, _testInternals } from './index.js'
 import type { SpawnPlan } from '../../../core/agent-base.js'
@@ -138,7 +138,7 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
     expect(cfgIdx).toBe(0)
     expect(plan.args[cfgIdx + 2].startsWith('-')).toBe(true)
 
-    await plan.cleanup!()
+    await plan.cleanup?.()
   })
 
   it('cleanup unregisters run and removes config tmpdir', async () => {
@@ -146,7 +146,7 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
     const configPath = plan.args[plan.args.indexOf('--mcp-config') + 1]
     expect(await fileExists(configPath)).toBe(true)
 
-    await plan.cleanup!()
+    await plan.cleanup?.()
     expect(await fileExists(configPath)).toBe(false)
   })
 
@@ -179,19 +179,19 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
       .not.toBe(rawB.mcpServers.imhub.env.IMHUB_RUN_ID)
 
     // Cleaning up A must NOT remove B's config.
-    await planA.cleanup!()
+    await planA.cleanup?.()
     expect(await fileExists(cfgA)).toBe(false)
     expect(await fileExists(cfgB)).toBe(true)
 
-    await planB.cleanup!()
+    await planB.cleanup?.()
     expect(await fileExists(cfgB)).toBe(false)
   })
 
   it('cleanup is idempotent (calling twice is safe)', async () => {
     const plan: SpawnPlan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
-    await plan.cleanup!()
+    await plan.cleanup?.()
     // Should not throw on the second call
-    await plan.cleanup!()
+    await plan.cleanup?.()
   })
 
   // Regression for ADR 0005: every fallback return inside prepareCommand must

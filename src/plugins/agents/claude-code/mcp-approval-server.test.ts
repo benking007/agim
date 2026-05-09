@@ -2,9 +2,9 @@
 // 用 InMemoryTransport 替代 stdio，避免依赖 build / 子进程。
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { randomBytes } from 'crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ApprovalBus, threadKey, type RunContext } from '../../../core/approval-bus.js'

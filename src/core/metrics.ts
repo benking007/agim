@@ -339,7 +339,7 @@ export function toPrometheus(): string {
     lines.push(`im_hub_approval_resolved_total{result="timeout"} ${ab.totalTimedOut}`)
   }
 
-  return lines.join('\n') + '\n'
+  return `${lines.join('\n')}\n`
 }
 
 /** Reset all counters. Test-only. */

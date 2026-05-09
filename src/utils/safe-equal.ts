@@ -1,7 +1,7 @@
 // Constant-time string compare for auth-token comparison.
 // Returns false when lengths differ, otherwise defers to crypto.timingSafeEqual.
 
-import { timingSafeEqual } from 'crypto'
+import { timingSafeEqual } from 'node:crypto'
 
 export function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a)

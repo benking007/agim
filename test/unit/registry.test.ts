@@ -1,7 +1,7 @@
 // Unit tests for plugin registry
 
 import { describe, it, expect, beforeEach, vi } from 'bun:test'
-import type { MessengerAdapter, AgentAdapter, MessageContext } from '../../src/core/types'
+import type { MessengerAdapter, AgentAdapter, } from '../../src/core/types'
 
 // Create fresh registry for each test
 class TestRegistry {

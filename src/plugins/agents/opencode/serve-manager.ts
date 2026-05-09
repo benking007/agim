@@ -18,7 +18,7 @@
 
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 const log = rootLogger.child({ component: 'opencode.serve' })
 
@@ -123,7 +123,7 @@ export class OpencodeServeManager {
         resolved = true
         log.error({ event: 'opencode.serve.timeout' }, 'opencode serve did not become ready in time')
         try { child.kill('SIGTERM') } catch { /* ignore */ }
-        reject(new Error('opencode serve did not become ready within ' + READY_TIMEOUT_MS + 'ms'))
+        reject(new Error(`opencode serve did not become ready within ${READY_TIMEOUT_MS}ms`))
       }, READY_TIMEOUT_MS)
 
       const onLine = (line: string): void => {
@@ -144,8 +144,9 @@ export class OpencodeServeManager {
 
       stderr?.on('data', (data: Buffer) => {
         stderrBuf += data.toString('utf8')
-        let nl: number
-        while ((nl = stderrBuf.indexOf('\n')) !== -1) {
+        while (true) {
+          const nl = stderrBuf.indexOf('\n')
+          if (nl === -1) break
           const line = stderrBuf.slice(0, nl)
           stderrBuf = stderrBuf.slice(nl + 1)
           if (line.trim()) onLine(line)
@@ -153,8 +154,9 @@ export class OpencodeServeManager {
       })
       stdout?.on('data', (data: Buffer) => {
         stdoutBuf += data.toString('utf8')
-        let nl: number
-        while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
+        while (true) {
+          const nl = stdoutBuf.indexOf('\n')
+          if (nl === -1) break
           const line = stdoutBuf.slice(0, nl)
           stdoutBuf = stdoutBuf.slice(nl + 1)
           if (line.trim()) onLine(line)
@@ -198,7 +200,7 @@ async function probeOpencodeServe(baseUrl: string): Promise<boolean> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 500)
   try {
-    const res = await fetch(baseUrl + '/', { signal: controller.signal })
+    const res = await fetch(`${baseUrl}/`, { signal: controller.signal })
     return res.ok
   } catch {
     return false

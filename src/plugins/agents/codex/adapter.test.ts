@@ -209,6 +209,6 @@ describe('CodexAdapter prepareCommand', () => {
       threadId: 't1', platform: 'wechat', channelId: 'c1', userId: 'u1',
     })
     expect(plan.cwd).toBeDefined()
-    expect(plan.cwd!.endsWith('/codex')).toBe(true)
+    expect(plan.cwd?.endsWith('/codex')).toBe(true)
   })
 })

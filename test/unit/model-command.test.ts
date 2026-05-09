@@ -12,7 +12,7 @@ const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () 
 function makeCtx(suffix: string, agent = 'opencode'): RouteContext {
   const id = `${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   return {
-    platform: 'test', channelId: 'ch-' + id, threadId: 't-' + id,
+    platform: 'test', channelId: `ch-${id}`, threadId: `t-${id}`,
     defaultAgent: agent, traceId: 'tr', logger: noopLogger, userId: 'u',
   }
 }

@@ -1,9 +1,9 @@
 // Unit tests for session manager
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test'
-import { mkdir, rm, readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
+import { describe, it, expect, beforeEach, afterEach, } from 'bun:test'
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 // Create a testable version of SessionManager
 interface Session {

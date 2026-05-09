@@ -9,7 +9,7 @@
 // Caching: identical prompt+candidate-list pairs are memoized within a
 // 10-minute window so repeated chat-room banter doesn't burn budget.
 
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'
 

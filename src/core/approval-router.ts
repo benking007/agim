@@ -14,7 +14,6 @@ import type {
 } from './types.js'
 import {
   approvalBus,
-  threadKey,
   type ApprovalNotification,
   type Decision,
   type ResolvedInfo,
@@ -103,7 +102,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
 function safeStringify(v: unknown, maxLen: number): string {
   let s: string
   try { s = JSON.stringify(v) } catch { s = String(v) }
-  if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…'
+  if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`
   return s
 }
 

@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.37] - 2026-05-10 — Reminders + Email + Multi-agent MCP
+
+> 设计文档：`docs/architecture/reminders.md`
+
+### Added — `/remind` 子系统
+
+**核心**
+- `/remind` slash command（一次性 + 定期 + 邮件 + 字面/LLM 模式）
+- 时间解析：中文 NL 时长 / 时点 / 循环表达式（每天 N 点 / 每周 X / 工作日 / 周末 / 每隔 N），英文 / HH:MM / ISO
+- 5 秒 tick 调度器；崩溃恢复（`firing → pending`）；7 天 fireAt 上限；50 条 / 用户配额
+
+**LLM 增强（默认开启）**
+- **F1 LLM 意图识别**：非 slash 消息走 detector，时间词正则预过滤后调当前 thread 的 active agent 抽 JSON。置信度 ≥ 0.85 弹"要不要为这件事设个提醒？"卡片，y/n 确认。可 `/remind aiwatch off` 关
+- **F2 LLM 投递润色**：fire 时把字面文本作为 prompt 喂给当前 agent 重写成自然投递语（系统约束："不献媚、不过度幽默、不夸大"，≤ 80 字）。20s 超时 fallback 字面。`/remind literal …` 强制字面投递。每 N 分钟（< 1h）+ LLM 模式被拒绝（防止高频 LLM 调用）
+- **Agent context snippet**：每次 agent 调用前在 prompt 前注入 ≤ 5 条 pending 提醒摘要，agent 不用主动 list_reminders 就能看到现状
+
+**Agent MCP 工具（提醒兜底创建）**
+- 4 个工具：`create_reminder` / `list_reminders` / `cancel_reminder` / `snooze_reminder`
+- claude-code：复用现有 `--mcp-config` per-spawn 注入
+- opencode (stdio)：`prepareCommand` 注入 `IMHUB_RUN_ID` extraEnv，全局 `mcp.imhub` config 自动注册
+- opencode (http)：常驻 daemon 共享 MCP server，agent-asserted `_im_context` 兜底（**单用户限定**——agent 可伪造身份）
+- codex：未实施（`codex exec` 不支持外部 MCP）
+
+**Web 管理**
+- `/reminders` 页面（dark mode、状态筛选、取消、延后）
+- 3 个 REST endpoint：`GET /api/reminders`、`POST /api/reminders/:id/cancel`、`POST /api/reminders/:id/snooze`
+
+### Added — 邮件投递通道
+- 注册为 `email` messenger（`threadId` 即邮箱地址）
+- nodemailer + Gmail / QQ / 163 / 任意 SMTP（env：`IMHUB_SMTP_HOST/PORT/USER/PASS/FROM/SECURE`）
+- `/remind email <addr> <time> <text>` 内联 / `/remind bindemail` 绑定默认 / `/remind email <time> <text>` 走默认
+- 邮件 + 循环 + LLM 润色组合自由
+
+### Added — WeChat context_token 持久化
+- iLink Bot API 30 分钟 context_token TTL 之前只存内存，重启即丢，导致循环提醒在 wechat 端高概率失败
+- 新 SQLite 表（`~/.im-hub/wechat-context.db`），收消息时写穿，启动时 warm 内存 Map，cleanup 同步清 DB
+
+### Schema migrations
+新建 / 扩展三张表（在 `reminders.db` 内）：
+- `reminders` 主表：`recurrence` `last_fired_at` `prompt_mode` 三列追加（idempotent ALTER）
+- `user_email_bindings`
+- `user_aiwatch_settings`
+
+新独立 SQLite：`wechat-context.db`
+
+### Tests
+新增 7 个测试文件，~50 个新 case：`agent-helper`、`pending-reminder`、`remind-intent`、`reminder-rpc`、`email-adapter`、`wechat-context-store`、扩展的 `reminders.test.ts`。bun test 1033 pass / 34 skip / 0 new fail。
+
+### Dependencies
+- `nodemailer ^8.0.7`
+
+### Known limitations
+- opencode http 多用户场景不安全（`_im_context` 可伪造）；多用户部署应选 stdio 或 claude-code
+- `/api/reminders` 无 per-user owner-scoping（单运营者部署）
+- codex 暂无 MCP reminder 工具（重写需 ~5h，下一轮专项）
+- F1 detector 时区跟随 server `toLocaleString()`
+
+---
+
 ## [0.2.35] - 2026-05-09
 
 ### Added — WeChat & Telegram rich media support

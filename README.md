@@ -8,8 +8,9 @@
 
 ## Highlights
 
-- **4 messengers, 4+ agents** — WeChat (image / file / voice), Feishu, Telegram, Discord; Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
-- **Browser dashboard** — chat UI, tasks panel (jobs / schedules / approvals / health / files / audit), settings page with workspace CRUD
+- **4 messengers + email, 4+ agents** — WeChat (image / file / voice), Feishu, Telegram, Discord, Email (SMTP); Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
+- **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
+- **Browser dashboard** — chat UI, tasks panel (jobs / schedules / approvals / health / files / audit), reminders panel, settings page with workspace CRUD
 - **Human-in-the-loop tool approval** — Claude tool calls pause for `y`/`n` in IM or in-page card; works across all platforms
 - **Rich media in WeChat & Telegram** — receive images, files, videos; voice messages transcribed via WeChat STT, OpenAI Whisper, or whisper.cpp
 - **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
@@ -52,8 +53,9 @@ im-hub-pro start          # config, env vars, headers all unchanged
 
 | Category | Details |
 |----------|---------|
-| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), Telegram (grammy — photo / voice / audio), Discord (discord.js) |
+| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), Telegram (grammy — photo / voice / audio), Discord (discord.js), Email (SMTP, push-only) |
 | **Agents** | Claude Code, Codex, Copilot, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
+| **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
 | **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文), SSE dashboard |
 | **Tool Approval** | Human-in-the-loop over IM + in-page cards; MCP sidecar for Claude |
 | **Jobs** | Persistent SQLite job board + cron scheduler; batch ops; background task reader |
@@ -85,9 +87,10 @@ im-hub-pro messengers      # List available messengers
 | `/new` | New conversation (clear context) |
 | `/model [provider/model]` | View or switch model |
 | `/think on\|off` | Toggle extended thinking |
+| `/remind …` | Reminders — see [Reminders](#reminders) below |
 | `/job`, `/schedule`, `/audit`, `/stats` | Manage jobs, schedules, audit, stats |
 | `/router status\|explain` | Inspect routing decisions |
-| `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call |
+| `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
 
 ## Human-in-the-loop Tool Approval
 
@@ -101,6 +104,132 @@ Reply y to approve / n to deny  (auto-deny in 5 min)
 ```
 
 Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Telegram, Feishu, and Discord. Disable with `IMHUB_APPROVAL_DISABLED=1`.
+
+## Reminders
+
+Built-in `/remind` subsystem — one-shot or recurring, with three creation paths and three delivery enhancements.
+
+```bash
+# One-shot
+/remind 2m drink water
+/remind 40秒喝水
+/remind 下午6点下班
+/remind 18:30 出门
+
+# Recurring 🔁
+/remind 每5分钟看屏幕外
+/remind 每天早上8点喝水
+/remind 每周一三五9点站会
+/remind 每个工作日18:00下班
+
+# Email delivery ✉️ (requires SMTP — see Configuration)
+/remind email me@x.com 8:00 morning briefing
+/remind bindemail me@x.com   # bind default → /remind email 每天8点 早安
+/remind unbindemail
+
+# Manage
+/remind list
+/remind cancel <id>
+/remind clear
+/remind snooze <id> 5m
+/remind aiwatch on|off       # toggle the LLM intent detector
+
+# Disable LLM polish for one reminder
+/remind literal 每5分钟 喝水
+```
+
+**Three creation paths** (all land in the same `~/.im-hub/reminders.db`):
+
+1. **`/remind` slash** — explicit, structured input
+2. **LLM intent detection** (default-on) — say "明天早上8点提醒我开会" without `/remind`, the bot pops a confirmation card; reply `y` to create
+3. **Agent MCP tools** — claude-code and opencode (stdio) auto-call `create_reminder` when you mention future commitments in chat. Works with opencode (http) too via single-user agent-asserted context
+
+**Two delivery enhancements**:
+
+- **LLM polish** (default-on): at fire time the active agent rewrites the literal seed text into a natural one-liner ("早上好，记得喝杯水"). Tone constrained: *no flattery, no over-humor, no exaggeration*. Falls back to literal text on agent failure / timeout
+- **Late-delivery tag**: > 1 h overdue gets `⏰ 延迟投递` prefix so users know the bot was offline
+
+Manage reminders in the web UI at `/reminders` (status filters, snooze, cancel).
+
+Full design: [`docs/architecture/reminders.md`](docs/architecture/reminders.md).
+
+## Configuration
+
+### Config file
+`~/.im-hub/config.json` (validated by zod at startup):
+
+```json
+{
+  "messengers": ["wechat-ilink", "telegram"],
+  "agents": ["claude-code", "opencode"],
+  "defaultAgent": "claude-code",
+  "telegram": { "botToken": "***" },
+  "acpAgents": [
+    {
+      "name": "my-agent",
+      "endpoint": "https://api.example.com",
+      "auth": { "type": "bearer", "token": "***" }
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "team-data",
+      "name": "Data team",
+      "agents": ["opencode", "my-agent"],
+      "members": ["user-123"],
+      "rateLimit": { "rate": 30, "intervalSec": 60, "burst": 60 }
+    }
+  ]
+}
+```
+
+### Email reminders (SMTP)
+
+To enable `/remind email …`, set these environment variables before starting:
+
+```bash
+# Required
+export IMHUB_SMTP_HOST=smtp.gmail.com
+export IMHUB_SMTP_USER=you@gmail.com
+export IMHUB_SMTP_PASS=<16-char-app-password>      # NOT your normal password
+
+# Optional
+export IMHUB_SMTP_PORT=465                         # default 465
+export IMHUB_SMTP_FROM=you@gmail.com               # default = USER
+export IMHUB_SMTP_SECURE=auto                      # auto | true | false
+```
+
+**Provider quick reference**:
+
+| Provider | HOST | PORT | Notes |
+|----------|------|------|-------|
+| Gmail | `smtp.gmail.com` | 465 | Use [App Password](https://myaccount.google.com/apppasswords) — 2-Step Verification required |
+| QQ Mail | `smtp.qq.com` | 465 | "授权码" (account → POP3/SMTP service) |
+| 163 Mail | `smtp.163.com` | 465 | "授权码" (account → POP3/SMTP/IMAP service) |
+| Outlook | `smtp-mail.outlook.com` | 587 | Set `IMHUB_SMTP_SECURE=false` (STARTTLS) |
+| Custom | any host | any port | Set `SECURE` per provider docs |
+
+Without these env vars, the email adapter still loads but `/remind email …` returns "Email adapter not configured" — IM reminders keep working.
+
+For systemd, put env in your unit file:
+```ini
+[Service]
+Environment="IMHUB_SMTP_HOST=smtp.gmail.com"
+Environment="IMHUB_SMTP_USER=you@gmail.com"
+Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
+```
+
+### Other env vars
+
+| Env | Default | What it does |
+|-----|---------|-------------|
+| `IMHUB_WEB_BIND` | `127.0.0.1` | Web UI bind address (set `0.0.0.0` to expose; front with HTTPS reverse proxy) |
+| `IMHUB_APPROVAL_DISABLED` | unset | Set `=1` to skip the human-in-the-loop tool approval gate |
+| `IMHUB_OPENCODE_DRIVER` | `stdio` | `http` selects the HTTP driver (faster, but reminder MCP path uses single-user agent-asserted context) |
+| `IMHUB_OPENCODE_GATE` | `medium` | `strict` / `loose` / `none` — opencode permission gate |
+| `IM_HUB_LLM_JUDGE_AGENT` | unset | Agent name used as LLM router fallback judge |
+| `OPENAI_API_KEY` | unset | Enables OpenAI Whisper for voice transcription |
+| `IMHUB_WHISPERCPP_BIN` + `IMHUB_WHISPERCPP_MODEL` | unset | Local Whisper.cpp for voice transcription (no cloud) |
 
 ## Architecture
 
@@ -145,35 +274,6 @@ Single process, zero external dependencies — SQLite + session files are the en
 
 For the full deep-dive see [`docs/architecture/current.md`](docs/architecture/current.md).
 
-## Configuration
-
-Config file: `~/.im-hub/config.json` (validated by zod at startup)
-
-```json
-{
-  "messengers": ["wechat", "telegram"],
-  "agents": ["claude-code", "opencode"],
-  "defaultAgent": "claude-code",
-  "telegram": { "botToken": "***" },
-  "acpAgents": [
-    {
-      "name": "my-agent",
-      "endpoint": "https://api.example.com",
-      "auth": { "type": "bearer", "token": "***" }
-    }
-  ],
-  "workspaces": [
-    {
-      "id": "team-data",
-      "name": "Data team",
-      "agents": ["opencode", "my-agent"],
-      "members": ["user-123"],
-      "rateLimit": { "rate": 30, "intervalSec": 60, "burst": 60 }
-    }
-  ]
-}
-```
-
 ## Requirements
 
 - **Node.js ≥ 18** (≥ 22 LTS recommended)
@@ -215,9 +315,11 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.2.20–23 | Web console — theme, approvals, SSE, files, batch ops |
 | v0.2.30 | Production hardening — session isolation, serial WS, loopback bind |
 | v0.2.35 | WeChat & Telegram rich media — image / file / voice / video |
+| v0.2.37 | Reminders subsystem — `/remind`, LLM intent + polish, agent MCP tools, email channel, web `/reminders`, WeChat context_token persistence |
 
 ### v0.3.0 (next)
 
+- [ ] codex MCP-server mode (so codex can use reminder tools too)
 - [ ] DingTalk adapter
 - [ ] Slack adapter
 - [ ] Feishu / Discord button-style approval cards

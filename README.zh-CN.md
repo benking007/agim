@@ -8,8 +8,9 @@
 
 ## 亮点
 
-- **4 种 IM 通道，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、Telegram、Discord；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
-- **浏览器控制台** — 对话界面、任务面板（Jobs / 调度 / 审批 / 健康 / 文件 / 审计）、设置页含工作区 CRUD
+- **4 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
+- **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
+- **浏览器控制台** — 对话界面、任务面板（Jobs / 调度 / 审批 / 健康 / 文件 / 审计）、提醒面板、设置页含工作区 CRUD
 - **工具调用人审（HITL）** — Claude 调用工具时暂停，IM 回复 `y`/`n` 或在页面点卡片审批；全平台一致
 - **微信和 Telegram 富媒体** — 接收图片、文件、视频；语音消息支持微信 STT、OpenAI Whisper、whisper.cpp 转写
 - **智能路由** — 意图分类（中英文）、Sticky 会话、断路器、限流器
@@ -52,8 +53,9 @@ im-hub-pro start          # 配置、环境变量、Header 全部不变
 
 | 分类 | 内容 |
 |------|------|
-| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js） |
+| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js）、Email（SMTP，仅推送） |
 | **Agent** | Claude Code、Codex、Copilot、OpenCode（统一 `AgentBase`）；任何 HTTP Agent 通过 ACP 接入 |
+| **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **Web 控制台** | 流式对话、三态主题（浅 / 深 / 跟随系统）、中英双语、SSE 实时仪表盘 |
 | **工具人审** | IM 端 + 页面内审批卡；Claude MCP sidecar |
 | **任务** | SQLite 持久化 Job Board + cron 调度；批量操作；后台任务读取 |
@@ -85,9 +87,10 @@ im-hub-pro messengers      # 列出可用 IM
 | `/new` | 开新会话（清空历史） |
 | `/model [provider/model]` | 查看或切换模型 |
 | `/think on\|off` | 切换深度思考模式 |
+| `/remind …` | 提醒子系统 — 详见 [提醒](#提醒) |
 | `/job`、`/schedule`、`/audit`、`/stats` | 管理任务、调度、审计、统计 |
 | `/router status\|explain` | 查看路由策略 |
-| `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝 Claude 工具调用 |
+| `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝（工具调用 或 提醒确认卡片） |
 
 ## 工具调用人审
 
@@ -101,6 +104,132 @@ im-hub-pro messengers      # 列出可用 IM
 ```
 
 在 IM 回复 `y` / `n`，或在 Web 界面点 Allow / Deny。微信、Telegram、飞书、Discord 行为一致。`IMHUB_APPROVAL_DISABLED=1` 可关闭。
+
+## 提醒
+
+内置 `/remind` 子系统——一次性 / 定期，三种创建路径，三种投递增强。
+
+```bash
+# 一次性
+/remind 2m 喝水
+/remind 40秒喝水
+/remind 下午6点下班
+/remind 18:30 出门
+
+# 定期 🔁
+/remind 每5分钟看屏幕外
+/remind 每天早上8点喝水
+/remind 每周一三五9点站会
+/remind 每个工作日18:00下班
+
+# 邮件 ✉️ （需要 SMTP 配置——见 [配置](#配置)）
+/remind email me@x.com 8:00 早安
+/remind bindemail me@x.com   # 绑定默认邮箱 → /remind email 每天8点 早安
+/remind unbindemail
+
+# 管理
+/remind list
+/remind cancel <id>
+/remind clear
+/remind snooze <id> 5m
+/remind aiwatch on|off       # 切换 LLM 意图识别
+
+# 关掉某条提醒的 LLM 润色
+/remind literal 每5分钟 喝水
+```
+
+**三种创建路径**（最终都落到同一个 `~/.im-hub/reminders.db`）：
+
+1. **`/remind` slash** — 显式、结构化输入
+2. **LLM 意图识别**（默认开启）— 直接说"明天早上8点提醒我开会"，机器人弹"要不要为这件事设个提醒？"卡片，回复 `y` 创建
+3. **Agent MCP 工具** — 在 claude-code / opencode (stdio) 会话里聊到未来事件时，agent 自动调 `create_reminder`。opencode (http) 走单用户 agent-asserted context 路径
+
+**两种投递增强**：
+
+- **LLM 润色**（默认开启）：触发时由当前 agent 把字面文本重写成自然提醒（"早上好，记得喝杯水"）。系统约束：**不献媚、不过度幽默、不夸大**。Agent 失败 / 超时时回退字面文本
+- **延迟投递标记**：超过 1 小时未投递的提醒前缀加 `⏰ 延迟投递`，让用户知道 bot 离线过
+
+Web 界面 `/reminders` 可视化管理（状态筛选、延后、取消）。
+
+完整设计：[`docs/architecture/reminders.md`](docs/architecture/reminders.md)。
+
+## 配置
+
+### 配置文件
+`~/.im-hub/config.json`（启动时 zod 校验）：
+
+```json
+{
+  "messengers": ["wechat-ilink", "telegram"],
+  "agents": ["claude-code", "opencode"],
+  "defaultAgent": "claude-code",
+  "telegram": { "botToken": "***" },
+  "acpAgents": [
+    {
+      "name": "my-agent",
+      "endpoint": "https://api.example.com",
+      "auth": { "type": "bearer", "token": "***" }
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "team-data",
+      "name": "数据团队",
+      "agents": ["opencode", "my-agent"],
+      "members": ["user-123"],
+      "rateLimit": { "rate": 30, "intervalSec": 60, "burst": 60 }
+    }
+  ]
+}
+```
+
+### 邮件提醒（SMTP）
+
+要启用 `/remind email …`，启动前设置以下环境变量：
+
+```bash
+# 必填
+export IMHUB_SMTP_HOST=smtp.gmail.com
+export IMHUB_SMTP_USER=you@gmail.com
+export IMHUB_SMTP_PASS=<16位应用专用密码>      # 不是登录密码
+
+# 可选
+export IMHUB_SMTP_PORT=465                    # 默认 465
+export IMHUB_SMTP_FROM=you@gmail.com          # 默认 = USER
+export IMHUB_SMTP_SECURE=auto                 # auto | true | false
+```
+
+**常见邮箱配置参考**：
+
+| 服务商 | HOST | PORT | 备注 |
+|-------|------|------|------|
+| Gmail | `smtp.gmail.com` | 465 | 用 [应用专用密码](https://myaccount.google.com/apppasswords)，需先开两步验证 |
+| QQ 邮箱 | `smtp.qq.com` | 465 | 设置 → 账号 → POP3/SMTP 服务 → 授权码 |
+| 163 邮箱 | `smtp.163.com` | 465 | 设置 → POP3/SMTP/IMAP → 授权码 |
+| Outlook | `smtp-mail.outlook.com` | 587 | 设 `IMHUB_SMTP_SECURE=false`（STARTTLS） |
+| 企业邮箱 | 厂商提供 | 任意 | `SECURE` 按厂商文档设 |
+
+不设这些环境变量也不会启动失败——邮件 adapter 仍会注册，但 `/remind email …` 会返回"Email adapter not configured"，IM 提醒不受影响。
+
+systemd 部署示例：
+```ini
+[Service]
+Environment="IMHUB_SMTP_HOST=smtp.gmail.com"
+Environment="IMHUB_SMTP_USER=you@gmail.com"
+Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
+```
+
+### 其他环境变量
+
+| 变量 | 默认值 | 作用 |
+|------|--------|------|
+| `IMHUB_WEB_BIND` | `127.0.0.1` | Web UI 监听地址（设 `0.0.0.0` 对外暴露，建议前面挂 HTTPS 反代） |
+| `IMHUB_APPROVAL_DISABLED` | 未设 | 设 `=1` 跳过工具调用人审 |
+| `IMHUB_OPENCODE_DRIVER` | `stdio` | 设 `http` 启用 HTTP driver（更快，但 reminder MCP 路径会走单用户 agent-asserted context） |
+| `IMHUB_OPENCODE_GATE` | `medium` | `strict` / `loose` / `none` — opencode 权限闸 |
+| `IM_HUB_LLM_JUDGE_AGENT` | 未设 | 路由分类失败时用作兜底的 LLM judge agent 名 |
+| `OPENAI_API_KEY` | 未设 | 启用 OpenAI Whisper 做语音转写 |
+| `IMHUB_WHISPERCPP_BIN` + `IMHUB_WHISPERCPP_MODEL` | 未设 | 本地 Whisper.cpp 转写（不走云） |
 
 ## 架构
 
@@ -145,35 +274,6 @@ im-hub-pro messengers      # 列出可用 IM
 
 深入架构详见 [`docs/architecture/current.md`](docs/architecture/current.md)。
 
-## 配置
-
-配置文件：`~/.im-hub/config.json`（启动时 zod 校验）
-
-```json
-{
-  "messengers": ["wechat", "telegram"],
-  "agents": ["claude-code", "opencode"],
-  "defaultAgent": "claude-code",
-  "telegram": { "botToken": "***" },
-  "acpAgents": [
-    {
-      "name": "my-agent",
-      "endpoint": "https://api.example.com",
-      "auth": { "type": "bearer", "token": "***" }
-    }
-  ],
-  "workspaces": [
-    {
-      "id": "team-data",
-      "name": "数据团队",
-      "agents": ["opencode", "my-agent"],
-      "members": ["user-123"],
-      "rateLimit": { "rate": 30, "intervalSec": 60, "burst": 60 }
-    }
-  ]
-}
-```
-
 ## 环境要求
 
 - **Node.js ≥ 18**（推荐 ≥ 22 LTS）
@@ -215,9 +315,11 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.2.20–23 | Web 控制台 — 主题、审批、SSE、文件、批量操作 |
 | v0.2.30 | 生产硬化 — 会话隔离、WS 串行、回环监听 |
 | v0.2.35 | 微信和 Telegram 富媒体 — 图片 / 文件 / 语音 / 视频 |
+| v0.2.37 | 提醒子系统 — `/remind`、LLM 意图识别 + 润色、Agent MCP 工具、邮件通道、Web `/reminders`、微信 context_token 持久化 |
 
 ### v0.3.0（下一版）
 
+- [ ] codex MCP-server 模式（让 codex 也能用提醒工具）
 - [ ] 钉钉适配器
 - [ ] Slack 适配器
 - [ ] 飞书 / Discord 卡片按钮版审批

@@ -2,7 +2,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { readdir, stat, readFile, writeFile, rename, unlink } from 'fs/promises'
+import { readdir, stat, lstat, readFile, writeFile, rename, unlink, realpath, open } from 'fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
@@ -1136,6 +1136,40 @@ const WORKSPACE_FILE_MAX_BYTES = 1 * 1024 * 1024
 const BINARY_PROBE_BYTES = 8 * 1024
 
 /**
+ * Resolve a user-supplied path under a workspace base and verify that the
+ * *real* filesystem path (after symlink resolution) still lives under `base`.
+ * Returns the validated real path, or null + sends an error response.
+ */
+async function validateWorkspacePath(
+  base: string,
+  userPath: string,
+  res: ServerResponse,
+): Promise<string | null> {
+  const target = resolvePath(base, userPath)
+  if (target !== base && !target.startsWith(base + pathSep)) {
+    sendJson(res, 400, { error: 'Path escapes workspace root' })
+    return null
+  }
+  let real: string
+  try {
+    real = await realpath(target)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Not found', path: relativePath(base, target) })
+      return null
+    }
+    throw err
+  }
+  const realBase = await realpath(base)
+  if (real !== realBase && !real.startsWith(realBase + pathSep)) {
+    sendJson(res, 403, { error: 'Path resolves outside workspace root (symlink escape)' })
+    return null
+  }
+  return real
+}
+
+/**
  * Read-only view of `~/.im-hub-workspaces/<agent>/`. The Files tab in /tasks
  * uses it to inspect what an IM-context agent is reading and writing into its
  * pinned workspace (CLAUDE.md, AGENTS.md, scratch notes, etc.).
@@ -1175,30 +1209,27 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
 
     const { defaultAgentCwd } = await import('../core/agent-cwd.js')
     const base = resolvePath(defaultAgentCwd(agent))
-    const target = resolvePath(base, userPath)
-    // The base itself is allowed; anything else must live strictly below it.
-    if (target !== base && !target.startsWith(base + pathSep)) {
-      sendJson(res, 400, { error: 'Path escapes workspace root' })
-      return
-    }
+    const target = await validateWorkspacePath(base, userPath, res)
+    if (!target) return
 
-    let st: Awaited<ReturnType<typeof stat>>
-    try {
-      st = await stat(target)
-    } catch (err) {
-      const e = err as NodeJS.ErrnoException
-      if (e.code === 'ENOENT') {
-        sendJson(res, 404, { error: 'Not found', path: relativePath(base, target) })
-        return
-      }
-      throw err
-    }
+    const st = await stat(target)
 
     if (st.isDirectory()) {
+      const realBase = await realpath(base)
       const names = await readdir(target)
       const entries = await Promise.all(names.map(async (name) => {
         try {
-          const sub = await stat(join(target, name))
+          const childPath = join(target, name)
+          let childReal: string
+          try {
+            childReal = await realpath(childPath)
+          } catch {
+            return { name, isDir: false, size: null, mtime: null, broken: true }
+          }
+          if (childReal !== realBase && !childReal.startsWith(realBase + pathSep)) {
+            return { name, isDir: false, size: null, mtime: null, symlink_escape: true }
+          }
+          const sub = await stat(childPath)
           return {
             name,
             isDir: sub.isDirectory(),
@@ -1206,12 +1237,9 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
             mtime: sub.mtime.toISOString(),
           }
         } catch {
-          // Broken symlink or race-deleted entry — surface but mark unknown.
           return { name, isDir: false, size: null, mtime: null, broken: true }
         }
       }))
-      // Dirs first, then case-insensitive name sort — matches the convention
-      // most file-managers use. Stable in practice (Intl.Collator sort).
       entries.sort((a, b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
         return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -1231,15 +1259,21 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       return
     }
 
-    // For files larger than the cap, we still return metadata + a note —
-    // user can ssh in for the rest. Avoids surprising the browser with
-    // a 50 MB log dump.
     const truncated = st.size > WORKSPACE_FILE_MAX_BYTES
-    const buf = await readFile(target)
-    const slice = truncated ? buf.subarray(0, WORKSPACE_FILE_MAX_BYTES) : buf
-    // Binary detection: a NUL byte in the first 8 KB is a strong signal.
-    // Cheaper than full UTF-8 validation and matches grep's heuristic.
-    const probe = slice.subarray(0, Math.min(slice.length, BINARY_PROBE_BYTES))
+    let buf: Buffer
+    if (truncated) {
+      const fd = await open(target, 'r')
+      try {
+        buf = Buffer.alloc(WORKSPACE_FILE_MAX_BYTES)
+        const { bytesRead } = await fd.read(buf, 0, WORKSPACE_FILE_MAX_BYTES, 0)
+        buf = buf.subarray(0, bytesRead)
+      } finally {
+        await fd.close()
+      }
+    } else {
+      buf = await readFile(target)
+    }
+    const probe = buf.subarray(0, Math.min(buf.length, BINARY_PROBE_BYTES))
     const isBinary = probe.includes(0)
     sendJson(res, 200, {
       type: 'file',
@@ -1248,7 +1282,7 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       size: st.size,
       mtime: st.mtime.toISOString(),
       encoding: isBinary ? 'base64' : 'utf-8',
-      content: isBinary ? slice.toString('base64') : slice.toString('utf-8'),
+      content: isBinary ? buf.toString('base64') : buf.toString('utf-8'),
       truncated,
     })
   } catch (err) {
@@ -1295,15 +1329,48 @@ async function handleWorkspaceFileWrite(req: IncomingMessage, res: ServerRespons
 
     const { defaultAgentCwd } = await import('../core/agent-cwd.js')
     const base = resolvePath(defaultAgentCwd(agent))
-    const target = resolvePath(base, userPath)
-    if (target !== base && !target.startsWith(base + pathSep)) {
+
+    // For writes, the file may not yet exist so realpath would fail.
+    // Validate the parent directory via realpath and verify the logical
+    // path stays under base as a prefix check.
+    const logicalTarget = resolvePath(base, userPath)
+    if (logicalTarget !== base && !logicalTarget.startsWith(base + pathSep)) {
       sendJson(res, 400, { error: 'Path escapes workspace root' })
       return
     }
-    if (target === base) {
+    if (logicalTarget === base) {
       sendJson(res, 400, { error: 'Cannot overwrite workspace root' })
       return
     }
+    // Verify the parent directory resolves inside the workspace.
+    const parentDir = dirname(logicalTarget)
+    try {
+      const realParent = await realpath(parentDir)
+      const realBase = await realpath(base)
+      if (realParent !== realBase && !realParent.startsWith(realBase + pathSep)) {
+        sendJson(res, 403, { error: 'Parent path resolves outside workspace root (symlink escape)' })
+        return
+      }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === 'ENOENT') {
+        sendJson(res, 400, { error: 'Parent directory does not exist' })
+        return
+      }
+      throw err
+    }
+    // If the file itself already exists, ensure its real path is inside too.
+    try {
+      const realTarget = await realpath(logicalTarget)
+      const realBase = await realpath(base)
+      if (realTarget !== realBase && !realTarget.startsWith(realBase + pathSep)) {
+        sendJson(res, 403, { error: 'Path resolves outside workspace root (symlink escape)' })
+        return
+      }
+    } catch {
+      // ENOENT is fine — the file doesn't exist yet
+    }
+    const target = logicalTarget
 
     const body = await readBody(req, res)
     let parsed: { content?: unknown }

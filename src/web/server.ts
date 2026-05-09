@@ -6,7 +6,7 @@ import { readdir, stat, lstat, readFile, writeFile, rename, unlink, realpath, op
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
@@ -88,19 +88,90 @@ export async function startWebServer(options: {
   const webToken = getOrCreateWebToken()
   const clients = new Map<string, ClientConnection>()
 
+  // Per-process secret for signing session cookies. Not persisted — browser
+  // sessions expire on restart, which is acceptable for a dev tool.
+  const cookieSecret = randomBytes(32).toString('hex')
+  const COOKIE_NAME = 'imhub_session'
+
+  function makeSessionCookie(): string {
+    return createHmac('sha256', cookieSecret).update(webToken).digest('hex')
+  }
+  function isValidSessionCookie(cookie: string): boolean {
+    const expected = makeSessionCookie()
+    if (cookie.length !== expected.length) return false
+    try {
+      return timingSafeEqual(Buffer.from(cookie, 'utf8'), Buffer.from(expected, 'utf8'))
+    } catch { return false }
+  }
+  function parseCookies(req: IncomingMessage): Record<string, string> {
+    const hdr = req.headers.cookie || ''
+    const out: Record<string, string> = {}
+    for (const pair of hdr.split(';')) {
+      const eq = pair.indexOf('=')
+      if (eq < 0) continue
+      out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim()
+    }
+    return out
+  }
+  function hasValidSession(req: IncomingMessage): boolean {
+    const cookies = parseCookies(req)
+    return isValidSessionCookie(cookies[COOKIE_NAME] || '')
+  }
+  function setSessionCookie(res: ServerResponse): void {
+    const val = makeSessionCookie()
+    const parts = [`${COOKIE_NAME}=${val}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
+    if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+      webLog.warn({
+        event: 'web.public_bind_warning',
+        bind: bindHost,
+      }, 'Web server bound to a non-localhost address — consider using a reverse proxy with TLS for production')
+    }
+    res.setHeader('Set-Cookie', parts.join('; '))
+  }
+
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
-    // Static pages
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'index.html'), webToken)
+    // Login page — always accessible
+    if (url.pathname === '/login' || url.pathname === '/login.html') {
+      return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
     }
-    if (url.pathname === '/settings' || url.pathname === '/settings.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'settings.html'), webToken)
+
+    // POST /api/auth/login — validate token, set session cookie
+    if (url.pathname === '/api/auth/login' && req.method === 'POST') {
+      const body = await readBody(req, res)
+      let parsed: { token?: string }
+      try { parsed = JSON.parse(body) } catch {
+        sendJson(res, 400, { error: 'Invalid JSON' })
+        return
+      }
+      if (typeof parsed.token === 'string' && safeEqual(parsed.token, webToken)) {
+        setSessionCookie(res)
+        sendJson(res, 200, { ok: true })
+      } else {
+        sendJson(res, 401, { error: 'Invalid token' })
+      }
+      return
     }
-    if (url.pathname === '/tasks' || url.pathname === '/tasks.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'tasks.html'), webToken)
+
+    // Static pages — require valid session cookie
+    if (
+      url.pathname === '/' || url.pathname === '/index.html' ||
+      url.pathname === '/settings' || url.pathname === '/settings.html' ||
+      url.pathname === '/tasks' || url.pathname === '/tasks.html'
+    ) {
+      if (!hasValidSession(req)) {
+        res.writeHead(302, { Location: `/login?next=${encodeURIComponent(url.pathname)}` })
+        res.end()
+        return
+      }
+      const fileMap: Record<string, string> = {
+        '/': 'index.html', '/index.html': 'index.html',
+        '/settings': 'settings.html', '/settings.html': 'settings.html',
+        '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
+      }
+      return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
 
     // M4: /api/health is intentionally public (k8s liveness probe friendly)
@@ -118,10 +189,10 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 
-    // REST API — require auth token
+    // REST API — require auth token (header) or valid session cookie
     if (url.pathname.startsWith('/api/')) {
       const token = req.headers['x-im-hub-token'] as string || ''
-      if (!safeEqual(token, webToken)) {
+      if (!safeEqual(token, webToken) && !hasValidSession(req)) {
         res.writeHead(401)
         res.end(JSON.stringify({ error: 'Unauthorized' }))
         return
@@ -241,7 +312,7 @@ export async function startWebServer(options: {
     // /events is outside the /api/* token gate above.
     if (url.pathname === '/events' && req.method === 'GET') {
       const evToken = url.searchParams.get('token') || ''
-      if (!safeEqual(evToken, webToken)) {
+      if (!safeEqual(evToken, webToken) && !hasValidSession(req)) {
         res.writeHead(401, { 'Content-Type': 'text/plain' })
         res.end('Unauthorized')
         return
@@ -289,10 +360,10 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
-    // Verify token from URL query before accepting connection
+    // Verify token from URL query or session cookie before accepting connection
     const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
     const wsToken = wsUrl.searchParams.get('token') || ''
-    if (!safeEqual(wsToken, webToken)) {
+    if (!safeEqual(wsToken, webToken) && !hasValidSession(req)) {
       ws.close(1008, 'Unauthorized')
       return
     }
@@ -1895,27 +1966,16 @@ function serveStatic(res: ServerResponse, filePath: string, contentType: string)
 }
 
 /**
- * Serve index/settings HTML with injected web token for API auth
+ * Serve HTML pages with security headers. Token is no longer injected —
+ * the browser authenticates via httpOnly session cookie set at /login.
  */
-function serveIndexHtml(res: ServerResponse, filePath: string, token: string): void {
+function servePageHtml(res: ServerResponse, filePath: string): void {
   if (!existsSync(filePath)) {
     res.writeHead(404)
     res.end('Not found')
     return
   }
-  let html = readFileSync(filePath, 'utf-8')
-  // JSON.stringify produces a safely quoted JS string literal — prevents
-  // breakout if the token ever contains ' or </script>.
-  html = html.replace('</head>', `<script>window.IMHUB_TOKEN=${JSON.stringify(token)};</script></head>`)
-  // No-cache so dashboard updates land for users without forcing a hard refresh.
-  // The HTML is small (<30KB) and the round-trip is cheap; correctness wins.
-  //
-  // M1: defense-in-depth response headers. CSP keeps 'unsafe-inline' on
-  // script/style because the IMHUB_TOKEN bootstrap and a few inline event
-  // handlers in the static pages still rely on it; tightening to a nonce
-  // is tracked separately. Outside that, lock everything down: no framing,
-  // no MIME sniffing, no Referer leak to third parties, no third-party
-  // resources at all.
+  const html = readFileSync(filePath, 'utf-8')
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache, must-revalidate',

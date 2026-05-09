@@ -558,16 +558,13 @@
       'opencode': { aliases: ['oc'], pkg: 'opencode-ai', cmd: 'opencode' },
     };
 
-    // Helper: add auth token to all API requests
+    // Helper: add auth token to all API requests (uses session cookie;
+    // falls back to IMHUB_TOKEN header if set for backward compat).
     function authFetch(url, init = {}) {
       const token = window.IMHUB_TOKEN || '';
-      return fetch(url, {
-        ...init,
-        headers: {
-          ...(init.headers || {}),
-          'X-IM-Hub-Token': token,
-        },
-      });
+      const headers = { ...(init.headers || {}) };
+      if (token) headers['X-IM-Hub-Token'] = token;
+      return fetch(url, { ...init, headers, credentials: 'same-origin' });
     }
 
     // Fetch config on load

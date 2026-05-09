@@ -28,12 +28,17 @@
   },
   "keywords": [
     "wechat",
+    "feishu",
+    "telegram",
+    "discord",
     "claude-code",
     "codex",
     "copilot",
+    "opencode",
     "bot",
     "agent",
-    "bridge"
+    "bridge",
+    "acp"
   ],
   "author": "Jerry",
   "license": "MIT",

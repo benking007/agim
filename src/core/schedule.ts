@@ -244,7 +244,10 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     return
   }
 
-  const jobId = createJob(s.agent, s.prompt)
+  const jobId = createJob(s.agent, s.prompt, {
+    creatorId: s.creator_id,
+    workspaceId: s.workspace_id,
+  })
   logger.info({ scheduleId: s.id, jobId, name: s.name }, 'Schedule fired')
 
   // Compute next_run BEFORE running so even a long-running job doesn't

@@ -41,6 +41,13 @@ class ScriptAgent extends AgentBase {
     if (errorMessage.includes('quota')) return `❌ ${this.name} quota exceeded (exit ${code})`
     return null
   }
+
+  // Public test hook — exposes the protected spawnStream so tests can drive
+  // it directly without subclassing again. Production callers go through
+  // sendPrompt(); this stays test-only.
+  public testSpawnStream(prompt: string, signal?: AbortSignal): AsyncGenerator<string> {
+    return this.spawnStream(prompt, signal)
+  }
 }
 
 async function collect(gen: AsyncGenerator<string>): Promise<string[]> {
@@ -61,7 +68,7 @@ describe('AgentBase streaming', () => {
       }
     `
     const agent = new ScriptAgent('script-stream', script)
-    const chunks = await collect(agent.spawnStream('prompt'))
+    const chunks = await collect(agent.testSpawnStream('prompt'))
     expect(chunks).toContain('hello')
     expect(chunks).toContain(' world')
     expect(chunks.join('')).toBe('hello world')
@@ -70,7 +77,7 @@ describe('AgentBase streaming', () => {
   it('passes non-JSON lines through verbatim', async () => {
     const script = `process.stdout.write('plain text line\\n');`
     const agent = new ScriptAgent('script-plain', script)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).toContain('plain text line')
   })
 
@@ -80,7 +87,7 @@ describe('AgentBase streaming', () => {
       process.stdout.write(JSON.stringify({ type: 'text', content: 'after' }) + '\\n');
     `
     const agent = new ScriptAgent('script-err', script)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).not.toContain('boom')
     expect(chunks.join('')).toContain('after')
   })
@@ -91,14 +98,14 @@ describe('AgentBase streaming', () => {
       process.exit(2);
     `
     const agent = new ScriptAgent('script-quota', script)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).toContain('quota exceeded')
   })
 
   it('falls back to generic exit-code message when handleError returns null', async () => {
     const script = `process.exit(7);`
     const agent = new ScriptAgent('script-fail', script)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).toContain('exit 7')
   })
 
@@ -113,7 +120,7 @@ describe('AgentBase streaming', () => {
     `
     const agent = new ScriptAgent('script-abort', script)
     const ac = new AbortController()
-    const gen = agent.spawnStream('p', ac.signal)
+    const gen = agent.testSpawnStream('p', ac.signal)
 
     // Wait for first chunk
     const first = await gen.next()
@@ -130,7 +137,7 @@ describe('AgentBase streaming', () => {
     const script = `setTimeout(() => process.exit(0), 5000);`
     // 50ms timeout to force the timeout branch quickly
     const agent = new ScriptAgent('script-timeout', script, 50)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).toContain('⚠️')
     expect(chunks.join('')).toContain('超时')
   })
@@ -146,7 +153,7 @@ describe('AgentBase streaming', () => {
       process.stdout.write(e + '\\n');
     `
     const agent = new ScriptAgent('script-utf8', script)
-    const chunks = await collect(agent.spawnStream('p'))
+    const chunks = await collect(agent.testSpawnStream('p'))
     const joined = chunks.join('')
     expect(joined).not.toContain('�')
     expect(joined.length).toBeGreaterThan(2000)

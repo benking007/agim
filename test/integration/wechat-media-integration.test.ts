@@ -96,7 +96,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.IMAGE,
           image_item: {
-            media: { encrypt_query_param: 'eqp=abc', aes_key: 'key1' },
+            media: { full_url: 'https://cdn.weixin/abc', aes_key: 'a2V5' },
             url: 'https://cdn.example.com/photo.png',
           },
         },
@@ -140,7 +140,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.IMAGE,
           image_item: {
-            media: { encrypt_query_param: 'eqp=fail' },
+            media: { full_url: 'https://cdn.weixin/fail', aes_key: 'a2V5' },
           },
         },
       ],
@@ -165,7 +165,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.VOICE,
           voice_item: {
-            media: { encrypt_query_param: 'eqp=voice1' },
+            media: { full_url: 'https://cdn.weixin/voice1', aes_key: 'a2V5' },
             encode_type: 6,
             playtime: 5000,
             text: '今天天气真好',
@@ -221,7 +221,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.VOICE,
           voice_item: {
-            media: { encrypt_query_param: 'eqp=voice2' },
+            media: { full_url: 'https://cdn.weixin/voice2', aes_key: 'a2V5' },
             encode_type: 6,
             playtime: 3000,
           },
@@ -270,7 +270,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.VOICE,
           voice_item: {
-            media: { encrypt_query_param: 'eqp=broken' },
+            media: { full_url: 'https://cdn.weixin/broken', aes_key: 'a2V5' },
           },
         },
       ],
@@ -299,7 +299,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.FILE,
           file_item: {
-            media: { encrypt_query_param: 'eqp=file1' },
+            media: { full_url: 'https://cdn.weixin/file1', aes_key: 'a2V5' },
             file_name: 'quarterly_report.pdf',
             len: '102400',
             md5: 'abc123',
@@ -330,7 +330,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.FILE,
           file_item: {
-            media: { encrypt_query_param: 'eqp=bigfile' },
+            media: { full_url: 'https://cdn.weixin/bigfile', aes_key: 'a2V5' },
             file_name: 'data.zip',
           },
         },
@@ -380,7 +380,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.FILE,
           file_item: {
-            media: { encrypt_query_param: 'eqp=broken' },
+            media: { full_url: 'https://cdn.weixin/broken', aes_key: 'a2V5' },
             file_name: 'important.xlsx',
           },
         },
@@ -408,7 +408,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.FILE,
           file_item: {
-            media: { encrypt_query_param: 'eqp=tricky' },
+            media: { full_url: 'https://cdn.weixin/tricky', aes_key: 'a2V5' },
             file_name: 'path/to/hack.exe',
           },
         },
@@ -440,7 +440,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.VIDEO,
           video_item: {
-            media: { encrypt_query_param: 'eqp=vid1' },
+            media: { full_url: 'https://cdn.weixin/vid1', aes_key: 'a2V5' },
             video_size: 5000000,
             play_length: 15,
           },
@@ -490,7 +490,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.IMAGE,
           image_item: {
-            media: { encrypt_query_param: 'eqp=mixed' },
+            media: { full_url: 'https://cdn.weixin/mixed', aes_key: 'a2V5' },
             url: 'https://cdn.example.com/pic.jpg',
           },
         },
@@ -724,7 +724,7 @@ describe('WeChat iLink adapter — media integration', () => {
         {
           type: ITEM_TYPE.IMAGE,
           image_item: {
-            media: { encrypt_query_param: 'eqp=persist' },
+            media: { full_url: 'https://cdn.weixin/persist', aes_key: 'a2V5' },
           },
         },
       ],

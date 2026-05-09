@@ -1,12 +1,12 @@
 // WeChat iLink Bot API HTTP Client
 // Pure HTTP wrapper for iLink API endpoints
 
+import { createDecipheriv } from 'node:crypto'
 import type {
   QRCodeResponse,
   QRCodeStatusResponse,
   Credentials,
   CDNMedia,
-  DownloadMediaRequest,
   GetUpdatesRequest,
   GetUpdatesResponse,
   SendMessageRequest,
@@ -221,44 +221,47 @@ export class ILinkClient {
   // ============================================
 
   /**
-   * Download media content via the iLink CDN endpoint. Returns the raw binary
-   * as a Buffer. Throws on HTTP failure or non-OK response.
+   * Download media content via the signed CDN URL embedded in the message
+   * payload. iLink delivers media as an AES-128-ECB encrypted blob behind
+   * `media.full_url`; `media.aes_key` is base64 of a 32-char ASCII hex
+   * string, which after hex-decode becomes the 16-byte AES-128 key. There is
+   * no `/ilink/bot/downloadmedia` endpoint — the bot fetches the CDN
+   * directly with no auth header.
    */
   async downloadMedia(cdnMedia: CDNMedia): Promise<Buffer> {
-    if (!this.botToken) {
-      throw new Error('No credentials - need to login first')
+    if (!cdnMedia.full_url) {
+      throw new Error('downloadMedia: media.full_url is missing')
+    }
+    if (!cdnMedia.aes_key) {
+      throw new Error('downloadMedia: media.aes_key is missing')
     }
 
-    const url = `${this.baseUrl}/ilink/bot/downloadmedia`
-    const body: DownloadMediaRequest = {
-      media: cdnMedia,
-      base_info: {
-        channel_version: CHANNEL_VERSION,
-      },
+    // media.aes_key is base64("<32-char-hex-string>"); decode → ASCII hex → bytes
+    const aeskeyHex = Buffer.from(cdnMedia.aes_key, 'base64').toString('utf8')
+    if (!/^[0-9a-fA-F]{32}$/.test(aeskeyHex)) {
+      throw new Error(`downloadMedia: decoded aes_key is not 32 hex chars (got ${aeskeyHex.length}: ${aeskeyHex.slice(0, 16)}...)`)
     }
+    const key = Buffer.from(aeskeyHex, 'hex')
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify(body),
+    const response = await fetch(cdnMedia.full_url, {
+      method: 'GET',
       signal: AbortSignal.timeout(FETCH_TIMEOUT),
     })
 
     if (!response.ok) {
-      throw new Error(`downloadMedia failed: ${response.status} ${response.statusText}`)
-    }
-
-    const contentType = response.headers.get('content-type') ?? ''
-    if (contentType.includes('application/json')) {
-      const data = await response.json() as { ret?: number; errmsg?: string }
-      if (data.ret !== 0 && data.ret !== undefined) {
-        throw new Error(`downloadMedia error: ${data.errmsg || `ret=${data.ret}`}`)
-      }
-      throw new Error('downloadMedia returned JSON without binary payload')
+      throw new Error(`downloadMedia CDN fetch failed: ${response.status} ${response.statusText}`)
     }
 
     const arrayBuf = await response.arrayBuffer()
-    return Buffer.from(arrayBuf)
+    const cipherBuf = Buffer.from(arrayBuf)
+    if (cipherBuf.length === 0 || cipherBuf.length % 16 !== 0) {
+      throw new Error(`downloadMedia: ciphertext length ${cipherBuf.length} is not a multiple of 16`)
+    }
+
+    // AES-128-ECB. PKCS#7 padding is applied by WeChat's encrypt side; Node's
+    // default decipher will strip it.
+    const decipher = createDecipheriv('aes-128-ecb', key, null)
+    return Buffer.concat([decipher.update(cipherBuf), decipher.final()])
   }
 
   // ============================================

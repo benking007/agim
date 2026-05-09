@@ -119,7 +119,8 @@ export class TelegramAdapter implements MessengerAdapter {
       if (!this.messageHandler) return
       const doc = ctx.message.document
       // Image documents → media upload path. Audio documents → voice path.
-      // Anything else gets dropped (videos / archives / misc).
+      // Everything else (PDF / Word / Excel / zip / txt / arbitrary binaries)
+      // → generic file path so the agent at least sees the attachment.
       if (doc.mime_type?.startsWith('image/')) {
         void this.handleMediaUpload(ctx, doc.file_id, doc.mime_type, ctx.message.caption ?? '')
         return
@@ -130,7 +131,7 @@ export class TelegramAdapter implements MessengerAdapter {
         void this.handleVoiceUpload(ctx, doc.file_id, doc.mime_type, ctx.message.caption ?? '', undefined)
         return
       }
-      log.debug({ mime: doc.mime_type, chatId: ctx.chat.id }, 'ignoring non-image/audio document')
+      void this.handleFileUpload(ctx, doc.file_id, doc.mime_type, ctx.message.caption ?? '', doc.file_name)
     })
 
     // Voice messages (the mic-button "press and hold" recording, OGG OPUS).
@@ -148,6 +149,31 @@ export class TelegramAdapter implements MessengerAdapter {
       if (!this.messageHandler) return
       const a = ctx.message.audio
       void this.handleVoiceUpload(ctx, a.file_id, a.mime_type, ctx.message.caption ?? '', a.duration)
+    })
+
+    // Video sent via "Video" attachment (auto-compressed). Sending "as file"
+    // arrives as message:document and goes through handleFileUpload instead.
+    this.bot.on('message:video', (ctx) => {
+      if (ctx.message.from?.is_bot) return
+      if (!this.messageHandler) return
+      const v = ctx.message.video
+      void this.handleVideoUpload(ctx, v.file_id, v.mime_type, ctx.message.caption ?? '', v.duration)
+    })
+
+    // Round video notes (40s max, recorded via the round-camera button).
+    this.bot.on('message:video_note', (ctx) => {
+      if (ctx.message.from?.is_bot) return
+      if (!this.messageHandler) return
+      const v = ctx.message.video_note
+      void this.handleVideoUpload(ctx, v.file_id, undefined, '', v.duration)
+    })
+
+    // Animations (silent looping MP4 / GIF). Same surface as video.
+    this.bot.on('message:animation', (ctx) => {
+      if (ctx.message.from?.is_bot) return
+      if (!this.messageHandler) return
+      const a = ctx.message.animation
+      void this.handleVideoUpload(ctx, a.file_id, a.mime_type, ctx.message.caption ?? '', a.duration)
     })
 
     // Inline-button taps (approval cards). Same fire-and-forget discipline
@@ -515,6 +541,142 @@ export class TelegramAdapter implements MessengerAdapter {
         err: err instanceof Error ? err.message : String(err),
         threadId: message.threadId,
       }, 'Error in voice message handler')
+    })
+  }
+
+  /**
+   * Download an arbitrary file (PDF / Word / archive / binary) and surface
+   * `[文件附件：${path} (${displayName}, ${size})]` to the agent. Same
+   * download infra as media/voice; differs only in marker format and
+   * filename handling — we keep the user's `file_name` (sanitised) so the
+   * on-disk file stays recognisable, falling back to `${msgId}.${ext}` when
+   * Telegram doesn't supply one.
+   */
+  private async handleFileUpload(
+    ctx: Context,
+    fileId: string,
+    mime: string | undefined,
+    caption: string,
+    fileName: string | undefined,
+  ): Promise<void> {
+    if (!this.bot || !ctx.chat || !ctx.message) return
+    const chatId = ctx.chat.id
+    const msgId = ctx.message.message_id
+    const displayName = fileName || '未命名文件'
+    let attachmentLine: string
+    const botToken = this.config?.botToken
+    const scrub = (s: string): string => botToken ? s.split(botToken).join('[REDACTED]') : s
+    try {
+      const file = await this.bot.api.getFile(fileId)
+      if (!file.file_path) throw new Error('TG returned no file_path')
+      const ext = pickExtension(file.file_path, mime)
+      // Sanitise the user-supplied file_name. downloadToMediaRoot also
+      // rejects '/', '\\', '..' but we replace defensively so the disk name
+      // stays meaningful instead of erroring out on weird names.
+      const safeName = fileName
+        ? fileName.replace(/[/\\]/g, '_').replace(/\.\.+/g, '.').slice(0, 200)
+        : `${msgId}.${ext}`
+      // Prefix with msgId so two uploads of the same name in a chat don't
+      // collide. Underscore separator stays human-readable.
+      const onDiskName = `${msgId}_${safeName}`
+      const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
+      const { path, bytes } = await downloadToMediaRoot({
+        url,
+        subdir: `telegram/${chatId}`,
+        filename: onDiskName,
+      })
+      const sizeStr = bytes >= 1024 * 1024
+        ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${(bytes / 1024).toFixed(0)} KB`
+      attachmentLine = `[文件附件：${path} (${displayName}, ${sizeStr})]`
+    } catch (err) {
+      const msg = scrub(err instanceof Error ? err.message : String(err))
+      log.warn({ event: 'telegram.file.download_failed', err: msg, chatId, msgId }, 'file download failed')
+      attachmentLine = `[文件附件下载失败：${msg} (${displayName})]`
+    }
+
+    const text = caption ? `${caption}\n\n${attachmentLine}` : attachmentLine
+    const message: Message = {
+      id: msgId.toString(),
+      threadId: chatId.toString(),
+      userId: ctx.message.from?.id?.toString() || 'unknown',
+      text,
+      timestamp: new Date(ctx.message.date * 1000),
+      channelId: this.config?.channelId || 'default',
+    }
+    const msgCtx: MessageContext = {
+      message,
+      platform: 'telegram',
+      channelId: this.config?.channelId || 'default',
+    }
+    if (!this.messageHandler) return
+    this.messageHandler(msgCtx).catch((err) => {
+      log.error({
+        err: err instanceof Error ? err.message : String(err),
+        threadId: message.threadId,
+      }, 'Error in file message handler')
+    })
+  }
+
+  /**
+   * Download a video / video_note / animation and surface
+   * `[视频附件：${path} (${dur}s, ${size})]` to the agent. Same caveats as
+   * handleFileUpload; we don't attempt frame extraction or transcription.
+   */
+  private async handleVideoUpload(
+    ctx: Context,
+    fileId: string,
+    mime: string | undefined,
+    caption: string,
+    durationSec: number | undefined,
+  ): Promise<void> {
+    if (!this.bot || !ctx.chat || !ctx.message) return
+    const chatId = ctx.chat.id
+    const msgId = ctx.message.message_id
+    let attachmentLine: string
+    const botToken = this.config?.botToken
+    const scrub = (s: string): string => botToken ? s.split(botToken).join('[REDACTED]') : s
+    try {
+      const file = await this.bot.api.getFile(fileId)
+      if (!file.file_path) throw new Error('TG returned no file_path')
+      const ext = pickExtension(file.file_path, mime) || 'mp4'
+      const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
+      const { path, bytes } = await downloadToMediaRoot({
+        url,
+        subdir: `telegram/${chatId}`,
+        filename: `${msgId}.${ext}`,
+      })
+      const dur = durationSec != null ? `${durationSec}s, ` : ''
+      const sizeStr = bytes >= 1024 * 1024
+        ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${(bytes / 1024).toFixed(0)} KB`
+      attachmentLine = `[视频附件：${path} (${dur}${sizeStr})]`
+    } catch (err) {
+      const msg = scrub(err instanceof Error ? err.message : String(err))
+      log.warn({ event: 'telegram.video.download_failed', err: msg, chatId, msgId }, 'video download failed')
+      attachmentLine = `[视频附件下载失败：${msg}]`
+    }
+
+    const text = caption ? `${caption}\n\n${attachmentLine}` : attachmentLine
+    const message: Message = {
+      id: msgId.toString(),
+      threadId: chatId.toString(),
+      userId: ctx.message.from?.id?.toString() || 'unknown',
+      text,
+      timestamp: new Date(ctx.message.date * 1000),
+      channelId: this.config?.channelId || 'default',
+    }
+    const msgCtx: MessageContext = {
+      message,
+      platform: 'telegram',
+      channelId: this.config?.channelId || 'default',
+    }
+    if (!this.messageHandler) return
+    this.messageHandler(msgCtx).catch((err) => {
+      log.error({
+        err: err instanceof Error ? err.message : String(err),
+        threadId: message.threadId,
+      }, 'Error in video message handler')
     })
   }
 

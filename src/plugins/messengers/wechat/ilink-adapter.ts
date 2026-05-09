@@ -495,7 +495,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
     const cdn = extractCdnMedia(item.image_item)
     if (!cdn) {
-      log.debug({ msgId }, 'Image item has no downloadable CDN media')
+      log.warn({ event: 'wechat.media.image_no_cdn', msgId, image_item: item.image_item }, 'Image item has no downloadable CDN media')
       return '[图片消息：无法下载]'
     }
 
@@ -530,7 +530,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     // No built-in transcription — download and run STT ourselves
     const cdn = extractCdnMedia(item.voice_item)
     if (!cdn) {
-      log.debug({ msgId }, 'Voice item has no downloadable CDN media and no text')
+      log.warn({ event: 'wechat.media.voice_no_cdn', msgId, voice_item: item.voice_item }, 'Voice item has no downloadable CDN media and no text')
       return '[语音消息：无法下载且无转写文本]'
     }
 
@@ -578,7 +578,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
     const cdn = extractCdnMedia(item.file_item)
     if (!cdn) {
-      log.debug({ msgId }, 'File item has no downloadable CDN media')
+      log.warn({ event: 'wechat.media.file_no_cdn', msgId, file_item: item.file_item }, 'File item has no downloadable CDN media')
       return `[文件消息：无法下载${item.file_item.file_name ? ` (${item.file_item.file_name})` : ''}]`
     }
 
@@ -610,7 +610,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
     const cdn = extractCdnMedia(item.video_item)
     if (!cdn) {
-      log.debug({ msgId }, 'Video item has no downloadable CDN media')
+      log.warn({ event: 'wechat.media.video_no_cdn', msgId, video_item: item.video_item }, 'Video item has no downloadable CDN media')
       return '[视频消息：无法下载]'
     }
 

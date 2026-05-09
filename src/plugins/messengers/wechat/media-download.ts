@@ -30,6 +30,7 @@ export interface WechatDownloadResult {
 /**
  * Download a CDN media blob via the iLink client and write it to
  * `MEDIA_ROOT/wechat/<subdir>/<filename>`. Returns the absolute path.
+ * The AES key is read from `cdnMedia.aes_key` (base64 of an ASCII hex string).
  */
 export async function downloadWechatMedia(
   client: ILinkClient,
@@ -89,12 +90,14 @@ export function pickExtensionForVideo(_item: VideoItem): string {
 }
 
 /**
- * Resolve the CDNMedia reference from a media item. Returns null when no
- * downloadable media descriptor is present.
+ * Resolve the CDNMedia reference from a media item. Returns null when the
+ * item lacks the signed CDN URL or its AES key. The bot fetches
+ * `media.full_url` directly and decrypts with `media.aes_key` (no iLink-side
+ * download endpoint exists).
  */
 export function extractCdnMedia(
   item: { media?: CDNMedia },
 ): CDNMedia | null {
-  if (!item.media?.encrypt_query_param) return null
+  if (!item.media?.full_url || !item.media?.aes_key) return null
   return item.media
 }

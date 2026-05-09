@@ -24,7 +24,7 @@ function mockClient(response: Buffer | Error) {
       if (response instanceof Error) throw response
       return response
     },
-  } as Parameters<typeof downloadWechatMedia>[0]
+  } as unknown as Parameters<typeof downloadWechatMedia>[0]
 }
 
 describe('wechat media-download — pickExtension helpers', () => {
@@ -62,8 +62,8 @@ describe('wechat media-download — pickExtension helpers', () => {
 })
 
 describe('wechat media-download — extractCdnMedia', () => {
-  it('returns CDNMedia when encrypt_query_param is present', () => {
-    const cdn = { encrypt_query_param: 'abc', aes_key: 'k1' }
+  it('returns CDNMedia when full_url and aes_key are both present', () => {
+    const cdn = { full_url: 'https://cdn.weixin/x', aes_key: 'a2V5' }
     expect(extractCdnMedia({ media: cdn })).toBe(cdn)
   })
 
@@ -71,8 +71,12 @@ describe('wechat media-download — extractCdnMedia', () => {
     expect(extractCdnMedia({})).toBeNull()
   })
 
-  it('returns null when encrypt_query_param is empty', () => {
-    expect(extractCdnMedia({ media: { encrypt_query_param: '' } })).toBeNull()
+  it('returns null when full_url is missing', () => {
+    expect(extractCdnMedia({ media: { aes_key: 'a2V5' } })).toBeNull()
+  })
+
+  it('returns null when aes_key is missing', () => {
+    expect(extractCdnMedia({ media: { full_url: 'https://cdn.weixin/x' } })).toBeNull()
   })
 })
 
@@ -97,12 +101,15 @@ describe('wechat media-download — downloadWechatMedia', () => {
     expect(MEDIA_ROOT).toContain(tmpdir())
   })
 
+  // The mock client returns a fixed Buffer regardless of cdn contents, so
+  // these tests don't need real full_url / aes_key values.
+  const stubCdn = { full_url: 'https://cdn.weixin/x', aes_key: 'a2V5' }
+
   it('saves a file and returns the correct path', async () => {
     const data = Buffer.from('fake-image-data')
-    const cdn = { encrypt_query_param: 'q=1', aes_key: 'k' }
     const client = mockClient(data)
 
-    const result = await downloadWechatMedia(client, cdn, 'user123', 'msg1.jpg')
+    const result = await downloadWechatMedia(client, stubCdn, 'user123', 'msg1.jpg')
     expect(result.bytes).toBe(data.length)
     expect(result.path).toContain('wechat/user123/msg1.jpg')
 
@@ -112,32 +119,29 @@ describe('wechat media-download — downloadWechatMedia', () => {
 
   it('rejects unsafe filenames', async () => {
     const client = mockClient(Buffer.from('x'))
-    const cdn = { encrypt_query_param: 'q=1' }
 
     await expect(
-      downloadWechatMedia(client, cdn, 'u', '../escape.jpg'),
+      downloadWechatMedia(client, stubCdn, 'u', '../escape.jpg'),
     ).rejects.toThrow(/unsafe filename/)
     await expect(
-      downloadWechatMedia(client, cdn, 'u', 'a/b.jpg'),
+      downloadWechatMedia(client, stubCdn, 'u', 'a/b.jpg'),
     ).rejects.toThrow(/unsafe filename/)
   })
 
   it('rejects payloads exceeding MAX_BYTES', async () => {
     const huge = Buffer.alloc(MAX_BYTES + 1)
     const client = mockClient(huge)
-    const cdn = { encrypt_query_param: 'q=1' }
 
     await expect(
-      downloadWechatMedia(client, cdn, 'u', 'big.bin'),
+      downloadWechatMedia(client, stubCdn, 'u', 'big.bin'),
     ).rejects.toThrow(/exceeds/)
   })
 
   it('propagates client download errors', async () => {
     const client = mockClient(new Error('CDN unreachable'))
-    const cdn = { encrypt_query_param: 'q=1' }
 
     await expect(
-      downloadWechatMedia(client, cdn, 'u', 'x.jpg'),
+      downloadWechatMedia(client, stubCdn, 'u', 'x.jpg'),
     ).rejects.toThrow(/CDN unreachable/)
   })
 })

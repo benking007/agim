@@ -38,8 +38,9 @@ export type MessageState = 0 | 1 | 2 // 0 = NEW, 1 = GENERATING, 2 = FINISH
 
 export interface CDNMedia {
   encrypt_query_param?: string
-  aes_key?: string
+  aes_key?: string // base64 of the hex aeskey string (NOT raw key bytes)
   encrypt_type?: number // 0 = file id only, 1 = with thumbnails
+  full_url?: string // Signed CDN GET URL — fetch and AES-128-ECB decrypt with the item's aeskey
 }
 
 export interface TextItem {
@@ -189,13 +190,6 @@ export interface SendTypingResponse {
   ret?: number
   errcode?: number
   errmsg?: string
-}
-
-export interface DownloadMediaRequest {
-  media: CDNMedia
-  base_info: {
-    channel_version: string
-  }
 }
 
 // ============================================

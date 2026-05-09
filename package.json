@@ -1,6 +1,6 @@
 {
   "name": "im-hub-pro",
-  "version": "0.2.33",
+  "version": "0.2.34",
   "description": "Universal messenger-to-agent bridge — connect WeChat/Feishu/Telegram/Discord to Claude Code/Codex/Copilot/OpenCode (productized fork of im-hub)",
   "type": "module",
   "bin": {

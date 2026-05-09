@@ -23,7 +23,7 @@ import { generateTraceId, createLogger } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
 import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
-import { approvalBus } from './core/approval-bus.js'
+import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
 import {
   checkMessengerConfig,
@@ -83,7 +83,8 @@ program
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
 
-    // Validate config schema
+    // Validate config schema — always use the zod-validated output (which
+    // applies defaults and strips invalid fields) instead of the raw config.
     const validation = validateConfig(config)
     if (!validation.ok) {
       console.warn('⚠️  Config schema issues detected:')
@@ -92,7 +93,7 @@ program
       }
       console.warn('   im-hub-pro will continue with defaults for invalid fields.\n')
     }
-    config = validation.ok ? validation.config as unknown as Config : config
+    config = validation.config as unknown as Config
 
     // Initialize workspace registry
     const rawConfig = config as Record<string, unknown>
@@ -220,7 +221,7 @@ program
         // reply, we resolve the approval and stop. Anything else routes
         // normally (with the side effect of auto-denying any stale pending —
         // see approval-router.ts).
-        if (tryHandleApprovalReply(ctx.message.threadId, ctx.message.text)) {
+        if (tryHandleApprovalReply(threadKey(ctx.platform, ctx.channelId, ctx.message.threadId), ctx.message.text)) {
           ctx.logger.info({ event: 'message.consumed_by_approval' })
           return
         }
@@ -413,74 +414,50 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       (parsed.type === 'default' || parsed.type === 'agent' || parsed.type === 'agentCommand') &&
       !looksLikeApproval
 
-    // Resolve which agent will actually run, so we know whether to allocate
-    // a resumable claude-code session id. For an explicit /agent switch we
-    // can read parsed.agent directly; otherwise the active agent comes from
-    // the existing sticky session (or default agent if none yet).
+    // Prepare native agent sessions lazily — the router calls
+    // onAgentResolved once intent classification picks the final agent,
+    // so we never allocate a Claude UUID for an opencode run (or vice versa).
     let agentForRun: string | undefined
     let claudeRunWillResume = false
     if (willInvokeAgent) {
-      const stickySession = await sessionManager.getExistingSession(
-        platform, ctx.channelId, message.threadId,
-      )
-      if (parsed.type === 'agent') {
-        agentForRun = parsed.agent
-      } else {
-        agentForRun = stickySession?.agent || defaultAgent
-      }
-      if (agentForRun === 'claude-code') {
-        // Reuse the same UUID across every claude turn in this im-hub-pro
-        // session — that's what keeps the displayed id stable AND what
-        // gives the user a single `claude --resume <uuid>` they can run
-        // any time during the conversation.
-        let claudeId = stickySession?.claudeSessionId
-        if (!claudeId) {
-          claudeId = randomUUID()
-          // Make sure the session row exists, then persist the id on it.
+      routeCtx.onAgentResolved = async (resolvedAgent: string) => {
+        agentForRun = resolvedAgent
+        const stickySession = await sessionManager.getExistingSession(
+          platform, ctx.channelId, message.threadId,
+        )
+        if (resolvedAgent === 'claude-code') {
+          let claudeId = stickySession?.claudeSessionId
+          if (!claudeId) {
+            claudeId = randomUUID()
+            await sessionManager.getOrCreateSession(
+              platform, ctx.channelId, message.threadId, resolvedAgent,
+            )
+            await sessionManager.setClaudeSessionId(
+              platform, ctx.channelId, message.threadId, claudeId,
+            )
+          }
+          routeCtx.agentSessionId = claudeId
+          claudeRunWillResume = !!stickySession?.claudeSessionPrimed
+          routeCtx.agentSessionResume = claudeRunWillResume
+        } else if (resolvedAgent === 'opencode') {
+          const ocId = stickySession?.opencodeSessionId
+          if (ocId) {
+            routeCtx.agentSessionId = ocId
+            routeCtx.agentSessionResume = true
+          }
           await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId,
-            agentForRun,
+            platform, ctx.channelId, message.threadId, resolvedAgent,
           )
-          await sessionManager.setClaudeSessionId(
-            platform, ctx.channelId, message.threadId, claudeId,
+        } else if (resolvedAgent === 'codex') {
+          const cxId = stickySession?.codexSessionId
+          if (cxId) {
+            routeCtx.agentSessionId = cxId
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
           )
         }
-        routeCtx.agentSessionId = claudeId
-        // First call uses --session-id (creates); subsequent uses --resume
-        // (continues). Track via claudeSessionPrimed on the session.
-        claudeRunWillResume = !!stickySession?.claudeSessionPrimed
-        routeCtx.agentSessionResume = claudeRunWillResume
-      } else if (agentForRun === 'opencode') {
-        // opencode generates its own session id (`ses_…`) on first run; we
-        // capture it from the JSON event stream rather than pre-allocating.
-        // If we already have one for this thread, hand it back so opencode
-        // resumes from its own DB and we skip stitching messages into the
-        // prompt (router clears history when agentSessionResume is true).
-        const ocId = stickySession?.opencodeSessionId
-        if (ocId) {
-          routeCtx.agentSessionId = ocId
-          routeCtx.agentSessionResume = true
-        }
-        // Make sure the session row exists so the subsequent
-        // setOpencodeSessionId callback (fired from the adapter) has
-        // somewhere to write to.
-        await sessionManager.getOrCreateSession(
-          platform, ctx.channelId, message.threadId, agentForRun,
-        )
-      } else if (agentForRun === 'codex') {
-        // codex generates its own thread id (UUID) on first run; we capture
-        // it from `thread.started` in the JSON stream. If we already have
-        // one, hand it back so codex spawns `exec resume <id>` and continues
-        // from ~/.codex/sessions; router clears history under
-        // agentSessionResume so we don't double-feed prior turns.
-        const cxId = stickySession?.codexSessionId
-        if (cxId) {
-          routeCtx.agentSessionId = cxId
-          routeCtx.agentSessionResume = true
-        }
-        await sessionManager.getOrCreateSession(
-          platform, ctx.channelId, message.threadId, agentForRun,
-        )
       }
     }
 
@@ -495,11 +472,12 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       }
     }
 
-    // Mark primed BEFORE invoking claude. claude writes the session jsonl
-    // as soon as the run starts, so even if the run later errors we still
-    // need to use --resume on the next turn (or it'll error with "session
-    // already exists"). The flag is best-effort: if the spawn itself fails
-    // (claude binary missing) the user can /new to reset.
+    const result = await routeMessage(parsed, routeCtx)
+
+    // Mark primed AFTER routeMessage (which calls onAgentResolved) so we
+    // know the final agent. claude writes the session jsonl as soon as the
+    // run starts, so even if the run later errors we still need --resume
+    // on the next turn.
     if (agentForRun === 'claude-code' && !claudeRunWillResume) {
       try {
         await sessionManager.markClaudeSessionPrimed(
@@ -509,8 +487,6 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         logger.debug({ err: String(err) }, 'markClaudeSessionPrimed failed')
       }
     }
-
-    const result = await routeMessage(parsed, routeCtx)
 
     const dismiss = async () => {
       if (dismissThinking) {
@@ -654,24 +630,6 @@ program
           config.agents.push('codex')
         }
         config.defaultAgent = 'codex'
-        break
-
-      case 'opencode':
-        console.log('🤖 Configuring OpenCode agent...')
-        const checkOpenCode = crossSpawn('opencode', ['--version'], { stdio: 'ignore' })
-        checkOpenCode.on('error', () => {
-          console.log('❌ OpenCode CLI not found.')
-          console.log('Install with: npm i -g opencode-ai')
-        })
-        checkOpenCode.on('close', (code) => {
-          if (code === 0) {
-            console.log('✅ OpenCode CLI found!')
-          }
-        })
-        if (!config.agents.includes('opencode')) {
-          config.agents.push('opencode')
-        }
-        config.defaultAgent = 'opencode'
         break
 
       case 'telegram':

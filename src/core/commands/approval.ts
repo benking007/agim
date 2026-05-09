@@ -7,7 +7,7 @@
 // approval-bus uses internally.
 
 import type { RouteContext } from '../router.js'
-import { approvalBus } from '../approval-bus.js'
+import { approvalBus, threadKey } from '../approval-bus.js'
 
 function formatRuleKey(key: string): string {
   // Keys are stored as `${toolName}::${prefix}` — split for prettier rendering.
@@ -24,14 +24,16 @@ export async function handleApprovalCommand(
 ): Promise<string> {
   const sub = args.trim().toLowerCase()
 
+  const tKey = threadKey(ctx.platform, ctx.channelId, ctx.threadId)
+
   if (sub === 'clear' || sub === 'reset') {
-    const before = approvalBus.getAutoAllowKeys(ctx.threadId)
-    approvalBus.clearAutoAllowForThread(ctx.threadId)
+    const before = approvalBus.getAutoAllowKeys(tKey)
+    approvalBus.clearAutoAllowForThread(tKey)
     if (before.length === 0) return '🧹 当前没有自动放行规则，无需清空。'
     return `🧹 已清空本会话的 ${before.length} 条自动放行规则。`
   }
 
-  const keys = approvalBus.getAutoAllowKeys(ctx.threadId)
+  const keys = approvalBus.getAutoAllowKeys(tKey)
   if (keys.length === 0) {
     return [
       '📋 本会话当前没有自动放行规则。',

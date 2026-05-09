@@ -2,11 +2,11 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { readdir, stat, readFile, writeFile, rename, unlink } from 'fs/promises'
+import { readdir, stat, lstat, readFile, writeFile, rename, unlink, realpath, open } from 'fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
@@ -88,19 +88,90 @@ export async function startWebServer(options: {
   const webToken = getOrCreateWebToken()
   const clients = new Map<string, ClientConnection>()
 
+  // Per-process secret for signing session cookies. Not persisted — browser
+  // sessions expire on restart, which is acceptable for a dev tool.
+  const cookieSecret = randomBytes(32).toString('hex')
+  const COOKIE_NAME = 'imhub_session'
+
+  function makeSessionCookie(): string {
+    return createHmac('sha256', cookieSecret).update(webToken).digest('hex')
+  }
+  function isValidSessionCookie(cookie: string): boolean {
+    const expected = makeSessionCookie()
+    if (cookie.length !== expected.length) return false
+    try {
+      return timingSafeEqual(Buffer.from(cookie, 'utf8'), Buffer.from(expected, 'utf8'))
+    } catch { return false }
+  }
+  function parseCookies(req: IncomingMessage): Record<string, string> {
+    const hdr = req.headers.cookie || ''
+    const out: Record<string, string> = {}
+    for (const pair of hdr.split(';')) {
+      const eq = pair.indexOf('=')
+      if (eq < 0) continue
+      out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim()
+    }
+    return out
+  }
+  function hasValidSession(req: IncomingMessage): boolean {
+    const cookies = parseCookies(req)
+    return isValidSessionCookie(cookies[COOKIE_NAME] || '')
+  }
+  function setSessionCookie(res: ServerResponse): void {
+    const val = makeSessionCookie()
+    const parts = [`${COOKIE_NAME}=${val}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
+    if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+      webLog.warn({
+        event: 'web.public_bind_warning',
+        bind: bindHost,
+      }, 'Web server bound to a non-localhost address — consider using a reverse proxy with TLS for production')
+    }
+    res.setHeader('Set-Cookie', parts.join('; '))
+  }
+
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
-    // Static pages
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'index.html'), webToken)
+    // Login page — always accessible
+    if (url.pathname === '/login' || url.pathname === '/login.html') {
+      return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
     }
-    if (url.pathname === '/settings' || url.pathname === '/settings.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'settings.html'), webToken)
+
+    // POST /api/auth/login — validate token, set session cookie
+    if (url.pathname === '/api/auth/login' && req.method === 'POST') {
+      const body = await readBody(req, res)
+      let parsed: { token?: string }
+      try { parsed = JSON.parse(body) } catch {
+        sendJson(res, 400, { error: 'Invalid JSON' })
+        return
+      }
+      if (typeof parsed.token === 'string' && safeEqual(parsed.token, webToken)) {
+        setSessionCookie(res)
+        sendJson(res, 200, { ok: true })
+      } else {
+        sendJson(res, 401, { error: 'Invalid token' })
+      }
+      return
     }
-    if (url.pathname === '/tasks' || url.pathname === '/tasks.html') {
-      return serveIndexHtml(res, join(PUBLIC_DIR, 'tasks.html'), webToken)
+
+    // Static pages — require valid session cookie
+    if (
+      url.pathname === '/' || url.pathname === '/index.html' ||
+      url.pathname === '/settings' || url.pathname === '/settings.html' ||
+      url.pathname === '/tasks' || url.pathname === '/tasks.html'
+    ) {
+      if (!hasValidSession(req)) {
+        res.writeHead(302, { Location: `/login?next=${encodeURIComponent(url.pathname)}` })
+        res.end()
+        return
+      }
+      const fileMap: Record<string, string> = {
+        '/': 'index.html', '/index.html': 'index.html',
+        '/settings': 'settings.html', '/settings.html': 'settings.html',
+        '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
+      }
+      return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
 
     // M4: /api/health is intentionally public (k8s liveness probe friendly)
@@ -118,10 +189,10 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 
-    // REST API — require auth token
+    // REST API — require auth token (header) or valid session cookie
     if (url.pathname.startsWith('/api/')) {
       const token = req.headers['x-im-hub-token'] as string || ''
-      if (!safeEqual(token, webToken)) {
+      if (!safeEqual(token, webToken) && !hasValidSession(req)) {
         res.writeHead(401)
         res.end(JSON.stringify({ error: 'Unauthorized' }))
         return
@@ -241,7 +312,7 @@ export async function startWebServer(options: {
     // /events is outside the /api/* token gate above.
     if (url.pathname === '/events' && req.method === 'GET') {
       const evToken = url.searchParams.get('token') || ''
-      if (!safeEqual(evToken, webToken)) {
+      if (!safeEqual(evToken, webToken) && !hasValidSession(req)) {
         res.writeHead(401, { 'Content-Type': 'text/plain' })
         res.end('Unauthorized')
         return
@@ -289,10 +360,10 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
-    // Verify token from URL query before accepting connection
+    // Verify token from URL query or session cookie before accepting connection
     const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
     const wsToken = wsUrl.searchParams.get('token') || ''
-    if (!safeEqual(wsToken, webToken)) {
+    if (!safeEqual(wsToken, webToken) && !hasValidSession(req)) {
       ws.close(1008, 'Unauthorized')
       return
     }
@@ -1099,10 +1170,8 @@ async function handleListApprovals(_req: IncomingMessage, res: ServerResponse): 
  * Resolve an approval by reqId (admin / dashboard path). Body:
  *   { behavior: 'allow' | 'deny', autoAllowFurther?: boolean, message?: string }
  *
- * resolvePending operates on threadId, not reqId, so we walk listPending
- * to find the matching pending and forward to the bus. The web token is
- * the access gate — anyone with it can resolve any pending. Multi-tenant
- * scoping is tracked separately with the rest of cross-cutting #3.1.
+ * Uses resolvePendingByReqId for precise targeting — avoids the FIFO head
+ * ambiguity when multiple approvals are queued on the same thread.
  */
 async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, reqId: string): Promise<void> {
   try {
@@ -1117,17 +1186,12 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
       return
     }
     const { approvalBus } = await import('../core/approval-bus.js')
-    const target = approvalBus.listPending().find((p) => p.reqId === reqId)
-    if (!target) {
-      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
-      return
-    }
     const decision = parsed.behavior === 'allow'
       ? { behavior: 'allow' as const, autoAllowFurther: parsed.autoAllowFurther === true }
       : { behavior: 'deny' as const, message: parsed.message || 'denied via dashboard' }
-    const resolved = approvalBus.resolvePending(target.threadId, decision)
+    const resolved = approvalBus.resolvePendingByReqId(reqId, decision)
     if (!resolved) {
-      sendJson(res, 409, { ok: false, error: 'Race: pending vanished between list and resolve' })
+      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
       return
     }
     sendJson(res, 200, { ok: true, resolved })
@@ -1141,6 +1205,40 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
 const WORKSPACE_FILE_MAX_BYTES = 1 * 1024 * 1024
 /** Bytes scanned for a binary heuristic. Null byte in this window → binary. */
 const BINARY_PROBE_BYTES = 8 * 1024
+
+/**
+ * Resolve a user-supplied path under a workspace base and verify that the
+ * *real* filesystem path (after symlink resolution) still lives under `base`.
+ * Returns the validated real path, or null + sends an error response.
+ */
+async function validateWorkspacePath(
+  base: string,
+  userPath: string,
+  res: ServerResponse,
+): Promise<string | null> {
+  const target = resolvePath(base, userPath)
+  if (target !== base && !target.startsWith(base + pathSep)) {
+    sendJson(res, 400, { error: 'Path escapes workspace root' })
+    return null
+  }
+  let real: string
+  try {
+    real = await realpath(target)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Not found', path: relativePath(base, target) })
+      return null
+    }
+    throw err
+  }
+  const realBase = await realpath(base)
+  if (real !== realBase && !real.startsWith(realBase + pathSep)) {
+    sendJson(res, 403, { error: 'Path resolves outside workspace root (symlink escape)' })
+    return null
+  }
+  return real
+}
 
 /**
  * Read-only view of `~/.im-hub-workspaces/<agent>/`. The Files tab in /tasks
@@ -1182,30 +1280,27 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
 
     const { defaultAgentCwd } = await import('../core/agent-cwd.js')
     const base = resolvePath(defaultAgentCwd(agent))
-    const target = resolvePath(base, userPath)
-    // The base itself is allowed; anything else must live strictly below it.
-    if (target !== base && !target.startsWith(base + pathSep)) {
-      sendJson(res, 400, { error: 'Path escapes workspace root' })
-      return
-    }
+    const target = await validateWorkspacePath(base, userPath, res)
+    if (!target) return
 
-    let st: Awaited<ReturnType<typeof stat>>
-    try {
-      st = await stat(target)
-    } catch (err) {
-      const e = err as NodeJS.ErrnoException
-      if (e.code === 'ENOENT') {
-        sendJson(res, 404, { error: 'Not found', path: relativePath(base, target) })
-        return
-      }
-      throw err
-    }
+    const st = await stat(target)
 
     if (st.isDirectory()) {
+      const realBase = await realpath(base)
       const names = await readdir(target)
       const entries = await Promise.all(names.map(async (name) => {
         try {
-          const sub = await stat(join(target, name))
+          const childPath = join(target, name)
+          let childReal: string
+          try {
+            childReal = await realpath(childPath)
+          } catch {
+            return { name, isDir: false, size: null, mtime: null, broken: true }
+          }
+          if (childReal !== realBase && !childReal.startsWith(realBase + pathSep)) {
+            return { name, isDir: false, size: null, mtime: null, symlink_escape: true }
+          }
+          const sub = await stat(childPath)
           return {
             name,
             isDir: sub.isDirectory(),
@@ -1213,12 +1308,9 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
             mtime: sub.mtime.toISOString(),
           }
         } catch {
-          // Broken symlink or race-deleted entry — surface but mark unknown.
           return { name, isDir: false, size: null, mtime: null, broken: true }
         }
       }))
-      // Dirs first, then case-insensitive name sort — matches the convention
-      // most file-managers use. Stable in practice (Intl.Collator sort).
       entries.sort((a, b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
         return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -1238,15 +1330,21 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       return
     }
 
-    // For files larger than the cap, we still return metadata + a note —
-    // user can ssh in for the rest. Avoids surprising the browser with
-    // a 50 MB log dump.
     const truncated = st.size > WORKSPACE_FILE_MAX_BYTES
-    const buf = await readFile(target)
-    const slice = truncated ? buf.subarray(0, WORKSPACE_FILE_MAX_BYTES) : buf
-    // Binary detection: a NUL byte in the first 8 KB is a strong signal.
-    // Cheaper than full UTF-8 validation and matches grep's heuristic.
-    const probe = slice.subarray(0, Math.min(slice.length, BINARY_PROBE_BYTES))
+    let buf: Buffer
+    if (truncated) {
+      const fd = await open(target, 'r')
+      try {
+        buf = Buffer.alloc(WORKSPACE_FILE_MAX_BYTES)
+        const { bytesRead } = await fd.read(buf, 0, WORKSPACE_FILE_MAX_BYTES, 0)
+        buf = buf.subarray(0, bytesRead)
+      } finally {
+        await fd.close()
+      }
+    } else {
+      buf = await readFile(target)
+    }
+    const probe = buf.subarray(0, Math.min(buf.length, BINARY_PROBE_BYTES))
     const isBinary = probe.includes(0)
     sendJson(res, 200, {
       type: 'file',
@@ -1255,7 +1353,7 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       size: st.size,
       mtime: st.mtime.toISOString(),
       encoding: isBinary ? 'base64' : 'utf-8',
-      content: isBinary ? slice.toString('base64') : slice.toString('utf-8'),
+      content: isBinary ? buf.toString('base64') : buf.toString('utf-8'),
       truncated,
     })
   } catch (err) {
@@ -1302,15 +1400,48 @@ async function handleWorkspaceFileWrite(req: IncomingMessage, res: ServerRespons
 
     const { defaultAgentCwd } = await import('../core/agent-cwd.js')
     const base = resolvePath(defaultAgentCwd(agent))
-    const target = resolvePath(base, userPath)
-    if (target !== base && !target.startsWith(base + pathSep)) {
+
+    // For writes, the file may not yet exist so realpath would fail.
+    // Validate the parent directory via realpath and verify the logical
+    // path stays under base as a prefix check.
+    const logicalTarget = resolvePath(base, userPath)
+    if (logicalTarget !== base && !logicalTarget.startsWith(base + pathSep)) {
       sendJson(res, 400, { error: 'Path escapes workspace root' })
       return
     }
-    if (target === base) {
+    if (logicalTarget === base) {
       sendJson(res, 400, { error: 'Cannot overwrite workspace root' })
       return
     }
+    // Verify the parent directory resolves inside the workspace.
+    const parentDir = dirname(logicalTarget)
+    try {
+      const realParent = await realpath(parentDir)
+      const realBase = await realpath(base)
+      if (realParent !== realBase && !realParent.startsWith(realBase + pathSep)) {
+        sendJson(res, 403, { error: 'Parent path resolves outside workspace root (symlink escape)' })
+        return
+      }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === 'ENOENT') {
+        sendJson(res, 400, { error: 'Parent directory does not exist' })
+        return
+      }
+      throw err
+    }
+    // If the file itself already exists, ensure its real path is inside too.
+    try {
+      const realTarget = await realpath(logicalTarget)
+      const realBase = await realpath(base)
+      if (realTarget !== realBase && !realTarget.startsWith(realBase + pathSep)) {
+        sendJson(res, 403, { error: 'Path resolves outside workspace root (symlink escape)' })
+        return
+      }
+    } catch {
+      // ENOENT is fine — the file doesn't exist yet
+    }
+    const target = logicalTarget
 
     const body = await readBody(req, res)
     let parsed: { content?: unknown }
@@ -1835,27 +1966,16 @@ function serveStatic(res: ServerResponse, filePath: string, contentType: string)
 }
 
 /**
- * Serve index/settings HTML with injected web token for API auth
+ * Serve HTML pages with security headers. Token is no longer injected —
+ * the browser authenticates via httpOnly session cookie set at /login.
  */
-function serveIndexHtml(res: ServerResponse, filePath: string, token: string): void {
+function servePageHtml(res: ServerResponse, filePath: string): void {
   if (!existsSync(filePath)) {
     res.writeHead(404)
     res.end('Not found')
     return
   }
-  let html = readFileSync(filePath, 'utf-8')
-  // JSON.stringify produces a safely quoted JS string literal — prevents
-  // breakout if the token ever contains ' or </script>.
-  html = html.replace('</head>', `<script>window.IMHUB_TOKEN=${JSON.stringify(token)};</script></head>`)
-  // No-cache so dashboard updates land for users without forcing a hard refresh.
-  // The HTML is small (<30KB) and the round-trip is cheap; correctness wins.
-  //
-  // M1: defense-in-depth response headers. CSP keeps 'unsafe-inline' on
-  // script/style because the IMHUB_TOKEN bootstrap and a few inline event
-  // handlers in the static pages still rely on it; tightening to a nonce
-  // is tracked separately. Outside that, lock everything down: no framing,
-  // no MIME sniffing, no Referer leak to third parties, no third-party
-  // resources at all.
+  const html = readFileSync(filePath, 'utf-8')
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache, must-revalidate',

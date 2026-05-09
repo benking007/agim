@@ -158,14 +158,14 @@
   // server-provided `error` field as the message when present. Always
   // returns parsed JSON on success — pages handle data shape themselves.
   async function apiFetch(path, init = {}) {
-    const headers = {
-      'X-IM-Hub-Token': window.IMHUB_TOKEN || '',
-      ...(init.headers || {}),
-    }
+    const headers = { ...(init.headers || {}) }
+    // Legacy: if IMHUB_TOKEN is set (e.g. by external tools), attach it.
+    // Normal browser flow uses the httpOnly session cookie instead.
+    if (window.IMHUB_TOKEN) headers['X-IM-Hub-Token'] = window.IMHUB_TOKEN
     if (init.body && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json'
     }
-    const res = await fetch(path, { ...init, headers })
+    const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`
       try { const j = await res.json(); if (j && j.error) msg = j.error } catch { /* ignore */ }

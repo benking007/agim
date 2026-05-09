@@ -516,6 +516,10 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    function esc(s) {
+      return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     // Apply i18n to static elements
     function applyLang() {
       document.title = t('title');
@@ -558,16 +562,13 @@
       'opencode': { aliases: ['oc'], pkg: 'opencode-ai', cmd: 'opencode' },
     };
 
-    // Helper: add auth token to all API requests
+    // Helper: add auth token to all API requests (uses session cookie;
+    // falls back to IMHUB_TOKEN header if set for backward compat).
     function authFetch(url, init = {}) {
       const token = window.IMHUB_TOKEN || '';
-      return fetch(url, {
-        ...init,
-        headers: {
-          ...(init.headers || {}),
-          'X-IM-Hub-Token': token,
-        },
-      });
+      const headers = { ...(init.headers || {}) };
+      if (token) headers['X-IM-Hub-Token'] = token;
+      return fetch(url, { ...init, headers, credentials: 'same-origin' });
     }
 
     // Fetch config on load
@@ -587,7 +588,7 @@
         } catch { /* fall through with workspaceList = null */ }
         render();
       } catch (err) {
-        app.innerHTML = `<div class="loading" style="color:var(--red)">${t('loadFailed')}: ${err.message}</div>`;
+        app.innerHTML = `<div class="loading" style="color:var(--red)">${t('loadFailed')}: ${esc(err.message)}</div>`;
       }
     }
 
@@ -649,7 +650,7 @@
           <label>${t('defaultAgent')}</label>
           <select id="defaultAgent">
             ${agents.filter(a => agentStatus[a]).map(a =>
-              `<option value="${a}" ${a === defaultAgent ? 'selected' : ''}>${a}</option>`
+              `<option value="${esc(a)}" ${a === defaultAgent ? 'selected' : ''}>${esc(a)}</option>`
             ).join('')}
           </select>
           <div class="actions">
@@ -704,11 +705,11 @@
               <div class="row">
                 <div>
                   <label>${t('botToken')}</label>
-                  <input type="password" id="tgToken" value="${tg.botToken || ''}" placeholder="123456:ABC-DEF...">
+                  <input type="password" id="tgToken" value="${esc(tg.botToken || '')}" placeholder="123456:ABC-DEF...">
                 </div>
                 <div>
                   <label>${t('channelId')}</label>
-                  <input type="text" id="tgChannel" value="${tg.channelId || ''}" placeholder="default">
+                  <input type="text" id="tgChannel" value="${esc(tg.channelId || '')}" placeholder="default">
                 </div>
               </div>
             ` : ''}
@@ -729,11 +730,11 @@
               <div class="row">
                 <div>
                   <label>${t('appId')}</label>
-                  <input type="text" id="fsAppId" value="${fs.appId || ''}" placeholder="cli_xxx">
+                  <input type="text" id="fsAppId" value="${esc(fs.appId || '')}" placeholder="cli_xxx">
                 </div>
                 <div>
                   <label>${t('appSecret')}</label>
-                  <input type="password" id="fsAppSecret" value="${fs.appSecret || ''}" placeholder="Your app secret">
+                  <input type="password" id="fsAppSecret" value="${esc(fs.appSecret || '')}" placeholder="Your app secret">
                 </div>
               </div>
             ` : ''}
@@ -754,8 +755,8 @@
 
       const rows = agents.length > 0 ? agents.map((a, i) => `
         <tr data-acp-idx="${i}">
-          <td><strong>${a.name}</strong><br><span style="font-size:11px;color:var(--text-dim)">${(a.aliases || []).join(', ')}</span></td>
-          <td style="font-family:monospace;font-size:12px">${a.endpoint}</td>
+          <td><strong>${esc(a.name)}</strong><br><span style="font-size:11px;color:var(--text-dim)">${esc((a.aliases || []).join(', '))}</span></td>
+          <td style="font-family:monospace;font-size:12px">${esc(a.endpoint)}</td>
           <td>${a.auth?.type || t('none')}</td>
           <td><div class="toggle ${a.enabled !== false ? 'active' : ''}" data-toggle-acp="${i}"></div></td>
           <td>
@@ -985,7 +986,7 @@
             });
             const data = await res.json();
             if (data.ok) {
-              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success');
+              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success')
             } else {
               toast(`${t('failed')}: ${data.error}`, 'error');
             }

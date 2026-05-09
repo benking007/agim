@@ -47,6 +47,11 @@ export interface RouteContext {
   /** True when the adapter should --resume an existing session under
    *  agentSessionId instead of creating a new one. */
   agentSessionResume?: boolean
+  /** Callback invoked by the router once the final agent is determined
+   *  (after intent classification). CLI uses this to lazily prepare native
+   *  agent sessions (Claude UUID, opencode session, etc.) only for the
+   *  agent that will actually run. */
+  onAgentResolved?: (agentName: string) => Promise<void>
 }
 
 export interface AgentCallOptions {
@@ -240,6 +245,10 @@ export async function routeMessage(
         return `✅ Switched to ${agent.name}`
       }
 
+      if (ctx.onAgentResolved) {
+        await ctx.onAgentResolved(agent.name)
+      }
+
       const session = await sessionManager.getOrCreateSession(
         ctx.platform, ctx.channelId, ctx.threadId, agent.name
       )
@@ -364,6 +373,11 @@ export async function routeMessage(
       // Switch session agent if intent picked a different one
       if (agentName !== stickyAgent) {
         await sessionManager.switchAgent(ctx.platform, ctx.channelId, ctx.threadId, agentName)
+      }
+
+      // Let CLI prepare native agent sessions now that we know the final agent.
+      if (ctx.onAgentResolved) {
+        await ctx.onAgentResolved(agentName)
       }
 
       const session = await sessionManager.getOrCreateSession(

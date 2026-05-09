@@ -14,6 +14,7 @@ import type {
 } from './types.js'
 import {
   approvalBus,
+  threadKey,
   type ApprovalNotification,
   type Decision,
   type ResolvedInfo,
@@ -301,28 +302,31 @@ function onBusResolution(e: ResolutionEvent): void {
  * sendMessage failure is logged and ignored — the approval itself already
  * resolved successfully.
  */
-export function tryHandleApprovalReply(threadId: string, text: string): boolean {
-  if (!approvalBus.hasPendingFor(threadId)) return false
+/**
+ * Called by cli's onMessage handler before it routes to the agent.
+ * `key` should be a composite key from `threadKey(platform, channelId, threadId)`
+ * for cross-platform isolation. Plain threadId still works if the bus was
+ * registered with the same plain key (backward compat for tests).
+ */
+export function tryHandleApprovalReply(key: string, text: string): boolean {
+  if (!approvalBus.hasPendingFor(key)) return false
   const decision = parseApprovalReply(text)
   if (decision) {
-    const info = approvalBus.resolvePending(threadId, decision)
-    log.info({ event: 'approval.router.resolved', threadId, behavior: decision.behavior })
+    const info = approvalBus.resolvePending(key, decision)
+    log.info({ event: 'approval.router.resolved', key, behavior: decision.behavior })
     if (info) {
-      editCardOnThreadResolution(threadId, info, decision, undefined)
+      editCardOnThreadResolution(key, info, decision, undefined)
       sendReceiptIfAny(info, decision)
     }
     return true
   }
-  // Unrecognized reply while a pending exists → treat as redirect: deny so
-  // the sidecar (and ultimately Claude) doesn't keep waiting, but let the
-  // user's actual message route normally.
   const redirectDecision: Decision = {
     behavior: 'deny',
     message: '用户在 IM 中改换话题，未给出审批回复',
   }
-  const info = approvalBus.resolvePending(threadId, redirectDecision)
-  if (info) editCardOnThreadResolution(threadId, info, redirectDecision, undefined)
-  log.info({ event: 'approval.router.redirected', threadId })
+  const info = approvalBus.resolvePending(key, redirectDecision)
+  if (info) editCardOnThreadResolution(key, info, redirectDecision, undefined)
+  log.info({ event: 'approval.router.redirected', key })
   return false
 }
 
@@ -344,7 +348,7 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
     return
   }
   const decision = decisionFromButton(parsed.choice)
-  const info = approvalBus.resolvePending(cb.threadId, decision)
+  const info = approvalBus.resolvePendingByReqId(parsed.reqId, decision)
 
   if (!info) {
     await cb.ack('请求已过期或已被处理')
@@ -394,10 +398,10 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
   sendReceiptIfAny(info, decision)
 }
 
-/** Find the active card belonging to this thread (the one matching the head
- *  of the pending queue we just resolved) and edit it to its terminal state.
- *  Used by the text-reply path so y/n typed messages also collapse the card
- *  on Telegram. No-op when no card was registered (other IMs / fallback). */
+/** Find the active card matching the resolved reqId and edit it to its
+ *  terminal state. Falls back to thread-based lookup for backward compat
+ *  with the text y/n path where reqId is determined by the bus head.
+ *  No-op when no card was registered (other IMs / fallback). */
 function editCardOnThreadResolution(
   threadId: string,
   info: ResolvedInfo,
@@ -405,15 +409,19 @@ function editCardOnThreadResolution(
   byUserDisplay: string | undefined,
 ): void {
   if (!installed) return
-  let target: { reqId: string; card: ActiveCard } | null = null
-  for (const [reqId, card] of activeCards) {
-    if (card.threadId === threadId) {
-      target = { reqId, card }
-      break
+  let card = activeCards.get(info.reqId)
+  if (card) {
+    activeCards.delete(info.reqId)
+  } else {
+    for (const [reqId, c] of activeCards) {
+      if (c.threadId === threadId) {
+        card = c
+        activeCards.delete(reqId)
+        break
+      }
     }
   }
-  if (!target) return
-  activeCards.delete(target.reqId)
+  if (!card) return
   const m = installed.resolveMessenger(info.platform)
   if (!m?.editApprovalCard) return
   const outcome: ApprovalCardOutcome = {
@@ -421,7 +429,7 @@ function editCardOnThreadResolution(
     byUserDisplay,
     atDate: new Date(),
   }
-  m.editApprovalCard(target.card.threadId, target.card.messageId, outcome).catch((err) => {
+  m.editApprovalCard(card.threadId, card.messageId, outcome).catch((err) => {
     log.warn({ event: 'approval.router.edit_failed', err: String(err) })
   })
 }

@@ -986,7 +986,7 @@
             });
             const data = await res.json();
             if (data.ok) {
-              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success')
+              toast(`${t('connected')}: ${data.name}${data.description ? ' — ' + data.description : ''}`, 'success');
             } else {
               toast(`${t('failed')}: ${data.error}`, 'error');
             }

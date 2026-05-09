@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { OpenCodeAdapter, OpenCodeHttpAdapter } from './index.js'
+import { threadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import type { OpencodeEvent } from './opencode-http-adapter.js'
 import type { OpencodeServeManager } from './serve-manager.js'
@@ -507,7 +508,7 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     expect(notified!.threadId).toBe('thread-X')
 
     // User clicks "approve" → bus.resolvePending → adapter's dispatch → POST.
-    bus.resolvePending('thread-X', { behavior: 'allow' })
+    bus.resolvePending(threadKey('wechat', 'c', 'thread-X'), { behavior: 'allow' })
     await drained
 
     const replyHit = hits.find(h =>
@@ -536,10 +537,11 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
       threadId: 'thread-Y', platform: 'wechat',
     }))
 
-    for (let i = 0; i < 50 && !bus.hasPendingFor('thread-Y'); i++) await new Promise(r => setTimeout(r, 5))
-    expect(bus.hasPendingFor('thread-Y')).toBe(true)
+    const yKey = threadKey('wechat', '', 'thread-Y')
+    for (let i = 0; i < 50 && !bus.hasPendingFor(yKey); i++) await new Promise(r => setTimeout(r, 5))
+    expect(bus.hasPendingFor(yKey)).toBe(true)
 
-    bus.resolvePending('thread-Y', { behavior: 'deny', message: 'user said no' })
+    bus.resolvePending(yKey, { behavior: 'deny', message: 'user said no' })
     await drained
 
     const replyHit = hits.find(h => h.url === 'http://test.local/permission/perm_d1/reply')

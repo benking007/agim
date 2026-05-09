@@ -417,11 +417,15 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     // Prepare native agent sessions lazily — the router calls
     // onAgentResolved once intent classification picks the final agent,
     // so we never allocate a Claude UUID for an opencode run (or vice versa).
-    let agentForRun: string | undefined
-    let claudeRunWillResume = false
+    //
+    // Important: claude-code writes its session jsonl as soon as the run
+    // starts, so markClaudeSessionPrimed MUST happen before the adapter is
+    // invoked. If the run later errors, the next turn must use --resume or
+    // claude refuses with "session already exists". We therefore mark
+    // primed inside onAgentResolved (right after we wire agentSessionId)
+    // rather than after routeMessage returns.
     if (willInvokeAgent) {
       routeCtx.onAgentResolved = async (resolvedAgent: string) => {
-        agentForRun = resolvedAgent
         const stickySession = await sessionManager.getExistingSession(
           platform, ctx.channelId, message.threadId,
         )
@@ -437,8 +441,17 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
             )
           }
           routeCtx.agentSessionId = claudeId
-          claudeRunWillResume = !!stickySession?.claudeSessionPrimed
-          routeCtx.agentSessionResume = claudeRunWillResume
+          const willResume = !!stickySession?.claudeSessionPrimed
+          routeCtx.agentSessionResume = willResume
+          if (!willResume) {
+            try {
+              await sessionManager.markClaudeSessionPrimed(
+                platform, ctx.channelId, message.threadId,
+              )
+            } catch (err) {
+              logger.debug({ err: String(err) }, 'markClaudeSessionPrimed failed')
+            }
+          }
         } else if (resolvedAgent === 'opencode') {
           const ocId = stickySession?.opencodeSessionId
           if (ocId) {
@@ -473,20 +486,6 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     }
 
     const result = await routeMessage(parsed, routeCtx)
-
-    // Mark primed AFTER routeMessage (which calls onAgentResolved) so we
-    // know the final agent. claude writes the session jsonl as soon as the
-    // run starts, so even if the run later errors we still need --resume
-    // on the next turn.
-    if (agentForRun === 'claude-code' && !claudeRunWillResume) {
-      try {
-        await sessionManager.markClaudeSessionPrimed(
-          platform, ctx.channelId, message.threadId,
-        )
-      } catch (err) {
-        logger.debug({ err: String(err) }, 'markClaudeSessionPrimed failed')
-      }
-    }
 
     const dismiss = async () => {
       if (dismissThinking) {

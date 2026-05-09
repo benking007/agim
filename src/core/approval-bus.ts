@@ -327,7 +327,10 @@ export class ApprovalBus {
     }
   }
 
-  /** Check if there are pending approvals for the given key (composite or plain threadId for backward compat). */
+  /** Check if there are pending approvals for the given composite key.
+   *  `key` must be a composite produced by `threadKey(platform, channelId,
+   *  threadId)` — that's what register stores under. A bare threadId will
+   *  miss in multi-platform deployments. */
   hasPendingFor(key: string): boolean {
     return (this.pendingByThread.get(key)?.length ?? 0) > 0
   }
@@ -353,8 +356,10 @@ export class ApprovalBus {
    * scoped to this user-path so sidecar disconnects / shutdown / run-
    * terminated denies don't accidentally clear rules the user still wants.
    */
-  /** Resolve the FIFO head for a thread key. Accepts either a composite key
-   *  (`platform:channelId:threadId`) or a plain threadId for backward compat. */
+  /** Resolve the FIFO head for the given composite key. `key` must be a
+   *  composite produced by `threadKey(platform, channelId, threadId)`. The
+   *  text-reply path (cli's tryHandleApprovalReply) is the canonical caller;
+   *  button callbacks should use `resolvePendingByReqId` instead. */
   resolvePending(key: string, decision: Decision): ResolvedInfo | null {
     const q = this.pendingByThread.get(key)
     const head = q?.[0]
@@ -393,7 +398,7 @@ export class ApprovalBus {
 
   /** Drop every auto-allow rule registered for this thread. Called from
    *  session.resetConversation so `/new` truly returns to "ask every time".
-   *  Accepts composite key or plain threadId for backward compat. */
+   *  `key` must be a composite from `threadKey(platform, channelId, threadId)`. */
   clearAutoAllowForThread(key: string): void {
     this.autoAllowByThread.delete(key)
   }

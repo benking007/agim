@@ -22,6 +22,21 @@ const stubAgent: AgentAdapter = {
   sendPrompt: async function* (_id, _prompt) { yield 'acp-stub-reply' },
 }
 
+/** intent.test.ts registers empty-yielding stubs for the four profiled agents
+ *  (opencode/claude-code/codex/copilot) and the registry singleton persists
+ *  those across test files. The intent classifier then prefers any profiled
+ *  agent (base 0.5) over our acp-stub (no profile). Override those four with
+ *  yielding stubs so any classifier decision still produces content. */
+const profiledNames = ['opencode', 'claude-code', 'codex', 'copilot'] as const
+function makeProfiledStub(name: string): AgentAdapter {
+  return {
+    name,
+    aliases: [],
+    isAvailable: async () => true,
+    sendPrompt: async function* (_id, _prompt) { yield `${name}-reply` },
+  }
+}
+
 const TOKEN_DIR = join(homedir(), '.im-hub')
 const TOKEN_FILE = join(TOKEN_DIR, 'web-token')
 const TEST_TOKEN = 'acp-test-token-1234567890'
@@ -31,6 +46,7 @@ let close: () => void
 
 beforeAll(async () => {
   registry.registerAgent(stubAgent)
+  for (const n of profiledNames) registry.registerAgent(makeProfiledStub(n))
   // Plant a known token so parseAuth() finds it.
   mkdirSync(TOKEN_DIR, { recursive: true })
   writeFileSync(TOKEN_FILE, TEST_TOKEN, { mode: 0o600 })

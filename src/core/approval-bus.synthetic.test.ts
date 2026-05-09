@@ -7,9 +7,10 @@
 // caller's `dispatch(decision)` callback replaces socket writes.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { ApprovalBus, type ApprovalNotification, type Decision } from './approval-bus.js'
+import { ApprovalBus, threadKey, type ApprovalNotification, type Decision } from './approval-bus.js'
 
 const RUN_CTX = { threadId: 'thread-A', platform: 'feishu', userId: 'u', channelId: 'c' }
+const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -45,12 +46,12 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(notified!.toolName).toBe('external_directory')
     expect(notified!.input).toEqual({ patterns: ['/root/workspace/im-hub/*'] })
     expect(notified!.ctx.threadId).toBe('thread-A')
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
 
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    bus.resolvePending(KEY, { behavior: 'allow' })
     expect(decisions.length).toBe(1)
     expect(decisions[0]).toEqual({ behavior: 'allow' })
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 
   it('resolve(deny) forwards the message via dispatch', async () => {
@@ -61,7 +62,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       ctx: RUN_CTX, dispatch: (d) => decisions.push(d),
     })
 
-    bus.resolvePending('thread-A', { behavior: 'deny', message: 'hard no' })
+    bus.resolvePending(KEY, { behavior: 'deny', message: 'hard no' })
     expect(decisions[0]).toEqual({ behavior: 'deny', message: 'hard no' })
   })
 
@@ -79,7 +80,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     if (decisions[0].behavior === 'deny') {
       expect(decisions[0].message).toBe('approval timeout')
     }
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 
   it('auto-allow grace mode: timer expiry dispatches allow', async () => {
@@ -91,7 +92,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       input: { command: 'git status' },
       ctx: RUN_CTX, dispatch: (d) => firstDispatched.push(d),
     })
-    bus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
     expect(firstDispatched[0]).toEqual({ behavior: 'allow', autoAllowFurther: true })
 
     // Now a second call with the same fingerprint enters auto-allow mode.
@@ -118,8 +119,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       input: { command: 'git status' },
       ctx: RUN_CTX, dispatch: (d) => seeded.push(d),
     })
-    bus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
-    expect(bus.getAutoAllowKeys('thread-A').length).toBe(1)
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
+    expect(bus.getAutoAllowKeys(KEY).length).toBe(1)
 
     // Second call enters grace mode, user explicitly denies → revoke.
     const second: Decision[] = []
@@ -128,10 +129,10 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       input: { command: 'git status' },
       ctx: RUN_CTX, dispatch: (d) => second.push(d),
     })
-    const info = bus.resolvePending('thread-A', { behavior: 'deny' })
+    const info = bus.resolvePending(KEY, { behavior: 'deny' })
     expect(info?.wasAutoAllow).toBe(true)
     expect(second[0].behavior).toBe('deny')
-    expect(bus.getAutoAllowKeys('thread-A').length).toBe(0)
+    expect(bus.getAutoAllowKeys(KEY).length).toBe(0)
   })
 
   it('throws when no notifier is installed (caller falls back)', async () => {
@@ -165,7 +166,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     })
 
     expect(notifyCount).toBe(1)
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    bus.resolvePending(KEY, { behavior: 'allow' })
     expect(first.length).toBe(1)
     expect(second.length).toBe(0)  // duplicate dispatch never fired
   })
@@ -178,8 +179,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     })
 
     // Should NOT throw despite dispatch's rejection.
-    bus.resolvePending('thread-A', { behavior: 'allow' })
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    bus.resolvePending(KEY, { behavior: 'allow' })
+    expect(bus.hasPendingFor(KEY)).toBe(false)
 
     // A subsequent registration in the same thread still works.
     const next: Decision[] = []
@@ -187,7 +188,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       runId: 'oc-1', reqId: 'perm-next', toolName: 't', input: {},
       ctx: RUN_CTX, dispatch: (d) => next.push(d),
     })
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    bus.resolvePending(KEY, { behavior: 'allow' })
     expect(next.length).toBe(1)
   })
 

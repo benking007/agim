@@ -14,6 +14,7 @@ import {
   type Decision,
   type RunContext,
 } from './approval-bus.js'
+import { threadKey } from './approval-bus.js'
 import {
   parseApprovalReply,
   formatApprovalPrompt,
@@ -26,6 +27,10 @@ import {
 import type { MessengerAdapter, ButtonCallback } from './types.js'
 
 const RUN_CTX: RunContext = { threadId: 'thread-A', platform: 'feishu', userId: 'u1', channelId: 'c1' }
+/** Composite key matching RUN_CTX. After P0 #4 the bus stores by composite
+ *  key, so all bus lookups (and the cli's tryHandleApprovalReply) must pass
+ *  this exact value rather than the bare threadId. */
+const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
   return join(tmpdir(), `imhub-router-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
@@ -139,7 +144,7 @@ describe('tryHandleApprovalReply', () => {
     bus.registerRun('run-1', RUN_CTX)
     bus.setNotifier(async () => { /* no-op: we'll seed pending manually below */ })
 
-    // Seed a pending so hasPendingFor('thread-A') is true.
+    // Seed a pending so hasPendingFor(KEY) is true.
     connectedSock = await new Promise<Socket>((resolve, reject) => {
       const s = createConnection(path)
       s.once('error', reject)
@@ -151,7 +156,7 @@ describe('tryHandleApprovalReply', () => {
     }) + '\n')
     // Give bus a tick to enqueue
     await new Promise((r) => setTimeout(r, 30))
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
   })
 
   afterEach(async () => {
@@ -161,10 +166,10 @@ describe('tryHandleApprovalReply', () => {
   })
 
   it('returns false when no pending exists for the thread', () => {
-    // Use a different threadId — no pending there
-    expect(tryHandleApprovalReply('other-thread', 'y')).toBe(false)
+    // Use a different composite key — no pending there
+    expect(tryHandleApprovalReply(threadKey('feishu', 'c1', 'other-thread'), 'y')).toBe(false)
     // The original pending is still there
-    expect(bus.hasPendingFor('thread-A')).toBe(false || bus.hasPendingFor('thread-A'))
+    expect(bus.hasPendingFor(KEY)).toBe(true)
   })
 
   // The following two tests must use the singleton bus, since
@@ -181,10 +186,10 @@ describe('tryHandleApprovalReply', () => {
     approvalBus.hasPendingFor = (tid: string) => bus.hasPendingFor(tid)
     approvalBus.resolvePending = (tid: string, d: Decision) => bus.resolvePending(tid, d)
     try {
-      const consumed = tryHandleApprovalReply('thread-A', 'do something completely different')
+      const consumed = tryHandleApprovalReply(KEY, 'do something completely different')
       expect(consumed).toBe(false)
       // pending should now be drained (auto-deny)
-      expect(bus.hasPendingFor('thread-A')).toBe(false)
+      expect(bus.hasPendingFor(KEY)).toBe(false)
     } finally {
       approvalBus.hasPendingFor = origHasPending
       approvalBus.resolvePending = origResolve
@@ -201,7 +206,7 @@ describe('tryHandleApprovalReply', () => {
       return bus.resolvePending(tid, d)
     }
     try {
-      const consumed = tryHandleApprovalReply('thread-A', 'y')
+      const consumed = tryHandleApprovalReply(KEY, 'y')
       expect(consumed).toBe(true)
       expect(resolvedWith).not.toBeNull()
       expect((resolvedWith as unknown as Decision).behavior).toBe('allow')
@@ -257,7 +262,7 @@ describe('install / uninstall — full loop with fake messenger', () => {
     expect(lastSentTo!.text).toContain('rm -rf')
 
     // User replies "y" via cli's onMessage path
-    const consumed = tryHandleApprovalReply('thread-A', 'y')
+    const consumed = tryHandleApprovalReply(KEY, 'y')
     expect(consumed).toBe(true)
 
     // Sidecar should receive a decision shortly
@@ -304,7 +309,7 @@ describe('install / uninstall — full loop with fake messenger', () => {
     expect(sent[0].text).toContain('🔐')
 
     // User replies "all" → receipt should be sent in addition to (silent) decision
-    const consumed = tryHandleApprovalReply('thread-A', 'all')
+    const consumed = tryHandleApprovalReply(KEY, 'all')
     expect(consumed).toBe(true)
     for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 10))
     expect(sent.length).toBe(2)
@@ -348,7 +353,7 @@ describe('install / uninstall — full loop with fake messenger', () => {
       toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu',
     }) + '\n')
     for (let i = 0; i < 50 && sent.length < 1; i++) await new Promise((r) => setTimeout(r, 10))
-    tryHandleApprovalReply('thread-A', 'all')
+    tryHandleApprovalReply(KEY, 'all')
     for (let i = 0; i < 50 && sent.length < 2; i++) await new Promise((r) => setTimeout(r, 10))
     expect(sent[1].text).toContain('已批准并启用自动放行')
 
@@ -361,10 +366,10 @@ describe('install / uninstall — full loop with fake messenger', () => {
     expect(sent[2].text).toContain('自动放行中')
 
     // User actively denies → receipt confirms revocation
-    tryHandleApprovalReply('thread-A', 'n')
+    tryHandleApprovalReply(KEY, 'n')
     for (let i = 0; i < 50 && sent.length < 4; i++) await new Promise((r) => setTimeout(r, 10))
     expect(sent[3].text).toContain('已拒绝并撤销自动放行')
-    expect(localBus.getAutoAllowKeys('thread-A')).toEqual([])
+    expect(localBus.getAutoAllowKeys(KEY)).toEqual([])
 
     sock.end()
     uninstall()

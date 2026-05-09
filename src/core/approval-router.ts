@@ -304,9 +304,9 @@ function onBusResolution(e: ResolutionEvent): void {
  */
 /**
  * Called by cli's onMessage handler before it routes to the agent.
- * `key` should be a composite key from `threadKey(platform, channelId, threadId)`
- * for cross-platform isolation. Plain threadId still works if the bus was
- * registered with the same plain key (backward compat for tests).
+ * `key` must be a composite key from `threadKey(platform, channelId, threadId)`
+ * — same value the bus stored under at registerRun/registerSyntheticPending
+ * time. A bare threadId will miss in multi-platform deployments.
  */
 export function tryHandleApprovalReply(key: string, text: string): boolean {
   if (!approvalBus.hasPendingFor(key)) return false
@@ -315,7 +315,7 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
     const info = approvalBus.resolvePending(key, decision)
     log.info({ event: 'approval.router.resolved', key, behavior: decision.behavior })
     if (info) {
-      editCardOnThreadResolution(key, info, decision, undefined)
+      editCardOnThreadResolution(info, decision, undefined)
       sendReceiptIfAny(info, decision)
     }
     return true
@@ -325,7 +325,7 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
     message: '用户在 IM 中改换话题，未给出审批回复',
   }
   const info = approvalBus.resolvePending(key, redirectDecision)
-  if (info) editCardOnThreadResolution(key, info, redirectDecision, undefined)
+  if (info) editCardOnThreadResolution(info, redirectDecision, undefined)
   log.info({ event: 'approval.router.redirected', key })
   return false
 }
@@ -399,29 +399,18 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
 }
 
 /** Find the active card matching the resolved reqId and edit it to its
- *  terminal state. Falls back to thread-based lookup for backward compat
- *  with the text y/n path where reqId is determined by the bus head.
- *  No-op when no card was registered (other IMs / fallback). */
+ *  terminal state. Keyed strictly by reqId — both the text y/n path and the
+ *  button-callback path now resolve via reqId, so a thread-scan fallback is
+ *  unnecessary. No-op when no card was registered (other IMs / fallback). */
 function editCardOnThreadResolution(
-  threadId: string,
   info: ResolvedInfo,
   decision: Decision,
   byUserDisplay: string | undefined,
 ): void {
   if (!installed) return
-  let card = activeCards.get(info.reqId)
-  if (card) {
-    activeCards.delete(info.reqId)
-  } else {
-    for (const [reqId, c] of activeCards) {
-      if (c.threadId === threadId) {
-        card = c
-        activeCards.delete(reqId)
-        break
-      }
-    }
-  }
+  const card = activeCards.get(info.reqId)
   if (!card) return
+  activeCards.delete(info.reqId)
   const m = installed.resolveMessenger(info.platform)
   if (!m?.editApprovalCard) return
   const outcome: ApprovalCardOutcome = {

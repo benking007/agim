@@ -7,7 +7,7 @@ import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { ApprovalBus, type RunContext } from '../../../core/approval-bus.js'
+import { ApprovalBus, threadKey, type RunContext } from '../../../core/approval-bus.js'
 import { ApprovalClient, buildServer } from './mcp-approval-server.js'
 
 const RUN_ID = 'run-test-1'
@@ -17,6 +17,7 @@ const RUN_CTX: RunContext = {
   userId: 'u1',
   channelId: 'c1',
 }
+const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
   return join(tmpdir(), `imhub-mcp-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
@@ -75,7 +76,7 @@ describe('mcp-approval-server', () => {
       captured = { toolName: n.toolName, input: n.input }
       // Simulate IM user clicking "approve" by resolving in the next tick
       queueMicrotask(() => {
-        h.bus.resolvePending('thread-A', { behavior: 'allow' })
+        h.bus.resolvePending(KEY, { behavior: 'allow' })
       })
     })
 
@@ -104,7 +105,7 @@ describe('mcp-approval-server', () => {
   it('forwards updatedInput on allow', async () => {
     h.bus.setNotifier(async () => {
       queueMicrotask(() => {
-        h.bus.resolvePending('thread-A', {
+        h.bus.resolvePending(KEY, {
           behavior: 'allow',
           updatedInput: { command: 'echo sandboxed' },
         })
@@ -124,7 +125,7 @@ describe('mcp-approval-server', () => {
   it('forwards deny + message', async () => {
     h.bus.setNotifier(async () => {
       queueMicrotask(() => {
-        h.bus.resolvePending('thread-A', { behavior: 'deny', message: '用户拒绝' })
+        h.bus.resolvePending(KEY, { behavior: 'deny', message: '用户拒绝' })
       })
     })
 
@@ -157,7 +158,7 @@ describe('mcp-approval-server', () => {
     h.bus.setNotifier(async (n) => {
       captured = n.toolName
       queueMicrotask(() => {
-        h.bus.resolvePending('thread-A', { behavior: 'allow' })
+        h.bus.resolvePending(KEY, { behavior: 'allow' })
       })
     })
 

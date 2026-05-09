@@ -27,6 +27,7 @@ import { Socket, createConnection } from 'net'
 import { DiscordAdapter } from './discord-adapter.js'
 import {
   approvalBus,
+  threadKey,
   type RunContext,
 } from '../../../core/approval-bus.js'
 import {
@@ -335,7 +336,7 @@ describe('Discord × ApprovalBus × approval-router — end-to-end (offline)', (
     await new Promise((r) => setTimeout(r, 5))
     expect(messageHandlerCalled).toBeGreaterThanOrEqual(1)
 
-    const consumed = tryHandleApprovalReply('chan-discord-1', 'y')
+    const consumed = tryHandleApprovalReply(threadKey('discord', 'default', 'chan-discord-1'), 'y')
     expect(consumed).toBe(true)
 
     // 6. Sidecar should now receive {behavior: "allow"}
@@ -384,7 +385,7 @@ describe('Discord × ApprovalBus × approval-router — end-to-end (offline)', (
     }
     expect(ch.sent.length).toBe(1)
 
-    expect(tryHandleApprovalReply('chan-discord-2', 'n')).toBe(true)
+    expect(tryHandleApprovalReply(threadKey('discord', 'default', 'chan-discord-2'), 'n')).toBe(true)
 
     for (let i = 0; i < 50 && decisions.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 10))

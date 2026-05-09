@@ -5,12 +5,15 @@ import { Socket, createConnection } from 'net'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
-import { approvalBus, type RunContext } from '../approval-bus.js'
+import { approvalBus, threadKey, type RunContext } from '../approval-bus.js'
 import { handleApprovalCommand } from './approval.js'
 import type { RouteContext } from '../router.js'
 import type { Logger } from 'pino'
 
 const RUN_CTX: RunContext = { threadId: 'thread-X', platform: 'feishu', userId: 'u', channelId: 'c' }
+/** Composite key matching RUN_CTX — bus stores by composite, so direct
+ *  lookups in this test must use this exact value. */
+const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function makeRouteCtx(): RouteContext {
   return {
@@ -39,7 +42,7 @@ async function seedRule(socketPath: string, runId: string, reqId: string, toolNa
     input: { command }, toolUseId: 'tu-' + reqId,
   }) + '\n')
   await sleep(20)
-  approvalBus.resolvePending('thread-X', { behavior: 'allow', autoAllowFurther: true })
+  approvalBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
   return sock
 }
 
@@ -54,7 +57,7 @@ describe('handleApprovalCommand', () => {
   })
 
   afterEach(async () => {
-    approvalBus.clearAutoAllowForThread('thread-X')
+    approvalBus.clearAutoAllowForThread(KEY)
     await approvalBus.stop()
   })
 
@@ -71,7 +74,7 @@ describe('handleApprovalCommand', () => {
     // 10 characters of the input. `git status -s` is 13 chars, prefix10
     // is `git status`; `rm -rf /tmp/x` is 13 chars, prefix10 is
     // `rm -rf /tm`.
-    expect(approvalBus.getAutoAllowKeys('thread-X').sort()).toEqual([
+    expect(approvalBus.getAutoAllowKeys(KEY).sort()).toEqual([
       'Bash::git status', 'Bash::rm -rf /tm',
     ])
 
@@ -91,11 +94,11 @@ describe('handleApprovalCommand', () => {
 
   it('clear drops every rule for this thread', async () => {
     const sock = await seedRule(path, 'run-X', 'rc', 'Bash', 'docker ps')
-    expect(approvalBus.getAutoAllowKeys('thread-X').length).toBe(1)
+    expect(approvalBus.getAutoAllowKeys(KEY).length).toBe(1)
 
     const out = await handleApprovalCommand('clear', makeRouteCtx())
     expect(out).toContain('已清空本会话的 1 条自动放行规则')
-    expect(approvalBus.getAutoAllowKeys('thread-X')).toEqual([])
+    expect(approvalBus.getAutoAllowKeys(KEY)).toEqual([])
 
     sock.end()
   })

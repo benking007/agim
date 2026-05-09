@@ -7,6 +7,7 @@ import { join } from 'path'
 import { randomBytes } from 'crypto'
 import {
   ApprovalBus,
+  threadKey,
   type ApprovalNotification,
   type Decision,
   type RunContext,
@@ -18,6 +19,11 @@ const RUN_CTX: RunContext = {
   userId: 'user-1',
   channelId: 'chan-1',
 }
+
+/** Composite key matching RUN_CTX. After P0 #4 the bus stores by composite
+ *  key, so all hasPendingFor / resolvePending / autoAllow lookups must use
+ *  this exact value (not the bare threadId). */
+const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
   return join(tmpdir(), `imhub-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
@@ -149,9 +155,9 @@ describe('ApprovalBus', () => {
     expect(notified!.toolName).toBe('Bash')
     expect(notified!.input).toEqual({ command: 'git push' })
     expect(notified!.ctx.threadId).toBe('thread-A')
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
 
-    const resolved = bus.resolvePending('thread-A', { behavior: 'allow' })
+    const resolved = bus.resolvePending(KEY, { behavior: 'allow' })
     expect(resolved).not.toBeNull()
     expect(resolved?.toolName).toBe('Bash')
     // M13: fingerprint length bumped 5 → 10 to reduce false matches
@@ -160,7 +166,7 @@ describe('ApprovalBus', () => {
     expect(resolved?.fingerprint).toBe('git push')
     expect(resolved?.platform).toBe('feishu')
     expect(resolved?.wasAutoAllow).toBe(false)
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
 
     const decision = await client.next()
     expect(decision).toEqual({ v: 1, type: 'decision', reqId: 'req-1', behavior: 'allow' })
@@ -179,7 +185,7 @@ describe('ApprovalBus', () => {
     })
     await sleep(20)
 
-    bus.resolvePending('thread-A', { behavior: 'allow', updatedInput: { command: 'rm -rf /tmp/safe' } })
+    bus.resolvePending(KEY, { behavior: 'allow', updatedInput: { command: 'rm -rf /tmp/safe' } })
     const decision = await client.next()
     expect(decision.behavior).toBe('allow')
     expect(decision.updatedInput).toEqual({ command: 'rm -rf /tmp/safe' })
@@ -198,7 +204,7 @@ describe('ApprovalBus', () => {
     })
     await sleep(20)
 
-    bus.resolvePending('thread-A', { behavior: 'deny', message: '用户拒绝' })
+    bus.resolvePending(KEY, { behavior: 'deny', message: '用户拒绝' })
     const decision = await client.next()
     expect(decision).toEqual({ v: 1, type: 'decision', reqId: 'req-1', behavior: 'deny', message: '用户拒绝' })
 
@@ -218,7 +224,7 @@ describe('ApprovalBus', () => {
     const decision = await client.next(2000)
     expect(decision.behavior).toBe('deny')
     expect(decision.message).toBe('approval timeout')
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
 
     await client.close()
   })
@@ -268,13 +274,13 @@ describe('ApprovalBus', () => {
       toolName: 'Bash', input: {}, toolUseId: 'tu-1',
     })
     await sleep(20)
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
 
     bus.unregisterRun('run-1')
     const decision = await client.next()
     expect(decision.behavior).toBe('deny')
     expect(decision.message).toContain('run terminated')
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
 
     await client.close()
   })
@@ -289,12 +295,12 @@ describe('ApprovalBus', () => {
       toolName: 'Bash', input: {}, toolUseId: 'tu-1',
     })
     await sleep(20)
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
 
     await client.close()
     // Give bus a moment to handle 'close'
-    for (let i = 0; i < 20 && bus.hasPendingFor('thread-A'); i++) await sleep(10)
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    for (let i = 0; i < 20 && bus.hasPendingFor(KEY); i++) await sleep(10)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 
   it('bad JSON does not crash; subsequent valid lines still work', async () => {
@@ -308,8 +314,8 @@ describe('ApprovalBus', () => {
       toolName: 'Bash', input: {}, toolUseId: 'tu-1',
     })
     await sleep(20)
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'allow' })
     const decision = await client.next()
     expect(decision.reqId).toBe('req-1')
     await client.close()
@@ -328,7 +334,7 @@ describe('ApprovalBus', () => {
     let received: unknown = null
     try { received = await client.next(150) } catch { /* expected timeout */ }
     expect(received).toBeNull()
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
     await client.close()
   })
 
@@ -352,8 +358,8 @@ describe('ApprovalBus', () => {
     expect(first.behavior).toBe('deny')
     expect(first.message).toBe('duplicate reqId')
     // Original is still pending
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'allow' })
     const second = await client.next()
     expect(second.behavior).toBe('allow')
 
@@ -400,7 +406,7 @@ describe('ApprovalBus', () => {
     const decision = await client.next()
     expect(decision.behavior).toBe('deny')
     expect(decision.message).toBe('notifier error')
-    expect(bus.hasPendingFor('thread-A')).toBe(false)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
 
     await client.close()
   })
@@ -422,12 +428,12 @@ describe('ApprovalBus', () => {
       })
       for (let i = 0; i < 50 && notifications.length < 1; i++) await sleep(10)
       expect(notifications[0].autoAllow).toBeUndefined() // first ask is normal
-      fastBus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
+      fastBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
       const d1 = await client.next()
       expect(d1.behavior).toBe('allow')
       // Wire payload must NOT carry autoAllowFurther — that's internal-only.
       expect(d1.autoAllowFurther).toBeUndefined()
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::git status'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::git status'])
 
       // Second call — same tool + same prefix → grace mode
       client.send({
@@ -440,7 +446,7 @@ describe('ApprovalBus', () => {
       // Don't reply → grace timer fires → allow auto-resolved
       const d2 = await client.next(500)
       expect(d2.behavior).toBe('allow')
-      expect(fastBus.hasPendingFor('thread-A')).toBe(false)
+      expect(fastBus.hasPendingFor(KEY)).toBe(false)
 
       await client.close()
     } finally {
@@ -465,9 +471,9 @@ describe('ApprovalBus', () => {
         toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu-1',
       })
       await sleep(20)
-      fastBus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
+      fastBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
       await client.next()
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::rm -rf /tm'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::rm -rf /tm'])
 
       // Second call hits the rule → grace mode. User explicitly denies.
       client.send({
@@ -475,11 +481,11 @@ describe('ApprovalBus', () => {
         toolName: 'Bash', input: { command: 'rm -rf /tmp/y' }, toolUseId: 'tu-2',
       })
       await sleep(20)
-      fastBus.resolvePending('thread-A', { behavior: 'deny', message: '不行' })
+      fastBus.resolvePending(KEY, { behavior: 'deny', message: '不行' })
       const d = await client.next()
       expect(d.behavior).toBe('deny')
       // Rule is revoked → next call should be normal (not auto-allow).
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual([])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual([])
 
       await client.close()
     } finally {
@@ -501,7 +507,7 @@ describe('ApprovalBus', () => {
         toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-foo' }, toolUseId: 'tu-1',
       })
       await sleep(20)
-      fastBus.resolvePending('thread-A', { behavior: 'allow', autoAllowFurther: true })
+      fastBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
       await client.next()
 
       // Open a 2nd request that hits the rule (auto-allow grace). Both
@@ -518,7 +524,7 @@ describe('ApprovalBus', () => {
       fastBus.unregisterRun('run-1')
       const d = await client.next()
       expect(d.behavior).toBe('deny')
-      expect(fastBus.getAutoAllowKeys('thread-A')).toEqual(['Bash::ls -la /tm'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::ls -la /tm'])
 
       await client.close()
     } finally {
@@ -533,8 +539,8 @@ describe('ApprovalBus', () => {
     bus.registerRun('run-clr', RUN_CTX)
     bus.setNotifier(async () => {})
     // After clearing, no rules should remain — start from baseline.
-    bus.clearAutoAllowForThread('thread-A')
-    expect(bus.getAutoAllowKeys('thread-A')).toEqual([])
+    bus.clearAutoAllowForThread(KEY)
+    expect(bus.getAutoAllowKeys(KEY)).toEqual([])
   })
 
   it('queues multiple pending on same thread, resolves head first', async () => {
@@ -553,13 +559,13 @@ describe('ApprovalBus', () => {
     })
     await sleep(20)
 
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'allow' })
     const first = await client.next()
     expect(first.reqId).toBe('req-A')
 
-    expect(bus.hasPendingFor('thread-A')).toBe(true)
-    bus.resolvePending('thread-A', { behavior: 'deny', message: 'no' })
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'deny', message: 'no' })
     const second = await client.next()
     expect(second.reqId).toBe('req-B')
     expect(second.behavior).toBe('deny')
@@ -581,13 +587,13 @@ describe('ApprovalBus', () => {
     // 1. user allow
     client.send({ v: 1, type: 'approval', runId: 'run-1', reqId: 'r1', toolName: 'Bash', input: {}, toolUseId: 'tu-1' })
     await sleep(20)
-    bus.resolvePending('thread-A', { behavior: 'allow' })
+    bus.resolvePending(KEY, { behavior: 'allow' })
     await client.next()
 
     // 2. user deny
     client.send({ v: 1, type: 'approval', runId: 'run-1', reqId: 'r2', toolName: 'Bash', input: {}, toolUseId: 'tu-2' })
     await sleep(20)
-    bus.resolvePending('thread-A', { behavior: 'deny', message: 'no' })
+    bus.resolvePending(KEY, { behavior: 'deny', message: 'no' })
     await client.next()
 
     // 3. timeout (no auto-allow grace, fires deny on the wire but counts as timeout)

@@ -259,12 +259,37 @@ describe('Web REST API', () => {
   })
 
   describe('Static tasks page', () => {
-    it('GET /tasks serves an HTML page with auth-token injected', async () => {
-      const res = await fetch(url('/tasks'))
+    // P0 #1: token is no longer injected into HTML. Unauthenticated requests
+    // are redirected to /login; the page itself must render only after a
+    // successful POST /api/auth/login (which sets the session cookie).
+    it('GET /tasks without session redirects to /login', async () => {
+      const res = await fetch(url('/tasks'), { redirect: 'manual' })
+      expect(res.status).toBe(302)
+      const loc = res.headers.get('location') || ''
+      expect(loc).toContain('/login')
+      expect(loc).toContain('next=%2Ftasks')
+    })
+
+    it('GET /tasks with valid session cookie serves the page (no token in HTML)', async () => {
+      const loginRes = await fetch(url('/api/auth/login'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: TEST_TOKEN }),
+      })
+      expect(loginRes.status).toBe(200)
+      const setCookie = loginRes.headers.get('set-cookie') || ''
+      expect(setCookie).toContain('imhub_session=')
+      expect(setCookie).toContain('HttpOnly')
+      expect(setCookie).toContain('SameSite=Strict')
+
+      const cookie = setCookie.split(';')[0] // imhub_session=<value>
+      const res = await fetch(url('/tasks'), { headers: { cookie } })
       expect(res.status).toBe(200)
       const text = await res.text()
-      expect(text).toContain('IMHUB_TOKEN')
       expect(text).toContain('Tasks')
+      // The token must NOT be embedded in HTML anymore.
+      expect(text).not.toContain('IMHUB_TOKEN=')
+      expect(text).not.toContain(TEST_TOKEN)
     })
   })
 

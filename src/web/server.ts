@@ -2,7 +2,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
-import { readdir, stat, lstat, readFile, writeFile, rename, unlink, realpath, open } from 'fs/promises'
+import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
@@ -117,16 +117,24 @@ export async function startWebServer(options: {
     const cookies = parseCookies(req)
     return isValidSessionCookie(cookies[COOKIE_NAME] || '')
   }
-  function setSessionCookie(res: ServerResponse): void {
+  function setSessionCookie(req: IncomingMessage, res: ServerResponse): void {
     const val = makeSessionCookie()
     const parts = [`${COOKIE_NAME}=${val}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
-    if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
-      webLog.warn({
-        event: 'web.public_bind_warning',
-        bind: bindHost,
-      }, 'Web server bound to a non-localhost address — consider using a reverse proxy with TLS for production')
-    }
+    // Mark Secure when we have any signal we're served over TLS:
+    //  - public bind (assume reverse proxy will/should terminate TLS)
+    //  - X-Forwarded-Proto: https from a trusted reverse proxy
+    // For pure localhost dev (no proxy) we omit Secure so plain HTTP works.
+    const isPublicBind = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
+    const xfp = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
+    if (isPublicBind || xfp === 'https') parts.push('Secure')
     res.setHeader('Set-Cookie', parts.join('; '))
+  }
+
+  if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+    webLog.warn({
+      event: 'web.public_bind_warning',
+      bind: bindHost,
+    }, 'Web server bound to a non-localhost address — front it with a reverse proxy that terminates TLS')
   }
 
   // HTTP request handler — static files + REST API
@@ -147,7 +155,7 @@ export async function startWebServer(options: {
         return
       }
       if (typeof parsed.token === 'string' && safeEqual(parsed.token, webToken)) {
-        setSessionCookie(res)
+        setSessionCookie(req, res)
         sendJson(res, 200, { ok: true })
       } else {
         sendJson(res, 401, { error: 'Invalid token' })

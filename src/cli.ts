@@ -24,6 +24,10 @@ import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
 import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
+import { tryConsumeReply as tryConsumePendingReminderReply } from './core/pending-reminder.js'
+import { tryDetectReminderIntent } from './core/remind-intent.js'
+import { createReminder } from './core/reminders.js'
+import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
 import {
   checkMessengerConfig,
   checkAgentAvailability,
@@ -112,6 +116,12 @@ program
       try {
         const sockPath = await approvalBus.start()
         console.log(`✅ Approval bus listening on ${sockPath}`)
+        // Expose the path through env so long-lived child processes
+        // (notably `opencode serve`, which spawns the MCP sidecar with
+        // `env: process.env`) can connect without per-spawn config.
+        // claude-code and opencode stdio still set this per-spawn via
+        // extraEnv — that override wins inside their spawn scope.
+        process.env.IMHUB_APPROVAL_SOCK = sockPath
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.warn(`⚠️ Approval bus failed to start (${msg}); claude-code will fall back to dontAsk mode`)
@@ -140,6 +150,19 @@ program
       console.warn('   Agents will fall back to im-hub-pro cwd ("/" under systemd)')
     }
 
+    // Register the imhub MCP server in opencode's global config so opencode
+    // (stdio mode) can see the reminder tools. Idempotent; quietly skips if
+    // opencode isn't installed / no config dir / write fails. HTTP mode
+    // can't use this — see ensure-mcp-config.ts comments.
+    try {
+      const { ensureOpencodeMcpRegistered } = await import('./plugins/agents/opencode/ensure-mcp-config.js')
+      const wrote = await ensureOpencodeMcpRegistered()
+      if (wrote) console.log('🔧 Registered imhub MCP in opencode global config')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`⚠️ opencode MCP registration skipped: ${msg}`)
+    }
+
     // Load ACP (remote) agents from config
     if (config.acpAgents?.length) {
       await registry.loadACPAgents(config.acpAgents)
@@ -154,6 +177,10 @@ program
     // Start the scheduler (runs cron-due schedules every 30s)
     const { startScheduler } = await import('./core/schedule.js')
     startScheduler()
+
+    // Start the reminder engine (one-shot lightweight timers, 5s tick)
+    const { startReminderEngine } = await import('./core/reminders.js')
+    startReminderEngine()
 
     // ============================================
     // ONBOARDING CHECKS (before default fill!)
@@ -197,8 +224,16 @@ program
 
     // Get messengers to start (now config.messengers is populated)
     const messengersToStart = config.messengers.length > 0
-      ? config.messengers
+      ? [...config.messengers]
       : ['wechat-ilink'] // Fallback default
+
+    // Auto-include the email adapter so /remind email ... works without
+    // explicit `im-hub-pro config email`. The adapter's start() is fail-soft
+    // when SMTP env vars are missing — it stays "registered but disabled"
+    // and any actual send call throws a clear "not configured" error.
+    if (!messengersToStart.includes('email')) {
+      messengersToStart.push('email')
+    }
 
     // Start messenger adapters
     for (const name of messengersToStart) {
@@ -223,6 +258,67 @@ program
         if (tryHandleApprovalReply(threadKey(ctx.platform, ctx.channelId, ctx.message.threadId), ctx.message.text)) {
           ctx.logger.info({ event: 'message.consumed_by_approval' })
           return
+        }
+
+        // Reminder-intent confirmation reply ("y"/"n" to a previously-
+        // proposed reminder card). Must come BEFORE the detector so a
+        // user replying "y" doesn't get re-detected as another reminder.
+        const tk = `${ctx.platform}:${ctx.channelId}:${ctx.message.threadId}`
+        const replyDecision = tryConsumePendingReminderReply(tk, ctx.message.text)
+        if (replyDecision) {
+          if (replyDecision.decision === 'cancel') {
+            await messenger.sendMessage(ctx.message.threadId, '✅ 已忽略这条提醒建议')
+          } else {
+            const p = replyDecision.pending
+            try {
+              const id = createReminder({
+                fireAt: p.fireAt,
+                text: p.text,
+                platform: ctx.platform,
+                channelId: ctx.channelId,
+                threadId: ctx.message.threadId,
+                userId: ctx.message.userId || '',
+                source: 'slash',
+                recurrence: p.recurrence,
+              })
+              const recurLine = p.recurrence ? `\n   循环：${p.recurrence}` : ''
+              await messenger.sendMessage(ctx.message.threadId,
+                `✅ 已创建提醒 #${id}\n   触发：${p.fireAt.toLocaleString()}${recurLine}\n   内容：${p.text}`)
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              await messenger.sendMessage(ctx.message.threadId, `❌ 创建失败：${msg}`)
+            }
+          }
+          ctx.logger.info({ event: 'message.consumed_by_pending_reminder', decision: replyDecision.decision })
+          return
+        }
+
+        // Reminder-intent detector: only on non-slash messages and only
+        // when the user has aiwatch on. Cheap regex pre-filter inside the
+        // detector skips most messages without a time hint, so the LLM
+        // call only fires on plausible candidates.
+        if (!ctx.message.text.trim().startsWith('/')) {
+          try {
+            const detected = await tryDetectReminderIntent({
+              platform: ctx.platform,
+              channelId: ctx.channelId,
+              threadId: ctx.message.threadId,
+              userId: ctx.message.userId || '',
+              text: ctx.message.text,
+            })
+            if (detected.handled && detected.reply) {
+              await messenger.sendMessage(ctx.message.threadId, detected.reply)
+              ctx.logger.info({ event: 'message.proposed_reminder' })
+              return
+            }
+          } catch (err) {
+            // Detector must never break the message pipeline. Log and
+            // fall through to normal agent dispatch.
+            ctx.logger.warn({
+              event: 'remind-intent.crashed',
+              err: err instanceof Error ? err.message : String(err),
+            }, 'detector crashed — falling through to normal agent flow')
+          }
         }
 
         await handleMessage(ctx, config.defaultAgent)
@@ -253,6 +349,20 @@ program
       })
       console.log('✅ Approval router wired to messengers')
     }
+
+    // Reminder confirm notifier — used by reminder-rpc.ts when an agent
+    // creates a high-frequency + LLM-polish reminder (those go through a
+    // y/n card before landing in the DB). Plain message via the same
+    // messenger the agent is talking on.
+    setReminderConfirmNotifier(async (ctx, message) => {
+      const messenger = registry.getMessenger(platformToMessengerName(ctx.platform))
+        ?? registry.getMessenger(ctx.platform)
+      if (!messenger) {
+        console.warn(`reminder-confirm: no messenger for platform "${ctx.platform}"`)
+        return
+      }
+      await messenger.sendMessage(ctx.threadId, message)
+    })
 
     // ============================================
     // START WEB CHAT SERVER
@@ -330,6 +440,11 @@ program
         const { stopScheduler, closeScheduleDb } = await import('./core/schedule.js')
         stopScheduler()
         closeScheduleDb()
+      } catch { /* ignore */ }
+      try {
+        const { stopReminderEngine, closeReminderDb } = await import('./core/reminders.js')
+        stopReminderEngine()
+        closeReminderDb()
       } catch { /* ignore */ }
 
       process.exit(0)

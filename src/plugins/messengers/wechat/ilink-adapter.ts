@@ -19,6 +19,13 @@ import {
   pickExtensionForVideo,
 } from './media-download.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
+import {
+  persistContextToken,
+  loadContextToken,
+  loadAllContextTokens,
+  cleanupExpiredTokens as cleanupExpiredTokensInStore,
+  closeContextStore,
+} from './context-store.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
 
@@ -60,6 +67,22 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
       throw new Error('No WeChat credentials found. Run "im-hub config wechat" first.')
     }
 
+    // Warm in-memory context-token cache from persistent store. Without this,
+    // any user who messaged before the last restart but is silent now can't
+    // receive pushes (e.g. recurring reminders) until they speak again.
+    const warmed = loadAllContextTokens(CONTEXT_TOKEN_TTL, Date.now())
+    for (const t of warmed) {
+      this.contextTokens.set(t.userId, {
+        userId: t.userId,
+        contextToken: t.token,
+        timestamp: t.fetchedAt,
+      })
+    }
+    if (warmed.length > 0) {
+      log.info({ event: 'wechat.context.warm', count: warmed.length },
+        'Warmed context-token cache from persistent store')
+    }
+
     this.isRunning = true
     log.info('WeChat iLink adapter started')
 
@@ -70,6 +93,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
   async stop(): Promise<void> {
     this.isRunning = false
     this.client.clearCredentials()
+    closeContextStore()
     log.info('WeChat iLink adapter stopped')
   }
 
@@ -638,24 +662,41 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
   // ============================================
 
   private getContextToken(userId: string): string | null {
+    const now = Date.now()
     const cached = this.contextTokens.get(userId)
-    if (!cached) return null
-
-    // Check if expired
-    if (Date.now() - cached.timestamp > CONTEXT_TOKEN_TTL) {
-      this.contextTokens.delete(userId)
-      return null
+    if (cached) {
+      if (now - cached.timestamp > CONTEXT_TOKEN_TTL) {
+        this.contextTokens.delete(userId)
+        // Fall through to DB — last-resort same-user token might be even
+        // older, but the DB-backed cleanup will reject expired rows too.
+      } else {
+        return cached.contextToken
+      }
     }
 
-    return cached.contextToken
+    // Map miss (or just-expired) → fall back to persistent store. This makes
+    // first-send-after-restart succeed when the user messaged before the
+    // restart and the token is still within its 30-min window.
+    const stored = loadContextToken(userId, CONTEXT_TOKEN_TTL, now)
+    if (!stored) return null
+    // Re-populate the Map so subsequent sends in this run skip the DB.
+    this.contextTokens.set(userId, {
+      userId: stored.userId,
+      contextToken: stored.token,
+      timestamp: stored.fetchedAt,
+    })
+    return stored.token
   }
 
   private setContextToken(userId: string, token: string): void {
+    const now = Date.now()
     this.contextTokens.set(userId, {
       userId,
       contextToken: token,
-      timestamp: Date.now(),
+      timestamp: now,
     })
+    // Write-through. Best-effort: store calls fail-soft on SQLite issues.
+    persistContextToken(userId, token, now)
   }
 
   private cleanupProcessedMessages(): void {
@@ -682,6 +723,9 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
         this.contextTokens.delete(userId)
       }
     }
+    // Mirror the cleanup into the persistent store so its row count stays
+    // bounded too. Cheap (indexed by fetched_at).
+    cleanupExpiredTokensInStore(CONTEXT_TOKEN_TTL, now)
   }
 
   // ============================================

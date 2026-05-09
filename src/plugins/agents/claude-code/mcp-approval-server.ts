@@ -31,10 +31,21 @@ interface PendingRequest {
   originalInput: Record<string, unknown>
 }
 
+interface ReminderResult {
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+
+interface PendingReminderRpc {
+  resolve: (r: ReminderResult) => void
+}
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
   private pending = new Map<string, PendingRequest>()
+  private pendingReminders = new Map<string, PendingReminderRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -89,20 +100,40 @@ class ApprovalClient {
   private dispatch(msg: unknown): void {
     if (!msg || typeof msg !== 'object') return
     const m = msg as Record<string, unknown>
-    if (m.v !== 1 || m.type !== 'decision') return
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    if (!reqId) return
-    const p = this.pending.get(reqId)
-    if (!p) return
-    this.pending.delete(reqId)
-    if (m.behavior === 'allow') {
-      const updatedInput = (m.updatedInput && typeof m.updatedInput === 'object' && !Array.isArray(m.updatedInput))
-        ? m.updatedInput as Record<string, unknown>
-        : p.originalInput   // Claude Code requires updatedInput; echo original
-      p.resolve({ behavior: 'allow', updatedInput })
-    } else {
-      const message = typeof m.message === 'string' ? m.message : undefined
-      p.resolve({ behavior: 'deny', ...(message ? { message } : {}) })
+    if (m.v !== 1) return
+
+    if (m.type === 'decision') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pending.get(reqId)
+      if (!p) return
+      this.pending.delete(reqId)
+      if (m.behavior === 'allow') {
+        const updatedInput = (m.updatedInput && typeof m.updatedInput === 'object' && !Array.isArray(m.updatedInput))
+          ? m.updatedInput as Record<string, unknown>
+          : p.originalInput   // Claude Code requires updatedInput; echo original
+        p.resolve({ behavior: 'allow', updatedInput })
+      } else {
+        const message = typeof m.message === 'string' ? m.message : undefined
+        p.resolve({ behavior: 'deny', ...(message ? { message } : {}) })
+      }
+      return
+    }
+
+    if (m.type === 'reminder.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingReminders.get(reqId)
+      if (!p) return
+      this.pendingReminders.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
     }
   }
 
@@ -113,6 +144,10 @@ class ApprovalClient {
       p.resolve({ behavior: 'deny', message: 'approval bus disconnected' })
     }
     this.pending.clear()
+    for (const [, p] of this.pendingReminders) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingReminders.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -147,6 +182,36 @@ class ApprovalClient {
         if (err) {
           this.pending.delete(reqId)
           resolve({ behavior: 'deny', message: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /**
+   * Send a reminder RPC and wait for the result. Same socket as approvals,
+   * different message type. Bus delegates to reminder-rpc.ts which actually
+   * touches reminders.db.
+   */
+  async requestReminder(op: string, payload: Record<string, unknown>): Promise<ReminderResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1,
+      type: 'reminder',
+      runId: this.runId,
+      reqId,
+      op,
+      payload,
+    })}\n`
+    return new Promise<ReminderResult>((resolve) => {
+      this.pendingReminders.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingReminders.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
     })
@@ -199,6 +264,22 @@ export function buildServer(client: ApprovalClient): McpServer {
       const input = (args.input ?? {}) as Record<string, unknown>
       const toolUseId = args.tool_use_id ?? args.toolUseId ?? ''
 
+      // Auto-allow im-hub's own MCP tools. These are user-scoped, idempotent,
+      // and easily reversible via /remind cancel — asking the user to
+      // approve "do you really want this reminder you literally just asked
+      // for" is double-confirmation and clutters the chat. The tool body
+      // itself runs through bus.handleReminder which validates payloads.
+      if (toolName.startsWith('mcp__imhub__')) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ behavior: 'allow', updatedInput: input }),
+            },
+          ],
+        }
+      }
+
       const decision = await client.request({ toolName, input, toolUseId })
       return {
         content: [
@@ -208,6 +289,106 @@ export function buildServer(client: ApprovalClient): McpServer {
     },
   )
 
+  // ─── Reminder tools ───────────────────────────────────────────────
+  // These let Claude create / list / cancel / snooze reminders for the
+  // current IM user without going back to the user with a slash command.
+  // Bus uses runId → RunContext to know which user/thread the call belongs
+  // to. All four tools return JSON-encoded text blocks; the result schema
+  // is `{ok: true, result: {...}} | {ok: false, error: string}`.
+  //
+  // `_im_context` is a single-user fallback for adapter setups where the
+  // MCP server is shared (e.g. opencode http daemon — see ensure-mcp-config.ts):
+  // the runId env var was set when opencode serve started and is the SAME
+  // for all sessions, so we can't disambiguate via runId. Instead the agent
+  // is instructed (via prompt injection) to pass an `_im_context` block,
+  // which the bus uses iff the runId lookup fails. Untrusted in multi-user
+  // deployments — operators must understand the trust model.
+
+  const imContextSchema = z.object({
+    platform: z.string(),
+    threadId: z.string(),
+    channelId: z.string(),
+    userId: z.string().optional(),
+  }).optional().describe(
+    'IM context override. Only set this when the system prompt explicitly tells you to. ' +
+    'Otherwise omit and the server figures it out via runId.',
+  )
+
+  const wrapReminder = (op: string) => async (args: Record<string, unknown>) => {
+    const result = await client.requestReminder(op, args)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+  }
+
+  server.registerTool(
+    'create_reminder',
+    {
+      title: 'Create a reminder',
+      description:
+        'Create a one-shot or recurring reminder for the current user. CALL THIS PROACTIVELY ' +
+        'whenever the user mentions a future commitment, event, task, or anything they might ' +
+        'want to be reminded about — including casual mentions like "明天中午要开会", ' +
+        '"下周三去医院复查", or explicit asks like "提醒我30分钟后喝水". ' +
+        'The reminder will fire at fireAt and be delivered to this same IM thread. ' +
+        'After creating, briefly acknowledge to the user (e.g. "✅ 已为你设了提醒，明天12点 团队聚餐"). ' +
+        'For recurring: use "every:5m", "daily:08:00", or "weekly:1,3,5:09:00". ' +
+        'High-frequency (interval < 1h) + LLM polish is auto-confirmed via card; ' +
+        'agent should keep its reply terse in that case.',
+      inputSchema: {
+        fireAt: z.string().describe('First fire time as ISO 8601 local-time, e.g. "2026-05-10T12:00:00"'),
+        text: z.string().describe('What to remind the user about, ≤ 60 chars. Just the activity, not the time.'),
+        recurrence: z.string().optional().describe('Optional. "every:5m" | "daily:HH:MM" | "weekly:1,3,5:HH:MM"'),
+        promptMode: z.enum(['literal', 'llm']).optional().describe(
+          'Default "llm" (LLM polishes the reminder text at fire time). Pass "literal" for verbatim delivery.',
+        ),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapReminder('create'),
+  )
+
+  server.registerTool(
+    'list_reminders',
+    {
+      title: 'List reminders',
+      description:
+        'List the current user\'s pending reminders. Use this when the user asks "我有什么提醒" / ' +
+        '"接下来要做什么" or before suggesting cancel/snooze.',
+      inputSchema: { _im_context: imContextSchema },
+    },
+    wrapReminder('list'),
+  )
+
+  server.registerTool(
+    'cancel_reminder',
+    {
+      title: 'Cancel a reminder',
+      description:
+        'Cancel a pending reminder by id. Find ids via list_reminders. For recurring reminders, ' +
+        'this terminates the entire loop.',
+      inputSchema: {
+        id: z.number().int().positive().describe('Reminder id from list_reminders'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapReminder('cancel'),
+  )
+
+  server.registerTool(
+    'snooze_reminder',
+    {
+      title: 'Snooze a reminder',
+      description:
+        'Push a reminder back by a duration ("5m", "30m", "2h"). Creates a new reminder with the ' +
+        'same text and cancels the original.',
+      inputSchema: {
+        id: z.number().int().positive().describe('Reminder id to snooze'),
+        duration: z.string().describe('Duration like "5m" / "30m" / "2h" / "1d"'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapReminder('snooze'),
+  )
+
   return server
 }
 
@@ -215,11 +396,19 @@ export { ApprovalClient }
 
 async function main(): Promise<void> {
   const sockPath = process.env.IMHUB_APPROVAL_SOCK
-  const runId = process.env.IMHUB_RUN_ID
-  if (!sockPath || !runId) {
-    process.stderr.write('[mcp-approval-server] missing IMHUB_APPROVAL_SOCK or IMHUB_RUN_ID\n')
+  if (!sockPath) {
+    process.stderr.write('[mcp-approval-server] missing IMHUB_APPROVAL_SOCK\n')
     process.exit(1)
   }
+  // IMHUB_RUN_ID is optional. Per-spawn paths (claude-code --mcp-config,
+  // opencode stdio extraEnv) set a unique runId so the bus can look up
+  // the IM thread context. Long-lived shared paths (opencode http daemon
+  // spawning the MCP server once at startup) leave it unset; reminder.*
+  // tool calls then route via the agent-asserted `_im_context` payload.
+  // Approval tool calls without a runId can't be routed and will be
+  // denied by the bus — but those paths don't use this sidecar anyway
+  // (opencode http does approvals via SSE, not MCP).
+  const runId = process.env.IMHUB_RUN_ID || ''
 
   const client = new ApprovalClient(sockPath, runId)
   const server = buildServer(client)

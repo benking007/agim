@@ -17,6 +17,8 @@ import { handleStatsCommand } from './commands/stats.js'
 import { handleSessionsCommand } from './commands/sessions.js'
 import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleScheduleCommand } from './commands/schedule.js'
+import { handleRemindCommand } from './commands/remind.js'
+import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
 import { logInvocation } from './audit-log.js'
@@ -113,6 +115,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'router') return { type: 'router', args: rest }
   if (cmd === 'workspaces' || cmd === 'ws') return { type: 'workspaces', args: rest }
   if (cmd === 'schedule' || cmd === 'cron') return { type: 'schedule', args: rest }
+  if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'tasks') return { type: 'job', args: 'list' }
   if (cmd === 'check') return { type: 'job', args: `check ${rest}` }
@@ -177,6 +180,10 @@ export async function routeMessage(
 
     case 'schedule': {
       return handleScheduleCommand(parsed.args, ctx)
+    }
+
+    case 'remind': {
+      return handleRemindCommand(parsed.args, ctx)
     }
 
     case 'job': {
@@ -453,7 +460,14 @@ export async function callAgentWithHistory(
   // var that short-circuits the /plan command itself.
   const effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
 
-  const generator = agent.sendPrompt(sessionId, prompt, effectiveHistory, {
+  // Inject pending-reminder context so the agent has live visibility into
+  // the user's queue. Only sent OVER THE WIRE — we keep the user's stored
+  // history clean (already addMessage'd above) so context isn't duplicated
+  // turn-after-turn. Empty when no pending OR no userId (non-IM call).
+  const reminderContext = buildReminderContextSnippet(ctx.platform, ctx.userId ?? '')
+  const augmentedPrompt = reminderContext ? `${reminderContext}\n${prompt}` : prompt
+
+  const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
     model,
     variant,
     threadId: ctx.threadId,

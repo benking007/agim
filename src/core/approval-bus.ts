@@ -559,7 +559,100 @@ export class ApprovalBus {
       await this.handleApproval(m, socket)
       return
     }
+    if (m.type === 'reminder') {
+      await this.handleReminder(m, socket)
+      return
+    }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
+  }
+
+  /**
+   * Handle a reminder RPC sent by the MCP sidecar (mcp-approval-server.ts).
+   * Same socket as approvals; different `type`. Two ways to identify the
+   * IM thread:
+   *
+   *   1. runId → RunContext lookup (preferred — used by claude-code via
+   *      --mcp-config env, and opencode stdio via per-spawn extraEnv)
+   *   2. _im_context inline (fallback — used by opencode http where the
+   *      MCP server is shared across sessions and per-spawn env can't be
+   *      injected; the agent itself asserts the context)
+   *
+   * Path 2 is **single-user only** by design: a multi-tenant deployment
+   * would let one user's agent forge reminders for another. Adapters that
+   * want to use path 2 must opt in by sending `_im_context`. We log it
+   * loudly so operators can audit.
+   */
+  private async handleReminder(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const op = typeof m.op === 'string' ? m.op : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+
+    if (!reqId) {
+      log.warn({ event: 'reminder.bus.missing_reqId' })
+      return // can't reply without reqId
+    }
+    if (!op) {
+      this.sendReminderResult(socket, reqId, { ok: false, error: 'invalid reminder message' })
+      return
+    }
+
+    // Resolve context: runId path first, then inline _im_context fallback.
+    let ctx: RunContext | null = null
+    if (runId) {
+      ctx = this.runContexts.get(runId) ?? null
+    }
+    if (!ctx) {
+      // Try to extract _im_context from the payload itself (path 2)
+      const inlineCtx = payload._im_context
+      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
+        const ic = inlineCtx as Record<string, unknown>
+        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
+            && typeof ic.channelId === 'string') {
+          ctx = {
+            platform: ic.platform,
+            threadId: ic.threadId,
+            channelId: ic.channelId,
+            userId: typeof ic.userId === 'string' ? ic.userId : '',
+          }
+          log.info({
+            event: 'reminder.bus.inline_ctx',
+            platform: ctx.platform, threadId: ctx.threadId, runId,
+          }, 'reminder using agent-asserted _im_context (single-user mode)')
+          // Strip _im_context from payload so it doesn't leak into the
+          // RPC handler's field validation.
+          delete payload._im_context
+        }
+      }
+    }
+
+    if (!ctx) {
+      this.sendReminderResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+      })
+      return
+    }
+    // Lazy-import so the bus module stays free of reminders.ts at load time
+    // (matters for tests that mock reminder side-effects).
+    const { handleReminderOp } = await import('./reminder-rpc.js')
+    const result = await handleReminderOp(op, payload, ctx)
+    this.sendReminderResult(socket, reqId, result)
+  }
+
+  private sendReminderResult(
+    socket: Socket, reqId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'reminder.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'reminder.bus.write_failed', reqId, err: String(err) })
+    })
   }
 
   private async handleApproval(m: Record<string, unknown>, socket: Socket): Promise<void> {

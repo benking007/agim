@@ -36,6 +36,7 @@ export type ParsedMessage =
   | { type: 'router'; args: string }
   | { type: 'workspaces'; args: string }
   | { type: 'schedule'; args: string }
+  | { type: 'remind'; args: string }
   | { type: 'job'; args: string }
   | { type: 'model'; args: string }
   | { type: 'think'; args: string }

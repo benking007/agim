@@ -24,9 +24,14 @@
 // process hangs until the 30-min hard timeout fires. The HTTP driver fixes
 // this at the root by driving opencode via its REST + SSE API instead.
 
+import { randomUUID } from 'node:crypto'
 import { AgentBase, type SpawnPlan } from '../../../core/agent-base.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
+import { approvalBus } from '../../../core/approval-bus.js'
+import { logger as rootLogger } from '../../../core/logger.js'
+
+const log = rootLogger.child({ component: 'agent.opencode' })
 
 interface OpenCodeEvent {
   type: string
@@ -72,11 +77,45 @@ export class OpenCodeAdapter extends AgentBase {
    * so for IM calls we pin to ~/.im-hub-workspaces/opencode/. Non-IM calls
    * (web/scheduler) keep cwd undefined and inherit im-hub's cwd, preserving
    * the prior behavior. See agent-cwd.ts for full rationale.
+   *
+   * MCP context (for the imhub reminder tools): when we have a real IM
+   * thread + the bus is running, register a unique runId and inject
+   * IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID into the spawn env. opencode forwards
+   * its env to MCP server children (per opencode/src/mcp/index.ts:384), so
+   * the sidecar inherits these and can route reminder.* RPCs back to the
+   * right RunContext. No env injection → sidecar still launches but
+   * connects to nothing → reminder tools deny gracefully ("bus unavailable").
    */
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
+    const args = this.buildArgs(prompt, opts)
+    const cwd = resolveAgentCwd(this.name, opts)
+
+    const sockPath = approvalBus.getSocketPath()
+    const haveImCtx = !!(opts.threadId && opts.platform && opts.channelId)
+    if (!sockPath || !haveImCtx) {
+      return { args, cwd }
+    }
+
+    const runId = randomUUID()
+    approvalBus.registerRun(runId, {
+      threadId: opts.threadId as string,
+      platform: opts.platform as string,
+      userId: opts.userId ?? '',
+      channelId: opts.channelId as string,
+    })
+    log.info({ event: 'opencode.mcp.run_registered', runId, threadId: opts.threadId },
+      'opencode run registered with bus for MCP reminder tools')
+
     return {
-      args: this.buildArgs(prompt, opts),
-      cwd: resolveAgentCwd(this.name, opts),
+      args,
+      cwd,
+      extraEnv: {
+        IMHUB_APPROVAL_SOCK: sockPath,
+        IMHUB_RUN_ID: runId,
+      },
+      cleanup: () => {
+        approvalBus.unregisterRun(runId)
+      },
     }
   }
 

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>im-hub-pro — Reminders</title>
+  <script src="/_app.js"></script>
+  <style>
+    :root {
+      --bg: #fafafa; --fg: #222; --muted: #666; --border: #e5e7eb;
+      --card: #fff; --accent: #2563eb; --danger: #dc2626; --warn: #d97706;
+      --recur: #7c3aed;
+    }
+    [data-theme="dark"] {
+      --bg: #1a1a1a; --fg: #e5e5e5; --muted: #999; --border: #333;
+      --card: #242424; --accent: #60a5fa; --danger: #f87171; --warn: #fbbf24;
+      --recur: #a78bfa;
+    }
+    body {
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      background: var(--bg); color: var(--fg);
+      margin: 0; padding: 0;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header nav a {
+      margin-left: 12px; color: var(--muted); text-decoration: none;
+      font-size: 13px;
+    }
+    header nav a:hover { color: var(--accent); }
+    main { max-width: 880px; margin: 24px auto; padding: 0 16px; }
+    .filters {
+      display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .filter-btn {
+      padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card); color: var(--fg); cursor: pointer;
+      font-size: 13px;
+    }
+    .filter-btn.active {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    .empty {
+      text-align: center; color: var(--muted); padding: 60px 20px;
+      background: var(--card); border-radius: 8px; border: 1px dashed var(--border);
+    }
+    .reminder {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px; margin-bottom: 8px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .icon { font-size: 20px; flex-shrink: 0; line-height: 1; padding-top: 1px; }
+    .body { flex: 1; min-width: 0; }
+    .text { font-weight: 500; word-break: break-word; }
+    .meta {
+      color: var(--muted); font-size: 12px; margin-top: 4px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .meta .recur { color: var(--recur); }
+    .meta .literal { color: var(--warn); }
+    .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px;
+      background: transparent; color: var(--fg); cursor: pointer;
+      font-size: 12px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border); padding: 10px 16px;
+      border-radius: 6px; font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transition: opacity 0.2s;
+    }
+    .toast.error { color: var(--danger); border-color: var(--danger); }
+    @media (max-width: 600px) {
+      .reminder { flex-direction: column; }
+      .actions { width: 100%; justify-content: flex-end; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>🔔 Reminders</h1>
+  <nav>
+    <a href="/">Chat</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+<main>
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-status="pending">待发 (Pending)</button>
+    <button class="filter-btn" data-status="fired">已发</button>
+    <button class="filter-btn" data-status="cancelled">已取消</button>
+    <button class="filter-btn" data-status="failed">失败</button>
+  </div>
+  <div id="list"></div>
+</main>
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+(() => {
+  const $list = document.getElementById('list')
+  const $toast = document.getElementById('toast')
+  const $filters = document.getElementById('filters')
+  let currentStatus = 'pending'
+
+  function toast(msg, isErr = false) {
+    $toast.textContent = msg
+    $toast.className = 'toast' + (isErr ? ' error' : '')
+    $toast.style.display = 'block'
+    setTimeout(() => { $toast.style.display = 'none' }, 2500)
+  }
+
+  function fmtTime(iso) {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    const now = new Date()
+    const diffMs = d.getTime() - now.getTime()
+    const absMin = Math.abs(Math.round(diffMs / 60000))
+    let rel = ''
+    if (Math.abs(diffMs) < 60_000) rel = '刚才'
+    else if (absMin < 60) rel = (diffMs > 0 ? '' : '已过 ') + absMin + ' 分钟' + (diffMs > 0 ? '后' : '')
+    else if (absMin < 1440) rel = (diffMs > 0 ? '' : '已过 ') + (absMin / 60).toFixed(1) + ' 小时' + (diffMs > 0 ? '后' : '')
+    else rel = (diffMs > 0 ? '' : '已过 ') + (absMin / 1440).toFixed(1) + ' 天' + (diffMs > 0 ? '后' : '')
+    return d.toLocaleString() + ' · ' + rel
+  }
+
+  async function load() {
+    $list.innerHTML = '<div class="empty">加载中…</div>'
+    try {
+      const data = await window.imhub.api('/api/reminders?status=' + encodeURIComponent(currentStatus))
+      render(data.reminders || [])
+    } catch (err) {
+      $list.innerHTML = ''
+      toast('加载失败：' + err.message, true)
+    }
+  }
+
+  function render(items) {
+    if (!items.length) {
+      $list.innerHTML = '<div class="empty">没有' + statusLabel(currentStatus) + '的提醒</div>'
+      return
+    }
+    $list.innerHTML = items.map((r) => {
+      const icon = r.recurrence ? '🔁' : '🔔'
+      const recurMeta = r.recurrence_label
+        ? '<span class="recur">↻ ' + escapeHtml(r.recurrence_label) + '</span>' : ''
+      const literalMeta = r.prompt_mode === 'literal'
+        ? '<span class="literal">字面文本</span>' : ''
+      const platformMeta = r.platform
+        ? '<span>' + escapeHtml(r.platform) + '</span>' : ''
+      const showActions = currentStatus === 'pending'
+      const actions = showActions
+        ? `<div class="actions">
+             <button class="btn" data-act="snooze" data-id="${r.id}">延 5 分钟</button>
+             <button class="btn danger" data-act="cancel" data-id="${r.id}">取消</button>
+           </div>`
+        : ''
+      return `<div class="reminder">
+        <div class="icon">${icon}</div>
+        <div class="body">
+          <div class="text">${escapeHtml(r.text)}</div>
+          <div class="meta">
+            <span>#${r.id}</span>
+            <span>${escapeHtml(fmtTime(r.fire_at))}</span>
+            ${recurMeta}
+            ${literalMeta}
+            ${platformMeta}
+          </div>
+        </div>
+        ${actions}
+      </div>`
+    }).join('')
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c
+    ))
+  }
+
+  function statusLabel(s) {
+    return ({ pending: '待发', fired: '已发', cancelled: '已取消', failed: '失败' })[s] || s
+  }
+
+  $filters.addEventListener('click', (e) => {
+    const t = e.target.closest('.filter-btn')
+    if (!t) return
+    currentStatus = t.dataset.status
+    document.querySelectorAll('.filter-btn').forEach((b) => b.classList.toggle('active', b === t))
+    load()
+  })
+
+  $list.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]')
+    if (!btn) return
+    const id = btn.dataset.id
+    const act = btn.dataset.act
+    btn.disabled = true
+    try {
+      if (act === 'cancel') {
+        if (!confirm(`取消提醒 #${id}？（循环提醒会终止整条循环）`)) return
+        await window.imhub.api(`/api/reminders/${id}/cancel`, { method: 'POST' })
+        toast(`✅ 已取消 #${id}`)
+      } else if (act === 'snooze') {
+        await window.imhub.api(`/api/reminders/${id}/snooze`, {
+          method: 'POST',
+          body: JSON.stringify({ duration: '5m' }),
+        })
+        toast(`✅ #${id} 已延后 5 分钟`)
+      }
+      await load()
+    } catch (err) {
+      toast(`操作失败：${err.message}`, true)
+    } finally {
+      btn.disabled = false
+    }
+  })
+
+  // Initial load + auto-refresh every 30s
+  load()
+  setInterval(load, 30_000)
+})()
+</script>
+</body>
+</html>

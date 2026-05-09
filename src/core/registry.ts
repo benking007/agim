@@ -129,6 +129,9 @@ class PluginRegistry {
     const { discordAdapter } = await import('../plugins/messengers/discord/index.js')
     this.registerMessenger(discordAdapter)
 
+    const { emailAdapter } = await import('../plugins/messengers/email/email-adapter.js')
+    this.registerMessenger(emailAdapter)
+
     // Load built-in agents
     const { claudeCodeAdapter } = await import('../plugins/agents/claude-code/index.js')
     this.registerAgent(claudeCodeAdapter)

@@ -256,9 +256,21 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       ? prompt
       : this.buildHttpContextualPrompt(prompt, history)
 
+    // HTTP mode quirk: the imhub MCP server is shared across all opencode
+    // sessions because `opencode serve` is one daemon. The MCP server's
+    // env was set ONCE at daemon startup, so the runId there is stale for
+    // any given turn. Workaround: ask the agent to pass `_im_context` in
+    // every imhub-tool call; the bus accepts it as a runId fallback. This
+    // is a single-user-only path (agent could lie in multi-tenant) — see
+    // approval-bus.ts:handleReminder for the trust note.
+    const imCtxInstruction = buildImContextInstruction(callOpts)
+    const finalPrompt = imCtxInstruction
+      ? `${imCtxInstruction}\n\n${contextualPrompt}`
+      : contextualPrompt
+
     // Subscribe BEFORE posting so we don't miss early events.
     const sse = await this.openEventStream(baseUrl)
-    const promptPromise = this.postPrompt(baseUrl, sessionID, contextualPrompt, callOpts)
+    const promptPromise = this.postPrompt(baseUrl, sessionID, finalPrompt, callOpts)
       .catch((err: unknown) => ({ error: err instanceof Error ? err : new Error(String(err)) } as const))
 
     const timeoutMs = resolveTimeout()
@@ -545,6 +557,38 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
  *     useful hint instead of a bare reject.
  *   - deny             → reject
  */
+/**
+ * Compose the system instruction telling the agent how to identify the
+ * IM thread when it calls imhub MCP tools. Empty string when we don't
+ * have full IM context (web/scheduler/intent-llm calls) — those won't
+ * have reminder tools wired anyway.
+ *
+ * Single-user trust model: this prompt asks the agent to assert the
+ * caller's identity. A malicious or confused agent could pass another
+ * user's IDs. Acceptable for personal deployments; multi-tenant operators
+ * should use claude-code (per-spawn env via --mcp-config) or opencode
+ * stdio (per-spawn extraEnv) instead.
+ */
+function buildImContextInstruction(opts: AgentSendOpts): string {
+  const platform = opts.platform
+  const threadId = opts.threadId
+  const channelId = opts.channelId
+  if (!platform || !threadId || !channelId) return ''
+  const userId = opts.userId ?? ''
+  const ctx = JSON.stringify({ platform, threadId, channelId, userId })
+  return [
+    '[im-hub MCP routing — important]',
+    'When you call any imhub tool (create_reminder / list_reminders /',
+    'cancel_reminder / snooze_reminder), you MUST include this exact',
+    '`_im_context` field in the tool input so the call routes to the',
+    'correct IM thread:',
+    '',
+    `  "_im_context": ${ctx}`,
+    '',
+    'Pass these values verbatim — do not invent or modify them.',
+  ].join('\n')
+}
+
 function decisionToOpencodeReply(decision: Decision): { reply: 'once' | 'always' | 'reject'; message?: string } {
   if (decision.behavior === 'allow') return { reply: 'once' }
   return decision.message

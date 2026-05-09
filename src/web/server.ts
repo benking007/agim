@@ -167,7 +167,8 @@ export async function startWebServer(options: {
     if (
       url.pathname === '/' || url.pathname === '/index.html' ||
       url.pathname === '/settings' || url.pathname === '/settings.html' ||
-      url.pathname === '/tasks' || url.pathname === '/tasks.html'
+      url.pathname === '/tasks' || url.pathname === '/tasks.html' ||
+      url.pathname === '/reminders' || url.pathname === '/reminders.html'
     ) {
       if (!hasValidSession(req)) {
         res.writeHead(302, { Location: `/login?next=${encodeURIComponent(url.pathname)}` })
@@ -178,6 +179,7 @@ export async function startWebServer(options: {
         '/': 'index.html', '/index.html': 'index.html',
         '/settings': 'settings.html', '/settings.html': 'settings.html',
         '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
+        '/reminders': 'reminders.html', '/reminders.html': 'reminders.html',
       }
       return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
@@ -261,6 +263,22 @@ export async function startWebServer(options: {
     // Schedules
     if (url.pathname === '/api/schedules' && req.method === 'GET') {
       return handleListSchedules(req, res, url)
+    }
+
+    // Reminders — list / cancel / snooze. Web-only path (the IM-side path
+    // is /remind slash command). Auth via the same web session cookie as
+    // every other /api/* endpoint above; no per-user filtering yet, so
+    // single-operator deployments only.
+    if (url.pathname === '/api/reminders' && req.method === 'GET') {
+      return handleListReminders(req, res, url)
+    }
+    const reminderCancelMatch = url.pathname.match(/^\/api\/reminders\/(\d+)\/cancel$/)
+    if (reminderCancelMatch && req.method === 'POST') {
+      return handleCancelReminderApi(req, res, Number.parseInt(reminderCancelMatch[1], 10))
+    }
+    const reminderSnoozeMatch = url.pathname.match(/^\/api\/reminders\/(\d+)\/snooze$/)
+    if (reminderSnoozeMatch && req.method === 'POST') {
+      return handleSnoozeReminderApi(req, res, Number.parseInt(reminderSnoozeMatch[1], 10))
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
@@ -1016,6 +1034,63 @@ async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, u
     const { listSchedules } = await import('../core/schedule.js')
     const agent = url.searchParams.get('agent') || undefined
     sendJson(res, 200, { schedules: listSchedules(50, agent ? { agent } : {}) })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/**
+ * GET /api/reminders?status=pending&limit=100
+ * Returns a flat list of reminders. status filter is optional; without it
+ * we only return pending — that's the 99% UI use-case (the page is a
+ * "what's queued up" view, not an audit log).
+ */
+async function handleListReminders(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { listReminders, describeRecurrence } = await import('../core/reminders.js')
+    const status = url.searchParams.get('status') as
+      | 'pending' | 'firing' | 'fired' | 'cancelled' | 'failed' | null
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 500)
+    const rows = listReminders({ status: status ?? 'pending', limit })
+    const annotated = rows.map((r) => ({
+      ...r,
+      recurrence_label: r.recurrence ? describeRecurrence(r.recurrence) : null,
+    }))
+    sendJson(res, 200, { reminders: annotated })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleCancelReminderApi(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  if (!Number.isFinite(id) || id <= 0) { sendJson(res, 400, { error: 'invalid id' }); return }
+  try {
+    const { cancelReminder } = await import('../core/reminders.js')
+    const ok = cancelReminder(id)
+    if (!ok) { sendJson(res, 404, { error: 'not found or not cancellable' }); return }
+    sendJson(res, 200, { ok: true, id })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleSnoozeReminderApi(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  if (!Number.isFinite(id) || id <= 0) { sendJson(res, 400, { error: 'invalid id' }); return }
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { duration?: string }
+    const duration = parsed.duration?.trim() || ''
+    if (!duration) { sendJson(res, 400, { error: 'duration required (e.g. "5m")' }); return }
+    const { snoozeReminder, parseDuration, ReminderError } = await import('../core/reminders.js')
+    const ms = parseDuration(duration)
+    if (ms === null) { sendJson(res, 400, { error: `bad duration "${duration}"` }); return }
+    try {
+      const newId = snoozeReminder(id, ms)
+      sendJson(res, 200, { ok: true, originalId: id, newId, duration })
+    } catch (err) {
+      if (err instanceof ReminderError) { sendJson(res, 400, { error: err.message }); return }
+      throw err
+    }
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

@@ -70,40 +70,126 @@ export function parseApprovalReply(text: string): Decision | null {
 }
 
 /**
- * Render an approval request as a plain text message. We keep this format
- * stable across IM platforms; richer flows (Feishu cards with buttons) can
- * layer on later by checking platform/sendCard.
- *
- * Two flavors:
- *   - Normal: "y 批准 / n 拒绝 / all 同意并对该工具同类调用 5s 自动放行"
- *   - Auto-allow grace mode (n.autoAllow set): "⏱ 自动放行中… 5s 内回 n 可拒绝"
+ * Compact JSON serialize with truncation. Used by the rich-card path (which
+ * has its own UI rendering) — for plain-text we use formatInputBody below.
  */
-export function formatApprovalPrompt(n: ApprovalNotification): string {
-  const inputJson = safeStringify(n.input, MAX_INPUT_PREVIEW)
-  if (n.autoAllow) {
-    const sec = Math.round(n.autoAllow.graceMs / 1000)
-    return [
-      `⏱ 自动放行中（${sec}s 后执行）`,
-      `工具：${n.toolName}`,
-      `入参：${inputJson}`,
-      `回复 n 可拒绝（同时撤销该工具的自动放行规则）`,
-      `req: ${n.reqId.slice(0, 8)}`,
-    ].join('\n')
-  }
-  return [
-    '🔐 工具调用审批请求',
-    `工具：${n.toolName}`,
-    `入参：${inputJson}`,
-    `回复 y 批准 / n 拒绝 / all 本会话内同工具同前缀自动放行（5 分钟内未操作将自动拒绝）`,
-    `req: ${n.reqId.slice(0, 8)}`,
-  ].join('\n')
-}
-
 function safeStringify(v: unknown, maxLen: number): string {
   let s: string
   try { s = JSON.stringify(v) } catch { s = String(v) }
   if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`
   return s
+}
+
+/**
+ * Strip MCP-style prefix from a tool name for display. `mcp__imhub__create_reminder`
+ * → `imhub: create_reminder` (the user cares about the namespace, not the
+ * triple-underscore wire format).
+ */
+function displayToolName(name: string): string {
+  const m = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name)
+  if (m) return `${m[1]}: ${m[2]}`
+  return name
+}
+
+/**
+ * Render the input payload as a multiline body. Known tools (Bash / Read /
+ * Edit / Write / Grep / Glob / WebFetch) get a single labelled line for
+ * their primary field. Unknown tools fall back to compact JSON, truncated.
+ *
+ * The goal is "user can decide y/n in 1 second" — they shouldn't have to
+ * mentally parse JSON for the most common tools.
+ */
+function formatInputBody(toolName: string, input: Record<string, unknown>, maxLen: number): string {
+  // Single-field shortcuts for built-in claude-code tools.
+  const single = (label: string, key: string): string | null => {
+    const v = input[key]
+    if (typeof v !== 'string') return null
+    const truncated = v.length > maxLen ? v.slice(0, maxLen - 1) + '…' : v
+    return `${label}：${truncated}`
+  }
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = single('命令', 'command')
+      if (cmd) return cmd
+      break
+    }
+    case 'Read':
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit': {
+      const fp = single('路径', 'file_path')
+      if (fp) return fp
+      break
+    }
+    case 'Glob': {
+      const p = single('Pattern', 'pattern')
+      if (p) return p
+      break
+    }
+    case 'Grep': {
+      const p = single('查找', 'pattern')
+      if (p) return p
+      break
+    }
+    case 'WebFetch':
+    case 'WebSearch': {
+      const u = single('URL', 'url') ?? single('Query', 'query')
+      if (u) return u
+      break
+    }
+  }
+  // Fallback: JSON dump, but pretty-printed when small enough.
+  let s: string
+  try {
+    const pretty = JSON.stringify(input, null, 2)
+    s = pretty.length <= maxLen ? pretty : JSON.stringify(input)
+  } catch {
+    s = String(input)
+  }
+  if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…'
+  // For multi-line JSON, indent so it visually groups under the "入参" label.
+  if (s.includes('\n')) {
+    return `入参：\n${s.split('\n').map((l) => '  ' + l).join('\n')}`
+  }
+  return `入参：${s}`
+}
+
+/**
+ * Render an approval request as a plain text message. We keep this format
+ * stable across IM platforms; richer flows (Feishu cards with buttons) can
+ * layer on later by checking platform/sendCard.
+ *
+ * Two flavors:
+ *   - Normal: y/n/all action box with timeout footer
+ *   - Auto-allow grace mode (n.autoAllow set): "⏱ 自动放行中…" with deny option
+ */
+export function formatApprovalPrompt(n: ApprovalNotification): string {
+  const tool = displayToolName(n.toolName)
+  const body = formatInputBody(n.toolName, n.input, MAX_INPUT_PREVIEW)
+  if (n.autoAllow) {
+    const sec = Math.round(n.autoAllow.graceMs / 1000)
+    return [
+      `⏱ 自动放行中（${sec}s 后执行）`,
+      ``,
+      `工具：${tool}`,
+      body,
+      ``,
+      `回复 n 可拒绝并撤销规则`,
+      `req ${n.reqId.slice(0, 8)}`,
+    ].join('\n')
+  }
+  return [
+    `🔐 需要审批`,
+    ``,
+    `工具：${tool}`,
+    body,
+    ``,
+    `y    批准`,
+    `n    拒绝`,
+    `all  本会话同类自动放行`,
+    ``,
+    `5 分钟未回 = 拒绝 · req ${n.reqId.slice(0, 8)}`,
+  ].join('\n')
 }
 
 /**

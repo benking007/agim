@@ -83,7 +83,8 @@ program
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
 
-    // Validate config schema
+    // Validate config schema — always use the zod-validated output (which
+    // applies defaults and strips invalid fields) instead of the raw config.
     const validation = validateConfig(config)
     if (!validation.ok) {
       console.warn('⚠️  Config schema issues detected:')
@@ -92,7 +93,7 @@ program
       }
       console.warn('   im-hub-pro will continue with defaults for invalid fields.\n')
     }
-    config = validation.ok ? validation.config as unknown as Config : config
+    config = validation.config as unknown as Config
 
     // Initialize workspace registry
     const rawConfig = config as Record<string, unknown>

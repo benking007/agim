@@ -61,15 +61,26 @@ export const configSchema = z.object({
 export type ValidatedConfig = z.infer<typeof configSchema>
 
 export function validateConfig(data: unknown):
-  { ok: true; config: ValidatedConfig } | { ok: false; errors: string[] }
+  { ok: true; config: ValidatedConfig; errors: string[] } | { ok: false; config: ValidatedConfig; errors: string[] }
 {
   const result = configSchema.safeParse(data)
   if (result.success) {
-    return { ok: true, config: result.data }
+    return { ok: true, config: result.data, errors: [] }
   }
   const errors = result.error.issues.map(issue => {
     const path = issue.path.join('.') || '(root)'
     return `${path}: ${issue.message}`
   })
-  return { ok: false, errors }
+  // Best-effort: strip invalid fields and re-parse with defaults so the
+  // caller always gets a structurally valid config. If even that fails,
+  // fall back to schema defaults (empty config).
+  const sanitized = { ...(data && typeof data === 'object' ? data : {}) }
+  for (const issue of result.error.issues) {
+    if (issue.path.length === 1) {
+      delete (sanitized as Record<string, unknown>)[String(issue.path[0])]
+    }
+  }
+  const retry = configSchema.safeParse(sanitized)
+  const config = retry.success ? retry.data : configSchema.parse({})
+  return { ok: false, config, errors }
 }

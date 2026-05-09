@@ -632,24 +632,6 @@ program
         config.defaultAgent = 'codex'
         break
 
-      case 'opencode':
-        console.log('🤖 Configuring OpenCode agent...')
-        const checkOpenCode = crossSpawn('opencode', ['--version'], { stdio: 'ignore' })
-        checkOpenCode.on('error', () => {
-          console.log('❌ OpenCode CLI not found.')
-          console.log('Install with: npm i -g opencode-ai')
-        })
-        checkOpenCode.on('close', (code) => {
-          if (code === 0) {
-            console.log('✅ OpenCode CLI found!')
-          }
-        })
-        if (!config.agents.includes('opencode')) {
-          config.agents.push('opencode')
-        }
-        config.defaultAgent = 'opencode'
-        break
-
       case 'telegram':
         console.log('📱 Configuring Telegram adapter...')
         console.log('To get a bot token:')

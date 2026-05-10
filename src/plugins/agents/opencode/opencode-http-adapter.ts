@@ -55,12 +55,27 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
  *  is optional because we are deliberately conservative — opencode's bus is
  *  shared across many event types and we touch only the slice we need. */
 interface OpencodePart {
+  id?: string
   type?: string
   text?: string
   tokens?: { input?: number; output?: number; total?: number; reasoning?: number }
   cost?: number
   time?: { start?: number; end?: number }
   sessionID?: string
+}
+
+/** Shape returned by POST /session/:id/message on opencode 1.14.45+ where the
+ *  /event SSE stream silently drops bus events. The endpoint blocks until the
+ *  assistant message is complete and returns the full message body. We use it
+ *  as the authoritative source of text + usage when SSE yields nothing. */
+interface OpencodeMessageResponse {
+  info?: {
+    id?: string
+    sessionID?: string
+    cost?: number
+    tokens?: { input?: number; output?: number; total?: number; reasoning?: number }
+  }
+  parts?: OpencodePart[]
 }
 
 interface OpencodeEvent {
@@ -120,10 +135,12 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
    * Translate a single SSE event into adapter-side effects:
    *   - sessionID capture → opts.onAgentSessionId
    *   - step-finish cost/tokens → opts.onUsage
-   *   - text-part with finished `time.end` → returned as a chunk
+   *   - text-part with finished `time.end` → returned as a chunk (with
+   *     part id when known, so the caller can dedupe against the POST-body
+   *     fallback for SSE-broken builds — see drainResponseBody).
    * Pure: tests drive this directly without spinning up a daemon.
    */
-  inspectHttpEvent(event: OpencodeEvent, sessionID: string, opts: AgentSendOpts): { text?: string } {
+  inspectHttpEvent(event: OpencodeEvent, sessionID: string, opts: AgentSendOpts): { text?: string; partId?: string } {
     const props = event.properties ?? {}
     const part = props.part
 
@@ -158,7 +175,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
         part.time?.end &&
         eventSid === sessionID
       ) {
-        return { text: part.text }
+        return { text: part.text, partId: part.id }
       }
     }
 
@@ -269,14 +286,35 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       : contextualPrompt
 
     // Subscribe BEFORE posting so we don't miss early events.
+    //
+    // SSE-broken fallback (opencode 1.14.45+ with node-http-server runtime):
+    //   the /event stream only emits the initial server.connected and never
+    //   broadcasts bus events. The POST /session/:id/message endpoint blocks
+    //   until the message is complete and returns the full assistant body in
+    //   JSON, so we use that as the authoritative text source. We still keep
+    //   the SSE loop for older opencode versions that DO stream — yielded
+    //   text-part ids are tracked so we don't emit them twice when draining
+    //   the POST body. Once POST settles we schedule a brief grace then close
+    //   SSE, which exits the for-await loop on the broken-stream case.
     const sse = await this.openEventStream(baseUrl)
     const promptPromise = this.postPrompt(baseUrl, sessionID, finalPrompt, callOpts)
       .catch((err: unknown) => ({ error: err instanceof Error ? err : new Error(String(err)) } as const))
+
+    // 500ms after POST resolves, force-close SSE so the for-await exits even
+    // when the daemon never emits session.idle. Short enough that latency
+    // stays low; long enough to flush any final events that did stream.
+    promptPromise.finally(() => {
+      const t = setTimeout(() => { sse.close() }, 500)
+      // Don't keep the event loop alive solely for the grace-close timer.
+      ;(t as unknown as { unref?: () => void }).unref?.()
+    })
 
     const timeoutMs = resolveTimeout()
     const timeoutAt = Date.now() + timeoutMs
 
     let surfacedError: string | null = null
+    const yieldedPartIds = new Set<string>()
+    let sseYieldedAnyText = false
 
     try {
       for await (const event of sse) {
@@ -297,8 +335,12 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
           continue
         }
 
-        const { text } = this.inspectHttpEvent(event, sessionID, callOpts)
-        if (text) yield text
+        const { text, partId } = this.inspectHttpEvent(event, sessionID, callOpts)
+        if (text) {
+          if (partId) yieldedPartIds.add(partId)
+          sseYieldedAnyText = true
+          yield text
+        }
 
         if (this.isIdleEvent(event, sessionID)) {
           break
@@ -314,9 +356,60 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       yield `opencode failed: ${result.error.message}`
       return
     }
+
+    // SSE-broken fallback: drain text + usage from the POST response body.
+    // No-op when SSE already streamed everything (yieldedPartIds covers it).
+    if (result && typeof result === 'object' && !('error' in result)) {
+      const drained = this.drainResponseBody(result, yieldedPartIds, callOpts)
+      if (drained.length > 0) {
+        if (!sseYieldedAnyText) {
+          log.info(
+            { event: 'opencode.http.drained_post_body', sessionID, parts: drained.length },
+            'SSE yielded no text; recovered assistant message from POST body',
+          )
+        }
+        for (const text of drained) yield text
+      }
+    }
+
     if (surfacedError) {
       yield `opencode session error: ${surfacedError}`
     }
+  }
+
+  /**
+   * Extract assistant text + usage from the POST /session/:id/message response
+   * body, skipping any text part already emitted via SSE (matched by part id).
+   * Used as a fallback for opencode builds whose /event stream is broken.
+   */
+  drainResponseBody(
+    body: OpencodeMessageResponse,
+    alreadyYielded: Set<string>,
+    opts: AgentSendOpts,
+  ): string[] {
+    const parts = Array.isArray(body.parts) ? body.parts : []
+
+    if (opts.onUsage && body.info) {
+      const delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number } = {}
+      if (typeof body.info.cost === 'number' && Number.isFinite(body.info.cost)) {
+        delta.costUsd = body.info.cost
+      }
+      if (typeof body.info.tokens?.input === 'number') delta.tokensInput = body.info.tokens.input
+      if (typeof body.info.tokens?.output === 'number') delta.tokensOutput = body.info.tokens.output
+      if (delta.costUsd !== undefined || delta.tokensInput !== undefined || delta.tokensOutput !== undefined) {
+        try { opts.onUsage(delta) } catch { /* ignore */ }
+      }
+    }
+
+    const texts: string[] = []
+    for (const part of parts) {
+      if (part.type !== 'text') continue
+      if (typeof part.text !== 'string' || part.text.length === 0) continue
+      if (!part.time?.end) continue
+      if (part.id && alreadyYielded.has(part.id)) continue
+      texts.push(part.text)
+    }
+    return texts
   }
 
   // ─── permission bridge ────────────────────────────────────────────────
@@ -491,7 +584,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     sessionID: string,
     prompt: string,
     opts: AgentSendOpts,
-  ): Promise<void> {
+  ): Promise<OpencodeMessageResponse> {
     const body: Record<string, unknown> = {
       parts: [{ type: 'text', text: prompt }],
     }
@@ -509,8 +602,14 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     if (!res.ok) {
       throw new Error(`opencode prompt failed: HTTP ${res.status} ${await safeText(res)}`)
     }
-    // Drain the body to free the connection slot — events stream via SSE.
-    await res.text().catch(() => '')
+    // On opencode 1.14.45+ the POST blocks until the assistant message is
+    // complete and returns the full body. We parse it (best-effort) so the
+    // caller can recover text + usage when /event SSE doesn't broadcast.
+    try {
+      return await res.json() as OpencodeMessageResponse
+    } catch {
+      return {}
+    }
   }
 
   private async replyPermission(

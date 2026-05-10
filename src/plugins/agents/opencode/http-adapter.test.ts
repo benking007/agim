@@ -299,7 +299,7 @@ function makeServeStub(baseUrl = 'http://127.0.0.1:14199'): OpencodeServeManager
  *  /event and JSON for the other endpoints. */
 function makeFakeFetch(
   events: OpencodeEvent[],
-  opts: { sessionId?: string; hits?: MockedHit[] } = {},
+  opts: { sessionId?: string; hits?: MockedHit[]; messageResponse?: unknown } = {},
 ): typeof fetch {
   const hits = opts.hits ?? []
   return (async (input: string | URL | Request, init?: RequestInit) => {
@@ -319,7 +319,8 @@ function makeFakeFetch(
       })
     }
     if (url.includes('/session/') && url.endsWith('/message') && method === 'POST') {
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      const body = opts.messageResponse !== undefined ? JSON.stringify(opts.messageResponse) : '{}'
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
     if (url.endsWith('/permission') === false && url.includes('/permission/') && url.endsWith('/reply')) {
       return new Response('true', { status: 200 })
@@ -629,5 +630,91 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
       h => h.url === `http://test.local/session/${sid}/message` && h.method === 'POST',
     )
     expect((messageHit?.body as Record<string, unknown>).agent).toBe('plan')
+  })
+})
+
+describe('OpenCodeHttpAdapter.sendPrompt — SSE-broken fallback (opencode 1.14.45+ node-http-server)', () => {
+  // Regression for opencode's node-http-server runtime, where /event SSE
+  // emits only the initial server.connected and never broadcasts bus events.
+  // The POST /session/:id/message endpoint blocks until completion and
+  // returns the full assistant message body. The adapter must drain text +
+  // usage from that body when SSE yields nothing.
+
+  it('drains text + usage from POST body when SSE emits no message events', async () => {
+    const sid = 'ses_drained'
+    const events: OpencodeEvent[] = [
+      { type: 'server.connected', properties: {} },
+    ]
+    const messageResponse = {
+      info: {
+        id: 'msg_x',
+        sessionID: sid,
+        cost: 0.123,
+        tokens: { input: 100, output: 25, total: 125, reasoning: 0 },
+      },
+      parts: [
+        { id: 'prt_step', type: 'step-start', sessionID: sid },
+        { id: 'prt_reason', type: 'reasoning', text: 'thinking...', sessionID: sid,
+          time: { start: 1, end: 2 } },
+        { id: 'prt_text', type: 'text', text: 'recovered from POST body', sessionID: sid,
+          time: { start: 3, end: 4 } },
+        { id: 'prt_finish', type: 'step-finish', sessionID: sid,
+          tokens: { input: 100, output: 25 }, cost: 0.123 },
+      ],
+    }
+    const fetchImpl = makeFakeFetch(events, { sessionId: sid, messageResponse })
+    const serve = makeServeStub('http://test.local')
+
+    const usage: Array<{ costUsd?: number; tokensInput?: number; tokensOutput?: number }> = []
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
+    const chunks = await collect(adapter.sendPrompt('imhub-1', 'hi', [], {
+      onUsage: (d) => usage.push(d),
+    }))
+
+    expect(chunks).toEqual(['recovered from POST body'])
+    expect(usage[0]?.costUsd).toBeCloseTo(0.123)
+    expect(usage[0]?.tokensInput).toBe(100)
+    expect(usage[0]?.tokensOutput).toBe(25)
+  })
+
+  it('does not duplicate text already streamed via SSE (matches by part.id)', async () => {
+    const sid = 'ses_dedup'
+    const events: OpencodeEvent[] = [
+      { type: 'message.part.updated', properties: {
+          sessionID: sid,
+          part: { id: 'prt_a', type: 'text', text: 'streamed once', time: { start: 1, end: 2 } },
+        } },
+      { type: 'session.status', properties: { sessionID: sid, status: { type: 'idle' } } },
+    ]
+    const messageResponse = {
+      info: { sessionID: sid },
+      parts: [
+        // Same part id as the SSE event — must NOT be re-emitted.
+        { id: 'prt_a', type: 'text', text: 'streamed once', sessionID: sid,
+          time: { start: 1, end: 2 } },
+      ],
+    }
+    const fetchImpl = makeFakeFetch(events, { sessionId: sid, messageResponse })
+    const serve = makeServeStub('http://test.local')
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
+    const chunks = await collect(adapter.sendPrompt('imhub-1', 'hi', [], {}))
+
+    expect(chunks).toEqual(['streamed once'])
+  })
+
+  it('drainResponseBody yields only finished text parts (skips reasoning / step-* / unfinished / empty)', () => {
+    const adapter = new OpenCodeHttpAdapter()
+    const out = adapter.drainResponseBody({
+      info: { cost: 0.5, tokens: { input: 1, output: 2 } },
+      parts: [
+        { id: 'p1', type: 'step-start' },
+        { id: 'p2', type: 'reasoning', text: 'inner monologue', time: { end: 1 } },
+        { id: 'p3', type: 'text', text: 'still streaming', time: { start: 1 } },
+        { id: 'p4', type: 'text', text: 'done', time: { start: 1, end: 2 } },
+        { id: 'p5', type: 'text', text: '', time: { end: 3 } },
+        { id: 'p6', type: 'step-finish' },
+      ],
+    }, new Set(), {})
+    expect(out).toEqual(['done'])
   })
 })

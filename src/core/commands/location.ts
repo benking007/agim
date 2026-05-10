@@ -119,7 +119,7 @@ export async function handleLocationCommand(args: string, ctx: RouteContext): Pr
       '❌ 不识别为坐标，且地址解析未配置。',
       '',
       '试试坐标输入: /location 39.908,116.397 停车场B区',
-      '或配置 IMHUB_TENCENT_MAP_KEY 启用地址识别（lbs.qq.com 注册免费 key）。',
+      '或配置 IMHUB_BAIDU_MAP_AK 启用地址识别（lbsyun.baidu.com 注册免费 ak）。',
     ].join('\n')
   }
 
@@ -135,7 +135,7 @@ export async function handleLocationCommand(args: string, ctx: RouteContext): Pr
       case 'signature':
         return [
           `❌ 地图 key 签名校验失败（status ${geo.status}）。`,
-          '检查：IMHUB_TENCENT_MAP_KEY 是否对应 IMHUB_TENCENT_MAP_SK；',
+          '检查：IMHUB_BAIDU_MAP_AK 是否在 lbsyun.baidu.com 控制台启用了"正逆地理编码"服务；',
           '或在控制台关掉强制签名校验。',
         ].join('\n')
       case 'http':

@@ -17,7 +17,7 @@ const mod = await import('../../src/core/locations.js')
 const {
   createMemo, listMemos, getMemo, deleteMemo,
   parseCoordPair, stripCoordPrefix, mapUrl,
-  isGeocodingAvailable, signTencent, closeLocationsDb,
+  isGeocodingAvailable, closeLocationsDb,
 } = mod
 
 beforeAll(async () => { await mkdir(TEST_DIR, { recursive: true }) })
@@ -69,83 +69,40 @@ describe('stripCoordPrefix', () => {
   })
 })
 
-describe('mapUrl', () => {
-  it('builds Tencent URI scheme with coord only', () => {
+describe('mapUrl (Baidu)', () => {
+  it('builds Baidu marker URI with coords + WGS-84 hint', () => {
     const url = mapUrl(39.908, 116.397)
-    expect(url).toContain('apis.map.qq.com/uri/v1/marker')
-    expect(url).toContain('coord%3A39.908%2C116.397')
-    expect(url).toContain('referer=imhub')
+    expect(url).toContain('api.map.baidu.com/marker')
+    expect(url).toContain('location=39.908%2C116.397')
+    expect(url).toContain('coord_type=wgs84')
+    expect(url).toContain('output=html')
+    expect(url).toContain('src=imhub')
   })
-  it('includes title and addr when given', () => {
+  it('includes title and content when given', () => {
     const url = mapUrl(39.908, 116.397, '故宫', '北京市东城区')
-    expect(decodeURIComponent(url)).toContain('title:故宫')
-    expect(decodeURIComponent(url)).toContain('addr:北京市东城区')
+    expect(decodeURIComponent(url)).toContain('title=故宫')
+    expect(decodeURIComponent(url)).toContain('content=北京市东城区')
   })
 })
 
 describe('isGeocodingAvailable', () => {
-  it('reflects env var presence', () => {
-    const orig = process.env.IMHUB_TENCENT_MAP_KEY
-    delete process.env.IMHUB_TENCENT_MAP_KEY
+  it('reflects IMHUB_BAIDU_MAP_AK presence', () => {
+    const orig = process.env.IMHUB_BAIDU_MAP_AK
+    delete process.env.IMHUB_BAIDU_MAP_AK
     expect(isGeocodingAvailable()).toBe(false)
-    process.env.IMHUB_TENCENT_MAP_KEY = 'fake-test-key'
+    process.env.IMHUB_BAIDU_MAP_AK = 'fake-test-ak'
     expect(isGeocodingAvailable()).toBe(true)
-    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_KEY
-    else process.env.IMHUB_TENCENT_MAP_KEY = orig
+    if (orig === undefined) delete process.env.IMHUB_BAIDU_MAP_AK
+    else process.env.IMHUB_BAIDU_MAP_AK = orig
   })
 })
 
-describe('signTencent (Tencent Maps SK signing)', () => {
-  // Algorithm verified against the live API on 2026-05-10:
-  // sort params alphabetically, build "k=v&...." with **un-URL-encoded**
-  // values, concat path + "?" + raw_qs + sk, MD5 → 32 hex chars lowercase.
-  it('returns null when SK env not set', () => {
-    const orig = process.env.IMHUB_TENCENT_MAP_SK
-    delete process.env.IMHUB_TENCENT_MAP_SK
-    expect(signTencent('/ws/geocoder/v1/', { address: '故宫', key: 'KEY' })).toBeNull()
-    if (orig !== undefined) process.env.IMHUB_TENCENT_MAP_SK = orig
-  })
-
-  it('produces a 32-char lowercase hex MD5 when SK set', () => {
-    const orig = process.env.IMHUB_TENCENT_MAP_SK
-    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK123456'
-    const sig = signTencent('/ws/geocoder/v1/', { address: '故宫', key: 'TESTKEY' })
-    expect(sig).not.toBeNull()
-    expect(sig).toMatch(/^[a-f0-9]{32}$/)
-    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
-    else process.env.IMHUB_TENCENT_MAP_SK = orig
-  })
-
-  it('signing is deterministic and depends on param order normalization', () => {
-    const orig = process.env.IMHUB_TENCENT_MAP_SK
-    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK'
-    // Same params in different insertion orders → same sig (we sort).
-    const a = signTencent('/p/', { z: '1', a: '2' })
-    const b = signTencent('/p/', { a: '2', z: '1' })
-    expect(a).toBe(b)
-    // Different SK → different sig.
-    process.env.IMHUB_TENCENT_MAP_SK = 'OTHERSK'
-    const c = signTencent('/p/', { z: '1', a: '2' })
-    expect(c).not.toBe(a)
-    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
-    else process.env.IMHUB_TENCENT_MAP_SK = orig
-  })
-
-  it('matches the documented Python reference implementation', () => {
-    // This is the exact SK + params + expected MD5 from our shell verification
-    // run on 2026-05-10. If Tencent ever changes the algorithm, this fixture
-    // breaks loudly so we know to rev. Computed via:
-    //   md5("/ws/geocoder/v1/?address=tiananmen&key=FAKEKEY" + "TESTSK")
-    const orig = process.env.IMHUB_TENCENT_MAP_SK
-    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK'
-    const sig = signTencent('/ws/geocoder/v1/', { address: 'tiananmen', key: 'FAKEKEY' })
-    // Pre-computed reference:
-    //   echo -n '/ws/geocoder/v1/?address=tiananmen&key=FAKEKEYTESTSK' | md5sum
-    expect(sig).toBe('24863043a5ae65196985839ccd112c7b')
-    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
-    else process.env.IMHUB_TENCENT_MAP_SK = orig
-  })
-})
+// Tencent geocoder + SK signing was replaced with Baidu (no signing
+// required for default keys) in 0.2.42-pre. If you ever need to add SN
+// signing for a Baidu key with 校验 enabled, the algorithm is:
+//   MD5(URLencode(path?qs+sk))
+// (different from Tencent's MD5(path?raw_qs+sk) — note the URL-encoding
+// of the entire path+qs+sk concat). See locations.ts header comment.
 
 // CRUD tests touch the SQLite layer. Bun's runtime can't load better-sqlite3
 // in this dev env (same issue logged across the suite — CI runs real Node and

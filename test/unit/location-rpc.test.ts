@@ -122,19 +122,19 @@ describeIfSqlite('handleLocationOp — DB CRUD', () => {
       expect(res.lat).toBeCloseTo(39.908)
       expect(res.label).toBe('故宫午门')
       expect(res.source).toBe('manual')
-      expect(res.mapUrl).toContain('apis.map.qq.com')
+      expect(res.mapUrl).toContain('api.map.baidu.com')
     }
   })
 
   it('save with no API key + address returns geocode error', async () => {
-    const orig = process.env.IMHUB_TENCENT_MAP_KEY
-    delete process.env.IMHUB_TENCENT_MAP_KEY
+    const orig = process.env.IMHUB_BAIDU_MAP_AK
+    delete process.env.IMHUB_BAIDU_MAP_AK
     try {
       const r = await handleLocationOp('save', { address: '北京天安门' }, CTX)
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.error).toContain('not configured')
     } finally {
-      if (orig !== undefined) process.env.IMHUB_TENCENT_MAP_KEY = orig
+      if (orig !== undefined) process.env.IMHUB_BAIDU_MAP_AK = orig
     }
   })
 
@@ -147,7 +147,7 @@ describeIfSqlite('handleLocationOp — DB CRUD', () => {
       const res = r.result as { items: Array<{ note: string; mapUrl: string }> }
       expect(res.items.length).toBeGreaterThanOrEqual(2)
       // Newest first; map URL on every item.
-      for (const it of res.items) expect(it.mapUrl).toContain('apis.map.qq.com')
+      for (const it of res.items) expect(it.mapUrl).toContain('api.map.baidu.com')
     }
   })
 

@@ -122,7 +122,7 @@ async function handleSave(
     label = note  // when caller had coords, the human-readable bit is the note
   } else if (address) {
     if (!isGeocodingAvailable()) {
-      return { ok: false, error: 'geocoding not configured (IMHUB_TENCENT_MAP_KEY unset). Pass lat/lng directly.' }
+      return { ok: false, error: 'geocoding not configured (IMHUB_BAIDU_MAP_AK unset). Pass lat/lng directly.' }
     }
     const geo = await geocodeAddress(address)
     if (!geo.ok) {

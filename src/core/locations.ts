@@ -5,15 +5,16 @@
 //
 // Two input paths:
 //   1. Coords:  "/location 39.908,116.397 [memo]"        — zero deps.
-//   2. Address: "/location 国贸三期 [memo]"               — needs IMHUB_TENCENT_MAP_KEY.
+//   2. Address: "/location 国贸三期 [memo]"               — needs IMHUB_BAIDU_MAP_AK.
 //
-// Render: every memo carries a Tencent Maps URI scheme link
-// (https://apis.map.qq.com/uri/v1/marker?...) which opens the user's map app
-// (Tencent / WeChat in-app browser / Amap on Android intent dispatch).
+// Render: every memo carries a Baidu Maps URI scheme link
+// (https://api.map.baidu.com/marker?...) which opens the user's map app.
+// All stored coords are WGS-84 (browser geolocation native + Baidu geocoder
+// forced via ret_coordtype=wgs84ll). Baidu marker URL gets coord_type=wgs84
+// to match.
 
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { createHash } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
@@ -213,23 +214,28 @@ export function stripCoordPrefix(input: string): string {
   return input.replace(/^(-?\d+(?:\.\d+)?)\s*[,，\s]\s*(-?\d+(?:\.\d+)?)\b\s*/, '').trim()
 }
 
-// ─── Geocoding (Tencent Maps) ──────────────────────────────────────────
+// ─── Geocoding (Baidu Maps) ────────────────────────────────────────────
+// Why Baidu (not Tencent): Tencent's WebGL JS API requires commercial
+// licensing per their console. Baidu's server-side AK works with default
+// quota and no SN signing required for most key configs (verified live
+// 2026-05-10). Coordinate system: we always request ret_coordtype=wgs84ll
+// to keep storage consistent with browser geolocation output.
+//
+// If you re-enable SN 校验 in Baidu's console, sign per:
+//   sn = MD5(URLencode(path?queryString + sk))
+// Doc: https://lbsyun.baidu.com/faq/api?title=webapi/appendix
+// Not implemented here because the default key flow doesn't need it.
 
-interface TencentGeocodeResponse {
+interface BaiduGeocodeResponse {
   status: number
   message?: string
+  msg?: string
   result?: {
-    location?: { lat: number; lng: number }
-    title?: string
-    address?: string
-    formatted_addresses?: { recommend?: string; rough?: string }
-    address_components?: {
-      province?: string
-      city?: string
-      district?: string
-      street?: string
-      street_number?: string
-    }
+    location?: { lng: number; lat: number }
+    precise?: number
+    confidence?: number
+    comprehension?: number
+    level?: string
   }
 }
 
@@ -246,51 +252,41 @@ export type GeocodeOutcome =
   | { ok: true; lat: number; lng: number; formattedAddress: string }
   | { ok: false; reason: 'no_key' | 'quota' | 'signature' | 'not_found' | 'http' | 'unknown'; status?: number; message?: string }
 
-/**
- * Tencent Maps WebService SK signing.
- *
- * Algorithm (verified against the live API): sort params alphabetically by
- * key, build `k=v&...` with **un-URL-encoded** values, concat
- * `path + '?' + raw_qs + sk`, MD5 → 32-char lowercase hex. The actual HTTP
- * request URL still uses URL-encoded values; only the signing input uses raw.
- *
- * If IMHUB_TENCENT_MAP_SK is unset, returns null (= unsigned mode; key must
- * have signature requirement disabled in the lbs.qq.com console).
- */
-export function signTencent(path: string, params: Record<string, string>): string | null {
-  const sk = process.env.IMHUB_TENCENT_MAP_SK
-  if (!sk) return null
-  const sorted = Object.entries(params).sort(([a], [b]) => a.localeCompare(b))
-  const rawQs = sorted.map(([k, v]) => `${k}=${v}`).join('&')
-  return createHash('md5').update(`${path}?${rawQs}${sk}`).digest('hex')
-}
-
 type GeocodeFailReason = 'no_key' | 'quota' | 'signature' | 'not_found' | 'http' | 'unknown'
 
-/** Map Tencent's response status codes to our reason taxonomy.
- *  Codes per https://lbs.qq.com/service/webService/webServiceGuide/status . */
+/** Map Baidu's response status codes to our reason taxonomy.
+ *  Codes per https://lbsyun.baidu.com/faq/api?title=webapi/appendix . */
 function classifyStatus(status: number): GeocodeFailReason {
-  // 0 = success, 1xx = auth/sig family, 3xx = data/quota family
-  if (status === 110 || status === 111 || status === 112 || status === 113) return 'signature'
-  if (status === 120 || status === 121 || status === 122) return 'quota'
-  if (status === 347 || status === 348 || status === 349) return 'not_found'
+  // 0 = success.
+  // 1 = ServerInternalError (catch-all). 2 = ParameterInvalid.
+  // 3,4 = AddressInvalid / could not geocode.
+  // 5 = AppKey/ServiceForbidden. 200/201/202 = SN校验 / Referer / IP 限制.
+  // 210/211/220/240 = AK 配置 / 配额 family.
+  // 401-405 = 频次/天配额超限.
+  if (status === 1 || status === 2 || status === 3 || status === 4) return 'not_found'
+  if (status === 200 || status === 201 || status === 202) return 'signature'
+  if (status >= 401 && status <= 405) return 'quota'
+  if (status === 240 || status === 220 || status === 211 || status === 210) return 'quota'
+  if (status === 5) return 'signature'
   return 'unknown'
 }
 
-/** Geocode a free-text address via Tencent Maps. Discriminated outcome so the
+/** Geocode a free-text address via Baidu Maps. Discriminated outcome so the
  *  command can give precise feedback (quota / signature / not-found / etc). */
 export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
-  const key = process.env.IMHUB_TENCENT_MAP_KEY
-  if (!key) {
-    log.debug({ event: 'locations.geocode.no_key' }, 'Tencent map key not set; skipping geocode')
+  const ak = process.env.IMHUB_BAIDU_MAP_AK
+  if (!ak) {
+    log.debug({ event: 'locations.geocode.no_key' }, 'Baidu map AK not set; skipping geocode')
     return { ok: false, reason: 'no_key' }
   }
-  const path = '/ws/geocoder/v1/'
-  const params: Record<string, string> = { address, key }
-  const sig = signTencent(path, params)
-  const url = new URL(`https://apis.map.qq.com${path}`)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  if (sig) url.searchParams.set('sig', sig)
+  const url = new URL('https://api.map.baidu.com/geocoding/v3/')
+  url.searchParams.set('address', address)
+  url.searchParams.set('output', 'json')
+  // Force WGS-84 output — Baidu's native is BD-09; without this the saved
+  // coords would be 50–500m offset from where browser geolocation said the
+  // user was, breaking distance-based searches and re-display.
+  url.searchParams.set('ret_coordtype', 'wgs84ll')
+  url.searchParams.set('ak', ak)
   try {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 8000)
@@ -300,23 +296,21 @@ export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
       log.warn({ event: 'locations.geocode.http_error', status: res.status })
       return { ok: false, reason: 'http', status: res.status }
     }
-    const data = (await res.json()) as TencentGeocodeResponse
+    const data = (await res.json()) as BaiduGeocodeResponse
     if (data.status === 0 && data.result?.location) {
       const { lat, lng } = data.result.location
-      const formatted =
-        data.result.formatted_addresses?.recommend ??
-        data.result.formatted_addresses?.rough ??
-        data.result.address ??
-        data.result.title ??
-        address
-      return { ok: true, lat, lng, formattedAddress: formatted }
+      // Baidu doesn't return a formatted address in geocoding/v3 — just the
+      // input address, precision, and confidence. Use the raw input as-is
+      // for the memo's display label; users can rename later via /location.
+      return { ok: true, lat, lng, formattedAddress: address }
     }
     const reason = classifyStatus(data.status)
+    const message = data.message || data.msg
     log.info({
       event: 'locations.geocode.miss',
-      status: data.status, reason, message: data.message, address,
+      status: data.status, reason, message, address,
     })
-    return { ok: false, reason, status: data.status, message: data.message }
+    return { ok: false, reason, status: data.status, message }
   } catch (err) {
     log.warn({
       event: 'locations.geocode.failed',
@@ -327,23 +321,26 @@ export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
 }
 
 export function isGeocodingAvailable(): boolean {
-  return !!process.env.IMHUB_TENCENT_MAP_KEY
+  return !!process.env.IMHUB_BAIDU_MAP_AK
 }
 
 // ─── Map URL builder ────────────────────────────────────────────────────
 
 /**
- * Build a Tencent Maps URI scheme link. WeChat's in-app browser dispatches
- * `https://apis.map.qq.com/uri/v1/marker?...` to the user's preferred map app
- * (Tencent / Amap / Baidu via Android intent picker on Android; Tencent Maps
- * web on iOS if no app installed).
+ * Build a Baidu Maps URI scheme link. Tappable in WeChat: opens the Baidu
+ * Maps mini-program / web / native app depending on what's installed.
+ *
+ * `coord_type=wgs84` is critical — our stored coords are WGS-84 (browser
+ * geolocation native, Baidu geocoder forced via ret_coordtype). Without
+ * this, Baidu interprets them as BD-09 and shows the marker 50–500m off.
  */
 export function mapUrl(lat: number, lng: number, label = '', addr = ''): string {
-  const url = new URL('https://apis.map.qq.com/uri/v1/marker')
-  const marker = [`coord:${lat},${lng}`]
-  if (label) marker.push(`title:${label}`)
-  if (addr) marker.push(`addr:${addr}`)
-  url.searchParams.set('marker', marker.join(';'))
-  url.searchParams.set('referer', 'imhub')
+  const url = new URL('https://api.map.baidu.com/marker')
+  url.searchParams.set('location', `${lat},${lng}`)
+  if (label) url.searchParams.set('title', label)
+  if (addr) url.searchParams.set('content', addr)
+  url.searchParams.set('output', 'html')
+  url.searchParams.set('coord_type', 'wgs84')
+  url.searchParams.set('src', 'imhub')
   return url.toString()
 }

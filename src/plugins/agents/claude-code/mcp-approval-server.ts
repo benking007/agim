@@ -500,7 +500,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'Persist a location memo without an H5 round-trip. Use when the user GAVE you ' +
         'coordinates ("39.908,116.397") OR a geocodable address ("国贸三期", "Times Square"). ' +
         'Pass either lat+lng (preferred when known) or address (geocoded server-side via ' +
-        'Tencent Maps; requires IMHUB_TENCENT_MAP_KEY env). Returns { id, lat, lng, label, ' +
+        'Baidu Maps; requires IMHUB_BAIDU_MAP_AK env). Returns { id, lat, lng, label, ' +
         'mapUrl, source }. Confirm to the user with one sentence + the map URL.',
       inputSchema: {
         lat: z.number().min(-90).max(90).optional().describe('Latitude in WGS84 degrees'),

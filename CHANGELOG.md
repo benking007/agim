@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed — 地图服务从腾讯切到百度
+- **地理编码**：`apis.map.qq.com/ws/geocoder/v1/` → `api.map.baidu.com/geocoding/v3/`，强制 `ret_coordtype=wgs84ll`（百度默认返 BD-09，必须显式拉 WGS-84 才和浏览器 `navigator.geolocation` 一致——否则存库坐标 vs 浏览器坐标 50–500m 飘移）
+- **凭据 env**：`IMHUB_TENCENT_MAP_KEY` / `IMHUB_TENCENT_MAP_SK` → `IMHUB_BAIDU_MAP_AK`（默认 key 流程不需要 SN 签名；如以后开启 SN 校验，文档说明在 `src/core/locations.ts` 头注释里）
+- **地图 URI scheme**：默认从 `apis.map.qq.com/uri/v1/marker?...` 改为 `api.map.baidu.com/marker?location=lat,lng&coord_type=wgs84&...`（注意 `coord_type=wgs84` 关键，否则百度按 BD-09 解读飘 50–500m）
+- 错误码分类重写：百度状态码体系不同（200/201/202 = 签名 / Referer / IP；401-405 = 配额；1-4 = 找不到/参数错；5/210/211/220/240 = 各种权限 / 配额家族）
+- **腾讯 SK 签名代码移除**：`signTencent` 函数 + 4 条相关单测删除。Baidu 默认 key 流程不需要签名；如以后开启 SN 校验，算法是 `MD5(URLencode(path?qs+sk))`（与腾讯的 `MD5(path?raw_qs+sk)` 不同 —— 多一步整体 URL 编码），实现可参考头注释
+- 用户消息文案更新：错误提示里 `lbs.qq.com` → `lbsyun.baidu.com`
+- **不影响**：已有的 `location_memos` 数据（坐标统一是 WGS-84，不需要迁移）；坐标输入路径（`/location 39.9,116.4`）；H5 浏览器 geolocation 流程
+
 ### Added — Location MCP 工具（agent-driven 自然语言交互）
 - 新增 4 个 MCP 工具，agent（claude-code / opencode）按需调用——**不加 detector，不拦截消息流**。直接利用 agent 已有的语义理解：
   - `request_location_capture(note?)`：用户想记当前 GPS（"我把车停这"），返回一次性 H5 URL 给 agent 念给用户

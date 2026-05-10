@@ -95,10 +95,10 @@
 </header>
 <main>
   <div class="filters" id="filters">
-    <button class="filter-btn active" data-status="pending">待发 (Pending)</button>
-    <button class="filter-btn" data-status="fired">已发</button>
-    <button class="filter-btn" data-status="cancelled">已取消</button>
-    <button class="filter-btn" data-status="failed">失败</button>
+    <button type="button" class="filter-btn active" data-status="pending">待发 (Pending)</button>
+    <button type="button" class="filter-btn" data-status="fired">已发</button>
+    <button type="button" class="filter-btn" data-status="cancelled">已取消</button>
+    <button type="button" class="filter-btn" data-status="failed">失败</button>
   </div>
   <div id="list"></div>
 </main>
@@ -194,7 +194,7 @@
     const t = e.target.closest('.filter-btn')
     if (!t) return
     currentStatus = t.dataset.status
-    document.querySelectorAll('.filter-btn').forEach((b) => b.classList.toggle('active', b === t))
+    document.querySelectorAll('.filter-btn').forEach((b) => { b.classList.toggle('active', b === t) })
     load()
   })
 

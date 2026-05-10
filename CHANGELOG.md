@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added — 只读工具自动放行（默认开启）
+- 新增 `READONLY_TOOLS` 短路：`Read` / `Grep` / `Glob` / `LS` / `NotebookRead` 这 5 个 Claude Code 原生只读工具的审批请求在 `approval-bus._registerPending` 入口被直接放行——不建 pending、不通知、不写 IM 卡片。零 IM 往返，给 LLM 自由探索代码而不打扰用户。
+- 全局开关：`IMHUB_AUTOALLOW_READONLY=0`（默认 1）关闭。
+- per-thread 开关：`/approval readonly off|on`（别名 `/approval ro`）。仅本会话内存生效，重启后回到全局默认。
+- 审计：每次短路写一行 `approval.bus.readonly_auto_allow` info log，并在 metrics 新增 `totalReadonlyAutoAllowed` 计数。
+- `/approval`（无参）和 `/approval readonly` 都会显示当前状态行 `🛡 只读自动放行：开启 ...`。
+- 保守白名单：**不**包含 `Bash`（无法静态判断 `cat` vs `rm`）、`WebFetch`/`WebSearch`（出站 HTTP）、任何 `mcp__*`（第三方 MCP 工具语义未知）。这些走原审批流程不变。
+- 测试：`approval-bus.readonly.test.ts` 11 条（每个 readonly 工具 + 5 条边界）+ `approval.test.ts` 4 条新 case。
+
+### Fixed
+- **WeChat 文本换行渲染**：`ILinkClient.sendMessage` 把 outbound 文本里的 `\n` 替换为 `\r\n`。iLink Bot API 要求 CRLF；只发 LF 时部分微信客户端会吞换行，多行消息渲染成单段。
+
 ## [0.2.39] - 2026-05-10 — WeChat 回复延迟修复 + `/help` alias 解析
 
 ### Fixed

@@ -33,6 +33,34 @@ const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 
+/**
+ * Tools whose contract is "read filesystem state, return it" — no writes,
+ * no shell exec, no network. These short-circuit the approval flow with an
+ * immediate `allow` and never reach the IM notifier. Saves the ~3–5s round
+ * trip per call AND removes the noise of "🔐 Read /tmp/foo.txt y/n" cards
+ * that LLMs spam during exploration.
+ *
+ * Conservative starting list — only tools whose name guarantees the
+ * contract. Excluded on purpose:
+ *  - `Bash` (cannot statically tell `cat` from `rm -rf /`)
+ *  - `WebFetch` / `WebSearch` (outbound HTTP — leaks context, hits rate
+ *    limits, has third-party side effects even if "readonly" locally)
+ *  - any `mcp__*` (third-party MCP servers; arbitrary semantics)
+ *
+ * Per-thread opt-out: `/approval readonly off`. Global opt-out:
+ * `IMHUB_AUTOALLOW_READONLY=0`.
+ */
+const READONLY_TOOLS = new Set<string>([
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'NotebookRead',
+])
+
+const READONLY_AUTO_ALLOW_GLOBAL_ENABLED =
+  (process.env.IMHUB_AUTOALLOW_READONLY ?? '1') !== '0'
+
 function parseEnvMs(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback
   const n = Number(raw)
@@ -206,6 +234,12 @@ export class ApprovalBus {
    *  `platform:channelId:threadId` to isolate across platforms/channels. */
   private autoAllowByThread = new Map<string, Set<string>>()
 
+  /** Per-thread opt-out for readonly auto-allow. Default: enabled (= empty
+   *  set means everyone is opted in). Toggled via /approval readonly on|off.
+   *  In-memory only — survives no restarts; restart returns to default-on,
+   *  matching the env-var default. */
+  private readonlyAutoAllowDisabledThreads = new Set<string>()
+
   /**
    * Lifetime counters surfaced via {@link getMetrics}. Help ops detect
    * leaks (pending growing unbounded), spikes (totalRequests rate), and
@@ -218,6 +252,7 @@ export class ApprovalBus {
     totalAllowed: 0,
     totalDenied: 0,
     totalTimedOut: 0,
+    totalReadonlyAutoAllowed: 0,
   }
 
   constructor(opts: ApprovalBusOptions = {}) {
@@ -286,10 +321,11 @@ export class ApprovalBus {
     this.pendingById.clear()
     this.pendingByThread.clear()
     this.autoAllowByThread.clear()
+    this.readonlyAutoAllowDisabledThreads.clear()
     // Reset lifetime counters so a restarted process starts at 0 — keeps
     // `rate(im_hub_approval_requests_total)` correct without ops needing
     // to track process restarts in the alert query.
-    this.metricsSnapshot = { totalRequests: 0, totalResolved: 0, totalAllowed: 0, totalDenied: 0, totalTimedOut: 0 }
+    this.metricsSnapshot = { totalRequests: 0, totalResolved: 0, totalAllowed: 0, totalDenied: 0, totalTimedOut: 0, totalReadonlyAutoAllowed: 0 }
 
     // server.close() doesn't terminate existing connections. Half-close each
     // (so the deny payload buffered above gets flushed) and fall back to
@@ -408,6 +444,34 @@ export class ApprovalBus {
     return [...(this.autoAllowByThread.get(key) ?? [])]
   }
 
+  /** Whether readonly auto-allow is active for this thread. False if either
+   *  the global env flag is off OR the user explicitly opted this thread out. */
+  isReadonlyAutoAllowEnabled(key: string): boolean {
+    if (!READONLY_AUTO_ALLOW_GLOBAL_ENABLED) return false
+    return !this.readonlyAutoAllowDisabledThreads.has(key)
+  }
+
+  /** Per-thread toggle. Returns the new effective state (after applying the
+   *  global env constraint — if the env disabled it, returning true is
+   *  impossible). */
+  setReadonlyAutoAllowEnabled(key: string, enabled: boolean): boolean {
+    if (enabled) this.readonlyAutoAllowDisabledThreads.delete(key)
+    else this.readonlyAutoAllowDisabledThreads.add(key)
+    return this.isReadonlyAutoAllowEnabled(key)
+  }
+
+  /** True iff the tool name is in the readonly allowlist. Surface for tests
+   *  and the /approval command's status output. */
+  isReadonlyTool(toolName: string): boolean {
+    return READONLY_TOOLS.has(toolName)
+  }
+
+  /** Snapshot of the readonly allowlist. Returns a copy so callers can't
+   *  mutate the bus's internal set. */
+  getReadonlyTools(): string[] {
+    return [...READONLY_TOOLS]
+  }
+
   /** 测试用：当前 socket 路径。 */
   getSocketPath(): string | null { return this.socketPath }
 
@@ -426,6 +490,7 @@ export class ApprovalBus {
     totalAllowed: number
     totalDenied: number
     totalTimedOut: number
+    totalReadonlyAutoAllowed: number
   } {
     return {
       pending: this.pendingById.size,
@@ -434,6 +499,7 @@ export class ApprovalBus {
       totalAllowed: this.metricsSnapshot.totalAllowed,
       totalDenied: this.metricsSnapshot.totalDenied,
       totalTimedOut: this.metricsSnapshot.totalTimedOut,
+      totalReadonlyAutoAllowed: this.metricsSnapshot.totalReadonlyAutoAllowed,
     }
   }
 
@@ -770,6 +836,34 @@ export class ApprovalBus {
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.input)
     const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
+
+    // Readonly auto-allow short-circuit. Must come BEFORE pending registration
+    // / notifier so it costs zero IM round-trips. Counts toward totals so the
+    // metrics dashboard still reflects activity, but never fires the SSE
+    // event-bus or notifier — readonly calls are deliberately invisible.
+    if (READONLY_TOOLS.has(args.toolName) && this.isReadonlyAutoAllowEnabled(cKey)) {
+      this.metricsSnapshot.totalRequests++
+      this.metricsSnapshot.totalResolved++
+      this.metricsSnapshot.totalAllowed++
+      this.metricsSnapshot.totalReadonlyAutoAllowed++
+      log.info({
+        event: 'approval.bus.readonly_auto_allow',
+        toolName: args.toolName,
+        reqId: args.reqId,
+        runId: args.runId,
+        compositeKey: cKey,
+      })
+      const decision: Decision = { behavior: 'allow' }
+      if ('socket' in args.transport) {
+        this.sendDecision(args.transport.socket, args.reqId, decision)
+      } else {
+        try { args.transport.dispatch(decision) } catch (err) {
+          log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(err) })
+        }
+      }
+      return
+    }
+
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
     const isAutoAllow = this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false
     const timeoutMs = isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs

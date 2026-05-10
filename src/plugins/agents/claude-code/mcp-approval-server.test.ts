@@ -162,12 +162,15 @@ describe('mcp-approval-server', () => {
       })
     })
 
+    // Use a non-readonly tool so the request actually reaches the notifier
+    // (Read / Grep / Glob / LS / NotebookRead short-circuit via the readonly
+    // auto-allow path and never call the notifier).
     await h.mcpClient.callTool({
       name: 'request',
-      arguments: { toolName: 'Read', input: { file_path: '/etc/hosts' }, toolUseId: 'tu' },
+      arguments: { toolName: 'Edit', input: { file_path: '/etc/hosts' }, toolUseId: 'tu' },
     })
     expect(captured).not.toBeNull()
-    expect(captured!).toBe('Read')
+    expect(captured!).toBe('Edit')
   })
 
   it('unknown runId is denied immediately', async () => {

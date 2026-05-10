@@ -554,8 +554,11 @@ describe('ApprovalBus', () => {
     })
     await sleep(20)
     client.send({
+      // Edit (not Read) — Read auto-allows under the readonly short-circuit
+      // and would never enter the queue. Test intent is queue ordering, not
+      // any specific tool semantics.
       v: 1, type: 'approval', runId: 'run-1', reqId: 'req-B',
-      toolName: 'Read', input: {}, toolUseId: 'tu-B',
+      toolName: 'Edit', input: {}, toolUseId: 'tu-B',
     })
     await sleep(20)
 

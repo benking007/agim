@@ -102,4 +102,41 @@ describe('handleApprovalCommand', () => {
 
     sock.end()
   })
+
+  // ─── /approval readonly subcommand ────────────────────────────────────
+
+  it('readonly: bare subcommand reports current status', async () => {
+    // Default-on at process start.
+    const out = await handleApprovalCommand('readonly', makeRouteCtx())
+    expect(out).toContain('只读自动放行：开启')
+    expect(out).toContain('Read')
+    expect(out).toContain('readonly off')
+  })
+
+  it('readonly off / on toggles the per-thread state', async () => {
+    expect(approvalBus.isReadonlyAutoAllowEnabled(KEY)).toBe(true)
+
+    const offOut = await handleApprovalCommand('readonly off', makeRouteCtx())
+    expect(offOut).toContain('已关闭')
+    expect(approvalBus.isReadonlyAutoAllowEnabled(KEY)).toBe(false)
+
+    const onOut = await handleApprovalCommand('readonly on', makeRouteCtx())
+    expect(onOut).toContain('已开启')
+    expect(approvalBus.isReadonlyAutoAllowEnabled(KEY)).toBe(true)
+  })
+
+  it('readonly: aliases /approval ro on|off', async () => {
+    const offOut = await handleApprovalCommand('ro disable', makeRouteCtx())
+    expect(offOut).toContain('已关闭')
+    expect(approvalBus.isReadonlyAutoAllowEnabled(KEY)).toBe(false)
+
+    const onOut = await handleApprovalCommand('ro enable', makeRouteCtx())
+    expect(onOut).toContain('已开启')
+    expect(approvalBus.isReadonlyAutoAllowEnabled(KEY)).toBe(true)
+  })
+
+  it('bare /approval surfaces readonly status line', async () => {
+    const out = await handleApprovalCommand('', makeRouteCtx())
+    expect(out).toContain('只读自动放行')
+  })
 })

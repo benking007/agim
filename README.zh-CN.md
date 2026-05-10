@@ -10,6 +10,7 @@
 
 - **4 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
+- **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
 - **浏览器控制台** — 对话界面、任务面板（Jobs / 调度 / 审批 / 健康 / 文件 / 审计）、提醒面板、设置页含工作区 CRUD
 - **工具调用人审（HITL）** — Claude 调用工具时暂停，IM 回复 `y`/`n` 或在页面点卡片审批；全平台一致
 - **微信和 Telegram 富媒体** — 接收图片、文件、视频；语音消息支持微信 STT、OpenAI Whisper、whisper.cpp 转写
@@ -88,6 +89,7 @@ im-hub-pro messengers      # 列出可用 IM
 | `/model [provider/model]` | 查看或切换模型 |
 | `/think on\|off` | 切换深度思考模式 |
 | `/remind …` | 提醒子系统 — 详见 [提醒](#提醒) |
+| `/memo …` | 5W1H 持久记忆库 — 详见 [备忘](#备忘)（别名 `/记`、`/note`）|
 | `/job`、`/cron`、`/audit`、`/stats` | 管理任务、定时、审计、统计（`/schedule` 仍是 `/cron` 别名，v0.4.0 移除） |
 | `/router status\|explain` | 查看路由策略 |
 | `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝（工具调用 或 提醒确认卡片） |
@@ -152,6 +154,39 @@ im-hub-pro messengers      # 列出可用 IM
 Web 界面 `/reminders` 可视化管理（状态筛选、延后、取消）。
 
 完整设计：[`docs/architecture/reminders.md`](docs/architecture/reminders.md)。
+
+## 备忘
+
+`/memo` 是一个 5W1H 持久记忆库。每条 memo 都可以挂上 `what` / `who` / `when_at` / `where (lat/lng/label)` / `how` / `why` 任意子集，外加可选的 `expires_at` 生命周期。位置只是其中一个轴 —— 同一个工具也能记「我爸生日 5月8日」「苹果发了 AVP2」。
+
+```bash
+# Slash
+/memo                          # 搜索提示 + 最近的 memo
+/memo list                     # 最近 10 条
+/memo show <id>
+/memo delete <id>
+/memo search 茶馆
+/memo here [备注]              # 一次性 HTTPS 链接 → 浏览器抓 GPS
+/memo 39.9,116.4 家            # 直接给坐标 + label
+
+# 别名：/记、/note
+```
+
+Agent（claude-code / opencode）能看到 5 个 MCP 工具，遇到值得记的内容**自动调用**——不用打 slash：
+
+- `save_memo` —— 从自然语言里抽 5W1H 落库；`address` 参数走百度地理编码补全坐标
+- `request_location_capture` —— 返回一次性 H5 链接让用户在 IM 内置浏览器授权 GPS
+- `search_memos` —— 多字段 AND-combined 检索（"我的车在哪"）
+- `update_memo` —— patch 已有 memo（比如后补 `where_*`，或传 `address` 让后端 geocode）
+- `delete_memo`
+
+**生命周期分层**：默认所有 memo 永久；agent 判定为临时性内容（"我把车停这了" / "今天下午3点开会"）才 set `expires_in_hours`，后台每 5 分钟跑一次 sweep 删掉到期行。
+
+**时区**：所有时间按 Asia/Shanghai (UTC+8) 解读，存为不带 `Z` / 偏移的 `YYYY-MM-DD HH:MM:SS`。其他时区部署设 `IMHUB_TZ_OFFSET_HOURS` 即可。
+
+**浏览器 GPS 抓取**：`/memo here` 和 `request_location_capture` 都会发一个 10 分钟有效的一次性 HTTPS 链接，默认 base 是 `https://agent.iclaw.host`（公共托管入口）。自己有 HTTPS 域名的用户设 `IMHUB_LOC_BASE_URL=https://your-host` 让链接走自己的域。
+
+**地址转坐标（可选）**：设 `IMHUB_BAIDU_MAP_AK` 一个百度地图 AK 之后，agent 在 `save_memo` / `update_memo` 里就能直接传 `address: "中关村大街27号"` 让后端 geocode 出坐标。不设的话该路径返回「geocoding not configured」，但**直接传坐标 + 浏览器抓 GPS 这两条路径都不受影响**。免费申请：[lbsyun.baidu.com](https://lbsyun.baidu.com/) → 控制台 → 应用管理 → 创建应用 → 服务端 API。默认无需 SN 签名；如启用 SN校验，详见 `src/core/locations.ts` 头注释。
 
 ## 配置
 
@@ -230,6 +265,9 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IM_HUB_LLM_JUDGE_AGENT` | 未设 | 路由分类失败时用作兜底的 LLM judge agent 名 |
 | `OPENAI_API_KEY` | 未设 | 启用 OpenAI Whisper 做语音转写 |
 | `IMHUB_WHISPERCPP_BIN` + `IMHUB_WHISPERCPP_MODEL` | 未设 | 本地 Whisper.cpp 转写（不走云） |
+| `IMHUB_BAIDU_MAP_AK` | 未设 | 百度地图 AK；启用 `/memo` 地址→坐标 geocoding 路径。不设置时直接给坐标和浏览器抓 GPS 不受影响。 |
+| `IMHUB_LOC_BASE_URL` | `https://agent.iclaw.host` | `/memo here` H5 抓 GPS 链接的公开 HTTPS 域名。自托管时改成自己的域。 |
+| `IMHUB_TZ_OFFSET_HOURS` | `8` | memo 时间戳的 UTC 偏移（默认 Asia/Shanghai）。仅当部署在其他时区时调整。 |
 
 ## 架构
 

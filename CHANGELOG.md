@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-11
+
+> **核心主题**：`/location` 升级为通用 `/memo`（5W1H 持久记忆库），地图服务从腾讯切到百度，opencode HTTP driver 修复 SSE-broken 回归。这是个有意义的里程碑——位置只是 5W1H 中的一个轴。
+
+### Fixed — opencode HTTP driver: SSE 不发事件时从 POST body 拿文本
+opencode 1.14.45+ 在新的 `node-http-server` runtime 下 `/event` SSE 只发首个 `server.connected` 然后再不广播任何 bus 事件（`message.part.updated` / `session.idle` 全丢），导致 im-hub 这边收 0 字节，用户在微信里看到「opencode无回复」。
+
+直 curl 复现：POST `/session/:id/message` 这个 endpoint 现在改成阻塞直至 LLM 完成，把整条 assistant message 同步以 JSON 还回来。我们就拿这个：
+
+- `OpenCodeHttpAdapter.postPrompt` 不再 `Promise<void>`，改回 `Promise<OpencodeMessageResponse>`，把 body 解析出来
+- `inspectHttpEvent` 多返一个 `partId`，SSE 路径走过的 part 都进 `yieldedPartIds`，不会被 POST 兜底重复 yield
+- 新增 `drainResponseBody(body, alreadyYielded, opts)`：从 POST body 抽完成态 text part（time.end 已设、文本非空、非 reasoning / step-* 类）+ 把 cost / tokens 喂回 `opts.onUsage`
+- `promptPromise.finally` 内挂 500ms grace 计时器调 `sse.close()`：旧版 opencode SSE 正常时仍走原路径；新版 SSE 一直空时让 for-await 退出，然后排掉 POST body
+- 命中走 fallback 路径会记一行 `opencode.http.drained_post_body` 日志，方便排查
+
+新增 3 单测覆盖：drained-only / SSE+POST 同 part 的 dedupe / `drainResponseBody` 的过滤逻辑。35/35 adapter 测试全过。
+
+### Added — 部署脚本自动重启 opencode
+`/root/.claude/bgjobs/scripts/imhub-deploy.sh` 末尾加一段：im-hub 重启完成后如果检测到 `opencode serve --port 14199` 还在跑，调 `opencode-restart.sh` 把它弹一遍，让新 daemon 继承当前 shell 的 `IMHUB_APPROVAL_SOCK`（im-hub 每次重启会换 socket hash，旧 daemon 还指向旧 socket → MCP 工具调用会回「后台消息服务不可用」）。一行钩子，一劳永逸。
+
+### Added — 给 place-like memo 主动追问坐标
+agent 落库一条「老孙家」「公司新址」这种**明显是地点但用户没给坐标**的 memo 后，会反问一句「要不要顺带补个坐标？」给三个选项（现在抓 GPS / 告地址解析 / 不用）。`save_memo` tool description 里写死的 PROACTIVE FOLLOW-UP 段。同一段还硬塞一份 TOOL INVENTORY 列表（5 个 memo 工具），并明令「不准跟用户说工具下线了」——之前 agent 在 location→memo 重命名后偶尔会胡说「位置工具已下线」。
+
+### Added — `update_memo` 接受 `address` 参数走 geocoding 路径
+之前 update_memo 只能直接给 `where_lat/where_lng/where_label`。现在传 `address` 字符串会自动调百度地理编码补全坐标 + 把 formatted address 当 label。配合 augment-mode token 流（POST `/api/loc` 带 memoId），用户也能在 H5 上直接补充「我现在就在那」的当前 GPS 给已存的 memo。
+
 ### Fixed — memo 时区 + 永久 location 判断
 两个用户反馈直接修：
 

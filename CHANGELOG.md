@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Location MCP 工具（agent-driven 自然语言交互）
+- 新增 4 个 MCP 工具，agent（claude-code / opencode）按需调用——**不加 detector，不拦截消息流**。直接利用 agent 已有的语义理解：
+  - `request_location_capture(note?)`：用户想记当前 GPS（"我把车停这"），返回一次性 H5 URL 给 agent 念给用户
+  - `save_location({ lat, lng } | { address }, note?)`：agent 已有坐标或地址时直接落库（绕过 H5）；address 路径走腾讯地图地理编码
+  - `list_locations(query?, limit?)`：用户问"我的车在哪"时调，模糊匹配 label + note，按时间倒序返回
+  - `delete_location(id)`：用户说"删了车的记录"
+- 数据流（NL 记录 + NL 查询）：
+  ```
+  用户 "帮我记下车停这了" → claude 看到 4 个工具
+   → claude 调 request_location_capture({note:'车'})
+   → bus → location-rpc → 发 token + 返 URL
+   → claude 回用户 "好的，点开链接授权: <url>"
+   → 用户点 → H5 显示 "正在记录: 车" → 授权 → POST → 写库
+   → im-hub fire-and-forget 推回 "✅ 已记录'车' lat,lng [地图]"
+  ```
+  ```
+  用户 "我的车在哪" → claude 调 list_locations({query:'车'})
+   → bus → location-rpc → SQL LIKE → 返结果
+   → claude 自然语言回 "🚗 你 5 小时前记录的车: ..."
+  ```
+- 实现：
+  - 新建 `src/core/location-rpc.ts` — 4 op handlers，与 `reminder-rpc.ts` 结构对齐
+  - `src/core/locations.ts` 加 `searchMemos(opts)`，SQL LIKE ESCAPE 处理 `%` `_` 字面量
+  - `src/core/location-token.ts` 加 `note` 字段 + `peekToken()`（只读不消费）
+  - `src/web/server.ts` 加 `GET /api/loc/info?t=…` 让 H5 拿 server-stored note 显示
+  - `src/web/public/loc.html` 加 "正在记录: <note>" 蓝色信息条
+  - `src/core/approval-bus.ts` 加 `type:'location'` dispatcher，复用 runId/`_im_context` 双路径
+  - `src/plugins/agents/claude-code/mcp-approval-server.ts` 加 `requestLocation` client + 4 工具注册（claude-code 和 opencode 共享同一个 sidecar 二进制，自动可见）
+  - 同时把 `POST /api/loc` 改为读 token 中的 server-side note 作为 memo label（防 URL 篡改）
+- 18 单测 `location-rpc.test.ts`（含 9 个 SQLite-skipped CRUD case）+ 现有 `location-token.test.ts` 7 条全过。
+- **架构权衡**：放弃了 `remind-intent.ts` 那种"消息流前置正则探测器"模式。reminder 的 detector 是历史遗留，每条消息都跑一次额外 LLM 调用（就是修过 80s→3s 那个性能问题的祸根）。location 直接让 agent 看工具描述自己判断，零额外 LLM 调用、零误触代价、对话上下文连续。
+
 ### Added — `/location here` 浏览器 GPS 捕获
 - 新子命令 `/location here [备注]` 或 `/location 当前 [备注]`：bot 回一个一次性 HTTPS 链接，用户在 WeChat 内置浏览器点开，授权后 H5 页面调 `navigator.geolocation.getCurrentPosition` 把坐标 POST 回 im-hub，im-hub 写库 + 推回 IM 线程。
 - 数据流：`/location here` → 内存 token store 发 32 hex token (10 min TTL，single-shot) → 用户点 URL → `GET /loc?t=...` 渲 H5 → 用户授权 → `POST /api/loc { t, lat, lng, accuracy }` → 验 token → 写 `location_memos`（source=`browser`）→ messenger.sendMessage 把"✅ 位置已收到 + 地图链接"回推到原线程。

@@ -126,6 +126,45 @@ export function listMemos(opts: OwnerOpts & { limit?: number } = {}): LocationMe
   }, [])
 }
 
+export interface SearchOpts extends OwnerOpts {
+  /** Free-text query — matched as `LIKE %query%` against label and note. */
+  query?: string
+  limit?: number
+}
+
+/**
+ * Search memos by free-text against label + note. Tencent Maps geocoding
+ * fills `label` with the formatted address for `source='geocoded'` rows;
+ * agent-driven /location with a note fills `label` directly. Empty query
+ * falls back to plain recency listing (= listMemos).
+ *
+ * The query is treated as a single token; no tokenization, no multi-term
+ * AND. For "find my car" use `query='车'`. Wildcards ('%' '_') in the
+ * query are escaped to literal characters via `LIKE ESCAPE`.
+ */
+export function searchMemos(opts: SearchOpts = {}): LocationMemo[] {
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50)
+  const q = (opts.query ?? '').trim()
+  if (!q) return listMemos({ userId: opts.userId, limit })
+  // Escape SQL LIKE wildcards so a query containing % or _ matches literally.
+  const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`)
+  const pattern = `%${escaped}%`
+  return helper.safe((d) => {
+    if (opts.userId) {
+      return d.prepare(
+        `SELECT * FROM location_memos
+         WHERE user_id = ? AND (label LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')
+         ORDER BY id DESC LIMIT ?`,
+      ).all(opts.userId, pattern, pattern, limit) as LocationMemo[]
+    }
+    return d.prepare(
+      `SELECT * FROM location_memos
+       WHERE label LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'
+       ORDER BY id DESC LIMIT ?`,
+    ).all(pattern, pattern, limit) as LocationMemo[]
+  }, [])
+}
+
 export function getMemo(id: number, opts: OwnerOpts = {}): LocationMemo | null {
   return helper.safe((d) => {
     const row = opts.userId

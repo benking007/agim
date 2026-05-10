@@ -14,7 +14,7 @@ import { registry } from '../core/registry.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
-import { consumeToken } from '../core/location-token.js'
+import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, mapUrl } from '../core/locations.js'
 
 const webLog = rootLogger.child({ component: 'web' })
@@ -213,6 +213,19 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
     }
 
+    // GET /api/loc/info?t=… — read-only peek for the H5 page to show the
+    // pre-filled note ("正在记录: 车"). Does NOT consume the token — that
+    // happens on POST. Returns 410 when the token is expired/unknown so
+    // the page can render the "link expired" state without faking a POST.
+    if (url.pathname === '/api/loc/info' && req.method === 'GET') {
+      const tk = url.searchParams.get('t') || ''
+      if (!tk) { sendJson(res, 400, { error: 'missing t' }); return }
+      const peek = peekToken(tk)
+      if (!peek) { sendJson(res, 410, { error: 'token expired or unknown' }); return }
+      sendJson(res, 200, { ok: true, note: peek.note, expiresAt: new Date(peek.expiresAt).toISOString() })
+      return
+    }
+
     if (url.pathname === '/api/loc' && req.method === 'POST') {
       const body = await readBody(req, res)
       let parsed: { t?: string; lat?: number; lng?: number; accuracy?: number }
@@ -234,6 +247,7 @@ export async function startWebServer(options: {
         sendJson(res, 410, { error: msg }); return
       }
       const ctx = cr.ctx
+      const note = cr.note || ''
       const accuracy = typeof parsed.accuracy === 'number' ? parsed.accuracy : 0
 
       let memoId: number | null = null
@@ -244,7 +258,7 @@ export async function startWebServer(options: {
           threadId: ctx.threadId,
           userId: ctx.userId,
           lat, lng,
-          label: '',
+          label: note,  // server-stored note becomes the memo's display label
           note: '',
           source: 'browser',
         })
@@ -256,11 +270,12 @@ export async function startWebServer(options: {
       const messenger = registry.getMessenger(messengerName)
       const idTag = memoId ? `#${memoId}` : ''
       const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
+      const headLabel = note ? `'${note}'` : '位置'
       const reply = [
-        `✅ 位置已收到 ${idTag}`,
+        `✅ 已记录${headLabel} ${idTag}`,
         `   坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accTxt}`,
         '',
-        `   🗺 ${mapUrl(lat, lng, '当前位置', '')}`,
+        `   🗺 ${mapUrl(lat, lng, note || '当前位置', '')}`,
         memoId ? `   /location show ${memoId} 看详情 · /location delete ${memoId} 删除` : '',
       ].filter(Boolean).join('\n')
       if (messenger) {

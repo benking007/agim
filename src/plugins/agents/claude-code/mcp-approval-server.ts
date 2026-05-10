@@ -41,11 +41,19 @@ interface PendingReminderRpc {
   resolve: (r: ReminderResult) => void
 }
 
+// Location RPC mirrors reminder RPC — same shape, separate result map so
+// reminder + location can be in flight concurrently without reqId collision
+// risk (in practice reqIds are UUIDs, but keeping channels separate is
+// simpler than reasoning about the shared map).
+type LocationResult = ReminderResult
+type PendingLocationRpc = PendingReminderRpc
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
   private pending = new Map<string, PendingRequest>()
   private pendingReminders = new Map<string, PendingReminderRpc>()
+  private pendingLocations = new Map<string, PendingLocationRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -135,6 +143,22 @@ class ApprovalClient {
       }
       return
     }
+
+    if (m.type === 'location.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingLocations.get(reqId)
+      if (!p) return
+      this.pendingLocations.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
   }
 
   private onClose(): void {
@@ -148,6 +172,10 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingReminders.clear()
+    for (const [, p] of this.pendingLocations) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingLocations.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -211,6 +239,33 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingReminders.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /** Same shape as requestReminder, different message type. Bus delegates
+   *  to location-rpc.ts which actually writes locations.db. */
+  async requestLocation(op: string, payload: Record<string, unknown>): Promise<LocationResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1,
+      type: 'location',
+      runId: this.runId,
+      reqId,
+      op,
+      payload,
+    })}\n`
+    return new Promise<LocationResult>((resolve) => {
+      this.pendingLocations.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingLocations.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -318,6 +373,10 @@ export function buildServer(client: ApprovalClient): McpServer {
     const result = await client.requestReminder(op, args)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
   }
+  const wrapLocation = (op: string) => async (args: Record<string, unknown>) => {
+    const result = await client.requestLocation(op, args)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+  }
 
   server.registerTool(
     'create_reminder',
@@ -387,6 +446,106 @@ export function buildServer(client: ApprovalClient): McpServer {
       },
     },
     wrapReminder('snooze'),
+  )
+
+  // ─── Location tools ─────────────────────────────────────────────────
+  // Geo-memo capture and recall. Two record paths + list + delete:
+  //
+  //   request_location_capture   → returns a one-time HTTPS URL the agent
+  //                                surfaces to the user; the user's tap
+  //                                triggers a browser geolocation
+  //                                permission prompt and POSTs coords back.
+  //                                Result delivery is asynchronous —
+  //                                im-hub pushes "✅ 已记录" directly to
+  //                                the IM thread once coords arrive.
+  //
+  //   save_location              → store coords (or geocode an address)
+  //                                directly. Use this when the agent has
+  //                                lat/lng or a full address text.
+  //
+  //   list_locations             → recent or query-matched memos.
+  //
+  //   delete_location            → drop one memo.
+
+  server.registerTool(
+    'request_location_capture',
+    {
+      title: 'Request the user\'s current device location',
+      description:
+        'Generate a one-time HTTPS link that opens a page asking the user\'s browser for ' +
+        'their current GPS coordinates. CALL THIS PROACTIVELY when the user wants to record ' +
+        'where they ARE RIGHT NOW (parking the car, marking a meeting spot, etc.) and you ' +
+        'don\'t already have explicit coordinates from them. Examples that should trigger ' +
+        'this: "帮我记下我的车停在这" / "我把伞放这了，记一下" / "记一下我现在的位置". ' +
+        'Returns { url, expiresAt, ttlSeconds, note }. Reply to the user with a short ' +
+        'sentence + the URL on its own line. After the user taps the link and grants ' +
+        'permission, im-hub pushes a "✅ 已记录..." confirmation to this thread directly — ' +
+        'you do NOT need to wait for it. The link is single-use and expires in 10 minutes.',
+      inputSchema: {
+        note: z.string().optional().describe(
+          'Optional short label for what is being recorded (e.g. "车", "伞", "停车场B区"). ' +
+          'Shown to the user on the H5 page and stored as the memo label. ≤80 chars.',
+        ),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapLocation('request_capture'),
+  )
+
+  server.registerTool(
+    'save_location',
+    {
+      title: 'Save a known location directly',
+      description:
+        'Persist a location memo without an H5 round-trip. Use when the user GAVE you ' +
+        'coordinates ("39.908,116.397") OR a geocodable address ("国贸三期", "Times Square"). ' +
+        'Pass either lat+lng (preferred when known) or address (geocoded server-side via ' +
+        'Tencent Maps; requires IMHUB_TENCENT_MAP_KEY env). Returns { id, lat, lng, label, ' +
+        'mapUrl, source }. Confirm to the user with one sentence + the map URL.',
+      inputSchema: {
+        lat: z.number().min(-90).max(90).optional().describe('Latitude in WGS84 degrees'),
+        lng: z.number().min(-180).max(180).optional().describe('Longitude in WGS84 degrees'),
+        address: z.string().optional().describe('Free-text address; used if lat/lng absent'),
+        note: z.string().optional().describe('Short label / what is being recorded. ≤80 chars'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapLocation('save'),
+  )
+
+  server.registerTool(
+    'list_locations',
+    {
+      title: 'List or search location memos',
+      description:
+        'Look up the user\'s saved location memos. CALL THIS when the user asks where they ' +
+        'put / parked / left something, or for any recall query: "我的车在哪", "上次记的咖啡店" ' +
+        ', "找下伞的位置". Pass `query` for fuzzy match against label and note (LIKE match, ' +
+        'single token). Without `query`, returns the most recent memos. Returns { items: ' +
+        '[{ id, lat, lng, label, note, created_at, mapUrl, ... }] }. Format the answer for the ' +
+        'user as 1-2 sentences + the map URL on its own line.',
+      inputSchema: {
+        query: z.string().optional().describe('Fuzzy match against label and note'),
+        limit: z.number().int().min(1).max(50).optional().describe('Max rows (default 10)'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapLocation('list'),
+  )
+
+  server.registerTool(
+    'delete_location',
+    {
+      title: 'Delete a location memo',
+      description:
+        'Remove a memo by id. Find ids via list_locations. Use when the user explicitly says ' +
+        'to delete / forget / clear a saved location ("删了车的记录" / "把上次那个位置忘掉").',
+      inputSchema: {
+        id: z.number().int().positive().describe('Memo id from list_locations'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapLocation('delete'),
   )
 
   return server

@@ -32,8 +32,17 @@ export interface TokenContext {
   userId: string
 }
 
+/** Optional metadata the issuer may attach. The `note` is shown on the H5
+ *  page and stored verbatim into the resulting memo's `label` so users see
+ *  "已记录'车' ..." instead of "已记录 #N". Server-side only — never trust
+ *  the client to set it. */
+export interface TokenMeta {
+  note?: string
+}
+
 interface StoredToken extends TokenContext {
   token: string
+  note: string
   createdAt: number
   expiresAt: number
 }
@@ -58,22 +67,43 @@ function startSweepIfNeeded(): void {
   sweepTimer.unref()
 }
 
-export function issueToken(ctx: TokenContext): { token: string; expiresAt: number; ttlSeconds: number } {
+export function issueToken(ctx: TokenContext, meta: TokenMeta = {}): { token: string; expiresAt: number; ttlSeconds: number } {
   startSweepIfNeeded()
   const token = randomBytes(TOKEN_BYTES).toString('hex')
   const now = Date.now()
   const expiresAt = now + TOKEN_TTL_MS
-  tokens.set(token, { ...ctx, token, createdAt: now, expiresAt })
+  // Cap note size — H5 page just renders it back; oversize entries waste
+  // memory and could be used to bloat tokens.
+  const note = (meta.note || '').toString().slice(0, 80)
+  tokens.set(token, { ...ctx, token, note, createdAt: now, expiresAt })
   log.info({
     event: 'location-token.issued',
     platform: ctx.platform, threadId: ctx.threadId, userId: ctx.userId,
+    note: note || undefined,
     expiresAt: new Date(expiresAt).toISOString(),
   })
   return { token, expiresAt, ttlSeconds: Math.floor(TOKEN_TTL_MS / 1000) }
 }
 
+/** Read-only peek at a token's note — used by GET /api/loc/info so the H5
+ *  page can show "正在记录: <note>" without consuming the token. Returns
+ *  null when the token is unknown or expired. */
+export function peekToken(token: string): { ctx: TokenContext; note: string; expiresAt: number } | null {
+  const t = tokens.get(token)
+  if (!t) return null
+  if (t.expiresAt <= Date.now()) {
+    tokens.delete(token)
+    return null
+  }
+  return {
+    ctx: { platform: t.platform, channelId: t.channelId, threadId: t.threadId, userId: t.userId },
+    note: t.note,
+    expiresAt: t.expiresAt,
+  }
+}
+
 export type ConsumeResult =
-  | { ok: true; ctx: TokenContext }
+  | { ok: true; ctx: TokenContext; note: string }
   | { ok: false; reason: 'unknown' | 'expired' }
 
 /**
@@ -97,7 +127,11 @@ export function consumeToken(token: string): ConsumeResult {
     platform: t.platform, threadId: t.threadId, userId: t.userId,
     ageMs: Date.now() - t.createdAt,
   })
-  return { ok: true, ctx: { platform: t.platform, channelId: t.channelId, threadId: t.threadId, userId: t.userId } }
+  return {
+    ok: true,
+    ctx: { platform: t.platform, channelId: t.channelId, threadId: t.threadId, userId: t.userId },
+    note: t.note,
+  }
 }
 
 /** Test/diagnostic helper. */

@@ -27,10 +27,13 @@
 <body>
   <div class="wrap">
     <div class="icon">📍</div>
-    <h1>共享当前位置给 bot</h1>
-    <p>im-hub 需要你的当前位置来记录这条备忘。点击下方按钮，浏览器会询问授权。</p>
+    <h1 id="title">共享当前位置给 bot</h1>
+    <p id="subtitle">im-hub 需要你的当前位置来记录这条备忘。点击下方按钮，浏览器会询问授权。</p>
 
     <div class="card">
+      <div id="note-row" style="display:none; margin-bottom:14px; padding:12px; background:#eff6ff; border-radius:8px; color:#1e40af; font-size:14px;">
+        正在记录: <strong id="note-text"></strong>
+      </div>
       <button id="share" class="btn" type="button">共享我的位置</button>
       <div id="status" class="status info" style="display:none"></div>
     </div>
@@ -64,6 +67,25 @@
         show('err', '❌ 浏览器不支持地理位置 API。')
         return
       }
+
+      // Fetch the pre-filled note (server-side; never trust the URL).
+      // Failure here is non-fatal — we just don't show the note row, the
+      // user can still capture coords. Renders the "link expired" hard-stop
+      // when the server says 410.
+      fetch('/api/loc/info?t=' + encodeURIComponent(token)).then(function (r) {
+        if (r.status === 410) {
+          btn.disabled = true
+          show('err', '❌ 链接已过期或已被使用。回到 IM 重新发送 <code>/location here</code> 拿新链接。')
+          return null
+        }
+        return r.ok ? r.json() : null
+      }).then(function (j) {
+        if (j && j.note) {
+          document.getElementById('note-text').textContent = j.note
+          document.getElementById('note-row').style.display = 'block'
+          document.getElementById('title').textContent = '共享 "' + j.note + '" 的位置'
+        }
+      }).catch(function () { /* network blip — proceed without note */ })
 
       btn.addEventListener('click', function () {
         btn.disabled = true

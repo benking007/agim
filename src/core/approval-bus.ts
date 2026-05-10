@@ -629,6 +629,10 @@ export class ApprovalBus {
       await this.handleReminder(m, socket)
       return
     }
+    if (m.type === 'location') {
+      await this.handleLocation(m, socket)
+      return
+    }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
   }
 
@@ -718,6 +722,77 @@ export class ApprovalBus {
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
       if (err) log.warn({ event: 'reminder.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * Handle a location RPC from the MCP sidecar — same socket as approvals
+   * and reminders, different `type`. Mirror of {@link handleReminder}.
+   * Both runId-resolved context and the inline `_im_context` fallback are
+   * supported, with the same single-user-only caveat for path 2.
+   */
+  private async handleLocation(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const op = typeof m.op === 'string' ? m.op : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+
+    if (!reqId) {
+      log.warn({ event: 'location.bus.missing_reqId' })
+      return
+    }
+    if (!op) {
+      this.sendLocationResult(socket, reqId, { ok: false, error: 'invalid location message' })
+      return
+    }
+
+    let ctx: RunContext | null = null
+    if (runId) ctx = this.runContexts.get(runId) ?? null
+    if (!ctx) {
+      const inlineCtx = payload._im_context
+      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
+        const ic = inlineCtx as Record<string, unknown>
+        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
+            && typeof ic.channelId === 'string') {
+          ctx = {
+            platform: ic.platform,
+            threadId: ic.threadId,
+            channelId: ic.channelId,
+            userId: typeof ic.userId === 'string' ? ic.userId : '',
+          }
+          log.info({
+            event: 'location.bus.inline_ctx',
+            platform: ctx.platform, threadId: ctx.threadId, runId,
+          }, 'location using agent-asserted _im_context (single-user mode)')
+          delete payload._im_context
+        }
+      }
+    }
+
+    if (!ctx) {
+      this.sendLocationResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+      })
+      return
+    }
+    const { handleLocationOp } = await import('./location-rpc.js')
+    const result = await handleLocationOp(op, payload, ctx)
+    this.sendLocationResult(socket, reqId, result)
+  }
+
+  private sendLocationResult(
+    socket: Socket, reqId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'location.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'location.bus.write_failed', reqId, err: String(err) })
     })
   }
 

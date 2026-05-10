@@ -43,7 +43,7 @@ export async function handleMemoOp(
       case 'save':            return await handleSave(payload, ctx)
       case 'request_capture': return handleRequestCapture(payload, ctx)
       case 'search':          return handleSearch(payload, ctx)
-      case 'update':          return handleUpdate(payload, ctx)
+      case 'update':          return await handleUpdate(payload, ctx)
       case 'delete':          return handleDelete(payload, ctx)
       default: return { ok: false, error: `unknown op: ${op}` }
     }
@@ -227,7 +227,7 @@ function handleSearch(payload: Record<string, unknown>, ctx: RunContext): MemoRp
 
 // ─── update ─────────────────────────────────────────────────────────────
 
-function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): MemoRpcResult {
+async function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): Promise<MemoRpcResult> {
   if (!ctx.userId) return { ok: false, error: 'no userId in run context' }
   const id = typeof payload.id === 'number' ? payload.id : NaN
   if (!Number.isFinite(id)) return { ok: false, error: 'id (number) required' }
@@ -250,6 +250,28 @@ function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): MemoRp
   }
   if ('expires_at' in payload && payload.expires_at === null) {
     u.expiresAt = null
+  }
+
+  // Convenience: agent can pass `address` and we geocode + populate
+  // where_lat / where_lng / where_label in one shot. This is the "user
+  // told me 'X 路 Y 号', augment the existing memo" path that follows the
+  // place-memo proactive prompt. If lat/lng are also explicitly passed,
+  // those take precedence (caller knows what they're doing).
+  if (typeof payload.address === 'string' && payload.address.trim()) {
+    if (u.whereLat === undefined && u.whereLng === undefined) {
+      if (!isGeocodingAvailable()) {
+        return { ok: false, error: 'geocoding not configured (IMHUB_BAIDU_MAP_AK unset). Pass where_lat/where_lng directly.' }
+      }
+      const geo = await geocodeAddress(payload.address.trim())
+      if (!geo.ok) {
+        return { ok: false, error: `geocode failed: ${geo.reason}${geo.message ? ' (' + geo.message + ')' : ''}` }
+      }
+      u.whereLat = geo.lat
+      u.whereLng = geo.lng
+      // Only set where_label from geocoder if the caller didn't explicitly
+      // override it — preserves user-typed labels like "老孙家".
+      if (u.whereLabel === undefined) u.whereLabel = geo.formattedAddress
+    }
   }
 
   let changed = false

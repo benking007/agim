@@ -504,8 +504,27 @@ export function buildServer(client: ApprovalClient): McpServer {
         'IF the user wants to record their CURRENT GPS location ("我把车停这" / "记一下我现在 ' +
         '的位置"), DO NOT call save_memo — call request_location_capture instead (it can take a ' +
         '`what` arg to label the new memo at capture time).\n\n' +
+        '🧭 PROACTIVE FOLLOW-UP for place-like memos:\n' +
+        'When the memo what is clearly a PLACE (家/公司/茶馆/餐厅/酒店/朋友的工作室/老孙家 ' +
+        'etc.) AND the user did NOT supply where_lat/lng/address, AFTER saving, ASK ONE short ' +
+        'clarifying question, e.g.:\n' +
+        '  "记下了 ✅ 老孙家（常聚会的地方），永久保存。\n' +
+        '   要不要顺带补个坐标？\n' +
+        '   • 我现在就在那 → 抓 GPS\n' +
+        '   • 告诉你地址 → 帮你解析\n' +
+        '   • 不用了"\n' +
+        'Then route the answer into the right tool (see "TOOL INVENTORY" below).\n' +
+        'Skip this for non-place memos (生日 / 联系方式 / 新闻条目 / preferences / 任何抽象事物).\n\n' +
+        '🧰 TOOL INVENTORY (you have these RIGHT NOW — do NOT tell the user any of them is gone):\n' +
+        '  • save_memo with `address` arg — geocode + save in one shot (this tool, address path)\n' +
+        '  • request_location_capture({what?, memo_id?}) — GPS via H5 link\n' +
+        '       - {what} → creates a new memo at capture time\n' +
+        '       - {memo_id} → AUGMENTS an existing memo (use this to fill where_* on a memo\n' +
+        '         you already saved without coords)\n' +
+        '  • update_memo({id, address}) — geocode + patch existing memo\'s where_*\n' +
+        '  • update_memo({id, where_lat, where_lng, where_label}) — patch directly\n\n' +
         'Returns the saved memo summary including id, fields, and (if where_* set) mapUrls. ' +
-        'Confirm to the user with one sentence + the map links using markdown syntax ' +
+        'Confirm to the user with one sentence + (if where_* set) the map links using markdown ' +
         '`[百度地图](url) · [高德地图](url) · [Google](url)`. Do NOT print raw URLs.',
       inputSchema: {
         what: z.string().describe('Core thing being recorded (REQUIRED). ≤200 chars'),
@@ -600,7 +619,18 @@ export function buildServer(client: ApprovalClient): McpServer {
         'id, expires_at: null }).\n\n' +
         'Pass null to a field to CLEAR it (vs omitting which leaves alone). For expiry, you ' +
         'can pass either expires_in_hours (relative) or expires_at (absolute ISO; null clears).\n\n' +
-        'Returns the updated memo summary. Confirm to the user with one sentence.',
+        '🌍 ADDRESS PATH: when the user gives you a textual address ("在国贸三期" / "北京天安门"), ' +
+        'pass `address` and the server will geocode it via Baidu Maps + populate where_lat/lng/' +
+        'label in one shot. Use this for the "place-memo augment" flow — after save_memo of a ' +
+        'place without coords, the user replies with an address → call update_memo({id, address}). ' +
+        'If `address` is provided AND where_lat/lng are NOT explicitly set, the geocoded coords ' +
+        'fill them. If you also pass where_label, it overrides the geocoded one (so user\'s ' +
+        '"老孙家" beats Baidu\'s "X街 Y号").\n\n' +
+        '📍 GPS PATH: if the user is AT the place right now ("我现在就在那"), do NOT use ' +
+        'update_memo — call request_location_capture({memo_id}) instead, which sends a ' +
+        'one-time browser-GPS link. The H5 callback patches the existing memo\'s where_*.\n\n' +
+        'Returns the updated memo summary. Confirm to the user with one sentence + (if where_* ' +
+        'now set) the markdown map links.',
       inputSchema: {
         id: z.number().int().positive().describe('Memo id from search_memos'),
         what: z.string().optional(),
@@ -610,6 +640,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         where_lat: z.number().min(-90).max(90).nullable().optional(),
         where_lng: z.number().min(-180).max(180).nullable().optional(),
         where_label: z.string().nullable().optional(),
+        address: z.string().optional().describe('Free-text address — server geocodes + sets where_lat/lng. Mutually compatible with where_label override.'),
         how: z.string().nullable().optional(),
         why: z.string().nullable().optional(),
         expires_in_hours: z.number().positive().optional(),

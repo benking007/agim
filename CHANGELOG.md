@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.39] - 2026-05-10 — WeChat 回复延迟修复 + `/help` alias 解析
+
+### Fixed
+- **WeChat 回复延迟（remind-intent 误触）**：v0.2.37 引入的 reminder 意图识别在 cli.ts 上每条非 slash 消息都跑一次预过滤。预过滤正则里有一组独立的"强意图动词"分支 `(提醒|通知|叫我|喊我|告诉我|记得|别忘了|提醒我)` —— **不要求带时间词**。日常会话里 `告诉我XXX`/`通知XXX`/`记得XXX` 都中招，触发一次 5–10s 的 helper-LLM 调用 `await` 在真正的 agent 回复之前，最终用户感知"每条消息都慢 5–10s"。修复：删掉这个动词分支。下游 LLM 没有时间词也产不出 `fire_at_iso`（remind-intent.ts:164 会拒），所以这一分支本来就是 100% 浪费。真正想设提醒的自然表达都带时间词（`明天9点提醒我开会`），仍能命中其他分支。新增 5+4 条测试覆盖。**实测**：WeChat 平均回复 ~80s/avg → 3s/avg。
+
+### Changed
+- **`/help <alias>` 自动解析**：`/help tasks` `/help check` `/help cancel` `/help switch` `/help collect` 都解析到 `/help job`；`/help auto` → `approval`；`/help models` → `model`；`/help ws` → `workspaces`；`/help reminder` → `remind`。alias 表 `TOPIC_ALIAS` 与 dict 解耦，避免维护重定向字符串。
+- 同时清理 `EN_TOKENS` / `ZH_TOKENS` 里早期防御代码遗留的 `'english:'` `'cn:'` 噪音 token。
+
 ## [0.2.38] - 2026-05-10 — `/schedule` → `/cron` 命名空间清理 + `/help` 改造
 
 ### Changed — `/help` / `/start` i18n + 重写
@@ -9,7 +18,6 @@ All notable changes to this project will be documented in this file.
 - **补全所有遗漏命令**：原本只有 ~10 条，现在覆盖 `/cron` `/remind` `/job` `/tasks` `/check` `/cancel` `/switch` `/collect` `/model` `/models` `/think` `/plan` `/approval` `/auto` `/audit` `/stats` `/sessions` `/workspaces` `/router` 等。
 - **按分类分区块**：会话 / 提醒 · 定时 / 任务 / Agent 控制 / 工具审批 / 运维 / Agent 子命令。
 - **`/help <topic>` 子命令**：`/help remind`、`/help cron`、`/help job`、`/help approval`、`/help workspaces` 等都返回该命令的详细帮助；`/help remind` 直接复用 `/remind help`。
-- **`/help <alias>` 自动解析**：`/help tasks` `/help check` `/help cancel` `/help switch` `/help collect` 都解析到 `/help job`；`/help auto` → `approval`；`/help models` → `model`；`/help ws` → `workspaces`；`/help reminder` → `remind`。alias 表 `TOPIC_ALIAS` 与 dict 解耦，避免维护重定向字符串。
 - **`/?` 别名 `/help`**。
 - 实现：`ParsedMessage` 的 `command` 变种新增可选 `args`，router 把 `/help` `/start` 后面的内容当 args 透传。
 
@@ -28,7 +36,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **schedules.db 自举顺序**：`idx_sched_creator` 索引从初始化 schema 字符串里挪到 `migrateOwnership()` 之后。原先在 0.2.0 之前建的库升级到 0.2.x 时，`db.exec(schema)` 会因为 `creator_id` 列不存在直接抛错，被 helper 标记为 broken，导致后续的 `ALTER TABLE` 迁移永远跑不到——`/cron` / `/schedule` 整个子系统于是默默失效。修了这次老库会自动补列再建索引。
-- **WeChat 回复延迟（remind-intent 误触）**：v0.2.37 引入的 reminder 意图识别在 cli.ts 上每条非 slash 消息都跑一次预过滤。预过滤正则里有一组独立的"强意图动词"分支 `(提醒|通知|叫我|喊我|告诉我|记得|别忘了|提醒我)` —— **不要求带时间词**。日常会话里 `告诉我XXX`/`通知XXX`/`记得XXX` 都中招，触发一次 5–10s 的 helper-LLM 调用 `await` 在真正的 agent 回复之前，最终用户感知"每条消息都慢 5–10s"。修复：删掉这个动词分支。下游 LLM 没有时间词也产不出 `fire_at_iso`（remind-intent.ts:164 会拒），所以这一分支本来就是 100% 浪费。真正想设提醒的自然表达都带时间词（`明天9点提醒我开会`），仍能命中其他分支。新增 5+4 条测试覆盖。
 
 ## [0.2.37] - 2026-05-10 — Reminders + Email + Multi-agent MCP
 

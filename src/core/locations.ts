@@ -324,17 +324,79 @@ export function isGeocodingAvailable(): boolean {
   return !!process.env.IMHUB_BAIDU_MAP_AK
 }
 
-// ─── Map URL builder ────────────────────────────────────────────────────
+// ─── Map URL builders ──────────────────────────────────────────────────
+//
+// All stored coords are WGS-84. Each map provider has its own coordinate
+// system convention; we honour what each one expects:
+//
+//   Baidu (BD-09 internally) — accepts WGS-84 with coord_type=wgs84
+//   Amap  (GCJ-02 internally) — convert WGS-84 → GCJ-02 before sending
+//   Google (WGS-84 native)    — pass through unchanged
 
-/**
- * Build a Baidu Maps URI scheme link. Tappable in WeChat: opens the Baidu
- * Maps mini-program / web / native app depending on what's installed.
- *
- * `coord_type=wgs84` is critical — our stored coords are WGS-84 (browser
- * geolocation native, Baidu geocoder forced via ret_coordtype). Without
- * this, Baidu interprets them as BD-09 and shows the marker 50–500m off.
- */
+/** WGS-84 → GCJ-02 conversion. Standard "Chinese encrypted" offset.
+ *  Outside mainland China (Hong Kong / Macau / Taiwan / overseas) this is
+ *  a no-op. Formulas from public-domain references (countries' geodetic
+ *  community), used by every Chinese map SDK. */
+export function wgs84ToGcj02(lat: number, lng: number): { lat: number; lng: number } {
+  if (outOfChina(lat, lng)) return { lat, lng }
+  const A = 6378245.0
+  const EE = 0.00669342162296594323
+  const PI = Math.PI
+  let dLat = transformLat(lng - 105.0, lat - 35.0)
+  let dLng = transformLng(lng - 105.0, lat - 35.0)
+  const radLat = (lat / 180.0) * PI
+  let magic = Math.sin(radLat); magic = 1 - EE * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  dLat = (dLat * 180.0) / (((A * (1 - EE)) / (magic * sqrtMagic)) * PI)
+  dLng = (dLng * 180.0) / ((A / sqrtMagic) * Math.cos(radLat) * PI)
+  return { lat: lat + dLat, lng: lng + dLng }
+}
+
+function outOfChina(lat: number, lng: number): boolean {
+  return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+}
+
+function transformLat(x: number, y: number): number {
+  const PI = Math.PI
+  let r = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+  r += ((20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0) / 3.0
+  r += ((20.0 * Math.sin(y * PI) + 40.0 * Math.sin((y / 3.0) * PI)) * 2.0) / 3.0
+  r += ((160.0 * Math.sin((y / 12.0) * PI) + 320 * Math.sin((y * PI) / 30.0)) * 2.0) / 3.0
+  return r
+}
+
+function transformLng(x: number, y: number): number {
+  const PI = Math.PI
+  let r = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+  r += ((20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0) / 3.0
+  r += ((20.0 * Math.sin(x * PI) + 40.0 * Math.sin((x / 3.0) * PI)) * 2.0) / 3.0
+  r += ((150.0 * Math.sin((x / 12.0) * PI) + 300.0 * Math.sin((x / 30.0) * PI)) * 2.0) / 3.0
+  return r
+}
+
+export interface MapUrls {
+  baidu: string
+  amap: string
+  google: string
+}
+
+/** Build map URLs for all three major providers (Baidu / Amap / Google).
+ *  Pass WGS-84 lat/lng — internal conversion handled per provider. */
+export function mapUrls(lat: number, lng: number, label = '', addr = ''): MapUrls {
+  return {
+    baidu: buildBaiduUrl(lat, lng, label, addr),
+    amap: buildAmapUrl(lat, lng, label),
+    google: buildGoogleUrl(lat, lng),
+  }
+}
+
+/** Backwards-compat single-URL builder (Baidu). New callers should prefer
+ *  mapUrls() so users can pick their preferred provider. */
 export function mapUrl(lat: number, lng: number, label = '', addr = ''): string {
+  return buildBaiduUrl(lat, lng, label, addr)
+}
+
+function buildBaiduUrl(lat: number, lng: number, label: string, addr: string): string {
   const url = new URL('https://api.map.baidu.com/marker')
   url.searchParams.set('location', `${lat},${lng}`)
   if (label) url.searchParams.set('title', label)
@@ -342,5 +404,25 @@ export function mapUrl(lat: number, lng: number, label = '', addr = ''): string 
   url.searchParams.set('output', 'html')
   url.searchParams.set('coord_type', 'wgs84')
   url.searchParams.set('src', 'imhub')
+  return url.toString()
+}
+
+function buildAmapUrl(lat: number, lng: number, label: string): string {
+  // Amap URI scheme expects GCJ-02; convert from our stored WGS-84.
+  // position is "lng,lat" (Amap convention, opposite of Baidu).
+  const gcj = wgs84ToGcj02(lat, lng)
+  const url = new URL('https://uri.amap.com/marker')
+  url.searchParams.set('position', `${gcj.lng},${gcj.lat}`)
+  if (label) url.searchParams.set('name', label)
+  url.searchParams.set('src', 'imhub')
+  url.searchParams.set('coordinate', 'gaode')
+  return url.toString()
+}
+
+function buildGoogleUrl(lat: number, lng: number): string {
+  // Google Maps uses WGS-84 natively. The `q=lat,lng` form drops a pin and
+  // works on web + native (iOS/Android Google Maps app intercepts it).
+  const url = new URL('https://www.google.com/maps')
+  url.searchParams.set('q', `${lat},${lng}`)
   return url.toString()
 }

@@ -15,7 +15,7 @@ import { generateTraceId, createLogger, logger as rootLogger } from '../core/log
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
-import { createMemo, mapUrl } from '../core/locations.js'
+import { createMemo, mapUrls } from '../core/locations.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -271,11 +271,15 @@ export async function startWebServer(options: {
       const idTag = memoId ? `#${memoId}` : ''
       const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
       const headLabel = note ? `'${note}'` : '位置'
+      const urls = mapUrls(lat, lng, note || '当前位置', '')
       const reply = [
         `✅ 已记录${headLabel} ${idTag}`,
         `   坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accTxt}`,
         '',
-        `   🗺 ${mapUrl(lat, lng, note || '当前位置', '')}`,
+        `   🗺 在地图中打开:`,
+        `   百度: ${urls.baidu}`,
+        `   高德: ${urls.amap}`,
+        `   Google: ${urls.google}`,
         memoId ? `   /location show ${memoId} 看详情 · /location delete ${memoId} 删除` : '',
       ].filter(Boolean).join('\n')
       if (messenger) {

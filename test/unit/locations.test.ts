@@ -16,7 +16,7 @@ process.env.IMHUB_LOCATIONS_DB = TEST_DB
 const mod = await import('../../src/core/locations.js')
 const {
   createMemo, listMemos, getMemo, deleteMemo,
-  parseCoordPair, stripCoordPrefix, mapUrl,
+  parseCoordPair, stripCoordPrefix, mapUrl, mapUrls, wgs84ToGcj02,
   isGeocodingAvailable, closeLocationsDb,
 } = mod
 
@@ -82,6 +82,72 @@ describe('mapUrl (Baidu)', () => {
     const url = mapUrl(39.908, 116.397, '故宫', '北京市东城区')
     expect(decodeURIComponent(url)).toContain('title=故宫')
     expect(decodeURIComponent(url)).toContain('content=北京市东城区')
+  })
+})
+
+describe('wgs84ToGcj02', () => {
+  it('returns input unchanged outside China (Sydney)', () => {
+    const sydney = wgs84ToGcj02(-33.8688, 151.2093)
+    expect(sydney.lat).toBeCloseTo(-33.8688, 6)
+    expect(sydney.lng).toBeCloseTo(151.2093, 6)
+  })
+  it('returns input unchanged outside China (NYC)', () => {
+    const nyc = wgs84ToGcj02(40.7128, -74.0060)
+    expect(nyc.lat).toBeCloseTo(40.7128, 6)
+    expect(nyc.lng).toBeCloseTo(-74.0060, 6)
+  })
+  it('shifts coords inside China (Beijing Tiananmen)', () => {
+    // Tiananmen WGS-84 ≈ (39.9055, 116.3911); GCJ-02 shift is ~300-700m,
+    // generally the result is east+north of the input.
+    const r = wgs84ToGcj02(39.9055, 116.3911)
+    expect(Math.abs(r.lat - 39.9055)).toBeGreaterThan(0.001)
+    expect(Math.abs(r.lng - 116.3911)).toBeGreaterThan(0.001)
+    // Sanity-bound: the offset is always under ~0.01° in either dimension.
+    expect(Math.abs(r.lat - 39.9055)).toBeLessThan(0.01)
+    expect(Math.abs(r.lng - 116.3911)).toBeLessThan(0.01)
+  })
+  it('shifts coords inside China (Shanghai)', () => {
+    const r = wgs84ToGcj02(31.2304, 121.4737)
+    expect(Math.abs(r.lat - 31.2304)).toBeGreaterThan(0.001)
+    expect(Math.abs(r.lng - 121.4737)).toBeGreaterThan(0.001)
+  })
+})
+
+describe('mapUrls (multi-provider)', () => {
+  it('returns three provider URLs', () => {
+    const u = mapUrls(39.908, 116.397, '故宫')
+    expect(u.baidu).toContain('api.map.baidu.com/marker')
+    expect(u.amap).toContain('uri.amap.com/marker')
+    expect(u.google).toContain('google.com/maps')
+  })
+  it('Baidu URL keeps WGS-84 (passthrough + coord_type)', () => {
+    const u = mapUrls(39.908, 116.397, '故宫')
+    expect(u.baidu).toContain('coord_type=wgs84')
+    expect(u.baidu).toContain('location=39.908%2C116.397')
+  })
+  it('Amap URL converts to GCJ-02 (coords differ from input inside China)', () => {
+    const u = mapUrls(39.908, 116.397, '故宫')
+    // Amap position is "lng,lat" — extract and confirm it's NOT raw WGS-84.
+    const m = u.amap.match(/position=([\d.]+)%2C([\d.]+)/)
+    expect(m).toBeTruthy()
+    if (m) {
+      const lng = parseFloat(m[1])
+      const lat = parseFloat(m[2])
+      expect(Math.abs(lng - 116.397)).toBeGreaterThan(0.001)
+      expect(Math.abs(lat - 39.908)).toBeGreaterThan(0.001)
+    }
+  })
+  it('Amap URL passes WGS-84 unchanged outside China', () => {
+    const u = mapUrls(40.7128, -74.0060)  // NYC
+    expect(u.amap).toContain('position=-74.006%2C40.7128')
+  })
+  it('Google URL is plain WGS-84', () => {
+    const u = mapUrls(39.908, 116.397)
+    expect(u.google).toContain('q=39.908%2C116.397')
+  })
+  it('includes label as Amap name', () => {
+    const u = mapUrls(39.908, 116.397, '故宫')
+    expect(decodeURIComponent(u.amap)).toContain('name=故宫')
   })
 })
 

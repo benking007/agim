@@ -14,8 +14,8 @@
 import { logger as rootLogger } from './logger.js'
 import {
   createMemo, getMemo, deleteMemo, searchMemos, listMemos,
-  geocodeAddress, isGeocodingAvailable, mapUrl,
-  type LocationMemo,
+  geocodeAddress, isGeocodingAvailable, mapUrl, mapUrls,
+  type LocationMemo, type MapUrls,
 } from './locations.js'
 import { issueToken } from './location-token.js'
 import type { RunContext } from './approval-bus.js'
@@ -100,7 +100,10 @@ interface SaveResult {
   lat: number
   lng: number
   label: string
+  /** Default (Baidu) map URL — kept for backwards compat. */
   mapUrl: string
+  /** All three providers — agent can offer the user a choice. */
+  mapUrls: MapUrls
   source: LocationMemo['source']
 }
 
@@ -148,9 +151,11 @@ async function handleSave(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+  const displayLabel = label || `位置 #${id}`
   const result: SaveResult = {
     id, lat, lng, label, source,
-    mapUrl: mapUrl(lat, lng, label || `位置 #${id}`, ''),
+    mapUrl: mapUrl(lat, lng, displayLabel, ''),
+    mapUrls: mapUrls(lat, lng, displayLabel, ''),
   }
   return { ok: true, result }
 }
@@ -169,7 +174,10 @@ interface ListResult {
     note: string
     source: string
     created_at: string
+    /** Default (Baidu) URL. */
     mapUrl: string
+    /** All three providers. */
+    mapUrls: MapUrls
   }>
 }
 
@@ -185,16 +193,20 @@ function handleList(
     ? searchMemos({ userId: ctx.userId, query, limit })
     : listMemos({ userId: ctx.userId, limit })
   const result: ListResult = {
-    items: rows.map((r) => ({
-      id: r.id,
-      lat: r.lat,
-      lng: r.lng,
-      label: r.label,
-      note: r.note,
-      source: r.source,
-      created_at: r.created_at,
-      mapUrl: mapUrl(r.lat, r.lng, r.label || r.note || `位置 #${r.id}`, ''),
-    })),
+    items: rows.map((r) => {
+      const displayLabel = r.label || r.note || `位置 #${r.id}`
+      return {
+        id: r.id,
+        lat: r.lat,
+        lng: r.lng,
+        label: r.label,
+        note: r.note,
+        source: r.source,
+        created_at: r.created_at,
+        mapUrl: mapUrl(r.lat, r.lng, displayLabel, ''),
+        mapUrls: mapUrls(r.lat, r.lng, displayLabel, ''),
+      }
+    }),
   }
   return { ok: true, result }
 }

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — 三家地图任选（百度 / 高德 / Google）
+- 用户在 IM 里收到的位置消息现在同时给出 **百度 / 高德 / Google** 三条地图链接，根据自己习惯任选——之前默认只挂百度
+- 新增 `mapUrls(lat, lng, label?, addr?)` 工具：返回 `{ baidu, amap, google }`，三家分别对接：
+  - 百度：`api.map.baidu.com/marker` + `coord_type=wgs84`（继承之前的实现）
+  - 高德：`uri.amap.com/marker` —— **必须把 WGS-84 → GCJ-02 转换后再发送**（高德内部用 GCJ-02，参数 `coordinate=gaode` 提示）
+  - Google：`google.com/maps?q=lat,lng`（WGS-84 原生，直接透传）
+- 新增 `wgs84ToGcj02(lat, lng)`：标准的"中国加密偏移"转换公式（A=6378245.0, EE=0.00669342162296594323），中国大陆境内偏移 ~300-700m，境外（HK/MO/TW/海外）原样返回
+- 调整三处用户可见输出：
+  - `POST /api/loc` 推回的"✅ 已记录" 消息列出 3 条链接
+  - `/location show <id>` 命令详情列出 3 条
+  - `mcp__imhub__save_location` 和 `list_locations` 工具返回结构加 `mapUrls: { baidu, amap, google }` 字段；旧 `mapUrl`（百度）保留向后兼容
+  - MCP 工具描述告诉 agent 优先把三条都展示给用户挑
+
 ### Changed — 地图服务从腾讯切到百度
 - **地理编码**：`apis.map.qq.com/ws/geocoder/v1/` → `api.map.baidu.com/geocoding/v3/`，强制 `ret_coordtype=wgs84ll`（百度默认返 BD-09，必须显式拉 WGS-84 才和浏览器 `navigator.geolocation` 一致——否则存库坐标 vs 浏览器坐标 50–500m 飘移）
 - **凭据 env**：`IMHUB_TENCENT_MAP_KEY` / `IMHUB_TENCENT_MAP_SK` → `IMHUB_BAIDU_MAP_AK`（默认 key 流程不需要 SN 签名；如以后开启 SN 校验，文档说明在 `src/core/locations.ts` 头注释里）

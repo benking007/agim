@@ -501,7 +501,8 @@ export function buildServer(client: ApprovalClient): McpServer {
         'coordinates ("39.908,116.397") OR a geocodable address ("国贸三期", "Times Square"). ' +
         'Pass either lat+lng (preferred when known) or address (geocoded server-side via ' +
         'Baidu Maps; requires IMHUB_BAIDU_MAP_AK env). Returns { id, lat, lng, label, ' +
-        'mapUrl, source }. Confirm to the user with one sentence + the map URL.',
+        'mapUrl, mapUrls: { baidu, amap, google }, source }. Show ALL THREE map URLs ' +
+        '(Baidu / 高德 / Google) in your reply so the user can pick their preferred app.',
       inputSchema: {
         lat: z.number().min(-90).max(90).optional().describe('Latitude in WGS84 degrees'),
         lng: z.number().min(-180).max(180).optional().describe('Longitude in WGS84 degrees'),
@@ -522,8 +523,9 @@ export function buildServer(client: ApprovalClient): McpServer {
         'put / parked / left something, or for any recall query: "我的车在哪", "上次记的咖啡店" ' +
         ', "找下伞的位置". Pass `query` for fuzzy match against label and note (LIKE match, ' +
         'single token). Without `query`, returns the most recent memos. Returns { items: ' +
-        '[{ id, lat, lng, label, note, created_at, mapUrl, ... }] }. Format the answer for the ' +
-        'user as 1-2 sentences + the map URL on its own line.',
+        '[{ id, lat, lng, label, note, created_at, mapUrl, mapUrls: { baidu, amap, google }, ... }] }. ' +
+        'Format the answer for the user as 1-2 sentences + ALL THREE map URLs (Baidu / 高德 / Google) ' +
+        'so the user can pick their preferred app.',
       inputSchema: {
         query: z.string().optional().describe('Fuzzy match against label and note'),
         limit: z.number().int().min(1).max(50).optional().describe('Max rows (default 10)'),

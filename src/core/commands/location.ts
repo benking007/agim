@@ -16,7 +16,7 @@ import {
   createMemo, listMemos, getMemo, deleteMemo,
   parseCoordPair, stripCoordPrefix,
   geocodeAddress, isGeocodingAvailable,
-  mapUrl,
+  mapUrls,
 } from '../locations.js'
 import { issueToken } from '../location-token.js'
 
@@ -48,7 +48,7 @@ function fmtDetail(m: {
   id: number; lat: number; lng: number; label: string; note: string;
   source: string; created_at: string;
 }): string {
-  const url = mapUrl(m.lat, m.lng, m.label || m.note || `位置 #${m.id}`, m.label)
+  const urls = mapUrls(m.lat, m.lng, m.label || m.note || `位置 #${m.id}`, m.label)
   return [
     `📍 位置 #${m.id}`,
     m.label ? `   位置: ${m.label}` : '',
@@ -57,7 +57,10 @@ function fmtDetail(m: {
     `   来源: ${m.source === 'geocoded' ? '地址解析' : m.source === 'browser' ? '浏览器定位' : '手动录入'}`,
     `   时间: ${m.created_at}`,
     '',
-    `   🗺 ${url}`,
+    `   🗺 在地图中打开:`,
+    `   百度: ${urls.baidu}`,
+    `   高德: ${urls.amap}`,
+    `   Google: ${urls.google}`,
   ].filter(Boolean).join('\n')
 }
 

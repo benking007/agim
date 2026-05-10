@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.38] - 2026-05-10 — `/schedule` → `/cron` 命名空间清理 + `/help` 改造
+
+### Changed — `/help` / `/start` i18n + 重写
+- **默认中文**（与 `/remind` `/cron` `/audit` 等其它命令的中文文案保持一致），`/help en` / `/start en` 切英文。
+- **补全所有遗漏命令**：原本只有 ~10 条，现在覆盖 `/cron` `/remind` `/job` `/tasks` `/check` `/cancel` `/switch` `/collect` `/model` `/models` `/think` `/plan` `/approval` `/auto` `/audit` `/stats` `/sessions` `/workspaces` `/router` 等。
+- **按分类分区块**：会话 / 提醒 · 定时 / 任务 / Agent 控制 / 工具审批 / 运维 / Agent 子命令。
+- **`/help <topic>` 子命令**：`/help remind`、`/help cron`、`/help job`、`/help approval`、`/help workspaces` 等都返回该命令的详细帮助；`/help remind` 直接复用 `/remind help`。
+- **`/?` 别名 `/help`**。
+- 实现：`ParsedMessage` 的 `command` 变种新增可选 `args`，router 把 `/help` `/start` 后面的内容当 args 透传。
+
+
+### Changed
+- **`/schedule` 重命名为 `/cron`**——避免和 Claude Code 内置 `/schedule` skill（Anthropic 云端 routines）撞名导致 LLM 误解。
+  - 主名：`/cron list|create|delete|enable|disable|check`，语义和老 `/schedule` 完全相同。
+  - 老 `/schedule` 仍能用，但首行返回 `⚠️ 已重命名为 /cron` 迁移提示。计划在 **v0.4.0** 移除 `/schedule` 别名。
+  - 引擎模块名（`src/core/schedule.ts`）和 REST 端点（`/api/schedules`）保持不变——纯命令面 rename，不破坏历史数据 / 外部集成。
+- 文件移动：`src/core/commands/schedule.ts` → `src/core/commands/cron.ts`；导出函数 `handleScheduleCommand` → `handleCronCommand`；`ParsedMessage` 联合类型 `{ type: 'schedule' }` → `{ type: 'cron'; legacy?: boolean }`。
+- README / Web tasks 页文案同步更新。
+
+### Migration
+- 用户层：把 `/schedule …` 改成 `/cron …` 即可；脚本里如果硬编码 `/schedule` 也能继续工作直到 v0.4.0。
+- 集成层：`/api/schedules` REST 接口、`schedules` SQLite 表、`schedules.db` 文件路径均不变。
+
+### Fixed
+- **schedules.db 自举顺序**：`idx_sched_creator` 索引从初始化 schema 字符串里挪到 `migrateOwnership()` 之后。原先在 0.2.0 之前建的库升级到 0.2.x 时，`db.exec(schema)` 会因为 `creator_id` 列不存在直接抛错，被 helper 标记为 broken，导致后续的 `ALTER TABLE` 迁移永远跑不到——`/cron` / `/schedule` 整个子系统于是默默失效。修了这次老库会自动补列再建索引。
+
 ## [0.2.37] - 2026-05-10 — Reminders + Email + Multi-agent MCP
 
 > 设计文档：`docs/architecture/reminders.md`

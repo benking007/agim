@@ -16,7 +16,7 @@ import { handleThinkCommand } from './commands/think.js'
 import { handleStatsCommand } from './commands/stats.js'
 import { handleSessionsCommand } from './commands/sessions.js'
 import { handleWorkspacesCommand } from './commands/workspaces.js'
-import { handleScheduleCommand } from './commands/schedule.js'
+import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { handleApprovalCommand } from './commands/approval.js'
@@ -106,15 +106,16 @@ export function parseMessage(text: string): ParsedMessage {
   const [, cmd, rest] = match
 
   // Built-in commands
-  if (cmd === 'start') return { type: 'command', command: 'start' }
+  if (cmd === 'start') return { type: 'command', command: 'start', args: rest }
   if (cmd === 'status') return { type: 'command', command: 'status' }
-  if (cmd === 'help') return { type: 'command', command: 'help' }
+  if (cmd === 'help' || cmd === '?') return { type: 'command', command: 'help', args: rest }
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }
   if (cmd === 'audit') return { type: 'audit', args: rest }
   if (cmd === 'router') return { type: 'router', args: rest }
   if (cmd === 'workspaces' || cmd === 'ws') return { type: 'workspaces', args: rest }
-  if (cmd === 'schedule' || cmd === 'cron') return { type: 'schedule', args: rest }
+  if (cmd === 'cron') return { type: 'cron', args: rest }
+  if (cmd === 'schedule') return { type: 'cron', args: rest, legacy: true }
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'tasks') return { type: 'job', args: 'list' }
@@ -159,7 +160,7 @@ export async function routeMessage(
 ): Promise<string | AsyncGenerator<string>> {
   switch (parsed.type) {
     case 'command': {
-      return handleBuiltInCommand(parsed.command, ctx)
+      return handleBuiltInCommand(parsed.command, ctx, parsed.args)
     }
 
     case 'agentCommand': {
@@ -178,8 +179,12 @@ export async function routeMessage(
       return handleWorkspacesCommand(parsed.args, ctx)
     }
 
-    case 'schedule': {
-      return handleScheduleCommand(parsed.args, ctx)
+    case 'cron': {
+      const out = await handleCronCommand(parsed.args, ctx)
+      if (parsed.legacy) {
+        return `⚠️ \`/schedule\` 已重命名为 \`/cron\`（避免与 Claude Code 内置 /schedule 撞名）。老命令将在 v0.4.0 移除。\n\n${out}`
+      }
+      return out
     }
 
     case 'remind': {

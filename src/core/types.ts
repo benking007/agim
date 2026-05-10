@@ -29,13 +29,13 @@ export interface ChatMessage {
  */
 export type ParsedMessage =
   | { type: 'default'; prompt: string }
-  | { type: 'command'; command: 'start' | 'status' | 'help' | 'agents' | 'new' }
+  | { type: 'command'; command: 'start' | 'status' | 'help' | 'agents' | 'new'; args?: string }
   | { type: 'agentCommand'; command: string; prompt: string }
   | { type: 'agent'; agent: string; prompt: string }
   | { type: 'audit'; args: string }
   | { type: 'router'; args: string }
   | { type: 'workspaces'; args: string }
-  | { type: 'schedule'; args: string }
+  | { type: 'cron'; args: string; legacy?: boolean }
   | { type: 'remind'; args: string }
   | { type: 'job'; args: string }
   | { type: 'model'; args: string }

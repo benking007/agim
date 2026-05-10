@@ -621,7 +621,7 @@ export function createReminder(input: CreateReminderInput): number {
     throw new ReminderError('too_soon', `触发时间必须至少 ${MIN_FUTURE_MS / 1000} 秒之后`)
   }
   if (delta > MAX_FUTURE_MS) {
-    throw new ReminderError('too_far', '触发时间不能超过 7 天后；如需更长周期请用 /schedule')
+    throw new ReminderError('too_far', '触发时间不能超过 7 天后；如需更长周期请用 /cron')
   }
 
   if (input.userId) {

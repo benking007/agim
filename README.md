@@ -88,7 +88,7 @@ im-hub-pro messengers      # List available messengers
 | `/model [provider/model]` | View or switch model |
 | `/think on\|off` | Toggle extended thinking |
 | `/remind …` | Reminders — see [Reminders](#reminders) below |
-| `/job`, `/schedule`, `/audit`, `/stats` | Manage jobs, schedules, audit, stats |
+| `/job`, `/cron`, `/audit`, `/stats` | Manage jobs, cron schedules, audit, stats (`/schedule` aliases `/cron` until v0.4.0) |
 | `/router status\|explain` | Inspect routing decisions |
 | `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
 

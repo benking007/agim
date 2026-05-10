@@ -88,7 +88,7 @@ im-hub-pro messengers      # 列出可用 IM
 | `/model [provider/model]` | 查看或切换模型 |
 | `/think on\|off` | 切换深度思考模式 |
 | `/remind …` | 提醒子系统 — 详见 [提醒](#提醒) |
-| `/job`、`/schedule`、`/audit`、`/stats` | 管理任务、调度、审计、统计 |
+| `/job`、`/cron`、`/audit`、`/stats` | 管理任务、定时、审计、统计（`/schedule` 仍是 `/cron` 别名，v0.4.0 移除） |
 | `/router status\|explain` | 查看路由策略 |
 | `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝（工具调用 或 提醒确认卡片） |
 

@@ -114,6 +114,11 @@ function migrateOwnership(d: Database.Database): void {
       // duplicate column — already migrated
     }
   }
+  // creator_id index has to be created AFTER the column exists. Putting it
+  // in the initial schema string would fault on any pre-0.2.x DB whose
+  // schedules table predates ownership tracking — db.exec() throws, helper
+  // marks the DB broken, and init() never runs to add the column.
+  d.exec('CREATE INDEX IF NOT EXISTS idx_sched_creator ON schedules(creator_id)')
 }
 
 const helper = createSqliteHelper({
@@ -136,7 +141,6 @@ const helper = createSqliteHelper({
       workspace_id  TEXT    NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_sched_next ON schedules(next_run, enabled);
-    CREATE INDEX IF NOT EXISTS idx_sched_creator ON schedules(creator_id);
   `,
   init: (d) => migrateOwnership(d),
 })

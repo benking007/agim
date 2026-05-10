@@ -73,9 +73,23 @@ describe('parseMessage', () => {
       expect(result).toEqual({ type: 'command', command: 'status' })
     })
 
-    it('should parse /help command', () => {
-      const result = parseMessage('/help')
-      expect(result).toEqual({ type: 'command', command: 'help' })
+    it('should parse /help command (no args)', () => {
+      expect(parseMessage('/help')).toEqual({ type: 'command', command: 'help', args: '' })
+    })
+
+    it('should pass /help args through (lang + topic)', () => {
+      expect(parseMessage('/help en')).toEqual({ type: 'command', command: 'help', args: 'en' })
+      expect(parseMessage('/help remind')).toEqual({ type: 'command', command: 'help', args: 'remind' })
+      expect(parseMessage('/help en cron')).toEqual({ type: 'command', command: 'help', args: 'en cron' })
+    })
+
+    it('should accept /? as alias of /help', () => {
+      expect(parseMessage('/?')).toEqual({ type: 'command', command: 'help', args: '' })
+    })
+
+    it('should pass /start args through (lang)', () => {
+      expect(parseMessage('/start')).toEqual({ type: 'command', command: 'start', args: '' })
+      expect(parseMessage('/start en')).toEqual({ type: 'command', command: 'start', args: 'en' })
     })
 
     it('should parse /agents command', () => {
@@ -216,9 +230,9 @@ describe('parseMessage', () => {
       expect(parseMessage('/ws list')).toEqual({ type: 'workspaces', args: 'list' })
     })
 
-    it('parses /schedule and /cron as aliases (P2-F)', () => {
-      expect(parseMessage('/schedule list')).toEqual({ type: 'schedule', args: 'list' })
-      expect(parseMessage('/cron list')).toEqual({ type: 'schedule', args: 'list' })
+    it('parses /cron as primary and /schedule as legacy alias (P2-F)', () => {
+      expect(parseMessage('/cron list')).toEqual({ type: 'cron', args: 'list' })
+      expect(parseMessage('/schedule list')).toEqual({ type: 'cron', args: 'list', legacy: true })
     })
 
     it('parses /approval and /auto as aliases', () => {
@@ -243,9 +257,19 @@ describe('routeMessage', () => {
       expect(result).toContain('IM hub Status')
     })
 
-    it('should return help message for /help', async () => {
+    it('should return help message for /help (zh by default)', async () => {
       const result = await routeMessage({ type: 'command', command: 'help' }, ctx)
-      expect(result).toContain('IM hub Commands')
+      expect(result).toContain('im-hub 命令速查')
+    })
+
+    it('/help en returns the English help', async () => {
+      const result = await routeMessage({ type: 'command', command: 'help', args: 'en' }, ctx)
+      expect(result).toContain('im-hub Commands')
+    })
+
+    it('/help <topic> returns topic-specific help', async () => {
+      const result = await routeMessage({ type: 'command', command: 'help', args: 'cron' }, ctx)
+      expect(result).toContain('/cron')
     })
 
     it('should return agents list for /agents', async () => {

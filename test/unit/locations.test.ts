@@ -17,7 +17,7 @@ const mod = await import('../../src/core/locations.js')
 const {
   createMemo, listMemos, getMemo, deleteMemo,
   parseCoordPair, stripCoordPrefix, mapUrl,
-  isGeocodingAvailable, closeLocationsDb,
+  isGeocodingAvailable, signTencent, closeLocationsDb,
 } = mod
 
 beforeAll(async () => { await mkdir(TEST_DIR, { recursive: true }) })
@@ -92,6 +92,58 @@ describe('isGeocodingAvailable', () => {
     expect(isGeocodingAvailable()).toBe(true)
     if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_KEY
     else process.env.IMHUB_TENCENT_MAP_KEY = orig
+  })
+})
+
+describe('signTencent (Tencent Maps SK signing)', () => {
+  // Algorithm verified against the live API on 2026-05-10:
+  // sort params alphabetically, build "k=v&...." with **un-URL-encoded**
+  // values, concat path + "?" + raw_qs + sk, MD5 → 32 hex chars lowercase.
+  it('returns null when SK env not set', () => {
+    const orig = process.env.IMHUB_TENCENT_MAP_SK
+    delete process.env.IMHUB_TENCENT_MAP_SK
+    expect(signTencent('/ws/geocoder/v1/', { address: '故宫', key: 'KEY' })).toBeNull()
+    if (orig !== undefined) process.env.IMHUB_TENCENT_MAP_SK = orig
+  })
+
+  it('produces a 32-char lowercase hex MD5 when SK set', () => {
+    const orig = process.env.IMHUB_TENCENT_MAP_SK
+    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK123456'
+    const sig = signTencent('/ws/geocoder/v1/', { address: '故宫', key: 'TESTKEY' })
+    expect(sig).not.toBeNull()
+    expect(sig).toMatch(/^[a-f0-9]{32}$/)
+    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
+    else process.env.IMHUB_TENCENT_MAP_SK = orig
+  })
+
+  it('signing is deterministic and depends on param order normalization', () => {
+    const orig = process.env.IMHUB_TENCENT_MAP_SK
+    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK'
+    // Same params in different insertion orders → same sig (we sort).
+    const a = signTencent('/p/', { z: '1', a: '2' })
+    const b = signTencent('/p/', { a: '2', z: '1' })
+    expect(a).toBe(b)
+    // Different SK → different sig.
+    process.env.IMHUB_TENCENT_MAP_SK = 'OTHERSK'
+    const c = signTencent('/p/', { z: '1', a: '2' })
+    expect(c).not.toBe(a)
+    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
+    else process.env.IMHUB_TENCENT_MAP_SK = orig
+  })
+
+  it('matches the documented Python reference implementation', () => {
+    // This is the exact SK + params + expected MD5 from our shell verification
+    // run on 2026-05-10. If Tencent ever changes the algorithm, this fixture
+    // breaks loudly so we know to rev. Computed via:
+    //   md5("/ws/geocoder/v1/?address=tiananmen&key=FAKEKEY" + "TESTSK")
+    const orig = process.env.IMHUB_TENCENT_MAP_SK
+    process.env.IMHUB_TENCENT_MAP_SK = 'TESTSK'
+    const sig = signTencent('/ws/geocoder/v1/', { address: 'tiananmen', key: 'FAKEKEY' })
+    // Pre-computed reference:
+    //   echo -n '/ws/geocoder/v1/?address=tiananmen&key=FAKEKEYTESTSK' | md5sum
+    expect(sig).toBe('24863043a5ae65196985839ccd112c7b')
+    if (orig === undefined) delete process.env.IMHUB_TENCENT_MAP_SK
+    else process.env.IMHUB_TENCENT_MAP_SK = orig
   })
 })
 

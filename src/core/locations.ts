@@ -13,6 +13,7 @@
 
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
@@ -199,17 +200,58 @@ export interface GeocodeResult {
   formattedAddress: string
 }
 
-/** Geocode a free-text address via Tencent Maps. Returns null on missing key
- *  (so the command can show a friendly error) or any failure. */
-export async function geocodeAddress(address: string): Promise<GeocodeResult | null> {
+/** Discriminated outcome surface for geocoding. Lets the command layer give
+ *  precise error messages (quota exceeded vs. address not found vs. wrong key
+ *  config) instead of a generic "找不到" for every non-success case. */
+export type GeocodeOutcome =
+  | { ok: true; lat: number; lng: number; formattedAddress: string }
+  | { ok: false; reason: 'no_key' | 'quota' | 'signature' | 'not_found' | 'http' | 'unknown'; status?: number; message?: string }
+
+/**
+ * Tencent Maps WebService SK signing.
+ *
+ * Algorithm (verified against the live API): sort params alphabetically by
+ * key, build `k=v&...` with **un-URL-encoded** values, concat
+ * `path + '?' + raw_qs + sk`, MD5 → 32-char lowercase hex. The actual HTTP
+ * request URL still uses URL-encoded values; only the signing input uses raw.
+ *
+ * If IMHUB_TENCENT_MAP_SK is unset, returns null (= unsigned mode; key must
+ * have signature requirement disabled in the lbs.qq.com console).
+ */
+export function signTencent(path: string, params: Record<string, string>): string | null {
+  const sk = process.env.IMHUB_TENCENT_MAP_SK
+  if (!sk) return null
+  const sorted = Object.entries(params).sort(([a], [b]) => a.localeCompare(b))
+  const rawQs = sorted.map(([k, v]) => `${k}=${v}`).join('&')
+  return createHash('md5').update(`${path}?${rawQs}${sk}`).digest('hex')
+}
+
+type GeocodeFailReason = 'no_key' | 'quota' | 'signature' | 'not_found' | 'http' | 'unknown'
+
+/** Map Tencent's response status codes to our reason taxonomy.
+ *  Codes per https://lbs.qq.com/service/webService/webServiceGuide/status . */
+function classifyStatus(status: number): GeocodeFailReason {
+  // 0 = success, 1xx = auth/sig family, 3xx = data/quota family
+  if (status === 110 || status === 111 || status === 112 || status === 113) return 'signature'
+  if (status === 120 || status === 121 || status === 122) return 'quota'
+  if (status === 347 || status === 348 || status === 349) return 'not_found'
+  return 'unknown'
+}
+
+/** Geocode a free-text address via Tencent Maps. Discriminated outcome so the
+ *  command can give precise feedback (quota / signature / not-found / etc). */
+export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
   const key = process.env.IMHUB_TENCENT_MAP_KEY
   if (!key) {
     log.debug({ event: 'locations.geocode.no_key' }, 'Tencent map key not set; skipping geocode')
-    return null
+    return { ok: false, reason: 'no_key' }
   }
-  const url = new URL('https://apis.map.qq.com/ws/geocoder/v1/')
-  url.searchParams.set('address', address)
-  url.searchParams.set('key', key)
+  const path = '/ws/geocoder/v1/'
+  const params: Record<string, string> = { address, key }
+  const sig = signTencent(path, params)
+  const url = new URL(`https://apis.map.qq.com${path}`)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  if (sig) url.searchParams.set('sig', sig)
   try {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 8000)
@@ -217,30 +259,31 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult | n
     clearTimeout(timer)
     if (!res.ok) {
       log.warn({ event: 'locations.geocode.http_error', status: res.status })
-      return null
+      return { ok: false, reason: 'http', status: res.status }
     }
     const data = (await res.json()) as TencentGeocodeResponse
-    if (data.status !== 0 || !data.result?.location) {
-      log.info({
-        event: 'locations.geocode.miss',
-        status: data.status, message: data.message, address,
-      })
-      return null
+    if (data.status === 0 && data.result?.location) {
+      const { lat, lng } = data.result.location
+      const formatted =
+        data.result.formatted_addresses?.recommend ??
+        data.result.formatted_addresses?.rough ??
+        data.result.address ??
+        data.result.title ??
+        address
+      return { ok: true, lat, lng, formattedAddress: formatted }
     }
-    const { lat, lng } = data.result.location
-    const formatted =
-      data.result.formatted_addresses?.recommend ??
-      data.result.formatted_addresses?.rough ??
-      data.result.address ??
-      data.result.title ??
-      address
-    return { lat, lng, formattedAddress: formatted }
+    const reason = classifyStatus(data.status)
+    log.info({
+      event: 'locations.geocode.miss',
+      status: data.status, reason, message: data.message, address,
+    })
+    return { ok: false, reason, status: data.status, message: data.message }
   } catch (err) {
     log.warn({
       event: 'locations.geocode.failed',
       err: err instanceof Error ? err.message : String(err),
     })
-    return null
+    return { ok: false, reason: 'unknown', message: err instanceof Error ? err.message : String(err) }
   }
 }
 

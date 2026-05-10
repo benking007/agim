@@ -114,11 +114,33 @@ export async function handleLocationCommand(args: string, ctx: RouteContext): Pr
   }
 
   const geo = await geocodeAddress(trimmed)
-  if (!geo) {
-    return [
-      `❌ 找不到 "${trimmed}" 这个位置。`,
-      '换个具体点的地址试试，或直接给坐标：/location 39.908,116.397',
-    ].join('\n')
+  if (!geo.ok) {
+    switch (geo.reason) {
+      case 'quota':
+        return [
+          `❌ 地图服务今日配额已用尽（status ${geo.status}）。`,
+          '解决：[lbs.qq.com](https://lbs.qq.com) 控制台 → 配额管理 → 申请免费配额。',
+          '或者直接用坐标：/location 39.908,116.397',
+        ].join('\n')
+      case 'signature':
+        return [
+          `❌ 地图 key 签名校验失败（status ${geo.status}）。`,
+          '检查：IMHUB_TENCENT_MAP_KEY 是否对应 IMHUB_TENCENT_MAP_SK；',
+          '或在控制台关掉强制签名校验。',
+        ].join('\n')
+      case 'http':
+        return `❌ 地图服务 HTTP 错误（${geo.status}），稍后再试或用坐标。`
+      case 'not_found':
+        return [
+          `❌ 找不到 "${trimmed}" 这个位置。`,
+          '换个具体点的地址试试，或直接给坐标：/location 39.908,116.397',
+        ].join('\n')
+      default:
+        return [
+          `❌ 地址解析失败：${geo.message ?? geo.reason}。`,
+          '可以直接给坐标：/location 39.908,116.397',
+        ].join('\n')
+    }
   }
   try {
     const id = createMemo({

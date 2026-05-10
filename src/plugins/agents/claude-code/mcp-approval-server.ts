@@ -477,10 +477,13 @@ export function buildServer(client: ApprovalClient): McpServer {
         'where they ARE RIGHT NOW (parking the car, marking a meeting spot, etc.) and you ' +
         'don\'t already have explicit coordinates from them. Examples that should trigger ' +
         'this: "帮我记下我的车停在这" / "我把伞放这了，记一下" / "记一下我现在的位置". ' +
-        'Returns { url, expiresAt, ttlSeconds, note }. Reply to the user with a short ' +
-        'sentence + the URL on its own line. After the user taps the link and grants ' +
-        'permission, im-hub pushes a "✅ 已记录..." confirmation to this thread directly — ' +
-        'you do NOT need to wait for it. The link is single-use and expires in 10 minutes.',
+        'Returns { url, expiresAt, ttlSeconds, note }. Reply to the user with markdown link ' +
+        'syntax `[👉 点击共享当前位置](url)` on its own line — the bracket-paren form is the ' +
+        'project convention; iLink + WeChat in-app browser render it as a tappable label ' +
+        'that hides the long token URL. Do NOT print the raw URL alongside (clutters chat). ' +
+        'After the user taps and grants permission, im-hub pushes a "✅ 已记录..." ' +
+        'confirmation to this thread directly — you do NOT need to wait for it. Link is ' +
+        'single-use and expires in 10 minutes.',
       inputSchema: {
         note: z.string().optional().describe(
           'Optional short label for what is being recorded (e.g. "车", "伞", "停车场B区"). ' +
@@ -501,8 +504,10 @@ export function buildServer(client: ApprovalClient): McpServer {
         'coordinates ("39.908,116.397") OR a geocodable address ("国贸三期", "Times Square"). ' +
         'Pass either lat+lng (preferred when known) or address (geocoded server-side via ' +
         'Baidu Maps; requires IMHUB_BAIDU_MAP_AK env). Returns { id, lat, lng, label, ' +
-        'mapUrl, mapUrls: { baidu, amap, google }, source }. Show ALL THREE map URLs ' +
-        '(Baidu / 高德 / Google) in your reply so the user can pick their preferred app.',
+        'mapUrl, mapUrls: { baidu, amap, google }, source }. Show ALL THREE map URLs in your ' +
+        'reply using markdown link syntax: ' +
+        '`🗺 [百度地图](url) · [高德地图](url) · [Google](url)` so the user gets tappable ' +
+        'labels (iLink + WeChat in-app browser render markdown links). Do NOT print raw URLs.',
       inputSchema: {
         lat: z.number().min(-90).max(90).optional().describe('Latitude in WGS84 degrees'),
         lng: z.number().min(-180).max(180).optional().describe('Longitude in WGS84 degrees'),
@@ -524,8 +529,9 @@ export function buildServer(client: ApprovalClient): McpServer {
         ', "找下伞的位置". Pass `query` for fuzzy match against label and note (LIKE match, ' +
         'single token). Without `query`, returns the most recent memos. Returns { items: ' +
         '[{ id, lat, lng, label, note, created_at, mapUrl, mapUrls: { baidu, amap, google }, ... }] }. ' +
-        'Format the answer for the user as 1-2 sentences + ALL THREE map URLs (Baidu / 高德 / Google) ' +
-        'so the user can pick their preferred app.',
+        'Format the answer as 1-2 sentences + ALL THREE map URLs using markdown link syntax: ' +
+        '`🗺 [百度地图](url) · [高德地图](url) · [Google](url)` so the user gets tappable labels ' +
+        'instead of raw URL strings. Do NOT print the raw URLs.',
       inputSchema: {
         query: z.string().optional().describe('Fuzzy match against label and note'),
         limit: z.number().int().min(1).max(50).optional().describe('Max rows (default 10)'),

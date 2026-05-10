@@ -279,14 +279,16 @@ export async function startWebServer(options: {
       const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
       const headLabel = note ? `'${note}'` : '位置'
       const urls = mapUrls(lat, lng, note || '当前位置', '')
+      // Markdown link form `[text](url)` — if iLink renders, the user sees
+      // tappable labels instead of raw URLs. If iLink ignores markdown,
+      // worst case the brackets show through; URL still clickable on its
+      // own line elsewhere. Test in WeChat after deploy; revert to plain
+      // URLs if the markdown shows as raw chars.
       const reply = [
         `✅ 已记录${headLabel} ${idTag}`,
         `   坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accTxt}`,
         '',
-        `   🗺 在地图中打开:`,
-        `   百度: ${urls.baidu}`,
-        `   高德: ${urls.amap}`,
-        `   Google: ${urls.google}`,
+        `   🗺 [百度地图](${urls.baidu}) · [高德地图](${urls.amap}) · [Google](${urls.google})`,
         memoId ? `   /location show ${memoId} 看详情 · /location delete ${memoId} 删除` : '',
       ].filter(Boolean).join('\n')
       if (messenger) {

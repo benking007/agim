@@ -57,10 +57,7 @@ function fmtDetail(m: {
     `   来源: ${m.source === 'geocoded' ? '地址解析' : m.source === 'browser' ? '浏览器定位' : '手动录入'}`,
     `   时间: ${m.created_at}`,
     '',
-    `   🗺 在地图中打开:`,
-    `   百度: ${urls.baidu}`,
-    `   高德: ${urls.amap}`,
-    `   Google: ${urls.google}`,
+    `   🗺 [百度地图](${urls.baidu}) · [高德地图](${urls.amap}) · [Google](${urls.google})`,
   ].filter(Boolean).join('\n')
 }
 
@@ -221,13 +218,15 @@ function hereAction(ctx: RouteContext): string {
   })
   // Strip trailing slash so we don't end up with `//loc?...`.
   const base = baseUrl.replace(/\/+$/, '')
-  const url = `${base}/loc?t=${token}`
+  // Short alias /l/<token> matches what the agent-driven tool uses; both
+  // /loc?t= and /l/ resolve to the same H5 page server-side.
+  const url = `${base}/l/${token}`
   const ttlMin = Math.floor(ttlSeconds / 60)
+  // Markdown link form `[text](url)` — see same comment in
+  // src/web/server.ts. Falls back gracefully if iLink doesn't render.
   return [
-    '📍 点开链接共享当前位置：',
+    `📍 [👉 点击共享当前位置](${url})`,
     '',
-    url,
-    '',
-    `链接 ${ttlMin} 分钟内有效。在微信中打开会唤起内置浏览器，授权"位置"后自动回传给 bot。`,
+    `链接 ${ttlMin} 分钟内有效。在微信中点开会唤起内置浏览器，授权"位置"后自动回传给 bot。`,
   ].join('\n')
 }

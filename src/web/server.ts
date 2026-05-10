@@ -14,6 +14,8 @@ import { registry } from '../core/registry.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
+import { consumeToken } from '../core/location-token.js'
+import { createMemo, mapUrl } from '../core/locations.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -197,6 +199,90 @@ export async function startWebServer(options: {
     // to serve un-authenticated.
     if (url.pathname === '/_app.js' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
+    }
+
+    // ─── Location capture endpoints (public; auth via single-use token) ───
+    // Public on purpose — the user reaches these via a token-bearing link
+    // sent into their IM thread. Token (32 hex chars, 10-min TTL, single
+    // use) is the credential. Designed to sit behind a CDN that proxies
+    // bot.iclaw.host → this port (only /loc and /api/loc allowed through).
+
+    // GET /loc — serve the H5 capture page. Token validity is NOT checked
+    // here (the page reads ?t=... and uses it as the body of the POST).
+    // We intentionally don't 404 on missing/invalid token at this stage so
+    // the user gets a helpful in-page error instead of a bare HTTP error.
+    if (url.pathname === '/loc' && req.method === 'GET') {
+      return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
+    }
+
+    // POST /api/loc — H5 page submits the captured coords. Validates token,
+    // writes a location_memo, dispatches a result message back to the
+    // originating IM thread.
+    if (url.pathname === '/api/loc' && req.method === 'POST') {
+      const body = await readBody(req, res)
+      let parsed: { t?: string; lat?: number; lng?: number; accuracy?: number }
+      try { parsed = JSON.parse(body) } catch {
+        sendJson(res, 400, { error: 'invalid JSON' }); return
+      }
+      const tk = typeof parsed.t === 'string' ? parsed.t : ''
+      const lat = typeof parsed.lat === 'number' ? parsed.lat : NaN
+      const lng = typeof parsed.lng === 'number' ? parsed.lng : NaN
+      if (!tk || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        sendJson(res, 400, { error: '请求体缺少 t / lat / lng' }); return
+      }
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        sendJson(res, 400, { error: '坐标超出有效范围' }); return
+      }
+      const cr = consumeToken(tk)
+      if (!cr.ok) {
+        const msg = cr.reason === 'expired' ? '链接已过期，请重新发送 /location here' : '链接无效或已被使用'
+        sendJson(res, 410, { error: msg }); return
+      }
+      const ctx = cr.ctx
+      const accuracy = typeof parsed.accuracy === 'number' ? parsed.accuracy : 0
+
+      // Persist the memo (best-effort — don't fail the request if DB is wedged).
+      let memoId: number | null = null
+      try {
+        memoId = createMemo({
+          platform: ctx.platform,
+          channelId: ctx.channelId,
+          threadId: ctx.threadId,
+          userId: ctx.userId,
+          lat, lng,
+          label: '',
+          note: '',
+          source: 'browser',
+        })
+      } catch (err) {
+        webLog.warn({ event: 'web.loc.memo_create_failed', err: String(err) }, 'failed to write location memo')
+      }
+
+      // Push a result message back to the original IM thread. Same routing
+      // rule as cli.ts: wechat platform → 'wechat-ilink' messenger; others
+      // map directly. We do this fire-and-forget — don't block the H5 POST
+      // on IM-side delivery latency.
+      const messengerName = ctx.platform === 'wechat' ? 'wechat-ilink' : ctx.platform
+      const messenger = registry.getMessenger(messengerName)
+      const idTag = memoId ? `#${memoId}` : ''
+      const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
+      const reply = [
+        `✅ 位置已收到 ${idTag}`,
+        `   坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accTxt}`,
+        '',
+        `   🗺 ${mapUrl(lat, lng, '当前位置', '')}`,
+        memoId ? `   /location show ${memoId} 看详情 · /location delete ${memoId} 删除` : '',
+      ].filter(Boolean).join('\n')
+      if (messenger) {
+        messenger.sendMessage(ctx.threadId, reply).catch((err) => {
+          webLog.warn({ event: 'web.loc.dispatch_failed', threadId: ctx.threadId, err: String(err) }, 'failed to push location result back to IM')
+        })
+      } else {
+        webLog.warn({ event: 'web.loc.no_messenger', platform: ctx.platform, messengerName }, 'no messenger registered to dispatch location result')
+      }
+
+      sendJson(res, 200, { ok: true, id: memoId, lat, lng })
+      return
     }
 
     // REST API — require auth token (header) or valid session cookie

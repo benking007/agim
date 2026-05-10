@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>共享位置 · im-hub</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body { background: linear-gradient(180deg, #eff6ff 0%, #ffffff 60%); color: #0f172a; }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 32px 24px; }
+    h1 { font-size: 24px; margin: 0 0 8px; font-weight: 600; }
+    p { color: #475569; line-height: 1.6; margin: 8px 0; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .btn { display: block; width: 100%; padding: 14px; font-size: 16px; font-weight: 500; color: white; background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .status { padding: 16px; border-radius: 8px; margin-top: 16px; font-size: 14px; line-height: 1.5; word-break: break-all; }
+    .status.ok { background: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+    .status.err { background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5; }
+    .status.info { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
+    .meta { font-size: 12px; color: #94a3b8; margin-top: 24px; text-align: center; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, "SFMono-Regular", monospace; font-size: 13px; }
+    .icon { font-size: 48px; line-height: 1; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="icon">📍</div>
+    <h1>共享当前位置给 bot</h1>
+    <p>im-hub 需要你的当前位置来记录这条备忘。点击下方按钮，浏览器会询问授权。</p>
+
+    <div class="card">
+      <button id="share" class="btn" type="button">共享我的位置</button>
+      <div id="status" class="status info" style="display:none"></div>
+    </div>
+
+    <p class="meta">
+      链接 10 分钟内有效，单次使用 · 你的坐标只会发回触发本链接的 IM 会话
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      const btn = document.getElementById('share')
+      const status = document.getElementById('status')
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get('t')
+
+      function show(kind, html) {
+        status.className = 'status ' + kind
+        status.innerHTML = html
+        status.style.display = 'block'
+      }
+
+      if (!token) {
+        btn.disabled = true
+        show('err', '❌ 链接无效（缺少 token）。请回到 IM 重新发送 <code>/location here</code>。')
+        return
+      }
+
+      if (!('geolocation' in navigator)) {
+        btn.disabled = true
+        show('err', '❌ 浏览器不支持地理位置 API。')
+        return
+      }
+
+      btn.addEventListener('click', function () {
+        btn.disabled = true
+        btn.textContent = '获取定位中…'
+        show('info', '⏳ 等待浏览器返回坐标…')
+
+        navigator.geolocation.getCurrentPosition(
+          function (pos) {
+            const body = {
+              t: token,
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            }
+            show('info', '⏳ 上传到 bot…')
+            fetch('/api/loc', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            }).then(function (r) {
+              if (r.ok) {
+                btn.textContent = '✅ 已发送'
+                show('ok', '✅ 位置已发回 IM。可以关闭页面回到聊天查看。')
+              } else {
+                return r.json().catch(function () { return {} }).then(function (j) {
+                  btn.disabled = false
+                  btn.textContent = '重试'
+                  show('err', '❌ ' + (j.error || ('上传失败 (HTTP ' + r.status + ')')))
+                })
+              }
+            }).catch(function (err) {
+              btn.disabled = false
+              btn.textContent = '重试'
+              show('err', '❌ 网络错误：' + (err && err.message || err))
+            })
+          },
+          function (err) {
+            btn.disabled = false
+            btn.textContent = '重试'
+            const map = { 1: '你拒绝了授权', 2: '位置不可用', 3: '获取超时' }
+            show('err', '❌ ' + (map[err.code] || err.message || '未知错误'))
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+        )
+      })
+    })()
+  </script>
+</body>
+</html>

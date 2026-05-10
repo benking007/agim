@@ -18,10 +18,17 @@ import {
   geocodeAddress, isGeocodingAvailable,
   mapUrl,
 } from '../locations.js'
+import { issueToken } from '../location-token.js'
+
+/** Default base URL for the location-share H5 page. Operators can override
+ *  via IMHUB_LOC_BASE_URL — points at https://bot.iclaw.host as the public
+ *  fallback so OSS users without their own HTTPS endpoint can opt in. */
+const DEFAULT_LOC_BASE_URL = 'https://bot.iclaw.host'
 
 const HELP = [
   '📍 /location — 位置备忘',
   '─────────────────────',
+  '/location here [备注]           获取当前设备 GPS 位置 (浏览器授权)',
   '/location <lat>,<lng> [备注]   记录坐标 (例: /location 39.908,116.397 停车场B区)',
   '/location <地址> [备注]         按地址记录 (需配置腾讯地图 key)',
   '/location list [N]              列出最近 N 条 (默认 10)',
@@ -74,6 +81,9 @@ export async function handleLocationCommand(args: string, ctx: RouteContext): Pr
   }
   if (firstWord === 'delete' || firstWord === 'del' || firstWord === 'rm') {
     return deleteAction(trimmed.slice(firstWord.length).trim(), ownerOpts)
+  }
+  if (firstWord === 'here' || firstWord === '当前') {
+    return hereAction(ctx)
   }
 
   // Coord input (preferred path — zero infrastructure required).
@@ -190,4 +200,31 @@ function deleteAction(rest: string, ownerOpts: { userId?: string }): string {
   return deleteMemo(id, ownerOpts)
     ? `🗑 已删除 #${id}`
     : `❌ 找不到 #${id}（或不属于你）。`
+}
+
+function hereAction(ctx: RouteContext): string {
+  // The H5 capture flow needs an HTTPS endpoint the user can tap from inside
+  // WeChat. By default we use the hosted bot.iclaw.host; self-hosters who
+  // run their own can set IMHUB_LOC_BASE_URL.
+  const baseUrl = process.env.IMHUB_LOC_BASE_URL || DEFAULT_LOC_BASE_URL
+  if (!ctx.userId) {
+    return '❌ 无法识别用户身份，无法发起位置授权请求。'
+  }
+  const { token, ttlSeconds } = issueToken({
+    platform: ctx.platform,
+    channelId: ctx.channelId,
+    threadId: ctx.threadId,
+    userId: ctx.userId,
+  })
+  // Strip trailing slash so we don't end up with `//loc?...`.
+  const base = baseUrl.replace(/\/+$/, '')
+  const url = `${base}/loc?t=${token}`
+  const ttlMin = Math.floor(ttlSeconds / 60)
+  return [
+    '📍 点开链接共享当前位置：',
+    '',
+    url,
+    '',
+    `链接 ${ttlMin} 分钟内有效。在微信中打开会唤起内置浏览器，授权"位置"后自动回传给 bot。`,
+  ].join('\n')
 }

@@ -3,6 +3,8 @@
 // /help and /start are i18n-aware (default zh, /help en or /start en for English).
 // /help also accepts a topic: /help remind, /help cron, /help job, /help approval,
 // /help workspaces, /help model, /help think, /help stats, /help sessions, /help plan.
+// Topic aliases (`/help tasks` → job, `/help auto` → approval, etc.) are resolved
+// via TOPIC_ALIAS before delegation/dict lookup.
 
 import type { RouteContext } from '../router.js'
 import { registry } from '../registry.js'
@@ -11,8 +13,8 @@ import { handleRemindCommand } from './remind.js'
 
 type Lang = 'zh' | 'en'
 
-const EN_TOKENS = new Set(['en', 'english', 'eng', '英文', 'english:'])
-const ZH_TOKENS = new Set(['zh', 'cn', 'chinese', '中文', '中', 'cn:', 'zh-cn'])
+const EN_TOKENS = new Set(['en', 'english', 'eng', '英文'])
+const ZH_TOKENS = new Set(['zh', 'cn', 'chinese', '中文', '中', 'zh-cn'])
 
 /** Strip a leading lang token if present, returning {lang, rest}. Default zh. */
 function detectLang(args: string | undefined): { lang: Lang; rest: string } {
@@ -26,28 +28,74 @@ function detectLang(args: string | undefined): { lang: Lang; rest: string } {
 
 const HELP_ZH = [
   'im-hub 命令速查',
-  '会话: /new  /agents  /[agent] [内容]',
-  '提醒: /remind …（一次性/周期/邮件，中文 NL 时间）',
-  '定时: /cron …（cron 跑 agent，旧名 /schedule 仍可）',
-  '任务: /job  /tasks  /check  /cancel  /switch  /collect',
-  'Agent: /model  /models  /think on|off  /plan on|off',
-  '审批: /approval（别名 /auto），卡片回 y/n/all',
-  '运维: /status  /audit  /stats  /sessions  /workspaces  /router',
-  '转 agent: /test  /review  /commit  /push  /diff  /shell  /bug  /explain',
-  '详情: /help [命令]   英文: /help en',
+  '',
+  '/new          开新会话',
+  '/agents       列出可用 agent',
+  '/[agent]      向指定 agent 发消息',
+  '/help [cmd]   查看帮助（/help en 英文）',
+  '/remind …     提醒（一次性/周期/邮件）',
+  '/cron …       定时跑 agent（旧名 /schedule）',
+  '/job          后台长任务管理',
+  '/tasks        列出我的任务',
+  '/check <id>   查看任务进度',
+  '/cancel <id>  取消任务',
+  '/switch <id>  切换会话到任务',
+  '/collect <id> 拉取结果',
+  '/model        查看或切换模型',
+  '/models       列出可用模型',
+  '/think on|off 切换深度思考',
+  '/plan on|off  切换 plan 模式',
+  '/approval     审批规则（别名 /auto）',
+  '/status       连接状态',
+  '/audit [n]    查看调用记录',
+  '/stats        用量统计（/usage /cost）',
+  '/sessions     最近会话',
+  '/workspaces   工作区管理（别名 /ws）',
+  '/router       查看路由决策',
+  '/test         -> agent: 测试',
+  '/review       -> agent: 审查',
+  '/commit       -> agent: 提交',
+  '/push         -> agent: 推送',
+  '/diff         -> agent: 差异',
+  '/shell        -> agent: shell',
+  '/bug          -> agent: bug',
+  '/explain      -> agent: 解释',
 ].join('\n')
 
 const HELP_EN = [
   'im-hub Commands',
-  'Session: /new  /agents  /[agent] [prompt]',
-  'Remind: /remind … (one-shot/recurring/email · NL time)',
-  'Cron: /cron … (cron-driven agent; legacy /schedule works)',
-  'Jobs: /job  /tasks  /check  /cancel  /switch  /collect',
-  'Agent: /model  /models  /think on|off  /plan on|off',
-  'Approval: /approval (alias /auto) · card reply y/n/all',
-  'Ops: /status  /audit  /stats  /sessions  /workspaces  /router',
-  'Forward: /test  /review  /commit  /push  /diff  /shell  /bug  /explain',
-  'Details: /help [cmd]   中文: /help zh',
+  '',
+  '/new          start a new session',
+  '/agents       list available agents',
+  '/[agent]      send message to agent',
+  '/help [cmd]   show help (/help zh for Chinese)',
+  '/remind …     reminders (one-shot/recurring/email)',
+  '/cron …       scheduled agent runs (legacy /schedule)',
+  '/job          manage background jobs',
+  '/tasks        list your jobs',
+  '/check <id>   inspect job progress',
+  '/cancel <id>  cancel a job',
+  '/switch <id>  switch session to job',
+  '/collect <id> collect job result',
+  '/model        view or switch model',
+  '/models       list available models',
+  '/think on|off toggle extended thinking',
+  '/plan on|off  toggle plan mode',
+  '/approval     tool approval rules (alias /auto)',
+  '/status       connectivity status',
+  '/audit [n]    show invocations',
+  '/stats        usage stats (/usage /cost)',
+  '/sessions     list recent sessions',
+  '/workspaces   workspace management (alias /ws)',
+  '/router       show routing decisions',
+  '/test         -> agent: test',
+  '/review       -> agent: review',
+  '/commit       -> agent: commit',
+  '/push         -> agent: push',
+  '/diff         -> agent: diff',
+  '/shell        -> agent: shell',
+  '/bug          -> agent: bug',
+  '/explain      -> agent: explain',
 ].join('\n')
 
 // Topic-help section separator. Plain ASCII — non-ASCII line-drawing
@@ -69,6 +117,24 @@ const START_EN = [
   '/agents    available agents',
   '/help zh   切换中文',
 ].join('\n')
+
+/**
+ * Topic-name aliases — resolved to canonical names BEFORE delegation/dict lookup.
+ * Lets `/help tasks` show the same content as `/help job`, etc. Slash-command
+ * aliases (`/tasks`, `/auto`, `/ws`, `/reminder`) are listed in the master HELP
+ * but had no per-topic detail before this map.
+ */
+const TOPIC_ALIAS: Record<string, string> = {
+  reminder: 'remind',
+  tasks: 'job',
+  check: 'job',
+  cancel: 'job',
+  switch: 'job',
+  collect: 'job',
+  auto: 'approval',
+  models: 'model',
+  ws: 'workspaces',
+}
 
 /** Brief help for commands that don't have their own help subcommand. */
 const TOPIC_HELP_ZH: Record<string, string> = {
@@ -112,7 +178,6 @@ const TOPIC_HELP_ZH: Record<string, string> = {
     '/ws current        看当前',
     '/ws use <name>     切换',
   ].join('\n'),
-  ws: '见 /help workspaces',
   model: [
     '/model — 查或切当前 agent 的模型',
     SEP,
@@ -172,7 +237,6 @@ const TOPIC_HELP_EN: Record<string, string> = {
     '/ws current        show current',
     '/ws use <name>     switch',
   ].join('\n'),
-  ws: 'see /help workspaces',
   model: [
     '/model — view or switch the active agent\'s model',
     SEP,
@@ -191,9 +255,10 @@ const TOPIC_HELP_EN: Record<string, string> = {
   status: '/status — connectivity status',
 }
 
-/** Topics that delegate to the command's own `help` subcommand. */
+/** Topics that delegate to the command's own `help` subcommand. Topic is canonical
+ *  here — aliases (e.g. 'reminder') are resolved by TOPIC_ALIAS before this runs. */
 async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string | null> {
-  if (topic === 'remind' || topic === 'reminder') {
+  if (topic === 'remind') {
     return handleRemindCommand('help', ctx)
   }
   return null
@@ -215,16 +280,17 @@ export async function handleBuiltInCommand(
 
     case 'help': {
       const { lang, rest } = detectLang(args)
-      const topic = rest.split(/\s+/)[0]?.toLowerCase().replace(/^\//, '') || ''
-      if (!topic) return lang === 'en' ? HELP_EN : HELP_ZH
+      const raw = rest.split(/\s+/)[0]?.toLowerCase().replace(/^\//, '') || ''
+      if (!raw) return lang === 'en' ? HELP_EN : HELP_ZH
+      const topic = TOPIC_ALIAS[raw] ?? raw
       const delegated = await delegatedTopic(topic, ctx)
       if (delegated) return delegated
       const dict = lang === 'en' ? TOPIC_HELP_EN : TOPIC_HELP_ZH
       const body = dict[topic]
       if (body) return body
       const unknown = lang === 'en'
-        ? `Unknown topic "${topic}". Try \`/help\` for the full list.`
-        : `没有 \`${topic}\` 这个主题。试试 \`/help\` 看完整列表。`
+        ? `Unknown topic "${raw}". Try \`/help\` for the full list.`
+        : `没有 \`${raw}\` 这个主题。试试 \`/help\` 看完整列表。`
       return unknown
     }
 

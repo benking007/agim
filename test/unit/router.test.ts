@@ -272,6 +272,31 @@ describe('routeMessage', () => {
       expect(result).toContain('/cron')
     })
 
+    it('/help <alias> resolves to canonical topic', async () => {
+      // tasks/check/cancel/switch/collect → job
+      const tasks = await routeMessage({ type: 'command', command: 'help', args: 'tasks' }, ctx)
+      expect(tasks).toContain('/job')
+      // auto → approval
+      const auto = await routeMessage({ type: 'command', command: 'help', args: 'auto' }, ctx)
+      expect(auto).toContain('/approval')
+      // models → model
+      const models = await routeMessage({ type: 'command', command: 'help', args: 'models' }, ctx)
+      expect(models).toContain('/model')
+      // ws → workspaces
+      const ws = await routeMessage({ type: 'command', command: 'help', args: 'ws' }, ctx)
+      expect(ws).toContain('/workspaces')
+    })
+
+    it('/help reminder delegates to /remind help (alias of remind)', async () => {
+      const result = await routeMessage({ type: 'command', command: 'help', args: 'reminder' }, ctx)
+      expect(result).toContain('/remind')
+    })
+
+    it('/help with unknown topic reports the original input', async () => {
+      const result = await routeMessage({ type: 'command', command: 'help', args: 'nonsense-xyz' }, ctx)
+      expect(result).toContain('nonsense-xyz')
+    })
+
     it('should return agents list for /agents', async () => {
       const result = await routeMessage({ type: 'command', command: 'agents' }, ctx)
       expect(result).toContain('Available Agents')

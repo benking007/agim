@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **补全所有遗漏命令**：原本只有 ~10 条，现在覆盖 `/cron` `/remind` `/job` `/tasks` `/check` `/cancel` `/switch` `/collect` `/model` `/models` `/think` `/plan` `/approval` `/auto` `/audit` `/stats` `/sessions` `/workspaces` `/router` 等。
 - **按分类分区块**：会话 / 提醒 · 定时 / 任务 / Agent 控制 / 工具审批 / 运维 / Agent 子命令。
 - **`/help <topic>` 子命令**：`/help remind`、`/help cron`、`/help job`、`/help approval`、`/help workspaces` 等都返回该命令的详细帮助；`/help remind` 直接复用 `/remind help`。
+- **`/help <alias>` 自动解析**：`/help tasks` `/help check` `/help cancel` `/help switch` `/help collect` 都解析到 `/help job`；`/help auto` → `approval`；`/help models` → `model`；`/help ws` → `workspaces`；`/help reminder` → `remind`。alias 表 `TOPIC_ALIAS` 与 dict 解耦，避免维护重定向字符串。
 - **`/?` 别名 `/help`**。
 - 实现：`ParsedMessage` 的 `command` 变种新增可选 `args`，router 把 `/help` `/start` 后面的内容当 args 透传。
 

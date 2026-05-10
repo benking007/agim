@@ -193,7 +193,8 @@ export class ILinkClient {
         item_list: [
           {
             type: 1, // TEXT
-            text_item: { text },
+            // iLink Bot API 要求 CRLF；只发 \n 时部分微信客户端会把换行吞掉。
+            text_item: { text: text.replace(/\n/g, '\r\n') },
           },
         ],
       },

@@ -2,10 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.41] - 2026-05-10 — 移除 WeChat 思考中占位气泡
 
 ### Removed
-- **WeChat `🤔 思考中…` 占位气泡**：原本在 cli.ts:591 调 `messenger.sendThinking` 给 wechat 发的 placeholder。理由：iLink 不支持 recall，气泡永久留在聊天里污染历史；远程 typing 指示器（`sendTyping`）已 1.5 个月稳定运行；remind-intent perf 修复后平均回复延迟 80s → 3s，"以为机器人挂了"的窗口几乎消失；CRLF 修复也让真实回复的视觉强度足够。改动：删 `wechat/ilink-adapter.ts:sendThinking`，cli.ts 已用 `if (messenger.sendThinking)` 自动 fallback。Feishu 保留（其 sendTyping 是 no-op，气泡是唯一信号）。
+- **WeChat `🤔 思考中…` 占位气泡**：原本在 cli.ts:591 调 `messenger.sendThinking` 给 wechat 发的 placeholder。理由：iLink 不支持 recall，气泡永久留在聊天里污染历史；原生 typing 指示器（`sendTyping`）已 1.5 个月稳定运行；remind-intent perf 修复后平均回复延迟 80s → 3s，"以为机器人挂了"的窗口几乎消失；CRLF 修复也让真实回复的视觉强度足够。改动：删 `wechat/ilink-adapter.ts:sendThinking`，cli.ts 已用 `if (messenger.sendThinking)` 自动 fallback。Feishu 保留（其 sendTyping 是 no-op，气泡是唯一信号）。
 
 ## [0.2.40] - 2026-05-10 — 只读工具自动放行 + WeChat 换行修复
 

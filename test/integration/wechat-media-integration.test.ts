@@ -6,7 +6,7 @@
 // method. The resulting MessageContext.text is observed via the registered
 // message handler.
 
-import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import { describe, it, expect, beforeEach, } from 'bun:test'
 import { mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

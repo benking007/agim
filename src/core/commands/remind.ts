@@ -87,7 +87,7 @@ export async function handleRemindCommand(args: string, ctx: RouteContext): Prom
     if (!all.length) return '🔔 当前没有待发提醒。\n\n创建：`/remind 2m 喝水`'
     const now = new Date()
     const lines = all.map((r) => {
-      const text = r.text.length > 40 ? r.text.slice(0, 40) + '…' : r.text
+      const text = r.text.length > 40 ? `${r.text.slice(0, 40)}…` : r.text
       const icon = r.recurrence ? '🔁' : '🔔'
       const tail = r.recurrence ? `  [${describeRecurrence(r.recurrence)}]` : ''
       return `${icon} #${r.id}  ${fmtRel(r.fire_at, now)}  ${text}${tail}`

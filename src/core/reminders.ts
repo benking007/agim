@@ -454,7 +454,7 @@ export function describeRecurrence(spec: string): string {
     const dayLabels: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
     const isWorkday = days.length === 5 && days.join(',') === '1,2,3,4,5'
     const isWeekend = days.length === 2 && days.join(',') === '6,7'
-    const label = isWorkday ? '工作日' : isWeekend ? '周末' : '周' + days.map((d) => dayLabels[d]).join('')
+    const label = isWorkday ? '工作日' : isWeekend ? '周末' : `周${days.map((d) => dayLabels[d]).join('')}`
     return `每${label} ${m[2]}`
   }
   return spec
@@ -822,7 +822,7 @@ export function buildContextSnippet(platform: string, userId: string): string {
     const when = t.toLocaleString()
     const recur = r.recurrence ? ` [${describeRecurrence(r.recurrence)}]` : ''
     const text = r.text.length > CONTEXT_MAX_TEXT_LEN
-      ? r.text.slice(0, CONTEXT_MAX_TEXT_LEN) + '…'
+      ? `${r.text.slice(0, CONTEXT_MAX_TEXT_LEN)}…`
       : r.text
     return `  #${r.id} ${when}${recur}: ${text}`
   })

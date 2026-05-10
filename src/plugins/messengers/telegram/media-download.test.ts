@@ -12,7 +12,7 @@ const TEST_ROOT = join(tmpdir(), `imhub-media-test-${process.pid}-${Math.random(
 process.env.IMHUB_MEDIA_ROOT = TEST_ROOT
 
 // Import AFTER setting env so MEDIA_ROOT picks it up at module-eval time.
-const { MEDIA_ROOT, MAX_BYTES, buildCurlArgs, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
+const { MEDIA_ROOT, buildCurlArgs, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
 
 describe('media-download — pickExtension', () => {
   it('extracts ext from file_path', () => {

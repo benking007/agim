@@ -22,7 +22,7 @@ const {
   createReminder, listReminders, getReminder, cancelReminder, clearReminders, snoozeReminder,
   bindEmail, unbindEmail, getBoundEmail,
   tick, closeReminderDb,
-  ReminderError, MAX_PENDING_PER_USER, MIN_FUTURE_MS, MAX_FUTURE_MS, MAX_TEXT_LEN,
+  ReminderError, MAX_PENDING_PER_USER, MAX_FUTURE_MS, MAX_TEXT_LEN,
 } = remindersMod
 
 // ─── Time parsing (pure functions, no DB) ───────────────────────────

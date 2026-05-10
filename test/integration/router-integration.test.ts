@@ -4,31 +4,6 @@
 import { describe, it, expect, beforeEach, } from 'bun:test'
 
 // Types
-interface Message {
-  id: string
-  threadId: string
-  userId: string
-  text: string
-  timestamp: Date
-}
-
-interface MessageContext {
-  message: Message
-  platform: string
-  agent?: string
-  session?: Session
-}
-
-interface Session {
-  id: string
-  threadId: string
-  platform: string
-  agent: string
-  createdAt: Date
-  lastActivity: Date
-  ttl: number
-}
-
 type ParsedMessage =
   | { type: 'default'; prompt: string }
   | { type: 'command'; command: 'status' | 'help' | 'agents' }

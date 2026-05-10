@@ -105,7 +105,7 @@ export async function ensureOpencodeMcpRegistered(): Promise<boolean> {
 
   try {
     await mkdir(dirname(configPath), { recursive: true })
-    await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8')
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
     log.info({
       event: 'opencode.mcp.registered',
       configPath, sidecar: SIDECAR_PATH,

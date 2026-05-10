@@ -104,7 +104,7 @@ function formatInputBody(toolName: string, input: Record<string, unknown>, maxLe
   const single = (label: string, key: string): string | null => {
     const v = input[key]
     if (typeof v !== 'string') return null
-    const truncated = v.length > maxLen ? v.slice(0, maxLen - 1) + '…' : v
+    const truncated = v.length > maxLen ? `${v.slice(0, maxLen - 1)}…` : v
     return `${label}：${truncated}`
   }
   switch (toolName) {
@@ -146,10 +146,10 @@ function formatInputBody(toolName: string, input: Record<string, unknown>, maxLe
   } catch {
     s = String(input)
   }
-  if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…'
+  if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`
   // For multi-line JSON, indent so it visually groups under the "入参" label.
   if (s.includes('\n')) {
-    return `入参：\n${s.split('\n').map((l) => '  ' + l).join('\n')}`
+    return `入参：\n${s.split('\n').map((l) => `  ${l}`).join('\n')}`
   }
   return `入参：${s}`
 }

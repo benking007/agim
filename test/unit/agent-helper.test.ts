@@ -56,7 +56,7 @@ describe('agent-helper.callHelperAgent', () => {
   })
 
   it('streams output from the resolved agent', async () => {
-    const name = 'helper-fake-' + Date.now()
+    const name = `helper-fake-${Date.now()}`
     registry.registerMessenger as unknown // satisfy lint
     registry.registerAgent(fakeAgent({ name, output: 'polished text' }))
     registered.push(name)
@@ -69,7 +69,7 @@ describe('agent-helper.callHelperAgent', () => {
   })
 
   it('honors maxOutputChars by truncating the stream', async () => {
-    const name = 'helper-trunc-' + Date.now()
+    const name = `helper-trunc-${Date.now()}`
     registry.registerAgent(fakeAgent({ name, output: 'x'.repeat(200) }))
     const result = await callHelperAgent({
       platform: PLATFORM, channelId: CHANNEL, threadId: THREAD,
@@ -82,7 +82,7 @@ describe('agent-helper.callHelperAgent', () => {
   })
 
   it('returns null on timeout', async () => {
-    const name = 'helper-slow-' + Date.now()
+    const name = `helper-slow-${Date.now()}`
     registry.registerAgent(fakeAgent({
       name,
       output: 'never-finishes',
@@ -98,7 +98,7 @@ describe('agent-helper.callHelperAgent', () => {
   })
 
   it('returns null when the agent throws', async () => {
-    const name = 'helper-throw-' + Date.now()
+    const name = `helper-throw-${Date.now()}`
     registry.registerAgent(fakeAgent({ name, throwOnInvoke: true }))
     const result = await callHelperAgent({
       platform: PLATFORM, channelId: CHANNEL, threadId: THREAD,
@@ -111,7 +111,7 @@ describe('agent-helper.callHelperAgent', () => {
 
 describe('agent-helper.callHelperForJson', () => {
   it('extracts JSON from a noisy response', async () => {
-    const name = 'json-fake-' + Date.now()
+    const name = `json-fake-${Date.now()}`
     registry.registerAgent(fakeAgent({
       name,
       output: 'Here is the JSON:\n```json\n{"a": 1, "b": "hi"}\n```\nDone.',
@@ -127,7 +127,7 @@ describe('agent-helper.callHelperForJson', () => {
   })
 
   it('returns null when no JSON object is in the response', async () => {
-    const name = 'json-empty-' + Date.now()
+    const name = `json-empty-${Date.now()}`
     registry.registerAgent(fakeAgent({ name, output: 'just prose, no curly braces' }))
     const result = await callHelperForJson({
       platform: PLATFORM, channelId: CHANNEL, threadId: THREAD,

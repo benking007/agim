@@ -113,7 +113,7 @@
 
   function toast(msg, isErr = false) {
     $toast.textContent = msg
-    $toast.className = 'toast' + (isErr ? ' error' : '')
+    $toast.className = `toast${isErr ? ' error' : ''}`
     $toast.style.display = 'block'
     setTimeout(() => { $toast.style.display = 'none' }, 2500)
   }
@@ -126,36 +126,36 @@
     const absMin = Math.abs(Math.round(diffMs / 60000))
     let rel = ''
     if (Math.abs(diffMs) < 60_000) rel = '刚才'
-    else if (absMin < 60) rel = (diffMs > 0 ? '' : '已过 ') + absMin + ' 分钟' + (diffMs > 0 ? '后' : '')
-    else if (absMin < 1440) rel = (diffMs > 0 ? '' : '已过 ') + (absMin / 60).toFixed(1) + ' 小时' + (diffMs > 0 ? '后' : '')
-    else rel = (diffMs > 0 ? '' : '已过 ') + (absMin / 1440).toFixed(1) + ' 天' + (diffMs > 0 ? '后' : '')
-    return d.toLocaleString() + ' · ' + rel
+    else if (absMin < 60) rel = `${(diffMs > 0 ? '' : '已过 ') + absMin} 分钟${diffMs > 0 ? '后' : ''}`
+    else if (absMin < 1440) rel = `${(diffMs > 0 ? '' : '已过 ') + (absMin / 60).toFixed(1)} 小时${diffMs > 0 ? '后' : ''}`
+    else rel = `${(diffMs > 0 ? '' : '已过 ') + (absMin / 1440).toFixed(1)} 天${diffMs > 0 ? '后' : ''}`
+    return `${d.toLocaleString()} · ${rel}`
   }
 
   async function load() {
     $list.innerHTML = '<div class="empty">加载中…</div>'
     try {
-      const data = await window.imhub.api('/api/reminders?status=' + encodeURIComponent(currentStatus))
+      const data = await window.imhub.api(`/api/reminders?status=${encodeURIComponent(currentStatus)}`)
       render(data.reminders || [])
     } catch (err) {
       $list.innerHTML = ''
-      toast('加载失败：' + err.message, true)
+      toast(`加载失败：${err.message}`, true)
     }
   }
 
   function render(items) {
     if (!items.length) {
-      $list.innerHTML = '<div class="empty">没有' + statusLabel(currentStatus) + '的提醒</div>'
+      $list.innerHTML = `<div class="empty">没有${statusLabel(currentStatus)}的提醒</div>`
       return
     }
     $list.innerHTML = items.map((r) => {
       const icon = r.recurrence ? '🔁' : '🔔'
       const recurMeta = r.recurrence_label
-        ? '<span class="recur">↻ ' + escapeHtml(r.recurrence_label) + '</span>' : ''
+        ? `<span class="recur">↻ ${escapeHtml(r.recurrence_label)}</span>` : ''
       const literalMeta = r.prompt_mode === 'literal'
         ? '<span class="literal">字面文本</span>' : ''
       const platformMeta = r.platform
-        ? '<span>' + escapeHtml(r.platform) + '</span>' : ''
+        ? `<span>${escapeHtml(r.platform)}</span>` : ''
       const showActions = currentStatus === 'pending'
       const actions = showActions
         ? `<div class="actions">

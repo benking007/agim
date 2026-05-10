@@ -60,10 +60,6 @@ export class EmailAdapter implements MessengerAdapter {
   private config: SmtpConfig | null = null
   private started = false
 
-  // onMessage is required by the interface but email doesn't poll inbox.
-  // We accept handlers for signature compatibility and never invoke them.
-  private _handler?: (ctx: MessageContext) => Promise<void>
-
   async start(): Promise<void> {
     this.config = readSmtpConfig()
     if (!this.config) {
@@ -111,8 +107,11 @@ export class EmailAdapter implements MessengerAdapter {
     this.started = false
   }
 
-  onMessage(handler: (ctx: MessageContext) => Promise<void>): void {
-    this._handler = handler
+  // onMessage is required by the MessengerAdapter interface, but email is a
+  // push-only channel — we never poll an inbox, so the handler is intentionally
+  // discarded. The signature is preserved for interface conformance.
+  onMessage(_handler: (ctx: MessageContext) => Promise<void>): void {
+    // no-op
   }
 
   /**

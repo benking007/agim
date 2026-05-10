@@ -63,7 +63,11 @@ class TestClient {
     this.socket.write(`${line}\n`)
   }
 
-  /** Resolve as soon as next NDJSON message arrives. Throws on timeout. */
+  /** Resolve as soon as next NDJSON message arrives. Throws on timeout.
+   *  any is intentional — callers do ad-hoc property access on the parsed
+   *  wire payload (decision.behavior, etc.); a strict shape would force a
+   *  cast at every call site for a test-only helper. */
+  // biome-ignore lint/suspicious/noExplicitAny: see jsdoc — test helper
   next(timeoutMs = 1000): Promise<any> {
     return new Promise((resolve, reject) => {
       const queued = this.queue.shift()
@@ -82,6 +86,7 @@ class TestClient {
   }
 
   /** Resolve next message OR null if socket closes first within timeout. */
+  // biome-ignore lint/suspicious/noExplicitAny: same as next() — test helper
   nextOrClose(timeoutMs = 1000): Promise<any> {
     return Promise.race([
       this.next(timeoutMs).catch(() => null),

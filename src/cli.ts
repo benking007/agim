@@ -458,7 +458,7 @@ program
  * Handle incoming message from any messenger
  */
 async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise<void> {
-  const { message, platform, channelId } = ctx
+  const { message, platform } = ctx
   const traceId = ctx.traceId || generateTraceId()
   const logger = ctx.logger || createLogger({ traceId, platform, component: 'cli' })
 
@@ -1005,13 +1005,14 @@ program
         // Validate connection
         console.log('\n🔍 Testing connection...')
         const { ACPClient } = await import('./plugins/agents/acp/acp-client.js')
-        const testClient = new ACPClient({ name: agentName, endpoint, auth: auth as any })
+        const testClient = new ACPClient({ name: agentName, endpoint, auth })
         try {
           const manifest = await testClient.fetchManifest()
           console.log(`✅ Connected! Agent: ${manifest.name}`)
           if (manifest.description) console.log(`   ${manifest.description}`)
-        } catch (e: any) {
-          console.log(`⚠️  Connection failed: ${e.message}`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.log(`⚠️  Connection failed: ${msg}`)
           console.log('   Agent will be saved but may not work until endpoint is available.')
         }
 

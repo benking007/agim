@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added — `/location` 位置备忘（基础版）
+- 新 slash 命令 `/location`（别名 `/loc` `/位置`）：记录"在 X 位置干了 Y 事"型备忘。
+- **零依赖坐标输入**：`/location 39.908,116.397 [备注]` —— 支持 `,` `，` 或空格分隔，负数支持。
+- **可选地址解析**：`/location 国贸三期 [备注]`，需配置 `IMHUB_TENCENT_MAP_KEY`（[lbs.qq.com](https://lbs.qq.com) 注册免费 key）。无 key 时给友好错误提示，引导用户用坐标路径。
+- 子命令：`list [N]` / `show <id>` / `delete <id>` / `help`，全部 per-user owner-scoped（同 `/remind` `/cron` 模式）。
+- **地图链接回显**：每条记录附 `https://apis.map.qq.com/uri/v1/marker?...` URI，WeChat 内置浏览器/地图 App 可直接唤起。
+- 数据：`~/.im-hub/locations.db`（路径可通过 `IMHUB_LOCATIONS_DB` 覆盖），fail-soft via 现有 `sqlite-helper`。
+- 14 单测：坐标解析（中文逗号 / 负数 / 范围校验）、地图 URL 构建、地理编码 env 探测、CRUD 全流程 + owner scoping。
+- **不包含**：浏览器 geolocation 链接（Phase 2，要求 HTTPS endpoint），LLM 自然语言识别（Phase 3）。
+
 ## [0.2.41] - 2026-05-10 — 移除 WeChat 思考中占位气泡
 
 ### Removed

@@ -10,6 +10,7 @@ import type { RouteContext } from '../router.js'
 import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { handleRemindCommand } from './remind.js'
+import { handleLocationCommand } from './location.js'
 
 type Lang = 'zh' | 'en'
 
@@ -34,6 +35,7 @@ const HELP_ZH = [
   '/[agent]      向指定 agent 发消息',
   '/help [cmd]   查看帮助（/help en 英文）',
   '/remind …     提醒（一次性/周期/邮件）',
+  '/location …   位置备忘（坐标/地址 → 地图链接）',
   '/cron …       定时跑 agent（旧名 /schedule）',
   '/job          后台长任务管理',
   '/tasks        列出我的任务',
@@ -70,6 +72,7 @@ const HELP_EN = [
   '/[agent]      send message to agent',
   '/help [cmd]   show help (/help zh for Chinese)',
   '/remind …     reminders (one-shot/recurring/email)',
+  '/location …   geo memos (coords/address → map link)',
   '/cron …       scheduled agent runs (legacy /schedule)',
   '/job          manage background jobs',
   '/tasks        list your jobs',
@@ -134,6 +137,8 @@ const TOPIC_ALIAS: Record<string, string> = {
   auto: 'approval',
   models: 'model',
   ws: 'workspaces',
+  loc: 'location',
+  '位置': 'location',
 }
 
 /** Brief help for commands that don't have their own help subcommand. */
@@ -260,6 +265,9 @@ const TOPIC_HELP_EN: Record<string, string> = {
 async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string | null> {
   if (topic === 'remind') {
     return handleRemindCommand('help', ctx)
+  }
+  if (topic === 'location') {
+    return handleLocationCommand('help', ctx)
   }
   return null
 }

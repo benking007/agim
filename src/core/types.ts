@@ -37,6 +37,7 @@ export type ParsedMessage =
   | { type: 'workspaces'; args: string }
   | { type: 'cron'; args: string; legacy?: boolean }
   | { type: 'remind'; args: string }
+  | { type: 'location'; args: string }
   | { type: 'job'; args: string }
   | { type: 'model'; args: string }
   | { type: 'think'; args: string }

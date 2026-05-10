@@ -7,11 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added — `/location here` 浏览器 GPS 捕获
 - 新子命令 `/location here [备注]` 或 `/location 当前 [备注]`：bot 回一个一次性 HTTPS 链接，用户在 WeChat 内置浏览器点开，授权后 H5 页面调 `navigator.geolocation.getCurrentPosition` 把坐标 POST 回 im-hub，im-hub 写库 + 推回 IM 线程。
 - 数据流：`/location here` → 内存 token store 发 32 hex token (10 min TTL，single-shot) → 用户点 URL → `GET /loc?t=...` 渲 H5 → 用户授权 → `POST /api/loc { t, lat, lng, accuracy }` → 验 token → 写 `location_memos`（source=`browser`）→ messenger.sendMessage 把"✅ 位置已收到 + 地图链接"回推到原线程。
-- **默认 base URL**：`https://bot.iclaw.host`（公共托管入口，由 ben 提供）。自托管用户可设 `IMHUB_LOC_BASE_URL=https://your-host` 覆盖。OSS 用户没有 HTTPS endpoint 时可继续用坐标输入路径。
+- **默认 base URL**：`https://agent.iclaw.host`（公共托管入口）。自托管用户可设 `IMHUB_LOC_BASE_URL=https://your-host` 覆盖。OSS 用户没有 HTTPS endpoint 时可继续用坐标输入路径。
 - 新建 `src/core/location-token.ts`：内存 Map，60s 一次的 sweep timer 清过期；test/diagnostic 钩子 `_pendingCount` `_clearAll` `_stopSweep`。
 - 新建 `src/web/public/loc.html`：单页 H5（无构建依赖、纯内联 CSS+JS），蓝主题与 imhub-site 视觉一致。错误分支覆盖：缺 token / 浏览器不支持 / 用户拒绝授权 / 网络错误。
 - 新增 `src/web/server.ts` 公开路由 `GET /loc` + `POST /api/loc`，放在 auth gate 之前（token 即凭证）。`POST /api/loc` 失败时分类回 410（链接过期 / 已使用）/ 400（参数错）；写库/dispatch 是 fail-soft，不阻塞 H5 端 200 响应。
-- **bot.iclaw.host 部署**：CDN 仅放行 `/loc` 与 `/api/loc` 路径回源到本机 :3000，其他路径在 CDN 层 404 防止 `/tasks` 等内部页面意外暴露。
+- **agent.iclaw.host 部署**：路由复用现有 :3000，CDN 必须配路径白名单只放行 `/loc` 与 `/api/loc`，其他路径（`/tasks` `/reminders` `/api/*`）必须在 CDN 层 404，否则操作员控制台会被外网暴露。
 - 7 单测 `location-token.test.ts`：issue/consume 圆环、单次消费、过期回收（Date.now stub）、多 token 独立、跨用户隔离。
 
 ### Added — `/location` 位置备忘（基础版）

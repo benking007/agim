@@ -205,19 +205,14 @@ export async function startWebServer(options: {
     // Public on purpose — the user reaches these via a token-bearing link
     // sent into their IM thread. Token (32 hex chars, 10-min TTL, single
     // use) is the credential. Designed to sit behind a CDN that proxies
-    // bot.iclaw.host → this port (only /loc and /api/loc allowed through).
+    // agent.iclaw.host → this port. **CDN MUST whitelist only /loc and
+    // /api/loc** — other paths on :3000 (/tasks, /api/*, /reminders) are
+    // operator-only and would leak if the CDN catch-all forwards.
 
-    // GET /loc — serve the H5 capture page. Token validity is NOT checked
-    // here (the page reads ?t=... and uses it as the body of the POST).
-    // We intentionally don't 404 on missing/invalid token at this stage so
-    // the user gets a helpful in-page error instead of a bare HTTP error.
     if (url.pathname === '/loc' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
     }
 
-    // POST /api/loc — H5 page submits the captured coords. Validates token,
-    // writes a location_memo, dispatches a result message back to the
-    // originating IM thread.
     if (url.pathname === '/api/loc' && req.method === 'POST') {
       const body = await readBody(req, res)
       let parsed: { t?: string; lat?: number; lng?: number; accuracy?: number }
@@ -241,7 +236,6 @@ export async function startWebServer(options: {
       const ctx = cr.ctx
       const accuracy = typeof parsed.accuracy === 'number' ? parsed.accuracy : 0
 
-      // Persist the memo (best-effort — don't fail the request if DB is wedged).
       let memoId: number | null = null
       try {
         memoId = createMemo({
@@ -258,10 +252,6 @@ export async function startWebServer(options: {
         webLog.warn({ event: 'web.loc.memo_create_failed', err: String(err) }, 'failed to write location memo')
       }
 
-      // Push a result message back to the original IM thread. Same routing
-      // rule as cli.ts: wechat platform → 'wechat-ilink' messenger; others
-      // map directly. We do this fire-and-forget — don't block the H5 POST
-      // on IM-side delivery latency.
       const messengerName = ctx.platform === 'wechat' ? 'wechat-ilink' : ctx.platform
       const messenger = registry.getMessenger(messengerName)
       const idTag = memoId ? `#${memoId}` : ''
@@ -275,10 +265,10 @@ export async function startWebServer(options: {
       ].filter(Boolean).join('\n')
       if (messenger) {
         messenger.sendMessage(ctx.threadId, reply).catch((err) => {
-          webLog.warn({ event: 'web.loc.dispatch_failed', threadId: ctx.threadId, err: String(err) }, 'failed to push location result back to IM')
+          webLog.warn({ event: 'web.loc.dispatch_failed', threadId: ctx.threadId, err: String(err) })
         })
       } else {
-        webLog.warn({ event: 'web.loc.no_messenger', platform: ctx.platform, messengerName }, 'no messenger registered to dispatch location result')
+        webLog.warn({ event: 'web.loc.no_messenger', platform: ctx.platform })
       }
 
       sendJson(res, 200, { ok: true, id: memoId, lat, lng })

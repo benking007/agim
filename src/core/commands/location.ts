@@ -21,9 +21,9 @@ import {
 import { issueToken } from '../location-token.js'
 
 /** Default base URL for the location-share H5 page. Operators can override
- *  via IMHUB_LOC_BASE_URL — points at https://bot.iclaw.host as the public
+ *  via IMHUB_LOC_BASE_URL — points at https://agent.iclaw.host as the public
  *  fallback so OSS users without their own HTTPS endpoint can opt in. */
-const DEFAULT_LOC_BASE_URL = 'https://bot.iclaw.host'
+const DEFAULT_LOC_BASE_URL = 'https://agent.iclaw.host'
 
 const HELP = [
   '📍 /location — 位置备忘',

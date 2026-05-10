@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed — memo 时区 + 永久 location 判断
+两个用户反馈直接修：
+
+1. **不应该按"有没有 location"判断 transient/permanent**。我朋友常去的茶馆、公司新址、家庭住址这些**有 location 但应该永久**记的，之前 prompt 里把"含位置类"暗示成 24h 临时，会丢数据。
+   - `save_memo` tool description 重写 EXPIRY 段：判断条件改为**内容语义**（"刚刚 / 今天 / 暂时 / 临时" → 临时；"我朋友常去 / 老地方 / 我家 / 我公司 / 重要 / 永久" → 永久），不再以 has_location 作为信号
+   - 给了双向 examples：transient 案例 vs permanent location 案例，让 agent 看清差异
+   - 强化 "When ambiguous, ASK" 指引
+
+2. **时间没有时区，agent 按 UTC 计算 "明天下午3点" 会偏 8 小时**。统一按 **Asia/Shanghai (UTC+8)** 存储，bare 本地格式 `YYYY-MM-DD HH:MM:SS`：
+   - 新 helpers `nowSqliteLocal()` / `toSqliteLocal(ms)` / `normalizeWhenAt(s)`
+   - `createMemo` / `updateMemo`：JS 显式设 `created_at` / `updated_at` (UTC+8)；agent 传的 `when_at` / `expires_at` 走 `normalizeWhenAt` 兜底（含 `Z` / `+00:00` / `+08:00` 都正确归一）
+   - `searchMemos` 的 expiry 过滤 + `whenAfter` / `whenBefore` 都用 `datetime('now', '+8 hours')` 与存储 shape 对齐
+   - `sweepExpired` 同理
+   - `expiresAtFrom(hours)` 改用 `toSqliteLocal(now + ms)` 而不是 `.toISOString()`
+   - schema 里 `created_at` / `updated_at` 默认值改为 `datetime('now', '+8 hours')`（兜底，正常路径 JS 会显式设）
+   - tool description 里 `when_at` / `when_after` / `when_before` 都说明：**Asia/Shanghai (UTC+8)，"YYYY-MM-DD HH:MM:SS"，不要带 T 也不要 Z**
+   - 11 新增单测覆盖：nowSqliteLocal 形状 / toSqliteLocal +8h shift / normalizeWhenAt 各路径（Z / +08:00 / 已 local / null / unparseable）/ created_at 实际写入 UTC+8 / sweep 用 UTC+8 比较
+   - 时区可调：`IMHUB_TZ_OFFSET_HOURS` env，默认 8（其他时区部署只改这一个就行）
+
+### Changed — opencode agent 系统提示也加上 memo 工具
+opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提了 reminder 那 4 个工具，现在加上 memo 那 5 个 (`save_memo` / `search_memos` / `update_memo` / `delete_memo` / `request_location_capture`) 一起列出，并补一段 timezone 说明。这样 opencode 通过 HTTP daemon mode 跑时也知道要带 `_im_context` + 用 UTC+8。
+
+
 ### Changed — `/location` 重命名为 `/memo` + 数据模型升级到 5W1H 持久记忆库
 **这是个产品级别的概念升级**：从"位置备忘"扩展到通用的"持久记忆数据库"。位置只是其中一种类型——同一个工具也能记 "爸爸的生日是5月8日"、"明天下午3点开会"、"伞放前台了"、"苹果发了 AVP2"。
 

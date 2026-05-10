@@ -26,6 +26,49 @@ const log = rootLogger.child({ component: 'memos' })
 
 const DB_FILE = process.env.IMHUB_MEMOS_DB || join(homedir(), '.im-hub', 'memos.db')
 
+// ─── Time / timezone ───────────────────────────────────────────────────
+// All timestamps are stored in UTC+8 (Asia/Shanghai) wall-clock format,
+// matching SQLite's `datetime()` shape: "YYYY-MM-DD HH:MM:SS". This keeps
+// JS-set values (expires_at, created_at when overridden) and SQL-set
+// values (`datetime('now', '+8 hours')` in default + sweep + search)
+// lexicographically comparable. UTC+8 matches the deployment's user base
+// (CN); for other regions, the offset is overridable via env.
+
+const TZ_OFFSET_HOURS = Number(process.env.IMHUB_TZ_OFFSET_HOURS ?? 8)
+const TZ_OFFSET_MS = TZ_OFFSET_HOURS * 3600_000
+const TZ_SHIFT_SQL = `'+${TZ_OFFSET_HOURS} hours'`  // for datetime('now', ...)
+
+/** UTC+8 wall-clock as `YYYY-MM-DD HH:MM:SS` — matches SQLite's `datetime()`
+ *  output shape so cross-source comparisons are well-defined. */
+export function nowSqliteLocal(): string {
+  return new Date(Date.now() + TZ_OFFSET_MS).toISOString().slice(0, 19).replace('T', ' ')
+}
+
+/** Convert an absolute Date (or ms) to the local-storage shape. */
+export function toSqliteLocal(d: Date | number): string {
+  const ms = typeof d === 'number' ? d : d.getTime()
+  return new Date(ms + TZ_OFFSET_MS).toISOString().slice(0, 19).replace('T', ' ')
+}
+
+/** Normalize whatever the agent passes for `when_at` into our storage shape.
+ *  Accepts: bare ISO (assumed already local), ISO with `Z` or `±HH:MM` offset,
+ *  or already-normalized "YYYY-MM-DD HH:MM:SS". Output: "YYYY-MM-DD HH:MM:SS"
+ *  in UTC+8. Falls through unchanged on parse failure rather than throwing
+ *  so an agent typo doesn't kill the save. */
+export function normalizeWhenAt(s: string | null | undefined): string | null {
+  if (!s) return null
+  const trimmed = s.trim()
+  if (!trimmed) return null
+  // Has explicit TZ marker → parse + convert.
+  if (/Z$|[+\-]\d{2}:\d{2}$/.test(trimmed)) {
+    const ms = Date.parse(trimmed)
+    if (!Number.isFinite(ms)) return trimmed
+    return toSqliteLocal(ms)
+  }
+  // Bare — assume already in our local zone. Normalize T→space, trim ms.
+  return trimmed.replace('T', ' ').slice(0, 19)
+}
+
 export type MemoSource = 'manual' | 'agent' | 'geocoded' | 'browser'
 
 export interface Memo {
@@ -81,8 +124,8 @@ const helper = createSqliteHelper({
 
       expires_at  TEXT,
       source      TEXT    NOT NULL DEFAULT 'agent',
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours'))
     );
     CREATE INDEX IF NOT EXISTS idx_memos_user_recent
       ON memos(platform, user_id, created_at DESC);
@@ -129,34 +172,39 @@ export function createMemo(input: CreateMemoInput): number {
   assertCoords(input.whereLat, input.whereLng)
   const d = helper.get()
   if (!d) throw new Error('memos DB unavailable (sqlite disabled?)')
+  const now = nowSqliteLocal()  // UTC+8 wall-clock — same shape as SQLite default
+  const whenAt = normalizeWhenAt(input.whenAt)
+  const expiresAt = normalizeWhenAt(input.expiresAt) // accept agent-supplied ISO with TZ offset
   const stmt = d.prepare(
     `INSERT INTO memos
        (platform, channel_id, thread_id, user_id,
         what, who, when_at, when_text,
         where_lat, where_lng, where_label,
         how, why,
-        expires_at, source)
-     VALUES (?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?)`,
+        expires_at, source,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?,  ?, ?)`,
   )
   const r = stmt.run(
     input.platform, input.channelId, input.threadId, input.userId ?? '',
     input.what.trim().slice(0, 200),
     input.who ?? null,
-    input.whenAt ?? null,
+    whenAt,
     input.whenText ?? null,
     input.whereLat ?? null,
     input.whereLng ?? null,
     input.whereLabel ?? null,
     input.how ?? null,
     input.why ?? null,
-    input.expiresAt ?? null,
+    expiresAt,
     input.source ?? 'agent',
+    now, now,
   )
   log.info({
     event: 'memos.created',
     id: r.lastInsertRowid, platform: input.platform, userId: input.userId,
     what: input.what, hasLocation: input.whereLat != null,
-    expiresAt: input.expiresAt, source: input.source,
+    expiresAt, source: input.source,
   })
   return Number(r.lastInsertRowid)
 }
@@ -199,16 +247,18 @@ export function updateMemo(id: number, input: UpdateMemoInput, opts: OwnerOpts =
   }
   if (input.what !== undefined)      setIf('what', input.what.trim().slice(0, 200))
   if (input.who !== undefined)       setIf('who', input.who)
-  if (input.whenAt !== undefined)    setIf('when_at', input.whenAt)
+  if (input.whenAt !== undefined)    setIf('when_at', input.whenAt === null ? null : normalizeWhenAt(input.whenAt))
   if (input.whenText !== undefined)  setIf('when_text', input.whenText)
   if (input.whereLat !== undefined)  setIf('where_lat', input.whereLat)
   if (input.whereLng !== undefined)  setIf('where_lng', input.whereLng)
   if (input.whereLabel !== undefined) setIf('where_label', input.whereLabel)
   if (input.how !== undefined)       setIf('how', input.how)
   if (input.why !== undefined)       setIf('why', input.why)
-  if (input.expiresAt !== undefined) setIf('expires_at', input.expiresAt)
+  if (input.expiresAt !== undefined) setIf('expires_at', input.expiresAt === null ? null : normalizeWhenAt(input.expiresAt))
   if (sets.length === 0) return false
-  sets.push(`updated_at = datetime('now')`)
+  // Stamp updated_at with the same UTC+8 shape as create + sweep.
+  sets.push(`updated_at = ?`)
+  args.push(nowSqliteLocal())
 
   const where = opts.userId ? 'id = ? AND user_id = ?' : 'id = ?'
   const sql = `UPDATE memos SET ${sets.join(', ')} WHERE ${where}`
@@ -281,8 +331,10 @@ export function searchMemos(opts: SearchOpts = {}): Memo[] {
 
   if (opts.userId) { wheres.push('user_id = ?'); args.push(opts.userId) }
   if (!opts.includeExpired) {
-    // Keep rows where expires_at IS NULL (permanent) OR > now.
-    wheres.push("(expires_at IS NULL OR expires_at > datetime('now'))")
+    // Keep rows where expires_at IS NULL (permanent) OR > now (UTC+8).
+    // Comparing UTC+8 stored shape against UTC+8 wall-clock — same TZ both
+    // sides, lexicographic compare correct around midnight crossings.
+    wheres.push(`(expires_at IS NULL OR expires_at > datetime('now', ${TZ_SHIFT_SQL}))`)
   }
   if (opts.hasLocation) wheres.push('where_lat IS NOT NULL')
 
@@ -303,10 +355,12 @@ export function searchMemos(opts: SearchOpts = {}): Memo[] {
     wheres.push(`what LIKE ? ESCAPE '\\'`); args.push(`%${escapeLike(opts.what.trim())}%`)
   }
   if (opts.whenAfter) {
-    wheres.push(`COALESCE(when_at, created_at) >= ?`); args.push(opts.whenAfter)
+    const v = normalizeWhenAt(opts.whenAfter)
+    if (v) { wheres.push(`COALESCE(when_at, created_at) >= ?`); args.push(v) }
   }
   if (opts.whenBefore) {
-    wheres.push(`COALESCE(when_at, created_at) <= ?`); args.push(opts.whenBefore)
+    const v = normalizeWhenAt(opts.whenBefore)
+    if (v) { wheres.push(`COALESCE(when_at, created_at) <= ?`); args.push(v) }
   }
 
   const sql = `SELECT * FROM memos${wheres.length ? ' WHERE ' + wheres.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`
@@ -326,7 +380,9 @@ const SWEEP_INTERVAL_MS = 5 * 60 * 1000  // every 5 min
 
 export function sweepExpired(): number {
   return helper.safe((d) => {
-    const r = d.prepare(`DELETE FROM memos WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')`).run()
+    const r = d.prepare(
+      `DELETE FROM memos WHERE expires_at IS NOT NULL AND expires_at <= datetime('now', ${TZ_SHIFT_SQL})`,
+    ).run()
     if (r.changes > 0) log.info({ event: 'memos.sweep', removed: r.changes })
     return r.changes
   }, 0)

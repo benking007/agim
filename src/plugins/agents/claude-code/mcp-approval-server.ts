@@ -472,19 +472,35 @@ export function buildServer(client: ApprovalClient): McpServer {
       description:
         'Record any kind of memo for the user — "请记下" / "帮我记一下" / "别忘了" / "重要的事". ' +
         'Extract 5W1H from the user\'s message: what (the core thing — REQUIRED), who (person/org), ' +
-        'when_at (parseable ISO datetime) or when_text (raw phrase if not parseable), where_lat/lng + ' +
+        'when_at (parseable datetime) or when_text (raw phrase if not parseable), where_lat/lng + ' +
         'where_label OR address (server geocodes), how (manner), why (reason). Examples:\n' +
-        '  "我爸爸的生日是5月8日" → { what: "生日", who: "爸爸", when_text: "5月8日" }\n' +
-        '  "明天下午3点开会"     → { what: "开会", when_at: "<ISO_FOR_TOMORROW_15:00>" }\n' +
-        '  "记一下，伞放在前台"  → { what: "伞", where_label: "前台" }\n' +
-        '  "苹果今年发了AVP2"    → { what: "AVP2", who: "苹果" }\n' +
-        '  "国贸三期是公司新址"  → { what: "公司新址", address: "国贸三期" } (geocoded)\n\n' +
-        'EXPIRY: by default memos persist forever. Set expires_in_hours when the memo describes ' +
-        'TRANSIENT state — typical values: 24 (one day), 168 (one week). Trigger words for ' +
-        'transient: "暂时" / "临时" / "今天" / "这次" / "刚刚" / parking-style "停在这" — anything ' +
-        'where the info would be useless after a day or week. Trigger words for permanent (omit ' +
-        'expires_in_hours): "永久" / "记住" / "总是" / 生日 / 联系方式 / preferences. When ' +
-        'unsure, ASK the user briefly: "永久记还是 24h 后忘掉？" then use the answer.\n\n' +
+        '  "我爸爸的生日是5月8日"      → { what: "生日", who: "爸爸", when_text: "5月8日" }\n' +
+        '  "明天下午3点开会"           → { what: "开会", when_at: "<2026-05-11 15:00:00>" }\n' +
+        '  "我朋友的茶馆在 X 路 Y 号" → { what: "茶馆", who: "朋友", address: "X路Y号" } [PERMANENT]\n' +
+        '  "苹果今年发了AVP2"          → { what: "AVP2", who: "苹果" }\n' +
+        '  "国贸三期是公司新址"        → { what: "公司新址", address: "国贸三期" } (geocoded)\n' +
+        '  "我把车停在地下B区了"       → DO NOT call save_memo — use request_location_capture\n\n' +
+        '⏰ TIMEZONE: ALL times are interpreted as Asia/Shanghai (UTC+8). When the user says "明天" ' +
+        '"下午3点" "下周" etc., compute the absolute datetime in UTC+8 and format as ' +
+        '"YYYY-MM-DD HH:MM:SS" (no T, no offset suffix — bare local). Do NOT use ISO with `Z` or ' +
+        '`+00:00` — that would store UTC and display 8h off in CN. Server normalizes "+08:00" / "Z" ' +
+        'inputs to local for safety, but emit local directly.\n\n' +
+        '⚠️ EXPIRY (this is subtle — read carefully):\n' +
+        'Default = PERMANENT. Only set expires_in_hours when the memo is genuinely transient. ' +
+        'The signal is the SEMANTICS of the user\'s words, NOT whether the memo has location.\n\n' +
+        '  TRANSIENT (set expires_in_hours):\n' +
+        '   • "刚刚 / 刚才 / 暂时 / 临时 / 今天 / 这次" + 状态描述\n' +
+        '   • "我把车停在这了" (parking — typically 24)\n' +
+        '   • "我把伞放在前台了" (today\'s ad-hoc placement — 24)\n' +
+        '   • "今天的会议在 3 楼" (one-day-relevant — 24)\n\n' +
+        '  PERMANENT (omit expires_in_hours):\n' +
+        '   • "X 是我朋友常去的茶馆" / "X 是我们老地方" → 永久存（即使有 location！）\n' +
+        '   • "我家在 X" / "我公司在 Y" → 永久\n' +
+        '   • "爸爸生日是..." / "妈妈电话是..." → 永久\n' +
+        '   • Anything user explicitly says "永久 / 记住 / 总是 / 重要" → 永久\n\n' +
+        'When ambiguous, ASK the user: "这个要永久记还是 24h 后忘掉？" then use the answer. ' +
+        'NEVER guess "transient" just because there\'s a location — friends\' regular hangouts, ' +
+        'home/office addresses, favorite places are all permanent.\n\n' +
         'IF the user wants to record their CURRENT GPS location ("我把车停这" / "记一下我现在 ' +
         '的位置"), DO NOT call save_memo — call request_location_capture instead (it can take a ' +
         '`what` arg to label the new memo at capture time).\n\n' +
@@ -494,8 +510,8 @@ export function buildServer(client: ApprovalClient): McpServer {
       inputSchema: {
         what: z.string().describe('Core thing being recorded (REQUIRED). ≤200 chars'),
         who: z.string().optional().describe('Person/org/role involved (e.g. "爸爸", "团队")'),
-        when_at: z.string().optional().describe('ISO 8601 local datetime, e.g. "2026-05-08T15:00:00"'),
-        when_text: z.string().optional().describe('Raw user phrase if when_at not parseable, e.g. "明年5月"'),
+        when_at: z.string().optional().describe('Asia/Shanghai (UTC+8) datetime, format "YYYY-MM-DD HH:MM:SS" (no T, no offset)'),
+        when_text: z.string().optional().describe('Raw user phrase if when_at not parseable, e.g. "明年5月" / "下个月底"'),
         where_lat: z.number().min(-90).max(90).optional().describe('WGS-84 latitude (pair with where_lng)'),
         where_lng: z.number().min(-180).max(180).optional().describe('WGS-84 longitude'),
         where_label: z.string().optional().describe('Place name / address text'),
@@ -551,7 +567,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'Examples:\n' +
         '  "我的车在哪？"        → { query: "车", has_location: true }\n' +
         '  "我爸爸生日是哪天？" → { who: "爸爸", what: "生日" }\n' +
-        '  "今天记了什么？"     → { when_after: "<ISO_TODAY_00>" }\n' +
+        '  "今天记了什么？"     → { when_after: "<2026-05-11 00:00:00>" }  (UTC+8)\n' +
         '  "找下苹果发布会"     → { query: "苹果发布会" }\n\n' +
         'Returns { items: [{ id, what, who, whenAt/whenText, where: { lat, lng, label, mapUrl, ' +
         'mapUrls } if location set, how, why, expiresAt, createdAt }] }. Format the answer ' +
@@ -563,8 +579,8 @@ export function buildServer(client: ApprovalClient): McpServer {
         who: z.string().optional().describe('Filter by who field (LIKE match)'),
         what: z.string().optional().describe('Filter by what field (LIKE match)'),
         has_location: z.boolean().optional().describe('When true, only memos with where_lat set'),
-        when_after: z.string().optional().describe('ISO datetime — memos with when_at OR created_at >= this'),
-        when_before: z.string().optional().describe('ISO datetime — memos with when_at OR created_at <= this'),
+        when_after: z.string().optional().describe('Asia/Shanghai (UTC+8) datetime — memos with when_at OR created_at >= this. Format "YYYY-MM-DD HH:MM:SS"'),
+        when_before: z.string().optional().describe('Asia/Shanghai (UTC+8) datetime — memos with when_at OR created_at <= this'),
         include_expired: z.boolean().optional().describe('Include expired memos in results (default false)'),
         limit: z.number().int().min(1).max(50).optional().describe('Max rows (default 10)'),
         _im_context: imContextSchema,

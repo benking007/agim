@@ -17,6 +17,7 @@ const {
   createMemo, updateMemo, getMemo, deleteMemo, listMemos, searchMemos,
   parseCoordPair, stripCoordPrefix, mapUrl, mapUrls, wgs84ToGcj02,
   isGeocodingAvailable, sweepExpired, closeMemosDb,
+  nowSqliteLocal, toSqliteLocal, normalizeWhenAt,
 } = mod
 
 beforeAll(async () => { await mkdir(TEST_DIR, { recursive: true }) })
@@ -78,6 +79,37 @@ describe('wgs84ToGcj02', () => {
   it('is a no-op outside China', () => {
     const out = wgs84ToGcj02(40.7128, -74.0060)  // NYC
     expect(out).toEqual({ lat: 40.7128, lng: -74.0060 })
+  })
+})
+
+describe('TZ helpers (UTC+8 storage shape)', () => {
+  it('nowSqliteLocal returns YYYY-MM-DD HH:MM:SS', () => {
+    expect(nowSqliteLocal()).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  })
+  it('toSqliteLocal shifts UTC ms by +8h', () => {
+    // 2026-05-11 08:00:00 UTC → 2026-05-11 16:00:00 in UTC+8
+    const ms = Date.parse('2026-05-11T08:00:00Z')
+    expect(toSqliteLocal(ms)).toBe('2026-05-11 16:00:00')
+  })
+  it('normalizeWhenAt: bare ISO assumed local, T→space', () => {
+    expect(normalizeWhenAt('2026-05-11T15:00:00')).toBe('2026-05-11 15:00:00')
+  })
+  it('normalizeWhenAt: already-local form passes through', () => {
+    expect(normalizeWhenAt('2026-05-11 15:00:00')).toBe('2026-05-11 15:00:00')
+  })
+  it('normalizeWhenAt: explicit Z suffix → converted to UTC+8', () => {
+    expect(normalizeWhenAt('2026-05-11T08:00:00Z')).toBe('2026-05-11 16:00:00')
+  })
+  it('normalizeWhenAt: explicit +08:00 → converted (no double-shift)', () => {
+    expect(normalizeWhenAt('2026-05-11T15:00:00+08:00')).toBe('2026-05-11 15:00:00')
+  })
+  it('normalizeWhenAt: null / empty → null', () => {
+    expect(normalizeWhenAt(null)).toBeNull()
+    expect(normalizeWhenAt('')).toBeNull()
+    expect(normalizeWhenAt('   ')).toBeNull()
+  })
+  it('normalizeWhenAt: unparseable string falls through unchanged', () => {
+    expect(normalizeWhenAt('garbage')).toBe('garbage')
   })
 })
 
@@ -208,6 +240,42 @@ describeIfSqlite('memo CRUD', () => {
     const removed = sweepExpired()
     expect(removed).toBeGreaterThanOrEqual(2)
     expect(searchMemos({ userId: 'alice', query: 'sweep-test', includeExpired: true }).length).toBe(0)
+  })
+
+  it('createMemo writes UTC+8 wall-clock for created_at + updated_at', () => {
+    const id = createMemo({ ...CTX, what: 'tz-stamp' })
+    const m = getMemo(id, { userId: 'alice' })
+    expect(m).not.toBeNull()
+    if (!m) return
+    expect(m.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+    expect(m.updated_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+    // The stored value should be roughly NOW in UTC+8 — within 60s.
+    const localNow = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+    const drift = Math.abs(Date.parse(m.created_at.replace(' ', 'T') + 'Z') - Date.parse(localNow.replace(' ', 'T') + 'Z'))
+    expect(drift).toBeLessThan(60_000)
+  })
+
+  it('createMemo normalizes whenAt ISO with Z to local UTC+8', () => {
+    const id = createMemo({ ...CTX, what: 'tz-when', whenAt: '2026-05-11T08:00:00Z' })
+    const m = getMemo(id, { userId: 'alice' })
+    expect(m?.when_at).toBe('2026-05-11 16:00:00')
+  })
+
+  it('createMemo accepts already-local whenAt unchanged', () => {
+    const id = createMemo({ ...CTX, what: 'tz-when2', whenAt: '2026-05-11 15:00:00' })
+    const m = getMemo(id, { userId: 'alice' })
+    expect(m?.when_at).toBe('2026-05-11 15:00:00')
+  })
+
+  it('expires_at stored UTC+8: future memo NOT swept; past memo IS swept', () => {
+    const futureUtc8 = new Date(Date.now() + 8 * 3600_000 + 60_000).toISOString().slice(0, 19).replace('T', ' ')
+    const pastUtc8   = new Date(Date.now() + 8 * 3600_000 - 60_000).toISOString().slice(0, 19).replace('T', ' ')
+    const live = createMemo({ ...CTX, what: 'tz-future', expiresAt: futureUtc8 })
+    const dead = createMemo({ ...CTX, what: 'tz-past',   expiresAt: pastUtc8 })
+    const removed = sweepExpired()
+    expect(removed).toBeGreaterThanOrEqual(1)
+    expect(getMemo(live, { userId: 'alice' })).not.toBeNull()
+    expect(getMemo(dead, { userId: 'alice' })).toBeNull()
   })
 
   it('listMemos / deleteMemo per-user scoped', () => {

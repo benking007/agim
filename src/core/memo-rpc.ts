@@ -17,6 +17,7 @@ import { logger as rootLogger } from './logger.js'
 import {
   createMemo, getMemo, updateMemo, deleteMemo, searchMemos, listMemos,
   geocodeAddress, isGeocodingAvailable, mapUrl, mapUrls,
+  toSqliteLocal,
   type Memo, type MemoSource,
 } from './memos.js'
 import { issueToken } from './location-token.js'
@@ -54,12 +55,15 @@ export async function handleMemoOp(
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-/** Compute expires_at ISO from `expires_in_hours`, or null for permanent. */
+/** Compute expires_at from `expires_in_hours`, or null for permanent.
+ *  Output shape matches the rest of the storage: UTC+8 wall-clock,
+ *  "YYYY-MM-DD HH:MM:SS" — so comparison against the sweep's
+ *  `datetime('now', '+8 hours')` is well-defined. */
 function expiresAtFrom(expiresInHours: unknown): string | null {
   if (typeof expiresInHours !== 'number' || !Number.isFinite(expiresInHours) || expiresInHours <= 0) {
     return null
   }
-  return new Date(Date.now() + expiresInHours * 3600_000).toISOString()
+  return toSqliteLocal(Date.now() + expiresInHours * 3600_000)
 }
 
 /** Public-facing summary of a memo (camelCase, only-set fields, includes

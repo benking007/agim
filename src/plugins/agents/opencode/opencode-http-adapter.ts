@@ -578,14 +578,21 @@ function buildImContextInstruction(opts: AgentSendOpts): string {
   const ctx = JSON.stringify({ platform, threadId, channelId, userId })
   return [
     '[im-hub MCP routing — important]',
-    'When you call any imhub tool (create_reminder / list_reminders /',
-    'cancel_reminder / snooze_reminder), you MUST include this exact',
-    '`_im_context` field in the tool input so the call routes to the',
-    'correct IM thread:',
+    'When you call any imhub tool — reminder family (create_reminder /',
+    'list_reminders / cancel_reminder / snooze_reminder) or memo family',
+    '(save_memo / search_memos / update_memo / delete_memo /',
+    'request_location_capture) — you MUST include this exact `_im_context`',
+    'field in the tool input so the call routes to the correct IM thread:',
     '',
     `  "_im_context": ${ctx}`,
     '',
     'Pass these values verbatim — do not invent or modify them.',
+    '',
+    '[memo timezone] All times in memo tools are Asia/Shanghai (UTC+8).',
+    'When the user says relative dates ("明天" / "下周三" / "下午3点"),',
+    'compute the absolute datetime in UTC+8 and emit "YYYY-MM-DD HH:MM:SS"',
+    '(no T, no offset suffix). The server normalizes if you slip an offset',
+    'in, but emit local directly to keep the chat consistent.',
   ].join('\n')
 }
 

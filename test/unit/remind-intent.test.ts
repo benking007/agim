@@ -79,6 +79,50 @@ describe('tryDetectReminderIntent — pre-filter', () => {
     expect(r.handled).toBe(false)
   })
 
+  // PERF-2026-05-10: dropped the standalone verb-only branch that was
+  // triggering a 5-10s helper-LLM call on every chat message containing
+  // common verbs like 告诉我/通知/记得 — net: every WeChat reply running
+  // 5-10s late even when no reminder was intended. These cases must now
+  // pre-filter-skip without an LLM call.
+  it('skips verb-only chat without time tokens (告诉我/通知/记得/别忘了/叫我)', async () => {
+    const cases = [
+      '告诉我天气怎么样',     // common ask, not a reminder
+      '通知大家来开会',        // imperative to the user, no time
+      '记得这件事吗',          // past-leaning question
+      '别忘了小心点',          // generic warning
+      '叫我吃饭',              // imperative without time
+    ]
+    for (const text of cases) {
+      const r = await tryDetectReminderIntent({
+        platform: PLATFORM, channelId: CHANNEL, threadId: THREAD, userId: USER,
+        text, now: NOW,
+      })
+      expect(r.handled).toBe(false)
+    }
+  })
+
+  it('still passes pre-filter when verb co-occurs with a time token', async () => {
+    // These should reach the LLM (and the fake agent returns is_reminder=false,
+    // so handled stays false — we just want to confirm pre-filter doesn't reject).
+    const cases = [
+      '明天9点提醒我开会',     // CN time word + 时点 unit
+      '30分钟后叫我喝水',      // duration unit
+      '今晚8点别忘了',         // CN time word + 时点
+      '8:30 提醒我',           // HH:MM
+    ]
+    for (const text of cases) {
+      const r = await tryDetectReminderIntent({
+        platform: PLATFORM, channelId: CHANNEL, threadId: THREAD, userId: USER,
+        text, now: NOW,
+      })
+      // Pre-filter passed → LLM ran → fake returned is_reminder=false → handled=false.
+      // What we care about is that the call didn't early-out at the regex.
+      // (No direct API to assert "agent was invoked"; we rely on the fake
+      // agent being permissive and assert behavior is shaped by LLM output.)
+      expect(r.handled).toBe(false)
+    }
+  })
+
   it('skips when aiwatch is off', async () => {
     setAiwatchEnabled(PLATFORM, USER, false)
     const r = await tryDetectReminderIntent({

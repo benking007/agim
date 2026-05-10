@@ -27,12 +27,24 @@ const DETECTOR_MAX_OUTPUT = 600
 // ("提醒我..."、"叫我..."、"X 分钟后...") which score ≥ 0.85.
 const CONFIDENCE_THRESHOLD = 0.85
 
-// Pre-filter: any time-ish token. Catches CN units (秒/分/时/天/周/月/点),
-// CN time words (早上/上午/中午/下午/晚上/凌晨/今晚/明天/后天/每天/每周),
-// EN durations (Nm/Nh/Nd, "every N…"), HH:MM, ISO date.
+// Pre-filter: must have at least ONE time-ish token. Catches CN units
+// (秒/分/时/天/周/月/点), CN time words (早上/上午/中午/下午/晚上/凌晨/
+// 今晚/明天/后天/每天/每周), EN durations (Nm/Nh/Nd, "every N…"), HH:MM,
+// ISO date.
 //
-// Goal: high recall, false positives are cheap (an extra LLM call).
-// Real misses are expensive (silent feature failure for natural phrasings).
+// PERF (2026-05-10): the previous version also matched on standalone verb
+// words (提醒|通知|叫我|告诉我|记得|别忘了)，without requiring a time
+// token. Those verbs appear in everyday Chinese chat ("告诉我天气", "通知
+// 群里他来了") and were triggering a 5-10s helper-LLM call on a huge
+// fraction of normal WeChat messages — net effect was every reply
+// arriving 5-10s late even when no reminder was intended. Since the
+// downstream LLM can't produce a valid fire_at_iso without a time token
+// anyway (and we reject without one at remind-intent.ts:164), the
+// verb-only branch was pure waste — guaranteed false positive. Removed.
+//
+// If a user *does* want to set a reminder, the natural phrasing always
+// carries a time token (e.g. "明天9点提醒我开会", "30分钟后叫我喝水",
+// "今晚8点别忘了") which the remaining branches catch.
 const TIME_HINT_RE = new RegExp([
   '\\d+\\s*(秒|分钟|分|小时|钟头|时|天|周|月|点|刻)',
   '(早上|上午|中午|下午|晚上|凌晨|今晚|今天|明天|后天|今早|大后天)',
@@ -40,7 +52,6 @@ const TIME_HINT_RE = new RegExp([
   '\\d{1,2}:\\d{2}',
   '\\d{4}-\\d{2}-\\d{2}',
   '\\b(every\\s+\\d|in\\s+\\d+\\s*(min|hour|day|sec))\\b',
-  '(提醒|通知|叫我|喊我|告诉我|记得|别忘了|提醒我)',
 ].join('|'), 'i')
 
 const DETECTOR_SYSTEM_PROMPT = [

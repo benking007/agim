@@ -182,6 +182,13 @@ program
     const { startReminderEngine } = await import('./core/reminders.js')
     startReminderEngine()
 
+    // Start the memo expiry sweeper (every 5 min — purges memos with
+    // expires_at <= now). Idempotent: safe even if startSweepTimer is
+    // called twice. Lazy import keeps memos.ts out of the cold-start path
+    // until it's actually needed.
+    const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
+    startMemoSweep()
+
     // ============================================
     // ONBOARDING CHECKS (before default fill!)
     // ============================================
@@ -445,6 +452,10 @@ program
         const { stopReminderEngine, closeReminderDb } = await import('./core/reminders.js')
         stopReminderEngine()
         closeReminderDb()
+      } catch { /* ignore */ }
+      try {
+        const { closeMemosDb } = await import('./core/memos.js')
+        closeMemosDb()  // also stops the sweep timer
       } catch { /* ignore */ }
 
       process.exit(0)

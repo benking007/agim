@@ -45,15 +45,15 @@ interface PendingReminderRpc {
 // reminder + location can be in flight concurrently without reqId collision
 // risk (in practice reqIds are UUIDs, but keeping channels separate is
 // simpler than reasoning about the shared map).
-type LocationResult = ReminderResult
-type PendingLocationRpc = PendingReminderRpc
+type MemoResult = ReminderResult
+type PendingMemoRpc = PendingReminderRpc
 
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
   private pending = new Map<string, PendingRequest>()
   private pendingReminders = new Map<string, PendingReminderRpc>()
-  private pendingLocations = new Map<string, PendingLocationRpc>()
+  private pendingMemos = new Map<string, PendingMemoRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -144,12 +144,12 @@ class ApprovalClient {
       return
     }
 
-    if (m.type === 'location.result') {
+    if (m.type === 'memo.result') {
       const reqId = typeof m.reqId === 'string' ? m.reqId : null
       if (!reqId) return
-      const p = this.pendingLocations.get(reqId)
+      const p = this.pendingMemos.get(reqId)
       if (!p) return
-      this.pendingLocations.delete(reqId)
+      this.pendingMemos.delete(reqId)
       const ok = m.ok === true
       if (ok) {
         p.resolve({ ok: true, result: m.result })
@@ -172,10 +172,10 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingReminders.clear()
-    for (const [, p] of this.pendingLocations) {
+    for (const [, p] of this.pendingMemos) {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
-    this.pendingLocations.clear()
+    this.pendingMemos.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -246,8 +246,8 @@ class ApprovalClient {
   }
 
   /** Same shape as requestReminder, different message type. Bus delegates
-   *  to location-rpc.ts which actually writes locations.db. */
-  async requestLocation(op: string, payload: Record<string, unknown>): Promise<LocationResult> {
+   *  to memo-rpc.ts which actually writes memos.db. */
+  async requestMemo(op: string, payload: Record<string, unknown>): Promise<MemoResult> {
     await this.connectPromise
     if (this.connectErr || this.closed || !this.socket) {
       return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
@@ -255,17 +255,17 @@ class ApprovalClient {
     const reqId = randomUUID()
     const wire = `${JSON.stringify({
       v: 1,
-      type: 'location',
+      type: 'memo',
       runId: this.runId,
       reqId,
       op,
       payload,
     })}\n`
-    return new Promise<LocationResult>((resolve) => {
-      this.pendingLocations.set(reqId, { resolve })
+    return new Promise<MemoResult>((resolve) => {
+      this.pendingMemos.set(reqId, { resolve })
       this.socket?.write(wire, (err) => {
         if (err) {
-          this.pendingLocations.delete(reqId)
+          this.pendingMemos.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -373,8 +373,8 @@ export function buildServer(client: ApprovalClient): McpServer {
     const result = await client.requestReminder(op, args)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
   }
-  const wrapLocation = (op: string) => async (args: Record<string, unknown>) => {
-    const result = await client.requestLocation(op, args)
+  const wrapMemo = (op: string) => async (args: Record<string, unknown>) => {
+    const result = await client.requestMemo(op, args)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
   }
 
@@ -448,112 +448,176 @@ export function buildServer(client: ApprovalClient): McpServer {
     wrapReminder('snooze'),
   )
 
-  // ─── Location tools ─────────────────────────────────────────────────
-  // Geo-memo capture and recall. Two record paths + list + delete:
+  // ─── Memo tools (5W1H persistent memory) ─────────────────────────────
+  // Generalized "记下来" memory database. Each memo carries optional 5W1H
+  // fields — what (REQUIRED), who, when_at/when_text, where_lat/lng/label,
+  // how, why. Plus expires_at (NULL = permanent). Five tools:
   //
-  //   request_location_capture   → returns a one-time HTTPS URL the agent
-  //                                surfaces to the user; the user's tap
-  //                                triggers a browser geolocation
-  //                                permission prompt and POSTs coords back.
-  //                                Result delivery is asynchronous —
-  //                                im-hub pushes "✅ 已记录" directly to
-  //                                the IM thread once coords arrive.
-  //
-  //   save_location              → store coords (or geocode an address)
-  //                                directly. Use this when the agent has
-  //                                lat/lng or a full address text.
-  //
-  //   list_locations             → recent or query-matched memos.
-  //
-  //   delete_location            → drop one memo.
+  //   save_memo                  agent extracts whatever 5W1H it can from
+  //                              the user's natural language and persists.
+  //   request_location_capture   one-time HTTPS link for browser GPS;
+  //                              creates a NEW memo OR augments an
+  //                              existing memo's where_*. Result delivery
+  //                              is async — im-hub pushes "✅ 已记下..."
+  //                              to the IM thread once coords arrive.
+  //   search_memos               recall: free-text + structured filters.
+  //   update_memo                patch an existing memo when user adds
+  //                              context after the initial save.
+  //   delete_memo                drop one memo by id.
+
+  server.registerTool(
+    'save_memo',
+    {
+      title: 'Save a memo (5W1H persistent record)',
+      description:
+        'Record any kind of memo for the user — "请记下" / "帮我记一下" / "别忘了" / "重要的事". ' +
+        'Extract 5W1H from the user\'s message: what (the core thing — REQUIRED), who (person/org), ' +
+        'when_at (parseable ISO datetime) or when_text (raw phrase if not parseable), where_lat/lng + ' +
+        'where_label OR address (server geocodes), how (manner), why (reason). Examples:\n' +
+        '  "我爸爸的生日是5月8日" → { what: "生日", who: "爸爸", when_text: "5月8日" }\n' +
+        '  "明天下午3点开会"     → { what: "开会", when_at: "<ISO_FOR_TOMORROW_15:00>" }\n' +
+        '  "记一下，伞放在前台"  → { what: "伞", where_label: "前台" }\n' +
+        '  "苹果今年发了AVP2"    → { what: "AVP2", who: "苹果" }\n' +
+        '  "国贸三期是公司新址"  → { what: "公司新址", address: "国贸三期" } (geocoded)\n\n' +
+        'EXPIRY: by default memos persist forever. Set expires_in_hours when the memo describes ' +
+        'TRANSIENT state — typical values: 24 (one day), 168 (one week). Trigger words for ' +
+        'transient: "暂时" / "临时" / "今天" / "这次" / "刚刚" / parking-style "停在这" — anything ' +
+        'where the info would be useless after a day or week. Trigger words for permanent (omit ' +
+        'expires_in_hours): "永久" / "记住" / "总是" / 生日 / 联系方式 / preferences. When ' +
+        'unsure, ASK the user briefly: "永久记还是 24h 后忘掉？" then use the answer.\n\n' +
+        'IF the user wants to record their CURRENT GPS location ("我把车停这" / "记一下我现在 ' +
+        '的位置"), DO NOT call save_memo — call request_location_capture instead (it can take a ' +
+        '`what` arg to label the new memo at capture time).\n\n' +
+        'Returns the saved memo summary including id, fields, and (if where_* set) mapUrls. ' +
+        'Confirm to the user with one sentence + the map links using markdown syntax ' +
+        '`[百度地图](url) · [高德地图](url) · [Google](url)`. Do NOT print raw URLs.',
+      inputSchema: {
+        what: z.string().describe('Core thing being recorded (REQUIRED). ≤200 chars'),
+        who: z.string().optional().describe('Person/org/role involved (e.g. "爸爸", "团队")'),
+        when_at: z.string().optional().describe('ISO 8601 local datetime, e.g. "2026-05-08T15:00:00"'),
+        when_text: z.string().optional().describe('Raw user phrase if when_at not parseable, e.g. "明年5月"'),
+        where_lat: z.number().min(-90).max(90).optional().describe('WGS-84 latitude (pair with where_lng)'),
+        where_lng: z.number().min(-180).max(180).optional().describe('WGS-84 longitude'),
+        where_label: z.string().optional().describe('Place name / address text'),
+        address: z.string().optional().describe('Free-text address — geocoded server-side via Baidu when where_lat/lng absent'),
+        how: z.string().optional().describe('Manner / process'),
+        why: z.string().optional().describe('Reason / motivation'),
+        expires_in_hours: z.number().positive().optional().describe('Auto-expire in N hours. Omit for permanent.'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemo('save'),
+  )
 
   server.registerTool(
     'request_location_capture',
     {
-      title: 'Request the user\'s current device location',
+      title: 'Get user\'s current device GPS via one-time link',
       description:
-        'Generate a one-time HTTPS link that opens a page asking the user\'s browser for ' +
-        'their current GPS coordinates. CALL THIS PROACTIVELY when the user wants to record ' +
-        'where they ARE RIGHT NOW (parking the car, marking a meeting spot, etc.) and you ' +
-        'don\'t already have explicit coordinates from them. Examples that should trigger ' +
-        'this: "帮我记下我的车停在这" / "我把伞放这了，记一下" / "记一下我现在的位置". ' +
-        'Returns { url, expiresAt, ttlSeconds, note }. Reply to the user with markdown link ' +
-        'syntax `[👉 点击共享当前位置](url)` on its own line — the bracket-paren form is the ' +
-        'project convention; iLink + WeChat in-app browser render it as a tappable label ' +
-        'that hides the long token URL. Do NOT print the raw URL alongside (clutters chat). ' +
-        'After the user taps and grants permission, im-hub pushes a "✅ 已记录..." ' +
-        'confirmation to this thread directly — you do NOT need to wait for it. Link is ' +
-        'single-use and expires in 10 minutes.',
+        'Generate a one-time HTTPS link that opens a page asking for browser geolocation. ' +
+        'CALL THIS when the user wants to record where they ARE RIGHT NOW: "我把车停这了" / ' +
+        '"记一下我现在的位置" / "伞放这儿了，记一下". Two modes:\n\n' +
+        '  1. Create new memo (pass `what`): the H5 callback creates a fresh memo with ' +
+        '     where_lat/lng + the what label. Use when this is the first time the topic is ' +
+        '     being captured.\n' +
+        '  2. Update existing memo (pass `memo_id`): the callback patches an existing memo\'s ' +
+        '     where_* fields. Use after save_memo when you saved the structural info but ' +
+        '     still need GPS.\n\n' +
+        'Returns { url, expiresAt, ttlSeconds, what?, memoId? }. Reply to the user with ' +
+        'markdown link syntax `[👉 点击共享当前位置](url)` on its own line so iLink renders ' +
+        'a tappable label (the URL itself stays hidden). Do NOT print the raw URL.\n\n' +
+        'After the user taps and grants permission, im-hub pushes a "✅ 已记下..." confirmation ' +
+        'to this thread directly — you do NOT need to wait. Link is single-use and expires in ' +
+        '10 minutes. EXPIRY for the memo itself is set via save_memo separately if needed; ' +
+        'capture-flow memos default to permanent unless you call save_memo first with ' +
+        'expires_in_hours then attach via memo_id here.',
       inputSchema: {
-        note: z.string().optional().describe(
-          'Optional short label for what is being recorded (e.g. "车", "伞", "停车场B区"). ' +
-          'Shown to the user on the H5 page and stored as the memo label. ≤80 chars.',
-        ),
+        what: z.string().optional().describe('Short label for what is being recorded (e.g. "车", "伞"). Used as the new memo\'s what field. ≤80 chars. Mutually exclusive with memo_id.'),
+        memo_id: z.number().int().positive().optional().describe('Existing memo id to augment with GPS instead of creating a new one. Mutually exclusive with what.'),
         _im_context: imContextSchema,
       },
     },
-    wrapLocation('request_capture'),
+    wrapMemo('request_capture'),
   )
 
   server.registerTool(
-    'save_location',
+    'search_memos',
     {
-      title: 'Save a known location directly',
+      title: 'Search the user\'s memos',
       description:
-        'Persist a location memo without an H5 round-trip. Use when the user GAVE you ' +
-        'coordinates ("39.908,116.397") OR a geocodable address ("国贸三期", "Times Square"). ' +
-        'Pass either lat+lng (preferred when known) or address (geocoded server-side via ' +
-        'Baidu Maps; requires IMHUB_BAIDU_MAP_AK env). Returns { id, lat, lng, label, ' +
-        'mapUrl, mapUrls: { baidu, amap, google }, source }. Show ALL THREE map URLs in your ' +
-        'reply using markdown link syntax: ' +
-        '`🗺 [百度地图](url) · [高德地图](url) · [Google](url)` so the user gets tappable ' +
-        'labels (iLink + WeChat in-app browser render markdown links). Do NOT print raw URLs.',
+        'Recall memos for ANY query the user makes about their saved knowledge: "我的车在哪" / ' +
+        '"我爸爸的生日" / "上周记了什么" / "找下AVP2那条". Combines free-text query with optional ' +
+        'structured filters; all filters AND-combine. Empty query returns most recent.\n\n' +
+        'Examples:\n' +
+        '  "我的车在哪？"        → { query: "车", has_location: true }\n' +
+        '  "我爸爸生日是哪天？" → { who: "爸爸", what: "生日" }\n' +
+        '  "今天记了什么？"     → { when_after: "<ISO_TODAY_00>" }\n' +
+        '  "找下苹果发布会"     → { query: "苹果发布会" }\n\n' +
+        'Returns { items: [{ id, what, who, whenAt/whenText, where: { lat, lng, label, mapUrl, ' +
+        'mapUrls } if location set, how, why, expiresAt, createdAt }] }. Format the answer ' +
+        'naturally for the user: 1-2 sentences summarizing the find + (if where set) all three ' +
+        'map URLs using markdown links `[百度地图](url) · [高德地图](url) · [Google](url)`. ' +
+        'Do NOT print raw URLs. If multiple matches, lead with the most recent.',
       inputSchema: {
-        lat: z.number().min(-90).max(90).optional().describe('Latitude in WGS84 degrees'),
-        lng: z.number().min(-180).max(180).optional().describe('Longitude in WGS84 degrees'),
-        address: z.string().optional().describe('Free-text address; used if lat/lng absent'),
-        note: z.string().optional().describe('Short label / what is being recorded. ≤80 chars'),
-        _im_context: imContextSchema,
-      },
-    },
-    wrapLocation('save'),
-  )
-
-  server.registerTool(
-    'list_locations',
-    {
-      title: 'List or search location memos',
-      description:
-        'Look up the user\'s saved location memos. CALL THIS when the user asks where they ' +
-        'put / parked / left something, or for any recall query: "我的车在哪", "上次记的咖啡店" ' +
-        ', "找下伞的位置". Pass `query` for fuzzy match against label and note (LIKE match, ' +
-        'single token). Without `query`, returns the most recent memos. Returns { items: ' +
-        '[{ id, lat, lng, label, note, created_at, mapUrl, mapUrls: { baidu, amap, google }, ... }] }. ' +
-        'Format the answer as 1-2 sentences + ALL THREE map URLs using markdown link syntax: ' +
-        '`🗺 [百度地图](url) · [高德地图](url) · [Google](url)` so the user gets tappable labels ' +
-        'instead of raw URL strings. Do NOT print the raw URLs.',
-      inputSchema: {
-        query: z.string().optional().describe('Fuzzy match against label and note'),
+        query: z.string().optional().describe('Free-text — fuzzy LIKE match across what/who/where_label/how/why/when_text'),
+        who: z.string().optional().describe('Filter by who field (LIKE match)'),
+        what: z.string().optional().describe('Filter by what field (LIKE match)'),
+        has_location: z.boolean().optional().describe('When true, only memos with where_lat set'),
+        when_after: z.string().optional().describe('ISO datetime — memos with when_at OR created_at >= this'),
+        when_before: z.string().optional().describe('ISO datetime — memos with when_at OR created_at <= this'),
+        include_expired: z.boolean().optional().describe('Include expired memos in results (default false)'),
         limit: z.number().int().min(1).max(50).optional().describe('Max rows (default 10)'),
         _im_context: imContextSchema,
       },
     },
-    wrapLocation('list'),
+    wrapMemo('search'),
   )
 
   server.registerTool(
-    'delete_location',
+    'update_memo',
     {
-      title: 'Delete a location memo',
+      title: 'Patch fields on an existing memo',
       description:
-        'Remove a memo by id. Find ids via list_locations. Use when the user explicitly says ' +
-        'to delete / forget / clear a saved location ("删了车的记录" / "把上次那个位置忘掉").',
+        'Update ANY 5W1H field on an existing memo. CALL THIS when the user adds info to a ' +
+        'previously-saved memo: "对了，那个会议在 3 楼 A 区" → update_memo({ id, where_label: ' +
+        '"3楼A区" }). Or to extend / shorten the expiry: "把车那条改成永久" → update_memo({ ' +
+        'id, expires_at: null }).\n\n' +
+        'Pass null to a field to CLEAR it (vs omitting which leaves alone). For expiry, you ' +
+        'can pass either expires_in_hours (relative) or expires_at (absolute ISO; null clears).\n\n' +
+        'Returns the updated memo summary. Confirm to the user with one sentence.',
       inputSchema: {
-        id: z.number().int().positive().describe('Memo id from list_locations'),
+        id: z.number().int().positive().describe('Memo id from search_memos'),
+        what: z.string().optional(),
+        who: z.string().nullable().optional(),
+        when_at: z.string().nullable().optional(),
+        when_text: z.string().nullable().optional(),
+        where_lat: z.number().min(-90).max(90).nullable().optional(),
+        where_lng: z.number().min(-180).max(180).nullable().optional(),
+        where_label: z.string().nullable().optional(),
+        how: z.string().nullable().optional(),
+        why: z.string().nullable().optional(),
+        expires_in_hours: z.number().positive().optional(),
+        expires_at: z.string().nullable().optional().describe('ISO datetime or null to clear'),
         _im_context: imContextSchema,
       },
     },
-    wrapLocation('delete'),
+    wrapMemo('update'),
+  )
+
+  server.registerTool(
+    'delete_memo',
+    {
+      title: 'Delete a memo by id',
+      description:
+        'Remove a memo. Find ids via search_memos. Use when user explicitly says to delete / ' +
+        'forget / clear ("删了车那条" / "把生日那条记录忘掉"). ⚠️ Permanent — confirm with the ' +
+        'user before calling for important-looking memos (no expiry set, who/when fields populated).',
+      inputSchema: {
+        id: z.number().int().positive().describe('Memo id from search_memos'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemo('delete'),
   )
 
   return server

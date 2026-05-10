@@ -47,7 +47,7 @@
     <p id="subtitle">点击下方按钮，浏览器会询问位置授权。授权后可在地图上微调精确位置。</p>
 
     <div id="note-row" class="note-row">
-      正在记录: <strong id="note-text"></strong>
+      <span id="note-prefix">正在记录</span>: <strong id="note-text"></strong>
     </div>
 
     <!-- Step 1: get permission + initial coords -->
@@ -146,12 +146,17 @@
         }
         return r.ok ? r.json() : null
       }).then(function (j) {
-        if (j && j.note) {
-          document.getElementById('note-text').textContent = j.note
-          document.getElementById('note-row').style.display = 'block'
-          document.getElementById('title').textContent = '共享"' + j.note + '"的位置'
-        }
-      }).catch(function () { /* network blip — proceed without note */ })
+        if (!j) return
+        // Two display modes:
+        //   - augment: token has memo_id → "正在补充'<existing memo's what>'的位置"
+        //   - create:  token has what     → "正在记录: <what>"
+        var label = j.augmentLabel || j.what || ''
+        if (!label) return
+        document.getElementById('note-text').textContent = label
+        document.getElementById('note-prefix').textContent = j.augmentLabel ? '正在补充' : '正在记录'
+        document.getElementById('note-row').style.display = 'block'
+        document.getElementById('title').textContent = (j.augmentLabel ? '为"' + label + '"补充位置' : '共享"' + label + '"的位置')
+      }).catch(function () { /* network blip — proceed without label */ })
 
       // ── Step 1 → Step 2: get permission, switch to map ────────────────
       function captureCoords() {

@@ -15,7 +15,7 @@ import { generateTraceId, createLogger, logger as rootLogger } from '../core/log
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
-import { createMemo, mapUrls } from '../core/locations.js'
+import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -220,16 +220,30 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
     }
 
-    // GET /api/loc/info?t=… — read-only peek for the H5 page to show the
-    // pre-filled note ("正在记录: 车"). Does NOT consume the token — that
-    // happens on POST. Returns 410 when the token is expired/unknown so
-    // the page can render the "link expired" state without faking a POST.
+    // GET /api/loc/info?t=… — read-only peek for the H5 page to show what
+    // is being recorded. Does NOT consume the token — that happens on POST.
+    // Returns 410 when the token is expired/unknown so the page can render
+    // a hard-stop "link expired" state instead of pretending and failing
+    // on the POST.
     if (url.pathname === '/api/loc/info' && req.method === 'GET') {
       const tk = url.searchParams.get('t') || ''
       if (!tk) { sendJson(res, 400, { error: 'missing t' }); return }
       const peek = peekToken(tk)
       if (!peek) { sendJson(res, 410, { error: 'token expired or unknown' }); return }
-      sendJson(res, 200, { ok: true, note: peek.note, expiresAt: new Date(peek.expiresAt).toISOString() })
+      // For augment-mode (memo_id present), tell the H5 page so it can show
+      // "正在补充'<existing what>'的位置" instead of "正在记录: <what>".
+      let augmentLabel: string | undefined
+      if (peek.memoId != null) {
+        const existing = getMemo(peek.memoId, { userId: peek.ctx.userId })
+        if (existing) augmentLabel = existing.what
+      }
+      sendJson(res, 200, {
+        ok: true,
+        what: peek.what,
+        memoId: peek.memoId ?? undefined,
+        augmentLabel,
+        expiresAt: new Date(peek.expiresAt).toISOString(),
+      })
       return
     }
 
@@ -250,46 +264,65 @@ export async function startWebServer(options: {
       }
       const cr = consumeToken(tk)
       if (!cr.ok) {
-        const msg = cr.reason === 'expired' ? '链接已过期，请重新发送 /location here' : '链接无效或已被使用'
+        const msg = cr.reason === 'expired' ? '链接已过期，请重新让 bot 发起记录' : '链接无效或已被使用'
         sendJson(res, 410, { error: msg }); return
       }
       const ctx = cr.ctx
-      const note = cr.note || ''
+      const what = cr.what || ''
       const accuracy = typeof parsed.accuracy === 'number' ? parsed.accuracy : 0
 
+      // Two paths:
+      //   - cr.memoId set → UPDATE existing memo's where_*
+      //   - cr.memoId null → CREATE new memo with what + where_*
       let memoId: number | null = null
+      let displayWhat = what
       try {
-        memoId = createMemo({
-          platform: ctx.platform,
-          channelId: ctx.channelId,
-          threadId: ctx.threadId,
-          userId: ctx.userId,
-          lat, lng,
-          label: note,  // server-stored note becomes the memo's display label
-          note: '',
-          source: 'browser',
-        })
+        if (cr.memoId != null) {
+          const existing = getMemo(cr.memoId, { userId: ctx.userId })
+          if (existing) {
+            updateMemo(cr.memoId, {
+              whereLat: lat,
+              whereLng: lng,
+            }, { userId: ctx.userId })
+            memoId = cr.memoId
+            displayWhat = existing.what  // memo's own what wins for reply
+          } else {
+            // Memo got deleted between issue + consume? Fall back to creating
+            // a new one with whatever `what` the token had — better than
+            // dropping the user's grant.
+            memoId = createMemo({
+              platform: ctx.platform, channelId: ctx.channelId,
+              threadId: ctx.threadId, userId: ctx.userId,
+              what: what || '位置',
+              whereLat: lat, whereLng: lng,
+              source: 'browser',
+            })
+          }
+        } else {
+          memoId = createMemo({
+            platform: ctx.platform, channelId: ctx.channelId,
+            threadId: ctx.threadId, userId: ctx.userId,
+            what: what || '位置',
+            whereLat: lat, whereLng: lng,
+            source: 'browser',
+          })
+        }
       } catch (err) {
-        webLog.warn({ event: 'web.loc.memo_create_failed', err: String(err) }, 'failed to write location memo')
+        webLog.warn({ event: 'web.loc.memo_failed', err: String(err) }, 'failed to write/update memo')
       }
 
       const messengerName = ctx.platform === 'wechat' ? 'wechat-ilink' : ctx.platform
       const messenger = registry.getMessenger(messengerName)
       const idTag = memoId ? `#${memoId}` : ''
       const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
-      const headLabel = note ? `'${note}'` : '位置'
-      const urls = mapUrls(lat, lng, note || '当前位置', '')
-      // Markdown link form `[text](url)` — if iLink renders, the user sees
-      // tappable labels instead of raw URLs. If iLink ignores markdown,
-      // worst case the brackets show through; URL still clickable on its
-      // own line elsewhere. Test in WeChat after deploy; revert to plain
-      // URLs if the markdown shows as raw chars.
+      const headLabel = displayWhat ? `'${displayWhat}'` : ''
+      const urls = mapUrls(lat, lng, displayWhat || '当前位置', '')
+      const verb = cr.memoId != null ? '已补全' : '已记下'
       const reply = [
-        `✅ 已记录${headLabel} ${idTag}`,
+        `✅ ${verb}${headLabel} ${idTag}`.trim(),
         `   坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accTxt}`,
         '',
         `   🗺 [百度地图](${urls.baidu}) · [高德地图](${urls.amap}) · [Google](${urls.google})`,
-        memoId ? `   /location show ${memoId} 看详情 · /location delete ${memoId} 删除` : '',
       ].filter(Boolean).join('\n')
       if (messenger) {
         messenger.sendMessage(ctx.threadId, reply).catch((err) => {

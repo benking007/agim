@@ -18,7 +18,7 @@ import { handleSessionsCommand } from './commands/sessions.js'
 import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
-import { handleLocationCommand } from './commands/location.js'
+import { handleMemoCommand } from './commands/memo.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
@@ -118,7 +118,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'cron') return { type: 'cron', args: rest }
   if (cmd === 'schedule') return { type: 'cron', args: rest, legacy: true }
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
-  if (cmd === 'location' || cmd === 'loc' || cmd === '位置') return { type: 'location', args: rest }
+  if (cmd === 'memo' || cmd === '记' || cmd === 'note') return { type: 'memo', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'tasks') return { type: 'job', args: 'list' }
   if (cmd === 'check') return { type: 'job', args: `check ${rest}` }
@@ -193,8 +193,8 @@ export async function routeMessage(
       return handleRemindCommand(parsed.args, ctx)
     }
 
-    case 'location': {
-      return handleLocationCommand(parsed.args, ctx)
+    case 'memo': {
+      return handleMemoCommand(parsed.args, ctx)
     }
 
     case 'job': {

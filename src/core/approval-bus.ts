@@ -629,8 +629,8 @@ export class ApprovalBus {
       await this.handleReminder(m, socket)
       return
     }
-    if (m.type === 'location') {
-      await this.handleLocation(m, socket)
+    if (m.type === 'memo') {
+      await this.handleMemo(m, socket)
       return
     }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
@@ -726,12 +726,15 @@ export class ApprovalBus {
   }
 
   /**
-   * Handle a location RPC from the MCP sidecar — same socket as approvals
-   * and reminders, different `type`. Mirror of {@link handleReminder}.
-   * Both runId-resolved context and the inline `_im_context` fallback are
+   * Handle a memo RPC from the MCP sidecar — same socket as approvals and
+   * reminders, different `type`. Mirror of {@link handleReminder}. Both
+   * runId-resolved context and the inline `_im_context` fallback are
    * supported, with the same single-user-only caveat for path 2.
+   *
+   * Wire history: pre-0.2.42 this was `type: 'location'` carrying geo-only
+   * memos; 0.2.42 generalized to 5W1H memos and renamed the wire type.
    */
-  private async handleLocation(m: Record<string, unknown>, socket: Socket): Promise<void> {
+  private async handleMemo(m: Record<string, unknown>, socket: Socket): Promise<void> {
     const reqId = typeof m.reqId === 'string' ? m.reqId : null
     const runId = typeof m.runId === 'string' ? m.runId : null
     const op = typeof m.op === 'string' ? m.op : null
@@ -740,11 +743,11 @@ export class ApprovalBus {
       : {}
 
     if (!reqId) {
-      log.warn({ event: 'location.bus.missing_reqId' })
+      log.warn({ event: 'memo.bus.missing_reqId' })
       return
     }
     if (!op) {
-      this.sendLocationResult(socket, reqId, { ok: false, error: 'invalid location message' })
+      this.sendMemoResult(socket, reqId, { ok: false, error: 'invalid memo message' })
       return
     }
 
@@ -763,36 +766,36 @@ export class ApprovalBus {
             userId: typeof ic.userId === 'string' ? ic.userId : '',
           }
           log.info({
-            event: 'location.bus.inline_ctx',
+            event: 'memo.bus.inline_ctx',
             platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'location using agent-asserted _im_context (single-user mode)')
+          }, 'memo using agent-asserted _im_context (single-user mode)')
           delete payload._im_context
         }
       }
     }
 
     if (!ctx) {
-      this.sendLocationResult(socket, reqId, {
+      this.sendMemoResult(socket, reqId, {
         ok: false,
         error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
       })
       return
     }
-    const { handleLocationOp } = await import('./location-rpc.js')
-    const result = await handleLocationOp(op, payload, ctx)
-    this.sendLocationResult(socket, reqId, result)
+    const { handleMemoOp } = await import('./memo-rpc.js')
+    const result = await handleMemoOp(op, payload, ctx)
+    this.sendMemoResult(socket, reqId, result)
   }
 
-  private sendLocationResult(
+  private sendMemoResult(
     socket: Socket, reqId: string,
     result: { ok: true; result: unknown } | { ok: false; error: string },
   ): void {
     if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'location.result', reqId, ok: result.ok }
+    const wire: Record<string, unknown> = { v: 1, type: 'memo.result', reqId, ok: result.ok }
     if (result.ok) wire.result = result.result
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'location.bus.write_failed', reqId, err: String(err) })
+      if (err) log.warn({ event: 'memo.bus.write_failed', reqId, err: String(err) })
     })
   }
 

@@ -1,17 +1,20 @@
-// One-time tokens for the /location here HTTPS handoff flow.
+// One-time tokens for the GPS-via-H5 handoff flow.
 //
 // Lifecycle:
-//   1. /location here  → issueToken(ctx) → returns { token, expiresAt }
+//   1. Agent calls request_location_capture({what} | {memoId}) → issueToken
 //   2. Bot sends URL containing token to user → user opens H5 page
-//   3. H5 page POSTs { token, lat, lng } → consumeToken(token) → returns ctx
-//   4. Server uses the resolved ctx to push the result back to the original
-//      IM thread, then drops the token.
+//   3. H5 page POSTs { token, lat, lng } → consumeToken(token) → returns
+//      ctx + meta (what / memoId). Server then either CREATES a new memo
+//      with the supplied what + lat/lng, or UPDATES an existing memo by
+//      memoId.
+//   4. Server pushes a result message back to the original IM thread,
+//      then drops the token.
 //
 // Stored in-memory only. Process restart drops all pending tokens (10-min
-// TTL means worst case is the user re-runs /location here). No persistence
-// because the entire feature is opportunistic — losing pending tokens on
-// restart is strictly better than persisting them through a crash and
-// risking stale state.
+// TTL means worst case is the user re-clicks the bot's request). No
+// persistence because the entire feature is opportunistic — losing pending
+// tokens on restart is strictly better than persisting them through a
+// crash and risking stale state.
 
 import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
@@ -35,17 +38,28 @@ export interface TokenContext {
   userId: string
 }
 
-/** Optional metadata the issuer may attach. The `note` is shown on the H5
- *  page and stored verbatim into the resulting memo's `label` so users see
- *  "已记录'车' ..." instead of "已记录 #N". Server-side only — never trust
- *  the client to set it. */
+/**
+ * Optional metadata the issuer may attach.
+ *
+ *  - `what`   : label shown on the H5 page and used as the new memo's
+ *               `what` field if the token's flow CREATES a memo.
+ *  - `memoId` : when set, the H5 callback UPDATES an existing memo's
+ *               where_lat / where_lng instead of creating a new one.
+ *               Used when agent already created the memo via save_memo
+ *               and is now augmenting it with GPS.
+ *
+ * Server-side only — clients (the H5 page) can READ what/memoId via
+ * /api/loc/info but never inject them.
+ */
 export interface TokenMeta {
-  note?: string
+  what?: string
+  memoId?: number
 }
 
 interface StoredToken extends TokenContext {
   token: string
-  note: string
+  what: string
+  memoId: number | null
   createdAt: number
   expiresAt: number
 }
@@ -72,8 +86,7 @@ function startSweepIfNeeded(): void {
 
 export function issueToken(ctx: TokenContext, meta: TokenMeta = {}): { token: string; expiresAt: number; ttlSeconds: number } {
   startSweepIfNeeded()
-  // base64url so the token is URL-safe + shorter than hex (12 chars vs 32).
-  // 9 bytes → 12 chars, no padding.
+  // base64url — 9 bytes → 12 chars, URL-safe, padding stripped.
   const token = randomBytes(TOKEN_BYTES)
     .toString('base64')
     .replace(/\+/g, '-')
@@ -81,23 +94,24 @@ export function issueToken(ctx: TokenContext, meta: TokenMeta = {}): { token: st
     .replace(/=+$/, '')
   const now = Date.now()
   const expiresAt = now + TOKEN_TTL_MS
-  // Cap note size — H5 page just renders it back; oversize entries waste
-  // memory and could be used to bloat tokens.
-  const note = (meta.note || '').toString().slice(0, 80)
-  tokens.set(token, { ...ctx, token, note, createdAt: now, expiresAt })
+  // Cap what size to avoid memory bloat from a malformed caller.
+  const what = (meta.what || '').toString().slice(0, 80)
+  const memoId = typeof meta.memoId === 'number' && Number.isFinite(meta.memoId) ? meta.memoId : null
+  tokens.set(token, { ...ctx, token, what, memoId, createdAt: now, expiresAt })
   log.info({
     event: 'location-token.issued',
     platform: ctx.platform, threadId: ctx.threadId, userId: ctx.userId,
-    note: note || undefined,
+    what: what || undefined,
+    memoId: memoId ?? undefined,
     expiresAt: new Date(expiresAt).toISOString(),
   })
   return { token, expiresAt, ttlSeconds: Math.floor(TOKEN_TTL_MS / 1000) }
 }
 
-/** Read-only peek at a token's note — used by GET /api/loc/info so the H5
- *  page can show "正在记录: <note>" without consuming the token. Returns
- *  null when the token is unknown or expired. */
-export function peekToken(token: string): { ctx: TokenContext; note: string; expiresAt: number } | null {
+/** Read-only peek — used by GET /api/loc/info so the H5 page can render
+ *  "正在记录: <what>" without consuming the token. Returns null when the
+ *  token is unknown or expired (auto-evicts expired). */
+export function peekToken(token: string): { ctx: TokenContext; what: string; memoId: number | null; expiresAt: number } | null {
   const t = tokens.get(token)
   if (!t) return null
   if (t.expiresAt <= Date.now()) {
@@ -106,13 +120,14 @@ export function peekToken(token: string): { ctx: TokenContext; note: string; exp
   }
   return {
     ctx: { platform: t.platform, channelId: t.channelId, threadId: t.threadId, userId: t.userId },
-    note: t.note,
+    what: t.what,
+    memoId: t.memoId,
     expiresAt: t.expiresAt,
   }
 }
 
 export type ConsumeResult =
-  | { ok: true; ctx: TokenContext; note: string }
+  | { ok: true; ctx: TokenContext; what: string; memoId: number | null }
   | { ok: false; reason: 'unknown' | 'expired' }
 
 /**
@@ -139,7 +154,8 @@ export function consumeToken(token: string): ConsumeResult {
   return {
     ok: true,
     ctx: { platform: t.platform, channelId: t.channelId, threadId: t.threadId, userId: t.userId },
-    note: t.note,
+    what: t.what,
+    memoId: t.memoId,
   }
 }
 

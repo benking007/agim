@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed — `/location` 重命名为 `/memo` + 数据模型升级到 5W1H 持久记忆库
+**这是个产品级别的概念升级**：从"位置备忘"扩展到通用的"持久记忆数据库"。位置只是其中一种类型——同一个工具也能记 "爸爸的生日是5月8日"、"明天下午3点开会"、"伞放前台了"、"苹果发了 AVP2"。
+
+- **数据模型**：`location_memos` 表整体替换为 `memos` 表，每行携带 5W1H 可选字段 — `what` (必填，核心事项) / `who` / `when_at` / `when_text` / `where_lat` / `where_lng` / `where_label` / `how` / `why`，加 `expires_at` 生命周期列（NULL = 永久）+ `source` + `created_at` + `updated_at`
+- **slash 命令**：`/location` 整体下线，改为 `/memo`（别名 `/记` `/note`）。`/memo list/show/delete/here/help` 子命令保留，新增 `/memo search <query>` 直接搜，无子命令的纯文本也走 search
+- **MCP 工具组**（agent-driven）：4 个旧 location 工具替换为 5 个 memo 工具——
+  - `save_memo({what, who?, when_at?, when_text?, where_*?, address?, how?, why?, expires_in_hours?})` — 通用落库；agent 从用户自然语言抽 5W1H
+  - `request_location_capture({what?, memo_id?})` — 一次性 GPS 链接。可选 `memo_id` 触发 UPDATE 已有 memo 的 `where_*`（之前只能 CREATE）
+  - `search_memos({query?, who?, what?, has_location?, when_after?, when_before?, include_expired?, limit?})` — 多字段 AND-combined 检索
+  - `update_memo({id, ...fields})` — patch 模式，null 清空 / undefined 不动
+  - `delete_memo({id})`
+- **Tool description prompt 工程**：每个工具描述给 3-5 个具体例子（"我爸爸的生日是5月8日" → save_memo 拆出 what/who/when_text）；明确 `expires_in_hours` 的判断指引（含"暂时/临时/今天"等关键词→24h，"永久/记住/总是"等关键词→不传）；明确告诉 agent 用 markdown 链接 `[百度地图](url)` 格式回复
+- **生命周期分层**：默认所有 memo 永久；agent 判定为临时性内容（停车、当天会议）才 set `expires_in_hours`。后台每 5 分钟跑一次 `sweepExpired()` DELETE `expires_at <= now` 的行
+- **token meta 升级**：`note` → `what`，新增 `memoId` 字段。POST `/api/loc` 拿 token 时根据 memoId 决定 CREATE 新 memo 还是 UPDATE 已有 memo 的 `where_*`
+- **H5 页**：根据 token 是 create 还是 augment 模式显示"正在记录: <what>"或"正在补充'<existing what>'的位置"
+- **wire-protocol 升级**：approval-bus 上 `type: 'location'` / `'location.result'` → `type: 'memo'` / `'memo.result'`；ApprovalClient 的 `requestLocation` → `requestMemo`
+- **数据迁移**：用户决定不迁移老 `location_memos` 表数据（从 0 重新开始）。老 `locations.db` 文件留在磁盘上但不再被打开
+- 13 单测 `memos.test.ts` (含 SQLite-skipped CRUD 9 条) + 7 单测 `memo-rpc.test.ts` (含 9 个 SQLite-skipped agent-flow case)
+
+
 ### Added — H5 地图预览 + 拖拽微调
 - `loc.html` 加载 Leaflet + OpenStreetMap 瓦片（无需密钥、免商业授权）。授权 GPS 后展示当前坐标的地图视图，初始 marker 放在浏览器返回的位置上，外圈叠一层蓝色 accuracy 圆圈让用户直观感受 ±N米的不确定性。
 - **微调操作**：长按 marker 拖动、或点击地图任意位置 marker 跳过去；坐标框实时更新。

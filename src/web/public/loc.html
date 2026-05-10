@@ -4,77 +4,143 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>共享位置 · im-hub</title>
+  <!-- Leaflet for the interactive map preview. Loaded from unpkg CDN; both
+       the page and Leaflet itself fall back gracefully if the CDN is
+       blocked — see the `typeof L === 'undefined'` branch in the script. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; padding: 0; min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
     body { background: linear-gradient(180deg, #eff6ff 0%, #ffffff 60%); color: #0f172a; }
-    .wrap { max-width: 480px; margin: 0 auto; padding: 32px 24px; }
-    h1 { font-size: 24px; margin: 0 0 8px; font-weight: 600; }
-    p { color: #475569; line-height: 1.6; margin: 8px 0; }
-    .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0; }
-    .btn { display: block; width: 100%; padding: 14px; font-size: 16px; font-weight: 500; color: white; background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 24px 20px; }
+    h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+    p { color: #475569; line-height: 1.6; margin: 6px 0; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 18px 0; }
+    .btn { display: block; width: 100%; padding: 13px; font-size: 16px; font-weight: 500; color: white; background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
     .btn:hover { background: #1d4ed8; }
     .btn:disabled { background: #94a3b8; cursor: not-allowed; }
-    .status { padding: 16px; border-radius: 8px; margin-top: 16px; font-size: 14px; line-height: 1.5; word-break: break-all; }
+    .btn.secondary { background: white; color: #2563eb; border: 1px solid #cbd5e1; margin-top: 8px; }
+    .btn.secondary:hover { background: #eff6ff; }
+    .status { padding: 14px; border-radius: 8px; margin-top: 14px; font-size: 14px; line-height: 1.5; word-break: break-all; }
     .status.ok { background: #dcfce7; color: #14532d; border: 1px solid #86efac; }
     .status.err { background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5; }
     .status.info { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
-    .meta { font-size: 12px; color: #94a3b8; margin-top: 24px; text-align: center; }
+    .meta { font-size: 12px; color: #94a3b8; margin-top: 18px; text-align: center; line-height: 1.6; }
     code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, "SFMono-Regular", monospace; font-size: 13px; }
-    .icon { font-size: 48px; line-height: 1; margin-bottom: 12px; }
+    .icon { font-size: 40px; line-height: 1; margin-bottom: 8px; }
+    #map { width: 100%; height: 320px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .coords-row { display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:10px 12px; background:#f8fafc; border-radius:6px; font-size:13px; color:#334155; font-family: ui-monospace, "SFMono-Regular", monospace; }
+    .hint { font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.5; }
+    .note-row { display:none; margin-bottom:12px; padding:10px 12px; background:#eff6ff; border-radius:8px; color:#1e40af; font-size:14px; }
+    .leaflet-container { background: #e2e8f0; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="icon">📍</div>
     <h1 id="title">共享当前位置给 bot</h1>
-    <p id="subtitle">im-hub 需要你的当前位置来记录这条备忘。点击下方按钮，浏览器会询问授权。</p>
+    <p id="subtitle">点击下方按钮，浏览器会询问位置授权。授权后可在地图上微调精确位置。</p>
 
-    <div class="card">
-      <div id="note-row" style="display:none; margin-bottom:14px; padding:12px; background:#eff6ff; border-radius:8px; color:#1e40af; font-size:14px;">
-        正在记录: <strong id="note-text"></strong>
-      </div>
-      <button id="share" class="btn" type="button">共享我的位置</button>
+    <div id="note-row" class="note-row">
+      正在记录: <strong id="note-text"></strong>
+    </div>
+
+    <!-- Step 1: get permission + initial coords -->
+    <div id="card-prep" class="card">
+      <button id="share" class="btn" type="button">📍 获取我的位置</button>
       <div id="status" class="status info" style="display:none"></div>
     </div>
 
+    <!-- Step 2: map preview + drag to fine-tune + confirm -->
+    <div id="card-map" class="card" style="display:none">
+      <div id="map"></div>
+      <div class="coords-row">
+        <span id="coords-text">—</span>
+        <span id="acc-text" style="color:#64748b"></span>
+      </div>
+      <p class="hint">📌 长按 marker 拖动，或点击地图任意位置移动 marker，可微调到准确位置。</p>
+      <button id="confirm" class="btn" type="button">✅ 确认提交这个位置</button>
+      <button id="redo" class="btn secondary" type="button">🔄 重新获取定位</button>
+    </div>
+
+    <!-- Step 3: done -->
+    <div id="card-done" class="card" style="display:none">
+      <div class="status ok">✅ 位置已发回 IM。可以关闭页面回到聊天查看。</div>
+    </div>
+
     <p class="meta">
-      链接 10 分钟内有效，单次使用 · 你的坐标只会发回触发本链接的 IM 会话
+      链接 10 分钟内有效，单次使用<br>
+      你的坐标只会发回触发本链接的 IM 会话
     </p>
   </div>
 
   <script>
     (function () {
-      const btn = document.getElementById('share')
-      const status = document.getElementById('status')
-      const params = new URLSearchParams(window.location.search)
-      const token = params.get('t')
+      // ── DOM refs ───────────────────────────────────────────────────────
+      var status = document.getElementById('status')
+      var btnShare = document.getElementById('share')
+      var btnConfirm = document.getElementById('confirm')
+      var btnRedo = document.getElementById('redo')
+      var cardPrep = document.getElementById('card-prep')
+      var cardMap = document.getElementById('card-map')
+      var cardDone = document.getElementById('card-done')
+      var coordsText = document.getElementById('coords-text')
+      var accText = document.getElementById('acc-text')
+
+      // ── Token resolution (supports both /loc?t=… and /l/… shapes) ─────
+      var token = ''
+      var qp = new URLSearchParams(window.location.search).get('t')
+      var pathMatch = window.location.pathname.match(/^\/l\/([A-Za-z0-9_-]+)$/)
+      if (qp) {
+        token = qp
+      } else if (pathMatch) {
+        token = pathMatch[1]
+      }
+
+      // ── State ─────────────────────────────────────────────────────────
+      var leafletMap = null
+      var marker = null
+      var currentLat = 0, currentLng = 0, currentAcc = 0
+      var leafletAvailable = (typeof L !== 'undefined')
 
       function show(kind, html) {
         status.className = 'status ' + kind
         status.innerHTML = html
         status.style.display = 'block'
       }
+      function clearStatus() { status.style.display = 'none' }
 
+      function fmtCoords(lat, lng) {
+        return lat.toFixed(6) + ', ' + lng.toFixed(6)
+      }
+      function updateCoordsDisplay(acc) {
+        coordsText.textContent = fmtCoords(currentLat, currentLng)
+        if (typeof acc === 'number' && acc > 0) {
+          accText.textContent = '初始 ±' + Math.round(acc) + 'm'
+        }
+      }
+
+      // ── Pre-flight ────────────────────────────────────────────────────
       if (!token) {
-        btn.disabled = true
+        btnShare.disabled = true
         show('err', '❌ 链接无效（缺少 token）。请回到 IM 重新发送 <code>/location here</code>。')
         return
       }
-
       if (!('geolocation' in navigator)) {
-        btn.disabled = true
+        btnShare.disabled = true
         show('err', '❌ 浏览器不支持地理位置 API。')
         return
       }
 
-      // Fetch the pre-filled note (server-side; never trust the URL).
-      // Failure here is non-fatal — we just don't show the note row, the
-      // user can still capture coords. Renders the "link expired" hard-stop
-      // when the server says 410.
+      // Fetch the pre-filled note for the title bar.
       fetch('/api/loc/info?t=' + encodeURIComponent(token)).then(function (r) {
         if (r.status === 410) {
-          btn.disabled = true
+          btnShare.disabled = true
           show('err', '❌ 链接已过期或已被使用。回到 IM 重新发送 <code>/location here</code> 拿新链接。')
           return null
         }
@@ -83,54 +149,151 @@
         if (j && j.note) {
           document.getElementById('note-text').textContent = j.note
           document.getElementById('note-row').style.display = 'block'
-          document.getElementById('title').textContent = '共享 "' + j.note + '" 的位置'
+          document.getElementById('title').textContent = '共享"' + j.note + '"的位置'
         }
       }).catch(function () { /* network blip — proceed without note */ })
 
-      btn.addEventListener('click', function () {
-        btn.disabled = true
-        btn.textContent = '获取定位中…'
+      // ── Step 1 → Step 2: get permission, switch to map ────────────────
+      function captureCoords() {
+        btnShare.disabled = true
+        btnShare.textContent = '获取定位中…'
         show('info', '⏳ 等待浏览器返回坐标…')
 
         navigator.geolocation.getCurrentPosition(
           function (pos) {
-            const body = {
-              t: token,
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
+            currentLat = pos.coords.latitude
+            currentLng = pos.coords.longitude
+            currentAcc = pos.coords.accuracy
+            clearStatus()
+            cardPrep.style.display = 'none'
+            cardMap.style.display = 'block'
+            updateCoordsDisplay(currentAcc)
+
+            if (leafletAvailable) {
+              renderMap()
+            } else {
+              fallbackNoMap()
             }
-            show('info', '⏳ 上传到 bot…')
-            fetch('/api/loc', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            }).then(function (r) {
-              if (r.ok) {
-                btn.textContent = '✅ 已发送'
-                show('ok', '✅ 位置已发回 IM。可以关闭页面回到聊天查看。')
-              } else {
-                return r.json().catch(function () { return {} }).then(function (j) {
-                  btn.disabled = false
-                  btn.textContent = '重试'
-                  show('err', '❌ ' + (j.error || ('上传失败 (HTTP ' + r.status + ')')))
-                })
-              }
-            }).catch(function (err) {
-              btn.disabled = false
-              btn.textContent = '重试'
-              show('err', '❌ 网络错误：' + (err && err.message || err))
-            })
           },
           function (err) {
-            btn.disabled = false
-            btn.textContent = '重试'
-            const map = { 1: '你拒绝了授权', 2: '位置不可用', 3: '获取超时' }
+            btnShare.disabled = false
+            btnShare.textContent = '📍 获取我的位置'
+            var map = { 1: '你拒绝了授权', 2: '位置不可用', 3: '获取超时' }
             show('err', '❌ ' + (map[err.code] || err.message || '未知错误'))
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
         )
-      })
+      }
+
+      // CDN blocked / Leaflet missing → no map preview, but still let the
+      // user submit the captured coords directly via the same confirm button.
+      function fallbackNoMap() {
+        document.getElementById('map').style.display = 'none'
+        var hintEl = document.querySelector('.hint')
+        if (hintEl) hintEl.textContent = '⚠️ 地图加载失败（网络限制？），无法微调。如坐标不准请用「重新获取定位」。'
+      }
+
+      // ── Map render (Leaflet + OSM tiles, WGS-84 native, no key) ───────
+      function renderMap() {
+        leafletMap = L.map('map', {
+          zoomControl: true,
+          // Touch-friendly defaults; let drag work even on tap-and-hold.
+          tap: true,
+        }).setView([currentLat, currentLng], 17)
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap',
+        }).addTo(leafletMap)
+
+        // Initial accuracy circle gives the user a sense of GPS uncertainty.
+        if (currentAcc > 0) {
+          L.circle([currentLat, currentLng], {
+            radius: currentAcc,
+            color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.12, weight: 1,
+          }).addTo(leafletMap)
+        }
+
+        marker = L.marker([currentLat, currentLng], {
+          draggable: true,
+          autoPan: true,
+        }).addTo(leafletMap)
+
+        marker.on('dragend', function () {
+          var p = marker.getLatLng()
+          currentLat = p.lat; currentLng = p.lng
+          updateCoordsDisplay()
+        })
+
+        leafletMap.on('click', function (e) {
+          marker.setLatLng(e.latlng)
+          currentLat = e.latlng.lat; currentLng = e.latlng.lng
+          updateCoordsDisplay()
+          // Recenter only if marker drifts close to viewport edge — avoids
+          // jarring re-pans for small adjustments.
+          var bounds = leafletMap.getBounds().pad(-0.15)
+          if (!bounds.contains(e.latlng)) leafletMap.panTo(e.latlng)
+        })
+
+        // Some browsers compute layout AFTER tile load; force a redraw.
+        setTimeout(function () { leafletMap.invalidateSize() }, 200)
+      }
+
+      // ── Step 2 → Step 3: submit ───────────────────────────────────────
+      function submitCoords() {
+        btnConfirm.disabled = true
+        btnConfirm.textContent = '提交中…'
+        show('info', '⏳ 上传到 bot…')
+
+        fetch('/api/loc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            t: token,
+            lat: currentLat,
+            lng: currentLng,
+            // We send 0 for accuracy when the user has manually adjusted —
+            // the GPS-reported accuracy no longer applies. A future tweak:
+            // track whether marker was moved and report acc only if not.
+            accuracy: currentAcc,
+          }),
+        }).then(function (r) {
+          if (r.ok) {
+            cardMap.style.display = 'none'
+            cardDone.style.display = 'block'
+            clearStatus()
+          } else {
+            return r.json().catch(function () { return {} }).then(function (j) {
+              btnConfirm.disabled = false
+              btnConfirm.textContent = '✅ 确认提交这个位置'
+              show('err', '❌ ' + (j.error || ('上传失败 (HTTP ' + r.status + ')')))
+            })
+          }
+        }).catch(function (err) {
+          btnConfirm.disabled = false
+          btnConfirm.textContent = '✅ 确认提交这个位置'
+          show('err', '❌ 网络错误：' + (err && err.message || err))
+        })
+      }
+
+      // ── Redo: go back to step 1 (re-fetch GPS for higher accuracy) ────
+      function redoCapture() {
+        if (leafletMap) {
+          leafletMap.remove()
+          leafletMap = null
+          marker = null
+        }
+        cardMap.style.display = 'none'
+        cardPrep.style.display = 'block'
+        btnShare.disabled = false
+        btnShare.textContent = '📍 获取我的位置'
+        clearStatus()
+      }
+
+      // ── Wire up ───────────────────────────────────────────────────────
+      btnShare.addEventListener('click', captureCoords)
+      btnConfirm.addEventListener('click', submitCoords)
+      btnRedo.addEventListener('click', redoCapture)
     })()
   </script>
 </body>

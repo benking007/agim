@@ -213,6 +213,13 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
     }
 
+    // Short alias: /l/<token> serves the same H5 page. The page auto-detects
+    // either ?t= query or /l/<token> path. Lets us issue ~38-char URLs
+    // (vs 70+ for /loc?t=<32-hex>) which keeps WeChat chat cleaner.
+    if (url.pathname.startsWith('/l/') && req.method === 'GET') {
+      return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
+    }
+
     // GET /api/loc/info?t=… — read-only peek for the H5 page to show the
     // pre-filled note ("正在记录: 车"). Does NOT consume the token — that
     // happens on POST. Returns 410 when the token is expired/unknown so

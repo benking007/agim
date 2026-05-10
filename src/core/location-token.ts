@@ -20,9 +20,12 @@ const log = rootLogger.child({ component: 'location-token' })
 
 const TOKEN_TTL_MS = 10 * 60 * 1000  // 10 min — long enough that the user
                                       // can switch apps + grant permission.
-const TOKEN_BYTES = 16                // 32 hex chars; ~10^38 keyspace, plenty
-                                      // for a per-process map cleared every
-                                      // 10 min.
+const TOKEN_BYTES = 9                 // 9 random bytes → 12 base64url chars,
+                                      // ~10^16 keyspace (per-process Map cleared
+                                      // every 10 min — single-shot, brute-force
+                                      // doesn't apply). Halves the URL length
+                                      // vs the original 32-hex token, which
+                                      // matters for IM-side display.
 const SWEEP_INTERVAL_MS = 60 * 1000   // expire-sweep cadence
 
 export interface TokenContext {
@@ -69,7 +72,13 @@ function startSweepIfNeeded(): void {
 
 export function issueToken(ctx: TokenContext, meta: TokenMeta = {}): { token: string; expiresAt: number; ttlSeconds: number } {
   startSweepIfNeeded()
-  const token = randomBytes(TOKEN_BYTES).toString('hex')
+  // base64url so the token is URL-safe + shorter than hex (12 chars vs 32).
+  // 9 bytes → 12 chars, no padding.
+  const token = randomBytes(TOKEN_BYTES)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
   const now = Date.now()
   const expiresAt = now + TOKEN_TTL_MS
   // Cap note size — H5 page just renders it back; oversize entries waste

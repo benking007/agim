@@ -340,7 +340,12 @@ export function isGeocodingAvailable(): boolean {
 export function wgs84ToGcj02(lat: number, lng: number): { lat: number; lng: number } {
   if (outOfChina(lat, lng)) return { lat, lng }
   const A = 6378245.0
-  const EE = 0.00669342162296594323
+  // EE is the eccentricity squared of the GCJ-02 reference ellipsoid.
+  // Reference value 0.00669342162296594323 has more digits than IEEE-754
+  // can represent — truncate to ~17 significant digits (max float64
+  // precision); the dropped digits are far below GCJ-02's intentional
+  // ±50–500m offset, no observable difference in output.
+  const EE = 0.006693421622965943
   const PI = Math.PI
   let dLat = transformLat(lng - 105.0, lat - 35.0)
   let dLng = transformLng(lng - 105.0, lat - 35.0)

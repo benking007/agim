@@ -20,7 +20,8 @@ describe('location-token', () => {
 
   it('issueToken returns a 32-char hex token + future expiry', () => {
     const r = issueToken(CTX)
-    expect(r.token).toMatch(/^[a-f0-9]{32}$/)
+    // base64url (9 bytes → 12 chars). Pattern from RFC 4648 §5.
+    expect(r.token).toMatch(/^[A-Za-z0-9_-]{12}$/)
     expect(r.expiresAt).toBeGreaterThan(Date.now())
     expect(r.ttlSeconds).toBe(600) // 10 min
     expect(_pendingCount()).toBe(1)

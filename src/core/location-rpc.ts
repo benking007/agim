@@ -80,8 +80,12 @@ function handleRequestCapture(
     },
     note ? { note } : {},
   )
+  // Short path /l/<token>: total URL ~38 chars vs the previous 70+ when
+  // the token was 32 hex chars. iLink TEXT messages auto-linkify URLs but
+  // can't render markdown / HTML anchors, so the shorter the URL string
+  // itself, the cleaner the chat looks.
   const result: RequestCaptureResult = {
-    url: `${baseUrl}/loc?t=${token}`,
+    url: `${baseUrl}/l/${token}`,
     expiresAt: new Date(expiresAt).toISOString(),
     ttlSeconds,
     note,

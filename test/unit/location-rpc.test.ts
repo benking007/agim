@@ -42,7 +42,8 @@ describe('handleLocationOp — pure / no-DB cases', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       const res = r.result as { url: string; ttlSeconds: number; note: string }
-      expect(res.url).toMatch(/^https:\/\/.+\/loc\?t=[a-f0-9]{32}$/)
+      // Short path /l/<token>; token is base64url (9 bytes → 12 chars).
+      expect(res.url).toMatch(/^https:\/\/.+\/l\/[A-Za-z0-9_-]{12}$/)
       expect(res.ttlSeconds).toBe(600)
       expect(res.note).toBe('车')
     }
@@ -54,7 +55,8 @@ describe('handleLocationOp — pure / no-DB cases', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const url = (r.result as { url: string }).url
-    const token = url.split('t=')[1]
+    // New URL shape: /l/<token>. Extract trailing path component.
+    const token = url.split('/').pop() as string
     const peek = peekToken(token)
     expect(peek).not.toBeNull()
     expect(peek?.note).toBe('伞')

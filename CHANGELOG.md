@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — H5 地图预览 + 拖拽微调
+- `loc.html` 加载 Leaflet + OpenStreetMap 瓦片（无需密钥、免商业授权）。授权 GPS 后展示当前坐标的地图视图，初始 marker 放在浏览器返回的位置上，外圈叠一层蓝色 accuracy 圆圈让用户直观感受 ±N米的不确定性。
+- **微调操作**：长按 marker 拖动、或点击地图任意位置 marker 跳过去；坐标框实时更新。
+- 新两按钮：`✅ 确认提交这个位置`（POST 当前 marker 坐标）/ `🔄 重新获取定位`（清除 marker，回到第 1 步重抽 GPS——某些情况第二次精度更高）。
+- **优雅降级**：CDN 屏蔽 / Leaflet 加载失败时（`typeof L === 'undefined'`），地图区隐藏 + 提示文案改成"网络限制？无法微调"，但同一个"确认"按钮仍可直接提交浏览器抓的原始坐标。
+- 三步卡片视觉：`获取位置` → `地图微调` → `已发送`，布局清晰，每一步只露一个 primary action。
+
+### Changed — Token 短链
+- Token 从 32 hex char (16 bytes) 缩到 12 char base64url (9 bytes random，~10^16 keyspace；single-shot + 10min TTL 下绰绰有余）
+- URL 路径从 `/loc?t=<32hex>` 改为 `/l/<12base64url>`，总长度 70+ char → ~38 char。微信里展开占 1 行而非 2 行
+- `/loc?t=` 老路径同时保留——已发出去尚未消费的 token 不会断
+- `loc.html` 同时识别两种 URL shape，自动降级
+
 ### Added — 三家地图任选（百度 / 高德 / Google）
 - 用户在 IM 里收到的位置消息现在同时给出 **百度 / 高德 / Google** 三条地图链接，根据自己习惯任选——之前默认只挂百度
 - 新增 `mapUrls(lat, lng, label?, addr?)` 工具：返回 `{ baidu, amap, google }`，三家分别对接：

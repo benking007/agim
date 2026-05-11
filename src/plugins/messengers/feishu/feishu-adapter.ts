@@ -8,6 +8,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { setPending as setPendingMemoLocation } from '../../../core/pending-memo-location.js'
+import { gcj02ToWgs84 } from '../../../core/memos.js'
 
 const log = rootLogger.child({ component: 'feishu' })
 
@@ -191,6 +193,72 @@ export class FeishuAdapter implements MessengerAdapter {
     const msgId = message.message_id || ''
     if (msgId && this.isDuplicate(msgId)) {
       log.info({ messageId: msgId, event: 'feishu.dedup.skip' }, 'Dropping replayed message_id')
+      return
+    }
+
+    // Native location messages — Feishu sends them as message_type='location'
+    // with content = { name?, address?, latitude: "32.04", longitude: "118.78" }.
+    // Note: lat/lng arrive as strings, not numbers. Same Apple/Google offset
+    // applies (mobile Feishu client uses system Core Location / fused-location
+    // in China → GCJ-02). We reverse to WGS-84 before stashing, then ask the
+    // user to name it — exact same UX as Telegram pins.
+    if (message.message_type === 'location') {
+      let lat = NaN
+      let lng = NaN
+      let name = ''
+      let address = ''
+      try {
+        const c = JSON.parse(message.content || '{}') as {
+          name?: string; address?: string; latitude?: string | number; longitude?: string | number
+        }
+        lat = typeof c.latitude === 'number' ? c.latitude : parseFloat(String(c.latitude ?? ''))
+        lng = typeof c.longitude === 'number' ? c.longitude : parseFloat(String(c.longitude ?? ''))
+        name = typeof c.name === 'string' ? c.name : ''
+        address = typeof c.address === 'string' ? c.address : ''
+      } catch {
+        log.warn({ messageId: message.message_id }, 'Failed to parse location message content')
+        return
+      }
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        log.warn({ messageId: message.message_id }, 'location message had no parseable lat/lng')
+        return
+      }
+      const threadId = message.chat_id || ''
+      const channelId = this.config?.channelId || 'default'
+      const threadKey = `feishu:${channelId}:${threadId}`
+      const wgs = gcj02ToWgs84(lat, lng)
+      setPendingMemoLocation(threadKey, {
+        lat: wgs.lat,
+        lng: wgs.lng,
+        venueLabel: name || undefined,
+        venueAddress: address || undefined,
+      })
+      const promptLines: string[] = []
+      if (name || address) {
+        promptLines.push(`📍 收到「${name || '位置'}」`)
+        if (address) promptLines.push(`   ${address}`)
+        promptLines.push('')
+        promptLines.push('要记下吗？回 `y` 确认（按上面的名字记），或回别的名字改名，或回 `n` 跳过。')
+      } else {
+        promptLines.push(`📍 收到位置 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})`)
+        promptLines.push('')
+        promptLines.push('要记一笔吗？回个名字（如「车」「茶馆」「家」），或回 `n` 跳过。')
+        promptLines.push('5 分钟内有效。')
+      }
+      if (this.client) {
+        try {
+          await this.client.sendMessage(threadId, promptLines.join('\n'))
+        } catch (err) {
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to feishu location')
+        }
+      }
+      log.info({
+        event: 'feishu.location.received',
+        threadId,
+        gcj_lat: lat, gcj_lng: lng,
+        wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+        hasName: !!name, hasAddress: !!address,
+      })
       return
     }
 

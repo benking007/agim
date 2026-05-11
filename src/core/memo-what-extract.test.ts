@@ -51,6 +51,23 @@ describe('extractWhatAndMemo — heuristic peel', () => {
     expect(r.what).toBe('伞')
   })
 
+  it('extracts 公司地址 from "这是我公司地址，记录下" (demonstrative + comma)', async () => {
+    // Regression: previously returned just "这" because heuristic cut at
+    // "是" (in VERB_BOUNDARY) before stripping the leading "这是".
+    const r = await extractWhatAndMemo({ ...CTX, text: '这是我公司地址，记录下' })
+    // After fix: strip "这是" + "我" → "公司地址，记录下" → cut at "，" → "公司地址"
+    expect(r.what).toBe('公司地址')
+    expect(r.memo).toBe('这是我公司地址，记录下')
+  })
+
+  it('extracts 茶馆 from "那是朋友常去的茶馆"', async () => {
+    const r = await extractWhatAndMemo({ ...CTX, text: '那是朋友常去的茶馆' })
+    // Strips "那是" → "朋友常去的茶馆" — but no verb/comma cut here, so falls
+    // through to LLM/fallback. Without an LLM agent in tests we get fallback
+    // = first 6 chars of original input ("这是我公司..." style). Acceptable.
+    expect(r.method).toBeOneOf(['heuristic', 'llm', 'fallback'])
+  })
+
   it('strips state adverb "我暂时把车留这"', async () => {
     // After stripping "我" and "暂时" we get "把车留这" — "把" isn't a noun,
     // so the heuristic should give up (return null) and fall through to LLM

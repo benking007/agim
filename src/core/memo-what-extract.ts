@@ -33,8 +33,12 @@ const ASCII_SHORT_LIMIT = 16 // ASCII fits more characters per concept
 const PUNCT_RE = /[，。,.；;！!？?]/
 
 // Leading prefixes that aren't the subject. Order matters — longest first
-// so "本人的" is stripped before "本人".
-const LEADING_PREFIX_RE = /^(本人的|本人|我的|我)/
+// so multi-char demonstratives ("这就是") win before single-char ones.
+// Includes:
+//   - subject pronouns: 我[的]? / 本人[的]?
+//   - demonstratives + copula: 这[就]?是 / 那[就]?是 / 这是 / 那是
+//     (handles "这是我公司地址" → after strip "这是" → "我公司地址")
+const LEADING_PREFIX_RE = /^(本人的|本人|我的|我|这就是|那就是|这是|那是|这|那)/
 // Adverbs / state words to peel after the subject pronoun. We only peel
 // them if they sit between the pronoun and the noun.
 const STATE_PREFIX_RE = /^(暂时|临时|刚才|刚刚|今天|这次|目前|现在|马上)/
@@ -76,31 +80,36 @@ function isShortEnough(s: string): boolean {
  */
 function heuristicExtract(s: string): string | null {
   let t = s.trim()
-  // Strip subject pronoun
-  const subj = t.match(LEADING_PREFIX_RE)
-  if (subj) t = t.slice(subj[0].length).trim()
+  // Peel leading prefixes iteratively — "这是我公司..." needs TWO passes
+  // (strip "这是" → "我公司..." → strip "我" → "公司...").
+  for (let i = 0; i < 4; i++) {
+    const m = t.match(LEADING_PREFIX_RE)
+    if (!m) break
+    t = t.slice(m[0].length).trim()
+  }
   // Strip state adverb if it sits right at the front (post-pronoun)
   const state = t.match(STATE_PREFIX_RE)
   if (state) t = t.slice(state[0].length).trim()
   if (!t) return null
 
-  // Find the earliest boundary in `t` — either a verb-ish character OR a
-  // state-prefix word that ended up sandwiched between the noun and the
-  // verb ("车暂时停" → boundary at "暂时"). Whichever comes first wins, so
-  // we keep just the leading noun.
+  // Find the earliest boundary in `t` — verb-ish character OR mid-string
+  // state-prefix word OR sentence punctuation. Whichever comes first wins,
+  // so we keep just the leading noun phrase.
+  //   "车暂时停"            → cut at "暂时" → "车"
+  //   "公司地址，记录下"   → cut at "，"  → "公司地址"
+  //   "X是Y"               → cut at "是"  → "X"
   const VERB_BOUNDARY = /[停放是在到找给带有去回送到挂搁掉留藏交]/
   const verbIdx = t.search(VERB_BOUNDARY)
-  // Use the non-anchored STATE_WORD_RE — we want to find adverbs anywhere
-  // in the string, not just at the start.
   const stateIdx = t.search(STATE_WORD_RE)
+  const punctIdx = t.search(PUNCT_RE)
   let cutIdx = -1
-  if (verbIdx >= 0) cutIdx = verbIdx
-  if (stateIdx >= 0 && (cutIdx < 0 || stateIdx < cutIdx)) cutIdx = stateIdx
+  for (const idx of [verbIdx, stateIdx, punctIdx]) {
+    if (idx >= 0 && (cutIdx < 0 || idx < cutIdx)) cutIdx = idx
+  }
   if (cutIdx <= 0) return null // nothing found, or boundary at idx 0
   const noun = t.slice(0, cutIdx).trim()
   if (!noun || noun.length > SHORT_LIMIT) return null
-  // Reject if the candidate contains the punctuation we use as topic
-  // separators — that means we mis-peeled.
+  // Reject if the candidate contains punctuation — that means we mis-peeled.
   if (PUNCT_RE.test(noun)) return null
   return noun
 }

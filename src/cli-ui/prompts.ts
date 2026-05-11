@@ -14,7 +14,7 @@ import {
   input,
   password,
   confirm,
-  type Separator,
+  Separator,
 } from '@inquirer/prompts'
 import { t, type Lang, type Key } from './i18n.js'
 
@@ -63,11 +63,9 @@ export async function menu<T>(opts: {
   const choices: Array<MenuChoice<T | BackSentinel> | Separator> = []
   for (const c of opts.choices) {
     if (c.separatorBefore) {
-      // We need a Separator instance, but Separator is exported from
-      // inquirer prompts; deferring import to runtime to avoid a hard dep
-      // on the value at module load.
-      const { Separator: Sep } = require('@inquirer/prompts') as { Separator: new () => Separator }
-      choices.push(new Sep())
+      // Statically imported above. require() doesn't exist in ESM modules,
+      // so an earlier lazy-import attempt crashed at runtime.
+      choices.push(new Separator())
     }
     choices.push({
       value: c.value as T | BackSentinel,

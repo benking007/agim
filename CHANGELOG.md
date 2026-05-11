@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-11
+
+### Fixed — `require() is not defined` crash entering the wizard
+0.5.0 shipped three `require()` calls inside ESM modules (`package.json` is
+`"type": "module"`), so the wizard crashed the moment the user picked a
+language:
+
+```
+ReferenceError: require is not defined
+    at menu (file:///.../cli-ui/prompts.js:37:40)
+```
+
+Fixed all three:
+- `src/cli-ui/prompts.ts` — `Separator` now statically imported from
+  `@inquirer/prompts`
+- `src/cli-ui/service.ts` — `openSync`/`closeSync` added to the existing
+  `node:fs` import
+- `src/cli.ts` — replaced `require('node:child_process')` with
+  `await import('node:child_process')` in the entry-menu's foreground-start
+  dispatch path
+
+No other behavior changes. v0.5.0 was tagged but never npm-published, so
+this is the actual first published 0.5.x release.
+
 ## [0.5.0] - 2026-05-11
 
 > **核心主题**：`im-hub-pro` CLI 升级成"运维主入口"——双语 + 上下键交互向导 + 完整服务生命周期管理（status / start --bg / restart / stop / uninstall）。SMTP 和百度地图 AK 终于进入 `config` 一站式配置。

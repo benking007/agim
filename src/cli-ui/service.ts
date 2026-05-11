@@ -17,7 +17,7 @@
 // error, so the caller can decide what to ack.
 
 import { execSync, spawn } from 'node:child_process'
-import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 
@@ -135,11 +135,8 @@ export function detectService(): ServiceState {
 export function spawnBackground(executable: string, args: string[] = ['start']): { pid: number } {
   mkdirSync(dirname(LOG_FILE), { recursive: true })
   // Open the log file (append) and use its fd for child stdout/stderr.
-  // node:fs.openSync would block when we have a pipe-based shim; using a
-  // tail-friendly approach: spawn `sh -c` and let the shell handle redirection.
-  // Simpler + Mac-friendly: spawn with `stdio: ['ignore', logFd, logFd]`.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { openSync, closeSync } = require('node:fs') as typeof import('node:fs')
+  // openSync + closeSync are statically imported at the top — require() doesn't
+  // exist in ESM modules (package.json has "type": "module").
   const fd = openSync(LOG_FILE, 'a')
   try {
     const child = spawn(executable, args, {

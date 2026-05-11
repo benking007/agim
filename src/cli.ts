@@ -1213,9 +1213,10 @@ async function maybeRunEntryMenu(): Promise<boolean> {
       if (action.bg) {
         await cmdStart(true, async () => { /* unreachable */ })
       } else {
-        // Re-exec in the same shell so Ctrl-C maps cleanly.
+        // Re-exec in the same shell so Ctrl-C maps cleanly. Dynamic
+        // `await import` works in ESM (require() doesn't).
+        const { spawn } = await import('node:child_process')
         await cmdStart(false, () => new Promise<void>((resolve) => {
-          const { spawn } = require('node:child_process') as typeof import('node:child_process')
           const child = spawn(process.execPath, [process.argv[1], 'start'], { stdio: 'inherit' })
           child.on('exit', () => resolve())
         }))

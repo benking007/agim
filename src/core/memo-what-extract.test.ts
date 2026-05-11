@@ -51,6 +51,20 @@ describe('extractWhatAndMemo — heuristic peel', () => {
     expect(r.what).toBe('伞')
   })
 
+  it('extracts noun after 的 ("一个好吃的日料店" → 日料店, not slice-truncated "日")', async () => {
+    // Regression: previously fell to slice-fallback giving "一个好吃的日"
+    // (truncated mid-noun at char 6). The 的-split rule now grabs the
+    // post-的 noun directly.
+    const r = await extractWhatAndMemo({ ...CTX, text: '一个好吃的日料店' })
+    expect(r.what).toBe('日料店')
+    expect(r.method).toBe('heuristic')
+  })
+
+  it('extracts noun after the LAST 的 ("我朋友的茶馆的二楼" → 二楼)', async () => {
+    const r = await extractWhatAndMemo({ ...CTX, text: '我朋友的茶馆的二楼' })
+    expect(r.what).toBe('二楼')
+  })
+
   it('extracts 聚餐的地方 (≤6 chars) from "记下，这是我们经常聚餐的地方" (imperative prefix)', async () => {
     // Regression: previously what="记下" because the heuristic cut at "，"
     // and kept the imperative verb. Fix: imperative prefixes get peeled.

@@ -128,6 +128,23 @@ function heuristicExtract(s: string): string | null {
     return null
   }
 
+  // Chinese "ADJ 的 NOUN" pattern: the noun follows 的. Take everything
+  // after the LAST 的 if it's short enough.
+  //   "一个好吃的日料店"    → "日料店"
+  //   "朋友的茶馆"          → "茶馆"
+  //   "我们经常聚餐的地方"  → "地方"
+  // We use lastIndexOf so nested 的 ("我朋友的茶馆的二楼" → "二楼") still
+  // produces the most-specific token. Skip if 的 is at position 0
+  // (residue starts with 的 — already stripped wrong) or at the end
+  // (trailing 的 means caller wrote "X 的"... no noun yet).
+  const deIdx = t.lastIndexOf('的')
+  if (deIdx > 0 && deIdx < t.length - 1) {
+    const after = t.slice(deIdx + 1).trim()
+    if (after && after.length <= SHORT_LIMIT && !PUNCT_RE.test(after)) {
+      return after
+    }
+  }
+
   // No boundary found. If the residue itself is already short enough AND
   // has no internal punctuation, that's our answer.
   //   "帮我记一下，这是茶馆" → strip imperative + demonstrative → "茶馆"

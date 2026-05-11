@@ -503,17 +503,13 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     return
   }
 
-  // Prefix uses the session's agent at reply time (re-read after routing so
-  // a /agent-style switch in this turn is reflected). Lazy so we only hit
-  // the session store when we have a result to send.
-  const maybePrefix = async (text: string): Promise<string> => {
-    const s = await sessionManager.getExistingSession(platform, ctx.channelId, message.threadId)
-    const replyAgent = s?.agent || defaultAgent
-    if (replyAgent && replyAgent !== defaultAgent) {
-      return `[${replyAgent}]\n\n${text}`
-    }
-    return text
-  }
+  // Agent-name prefix removed — historically we prepended "[opencode]\n\n"
+  // / "[codex]\n\n" / etc. so users could see which agent answered when
+  // they were on a non-default sticky session. In practice it cluttered
+  // every reply (most users only ever stick with one agent per channel)
+  // and made memo/reminder confirmations look noisy. If the user wants to
+  // know the active agent they can run `/status` or `/router status`.
+  const maybePrefix = async (text: string): Promise<string> => text
 
   const stopTyping = async () => {
     if (messenger.sendTyping) {

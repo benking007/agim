@@ -111,23 +111,12 @@ export class FeishuAdapter implements MessengerAdapter {
     await this.client.sendCard(threadId, card)
   }
 
-  /**
-   * Send a "🤔 思考中…" placeholder so the user sees immediate feedback
-   * (sendTyping is a no-op on Feishu — the SDK doesn't expose a public
-   * typing API). The placeholder is intentionally not recalled when the
-   * real reply arrives — keeping it in chat history shows the user when
-   * the bot started working, and matches WeChat behaviour where recall
-   * isn't available either.
-   */
-  async sendThinking(threadId: string, text: string): Promise<undefined> {
-    if (!this.client) return undefined
-    try {
-      await this.client.sendMessage(threadId, text)
-    } catch (err) {
-      log.debug({ err: String(err) }, 'Failed to send thinking placeholder')
-    }
-    return undefined
-  }
+  // sendThinking intentionally omitted on Feishu — it used to post a
+  // "🤔 思考中…" placeholder, but in practice Feishu shows a built-in
+  // typing indicator AND keeps the placeholder in chat history forever
+  // (Feishu doesn't support message recall for bot messages). The visual
+  // noise outweighs the "I'm working on it" signal. cli.ts feature-checks
+  // for sendThinking so omitting the method is the clean way to opt out.
 
   async sendTyping(threadId: string, isTyping: boolean): Promise<void> {
     if (!this.client) {

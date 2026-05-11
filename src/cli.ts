@@ -319,16 +319,25 @@ program
                 memo,
                 whereLat: pending.lat,
                 whereLng: pending.lng,
-                whereLabel: pending.venueAddress ?? pending.venueLabel ?? null,
+                // Combine venue title + address so neither is lost. When the
+                // user later searches "黄龙" or "学院路" the LIKE clause hits
+                // either token. Format: "<title> · <address>" when both exist,
+                // otherwise whichever single value is set; null for plain pins.
+                whereLabel: [pending.venueLabel, pending.venueAddress].filter(Boolean).join(' · ') || null,
                 source: 'browser',
               })
               const accuracyHint = typeof pending.accuracy === 'number'
                 ? `（精度 ±${Math.round(pending.accuracy)}m）`
                 : ''
+              // Show venue title + address when present so the user sees what
+              // we kept from their original pin (often the most recognizable
+              // line on the card — e.g. "黄龙国际中心 · 学院路77号").
+              const venueLine = [pending.venueLabel, pending.venueAddress].filter(Boolean).join(' · ')
+              const venueHint = venueLine ? `\n   📍 ${venueLine}` : ''
               const memoHint = memo && memo !== what ? `\n   记录原文：${memo}` : ''
               await messenger.sendMessage(
                 ctx.message.threadId,
-                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}${memoHint}`,
+                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}${venueHint}${memoHint}`,
               )
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)

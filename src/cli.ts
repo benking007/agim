@@ -80,8 +80,17 @@ program
 
 program
   .command('start')
-  .description('Start the im-hub-pro server')
-  .action(async () => {
+  .description('Start the im-hub-pro server (foreground by default; --bg for detached daemon)')
+  .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.im-hub/)')
+  .action(async (opts: { bg?: boolean; background?: boolean }) => {
+    // `--bg` (or its alias `--background`): hand off to the bg-spawner.
+    // It re-execs us with `start` (no flag) inside a detached child so
+    // the actual foreground start logic below runs in that child.
+    if (opts.bg || opts.background) {
+      const { cmdStart } = await import('./cli-ui/cmd-handlers.js')
+      await cmdStart(true, async () => { /* unreachable in --bg path */ })
+      return
+    }
     console.log('🚀 Starting im-hub-pro...')
 
     let config = await loadConfig()
@@ -677,23 +686,16 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
 
 program
   .command('config [component]')
-  .description('Configure a messenger or agent')
+  .description('Interactive config wizard (or `config <component>` for the per-component legacy flow)')
   .action(async (component?: string) => {
     if (!component) {
-      console.log('Available components to configure:')
-      console.log('\nMessengers:')
-      console.log('  wechat   - WeChat adapter')
-      console.log('  telegram - Telegram adapter')
-      console.log('  feishu   - Feishu/Lark adapter')
-      console.log('  discord  - Discord adapter')
-      console.log('\nAgents:')
-      console.log('  claude   - Claude Code agent')
-      console.log('  codex    - OpenAI Codex CLI agent')
-      console.log('  opencode - OpenCode CLI agent')
-      console.log('  copilot  - GitHub Copilot CLI agent')
-      console.log('\nRemote Agents:')
-      console.log('  agent    - Add a remote ACP agent')
-      console.log('\nUsage: im-hub-pro config <component>')
+      // New interactive wizard (since v0.5.0). Falls through to the
+      // per-component switch below when an explicit `config wechat` etc.
+      // is passed — keeps scripted setups working.
+      const { pickLang } = await import('./cli-ui/lang-picker.js')
+      const { runConfigWizard } = await import('./cli-ui/config-wizard.js')
+      const lang = await pickLang()
+      await runConfigWizard(lang)
       return
     }
 
@@ -1141,4 +1143,96 @@ program
     }
   })
 
-program.parse()
+// ─── service-management commands (v0.5.0) ──────────────────────────────
+// status / restart / stop / uninstall — all delegate to cli-ui/cmd-handlers.ts.
+
+program
+  .command('status')
+  .description('Show whether the bridge is running (systemd / background / foreground)')
+  .action(async () => {
+    const { cmdStatus } = await import('./cli-ui/cmd-handlers.js')
+    cmdStatus()
+  })
+
+program
+  .command('restart')
+  .description('Restart the bridge (autodetects systemd vs background daemon)')
+  .action(async () => {
+    const { cmdRestart } = await import('./cli-ui/cmd-handlers.js')
+    await cmdRestart()
+  })
+
+program
+  .command('stop')
+  .description('Stop the bridge (systemd unit or background daemon)')
+  .action(async () => {
+    const { cmdStop } = await import('./cli-ui/cmd-handlers.js')
+    await cmdStop()
+  })
+
+program
+  .command('uninstall')
+  .description('Stop service, remove npm install + config; keeps ~/.im-hub-workspaces/')
+  .action(async () => {
+    const { cmdUninstall } = await import('./cli-ui/cmd-handlers.js')
+    await cmdUninstall()
+  })
+
+// ─── bare `im-hub-pro` → entry menu (v0.5.0) ────────────────────────────
+// If the user invoked us with no args (just `im-hub-pro`), drop them at
+// the language picker + maintenance menu instead of dumping --help text.
+//
+// This is intentionally BEFORE program.parse() so the menu runs even
+// though commander would otherwise fall through to its default no-command
+// branch. We check process.argv length to detect "no subcommand passed".
+
+async function maybeRunEntryMenu(): Promise<boolean> {
+  // argv layout: [node, /path/to/cli.js, ...rest]. No subcommand = length 2.
+  if (process.argv.length > 2) return false
+  if (!process.stdin.isTTY) return false  // piped / non-interactive — fall back to commander's help
+  const { runEntryMenu } = await import('./cli-ui/entry-menu.js')
+  const { cmdStatus, cmdStart, cmdStop, cmdRestart, cmdUninstall } = await import('./cli-ui/cmd-handlers.js')
+  const action = await runEntryMenu()
+  switch (action.kind) {
+    case 'quit':
+      return true
+    case 'status':
+      cmdStatus()
+      return true
+    case 'config': {
+      const { pickLang } = await import('./cli-ui/lang-picker.js')
+      const { runConfigWizard } = await import('./cli-ui/config-wizard.js')
+      const lang = await pickLang()
+      await runConfigWizard(lang)
+      return true
+    }
+    case 'start':
+      // For foreground start from the menu, re-exec ourselves with the
+      // proper subcommand so commander's `start` action runs. Easier than
+      // duplicating the 500-line start body.
+      if (action.bg) {
+        await cmdStart(true, async () => { /* unreachable */ })
+      } else {
+        // Re-exec in the same shell so Ctrl-C maps cleanly.
+        await cmdStart(false, () => new Promise<void>((resolve) => {
+          const { spawn } = require('node:child_process') as typeof import('node:child_process')
+          const child = spawn(process.execPath, [process.argv[1], 'start'], { stdio: 'inherit' })
+          child.on('exit', () => resolve())
+        }))
+      }
+      return true
+    case 'restart':
+      await cmdRestart()
+      return true
+    case 'stop':
+      await cmdStop()
+      return true
+    case 'uninstall':
+      await cmdUninstall()
+      return true
+  }
+}
+
+void maybeRunEntryMenu().then((handled) => {
+  if (!handled) program.parse()
+})

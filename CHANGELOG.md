@@ -4,6 +4,73 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-11
+
+> **核心主题**：`im-hub-pro` CLI 升级成"运维主入口"——双语 + 上下键交互向导 + 完整服务生命周期管理（status / start --bg / restart / stop / uninstall）。SMTP 和百度地图 AK 终于进入 `config` 一站式配置。
+
+### Added — 双语交互式 `config` 向导
+之前 `im-hub-pro config` 是 per-component 的命令行参数式配置（`config wechat` / `config telegram` / ...），界面是纯 `readline.question` 文本提示，新用户摸不着头脑。
+
+新增基于 `@inquirer/prompts` 的交互向导：
+- **语言选择**：首次进入弹出 EN / 中文 选择器，记忆到 `~/.im-hub/cli-lang`，下次进入回车即可
+- **5 个分类**（每个分类内部支持 ← Back 回根菜单）：
+  1. **IM 渠道** — 多选 checkbox：微信 / Telegram / 飞书 / Discord / 邮件
+  2. **AI Agent** — 多选 + 选默认 agent（Claude Code / OpenCode / Codex / Copilot）
+  3. **远程 ACP agent** — 列表 + 新增 / 编辑 / 删除，支持 Bearer token 认证（输入隐藏）
+  4. **SMTP**（新增）— 4 个预设（Gmail / Outlook / QQ / 163）+ Custom + Skip；写到 `~/.im-hub/env`（chmod 600）
+  5. **百度地图 AK**（新增）— 输入 / 清除，写到 `~/.im-hub/env`
+- **Per-spawn 持久化**：SMTP 密码、Baidu AK 一输入就落盘，wizard 半途崩了不丢
+- 旧的 `im-hub-pro config <component>` 路径保留兼容
+
+### Added — bare `im-hub-pro` → 运维入口菜单
+直接敲 `im-hub-pro`（无参）不再 dump help。改成弹出 8 项菜单：
+- Configure
+- Show status
+- Start (foreground / background)
+- Restart
+- Stop
+- Uninstall
+- Quit
+
+非 TTY 环境（pipe / cron）仍回退到 commander 的 `--help`。
+
+### Added — 5 个服务管理命令
+
+| Command | 行为 |
+|---|---|
+| `im-hub-pro status` | 探测 systemd / background daemon / foreground；显示 pid + uptime + Web URL |
+| `im-hub-pro start --bg` | 后台启动（nohup + setsid + pid 文件 + 日志到 `~/.im-hub/im-hub.log`）；裸 `start` 仍前台 |
+| `im-hub-pro restart` | 自动选 systemctl restart 或 bg daemon 重启 |
+| `im-hub-pro stop` | 自动选 systemctl stop 或 SIGTERM bg pid + cleanup pid 文件 |
+| `im-hub-pro uninstall` | 双重确认后：停服务 → 卸载 npm 包 → 删 config.json + env + pid + systemd 单元；**保留 `~/.im-hub-workspaces/`** |
+
+**跨平台后台启动**：Linux / macOS / WSL2 都走 `nohup`+detach 路径。macOS 上想真正开机自启仍要自己写 launchd plist（CHANGELOG 后续版本可加）。
+
+### Added — 新模块
+- `src/cli-ui/i18n.ts` — 100+ 键的 `Record<Key, string>` × `{en, zh}`，TS 编译期保证两侧同步
+- `src/cli-ui/prompts.ts` — `@inquirer/prompts` 的薄包装，统一 BACK 哨兵 + UserAbortError 处理
+- `src/cli-ui/lang-picker.ts` — 语言选择 + 持久化
+- `src/cli-ui/config-wizard.ts` — 5 个分类的向导主体
+- `src/cli-ui/service.ts` — `detectService()` / `spawnBackground()` / `stopService()` / `formatUptime()`
+- `src/cli-ui/env-file.ts` — 增量更新 `~/.im-hub/env`（merge-update + chmod 600）
+- `src/cli-ui/cmd-handlers.ts` — status / start / stop / restart / uninstall 实现
+- `src/cli-ui/entry-menu.ts` — bare invocation 用的入口菜单
+- `src/cli-ui/paths.ts` — 共享路径常量
+
+### Changed — Feishu adapter: 移除 "🤔 思考中…" placeholder
+飞书原生有打字状态指示，bot 自己再发占位文本只会把对话框搞乱（飞书还不支持 bot 消息撤回）。注释保留为什么。
+
+### Changed — 消息回复不再加 `[opencode]` / `[codex]` / `[claude-code]` 前缀
+原本为了让用户看清哪个 agent 在答，但 sticky session 下 99% 的消息都是同一个 agent，每条都加一个 `[xxx]\n\n` 反而噪音。要看当前 agent 跑 `/status` 或 `/router status`。
+
+### New dependency
+- `@inquirer/prompts ^8.4.3` — modern interactive prompts (上下键 / Space / 输入隐藏)。~80KB 加到 dist。
+
+### Migration notes
+- 老用户升级：`npm install -g im-hub-pro@0.5.0`。已有 `~/.im-hub/config.json` 全部兼容，新增 SMTP / Baidu 配置可以走新向导补充
+- 想跳过新向导：`im-hub-pro config wechat` / `config telegram` 等老路径仍然能用
+- 后台启动取代了之前文档里推荐的 `nohup im-hub-pro start &` 写法
+
 ## [0.4.0] - 2026-05-11
 
 > **核心主题（两条）**：

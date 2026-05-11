@@ -22,7 +22,7 @@
 // The full original text always lands in `memo`.
 
 import { logger as rootLogger } from './logger.js'
-import { callHelperForJson } from './agent-helper.js'
+import { callHelperForJson, pickFastHelperAgent } from './agent-helper.js'
 
 const log = rootLogger.child({ component: 'memo.extract' })
 
@@ -191,14 +191,19 @@ export async function extractWhatAndMemo(opts: ExtractInput): Promise<ExtractRes
     '- Output 1–6 CJK characters OR 1–16 ASCII characters. NEVER a full sentence.',
     '- If you cannot find a noun, output { "what": "" }.',
   ].join('\n')
+  // Bypass the sticky-agent picker — extraction is a micro-task and codex's
+  // 15–30 s cold start blows past any reasonable timeout. Prefer opencode
+  // (HTTP daemon, ~1 s per call) then claude-code.
+  const helperAgent = pickFastHelperAgent() ?? undefined
   const result = await callHelperForJson<{ what?: unknown }>({
     platform: opts.platform,
     channelId: opts.channelId,
     threadId: opts.threadId,
     systemPrompt: SYSTEM,
     userPrompt: `Message: ${trimmed}`,
-    timeoutMs: 6_000,
+    timeoutMs: 8_000,
     maxOutputChars: 400,
+    agentName: helperAgent,
   })
 
   const llmWhat = typeof result?.what === 'string' ? result.what.trim() : ''

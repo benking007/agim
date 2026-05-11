@@ -78,6 +78,34 @@ export async function resolveActiveAgent(
 }
 
 /**
+ * Pick the fastest registered agent for a short helper task (noun
+ * extraction, intent classification, etc.). Spawn-cost order, lowest first:
+ *
+ *   1. opencode — HTTP daemon already running; per-call latency ~1–3 s
+ *   2. claude-code — fresh subprocess each call; ~5–10 s spawn cost
+ *   3. codex — `codex exec` cold start is ~15–30 s; way too slow for
+ *      a micro-task that has a 6 s timeout budget
+ *   4. copilot / any other — fallback to first registered
+ *
+ * Used for inline LLM helpers that block the IM pipeline (memo-extract's
+ * `what` extraction, intent detector). Picking the sticky agent would
+ * make a feishu-+-codex user pay 15 s per memo save — unacceptable.
+ *
+ * Falls through to `resolveActiveAgent` semantics if none of the preferred
+ * agents are registered.
+ */
+export function pickFastHelperAgent(
+  deps: { listAgents?: () => string[] } = {},
+): string | null {
+  const all = (deps.listAgents ?? (() => registry.listAgents()))()
+  const preferred = ['opencode', 'claude-code', 'codex', 'copilot']
+  for (const name of preferred) {
+    if (all.includes(name)) return name
+  }
+  return all[0] ?? null
+}
+
+/**
  * Call a helper agent with composed prompts. Returns trimmed output text or
  * null on any failure / timeout / no-agent.
  *

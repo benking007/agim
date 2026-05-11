@@ -210,13 +210,40 @@ export class CodexAdapter extends AgentBase {
     // `exec resume` subcommand (codex 0.130+) inherits the sandbox policy
     // from the original session and rejects `-s` with "unexpected argument".
     // So we splice sandboxFlags onto fresh starts only.
+    //
+    // MCP tool approval: codex's MCP integration auto-cancels every tool
+    // call in non-interactive (`exec --json`) mode because there's no TUI
+    // to render the approval prompt. Result: every imhub_save_memo/etc.
+    // call returns `"user cancelled MCP tool call"` and the model gives up.
+    // The ONLY way codex 0.130 lets MCP calls through non-interactively is
+    // `--dangerously-bypass-approvals-and-sandbox` which also disables the
+    // sandbox layer.
+    //
+    // Trade-off: IM-spawned codex gains imhub MCP tool access at the cost
+    // of the workspace-write sandbox. Acceptable for our use because:
+    //   - the IM user IS the same trust principal as the host
+    //   - codex never had per-tool approval cards in im-hub anyway (no CLI
+    //     hook; it always ran bash/edit autonomously within sandbox)
+    //   - users who want sandbox back can set IMHUB_CODEX_SAFE_MODE=1, at
+    //     the cost of MCP tools being unusable
+    // planMode users similarly fall back to safe-mode (`-s read-only` only,
+    // no bypass) because plan runs shouldn't be acting anyway.
+    const wantBypass =
+      process.env.IMHUB_CODEX_SAFE_MODE !== '1' &&
+      !opts.planMode &&
+      process.env.IMHUB_APPROVAL_DISABLED !== '1'
     const sandboxMode = opts.planMode ? 'read-only' : 'workspace-write'
     if (opts.agentSessionId && opts.agentSessionResume) {
       // `codex exec resume <UUID> [OPTIONS] [PROMPT]` — SESSION_ID is a
-      // positional immediately after `resume`. No -s here.
-      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, prompt]
+      // positional immediately after `resume`. No -s here (resume inherits
+      // sandbox from original session).
+      const flags = wantBypass ? ['--dangerously-bypass-approvals-and-sandbox'] : []
+      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, ...flags, prompt]
     }
-    return ['exec', ...BASE_FLAGS, '-s', sandboxMode, prompt]
+    const sandboxFlags = wantBypass
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : ['-s', sandboxMode]
+    return ['exec', ...BASE_FLAGS, ...sandboxFlags, prompt]
   }
 
   /**

@@ -73,32 +73,77 @@ describe('CodexAdapter buildArgs', () => {
     })).toContain('--skip-git-repo-check')
   })
 
-  it('passes -s workspace-write by default (no plan mode)', () => {
+  it('passes --dangerously-bypass-approvals-and-sandbox by default so MCP tools work (non-interactive)', () => {
+    // codex's MCP integration auto-cancels every tool call in exec --json
+    // mode because no TUI is present to render approval prompts. The only
+    // way to get MCP tools to actually run is the bypass flag. See file
+    // header for the trade-off discussion.
     const adapter = new CodexAdapter()
     const args = buildArgs(adapter, 'p', {})
-    expect(args).toContain('-s')
-    expect(args).toContain('workspace-write')
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
+    // Bypass replaces the explicit -s flag — codex disables sandbox itself.
+    expect(args).not.toContain('-s')
   })
 
-  it('passes -s read-only when planMode is true', () => {
+  it('passes -s read-only when planMode is true (no bypass; plan runs are observation-only)', () => {
     const adapter = new CodexAdapter()
     const args = buildArgs(adapter, 'p', { planMode: true })
     expect(args).toContain('-s')
     expect(args).toContain('read-only')
-    expect(args).not.toContain('workspace-write')
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
   })
 
-  it('does NOT pass -s on a resume turn (codex 0.130+ rejects it; session inherits sandbox)', () => {
+  it('IMHUB_CODEX_SAFE_MODE=1 opt-out: drops bypass, keeps -s workspace-write (loses MCP)', () => {
+    const adapter = new CodexAdapter()
+    const original = process.env.IMHUB_CODEX_SAFE_MODE
+    process.env.IMHUB_CODEX_SAFE_MODE = '1'
+    try {
+      const args = buildArgs(adapter, 'p', {})
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+      expect(args).toContain('-s')
+      expect(args).toContain('workspace-write')
+    } finally {
+      if (original === undefined) delete process.env.IMHUB_CODEX_SAFE_MODE
+      else process.env.IMHUB_CODEX_SAFE_MODE = original
+    }
+  })
+
+  it('IMHUB_APPROVAL_DISABLED=1 also drops bypass — approval gating is off-by-design', () => {
+    const adapter = new CodexAdapter()
+    const original = process.env.IMHUB_APPROVAL_DISABLED
+    process.env.IMHUB_APPROVAL_DISABLED = '1'
+    try {
+      const args = buildArgs(adapter, 'p', {})
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+      expect(args).toContain('-s')
+    } finally {
+      if (original === undefined) delete process.env.IMHUB_APPROVAL_DISABLED
+      else process.env.IMHUB_APPROVAL_DISABLED = original
+    }
+  })
+
+  it('on resume: no -s (codex 0.130 rejects it; session inherits sandbox), but bypass IS included', () => {
     // Regression: `codex exec resume` errors with "unexpected argument '-s'"
     // because the resume subcommand inherits the original session's sandbox
-    // policy. We must splice -s onto fresh `exec` only.
+    // policy. The bypass flag is NOT a sandbox flag in resume's view, so it
+    // stays — and we still need it for MCP tool calls on resume turns too.
+    const adapter = new CodexAdapter()
+    const args = buildArgs(adapter, 'p', {
+      agentSessionId: 'abc', agentSessionResume: true,
+    })
+    expect(args).not.toContain('-s')
+    expect(args).not.toContain('read-only')
+    expect(args).not.toContain('workspace-write')
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
+  })
+
+  it('on resume + planMode: no -s, no bypass (plan resume is pure observation)', () => {
     const adapter = new CodexAdapter()
     const args = buildArgs(adapter, 'p', {
       agentSessionId: 'abc', agentSessionResume: true, planMode: true,
     })
     expect(args).not.toContain('-s')
-    expect(args).not.toContain('read-only')
-    expect(args).not.toContain('workspace-write')
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
   })
 })
 
@@ -345,11 +390,18 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
     expect(plan.cwd?.endsWith('/codex')).toBe(true)
   })
 
-  it('preserves planMode → -s read-only when MCP-routed', async () => {
+  it('preserves planMode → -s read-only when MCP-routed (no bypass)', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'hi', { ...FULL_OPTS, planMode: true })
     const sIdx = plan.args.indexOf('-s')
     expect(plan.args[sIdx + 1]).toBe('read-only')
     expect(plan.args).not.toContain('workspace-write')
+    // Plan runs are observation-only — no bypass even when MCP-routed.
+    expect(plan.args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+  })
+
+  it('default (non-plan) MCP-routed runs include the bypass flag so MCP tools execute', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+    expect(plan.args).toContain('--dangerously-bypass-approvals-and-sandbox')
   })
 
   it('preserves exec resume <id> structure when MCP-routed', async () => {

@@ -21,6 +21,7 @@ import { splitMessage } from '../../../utils/message-split.js'
 import { Backoff } from '../../../utils/backoff.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
+import { setPending as setPendingMemoLocation } from '../../../core/pending-memo-location.js'
 
 const log = rootLogger.child({ component: 'telegram' })
 
@@ -174,6 +175,62 @@ export class TelegramAdapter implements MessengerAdapter {
       if (!this.messageHandler) return
       const a = ctx.message.animation
       void this.handleVideoUpload(ctx, a.file_id, a.mime_type, ctx.message.caption ?? '', a.duration)
+    })
+
+    // Location pins (📎 → Location → Send My Current Location / Choose on Map).
+    // Telegram delivers { latitude, longitude, horizontal_accuracy?, … }. We
+    // stash a short-lived pending entry keyed by thread and ask the user to
+    // name it — the next text reply runs through pending-memo-location's
+    // tryConsumeReply in cli.ts (BEFORE the agent dispatch) to save the memo.
+    this.bot.on('message:location', (botCtx) => {
+      if (botCtx.message.from?.is_bot) return
+      const loc = botCtx.message.location
+      const threadId = botCtx.chat.id.toString()
+      const threadKey = `telegram:default:${threadId}`
+      setPendingMemoLocation(threadKey, {
+        lat: loc.latitude,
+        lng: loc.longitude,
+        accuracy: typeof loc.horizontal_accuracy === 'number' ? loc.horizontal_accuracy : undefined,
+      })
+      const accuracyHint = typeof loc.horizontal_accuracy === 'number'
+        ? `（精度 ±${Math.round(loc.horizontal_accuracy)}m）`
+        : ''
+      const prompt = [
+        `📍 收到位置 (${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)})${accuracyHint}`,
+        '',
+        '要记一笔吗？回个名字（如「车」「茶馆」「家」），或回 `n` 跳过。',
+        '5 分钟内有效。',
+      ].join('\n')
+      void botCtx.reply(prompt).catch((err) => {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to location share')
+      })
+      log.info({ event: 'telegram.location.received', threadId, lat: loc.latitude, lng: loc.longitude })
+    })
+
+    // Venues — location with a title + address (Telegram's "Place" picker).
+    // Title becomes the suggested `what`; we accept y/记下 to confirm without
+    // re-typing.
+    this.bot.on('message:venue', (botCtx) => {
+      if (botCtx.message.from?.is_bot) return
+      const v = botCtx.message.venue
+      const threadId = botCtx.chat.id.toString()
+      const threadKey = `telegram:default:${threadId}`
+      setPendingMemoLocation(threadKey, {
+        lat: v.location.latitude,
+        lng: v.location.longitude,
+        venueLabel: v.title,
+        venueAddress: v.address,
+      })
+      const prompt = [
+        `📍 收到「${v.title}」`,
+        `   ${v.address}`,
+        '',
+        '要记下吗？回 `y` 确认（按上面的名字记），或回别的名字改名，或回 `n` 跳过。',
+      ].join('\n')
+      void botCtx.reply(prompt).catch((err) => {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to venue share')
+      })
+      log.info({ event: 'telegram.venue.received', threadId, title: v.title })
     })
 
     // Inline-button taps (approval cards). Same fire-and-forget discipline

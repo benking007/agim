@@ -25,6 +25,8 @@ import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
 import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
 import { tryConsumeReply as tryConsumePendingReminderReply } from './core/pending-reminder.js'
+import { tryConsumeReply as tryConsumePendingMemoLocationReply } from './core/pending-memo-location.js'
+import { createMemo as createMemoRow } from './core/memos.js'
 import { tryDetectReminderIntent } from './core/remind-intent.js'
 import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
@@ -271,6 +273,45 @@ program
         // proposed reminder card). Must come BEFORE the detector so a
         // user replying "y" doesn't get re-detected as another reminder.
         const tk = `${ctx.platform}:${ctx.channelId}:${ctx.message.threadId}`
+
+        // Pending memo-location reply (the user shared a Telegram pin /
+        // venue and we asked them to name it). Same ordering rationale as
+        // pending-reminder: short-circuit before slash / agent dispatch so
+        // the label text doesn't accidentally trigger anything else.
+        const memoLocDecision = tryConsumePendingMemoLocationReply(tk, ctx.message.text)
+        if (memoLocDecision) {
+          if (memoLocDecision.decision === 'cancel') {
+            await messenger.sendMessage(ctx.message.threadId, '👌 跳过了，没记')
+          } else {
+            const { pending, what } = memoLocDecision
+            try {
+              const id = createMemoRow({
+                platform: ctx.platform,
+                channelId: ctx.channelId,
+                threadId: ctx.message.threadId,
+                userId: ctx.message.userId || '',
+                what,
+                whereLat: pending.lat,
+                whereLng: pending.lng,
+                whereLabel: pending.venueAddress ?? pending.venueLabel ?? null,
+                source: 'browser',
+              })
+              const accuracyHint = typeof pending.accuracy === 'number'
+                ? `（精度 ±${Math.round(pending.accuracy)}m）`
+                : ''
+              await messenger.sendMessage(
+                ctx.message.threadId,
+                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}`,
+              )
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              await messenger.sendMessage(ctx.message.threadId, `❌ 保存失败：${msg}`)
+            }
+          }
+          ctx.logger.info({ event: 'message.consumed_by_pending_memo_location', decision: memoLocDecision.decision })
+          return
+        }
+
         const replyDecision = tryConsumePendingReminderReply(tk, ctx.message.text)
         if (replyDecision) {
           if (replyDecision.decision === 'cancel') {

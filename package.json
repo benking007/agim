@@ -61,6 +61,7 @@
     "@types/nodemailer": "^8.0.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^11.0.0",
+    "dingtalk-stream": "^2.1.5",
     "discord.js": "^14.26.3",
     "grammy": "^1.41.1",
     "marked": "^17.0.5",

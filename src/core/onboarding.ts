@@ -44,6 +44,7 @@ export interface Config {
   defaultAgent: string
   telegram?: { botToken: string; channelId?: string }
   feishu?: { appId: string; appSecret: string; channelId?: string }
+  dingtalk?: { clientId: string; clientSecret: string; channelId?: string }
   discord?: { botToken: string; channelId?: string; allowedGuilds?: string[]; allowedChannels?: string[] }
   acpAgents?: Array<{
     name: string

@@ -126,6 +126,9 @@ class PluginRegistry {
     const { feishuAdapter } = await import('../plugins/messengers/feishu/index.js')
     this.registerMessenger(feishuAdapter)
 
+    const { dingtalkAdapter } = await import('../plugins/messengers/dingtalk/index.js')
+    this.registerMessenger(dingtalkAdapter)
+
     const { discordAdapter } = await import('../plugins/messengers/discord/index.js')
     this.registerMessenger(discordAdapter)
 

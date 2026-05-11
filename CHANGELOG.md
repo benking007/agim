@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — DingTalk (钉钉) messenger via Stream mode
+
+Sixth messenger adapter, sitting next to Feishu architecturally:
+
+- Inbound: WebSocket Stream via `dingtalk-stream` v2.1.5 (official SDK).
+  No public webhook needed — the SDK opens a long-lived WS to
+  `api.dingtalk.com/v1.0/gateway/connections/open`, handles
+  reconnect / heartbeat / access-token rotation internally. Bot only
+  receives when the user @-mentions in groups or sends 1:1 directly
+  (DingTalk's hard limit, mirrors Feishu).
+- Outbound: REST OpenAPI under the bot's auto-rotated access token:
+  - 1:1 → `POST /v1.0/robot/oToMessages/batchSend`
+  - group → `POST /v1.0/robot/groupMessages/send`
+  - We don't use the per-message `sessionWebhook` (30s expiry doesn't
+    survive multi-minute agent runs); OpenAPI works for any send.
+- Encoding: threadId is `user:<senderStaffId>` or `group:<openConversationId>`
+  so `sendMessage()` can dispatch to the right endpoint without external
+  state.
+- Config: `dingtalk: { clientId, clientSecret }` in `~/.im-hub/config.json`.
+  `clientId` doubles as `robotCode` for stream-mode internal apps; we
+  also cache the most recently seen `robotCode` from inbound messages
+  for robustness.
+- Wizard: full per-component flow under `Configure → Messengers → DingTalk`,
+  with docs walkthrough (Stream-mode bot creation in `open.dingtalk.com`),
+  prefilled ClientID on re-config, masked "Enter = keep existing"
+  behavior for ClientSecret.
+
+Known limitations:
+- DingTalk Stream only delivers text messages to bots; no image / voice /
+  location inbound. /memo coordinate flow needs the user to type coords.
+- No typing indicator API for stream bots — the 1:1 client already shows
+  a native "正在输入" hint; groups get nothing until the first chunk.
+
+Files:
+- `src/plugins/messengers/dingtalk/{types,dingtalk-client,dingtalk-adapter,index}.ts`
+- `src/core/registry.ts` — registered
+- `src/core/onboarding.ts` — `Config.dingtalk` added
+- `src/cli-ui/{config-wizard,i18n}.ts` — wizard wiring + EN/中文 strings
+- `package.json` — added `dingtalk-stream@^2.1.5`
+
 ## [0.5.2] - 2026-05-11
 
 > 0.5.0 introduced the bilingual wizard but 0.5.1 hands-on showed it had

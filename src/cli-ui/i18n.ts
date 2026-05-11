@@ -55,6 +55,7 @@ const en = {
   'messengers.label.wechat': 'WeChat (iLink bot)',
   'messengers.label.telegram': 'Telegram',
   'messengers.label.feishu': 'Feishu / Lark',
+  'messengers.label.dingtalk': 'DingTalk (钉钉)',
   'messengers.label.discord': 'Discord',
   'messengers.label.email': 'Email (SMTP push)',
   'messengers.row': '{label} — {status}',
@@ -85,6 +86,11 @@ const en = {
   'feishu.field.app_id': 'App ID',
   'feishu.field.app_secret': 'App Secret',
   'feishu.field.app_secret_keep': 'App Secret (Enter = keep existing)',
+
+  'dingtalk.docs': 'To create a DingTalk Stream-mode bot:\n  1. https://open.dingtalk.com → create an Enterprise Internal App (1-person company works for personal use)\n  2. App → Add capability → Bot → choose Stream mode → publish\n  3. Copy ClientID (== AppKey) and ClientSecret from the app credentials page',
+  'dingtalk.field.client_id': 'ClientID (AppKey)',
+  'dingtalk.field.client_secret': 'ClientSecret',
+  'dingtalk.field.client_secret_keep': 'ClientSecret (Enter = keep existing)',
 
   'discord.docs': 'To create a Discord bot:\n  1. https://discord.com/developers/applications → New Application\n  2. Bot tab → Add Bot → enable MESSAGE CONTENT INTENT (privileged)\n  3. Reset Token to grab the bot token\n  4. OAuth2 → URL Generator → invite to your server',
   'discord.field.token': 'Bot token',
@@ -276,6 +282,7 @@ const zh: Record<Key, string> = {
   'messengers.label.wechat': '微信（iLink bot）',
   'messengers.label.telegram': 'Telegram',
   'messengers.label.feishu': '飞书 / Lark',
+  'messengers.label.dingtalk': '钉钉（DingTalk）',
   'messengers.label.discord': 'Discord',
   'messengers.label.email': '邮件（SMTP 推送）',
   'messengers.row': '{label} — {status}',
@@ -306,6 +313,11 @@ const zh: Record<Key, string> = {
   'feishu.field.app_id': 'App ID',
   'feishu.field.app_secret': 'App Secret',
   'feishu.field.app_secret_keep': 'App Secret（Enter = 保留现有）',
+
+  'dingtalk.docs': '创建钉钉 Stream 模式机器人：\n  1. https://open.dingtalk.com → 创建"企业内部应用"（1 人企业也可以，个人自用足够）\n  2. 应用 → 添加能力 → 机器人 → 选 Stream 模式 → 发布\n  3. 在应用凭证页拿到 ClientID（即 AppKey）和 ClientSecret',
+  'dingtalk.field.client_id': 'ClientID（AppKey）',
+  'dingtalk.field.client_secret': 'ClientSecret',
+  'dingtalk.field.client_secret_keep': 'ClientSecret（Enter = 保留现有）',
 
   'discord.docs': '创建 Discord 机器人：\n  1. https://discord.com/developers/applications → New Application\n  2. Bot 选项卡 → Add Bot → 开启 MESSAGE CONTENT INTENT（特权 intent）\n  3. Reset Token 获取 bot token\n  4. OAuth2 → URL Generator → 邀请到你的服务器',
   'discord.field.token': 'Bot token',

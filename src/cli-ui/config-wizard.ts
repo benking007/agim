@@ -101,14 +101,14 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
 // `im-hub-pro config <component>` flows — checkbox-only selection wasn't
 // enough because each messenger needs different credentials.
 
-type MessengerId = 'wechat-ilink' | 'telegram' | 'feishu' | 'discord' | 'email'
+type MessengerId = 'wechat-ilink' | 'telegram' | 'feishu' | 'dingtalk' | 'discord' | 'email'
 
 interface MessengerSpec {
   id: MessengerId
   labelKey: Key
   /** Does this entry have its own credentials object? Email/WeChat don't
    *  store credentials in config.json (WeChat keeps a separate token file;
-   *  email rides on SMTP). Telegram/Feishu/Discord do. */
+   *  email rides on SMTP). Telegram/Feishu/DingTalk/Discord do. */
   hasCreds: boolean
 }
 
@@ -116,6 +116,7 @@ const MESSENGER_SPECS: MessengerSpec[] = [
   { id: 'wechat-ilink', labelKey: 'messengers.label.wechat',   hasCreds: false },
   { id: 'telegram',     labelKey: 'messengers.label.telegram', hasCreds: true  },
   { id: 'feishu',       labelKey: 'messengers.label.feishu',   hasCreds: true  },
+  { id: 'dingtalk',     labelKey: 'messengers.label.dingtalk', hasCreds: true  },
   { id: 'discord',      labelKey: 'messengers.label.discord',  hasCreds: true  },
   { id: 'email',        labelKey: 'messengers.label.email',    hasCreds: false },
 ]
@@ -129,6 +130,9 @@ function messengerStatus(lang: Lang, spec: MessengerSpec, cfg: Config): string {
     return t(lang, 'messengers.status.enabled_no_creds')
   }
   if (spec.id === 'feishu' && !(cfg.feishu?.appId && cfg.feishu?.appSecret)) {
+    return t(lang, 'messengers.status.enabled_no_creds')
+  }
+  if (spec.id === 'dingtalk' && !(cfg.dingtalk?.clientId && cfg.dingtalk?.clientSecret)) {
     return t(lang, 'messengers.status.enabled_no_creds')
   }
   if (spec.id === 'discord' && !cfg.discord?.botToken) {
@@ -232,6 +236,7 @@ async function messengerSubMenu(lang: Lang, cfg: Config, spec: MessengerSpec): P
         if (spec.id === 'wechat-ilink') config = await configureWechat(lang, config)
         else if (spec.id === 'telegram') config = await configureTelegram(lang, config)
         else if (spec.id === 'feishu')   config = await configureFeishu(lang, config)
+        else if (spec.id === 'dingtalk') config = await configureDingtalk(lang, config)
         else if (spec.id === 'discord')  config = await configureDiscord(lang, config)
       }
     } catch (err) {
@@ -246,6 +251,7 @@ function removeMessenger(cfg: Config, id: MessengerId): Config {
   const next: Config = { ...cfg, messengers }
   if (id === 'telegram') delete next.telegram
   if (id === 'feishu')   delete next.feishu
+  if (id === 'dingtalk') delete next.dingtalk
   if (id === 'discord')  delete next.discord
   return next
 }
@@ -345,6 +351,33 @@ async function configureFeishu(lang: Lang, cfg: Config): Promise<Config> {
     ...cfg,
     messengers: Array.from(messengers),
     feishu: { appId, appSecret, channelId: current?.channelId },
+  }
+}
+
+async function configureDingtalk(lang: Lang, cfg: Config): Promise<Config> {
+  console.log()
+  console.log(t(lang, 'dingtalk.docs'))
+  console.log()
+  const current = cfg.dingtalk
+  const clientId = await inputText({
+    message: t(lang, 'dingtalk.field.client_id'),
+    default: current?.clientId,
+    required: true,
+  })
+  const secretLabel = current?.clientSecret
+    ? t(lang, 'dingtalk.field.client_secret_keep')
+    : t(lang, 'dingtalk.field.client_secret')
+  const secretIn = await inputSecret({
+    message: secretLabel,
+    required: !current?.clientSecret,
+  })
+  const clientSecret = secretIn || current?.clientSecret || ''
+  const messengers = new Set(cfg.messengers || [])
+  messengers.add('dingtalk')
+  return {
+    ...cfg,
+    messengers: Array.from(messengers),
+    dingtalk: { clientId, clientSecret, channelId: current?.channelId },
   }
 }
 

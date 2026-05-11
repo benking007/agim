@@ -4,44 +4,69 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added — DingTalk (钉钉) messenger via Stream mode
+## [0.6.0] - 2026-05-12
 
-Sixth messenger adapter, sitting next to Feishu architecturally:
+> **核心主题**：DingTalk 钉钉作为第六个 IM 适配器加入，图片 + 语音双向支持，
+> 语音直接走钉钉服务端 ASR（零延迟、中文准确率好），图片通过
+> `messageFiles/download` 端点拉到本地后让 claude-code 多模态 Read 工具看。
 
-- Inbound: WebSocket Stream via `dingtalk-stream` v2.1.5 (official SDK).
-  No public webhook needed — the SDK opens a long-lived WS to
-  `api.dingtalk.com/v1.0/gateway/connections/open`, handles
-  reconnect / heartbeat / access-token rotation internally. Bot only
-  receives when the user @-mentions in groups or sends 1:1 directly
-  (DingTalk's hard limit, mirrors Feishu).
-- Outbound: REST OpenAPI under the bot's auto-rotated access token:
-  - 1:1 → `POST /v1.0/robot/oToMessages/batchSend`
-  - group → `POST /v1.0/robot/groupMessages/send`
-  - We don't use the per-message `sessionWebhook` (30s expiry doesn't
-    survive multi-minute agent runs); OpenAPI works for any send.
-- Encoding: threadId is `user:<senderStaffId>` or `group:<openConversationId>`
-  so `sendMessage()` can dispatch to the right endpoint without external
-  state.
-- Config: `dingtalk: { clientId, clientSecret }` in `~/.im-hub/config.json`.
-  `clientId` doubles as `robotCode` for stream-mode internal apps; we
-  also cache the most recently seen `robotCode` from inbound messages
-  for robustness.
-- Wizard: full per-component flow under `Configure → Messengers → DingTalk`,
-  with docs walkthrough (Stream-mode bot creation in `open.dingtalk.com`),
-  prefilled ClientID on re-config, masked "Enter = keep existing"
-  behavior for ClientSecret.
+### Added — DingTalk Stream-mode adapter (text + media)
 
-Known limitations:
-- DingTalk Stream only delivers text messages to bots; no image / voice /
-  location inbound. /memo coordinate flow needs the user to type coords.
-- No typing indicator API for stream bots — the 1:1 client already shows
-  a native "正在输入" hint; groups get nothing until the first chunk.
+**Connection model** — WebSocket Stream via `dingtalk-stream` v2.1.5
+(official SDK). No public webhook required: SDK opens a long-lived WS to
+`api.dingtalk.com/v1.0/gateway/connections/open`, handles reconnect /
+heartbeat / access-token rotation internally. Bot only receives when the
+user @-mentions in groups or sends 1:1 (DingTalk hard limit, same as
+Feishu).
 
-Files:
-- `src/plugins/messengers/dingtalk/{types,dingtalk-client,dingtalk-adapter,index}.ts`
+**Outbound** — REST OpenAPI under the bot's auto-rotated access token:
+- 1:1 → `POST /v1.0/robot/oToMessages/batchSend`
+- group → `POST /v1.0/robot/groupMessages/send`
+
+The per-message `sessionWebhook` is NOT used — its 30 s expiry doesn't
+survive multi-minute agent runs. OpenAPI works for any send.
+
+**Inbound msgtypes** — empirically confirmed via real payload dumps
+(community docs were inconsistent):
+
+| msgtype on wire | Payload location | Adapter behavior |
+|---|---|---|
+| `text` | `text.content` | Pass through to agent (no change) |
+| `picture` | `content.downloadCode` | Download via `/v1.0/robot/messageFiles/download` (the `pictureDownloadCode` field looks tempting but returns 500 — reserved for a different endpoint we don't use). Save under `~/.im-hub/media/dingtalk/<thread>/<msgId>.<ext>`. Append `[图片附件：<path>]` to user text. claude-code's Read tool sees the JPG. |
+| `audio` | `content.downloadCode` + `content.recognition` | **Prefer the server-side ASR transcript in `recognition`** (zero latency, better Mandarin accuracy than whisper.cpp base model). Still download the source AMR for archive/replay. Fall back to whisper.cpp only when `recognition` is missing. |
+| `link` | `link.messageUrl` | Try `tryExtractLatLng()` on the URL (handles Amap, Tencent QMap, generic `?lat=&lng=`, `?location=lat,lng`). On hit → stash in `location-context`, next user text gets the GPS prefix injected. |
+| `file` | `content.downloadCode` | Acknowledge only (PDF / Word handling is a separate effort) |
+| anything else | full payload | WARN-level dump to journalctl so unknown shapes surface for the next iteration |
+
+**Filename hygiene** — DingTalk msgIds are base64-shaped
+(`msgAB2pLyIgOgo6bJXw9mWAtA==`) and contain `/+=`. `safeFilenameStem()`
+sanitises every non-`[A-Za-z0-9_-]` char to `_` before write, so the
+files land at `msgAB2pLyIgOgo6bJXw9mWAtA__.jpg` and the path-injection
+guard in `saveDingTalkMedia()` doesn't reject them.
+
+**Config** — `{ dingtalk: { clientId, clientSecret } }` in
+`~/.im-hub/config.json`. `clientId` doubles as `robotCode` for
+stream-mode internal apps; we also cache the most-recent `robotCode`
+from inbound messages for robustness against multi-bot setups.
+
+**Wizard** — full per-component flow under `Configure → Messengers →
+DingTalk` (bilingual). Docs walkthrough (Stream-mode bot creation in
+`open.dingtalk.com`), prefilled ClientID on re-config, masked "Enter =
+keep existing" for ClientSecret.
+
+**Known platform limitations**:
+- DingTalk does NOT deliver native location messages to bots (verified
+  empirically — zero inbound when the user shares a location).
+  Workaround: `/memo here <what>` capture link, or type the address and
+  let the agent geocode via Baidu.
+- No typing indicator API for stream bots. The 1:1 client UI shows a
+  native "正在输入" hint; groups get nothing until first chunk.
+
+**Files**:
+- `src/plugins/messengers/dingtalk/{types,dingtalk-client,dingtalk-adapter,media-store,index}.ts` (new)
 - `src/core/registry.ts` — registered
-- `src/core/onboarding.ts` — `Config.dingtalk` added
-- `src/cli-ui/{config-wizard,i18n}.ts` — wizard wiring + EN/中文 strings
+- `src/core/onboarding.ts` — `Config.dingtalk` shape added
+- `src/cli-ui/{config-wizard,i18n}.ts` — wizard + EN/中文 strings
 - `package.json` — added `dingtalk-stream@^2.1.5`
 
 ## [0.5.2] - 2026-05-11

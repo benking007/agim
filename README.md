@@ -2,18 +2,18 @@
 
 [中文文档](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
+**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
 > Productized fork of the original [`im-hub`](https://www.npmjs.com/package/im-hub). Config dir (`~/.im-hub/`), env vars (`IMHUB_*`), and headers (`X-IM-Hub-Token`) are unchanged — drop-in upgrade. See [Migrating from `im-hub`](#migrating-from-im-hub).
 
 ## Highlights
 
-- **4 messengers + email, 4+ agents** — WeChat (image / file / voice), Feishu, Telegram, Discord, Email (SMTP); Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
+- **5 messengers + email, 4+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Telegram, Discord, Email (SMTP); Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
 - **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
 - **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
 - **Browser dashboard** — chat UI, tasks panel (jobs / schedules / approvals / health / files / audit), reminders panel, settings page with workspace CRUD
 - **Human-in-the-loop tool approval** — Claude tool calls pause for `y`/`n` in IM or in-page card; works across all platforms
-- **Rich media in WeChat & Telegram** — receive images, files, videos; voice messages transcribed via WeChat STT, OpenAI Whisper, or whisper.cpp
+- **Rich media in WeChat / Telegram / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
 - **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
 - **Multi-tenant workspaces** — per-workspace agent whitelist, rate limits, command-level ACL
 - **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention
@@ -28,8 +28,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 npm install -g im-hub-pro    # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
 
 # Configure at least one messenger
+im-hub-pro                      # arrow-key wizard (recommended) — picks language,
+                                # then per-component setup for every messenger / agent
+                                # — or use the legacy per-component commands below:
 im-hub-pro config wechat        # QR-code login
 im-hub-pro config feishu        # App ID + Secret (no webhook needed)
+im-hub-pro config dingtalk      # ClientID + ClientSecret (Stream-mode bot)
 im-hub-pro config telegram      # @BotFather token
 im-hub-pro config discord       # Bot token; see docs/discord-setup.md
 
@@ -54,7 +58,7 @@ im-hub-pro start          # config, env vars, headers all unchanged
 
 | Category | Details |
 |----------|---------|
-| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), Telegram (grammy — photo / voice / audio), Discord (discord.js), Email (SMTP, push-only) |
+| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Telegram (grammy — photo / voice / audio), Discord (discord.js), Email (SMTP, push-only) |
 | **Agents** | Claude Code, Codex, Copilot, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
 | **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
 | **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文), SSE dashboard |
@@ -68,9 +72,16 @@ im-hub-pro start          # config, env vars, headers all unchanged
 ## CLI Commands
 
 ```
-im-hub-pro start           # Start the bridge + web UI
+im-hub-pro                 # Arrow-key wizard (bilingual zh/en) — recommended entry
+im-hub-pro start           # Start the bridge + web UI (foreground)
+im-hub-pro start --bg      # Start as a background daemon
+im-hub-pro status          # Show service status (systemd / bg / fg)
+im-hub-pro restart         # Restart the running service
+im-hub-pro stop            # Stop the running service
+im-hub-pro uninstall       # Uninstall (keeps ~/.im-hub-workspaces/)
 im-hub-pro config wechat   # Configure WeChat
 im-hub-pro config feishu   # Configure Feishu
+im-hub-pro config dingtalk # Configure DingTalk (Stream-mode internal app)
 im-hub-pro config telegram # Configure Telegram
 im-hub-pro config discord  # Configure Discord
 im-hub-pro config claude   # Configure Claude Code
@@ -105,7 +116,7 @@ Input: {"command":"rm -rf node_modules"}
 Reply y to approve / n to deny  (auto-deny in 5 min)
 ```
 
-Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Telegram, Feishu, and Discord. Disable with `IMHUB_APPROVAL_DISABLED=1`.
+Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Telegram, Feishu, DingTalk, and Discord. Disable with `IMHUB_APPROVAL_DISABLED=1`.
 
 ## Reminders
 
@@ -276,6 +287,7 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 │ WeChat iLink   (long-poll + image/voice/file)    │
 │ Telegram       (grammy + photo/voice/audio)      │
 │ Feishu         (Lark SDK WebSocket)              │
+│ DingTalk       (Stream WebSocket + ASR baked in) │
 │ Discord        (discord.js Gateway)              │
 │ Web Chat       (browser WebSocket)               │
 └───────────────────────┬──────────────────────────┘
@@ -357,13 +369,13 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.3.0 | `/memo` 5W1H persistent memory — `/location` → `/memo` rename, address geocoding via Baidu Maps, opencode HTTP driver SSE drain |
 | v0.3.1 | Native location messages on Telegram + Feishu, GCJ-02 → WGS-84 fix across all ingest paths, `memo` column + LLM/heuristic `what` extractor |
 | v0.4.0 | codex agent now sees the full imhub MCP toolset (reminder + memo); Telegram + Feishu location messages routed through agent-driven decision making (matches WeChat H5 architecture) |
+| v0.5.0–0.5.2 | Bilingual arrow-key `im-hub-pro` wizard; per-component flows (QR for WeChat, credentials prompts for Feishu / Telegram / Discord; live install detection for agents); systemd-unit env fallback for SMTP / Baidu prefill; full service lifecycle commands (`status / start --bg / restart / stop / uninstall`) |
+| **v0.6.0** | DingTalk Stream-mode adapter — bidirectional bot bridge via WebSocket, image inbound (`messageFiles/download` → claude-code multimodal Read), voice inbound (server-side ASR `recognition` field, whisper.cpp fallback) |
 
-### v0.5.0 (next)
+### v0.7.0 (next)
 
-- [ ] codex MCP-server mode — `codex mcp-server` stdio + im-hub as MCP client, enabling per-tool approval cards for codex's own bash/edit/read
-- [ ] DingTalk adapter
 - [ ] Slack adapter
-- [ ] Feishu / Discord button-style approval cards
+- [ ] Feishu / DingTalk / Discord button-style approval cards
 - [ ] Multi-instance event bus (Redis Streams / NATS)
 - [ ] Workspace member picker UI
 

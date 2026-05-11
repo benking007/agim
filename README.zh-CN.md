@@ -2,18 +2,18 @@
 
 [English](README.md)
 
-**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / Telegram / Discord 接入 Claude Code / Codex / Copilot / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
+**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / Copilot / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
 
 > 原 [`im-hub`](https://www.npmjs.com/package/im-hub) 的产品化分支。配置目录（`~/.im-hub/`）、环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）保持不变——无缝升级。详见[从 im-hub 迁移](#从-im-hub-迁移)。
 
 ## 亮点
 
-- **4 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
+- **5 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
 - **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
 - **浏览器控制台** — 对话界面、任务面板（Jobs / 调度 / 审批 / 健康 / 文件 / 审计）、提醒面板、设置页含工作区 CRUD
 - **工具调用人审（HITL）** — Claude 调用工具时暂停，IM 回复 `y`/`n` 或在页面点卡片审批；全平台一致
-- **微信和 Telegram 富媒体** — 接收图片、文件、视频；语音消息支持微信 STT、OpenAI Whisper、whisper.cpp 转写
+- **微信 / Telegram / 钉钉 富媒体** — 接收图片、文件、视频；语音消息按平台走最佳转写链路：微信 STT、钉钉服务端 ASR、OpenAI Whisper、whisper.cpp
 - **智能路由** — 意图分类（中英文）、Sticky 会话、断路器、限流器
 - **多租户工作区** — 按工作区隔离 Agent 白名单、限流、命令级 ACL
 - **持久化任务与定时** — SQLite 落地，重启不丢，30 天自动修剪
@@ -28,8 +28,11 @@
 npm install -g im-hub-pro    # 需要 Node.js ≥ 18（推荐 ≥ 22 LTS）
 
 # 配置至少一个 IM
+im-hub-pro                      # 交互式向导（推荐）—— 双语，方向键选语言后逐项配置
+                                # 也可以走老的子命令：
 im-hub-pro config wechat        # 扫码登录
 im-hub-pro config feishu        # 飞书 App ID + Secret，无需 webhook
+im-hub-pro config dingtalk      # 钉钉 ClientID + ClientSecret（Stream 模式机器人）
 im-hub-pro config telegram      # @BotFather 拿 Token
 im-hub-pro config discord       # Bot Token，详见 docs/discord-setup.md
 
@@ -54,7 +57,7 @@ im-hub-pro start          # 配置、环境变量、Header 全部不变
 
 | 分类 | 内容 |
 |------|------|
-| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js）、Email（SMTP，仅推送） |
+| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js）、Email（SMTP，仅推送） |
 | **Agent** | Claude Code、Codex、Copilot、OpenCode（统一 `AgentBase`）；任何 HTTP Agent 通过 ACP 接入 |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **Web 控制台** | 流式对话、三态主题（浅 / 深 / 跟随系统）、中英双语、SSE 实时仪表盘 |
@@ -69,8 +72,16 @@ im-hub-pro start          # 配置、环境变量、Header 全部不变
 
 ```
 im-hub-pro start           # 启动桥接 + Web UI
+im-hub-pro                 # 交互式向导（双语，推荐入口）
+im-hub-pro start           # 启动桥接 + Web 界面（前台）
+im-hub-pro start --bg      # 后台守护进程模式
+im-hub-pro status          # 查看服务状态（systemd / bg / fg）
+im-hub-pro restart         # 重启正在运行的服务
+im-hub-pro stop            # 停止服务
+im-hub-pro uninstall       # 卸载（保留 ~/.im-hub-workspaces/）
 im-hub-pro config wechat   # 配置微信
 im-hub-pro config feishu   # 配置飞书
+im-hub-pro config dingtalk # 配置钉钉（Stream 模式企业内部应用）
 im-hub-pro config telegram # 配置 Telegram
 im-hub-pro config discord  # 配置 Discord
 im-hub-pro config claude   # 配置 Claude Code
@@ -105,7 +116,7 @@ im-hub-pro messengers      # 列出可用 IM
 回复 y 批准 / n 拒绝（5 分钟内未操作将自动拒绝）
 ```
 
-在 IM 回复 `y` / `n`，或在 Web 界面点 Allow / Deny。微信、Telegram、飞书、Discord 行为一致。`IMHUB_APPROVAL_DISABLED=1` 可关闭。
+在 IM 回复 `y` / `n`，或在 Web 界面点 Allow / Deny。微信、Telegram、飞书、钉钉、Discord 行为一致。`IMHUB_APPROVAL_DISABLED=1` 可关闭。
 
 ## 提醒
 
@@ -276,6 +287,7 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 │ 微信 iLink     （长轮询 + 图片/语音/文件）        │
 │ Telegram       （grammy + 图片/语音/音频）        │
 │ 飞书           （Lark SDK WebSocket）             │
+│ 钉钉           （Stream WebSocket + 服务端 ASR）  │
 │ Discord        （discord.js Gateway）             │
 │ Web Chat       （浏览器 WebSocket）               │
 └───────────────────────┬──────────────────────────┘
@@ -357,13 +369,13 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.3.0 | `/memo` 5W1H 持久记忆库 — `/location` → `/memo` 改名、地址 geocoding 接百度地图、opencode HTTP driver SSE 修复 |
 | v0.3.1 | Telegram + 飞书原生位置消息接入、所有渠道 GCJ-02 → WGS-84 修正、`memo` 列保存原话 + LLM/启发式 `what` 提取 |
 | v0.4.0 | codex 接入完整 imhub MCP 工具表（reminder + memo）；Telegram + 飞书位置消息改走 agent-driven 决策（对齐微信 H5 架构） |
+| v0.5.0–0.5.2 | `im-hub-pro` 双语方向键向导；按渠道独立配置（微信扫码、飞书 / Telegram / Discord 凭据输入；agent CLI 安装态实时探测）；systemd unit env fallback；完整服务生命周期命令（`status / start --bg / restart / stop / uninstall`） |
+| **v0.6.0** | 钉钉 Stream 模式适配器——WebSocket 双向桥、图片消息（`messageFiles/download` → claude-code 多模态 Read）、语音消息（钉钉服务端 ASR `recognition`，whisper.cpp 兜底） |
 
-### v0.5.0（下一版）
+### v0.7.0（下一版）
 
-- [ ] codex MCP-server 模式——`codex mcp-server` stdio + im-hub 当 MCP client，给 codex 的 bash/edit/read 也加上 approval 卡
-- [ ] 钉钉适配器
 - [ ] Slack 适配器
-- [ ] 飞书 / Discord 卡片按钮版审批
+- [ ] 飞书 / 钉钉 / Discord 卡片按钮版审批
 - [ ] 多实例事件总线（Redis Streams / NATS）
 - [ ] 工作区成员选择 UI
 

@@ -22,14 +22,44 @@ export interface DingTalkConfig {
 }
 
 /** Inbound message payload from the Stream SDK's TOPIC_ROBOT callback.
- *  All fields are present on real deliveries; some are typed as optional
- *  for resilience against partial replays. */
+ *  Empirically observed msgtype values (community docs say `image`/`voice`
+ *  but DingTalk actually wire-formats them as `picture`/`audio`):
+ *    'text' | 'picture' | 'audio' | 'file' | 'link' | 'markdown' | 'action_card'
+ *  The official Node SDK only types `text`; we keep msgtype as a loose
+ *  string and snapshot known shapes for the rest. Unknown shapes fall
+ *  through to a debug-logging path that dumps the full payload — that's
+ *  how we discovered the `picture`/`audio` naming + the `content` block
+ *  shape (community docs document those fields under `msg.picture` etc.,
+ *  but real deliveries put them inside a single `content` object). */
 export interface DingTalkInboundMessage {
   /** Unique message id for dedup. */
   msgId: string
-  /** Always 'text' for now — DingTalk's stream bot only delivers text. */
+  /** One of the empirically-confirmed msgtype values, or something else. */
   msgtype: string
+  /** Present on msgtype='text'. */
   text?: { content: string }
+  /** Present on msgtype='link'. picUrl is the thumbnail; messageUrl is
+   *  the deep link / URL the user actually shared. Title/text are
+   *  display preview. */
+  link?: { title?: string; text?: string; picUrl?: string; messageUrl?: string }
+  /** Catch-all `content` block — used by every non-text/non-link msgtype.
+   *  Different msgtype values use different subsets of the fields below:
+   *    picture: { pictureDownloadCode (full), downloadCode (thumb) }
+   *    audio:   { downloadCode, recognition (DingTalk's server-side ASR!) }
+   *    file:    { downloadCode, fileName }     (best-effort from docs)
+   *    markdown / action_card: { text, title } (best-effort) */
+  content?: {
+    pictureDownloadCode?: string
+    downloadCode?: string
+    /** DingTalk's built-in voice-to-text for `audio` messages. Prefer
+     *  this over running whisper.cpp locally — it's typically more
+     *  accurate for Mandarin and zero-cost on our side. */
+    recognition?: string
+    title?: string
+    text?: string
+    fileName?: string
+    duration?: string | number
+  }
   /** Conversation id in OpenAPI's `openConversationId` shape — usable
    *  directly when calling /v1.0/robot/groupMessages/send. */
   conversationId: string
@@ -52,4 +82,7 @@ export interface DingTalkInboundMessage {
   sessionWebhookExpiredTime?: number
   createAt?: number
   isAdmin?: boolean
+  /** Catch-all for unknown fields — we never index this in code, but
+   *  preserving it lets the debug-log path dump the full payload. */
+  [extra: string]: unknown
 }

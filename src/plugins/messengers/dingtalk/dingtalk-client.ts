@@ -23,6 +23,12 @@ const log = rootLogger.child({ component: 'dingtalk-client' })
 const API_BASE = 'https://api.dingtalk.com'
 const URL_1V1 = `${API_BASE}/v1.0/robot/oToMessages/batchSend`
 const URL_GROUP = `${API_BASE}/v1.0/robot/groupMessages/send`
+const URL_MEDIA_DL = `${API_BASE}/v1.0/robot/messageFiles/download`
+
+/** Hard cap on a single inbound media download. DingTalk caps voice at
+ *  ~2 MB and images at ~10 MB on the consumer client; 20 MB gives us
+ *  headroom for files without letting a runaway upload fill the disk. */
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024
 
 type MessageHandler = (msg: DingTalkInboundMessage) => Promise<void>
 
@@ -122,6 +128,100 @@ export class DingTalkClient {
       title: title ?? firstLine,
       text,
     })
+  }
+
+  /** Download an inbound image / voice / file message's binary payload.
+   *
+   *  DingTalk hands the bot a short-lived `downloadCode` in each media
+   *  inbound; we trade it (plus our robotCode) for a presigned downloadUrl
+   *  on alibaba CDN, then GET that URL and return the bytes.
+   *
+   *  Returns null on any error (caller surfaces a "[download failed:...]"
+   *  marker instead of silently dropping the user's message). MAX cap is
+   *  enforced; oversize payloads throw before allocating the buffer.
+   *
+   *  Reference: POST /v1.0/robot/messageFiles/download
+   *             { downloadCode, robotCode }
+   *             header: x-acs-dingtalk-access-token
+   *             response: { downloadUrl }   (sometimes nested under .data)
+   */
+  async downloadMessageFile(downloadCode: string): Promise<
+    { buffer: Buffer; contentType: string } | null
+  > {
+    if (!downloadCode) return null
+    let accessToken: string | undefined
+    try {
+      accessToken = await this.dw.getAccessToken()
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) },
+        'dingtalk: getAccessToken failed before media download')
+      return null
+    }
+    if (!accessToken) return null
+
+    // Step 1: exchange downloadCode for a CDN URL.
+    let downloadUrl: string | null = null
+    try {
+      const res = await fetch(URL_MEDIA_DL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-acs-dingtalk-access-token': String(accessToken),
+        },
+        body: JSON.stringify({ downloadCode, robotCode: this.lastSeenRobotCode }),
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        log.warn({
+          status: res.status,
+          body: txt.slice(0, 200),
+          event: 'dingtalk.media.exchange_failed',
+        }, 'messageFiles/download API rejected the downloadCode exchange')
+        return null
+      }
+      const payload = await res.json().catch(() => null) as
+        | { downloadUrl?: string; data?: { downloadUrl?: string } }
+        | null
+      downloadUrl = payload?.downloadUrl ?? payload?.data?.downloadUrl ?? null
+      if (!downloadUrl) {
+        log.warn({ event: 'dingtalk.media.no_url_in_response', payload },
+          'exchange succeeded but response had no downloadUrl')
+        return null
+      }
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) },
+        'dingtalk: downloadCode exchange threw')
+      return null
+    }
+
+    // Step 2: GET the CDN URL. DingTalk's CDN may be on different alibaba
+    // hosts depending on the file type / region; no host restriction here.
+    try {
+      const res = await fetch(downloadUrl)
+      if (!res.ok) {
+        log.warn({ status: res.status, event: 'dingtalk.media.cdn_get_failed' },
+          'CDN refused the download')
+        return null
+      }
+      const contentLength = parseInt(res.headers.get('content-length') ?? '0', 10)
+      if (Number.isFinite(contentLength) && contentLength > MAX_MEDIA_BYTES) {
+        log.warn({ contentLength, max: MAX_MEDIA_BYTES, event: 'dingtalk.media.too_large' },
+          'media exceeds size cap; refusing to download')
+        return null
+      }
+      const arr = await res.arrayBuffer()
+      if (arr.byteLength > MAX_MEDIA_BYTES) {
+        log.warn({ bytes: arr.byteLength, max: MAX_MEDIA_BYTES, event: 'dingtalk.media.too_large' },
+          'media bytes exceed size cap after download')
+        return null
+      }
+      const contentType = res.headers.get('content-type') ?? 'application/octet-stream'
+      return { buffer: Buffer.from(arr), contentType }
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) },
+        'dingtalk: CDN GET threw')
+      return null
+    }
   }
 
   /** Shared POST path. msgKey + msgParam (stringified inner object) is

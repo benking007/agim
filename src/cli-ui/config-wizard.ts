@@ -127,17 +127,27 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     { id: 'codex', key: 'codex' },
     { id: 'copilot', key: 'copilot' },
   ]
-  const currentList = cfg.agents || []
+  // Effective enabled list: union of cfg.agents and cfg.defaultAgent.
+  // Reason: historical configs can drift into `agents: []` + a non-empty
+  // `defaultAgent` (legacy `config <agent>` flow + a later wizard run that
+  // unchecked all). Reading `cfg.agents` alone made the wizard show the
+  // user's working default-agent as unchecked, which looked like the
+  // wizard "lost their selection" (user-reported 2026-05-11).
+  const validIds = new Set(items.map(i => i.id))
+  const effective = Array.from(new Set([
+    ...(cfg.agents || []),
+    ...(cfg.defaultAgent && validIds.has(cfg.defaultAgent) ? [cfg.defaultAgent] : []),
+  ]))
   console.log()
   console.log(t(lang, 'agents.title'))
-  console.log(currentList.length === 0
+  console.log(effective.length === 0
     ? t(lang, 'agents.current_none')
-    : t(lang, 'agents.current', { list: currentList.join(', '), default: cfg.defaultAgent ?? '(none)' }))
+    : t(lang, 'agents.current', { list: effective.join(', '), default: cfg.defaultAgent ?? '(none)' }))
   console.log()
   const choices: Array<{ value: 'edit' | 'default'; name: string }> = [
     { value: 'edit', name: t(lang, 'agents.action.edit') },
   ]
-  if (currentList.length > 1) {
+  if (effective.length > 1) {
     choices.push({ value: 'default', name: t(lang, 'agents.action.default') })
   }
   const action = await menu<'edit' | 'default'>({
@@ -153,13 +163,13 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     const def = await menu<string>({
       lang,
       message: t(lang, 'agents.default'),
-      choices: currentList.map(p => ({ value: p, name: p })),
-      default: currentList.includes(cfg.defaultAgent) ? cfg.defaultAgent : currentList[0],
+      choices: effective.map(p => ({ value: p, name: p })),
+      default: effective.includes(cfg.defaultAgent) ? cfg.defaultAgent : effective[0],
     }) as string
-    return { ...cfg, defaultAgent: def }
+    return { ...cfg, agents: effective, defaultAgent: def }
   }
 
-  const current = new Set(currentList)
+  const current = new Set(effective)
   const picked = await multiSelect<string>({
     lang,
     message: t(lang, 'agents.pick'),
@@ -170,8 +180,10 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     })),
   })
   if (picked.length === 0) {
+    // User explicitly unchecked everything — clear both fields so the
+    // config doesn't carry a stale defaultAgent into the next run.
     console.log(t(lang, 'agents.saved'))
-    return { ...cfg, agents: [] }
+    return { ...cfg, agents: [], defaultAgent: '' }
   }
   // Default agent — pick from those just enabled.
   const def = await menu<string>({

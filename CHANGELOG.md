@@ -40,6 +40,18 @@ deeper in the flow.
 
    (`src/cli-ui/config-wizard.ts`, `src/cli-ui/i18n.ts`)
 
+4. **Agent checkbox state silently dropped a working default.** A user
+   with `config.json` containing `agents: []` + `defaultAgent: "opencode"`
+   (a drift state the legacy `config <agent>` flow + an earlier wizard
+   unselection can produce) saw the agents section showing nothing
+   checked, contradicting the fact that opencode is actually their
+   active default. Fix: the section now treats the **union** of
+   `cfg.agents` and `cfg.defaultAgent` as the effective enabled set —
+   so the working default shows as pre-checked, and "currently enabled"
+   reflects reality. When the user explicitly unchecks everything,
+   `defaultAgent` is now also cleared so the next run starts from a
+   consistent empty state instead of resurrecting the stale default.
+
 No behavior change for first-time setup — only relevant when re-entering
 the wizard to tweak. Tested via `tsc --noEmit`.
 

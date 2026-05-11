@@ -4,9 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.4.0-rc1] - 2026-05-11
+## [0.4.0] - 2026-05-11
 
-> **核心主题**：codex 也接 imhub MCP——/remind 4 工具 + /memo 5 工具，9 个全部对它开放。从此三大 agent（claude-code / opencode / codex）功能对等。codex 内置工具的 per-call approval 仍未做（需要把 codex 跑成 MCP server 模式让我们当 client，是个更大的工程，留给后续）。
+> **核心主题（两条）**：
+>
+> 1. **codex 也接 imhub MCP**——/remind 4 工具 + /memo 5 工具，9 个全部对它开放。三大 agent（claude-code / opencode / codex）功能对等。
+> 2. **位置消息架构统一化**——Telegram / 飞书的原生位置消息原本走「pending-reply + 启发式拆词」决策链，bug 频出。新版改成 agent-driven：adapter 只缓存坐标，cli.ts 注入结构化 annotation 到用户下一条文本，agent 用 LLM 决策。删除 ~400 行启发式代码，4 个 IM 渠道行为完全一致。
+
+### Refactored — Telegram + 飞书位置消息走 agent-driven 决策（对齐 WeChat H5 流程）
+**问题**：旧流程 adapter 拿到原生 pin → setPending → ask "回 y/n/名字" → cli.ts 跑 `memo-what-extract` 启发式（剥前缀 / cut at verb / `的`-split / LLM 兜底 / slice 兜底）→ save_memo。这条链跑出过的 bug 包括：
+  - "记下，这是一个好吃的日料店" → what="记下"（前缀没剥）
+  - "我车暂时停这里，晚点过来取" → what="车暂时"（state 词没识别）
+  - "这是我公司地址，记录下" → what="这"（demonstrative 没剥）
+  - "一个好吃的日料店" → what="一个好吃的日"（slice 截断在「的」前）
+
+每修一个 case 又冒出新的，根因是决策者错位——adapter 用 deterministic 代码做语言理解。
+
+**重构**：
+- 新增 `src/core/location-context.ts`：~80 行纯 TTL 缓存（5min, single-shot consume）+ `formatLocationAnnotation()`
+- 删除 `pending-memo-location.ts` + `memo-what-extract.ts`（共 ~400 行）+ 它们的 test 文件
+- Telegram adapter：`message:location` / `message:venue` 改成 `setLocationContext` + 简短 ack（"📍 位置已收到 (lat, lng)。告诉我要做什么。"）
+- 飞书 adapter：`message_type:'location'` 同上
+- cli.ts：agent dispatch 前如果有缓存的位置，把 `[user just shared location: lat=…, lng=…, name="X", address="Y", accuracy_m=N]` 前缀拼到 `ctx.message.text`，单次 consume 后清除
+- `save_memo` MCP tool description 新增 "📍 LOCATION ANNOTATION" 段，教 agent 识别这个 tag、直接用 lat/lng、不要再调 `request_location_capture`
+
+**用户感知变化**：
+- bot 不再问 "回 y/n"——直接看用户下一条说什么，agent 用 LLM + 整段上下文决策
+- 任何长句、短词、混合表达都不再走启发式：「这是我公司」「记下日料店」「不用记了」「这是哪里」都自然处理
+- 每个 pin 后续消息额外付出一次 agent 调用（旧版是 deterministic 直存）；用稳定性换费用
+
+### Added — codex 也能用 imhub MCP 工具
+（这一段已在 0.4.0-rc1 时落地，下面是 rc1 的内容）
+
+之前 codex 是唯一一个 reminder/memo 工具完全无法触达的 agent，因为 codex CLI 没有 `--mcp-config` flag。验证发现 codex 0.130.0+ 支持通过 `-c mcp_servers.<name>.{command,args,env}=...` 的 TOML 内联 override 在调用层注册 MCP server——per-spawn、不污染全局 `~/.codex/config.toml`。
+
+实现：
+
+- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID`，已经 channel-agnostic）。
+- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`IMHUB_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context 任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
+- **`codex exec resume` 不再接 `-s`**（codex 0.130 改的）：resume 路径继承原会话 sandbox，传 `-s` 直接 `unexpected argument` 报错。修复：sandbox flag 仅在 fresh `exec` 加。
+- **`--dangerously-bypass-approvals-and-sandbox`**：codex 在 `exec --json` 非交互模式下默认会 auto-cancel 所有 MCP 工具调用（找不到 TUI 让用户点 approve）。这个 flag 是 codex 0.130 目前唯一让 MCP 工具在非交互模式下能实际运行的方式。代价是 codex 自己的 bash/edit 也失去 sandbox。提供 `IMHUB_CODEX_SAFE_MODE=1` opt-out（代价：MCP 工具不可用）。
+- **AGENTS.md 写明命名差异**：claude-code/opencode 暴露 `mcp__imhub__save_memo`；codex 暴露 bare name `save_memo`。模型按错名调用会静默失败。
+
+**版本下限**：codex CLI ≥ 0.130.0（`mcp` 子命令 + `-c mcp_servers.*` TOML override 同时存在的最早稳定版）。
+
+**不在范围**：codex 自己的 Read/Edit/Bash 走 approval-bus——需要把 codex 跑成 `codex mcp-server` 让 im-hub 当 MCP client，是 v0.5.x 级别的大重构。
+
+## [0.3.1] - 2026-05-11
 
 ### Added — codex 也能用 imhub MCP 工具
 之前 codex 是唯一一个 reminder/memo 工具完全无法触达的 agent，因为 codex CLI 没有 `--mcp-config` flag。验证发现 codex 0.130.0+ 支持通过 `-c mcp_servers.<name>.{command,args,env}=...` 的 TOML 内联 override 在调用层注册 MCP server——per-spawn、不污染全局 `~/.codex/config.toml`。

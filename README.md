@@ -356,10 +356,11 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.2.37 | Reminders subsystem — `/remind`, LLM intent + polish, agent MCP tools, email channel, web `/reminders`, WeChat context_token persistence |
 | v0.3.0 | `/memo` 5W1H persistent memory — `/location` → `/memo` rename, address geocoding via Baidu Maps, opencode HTTP driver SSE drain |
 | v0.3.1 | Native location messages on Telegram + Feishu, GCJ-02 → WGS-84 fix across all ingest paths, `memo` column + LLM/heuristic `what` extractor |
+| v0.4.0 | codex agent now sees the full imhub MCP toolset (reminder + memo); Telegram + Feishu location messages routed through agent-driven decision making (matches WeChat H5 architecture) |
 
-### v0.4.0 (next)
+### v0.5.0 (next)
 
-- [ ] codex MCP-server mode (so codex can use reminder tools too)
+- [ ] codex MCP-server mode — `codex mcp-server` stdio + im-hub as MCP client, enabling per-tool approval cards for codex's own bash/edit/read
 - [ ] DingTalk adapter
 - [ ] Slack adapter
 - [ ] Feishu / Discord button-style approval cards

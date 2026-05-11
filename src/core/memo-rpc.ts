@@ -90,6 +90,7 @@ function summarizeMemo(m: Memo): Record<string, unknown> {
   }
   if (m.how) out.how = m.how
   if (m.why) out.why = m.why
+  if (m.memo) out.memo = m.memo
   if (m.expires_at) out.expiresAt = m.expires_at
   return out
 }
@@ -106,6 +107,7 @@ async function handleSave(payload: Record<string, unknown>, ctx: RunContext): Pr
   const whenText  = typeof payload.when_text === 'string' ? payload.when_text.trim().slice(0, 80) : null
   const how       = typeof payload.how === 'string' ? payload.how.trim().slice(0, 200) : null
   const why       = typeof payload.why === 'string' ? payload.why.trim().slice(0, 200) : null
+  const memo      = typeof payload.memo === 'string' ? payload.memo.trim().slice(0, 1000) : null
 
   // Location: accept either coords directly OR a geocodable address.
   let whereLat: number | null = typeof payload.where_lat === 'number' ? payload.where_lat : null
@@ -139,7 +141,7 @@ async function handleSave(payload: Record<string, unknown>, ctx: RunContext): Pr
       userId: ctx.userId,
       what, who, whenAt, whenText,
       whereLat, whereLng, whereLabel,
-      how, why,
+      how, why, memo,
       expiresAt,
       source,
     })
@@ -244,6 +246,7 @@ async function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): 
   if ('where_label' in payload) u.whereLabel = payload.where_label
   if ('how' in payload)         u.how = payload.how
   if ('why' in payload)         u.why = payload.why
+  if ('memo' in payload)        u.memo = payload.memo
   if ('expires_in_hours' in payload) u.expiresAt = expiresAtFrom(payload.expires_in_hours)
   if ('expires_at' in payload && typeof payload.expires_at === 'string') {
     u.expiresAt = payload.expires_at

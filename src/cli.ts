@@ -27,6 +27,7 @@ import { install as installApprovalRouter, tryHandleApprovalReply, platformToMes
 import { tryConsumeReply as tryConsumePendingReminderReply } from './core/pending-reminder.js'
 import { tryConsumeReply as tryConsumePendingMemoLocationReply } from './core/pending-memo-location.js'
 import { createMemo as createMemoRow } from './core/memos.js'
+import { extractWhatAndMemo } from './core/memo-what-extract.js'
 import { tryDetectReminderIntent } from './core/remind-intent.js'
 import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
@@ -283,14 +284,39 @@ program
           if (memoLocDecision.decision === 'cancel') {
             await messenger.sendMessage(ctx.message.threadId, '👌 跳过了，没记')
           } else {
-            const { pending, what } = memoLocDecision
+            const { pending, what: rawWhat } = memoLocDecision
             try {
+              // Long-text path: when the user replies with a full sentence
+              // ("我车暂时停这里，晚点过来取"), extract a short noun for the
+              // searchable `what` and preserve the full phrasing in `memo`.
+              // Venue confirmations (rawWhat === pending.venueLabel) skip
+              // extraction entirely since the label is already canonical.
+              let what = rawWhat
+              let memo: string | null = null
+              const isVenueConfirm = pending.venueLabel && rawWhat === pending.venueLabel
+              if (!isVenueConfirm) {
+                const extracted = await extractWhatAndMemo({
+                  text: rawWhat,
+                  platform: ctx.platform,
+                  channelId: ctx.channelId,
+                  threadId: ctx.message.threadId,
+                })
+                what = extracted.what
+                memo = extracted.memo
+                ctx.logger.info({
+                  event: 'memo.location.extracted',
+                  method: extracted.method,
+                  rawLen: rawWhat.length,
+                  what,
+                })
+              }
               const id = createMemoRow({
                 platform: ctx.platform,
                 channelId: ctx.channelId,
                 threadId: ctx.message.threadId,
                 userId: ctx.message.userId || '',
                 what,
+                memo,
                 whereLat: pending.lat,
                 whereLng: pending.lng,
                 whereLabel: pending.venueAddress ?? pending.venueLabel ?? null,
@@ -299,9 +325,10 @@ program
               const accuracyHint = typeof pending.accuracy === 'number'
                 ? `（精度 ±${Math.round(pending.accuracy)}m）`
                 : ''
+              const memoHint = memo && memo !== what ? `\n   记录原文：${memo}` : ''
               await messenger.sendMessage(
                 ctx.message.threadId,
-                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}`,
+                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}${memoHint}`,
               )
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)

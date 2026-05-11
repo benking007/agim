@@ -87,6 +87,9 @@ export interface Memo {
   where_label: string | null
   how: string | null
   why: string | null
+  /** Free-text full intent — preserves the user's complete phrasing when
+   *  `what` is an extracted short noun. Optional; null when unset. */
+  memo: string | null
 
   expires_at: string | null
   source: MemoSource
@@ -121,12 +124,16 @@ const helper = createSqliteHelper({
       where_label TEXT,
       how         TEXT,
       why         TEXT,
+      memo        TEXT,
 
       expires_at  TEXT,
       source      TEXT    NOT NULL DEFAULT 'agent',
       created_at  TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours'))
     );
+    -- Idempotent migration for DBs that pre-date the memo column. SQLite
+    -- doesn't have ADD COLUMN IF NOT EXISTS; the helper's exec ignores
+    -- "duplicate column" errors via the migrate hook below.
     CREATE INDEX IF NOT EXISTS idx_memos_user_recent
       ON memos(platform, user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memos_expires
@@ -134,6 +141,17 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_memos_what  ON memos(what);
     CREATE INDEX IF NOT EXISTS idx_memos_who   ON memos(who);
   `,
+  init: (db) => {
+    // ALTER TABLE ADD COLUMN — idempotent: catch "duplicate column" and
+    // proceed. New DBs already got the column via CREATE TABLE above;
+    // old DBs (created before this column existed) get it here.
+    try {
+      db.exec("ALTER TABLE memos ADD COLUMN memo TEXT")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/duplicate column|already exists/i.test(msg)) throw err
+    }
+  },
 })
 
 // ─── Validation ─────────────────────────────────────────────────────────
@@ -162,6 +180,9 @@ export interface CreateMemoInput {
   whereLabel?: string | null
   how?: string | null
   why?: string | null
+  /** Free-text full intent — preserve user's complete phrasing when `what`
+   *  is a shorter extracted noun. Optional. */
+  memo?: string | null
 
   expiresAt?: string | null
   source?: MemoSource
@@ -180,10 +201,10 @@ export function createMemo(input: CreateMemoInput): number {
        (platform, channel_id, thread_id, user_id,
         what, who, when_at, when_text,
         where_lat, where_lng, where_label,
-        how, why,
+        how, why, memo,
         expires_at, source,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?,  ?, ?)`,
+     VALUES (?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?)`,
   )
   const r = stmt.run(
     input.platform, input.channelId, input.threadId, input.userId ?? '',
@@ -196,6 +217,7 @@ export function createMemo(input: CreateMemoInput): number {
     input.whereLabel ?? null,
     input.how ?? null,
     input.why ?? null,
+    input.memo ?? null,
     expiresAt,
     input.source ?? 'agent',
     now, now,
@@ -219,6 +241,7 @@ export interface UpdateMemoInput {
   whereLabel?: string | null
   how?: string | null
   why?: string | null
+  memo?: string | null
   expiresAt?: string | null
 }
 
@@ -254,6 +277,7 @@ export function updateMemo(id: number, input: UpdateMemoInput, opts: OwnerOpts =
   if (input.whereLabel !== undefined) setIf('where_label', input.whereLabel)
   if (input.how !== undefined)       setIf('how', input.how)
   if (input.why !== undefined)       setIf('why', input.why)
+  if (input.memo !== undefined)      setIf('memo', input.memo)
   if (input.expiresAt !== undefined) setIf('expires_at', input.expiresAt === null ? null : normalizeWhenAt(input.expiresAt))
   if (sets.length === 0) return false
   // Stamp updated_at with the same UTC+8 shape as create + sweep.
@@ -344,9 +368,10 @@ export function searchMemos(opts: SearchOpts = {}): Memo[] {
     wheres.push(`(
       what LIKE ? ESCAPE '\\' OR who LIKE ? ESCAPE '\\' OR
       where_label LIKE ? ESCAPE '\\' OR how LIKE ? ESCAPE '\\' OR
-      why LIKE ? ESCAPE '\\' OR when_text LIKE ? ESCAPE '\\'
+      why LIKE ? ESCAPE '\\' OR when_text LIKE ? ESCAPE '\\' OR
+      memo LIKE ? ESCAPE '\\'
     )`)
-    for (let i = 0; i < 6; i++) args.push(p)
+    for (let i = 0; i < 7; i++) args.push(p)
   }
   if (opts.who?.trim()) {
     wheres.push(`who LIKE ? ESCAPE '\\'`); args.push(`%${escapeLike(opts.who.trim())}%`)

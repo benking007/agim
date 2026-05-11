@@ -537,6 +537,12 @@ export function buildServer(client: ApprovalClient): McpServer {
         address: z.string().optional().describe('Free-text address — geocoded server-side via Baidu when where_lat/lng absent'),
         how: z.string().optional().describe('Manner / process'),
         why: z.string().optional().describe('Reason / motivation'),
+        memo: z.string().optional().describe(
+          'Free-text full intent — preserves the user\'s complete phrasing when `what` is a ' +
+          'shorter extracted noun. Set this when the user said something longer than the noun ' +
+          'you captured in `what` (e.g. what="车", memo="我车暂时停这里，晚点过来取"). ' +
+          'Searchable via search_memos query. Omit when `what` already captures the full intent.',
+        ),
         expires_in_hours: z.number().positive().optional().describe('Auto-expire in N hours. Omit for permanent.'),
         _im_context: imContextSchema,
       },
@@ -589,12 +595,14 @@ export function buildServer(client: ApprovalClient): McpServer {
         '  "今天记了什么？"     → { when_after: "<2026-05-11 00:00:00>" }  (UTC+8)\n' +
         '  "找下苹果发布会"     → { query: "苹果发布会" }\n\n' +
         'Returns { items: [{ id, what, who, whenAt/whenText, where: { lat, lng, label, mapUrl, ' +
-        'mapUrls } if location set, how, why, expiresAt, createdAt }] }. Format the answer ' +
-        'naturally for the user: 1-2 sentences summarizing the find + (if where set) all three ' +
-        'map URLs using markdown links `[百度地图](url) · [高德地图](url) · [Google](url)`. ' +
-        'Do NOT print raw URLs. If multiple matches, lead with the most recent.',
+        'mapUrls } if location set, how, why, memo (full user phrasing when set), expiresAt, ' +
+        'createdAt }] }. Format the answer naturally for the user: 1-2 sentences summarizing the ' +
+        'find + (if where set) all three map URLs using markdown links `[百度地图](url) · ' +
+        '[高德地图](url) · [Google](url)`. When `memo` is set on the match (the full original ' +
+        'phrasing), quote it briefly so the user recognizes the entry. Do NOT print raw URLs. ' +
+        'If multiple matches, lead with the most recent.',
       inputSchema: {
-        query: z.string().optional().describe('Free-text — fuzzy LIKE match across what/who/where_label/how/why/when_text'),
+        query: z.string().optional().describe('Free-text — fuzzy LIKE match across what/who/where_label/how/why/when_text/memo'),
         who: z.string().optional().describe('Filter by who field (LIKE match)'),
         what: z.string().optional().describe('Filter by what field (LIKE match)'),
         has_location: z.boolean().optional().describe('When true, only memos with where_lat set'),

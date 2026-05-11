@@ -532,6 +532,32 @@ export function wgs84ToGcj02(lat: number, lng: number): { lat: number; lng: numb
   return { lat: lat + dLat, lng: lng + dLng }
 }
 
+/**
+ * Reverse of wgs84ToGcj02. Useful when an upstream gives us GCJ-02 coords
+ * but our DB convention is WGS-84.
+ *
+ * Common case: iOS Core Location in China returns GCJ-02 by design (Apple
+ * applies the offset to comply with PRC regulations). Telegram on a Chinese
+ * iPhone forwards exactly those coords. Without this reverse, the values
+ * get re-offset when we build amap/baidu URLs → marker lands 500m–1km off.
+ *
+ * Math: GCJ→WGS doesn't have a closed-form inverse, so we use the standard
+ * Newton's-method-style refinement — compute the forward offset at the
+ * GCJ point, subtract to get a candidate WGS point, then iterate. Three
+ * passes converge to sub-meter precision for any reasonable input.
+ */
+export function gcj02ToWgs84(lat: number, lng: number): { lat: number; lng: number } {
+  if (outOfChina(lat, lng)) return { lat, lng }
+  let wgsLat = lat
+  let wgsLng = lng
+  for (let i = 0; i < 3; i++) {
+    const forward = wgs84ToGcj02(wgsLat, wgsLng)
+    wgsLat = lat - (forward.lat - wgsLat)
+    wgsLng = lng - (forward.lng - wgsLng)
+  }
+  return { lat: wgsLat, lng: wgsLng }
+}
+
 function outOfChina(lat: number, lng: number): boolean {
   return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
 }

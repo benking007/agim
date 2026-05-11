@@ -15,7 +15,7 @@ import { generateTraceId, createLogger, logger as rootLogger } from '../core/log
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
-import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
+import { createMemo, updateMemo, getMemo, mapUrls, gcj02ToWgs84 } from '../core/memos.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -254,14 +254,26 @@ export async function startWebServer(options: {
         sendJson(res, 400, { error: 'invalid JSON' }); return
       }
       const tk = typeof parsed.t === 'string' ? parsed.t : ''
-      const lat = typeof parsed.lat === 'number' ? parsed.lat : NaN
-      const lng = typeof parsed.lng === 'number' ? parsed.lng : NaN
-      if (!tk || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const rawLat = typeof parsed.lat === 'number' ? parsed.lat : NaN
+      const rawLng = typeof parsed.lng === 'number' ? parsed.lng : NaN
+      if (!tk || !Number.isFinite(rawLat) || !Number.isFinite(rawLng)) {
         sendJson(res, 400, { error: '请求体缺少 t / lat / lng' }); return
       }
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      if (rawLat < -90 || rawLat > 90 || rawLng < -180 || rawLng > 180) {
         sendJson(res, 400, { error: '坐标超出有效范围' }); return
       }
+      // navigator.geolocation in browsers running on Apple platforms returns
+      // coordinates as Core Location hands them up — and Apple applies the
+      // GCJ-02 offset for inside-China coords (PRC compliance requirement,
+      // since iOS 7). Same for Google's fused-location on Android in China.
+      // So the H5 page typically ships us GCJ-02 even though the JS API name
+      // implies WGS-84. Our DB convention is WGS-84 (and the amap/baidu URL
+      // builders assume WGS-84 input), so reverse here. gcj02ToWgs84 is a
+      // no-op outside the China bbox, so foreign users with clean WGS-84
+      // pass through unchanged.
+      const wgs = gcj02ToWgs84(rawLat, rawLng)
+      const lat = wgs.lat
+      const lng = wgs.lng
       const cr = consumeToken(tk)
       if (!cr.ok) {
         const msg = cr.reason === 'expired' ? '链接已过期，请重新让 bot 发起记录' : '链接无效或已被使用'

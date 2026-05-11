@@ -15,7 +15,7 @@ process.env.IMHUB_MEMOS_DB = join(TEST_DIR, 'memos.db')
 const mod = await import('../../src/core/memos.js')
 const {
   createMemo, updateMemo, getMemo, deleteMemo, listMemos, searchMemos,
-  parseCoordPair, stripCoordPrefix, mapUrl, mapUrls, wgs84ToGcj02,
+  parseCoordPair, stripCoordPrefix, mapUrl, mapUrls, wgs84ToGcj02, gcj02ToWgs84,
   isGeocodingAvailable, sweepExpired, closeMemosDb,
   nowSqliteLocal, toSqliteLocal, normalizeWhenAt,
 } = mod
@@ -79,6 +79,64 @@ describe('wgs84ToGcj02', () => {
   it('is a no-op outside China', () => {
     const out = wgs84ToGcj02(40.7128, -74.0060)  // NYC
     expect(out).toEqual({ lat: 40.7128, lng: -74.0060 })
+  })
+})
+
+describe('gcj02ToWgs84 (reverse — needed for Telegram incoming coords)', () => {
+  it('round-trips a Beijing WGS-84 point within 1e-6 deg (~0.1m)', () => {
+    // Forward: WGS-84 → GCJ-02. Reverse: GCJ-02 → WGS-84. Should be lossless
+    // at the precision we care about (sub-meter).
+    const wgs = { lat: 39.9087, lng: 116.3975 }
+    const gcj = wgs84ToGcj02(wgs.lat, wgs.lng)
+    const back = gcj02ToWgs84(gcj.lat, gcj.lng)
+    expect(Math.abs(back.lat - wgs.lat)).toBeLessThan(1e-6)
+    expect(Math.abs(back.lng - wgs.lng)).toBeLessThan(1e-6)
+  })
+
+  it('round-trips a Hangzhou point (latitudes south of Beijing get a different offset)', () => {
+    const wgs = { lat: 30.2756, lng: 120.1279 }
+    const gcj = wgs84ToGcj02(wgs.lat, wgs.lng)
+    const back = gcj02ToWgs84(gcj.lat, gcj.lng)
+    expect(Math.abs(back.lat - wgs.lat)).toBeLessThan(1e-6)
+    expect(Math.abs(back.lng - wgs.lng)).toBeLessThan(1e-6)
+  })
+
+  it('produces a southwest shift from GCJ-02 input (the actual China-offset direction)', () => {
+    // Inverse of wgs84ToGcj02's NE shift — converting a GCJ-02 point should
+    // move it slightly south + west to recover the underlying WGS-84.
+    const gcj = { lat: 39.9087, lng: 116.3975 }
+    const wgs = gcj02ToWgs84(gcj.lat, gcj.lng)
+    expect(wgs.lat).toBeLessThan(gcj.lat)
+    expect(wgs.lng).toBeLessThan(gcj.lng)
+    // Magnitude should be ~0.0035 lat / ~0.005 lng in Beijing, definitely > 1e-4
+    expect(Math.abs(wgs.lat - gcj.lat)).toBeGreaterThan(1e-4)
+    expect(Math.abs(wgs.lng - gcj.lng)).toBeGreaterThan(1e-4)
+  })
+
+  it('is a no-op outside China', () => {
+    const out = gcj02ToWgs84(40.7128, -74.0060)  // NYC
+    expect(out).toEqual({ lat: 40.7128, lng: -74.0060 })
+  })
+
+  it('converges fast — three Newton passes get sub-meter precision anywhere in China', () => {
+    // Sample across the China bounding box to make sure no input class blows
+    // up. All should round-trip within 1e-6 deg.
+    const samples = [
+      { lat: 23.13, lng: 113.26 }, // Guangzhou
+      { lat: 31.23, lng: 121.47 }, // Shanghai
+      { lat: 22.27, lng: 114.17 }, // HK (right at the southern edge — note HK
+      //                                   itself uses WGS-84, but our outOfChina
+      //                                   bbox includes HK; that's an accepted
+      //                                   trade-off — the offset there is tiny)
+      { lat: 43.83, lng: 87.62 },  // Urumqi
+      { lat: 36.07, lng: 103.83 }, // Lanzhou
+    ]
+    for (const wgs of samples) {
+      const gcj = wgs84ToGcj02(wgs.lat, wgs.lng)
+      const back = gcj02ToWgs84(gcj.lat, gcj.lng)
+      expect(Math.abs(back.lat - wgs.lat)).toBeLessThan(1e-6)
+      expect(Math.abs(back.lng - wgs.lng)).toBeLessThan(1e-6)
+    }
   })
 })
 

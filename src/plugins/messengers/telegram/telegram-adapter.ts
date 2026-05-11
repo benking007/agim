@@ -22,6 +22,7 @@ import { Backoff } from '../../../utils/backoff.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
 import { setPending as setPendingMemoLocation } from '../../../core/pending-memo-location.js'
+import { gcj02ToWgs84 } from '../../../core/memos.js'
 
 const log = rootLogger.child({ component: 'telegram' })
 
@@ -178,25 +179,36 @@ export class TelegramAdapter implements MessengerAdapter {
     })
 
     // Location pins (📎 → Location → Send My Current Location / Choose on Map).
-    // Telegram delivers { latitude, longitude, horizontal_accuracy?, … }. We
-    // stash a short-lived pending entry keyed by thread and ask the user to
-    // name it — the next text reply runs through pending-memo-location's
-    // tryConsumeReply in cli.ts (BEFORE the agent dispatch) to save the memo.
+    //
+    // ⚠️ Coordinate-system gotcha: iOS Core Location and Android's Google
+    // Play Services both apply the GCJ-02 offset to locations inside China
+    // before handing them to apps (Apple/Google policy for PRC compliance).
+    // Telegram forwards exactly those coords verbatim — so what arrives in
+    // `loc.latitude` / `loc.longitude` is GCJ-02, NOT WGS-84.
+    //
+    // Our DB convention is WGS-84 (mapUrls() applies WGS→GCJ for amap and
+    // WGS→BD-09 hints for Baidu). If we stored the GCJ-02 input as-is, the
+    // amap link would land 500m–1km off and the Baidu link likewise. So we
+    // reverse the offset here before stashing.
+    //
+    // gcj02ToWgs84 is a no-op for coords outside China (we'd otherwise
+    // garble legitimate WGS-84 inputs from Telegram users abroad).
     this.bot.on('message:location', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const loc = botCtx.message.location
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
+      const wgs = gcj02ToWgs84(loc.latitude, loc.longitude)
       setPendingMemoLocation(threadKey, {
-        lat: loc.latitude,
-        lng: loc.longitude,
+        lat: wgs.lat,
+        lng: wgs.lng,
         accuracy: typeof loc.horizontal_accuracy === 'number' ? loc.horizontal_accuracy : undefined,
       })
       const accuracyHint = typeof loc.horizontal_accuracy === 'number'
         ? `（精度 ±${Math.round(loc.horizontal_accuracy)}m）`
         : ''
       const prompt = [
-        `📍 收到位置 (${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)})${accuracyHint}`,
+        `📍 收到位置 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})${accuracyHint}`,
         '',
         '要记一笔吗？回个名字（如「车」「茶馆」「家」），或回 `n` 跳过。',
         '5 分钟内有效。',
@@ -204,20 +216,25 @@ export class TelegramAdapter implements MessengerAdapter {
       void botCtx.reply(prompt).catch((err) => {
         log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to location share')
       })
-      log.info({ event: 'telegram.location.received', threadId, lat: loc.latitude, lng: loc.longitude })
+      log.info({
+        event: 'telegram.location.received',
+        threadId,
+        gcj_lat: loc.latitude, gcj_lng: loc.longitude,
+        wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+      })
     })
 
-    // Venues — location with a title + address (Telegram's "Place" picker).
-    // Title becomes the suggested `what`; we accept y/记下 to confirm without
-    // re-typing.
+    // Venues — same GCJ-02 → WGS-84 conversion applies (the embedded
+    // location object is from the same iOS/Android source as plain pins).
     this.bot.on('message:venue', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const v = botCtx.message.venue
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
+      const wgs = gcj02ToWgs84(v.location.latitude, v.location.longitude)
       setPendingMemoLocation(threadKey, {
-        lat: v.location.latitude,
-        lng: v.location.longitude,
+        lat: wgs.lat,
+        lng: wgs.lng,
         venueLabel: v.title,
         venueAddress: v.address,
       })

@@ -39,8 +39,15 @@ const TEST_TOKEN = 'web-test-token-1234567890abc'
 
 let port = 0
 let close: () => void
+let originalRequireAuth: string | undefined
 
 beforeAll(async () => {
+  // Force auth on so the rejection-path tests below see the same gate the
+  // production deployment exercises. Default is localhost-open, which is
+  // a UX choice for self-hosters but makes the 401/302 expectations here
+  // platform-dependent.
+  originalRequireAuth = process.env.IMHUB_WEB_REQUIRE_AUTH
+  process.env.IMHUB_WEB_REQUIRE_AUTH = '1'
   registry.registerAgent(stubAgent)
   registry.registerMessenger(stubMessenger)
   mkdirSync(TOKEN_DIR, { recursive: true })
@@ -52,6 +59,8 @@ beforeAll(async () => {
 
 afterAll(() => {
   close?.()
+  if (originalRequireAuth === undefined) delete process.env.IMHUB_WEB_REQUIRE_AUTH
+  else process.env.IMHUB_WEB_REQUIRE_AUTH = originalRequireAuth
 })
 
 const url = (path: string): string => `http://127.0.0.1:${port}${path}`

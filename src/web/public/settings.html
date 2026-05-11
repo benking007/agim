@@ -997,11 +997,6 @@
           <p class="muted" id="baiduStatus" style="margin-top:8px;font-size:12px"></p>
         </div>
       `;
-
-      // Load env values + wire SMTP / Baidu controls. Done after render
-      // so the DOM nodes exist. Values come in masked; Reveal re-fetches
-      // with ?reveal=1 to expose the raw secret on demand.
-      void loadEnvSection();
     }
 
     async function loadEnvSection(reveal) {
@@ -1040,6 +1035,10 @@
     // Event binding
     // ==========================================
     function bindEvents() {
+      // Populate SMTP / Baidu env-backed fields. Values come in masked;
+      // the Reveal buttons re-fetch with ?reveal=1 on demand.
+      void loadEnvSection();
+
       // Agent toggles
       document.querySelectorAll('[data-toggle-agent]').forEach(el => {
         el.addEventListener('click', () => el.classList.toggle('active'));

@@ -936,8 +936,105 @@
             <button type="button" class="btn btn-primary" id="saveGeneral">${t('save')}</button>
           </div>
         </div>
+
+        <!-- SMTP (env-file) — feeds /remind email delivery -->
+        <div class="card">
+          <h2>📨 SMTP</h2>
+          <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px">
+            Email delivery for <code>/remind email me@x.com …</code>. Credentials live in <code>~/.im-hub/env</code> (chmod 600). Leave blank to disable.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label>Host</label>
+              <input type="text" id="smtpHost" placeholder="smtp.gmail.com" />
+            </div>
+            <div>
+              <label>Port</label>
+              <input type="number" id="smtpPort" placeholder="465" min="1" max="65535" />
+            </div>
+            <div>
+              <label>User (login email)</label>
+              <input type="text" id="smtpUser" placeholder="you@example.com" />
+            </div>
+            <div>
+              <label>Password / app token</label>
+              <input type="password" id="smtpPass" placeholder="••••••••" autocomplete="off" />
+            </div>
+            <div>
+              <label>From (defaults to user)</label>
+              <input type="text" id="smtpFrom" placeholder="" />
+            </div>
+            <div>
+              <label>TLS mode</label>
+              <select id="smtpSecure">
+                <option value="auto">auto</option>
+                <option value="true">true (SSL on connect, port 465)</option>
+                <option value="false">false (STARTTLS, port 587)</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn btn-primary" id="saveSmtp">${t('save')}</button>
+            <button type="button" class="btn" id="clearSmtp">Disable SMTP</button>
+            <button type="button" class="btn" id="revealSmtp" title="Show the stored password">Reveal</button>
+          </div>
+          <p class="muted" id="smtpStatus" style="margin-top:8px;font-size:12px"></p>
+        </div>
+
+        <!-- Baidu Maps AK (env-file) — feeds /memo address geocoding -->
+        <div class="card">
+          <h2>🗺 Baidu Maps AK</h2>
+          <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px">
+            Enables <code>/memo</code> address-to-coords lookup. Without it, /memo still works via raw coords or browser GPS share. Free AK: <a href="https://lbsyun.baidu.com/" target="_blank">lbsyun.baidu.com</a> → Console → 应用管理 → 创建应用 → 服务端 API.
+          </p>
+          <label>IMHUB_BAIDU_MAP_AK</label>
+          <input type="text" id="baiduAk" placeholder="32-char AK starting with non-digit" style="max-width:480px" />
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn btn-primary" id="saveBaidu">${t('save')}</button>
+            <button type="button" class="btn" id="clearBaidu">Clear</button>
+            <button type="button" class="btn" id="revealBaidu" title="Show the stored AK">Reveal</button>
+          </div>
+          <p class="muted" id="baiduStatus" style="margin-top:8px;font-size:12px"></p>
+        </div>
       `;
+
+      // Load env values + wire SMTP / Baidu controls. Done after render
+      // so the DOM nodes exist. Values come in masked; Reveal re-fetches
+      // with ?reveal=1 to expose the raw secret on demand.
+      void loadEnvSection();
     }
+
+    async function loadEnvSection(reveal) {
+      try {
+        const url = reveal ? '/api/env?reveal=1' : '/api/env';
+        const data = await authFetch(url).then(r => r.json());
+        const env = data.env || {};
+        const set = (id, key) => {
+          const el = document.getElementById(id);
+          if (el) el.value = env[key] != null ? env[key] : '';
+        };
+        set('smtpHost', 'IMHUB_SMTP_HOST');
+        set('smtpPort', 'IMHUB_SMTP_PORT');
+        set('smtpUser', 'IMHUB_SMTP_USER');
+        set('smtpPass', 'IMHUB_SMTP_PASS');
+        set('smtpFrom', 'IMHUB_SMTP_FROM');
+        const sec = document.getElementById('smtpSecure');
+        if (sec) sec.value = env['IMHUB_SMTP_SECURE'] || 'auto';
+        set('baiduAk', 'IMHUB_BAIDU_MAP_AK');
+        const smtpStatus = document.getElementById('smtpStatus');
+        const baiduStatus = document.getElementById('baiduStatus');
+        if (smtpStatus) smtpStatus.textContent = env['IMHUB_SMTP_HOST']
+          ? `Loaded${reveal ? ' (raw)' : ' (password masked)'}`
+          : '(no SMTP credentials set)';
+        if (baiduStatus) baiduStatus.textContent = env['IMHUB_BAIDU_MAP_AK']
+          ? `Loaded${reveal ? ' (raw)' : ' (masked)'}`
+          : '(not set)';
+      } catch (err) {
+        const smtpStatus = document.getElementById('smtpStatus');
+        if (smtpStatus) smtpStatus.textContent = 'Failed to load: ' + (err && err.message ? err.message : err);
+      }
+    }
+
 
     // ==========================================
     // Event binding
@@ -1021,6 +1118,83 @@
         config.webPort = parseInt(document.getElementById('webPort').value, 10) || 3000;
         await saveConfig();
       });
+
+      // SMTP save: bundle all 6 fields into one /api/env PUT. Empty
+      // host treats it as "skip" — caller can also use the Disable button
+      // for an explicit clear of all 6 keys.
+      document.getElementById('saveSmtp')?.addEventListener('click', async () => {
+        const get = (id) => document.getElementById(id)?.value?.trim() ?? '';
+        const host = get('smtpHost'); const port = get('smtpPort');
+        const user = get('smtpUser'); const pass = get('smtpPass');
+        const from = get('smtpFrom'); const secure = get('smtpSecure');
+        if (!host) {
+          alert('Host is required (use Disable button to clear instead).');
+          return;
+        }
+        // pass === '' AND we have an existing masked value would erase the
+        // password. Detect: if pass starts with masked chars (4 plain + ****
+        // shape) we treat as "keep existing" by not sending the key.
+        const updates = {
+          IMHUB_SMTP_HOST: host,
+          IMHUB_SMTP_PORT: port || '465',
+          IMHUB_SMTP_USER: user,
+          IMHUB_SMTP_FROM: from || user,
+          IMHUB_SMTP_SECURE: secure || 'auto',
+        };
+        const looksMasked = pass && /\*{2,}/.test(pass);
+        if (pass && !looksMasked) updates.IMHUB_SMTP_PASS = pass;
+        else if (!pass) {
+          // Explicit blank — refuse, unless user clicks Disable.
+          alert('Password required (use Disable button to clear instead).');
+          return;
+        }
+        try {
+          await authFetch('/api/env', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }) });
+          alert('SMTP saved.');
+          await loadEnvSection();
+        } catch (err) {
+          alert('Save failed: ' + (err && err.message ? err.message : err));
+        }
+      });
+      document.getElementById('clearSmtp')?.addEventListener('click', async () => {
+        if (!confirm('Disable SMTP? Email reminder delivery will stop working.')) return;
+        const updates = {
+          IMHUB_SMTP_HOST: null, IMHUB_SMTP_PORT: null, IMHUB_SMTP_USER: null,
+          IMHUB_SMTP_PASS: null, IMHUB_SMTP_FROM: null, IMHUB_SMTP_SECURE: null,
+        };
+        try {
+          await authFetch('/api/env', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }) });
+          await loadEnvSection();
+        } catch (err) {
+          alert('Disable failed: ' + (err && err.message ? err.message : err));
+        }
+      });
+      document.getElementById('revealSmtp')?.addEventListener('click', () => loadEnvSection(true));
+
+      // Baidu AK
+      document.getElementById('saveBaidu')?.addEventListener('click', async () => {
+        const ak = document.getElementById('baiduAk')?.value?.trim() || '';
+        if (!ak) { alert('AK required (use Clear button to remove instead).'); return; }
+        const looksMasked = /\*{2,}/.test(ak);
+        if (looksMasked) { alert('Looks like the masked placeholder — enter the real AK or Reveal first.'); return; }
+        try {
+          await authFetch('/api/env', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates: { IMHUB_BAIDU_MAP_AK: ak } }) });
+          alert('Baidu AK saved.');
+          await loadEnvSection();
+        } catch (err) {
+          alert('Save failed: ' + (err && err.message ? err.message : err));
+        }
+      });
+      document.getElementById('clearBaidu')?.addEventListener('click', async () => {
+        if (!confirm('Clear Baidu Maps AK? Address-based /memo lookups will stop.')) return;
+        try {
+          await authFetch('/api/env', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates: { IMHUB_BAIDU_MAP_AK: null } }) });
+          await loadEnvSection();
+        } catch (err) {
+          alert('Clear failed: ' + (err && err.message ? err.message : err));
+        }
+      });
+      document.getElementById('revealBaidu')?.addEventListener('click', () => loadEnvSection(true));
 
       // ==========================================
       // Workspaces (PR-C)

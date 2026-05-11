@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>im-hub-pro — Memos</title>
+  <script src="/_app.js"></script>
+  <style>
+    :root {
+      --bg: #fafafa; --fg: #222; --muted: #666; --border: #e5e7eb;
+      --card: #fff; --accent: #2563eb; --danger: #dc2626; --warn: #d97706;
+      --geo: #059669;
+    }
+    [data-theme="dark"] {
+      --bg: #1a1a1a; --fg: #e5e5e5; --muted: #999; --border: #333;
+      --card: #242424; --accent: #60a5fa; --danger: #f87171; --warn: #fbbf24;
+      --geo: #34d399;
+    }
+    body {
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      background: var(--bg); color: var(--fg); margin: 0; padding: 0;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--card);
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header nav a {
+      color: var(--muted); text-decoration: none; padding: 4px 10px;
+      border-radius: 4px; font-size: 13px; margin-left: 4px;
+    }
+    header nav a:hover { background: var(--bg); color: var(--fg); }
+    main { padding: 20px; max-width: 980px; margin: 0 auto; }
+    .toolbar {
+      display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;
+      align-items: center;
+    }
+    .toolbar input[type="text"] {
+      flex: 1; min-width: 200px;
+      padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card); color: var(--fg); font-size: 14px;
+    }
+    .toolbar input[type="text"]:focus { outline: none; border-color: var(--accent); }
+    .filter-btn {
+      padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; color: var(--muted); cursor: pointer;
+      font-size: 13px; transition: all 0.15s;
+    }
+    .filter-btn:hover { color: var(--fg); border-color: var(--fg); }
+    .filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .stats { color: var(--muted); font-size: 12px; }
+    .memo {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px; margin-bottom: 10px;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    }
+    .memo .body { flex: 1; min-width: 0; }
+    .memo .what {
+      font-weight: 600; margin-bottom: 4px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .memo .icon { font-size: 16px; }
+    .memo .id { color: var(--muted); font-size: 11px; font-weight: normal; }
+    .memo .original {
+      color: var(--muted); margin-bottom: 6px; font-size: 13px;
+      border-left: 2px solid var(--border); padding-left: 8px;
+    }
+    .memo .meta {
+      color: var(--muted); font-size: 12px; margin-top: 4px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .memo .meta .who::before { content: '👤 '; }
+    .memo .meta .when::before { content: '🗓 '; }
+    .memo .meta .geo { color: var(--geo); }
+    .memo .meta .geo::before { content: '📍 '; }
+    .memo .meta .platform { opacity: 0.7; }
+    .memo .meta .expires { color: var(--warn); }
+    .memo .meta .expires::before { content: '⏳ '; }
+    .memo .maps { margin-top: 6px; font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .memo .maps a { color: var(--accent); text-decoration: none; }
+    .memo .maps a:hover { text-decoration: underline; }
+    .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px;
+      background: transparent; color: var(--fg); cursor: pointer; font-size: 12px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .empty { color: var(--muted); text-align: center; padding: 60px 0; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border); padding: 10px 16px;
+      border-radius: 6px; font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transition: opacity 0.2s;
+    }
+    .toast.error { color: var(--danger); border-color: var(--danger); }
+    @media (max-width: 600px) {
+      .memo { flex-direction: column; }
+      .actions { width: 100%; justify-content: flex-end; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>📋 Memos</h1>
+  <nav>
+    <a href="/">Chat</a>
+    <a href="/tasks">Tasks</a>
+    <a href="/reminders">Reminders</a>
+    <a href="/settings">Settings</a>
+  </nav>
+</header>
+<main>
+  <div class="toolbar">
+    <input type="text" id="q" placeholder="搜索内容（what / memo / who / 地址 …）" />
+    <button type="button" class="filter-btn active" data-filter="all">全部</button>
+    <button type="button" class="filter-btn" data-filter="geo">有位置</button>
+    <button type="button" class="filter-btn" data-filter="expired">已过期</button>
+    <span class="stats" id="stats"></span>
+  </div>
+  <div id="list"></div>
+</main>
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+(() => {
+  const $list = document.getElementById('list')
+  const $toast = document.getElementById('toast')
+  const $q = document.getElementById('q')
+  const $stats = document.getElementById('stats')
+  let currentFilter = 'all'
+  let queryStr = ''
+  let debounceTimer = null
+
+  function toast(msg, isErr = false) {
+    $toast.textContent = msg
+    $toast.className = 'toast' + (isErr ? ' error' : '')
+    $toast.style.display = 'block'
+    setTimeout(() => { $toast.style.display = 'none' }, 2400)
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return ''
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return ''
+    // memos use 'YYYY-MM-DD HH:MM:SS' (UTC+8 bare-local).
+    // Parse via Date and present as local. Worst case display drift is
+    // 0 (the user is also in UTC+8 because we already assume that).
+    const d = new Date(iso.replace(' ', 'T') + '+08:00')
+    if (Number.isNaN(d.getTime())) return iso
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const absMin = Math.abs(Math.round(diffMs / 60000))
+    let rel = ''
+    if (Math.abs(diffMs) < 60_000) rel = '刚才'
+    else if (absMin < 60) rel = `${absMin} 分钟前`
+    else if (absMin < 1440) rel = `${(absMin / 60).toFixed(1)} 小时前`
+    else rel = `${(absMin / 1440).toFixed(1)} 天前`
+    return `${d.toLocaleString()} · ${rel}`
+  }
+
+  async function load() {
+    $list.innerHTML = '<div class="empty">加载中…</div>'
+    try {
+      const params = new URLSearchParams()
+      if (queryStr) params.set('query', queryStr)
+      if (currentFilter === 'geo') params.set('has_location', 'true')
+      if (currentFilter === 'expired') params.set('include_expired', 'true')
+      params.set('limit', '200')
+      const data = await window.imhub.api(`/api/memos?${params.toString()}`)
+      let items = data.memos || []
+      if (currentFilter === 'expired') {
+        // Only the rows that have an expires_at in the past.
+        const now = new Date()
+        items = items.filter(m => m.expiresAt && new Date(m.expiresAt.replace(' ', 'T') + '+08:00') < now)
+      }
+      render(items)
+      $stats.textContent = items.length ? `${items.length} 条` : ''
+    } catch (err) {
+      $list.innerHTML = ''
+      toast(`加载失败：${err.message}`, true)
+    }
+  }
+
+  function render(items) {
+    if (!items.length) {
+      $list.innerHTML = `<div class="empty">${queryStr ? '没匹配的 memo' : '还没记下任何 memo。在 IM 里说「记下…」让 agent 帮你存。'}</div>`
+      return
+    }
+    $list.innerHTML = items.map(m => {
+      const icon = m.where_lat != null ? '📍' : '📝'
+      const idLbl = `<span class="id">#${m.id}</span>`
+      const what = `<div class="what"><span class="icon">${icon}</span>${escapeHtml(m.what)} ${idLbl}</div>`
+      const original = (m.memo && m.memo !== m.what)
+        ? `<div class="original">${escapeHtml(m.memo)}</div>` : ''
+      const metaBits = []
+      if (m.who) metaBits.push(`<span class="who">${escapeHtml(m.who)}</span>`)
+      if (m.whenAt) metaBits.push(`<span class="when">${escapeHtml(m.whenAt)}</span>`)
+      else if (m.whenText) metaBits.push(`<span class="when">${escapeHtml(m.whenText)}</span>`)
+      if (m.where_label) metaBits.push(`<span class="geo">${escapeHtml(m.where_label)}</span>`)
+      else if (m.where_lat != null) metaBits.push(`<span class="geo">${m.where_lat.toFixed(5)}, ${m.where_lng.toFixed(5)}</span>`)
+      if (m.platform) metaBits.push(`<span class="platform">${escapeHtml(m.platform)}</span>`)
+      if (m.expiresAt) metaBits.push(`<span class="expires">${escapeHtml(m.expiresAt)}</span>`)
+      metaBits.push(`<span class="when">${fmtTime(m.createdAt)}</span>`)
+      const meta = `<div class="meta">${metaBits.join('')}</div>`
+
+      let maps = ''
+      if (m.mapUrls) {
+        maps = `<div class="maps">
+          <a href="${m.mapUrls.baidu}" target="_blank">百度地图</a>
+          <a href="${m.mapUrls.amap}" target="_blank">高德地图</a>
+          <a href="${m.mapUrls.google}" target="_blank">Google</a>
+        </div>`
+      }
+
+      return `<div class="memo" data-id="${m.id}">
+        <div class="body">${what}${original}${meta}${maps}</div>
+        <div class="actions">
+          <button type="button" class="btn danger" data-action="delete">删除</button>
+        </div>
+      </div>`
+    }).join('')
+  }
+
+  $list.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]')
+    if (!btn) return
+    const card = btn.closest('.memo')
+    if (!card) return
+    const id = card.dataset.id
+    const action = btn.dataset.action
+    if (action === 'delete') {
+      if (!confirm(`确定删除 memo #${id}？`)) return
+      try {
+        await window.imhub.api(`/api/memos/${id}`, { method: 'DELETE' })
+        toast(`已删除 #${id}`)
+        load()
+      } catch (err) { toast(`删除失败：${err.message}`, true) }
+    }
+  })
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      currentFilter = btn.dataset.filter
+      load()
+    })
+  })
+
+  $q.addEventListener('input', () => {
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+      queryStr = $q.value.trim()
+      load()
+    }, 280)
+  })
+
+  load()
+  // Auto-refresh every 30s so newly-saved memos show up.
+  setInterval(load, 30_000)
+})()
+</script>
+</body>
+</html>

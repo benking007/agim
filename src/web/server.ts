@@ -90,6 +90,25 @@ export async function startWebServer(options: {
   const webToken = getOrCreateWebToken()
   const clients = new Map<string, ClientConnection>()
 
+  // Auth-required mode is now scoped to public binds. When listening on
+  // 127.0.0.1 / ::1 / localhost the web console is wide open — whoever has
+  // shell on this host already owns it, and asking small users to paste a
+  // token they don't understand was the biggest friction point in onboarding.
+  // For 0.0.0.0 / LAN / WAN binds we keep the token requirement so a
+  // copy-pasted IMHUB_WEB_BIND=0.0.0.0 doesn't expose memos/reminders/config.
+  //
+  // Escape hatches via env:
+  //   IMHUB_WEB_REQUIRE_AUTH=1 — force token even on localhost (legacy / paranoid)
+  //   IMHUB_WEB_REQUIRE_AUTH=0 — force NO token even on public bind (you know
+  //                              what you're doing — proxy + HTTPS + external auth)
+  const isPublicBind = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
+  const requireAuth = (() => {
+    const forced = process.env.IMHUB_WEB_REQUIRE_AUTH
+    if (forced === '1') return true
+    if (forced === '0') return false
+    return isPublicBind
+  })()
+
   // Per-process secret for signing session cookies. Not persisted — browser
   // sessions expire on restart, which is acceptable for a dev tool.
   const cookieSecret = randomBytes(32).toString('hex')
@@ -132,12 +151,22 @@ export async function startWebServer(options: {
     res.setHeader('Set-Cookie', parts.join('; '))
   }
 
-  if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+  if (isPublicBind) {
     webLog.warn({
       event: 'web.public_bind_warning',
       bind: bindHost,
-    }, 'Web server bound to a non-localhost address — front it with a reverse proxy that terminates TLS')
+      requireAuth,
+    }, requireAuth
+      ? 'Web server bound to a non-localhost address — token auth REQUIRED; front it with a reverse proxy that terminates TLS'
+      : 'Web server bound publicly with IMHUB_WEB_REQUIRE_AUTH=0 — caller assumes responsibility for upstream auth')
   }
+  webLog.info({
+    event: 'web.auth_mode',
+    bind: bindHost,
+    requireAuth,
+  }, requireAuth
+    ? 'Web console: token auth REQUIRED (login page at /login)'
+    : 'Web console: token auth DISABLED (localhost bind — open access)')
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -165,14 +194,17 @@ export async function startWebServer(options: {
       return
     }
 
-    // Static pages — require valid session cookie
+    // Static pages — gated by session cookie ONLY when requireAuth is on
+    // (i.e. the server is bound publicly). Localhost binds skip the gate
+    // entirely so small users don't need to know what a token is.
     if (
       url.pathname === '/' || url.pathname === '/index.html' ||
       url.pathname === '/settings' || url.pathname === '/settings.html' ||
       url.pathname === '/tasks' || url.pathname === '/tasks.html' ||
-      url.pathname === '/reminders' || url.pathname === '/reminders.html'
+      url.pathname === '/reminders' || url.pathname === '/reminders.html' ||
+      url.pathname === '/memos' || url.pathname === '/memos.html'
     ) {
-      if (!hasValidSession(req)) {
+      if (requireAuth && !hasValidSession(req)) {
         res.writeHead(302, { Location: `/login?next=${encodeURIComponent(url.pathname)}` })
         res.end()
         return
@@ -182,6 +214,7 @@ export async function startWebServer(options: {
         '/settings': 'settings.html', '/settings.html': 'settings.html',
         '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
         '/reminders': 'reminders.html', '/reminders.html': 'reminders.html',
+        '/memos': 'memos.html', '/memos.html': 'memos.html',
       }
       return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
@@ -348,8 +381,10 @@ export async function startWebServer(options: {
       return
     }
 
-    // REST API — require auth token (header) or valid session cookie
-    if (url.pathname.startsWith('/api/')) {
+    // REST API — gated by header token OR session cookie ONLY when
+    // requireAuth is on. Localhost binds let the call through; same
+    // trust model as the static pages above.
+    if (requireAuth && url.pathname.startsWith('/api/')) {
       const token = req.headers['x-im-hub-token'] as string || ''
       if (!safeEqual(token, webToken) && !hasValidSession(req)) {
         res.writeHead(401)
@@ -429,6 +464,27 @@ export async function startWebServer(options: {
     if (reminderSnoozeMatch && req.method === 'POST') {
       return handleSnoozeReminderApi(req, res, Number.parseInt(reminderSnoozeMatch[1], 10))
     }
+
+    // /api/memos — search / list / delete. List uses the same searchMemos
+    // function the MCP tool exposes; query/who/what/has_location/limit
+    // come through as URL params.
+    if (url.pathname === '/api/memos' && req.method === 'GET') {
+      return handleListMemos(req, res, url)
+    }
+    const memoIdMatch = url.pathname.match(/^\/api\/memos\/(\d+)$/)
+    if (memoIdMatch && req.method === 'DELETE') {
+      return handleDeleteMemo(req, res, Number.parseInt(memoIdMatch[1], 10))
+    }
+
+    // /api/env — read/write SMTP + Baidu AK + IMHUB_WEB_BIND. Values
+    // sensitive enough that GET returns them masked (only the last 4 chars
+    // visible) unless an explicit ?reveal=1 is passed (still auth-gated).
+    if (url.pathname === '/api/env' && req.method === 'GET') {
+      return handleGetEnv(req, res, url)
+    }
+    if (url.pathname === '/api/env' && req.method === 'PUT') {
+      return handlePutEnv(req, res)
+    }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
     }
@@ -487,7 +543,7 @@ export async function startWebServer(options: {
     // /events is outside the /api/* token gate above.
     if (url.pathname === '/events' && req.method === 'GET') {
       const evToken = url.searchParams.get('token') || ''
-      if (!safeEqual(evToken, webToken) && !hasValidSession(req)) {
+      if (requireAuth && !safeEqual(evToken, webToken) && !hasValidSession(req)) {
         res.writeHead(401, { 'Content-Type': 'text/plain' })
         res.end('Unauthorized')
         return
@@ -536,9 +592,10 @@ export async function startWebServer(options: {
       return
     }
     // Verify token from URL query or session cookie before accepting connection
+    // — only when requireAuth (public bind). Localhost connections are trusted.
     const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
     const wsToken = wsUrl.searchParams.get('token') || ''
-    if (!safeEqual(wsToken, webToken) && !hasValidSession(req)) {
+    if (requireAuth && !safeEqual(wsToken, webToken) && !hasValidSession(req)) {
       ws.close(1008, 'Unauthorized')
       return
     }
@@ -1240,6 +1297,125 @@ async function handleSnoozeReminderApi(req: IncomingMessage, res: ServerResponse
       if (err instanceof ReminderError) { sendJson(res, 400, { error: err.message }); return }
       throw err
     }
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ─── memos ─────────────────────────────────────────────────────────────
+
+async function handleListMemos(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { searchMemos } = await import('../core/memos.js')
+    const query = url.searchParams.get('query') || undefined
+    const who = url.searchParams.get('who') || undefined
+    const what = url.searchParams.get('what') || undefined
+    const hasLocation = url.searchParams.get('has_location') === 'true' ? true : undefined
+    const includeExpired = url.searchParams.get('include_expired') === 'true' ? true : undefined
+    const limitRaw = parseInt(url.searchParams.get('limit') || '50', 10)
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50
+    const rows = searchMemos({ query, who, what, hasLocation, includeExpired, limit })
+    // Strip ownership noise but keep everything searchable / displayable.
+    // mapUrls is added per-row so the dashboard can render map links.
+    const { mapUrls: makeMapUrls } = await import('../core/memos.js')
+    const items = rows.map((m) => {
+      const out: Record<string, unknown> = {
+        id: m.id,
+        platform: m.platform,
+        userId: m.user_id,
+        what: m.what,
+        who: m.who,
+        whenAt: m.when_at,
+        whenText: m.when_text,
+        where_lat: m.where_lat,
+        where_lng: m.where_lng,
+        where_label: m.where_label,
+        how: m.how,
+        why: m.why,
+        memo: m.memo,
+        source: m.source,
+        expiresAt: m.expires_at,
+        createdAt: m.created_at,
+        updatedAt: m.updated_at,
+      }
+      if (m.where_lat != null && m.where_lng != null) {
+        out.mapUrls = makeMapUrls(m.where_lat, m.where_lng, m.where_label || m.what, '')
+      }
+      return out
+    })
+    sendJson(res, 200, { memos: items })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleDeleteMemo(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  if (!Number.isFinite(id) || id <= 0) { sendJson(res, 400, { error: 'invalid id' }); return }
+  try {
+    const { deleteMemo } = await import('../core/memos.js')
+    const ok = deleteMemo(id)
+    if (!ok) { sendJson(res, 404, { error: `memo #${id} not found` }); return }
+    sendJson(res, 200, { ok: true, id })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ─── env file (SMTP + Baidu AK + …) ────────────────────────────────────
+
+const ENV_EDITABLE_KEYS = [
+  'IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS',
+  'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE',
+  'IMHUB_BAIDU_MAP_AK',
+  'IMHUB_LOC_BASE_URL', 'IMHUB_TZ_OFFSET_HOURS',
+] as const
+const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
+
+function maskSecret(v: string): string {
+  if (!v) return ''
+  if (v.length <= 8) return '*'.repeat(v.length)
+  return v.slice(0, 4) + '*'.repeat(Math.max(0, v.length - 8)) + v.slice(-4)
+}
+
+async function handleGetEnv(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { readEnvFile } = await import('../cli-ui/env-file.js')
+    const env = readEnvFile()
+    const reveal = url.searchParams.get('reveal') === '1'
+    const out: Record<string, string> = {}
+    for (const key of ENV_EDITABLE_KEYS) {
+      const v = env[key]
+      if (v === undefined) continue
+      out[key] = reveal ? v : (SECRET_KEYS.has(key) ? maskSecret(v) : v)
+    }
+    sendJson(res, 200, { env: out, secretKeys: Array.from(SECRET_KEYS) })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { updates?: Record<string, string | null> }
+    const updates = parsed.updates
+    if (!updates || typeof updates !== 'object') {
+      sendJson(res, 400, { error: 'updates object required' })
+      return
+    }
+    // Filter to whitelist — never let arbitrary keys through.
+    const safe: Record<string, string | null> = {}
+    for (const [k, v] of Object.entries(updates)) {
+      if (!(ENV_EDITABLE_KEYS as readonly string[]).includes(k)) continue
+      if (v === null || typeof v === 'string') safe[k] = v
+    }
+    if (Object.keys(safe).length === 0) {
+      sendJson(res, 400, { error: 'no editable keys in updates' })
+      return
+    }
+    const { updateEnvFile } = await import('../cli-ui/env-file.js')
+    updateEnvFile(safe)
+    sendJson(res, 200, { ok: true, updated: Object.keys(safe) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

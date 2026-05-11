@@ -51,8 +51,7 @@
     "url": "https://github.com/benking007/imhub/issues"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.4.3",

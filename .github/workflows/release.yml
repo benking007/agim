@@ -67,11 +67,13 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        # --provenance 走 sigstore 签名供应链证明；OIDC trusted 与 automation
-        # token 两条路径都支持（automation token 需配 id-token:write 权限，
-        # 上面 permissions 块已给）。NODE_AUTH_TOKEN 仅当配置了 NPM_TOKEN
-        # secret 时才有值，trusted publishing 启用后可以删掉 secret。
-        run: npm publish --provenance --access public
+        # NOTE: `--provenance` is intentionally omitted. npm requires the
+        # source repo to be public for sigstore provenance verification —
+        # benking007/imhub is private (422 Unprocessable Entity). Re-add
+        # `--provenance` once the repo is flipped to public; until then
+        # we publish with the OIDC / NPM_TOKEN auth path but no sigstore
+        # attestation. (Older 0.2.x / 0.3.x releases shipped the same way.)
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

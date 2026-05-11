@@ -35,10 +35,13 @@ const PUNCT_RE = /[，。,.；;！!？?]/
 // Leading prefixes that aren't the subject. Order matters — longest first
 // so multi-char demonstratives ("这就是") win before single-char ones.
 // Includes:
+//   - imperative verbs the user uses to tell us "this is what to record"
+//     (handles "记下，这是 X" → strip "记下" + comma → "这是 X")
 //   - subject pronouns: 我[的]? / 本人[的]?
 //   - demonstratives + copula: 这[就]?是 / 那[就]?是 / 这是 / 那是
-//     (handles "这是我公司地址" → after strip "这是" → "我公司地址")
-const LEADING_PREFIX_RE = /^(本人的|本人|我的|我|这就是|那就是|这是|那是|这|那)/
+//     (handles "这是我公司地址" → strip "这是" → "我公司地址")
+// Trailing [，,]? eats the comma that often follows the imperative.
+const LEADING_PREFIX_RE = /^(请帮我记一下|请帮我记|帮我记一下|帮我记下|帮我记|请记下|记一下|记下|请记|记住|记着|本人的|本人|我的|我|这就是|那就是|这是|那是|这|那)[，,]?/
 // Adverbs / state words to peel after the subject pronoun. We only peel
 // them if they sit between the pronoun and the noun.
 const STATE_PREFIX_RE = /^(暂时|临时|刚才|刚刚|今天|这次|目前|现在|马上)/
@@ -78,18 +81,29 @@ function isShortEnough(s: string): boolean {
  *     → strip 我      → "把伞放前台了"
  *     → "把" isn't a noun — heuristic returns null, LLM gets it
  */
-function heuristicExtract(s: string): string | null {
+/**
+ * Iteratively peel imperative + pronoun + demonstrative + state-adverb
+ * prefixes from the front of `s`. Each pass shrinks the string by one
+ * matched prefix; 4 passes covers realistic stacking like
+ * "请帮我记一下，这是我公司..." → "公司..." in four hops.
+ *
+ * Exposed so the slice fallback can apply it too — better to slice the
+ * meaningful residue than to slice raw user prose.
+ */
+function stripPrefixes(s: string): string {
   let t = s.trim()
-  // Peel leading prefixes iteratively — "这是我公司..." needs TWO passes
-  // (strip "这是" → "我公司..." → strip "我" → "公司...").
   for (let i = 0; i < 4; i++) {
     const m = t.match(LEADING_PREFIX_RE)
     if (!m) break
     t = t.slice(m[0].length).trim()
   }
-  // Strip state adverb if it sits right at the front (post-pronoun)
   const state = t.match(STATE_PREFIX_RE)
   if (state) t = t.slice(state[0].length).trim()
+  return t
+}
+
+function heuristicExtract(s: string): string | null {
+  const t = stripPrefixes(s)
   if (!t) return null
 
   // Find the earliest boundary in `t` — verb-ish character OR mid-string
@@ -98,6 +112,7 @@ function heuristicExtract(s: string): string | null {
   //   "车暂时停"            → cut at "暂时" → "车"
   //   "公司地址，记录下"   → cut at "，"  → "公司地址"
   //   "X是Y"               → cut at "是"  → "X"
+  //   "伞放前台了"         → cut at "放"  → "伞"
   const VERB_BOUNDARY = /[停放是在到找给带有去回送到挂搁掉留藏交]/
   const verbIdx = t.search(VERB_BOUNDARY)
   const stateIdx = t.search(STATE_WORD_RE)
@@ -106,12 +121,24 @@ function heuristicExtract(s: string): string | null {
   for (const idx of [verbIdx, stateIdx, punctIdx]) {
     if (idx >= 0 && (cutIdx < 0 || idx < cutIdx)) cutIdx = idx
   }
-  if (cutIdx <= 0) return null // nothing found, or boundary at idx 0
-  const noun = t.slice(0, cutIdx).trim()
-  if (!noun || noun.length > SHORT_LIMIT) return null
-  // Reject if the candidate contains punctuation — that means we mis-peeled.
-  if (PUNCT_RE.test(noun)) return null
-  return noun
+  if (cutIdx > 0) {
+    const noun = t.slice(0, cutIdx).trim()
+    if (noun && noun.length <= SHORT_LIMIT && !PUNCT_RE.test(noun)) return noun
+    // Boundary found but slice doesn't pass guards → no confident answer.
+    return null
+  }
+
+  // No boundary found. If the residue itself is already short enough AND
+  // has no internal punctuation, that's our answer.
+  //   "帮我记一下，这是茶馆" → strip imperative + demonstrative → "茶馆"
+  //   "我家"                → strip pronoun → "家"
+  if (!PUNCT_RE.test(t)) {
+    const cjkCount = (t.match(/[一-鿿]/g) ?? []).length
+    if (cjkCount > 0 && t.length <= SHORT_LIMIT) return t
+    if (cjkCount === 0 && t.length <= ASCII_SHORT_LIMIT) return t
+  }
+
+  return null
 }
 
 export interface ExtractInput {
@@ -180,14 +207,18 @@ export async function extractWhatAndMemo(opts: ExtractInput): Promise<ExtractRes
     return { what: llmWhat.slice(0, 200), memo: trimmed, method: 'llm' }
   }
 
-  // Last-resort fallback: slice the first few chars. Always ≤ SHORT_LIMIT
-  // so the resulting `what` looks like a noun even if it isn't.
-  const fallback = trimmed.slice(0, SHORT_LIMIT)
+  // Last-resort fallback: slice the first SHORT_LIMIT chars of the
+  // post-strip residue (not the original) — "记下，这是我们经常聚餐的地方"
+  // becomes "们经常聚餐的" instead of "记下，这是我", which is closer to a
+  // recognizable token even if not perfect. If the residue is empty
+  // (everything got stripped), fall back to the original first 6 chars.
+  const residue = stripPrefixes(trimmed)
+  const slice = (residue || trimmed).slice(0, SHORT_LIMIT)
   log.info({
     event: 'memo.extract.fallback',
     input: trimmed,
-    what: fallback,
+    what: slice,
     reason: 'heuristic + LLM both inconclusive',
   })
-  return { what: fallback, memo: trimmed, method: 'fallback' }
+  return { what: slice, memo: trimmed, method: 'fallback' }
 }

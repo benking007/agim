@@ -1192,7 +1192,7 @@ async function maybeRunEntryMenu(): Promise<boolean> {
   if (!process.stdin.isTTY) return false  // piped / non-interactive — fall back to commander's help
   const { runEntryMenu } = await import('./cli-ui/entry-menu.js')
   const { cmdStatus, cmdStart, cmdStop, cmdRestart, cmdUninstall } = await import('./cli-ui/cmd-handlers.js')
-  const action = await runEntryMenu()
+  const { action, lang } = await runEntryMenu()
   switch (action.kind) {
     case 'quit':
       return true
@@ -1200,9 +1200,9 @@ async function maybeRunEntryMenu(): Promise<boolean> {
       cmdStatus()
       return true
     case 'config': {
-      const { pickLang } = await import('./cli-ui/lang-picker.js')
+      // Reuse the lang the user just picked in runEntryMenu — re-prompting
+      // here was a v0.5.1 regression (user reported: "已经选过语言不要再问").
       const { runConfigWizard } = await import('./cli-ui/config-wizard.js')
-      const lang = await pickLang()
       await runConfigWizard(lang)
       return true
     }

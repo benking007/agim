@@ -9,7 +9,7 @@
 
 import { menu, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
-import { t } from './i18n.js'
+import { t, type Lang } from './i18n.js'
 
 export type EntryAction =
   | { kind: 'config' }
@@ -21,12 +21,12 @@ export type EntryAction =
   | { kind: 'quit' }
 
 /**
- * Run the language picker + entry menu, return the action the user picked.
- * The cli.ts top-level dispatcher then executes it. Returning an
- * EntryAction instead of running commands inline keeps the entry menu
- * decoupled from the heavy command implementations.
+ * Run the language picker + entry menu, return the action the user picked
+ * AND the lang they picked. The dispatcher needs the lang to localize
+ * follow-up flows (notably `runConfigWizard`) without re-prompting — the
+ * user already chose; asking again is a regression.
  */
-export async function runEntryMenu(): Promise<EntryAction> {
+export async function runEntryMenu(): Promise<{ action: EntryAction; lang: Lang }> {
   const lang = await pickLang()
   console.log()
   console.log(t(lang, 'menu.title'))
@@ -46,11 +46,11 @@ export async function runEntryMenu(): Promise<EntryAction> {
         { value: 'quit',      name: t(lang, 'menu.quit'),      separatorBefore: true },
       ],
     })) as EntryAction['kind'] | 'start_bg'
-    if (picked === 'start_bg') return { kind: 'start', bg: true }
-    if (picked === 'start')    return { kind: 'start', bg: false }
-    return { kind: picked } as EntryAction
+    if (picked === 'start_bg') return { action: { kind: 'start', bg: true }, lang }
+    if (picked === 'start')    return { action: { kind: 'start', bg: false }, lang }
+    return { action: { kind: picked } as EntryAction, lang }
   } catch (err) {
-    if (err instanceof UserAbortError) return { kind: 'quit' }
+    if (err instanceof UserAbortError) return { action: { kind: 'quit' }, lang }
     throw err
   }
 }

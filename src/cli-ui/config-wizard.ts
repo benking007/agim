@@ -86,16 +86,35 @@ async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
     { id: 'discord', persistAs: 'discord', key: 'discord' },
     { id: 'email', persistAs: 'email', key: 'email' },
   ]
-  const current = new Set(cfg.messengers || [])
+  // Pre-menu so user can pick "← Back" without committing to the
+  // checkbox edit. inquirer's checkbox prompt has no built-in back, and
+  // Ctrl-C is invisible to first-time users.
+  const current = cfg.messengers || []
+  console.log()
+  console.log(t(lang, 'messengers.title'))
+  console.log(current.length === 0
+    ? t(lang, 'messengers.current_none')
+    : t(lang, 'messengers.current', { list: current.join(', ') }))
+  console.log()
+  const action = await menu<'edit'>({
+    lang,
+    message: t(lang, 'menu.subtitle'),
+    choices: [
+      { value: 'edit', name: t(lang, 'messengers.action.edit') },
+    ],
+    back: 'messengers.action.back',
+  })
+  if (action === BACK) return cfg
   const picked = await multiSelect<string>({
     lang,
     message: t(lang, 'messengers.pick'),
     choices: items.map(it => ({
       value: it.persistAs,
       name: t(lang, `messengers.hint.${it.key}` as never),
-      checked: current.has(it.persistAs),
+      checked: new Set(current).has(it.persistAs),
     })),
   })
+  console.log(t(lang, 'messengers.saved'))
   return { ...cfg, messengers: picked }
 }
 
@@ -108,7 +127,39 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     { id: 'codex', key: 'codex' },
     { id: 'copilot', key: 'copilot' },
   ]
-  const current = new Set(cfg.agents || [])
+  const currentList = cfg.agents || []
+  console.log()
+  console.log(t(lang, 'agents.title'))
+  console.log(currentList.length === 0
+    ? t(lang, 'agents.current_none')
+    : t(lang, 'agents.current', { list: currentList.join(', '), default: cfg.defaultAgent ?? '(none)' }))
+  console.log()
+  const choices: Array<{ value: 'edit' | 'default'; name: string }> = [
+    { value: 'edit', name: t(lang, 'agents.action.edit') },
+  ]
+  if (currentList.length > 1) {
+    choices.push({ value: 'default', name: t(lang, 'agents.action.default') })
+  }
+  const action = await menu<'edit' | 'default'>({
+    lang,
+    message: t(lang, 'menu.subtitle'),
+    choices,
+    back: 'agents.action.back',
+  })
+  if (action === BACK) return cfg
+
+  if (action === 'default') {
+    // Just pick default agent from already-enabled list.
+    const def = await menu<string>({
+      lang,
+      message: t(lang, 'agents.default'),
+      choices: currentList.map(p => ({ value: p, name: p })),
+      default: currentList.includes(cfg.defaultAgent) ? cfg.defaultAgent : currentList[0],
+    }) as string
+    return { ...cfg, defaultAgent: def }
+  }
+
+  const current = new Set(currentList)
   const picked = await multiSelect<string>({
     lang,
     message: t(lang, 'agents.pick'),
@@ -119,6 +170,7 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     })),
   })
   if (picked.length === 0) {
+    console.log(t(lang, 'agents.saved'))
     return { ...cfg, agents: [] }
   }
   // Default agent — pick from those just enabled.
@@ -128,6 +180,7 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
     choices: picked.map(p => ({ value: p, name: p })),
     default: picked.includes(cfg.defaultAgent) ? cfg.defaultAgent : picked[0],
   }) as string
+  console.log(t(lang, 'agents.saved'))
   return { ...cfg, agents: picked, defaultAgent: def }
 }
 
@@ -231,34 +284,60 @@ async function sectionSmtp(lang: Lang): Promise<void> {
   console.log()
   console.log(t(lang, 'smtp.title'))
   console.log(t(lang, 'smtp.subtitle'))
+
+  const current = readEnvFile()
+  const hasExisting = Boolean(current.IMHUB_SMTP_HOST && current.IMHUB_SMTP_USER)
+  console.log(hasExisting
+    ? t(lang, 'smtp.current_set', {
+        user: current.IMHUB_SMTP_USER ?? '',
+        host: current.IMHUB_SMTP_HOST ?? '',
+        port: current.IMHUB_SMTP_PORT ?? '?',
+      })
+    : t(lang, 'smtp.current_unset'))
   console.log()
-  const presetId = (await menu<SmtpPreset['id']>({
+
+  const action = (await menu<'edit' | 'disable'>({
     lang,
-    message: t(lang, 'smtp.preset'),
-    choices: SMTP_PRESETS.map(p => ({
-      value: p.id,
-      name: t(lang, `smtp.preset.${p.id}` as never),
-    })),
-  })) as SmtpPreset['id']
-  if (presetId === 'skip') {
-    // Strip SMTP keys from env file (but keep other keys like IMHUB_BAIDU_MAP_AK).
+    message: t(lang, 'menu.subtitle'),
+    choices: [
+      { value: 'edit', name: t(lang, 'smtp.action.edit') },
+      { value: 'disable', name: t(lang, 'smtp.action.disable'), disabled: !hasExisting },
+    ],
+    back: 'smtp.action.back',
+  })) as 'edit' | 'disable' | typeof BACK
+  if (action === BACK) return
+  if (action === 'disable') {
     for (const k of ['IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS', 'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE']) {
       unsetEnvKey(k)
     }
     console.log(t(lang, 'smtp.cleared', { file: ENV_FILE }))
     return
   }
+
+  const presetId = (await menu<SmtpPreset['id'] | typeof BACK>({
+    lang,
+    message: t(lang, 'smtp.preset'),
+    choices: SMTP_PRESETS.filter(p => p.id !== 'skip').map(p => ({
+      value: p.id,
+      name: t(lang, `smtp.preset.${p.id}` as never),
+    })),
+    back: 'smtp.action.back',
+  })) as SmtpPreset['id'] | typeof BACK
+  if (presetId === BACK) return
   const preset = SMTP_PRESETS.find(p => p.id === presetId)!
 
-  const current = readEnvFile()
+  // Prefill priority: existing user value first, then preset default.
+  // Picking a known preset (gmail/qq/etc) while already-configured shouldn't
+  // erase the user's working host — they probably picked it just to grab the
+  // suggested port/TLS pair.
   const host = await inputText({
     message: t(lang, 'smtp.field.host'),
-    default: preset.host ?? current.IMHUB_SMTP_HOST,
+    default: current.IMHUB_SMTP_HOST ?? preset.host,
     required: true,
   })
   const port = await inputText({
     message: t(lang, 'smtp.field.port'),
-    default: String(preset.port ?? current.IMHUB_SMTP_PORT ?? 465),
+    default: String(current.IMHUB_SMTP_PORT ?? preset.port ?? 465),
     required: true,
     validate: v => /^\d+$/.test(v) && Number(v) > 0 && Number(v) < 65536 || '1..65535',
   })
@@ -267,15 +346,18 @@ async function sectionSmtp(lang: Lang): Promise<void> {
     default: current.IMHUB_SMTP_USER,
     required: true,
   })
-  const pass = await inputSecret({
-    message: t(lang, 'smtp.field.pass'),
-    required: true,
+  // Password: never prefill literally (leaks via scrollback). Empty input
+  // means "keep what's stored". When nothing is stored yet, require it.
+  const passInput = await inputSecret({
+    message: t(lang, current.IMHUB_SMTP_PASS ? 'smtp.field.pass_keep' : 'smtp.field.pass'),
+    required: !current.IMHUB_SMTP_PASS,
   })
+  const pass = passInput || current.IMHUB_SMTP_PASS || ''
   const from = await inputText({
     message: t(lang, 'smtp.field.from'),
     default: current.IMHUB_SMTP_FROM || user,
   })
-  let secure: 'auto' | 'true' | 'false' = preset.secure ?? 'auto'
+  let secure: 'auto' | 'true' | 'false' = preset.secure ?? (current.IMHUB_SMTP_SECURE as 'auto'|'true'|'false') ?? 'auto'
   if (presetId === 'custom') {
     secure = (await menu<'auto' | 'true' | 'false'>({
       lang,

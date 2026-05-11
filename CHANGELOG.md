@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-11
+
+### Fixed — three wizard UX regressions surfaced in real TTY use
+
+After 0.5.1 unblocked the wizard, the first round of hands-on use turned up
+three friction points. All three are first-time-user discoverability issues —
+the same problems that drove the v0.5.0 rewrite in the first place, just
+deeper in the flow.
+
+1. **Duplicate language prompt when entering `config` from the entry menu.**
+   `runEntryMenu()` already asked for a language, then the dispatcher in
+   `cli.ts` called `pickLang()` again before `runConfigWizard()`. Now
+   `runEntryMenu()` returns `{ action, lang }` and the dispatcher reuses
+   the picked lang. (`src/cli-ui/entry-menu.ts`, `src/cli.ts`)
+
+2. **No Back button inside sub-sections.** Messengers, agents, and SMTP
+   went straight into the edit flow with no way out except Ctrl-C — which
+   is invisible to non-technical users. Each section now opens with a
+   pre-menu: `Edit … / ← Back` (SMTP also has `Disable`). The destructive
+   "skip / disable" option is gated on whether SMTP is currently
+   configured. (`src/cli-ui/config-wizard.ts`)
+
+3. **Existing config not prefilled.** Editing SMTP previously forced the
+   user to retype the password every time (`inputSecret` has no default,
+   and that's correct for security — but UX-wise it blocked any
+   re-config). And the preset's host/port always overrode the user's
+   working values. Fixed:
+   - Host/port/user/from now prefer the **existing** stored value over
+     the preset default — picking a known preset still suggests its port
+     + TLS but doesn't clobber a working setup.
+   - Password prompt accepts empty input as "keep what's stored" (with a
+     new "Enter = keep existing" hint label). Only required when nothing
+     is stored yet.
+
+   (`src/cli-ui/config-wizard.ts`, `src/cli-ui/i18n.ts`)
+
+No behavior change for first-time setup — only relevant when re-entering
+the wizard to tweak. Tested via `tsc --noEmit`.
+
 ## [0.5.1] - 2026-05-11
 
 ### Fixed — `require() is not defined` crash entering the wizard

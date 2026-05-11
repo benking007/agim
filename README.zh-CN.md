@@ -354,8 +354,10 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.2.30 | 生产硬化 — 会话隔离、WS 串行、回环监听 |
 | v0.2.35 | 微信和 Telegram 富媒体 — 图片 / 文件 / 语音 / 视频 |
 | v0.2.37 | 提醒子系统 — `/remind`、LLM 意图识别 + 润色、Agent MCP 工具、邮件通道、Web `/reminders`、微信 context_token 持久化 |
+| v0.3.0 | `/memo` 5W1H 持久记忆库 — `/location` → `/memo` 改名、地址 geocoding 接百度地图、opencode HTTP driver SSE 修复 |
+| v0.3.1 | Telegram + 飞书原生位置消息接入、所有渠道 GCJ-02 → WGS-84 修正、`memo` 列保存原话 + LLM/启发式 `what` 提取 |
 
-### v0.3.0（下一版）
+### v0.4.0（下一版）
 
 - [ ] codex MCP-server 模式（让 codex 也能用提醒工具）
 - [ ] 钉钉适配器

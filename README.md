@@ -354,8 +354,10 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.2.30 | Production hardening — session isolation, serial WS, loopback bind |
 | v0.2.35 | WeChat & Telegram rich media — image / file / voice / video |
 | v0.2.37 | Reminders subsystem — `/remind`, LLM intent + polish, agent MCP tools, email channel, web `/reminders`, WeChat context_token persistence |
+| v0.3.0 | `/memo` 5W1H persistent memory — `/location` → `/memo` rename, address geocoding via Baidu Maps, opencode HTTP driver SSE drain |
+| v0.3.1 | Native location messages on Telegram + Feishu, GCJ-02 → WGS-84 fix across all ingest paths, `memo` column + LLM/heuristic `what` extractor |
 
-### v0.3.0 (next)
+### v0.4.0 (next)
 
 - [ ] codex MCP-server mode (so codex can use reminder tools too)
 - [ ] DingTalk adapter

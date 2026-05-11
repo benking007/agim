@@ -205,14 +205,18 @@ export class CodexAdapter extends AgentBase {
     // of "agent only plans, doesn't act"; codex still emits write attempts
     // as events but the OS layer rejects them. See file header for the
     // approval-model discussion.
+    //
+    // `-s/--sandbox` is ONLY valid on the initial `exec` invocation. The
+    // `exec resume` subcommand (codex 0.130+) inherits the sandbox policy
+    // from the original session and rejects `-s` with "unexpected argument".
+    // So we splice sandboxFlags onto fresh starts only.
     const sandboxMode = opts.planMode ? 'read-only' : 'workspace-write'
-    const sandboxFlags = ['-s', sandboxMode] as const
     if (opts.agentSessionId && opts.agentSessionResume) {
-      // `codex exec resume <UUID> [OPTIONS] [PROMPT]` — the SESSION_ID
-      // positional has to come immediately after `resume`, before flags.
-      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, ...sandboxFlags, prompt]
+      // `codex exec resume <UUID> [OPTIONS] [PROMPT]` — SESSION_ID is a
+      // positional immediately after `resume`. No -s here.
+      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, prompt]
     }
-    return ['exec', ...BASE_FLAGS, ...sandboxFlags, prompt]
+    return ['exec', ...BASE_FLAGS, '-s', sandboxMode, prompt]
   }
 
   /**

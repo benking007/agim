@@ -88,13 +88,17 @@ describe('CodexAdapter buildArgs', () => {
     expect(args).not.toContain('workspace-write')
   })
 
-  it('passes -s read-only on a resume turn when planMode is set', () => {
+  it('does NOT pass -s on a resume turn (codex 0.130+ rejects it; session inherits sandbox)', () => {
+    // Regression: `codex exec resume` errors with "unexpected argument '-s'"
+    // because the resume subcommand inherits the original session's sandbox
+    // policy. We must splice -s onto fresh `exec` only.
     const adapter = new CodexAdapter()
     const args = buildArgs(adapter, 'p', {
       agentSessionId: 'abc', agentSessionResume: true, planMode: true,
     })
-    expect(args).toContain('-s')
-    expect(args).toContain('read-only')
+    expect(args).not.toContain('-s')
+    expect(args).not.toContain('read-only')
+    expect(args).not.toContain('workspace-write')
   })
 })
 

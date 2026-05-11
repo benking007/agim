@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0-rc1] - 2026-05-11
+
+> **核心主题**：codex 也接 imhub MCP——/remind 4 工具 + /memo 5 工具，9 个全部对它开放。从此三大 agent（claude-code / opencode / codex）功能对等。codex 内置工具的 per-call approval 仍未做（需要把 codex 跑成 MCP server 模式让我们当 client，是个更大的工程，留给后续）。
+
+### Added — codex 也能用 imhub MCP 工具
+之前 codex 是唯一一个 reminder/memo 工具完全无法触达的 agent，因为 codex CLI 没有 `--mcp-config` flag。验证发现 codex 0.130.0+ 支持通过 `-c mcp_servers.<name>.{command,args,env}=...` 的 TOML 内联 override 在调用层注册 MCP server——per-spawn、不污染全局 `~/.codex/config.toml`。
+
+实现：
+
+- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID`，已经 channel-agnostic）。
+- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`IMHUB_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context（threadId+platform+channelId）任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
+- **测试**：39 个新单测覆盖 builder（argv shape + TOML 双引号/反斜杠/UUID/空格路径 escaping）+ adapter（fallback 三道、happy path、runId 嵌入、cleanup、cwd+planMode+resume 与 MCP -c 共存、并发产生不同 runId）。
+
+**仍然不做**：
+
+- codex 自己的 Read/Edit/Bash 走 approval-bus——CLI 没 hook，需要换成 `codex mcp-server` mode + 我们当 MCP client，是 v0.5.x 级别的大改造
+- 全局 `~/.codex/config.toml` 写入——这次坚决走 per-spawn -c 路径，不修改用户配置
+
+**版本下限**：codex CLI ≥ 0.130.0（`mcp` 子命令 + `-c mcp_servers.*` TOML override 同时存在的最早稳定版）。adapter 不主动探测版本——老版本 codex 看到不认识的 `-c` key 会忽略，所以最坏情况是 reminder/memo 工具不可见但 codex 正常跑。
+
 ## [0.3.1] - 2026-05-11
 
 > **核心主题**：把 `/memo` 的位置感知从「只有 H5 抓 GPS」一条路扩成「**Telegram / 飞书原生位置消息 + H5**」三条路。顺带把所有渠道的中国坐标系偏移问题彻底修了——iOS/Android Core Location 在境内吐 GCJ-02，再走 WGS→GCJ 的 amap 链接就成双重偏移，~500m-1km 翻车。

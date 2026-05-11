@@ -32,14 +32,31 @@
 //   - True per-tool approval would require running codex via `codex
 //     mcp-server` (stdio MCP) and putting our own approval-bus shim
 //     between the MCP client and codex. Tracked as a future iteration.
+//
+// MCP imhub sidecar (v0.4.0):
+//   - When IM context is present and approvalBus is up, prepareCommand
+//     injects `-c mcp_servers.imhub.{command,args,env}=...` ahead of the
+//     `exec` subcommand. codex spawns the sidecar as a stdio MCP child
+//     and the model gets access to the 9 imhub tools (reminder + memo +
+//     request_location_capture). The `request` approval-prompt tool is
+//     exposed too but codex has no `--permission-prompt-tool` knob, so
+//     codex won't auto-invoke it; it's harmless to include.
+//   - Per-spawn runId is set on the bus and passed via the MCP env table,
+//     so reminder.* RPCs route back to the originating IM thread.
+//   - No write to ~/.codex/config.toml — inline -c args merge over the
+//     persisted config for this invocation only. The user's hand-edited
+//     toml is left alone.
 
 import { execSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { AgentBase, type SpawnPlan } from '../../../core/agent-base.js'
 import type { AgentSendOpts } from '../../../core/types.js'
+import { approvalBus } from '../../../core/approval-bus.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { buildCodexMcpCliArgs } from './build-mcp-cli-args.js'
 
 const log = rootLogger.child({ component: 'agent.codex' })
 
@@ -177,6 +194,12 @@ export class CodexAdapter extends AgentBase {
     return resolveCodexBinary()
   }
 
+  /**
+   * Build the codex argv WITHOUT MCP -c flags. prepareCommand prepends MCP
+   * args separately so the order is: `<-c global flags...> exec [resume <id>]
+   * <exec flags...> <prompt>`. Codex's clap requires global flags ahead of
+   * the subcommand, and the prompt has to be the trailing positional.
+   */
   protected buildArgs(prompt: string, opts: AgentSendOpts): string[] {
     // session.planMode → -s read-only sandbox. Best-available approximation
     // of "agent only plans, doesn't act"; codex still emits write attempts
@@ -196,11 +219,51 @@ export class CodexAdapter extends AgentBase {
    * codex reads its project-level AGENTS.md from spawn cwd, so for IM calls we
    * pin to ~/.im-hub-workspaces/codex/. Non-IM calls (web/scheduler) keep
    * cwd undefined and inherit im-hub's cwd. See agent-cwd.ts for rationale.
+   *
+   * MCP sidecar injection: when we have an IM thread + the bus is up, prepend
+   * `-c mcp_servers.imhub.{command,args,env}=...` to register the imhub MCP
+   * sidecar for this invocation only. The runId env entry is registered on
+   * the bus first so reminder.* RPCs from the sidecar route back to the
+   * correct RunContext. Cleanup unregisters the runId after the spawn exits.
+   *
+   * Fallback path (no IM context, bus down, or IMHUB_APPROVAL_DISABLED=1):
+   * just buildArgs(prompt, opts) — codex still works, just without imhub
+   * MCP tools. Matches the existing claude-code/opencode fallback shape.
    */
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
+    const cwd = resolveAgentCwd(this.name, opts)
+    const baseArgs = this.buildArgs(prompt, opts)
+
+    if (process.env.IMHUB_APPROVAL_DISABLED === '1') {
+      return { args: baseArgs, cwd }
+    }
+
+    const sockPath = approvalBus.getSocketPath()
+    const { threadId, platform, channelId, userId } = opts
+    if (!sockPath || !threadId || !platform || !channelId) {
+      // Non-IM call (web/scheduler/intent-llm) OR bus not started yet —
+      // run codex without registering the MCP sidecar. The reminder tools
+      // wouldn't have a thread to address anyway.
+      return { args: baseArgs, cwd }
+    }
+
+    const runId = randomUUID()
+    const mcpArgs = buildCodexMcpCliArgs({ sockPath, runId })
+
+    approvalBus.registerRun(runId, {
+      threadId, platform, userId: userId ?? '', channelId,
+    })
+    log.info({ event: 'codex.mcp.run_registered', runId, threadId, platform },
+      'Codex run registered with bus for imhub MCP tools')
+
     return {
-      args: this.buildArgs(prompt, opts),
-      cwd: resolveAgentCwd(this.name, opts),
+      // -c flags belong BEFORE `exec`; baseArgs starts with `exec` so the
+      // simple prefix-splice is correct.
+      args: [...mcpArgs, ...baseArgs],
+      cwd,
+      cleanup: () => {
+        approvalBus.unregisterRun(runId)
+      },
     }
   }
 

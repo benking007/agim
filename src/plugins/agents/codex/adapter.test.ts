@@ -8,11 +8,26 @@
 //   {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hi!"}}
 //   {"type":"turn.completed","usage":{"input_tokens":13299,"cached_input_tokens":11648,"output_tokens":6,"reasoning_output_tokens":0}}
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { ApprovalBus, approvalBus } from '../../../core/approval-bus.js'
 import { CodexAdapter, _testInternals } from './index.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 
 const { buildArgs, extractText, inspectEvent } = _testInternals
+
+function uniqueSocketPath(): string {
+  return join(tmpdir(), `imhub-codex-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+}
+
+const FULL_OPTS = {
+  threadId: 'thread-A',
+  platform: 'feishu',
+  channelId: 'chan-1',
+  userId: 'u1',
+}
 
 describe('CodexAdapter buildArgs', () => {
   it('starts a fresh session when no agentSessionId provided', () => {
@@ -196,19 +211,164 @@ describe('CodexAdapter inspectEvent — usage capture', () => {
   })
 })
 
-describe('CodexAdapter prepareCommand', () => {
+describe('CodexAdapter prepareCommand — fallback paths', () => {
+  let adapter: CodexAdapter
+
+  beforeEach(() => {
+    adapter = new CodexAdapter()
+    delete process.env.IMHUB_APPROVAL_DISABLED
+  })
+
+  afterEach(() => {
+    delete process.env.IMHUB_APPROVAL_DISABLED
+  })
+
   it('does not pin cwd for non-IM calls (no threadId/platform)', async () => {
-    const adapter = new CodexAdapter()
     const plan = await _testInternals.prepareCommand(adapter, 'p', {})
     expect(plan.cwd).toBeUndefined()
   })
 
   it('pins cwd to ~/.im-hub-workspaces/codex when threadId+platform present', async () => {
-    const adapter = new CodexAdapter()
-    const plan = await _testInternals.prepareCommand(adapter, 'p', {
-      threadId: 't1', platform: 'wechat', channelId: 'c1', userId: 'u1',
-    })
+    const plan = await _testInternals.prepareCommand(adapter, 'p', FULL_OPTS)
     expect(plan.cwd).toBeDefined()
     expect(plan.cwd?.endsWith('/codex')).toBe(true)
+  })
+
+  it('omits MCP -c flags when bus is not started', async () => {
+    expect(approvalBus.getSocketPath()).toBeNull()
+    const plan = await _testInternals.prepareCommand(adapter, 'p', FULL_OPTS)
+    expect(plan.args).not.toContain('-c')
+    expect(plan.args[0]).toBe('exec')
+    expect(plan.cleanup).toBeUndefined()
+  })
+
+  it('omits MCP -c flags when IMHUB_APPROVAL_DISABLED=1', async () => {
+    process.env.IMHUB_APPROVAL_DISABLED = '1'
+    const plan = await _testInternals.prepareCommand(adapter, 'p', FULL_OPTS)
+    expect(plan.args).not.toContain('-c')
+    expect(plan.args[0]).toBe('exec')
+    expect(plan.cleanup).toBeUndefined()
+  })
+
+  it('omits MCP -c flags for non-IM calls (no threadId)', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'p', { model: 'gpt-5' })
+    expect(plan.args).not.toContain('-c')
+    expect(plan.args[0]).toBe('exec')
+    expect(plan.cleanup).toBeUndefined()
+  })
+})
+
+describe('CodexAdapter prepareCommand — MCP-routed', () => {
+  // Mirrors the claude-code adapter pattern: stand up a real ApprovalBus,
+  // monkey-patch the singleton to delegate to it, exercise the adapter, then
+  // tear down. Real bus + real socket so registerRun side-effects (and
+  // cleanup) are observable.
+
+  let bus: ApprovalBus
+  let adapter: CodexAdapter
+  let registered: string[]
+  let unregistered: string[]
+  let originalGetSocketPath: () => string | null
+  let originalRegisterRun: typeof approvalBus.registerRun
+  let originalUnregisterRun: typeof approvalBus.unregisterRun
+
+  beforeEach(async () => {
+    bus = new ApprovalBus({ approvalTimeoutMs: 500 })
+    await bus.start(uniqueSocketPath())
+    registered = []
+    unregistered = []
+    originalGetSocketPath = approvalBus.getSocketPath.bind(approvalBus)
+    originalRegisterRun = approvalBus.registerRun.bind(approvalBus)
+    originalUnregisterRun = approvalBus.unregisterRun.bind(approvalBus)
+    approvalBus.getSocketPath = () => bus.getSocketPath()
+    approvalBus.registerRun = (runId, ctx) => {
+      registered.push(runId)
+      bus.registerRun(runId, ctx)
+    }
+    approvalBus.unregisterRun = (runId) => {
+      unregistered.push(runId)
+      bus.unregisterRun(runId)
+    }
+
+    adapter = new CodexAdapter()
+  })
+
+  afterEach(async () => {
+    await bus.stop()
+    approvalBus.getSocketPath = originalGetSocketPath
+    approvalBus.registerRun = originalRegisterRun
+    approvalBus.unregisterRun = originalUnregisterRun
+  })
+
+  it('prepends three MCP -c pairs before the exec subcommand', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+    // -c pairs must precede `exec` (codex clap requires global flags
+    // before the subcommand). The first 6 entries are MCP -c pairs.
+    expect(plan.args[0]).toBe('-c')
+    expect(plan.args[1].startsWith('mcp_servers.imhub.command=')).toBe(true)
+    expect(plan.args[2]).toBe('-c')
+    expect(plan.args[3].startsWith('mcp_servers.imhub.args=')).toBe(true)
+    expect(plan.args[4]).toBe('-c')
+    expect(plan.args[5].startsWith('mcp_servers.imhub.env=')).toBe(true)
+    expect(plan.args[6]).toBe('exec')
+    // Prompt is still the trailing positional.
+    expect(plan.args[plan.args.length - 1]).toBe('hi')
+  })
+
+  it('embeds the live socket path + a fresh UUID runId in the env -c arg', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.imhub.env=')) as string
+    expect(envArg).toContain(`IMHUB_APPROVAL_SOCK=${JSON.stringify(bus.getSocketPath() as string)}`)
+    // runId is a UUID; assert minimally — has the expected shape.
+    const m = envArg.match(/IMHUB_RUN_ID="([^"]+)"/)
+    expect(m).toBeTruthy()
+    expect(m![1].length).toBeGreaterThan(8)
+  })
+
+  it('cleanup unregisters the run from the bus', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+    expect(plan.cleanup).toBeDefined()
+    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.imhub.env=')) as string
+    const runId = envArg.match(/IMHUB_RUN_ID="([^"]+)"/)![1]
+    expect(registered).toContain(runId)
+    expect(unregistered).not.toContain(runId)
+    await plan.cleanup?.()
+    expect(unregistered).toContain(runId)
+  })
+
+  it('still pins cwd alongside MCP routing', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+    expect(plan.cwd?.endsWith('/codex')).toBe(true)
+  })
+
+  it('preserves planMode → -s read-only when MCP-routed', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', { ...FULL_OPTS, planMode: true })
+    const sIdx = plan.args.indexOf('-s')
+    expect(plan.args[sIdx + 1]).toBe('read-only')
+    expect(plan.args).not.toContain('workspace-write')
+  })
+
+  it('preserves exec resume <id> structure when MCP-routed', async () => {
+    const plan = await _testInternals.prepareCommand(adapter, 'hi', {
+      ...FULL_OPTS, agentSessionId: 'abc-uuid', agentSessionResume: true,
+    })
+    // MCP -c pairs (6) come first, then exec resume <id> …
+    expect(plan.args[6]).toBe('exec')
+    expect(plan.args[7]).toBe('resume')
+    expect(plan.args[8]).toBe('abc-uuid')
+  })
+
+  it('each prepareCommand call produces a distinct runId (concurrent safety)', async () => {
+    const [a, b] = await Promise.all([
+      _testInternals.prepareCommand(adapter, 'p1', FULL_OPTS),
+      _testInternals.prepareCommand(adapter, 'p2', FULL_OPTS),
+    ])
+    const ridA = (a.args.find((x) => x.startsWith('mcp_servers.imhub.env=')) as string)
+      .match(/IMHUB_RUN_ID="([^"]+)"/)![1]
+    const ridB = (b.args.find((x) => x.startsWith('mcp_servers.imhub.env=')) as string)
+      .match(/IMHUB_RUN_ID="([^"]+)"/)![1]
+    expect(ridA).not.toBe(ridB)
+    await a.cleanup?.()
+    await b.cleanup?.()
   })
 })

@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'package.json'
+  # Manual trigger — needed when an auto-version-bump commit lands on main.
+  # GitHub Actions deliberately blocks bot commits (incl. github-actions[bot]
+  # from the auto-version workflow) from triggering other workflows, so an
+  # auto-bumped package.json never fires this push hook. Maintainers run
+  # workflow_dispatch from the Actions UI (or the REST API) to publish.
+  workflow_dispatch:
 
 permissions:
   id-token: write # 必须：用于 OIDC 身份验证

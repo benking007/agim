@@ -1,31 +1,49 @@
 // cli-ui/config-wizard.ts — interactive `im-hub-pro config` flow.
 //
 // Top-level menu has 5 sections:
-//   1. Messengers     — checkbox of [wechat, telegram, feishu, discord, email]
-//   2. Agents         — checkbox of [claude-code, opencode, codex, copilot] + default-agent pick
+//   1. Messengers     — list-of-channels; each opens its own sub-menu
+//                       (WeChat QR scan / Telegram & Feishu & Discord
+//                        credential prompts / Email toggle)
+//   2. Agents         — list-of-agents with live CLI install detection;
+//                       per-agent sub-menu lets you enable/disable, see
+//                       install / auth instructions, set as default
 //   3. Remote ACP     — list / add / edit / remove
-//   4. SMTP           — preset picker → host/port/user/pass/from/secure (writes to ENV_FILE)
-//   5. Baidu Maps AK  — set / clear (writes IMHUB_BAIDU_MAP_AK to ENV_FILE)
+//   4. SMTP           — Edit / Disable / Back; preset picker → host/port/
+//                       user/pass/from/secure (writes to ENV_FILE)
+//   5. Baidu Maps AK  — Set / Clear / Back (writes IMHUB_BAIDU_MAP_AK)
 //
-// Each section loops until the user picks "← Back". Edits land in the
-// in-memory Config object until "Done — save and exit". Config is then
-// persisted via core/onboarding.saveConfig (which writes config.json with
-// chmod 600). SMTP / Baidu writes go through env-file.ts immediately so a
-// crash mid-wizard doesn't lose the secrets the user already typed.
+// Design rule: every sub-menu has a ← Back entry. The wizard never
+// requires Ctrl-C to escape (first-time users don't know it works).
+//
+// Edits land in the in-memory Config object until "Done — save and exit".
+// SMTP / Baidu writes are immediate to env-file.ts so a crash mid-wizard
+// doesn't lose the secrets the user already typed.
 
+import { crossSpawn } from '../utils/cross-platform.js'
 import {
   menu,
-  multiSelect,
   inputText,
   inputSecret,
   yesNo,
   BACK,
   UserAbortError,
 } from './prompts.js'
-import { t, type Lang } from './i18n.js'
+import { t, type Lang, type Key } from './i18n.js'
 import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
 import { CONFIG_DIR } from './paths.js'
-import { ENV_FILE, readEnvFile, updateEnvFile, unsetEnvKey } from './env-file.js'
+import { ENV_FILE, readEnvFile, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
+
+/** Probe whether a CLI command exists on PATH. Mirrors the `--version`
+ *  spawn check the legacy `config <agent>` flow used. Resolves quickly:
+ *  most install probes finish in <200ms, missing binaries return
+ *  ENOENT immediately. */
+function cliAvailable(cmd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = crossSpawn(cmd, ['--version'], { stdio: 'ignore' })
+    proc.on('close', (code) => resolve(code === 0))
+    proc.on('error', () => resolve(false))
+  })
+}
 
 type Section = 'messengers' | 'agents' | 'acp' | 'smtp' | 'baidu' | 'done'
 
@@ -75,125 +93,522 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
 }
 
 // ─── messengers section ────────────────────────────────────────────────
+//
+// Top-level "list" menu shows every supported messenger with its current
+// status. Picking one opens a sub-menu that does the *actual* component
+// configuration: scan QR for WeChat, prompt for token+channel for
+// Telegram, app id+secret for Feishu, etc. This mirrors the legacy
+// `im-hub-pro config <component>` flows — checkbox-only selection wasn't
+// enough because each messenger needs different credentials.
+
+type MessengerId = 'wechat-ilink' | 'telegram' | 'feishu' | 'discord' | 'email'
+
+interface MessengerSpec {
+  id: MessengerId
+  labelKey: Key
+  /** Does this entry have its own credentials object? Email/WeChat don't
+   *  store credentials in config.json (WeChat keeps a separate token file;
+   *  email rides on SMTP). Telegram/Feishu/Discord do. */
+  hasCreds: boolean
+}
+
+const MESSENGER_SPECS: MessengerSpec[] = [
+  { id: 'wechat-ilink', labelKey: 'messengers.label.wechat',   hasCreds: false },
+  { id: 'telegram',     labelKey: 'messengers.label.telegram', hasCreds: true  },
+  { id: 'feishu',       labelKey: 'messengers.label.feishu',   hasCreds: true  },
+  { id: 'discord',      labelKey: 'messengers.label.discord',  hasCreds: true  },
+  { id: 'email',        labelKey: 'messengers.label.email',    hasCreds: false },
+]
+
+/** Return the localized one-line status (enabled / enabled-no-creds /
+ *  not configured) for a messenger. Used in the top-level list. */
+function messengerStatus(lang: Lang, spec: MessengerSpec, cfg: Config): string {
+  const enabled = (cfg.messengers || []).includes(spec.id)
+  if (!enabled) return t(lang, 'messengers.status.disabled')
+  if (spec.id === 'telegram' && !cfg.telegram?.botToken) {
+    return t(lang, 'messengers.status.enabled_no_creds')
+  }
+  if (spec.id === 'feishu' && !(cfg.feishu?.appId && cfg.feishu?.appSecret)) {
+    return t(lang, 'messengers.status.enabled_no_creds')
+  }
+  if (spec.id === 'discord' && !cfg.discord?.botToken) {
+    return t(lang, 'messengers.status.enabled_no_creds')
+  }
+  return t(lang, 'messengers.status.enabled')
+}
 
 async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
-  // Map between display id and the canonical messenger id we persist.
-  // wechat → wechat-ilink; the rest map 1:1.
-  const items: Array<{ id: string; persistAs: string; key: 'wechat' | 'telegram' | 'feishu' | 'discord' | 'email' }> = [
-    { id: 'wechat-ilink', persistAs: 'wechat-ilink', key: 'wechat' },
-    { id: 'telegram', persistAs: 'telegram', key: 'telegram' },
-    { id: 'feishu', persistAs: 'feishu', key: 'feishu' },
-    { id: 'discord', persistAs: 'discord', key: 'discord' },
-    { id: 'email', persistAs: 'email', key: 'email' },
-  ]
-  // Pre-menu so user can pick "← Back" without committing to the
-  // checkbox edit. inquirer's checkbox prompt has no built-in back, and
-  // Ctrl-C is invisible to first-time users.
-  const current = cfg.messengers || []
+  let config = cfg
+  while (true) {
+    console.log()
+    console.log(t(lang, 'messengers.title'))
+    console.log(t(lang, 'messengers.subtitle'))
+    console.log()
+    const choices = MESSENGER_SPECS.map(spec => ({
+      value: spec.id,
+      name: t(lang, 'messengers.row', {
+        label: t(lang, spec.labelKey),
+        status: messengerStatus(lang, spec, config),
+      }),
+    }))
+    const picked = await menu<MessengerId>({
+      lang,
+      message: t(lang, 'menu.subtitle'),
+      choices,
+      back: 'messengers.action.back',
+    })
+    if (picked === BACK) return config
+    const spec = MESSENGER_SPECS.find(s => s.id === picked)!
+    config = await messengerSubMenu(lang, config, spec)
+  }
+}
+
+/** Per-messenger sub-menu: shows current state, lets user configure,
+ *  re-configure, or remove (and for email just enable/disable). All
+ *  paths land back here so user can keep editing; ← Back returns to the
+ *  list above. */
+async function messengerSubMenu(lang: Lang, cfg: Config, spec: MessengerSpec): Promise<Config> {
+  let config = cfg
+  while (true) {
+    const enabled = (config.messengers || []).includes(spec.id)
+    console.log()
+    console.log(t(lang, spec.labelKey) + ' — ' + messengerStatus(lang, spec, config))
+    console.log()
+
+    const choices: Array<{ value: string; name: string }> = []
+
+    if (spec.id === 'email') {
+      // Email is just a toggle — SMTP creds live in env file, not config.
+      if (!enabled) {
+        choices.push({ value: 'enable_email', name: t(lang, 'messengers.action.enable_email') })
+      } else {
+        choices.push({ value: 'disable_email', name: t(lang, 'messengers.action.disable_email') })
+      }
+    } else if (spec.id === 'wechat-ilink') {
+      // WeChat: configure = scan QR.
+      choices.push({
+        value: 'configure',
+        name: enabled
+          ? t(lang, 'messengers.action.reconfigure')
+          : t(lang, 'messengers.action.configure'),
+      })
+      if (enabled) {
+        choices.push({ value: 'remove', name: t(lang, 'messengers.action.remove') })
+      }
+    } else {
+      // Telegram / Feishu / Discord — prompt for credentials.
+      choices.push({
+        value: 'configure',
+        name: enabled
+          ? t(lang, 'messengers.action.reconfigure')
+          : t(lang, 'messengers.action.configure'),
+      })
+      if (enabled) {
+        choices.push({ value: 'remove', name: t(lang, 'messengers.action.remove') })
+      }
+    }
+
+    const action = await menu<string>({
+      lang,
+      message: t(lang, 'menu.subtitle'),
+      choices,
+      back: 'messengers.action.back',
+    })
+    if (action === BACK) return config
+
+    try {
+      if (action === 'enable_email' || action === 'disable_email') {
+        config = toggleEmail(config, action === 'enable_email')
+        if (action === 'enable_email') {
+          console.log(t(lang, 'messengers.smtp_hint'))
+          console.log(t(lang, 'messengers.enabled', { label: t(lang, spec.labelKey) }))
+        } else {
+          console.log(t(lang, 'messengers.removed', { label: t(lang, spec.labelKey) }))
+        }
+      } else if (action === 'remove') {
+        config = removeMessenger(config, spec.id)
+        console.log(t(lang, 'messengers.removed', { label: t(lang, spec.labelKey) }))
+      } else if (action === 'configure') {
+        if (spec.id === 'wechat-ilink') config = await configureWechat(lang, config)
+        else if (spec.id === 'telegram') config = await configureTelegram(lang, config)
+        else if (spec.id === 'feishu')   config = await configureFeishu(lang, config)
+        else if (spec.id === 'discord')  config = await configureDiscord(lang, config)
+      }
+    } catch (err) {
+      if (err instanceof UserAbortError) continue // Ctrl-C inside a sub-flow → bounce back to this menu
+      throw err
+    }
+  }
+}
+
+function removeMessenger(cfg: Config, id: MessengerId): Config {
+  const messengers = (cfg.messengers || []).filter(m => m !== id)
+  const next: Config = { ...cfg, messengers }
+  if (id === 'telegram') delete next.telegram
+  if (id === 'feishu')   delete next.feishu
+  if (id === 'discord')  delete next.discord
+  return next
+}
+
+function toggleEmail(cfg: Config, enable: boolean): Config {
+  const current = new Set(cfg.messengers || [])
+  if (enable) current.add('email')
+  else        current.delete('email')
+  return { ...cfg, messengers: Array.from(current) }
+}
+
+async function configureWechat(lang: Lang, cfg: Config): Promise<Config> {
+  console.log(t(lang, 'wechat.fetching'))
+  const { ILinkWeChatAdapter } = await import('../plugins/messengers/wechat/ilink-adapter.js')
+  const adapter = new ILinkWeChatAdapter()
+  try {
+    const { qrUrl, qrToken } = await adapter.startQRLogin()
+    console.log()
+    console.log(t(lang, 'wechat.scan'))
+    console.log(qrUrl)
+    console.log()
+    console.log(t(lang, 'wechat.waiting'))
+    const credentials = await adapter.waitForQRLogin(qrToken, (status) => {
+      console.log(`[${new Date().toLocaleTimeString()}] ${status}`)
+    })
+    if (!credentials) {
+      console.log(t(lang, 'wechat.failed'))
+      return cfg
+    }
+    console.log(t(lang, 'wechat.logged_in', { user: credentials.userId ?? '', bot: credentials.accountId ?? '' }))
+    const messengers = new Set(cfg.messengers || [])
+    messengers.add('wechat-ilink')
+    return { ...cfg, messengers: Array.from(messengers) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`❌ ${msg}`)
+    return cfg
+  }
+}
+
+/** Mask a secret so we can show "(current: ...XYZ)" without leaking the
+ *  whole token. Keeps the last 4 chars; pads with • for the prefix so the
+ *  visible chunk looks roughly the right shape. */
+function maskSecret(s: string): string {
+  if (!s) return '(empty)'
+  if (s.length <= 6) return '•'.repeat(s.length)
+  return '•'.repeat(Math.min(8, s.length - 4)) + s.slice(-4)
+}
+
+async function configureTelegram(lang: Lang, cfg: Config): Promise<Config> {
   console.log()
-  console.log(t(lang, 'messengers.title'))
-  console.log(current.length === 0
-    ? t(lang, 'messengers.current_none')
-    : t(lang, 'messengers.current', { list: current.join(', ') }))
+  console.log(t(lang, 'tg.docs'))
   console.log()
-  const action = await menu<'edit'>({
-    lang,
-    message: t(lang, 'menu.subtitle'),
-    choices: [
-      { value: 'edit', name: t(lang, 'messengers.action.edit') },
-    ],
-    back: 'messengers.action.back',
+  const current = cfg.telegram
+  const tokenLabel = current?.botToken
+    ? t(lang, 'tg.field.token_keep', { hint: maskSecret(current.botToken) })
+    : t(lang, 'tg.field.token')
+  const tokenIn = await inputSecret({
+    message: tokenLabel,
+    required: !current?.botToken,
   })
-  if (action === BACK) return cfg
-  const picked = await multiSelect<string>({
-    lang,
-    message: t(lang, 'messengers.pick'),
-    choices: items.map(it => ({
-      value: it.persistAs,
-      name: t(lang, `messengers.hint.${it.key}` as never),
-      checked: new Set(current).has(it.persistAs),
-    })),
+  const token = tokenIn || current?.botToken || ''
+  const channelId = await inputText({
+    message: t(lang, 'tg.field.channel'),
+    default: current?.channelId ?? 'default',
   })
-  console.log(t(lang, 'messengers.saved'))
-  return { ...cfg, messengers: picked }
+  const messengers = new Set(cfg.messengers || [])
+  messengers.add('telegram')
+  return {
+    ...cfg,
+    messengers: Array.from(messengers),
+    telegram: { botToken: token, channelId: channelId || 'default' },
+  }
+}
+
+async function configureFeishu(lang: Lang, cfg: Config): Promise<Config> {
+  console.log()
+  console.log(t(lang, 'feishu.docs'))
+  console.log()
+  const current = cfg.feishu
+  const appId = await inputText({
+    message: t(lang, 'feishu.field.app_id'),
+    default: current?.appId,
+    required: true,
+  })
+  const secretLabel = current?.appSecret
+    ? t(lang, 'feishu.field.app_secret_keep')
+    : t(lang, 'feishu.field.app_secret')
+  const secretIn = await inputSecret({
+    message: secretLabel,
+    required: !current?.appSecret,
+  })
+  const appSecret = secretIn || current?.appSecret || ''
+  const messengers = new Set(cfg.messengers || [])
+  messengers.add('feishu')
+  return {
+    ...cfg,
+    messengers: Array.from(messengers),
+    feishu: { appId, appSecret, channelId: current?.channelId },
+  }
+}
+
+async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
+  console.log()
+  console.log(t(lang, 'discord.docs'))
+  console.log()
+  const current = cfg.discord
+  const tokenLabel = current?.botToken
+    ? t(lang, 'discord.field.token_keep')
+    : t(lang, 'discord.field.token')
+  const tokenIn = await inputSecret({
+    message: tokenLabel,
+    required: !current?.botToken,
+  })
+  const token = tokenIn || current?.botToken || ''
+  const channelId = await inputText({
+    message: t(lang, 'discord.field.channel'),
+    default: current?.channelId ?? 'default',
+  })
+  const guildsRaw = await inputText({
+    message: t(lang, 'discord.field.guilds'),
+    default: (current?.allowedGuilds ?? []).join(','),
+  })
+  const channelsRaw = await inputText({
+    message: t(lang, 'discord.field.channels'),
+    default: (current?.allowedChannels ?? []).join(','),
+  })
+  const messengers = new Set(cfg.messengers || [])
+  messengers.add('discord')
+  return {
+    ...cfg,
+    messengers: Array.from(messengers),
+    discord: {
+      botToken: token,
+      channelId: channelId || 'default',
+      allowedGuilds: guildsRaw ? guildsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+      allowedChannels: channelsRaw ? channelsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+    },
+  }
 }
 
 // ─── agents section ────────────────────────────────────────────────────
+//
+// Each agent has a CLI binary; we probe with `<cmd> --version` to detect
+// installation. Sub-menu lets the user enable/disable, see install
+// instructions, set as default, or re-check after they installed
+// something in another terminal.
+
+type AgentId = 'claude-code' | 'opencode' | 'codex' | 'copilot'
+
+interface AgentSpec {
+  id: AgentId
+  /** CLI binary to probe with `--version`. */
+  cmd: string
+  /** Whether this agent needs a separate `<cmd> auth login` step we
+   *  should hint at. (claude-code uses claude.ai login flow inside the
+   *  CLI itself; copilot uses gh auth.) */
+  authHintKey?: Key
+}
+
+const AGENT_SPECS: AgentSpec[] = [
+  { id: 'claude-code', cmd: 'claude' },
+  { id: 'opencode',    cmd: 'opencode', authHintKey: 'agents.auth_hint.opencode' },
+  { id: 'codex',       cmd: 'codex',    authHintKey: 'agents.auth_hint.codex' },
+  { id: 'copilot',     cmd: 'copilot' },
+]
+
+/** Detect install state once per sectionAgents() call, but always
+ *  re-detect after the user picks "Re-check". */
+async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
+  const out = new Map<AgentId, boolean>()
+  await Promise.all(AGENT_SPECS.map(async spec => {
+    if (spec.id === 'copilot') {
+      // Copilot has multiple install paths; use the plugin's own check
+      // which knows about VSCode extension / gh-copilot extension / etc.
+      try {
+        const { copilotAdapter } = await import('../plugins/agents/copilot/index.js')
+        out.set(spec.id, await copilotAdapter.isAvailable())
+      } catch {
+        out.set(spec.id, false)
+      }
+    } else {
+      out.set(spec.id, await cliAvailable(spec.cmd))
+    }
+  }))
+  return out
+}
+
+function agentStatus(lang: Lang, id: AgentId, enabled: boolean, installed: boolean): string {
+  if (enabled && installed)  return t(lang, 'agents.status.enabled_installed')
+  if (enabled && !installed) return t(lang, 'agents.status.enabled_missing')
+  if (!enabled && installed) return t(lang, 'agents.status.disabled_installed')
+  return t(lang, 'agents.status.disabled_missing')
+}
 
 async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
-  const items: Array<{ id: string; key: 'claude' | 'opencode' | 'codex' | 'copilot' }> = [
-    { id: 'claude-code', key: 'claude' },
-    { id: 'opencode', key: 'opencode' },
-    { id: 'codex', key: 'codex' },
-    { id: 'copilot', key: 'copilot' },
-  ]
-  // Effective enabled list: union of cfg.agents and cfg.defaultAgent.
-  // Reason: historical configs can drift into `agents: []` + a non-empty
-  // `defaultAgent` (legacy `config <agent>` flow + a later wizard run that
-  // unchecked all). Reading `cfg.agents` alone made the wizard show the
-  // user's working default-agent as unchecked, which looked like the
-  // wizard "lost their selection" (user-reported 2026-05-11).
-  const validIds = new Set(items.map(i => i.id))
-  const effective = Array.from(new Set([
-    ...(cfg.agents || []),
-    ...(cfg.defaultAgent && validIds.has(cfg.defaultAgent) ? [cfg.defaultAgent] : []),
-  ]))
-  console.log()
-  console.log(t(lang, 'agents.title'))
-  console.log(effective.length === 0
-    ? t(lang, 'agents.current_none')
-    : t(lang, 'agents.current', { list: effective.join(', '), default: cfg.defaultAgent ?? '(none)' }))
-  console.log()
-  const choices: Array<{ value: 'edit' | 'default'; name: string }> = [
-    { value: 'edit', name: t(lang, 'agents.action.edit') },
-  ]
-  if (effective.length > 1) {
-    choices.push({ value: 'default', name: t(lang, 'agents.action.default') })
-  }
-  const action = await menu<'edit' | 'default'>({
-    lang,
-    message: t(lang, 'menu.subtitle'),
-    choices,
-    back: 'agents.action.back',
-  })
-  if (action === BACK) return cfg
+  let config = cfg
+  let installs = await detectAgentInstalls()
+  while (true) {
+    // Effective enabled list: union of cfg.agents + cfg.defaultAgent.
+    // Historical configs can drift into `agents: []` + a non-empty
+    // `defaultAgent` from the legacy `config <agent>` flow.
+    const validIds = new Set(AGENT_SPECS.map(s => s.id))
+    const effective = new Set([
+      ...((config.agents || []).filter(a => validIds.has(a as AgentId))),
+      ...(config.defaultAgent && validIds.has(config.defaultAgent as AgentId) ? [config.defaultAgent] : []),
+    ])
 
-  if (action === 'default') {
-    // Just pick default agent from already-enabled list.
-    const def = await menu<string>({
+    console.log()
+    console.log(t(lang, 'agents.title'))
+    console.log(t(lang, 'agents.subtitle'))
+    console.log()
+
+    const choices: Array<{ value: string; name: string; separatorBefore?: boolean }> = []
+    for (const spec of AGENT_SPECS) {
+      const enabled = effective.has(spec.id)
+      const installed = installs.get(spec.id) ?? false
+      choices.push({
+        value: spec.id,
+        name: t(lang, 'agents.row', {
+          label: t(lang, ('agents.label.' + spec.id) as Key),
+          status: agentStatus(lang, spec.id, enabled, installed),
+        }),
+      })
+    }
+    if (effective.size > 0) {
+      choices.push({
+        value: '__set_default__',
+        name: t(lang, 'agents.set_default_action'),
+        separatorBefore: true,
+      })
+    }
+    choices.push({
+      value: '__recheck__',
+      name: t(lang, 'agents.action.recheck'),
+      separatorBefore: effective.size === 0,
+    })
+
+    const picked = await menu<string>({
       lang,
-      message: t(lang, 'agents.default'),
-      choices: effective.map(p => ({ value: p, name: p })),
-      default: effective.includes(cfg.defaultAgent) ? cfg.defaultAgent : effective[0],
-    }) as string
-    return { ...cfg, agents: effective, defaultAgent: def }
-  }
+      message: t(lang, 'menu.subtitle'),
+      choices,
+      back: 'agents.action.back',
+    })
+    if (picked === BACK) return config
 
-  const current = new Set(effective)
-  const picked = await multiSelect<string>({
-    lang,
-    message: t(lang, 'agents.pick'),
-    choices: items.map(it => ({
-      value: it.id,
-      name: t(lang, `agents.hint.${it.key}` as never),
-      checked: current.has(it.id),
-    })),
-  })
-  if (picked.length === 0) {
-    // User explicitly unchecked everything — clear both fields so the
-    // config doesn't carry a stale defaultAgent into the next run.
-    console.log(t(lang, 'agents.saved'))
-    return { ...cfg, agents: [], defaultAgent: '' }
+    if (picked === '__recheck__') {
+      installs = await detectAgentInstalls()
+      console.log('🔄 Re-checked all agents.')
+      continue
+    }
+    if (picked === '__set_default__') {
+      const enabledIds = Array.from(effective)
+      const def = await menu<string>({
+        lang,
+        message: t(lang, 'agents.default_picker'),
+        choices: enabledIds.map(id => ({
+          value: id,
+          name: t(lang, ('agents.label.' + id) as Key),
+        })),
+        default: enabledIds.includes(config.defaultAgent) ? config.defaultAgent : enabledIds[0],
+        back: 'agents.action.back',
+      })
+      if (def === BACK) continue
+      // Also ensure the picked default is in agents[] (it must be for
+      // routing to work).
+      const agents = new Set(config.agents || [])
+      agents.add(def as string)
+      config = { ...config, agents: Array.from(agents), defaultAgent: def as string }
+      console.log(t(lang, 'agents.default_set', { label: t(lang, ('agents.label.' + def) as Key) }))
+      continue
+    }
+
+    const spec = AGENT_SPECS.find(s => s.id === picked)!
+    try {
+      config = await agentSubMenu(lang, config, spec, installs, effective.has(spec.id))
+    } catch (err) {
+      if (err instanceof UserAbortError) continue
+      throw err
+    }
   }
-  // Default agent — pick from those just enabled.
-  const def = await menu<string>({
-    lang,
-    message: t(lang, 'agents.default'),
-    choices: picked.map(p => ({ value: p, name: p })),
-    default: picked.includes(cfg.defaultAgent) ? cfg.defaultAgent : picked[0],
-  }) as string
-  console.log(t(lang, 'agents.saved'))
-  return { ...cfg, agents: picked, defaultAgent: def }
+}
+
+async function agentSubMenu(
+  lang: Lang,
+  cfg: Config,
+  spec: AgentSpec,
+  installs: Map<AgentId, boolean>,
+  enabled: boolean,
+): Promise<Config> {
+  let config = cfg
+  let isEnabled = enabled
+  while (true) {
+    const installed = installs.get(spec.id) ?? false
+    const label = t(lang, ('agents.label.' + spec.id) as Key)
+    console.log()
+    console.log(label + ' — ' + agentStatus(lang, spec.id, isEnabled, installed))
+    console.log(installed
+      ? t(lang, 'agents.installed_msg', { label })
+      : t(lang, 'agents.missing_msg',   { label }))
+    if (spec.authHintKey) console.log(t(lang, spec.authHintKey))
+    console.log()
+
+    const choices: Array<{ value: string; name: string }> = []
+    if (!isEnabled) {
+      choices.push({ value: 'enable', name: t(lang, 'agents.action.enable') })
+    } else {
+      choices.push({ value: 'set_default', name: t(lang, 'agents.action.set_default') })
+      choices.push({ value: 'disable', name: t(lang, 'agents.action.disable') })
+    }
+    choices.push({ value: 'install_hint', name: t(lang, 'agents.action.install_hint') })
+    choices.push({ value: 'recheck', name: t(lang, 'agents.action.recheck') })
+
+    const action = await menu<string>({
+      lang,
+      message: t(lang, 'menu.subtitle'),
+      choices,
+      back: 'agents.action.back',
+    })
+    if (action === BACK) return config
+
+    if (action === 'enable') {
+      const agents = new Set(config.agents || [])
+      agents.add(spec.id)
+      // If there's no default yet, this agent becomes the default.
+      const alsoDefault = !config.defaultAgent
+      const next: Config = {
+        ...config,
+        agents: Array.from(agents),
+        defaultAgent: alsoDefault ? spec.id : config.defaultAgent,
+      }
+      config = next
+      isEnabled = true
+      console.log(t(lang, 'agents.enabled', {
+        label,
+        also_default: alsoDefault ? t(lang, 'agents.also_default') : '',
+      }))
+    } else if (action === 'disable') {
+      const agents = (config.agents || []).filter(a => a !== spec.id)
+      let defaultAgent = config.defaultAgent
+      if (defaultAgent === spec.id) {
+        // Promote the next enabled agent (or empty).
+        defaultAgent = agents[0] ?? ''
+      }
+      config = { ...config, agents, defaultAgent }
+      isEnabled = false
+      console.log(t(lang, 'agents.removed', { label }))
+    } else if (action === 'set_default') {
+      const agents = new Set(config.agents || [])
+      agents.add(spec.id)
+      config = { ...config, agents: Array.from(agents), defaultAgent: spec.id }
+      console.log(t(lang, 'agents.default_set', { label }))
+    } else if (action === 'install_hint') {
+      console.log()
+      console.log(t(lang, ('agents.install_hint.' + spec.id) as Key))
+      if (spec.authHintKey) console.log(t(lang, spec.authHintKey))
+      console.log()
+    } else if (action === 'recheck') {
+      const newInstalls = await detectAgentInstalls()
+      installs.set(spec.id, newInstalls.get(spec.id) ?? false)
+      console.log('🔄 Re-checked.')
+    }
+  }
 }
 
 // ─── ACP section ───────────────────────────────────────────────────────
@@ -297,7 +712,10 @@ async function sectionSmtp(lang: Lang): Promise<void> {
   console.log(t(lang, 'smtp.title'))
   console.log(t(lang, 'smtp.subtitle'))
 
-  const current = readEnvFile()
+  // Use the effective env (env file + process.env fallback) so SMTP keys
+  // set via the systemd unit's Environment= lines also show up in the
+  // prefill — historical installs put them there directly.
+  const current = readEffectiveEnv()
   const hasExisting = Boolean(current.IMHUB_SMTP_HOST && current.IMHUB_SMTP_USER)
   console.log(hasExisting
     ? t(lang, 'smtp.current_set', {
@@ -391,6 +809,15 @@ async function sectionSmtp(lang: Lang): Promise<void> {
     IMHUB_SMTP_SECURE: secure,
   })
   console.log(t(lang, 'smtp.saved', { file: ENV_FILE }))
+  // Warn if any wizard-managed SMTP key is also set by the running env
+  // (most commonly: systemd unit's `Environment=` lines). Writing the
+  // env file alone won't change the active value in that case.
+  for (const k of ['IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS', 'IMHUB_SMTP_FROM']) {
+    if (hasProcessEnvOverride(k)) {
+      console.log(t(lang, 'env.shadowed_warn', { key: k, file: ENV_FILE }))
+      break // one warning is enough; user gets the picture
+    }
+  }
 }
 
 // ─── Baidu Maps section ────────────────────────────────────────────────
@@ -402,7 +829,9 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     console.log(t(lang, 'baidu.subtitle'))
     console.log(t(lang, 'baidu.howto'))
     console.log()
-    const current = readEnvFile().IMHUB_BAIDU_MAP_AK
+    // Effective env so a key set via the systemd unit / shell export
+    // still shows up here, not just keys written into ~/.im-hub/env.
+    const current = readEffectiveEnv().IMHUB_BAIDU_MAP_AK
     const status = current ? `${current.slice(0, 6)}…${current.slice(-4)} (set)` : '(unset)'
     const action = (await menu<'set' | 'clear'>({
       lang,
@@ -430,6 +859,9 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     })
     updateEnvFile({ IMHUB_BAIDU_MAP_AK: ak })
     console.log(t(lang, 'baidu.saved', { file: ENV_FILE }))
+    if (hasProcessEnvOverride('IMHUB_BAIDU_MAP_AK')) {
+      console.log(t(lang, 'env.shadowed_warn', { key: 'IMHUB_BAIDU_MAP_AK', file: ENV_FILE }))
+    }
   }
 }
 

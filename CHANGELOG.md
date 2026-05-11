@@ -6,54 +6,101 @@ All notable changes to this project will be documented in this file.
 
 ## [0.5.2] - 2026-05-11
 
-### Fixed — three wizard UX regressions surfaced in real TTY use
+> 0.5.0 introduced the bilingual wizard but 0.5.1 hands-on showed it had
+> regressed real functionality vs. the old `im-hub-pro config <component>`
+> flows — checkbox-only selection couldn't issue WeChat QR codes, prompt
+> for Telegram tokens, probe agent CLI installs, etc. 0.5.2 restores all
+> of that work inside the new arrow-key UI, plus fixes a pile of paper-
+> cuts surfaced from real TTY sessions.
 
-After 0.5.1 unblocked the wizard, the first round of hands-on use turned up
-three friction points. All three are first-time-user discoverability issues —
-the same problems that drove the v0.5.0 rewrite in the first place, just
-deeper in the flow.
+### Changed — wizard restructured as list-of-per-component menus (matches legacy `config <component>`)
 
-1. **Duplicate language prompt when entering `config` from the entry menu.**
-   `runEntryMenu()` already asked for a language, then the dispatcher in
-   `cli.ts` called `pickLang()` again before `runConfigWizard()`. Now
-   `runEntryMenu()` returns `{ action, lang }` and the dispatcher reuses
-   the picked lang. (`src/cli-ui/entry-menu.ts`, `src/cli.ts`)
+**IM 渠道** is no longer a checkbox. Each messenger gets its own sub-menu
+with the real configuration work the legacy flow did:
 
-2. **No Back button inside sub-sections.** Messengers, agents, and SMTP
-   went straight into the edit flow with no way out except Ctrl-C — which
-   is invisible to non-technical users. Each section now opens with a
-   pre-menu: `Edit … / ← Back` (SMTP also has `Disable`). The destructive
-   "skip / disable" option is gated on whether SMTP is currently
-   configured. (`src/cli-ui/config-wizard.ts`)
+- **WeChat (iLink)** — `Configure` scans QR via
+  `ILinkWeChatAdapter.startQRLogin()` + `waitForQRLogin()`; on success the
+  credentials persist to `~/.im-hub/wechat-credentials.json` (existing
+  adapter path) and `wechat-ilink` is added to `cfg.messengers`. Re-running
+  re-issues a fresh QR.
+- **Telegram** — prompts for bot token (hidden) + channel id. On
+  re-config the existing token is shown masked (`••••••XXXX`) and Enter
+  keeps it; channel id prefills.
+- **Feishu / Lark** — prompts for App ID + App Secret with the same
+  "Enter = keep existing" behavior for the secret.
+- **Discord** — prompts for token + channel + allowed guilds/channels
+  (comma-separated). Existing values prefill except the token (masked).
+- **Email** — pure toggle since SMTP credentials live one section down.
+  Enabling prints a reminder to also configure SMTP.
 
-3. **Existing config not prefilled.** Editing SMTP previously forced the
-   user to retype the password every time (`inputSecret` has no default,
-   and that's correct for security — but UX-wise it blocked any
-   re-config). And the preset's host/port always overrode the user's
-   working values. Fixed:
-   - Host/port/user/from now prefer the **existing** stored value over
-     the preset default — picking a known preset still suggests its port
-     + TLS but doesn't clobber a working setup.
-   - Password prompt accepts empty input as "keep what's stored" (with a
-     new "Enter = keep existing" hint label). Only required when nothing
-     is stored yet.
+Each per-component menu has its own `Configure / Re-configure / Remove /
+← Back` choices; status row in the list above shows
+`enabled / enabled (credentials missing) / not configured` per item.
 
-   (`src/cli-ui/config-wizard.ts`, `src/cli-ui/i18n.ts`)
+**AI agents** is also per-component now, with live CLI install detection
+(`<cmd> --version` probe, copilot uses the plugin's own multi-path
+`isAvailable()`):
 
-4. **Agent checkbox state silently dropped a working default.** A user
-   with `config.json` containing `agents: []` + `defaultAgent: "opencode"`
-   (a drift state the legacy `config <agent>` flow + an earlier wizard
-   unselection can produce) saw the agents section showing nothing
-   checked, contradicting the fact that opencode is actually their
-   active default. Fix: the section now treats the **union** of
-   `cfg.agents` and `cfg.defaultAgent` as the effective enabled set —
-   so the working default shows as pre-checked, and "currently enabled"
-   reflects reality. When the user explicitly unchecks everything,
-   `defaultAgent` is now also cleared so the next run starts from a
-   consistent empty state instead of resurrecting the stale default.
+```
+Claude Code         — enabled · CLI installed
+OpenCode            — not enabled · CLI installed
+Codex               — not enabled · CLI NOT installed
+GitHub Copilot CLI  — not enabled · CLI NOT installed
+```
 
-No behavior change for first-time setup — only relevant when re-entering
-the wizard to tweak. Tested via `tsc --noEmit`.
+Per-agent sub-menu offers `Add to enabled list / Set as default /
+Remove / Show install instructions / Re-check CLI installation / ← Back`.
+Install instructions and `auth login` hints are localized; the legacy
+flow's bash-only install text is preserved. First agent enabled when no
+default exists is auto-promoted to default.
+
+### Added — env reads now find values wherever they actually live
+
+The wizard previously only read `~/.im-hub/env` for SMTP / Baidu prefill,
+so machines where those keys were set in the systemd unit's
+`Environment=` lines (the common install pattern from before the wizard
+existed) showed `(unset)` even though everything was working at runtime.
+New `readEffectiveEnv()` falls back through three sources for read:
+
+1. `~/.im-hub/env` (canonical, what the wizard writes)
+2. `process.env` (shell-exported)
+3. `/etc/systemd/system/im-hub.service` — parsed `Environment=` lines
+   (file is world-readable on standard installs, so works for the user's
+   shell-invoked `im-hub-pro config`)
+
+Writes still go to the env file only. When `hasProcessEnvOverride(key)`
+detects a wizard-managed key that's set somewhere outside the env file,
+the SMTP / Baidu save path prints a one-line warning:
+
+```
+⚠️  IMHUB_BAIDU_MAP_AK is also set by the running environment (systemd
+unit / shell export). Saving to ~/.im-hub/env alone will NOT change the
+active value — update the unit file or `unset` the shell export first.
+```
+
+### Fixed — four paper-cuts from real TTY use
+
+1. **Duplicate language prompt** when entering `config` from the entry
+   menu. `runEntryMenu()` now returns `{ action, lang }`, and the
+   dispatcher in `cli.ts` reuses the picked lang. (`src/cli-ui/entry-menu.ts`)
+2. **No `← Back` inside sub-sections.** Every menu and sub-menu (and
+   sub-sub-menu) now has an explicit Back row — non-technical users
+   should never need to discover Ctrl-C.
+3. **Existing values not prefilled.** SMTP host / port / user / from now
+   prefer the stored value over preset defaults. The password prompt
+   accepts empty input as "keep existing" with a new "Enter = keep
+   existing" hint. Baidu AK uses the same effective-env read.
+4. **Agent default-agent drift was invisible.** Configs with
+   `agents: []` + `defaultAgent: "opencode"` now treat the union as the
+   effective enabled set, so the working default shows correctly. When
+   the user explicitly disables every agent, `defaultAgent` is also
+   cleared.
+
+### Notes
+- No behavior change for first-time setup; everything new is in the
+  re-entry / drift-state / prefill paths.
+- Verified via `tsc --noEmit` + manual TTY round-trip on the SMTP /
+  Baidu / per-messenger / per-agent flows.
 
 ## [0.5.1] - 2026-05-11
 

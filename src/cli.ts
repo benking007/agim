@@ -25,9 +25,7 @@ import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
 import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
 import { tryConsumeReply as tryConsumePendingReminderReply } from './core/pending-reminder.js'
-import { tryConsumeReply as tryConsumePendingMemoLocationReply } from './core/pending-memo-location.js'
-import { createMemo as createMemoRow } from './core/memos.js'
-import { extractWhatAndMemo } from './core/memo-what-extract.js'
+import { consumeLocationContext, formatLocationAnnotation } from './core/location-context.js'
 import { tryDetectReminderIntent } from './core/remind-intent.js'
 import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
@@ -275,77 +273,24 @@ program
         // user replying "y" doesn't get re-detected as another reminder.
         const tk = `${ctx.platform}:${ctx.channelId}:${ctx.message.threadId}`
 
-        // Pending memo-location reply (the user shared a Telegram pin /
-        // venue and we asked them to name it). Same ordering rationale as
-        // pending-reminder: short-circuit before slash / agent dispatch so
-        // the label text doesn't accidentally trigger anything else.
-        const memoLocDecision = tryConsumePendingMemoLocationReply(tk, ctx.message.text)
-        if (memoLocDecision) {
-          if (memoLocDecision.decision === 'cancel') {
-            await messenger.sendMessage(ctx.message.threadId, '👌 跳过了，没记')
-          } else {
-            const { pending, what: rawWhat } = memoLocDecision
-            try {
-              // Long-text path: when the user replies with a full sentence
-              // ("我车暂时停这里，晚点过来取"), extract a short noun for the
-              // searchable `what` and preserve the full phrasing in `memo`.
-              // Venue confirmations (rawWhat === pending.venueLabel) skip
-              // extraction entirely since the label is already canonical.
-              let what = rawWhat
-              let memo: string | null = null
-              const isVenueConfirm = pending.venueLabel && rawWhat === pending.venueLabel
-              if (!isVenueConfirm) {
-                const extracted = await extractWhatAndMemo({
-                  text: rawWhat,
-                  platform: ctx.platform,
-                  channelId: ctx.channelId,
-                  threadId: ctx.message.threadId,
-                })
-                what = extracted.what
-                memo = extracted.memo
-                ctx.logger.info({
-                  event: 'memo.location.extracted',
-                  method: extracted.method,
-                  rawLen: rawWhat.length,
-                  what,
-                })
-              }
-              const id = createMemoRow({
-                platform: ctx.platform,
-                channelId: ctx.channelId,
-                threadId: ctx.message.threadId,
-                userId: ctx.message.userId || '',
-                what,
-                memo,
-                whereLat: pending.lat,
-                whereLng: pending.lng,
-                // Combine venue title + address so neither is lost. When the
-                // user later searches "黄龙" or "学院路" the LIKE clause hits
-                // either token. Format: "<title> · <address>" when both exist,
-                // otherwise whichever single value is set; null for plain pins.
-                whereLabel: [pending.venueLabel, pending.venueAddress].filter(Boolean).join(' · ') || null,
-                source: 'browser',
-              })
-              const accuracyHint = typeof pending.accuracy === 'number'
-                ? `（精度 ±${Math.round(pending.accuracy)}m）`
-                : ''
-              // Show venue title + address when present so the user sees what
-              // we kept from their original pin (often the most recognizable
-              // line on the card — e.g. "黄龙国际中心 · 学院路77号").
-              const venueLine = [pending.venueLabel, pending.venueAddress].filter(Boolean).join(' · ')
-              const venueHint = venueLine ? `\n   📍 ${venueLine}` : ''
-              const memoHint = memo && memo !== what ? `\n   记录原文：${memo}` : ''
-              await messenger.sendMessage(
-                ctx.message.threadId,
-                `✅ 已记下「${what}」 (${pending.lat.toFixed(5)}, ${pending.lng.toFixed(5)})${accuracyHint} · #${id}${venueHint}${memoHint}`,
-              )
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err)
-              await messenger.sendMessage(ctx.message.threadId, `❌ 保存失败：${msg}`)
-            }
-          }
-          ctx.logger.info({ event: 'message.consumed_by_pending_memo_location', decision: memoLocDecision.decision })
-          return
+        // Location-context injection: if the user shared a native pin /
+        // venue on Telegram or Feishu within the last 5 min, the adapter
+        // stashed the WGS-84 coords in core/location-context. Prepend a
+        // structured annotation to the user's text so the agent can decide
+        // what to do (save_memo with these coords, ignore, ask follow-up).
+        // Single-shot: consuming clears the stash so the next turn doesn't
+        // accidentally re-inject. Matches the WeChat H5-flow architecture:
+        // the agent is the decision-maker; adapters just surface data.
+        const locCtxStash = consumeLocationContext(tk)
+        if (locCtxStash) {
+          const annotation = formatLocationAnnotation(locCtxStash)
+          ctx.message.text = `${annotation}\n\n${ctx.message.text}`
+          ctx.logger.info({
+            event: 'message.location_context_injected',
+            lat: locCtxStash.lat,
+            lng: locCtxStash.lng,
+            hasVenue: !!locCtxStash.venueLabel,
+          })
         }
 
         const replyDecision = tryConsumePendingReminderReply(tk, ctx.message.text)

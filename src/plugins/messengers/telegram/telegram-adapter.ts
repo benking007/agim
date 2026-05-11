@@ -21,7 +21,7 @@ import { splitMessage } from '../../../utils/message-split.js'
 import { Backoff } from '../../../utils/backoff.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
-import { setPending as setPendingMemoLocation } from '../../../core/pending-memo-location.js'
+import { setLocationContext } from '../../../core/location-context.js'
 import { gcj02ToWgs84 } from '../../../core/memos.js'
 
 const log = rootLogger.child({ component: 'telegram' })
@@ -180,26 +180,32 @@ export class TelegramAdapter implements MessengerAdapter {
 
     // Location pins (📎 → Location → Send My Current Location / Choose on Map).
     //
-    // ⚠️ Coordinate-system gotcha: iOS Core Location and Android's Google
-    // Play Services both apply the GCJ-02 offset to locations inside China
-    // before handing them to apps (Apple/Google policy for PRC compliance).
-    // Telegram forwards exactly those coords verbatim — so what arrives in
-    // `loc.latitude` / `loc.longitude` is GCJ-02, NOT WGS-84.
+    // Architecture (agent-driven, matches WeChat's H5 flow):
+    //   The adapter does NOT make any decisions about the user's intent.
+    //   It just stashes the coords in core/location-context (TTL 5 min)
+    //   and sends a quiet ack. The user's NEXT text message in this thread
+    //   gets prefixed with `[user just shared location: lat=…, lng=…, …]`
+    //   by cli.ts before dispatching to the agent. The agent then decides
+    //   whether to save (with what label) or just acknowledge.
     //
-    // Our DB convention is WGS-84 (mapUrls() applies WGS→GCJ for amap and
-    // WGS→BD-09 hints for Baidu). If we stored the GCJ-02 input as-is, the
-    // amap link would land 500m–1km off and the Baidu link likewise. So we
-    // reverse the offset here before stashing.
+    //   Why no "记下来 / 跳过 / 回名字" prompt anymore: those forced the
+    //   adapter into a deterministic state machine and ran a brittle
+    //   heuristic noun extractor on the reply text. Several edge cases
+    //   produced wrong `what` values ("记下", "一个好吃的日", etc.). The
+    //   agent has LLM judgment + full conversation context — let it decide.
     //
-    // gcj02ToWgs84 is a no-op for coords outside China (we'd otherwise
-    // garble legitimate WGS-84 inputs from Telegram users abroad).
+    // ⚠️ Coordinate-system gotcha: iOS Core Location and Android Google
+    // Play Services both apply the GCJ-02 offset for in-China coordinates
+    // before handing them up. Telegram forwards verbatim, so the values
+    // here are GCJ-02 not WGS-84. Reverse before stashing. gcj02ToWgs84
+    // is a no-op outside the China bbox.
     this.bot.on('message:location', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const loc = botCtx.message.location
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
       const wgs = gcj02ToWgs84(loc.latitude, loc.longitude)
-      setPendingMemoLocation(threadKey, {
+      setLocationContext(threadKey, {
         lat: wgs.lat,
         lng: wgs.lng,
         accuracy: typeof loc.horizontal_accuracy === 'number' ? loc.horizontal_accuracy : undefined,
@@ -207,14 +213,10 @@ export class TelegramAdapter implements MessengerAdapter {
       const accuracyHint = typeof loc.horizontal_accuracy === 'number'
         ? `（精度 ±${Math.round(loc.horizontal_accuracy)}m）`
         : ''
-      const prompt = [
-        `📍 收到位置 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})${accuracyHint}`,
-        '',
-        '要记一笔吗？回个名字（如「车」「茶馆」「家」），或回 `n` 跳过。',
-        '5 分钟内有效。',
-      ].join('\n')
-      void botCtx.reply(prompt).catch((err) => {
-        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to location share')
+      void botCtx.reply(
+        `📍 位置已收到 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})${accuracyHint}。告诉我要做什么。`,
+      ).catch((err) => {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to ack location share')
       })
       log.info({
         event: 'telegram.location.received',
@@ -224,28 +226,23 @@ export class TelegramAdapter implements MessengerAdapter {
       })
     })
 
-    // Venues — same GCJ-02 → WGS-84 conversion applies (the embedded
-    // location object is from the same iOS/Android source as plain pins).
+    // Venues — same coord handling, plus the venue title + address ride
+    // through as structured fields so the agent sees them in the annotation.
     this.bot.on('message:venue', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const v = botCtx.message.venue
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
       const wgs = gcj02ToWgs84(v.location.latitude, v.location.longitude)
-      setPendingMemoLocation(threadKey, {
+      setLocationContext(threadKey, {
         lat: wgs.lat,
         lng: wgs.lng,
         venueLabel: v.title,
         venueAddress: v.address,
       })
-      const prompt = [
-        `📍 收到「${v.title}」`,
-        `   ${v.address}`,
-        '',
-        '要记下吗？回 `y` 确认（按上面的名字记），或回别的名字改名，或回 `n` 跳过。',
-      ].join('\n')
-      void botCtx.reply(prompt).catch((err) => {
-        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to venue share')
+      const addrLine = v.address ? `\n   ${v.address}` : ''
+      void botCtx.reply(`📍 「${v.title}」 已收到${addrLine}\n告诉我要做什么。`).catch((err) => {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to ack venue share')
       })
       log.info({ event: 'telegram.venue.received', threadId, title: v.title })
     })

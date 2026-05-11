@@ -8,7 +8,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
-import { setPending as setPendingMemoLocation } from '../../../core/pending-memo-location.js'
+import { setLocationContext } from '../../../core/location-context.js'
 import { gcj02ToWgs84 } from '../../../core/memos.js'
 
 const log = rootLogger.child({ component: 'feishu' })
@@ -197,11 +197,13 @@ export class FeishuAdapter implements MessengerAdapter {
     }
 
     // Native location messages — Feishu sends them as message_type='location'
-    // with content = { name?, address?, latitude: "32.04", longitude: "118.78" }.
-    // Note: lat/lng arrive as strings, not numbers. Same Apple/Google offset
-    // applies (mobile Feishu client uses system Core Location / fused-location
-    // in China → GCJ-02). We reverse to WGS-84 before stashing, then ask the
-    // user to name it — exact same UX as Telegram pins.
+    // with content = { name?, address?, latitude: "32.04", longitude: "118.78" }
+    // (lat/lng as strings; same Apple/Google GCJ-02 offset applies inside China).
+    //
+    // Agent-driven flow: stash coords in core/location-context (TTL 5 min)
+    // and send a quiet ack. The user's next text message gets the location
+    // prefix injected by cli.ts before agent dispatch — same architecture
+    // as the Telegram adapter + the WeChat H5 path.
     if (message.message_type === 'location') {
       let lat = NaN
       let lng = NaN
@@ -227,29 +229,25 @@ export class FeishuAdapter implements MessengerAdapter {
       const channelId = this.config?.channelId || 'default'
       const threadKey = `feishu:${channelId}:${threadId}`
       const wgs = gcj02ToWgs84(lat, lng)
-      setPendingMemoLocation(threadKey, {
+      setLocationContext(threadKey, {
         lat: wgs.lat,
         lng: wgs.lng,
         venueLabel: name || undefined,
         venueAddress: address || undefined,
       })
-      const promptLines: string[] = []
-      if (name || address) {
-        promptLines.push(`📍 收到「${name || '位置'}」`)
-        if (address) promptLines.push(`   ${address}`)
-        promptLines.push('')
-        promptLines.push('要记下吗？回 `y` 确认（按上面的名字记），或回别的名字改名，或回 `n` 跳过。')
+      const ackLines: string[] = []
+      if (name) {
+        ackLines.push(`📍 「${name}」 已收到`)
+        if (address) ackLines.push(`   ${address}`)
       } else {
-        promptLines.push(`📍 收到位置 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})`)
-        promptLines.push('')
-        promptLines.push('要记一笔吗？回个名字（如「车」「茶馆」「家」），或回 `n` 跳过。')
-        promptLines.push('5 分钟内有效。')
+        ackLines.push(`📍 位置已收到 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})`)
       }
+      ackLines.push('告诉我要做什么。')
       if (this.client) {
         try {
-          await this.client.sendMessage(threadId, promptLines.join('\n'))
+          await this.client.sendMessage(threadId, ackLines.join('\n'))
         } catch (err) {
-          log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to reply to feishu location')
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to ack feishu location')
         }
       }
       log.info({

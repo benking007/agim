@@ -504,6 +504,20 @@ export function buildServer(client: ApprovalClient): McpServer {
         'IF the user wants to record their CURRENT GPS location ("我把车停这" / "记一下我现在 ' +
         '的位置"), DO NOT call save_memo — call request_location_capture instead (it can take a ' +
         '`what` arg to label the new memo at capture time).\n\n' +
+        '📍 LOCATION ANNOTATION (Telegram / Feishu native pin or venue share):\n' +
+        'If the user\'s message STARTS with a tag like\n' +
+        '  [user just shared location: lat=30.27, lng=120.12, name="黄龙国际中心", address="学院路77号", accuracy_m=5]\n' +
+        '...the adapter received a native GPS pin and stashed the coords here. The follow-up text\n' +
+        'after the annotation is the user\'s actual instruction. Common patterns:\n' +
+        '  • "记下/记一下/帮我记 X" → save_memo({what: <extract from text>, where_lat, where_lng,\n' +
+        '    where_label: <name + address if both present, joined by " · ">})\n' +
+        '  • "这是我公司/家/...的地方" → save_memo(same — use the noun the user named)\n' +
+        '  • "这是哪里？" → answer the question; the venue name/address in the annotation IS the\n' +
+        '    answer. No save_memo needed.\n' +
+        '  • "不用" / silence on a new topic → ignore the location, just respond.\n' +
+        'DO NOT call request_location_capture here — the coords are ALREADY provided. Use lat/lng\n' +
+        'from the annotation directly via where_lat/where_lng. Do NOT echo the raw annotation\n' +
+        'back to the user; it\'s for you, not them.\n\n' +
         '🧭 PROACTIVE FOLLOW-UP for place-like memos:\n' +
         'When the memo what is clearly a PLACE (家/公司/茶馆/餐厅/酒店/朋友的工作室/老孙家 ' +
         'etc.) AND the user did NOT supply where_lat/lng/address, AFTER saving, ASK ONE short ' +

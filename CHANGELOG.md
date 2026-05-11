@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-11
+
+> **核心主题**：把 `/memo` 的位置感知从「只有 H5 抓 GPS」一条路扩成「**Telegram / 飞书原生位置消息 + H5**」三条路。顺带把所有渠道的中国坐标系偏移问题彻底修了——iOS/Android Core Location 在境内吐 GCJ-02，再走 WGS→GCJ 的 amap 链接就成双重偏移，~500m-1km 翻车。
+
+### Added — Telegram 原生 `message:location` + `message:venue` 消息支持
+之前 telegram adapter 只接 text/photo/document/voice/audio/video/video_note/animation 八种事件，**完全忽略**用户点📎→Location 发的 pin。现在加上 grammy 的 `bot.on('message:location')` + `bot.on('message:venue')` 双 handler——
+
+- 收到 pin → 通过新建的 `pending-memo-location.ts`（TTL 5min，threadKey-scoped，结构对齐 `pending-reminder.ts`）暂存 `{lat, lng, accuracy?, venueLabel?, venueAddress?}`
+- adapter 立刻 reply 「📍 收到位置 (lat, lng)，要记一笔吗？回个名字 / `n` 跳过」
+- 用户下条 text 消息走 cli.ts 新加的 `tryConsumePendingMemoLocationReply` 拦截（位置：在 reminder-confirm 之前、agent dispatch 之前），cancel 模式直接放弃，否则用回复文本当 `what` 调 `createMemo({where_lat, where_lng, where_label, what})`
+- Venue 模式额外支持 `y` 确认（直接用 venue title 当 `what`，省去重打字），改名也支持
+- 20 单测覆盖 store + reply-consumption 矩阵
+
+### Added — 飞书原生 `message_type: 'location'` 消息支持
+飞书 IM 协议本身有结构化位置消息，content 是 `{ name?, address?, latitude, longitude }`（注意 lat/lng 是字符串需要 parseFloat）。adapter 之前是纯文本，只解 `content.text`。现在 BEFORE 那一步加分支，命中 location 类型就走同一条 pending-memo-location 链路，跟 telegram 完全对齐。Venue 形态（带 name）支持 `y` 确认，无 name 时退到自由输入。
+
+### Added — `memos.memo` 列：保存用户原话，不丢长信息
+之前用户回 telegram pending prompt 时说一整句话（"我车暂时停这里，晚点过来取"），整句话就成了 `what`，搜索很难找。新增：
+
+- **schema 加 `memo TEXT` 列**——idempotent ALTER TABLE 迁移（CREATE TABLE 里也加，新老 DB 都覆盖）
+- **新模块 `memo-what-extract.ts`** 4 级提取策略（cheap → rich）：
+  1. **short**——文本 ≤6 CJK / ≤16 ASCII + 无句号逗号 + 无主语前缀，原样当 `what`
+  2. **heuristic**——剥 `我[的]?` / `本人`，找句中最早出现的状态词（暂时/今天/刚刚）或安置类动词（停/放/在/找）作为切点，前面那段当 `what`。能确定性 handle "我车暂时停这里" → "车"
+  3. **llm**——`callHelperForJson` 调用户当前活跃 agent，给个 strict JSON-only prompt，6s 超时
+  4. **fallback**——前 6 字符切片，保证 save 不会因为提取失败而阻塞
+- **`search_memos` query 加上 memo 字段**：现在搜全文也能命中
+- **`save_memo` / `update_memo` MCP 工具加可选 `memo` 参数**：agent 直接落库时也能用
+- **`summarizeMemo` 返回带 memo 字段**——搜索结果让 agent 能引用原话
+- 用户可见：保存回复多一行「记录原文：...」当提取出的 `what` 跟用户原话不一样时
+- 17 单测覆盖 short/heuristic/fallback 各路径 + emoji / 中英混合 / 长句不卷死等 adversarial 输入
+
+### Fixed — 中国境内坐标双重偏移（影响 Telegram + 飞书 + H5 三条路径）
+**根因**：iOS Core Location（Apple，iOS 7+）和 Android Google Play Services 都会在中国境内**主动**把 WGS-84 偏移成 GCJ-02 才交给应用层（合规要求）。Telegram / 飞书 / 浏览器 `navigator.geolocation` 都吃这个偏移，传给 im-hub 时已经是 GCJ-02。我们当 WGS-84 存入库，构 amap URL 时再做一次 WGS→GCJ-02 = 双重偏移，~500m-1km。
+
+**修复**：
+
+- **新函数 `gcj02ToWgs84()`**：已有 `wgs84ToGcj02()` 的 Newton-iteration 逆运算，3 趟收敛到亚米级（< 1e-6 度 ≈ 0.1m）。境外（lng < 72 / > 137.83 OR lat < 0.83 / > 55.83）自动 no-op
+- **Telegram adapter**：`message:location` + `message:venue` handler 都先 GCJ→WGS 再 setPending
+- **飞书 adapter**：`message_type: 'location'` handler 同样转
+- **`/api/loc` POST**（H5 抓 GPS 入口）：同样转
+- **`src/scripts/migrate-gcj02-to-wgs84.ts`**：一次性回填脚本，dry-run + write 模式，幂等（境外行跳过）。本机部署时已对 DB 里 7 行历史 memo 跑过——所有坐标平均西南偏移 ~500m，回到真实物理位置
+- 6 个新单测：6 城（北京/杭州/上海/广州/乌鲁木齐/兰州）round-trip < 1e-6 度，境外 no-op，方向校验（GCJ→WGS 应向西南偏移）
+
+### Added — 部署脚本自动迁移坐标
+没加。该迁移是 one-shot 性质，加在 startup 路径上反而每次重启重跑（虽然 outOfChina 已 no-op，但 1e-7 浮点抖动还是会触发"已变更"日志）。保持手动 `node dist/scripts/migrate-gcj02-to-wgs84.js [--dry-run]` 触发。
+
+### Fixed — Venue title 在 where_label 中保留
+之前 cli.ts pending consumer 写 `where_label` 时是 `venueAddress ?? venueLabel`——`??` 让 venueAddress 优先，title 就被丢了。Telegram venue 通常两者都有（"黄龙国际中心" + "学院路77号"），title 是用户最容易认出的那条。改成 `[venueLabel, venueAddress].filter(Boolean).join(' · ')`，两者都存，搜任一 token 都能命中。回复卡片同步加一行 `📍 <title> · <address>` 让用户看见保留。
+
+### Site (separate repo: imhub-site)
+不直接绑 npm 包，但同期 imhub-site 跑了一波 optimization pass：
+
+- 一键安装命令分 Linux / macOS / Windows 三 tab（同一份 install.sh，uname 自检；Windows 走 WSL2）
+- `curl ... | bash` 改 `bash -c "$(curl ...)"`：macOS bash 3.2 + /dev/tty 重连不稳的 pipe 形式换成 Homebrew 同款
+- install.sh：macOS 友好的依赖缺失提示（`brew install node` / `xcode-select --install`）+ 纯 bash JSON encoder（新版 macOS 不再预装 python3）+ launchd 提示
+- SEO：robots.txt + sitemap-index.xml + og.svg
+- 404 页面 + 双语支持
+- 代码 DRY：install 命令抽到 `src/data/install.ts` 单一真源；JS 初始化抽到 `src/lib/install-ui.ts`
+- 可达性：`role="tablist"` / `aria-selected` / keyboard navigation 完整
+
 ## [0.3.0] - 2026-05-11
 
 > **核心主题**：`/location` 升级为通用 `/memo`（5W1H 持久记忆库），地图服务从腾讯切到百度，opencode HTTP driver 修复 SSE-broken 回归。这是个有意义的里程碑——位置只是 5W1H 中的一个轴。

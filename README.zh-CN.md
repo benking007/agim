@@ -383,7 +383,7 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 
 <p align="center">
   <a href="https://deepseek.club/community/imhub">
-    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" alt="DeepSeek">
+    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" style="width: 150px; height: auto;" alt="DeepSeek">
   </a>
 </p>
 

@@ -53,15 +53,9 @@ jobs:
             echo "npm already has v$CURR_VERSION."
           fi
 
-      # better-sqlite3's prebuild-install postinstall hangs npm in CI
-      # ("Exit handler never called!") on Ubuntu runners with npm 10/11.
-      # We don't need the native sqlite binary to build or publish — only
-      # TypeScript compilation runs here. `--ignore-scripts` skips the
-      # prebuild hook entirely; the tarball still ships better-sqlite3 as
-      # a runtime dep that downstream consumers will build for themselves.
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        run: npm ci --ignore-scripts || npm install --ignore-scripts
+        run: npm ci || npm install
 
       - name: Build
         if: steps.version.outputs.changed == 'true'

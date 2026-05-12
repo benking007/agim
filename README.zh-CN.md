@@ -279,6 +279,8 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IMHUB_BAIDU_MAP_AK` | 未设 | 百度地图 AK；启用 `/memo` 地址→坐标 geocoding 路径。不设置时直接给坐标和浏览器抓 GPS 不受影响。 |
 | `IMHUB_LOC_BASE_URL` | `https://agent.iclaw.host` | `/memo here` H5 抓 GPS 链接的公开 HTTPS 域名。自托管时改成自己的域。 |
 | `IMHUB_TZ_OFFSET_HOURS` | `8` | memo 时间戳的 UTC 偏移（默认 Asia/Shanghai）。仅当部署在其他时区时调整。 |
+| `IMHUB_TELEGRAM_COORDS_GCJ02` | 未设 | 设 `1` 对 Telegram 原生位置/venue 消息做 GCJ-02 → WGS-84 转换。默认关（直通），适合 Telegram Desktop / Android-without-China-GMS / 海外用户。如果你的 Telegram 客户端是国内 iOS 设备（Core Location 会加 GCJ 偏移），打开它。 |
+| `IMHUB_H5_COORDS_GCJ02` | 未设 | 设 `1` 对 `/memo here` H5 抓 GPS 的坐标做 GCJ-02 → WGS-84 转换。默认关（直通），匹配微信 X5 / Android Chrome 直给 WGS-84 的常见情况。如果你的用户主要在 iOS Safari / iOS WebKit 国内打开 H5 链接（Apple 会加 GCJ 偏移），打开它。完整每平台策略见 [`src/core/coord-systems.ts`](src/core/coord-systems.ts)。 |
 
 ## 架构
 

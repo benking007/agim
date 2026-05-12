@@ -279,6 +279,8 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IMHUB_BAIDU_MAP_AK` | unset | Baidu Maps AK; enables `/memo` address-based geocoding. Without it, raw coords + browser GPS still work. |
 | `IMHUB_LOC_BASE_URL` | `https://agent.iclaw.host` | Public HTTPS base URL the `/memo here` H5 capture link points at. Override for self-hosted deployments. |
 | `IMHUB_TZ_OFFSET_HOURS` | `8` | Hours offset from UTC for memo timestamps (Asia/Shanghai default). Change only if your deployment is elsewhere. |
+| `IMHUB_TELEGRAM_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to Telegram native location/venue messages. Default off (WGS-84 pass-through). Turn on if your Telegram clients are Apple devices in mainland China — iOS Core Location applies the GCJ offset before handing coords to Telegram. |
+| `IMHUB_H5_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to coords POSTed from `/memo here` H5 capture pages. Default off (WGS-84 pass-through, fits WeChat X5 webview + Android Chrome). Turn on if your users open the H5 link in iOS Safari / iOS WebKit in mainland China. See [`src/core/coord-systems.ts`](src/core/coord-systems.ts) for the full per-platform policy. |
 
 ## Architecture
 

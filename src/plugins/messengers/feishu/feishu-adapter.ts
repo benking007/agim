@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { setLocationContext } from '../../../core/location-context.js'
-import { gcj02ToWgs84 } from '../../../core/memos.js'
+import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
 
 const log = rootLogger.child({ component: 'feishu' })
 
@@ -217,10 +217,13 @@ export class FeishuAdapter implements MessengerAdapter {
       const threadId = message.chat_id || ''
       const channelId = this.config?.channelId || 'default'
       const threadKey = `feishu:${channelId}:${threadId}`
-      const wgs = gcj02ToWgs84(lat, lng)
+      // Feishu's native location msgtype is server-mandated GCJ-02
+      // (Chinese IM regulatory compliance) — `normalizeIncomingCoords`
+      // applies GCJ→WGS unconditionally for source='feishu-native'.
+      const norm = normalizeIncomingCoords('feishu-native', lat, lng)
       setLocationContext(threadKey, {
-        lat: wgs.lat,
-        lng: wgs.lng,
+        lat: norm.lat,
+        lng: norm.lng,
         venueLabel: name || undefined,
         venueAddress: address || undefined,
       })
@@ -229,7 +232,7 @@ export class FeishuAdapter implements MessengerAdapter {
         ackLines.push(`📍 「${name}」 已收到`)
         if (address) ackLines.push(`   ${address}`)
       } else {
-        ackLines.push(`📍 位置已收到 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})`)
+        ackLines.push(`📍 位置已收到 (${norm.lat.toFixed(5)}, ${norm.lng.toFixed(5)})`)
       }
       ackLines.push('告诉我要做什么。')
       if (this.client) {
@@ -242,8 +245,9 @@ export class FeishuAdapter implements MessengerAdapter {
       log.info({
         event: 'feishu.location.received',
         threadId,
-        gcj_lat: lat, gcj_lng: lng,
-        wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+        raw_lat: lat, raw_lng: lng,
+        wgs_lat: norm.lat, wgs_lng: norm.lng,
+        applied: norm.applied,
         hasName: !!name, hasAddress: !!address,
       })
       return

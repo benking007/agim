@@ -22,7 +22,7 @@ import { Backoff } from '../../../utils/backoff.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
 import { setLocationContext } from '../../../core/location-context.js'
-import { gcj02ToWgs84 } from '../../../core/memos.js'
+import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
 
 const log = rootLogger.child({ component: 'telegram' })
 
@@ -194,35 +194,36 @@ export class TelegramAdapter implements MessengerAdapter {
     //   produced wrong `what` values ("记下", "一个好吃的日", etc.). The
     //   agent has LLM judgment + full conversation context — let it decide.
     //
-    // ⚠️ Coordinate-system gotcha: iOS Core Location and Android Google
-    // Play Services both apply the GCJ-02 offset for in-China coordinates
-    // before handing them up. Telegram forwards verbatim, so the values
-    // here are GCJ-02 not WGS-84. Reverse before stashing. gcj02ToWgs84
-    // is a no-op outside the China bbox.
+    // Coordinate-system handling lives in core/coord-systems.ts.
+    // Telegram default: pass-through (WGS-84). Most senders are Telegram
+    // Desktop / Android-without-China-GMS / users outside China — all of
+    // which deliver raw WGS-84. iOS Core Location in China applies the
+    // GCJ offset; users hitting that case set IMHUB_TELEGRAM_COORDS_GCJ02=1.
     this.bot.on('message:location', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const loc = botCtx.message.location
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
-      const wgs = gcj02ToWgs84(loc.latitude, loc.longitude)
+      const norm = normalizeIncomingCoords('telegram-native', loc.latitude, loc.longitude)
       setLocationContext(threadKey, {
-        lat: wgs.lat,
-        lng: wgs.lng,
+        lat: norm.lat,
+        lng: norm.lng,
         accuracy: typeof loc.horizontal_accuracy === 'number' ? loc.horizontal_accuracy : undefined,
       })
       const accuracyHint = typeof loc.horizontal_accuracy === 'number'
         ? `（精度 ±${Math.round(loc.horizontal_accuracy)}m）`
         : ''
       void botCtx.reply(
-        `📍 位置已收到 (${wgs.lat.toFixed(5)}, ${wgs.lng.toFixed(5)})${accuracyHint}。告诉我要做什么。`,
+        `📍 位置已收到 (${norm.lat.toFixed(5)}, ${norm.lng.toFixed(5)})${accuracyHint}。告诉我要做什么。`,
       ).catch((err) => {
         log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to ack location share')
       })
       log.info({
         event: 'telegram.location.received',
         threadId,
-        gcj_lat: loc.latitude, gcj_lng: loc.longitude,
-        wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+        raw_lat: loc.latitude, raw_lng: loc.longitude,
+        wgs_lat: norm.lat, wgs_lng: norm.lng,
+        applied: norm.applied,
       })
     })
 
@@ -233,10 +234,10 @@ export class TelegramAdapter implements MessengerAdapter {
       const v = botCtx.message.venue
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
-      const wgs = gcj02ToWgs84(v.location.latitude, v.location.longitude)
+      const norm = normalizeIncomingCoords('telegram-native', v.location.latitude, v.location.longitude)
       setLocationContext(threadKey, {
-        lat: wgs.lat,
-        lng: wgs.lng,
+        lat: norm.lat,
+        lng: norm.lng,
         venueLabel: v.title,
         venueAddress: v.address,
       })
@@ -244,7 +245,7 @@ export class TelegramAdapter implements MessengerAdapter {
       void botCtx.reply(`📍 「${v.title}」 已收到${addrLine}\n告诉我要做什么。`).catch((err) => {
         log.warn({ err: err instanceof Error ? err.message : String(err) }, 'failed to ack venue share')
       })
-      log.info({ event: 'telegram.venue.received', threadId, title: v.title })
+      log.info({ event: 'telegram.venue.received', threadId, title: v.title, applied: norm.applied })
     })
 
     // Inline-button taps (approval cards). Same fire-and-forget discipline

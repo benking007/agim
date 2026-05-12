@@ -23,6 +23,7 @@ import { join } from 'node:path'
 import type { MessengerAdapter, Message, MessageContext } from '../../../core/types.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { setLocationContext } from '../../../core/location-context.js'
+import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
 import { detectProvider, transcribe, TranscribeError } from '../../../core/transcribe.js'
 import { DingTalkClient } from './dingtalk-client.js'
 import { pickDingTalkExtension, saveDingTalkMedia } from './media-store.js'
@@ -158,14 +159,24 @@ export class DingTalkAdapter implements MessengerAdapter {
       }, 'received link msgtype')
       const coords = msg.link?.messageUrl ? tryExtractLatLng(msg.link.messageUrl) : null
       if (coords) {
+        // Apply the right coord-system conversion based on which map
+        // provider's URL we just parsed (amap/qq=GCJ-02, baidu=BD-09).
+        // See core/coord-systems.ts for the full per-source policy.
+        const norm = normalizeIncomingCoords(coords.source, coords.lat, coords.lng)
         const threadKey = `dingtalk:${channelId}:${threadId}`
         setLocationContext(threadKey, {
-          lat: coords.lat,
-          lng: coords.lng,
+          lat: norm.lat,
+          lng: norm.lng,
           venueLabel: msg.link?.title || undefined,
           venueAddress: msg.link?.text || undefined,
         })
-        log.info({ event: 'dingtalk.location_context.set', lat: coords.lat, lng: coords.lng })
+        log.info({
+          event: 'dingtalk.location_context.set',
+          source: coords.source,
+          raw_lat: coords.lat, raw_lng: coords.lng,
+          wgs_lat: norm.lat, wgs_lng: norm.lng,
+          applied: norm.applied,
+        })
         if (this.client) {
           await this.client.sendMessage(threadId,
             `📍 已收到位置${msg.link?.title ? `「${msg.link.title}」` : ''}。告诉我要做什么（例如 /memo 食堂、记下、提醒我下次来）。`)
@@ -428,19 +439,50 @@ export class DingTalkAdapter implements MessengerAdapter {
   }
 }
 
-/** Best-effort lat/lng extraction from common map URLs. Returns null if
- *  the URL doesn't look like a map share. Handles:
- *    - Amap (`uri.amap.com/marker?position=lng,lat`)
- *    - QMap / Tencent (`apis.map.qq.com/uri/v1/marker?marker=coord:lat,lng`)
- *    - Generic `?location=lat,lng` / `?lat=...&lng=...`
- *    - DingTalk map mini-app URLs (best-effort; format observed in field)
- *  Coords are returned as-is; caller is responsible for any GCJ-02 →
- *  WGS-84 conversion if the user is in mainland China and the source
- *  uses GCJ-02 (most Chinese map providers do). */
-export function tryExtractLatLng(url: string): { lat: number; lng: number } | null {
+/** What coord system the URL's host implies. Drives which conversion
+ *  `normalizeIncomingCoords` applies on the extracted lat/lng. */
+export type MapUrlSource =
+  | 'dingtalk-link-amap'      // *.amap.com (Gaode) → GCJ-02
+  | 'dingtalk-link-tencent'   // map.qq.com / apis.map.qq.com → GCJ-02
+  | 'dingtalk-link-baidu'     // *.baidu.com Map URLs → BD-09
+  | 'dingtalk-link-unknown'   // host not recognised → pass-through (WGS-84)
+
+function classifyHost(host: string): MapUrlSource {
+  const h = host.toLowerCase()
+  if (h.endsWith('.amap.com') || h === 'amap.com' || h.endsWith('.gaode.com') || h === 'gaode.com') {
+    return 'dingtalk-link-amap'
+  }
+  if (h.endsWith('.qq.com') || h === 'qq.com') {
+    // Tencent's map endpoints: map.qq.com, apis.map.qq.com, lbs.qq.com.
+    // Other *.qq.com URLs (chat / mail) shouldn't legitimately carry
+    // map coords; if they do, GCJ-02 is the safe assumption.
+    return 'dingtalk-link-tencent'
+  }
+  if (h.endsWith('.baidu.com') || h === 'baidu.com') {
+    return 'dingtalk-link-baidu'
+  }
+  return 'dingtalk-link-unknown'
+}
+
+/** Best-effort lat/lng extraction from common map URLs.
+ *
+ * Returns null if the URL doesn't look like a map share. On hit, also
+ * returns the `source` so the caller can route through
+ * `normalizeIncomingCoords()` for the right coord-system conversion:
+ *   - Amap / Gaode      → GCJ-02
+ *   - Tencent (map.qq)  → GCJ-02
+ *   - Baidu Maps        → BD-09
+ *   - Anything else     → pass-through (we don't guess for unknown hosts)
+ *
+ * Parses these URL shapes:
+ *   - Amap:    `uri.amap.com/marker?position=lng,lat`
+ *   - Tencent: `apis.map.qq.com/uri/v1/marker?marker=coord:lat,lng`
+ *   - Generic: `?location=lat,lng`, `?latlng=lat,lng`, `?lat=…&lng=…` */
+export function tryExtractLatLng(url: string): { lat: number; lng: number; source: MapUrlSource } | null {
   if (!url || typeof url !== 'string') return null
   try {
     const u = new URL(url)
+    const source = classifyHost(u.hostname)
     const params = u.searchParams
 
     // Amap: ?position=lng,lat
@@ -449,7 +491,7 @@ export function tryExtractLatLng(url: string): { lat: number; lng: number } | nu
       const [lngStr, latStr] = position.split(',')
       const lng = parseFloat(lngStr)
       const lat = parseFloat(latStr)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng }
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, source }
     }
 
     // Tencent: ?marker=coord:lat,lng;title:...
@@ -459,7 +501,7 @@ export function tryExtractLatLng(url: string): { lat: number; lng: number } | nu
       const [latStr, lngStr] = coord.split(',')
       const lat = parseFloat(latStr)
       const lng = parseFloat(lngStr)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng }
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, source }
     }
 
     // Generic ?location=lat,lng OR ?latlng=lat,lng
@@ -468,7 +510,7 @@ export function tryExtractLatLng(url: string): { lat: number; lng: number } | nu
       const [latStr, lngStr] = loc.split(',')
       const lat = parseFloat(latStr)
       const lng = parseFloat(lngStr)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng }
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, source }
     }
 
     // Separate ?lat=...&lng=... (or &lon=...)
@@ -477,7 +519,7 @@ export function tryExtractLatLng(url: string): { lat: number; lng: number } | nu
     if (latParam && lngParam) {
       const lat = parseFloat(latParam)
       const lng = parseFloat(lngParam)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng }
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, source }
     }
   } catch {
     /* URL didn't parse — not a map share we can read. */

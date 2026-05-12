@@ -15,7 +15,8 @@ import { generateTraceId, createLogger, logger as rootLogger } from '../core/log
 import { validateConfig } from '../core/config-schema.js'
 import { safeEqual } from '../utils/safe-equal.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
-import { createMemo, updateMemo, getMemo, mapUrls, gcj02ToWgs84 } from '../core/memos.js'
+import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
+import { normalizeIncomingCoords } from '../core/coord-systems.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -295,18 +296,19 @@ export async function startWebServer(options: {
       if (rawLat < -90 || rawLat > 90 || rawLng < -180 || rawLng > 180) {
         sendJson(res, 400, { error: '坐标超出有效范围' }); return
       }
-      // navigator.geolocation in browsers running on Apple platforms returns
-      // coordinates as Core Location hands them up — and Apple applies the
-      // GCJ-02 offset for inside-China coords (PRC compliance requirement,
-      // since iOS 7). Same for Google's fused-location on Android in China.
-      // So the H5 page typically ships us GCJ-02 even though the JS API name
-      // implies WGS-84. Our DB convention is WGS-84 (and the amap/baidu URL
-      // builders assume WGS-84 input), so reverse here. gcj02ToWgs84 is a
-      // no-op outside the China bbox, so foreign users with clean WGS-84
-      // pass through unchanged.
-      const wgs = gcj02ToWgs84(rawLat, rawLng)
-      const lat = wgs.lat
-      const lng = wgs.lng
+      // navigator.geolocation returns whatever the host engine hands the
+      // page. The coord system varies by browser+OS:
+      //   - iOS Safari / WebKit in mainland China: GCJ-02 (Apple's PRC
+      //     compliance offset baked into Core Location).
+      //   - WeChat X5 webview / Android Chrome without GMS: raw WGS-84.
+      //   - PC browsers anywhere: WGS-84.
+      // Default to WGS-84 pass-through (matches the most common Chinese
+      // mobile path — WeChat — which was silently miscalibrated before
+      // the 2026-05-12 fix). iOS users in China set IMHUB_H5_COORDS_GCJ02=1
+      // to restore the GCJ→WGS path.  See core/coord-systems.ts.
+      const norm = normalizeIncomingCoords('h5-browser-geolocation', rawLat, rawLng)
+      const lat = norm.lat
+      const lng = norm.lng
       const cr = consumeToken(tk)
       if (!cr.ok) {
         const msg = cr.reason === 'expired' ? '链接已过期，请重新让 bot 发起记录' : '链接无效或已被使用'

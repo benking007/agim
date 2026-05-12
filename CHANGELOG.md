@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed — per-platform coordinate-system handling for native location messages
+
+User-reported regression: GPS captured via WeChat's `/memo here` H5 link
+landed ~500m–1km off in both Baidu Maps and Amap. Root cause: the old code
+applied `gcj02ToWgs84` to every incoming lat/lng on the assumption that any
+inside-China coord came from Apple Core Location or Google's China-region
+GMS (both of which serve GCJ-02). Reality is messier: WeChat's X5 webview
+and Android Chrome without GMS hand `navigator.geolocation` raw WGS-84, so
+the inverse GCJ offset got applied to coords that were already WGS-84 and
+the stored value was shifted ~500m in the wrong direction.
+
+New module **`src/core/coord-systems.ts`** centralises every conversion +
+the per-platform "what coord system did the payload arrive in?" policy:
+
+| Source                                | Default                 | Override |
+|---------------------------------------|-------------------------|----------|
+| Telegram native location              | WGS-84 pass-through     | `IMHUB_TELEGRAM_COORDS_GCJ02=1` (iOS-zh-CN users) |
+| Feishu native location                | GCJ-02 → WGS-84         | (server-mandated, no override) |
+| DingTalk `link` msgtype, amap.com URL | GCJ-02 → WGS-84         | — |
+| DingTalk `link` msgtype, qq.com URL   | GCJ-02 → WGS-84         | — |
+| DingTalk `link` msgtype, baidu.com URL| **BD-09 → WGS-84** (new)| — |
+| DingTalk `link` msgtype, unknown host | WGS-84 pass-through     | — |
+| H5 `/memo here` browser geolocation   | WGS-84 pass-through     | `IMHUB_H5_COORDS_GCJ02=1` (iOS Safari users) |
+
+Two **default flips** vs. the old behavior:
+1. Telegram: was always GCJ→WGS, now pass-through. Telegram Desktop +
+   Android-without-China-GMS + non-China users all stop getting a phantom
+   inverse offset. Apple-zh-CN-in-China users opt back in via env flag.
+2. H5: was always GCJ→WGS, now pass-through. Fixes the WeChat X5 case the
+   user reported. iOS Safari users opt back in via env flag.
+
+New: **BD-09 ↔ GCJ-02 ↔ WGS-84** support. DingTalk users sharing a Baidu
+Maps link no longer get a 1km-off marker (chained GCJ + BD-09 offsets).
+
+Refactor:
+- `src/plugins/messengers/{telegram,feishu,dingtalk}/*.ts` — all coord
+  normalization now routes through `normalizeIncomingCoords(source, ...)`
+  rather than calling `gcj02ToWgs84` directly. Each call site logs
+  `event: coord.normalized, source, raw_*, wgs_*, applied` for post-mortems.
+- `src/web/server.ts` — H5 `/loc` handler likewise uses
+  `normalizeIncomingCoords('h5-browser-geolocation', ...)`.
+- `src/plugins/messengers/dingtalk/dingtalk-adapter.ts:tryExtractLatLng`
+  now also returns `source` based on URL host (amap / qq / baidu / unknown);
+  this is what lets the per-source policy fire correctly.
+
+Tests:
+- `src/core/coord-systems.test.ts` — 17 cases covering round-trip math
+  (WGS↔GCJ, GCJ↔BD-09, BD-09↔WGS-84) + per-source policy + env-flag
+  override + out-of-China bypass + NaN guard.
+- `src/plugins/messengers/dingtalk/dingtalk-link-coords.test.ts` —
+  6 cases over the host classifier.
+
 ## [0.6.0] - 2026-05-12
 
 > **核心主题**：DingTalk 钉钉作为第六个 IM 适配器加入，图片 + 语音双向支持，

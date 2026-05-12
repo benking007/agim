@@ -5,16 +5,16 @@
 // scrub our own files in afterEach without colliding with real sessions.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { unlink, readdir, readFile } from 'node:fs/promises'
 import { sessionManager } from '../session.js'
 import { handlePlanCommand } from './plan.js'
+import { AGIM_HOME } from '../agim-paths.js'
 import type { RouteContext } from '../router.js'
 import type { Logger } from 'pino'
 
 const PLATFORM = 'plantest'
-const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
+const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
 function uid(): string { return Math.random().toString(36).slice(2, 10) }
 

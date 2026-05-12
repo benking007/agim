@@ -7,16 +7,16 @@
 // any real sessions and we delete them afterwards.
 
 import { describe, it, expect, beforeAll, afterEach } from 'bun:test'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdir, unlink, readdir } from 'node:fs/promises'
 import { sessionManager } from './session.js'
+import { AGIM_HOME } from './agim-paths.js'
 
 const PLATFORM = 'subtest'
 const CHANNEL = `c-${Math.random().toString(36).slice(2, 8)}`
 const THREAD = `t-${Math.random().toString(36).slice(2, 8)}`
 
-const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
+const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
 // CI runs on a fresh runner where ~/.im-hub/sessions/ doesn't exist yet.
 // Without this beforeAll, saveSessionMeta's atomicWrite hits ENOENT, the

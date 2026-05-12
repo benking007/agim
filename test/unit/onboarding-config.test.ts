@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { saveConfig } from '../../src/core/onboarding'
+import { AGIM_HOME } from '../../src/core/agim-paths'
 
-const CONFIG_FILE = join(homedir(), '.im-hub', 'config.json')
+const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 describe('onboarding config persistence', () => {
   it('stores config.json with owner-only permissions', async () => {

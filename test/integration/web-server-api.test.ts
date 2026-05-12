@@ -10,8 +10,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { startWebServer } from '../../src/web/server'
+import { AGIM_HOME } from '../../src/core/agim-paths'
 import { registry } from '../../src/core/registry'
 import { recordInvocation, reset as resetMetrics } from '../../src/core/metrics'
 import type { AgentAdapter, MessengerAdapter } from '../../src/core/types'
@@ -33,7 +33,7 @@ const stubMessenger: MessengerAdapter = {
   sendMessage: async (threadId, text) => { captured.push({ threadId, text }) },
 }
 
-const TOKEN_DIR = join(homedir(), '.im-hub')
+const TOKEN_DIR = AGIM_HOME
 const TOKEN_FILE = join(TOKEN_DIR, 'web-token')
 const TEST_TOKEN = 'web-test-token-1234567890abc'
 

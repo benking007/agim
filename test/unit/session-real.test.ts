@@ -10,13 +10,13 @@
 
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
 import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
 import { sessionManager } from '../../src/core/session'
+import { AGIM_HOME } from '../../src/core/agim-paths'
 
-const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
+const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
 function uniqueKey(prefix: string): { platform: string; channelId: string; threadId: string } {
   const id = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

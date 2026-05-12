@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir, } from 'node:os'
+import { AGIM_HOME } from '../../src/core/agim-paths'
 import { startACPServer } from '../../src/core/acp-server'
 import { registry } from '../../src/core/registry'
 import type { AgentAdapter } from '../../src/core/types'
@@ -37,7 +37,7 @@ function makeProfiledStub(name: string): AgentAdapter {
   }
 }
 
-const TOKEN_DIR = join(homedir(), '.im-hub')
+const TOKEN_DIR = AGIM_HOME
 const TOKEN_FILE = join(TOKEN_DIR, 'web-token')
 const TEST_TOKEN = 'acp-test-token-1234567890'
 

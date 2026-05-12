@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-12
+
 ### Fixed — per-platform coordinate-system handling for native location messages
 
 User-reported regression: GPS captured via WeChat's `/memo here` H5 link

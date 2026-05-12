@@ -382,12 +382,8 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 ## 社区
 
 <p align="center">
-  <a href="https://discord.gg/R83CXYz5">
-    <img src="https://img.shields.io/badge/加入_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord">
-  </a>
-  &nbsp;
-  <a href="https://x.com/lijieisme">
-    <img src="https://img.shields.io/badge/关注_X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X">
+  <a href="https://deepseek.club/community/imhub">
+    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" alt="DeepSeek">
   </a>
 </p>
 

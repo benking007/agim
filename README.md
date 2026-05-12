@@ -382,12 +382,8 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 ## Community
 
 <p align="center">
-  <a href="https://discord.gg/R83CXYz5">
-    <img src="https://img.shields.io/badge/Join_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord">
-  </a>
-  &nbsp;
-  <a href="https://x.com/lijieisme">
-    <img src="https://img.shields.io/badge/Follow_on_X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X">
+  <a href="https://deepseek.club/community/imhub">
+    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" alt="DeepSeek">
   </a>
 </p>
 

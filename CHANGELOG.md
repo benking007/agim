@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-12
+
+### Changed — config / workspace dir auto-detect (~/.agim/ vs ~/.im-hub/)
+
+Follow-up to the v1.0.0 rebrand: the on-disk root is now resolved at
+startup rather than hard-coded to `~/.im-hub/`. New module
+`src/core/agim-paths.ts` exports `AGIM_HOME` and `AGIM_WORKSPACES`,
+computed once with this priority:
+
+1. `$AGIM_HOME` / `$AGIM_WORKSPACES` env override (legacy `$IMHUB_HOME`
+   spelling also honored).
+2. `~/.agim/` (or `~/.agim-workspaces/`) if the directory exists — new
+   canonical name in v1.0+.
+3. `~/.im-hub/` (or `~/.im-hub-workspaces/`) if the directory exists —
+   legacy 0.x layout. Picked up automatically so upgraded users keep
+   their data in place with **zero migration**.
+4. Default to `~/.agim/` (or `~/.agim-workspaces/`) for fresh installs.
+
+That means:
+- **Upgraded 0.x user** → `agim` finds the existing `~/.im-hub/`, uses
+  it. memos.db / reminders.db / sessions/ / wechat-credentials.json all
+  stay where they are; nothing is moved.
+- **Fresh installer on a clean box** → `agim` creates `~/.agim/`.
+- **User who manually moves data** to `~/.agim/` later → `agim` switches
+  to it automatically on next start.
+
+Every hard-coded `join(homedir(), '.im-hub', ...)` and
+`'.im-hub-workspaces'` literal across the codebase (22 files,
+~30 call sites) was replaced with the resolved root. Modules touched:
+`cli.ts`, `web/server.ts`, `core/onboarding.ts`, `core/audit-log.ts`,
+`core/job-board.ts`, `core/schedule.ts`, `core/session.ts`,
+`core/memos.ts`, `core/reminders.ts`, `core/acp-server.ts`,
+`core/agent-cwd.ts`, `cli-ui/{paths,env-file,service,i18n}.ts`,
+every messenger plugin, `scripts/migrate-gcj02-to-wgs84.ts`.
+
+User-facing wizard strings (uninstall confirm, SMTP subtitle, workspaces
+kept) now interpolate the resolved paths so the prompt accurately
+reflects the actual on-disk layout instead of hard-coding the legacy
+literal.
+
 ## [1.0.0] - 2026-05-12
 
 ### Changed — Brand rename: `im-hub-pro` → **Agim · 阿吉姆**

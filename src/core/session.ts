@@ -9,16 +9,16 @@
 // per message). All metadata writes are atomic via writeFile→rename.
 
 import { createHash, randomBytes } from 'node:crypto'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
 import { logger as rootLogger } from './logger.js'
+import { AGIM_HOME } from './agim-paths.js'
 
 const log = rootLogger.child({ component: 'session' })
 
-const SESSIONS_DIR = join(homedir(), '.im-hub', 'sessions')
+const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
 function sanitizeKey(raw: string): string {
   return raw.replace(/[^A-Za-z0-9_-]/g, (c) => {

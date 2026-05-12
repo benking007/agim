@@ -743,7 +743,7 @@ const SMTP_PRESETS: SmtpPreset[] = [
 async function sectionSmtp(lang: Lang): Promise<void> {
   console.log()
   console.log(t(lang, 'smtp.title'))
-  console.log(t(lang, 'smtp.subtitle'))
+  console.log(t(lang, 'smtp.subtitle', { envFile: ENV_FILE }))
 
   // Use the effective env (env file + process.env fallback) so SMTP keys
   // set via the systemd unit's Environment= lines also show up in the

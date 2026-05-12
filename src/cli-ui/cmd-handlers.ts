@@ -21,7 +21,7 @@ import {
 import { yesNo } from './prompts.js'
 import { pickLang } from './lang-picker.js'
 import { readSavedLang, t, type Lang } from './i18n.js'
-import { CONFIG_FILE } from './paths.js'
+import { CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { ENV_FILE, removeEnvFile } from './env-file.js'
 
 /** Candidate paths for the systemd unit; v1.0 prefers `agim.service`,
@@ -186,8 +186,12 @@ export async function cmdRestart(): Promise<void> {
 
 export async function cmdUninstall(): Promise<void> {
   const lang = await pickLang()
+  // Path interpolations — match whatever AGIM_HOME / AGIM_WORKSPACES
+  // resolved to so the prompts reflect the actual on-disk layout (the
+  // legacy ~/.im-hub/ on upgraded systems, the new ~/.agim/ on fresh).
+  const pathVars = { config: CONFIG_FILE, workspaces: WORKSPACES_DIR }
   console.log()
-  console.log(t(lang, 'svc.uninstall.confirm'))
+  console.log(t(lang, 'svc.uninstall.confirm', pathVars))
   console.log()
   const ok = await yesNo({ message: t(lang, 'confirm'), default: false })
   if (!ok) {
@@ -215,7 +219,7 @@ export async function cmdUninstall(): Promise<void> {
   }
   try { execSync('systemctl daemon-reload', { stdio: 'ignore' }) } catch { /* ok */ }
   // 3. Remove config + env (but KEEP workspaces).
-  console.log(t(lang, 'svc.uninstall.removing_config'))
+  console.log(t(lang, 'svc.uninstall.removing_config', pathVars))
   try { unlinkSync(CONFIG_FILE) } catch { /* missing is fine */ }
   removeEnvFile()
   try { unlinkSync(PID_FILE) } catch { /* missing is fine */ }
@@ -230,7 +234,7 @@ export async function cmdUninstall(): Promise<void> {
     console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim\` manually.`)
   }
   console.log()
-  console.log(t(lang, 'svc.uninstall.workspaces_kept'))
+  console.log(t(lang, 'svc.uninstall.workspaces_kept', pathVars))
   console.log(t(lang, 'svc.uninstall.done'))
 }
 

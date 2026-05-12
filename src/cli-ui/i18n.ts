@@ -9,12 +9,12 @@
 // runs default to the saved choice (Enter accepts).
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { AGIM_HOME } from '../core/agim-paths.js'
 
 export type Lang = 'en' | 'zh'
 
-const PREF_FILE = join(homedir(), '.im-hub', 'cli-lang')
+const PREF_FILE = join(AGIM_HOME, 'cli-lang')
 
 const en = {
   // ─── language picker ─────────────────────────────────────────────────
@@ -151,7 +151,7 @@ const en = {
 
   // ─── SMTP ────────────────────────────────────────────────────────────
   'smtp.title': 'SMTP (for /remind email delivery)',
-  'smtp.subtitle': 'These end up in ~/.im-hub/env (chmod 600). Skip if email is not used.',
+  'smtp.subtitle': 'These end up in {envFile} (chmod 600). Skip if email is not used.',
   'smtp.current_set': 'Currently configured: {user} via {host}:{port}',
   'smtp.current_unset': 'Currently configured: (none)',
   'smtp.action.edit': 'Edit / re-configure SMTP',
@@ -216,12 +216,12 @@ const en = {
   'svc.restart.fg_warning': 'A foreground process is running; cannot restart from another shell. Stop it (Ctrl-C) and run `agim start --bg`.',
   'svc.restart.done': '✅ Restarted.',
 
-  'svc.uninstall.confirm': 'Uninstall Agim? This stops the service, removes the npm install + ~/.im-hub/config.json + systemd unit. Workspaces under ~/.im-hub-workspaces/ are KEPT.',
+  'svc.uninstall.confirm': 'Uninstall Agim? This stops the service, removes the npm install + {config} + systemd unit. Workspaces under {workspaces} are KEPT.',
   'svc.uninstall.stopping': 'Stopping any running instance…',
   'svc.uninstall.removing_npm': 'Removing global npm package `agim`…',
   'svc.uninstall.removing_unit': 'Removing systemd unit…',
-  'svc.uninstall.removing_config': 'Removing ~/.im-hub/config.json + env…',
-  'svc.uninstall.workspaces_kept': 'Workspaces kept at ~/.im-hub-workspaces/ (your memos / sessions / agent data).',
+  'svc.uninstall.removing_config': 'Removing {config} + env…',
+  'svc.uninstall.workspaces_kept': 'Workspaces kept at {workspaces} (your memos / sessions / agent data).',
   'svc.uninstall.done': '✅ Uninstalled. Workspaces preserved.',
   'svc.uninstall.cancelled': 'Cancelled.',
 
@@ -378,7 +378,7 @@ const zh: Record<Key, string> = {
 
   // ─── SMTP ────────────────────────────────────────────────────────
   'smtp.title': 'SMTP（用于 /remind 邮件投递）',
-  'smtp.subtitle': '凭据会写到 ~/.im-hub/env（chmod 600）。不用邮件就跳过。',
+  'smtp.subtitle': '凭据会写到 {envFile}（chmod 600）。不用邮件就跳过。',
   'smtp.current_set': '当前已配置：{user} via {host}:{port}',
   'smtp.current_unset': '当前已配置：（无）',
   'smtp.action.edit': '编辑 / 重新配置 SMTP',
@@ -443,12 +443,12 @@ const zh: Record<Key, string> = {
   'svc.restart.fg_warning': '前台进程在跑，无法从其他 shell 重启它。请在那个 shell 里 Ctrl-C 后用 `agim start --bg`。',
   'svc.restart.done': '✅ 已重启。',
 
-  'svc.uninstall.confirm': '确定卸载阿吉姆吗？将停止服务、移除全局 npm 包 + ~/.im-hub/config.json + systemd 单元。~/.im-hub-workspaces/ 下的工作区数据 **保留**。',
+  'svc.uninstall.confirm': '确定卸载阿吉姆吗？将停止服务、移除全局 npm 包 + {config} + systemd 单元。{workspaces} 下的工作区数据 **保留**。',
   'svc.uninstall.stopping': '停止运行中的实例…',
   'svc.uninstall.removing_npm': '移除全局 npm 包 `agim`…',
   'svc.uninstall.removing_unit': '移除 systemd 单元…',
-  'svc.uninstall.removing_config': '移除 ~/.im-hub/config.json + env…',
-  'svc.uninstall.workspaces_kept': '工作区数据保留在 ~/.im-hub-workspaces/（你的 memos / sessions / agent 数据）。',
+  'svc.uninstall.removing_config': '移除 {config} + env…',
+  'svc.uninstall.workspaces_kept': '工作区数据保留在 {workspaces}（你的 memos / sessions / agent 数据）。',
   'svc.uninstall.done': '✅ 卸载完成。工作区数据已保留。',
   'svc.uninstall.cancelled': '已取消。',
 

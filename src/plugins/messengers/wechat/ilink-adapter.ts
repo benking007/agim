@@ -5,8 +5,8 @@ import type { MessengerAdapter, Message, MessageContext } from '../../../core/ty
 import { ILinkClient } from './ilink-client.js'
 import type { Credentials, WeixinMessage, MessageItem, ContextTokenCache } from './ilink-types.js'
 import { ILINK_ERRORS, ITEM_TYPE } from './ilink-types.js'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { Backoff } from '../../../utils/backoff.js'
@@ -29,7 +29,7 @@ import {
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
 
-const CREDENTIALS_FILE = join(homedir(), '.im-hub', 'wechat-credentials.json')
+const CREDENTIALS_FILE = join(AGIM_HOME, 'wechat-credentials.json')
 const _POLL_TIMEOUT = 30000 // 30 seconds
 const CONTEXT_TOKEN_TTL = 30 * 60 * 1000 // 30 minutes
 

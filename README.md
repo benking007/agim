@@ -300,6 +300,8 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IMHUB_TZ_OFFSET_HOURS` | `8` | Hours offset from UTC for memo timestamps (Asia/Shanghai default). Change only if your deployment is elsewhere. |
 | `IMHUB_TELEGRAM_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to Telegram native location/venue messages. Default off (WGS-84 pass-through). Turn on if your Telegram clients are Apple devices in mainland China — iOS Core Location applies the GCJ offset before handing coords to Telegram. |
 | `IMHUB_H5_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to coords POSTed from `/memo here` H5 capture pages. Default off (WGS-84 pass-through, fits WeChat X5 webview + Android Chrome). Turn on if your users open the H5 link in iOS Safari / iOS WebKit in mainland China. See [`src/core/coord-systems.ts`](src/core/coord-systems.ts) for the full per-platform policy. |
+| `AGIM_HOME` | auto | Per-user state directory. By default Agim picks `~/.agim/` on a fresh install and `~/.im-hub/` on a legacy 0.x install (auto-detected). Set explicitly if you want to pin a location — e.g. on shared machines or for tests. `IMHUB_HOME` is also honored. |
+| `AGIM_WORKSPACES` | auto | Per-agent workspace root. Same dual-detect logic as `AGIM_HOME` (`~/.agim-workspaces/` preferred, `~/.im-hub-workspaces/` if it exists). `IMHUB_WORKSPACES` also honored. |
 
 ## Architecture
 

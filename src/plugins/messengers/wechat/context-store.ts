@@ -13,13 +13,13 @@
 // schedule — if SQLite is unavailable (bun runtime), all calls degrade to
 // no-ops and the adapter just behaves like before persistence existed.
 
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { createSqliteHelper } from '../../../core/sqlite-helper.js'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 
 const STORE_FILE = process.env.IMHUB_WECHAT_CONTEXT_DB
-  ?? join(homedir(), '.im-hub', 'wechat-context.db')
+  ?? join(AGIM_HOME, 'wechat-context.db')
 
 const helper = createSqliteHelper({
   file: STORE_FILE,

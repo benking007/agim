@@ -4,16 +4,16 @@
 // Reuses the traceId from structured logging.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { recordInvocation, recordAuditPruneFailure } from './metrics.js'
 import { eventBus } from './event-bus.js'
 import { createSqliteHelper } from './sqlite-helper.js'
+import { AGIM_HOME } from './agim-paths.js'
 
 const log = rootLogger.child({ component: 'audit-log' })
 
-const AUDIT_DB = join(homedir(), '.im-hub', 'audit.db')
+const AUDIT_DB = join(AGIM_HOME, 'audit.db')
 
 /** Default number of days to keep audit rows. Override via env. */
 function resolveRetentionDays(): number {

@@ -11,16 +11,16 @@
 
 import { spawn } from 'node:child_process'
 import { mkdir, readdir, rm, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 
 const log = rootLogger.child({ component: 'telegram.media' })
 
 /** Root for downloaded media. Always resolved absolute so the safety check
  *  `path.startsWith(MEDIA_ROOT)` is robust. Override via env for tests. */
 export const MEDIA_ROOT: string = resolve(
-  process.env.IMHUB_MEDIA_ROOT ?? join(homedir(), '.im-hub', 'media'),
+  process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'),
 )
 
 /** Hard upper bound on a single download. Telegram photo max is ~10 MB and

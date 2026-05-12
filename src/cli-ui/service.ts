@@ -22,11 +22,14 @@
 
 import { execSync, spawn } from 'node:child_process'
 import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { AGIM_HOME } from '../core/agim-paths.js'
 
-export const PID_FILE = join(homedir(), '.im-hub', 'im-hub.pid')
-export const LOG_FILE = join(homedir(), '.im-hub', 'im-hub.log')
+// Pid + log files live inside whatever AGIM_HOME resolved to. Filenames
+// themselves stay `im-hub.*` for backwards compat with any external
+// monitoring / log-collection that's tailing them.
+export const PID_FILE = join(AGIM_HOME, 'im-hub.pid')
+export const LOG_FILE = join(AGIM_HOME, 'im-hub.log')
 
 /** Systemd unit candidates, checked in order. v1.0+ installers should
  *  write `agim.service`; older installs use `im-hub.service`. We accept
@@ -215,11 +218,12 @@ export async function stopService(): Promise<{ mode: ServiceMode; pid: number | 
   return { mode: 'none', pid: null }
 }
 
-/** Get the configured web bind+port from ~/.im-hub/config.json — used by
- *  `status` to print the URL. Returns null when config is absent / unparseable. */
+/** Get the configured web bind+port from `<AGIM_HOME>/config.json` —
+ *  used by `status` to print the URL. Returns null when config is
+ *  absent / unparseable. */
 export function readWebEndpoint(): { bind: string; port: number } | null {
   try {
-    const raw = readFileSync(join(homedir(), '.im-hub', 'config.json'), 'utf-8')
+    const raw = readFileSync(join(AGIM_HOME, 'config.json'), 'utf-8')
     const cfg = JSON.parse(raw) as { web?: { bind?: string; port?: number } }
     const bind = typeof cfg.web?.bind === 'string' ? cfg.web.bind : '127.0.0.1'
     const port = typeof cfg.web?.port === 'number' ? cfg.web.port : 3000

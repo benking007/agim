@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { AGIM_HOME } from './agim-paths.js'
 import { parseMessage, routeMessage, type RouteContext } from './router.js'
 import { generateTraceId, createLogger, logger as rootLogger } from './logger.js'
 import { registry } from './registry.js'
@@ -19,7 +19,7 @@ import { createJob, getJob, runJob } from './job-board.js'
 import { safeEqual } from '../utils/safe-equal.js'
 
 const DEFAULT_ACP_PORT = 9090
-const WEB_TOKEN_DIR = join(homedir(), '.im-hub')
+const WEB_TOKEN_DIR = AGIM_HOME
 const WEB_TOKEN_FILE = join(WEB_TOKEN_DIR, 'web-token')
 /** Max POST body size (per ACP request). Larger requests get 413. */
 const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB

@@ -18,13 +18,13 @@
 // Owner-scoped per (platform, user_id), same pattern as /remind, /cron.
 
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
+import { AGIM_HOME } from './agim-paths.js'
 
 const log = rootLogger.child({ component: 'memos' })
 
-const DB_FILE = process.env.IMHUB_MEMOS_DB || join(homedir(), '.im-hub', 'memos.db')
+const DB_FILE = process.env.IMHUB_MEMOS_DB || join(AGIM_HOME, 'memos.db')
 
 // ─── Time / timezone ───────────────────────────────────────────────────
 // All timestamps are stored in UTC+8 (Asia/Shanghai) wall-clock format,

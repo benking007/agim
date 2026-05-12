@@ -18,13 +18,13 @@
 //     therefore needs the user to type coords (no native location msg).
 
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { MessengerAdapter, Message, MessageContext } from '../../../core/types.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { setLocationContext } from '../../../core/location-context.js'
 import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
 import { detectProvider, transcribe, TranscribeError } from '../../../core/transcribe.js'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { DingTalkClient } from './dingtalk-client.js'
 import { tryExtractLatLng } from './link-coords.js'
 import { pickDingTalkExtension, saveDingTalkMedia } from './media-store.js'
@@ -32,7 +32,7 @@ import type { DingTalkConfig, DingTalkInboundMessage } from './types.js'
 
 const log = rootLogger.child({ component: 'dingtalk' })
 
-const CONFIG_FILE = join(homedir(), '.im-hub', 'config.json')
+const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 // Match Feishu's dedup window — DingTalk's gateway also re-delivers if
 // the ack races the next reconnect.

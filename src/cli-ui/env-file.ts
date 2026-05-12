@@ -8,10 +8,10 @@
 // Lines starting with # are preserved as comments. Empty lines preserved.
 
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync, existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { AGIM_HOME } from '../core/agim-paths.js'
 
-export const ENV_FILE = join(homedir(), '.im-hub', 'env')
+export const ENV_FILE = join(AGIM_HOME, 'env')
 
 /** Read existing env as a plain Record. Unknown lines (blank / comment)
  *  are dropped from the returned map but PRESERVED on write via merge. */

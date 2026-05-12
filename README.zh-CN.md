@@ -296,6 +296,8 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IMHUB_TZ_OFFSET_HOURS` | `8` | memo 时间戳的 UTC 偏移（默认 Asia/Shanghai）。仅当部署在其他时区时调整。 |
 | `IMHUB_TELEGRAM_COORDS_GCJ02` | 未设 | 设 `1` 对 Telegram 原生位置/venue 消息做 GCJ-02 → WGS-84 转换。默认关（直通），适合 Telegram Desktop / Android-without-China-GMS / 海外用户。如果你的 Telegram 客户端是国内 iOS 设备（Core Location 会加 GCJ 偏移），打开它。 |
 | `IMHUB_H5_COORDS_GCJ02` | 未设 | 设 `1` 对 `/memo here` H5 抓 GPS 的坐标做 GCJ-02 → WGS-84 转换。默认关（直通），匹配微信 X5 / Android Chrome 直给 WGS-84 的常见情况。如果你的用户主要在 iOS Safari / iOS WebKit 国内打开 H5 链接（Apple 会加 GCJ 偏移），打开它。完整每平台策略见 [`src/core/coord-systems.ts`](src/core/coord-systems.ts)。 |
+| `AGIM_HOME` | 自动 | 用户级配置/数据目录。全新安装默认 `~/.agim/`；从 0.x 升级则自动用现有的 `~/.im-hub/`。如果想固定到具体位置（多机共享、测试场景），显式设置即可。也认旧的 `IMHUB_HOME`。 |
+| `AGIM_WORKSPACES` | 自动 | per-agent 工作区目录。与 `AGIM_HOME` 一样的双探测（优先 `~/.agim-workspaces/`，存在 `~/.im-hub-workspaces/` 时用它）。也认 `IMHUB_WORKSPACES`。 |
 
 ## 架构
 

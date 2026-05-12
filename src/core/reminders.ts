@@ -10,15 +10,15 @@
 // 5-second tick; pending rows survive process restart.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { registry } from './registry.js'
 import { callHelperAgent } from './agent-helper.js'
 
 const REMINDERS_DB = process.env.IMHUB_REMINDERS_DB
-  ?? join(homedir(), '.im-hub', 'reminders.db')
+  ?? join(AGIM_HOME, 'reminders.db')
 const TICK_INTERVAL_MS = 5 * 1000
 const BATCH_SIZE = 50
 

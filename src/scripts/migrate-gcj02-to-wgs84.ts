@@ -16,12 +16,12 @@
 //   - Run with --dry-run first to preview.
 
 import Database from 'better-sqlite3'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { gcj02ToWgs84 } from '../core/memos.js'
+import { AGIM_HOME } from '../core/agim-paths.js'
 
 const DRY = process.argv.includes('--dry-run')
-const DB_FILE = process.env.IMHUB_MEMOS_DB || join(homedir(), '.im-hub', 'memos.db')
+const DB_FILE = process.env.IMHUB_MEMOS_DB || join(AGIM_HOME, 'memos.db')
 
 const db = new Database(DB_FILE)
 const rows = db.prepare(

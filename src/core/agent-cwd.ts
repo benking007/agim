@@ -19,14 +19,17 @@
 // `IMHUB_CLAUDE_CODE_CWD=/srv/foo`). Useful for migration tests and for
 // future per-tenant deployments.
 
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdir, writeFile, access } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
+import { AGIM_WORKSPACES } from './agim-paths.js'
 
-/** Root for all per-agent IM workspaces. Kept stable so memory persists. */
+/** Root for all per-agent IM workspaces. Kept stable so memory persists.
+ *  Honors the legacy `IMHUB_WORKSPACES_ROOT` env override; otherwise
+ *  resolves via core/agim-paths (which prefers `~/.agim-workspaces/` but
+ *  falls back to the legacy `~/.im-hub-workspaces/` on 0.x systems). */
 export function imhubWorkspacesRoot(): string {
-  return process.env.IMHUB_WORKSPACES_ROOT || join(homedir(), '.im-hub-workspaces')
+  return process.env.IMHUB_WORKSPACES_ROOT || AGIM_WORKSPACES
 }
 
 /** Default cwd for a given agent under the workspaces root. */

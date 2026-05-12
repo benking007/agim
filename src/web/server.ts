@@ -5,7 +5,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { homedir } from 'node:os'
+import { AGIM_HOME } from '../core/agim-paths.js'
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
@@ -41,7 +41,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, 'public')
 const DEFAULT_PORT = 3000
-const WEB_TOKEN_DIR = join(homedir(), '.im-hub')
+const WEB_TOKEN_DIR = AGIM_HOME
 const WEB_TOKEN_FILE = join(WEB_TOKEN_DIR, 'web-token')
 
 function generateToken(): string {

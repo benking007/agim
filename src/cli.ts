@@ -13,7 +13,6 @@
 // names being stable. The rename is a brand surface only.
 
 import { program } from 'commander'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
@@ -46,13 +45,14 @@ import {
 } from './core/onboarding.js'
 import { startWebServer } from './web/server.js'
 import { startACPServer } from './core/acp-server.js'
+import { AGIM_HOME } from './core/agim-paths.js'
 
 // Helper to format agent install hint for missing agents
 function _formatMissingAgentHint(missing: string[]): string {
   return formatAgentInstallHint(missing)
 }
 
-const CONFIG_DIR = join(homedir(), '.im-hub')
+const CONFIG_DIR = AGIM_HOME
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const PACKAGE_JSON = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
 

@@ -4,7 +4,7 @@
 import type { MessengerAdapter, Message, MessageContext } from '../../../core/types.js'
 import { FeishuClient } from './feishu-client.js'
 import type { FeishuConfig } from './types.js'
-import { homedir } from 'node:os'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { logger as rootLogger } from '../../../core/logger.js'
@@ -13,7 +13,7 @@ import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
 
 const log = rootLogger.child({ component: 'feishu' })
 
-const CONFIG_FILE = join(homedir(), '.im-hub', 'config.json')
+const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 // Message event type from Feishu SDK
 interface MessageReceiveEvent {

@@ -8,16 +8,16 @@
 // telegram/media-download.ts (both write into the same root dir).
 
 import { mkdir, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { AGIM_HOME } from '../../../core/agim-paths.js'
 import type { CDNMedia, ImageItem, VoiceItem, FileItem, VideoItem } from './ilink-types.js'
 import type { ILinkClient } from './ilink-client.js'
 
 const log = rootLogger.child({ component: 'wechat.media' })
 
 export const MEDIA_ROOT: string = resolve(
-  process.env.IMHUB_MEDIA_ROOT ?? join(homedir(), '.im-hub', 'media'),
+  process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'),
 )
 
 export const MAX_BYTES = 20 * 1024 * 1024

@@ -35,10 +35,10 @@ export class DiscordAdapter implements MessengerAdapter {
   async start(): Promise<void> {
     // Load config
     const { readFile } = await import('node:fs/promises')
-    const { homedir } = await import('node:os')
     const { join } = await import('node:path')
+    const { AGIM_HOME } = await import('../../../core/agim-paths.js')
 
-    const configPath = join(homedir(), '.im-hub', 'config.json')
+    const configPath = join(AGIM_HOME, 'config.json')
     try {
       const data = await readFile(configPath, 'utf-8')
       const config = JSON.parse(data)

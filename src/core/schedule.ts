@@ -7,8 +7,8 @@
 // audit-log + job-board.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AGIM_HOME } from './agim-paths.js'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
 import { parseCron, nextOccurrence } from './cron.js'
@@ -17,7 +17,7 @@ import { registry } from './registry.js'
 import { AgentBase } from './agent-base.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
-const SCHED_DB = join(homedir(), '.im-hub', 'schedules.db')
+const SCHED_DB = join(AGIM_HOME, 'schedules.db')
 const TICK_INTERVAL_MS = 30 * 1000
 const NOTIFY_TIMEOUT_MS = 10 * 1000
 /** Hard cap on webhook response body — we only read a small ack. */

@@ -20,14 +20,14 @@
 //     6h via setInterval, mirroring audit-log.
 
 import type Database from 'better-sqlite3'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
 import { createSqliteHelper } from './sqlite-helper.js'
+import { AGIM_HOME } from './agim-paths.js'
 
-const BOARD_DB = join(homedir(), '.im-hub', 'jobs.db')
+const BOARD_DB = join(AGIM_HOME, 'jobs.db')
 
 /** Hard cap on a single job's accumulated result. A misbehaving agent (or a
  * runaway tool that dumps a giant file) could otherwise keep filling the

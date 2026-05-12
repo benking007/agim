@@ -2,12 +2,12 @@
 // Handles messenger config checks, agent availability, and interactive setup
 
 import { createInterface } from 'node:readline'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { registry } from './registry.js'
+import { AGIM_HOME } from './agim-paths.js'
 
-const CONFIG_DIR = join(homedir(), '.im-hub')
+const CONFIG_DIR = AGIM_HOME
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 
 // ============================================

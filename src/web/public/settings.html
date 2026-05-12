@@ -89,6 +89,45 @@
         workspaceDeleted: 'Workspace deleted',
         workspaceIdHelp: 'Letters / digits / _ / - only',
         workspaceDefaultLocked: 'default (locked)',
+
+        // ── messengers (extras for v1.0.5) ───────────────────────
+        wechatScan: 'Scan to log in',
+        wechatScanTitle: 'WeChat — scan to log in',
+        wechatGenerating: 'Generating QR code…',
+        wechatWaiting: 'Waiting for scan…',
+        wechatScanned: 'QR scanned — confirm on your phone…',
+        wechatConfirmed: '✓ Logged in (account {account})',
+        wechatExpired: 'QR code expired',
+        wechatRegen: 'Regenerate',
+        wechatClose: 'Close',
+        wechatFailed: 'Failed: {error}',
+        dingtalk: 'DingTalk',
+        dingtalkHint: 'Stream-mode app: Client ID + Client Secret',
+        dingtalkClientId: 'Client ID',
+        dingtalkClientSecret: 'Client Secret',
+        discord: 'Discord',
+        discordHint: 'Bot token from Discord Developer Portal',
+        discordToken: 'Bot Token',
+        discordGuilds: 'Allowed guilds (comma-separated IDs, blank = any)',
+        discordChannels: 'Allowed channels (comma-separated IDs, blank = any)',
+        configure: 'Configure',
+        reconfigure: 'Edit credentials',
+
+        // ── service control ──────────────────────────────────────
+        svcTitle: 'Service',
+        svcStateLoading: 'Checking…',
+        svcStateRunning: 'Running ({mode}, pid {pid}, up {uptime})',
+        svcStateRunningNoUp: 'Running ({mode}, pid {pid})',
+        svcStateNone: 'Not running',
+        svcStart: 'Start',
+        svcStop: 'Stop',
+        svcRestart: 'Restart',
+        svcConfirmStop: 'Stop Agim? The web console will go offline until you start it again from a terminal.',
+        svcConfirmRestart: 'Restart Agim? The web console will reconnect automatically in a few seconds.',
+        svcRestarting: 'Restarting — waiting for the service to come back…',
+        svcRestarted: '✓ Service restarted',
+        svcStopped: '✓ Service stopped (this page is now disconnected)',
+        svcFgWarning: 'Foreground service is running in another terminal — restart it there.',
       },
       zh: {
         title: 'Agim — 设置',
@@ -164,6 +203,45 @@
         workspaceDeleted: '工作区已删除',
         workspaceIdHelp: '仅支持字母 / 数字 / _ / -',
         workspaceDefaultLocked: '默认（不可改）',
+
+        // ── messengers (extras for v1.0.5) ───────────────────────
+        wechatScan: '扫码登录',
+        wechatScanTitle: '微信 — 扫码登录',
+        wechatGenerating: '生成二维码中…',
+        wechatWaiting: '等待扫描…',
+        wechatScanned: '已扫描，请在手机端确认…',
+        wechatConfirmed: '✓ 登录成功（账号 {account}）',
+        wechatExpired: '二维码已过期',
+        wechatRegen: '重新生成',
+        wechatClose: '关闭',
+        wechatFailed: '失败：{error}',
+        dingtalk: '钉钉',
+        dingtalkHint: 'Stream 模式应用：Client ID + Client Secret',
+        dingtalkClientId: 'Client ID',
+        dingtalkClientSecret: 'Client Secret',
+        discord: 'Discord',
+        discordHint: '在 Discord Developer Portal 获取 Bot Token',
+        discordToken: 'Bot Token',
+        discordGuilds: '允许的服务器（逗号分隔 ID，空 = 不限）',
+        discordChannels: '允许的频道（逗号分隔 ID，空 = 不限）',
+        configure: '配置',
+        reconfigure: '修改凭据',
+
+        // ── service control ──────────────────────────────────────
+        svcTitle: '服务',
+        svcStateLoading: '检查中…',
+        svcStateRunning: '运行中（{mode}，pid {pid}，已运行 {uptime}）',
+        svcStateRunningNoUp: '运行中（{mode}，pid {pid}）',
+        svcStateNone: '未运行',
+        svcStart: '启动',
+        svcStop: '停止',
+        svcRestart: '重启',
+        svcConfirmStop: '停止 Agim？停止后 web 控制台会离线，需要回终端用 `agim start` 再启动。',
+        svcConfirmRestart: '重启 Agim？web 控制台会在几秒后自动重连。',
+        svcRestarting: '重启中——等待服务恢复…',
+        svcRestarted: '✓ 服务已重启',
+        svcStopped: '✓ 服务已停止（页面已断开连接）',
+        svcFgWarning: '前台服务在另一个终端运行——回那个终端重启。',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -603,6 +681,7 @@
     function render() {
       app.innerHTML = `
         <h1>${t('h1')}</h1>
+        ${renderServiceCard()}
         ${renderAgentsCard()}
         ${renderMessengersCard()}
         ${renderAcpCard()}
@@ -610,6 +689,28 @@
         ${renderGeneralCard()}
       `;
       bindEvents();
+      // Service status loads asynchronously; the card renders with a
+      // placeholder, populated by the first /api/service/status response.
+      void loadServiceStatus();
+    }
+
+    // ==========================================
+    // Service control card
+    // ==========================================
+    function renderServiceCard() {
+      return `
+        <div class="card">
+          <h2>${t('svcTitle')}</h2>
+          <div class="status" id="svc-state" style="margin-bottom:14px">
+            <span class="dot dot-off"></span>${t('svcStateLoading')}
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="svc-restart">${t('svcRestart')}</button>
+            <button type="button" class="btn" id="svc-stop">${t('svcStop')}</button>
+            <button type="button" class="btn" id="svc-start" disabled>${t('svcStart')}</button>
+          </div>
+        </div>
+      `;
     }
 
     // ==========================================
@@ -665,10 +766,14 @@
       const messengers = config.messengers || [];
       const tg = config.telegram || {};
       const fs = config.feishu || {};
+      const dt = config.dingtalk || {};
+      const dc = config.discord || {};
 
       const wechatEnabled = messengers.includes('wechat-ilink');
       const telegramEnabled = messengers.includes('telegram');
       const feishuEnabled = messengers.includes('feishu');
+      const dingtalkEnabled = messengers.includes('dingtalk');
+      const discordEnabled = messengers.includes('discord');
 
       return `
         <div class="card">
@@ -685,7 +790,11 @@
               </div>
               <div class="toggle ${wechatEnabled ? 'active' : ''}" data-toggle-messenger="wechat-ilink"></div>
             </div>
-            ${wechatEnabled ? `<div class="hint-box">${t('wechatBox')}</div>` : ''}
+            ${wechatEnabled ? `
+              <div class="actions">
+                <button type="button" class="btn" id="wechatScanBtn">${t('wechatScan')}</button>
+              </div>
+            ` : ''}
           </div>
 
           <!-- Telegram -->
@@ -714,7 +823,7 @@
           </div>
 
           <!-- Feishu -->
-          <div>
+          <div style="margin-bottom:16px">
             <div class="agent-row">
               <div class="left">
                 <div>
@@ -733,6 +842,66 @@
                 <div>
                   <label>${t('appSecret')}</label>
                   <input type="password" id="fsAppSecret" value="${esc(fs.appSecret || '')}" placeholder="Your app secret">
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- DingTalk -->
+          <div style="margin-bottom:16px">
+            <div class="agent-row">
+              <div class="left">
+                <div>
+                  <div class="name">${t('dingtalk')}</div>
+                  <div class="hint">${t('dingtalkHint')}</div>
+                </div>
+              </div>
+              <div class="toggle ${dingtalkEnabled ? 'active' : ''}" data-toggle-messenger="dingtalk"></div>
+            </div>
+            ${dingtalkEnabled ? `
+              <div class="row">
+                <div>
+                  <label>${t('dingtalkClientId')}</label>
+                  <input type="text" id="dtClientId" value="${esc(dt.clientId || '')}" placeholder="dingxxxxxx">
+                </div>
+                <div>
+                  <label>${t('dingtalkClientSecret')}</label>
+                  <input type="password" id="dtClientSecret" value="${esc(dt.clientSecret || '')}" placeholder="••••••••">
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Discord -->
+          <div>
+            <div class="agent-row">
+              <div class="left">
+                <div>
+                  <div class="name">${t('discord')}</div>
+                  <div class="hint">${t('discordHint')}</div>
+                </div>
+              </div>
+              <div class="toggle ${discordEnabled ? 'active' : ''}" data-toggle-messenger="discord"></div>
+            </div>
+            ${discordEnabled ? `
+              <div class="row">
+                <div>
+                  <label>${t('discordToken')}</label>
+                  <input type="password" id="dcToken" value="${esc(dc.botToken || '')}" placeholder="••••••••">
+                </div>
+                <div>
+                  <label>${t('channelId')}</label>
+                  <input type="text" id="dcChannel" value="${esc(dc.channelId || '')}" placeholder="default">
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>${t('discordGuilds')}</label>
+                  <input type="text" id="dcGuilds" value="${esc((dc.allowedGuilds || []).join(', '))}" placeholder="123, 456">
+                </div>
+                <div>
+                  <label>${t('discordChannels')}</label>
+                  <input type="text" id="dcChannels" value="${esc((dc.allowedChannels || []).join(', '))}" placeholder="789, 101112">
                 </div>
               </div>
             ` : ''}
@@ -1037,17 +1206,76 @@
       // the Reveal buttons re-fetch with ?reveal=1 on demand.
       void loadEnvSection();
 
+      // Service control card
+      document.getElementById('svc-restart')?.addEventListener('click', () => svcAction('restart'));
+      document.getElementById('svc-stop')?.addEventListener('click', () => svcAction('stop'));
+      document.getElementById('svc-start')?.addEventListener('click', () => svcAction('start'));
+
       // Agent toggles
       document.querySelectorAll('[data-toggle-agent]').forEach(el => {
         el.addEventListener('click', () => el.classList.toggle('active'));
       });
 
-      // Messenger toggles
+      // Messenger toggles — flip in-memory config.messengers, then re-render.
       document.querySelectorAll('[data-toggle-messenger]').forEach(el => {
         el.addEventListener('click', () => {
-          el.classList.toggle('active');
-          syncMessengerToggles();
+          const id = el.getAttribute('data-toggle-messenger');
+          const set = new Set(config.messengers || []);
+          if (set.has(id)) set.delete(id);
+          else set.add(id);
+          config.messengers = Array.from(set);
+          render();
         });
+      });
+
+      // Save messengers — pull credentials from any visible fields, then PUT.
+      document.getElementById('saveMessengers')?.addEventListener('click', async () => {
+        const get = (id) => document.getElementById(id)?.value?.trim() ?? '';
+        const messengers = (config.messengers || []);
+
+        if (messengers.includes('telegram')) {
+          const botToken = get('tgToken');
+          const channelId = get('tgChannel') || 'default';
+          if (botToken) config.telegram = { ...(config.telegram || {}), botToken, channelId };
+          else if (config.telegram?.channelId !== channelId) config.telegram = { ...(config.telegram || {}), channelId };
+        }
+        if (messengers.includes('feishu')) {
+          const appId = get('fsAppId');
+          const appSecret = get('fsAppSecret');
+          config.feishu = {
+            ...(config.feishu || {}),
+            ...(appId ? { appId } : {}),
+            ...(appSecret ? { appSecret } : {}),
+          };
+        }
+        if (messengers.includes('dingtalk')) {
+          const clientId = get('dtClientId');
+          const clientSecret = get('dtClientSecret');
+          config.dingtalk = {
+            ...(config.dingtalk || {}),
+            ...(clientId ? { clientId } : {}),
+            ...(clientSecret ? { clientSecret } : {}),
+          };
+        }
+        if (messengers.includes('discord')) {
+          const botToken = get('dcToken');
+          const channelId = get('dcChannel') || 'default';
+          const guildsRaw = get('dcGuilds');
+          const channelsRaw = get('dcChannels');
+          config.discord = {
+            ...(config.discord || {}),
+            ...(botToken ? { botToken } : {}),
+            channelId,
+            allowedGuilds: guildsRaw ? guildsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+            allowedChannels: channelsRaw ? channelsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+          };
+        }
+        await saveConfig();
+      });
+
+      // WeChat — open QR modal on click.
+      document.getElementById('wechatScanBtn')?.addEventListener('click', () => {
+        openWechatQrModal();
       });
 
       // ACP toggles
@@ -1303,6 +1531,186 @@
     }
 
     // ==========================================
+    // WeChat QR-login modal
+    // ==========================================
+    let wechatPollTimer = null;
+    function closeWechatQrModal() {
+      if (wechatPollTimer) { clearTimeout(wechatPollTimer); wechatPollTimer = null; }
+      const m = document.getElementById('wechat-modal');
+      if (m) m.remove();
+    }
+    async function openWechatQrModal() {
+      // Tear down any prior modal first.
+      closeWechatQrModal();
+      const overlay = document.createElement('div');
+      overlay.id = 'wechat-modal';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)';
+      overlay.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;max-width:380px;width:90%;text-align:center">
+          <div style="font-weight:600;font-size:15px;margin-bottom:14px">${esc(t('wechatScanTitle'))}</div>
+          <div id="wechat-qr-wrap" style="min-height:240px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border-radius:8px;margin-bottom:12px">
+            <div style="color:var(--text-dim);font-size:13px">${esc(t('wechatGenerating'))}</div>
+          </div>
+          <div id="wechat-qr-status" style="font-size:13px;color:var(--text-dim);margin-bottom:14px;min-height:18px"></div>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button type="button" class="btn" id="wechat-regen">${esc(t('wechatRegen'))}</button>
+            <button type="button" class="btn" id="wechat-close">${esc(t('wechatClose'))}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      document.getElementById('wechat-close')?.addEventListener('click', closeWechatQrModal);
+      document.getElementById('wechat-regen')?.addEventListener('click', () => { void startWechatQr(); });
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeWechatQrModal(); });
+      await startWechatQr();
+    }
+
+    async function startWechatQr() {
+      if (wechatPollTimer) { clearTimeout(wechatPollTimer); wechatPollTimer = null; }
+      const wrap = document.getElementById('wechat-qr-wrap');
+      const statusEl = document.getElementById('wechat-qr-status');
+      if (!wrap || !statusEl) return;
+      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:13px">${esc(t('wechatGenerating'))}</div>`;
+      statusEl.textContent = '';
+      let qrToken;
+      try {
+        const res = await authFetch('/api/messengers/wechat/qr-start', { method: 'POST' });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || res.statusText);
+        }
+        const data = await res.json();
+        qrToken = data.qrToken;
+        // qrUrl from iLink may be a data: URL (base64 png) or an https URL.
+        // Either way, <img src=...> handles it directly.
+        wrap.innerHTML = `<img src="${esc(data.qrUrl)}" alt="QR code" style="width:240px;height:240px;border-radius:6px;background:#fff;padding:8px">`;
+        statusEl.textContent = t('wechatWaiting');
+      } catch (err) {
+        wrap.innerHTML = `<div style="color:var(--red);font-size:13px">${esc(t('wechatFailed').replace('{error}', err && err.message ? err.message : err))}</div>`;
+        return;
+      }
+      // Begin polling.
+      const poll = async () => {
+        try {
+          const res = await authFetch('/api/messengers/wechat/qr-status?token=' + encodeURIComponent(qrToken));
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.error || res.statusText);
+          }
+          const data = await res.json();
+          if (data.status === 'wait') {
+            statusEl.textContent = t('wechatWaiting');
+            wechatPollTimer = setTimeout(poll, 1500);
+            return;
+          }
+          if (data.status === 'scaned') {
+            statusEl.textContent = t('wechatScanned');
+            wechatPollTimer = setTimeout(poll, 1000);
+            return;
+          }
+          if (data.status === 'confirmed') {
+            const account = (data.credentials && data.credentials.accountId) || '';
+            statusEl.innerHTML = '<span style="color:var(--green)">' + esc(t('wechatConfirmed').replace('{account}', account)) + '</span>';
+            // Refresh the underlying config (server added 'wechat-ilink' to messengers).
+            toast(t('savedMsg'), 'success');
+            setTimeout(() => { closeWechatQrModal(); void init(); }, 1500);
+            return;
+          }
+          if (data.status === 'expired') {
+            statusEl.innerHTML = '<span style="color:var(--red)">' + esc(t('wechatExpired')) + '</span>';
+            return;
+          }
+          // Unknown status — keep polling once, then stop.
+          wechatPollTimer = setTimeout(poll, 1500);
+        } catch (err) {
+          statusEl.innerHTML = '<span style="color:var(--red)">' + esc(t('wechatFailed').replace('{error}', err && err.message ? err.message : err)) + '</span>';
+        }
+      };
+      wechatPollTimer = setTimeout(poll, 1000);
+    }
+
+    // ==========================================
+    // Service-control card (status + start/stop/restart)
+    // ==========================================
+    let svcPollTimer = null;
+    async function loadServiceStatus() {
+      const stateEl = document.getElementById('svc-state');
+      const startBtn = document.getElementById('svc-start');
+      const stopBtn = document.getElementById('svc-stop');
+      const restartBtn = document.getElementById('svc-restart');
+      if (!stateEl) return;
+      try {
+        const res = await authFetch('/api/service/status');
+        if (!res.ok) throw new Error(res.statusText);
+        const d = await res.json();
+        if (d.mode === 'none') {
+          stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcStateNone'));
+        } else {
+          const tpl = d.uptime ? t('svcStateRunning') : t('svcStateRunningNoUp');
+          const label = tpl
+            .replace('{mode}', d.mode || '?')
+            .replace('{pid}', d.pid != null ? d.pid : '?')
+            .replace('{uptime}', d.uptime || '');
+          stateEl.innerHTML = '<span class="dot dot-on"></span>' + esc(label);
+        }
+        if (startBtn)   startBtn.disabled   = d.mode !== 'none';
+        if (stopBtn)    stopBtn.disabled    = d.mode === 'none';
+        if (restartBtn) restartBtn.disabled = d.mode === 'none' || d.mode === 'foreground';
+      } catch (err) {
+        stateEl.textContent = (t('error') + ': ' + (err && err.message ? err.message : err));
+      }
+    }
+    async function svcAction(action) {
+      const confirmKey = action === 'stop' ? 'svcConfirmStop' : action === 'restart' ? 'svcConfirmRestart' : null;
+      if (confirmKey && !confirm(t(confirmKey))) return;
+      const stateEl = document.getElementById('svc-state');
+      try {
+        const res = await authFetch('/api/service/' + action, { method: 'POST' });
+        if (action === 'restart') {
+          // The HTTP response may not arrive before the parent process
+          // SIGTERMs itself. Either way, drop into a "wait for reconnect" loop.
+          if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcRestarting'));
+          await waitForServiceBack(stateEl);
+          if (stateEl) {
+            // loadServiceStatus refreshes the badge to live state.
+            await loadServiceStatus();
+            toast(t('svcRestarted'), 'success');
+          }
+          return;
+        }
+        if (action === 'stop') {
+          if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcStopped'));
+          // Don't poll — the server is gone.
+          return;
+        }
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || res.statusText);
+        }
+        await loadServiceStatus();
+      } catch (err) {
+        toast(t('error') + ': ' + (err && err.message ? err.message : err), 'error');
+      }
+    }
+    async function waitForServiceBack(stateEl) {
+      // The new daemon takes ~2-4s to come back. Poll /api/service/status
+      // every 700ms for up to 30s. Each successful response means the new
+      // process has bound the port.
+      const start = Date.now();
+      for (;;) {
+        if (Date.now() - start > 30000) {
+          if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('error'));
+          return;
+        }
+        try {
+          const r = await fetch('/api/service/status', { credentials: 'same-origin' });
+          if (r.ok) return;
+        } catch { /* not back yet */ }
+        await new Promise(r => setTimeout(r, 700));
+      }
+    }
+
+    // ==========================================
     // API helpers
     // ==========================================
     async function saveConfig() {
@@ -1313,6 +1721,8 @@
           defaultAgent: config.defaultAgent,
           telegram: config.telegram,
           feishu: config.feishu,
+          dingtalk: config.dingtalk,
+          discord: config.discord,
           acpAgents: config.acpAgents,
           webPort: config.webPort,
         };

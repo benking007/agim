@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-05-12
+
+### Added — full messenger configuration + service control in the web settings page
+
+The web console's Settings page now does what previously required the terminal:
+
+**Messengers UI**
+
+- **WeChat (iLink)** — toggle on + click 「扫码登录」 → modal pops a live QR code,
+  polls every 1s, transitions wait → scaned → confirmed → page closes and the
+  channel is auto-added to `config.messengers`. Backed by two new endpoints:
+  `POST /api/messengers/wechat/qr-start` and `GET /api/messengers/wechat/qr-status?token=…`.
+- **DingTalk + Discord rows added.** They were missing entirely — only Telegram /
+  Feishu were on the settings page. DingTalk asks for Client ID + Client Secret
+  (Stream-mode app); Discord asks for Bot Token + channel + optional allowed
+  guilds/channels CSVs.
+- `GET /api/config` now masks and returns `dingtalk` / `discord`; `PUT /api/config`
+  honors the masked-value-means-keep convention for the new credentials too.
+- The 「保存通道」 button now actually saves — previously the button rendered but
+  had no click handler (regression discovered while wiring DingTalk/Discord).
+
+**Service control card** at the top of Settings:
+
+- One-line status badge: `Running (systemd, pid 12345, up 5h 19m)` (or `Not running`).
+- Three buttons: **Restart** (default-styled), **Stop**, **Start** — auto-enabled /
+  disabled based on detected service mode.
+- Restart shows a "Restarting…" overlay, polls `/api/service/status` every 700ms,
+  flips back to "Service restarted" once the new daemon is up. ~3-4s end to end.
+- systemd-managed services use `systemctl restart <unit>`; background daemons use
+  a tiny detached `node -e` helper that waits for the dying parent to release the
+  port, then re-spawns. Foreground services (`agim start` in a TTY) print a
+  one-liner saying "go back to that terminal" — can't safely SIGTERM someone
+  else's controlling tty.
+
+New endpoints: `GET /api/service/status`, `POST /api/service/{start,stop,restart}`.
+
+#### Why this matters
+
+Before 1.0.5, the only path to configure WeChat was `agim config` in a terminal
+plus the QR-image stream rendered in TTY. Headless setups (mac without iTerm
+attached / Linux servers / corporate laptops where you SSH'd in via VS Code)
+got stuck. Now the entire happy path is web-only: `agim start --bg` → open
+http://host:3000/settings → click through.
+
 ## [1.0.4] - 2026-05-12
 
 ### Added — guided service-start prompt after the config wizard

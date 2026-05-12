@@ -430,6 +430,37 @@ export async function startWebServer(options: {
       return handleInvoke(req, res, options.defaultAgent)
     }
 
+    // WeChat QR login — drives the "扫码登录" button in the web settings
+    // page. /qr-start returns the QR image URL + the token used to poll;
+    // /qr-status polls one cycle and, on confirmation, persists the
+    // credentials to disk AND adds 'wechat-ilink' into config.messengers
+    // so the next service restart picks the channel up.
+    if (url.pathname === '/api/messengers/wechat/qr-start' && req.method === 'POST') {
+      return handleWechatQrStart(res)
+    }
+    if (url.pathname === '/api/messengers/wechat/qr-status' && req.method === 'GET') {
+      return handleWechatQrStatus(res, url)
+    }
+
+    // Service management — status / start / stop / restart for the
+    // "service controls" card in the web settings page. start/stop are
+    // mostly no-ops from the web context (the web server itself IS the
+    // service, so the page wouldn't render if nothing was running), but
+    // restart is the headline use case: change a setting, click restart,
+    // wait ~2s, browser auto-reconnects.
+    if (url.pathname === '/api/service/status' && req.method === 'GET') {
+      return handleServiceStatus(res)
+    }
+    if (url.pathname === '/api/service/start' && req.method === 'POST') {
+      return handleServiceStart(res)
+    }
+    if (url.pathname === '/api/service/stop' && req.method === 'POST') {
+      return handleServiceStop(res)
+    }
+    if (url.pathname === '/api/service/restart' && req.method === 'POST') {
+      return handleServiceRestart(res)
+    }
+
     res.writeHead(404)
     res.end('Not found')
   })
@@ -682,6 +713,17 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       feishu: config.feishu
         ? { appId: config.feishu.appId, appSecret: mask(config.feishu.appSecret) }
         : undefined,
+      dingtalk: config.dingtalk
+        ? { clientId: config.dingtalk.clientId, clientSecret: mask(config.dingtalk.clientSecret), channelId: config.dingtalk.channelId }
+        : undefined,
+      discord: config.discord
+        ? {
+            botToken: mask(config.discord.botToken),
+            channelId: config.discord.channelId,
+            allowedGuilds: config.discord.allowedGuilds,
+            allowedChannels: config.discord.allowedChannels,
+          }
+        : undefined,
       acpAgents: config.acpAgents?.map(a => ({
         ...a,
         auth: a.auth
@@ -723,6 +765,24 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
           ...(existing.feishu || {}),
           ...f,
           appSecret: typeof f.appSecret === 'string' && isMasked(f.appSecret) ? existing.feishu?.appSecret : f.appSecret,
+        }
+        continue
+      }
+      if (key === 'dingtalk' && typeof val === 'object' && val !== null) {
+        const d = val as Record<string, unknown>
+        merged.dingtalk = {
+          ...(existing.dingtalk || {}),
+          ...d,
+          clientSecret: typeof d.clientSecret === 'string' && isMasked(d.clientSecret) ? existing.dingtalk?.clientSecret : d.clientSecret,
+        }
+        continue
+      }
+      if (key === 'discord' && typeof val === 'object' && val !== null) {
+        const d = val as Record<string, unknown>
+        merged.discord = {
+          ...(existing.discord || {}),
+          ...d,
+          botToken: typeof d.botToken === 'string' && isMasked(d.botToken) ? existing.discord?.botToken : d.botToken,
         }
         continue
       }
@@ -891,6 +951,181 @@ async function handleMetrics(_req: IncomingMessage, res: ServerResponse, url: UR
     const msg = err instanceof Error ? err.message : String(err)
     sendJson(res, 500, { error: msg })
   }
+}
+
+// ============================================================
+// WeChat QR-login endpoints (drive the "扫码登录" web button)
+// ============================================================
+
+async function handleWechatQrStart(res: ServerResponse): Promise<void> {
+  try {
+    const { ILinkWeChatAdapter } = await import('../plugins/messengers/wechat/ilink-adapter.js')
+    const adapter = new ILinkWeChatAdapter()
+    const { qrUrl, qrToken } = await adapter.startQRLogin()
+    sendJson(res, 200, { qrUrl, qrToken })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    sendJson(res, 500, { error: msg })
+  }
+}
+
+async function handleWechatQrStatus(res: ServerResponse, url: URL): Promise<void> {
+  const qrToken = url.searchParams.get('token') || ''
+  if (!qrToken) {
+    sendJson(res, 400, { error: 'token query param required' })
+    return
+  }
+  try {
+    const { ILinkWeChatAdapter } = await import('../plugins/messengers/wechat/ilink-adapter.js')
+    const adapter = new ILinkWeChatAdapter()
+    const result = await adapter.pollQRLogin(qrToken)
+    if (result.status === 'confirmed') {
+      // Add 'wechat-ilink' into config.messengers so the next restart of
+      // the service brings the channel up. The credentials file was
+      // already written by adapter.pollQRLogin().
+      try {
+        const cfg = await loadConfig()
+        if (!(cfg.messengers || []).includes('wechat-ilink')) {
+          const next: Config = {
+            ...cfg,
+            messengers: [...(cfg.messengers || []), 'wechat-ilink'],
+          }
+          await saveConfig(next)
+        }
+      } catch (err) {
+        webLog.warn({ event: 'wechat.qr.config_persist_failed', err: String(err) })
+      }
+    }
+    sendJson(res, 200, result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    sendJson(res, 500, { error: msg })
+  }
+}
+
+// ============================================================
+// Service-management endpoints (start / stop / restart / status)
+// ============================================================
+//
+// The web server itself runs inside the service process, so /stop and
+// /restart kill the very process handling the request. We respond
+// first, then schedule the kill in a tick so the HTTP reply has time
+// to flush. For /restart we additionally spawn a detached "wait + start"
+// child so the daemon comes back without manual intervention.
+
+async function handleServiceStatus(res: ServerResponse): Promise<void> {
+  try {
+    const { detectService, formatUptime, readWebEndpoint } = await import('../cli-ui/service.js')
+    const st = detectService()
+    const web = readWebEndpoint()
+    sendJson(res, 200, {
+      mode: st.mode,
+      pid: st.pid,
+      uptimeSec: st.uptimeSec ?? null,
+      uptime: typeof st.uptimeSec === 'number' ? formatUptime(st.uptimeSec) : null,
+      web,
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleServiceStart(res: ServerResponse): Promise<void> {
+  try {
+    const { detectService, spawnBackground } = await import('../cli-ui/service.js')
+    const st = detectService()
+    if (st.mode !== 'none') {
+      sendJson(res, 200, { ok: true, alreadyRunning: true, mode: st.mode, pid: st.pid })
+      return
+    }
+    const { fileURLToPath: f } = await import('node:url')
+    const __dn = dirname(f(import.meta.url))
+    const cliJs = join(__dn, '..', 'cli.js')
+    const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
+    sendJson(res, 200, { ok: true, started: true, pid })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleServiceStop(res: ServerResponse): Promise<void> {
+  const { detectService } = await import('../cli-ui/service.js')
+  const st = detectService()
+  if (st.mode === 'systemd') {
+    // systemctl stop handles the kill for us — no self-exit needed.
+    try {
+      const { execSync } = await import('node:child_process')
+      // Match service.ts's detection: prefer agim.service, fall back.
+      const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+      execSync(`systemctl stop ${unitName}`)
+      sendJson(res, 200, { ok: true, mode: 'systemd' })
+    } catch (err) {
+      sendJson(res, 500, { error: 'systemctl stop failed: ' + (err instanceof Error ? err.message : String(err)) })
+    }
+    return
+  }
+  // Background / foreground: respond, then SIGTERM self in next tick.
+  sendJson(res, 200, { ok: true, mode: st.mode, exiting: true })
+  setTimeout(() => {
+    try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
+  }, 200)
+}
+
+async function handleServiceRestart(res: ServerResponse): Promise<void> {
+  const { detectService, PID_FILE, LOG_FILE } = await import('../cli-ui/service.js')
+  const st = detectService()
+  if (st.mode === 'systemd') {
+    try {
+      const { execSync } = await import('node:child_process')
+      const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+      execSync(`systemctl restart ${unitName}`)
+      sendJson(res, 200, { ok: true, mode: 'systemd' })
+    } catch (err) {
+      sendJson(res, 500, { error: 'systemctl restart failed: ' + (err instanceof Error ? err.message : String(err)) })
+    }
+    return
+  }
+  if (st.mode === 'foreground') {
+    // Can't safely restart someone else's foreground process from the
+    // web context — the owning shell still attached to its stdio
+    // expects to Ctrl-C it manually.
+    sendJson(res, 409, { error: 'foreground service is running in another terminal; restart it manually (Ctrl-C + re-run)' })
+    return
+  }
+  // background or 'none': spawn a detached node -e helper that waits
+  // for our PID to die, then starts a fresh daemon. Then SIGTERM self
+  // so the helper's wait-loop unblocks and the new daemon takes over.
+  const __dn = dirname(fileURLToPath(import.meta.url))
+  const cliJs = join(__dn, '..', 'cli.js')
+  const parentPid = process.pid
+  const helperCode =
+    'const{spawn}=require("child_process");' +
+    'const fs=require("fs");' +
+    `const pid=${parentPid};` +
+    'let n=0;' +
+    'const t=setInterval(()=>{' +
+    '  try{process.kill(pid,0)}catch{' +
+    '    clearInterval(t);' +
+    `    const fd=fs.openSync(${JSON.stringify(LOG_FILE)},"a");` +
+    `    const c=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(cliJs)},"start"],{detached:true,stdio:["ignore",fd,fd],env:process.env});` +
+    '    c.unref();' +
+    `    fs.writeFileSync(${JSON.stringify(PID_FILE)},String(c.pid)+"\\n");` +
+    '    fs.closeSync(fd);' +
+    '    process.exit(0);' +
+    '  }' +
+    '  if(++n>150){clearInterval(t);process.exit(1)}' +
+    '},200);'
+  const { spawn: spawnChild } = await import('node:child_process')
+  const helper = spawnChild(process.execPath, ['-e', helperCode], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  })
+  helper.unref()
+  sendJson(res, 200, { ok: true, mode: st.mode, restarting: true })
+  setTimeout(() => {
+    try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
+  }, 300)
 }
 
 /**

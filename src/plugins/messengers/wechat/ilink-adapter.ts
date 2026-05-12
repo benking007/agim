@@ -196,6 +196,36 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
   }
 
   /**
+   * Single-shot QR status check, intended for the web settings page
+   * which polls on its own cadence rather than holding a 2-minute
+   * long-poll. On 'confirmed' the credentials are persisted to disk
+   * exactly the same way `waitForQRLogin` does, so the caller doesn't
+   * need to know about the credentials-file layout.
+   */
+  async pollQRLogin(qrToken: string): Promise<{
+    status: 'wait' | 'scaned' | 'confirmed' | 'expired' | string
+    credentials?: { accountId?: string; userId?: string }
+  }> {
+    const status = await this.client.getQRCodeStatus(qrToken)
+    if (status.status === 'confirmed' && status.bot_token && status.ilink_bot_id && status.ilink_user_id) {
+      const credentials: Credentials = {
+        bot_token: status.bot_token,
+        baseUrl: status.baseurl || 'https://ilinkai.weixin.qq.com',
+        accountId: status.ilink_bot_id,
+        userId: status.ilink_user_id,
+        savedAt: new Date().toISOString(),
+      }
+      await this.saveCredentials(credentials)
+      this.client.setCredentials(credentials)
+      return {
+        status: 'confirmed',
+        credentials: { accountId: credentials.accountId, userId: credentials.userId },
+      }
+    }
+    return { status: status.status }
+  }
+
+  /**
    * Poll QR code status until confirmed or expired
    */
   async waitForQRLogin(

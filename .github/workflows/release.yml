@@ -53,14 +53,15 @@ jobs:
             echo "npm already has v$CURR_VERSION."
           fi
 
-      # npm 10 and npm 11 both crash with "Exit handler never called!"
-      # when installing better-sqlite3 / prebuild-install on the GitHub
-      # ubuntu-latest runner. We already install Bun for the test step,
-      # so use `bun install` here too — much faster and skips the crash.
-      # https://github.com/npm/cli/issues/8284
+      # better-sqlite3's prebuild-install postinstall hangs npm in CI
+      # ("Exit handler never called!") on Ubuntu runners with npm 10/11.
+      # We don't need the native sqlite binary to build or publish — only
+      # TypeScript compilation runs here. `--ignore-scripts` skips the
+      # prebuild hook entirely; the tarball still ships better-sqlite3 as
+      # a runtime dep that downstream consumers will build for themselves.
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        run: bun install --frozen-lockfile || bun install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
 
       - name: Build
         if: steps.version.outputs.changed == 'true'

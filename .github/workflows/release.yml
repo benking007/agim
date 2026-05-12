@@ -53,17 +53,14 @@ jobs:
             echo "npm already has v$CURR_VERSION."
           fi
 
-      # Pin npm 10 — npm 11.x (bundled with Node 24) has a regression
-      # where install crashes with "Exit handler never called!" on
-      # native-binding packages (better-sqlite3, prebuild-install).
+      # npm 10 and npm 11 both crash with "Exit handler never called!"
+      # when installing better-sqlite3 / prebuild-install on the GitHub
+      # ubuntu-latest runner. We already install Bun for the test step,
+      # so use `bun install` here too — much faster and skips the crash.
       # https://github.com/npm/cli/issues/8284
-      - name: Pin npm 10
-        if: steps.version.outputs.changed == 'true'
-        run: npm install -g npm@10
-
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        run: npm ci || npm install
+        run: bun install --frozen-lockfile || bun install
 
       - name: Build
         if: steps.version.outputs.changed == 'true'

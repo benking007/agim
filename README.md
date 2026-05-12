@@ -383,7 +383,7 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 
 <p align="center">
   <a href="https://deepseek.club/community/imhub">
-    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" style="width: 50px; height: auto;" alt="DeepSeek">
+    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" style="width: 150px; height: auto;" alt="DeepSeek">
   </a>
 </p>
 

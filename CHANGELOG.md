@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-12
+
+### Removed — Web 控制台内建鉴权（登录页 / token / session cookie）
+
+Agim 的 web 控制台（端口 3000）不再有任何内建鉴权机制：
+
+- 删除 `/login` 页面、`POST /api/auth/login` 端点、`imhub_session` cookie
+- 删除 `~/.agim/web-token` 的自动创建（web 端不再读写此文件）
+- 删除 `IMHUB_WEB_REQUIRE_AUTH` 环境变量
+- 静态页面 / `/api/*` / `/events` / WebSocket 升级都不再做 token / cookie 校验
+- 前端代码删除所有 `X-IM-Hub-Token` header 注入与 `window.IMHUB_TOKEN` 引用
+
+**访问控制责任完全交给上游**——反向代理、防火墙、SSH 隧道、Tailscale /
+WireGuard 等。把 web 控制台暴露到 `0.0.0.0` 时务必先在 nginx / Caddy 上加一层
+Basic Auth 或 OAuth2 Proxy；不要直接 HTTP 暴露公网。
+
+#### ACP 端口（9090）保持鉴权
+
+ACP server 是给第三方 agent 程序化调用的接口，仍走 bearer-token：
+
+- token 文件改为 `~/.agim/acp-token`（自动生成）
+- 0.x 部署的 `~/.agim/web-token` / `~/.im-hub/web-token` 仍被识别为
+  legacy 回退路径，已有 ACP 调用方不会断
+- 删除 token 文件 + 重启服务即可轮换
+
+#### 升级影响
+
+- 0.x → 1.0.2 升级：旧 `web-token` 文件留在那里也没事（web 端忽略它，ACP
+  仍读它做 legacy fallback）；可手动删除。
+- 任何 `X-IM-Hub-Token` header 在 web 端会被静默忽略；脚本调用 `/api/*`
+  现在直接成功，**前提是你已经在反代层加了访问控制**。
+
 ## [1.0.1] - 2026-05-12
 
 ### Changed — config / workspace dir auto-detect (~/.agim/ vs ~/.im-hub/)

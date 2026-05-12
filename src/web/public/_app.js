@@ -1,14 +1,11 @@
-// im-hub-pro web console — shared utilities (theme / i18n / error boundary / api).
+// Agim web console — shared utilities (theme / i18n / error boundary / api).
 //
 // Loaded as a CLASSIC script in <head> by every page before any page-specific
 // code, so it sits in the same global lexical scope. Wrapped in an IIFE so the
 // only thing that leaks is `window.imhub`.
 //
-// IMPORTANT: this file is served as `/_app.js` by web/server.ts. It does NOT
-// have access to `window.IMHUB_TOKEN` until the inline <script> tag inside
-// each page <head> runs — make sure `imhub.api(...)` is only called after
-// the inline token bootstrap has executed (i.e. from inside DOMContentLoaded
-// or a deferred page script). Reading `window.__lang` follows the same rule.
+// Served as `/_app.js` by web/server.ts. Page scripts should call `imhub.api`
+// from inside DOMContentLoaded or a deferred script so `window.__lang` is set.
 
 (() => {
   // ============================================================
@@ -154,14 +151,10 @@
   // ============================================================
   // API helper
   // ============================================================
-  // Auto-attaches X-IM-Hub-Token header. Throws on non-2xx with the
-  // server-provided `error` field as the message when present. Always
-  // returns parsed JSON on success — pages handle data shape themselves.
+  // Throws on non-2xx with the server-provided `error` field as the message
+  // when present. Returns parsed JSON on success.
   async function apiFetch(path, init = {}) {
     const headers = { ...(init.headers || {}) }
-    // Legacy: if IMHUB_TOKEN is set (e.g. by external tools), attach it.
-    // Normal browser flow uses the httpOnly session cookie instead.
-    if (window.IMHUB_TOKEN) headers['X-IM-Hub-Token'] = window.IMHUB_TOKEN
     if (init.body && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json'
     }

@@ -1,19 +1,17 @@
 // Web chat server — HTTP + WebSocket for browser-based agent interaction
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AGIM_HOME } from '../core/agim-paths.js'
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
-import { safeEqual } from '../utils/safe-equal.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -41,23 +39,6 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, 'public')
 const DEFAULT_PORT = 3000
-const WEB_TOKEN_DIR = AGIM_HOME
-const WEB_TOKEN_FILE = join(WEB_TOKEN_DIR, 'web-token')
-
-function generateToken(): string {
-  return randomBytes(32).toString('hex')
-}
-
-function getOrCreateWebToken(): string {
-  try {
-    return readFileSync(WEB_TOKEN_FILE, 'utf-8').trim()
-  } catch {
-    const token = generateToken()
-    mkdirSync(WEB_TOKEN_DIR, { recursive: true })
-    writeFileSync(WEB_TOKEN_FILE, token, { mode: 0o600 })
-    return token
-  }
-}
 
 function isMasked(value: string | undefined): boolean {
   if (!value) return false
@@ -88,116 +69,29 @@ export async function startWebServer(options: {
 }): Promise<{ close: () => void; port: number }> {
   const port = options.port || DEFAULT_PORT
   const bindHost = process.env.IMHUB_WEB_BIND || '127.0.0.1'
-  const webToken = getOrCreateWebToken()
   const clients = new Map<string, ClientConnection>()
 
-  // Auth-required mode is now scoped to public binds. When listening on
-  // 127.0.0.1 / ::1 / localhost the web console is wide open — whoever has
-  // shell on this host already owns it, and asking small users to paste a
-  // token they don't understand was the biggest friction point in onboarding.
-  // For 0.0.0.0 / LAN / WAN binds we keep the token requirement so a
-  // copy-pasted IMHUB_WEB_BIND=0.0.0.0 doesn't expose memos/reminders/config.
-  //
-  // Escape hatches via env:
-  //   IMHUB_WEB_REQUIRE_AUTH=1 — force token even on localhost (legacy / paranoid)
-  //   IMHUB_WEB_REQUIRE_AUTH=0 — force NO token even on public bind (you know
-  //                              what you're doing — proxy + HTTPS + external auth)
+  // Agim's web console intentionally ships with NO built-in auth — neither
+  // for localhost nor for public binds. Operators putting it on 0.0.0.0 are
+  // responsible for fronting it with a reverse proxy / firewall / SSH tunnel
+  // / VPN of their choice. See README "Web console exposure".
   const isPublicBind = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
-  const requireAuth = (() => {
-    const forced = process.env.IMHUB_WEB_REQUIRE_AUTH
-    if (forced === '1') return true
-    if (forced === '0') return false
-    return isPublicBind
-  })()
-
-  // Per-process secret for signing session cookies. Not persisted — browser
-  // sessions expire on restart, which is acceptable for a dev tool.
-  const cookieSecret = randomBytes(32).toString('hex')
-  const COOKIE_NAME = 'imhub_session'
-
-  function makeSessionCookie(): string {
-    return createHmac('sha256', cookieSecret).update(webToken).digest('hex')
-  }
-  function isValidSessionCookie(cookie: string): boolean {
-    const expected = makeSessionCookie()
-    if (cookie.length !== expected.length) return false
-    try {
-      return timingSafeEqual(Buffer.from(cookie, 'utf8'), Buffer.from(expected, 'utf8'))
-    } catch { return false }
-  }
-  function parseCookies(req: IncomingMessage): Record<string, string> {
-    const hdr = req.headers.cookie || ''
-    const out: Record<string, string> = {}
-    for (const pair of hdr.split(';')) {
-      const eq = pair.indexOf('=')
-      if (eq < 0) continue
-      out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim()
-    }
-    return out
-  }
-  function hasValidSession(req: IncomingMessage): boolean {
-    const cookies = parseCookies(req)
-    return isValidSessionCookie(cookies[COOKIE_NAME] || '')
-  }
-  function setSessionCookie(req: IncomingMessage, res: ServerResponse): void {
-    const val = makeSessionCookie()
-    const parts = [`${COOKIE_NAME}=${val}`, 'HttpOnly', 'SameSite=Strict', 'Path=/']
-    // Mark Secure when we have any signal we're served over TLS:
-    //  - public bind (assume reverse proxy will/should terminate TLS)
-    //  - X-Forwarded-Proto: https from a trusted reverse proxy
-    // For pure localhost dev (no proxy) we omit Secure so plain HTTP works.
-    const isPublicBind = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
-    const xfp = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
-    if (isPublicBind || xfp === 'https') parts.push('Secure')
-    res.setHeader('Set-Cookie', parts.join('; '))
-  }
-
   if (isPublicBind) {
     webLog.warn({
       event: 'web.public_bind_warning',
       bind: bindHost,
-      requireAuth,
-    }, requireAuth
-      ? 'Web server bound to a non-localhost address — token auth REQUIRED; front it with a reverse proxy that terminates TLS'
-      : 'Web server bound publicly with IMHUB_WEB_REQUIRE_AUTH=0 — caller assumes responsibility for upstream auth')
+    }, 'Web server bound to a non-localhost address with NO built-in auth — front it with a reverse proxy / firewall / VPN')
   }
   webLog.info({
     event: 'web.auth_mode',
     bind: bindHost,
-    requireAuth,
-  }, requireAuth
-    ? 'Web console: token auth REQUIRED (login page at /login)'
-    : 'Web console: token auth DISABLED (localhost bind — open access)')
+  }, 'Web console: open access (no built-in auth — access control is upstream)')
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
-    // Login page — always accessible
-    if (url.pathname === '/login' || url.pathname === '/login.html') {
-      return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
-    }
-
-    // POST /api/auth/login — validate token, set session cookie
-    if (url.pathname === '/api/auth/login' && req.method === 'POST') {
-      const body = await readBody(req, res)
-      let parsed: { token?: string }
-      try { parsed = JSON.parse(body) } catch {
-        sendJson(res, 400, { error: 'Invalid JSON' })
-        return
-      }
-      if (typeof parsed.token === 'string' && safeEqual(parsed.token, webToken)) {
-        setSessionCookie(req, res)
-        sendJson(res, 200, { ok: true })
-      } else {
-        sendJson(res, 401, { error: 'Invalid token' })
-      }
-      return
-    }
-
-    // Static pages — gated by session cookie ONLY when requireAuth is on
-    // (i.e. the server is bound publicly). Localhost binds skip the gate
-    // entirely so small users don't need to know what a token is.
+    // Static pages — direct serve, no auth gate.
     if (
       url.pathname === '/' || url.pathname === '/index.html' ||
       url.pathname === '/settings' || url.pathname === '/settings.html' ||
@@ -205,11 +99,6 @@ export async function startWebServer(options: {
       url.pathname === '/reminders' || url.pathname === '/reminders.html' ||
       url.pathname === '/memos' || url.pathname === '/memos.html'
     ) {
-      if (requireAuth && !hasValidSession(req)) {
-        res.writeHead(302, { Location: `/login?next=${encodeURIComponent(url.pathname)}` })
-        res.end()
-        return
-      }
       const fileMap: Record<string, string> = {
         '/': 'index.html', '/index.html': 'index.html',
         '/settings': 'settings.html', '/settings.html': 'settings.html',
@@ -383,17 +272,7 @@ export async function startWebServer(options: {
       return
     }
 
-    // REST API — gated by header token OR session cookie ONLY when
-    // requireAuth is on. Localhost binds let the call through; same
-    // trust model as the static pages above.
-    if (requireAuth && url.pathname.startsWith('/api/')) {
-      const token = req.headers['x-im-hub-token'] as string || ''
-      if (!safeEqual(token, webToken) && !hasValidSession(req)) {
-        res.writeHead(401)
-        res.end(JSON.stringify({ error: 'Unauthorized' }))
-        return
-      }
-    }
+    // REST API — open access (no built-in auth). See top-of-function note.
 
     // REST API
     if (url.pathname === '/api/config' && req.method === 'GET') {
@@ -539,21 +418,11 @@ export async function startWebServer(options: {
       return handleBatchJob(req, res, 'run', options.defaultAgent)
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
-    // pushed real-time so the dashboard stops polling. EventSource has no
-    // header API, so the token rides in `?token=<webToken>` (same shape
-    // the WS upgrade uses). Auth is validated inside the handler since
-    // /events is outside the /api/* token gate above.
+    // pushed real-time so the dashboard stops polling. Open access; same
+    // trust model as the REST API.
     if (url.pathname === '/events' && req.method === 'GET') {
-      const evToken = url.searchParams.get('token') || ''
-      if (requireAuth && !safeEqual(evToken, webToken) && !hasValidSession(req)) {
-        res.writeHead(401, { 'Content-Type': 'text/plain' })
-        res.end('Unauthorized')
-        return
-      }
       return handleEventsSSE(req, res)
     }
-    // /api/health handled above the token gate (M4) — keep this comment so
-    // future contributors don't re-add the route inside the auth block.
     if (url.pathname === '/api/notify' && req.method === 'POST') {
       return handleNotify(req, res)
     }
@@ -593,15 +462,7 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
-    // Verify token from URL query or session cookie before accepting connection
-    // — only when requireAuth (public bind). Localhost connections are trusted.
-    const wsUrl = new URL(req.url || '/', `http://localhost:${port}`)
-    const wsToken = wsUrl.searchParams.get('token') || ''
-    if (requireAuth && !safeEqual(wsToken, webToken) && !hasValidSession(req)) {
-      ws.close(1008, 'Unauthorized')
-      return
-    }
-
+    // No auth gate — access control is upstream (reverse proxy / firewall).
     const clientId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const client: ClientConnection = { ws, id: clientId, agent: options.defaultAgent }
     clients.set(clientId, client)
@@ -2376,8 +2237,7 @@ function serveStatic(res: ServerResponse, filePath: string, contentType: string)
 }
 
 /**
- * Serve HTML pages with security headers. Token is no longer injected —
- * the browser authenticates via httpOnly session cookie set at /login.
+ * Serve HTML pages with security headers.
  */
 function servePageHtml(res: ServerResponse, filePath: string): void {
   if (!existsSync(filePath)) {

@@ -38,7 +38,7 @@ function makeProfiledStub(name: string): AgentAdapter {
 }
 
 const TOKEN_DIR = AGIM_HOME
-const TOKEN_FILE = join(TOKEN_DIR, 'web-token')
+const TOKEN_FILE = join(TOKEN_DIR, 'acp-token')
 const TEST_TOKEN = 'acp-test-token-1234567890'
 
 let port = 0

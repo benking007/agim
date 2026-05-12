@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>im-hub-pro — Settings</title>
+  <title>Agim — Settings</title>
   <!-- Shared utilities: theme manager (applies before first paint), error
        boundary (surfaces silent script failures), i18n + api helpers. -->
   <script src="/_app.js"></script>
@@ -16,9 +16,9 @@
 
     const T = {
       en: {
-        title: 'im-hub-pro — Settings',
+        title: 'Agim — Settings',
         backToChat: 'Back to Chat',
-        settingsTitle: 'im-hub-pro Settings',
+        settingsTitle: 'Agim Settings',
         loading: 'Loading configuration...',
         loadFailed: 'Failed to load config',
         h1: 'Settings',
@@ -28,7 +28,7 @@
         messengers: 'Messengers (Channels)',
         wechat: 'WeChat',
         wechatHint: 'iLink QR scan login',
-        wechatBox: 'WeChat requires QR scan login. Run <code>im-hub-pro config wechat</code> in terminal to set up.',
+        wechatBox: 'WeChat requires QR scan login. Run <code>agim config wechat</code> in terminal to set up.',
         telegram: 'Telegram',
         telegramHint: 'Bot token from @BotFather',
         botToken: 'Bot Token',
@@ -91,9 +91,9 @@
         workspaceDefaultLocked: 'default (locked)',
       },
       zh: {
-        title: 'im-hub-pro — 设置',
+        title: 'Agim — 设置',
         backToChat: '返回对话',
-        settingsTitle: 'im-hub-pro 设置',
+        settingsTitle: 'Agim 设置',
         loading: '加载配置中...',
         loadFailed: '加载配置失败',
         h1: '设置',
@@ -103,7 +103,7 @@
         messengers: '消息通道 (Channels)',
         wechat: '微信',
         wechatHint: 'iLink 扫码登录',
-        wechatBox: '微信需要扫码登录。在终端运行 <code>im-hub-pro config wechat</code> 进行配置。',
+        wechatBox: '微信需要扫码登录。在终端运行 <code>agim config wechat</code> 进行配置。',
         telegram: 'Telegram',
         telegramHint: '从 @BotFather 获取 Bot Token',
         botToken: 'Bot Token',
@@ -562,12 +562,10 @@
       'opencode': { aliases: ['oc'], pkg: 'opencode-ai', cmd: 'opencode' },
     };
 
-    // Helper: add auth token to all API requests (uses session cookie;
-    // falls back to IMHUB_TOKEN header if set for backward compat).
+    // Helper: API requests share the page origin so the session cookie
+    // (if any reverse-proxy added one) is sent automatically.
     function authFetch(url, init = {}) {
-      const token = window.IMHUB_TOKEN || '';
       const headers = { ...(init.headers || {}) };
-      if (token) headers['X-IM-Hub-Token'] = token;
       return fetch(url, { ...init, headers, credentials: 'same-origin' });
     }
 

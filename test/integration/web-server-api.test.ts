@@ -8,10 +8,7 @@
 //   POST /api/invoke            third-party agent invocation
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { startWebServer } from '../../src/web/server'
-import { AGIM_HOME } from '../../src/core/agim-paths'
 import { registry } from '../../src/core/registry'
 import { recordInvocation, reset as resetMetrics } from '../../src/core/metrics'
 import type { AgentAdapter, MessengerAdapter } from '../../src/core/types'
@@ -33,25 +30,12 @@ const stubMessenger: MessengerAdapter = {
   sendMessage: async (threadId, text) => { captured.push({ threadId, text }) },
 }
 
-const TOKEN_DIR = AGIM_HOME
-const TOKEN_FILE = join(TOKEN_DIR, 'web-token')
-const TEST_TOKEN = 'web-test-token-1234567890abc'
-
 let port = 0
 let close: () => void
-let originalRequireAuth: string | undefined
 
 beforeAll(async () => {
-  // Force auth on so the rejection-path tests below see the same gate the
-  // production deployment exercises. Default is localhost-open, which is
-  // a UX choice for self-hosters but makes the 401/302 expectations here
-  // platform-dependent.
-  originalRequireAuth = process.env.IMHUB_WEB_REQUIRE_AUTH
-  process.env.IMHUB_WEB_REQUIRE_AUTH = '1'
   registry.registerAgent(stubAgent)
   registry.registerMessenger(stubMessenger)
-  mkdirSync(TOKEN_DIR, { recursive: true })
-  writeFileSync(TOKEN_FILE, TEST_TOKEN, { mode: 0o600 })
   port = 8000 + Math.floor(Math.random() * 1000)
   const server = await startWebServer({ port, defaultAgent: 'rest-stub' })
   close = server.close
@@ -59,12 +43,10 @@ beforeAll(async () => {
 
 afterAll(() => {
   close?.()
-  if (originalRequireAuth === undefined) delete process.env.IMHUB_WEB_REQUIRE_AUTH
-  else process.env.IMHUB_WEB_REQUIRE_AUTH = originalRequireAuth
 })
 
 const url = (path: string): string => `http://127.0.0.1:${port}${path}`
-const auth = { 'x-im-hub-token': TEST_TOKEN }
+const auth: Record<string, string> = {}
 
 describe('Web REST API', () => {
   describe('/api/metrics', () => {
@@ -86,10 +68,6 @@ describe('Web REST API', () => {
       expect(typeof body.uptimeSec).toBe('number')
     })
 
-    it('rejects without auth', async () => {
-      const res = await fetch(url('/api/metrics'))
-      expect(res.status).toBe(401)
-    })
   })
 
   describe('/api/health', () => {
@@ -268,37 +246,13 @@ describe('Web REST API', () => {
   })
 
   describe('Static tasks page', () => {
-    // P0 #1: token is no longer injected into HTML. Unauthenticated requests
-    // are redirected to /login; the page itself must render only after a
-    // successful POST /api/auth/login (which sets the session cookie).
-    it('GET /tasks without session redirects to /login', async () => {
-      const res = await fetch(url('/tasks'), { redirect: 'manual' })
-      expect(res.status).toBe(302)
-      const loc = res.headers.get('location') || ''
-      expect(loc).toContain('/login')
-      expect(loc).toContain('next=%2Ftasks')
-    })
-
-    it('GET /tasks with valid session cookie serves the page (no token in HTML)', async () => {
-      const loginRes = await fetch(url('/api/auth/login'), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: TEST_TOKEN }),
-      })
-      expect(loginRes.status).toBe(200)
-      const setCookie = loginRes.headers.get('set-cookie') || ''
-      expect(setCookie).toContain('imhub_session=')
-      expect(setCookie).toContain('HttpOnly')
-      expect(setCookie).toContain('SameSite=Strict')
-
-      const cookie = setCookie.split(';')[0] // imhub_session=<value>
-      const res = await fetch(url('/tasks'), { headers: { cookie } })
+    // No built-in auth — /tasks serves directly. Access control is upstream
+    // (reverse proxy / firewall / SSH tunnel).
+    it('GET /tasks serves the page without a session', async () => {
+      const res = await fetch(url('/tasks'))
       expect(res.status).toBe(200)
       const text = await res.text()
       expect(text).toContain('Tasks')
-      // The token must NOT be embedded in HTML anymore.
-      expect(text).not.toContain('IMHUB_TOKEN=')
-      expect(text).not.toContain(TEST_TOKEN)
     })
   })
 
@@ -394,11 +348,6 @@ describe('Web REST API', () => {
       const res = await fetch(url('/api/bgjobs/no-such-id'), { headers: auth })
       expect(res.status).toBe(404)
     })
-
-    it('rejects without auth token', async () => {
-      const res = await fetch(url('/api/bgjobs'))
-      expect(res.status).toBe(401)
-    })
   })
 
   describe('/api/subtasks', () => {
@@ -407,11 +356,6 @@ describe('Web REST API', () => {
       expect(res.status).toBe(200)
       const body = await res.json() as { subtasks: unknown[] }
       expect(Array.isArray(body.subtasks)).toBe(true)
-    })
-
-    it('rejects without auth token', async () => {
-      const res = await fetch(url('/api/subtasks'))
-      expect(res.status).toBe(401)
     })
   })
 })

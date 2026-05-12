@@ -9,7 +9,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { parseMessage, routeMessage, type RouteContext } from './router.js'
@@ -19,13 +19,31 @@ import { createJob, getJob, runJob } from './job-board.js'
 import { safeEqual } from '../utils/safe-equal.js'
 
 const DEFAULT_ACP_PORT = 9090
-const WEB_TOKEN_DIR = AGIM_HOME
-const WEB_TOKEN_FILE = join(WEB_TOKEN_DIR, 'web-token')
+const ACP_TOKEN_FILE = join(AGIM_HOME, 'acp-token')
+// Legacy fallback: 0.x deployments shared one token file with the web console
+// at ~/.agim/web-token (or ~/.im-hub/web-token). The web console no longer
+// uses any token, so on a fresh 1.x deployment we keep ACP's bearer-token in
+// its own file; on upgrade we keep reading the legacy file so existing ACP
+// callers don't break.
+const LEGACY_TOKEN_FILE = join(AGIM_HOME, 'web-token')
 /** Max POST body size (per ACP request). Larger requests get 413. */
 const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
 
+function getOrCreateAcpToken(): string {
+  if (existsSync(ACP_TOKEN_FILE)) {
+    return readFileSync(ACP_TOKEN_FILE, 'utf-8').trim()
+  }
+  if (existsSync(LEGACY_TOKEN_FILE)) {
+    return readFileSync(LEGACY_TOKEN_FILE, 'utf-8').trim()
+  }
+  const token = randomBytes(32).toString('hex')
+  mkdirSync(AGIM_HOME, { recursive: true })
+  writeFileSync(ACP_TOKEN_FILE, token, { mode: 0o600 })
+  return token
+}
+
 function getToken(): string | null {
-  try { return readFileSync(WEB_TOKEN_FILE, 'utf-8').trim() } catch { return null }
+  try { return getOrCreateAcpToken() } catch { return null }
 }
 
 function parseAuth(req: IncomingMessage): { ok: boolean; error?: string } {

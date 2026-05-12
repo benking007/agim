@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>im-hub-pro — Tasks</title>
+  <title>Agim — Tasks</title>
   <!-- Shared utilities: theme manager applies before first paint, error
        boundary surfaces silent script failures, i18n + api helpers are
        used by the page-specific script below. -->
@@ -24,7 +24,7 @@
 
     const T = {
       en: {
-        title: 'im-hub-pro — Tasks',
+        title: 'Agim — Tasks',
         h1: 'Tasks & Schedules',
         backToChat: 'Chat',
         toSettings: 'Settings',
@@ -151,7 +151,7 @@
         jobsBatchResult: 'Batch result: {ok} ok, {fail} failed',
       },
       zh: {
-        title: 'im-hub-pro — 任务',
+        title: 'Agim — 任务',
         h1: '任务与定时',
         backToChat: '对话',
         toSettings: '设置',
@@ -697,7 +697,6 @@
 
   <script>
     const T = window.__t;
-    const TOKEN = window.IMHUB_TOKEN || '';
 
     // Theme toggle (light / dark / system). _app.js applied the theme
     // synchronously in <head>; here we wire the button so clicks cycle
@@ -773,7 +772,6 @@
     // API helper
     async function api(path, init) {
       const headers = { 'Content-Type': 'application/json', ...(init?.headers) };
-      if (TOKEN) headers['X-IM-Hub-Token'] = TOKEN;
       const res = await fetch(path, { ...init, headers, credentials: 'same-origin' });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       return res.json();
@@ -961,10 +959,8 @@
 
     // New job modal
     document.getElementById('btn-new').onclick = async () => {
-      const agentHeaders = {};
-      if (TOKEN) agentHeaders['X-IM-Hub-Token'] = TOKEN;
       const agentsRes = await fetch('/api/agents/status', {
-        headers: agentHeaders, credentials: 'same-origin',
+        credentials: 'same-origin',
       }).then(r => r.json());
       const agents = Object.keys(agentsRes);
 
@@ -1528,10 +1524,8 @@
       if (filesAgentsLoaded) return;
       filesAgentsLoaded = true;
       try {
-        const fHeaders = {};
-        if (TOKEN) fHeaders['X-IM-Hub-Token'] = TOKEN;
         const agentsRes = await fetch('/api/agents/status', {
-          headers: fHeaders, credentials: 'same-origin',
+          credentials: 'same-origin',
         }).then(r => r.json());
         const names = Object.keys(agentsRes);
         const sel = document.getElementById('files-agent');
@@ -1694,11 +1688,10 @@
           // structured error body (e.g. "Content exceeds 1 MiB cap")
           // rather than just the HTTP statusText.
           const qs = new URLSearchParams({ agent: data.agent, path: data.path });
-          const wHeaders = { 'Content-Type': 'application/json' };
-          if (TOKEN) wHeaders['X-IM-Hub-Token'] = TOKEN;
           const res = await fetch(`/api/workspace-files?${qs.toString()}`, {
             method: 'PUT',
-            headers: wHeaders, credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify({ content: newContent }),
           });
           if (!res.ok) {
@@ -1753,11 +1746,7 @@
     function setupSSE() {
       try {
         if (evtSource) try { evtSource.close(); } catch {}
-        // Session cookie is sent automatically. For backward compat,
-        // also include the token in the query if available (EventSource
-        // does not support custom headers).
-        const sseUrl = TOKEN ? `/events?token=${encodeURIComponent(TOKEN)}` : '/events';
-        evtSource = new EventSource(sseUrl, { withCredentials: true });
+        evtSource = new EventSource('/events', { withCredentials: true });
       } catch (err) {
         console.warn('[sse] init failed', err);
         return;

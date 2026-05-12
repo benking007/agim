@@ -58,17 +58,19 @@ npm link
 
 ## 三、首次配置
 
-`im-hub-pro` 把所有运行时数据放在 `~/.im-hub/`。结构如下：
+`agim` 把所有运行时数据放在 `~/.agim/`（从 0.x 升级则继续用 `~/.im-hub/`）。结构如下：
 
 ```
-~/.im-hub/
+~/.agim/
 ├── config.json              # 主配置（所有 messengers / agents / workspaces）
-├── web-token                # Web/ACP API 鉴权 token（自动生成）
+├── acp-token                # ACP（第三方 agent 调用）鉴权 token，自动生成
 ├── audit.db                 # 审计日志（30 天保留，可改）
 ├── jobs.db                  # Job Board
 ├── schedules.db             # 定时任务
 └── sessions/                # 会话历史（每会话一个 .json + .log）
 ```
+
+> Web 控制台（:3000）**没有内建鉴权**——不要直接 0.0.0.0 暴露，访问控制走反向代理 / 防火墙 / SSH 隧道 / VPN。ACP 端口（:9090）仍走 bearer-token 鉴权。
 
 ### 3.1 接入 IM 通道
 
@@ -287,17 +289,17 @@ docker run -d \
 | 3000 | Web 控制台 + REST API | **`127.0.0.1`**（v0.2.30 起默认回环） | 公网部署时放在 HTTPS 反代后；需要直连时显式设置 `IMHUB_WEB_BIND=0.0.0.0` |
 | 9090 | ACP Server | `127.0.0.1` only | 仅 ACP 上游需要时 |
 
-> ⚠️ v0.2.30 起 Web 控制台默认只监听回环地址，避免新部署误暴露到公网。
+> ⚠️ Web 控制台默认只监听回环地址，避免新部署误暴露到公网。
 > 如需从局域网/公网访问，请在 systemd 或容器环境变量里显式声明：
 >
 > ```ini
 > Environment="IMHUB_WEB_BIND=0.0.0.0"
 > ```
 >
-> 对外暴露时仍建议：
+> **Agim 的 web 控制台不带任何内建鉴权（无登录页、无 token、无 session cookie）**——0.0.0.0 暴露时所有访问控制必须走外面：
 > 1. 用防火墙（云厂商安全组 / iptables / ufw）只允许已知来源 IP；
-> 2. 用 nginx/Caddy 做 HTTPS 反代终端用户访问，**不要直接 HTTP 暴露**（web-token 在 header/URL 中传输，HTTP 等于交给中间路由）；
-> 3. 定期轮换 token：`rm ~/.im-hub/web-token && systemctl restart im-hub-pro`。
+> 2. 用 nginx/Caddy 做 HTTPS 反代 + Basic Auth / OAuth2 Proxy / mTLS；
+> 3. 或者别开 0.0.0.0，留在 127.0.0.1 然后用 SSH 隧道 / Tailscale / WireGuard 接进来。
 
 ### 5.1 nginx 反代示例
 
@@ -332,7 +334,7 @@ server {
 
 ### 5.2 端口冲突
 
-修改 `~/.im-hub/config.json`：
+修改 `~/.agim/config.json`：
 
 ```json
 { "webPort": 3001, "acpPort": 9091 }
@@ -350,7 +352,7 @@ server {
 | `/tasks` | 任务面板（jobs + schedules，可创建/取消/查看结果） |
 | `/settings` | 配置 agents / messengers / ACP / discovery |
 
-所有 `/api/*` 请求都带 `X-IM-Hub-Token` 自动鉴权（token 注入到 HTML 里）。
+无内建鉴权——所有 `/api/*` 请求直接放行。访问控制必须靠反向代理 / 防火墙。
 
 ---
 
@@ -358,19 +360,18 @@ server {
 
 ### 7.1 Prometheus 抓取
 
-`/api/metrics` 输出 Prometheus text exposition 格式（需 web-token）：
+`/api/metrics` 输出 Prometheus text exposition 格式：
 
 ```
 scrape_configs:
-  - job_name: im-hub-pro
+  - job_name: agim
     metrics_path: /api/metrics
-    bearer_token: <web-token-content>
     static_configs:
       - targets: ['imhub.example.com']
     scheme: https
 ```
 
-> bearer_token 用 `cat ~/.im-hub/web-token` 取出。
+> 公网暴露请用 nginx Basic Auth 等手段在反代层加保护，Agim 自身不鉴权。
 
 关键指标：
 
@@ -385,8 +386,7 @@ im_hub_uptime_seconds
 ### 7.2 健康检查
 
 ```bash
-curl -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
-  http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:3000/api/health
 ```
 
 返回 `{ ok: true, agents: { ... } }`，所有 agent 都不可用时返回 503。可用作 k8s readiness probe。
@@ -470,9 +470,9 @@ apk add python3 make g++ sqlite-libs
 npm install -g im-hub-pro --build-from-source=false
 ```
 
-### 启动后 Web 端 401
+### 启动后 Web 端 401 / 403
 
-确认请求带了 `X-IM-Hub-Token` header（值 = `~/.im-hub/web-token` 文件内容）。Web UI 是从 HTML 里自动读 `window.IMHUB_TOKEN` 注入的，所以浏览器直接打开主页一定有；用 curl/Postman 时要手动加。
+Agim 1.x 的 Web 控制台无内建鉴权，401/403 一般来自前面的反向代理。检查 nginx/Caddy 的 Basic Auth、OAuth2 Proxy、Cloudflare Access 等配置。
 
 ### 任务跑得太多把内存吃满
 
@@ -523,10 +523,10 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ### 想把 Web/ACP 暴露到公网
 
-**不要直接开放**。一定要：
-1. 反向代理强制 HTTPS（见 §5.1）
-2. 防火墙只允许已知来源
-3. 审视 `~/.im-hub/web-token`，定期轮换（删文件，重启服务，会自动生成新 token）
+**Web 控制台没有内建鉴权**，不要直接开放。一定要：
+1. 反向代理强制 HTTPS + Basic Auth / OAuth2 Proxy / mTLS（见 §5.1）
+2. 防火墙只允许已知来源 IP
+3. ACP 端口（默认 9090）走 bearer-token 鉴权，token 在 `~/.agim/acp-token`；删该文件 + 重启服务可轮换
 
 ---
 
@@ -536,27 +536,24 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ```bash
 # 1. 服务起来了
-systemctl status im-hub-pro
-journalctl -u im-hub-pro --since "5 min ago"
+systemctl status agim 2>/dev/null || systemctl status im-hub
+journalctl -u agim --since "5 min ago" 2>/dev/null || \
+  journalctl -u im-hub --since "5 min ago"
 
 # 2. 端口监听
 ss -lntp | grep -E ':(3000|9090)'
 
 # 3. Web 健康
-curl -fsS -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
-  http://127.0.0.1:3000/api/health | jq
+curl -fsS http://127.0.0.1:3000/api/health | jq
 
 # 4. agent 可用性
-curl -fsS -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
-  http://127.0.0.1:3000/api/agents/status | jq
+curl -fsS http://127.0.0.1:3000/api/agents/status | jq
 
 # 5. metrics 正常
-curl -fsS -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
-  http://127.0.0.1:3000/api/metrics | head
+curl -fsS http://127.0.0.1:3000/api/metrics | head
 
 # 6. 跑一个回环任务
 curl -fsS -X POST \
-  -H "X-IM-Hub-Token: $(cat ~/.im-hub/web-token)" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"echo hello","agent":"claude-code"}' \
   http://127.0.0.1:3000/api/invoke | jq

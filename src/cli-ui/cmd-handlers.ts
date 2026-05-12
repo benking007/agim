@@ -238,6 +238,121 @@ export async function cmdUninstall(): Promise<void> {
   console.log(t(lang, 'svc.uninstall.done'))
 }
 
+// ─── post-config: offer to start the service ────────────────────────
+//
+// Called by runConfigWizard right after saveConfig(). Drops the "what
+// next?" cliff users used to fall off after the wizard ended. Behaviour
+// depends on the current service state:
+//
+//   - none       → ask "start in background now?" Y/N.
+//   - background → ask "restart so changes take effect?" Y/N.
+//   - systemd    → ask "systemctl restart?" Y/N (requires root; if it
+//                  fails we just print the command).
+//   - foreground → can't restart from here. Print a one-line hint that
+//                  the user has to go back to the owning shell.
+//
+// Stays quiet on Ctrl-C (UserAbortError) so an exit doesn't dump a
+// stack on top of a successful wizard run.
+
+export async function offerServiceStart(lang: Lang): Promise<void> {
+  const { yesNo, UserAbortError } = await import('./prompts.js')
+  const st = detectService()
+  try {
+    if (st.mode === 'none') {
+      console.log()
+      console.log(t(lang, 'svc.offer.not_running_title'))
+      const wantStart = await yesNo({
+        message: t(lang, 'svc.offer.not_running_q'),
+        default: true,
+      })
+      if (!wantStart) {
+        console.log(t(lang, 'svc.offer.skipped'))
+        return
+      }
+      // Re-exec self detached. Mirrors cmdStart(true, ...).
+      const __dirname = dirname(fileURLToPath(import.meta.url))
+      const cliJs = join(__dirname, '..', 'cli.js')
+      const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
+      await new Promise(r => setTimeout(r, 1500))
+      const after = detectService()
+      if (after.mode === 'background' && after.pid === pid) {
+        console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
+        const web = readWebEndpoint()
+        if (web) {
+          // Localhost binds: show 127.0.0.1 (what the user will actually
+          // open in a browser on this machine). 0.0.0.0 is a server-side
+          // listen address that no browser actually connects to as-is.
+          const bind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
+          console.log(t(lang, 'svc.offer.bg_url', { bind, port: web.port }))
+        }
+      } else {
+        console.log(t(lang, 'svc.offer.bg_check_log'))
+        console.log(`   tail -n 40 ${LOG_FILE}`)
+      }
+      return
+    }
+
+    if (st.mode === 'foreground') {
+      console.log()
+      console.log(t(lang, 'svc.offer.running_title', { mode: 'foreground', pid: st.pid ?? '?' }))
+      console.log(t(lang, 'svc.offer.foreground_hint'))
+      return
+    }
+
+    // background OR systemd — same UX: ask whether to restart so the
+    // freshly-saved config takes effect.
+    console.log()
+    console.log(t(lang, 'svc.offer.running_title', { mode: st.mode, pid: st.pid ?? '?' }))
+    const wantRestart = await yesNo({
+      message: t(lang, 'svc.offer.restart_q'),
+      default: true,
+    })
+    if (!wantRestart) {
+      console.log(t(lang, 'svc.offer.restart_skipped'))
+      return
+    }
+
+    if (st.mode === 'systemd') {
+      const unit = findSystemdUnit()
+      if (unit) {
+        try {
+          execSync(`systemctl restart ${unit.name}`, { stdio: 'inherit' })
+          console.log(t(lang, 'svc.offer.systemd_restarted'))
+        } catch (err) {
+          console.warn(`⚠️ ${err instanceof Error ? err.message : String(err)}`)
+          console.log(`   sudo systemctl restart ${unit.name}`)
+        }
+      }
+      return
+    }
+
+    // background: stop + re-spawn.
+    await stopService()
+    const __dirname = dirname(fileURLToPath(import.meta.url))
+    const cliJs = join(__dirname, '..', 'cli.js')
+    const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
+    await new Promise(r => setTimeout(r, 1500))
+    const after = detectService()
+    if (after.mode === 'background' && after.pid === pid) {
+      console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
+      const web = readWebEndpoint()
+      if (web) {
+        const bind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
+        console.log(t(lang, 'svc.offer.bg_url', { bind, port: web.port }))
+      }
+    } else {
+      console.log(t(lang, 'svc.offer.bg_check_log'))
+      console.log(`   tail -n 40 ${LOG_FILE}`)
+    }
+  } catch (err) {
+    if (err instanceof UserAbortError) {
+      // User hit Ctrl-C inside the y/n prompt. Quiet exit — they're done.
+      return
+    }
+    throw err
+  }
+}
+
 // Suppress unused imports linters for now — spawn is referenced via spawnBackground.
 void spawn
 void readFileSync

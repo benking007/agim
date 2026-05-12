@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-05-12
+
+### Added — guided service-start prompt after the config wizard
+
+After the interactive `agim config` wizard saves, the CLI now asks the user
+what to do next instead of dropping them at a bare prompt. Behaviour depends
+on the current service state:
+
+- **Not running** → prompts `Start Agim in the background now? [Y/n]`. On
+  yes, spawns the detached daemon, waits for it to bind, prints the pid +
+  log path + `http://<bind>:<port>` URL for the web console.
+- **Background daemon already running** → prompts `Restart now so the new
+  config takes effect? [Y/n]`. On yes, stops + re-spawns + prints the same
+  ready line. On no, prints `agim restart` hint.
+- **systemd-managed** → prompts the same restart question; on yes runs
+  `systemctl restart <unit>` (falls back to printing the command when the
+  user lacks root).
+- **Foreground `agim start` in another shell** → can't restart from here,
+  prints a one-line hint telling the user to Ctrl-C in the owning shell.
+
+First-time install path is now: `npm install -g agim-cli` → `agim` →
+"Config" → pick agents → done — prompted to start — opens browser. No
+hidden "now go read the README to find `agim start --bg`" step.
+
+Ctrl-C at the start prompt exits cleanly without dumping a stack.
+
 ## [1.0.3] - 2026-05-12
 
 ### Fixed — service crashed on startup when only an agent was configured

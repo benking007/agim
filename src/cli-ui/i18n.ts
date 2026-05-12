@@ -46,6 +46,19 @@ const en = {
   'config.section.done': 'Done — save and exit',
   'config.saved': 'Config saved to {file}',
 
+  // ─── post-save service-start prompt ─────────────────────────────
+  'svc.offer.not_running_title': '🚀 Service is not running yet.',
+  'svc.offer.not_running_q': 'Start Agim in the background now?',
+  'svc.offer.bg_started': '✅ Agim started in the background (pid {pid}, log: {log})',
+  'svc.offer.bg_url': '   Web console: http://{bind}:{port}',
+  'svc.offer.skipped': 'Skipped. Run `agim start` (foreground) or `agim start --bg` (background) when you are ready.',
+  'svc.offer.bg_check_log': '⚠️ The background daemon may have failed — check the log:',
+  'svc.offer.running_title': '✓ Agim is already running ({mode}, pid {pid}).',
+  'svc.offer.restart_q': 'You changed the config — restart now so it takes effect?',
+  'svc.offer.restart_skipped': 'Skipped. Run `agim restart` later when ready.',
+  'svc.offer.foreground_hint': 'A foreground `agim start` is running elsewhere — restart it manually (Ctrl-C + re-run) for the new config to take effect.',
+  'svc.offer.systemd_restarted': '✅ systemd restart issued.',
+
   // ─── messengers ──────────────────────────────────────────────────────
   'messengers.title': 'Messengers',
   'messengers.subtitle': 'Pick a messenger to configure. Each is independent.',
@@ -272,6 +285,19 @@ const zh: Record<Key, string> = {
   'config.section.baidu': '百度地图 AK — /memo 地址解析',
   'config.section.done': '完成 — 保存并退出',
   'config.saved': '配置已保存到 {file}',
+
+  // ─── 配置保存后的"是否启动服务"提示 ─────────────────────────────
+  'svc.offer.not_running_title': '🚀 服务尚未启动。',
+  'svc.offer.not_running_q': '现在后台启动 Agim？',
+  'svc.offer.bg_started': '✅ 已后台启动 Agim（pid {pid}，日志：{log}）',
+  'svc.offer.bg_url': '   Web 控制台：http://{bind}:{port}',
+  'svc.offer.skipped': '已跳过。准备好后用 `agim start`（前台）或 `agim start --bg`（后台）启动。',
+  'svc.offer.bg_check_log': '⚠️ 后台守护进程可能启动失败 — 看日志：',
+  'svc.offer.running_title': '✓ Agim 正在运行（{mode}，pid {pid}）。',
+  'svc.offer.restart_q': '配置改过了——现在重启让改动生效？',
+  'svc.offer.restart_skipped': '已跳过。准备好后用 `agim restart` 重启。',
+  'svc.offer.foreground_hint': '另一个 shell 在前台跑 `agim start`——回那个终端 Ctrl-C 再重新启动以让新配置生效。',
+  'svc.offer.systemd_restarted': '✅ 已发送 systemd 重启指令。',
 
   // ─── messengers ──────────────────────────────────────────────────
   'messengers.title': 'IM 渠道',

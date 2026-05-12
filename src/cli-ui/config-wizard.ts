@@ -90,6 +90,12 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
   await saveConfig(config)
   console.log()
   console.log(t(lang, 'config.saved', { file: `${CONFIG_DIR}/config.json` }))
+
+  // Right after save, offer to start (or restart) the service so first-
+  // time users don't fall off a "what now?" cliff. Lazy import keeps the
+  // service / systemd machinery out of `--help` startup.
+  const { offerServiceStart } = await import('./cmd-handlers.js')
+  await offerServiceStart(lang)
 }
 
 // ─── messengers section ────────────────────────────────────────────────

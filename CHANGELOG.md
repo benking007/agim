@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-05-12
+
+### Fixed — Agent toggles in the web settings page actually do something
+
+The agent toggle in `/settings` only flipped the `.active` CSS class — it
+never updated `config.agents`, so toggling an agent on or off had zero
+effect on the saved config. The "Save Agents" button next to it had no
+click handler at all. The "Default Agent" `<select>` likewise ignored
+user changes.
+
+All three are now wired up the same way the messenger card already works:
+
+- Clicking an agent toggle flips it in `config.agents` (in-memory) and
+  re-renders so the Default Agent dropdown reflects the new eligible set.
+- Toggling off the current default auto-promotes the next still-enabled
+  agent (or clears if nothing left). Toggling on an agent when no default
+  is set makes it the default.
+- The Default Agent dropdown now only lists agents that are BOTH enabled
+  AND installed — so the saved default isn't a missing binary or a
+  disabled adapter that would break routing the first time someone sends
+  a message.
+- Changing the dropdown updates `config.defaultAgent` immediately; the
+  Save Agents button PUTs everything to `/api/config`.
+
 ## [1.0.5] - 2026-05-12
 
 ### Added — full messenger configuration + service control in the web settings page

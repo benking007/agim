@@ -741,16 +741,24 @@
         `;
       }).join('');
 
+      // Default-agent picker only lists agents that are BOTH enabled and
+      // installed — defaulting to a missing binary or a disabled adapter
+      // both break routing the first time someone sends a message.
+      const eligibleDefaults = agents.filter(a => enabledAgents.includes(a) && agentStatus[a]);
+
       return `
         <div class="card">
           <h2>${t('agents')} <span class="badge">${agents.length}</span></h2>
           ${rows}
           <hr class="divider">
           <label>${t('defaultAgent')}</label>
-          <select id="defaultAgent">
-            ${agents.filter(a => agentStatus[a]).map(a =>
-              `<option value="${esc(a)}" ${a === defaultAgent ? 'selected' : ''}>${esc(a)}</option>`
-            ).join('')}
+          <select id="defaultAgent" ${eligibleDefaults.length === 0 ? 'disabled' : ''}>
+            ${eligibleDefaults.length === 0
+              ? `<option value="">— ${esc(t('agents'))} —</option>`
+              : eligibleDefaults.map(a =>
+                  `<option value="${esc(a)}" ${a === defaultAgent ? 'selected' : ''}>${esc(a)}</option>`
+                ).join('')
+            }
           </select>
           <div class="actions">
             <button type="button" class="btn btn-primary" id="saveAgents">${t('saveAgents')}</button>
@@ -1211,9 +1219,40 @@
       document.getElementById('svc-stop')?.addEventListener('click', () => svcAction('stop'));
       document.getElementById('svc-start')?.addEventListener('click', () => svcAction('start'));
 
-      // Agent toggles
+      // Agent toggles — flip config.agents in memory + auto-manage
+      // defaultAgent (promote / demote as needed), then re-render so the
+      // default-agent dropdown reflects the new eligible set.
       document.querySelectorAll('[data-toggle-agent]').forEach(el => {
-        el.addEventListener('click', () => el.classList.toggle('active'));
+        el.addEventListener('click', () => {
+          const id = el.getAttribute('data-toggle-agent');
+          const set = new Set(config.agents || []);
+          if (set.has(id)) {
+            set.delete(id);
+            // If we just removed the default, promote the next still-enabled
+            // agent (or clear). saveConfig() will sync to disk on Save.
+            if (config.defaultAgent === id) {
+              config.defaultAgent = Array.from(set)[0] || '';
+            }
+          } else {
+            set.add(id);
+            // First enabled agent inherits default when nothing was set.
+            if (!config.defaultAgent) config.defaultAgent = id;
+          }
+          config.agents = Array.from(set);
+          render();
+        });
+      });
+
+      // Default-agent dropdown — keep in-memory config in sync so the
+      // Save button persists what the user just picked.
+      document.getElementById('defaultAgent')?.addEventListener('change', (e) => {
+        config.defaultAgent = e.target.value;
+      });
+
+      // Save Agents button — pushes the in-memory agents[] + defaultAgent
+      // to /api/config PUT. Mirrors the saveMessengers pattern.
+      document.getElementById('saveAgents')?.addEventListener('click', async () => {
+        await saveConfig();
       });
 
       // Messenger toggles — flip in-memory config.messengers, then re-render.

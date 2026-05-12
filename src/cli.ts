@@ -211,15 +211,25 @@ program
     // Check messengers BEFORE the default fill
     const onboardingResult = checkMessengerConfig(config)
     if (onboardingResult.needsOnboarding) {
-      console.log('👋 No messengers configured.\n')
-      const newConfig = await runMessengerOnboarding(config)
-      if (!newConfig) {
-        console.log('\n❌ Onboarding cancelled.')
-        console.log('Run "agim config <messenger>" to configure manually.')
-        process.exit(1)
+      if (process.stdin.isTTY) {
+        // Interactive shell — run the picker.
+        console.log('👋 No messengers configured.\n')
+        const newConfig = await runMessengerOnboarding(config)
+        if (!newConfig) {
+          console.log('\n❌ Onboarding cancelled.')
+          console.log('Run "agim config <messenger>" to configure manually.')
+          process.exit(1)
+        }
+        config = newConfig
+        await saveConfig(config)
+      } else {
+        // Non-interactive (systemd / launchctl / docker / bgjob). Don't try
+        // to prompt and don't exit — web-console-only deployments are a
+        // legitimate use case. Log a hint and keep going; web server + ACP
+        // server + scheduler / reminders / memos / approval bus still start.
+        console.log('ℹ️ No messengers configured — running in web-console-only mode.')
+        console.log('   Configure later with: agim config <wechat|telegram|feishu|dingtalk|discord>')
       }
-      config = newConfig
-      await saveConfig(config)
     }
 
     // Check agents (async, AFTER plugins loaded)
@@ -244,10 +254,9 @@ program
     // START MESSENGERS
     // ============================================
 
-    // Get messengers to start (now config.messengers is populated)
-    const messengersToStart = config.messengers.length > 0
-      ? [...config.messengers]
-      : ['wechat-ilink'] // Fallback default
+    // Get messengers to start. Empty array is fine — web-console-only
+    // deployments don't need any IM adapter.
+    const messengersToStart = [...config.messengers]
 
     // Auto-include the email adapter so /remind email ... works without
     // explicit `agim config email`. The adapter's start() is fail-soft

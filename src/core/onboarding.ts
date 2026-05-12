@@ -288,12 +288,14 @@ export function formatAgentNotAvailableError(agentName: string): string {
  * Returns updated config on success, null on failure/cancel.
  */
 export async function runMessengerOnboarding(config: Config): Promise<Config | null> {
-  // Non-interactive fallback
+  // Non-interactive fallback — cli.ts handles this branch directly now
+  // (web-console-only deployments shouldn't exit). Keep this guard so
+  // direct callers of runMessengerOnboarding still get a sane no-op.
   if (!process.stdin.isTTY) {
-    console.log('❌ No messengers configured. Run interactively:')
-    console.log('   im-hub config wechat')
-    console.log('   im-hub config telegram')
-    console.log('   im-hub config feishu')
+    console.log('No TTY; skip messenger onboarding. Run interactively:')
+    console.log('   agim config wechat')
+    console.log('   agim config telegram')
+    console.log('   agim config feishu')
     return null
   }
 
@@ -313,7 +315,7 @@ export async function runMessengerOnboarding(config: Config): Promise<Config | n
       // Handle quit
       if (choice.toLowerCase() === 'q' || choice === '') {
         console.log('\n❌ Onboarding cancelled.')
-        console.log('Run "im-hub config <messenger>" to configure manually.')
+        console.log('Run "agim config <messenger>" to configure manually.')
         return null
       }
 

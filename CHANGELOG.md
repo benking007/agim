@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-12
+
+### Fixed — service crashed on startup when only an agent was configured
+
+The non-TTY branch of the messenger-onboarding flow used to print a hint and
+`process.exit(1)` whenever no messenger was in `config.json`. That made the
+service unusable in any deployment that wanted **web console only** (no IM
+channel), which is a legitimate setup — e.g. running Agim purely as a local
+agent gateway / chat UI for Claude Code / OpenCode / etc.
+
+Now in non-TTY mode (systemd, launchctl, docker, bgjob) the absence of
+messengers is a one-line info log and startup continues normally. Web server,
+ACP server, scheduler, reminder engine, memo sweeper, approval bus, MCP all
+come up the same way they do with messengers configured.
+
+Also removed the misleading `wechat-ilink` fallback that kicked in when
+`config.messengers` was empty — it used to try to start the WeChat adapter
+with no credentials, throwing on first message. Empty `messengers` array now
+just means "no IM channels," not "secretly start WeChat anyway."
+
+#### Upgrade
+
+- 0.x / 1.0.0-1.0.2 boxes that started fine: nothing changes.
+- New / web-only deployments: run `agim start` (or systemd unit) without a
+  messenger configured — service stays up; visit `http://<host>:3000/`.
+
 ## [1.0.2] - 2026-05-12
 
 ### Removed — Web 控制台内建鉴权（登录页 / token / session cookie）

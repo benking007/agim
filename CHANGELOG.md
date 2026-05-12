@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-05-12
+
+### Fixed — WeChat QR modal blocked by CSP
+
+The QR image in the `/settings` page WeChat modal failed to load with:
+
+> Loading the image 'https://liteapp.weixin.qq.com/q/...' violates the
+> following Content Security Policy directive: "img-src 'self' data:"
+
+Root cause: iLink's `qrcode_img_content` API field returns a **WeChat
+short URL**, not an image — that URL is meant to be **encoded into a QR
+code** that the user scans with the WeChat app on their phone. The CLI
+flow prints the URL as text and the user is expected to look at it; the
+browser flow tried to use it directly as `<img src=…>`, which both
+mis-renders (the URL serves an HTML landing page) and gets blocked by
+the page's strict CSP.
+
+Fix: the server now generates a PNG data URL from that text using the
+`qrcode` npm package (newly added dep). The response shape gains a
+`qrImage` field — `data:image/png;base64,…` — which the frontend slots
+straight into `<img src>`. The original `qrUrl` is still returned for
+debugging / future fallback. No CSP changes needed.
+
 ## [1.0.6] - 2026-05-12
 
 ### Fixed — Agent toggles in the web settings page actually do something

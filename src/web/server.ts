@@ -962,7 +962,20 @@ async function handleWechatQrStart(res: ServerResponse): Promise<void> {
     const { ILinkWeChatAdapter } = await import('../plugins/messengers/wechat/ilink-adapter.js')
     const adapter = new ILinkWeChatAdapter()
     const { qrUrl, qrToken } = await adapter.startQRLogin()
-    sendJson(res, 200, { qrUrl, qrToken })
+    // iLink's `qrcode_img_content` field name is misleading — it's a
+    // plain WeChat short URL (e.g. https://liteapp.weixin.qq.com/q/...),
+    // NOT an image. The user has to scan it with their phone WeChat to
+    // authorize the bot. In the CLI we just print it as text; in the
+    // browser we need to render it as an actual QR code. Generate a PNG
+    // data: URL server-side so the frontend just slots it into <img src>
+    // — keeps the page's strict img-src CSP intact.
+    const QRCode = (await import('qrcode')).default
+    const qrImage = await QRCode.toDataURL(qrUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 280,
+    })
+    sendJson(res, 200, { qrUrl, qrToken, qrImage })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     sendJson(res, 500, { error: msg })

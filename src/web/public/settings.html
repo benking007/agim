@@ -1620,9 +1620,12 @@
         }
         const data = await res.json();
         qrToken = data.qrToken;
-        // qrUrl from iLink may be a data: URL (base64 png) or an https URL.
-        // Either way, <img src=...> handles it directly.
-        wrap.innerHTML = `<img src="${esc(data.qrUrl)}" alt="QR code" style="width:240px;height:240px;border-radius:6px;background:#fff;padding:8px">`;
+        // data.qrImage is a data: URL the server pre-rendered from the
+        // WeChat short URL (iLink returns plain text, not an image).
+        // data.qrUrl is the original short URL — only used as <img> alt
+        // / debug fallback in case server-side rendering ever fails.
+        const src = data.qrImage || data.qrUrl;
+        wrap.innerHTML = `<img src="${esc(src)}" alt="QR code" style="width:280px;height:280px;border-radius:6px;background:#fff;padding:8px">`;
         statusEl.textContent = t('wechatWaiting');
       } catch (err) {
         wrap.innerHTML = `<div style="color:var(--red);font-size:13px">${esc(t('wechatFailed').replace('{error}', err && err.message ? err.message : err))}</div>`;

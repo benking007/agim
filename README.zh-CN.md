@@ -5,10 +5,11 @@
 **IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / Copilot / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
 
 > **品牌**：英文名 **Agim**（取自 Agent + IM，也有 agile 敏捷的感觉），中文名 **阿吉姆**。
-> v1.0.0 从原 `im-hub-pro` 改名而来；命令 `im-hub-pro` 作为别名保留，老的 systemd
-> 单元和 shell 别名不会断。新用户直接打 `agim`。配置目录（`~/.im-hub/`）、环境变量
-> （`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）、systemd 单元 `im-hub.service` 都保留
-> 原名以兼容 0.x 部署——详见 [从 `im-hub-pro` 迁移](#迁移)。
+> npm 包名 **`agim-cli`**（短名 `agim` 被 npm 反 typo-squat 保留），装完后**命令**还是 **`agim`**，
+> 日常打的就是这个。老命令 `im-hub-pro` 也保留为别名，老的 systemd 单元和 shell 别名不会断。
+> 配置目录新装默认 **`~/.agim/`**，已有 **`~/.im-hub/`** 的老用户会被自动识别继续沿用。
+> 环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）、systemd 单元 `im-hub.service` 都保留
+> 原名以兼容 0.x 部署——详见 [迁移](#迁移)。
 
 ## 亮点
 
@@ -29,7 +30,7 @@
 ## 快速开始
 
 ```bash
-npm install -g agim          # 需要 Node.js ≥ 18（推荐 ≥ 22 LTS）
+npm install -g agim-cli      # 需要 Node.js ≥ 18（推荐 ≥ 22 LTS）
 
 # 配置至少一个 IM
 agim                            # 交互式向导（推荐）—— 双语，方向键选语言后逐项配置
@@ -54,19 +55,19 @@ agim start
 #### 从原 `im-hub` 迁移
 ```bash
 npm uninstall -g im-hub
-npm install -g agim
+npm install -g agim-cli
 agim start            # 配置、环境变量、Header 全部不变
 ```
 
 #### 从 `im-hub-pro`（0.x → 1.0）迁移
 ```bash
 npm uninstall -g im-hub-pro
-npm install -g agim
+npm install -g agim-cli
 agim start            # 配置目录、环境变量、Header 全部不变
 ```
 
-`im-hub-pro` 命令在 `agim` 包里作为别名保留，原有的 systemd 单元和别名脚本不用动也能跑。
-新材料一律用 `agim`。
+npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；安装后**命令**还是 `agim`，
+日常打命令就是 `agim …`。`im-hub-pro` 命令也保留为别名，原有的 systemd 单元和别名脚本不用动。
 
 ## 功能一览
 

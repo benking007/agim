@@ -5,12 +5,15 @@
 **Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
 > **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
-> Renamed from `im-hub-pro` at v1.0.0. The bin command `im-hub-pro` is kept as
-> an alias so existing systemd units / shell aliases keep working; new users
-> type `agim`. On-disk paths (`~/.im-hub/`), env vars (`IMHUB_*`), HTTP
-> headers (`X-IM-Hub-Token`), and the systemd unit `im-hub.service` retain
-> their legacy names for drop-in compatibility with installations from the
-> 0.x line — see [Migrating from `im-hub-pro`](#migrating).
+> npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's
+> anti-typosquat policy); the installed binary is **`agim`** — that's what
+> you type. The legacy `im-hub-pro` bin name is kept as an alias so existing
+> systemd units / shell aliases keep working unchanged.
+> On-disk paths default to **`~/.agim/`** for fresh installs but auto-detect
+> and continue using a pre-existing **`~/.im-hub/`** if one is present.
+> Env vars (`IMHUB_*`), HTTP headers (`X-IM-Hub-Token`), and the systemd
+> unit `im-hub.service` retain their legacy names for drop-in compatibility
+> with installations from the 0.x line — see [Migrating](#migrating).
 
 ## Highlights
 
@@ -31,7 +34,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 ## Quick Start
 
 ```bash
-npm install -g agim          # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
+npm install -g agim-cli      # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
 
 # Configure at least one messenger
 agim                            # arrow-key wizard (recommended) — picks language,
@@ -57,20 +60,22 @@ Web UI at `http://localhost:3000` — chat at `/`, tasks at `/tasks`, settings a
 #### From the original `im-hub`
 ```bash
 npm uninstall -g im-hub
-npm install -g agim
+npm install -g agim-cli
 agim start            # config, env vars, headers all unchanged
 ```
 
 #### From `im-hub-pro` (0.x → 1.0)
 ```bash
 npm uninstall -g im-hub-pro
-npm install -g agim
+npm install -g agim-cli
 agim start            # same config dir, same env vars, same headers
 ```
 
-`im-hub-pro` is also kept as a binary alias inside the `agim` package, so
-the previous command name continues to work without any extra setup. New
-material in this README uses `agim`.
+The npm package is named `agim-cli` (the unscoped name `agim` is reserved
+by npm's anti-typosquat policy); the **binary** it installs is `agim`,
+which is what you'll actually type. `im-hub-pro` is also retained as a
+binary alias inside the package, so previous shell aliases and systemd
+units that call `im-hub-pro` continue to work without any extra setup.
 
 ## Features
 

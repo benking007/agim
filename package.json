@@ -1,7 +1,7 @@
 {
-  "name": "agim",
+  "name": "agim-cli",
   "version": "1.0.1",
-  "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP.",
+  "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Installs the `agim` command.",
   "type": "module",
   "bin": {
     "agim": "./dist/cli.js",
@@ -29,6 +29,7 @@
   },
   "keywords": [
     "agim",
+    "agim-cli",
     "阿吉姆",
     "im-hub",
     "im-hub-pro",

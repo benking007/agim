@@ -218,7 +218,7 @@ const en = {
 
   'svc.uninstall.confirm': 'Uninstall Agim? This stops the service, removes the npm install + {config} + systemd unit. Workspaces under {workspaces} are KEPT.',
   'svc.uninstall.stopping': 'Stopping any running instance…',
-  'svc.uninstall.removing_npm': 'Removing global npm package `agim`…',
+  'svc.uninstall.removing_npm': 'Removing global npm package `agim-cli`…',
   'svc.uninstall.removing_unit': 'Removing systemd unit…',
   'svc.uninstall.removing_config': 'Removing {config} + env…',
   'svc.uninstall.workspaces_kept': 'Workspaces kept at {workspaces} (your memos / sessions / agent data).',
@@ -445,7 +445,7 @@ const zh: Record<Key, string> = {
 
   'svc.uninstall.confirm': '确定卸载阿吉姆吗？将停止服务、移除全局 npm 包 + {config} + systemd 单元。{workspaces} 下的工作区数据 **保留**。',
   'svc.uninstall.stopping': '停止运行中的实例…',
-  'svc.uninstall.removing_npm': '移除全局 npm 包 `agim`…',
+  'svc.uninstall.removing_npm': '移除全局 npm 包 `agim-cli`…',
   'svc.uninstall.removing_unit': '移除 systemd 单元…',
   'svc.uninstall.removing_config': '移除 {config} + env…',
   'svc.uninstall.workspaces_kept': '工作区数据保留在 {workspaces}（你的 memos / sessions / agent 数据）。',

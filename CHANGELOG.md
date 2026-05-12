@@ -53,7 +53,11 @@ Product upgrade to v1.0 ships under a new brand:
 - **English name**: `Agim` (Agent + IM, with a hint of "agile")
 - **Chinese name**: `阿吉姆`
 - **CLI command**: `agim` (was `im-hub-pro`)
-- **npm package**: `agim` (was `im-hub-pro`)
+- **npm package**: `agim-cli` (was `im-hub-pro`). npm's anti-typosquat
+  policy rejected the unscoped name `agim` (too similar to existing
+  `ai`/`aegir`/`gm`), so we ship as `agim-cli` and the installed binary
+  is still `agim` — the package name only affects the install command
+  `npm install -g agim-cli`.
 
 Cross-cutting policy:
 

@@ -226,12 +226,12 @@ export async function cmdUninstall(): Promise<void> {
   // 4. Uninstall npm package globally.
   console.log(t(lang, 'svc.uninstall.removing_npm'))
   try {
-    // Best-effort uninstall both the current package name `agim` and the
-    // legacy alias `im-hub-pro` so a user who upgraded across the rename
-    // doesn't end up with a stale dangling bin.
-    execSync('npm uninstall -g agim im-hub-pro', { stdio: 'inherit' })
+    // Best-effort uninstall the current package `agim-cli` plus the
+    // legacy npm names `im-hub-pro` and `im-hub` so a user who upgraded
+    // across the rename(s) doesn't end up with stale dangling bins.
+    execSync('npm uninstall -g agim-cli im-hub-pro im-hub', { stdio: 'inherit' })
   } catch (err) {
-    console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim\` manually.`)
+    console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim-cli\` manually.`)
   }
   console.log()
   console.log(t(lang, 'svc.uninstall.workspaces_kept', pathVars))

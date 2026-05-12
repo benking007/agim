@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-12
+
+### Changed — Brand rename: `im-hub-pro` → **Agim · 阿吉姆**
+
+Product upgrade to v1.0 ships under a new brand:
+
+- **English name**: `Agim` (Agent + IM, with a hint of "agile")
+- **Chinese name**: `阿吉姆`
+- **CLI command**: `agim` (was `im-hub-pro`)
+- **npm package**: `agim` (was `im-hub-pro`)
+
+Cross-cutting policy:
+
+| Surface                                              | New                | Status |
+|------------------------------------------------------|--------------------|--------|
+| npm package name                                     | `agim`             | renamed |
+| CLI bin command                                      | `agim`             | renamed |
+| Old CLI bin command                                  | `im-hub-pro`       | **kept as alias** in the same package — existing systemd units, shell aliases, scripts continue to work |
+| Console banner / help text / wizard titles           | `Agim` / `阿吉姆`   | renamed |
+| Config dir                                           | `~/.im-hub/`       | **unchanged** for backwards compat with all 0.x installs |
+| Workspace dir                                        | `~/.im-hub-workspaces/` | **unchanged** |
+| Env vars                                             | `IMHUB_*`          | **unchanged** |
+| HTTP header                                          | `X-IM-Hub-Token`   | **unchanged** |
+| systemd unit name                                    | `agim.service` preferred | **legacy `im-hub.service` is still recognised** by detection / restart / stop / uninstall code paths |
+
+What this means for users:
+- New install: `npm install -g agim` → use `agim …` commands.
+- Existing 0.x install: stays working unchanged. Optional upgrade is just
+  `npm uninstall -g im-hub-pro && npm install -g agim`; everything else
+  (config, env, data) is untouched. The old `im-hub-pro` bin command
+  continues to be installed by the new package, so your systemd unit
+  `ExecStart=/usr/local/bin/im-hub-pro start` keeps running.
+
+Files touched (non-exhaustive):
+- `package.json` — name + bin (with `im-hub-pro` alias) + version 1.0.0 + description + keywords
+- `src/cli.ts` — banner, program name, help text, comments
+- `src/cli-ui/i18n.ts` — every wizard title / status / uninstall string in
+  both EN and 中文
+- `src/cli-ui/service.ts` — accepts either `agim.service` or
+  `im-hub.service`; `pgrep` matches both bin names
+- `src/cli-ui/cmd-handlers.ts` — restart / uninstall walk both unit paths
+- `README.md` + `README.zh-CN.md` — full top-section rewrite, install
+  commands, migration guide, version history
+- imhub-site repo — separate brand rollout for the marketing site
+
 ## [0.6.3] - 2026-05-12
 
 ### Fixed — per-platform coordinate-system handling for native location messages

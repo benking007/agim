@@ -1,16 +1,20 @@
 // cli-ui/service.ts — cross-platform service detection + lifecycle for
-// im-hub-pro. Knows about three run modes:
+// Agim (formerly im-hub-pro). Knows about three run modes:
 //
-//   1. systemd-managed   — Linux + root, /etc/systemd/system/im-hub.service
-//                          exists and `systemctl is-active im-hub.service`
-//                          returns "active". The installer creates the
-//                          unit when run as root.
-//   2. background daemon — `im-hub-pro start --bg` writes ~/.im-hub/im-hub.pid
-//                          and ~/.im-hub/im-hub.log. nohup + setsid; survives
-//                          shell exit. Works on Linux, macOS, WSL2.
-//   3. foreground        — a TTY-attached `im-hub-pro start` somewhere. We
-//                          detect it via `pgrep -af` matching, but can't
-//                          stop or restart it from outside the owning TTY.
+//   1. systemd-managed   — Linux + root, either /etc/systemd/system/agim.service
+//                          (the v1.0+ unit) OR the legacy im-hub.service exists
+//                          and `systemctl is-active <unit>` returns "active".
+//                          New installs write agim.service; pre-v1.0 systems
+//                          continue to be detected via the legacy name.
+//   2. background daemon — `agim start --bg` writes ~/.im-hub/im-hub.pid
+//                          and ~/.im-hub/im-hub.log (paths kept under the
+//                          legacy ~/.im-hub/ for upgrade compatibility).
+//                          nohup + setsid; survives shell exit. Works on
+//                          Linux, macOS, WSL2.
+//   3. foreground        — a TTY-attached `agim start` (or the legacy
+//                          `im-hub-pro start`) somewhere. We detect it via
+//                          `pgrep -af` matching, but can't stop or restart
+//                          it from outside the owning TTY.
 //
 // The detection helpers are all best-effort: a missing systemctl, a stale
 // pid file, or a pgrep mismatch produces "not running" rather than an
@@ -23,7 +27,25 @@ import { join, dirname } from 'node:path'
 
 export const PID_FILE = join(homedir(), '.im-hub', 'im-hub.pid')
 export const LOG_FILE = join(homedir(), '.im-hub', 'im-hub.log')
-const SYSTEMD_UNIT = '/etc/systemd/system/im-hub.service'
+
+/** Systemd unit candidates, checked in order. v1.0+ installers should
+ *  write `agim.service`; older installs use `im-hub.service`. We accept
+ *  either so users who upgraded across the rename don't lose detection.
+ *  `getSystemdUnit()` resolves which one exists. */
+const SYSTEMD_UNIT_CANDIDATES = [
+  '/etc/systemd/system/agim.service',
+  '/etc/systemd/system/im-hub.service',
+] as const
+
+function getSystemdUnit(): { path: string; name: string } | null {
+  for (const path of SYSTEMD_UNIT_CANDIDATES) {
+    if (existsSync(path)) {
+      // e.g. "/etc/systemd/system/agim.service" → "agim.service"
+      return { path, name: path.split('/').pop() ?? '' }
+    }
+  }
+  return null
+}
 
 export type ServiceMode = 'systemd' | 'background' | 'foreground' | 'none'
 
@@ -74,14 +96,16 @@ export function formatUptime(sec: number): string {
  *  pid-file, then a foreground pgrep match. Returns `{mode:'none', pid:null}`
  *  when nothing is running. */
 export function detectService(): ServiceState {
-  // 1. systemd
-  if (existsSync(SYSTEMD_UNIT)) {
+  // 1. systemd — check whichever unit name exists (agim.service first,
+  //    im-hub.service fallback for pre-1.0 installs).
+  const unit = getSystemdUnit()
+  if (unit) {
     try {
-      const active = execSync('systemctl is-active im-hub.service 2>&1', { encoding: 'utf-8' }).trim()
+      const active = execSync(`systemctl is-active ${unit.name} 2>&1`, { encoding: 'utf-8' }).trim()
       if (active === 'active') {
         let pid: number | null = null
         try {
-          const out = execSync('systemctl show -p MainPID --value im-hub.service', { encoding: 'utf-8' }).trim()
+          const out = execSync(`systemctl show -p MainPID --value ${unit.name}`, { encoding: 'utf-8' }).trim()
           const n = parseInt(out, 10)
           if (Number.isFinite(n) && n > 0) pid = n
         } catch { /* keep null */ }
@@ -104,11 +128,12 @@ export function detectService(): ServiceState {
     } catch { /* fall through */ }
   }
 
-  // 3. foreground — pgrep for our CLI. Match `im-hub-pro start` or
+  // 3. foreground — pgrep for our CLI. Match `agim start`, the legacy
+  //    `im-hub-pro start` (kept for users with old bin aliases), or
   //    `dist/cli.js start`. Excludes the current process (the CLI that's
   //    running this check).
   try {
-    const out = execSync('pgrep -af "im-hub-pro start|dist/cli.js start"', {
+    const out = execSync('pgrep -af "agim start|im-hub-pro start|dist/cli.js start"', {
       encoding: 'utf-8',
     }).trim()
     const lines = out.split('\n').filter(Boolean)
@@ -124,7 +149,7 @@ export function detectService(): ServiceState {
 }
 
 /**
- * Spawn im-hub-pro detached with stdio redirected to ~/.im-hub/im-hub.log.
+ * Spawn Agim detached with stdio redirected to ~/.im-hub/im-hub.log.
  * Writes the pid to PID_FILE so subsequent `status` / `stop` find it.
  *
  * Cross-platform: setsid → new session, no controlling tty, parent can exit.
@@ -160,7 +185,10 @@ export async function stopService(): Promise<{ mode: ServiceMode; pid: number | 
   if (st.mode === 'none') return { mode: 'none', pid: null }
 
   if (st.mode === 'systemd') {
-    execSync('systemctl stop im-hub.service', { stdio: 'inherit' })
+    const unit = getSystemdUnit()
+    if (unit) {
+      execSync(`systemctl stop ${unit.name}`, { stdio: 'inherit' })
+    }
     return { mode: 'systemd', pid: st.pid }
   }
 

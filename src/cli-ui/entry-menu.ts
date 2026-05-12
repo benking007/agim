@@ -1,10 +1,10 @@
-// cli-ui/entry-menu.ts — what bare `im-hub-pro` shows when invoked with
+// cli-ui/entry-menu.ts — what bare `agim` shows when invoked with
 // no args. Drops the user at the language picker, then a 7-row menu
 // covering the 5 service-mgmt commands + config + quit.
 //
 // We dispatch to the existing commander actions by calling them directly
 // (they're exposed via the cli.ts module via `exec*` helpers). Could also
-// re-spawn `im-hub-pro <subcmd>` but that doubles startup time; direct
+// re-spawn `agim <subcmd>` but that doubles startup time; direct
 // dispatch keeps everything in one process.
 
 import { menu, UserAbortError } from './prompts.js'

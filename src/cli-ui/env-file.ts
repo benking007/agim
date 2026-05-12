@@ -1,7 +1,7 @@
 // cli-ui/env-file.ts — read / write key=value pairs in ~/.im-hub/env.
 //
 // The env file is sourced by the systemd unit (`EnvironmentFile=`) AND by
-// `im-hub-pro start --bg` via process.env when we re-exec ourselves. It's
+// `agim start --bg` via process.env when we re-exec ourselves. It's
 // chmod 600 because it holds SMTP passwords and Baidu Maps AK.
 //
 // Format: simple `KEY=value` per line. No interpolation, no quoting required.
@@ -53,7 +53,7 @@ const SYSTEMD_UNIT_PATH = '/etc/systemd/system/im-hub.service'
  *  of the im-hub systemd unit. Used as a fallback for `readEffectiveEnv()`
  *  on machines where the wizard hasn't yet written to ~/.im-hub/env AND
  *  the user's interactive shell doesn't export the keys — the unit file
- *  is world-readable on standard installs, so this works for `im-hub-pro
+ *  is world-readable on standard installs, so this works for `agim
  *  config` invoked as the user. Returns {} if the file is missing/unreadable. */
 export function readSystemdUnitEnv(): Record<string, string> {
   if (!existsSync(SYSTEMD_UNIT_PATH)) return {}

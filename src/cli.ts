@@ -1,11 +1,16 @@
 #!/usr/bin/env node
-// im-hub-pro CLI
+// Agim (阿吉姆) CLI — rebranded from im-hub-pro at v1.0.0.
 //
-// NOTE: brand string "im-hub-pro" is user-visible (CLI program name, console
-// banners, help text). On-disk paths (~/.im-hub/, ~/.im-hub-workspaces/),
-// env vars (IMHUB_*), and HTTP headers (X-IM-Hub-Token) intentionally
-// retain the legacy "im-hub" identifier for drop-in compatibility with
-// existing installations. Do not "fix" them.
+// Brand: "Agim" (English) / "阿吉姆" (Chinese). Binary is `agim`; the
+// legacy `im-hub-pro` bin name is kept as an alias for systemd units +
+// shell aliases users have already wired up.
+//
+// On-disk paths (~/.im-hub/, ~/.im-hub-workspaces/), env vars (IMHUB_*),
+// HTTP headers (X-IM-Hub-Token), and the systemd unit `im-hub.service`
+// keep their legacy "im-hub" identifier for drop-in compatibility with
+// existing installations. Do not "fix" them — millions of bytes of user
+// data + every existing deployment's systemd config depend on those
+// names being stable. The rename is a brand surface only.
 
 import { program } from 'commander'
 import { homedir } from 'node:os'
@@ -74,13 +79,13 @@ function readPackageVersion(): string {
 }
 
 program
-  .name('im-hub-pro')
+  .name('agim')
   .description('Universal messenger-to-agent bridge')
   .version(readPackageVersion())
 
 program
   .command('start')
-  .description('Start the im-hub-pro server (foreground by default; --bg for detached daemon)')
+  .description('Start the Agim server (foreground by default; --bg for detached daemon)')
   .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.im-hub/)')
   .action(async (opts: { bg?: boolean; background?: boolean }) => {
     // `--bg` (or its alias `--background`): hand off to the bg-spawner.
@@ -91,7 +96,7 @@ program
       await cmdStart(true, async () => { /* unreachable in --bg path */ })
       return
     }
-    console.log('🚀 Starting im-hub-pro...')
+    console.log('🚀 Starting Agim (阿吉姆)…')
 
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
@@ -104,7 +109,7 @@ program
       for (const err of validation.errors) {
         console.warn(`   - ${err}`)
       }
-      console.warn('   im-hub-pro will continue with defaults for invalid fields.\n')
+      console.warn('   Agim will continue with defaults for invalid fields.\n')
     }
     config = validation.config as unknown as Config
 
@@ -157,7 +162,7 @@ program
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn(`⚠️ Agent workspace bootstrap failed: ${msg}`)
-      console.warn('   Agents will fall back to im-hub-pro cwd ("/" under systemd)')
+      console.warn('   Agents will fall back to Agim cwd ("/" under systemd)')
     }
 
     // Register the imhub MCP server in opencode's global config so opencode
@@ -210,7 +215,7 @@ program
       const newConfig = await runMessengerOnboarding(config)
       if (!newConfig) {
         console.log('\n❌ Onboarding cancelled.')
-        console.log('Run "im-hub-pro config <messenger>" to configure manually.')
+        console.log('Run "agim config <messenger>" to configure manually.')
         process.exit(1)
       }
       config = newConfig
@@ -222,7 +227,7 @@ program
     if (agentResult.allMissing) {
       console.log('\n⚠️ No coding agents found!')
       console.log(formatAgentInstallHint(agentResult.missing))
-      console.log('\nInstall at least one agent, then run im-hub-pro start again.')
+      console.log('\nInstall at least one agent, then run agim start again.')
       process.exit(1)
     } else if (agentResult.missing.length > 0) {
       console.log('⚠️ Some agents not available:', agentResult.missing.join(', '))
@@ -245,7 +250,7 @@ program
       : ['wechat-ilink'] // Fallback default
 
     // Auto-include the email adapter so /remind email ... works without
-    // explicit `im-hub-pro config email`. The adapter's start() is fail-soft
+    // explicit `agim config email`. The adapter's start() is fail-soft
     // when SMTP env vars are missing — it stays "registered but disabled"
     // and any actual send call throws a clear "not configured" error.
     if (!messengersToStart.includes('email')) {
@@ -1068,7 +1073,7 @@ program
 
       default:
         console.log(`Unknown component: ${component}`)
-        console.log('Run "im-hub-pro config" to see available components.')
+        console.log('Run "agim config" to see available components.')
         return
     }
 
@@ -1088,8 +1093,8 @@ program
     const agents = registry.listAgents()
     if (agents.length === 0) {
       console.log('No agents registered yet.')
-      console.log('Run "im-hub-pro config claude" to configure Claude Code.')
-      console.log('Run "im-hub-pro config agent" to add a remote ACP agent.')
+      console.log('Run "agim config claude" to configure Claude Code.')
+      console.log('Run "agim config agent" to add a remote ACP agent.')
       return
     }
 
@@ -1134,7 +1139,7 @@ program
     const messengers = registry.listMessengers()
     if (messengers.length === 0) {
       console.log('No messengers registered yet.')
-      console.log('Run "im-hub-pro config wechat" to configure WeChat.')
+      console.log('Run "agim config wechat" to configure WeChat.')
       return
     }
     console.log('📱 Available Messengers:\n')
@@ -1178,8 +1183,8 @@ program
     await cmdUninstall()
   })
 
-// ─── bare `im-hub-pro` → entry menu (v0.5.0) ────────────────────────────
-// If the user invoked us with no args (just `im-hub-pro`), drop them at
+// ─── bare `agim` → entry menu (v0.5.0+) ─────────────────────────────
+// If the user invoked us with no args (just `agim`), drop them at
 // the language picker + maintenance menu instead of dumping --help text.
 //
 // This is intentionally BEFORE program.parse() so the menu runs even

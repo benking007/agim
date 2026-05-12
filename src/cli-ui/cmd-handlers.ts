@@ -24,7 +24,28 @@ import { readSavedLang, t, type Lang } from './i18n.js'
 import { CONFIG_FILE } from './paths.js'
 import { ENV_FILE, removeEnvFile } from './env-file.js'
 
-const SYSTEMD_UNIT_PATH = '/etc/systemd/system/im-hub.service'
+/** Candidate paths for the systemd unit; v1.0 prefers `agim.service`,
+ *  pre-v1.0 wrote `im-hub.service`. Resolved at runtime by `findSystemdUnit()`
+ *  so we operate on whichever exists. */
+const SYSTEMD_UNIT_CANDIDATES = [
+  '/etc/systemd/system/agim.service',
+  '/etc/systemd/system/im-hub.service',
+] as const
+
+function findSystemdUnit(): { path: string; name: string } | null {
+  for (const path of SYSTEMD_UNIT_CANDIDATES) {
+    if (existsSync(path)) {
+      return { path, name: path.split('/').pop() ?? '' }
+    }
+  }
+  return null
+}
+
+/** Path of the unit file, if any exists, for compat with code that
+ *  references this constant. Resolved lazily so cleanup can drop it. */
+function systemdUnitPath(): string | null {
+  return findSystemdUnit()?.path ?? null
+}
 
 /** Pick whichever language is already saved, falling back to 'zh'. We
  *  don't re-prompt for language inside per-command handlers — they
@@ -53,7 +74,7 @@ export function cmdStatus(): void {
       break
     case 'none':
       console.log('  ' + t(lang, 'svc.status.not_running'))
-      if (existsSync(SYSTEMD_UNIT_PATH)) {
+      if (systemdUnitPath()) {
         console.log('  ' + t(lang, 'svc.status.systemd_inactive'))
       }
       return
@@ -139,7 +160,8 @@ export async function cmdRestart(): Promise<void> {
   const st = detectService()
   if (st.mode === 'systemd') {
     console.log(t(lang, 'svc.restart.systemd'))
-    execSync('systemctl restart im-hub.service', { stdio: 'inherit' })
+    const unit = findSystemdUnit()
+    if (unit) execSync(`systemctl restart ${unit.name}`, { stdio: 'inherit' })
     console.log(t(lang, 'svc.restart.done'))
     return
   }
@@ -175,19 +197,23 @@ export async function cmdUninstall(): Promise<void> {
   // 1. Stop any running instance.
   console.log(t(lang, 'svc.uninstall.stopping'))
   await stopService()
-  // 2. Remove systemd unit if present (requires root).
-  if (existsSync(SYSTEMD_UNIT_PATH)) {
+  // 2. Remove systemd unit if present (requires root). Both `agim.service`
+  //    (v1.0+) and the legacy `im-hub.service` are cleaned up so an upgrade
+  //    across the rename doesn't leave a stale unit behind.
+  for (const unitPath of SYSTEMD_UNIT_CANDIDATES) {
+    if (!existsSync(unitPath)) continue
+    const unitName = unitPath.split('/').pop() ?? ''
     console.log(t(lang, 'svc.uninstall.removing_unit'))
     try {
-      execSync('systemctl disable im-hub.service', { stdio: 'ignore' })
+      execSync(`systemctl disable ${unitName}`, { stdio: 'ignore' })
     } catch { /* ok if not enabled */ }
     try {
-      unlinkSync(SYSTEMD_UNIT_PATH)
-      execSync('systemctl daemon-reload', { stdio: 'ignore' })
+      unlinkSync(unitPath)
     } catch (err) {
-      console.warn(`⚠️ Could not remove ${SYSTEMD_UNIT_PATH}: ${err instanceof Error ? err.message : String(err)} — try \`sudo rm ${SYSTEMD_UNIT_PATH}\` manually.`)
+      console.warn(`⚠️ Could not remove ${unitPath}: ${err instanceof Error ? err.message : String(err)} — try \`sudo rm ${unitPath}\` manually.`)
     }
   }
+  try { execSync('systemctl daemon-reload', { stdio: 'ignore' }) } catch { /* ok */ }
   // 3. Remove config + env (but KEEP workspaces).
   console.log(t(lang, 'svc.uninstall.removing_config'))
   try { unlinkSync(CONFIG_FILE) } catch { /* missing is fine */ }
@@ -196,9 +222,12 @@ export async function cmdUninstall(): Promise<void> {
   // 4. Uninstall npm package globally.
   console.log(t(lang, 'svc.uninstall.removing_npm'))
   try {
-    execSync('npm uninstall -g im-hub-pro', { stdio: 'inherit' })
+    // Best-effort uninstall both the current package name `agim` and the
+    // legacy alias `im-hub-pro` so a user who upgraded across the rename
+    // doesn't end up with a stale dangling bin.
+    execSync('npm uninstall -g agim im-hub-pro', { stdio: 'inherit' })
   } catch (err) {
-    console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g im-hub-pro\` manually.`)
+    console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim\` manually.`)
   }
   console.log()
   console.log(t(lang, 'svc.uninstall.workspaces_kept'))

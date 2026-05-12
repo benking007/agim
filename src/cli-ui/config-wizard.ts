@@ -1,4 +1,4 @@
-// cli-ui/config-wizard.ts — interactive `im-hub-pro config` flow.
+// cli-ui/config-wizard.ts — interactive `agim config` flow.
 //
 // Top-level menu has 5 sections:
 //   1. Messengers     — list-of-channels; each opens its own sub-menu
@@ -98,7 +98,7 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
 // status. Picking one opens a sub-menu that does the *actual* component
 // configuration: scan QR for WeChat, prompt for token+channel for
 // Telegram, app id+secret for Feishu, etc. This mirrors the legacy
-// `im-hub-pro config <component>` flows — checkbox-only selection wasn't
+// `agim config <component>` flows — checkbox-only selection wasn't
 // enough because each messenger needs different credentials.
 
 type MessengerId = 'wechat-ilink' | 'telegram' | 'feishu' | 'dingtalk' | 'discord' | 'email'

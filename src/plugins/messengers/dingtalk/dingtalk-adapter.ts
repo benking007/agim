@@ -52,7 +52,7 @@ export class DingTalkAdapter implements MessengerAdapter {
       const full = JSON.parse(raw) as { dingtalk?: DingTalkConfig }
       this.config = full.dingtalk ?? null
     } catch {
-      throw new Error('DingTalk config not found. Run `im-hub-pro` → Configure → DingTalk first.')
+      throw new Error('DingTalk config not found. Run `agim` → Configure → DingTalk first.')
     }
     if (!this.config?.clientId || !this.config?.clientSecret) {
       throw new Error('DingTalk ClientID or ClientSecret missing. Re-run the configure flow.')

@@ -1,10 +1,16 @@
-# im-hub-pro
+# Agim · 阿吉姆
 
 [中文文档](README.zh-CN.md)
 
 **Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
-> Productized fork of the original [`im-hub`](https://www.npmjs.com/package/im-hub). Config dir (`~/.im-hub/`), env vars (`IMHUB_*`), and headers (`X-IM-Hub-Token`) are unchanged — drop-in upgrade. See [Migrating from `im-hub`](#migrating-from-im-hub).
+> **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
+> Renamed from `im-hub-pro` at v1.0.0. The bin command `im-hub-pro` is kept as
+> an alias so existing systemd units / shell aliases keep working; new users
+> type `agim`. On-disk paths (`~/.im-hub/`), env vars (`IMHUB_*`), HTTP
+> headers (`X-IM-Hub-Token`), and the systemd unit `im-hub.service` retain
+> their legacy names for drop-in compatibility with installations from the
+> 0.x line — see [Migrating from `im-hub-pro`](#migrating).
 
 ## Highlights
 
@@ -25,34 +31,46 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 ## Quick Start
 
 ```bash
-npm install -g im-hub-pro    # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
+npm install -g agim          # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
 
 # Configure at least one messenger
-im-hub-pro                      # arrow-key wizard (recommended) — picks language,
+agim                            # arrow-key wizard (recommended) — picks language,
                                 # then per-component setup for every messenger / agent
                                 # — or use the legacy per-component commands below:
-im-hub-pro config wechat        # QR-code login
-im-hub-pro config feishu        # App ID + Secret (no webhook needed)
-im-hub-pro config dingtalk      # ClientID + ClientSecret (Stream-mode bot)
-im-hub-pro config telegram      # @BotFather token
-im-hub-pro config discord       # Bot token; see docs/discord-setup.md
+agim config wechat              # QR-code login
+agim config feishu              # App ID + Secret (no webhook needed)
+agim config dingtalk            # ClientID + ClientSecret (Stream-mode bot)
+agim config telegram            # @BotFather token
+agim config discord             # Bot token; see docs/discord-setup.md
 
 # (Optional) Connect a custom remote agent over ACP
-im-hub-pro config agent
+agim config agent
 
 # Start the bridge
-im-hub-pro start
+agim start
 ```
 
 Web UI at `http://localhost:3000` — chat at `/`, tasks at `/tasks`, settings at `/settings`.
 
-### Migrating from `im-hub`
+### Migrating
 
+#### From the original `im-hub`
 ```bash
 npm uninstall -g im-hub
-npm install -g im-hub-pro
-im-hub-pro start          # config, env vars, headers all unchanged
+npm install -g agim
+agim start            # config, env vars, headers all unchanged
 ```
+
+#### From `im-hub-pro` (0.x → 1.0)
+```bash
+npm uninstall -g im-hub-pro
+npm install -g agim
+agim start            # same config dir, same env vars, same headers
+```
+
+`im-hub-pro` is also kept as a binary alias inside the `agim` package, so
+the previous command name continues to work without any extra setup. New
+material in this README uses `agim`.
 
 ## Features
 
@@ -67,27 +85,28 @@ im-hub-pro start          # config, env vars, headers all unchanged
 | **Routing** | Intent classifier, circuit breaker, rate limiter, sticky sessions, LLM judge fallback |
 | **Workspaces** | Multi-tenant; agent whitelist + rate limits; command-level ACL |
 | **Observability** | pino structured logs, traceId, Prometheus `/api/metrics`, SQLite audit log |
-| **ACP** | Client (connect to remote agents) + Server (im-hub-pro itself as an ACP agent) |
+| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent) |
 
 ## CLI Commands
 
 ```
-im-hub-pro                 # Arrow-key wizard (bilingual zh/en) — recommended entry
-im-hub-pro start           # Start the bridge + web UI (foreground)
-im-hub-pro start --bg      # Start as a background daemon
-im-hub-pro status          # Show service status (systemd / bg / fg)
-im-hub-pro restart         # Restart the running service
-im-hub-pro stop            # Stop the running service
-im-hub-pro uninstall       # Uninstall (keeps ~/.im-hub-workspaces/)
-im-hub-pro config wechat   # Configure WeChat
-im-hub-pro config feishu   # Configure Feishu
-im-hub-pro config dingtalk # Configure DingTalk (Stream-mode internal app)
-im-hub-pro config telegram # Configure Telegram
-im-hub-pro config discord  # Configure Discord
-im-hub-pro config claude   # Configure Claude Code
-im-hub-pro config agent    # Connect a custom ACP agent
-im-hub-pro agents          # List available agents
-im-hub-pro messengers      # List available messengers
+agim                       # Arrow-key wizard (bilingual zh/en) — recommended entry
+agim start                 # Start the bridge + web UI (foreground)
+agim start --bg            # Start as a background daemon
+agim status                # Show service status (systemd / bg / fg)
+agim restart               # Restart the running service
+agim stop                  # Stop the running service
+agim uninstall             # Uninstall (keeps ~/.im-hub-workspaces/)
+agim config wechat         # Configure WeChat
+agim config feishu         # Configure Feishu
+agim config dingtalk       # Configure DingTalk (Stream-mode internal app)
+agim config telegram       # Configure Telegram
+agim config discord        # Configure Discord
+agim config claude         # Configure Claude Code
+agim config agent          # Connect a custom ACP agent
+agim agents                # List available agents
+agim messengers            # List available messengers
+# (`im-hub-pro …` continues to work as a deprecated alias)
 ```
 
 ## Chat Commands
@@ -107,7 +126,7 @@ im-hub-pro messengers      # List available messengers
 
 ## Human-in-the-loop Tool Approval
 
-When a Claude run tries to use a tool, im-hub-pro pauses and sends an approval card:
+When a Claude run tries to use a tool, Agim pauses and sends an approval card:
 
 ```
 🔐 Tool approval request
@@ -371,10 +390,12 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.3.0 | `/memo` 5W1H persistent memory — `/location` → `/memo` rename, address geocoding via Baidu Maps, opencode HTTP driver SSE drain |
 | v0.3.1 | Native location messages on Telegram + Feishu, GCJ-02 → WGS-84 fix across all ingest paths, `memo` column + LLM/heuristic `what` extractor |
 | v0.4.0 | codex agent now sees the full imhub MCP toolset (reminder + memo); Telegram + Feishu location messages routed through agent-driven decision making (matches WeChat H5 architecture) |
-| v0.5.0–0.5.2 | Bilingual arrow-key `im-hub-pro` wizard; per-component flows (QR for WeChat, credentials prompts for Feishu / Telegram / Discord; live install detection for agents); systemd-unit env fallback for SMTP / Baidu prefill; full service lifecycle commands (`status / start --bg / restart / stop / uninstall`) |
-| **v0.6.0** | DingTalk Stream-mode adapter — bidirectional bot bridge via WebSocket, image inbound (`messageFiles/download` → claude-code multimodal Read), voice inbound (server-side ASR `recognition` field, whisper.cpp fallback) |
+| v0.5.0–0.5.2 | Bilingual arrow-key `agim` wizard (then `im-hub-pro` pre-rename); per-component flows (QR for WeChat, credentials prompts for Feishu / Telegram / Discord; live install detection for agents); systemd-unit env fallback for SMTP / Baidu prefill; full service lifecycle commands (`status / start --bg / restart / stop / uninstall`) |
+| v0.6.0 | DingTalk Stream-mode adapter — bidirectional bot bridge via WebSocket, image inbound (`messageFiles/download` → claude-code multimodal Read), voice inbound (server-side ASR `recognition` field, whisper.cpp fallback) |
+| v0.6.3 | Per-platform coord-system handling for native location messages (Telegram defaults WGS pass-through; H5 WGS pass-through fixes WeChat-X5 markers; DingTalk routes Baidu link URLs through BD-09→WGS) |
+| **v1.0.0** | Brand rename to **Agim · 阿吉姆**. New canonical bin `agim`; `im-hub-pro` retained as deprecation alias. On-disk paths / env vars / HTTP headers / systemd unit name kept stable for drop-in compat with 0.x installs. |
 
-### v0.7.0 (next)
+### v1.1.0 (next)
 
 - [ ] Slack adapter
 - [ ] Feishu / DingTalk / Discord button-style approval cards

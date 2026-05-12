@@ -1,9 +1,10 @@
 {
-  "name": "im-hub-pro",
-  "version": "0.6.3",
-  "description": "Universal messenger-to-agent bridge — connect WeChat/Feishu/Telegram/Discord to Claude Code/Codex/Copilot/OpenCode, or any custom agent via ACP",
+  "name": "agim",
+  "version": "1.0.0",
+  "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP.",
   "type": "module",
   "bin": {
+    "agim": "./dist/cli.js",
     "im-hub-pro": "./dist/cli.js"
   },
   "main": "./dist/index.js",
@@ -27,8 +28,13 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
+    "agim",
+    "阿吉姆",
+    "im-hub",
+    "im-hub-pro",
     "wechat",
     "feishu",
+    "dingtalk",
     "telegram",
     "discord",
     "claude-code",

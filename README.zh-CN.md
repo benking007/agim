@@ -1,10 +1,14 @@
-# im-hub-pro
+# Agim · 阿吉姆
 
 [English](README.md)
 
 **IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / Copilot / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
 
-> 原 [`im-hub`](https://www.npmjs.com/package/im-hub) 的产品化分支。配置目录（`~/.im-hub/`）、环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）保持不变——无缝升级。详见[从 im-hub 迁移](#从-im-hub-迁移)。
+> **品牌**：英文名 **Agim**（取自 Agent + IM，也有 agile 敏捷的感觉），中文名 **阿吉姆**。
+> v1.0.0 从原 `im-hub-pro` 改名而来；命令 `im-hub-pro` 作为别名保留，老的 systemd
+> 单元和 shell 别名不会断。新用户直接打 `agim`。配置目录（`~/.im-hub/`）、环境变量
+> （`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）、systemd 单元 `im-hub.service` 都保留
+> 原名以兼容 0.x 部署——详见 [从 `im-hub-pro` 迁移](#迁移)。
 
 ## 亮点
 
@@ -25,33 +29,44 @@
 ## 快速开始
 
 ```bash
-npm install -g im-hub-pro    # 需要 Node.js ≥ 18（推荐 ≥ 22 LTS）
+npm install -g agim          # 需要 Node.js ≥ 18（推荐 ≥ 22 LTS）
 
 # 配置至少一个 IM
-im-hub-pro                      # 交互式向导（推荐）—— 双语，方向键选语言后逐项配置
+agim                            # 交互式向导（推荐）—— 双语，方向键选语言后逐项配置
                                 # 也可以走老的子命令：
-im-hub-pro config wechat        # 扫码登录
-im-hub-pro config feishu        # 飞书 App ID + Secret，无需 webhook
-im-hub-pro config dingtalk      # 钉钉 ClientID + ClientSecret（Stream 模式机器人）
-im-hub-pro config telegram      # @BotFather 拿 Token
-im-hub-pro config discord       # Bot Token，详见 docs/discord-setup.md
+agim config wechat              # 扫码登录
+agim config feishu              # 飞书 App ID + Secret，无需 webhook
+agim config dingtalk            # 钉钉 ClientID + ClientSecret（Stream 模式机器人）
+agim config telegram            # @BotFather 拿 Token
+agim config discord             # Bot Token，详见 docs/discord-setup.md
 
 # （可选）通过 ACP 接入远端自定义 Agent
-im-hub-pro config agent
+agim config agent
 
 # 启动
-im-hub-pro start
+agim start
 ```
 
 浏览器访问 `http://localhost:3000` — 对话 `/`、任务 `/tasks`、设置 `/settings`。
 
-### 从 `im-hub` 迁移
+### 迁移
 
+#### 从原 `im-hub` 迁移
 ```bash
 npm uninstall -g im-hub
-npm install -g im-hub-pro
-im-hub-pro start          # 配置、环境变量、Header 全部不变
+npm install -g agim
+agim start            # 配置、环境变量、Header 全部不变
 ```
+
+#### 从 `im-hub-pro`（0.x → 1.0）迁移
+```bash
+npm uninstall -g im-hub-pro
+npm install -g agim
+agim start            # 配置目录、环境变量、Header 全部不变
+```
+
+`im-hub-pro` 命令在 `agim` 包里作为别名保留，原有的 systemd 单元和别名脚本不用动也能跑。
+新材料一律用 `agim`。
 
 ## 功能一览
 
@@ -66,28 +81,28 @@ im-hub-pro start          # 配置、环境变量、Header 全部不变
 | **路由** | 意图分类、断路器、限流、Sticky 会话、LLM 兜底 |
 | **工作区** | 多租户；Agent 白名单 + 限流；命令级 ACL |
 | **可观测** | pino 结构化日志、traceId、Prometheus `/api/metrics`、SQLite 审计 |
-| **ACP** | 客户端（连接远端 Agent）+ 服务端（im-hub-pro 自身作为 ACP Agent） |
+| **ACP** | 客户端（连接远端 Agent）+ 服务端（阿吉姆自身作为 ACP Agent） |
 
 ## CLI 命令
 
 ```
-im-hub-pro start           # 启动桥接 + Web UI
-im-hub-pro                 # 交互式向导（双语，推荐入口）
-im-hub-pro start           # 启动桥接 + Web 界面（前台）
-im-hub-pro start --bg      # 后台守护进程模式
-im-hub-pro status          # 查看服务状态（systemd / bg / fg）
-im-hub-pro restart         # 重启正在运行的服务
-im-hub-pro stop            # 停止服务
-im-hub-pro uninstall       # 卸载（保留 ~/.im-hub-workspaces/）
-im-hub-pro config wechat   # 配置微信
-im-hub-pro config feishu   # 配置飞书
-im-hub-pro config dingtalk # 配置钉钉（Stream 模式企业内部应用）
-im-hub-pro config telegram # 配置 Telegram
-im-hub-pro config discord  # 配置 Discord
-im-hub-pro config claude   # 配置 Claude Code
-im-hub-pro config agent    # 接入自定义 ACP Agent
-im-hub-pro agents          # 列出可用 Agent
-im-hub-pro messengers      # 列出可用 IM
+agim                       # 交互式向导（双语，推荐入口）
+agim start                 # 启动桥接 + Web 界面（前台）
+agim start --bg            # 后台守护进程模式
+agim status                # 查看服务状态（systemd / bg / fg）
+agim restart               # 重启正在运行的服务
+agim stop                  # 停止服务
+agim uninstall             # 卸载（保留 ~/.im-hub-workspaces/）
+agim config wechat         # 配置微信
+agim config feishu         # 配置飞书
+agim config dingtalk       # 配置钉钉（Stream 模式企业内部应用）
+agim config telegram       # 配置 Telegram
+agim config discord        # 配置 Discord
+agim config claude         # 配置 Claude Code
+agim config agent          # 接入自定义 ACP Agent
+agim agents                # 列出可用 Agent
+agim messengers            # 列出可用 IM
+# （`im-hub-pro …` 作为别名继续可用）
 ```
 
 ## 聊天命令
@@ -107,7 +122,7 @@ im-hub-pro messengers      # 列出可用 IM
 
 ## 工具调用人审
 
-当 Claude 尝试调用工具时，im-hub-pro 会暂停并发送审批卡：
+当 Claude 尝试调用工具时，阿吉姆会暂停并发送审批卡：
 
 ```
 🔐 工具调用审批请求
@@ -371,10 +386,12 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.3.0 | `/memo` 5W1H 持久记忆库 — `/location` → `/memo` 改名、地址 geocoding 接百度地图、opencode HTTP driver SSE 修复 |
 | v0.3.1 | Telegram + 飞书原生位置消息接入、所有渠道 GCJ-02 → WGS-84 修正、`memo` 列保存原话 + LLM/启发式 `what` 提取 |
 | v0.4.0 | codex 接入完整 imhub MCP 工具表（reminder + memo）；Telegram + 飞书位置消息改走 agent-driven 决策（对齐微信 H5 架构） |
-| v0.5.0–0.5.2 | `im-hub-pro` 双语方向键向导；按渠道独立配置（微信扫码、飞书 / Telegram / Discord 凭据输入；agent CLI 安装态实时探测）；systemd unit env fallback；完整服务生命周期命令（`status / start --bg / restart / stop / uninstall`） |
-| **v0.6.0** | 钉钉 Stream 模式适配器——WebSocket 双向桥、图片消息（`messageFiles/download` → claude-code 多模态 Read）、语音消息（钉钉服务端 ASR `recognition`，whisper.cpp 兜底） |
+| v0.5.0–0.5.2 | `agim` 双语方向键向导（当时叫 `im-hub-pro`）；按渠道独立配置（微信扫码、飞书 / Telegram / Discord 凭据输入；agent CLI 安装态实时探测）；systemd unit env fallback；完整服务生命周期命令（`status / start --bg / restart / stop / uninstall`） |
+| v0.6.0 | 钉钉 Stream 模式适配器——WebSocket 双向桥、图片消息（`messageFiles/download` → claude-code 多模态 Read）、语音消息（钉钉服务端 ASR `recognition`，whisper.cpp 兜底） |
+| v0.6.3 | 各平台原生位置消息的坐标系按来源处理（Telegram 改为 WGS 直通；H5 改为 WGS 直通解决微信 X5 的偏移；钉钉 link 中的百度地图 URL 走 BD-09→WGS） |
+| **v1.0.0** | 品牌升级为 **Agim · 阿吉姆**。新主命令 `agim`，老命令 `im-hub-pro` 保留为废弃别名。配置目录 / 环境变量 / HTTP 头 / systemd 单元名都保留以兼容 0.x 部署。 |
 
-### v0.7.0（下一版）
+### v1.1.0（下一版）
 
 - [ ] Slack 适配器
 - [ ] 飞书 / 钉钉 / Discord 卡片按钮版审批

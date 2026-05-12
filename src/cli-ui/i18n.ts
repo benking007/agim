@@ -1,5 +1,5 @@
 // cli-ui/i18n.ts — string dictionaries + persistent language preference
-// for the interactive CLI wizard (im-hub-pro / im-hub-pro config / status / etc.).
+// for the interactive CLI wizard (agim / agim config / status / etc.).
 //
 // Pattern mirrors imhub-site's strings.ts: the EN dict drives the Key type,
 // the ZH dict is `Record<Key, string>` so missing keys are a compile error.
@@ -23,8 +23,8 @@ const en = {
   'lang.label.zh': '中文',
   'lang.saved': 'Language preference saved to {file}',
 
-  // ─── entry menu (bare `im-hub-pro`) ──────────────────────────────────
-  'menu.title': 'im-hub-pro · maintenance entry',
+  // ─── entry menu (bare `agim`) ────────────────────────────────────────
+  'menu.title': 'Agim · maintenance entry',
   'menu.subtitle': 'What would you like to do?',
   'menu.config': 'Configure (messengers, agents, SMTP, Baidu Maps …)',
   'menu.status': 'Show service status',
@@ -32,11 +32,11 @@ const en = {
   'menu.start_bg': 'Start the service (background)',
   'menu.restart': 'Restart the service',
   'menu.stop': 'Stop the service',
-  'menu.uninstall': 'Uninstall im-hub-pro (keeps workspaces)',
+  'menu.uninstall': 'Uninstall Agim (keeps workspaces)',
   'menu.quit': 'Quit',
 
   // ─── config root ─────────────────────────────────────────────────────
-  'config.title': 'im-hub-pro · config',
+  'config.title': 'Agim · config',
   'config.subtitle': 'Pick a section to edit. Each section has a Back option.',
   'config.section.messengers': 'Messengers (WeChat / Telegram / Feishu / Discord / Email)',
   'config.section.agents': 'AI agents (Claude Code / OpenCode / Codex / Copilot)',
@@ -190,35 +190,35 @@ const en = {
   'baidu.cleared': 'Baidu Maps AK cleared',
 
   // ─── service mgmt ────────────────────────────────────────────────────
-  'svc.status.title': 'im-hub-pro · status',
+  'svc.status.title': 'Agim · status',
   'svc.status.systemd_active': 'systemd unit `im-hub.service` is active (pid {pid})',
   'svc.status.systemd_inactive': 'systemd unit `im-hub.service` exists but is inactive',
   'svc.status.bg_running': 'background daemon running (pid {pid}, log: {log})',
   'svc.status.fg_running': 'foreground process running (pid {pid})',
-  'svc.status.not_running': 'no running im-hub-pro instance found',
+  'svc.status.not_running': 'no running Agim instance found',
   'svc.status.web': 'web console: http://{bind}:{port}',
   'svc.status.uptime': 'uptime: {duration}',
 
   'svc.start.starting_fg': 'Starting in foreground — Ctrl-C to stop.',
   'svc.start.starting_bg': 'Starting in background…',
   'svc.start.bg_ready': '✅ Background daemon started (pid {pid}, log: {log})',
-  'svc.start.bg_hint': 'Tip: use `im-hub-pro stop` to terminate; `im-hub-pro status` to inspect.',
+  'svc.start.bg_hint': 'Tip: use `agim stop` to terminate; `agim status` to inspect.',
   'svc.start.systemd_managed': 'A systemd unit already manages im-hub. Use `systemctl start im-hub.service`.',
-  'svc.start.already_running': 'Already running (pid {pid}). Use `im-hub-pro restart` instead.',
+  'svc.start.already_running': 'Already running (pid {pid}). Use `agim restart` instead.',
 
   'svc.stop.stopping_systemd': 'Stopping systemd unit `im-hub.service`…',
   'svc.stop.stopping_bg': 'Stopping background daemon (pid {pid})…',
-  'svc.stop.not_running': 'Nothing to stop — im-hub-pro is not running.',
+  'svc.stop.not_running': 'Nothing to stop — Agim is not running.',
   'svc.stop.stopped': '✅ Stopped.',
 
   'svc.restart.systemd': 'Restarting via `systemctl restart im-hub.service`…',
   'svc.restart.bg': 'Restarting background daemon…',
-  'svc.restart.fg_warning': 'A foreground process is running; cannot restart from another shell. Stop it (Ctrl-C) and run `im-hub-pro start --bg`.',
+  'svc.restart.fg_warning': 'A foreground process is running; cannot restart from another shell. Stop it (Ctrl-C) and run `agim start --bg`.',
   'svc.restart.done': '✅ Restarted.',
 
-  'svc.uninstall.confirm': 'Uninstall im-hub-pro? This stops the service, removes the npm install + ~/.im-hub/config.json + systemd unit. Workspaces under ~/.im-hub-workspaces/ are KEPT.',
+  'svc.uninstall.confirm': 'Uninstall Agim? This stops the service, removes the npm install + ~/.im-hub/config.json + systemd unit. Workspaces under ~/.im-hub-workspaces/ are KEPT.',
   'svc.uninstall.stopping': 'Stopping any running instance…',
-  'svc.uninstall.removing_npm': 'Removing global npm package `im-hub-pro`…',
+  'svc.uninstall.removing_npm': 'Removing global npm package `agim`…',
   'svc.uninstall.removing_unit': 'Removing systemd unit…',
   'svc.uninstall.removing_config': 'Removing ~/.im-hub/config.json + env…',
   'svc.uninstall.workspaces_kept': 'Workspaces kept at ~/.im-hub-workspaces/ (your memos / sessions / agent data).',
@@ -251,7 +251,7 @@ const zh: Record<Key, string> = {
   'lang.saved': '语言偏好已保存到 {file}',
 
   // ─── entry menu ──────────────────────────────────────────────────
-  'menu.title': 'im-hub-pro · 维护入口',
+  'menu.title': '阿吉姆 (Agim) · 维护入口',
   'menu.subtitle': '想做什么？',
   'menu.config': '配置（IM / Agent / SMTP / 百度地图 …）',
   'menu.status': '查看服务状态',
@@ -259,11 +259,11 @@ const zh: Record<Key, string> = {
   'menu.start_bg': '启动服务（后台）',
   'menu.restart': '重启服务',
   'menu.stop': '停止服务',
-  'menu.uninstall': '卸载 im-hub-pro（保留 workspaces）',
+  'menu.uninstall': '卸载阿吉姆（保留 workspaces）',
   'menu.quit': '退出',
 
   // ─── config root ─────────────────────────────────────────────────
-  'config.title': 'im-hub-pro · 配置',
+  'config.title': '阿吉姆 · 配置',
   'config.subtitle': '选要编辑的分类。每个分类内部都能 Back 回上一层。',
   'config.section.messengers': 'IM 渠道（微信 / Telegram / 飞书 / Discord / 邮件）',
   'config.section.agents': 'AI Agent（Claude Code / OpenCode / Codex / Copilot）',
@@ -417,21 +417,21 @@ const zh: Record<Key, string> = {
   'baidu.cleared': '百度地图 AK 已清除',
 
   // ─── service mgmt ────────────────────────────────────────────────
-  'svc.status.title': 'im-hub-pro · 状态',
+  'svc.status.title': '阿吉姆 · 状态',
   'svc.status.systemd_active': 'systemd 单元 `im-hub.service` 正在运行（pid {pid}）',
   'svc.status.systemd_inactive': 'systemd 单元 `im-hub.service` 存在但未启动',
   'svc.status.bg_running': '后台守护进程在跑（pid {pid}，日志：{log}）',
   'svc.status.fg_running': '前台进程在跑（pid {pid}）',
-  'svc.status.not_running': '未发现 im-hub-pro 实例',
+  'svc.status.not_running': '未发现阿吉姆实例',
   'svc.status.web': 'Web 控制台：http://{bind}:{port}',
   'svc.status.uptime': '运行时长：{duration}',
 
   'svc.start.starting_fg': '前台启动中——Ctrl-C 退出。',
   'svc.start.starting_bg': '后台启动中…',
   'svc.start.bg_ready': '✅ 后台守护进程已启动（pid {pid}，日志：{log}）',
-  'svc.start.bg_hint': '提示：`im-hub-pro stop` 终止；`im-hub-pro status` 查看。',
+  'svc.start.bg_hint': '提示：`agim stop` 终止；`agim status` 查看。',
   'svc.start.systemd_managed': '已有 systemd 单元管理 im-hub。用 `systemctl start im-hub.service`。',
-  'svc.start.already_running': '已经在跑（pid {pid}）。用 `im-hub-pro restart` 重启。',
+  'svc.start.already_running': '已经在跑（pid {pid}）。用 `agim restart` 重启。',
 
   'svc.stop.stopping_systemd': '停止 systemd 单元 `im-hub.service`…',
   'svc.stop.stopping_bg': '停止后台守护进程（pid {pid}）…',
@@ -440,12 +440,12 @@ const zh: Record<Key, string> = {
 
   'svc.restart.systemd': '通过 `systemctl restart im-hub.service` 重启…',
   'svc.restart.bg': '重启后台守护进程…',
-  'svc.restart.fg_warning': '前台进程在跑，无法从其他 shell 重启它。请在那个 shell 里 Ctrl-C 后用 `im-hub-pro start --bg`。',
+  'svc.restart.fg_warning': '前台进程在跑，无法从其他 shell 重启它。请在那个 shell 里 Ctrl-C 后用 `agim start --bg`。',
   'svc.restart.done': '✅ 已重启。',
 
-  'svc.uninstall.confirm': '确定卸载 im-hub-pro 吗？将停止服务、移除全局 npm 包 + ~/.im-hub/config.json + systemd 单元。~/.im-hub-workspaces/ 下的工作区数据 **保留**。',
+  'svc.uninstall.confirm': '确定卸载阿吉姆吗？将停止服务、移除全局 npm 包 + ~/.im-hub/config.json + systemd 单元。~/.im-hub-workspaces/ 下的工作区数据 **保留**。',
   'svc.uninstall.stopping': '停止运行中的实例…',
-  'svc.uninstall.removing_npm': '移除全局 npm 包 `im-hub-pro`…',
+  'svc.uninstall.removing_npm': '移除全局 npm 包 `agim`…',
   'svc.uninstall.removing_unit': '移除 systemd 单元…',
   'svc.uninstall.removing_config': '移除 ~/.im-hub/config.json + env…',
   'svc.uninstall.workspaces_kept': '工作区数据保留在 ~/.im-hub-workspaces/（你的 memos / sessions / agent 数据）。',

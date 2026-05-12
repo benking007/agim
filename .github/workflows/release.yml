@@ -44,7 +44,7 @@ jobs:
         id: version
         run: |
           CURR_VERSION=$(jq -r '.version' package.json)
-          PUBLISHED_VERSION=$(npm view im-hub-pro version 2>/dev/null || echo "none")
+          PUBLISHED_VERSION=$(npm view agim-cli version 2>/dev/null || echo "none")
           if [ "$PUBLISHED_VERSION" != "$CURR_VERSION" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "version=$CURR_VERSION" >> $GITHUB_OUTPUT
@@ -52,6 +52,14 @@ jobs:
           else
             echo "npm already has v$CURR_VERSION."
           fi
+
+      # Pin npm 10 — npm 11.x (bundled with Node 24) has a regression
+      # where install crashes with "Exit handler never called!" on
+      # native-binding packages (better-sqlite3, prebuild-install).
+      # https://github.com/npm/cli/issues/8284
+      - name: Pin npm 10
+        if: steps.version.outputs.changed == 'true'
+        run: npm install -g npm@10
 
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'

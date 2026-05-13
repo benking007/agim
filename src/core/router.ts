@@ -114,6 +114,8 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'status') return { type: 'service', action: 'status', args: rest }
   if (cmd === 'restart') return { type: 'service', action: 'restart', args: rest }
   if (cmd === 'stop') return { type: 'service', action: 'stop', args: rest }
+  // /setup admin <token> — one-time admin onboarding, see commands/setup.ts.
+  if (cmd === 'setup') return { type: 'setup', args: rest }
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }
   if (cmd === 'audit') return { type: 'audit', args: rest }
@@ -235,6 +237,11 @@ export async function routeMessage(
       if (parsed.action === 'restart') return handleRestartCommand(parsed.args, ctx)
       if (parsed.action === 'stop') return handleStopCommand(parsed.args, ctx)
       return handleStatusCommand(parsed.args, ctx)
+    }
+
+    case 'setup': {
+      const { handleSetupCommand } = await import('./commands/setup.js')
+      return handleSetupCommand(parsed.args, ctx)
     }
 
     case 'agent': {

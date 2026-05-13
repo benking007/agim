@@ -73,15 +73,20 @@ describe('admin-allowlist', () => {
   })
 
   describe('denialMessage', () => {
-    it('points to env when allowlist unset', () => {
+    it('points to /setup admin when no admins configured', () => {
       const msg = denialMessage('telegram', '12345')
-      expect(msg).toContain('IMHUB_ADMIN_USERS')
+      expect(msg).toContain('/setup admin')
+      // user's id appears in the message so they can copy-paste it
       expect(msg).toContain('telegram:12345')
+      // Don't leak IMHUB_ADMIN_USERS internals to end users
+      expect(msg).not.toContain('IMHUB_ADMIN_USERS')
     })
     it('gives generic denial when allowlist set but user missing', () => {
       setEnv('telegram:other')
       const msg = denialMessage('telegram', '12345')
-      expect(msg).toContain('白名单')
+      expect(msg).toContain('没有权限')
+      // Don't leak the current admin id back to non-admins
+      expect(msg).not.toContain('other')
     })
   })
 })

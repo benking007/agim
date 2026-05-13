@@ -204,6 +204,19 @@ program
     const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
     startMemoSweep()
 
+    // First-run admin onboarding: if IMHUB_ADMIN_USERS is unset, write a
+    // one-time bootstrap token to ~/.agim/admin-bootstrap-token and print
+    // a prominent banner so the operator can self-onboard via
+    // `/setup admin <token>` in IM (instead of having to edit env files
+    // by hand). On already-configured boxes, this is a no-op that also
+    // cleans up any stale token file.
+    try {
+      const { ensureBootstrapTokenIfNeeded } = await import('./core/admin-bootstrap.js')
+      ensureBootstrapTokenIfNeeded()
+    } catch (err) {
+      console.warn(`⚠️ admin bootstrap setup failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     // ============================================
     // ONBOARDING CHECKS (before default fill!)
     // ============================================

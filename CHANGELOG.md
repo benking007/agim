@@ -4,6 +4,82 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-05-13
+
+### Added — first-run admin onboarding
+
+The v1.0.9 denial message ("set IMHUB_ADMIN_USERS=… and restart") was
+unfriendly to small / non-technical operators. v1.0.10 replaces it with
+a guided self-onboarding flow:
+
+1. **At startup**, if no admin is configured, Agim generates a one-time
+   12-char base32 token (~60 bits of entropy), writes it to
+   `~/.agim/admin-bootstrap-token` (chmod 600), and prints a prominent
+   banner to stdout + structured log:
+
+   ```
+   ⚙️  No admin configured. To onboard yourself:
+        · In IM, send:  /setup admin ABCD-EFGH-JKLM
+        · Token also in: ~/.agim/admin-bootstrap-token
+        · Token regenerates on every restart while no admin is set.
+   ```
+
+2. **Operator** sees this in `journalctl -u im-hub` (or `tail
+   ~/.im-hub/im-hub.log`), opens their own IM, and sends
+   `/setup admin <token>` to the bot.
+
+3. **Bot** verifies the token, calls `promoteAdmin(platform, userId)`
+   which:
+   - Adds the entry to the in-memory allowlist (effective immediately,
+     no restart required)
+   - Persists `IMHUB_ADMIN_USERS` to `~/.agim/env` so the next restart
+     keeps it
+   - Unlinks the token file (single-use)
+   - Replies "✅ 你 (platform:userId) 已设为管理员"
+
+4. **All subsequent** /restart, /stop, "重启服务" etc. from that user
+   pass the admin gate.
+
+### Changed — smarter denial messages
+
+The blanket message in v1.0.9 ("IMHUB_ADMIN_USERS=… 然后重启服务") leaked
+internal env-var format to random visitors. v1.0.10 distinguishes:
+
+- **No admin at all** → "这个 bot 还没配置管理员。如果你是部署者：…
+  /setup admin <token>…"
+- **Admins exist but caller isn't one** → "你没有权限执行此操作。"
+  No env hint, no list of current admins.
+
+### Added — web UI "Admin Allowlist" sub-section
+
+The /settings Safety card now lists current admins and lets the
+operator add / remove entries directly. New endpoints:
+
+- `GET  /api/admin-allowlist` — list + bootstrapAvailable flag
+- `POST /api/admin-allowlist` — add (gated on bindHost = localhost)
+- `DELETE /api/admin-allowlist` — remove (gated on bindHost = localhost)
+
+The add/remove endpoints are **refused when the web is bound to
+0.0.0.0** — without auth, a LAN visitor could otherwise self-promote.
+The frontend hides the editor and shows a warning in that case.
+
+### New slash command
+
+- `/setup admin <token>` — consume the bootstrap token
+
+### Tests
+
+51 new cases across admin-bootstrap (8) + extended admin-allowlist
+denial-message + intent/self-protect coverage from v1.0.9. Full suite:
+1291 pass / 10 pre-existing flakies (same baseline as v1.0.9).
+
+### Migration
+
+- Existing deployments with `IMHUB_ADMIN_USERS` already set: nothing
+  changes. Token file is auto-cleaned at startup since admins exist.
+- New deployments: the bootstrap banner is the entry point. No more
+  manual env editing required for the typical operator onboarding.
+
 ## [1.0.8] - 2026-05-13
 
 ### Added — opt-in `--dangerously-skip-permissions` for Claude Code

@@ -139,6 +139,16 @@
         safetyRestartHint: 'Click Save & Restart to apply.',
         safetySaveRestart: 'Save & Restart',
         safetySaved: '✓ Setting saved',
+        adminListTitle: 'Admin Allowlist',
+        adminListHint: 'Only these users can run /restart, /stop, and natural-language equivalents in IM. Edits persist to ~/.agim/env immediately — no restart needed.',
+        adminListLoading: 'Loading…',
+        adminListEmpty: '(no admins yet — IM service commands are disabled)',
+        adminUserIdPlaceholder: 'platform-specific user id (e.g. wxid_… / 123456 / ou_…)',
+        adminAdd: 'Add admin',
+        adminRemove: 'Remove',
+        adminConfirmRemove: 'Remove admin {p}:{u}?',
+        adminPublicBindWarn: '⚠️ Web is bound publicly — admin editor disabled to prevent random visitors from granting themselves access. Bind to 127.0.0.1 to enable.',
+        adminBootstrapHint: 'Bootstrap token exists at {path}. Run `cat` on the server, then send `/setup admin <token>` in IM to self-onboard.',
       },
       zh: {
         title: 'Agim — 设置',
@@ -264,6 +274,16 @@
         safetyRestartHint: '点「保存并重启」让改动生效。',
         safetySaveRestart: '保存并重启',
         safetySaved: '✓ 设置已保存',
+        adminListTitle: '管理员白名单',
+        adminListHint: '只有列表里的用户能在 IM 里跑 /restart / /stop 或自然语言"重启服务"。改动会立即写入 ~/.agim/env，无需重启。',
+        adminListLoading: '加载中…',
+        adminListEmpty: '（还没有管理员 — IM 服务管理命令处于禁用状态）',
+        adminUserIdPlaceholder: '该平台的 user id（如 wxid_… / 123456 / ou_…）',
+        adminAdd: '添加管理员',
+        adminRemove: '移除',
+        adminConfirmRemove: '移除管理员 {p}:{u}？',
+        adminPublicBindWarn: '⚠️ web 控制台目前监听公开地址 — 为防止陌生访问者擅自给自己加 admin，此编辑器已禁用。绑回 127.0.0.1 后启用。',
+        adminBootstrapHint: '检测到一次性 token 文件在 {path}。在服务器上 `cat` 该文件取 token，然后在 IM 里发 /setup admin <token> 即可把自己设为 admin。',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -717,6 +737,8 @@
       void loadServiceStatus();
       // Safety toggle reflects the current env value; load once on render.
       void loadSafetyState();
+      // Admin allowlist list — loads via /api/admin-allowlist.
+      void loadAdminList();
     }
 
     // ==========================================
@@ -742,6 +764,26 @@
           <div class="hint" style="margin-top:10px">${t('safetyRestartHint')}</div>
           <div class="actions">
             <button type="button" class="btn btn-primary" id="safety-save-restart">${t('safetySaveRestart')}</button>
+          </div>
+          <hr class="divider">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">${t('adminListTitle')}</div>
+          <div class="hint" style="margin-bottom:10px">${t('adminListHint')}</div>
+          <div id="admin-list" style="margin-bottom:10px">${t('adminListLoading')}</div>
+          <div class="row">
+            <div>
+              <label>Platform</label>
+              <input type="text" id="admin-platform" placeholder="wechat-ilink / telegram / feishu …">
+            </div>
+            <div>
+              <label>User ID</label>
+              <input type="text" id="admin-userid" placeholder="${t('adminUserIdPlaceholder')}">
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="admin-add">${t('adminAdd')}</button>
+          </div>
+          <div class="hint" id="admin-public-warn" style="margin-top:8px;display:none;color:var(--yellow)">
+            ${t('adminPublicBindWarn')}
           </div>
         </div>
       `;
@@ -776,6 +818,69 @@
       toggle.setAttribute('data-active', safetySkipPending ? '1' : '0');
       status.textContent = safetySkipPending ? t('safetySkipStatusOn') : t('safetySkipStatusOff');
       status.style.color = safetySkipPending ? 'var(--red)' : 'var(--text-dim)';
+    }
+
+    // ─── Admin allowlist editor ──────────────────────────────────
+    async function loadAdminList() {
+      const listEl = document.getElementById('admin-list');
+      const warnEl = document.getElementById('admin-public-warn');
+      if (!listEl) return;
+      try {
+        const data = await authFetch('/api/admin-allowlist').then(r => r.json());
+        const admins = data.admins || [];
+        if (admins.length === 0) {
+          let inner = `<div class="hint" style="font-style:italic">${esc(t('adminListEmpty'))}</div>`;
+          if (data.bootstrapAvailable) {
+            inner += `<div class="hint" style="margin-top:6px;color:var(--yellow)">${esc(t('adminBootstrapHint').replace('{path}', data.bootstrapTokenPath || '~/.agim/admin-bootstrap-token'))}</div>`;
+          }
+          listEl.innerHTML = inner;
+        } else {
+          listEl.innerHTML = admins.map(a => `
+            <div class="agent-row" style="padding:6px 0">
+              <div class="left">
+                <div>
+                  <div style="font-family:monospace;font-size:13px">${esc(a.platform)}:${esc(a.userId)}</div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-danger" data-admin-remove='${esc(JSON.stringify({platform: a.platform, userId: a.userId}))}'>${esc(t('adminRemove'))}</button>
+            </div>
+          `).join('');
+          // Wire the remove buttons
+          listEl.querySelectorAll('[data-admin-remove]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const meta = JSON.parse(btn.getAttribute('data-admin-remove') || '{}');
+              if (!confirm(t('adminConfirmRemove').replace('{p}', meta.platform).replace('{u}', meta.userId))) return;
+              try {
+                const res = await authFetch('/api/admin-allowlist', {
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(meta),
+                });
+                if (!res.ok) {
+                  const j = await res.json().catch(() => ({}));
+                  throw new Error(j.error || res.statusText);
+                }
+                await loadAdminList();
+              } catch (err) {
+                toast(t('error') + ': ' + (err && err.message ? err.message : err), 'error');
+              }
+            });
+          });
+        }
+      } catch (err) {
+        listEl.textContent = t('error') + ': ' + (err && err.message ? err.message : err);
+      }
+      // The public-bind warning shows when /api/service/status reports a
+      // non-loopback bind. Re-use that endpoint instead of adding another.
+      try {
+        const status = await authFetch('/api/service/status').then(r => r.json());
+        if (warnEl && status.web && status.web.bind && status.web.bind !== '127.0.0.1' && status.web.bind !== 'localhost' && status.web.bind !== '::1') {
+          warnEl.style.display = 'block';
+          // Also disable the Add button
+          const addBtn = document.getElementById('admin-add');
+          if (addBtn) addBtn.disabled = true;
+        }
+      } catch { /* non-fatal */ }
     }
 
     // ==========================================
@@ -1331,6 +1436,34 @@
           // service-control restart path so the user gets the same overlay /
           // auto-reconnect they get clicking the Restart button manually.
           await svcAction('restart');
+        } catch (err) {
+          toast(`${t('error')}: ${err && err.message ? err.message : err}`, 'error');
+        }
+      });
+
+      // Add admin (Safety card → Admin Allowlist).
+      document.getElementById('admin-add')?.addEventListener('click', async () => {
+        const platform = (document.getElementById('admin-platform')?.value || '').trim();
+        const userId = (document.getElementById('admin-userid')?.value || '').trim();
+        if (!platform || !userId) {
+          toast(t('error') + ': platform + userId required', 'error');
+          return;
+        }
+        try {
+          const res = await authFetch('/api/admin-allowlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ platform, userId }),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.error || res.statusText);
+          }
+          toast(t('savedMsg'), 'success');
+          // Clear inputs + reload list
+          document.getElementById('admin-platform').value = '';
+          document.getElementById('admin-userid').value = '';
+          await loadAdminList();
         } catch (err) {
           toast(`${t('error')}: ${err && err.message ? err.message : err}`, 'error');
         }

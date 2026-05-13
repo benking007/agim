@@ -46,6 +46,7 @@ export type ParsedMessage =
   | { type: 'approval'; args: string }
   | { type: 'plan'; args: string }
   | { type: 'service'; action: 'restart' | 'stop' | 'status'; args: string }
+  | { type: 'setup'; args: string }
   | { type: 'error'; prompt: string; error: string }
 
 /**

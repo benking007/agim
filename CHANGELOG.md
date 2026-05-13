@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-05-13
+
+### Fixed — same-thread agent invocations now serialize (was: clobbering each other)
+
+When a user sent two messages quickly on the same IM thread, both
+`handleMessage` runs raced into the agent layer. Concrete failure modes
+that bit us:
+
+  - **claude-code**: same `--session-id` reused → second spawn fails with
+    "session already exists".
+  - **codex**: same conversation file written by two CLI processes.
+  - **opencode (stdio)**: stdin pipe interleaved between two writers.
+  - **opencode (HTTP)**: session-update PATCH dedup helped a bit, but
+    prompt-level concurrency was still unhandled.
+  - **all agents**: typing / "🤔 思考中…" placeholders from the two runs
+    raced, then the two replies came back out-of-order.
+
+`src/plugins/messengers/{wechat-ilink,telegram}` are the worst offenders —
+both dispatch incoming messages with `.catch(...)` (no `await`), so a
+single polling tick that pulls N messages fan-outs into N parallel
+runs immediately. discord/dingtalk/feishu await inside one event
+callback but offer no protection across callbacks. The
+`agent-base.ts` contract explicitly says concurrent calls are safe
+**across threadIds** — but does not guarantee same-thread safety.
+
+New `core/thread-queue.ts`: per-thread FIFO promise chain keyed by
+`${platform}:${channelId}:${threadId}`. `cli.ts:handleMessage` now
+wraps the agent invocation + response delivery block in
+`runOnThread()` when `willInvokeAgent === true`. Built-in commands
+(/help, /status, /audit, …) and approval replies (`y` / `n` /
+`批准` / ✅ / ❌ / …) bypass the queue — they need to stay parallel so
+that a `y` reply can resolve an approval card even while an agent run
+is in flight on the same thread.
+
+When depth > 0, joiners receive `📥 已收到（前面还有 N 条在处理，
+稍后给你结果）` so the user isn't left wondering whether their second
+message landed. The chain swallows predecessor failures (so one
+broken run doesn't poison every waiter behind it). Tests: 6 new cases
+in `core/thread-queue.test.ts`; full suite stays at the 9-flaky
+baseline.
+
+### Fixed — restart ack reported "版本 unknown"
+
+`src/core/restart-flow.ts:PKG_VERSION` used `require('node:fs')` to
+fetch `readFileSync` lazily, which silently threw `ReferenceError:
+require is not defined` on every call because the compiled output is
+native ESM. The try/catch swallowed the error and returned "unknown",
+leaving every IM restart ack reading "✅ 已重启完成（…, 版本
+unknown）". The fix imports `readFileSync` at the top of the file like
+every other fs use. Now restart acks correctly read "版本 1.0.14"
+(and forward).
+
 ## [1.0.13] - 2026-05-13
 
 ### Fixed — WeChat completion ack after restart silently dropped

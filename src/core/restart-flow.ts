@@ -21,7 +21,7 @@
 // the completion message to the initiator's IM thread, and deletes the
 // file.
 
-import { existsSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -84,12 +84,16 @@ export interface InitiateResult {
 /** Best-effort package version. `npm_package_version` is set by `npm start`
  *  / `npm run` but not by a bare `node dist/cli.js`; the systemd unit
  *  exposes it via Environment lines only when explicitly configured. Fall
- *  back to a readSync of the package.json sitting next to dist/. */
+ *  back to a readSync of the package.json sitting next to dist/.
+ *
+ *  Pre-1.0.14 this branch used `require('node:fs')` to fetch readFileSync
+ *  lazily — which silently threw `ReferenceError: require is not defined`
+ *  on every call because the compiled output is native ESM, leaving every
+ *  restart ack reading "版本 unknown". Now we import readFileSync at the
+ *  top of the file like every other fs use. */
 const PKG_VERSION = (() => {
   if (process.env.npm_package_version) return process.env.npm_package_version
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { readFileSync } = require('node:fs')
     const pkgPath = join(__dirname, '..', '..', 'package.json')
     const j = JSON.parse(readFileSync(pkgPath, 'utf-8'))
     return typeof j.version === 'string' ? j.version : 'unknown'

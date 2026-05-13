@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registry } from './core/registry.js'
 import { sessionManager } from './core/session.js'
+import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
 import { crossSpawn, isMac, isWindows } from './utils/cross-platform.js'
 import type { MessageContext } from './core/types.js'
@@ -703,48 +704,78 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       }
     }
 
-    if (willInvokeAgent && messenger.sendThinking) {
-      try {
-        dismissThinking = await messenger.sendThinking(
-          message.threadId,
-          '🤔 思考中…',
-        )
-      } catch (err) {
-        logger.debug({ err: String(err) }, 'sendThinking failed')
-      }
-    }
-
-    const result = await routeMessage(parsed, routeCtx)
-
-    const dismiss = async () => {
-      if (dismissThinking) {
-        try { await dismissThinking() } catch { /* ignore */ }
-        dismissThinking = undefined
-      }
-    }
-
-    // Handle response (string or async generator)
-    if (typeof result === 'string') {
-      await stopTyping()
-      await dismiss()
-      await messenger.sendMessage(message.threadId, await maybePrefix(result))
-      logger.info({ event: 'message.sent', responseLen: result.length })
-    } else {
-      // Stream response chunks
-      let fullResponse = ''
-      for await (const chunk of result) {
-        fullResponse += chunk
+    // The thinking placeholder + agent invocation + response delivery are
+    // wrapped into a closure so agent-bound messages can be serialized
+    // per-thread via runOnThread (see core/thread-queue.ts). Without
+    // serialization, two messages arriving in quick succession on the same
+    // threadId race each other into the agent — claude-code blows up on
+    // duplicate --session-id, codex / opencode get interleaved I/O, and
+    // the user sees mangled responses. Built-ins and approval replies
+    // (willInvokeAgent === false) bypass the queue so a `y` reply can
+    // still resolve an approval card while an agent run is in flight.
+    const runAgentInvocation = async (): Promise<void> => {
+      if (willInvokeAgent && messenger.sendThinking) {
+        try {
+          dismissThinking = await messenger.sendThinking(
+            message.threadId,
+            '🤔 思考中…',
+          )
+        } catch (err) {
+          logger.debug({ err: String(err) }, 'sendThinking failed')
+        }
       }
 
-      await stopTyping()
-      await dismiss()
+      const result = await routeMessage(parsed, routeCtx)
 
-      if (fullResponse) {
-        await messenger.sendMessage(message.threadId, await maybePrefix(fullResponse))
-        logger.info({ event: 'message.sent', responseLen: fullResponse.length })
+      const dismiss = async () => {
+        if (dismissThinking) {
+          try { await dismissThinking() } catch { /* ignore */ }
+          dismissThinking = undefined
+        }
+      }
+
+      // Handle response (string or async generator)
+      if (typeof result === 'string') {
+        await stopTyping()
+        await dismiss()
+        await messenger.sendMessage(message.threadId, await maybePrefix(result))
+        logger.info({ event: 'message.sent', responseLen: result.length })
       } else {
-        logger.warn({ event: 'message.empty_response' })
+        // Stream response chunks
+        let fullResponse = ''
+        for await (const chunk of result) {
+          fullResponse += chunk
+        }
+
+        await stopTyping()
+        await dismiss()
+
+        if (fullResponse) {
+          await messenger.sendMessage(message.threadId, await maybePrefix(fullResponse))
+          logger.info({ event: 'message.sent', responseLen: fullResponse.length })
+        } else {
+          logger.warn({ event: 'message.empty_response' })
+        }
       }
+    }
+
+    if (willInvokeAgent) {
+      const queueKey = `${platform}:${ctx.channelId || 'default'}:${message.threadId}`
+      await runOnThread(queueKey, runAgentInvocation, {
+        onQueued: async (ahead) => {
+          logger.info({ event: 'message.queued', ahead, queueKey })
+          try {
+            await messenger.sendMessage(
+              message.threadId,
+              `📥 已收到（前面还有 ${ahead} 条在处理，稍后给你结果）`,
+            )
+          } catch (err) {
+            logger.debug({ err: String(err) }, 'queued-notice send failed')
+          }
+        },
+      })
+    } else {
+      await runAgentInvocation()
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)

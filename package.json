@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && rm -rf dist/web/public && cp -r src/web/public dist/web/public && chmod +x dist/cli.js",
+    "build": "rm -rf dist && tsc && cp -r src/web/public dist/web/public && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",

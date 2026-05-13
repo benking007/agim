@@ -1,0 +1,6 @@
+# bun configuration — currently only used to wire the test preload.
+# See test/setup.ts for what the preload guarantees (AGIM_HOME sandbox
+# so tests cannot clobber the developer's live ~/.im-hub/ env file).
+
+[test]
+preload = ["./test/setup.ts"]

@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-05-13
+
+### Fixed - /restart races systemd own restart in systemd-managed installs
+
+P0 bug from v1.0.9-v1.0.10: restart-flow always spawned a detached helper to
+respawn, even when systemd was the supervisor. systemd would see its
+managed PID exit and try its own restart; the helper had already bound :3000;
+systemd entered auto-restart loop while a background daemon owned the port.
+
+Fix in core/restart-flow.ts initiateRestart(): now branches on detected
+service mode BEFORE writing the pending file:
+
+  - systemd    -> run systemctl restart <unit> in a detached child.
+                  systemd handles the lifecycle; no helper, no race.
+  - foreground -> refuse with friendly error pointing back to the
+                  owning shell.
+  - background -> existing detached-helper path (only when no external
+                  supervisor manages lifecycle).
+
+### Cleanup for affected v1.0.9 / v1.0.10 installs
+
+    pgrep -af dist/cli.js  # see surviving daemons
+    pkill -9 -f dist/cli.js
+    systemctl reset-failed im-hub
+    systemctl restart im-hub
+
 ## [1.0.10] - 2026-05-13
 
 ### Added — first-run admin onboarding

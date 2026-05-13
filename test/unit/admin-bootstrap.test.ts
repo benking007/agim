@@ -40,7 +40,7 @@ describe('admin-bootstrap', () => {
     expect(token!.length).toBeGreaterThan(10)
     expect(existsSync(BOOTSTRAP_TOKEN_FILE)).toBe(true)
     const onDisk = readFileSync(BOOTSTRAP_TOKEN_FILE, 'utf-8').trim()
-    expect(onDisk).toBe(token)
+    expect(onDisk).toBe(token!)
   })
 
   it('returns null + cleans stale file when admins already configured', () => {

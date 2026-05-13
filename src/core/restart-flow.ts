@@ -21,7 +21,7 @@
 // the completion message to the initiator's IM thread, and deletes the
 // file.
 
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -136,6 +136,52 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
       message: `🛑 重启取消：无法写入状态文件 ${RESTART_PENDING_FILE}（${err instanceof Error ? err.message : String(err)}）`,
       errors: [String(err)],
     }
+  }
+
+  // 3.5 Mode-aware respawn. CRITICAL: when systemd manages this
+  // process we MUST NOT spawn a detached helper - it would race
+  // systemctl on :3000. v1.0.10 had this exact bug.
+  const { detectService } = await import('../cli-ui/service.js')
+  const svcState = detectService()
+  if (svcState.mode === 'foreground') {
+    try { unlinkSync(RESTART_PENDING_FILE) } catch { /* ignore */ }
+    return {
+      ok: false,
+      message:
+        '🚫 重启取消：检测到前台运行的 agim（pid ' + (svcState.pid ?? '?') + '）。它由另一个 shell 持有 stdio，请回那个终端 Ctrl-C 后重启，或改用 systemd / `agim start --bg`。',
+      errors: ['foreground service cannot be safely restarted from a separate context'],
+    }
+  }
+  if (svcState.mode === 'systemd') {
+    const unitName = existsSync('/etc/systemd/system/agim.service')
+      ? 'agim.service'
+      : (existsSync('/etc/systemd/system/im-hub.service') ? 'im-hub.service' : null)
+    if (unitName) {
+      log.info({
+        event: 'restart-flow.systemd_restart',
+        unit: unitName,
+        source: initiator.source,
+      }, 'issuing systemctl restart - systemd will kill+respawn this process')
+      try {
+        spawn('systemctl', ['restart', unitName], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref()
+      } catch (err) {
+        log.error({
+          event: 'restart-flow.systemctl_spawn_failed',
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
+      return {
+        ok: true,
+        message: pre.warnings.length === 0
+          ? '🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。'
+          : `🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。\n   注意：${pre.warnings.join('；')}`,
+      }
+    }
+    log.warn({ event: 'restart-flow.systemd_unit_missing' },
+      'detectService said systemd but no unit file found; falling through to background helper')
   }
 
   // 4. Schedule helper + self-exit. We delay 300 ms so the caller's HTTP /

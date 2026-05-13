@@ -14,6 +14,7 @@ import { existsSync, readFileSync, unlinkSync, statSync } from 'node:fs'
 import { registry } from './registry.js'
 import { isAgentAvailableCached } from './onboarding.js'
 import { logger as rootLogger } from './logger.js'
+import type { MessengerAdapter } from './types.js'
 import {
   RESTART_PENDING_FILE,
   RESTART_FAILED_LOG,
@@ -135,11 +136,12 @@ async function pushToInitiator(initiator: RestartInitiator, body: string): Promi
     return
   }
 
-  const adapter = registry.getMessenger(initiator.platform)
+  const adapter = resolveMessenger(initiator.platform)
   if (!adapter) {
     log.warn({
       event: 'restart-completion.push_no_messenger',
       platform: initiator.platform,
+      registered: registry.listMessengers(),
     }, 'IM messenger not registered after restart; completion push dropped')
     return
   }
@@ -158,6 +160,28 @@ async function pushToInitiator(initiator: RestartInitiator, body: string): Promi
       platform: initiator.platform,
     }, 'completion message push threw — dropping')
   }
+}
+
+/** Look up the messenger that should ack a restart.
+ *
+ *  The wechat-ilink adapter registers as "wechat-ilink" but tags every
+ *  inbound MessageContext with platform="wechat", so the persisted
+ *  initiator.platform is the short form. Try the exact name first to
+ *  preserve behavior for telegram / feishu / dingtalk / discord (where
+ *  both sides agree), then fall back to a prefix scan so "wechat" finds
+ *  "wechat-ilink" — and any future "wechat-padlocal" etc. would also
+ *  resolve transparently. */
+export function resolveMessenger(platform: string): MessengerAdapter | undefined {
+  const direct = registry.getMessenger(platform)
+  if (direct) return direct
+
+  const prefix = platform + '-'
+  for (const name of registry.listMessengers()) {
+    if (name === platform || name.startsWith(prefix)) {
+      return registry.getMessenger(name)
+    }
+  }
+  return undefined
 }
 
 function safeUnlink(p: string): void {

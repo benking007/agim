@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-05-13
+
+### Fixed — WeChat completion ack after restart silently dropped
+
+When a restart was initiated from a WeChat thread, the "✅ 已重启完成"
+message was logged as
+
+    component=restart-completion event=restart-completion.push_no_messenger
+    platform=wechat msg="IM messenger not registered after restart;
+                         completion push dropped"
+
+and never reached the user. Root cause: the wechat-ilink adapter tags
+inbound `MessageContext.platform = 'wechat'`, but registers in the
+plugin registry under the name `wechat-ilink`. The completion path
+in `core/restart-completion.ts:pushToInitiator` called
+`registry.getMessenger('wechat')` directly, which returned undefined
+and dropped the push silently.
+
+`restart-completion.ts` now goes through a new `resolveMessenger()`
+helper: exact-name match first (preserves telegram / feishu /
+dingtalk / discord behavior, all of which have aligned names), then a
+prefix fallback so `wechat` finds `wechat-ilink` — and a future
+`wechat-padlocal` etc. would resolve transparently.
+
+Only WeChat was affected. No state-file format change; users on 1.0.12
+who don't restart from WeChat see no behavioral difference.
+
 ## [1.0.12] - 2026-05-13
 
 ### Removed — Safety card "Skip permissions" toggle

@@ -44,8 +44,12 @@ export interface RestartInitiator {
   /** Source layer that initiated. Determines who receives the completion
    *  message. */
   source: 'im' | 'web' | 'cli'
-  /** IM platform name (wechat-ilink / telegram / feishu / dingtalk /
-   *  discord). Empty when source !== 'im'. */
+  /** IM platform name as set on MessageContext by the inbound adapter
+   *  (wechat / telegram / feishu / dingtalk / discord). Note: this is
+   *  the short form used in MessageContext, NOT necessarily the same
+   *  string the adapter registers under in registry.ts — restart-
+   *  completion's resolveMessenger() bridges that gap.
+   *  Empty when source !== 'im'. */
   platform?: string
   channelId?: string
   threadId?: string

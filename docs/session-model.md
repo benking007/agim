@@ -1,19 +1,19 @@
-# im-hub-pro 会话模型与 Agent 会话的关系
+# agim 会话模型与 Agent 会话的关系
 
 > 适用：v0.2.15 + v2 升级（A/D/B/C 已落地）
-> 作用：把 im-hub-pro 自己的 session、Claude Code 的 session、opencode 的"无 session"摆到同一张桌子上看，便于排查"为什么会话突然没了 / Claude 续不上 / opencode 像失忆"。
+> 作用：把 agim 自己的 session、Claude Code 的 session、opencode 的"无 session"摆到同一张桌子上看，便于排查"为什么会话突然没了 / Claude 续不上 / opencode 像失忆"。
 > 关联：[`adr/0003-session-path-safety.md`](./adr/0003-session-path-safety.md) · [`adr/0004-sticky-agent-and-split-ttl.md`](./adr/0004-sticky-agent-and-split-ttl.md) · [`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md) · [`im-workspaces-guide.md`](./im-workspaces-guide.md)
 
 ---
 
 ## 一、三层 session，两个真实持久化
 
-im-hub-pro 在一次 IM 对话里面其实有三层"会话"，但只有前两层会真的落到磁盘：
+agim 在一次 IM 对话里面其实有三层"会话"，但只有前两层会真的落到磁盘：
 
 ```
-   ┌─ im-hub-pro session ───────────────────────────────────────┐
-   │  ~/.im-hub/sessions/<safe-key>.json   (元数据)          │
-   │  ~/.im-hub/sessions/<safe-key>.log    (消息 JSONL)      │
+   ┌─ agim session ───────────────────────────────────────┐
+   │  ~/.agim/sessions/<safe-key>.json   (元数据)          │
+   │  ~/.agim/sessions/<safe-key>.log    (消息 JSONL)      │
    │  生命周期：MESSAGES 30 min · META 7 d                    │
    └────────────────┬───────────────────────────────────────┘
                     │ 通过 claudeSessionId 字段索引
@@ -31,7 +31,7 @@ im-hub-pro 在一次 IM 对话里面其实有三层"会话"，但只有前两层
 
 ---
 
-## 二、im-hub-pro session
+## 二、agim session
 
 ### 2.1 Key 与文件布局
 
@@ -61,7 +61,7 @@ interface Session {
   model?: string               // sticky model
   variant?: string             // sticky variant
 
-  claudeSessionId?: string     // ← 把 im-hub-pro session 与 Claude session 粘在一起的索引
+  claudeSessionId?: string     // ← 把 agim session 与 Claude session 粘在一起的索引
   claudeSessionPrimed?: boolean
   opencodeSessionId?: string   // OpenCode 原生 session id（ses_...）
   codexSessionId?: string      // Codex 原生 thread id
@@ -117,12 +117,12 @@ Claude 用 `--session-id <uuid>`（首次）或 `--resume <uuid>`（续接），
 ~/.claude/projects/<cwd-encoded>/<uuid>.jsonl
 ```
 
-`<cwd-encoded>` 是 cwd 路径里 `/` 替换为 `-` 的结果。v2 升级前 IM Claude 都跑在 `/`，所以全在 `~/.claude/projects/-/`；升级后落到 `~/.claude/projects/-root-im-hub-workspaces-claude-code/`。
+`<cwd-encoded>` 是 cwd 路径里 `/` 替换为 `-` 的结果。v2 升级前 IM Claude 都跑在 `/`，所以全在 `~/.claude/projects/-/`；升级后落到 `~/.claude/projects/-root-agim-workspaces-claude-code/`。
 
-### 3.2 与 im-hub-pro session 的桥梁
+### 3.2 与 agim session 的桥梁
 
 ```
-im-hub-pro session.claudeSessionId  ──►  Claude 那个 <uuid>.jsonl
+agim session.claudeSessionId  ──►  Claude 那个 <uuid>.jsonl
                   ▲
                   │ 由 cli.ts 在第一次给 thread 调 Claude 时分配
                   │ 后续调用按 agentSessionResume=true 走 --resume
@@ -134,11 +134,11 @@ im-hub-pro session.claudeSessionId  ──►  Claude 那个 <uuid>.jsonl
 const effectiveHistory = ctx.agentSessionResume ? [] : history
 ```
 
-当走 `--resume`，**im-hub-pro 不再把 messages[] 拼回 prompt**，让 Claude 完全靠它自己的 jsonl 读历史，避免双倍上下文。
+当走 `--resume`，**agim 不再把 messages[] 拼回 prompt**，让 Claude 完全靠它自己的 jsonl 读历史，避免双倍上下文。
 
 ### 3.3 寿命对齐
 
-Claude 那边的 jsonl 永不过期（除非手动清）。但只要 im-hub-pro 这边的 `claudeSessionId` 字段被 META_TTL 清掉，下一条消息就走"分配新 UUID + `--session-id`"路径，旧 jsonl 还在但没人指它了。
+Claude 那边的 jsonl 永不过期（除非手动清）。但只要 agim 这边的 `claudeSessionId` 字段被 META_TTL 清掉，下一条消息就走"分配新 UUID + `--session-id`"路径，旧 jsonl 还在但没人指它了。
 
 → **想让 Claude 跨周续接，把 META_TTL 调大；想强制起新对话，`/new`。**
 
@@ -146,28 +146,28 @@ Claude 那边的 jsonl 永不过期（除非手动清）。但只要 im-hub-pro 
 
 ## 四、OpenCode / Codex native session
 
-OpenCode 与 Codex 会在 JSON 事件流里暴露自己的 session/thread id。im-hub-pro 捕获后分别写入：
+OpenCode 与 Codex 会在 JSON 事件流里暴露自己的 session/thread id。agim 捕获后分别写入：
 
 | Agent | 字段 | 后续调用 |
 |---|---|---|
 | OpenCode | `opencodeSessionId` | 传回 OpenCode adapter，并把 `agentSessionResume=true` |
 | Codex | `codexSessionId` | 使用 `codex exec resume <id>` |
 
-当 `agentSessionResume=true` 时，router 会把 `effectiveHistory` 置空，避免"CLI 原生历史 + im-hub 拼接历史"双喂上下文。
+当 `agentSessionResume=true` 时，router 会把 `effectiveHistory` 置空，避免"CLI 原生历史 + agim 拼接历史"双喂上下文。
 
-如果还没有捕获到原生 id（例如首次调用或旧版本升级后的第一轮），才依赖 im-hub-pro 的 `messages[]` 拼接历史。
+如果还没有捕获到原生 id（例如首次调用或旧版本升级后的第一轮），才依赖 agim 的 `messages[]` 拼接历史。
 
 后果：
 
 | 情形 | opencode 看到的 |
 |---|---|
-| 首轮 / 尚未捕获 native session id | im-hub-pro 拼接的 `messages[]` |
+| 首轮 / 尚未捕获 native session id | agim 拼接的 `messages[]` |
 | 已捕获 `opencodeSessionId` | OpenCode 原生 session 历史 |
-| 30 min 不说话再回来 | im-hub 短历史可能清空，但 native session id 仍在 META TTL 内保留 |
+| 30 min 不说话再回来 | agim 短历史可能清空，但 native session id 仍在 META TTL 内保留 |
 
 建议：
 
-- 在 `~/.im-hub-workspaces/opencode/PROJECT.md` 写"长期不变的项目档案"，让 opencode 启动时读
+- 在 `~/.agim-workspaces/opencode/PROJECT.md` 写"长期不变的项目档案"，让 opencode 启动时读
 - 把 `IMHUB_SESSION_META_TTL_MS` 调大，以延长 native session id 的可恢复窗口
 - 重要事实主动让用户复述，或建一个 prompt 前缀模板
 
@@ -179,21 +179,21 @@ OpenCode 与 Codex 会在 JSON 事件流里暴露自己的 session/thread id。i
 
 v0.2.30 起，`/test` / `/review` / `/diff` 等 agentCommand 也遵循同一焦点规则：active subtask 下会进入子会话，不再落回父会话。
 
-子任务会话也是 im-hub-pro session 的一种实例，TTL 规则一致，并且有自己的 `claudeSessionId` / `opencodeSessionId` / `codexSessionId`。这意味着主会话与子任务不会在 Agent CLI 原生 session 层串线。
+子任务会话也是 agim session 的一种实例，TTL 规则一致，并且有自己的 `claudeSessionId` / `opencodeSessionId` / `codexSessionId`。这意味着主会话与子任务不会在 Agent CLI 原生 session 层串线。
 
 ---
 
 ## 六、运维：调 TTL 的 systemd 片段
 
 ```ini
-# /etc/systemd/system/im-hub.service.d/override.conf
+# /etc/systemd/system/agim.service.d/override.conf
 [Service]
 Environment="IMHUB_SESSION_MESSAGES_TTL_MS=3600000"   # 1h，opencode 久聊用
 Environment="IMHUB_SESSION_META_TTL_MS=2592000000"    # 30d，长 sticky
 ```
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl restart im-hub-pro
+sudo systemctl daemon-reload && sudo systemctl restart agim
 ```
 
 env 钩子完整列表见 `im-workspaces-guide.md § 六`。
@@ -204,11 +204,11 @@ env 钩子完整列表见 `im-workspaces-guide.md § 六`。
 
 | 症状 | 怎么查 |
 |---|---|
-| Agent 又漂了 | `/audit` 看最近一条 `intent`：`sticky` = 锁正常；`topic` / `keyword` = sticky 失效（要么 META 过期要么 bug）；同时 `ls -la ~/.im-hub/sessions/<safe-key>.json` 看元数据是否还在 |
-| Claude 上下文丢了 | `jq '.claudeSessionId, .lastActivity' ~/.im-hub/sessions/<safe-key>.json`；为空 = META 过期；非空但 Claude 报 "session not found" = cwd 与 jsonl 路径不一致（v2 升级冷启动一次会出现，发一条消息生成新 UUID 即可） |
+| Agent 又漂了 | `/audit` 看最近一条 `intent`：`sticky` = 锁正常；`topic` / `keyword` = sticky 失效（要么 META 过期要么 bug）；同时 `ls -la ~/.agim/sessions/<safe-key>.json` 看元数据是否还在 |
+| Claude 上下文丢了 | `jq '.claudeSessionId, .lastActivity' ~/.agim/sessions/<safe-key>.json`；为空 = META 过期；非空但 Claude 报 "session not found" = cwd 与 jsonl 路径不一致（v2 升级冷启动一次会出现，发一条消息生成新 UUID 即可） |
 | opencode 一直失忆 | 这是设计如此，没有 session。考虑调大 `MESSAGES_TTL` 或 `PROJECT.md` |
-| 想看消息历史 | `cat ~/.im-hub/sessions/<safe-key>.log`（JSONL，每行一条） |
-| 想看 Claude 历史 | `ls -lt ~/.claude/projects/-root-im-hub-workspaces-claude-code/*.jsonl \| head` |
+| 想看消息历史 | `cat ~/.agim/sessions/<safe-key>.log`（JSONL，每行一条） |
+| 想看 Claude 历史 | `ls -lt ~/.claude/projects/-root-agim-workspaces-claude-code/*.jsonl \| head` |
 
 ---
 
@@ -216,7 +216,7 @@ env 钩子完整列表见 `im-workspaces-guide.md § 六`。
 
 | 问题 | 答案 |
 |---|---|
-| im-hub-pro session 在哪 | `~/.im-hub/sessions/<safe-key>.{json,log}` |
+| agim session 在哪 | `~/.agim/sessions/<safe-key>.{json,log}` |
 | safe-key 怎么算 | `${platform}:${channelId}:${threadId}` 过 sanitizeKey |
 | 短 TTL 与长 TTL 各管什么 | 短管消息历史 / 长管 sticky agent + Claude UUID |
 | Claude 续接靠什么 | session 的 `claudeSessionId` + `--resume` |

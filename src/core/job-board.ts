@@ -65,14 +65,14 @@ const waitQueue: Array<() => void> = []
 let activeJobs = 0
 
 /**
- * Reset jobs that were 'running' when the previous im-hub process died.
+ * Reset jobs that were 'running' when the previous agim process died.
  * Without this, those rows stay marked 'running' forever and every
  * /job list shows ghosts.
  */
 function reapStaleRunning(d: Database.Database): void {
   try {
     const stmt = d.prepare(
-      "UPDATE jobs SET status='failed', error='im-hub restarted while running', completed_at=datetime('now') WHERE status='running'"
+      "UPDATE jobs SET status='failed', error='agim restarted while running', completed_at=datetime('now') WHERE status='running'"
     )
     const info = stmt.run()
     if (info.changes > 0) {
@@ -331,7 +331,7 @@ export async function runJob(
       bytes += chunkBytes
     }
     if (truncated) {
-      const note = `\n\n[im-hub: result truncated — ${droppedBytes} bytes dropped after ${cap}-byte cap; raise IMHUB_JOB_RESULT_MAX_BYTES if needed]`
+      const note = `\n\n[agim: result truncated — ${droppedBytes} bytes dropped after ${cap}-byte cap; raise IMHUB_JOB_RESULT_MAX_BYTES if needed]`
       fullText += note
       logger.warn({ event: 'job.result.truncated', jobId: id, droppedBytes, cap })
     }

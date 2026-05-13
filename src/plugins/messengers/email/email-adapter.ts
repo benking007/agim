@@ -131,7 +131,7 @@ export class EmailAdapter implements MessengerAdapter {
     }
 
     // Subject = first non-empty line, stripped of bot icon prefixes, capped.
-    const firstLine = text.split('\n').map((s) => s.trim()).find((s) => s.length > 0) || 'im-hub 通知'
+    const firstLine = text.split('\n').map((s) => s.trim()).find((s) => s.length > 0) || 'agim 通知'
     const subject = firstLine.replace(/^(?:🔔|🔁|⏰)\s*/u, '').slice(0, 100)
 
     await this.transporter.sendMail({

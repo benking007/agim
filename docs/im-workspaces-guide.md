@@ -1,7 +1,7 @@
 # IM 工作区使用指南
 
 > 适用：v2 升级后（A/D/B 已落地，C 自然就位）
-> 角色：im-hub-pro 用户 / 接入方 / 运维
+> 角色：agim 用户 / 接入方 / 运维
 > 关联：[`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md) · [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)
 
 本文档面向"已经在用 IM 跟 Claude Code / opencode 聊天"的用户，讲 v2 之后的新能力怎么用：
@@ -16,7 +16,7 @@
 ## 一、目录速览
 
 ```
-~/.im-hub-workspaces/
+~/.agim-workspaces/
 ├── claude-code/
 │   ├── CLAUDE.md          ← IM 入口的 Claude 角色定义（你直接编辑这个）
 │   ├── memory/
@@ -37,14 +37,14 @@
 | 层级 | 行为 |
 |---|---|
 | 用户级（`~/.claude/CLAUDE.md` / `~/.config/opencode/AGENTS.md`） | **IM 入口与直连终端共享。** Claude / opencode 仍会按各自惯例加载用户级配置。这里写"无论从哪进来都希望生效"的全局规则。 |
-| 项目级（`<cwd>/CLAUDE.md`、`<cwd>/AGENTS.md`、`<cwd>/memory/`） | **隔离。** IM 入口 cwd = `~/.im-hub-workspaces/<agent>/`，直连终端 cwd = 当前 shell 目录。两边互不读。这里写"只在 IM 入口想要的人格 / 项目档案"。 |
+| 项目级（`<cwd>/CLAUDE.md`、`<cwd>/AGENTS.md`、`<cwd>/memory/`） | **隔离。** IM 入口 cwd = `~/.agim-workspaces/<agent>/`，直连终端 cwd = 当前 shell 目录。两边互不读。这里写"只在 IM 入口想要的人格 / 项目档案"。 |
 | Claude vs opencode vs codex | 互不可见。Claude 只读 `claude-code/`，opencode 只读 `opencode/`，codex 只读 `codex/`。三边可分别给不同人格。`AGENTS.md` 在 opencode/codex 目录里同名但因 cwd 隔离，互不读取。 |
 
 ---
 
 ## 二、给 IM 入口的 Claude 写"角色书"
 
-直接 vim 编辑 `~/.im-hub-workspaces/claude-code/CLAUDE.md`：
+直接 vim 编辑 `~/.agim-workspaces/claude-code/CLAUDE.md`：
 
 ```markdown
 # IM 入口 Claude 角色
@@ -55,7 +55,7 @@
 ## 项目背景
 
 主要协助 ben.wangzj@gmail.com 维护：
-- im-hub-pro（IM 网关，本目录是它的 IM 工作区）
+- agim（IM 网关，本目录是它的 IM 工作区）
 - 其他项目按需
 
 ## 长期偏好
@@ -89,7 +89,7 @@
 ## 三、给 IM 入口的 opencode 写"角色书"
 
 ```bash
-vim ~/.im-hub-workspaces/opencode/AGENTS.md
+vim ~/.agim-workspaces/opencode/AGENTS.md
 ```
 
 opencode 启动时会读 cwd 下的 `AGENTS.md`，行为与 Claude 类似。
@@ -99,18 +99,18 @@ opencode 启动时会读 cwd 下的 `AGENTS.md`，行为与 Claude 类似。
 ## 三·B、给 IM 入口的 Codex 写"角色书"
 
 ```bash
-vim ~/.im-hub-workspaces/codex/AGENTS.md
+vim ~/.agim-workspaces/codex/AGENTS.md
 ```
 
-Codex 启动时同样会读 cwd 下的 `AGENTS.md`。**与 opencode 同名但目录分离**：im-hub-pro
-spawn codex 时把 cwd 钉在 `~/.im-hub-workspaces/codex/`，所以它只读这个目录下的
+Codex 启动时同样会读 cwd 下的 `AGENTS.md`。**与 opencode 同名但目录分离**：agim
+spawn codex 时把 cwd 钉在 `~/.agim-workspaces/codex/`，所以它只读这个目录下的
 `AGENTS.md`，永远不会撞到 opencode 的那一份。
 
 Codex 会话连续性的关键事实：
-- im-hub-pro 监听 `thread.started` 事件捕获 codex 自生成的 thread UUID，存到
+- agim 监听 `thread.started` 事件捕获 codex 自生成的 thread UUID，存到
   `Session.codexSessionId`。
 - 后续每轮 spawn `codex exec resume <uuid> …`，codex 从 `~/.codex/sessions/`
-  读出完整历史，**im-hub-pro 不再把消息历史拼进 prompt**。
+  读出完整历史，**agim 不再把消息历史拼进 prompt**。
 - `/new` 会清掉 `codexSessionId`，下一轮起新 codex thread。
 
 记忆框架：codex 没有 Claude 那种 auto-memory，也没有 opencode 的 PROJECT.md
@@ -130,8 +130,8 @@ v2 让两条天然的长期记忆链路就位，**不需要新工具**：
 ### 4.1 Claude 的 auto-memory
 
 Claude Code 有内建的 auto-memory 机制：根据对话内容自己决定要不要写
-`<cwd>/memory/MEMORY.md`。当 IM 入口 Claude 的 cwd = `~/.im-hub-workspaces/claude-code/`
-时，记忆就落到 `~/.im-hub-workspaces/claude-code/memory/MEMORY.md`。
+`<cwd>/memory/MEMORY.md`。当 IM 入口 Claude 的 cwd = `~/.agim-workspaces/claude-code/`
+时，记忆就落到 `~/.agim-workspaces/claude-code/memory/MEMORY.md`。
 
 特点：
 - **自动**：你不需要手工写
@@ -143,10 +143,10 @@ Claude Code 有内建的 auto-memory 机制：根据对话内容自己决定要�
 Claude Code 在 `--session-id` / `--resume` 模式下把每次对话整段存成 jsonl：
 
 ```
-~/.claude/projects/-root-im-hub-workspaces-claude-code/<uuid>.jsonl
+~/.claude/projects/-root-agim-workspaces-claude-code/<uuid>.jsonl
 ```
 
-文件名 = im-hub-pro 给该 thread 分配的 `claudeSessionId`。**v2 升级后该 id 在 META TTL（默
+文件名 = agim 给该 thread 分配的 `claudeSessionId`。**v2 升级后该 id 在 META TTL（默
 认 7d）内不丢**，所以你 IM 里短暂离开几天回来，Claude 仍能续上完整上下文。
 
 ### 4.3 opencode 的项目档案（手写）
@@ -154,11 +154,11 @@ Claude Code 在 `--session-id` / `--resume` 模式下把每次对话整段存成
 opencode `run` 不持久化 session（每次都是新进程），所以"长期记忆"靠你手写：
 
 ```bash
-cat >> ~/.im-hub-workspaces/opencode/PROJECT.md <<'EOF'
+cat >> ~/.agim-workspaces/opencode/PROJECT.md <<'EOF'
 # IM 入口 opencode 项目档案
 
 ## 项目清单
-- im-hub-pro: /root/workspace/imhub
+- agim: /root/workspace/imhub
 
 ## 用户偏好
 - 中文沟通
@@ -201,10 +201,10 @@ v2 之后的 sticky 是**绝对锁**：选定 Claude 后，发再多带"代码/t
 
 ```bash
 # 看 session meta 是否还在
-ls -la ~/.im-hub/sessions/<platform>:<channel>:<thread>.json
+ls -la ~/.agim/sessions/<platform>:<channel>:<thread>.json
 
 # 看里面的 agent 字段
-jq '.agent, .lastActivity' ~/.im-hub/sessions/*.json | head
+jq '.agent, .lastActivity' ~/.agim/sessions/*.json | head
 ```
 
 只要 `.json` 还在，sticky 不会丢。
@@ -225,7 +225,7 @@ v2 把 TTL 拆成两层：
 如果你常常半个月才回到某个 thread，想让 sticky 一直锁住：
 
 ```ini
-# /etc/systemd/system/im-hub.service
+# /etc/systemd/system/agim.service
 Environment="IMHUB_SESSION_META_TTL_MS=2592000000"   # 30 天
 ```
 
@@ -239,7 +239,7 @@ Environment="IMHUB_SESSION_META_TTL_MS=86400000"   # 1 天
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart im-hub-pro
+sudo systemctl restart agim
 ```
 
 ---
@@ -264,11 +264,11 @@ sudo systemctl restart im-hub-pro
 说明工作区注入没生效。逐步检查：
 
 ```bash
-systemctl status im-hub-pro --no-pager
+systemctl status agim --no-pager
 ls -la /root/workspace/imhub/dist/core/agent-cwd.js
-ls -la ~/.im-hub-workspaces/claude-code/CLAUDE.md
-journalctl -u im-hub-pro --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
-systemctl cat im-hub-pro | grep IMHUB
+ls -la ~/.agim-workspaces/claude-code/CLAUDE.md
+journalctl -u agim --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
+systemctl cat agim | grep IMHUB
 ```
 
 最常见原因：升级后没重启服务。
@@ -276,10 +276,10 @@ systemctl cat im-hub-pro | grep IMHUB
 ### 8.2 sticky 失效，agent 自己变了
 
 ```bash
-sqlite3 ~/.im-hub/audit.db \
+sqlite3 ~/.agim/audit.db \
   "select ts, intent, agent, score from spans order by ts desc limit 10"
-ls -la ~/.im-hub/sessions/<key>.json
-jq '.agent' ~/.im-hub/sessions/<key>.json
+ls -la ~/.agim/sessions/<key>.json
+jq '.agent' ~/.agim/sessions/<key>.json
 ```
 
 - `.json` 不存在 → 超过 META TTL（默认 7d），属于预期行为
@@ -291,11 +291,11 @@ Claude 的 auto-memory 是 Claude 自己决定要不要写的。要明确触发�
 
 > 在 IM 里说："请把这件事记到长期记忆里：……"
 
-然后 Claude 会主动写到 `~/.im-hub-workspaces/claude-code/memory/MEMORY.md`。
+然后 Claude 会主动写到 `~/.agim-workspaces/claude-code/memory/MEMORY.md`。
 
 ```bash
-ls -la ~/.im-hub-workspaces/claude-code/memory/
-mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
+ls -la ~/.agim-workspaces/claude-code/memory/
+mkdir -p ~/.agim-workspaces/claude-code/memory/   # 不存在就建
 ```
 
 ### 8.4 Claude `--resume` 失败
@@ -305,8 +305,8 @@ mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
 ```
 
 可能原因：
-1. cwd 与原会话不一致（v2 升级前后路径变了：旧 jsonl 在 `~/.claude/projects/-/`，新 jsonl 在 `~/.claude/projects/-root-im-hub-workspaces-claude-code/`）
-2. META TTL 已过，im-hub-pro 把 claudeSessionId 删了，但用户手动 `/resume` 旧 id
+1. cwd 与原会话不一致（v2 升级前后路径变了：旧 jsonl 在 `~/.claude/projects/-/`，新 jsonl 在 `~/.claude/projects/-root-agim-workspaces-claude-code/`）
+2. META TTL 已过，agim 把 claudeSessionId 删了，但用户手动 `/resume` 旧 id
 
 **升级后冷启动**：第一次升级后所有 thread 的 `claudeSessionId` 仍指向旧路径 jsonl，
 而 cwd 已切。最稳的做法：第一次升级后让 Claude 跑一条新对话（自然生成新 id 落到新
@@ -323,7 +323,7 @@ mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
 3. **不要把项目代码放工作区里**：工作区只放角色书和记忆，代码本身仍在 `/root/workspace/...`。
 4. **跨 IM 平台共享**：同一 thread key 在所有 IM 里 sticky 是独立的（key 含 platform）。
    想跨平台共享上下文需自己写桥接。
-5. **备份**：把 `~/.im-hub-workspaces/` 加进备份脚本。
+5. **备份**：把 `~/.agim-workspaces/` 加进备份脚本。
 
 ---
 
@@ -331,13 +331,13 @@ mkdir -p ~/.im-hub-workspaces/claude-code/memory/   # 不存在就建
 
 | 需求 | 路径 |
 |---|---|
-| 写 IM Claude 角色书 | `~/.im-hub-workspaces/claude-code/CLAUDE.md` |
-| 写 IM opencode 角色书 | `~/.im-hub-workspaces/opencode/AGENTS.md` |
-| 写 IM Codex 角色书 | `~/.im-hub-workspaces/codex/AGENTS.md` |
-| 看 Claude auto-memory | `~/.im-hub-workspaces/claude-code/memory/MEMORY.md` |
-| 看 IM Claude jsonl 历史 | `~/.claude/projects/-root-im-hub-workspaces-claude-code/*.jsonl` |
+| 写 IM Claude 角色书 | `~/.agim-workspaces/claude-code/CLAUDE.md` |
+| 写 IM opencode 角色书 | `~/.agim-workspaces/opencode/AGENTS.md` |
+| 写 IM Codex 角色书 | `~/.agim-workspaces/codex/AGENTS.md` |
+| 看 Claude auto-memory | `~/.agim-workspaces/claude-code/memory/MEMORY.md` |
+| 看 IM Claude jsonl 历史 | `~/.claude/projects/-root-agim-workspaces-claude-code/*.jsonl` |
 | 看 IM Codex 会话历史 | `~/.codex/sessions/YYYY/MM/DD/*` |
 | Codex bgjob 工作目录 | `~/.codex/bgjobs/`（独立 wrapper：`/root/.codex/scripts/bgjob`） |
-| 看 im-hub-pro session 状态 | `~/.im-hub/sessions/*.json` |
-| 看 im-hub-pro 审计日志 | `sqlite3 ~/.im-hub/audit.db` |
-| 看 im-hub-pro 服务日志 | `journalctl -u im-hub-pro -f` |
+| 看 agim session 状态 | `~/.agim/sessions/*.json` |
+| 看 agim 审计日志 | `sqlite3 ~/.agim/audit.db` |
+| 看 agim 服务日志 | `journalctl -u agim -f` |

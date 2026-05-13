@@ -4,7 +4,7 @@
 // Pattern mirrors imhub-site's strings.ts: the EN dict drives the Key type,
 // the ZH dict is `Record<Key, string>` so missing keys are a compile error.
 //
-// Language preference is persisted to ~/.im-hub/cli-lang (single-line file
+// Language preference is persisted to ~/.agim/cli-lang (single-line file
 // containing "en" or "zh"). First-run users get a language picker; later
 // runs default to the saved choice (Enter accepts).
 
@@ -513,7 +513,7 @@ export function readSavedLang(): Lang | null {
   return null
 }
 
-/** Persist to ~/.im-hub/cli-lang. Best-effort — failures only logged. */
+/** Persist to ~/.agim/cli-lang. Best-effort — failures only logged. */
 export function saveLang(lang: Lang): void {
   try {
     mkdirSync(dirname(PREF_FILE), { recursive: true })

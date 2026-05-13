@@ -64,7 +64,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
       this.client.setCredentials(credentials)
       log.info('Credentials loaded from cache')
     } else {
-      throw new Error('No WeChat credentials found. Run "im-hub config wechat" first.')
+      throw new Error('No WeChat credentials found. Run "agim config wechat" first.')
     }
 
     // Warm in-memory context-token cache from persistent store. Without this,
@@ -296,7 +296,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     let lastHeartbeatTime = Date.now()
     const HEARTBEAT_INTERVAL_MS = 60 * 1000 // 60 seconds
     // M9: shared exponential-with-jitter helper. The previous inline
-    // `1000 * Math.pow(2, n - 1)` was deterministic, so a fleet of im-hub
+    // `1000 * Math.pow(2, n - 1)` was deterministic, so a fleet of agim
     // instances recovering from a shared network event would all
     // reconnect in lock-step. Backoff(jitter=0.5) spreads the storm
     // across a ±50% window without changing the underlying cadence.

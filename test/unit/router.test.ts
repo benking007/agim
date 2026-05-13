@@ -272,12 +272,12 @@ describe('routeMessage', () => {
 
     it('should return help message for /help (zh by default)', async () => {
       const result = await routeMessage({ type: 'command', command: 'help' }, ctx)
-      expect(result).toContain('im-hub 命令速查')
+      expect(result).toContain('agim 命令速查')
     })
 
     it('/help en returns the English help', async () => {
       const result = await routeMessage({ type: 'command', command: 'help', args: 'en' }, ctx)
-      expect(result).toContain('im-hub Commands')
+      expect(result).toContain('agim Commands')
     })
 
     it('/help <topic> returns topic-specific help', async () => {

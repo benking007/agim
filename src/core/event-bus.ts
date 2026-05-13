@@ -1,4 +1,4 @@
-// im-hub event bus — fan-out for cross-cutting state changes that the
+// agim event bus — fan-out for cross-cutting state changes that the
 // dashboard / future plugins want to observe in real time.
 //
 // Why a dedicated bus instead of just exposing each module's

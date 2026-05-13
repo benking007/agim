@@ -55,7 +55,7 @@ describe('EmailAdapter', () => {
 
   it('subject falls back to default when text empty', async () => {
     await adapter.sendMessage('a@b.com', '')
-    expect(mock.sent[0].subject).toBe('im-hub 通知')
+    expect(mock.sent[0].subject).toBe('agim 通知')
   })
 
   it('rejects invalid email', async () => {

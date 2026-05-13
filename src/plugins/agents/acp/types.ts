@@ -52,7 +52,7 @@ export interface ACPTaskResponse {
 
 /**
  * Configuration for a remote ACP agent.
- * Stored in ~/.im-hub/config.json under the "acpAgents" key.
+ * Stored in ~/.agim/config.json under the "acpAgents" key.
  */
 export interface ACPAgentConfig {
   name: string

@@ -1,7 +1,7 @@
 // DingTalk inbound media → local disk.
 //
 // We piggyback on telegram's MEDIA_ROOT so both adapters land their
-// attachments in the same ~/.im-hub/media/<platform>/<thread>/ tree.
+// attachments in the same ~/.agim/media/<platform>/<thread>/ tree.
 // That keeps `cleanupOldMedia` (running on the telegram side) covering
 // everything, and matches how claude-code's Read tool already expects
 // to find adjuncts referenced by `[图片附件：…]` markers.

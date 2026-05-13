@@ -1,8 +1,8 @@
-# im-hub-pro 部署指南
+# agim 部署指南
 
 > 适用版本：v0.2.13+（2026-05-02 v2 升级后包括 sticky-agent 绝对锁、双层 TTL、per-Agent 工作目录）
 
-本文档覆盖在 Linux 服务器上部署 im-hub-pro 的完整流程：依赖、构建、systemd 守护、端口暴露、配置、平滑升级。Windows 与 macOS 部署路径相似（仅 systemd 部分需替换）。
+本文档覆盖在 Linux 服务器上部署 agim 的完整流程：依赖、构建、systemd 守护、端口暴露、配置、平滑升级。Windows 与 macOS 部署路径相似（仅 systemd 部分需替换）。
 
 ---
 
@@ -34,19 +34,19 @@ npm i -g opencode-ai                  # OpenCode
 ### 2.1 全局安装（推荐生产）
 
 ```bash
-npm install -g im-hub-pro
-im-hub-pro --version    # 应该输出已安装 npm 包的版本，例如 0.2.30
+npm install -g agim
+agim --version    # 应该输出已安装 npm 包的版本，例如 0.2.30
 ```
 
-> 如果 `npm view im-hub-pro version` 仍低于仓库 `package.json`，说明对应 release commit
+> 如果 `npm view agim version` 仍低于仓库 `package.json`，说明对应 release commit
 > 还没有发布到 npm。生产全局安装只会拿到 npm 上的最新版本；需要先发布再升级。
 
 ### 2.2 从源码部署
 
 ```bash
 # 克隆 + 构建
-git clone https://github.com/benking007/imhub.git /opt/im-hub-pro
-cd /opt/im-hub-pro
+git clone https://github.com/benking007/imhub.git /opt/agim
+cd /opt/agim
 npm install
 npm run build
 
@@ -58,7 +58,7 @@ npm link
 
 ## 三、首次配置
 
-`agim` 把所有运行时数据放在 `~/.agim/`（从 0.x 升级则继续用 `~/.im-hub/`）。结构如下：
+`agim` 把所有运行时数据放在 `~/.agim/`（从 0.x 升级则继续用 `~/.agim/`）。结构如下：
 
 ```
 ~/.agim/
@@ -77,9 +77,9 @@ npm link
 至少配一个：
 
 ```bash
-im-hub-pro config telegram   # 输入 @BotFather 给的 bot token
-im-hub-pro config feishu     # 输入飞书 App ID / App Secret
-im-hub-pro config wechat     # 扫二维码登录
+agim config telegram   # 输入 @BotFather 给的 bot token
+agim config feishu     # 输入飞书 App ID / App Secret
+agim config wechat     # 扫二维码登录
 ```
 
 > Web 控制台单独跑也行，不一定要接 IM。
@@ -87,7 +87,7 @@ im-hub-pro config wechat     # 扫二维码登录
 ### 3.2 接入自定义 ACP Agent（可选）
 
 ```bash
-im-hub-pro config agent
+agim config agent
 # 交互式向导：name / endpoint / 鉴权方式
 ```
 
@@ -134,7 +134,7 @@ im-hub-pro config agent
 **默认目录**：
 
 ```
-~/.im-hub-workspaces/
+~/.agim-workspaces/
 ├── claude-code/
 │   ├── CLAUDE.md          # IM 入口的 Claude 角色定义（首次启动种子，后续不覆盖）
 │   └── memory/            # Claude auto-memory（per-cwd 自然落入）
@@ -143,13 +143,13 @@ im-hub-pro config agent
     └── memory/
 ```
 
-启动时 im-hub-pro 会幂等创建这两个目录并种入初始模板。**已存在的 CLAUDE.md / AGENTS.md
+启动时 agim 会幂等创建这两个目录并种入初始模板。**已存在的 CLAUDE.md / AGENTS.md
 不会被覆盖**，可以直接 vim 编辑当作"IM 入口的角色书"。
 
 **调整工作区位置**：
 
 ```ini
-# /etc/systemd/system/im-hub.service
+# /etc/systemd/system/agim.service
 Environment="IMHUB_WORKSPACES_ROOT=/srv/imhub-workspaces"
 # 或单独覆盖某个 agent
 Environment="IMHUB_CLAUDE_CODE_CWD=/srv/imhub/cc"
@@ -160,13 +160,13 @@ Environment="IMHUB_OPENCODE_CWD=/srv/imhub/oc"
 
 ```bash
 # 1. 工作区存在 + 种子文件就位
-ls -la ~/.im-hub-workspaces/claude-code/CLAUDE.md
-ls -la ~/.im-hub-workspaces/opencode/AGENTS.md
+ls -la ~/.agim-workspaces/claude-code/CLAUDE.md
+ls -la ~/.agim-workspaces/opencode/AGENTS.md
 
 # 2. 通过 IM 给 Claude 发 "pwd"
-#    → 返回 /root/.im-hub-workspaces/claude-code（而非 /）
+#    → 返回 /root/.agim-workspaces/claude-code（而非 /）
 # 3. 通过 IM 给 opencode 发 "pwd"
-#    → 返回 /root/.im-hub-workspaces/opencode
+#    → 返回 /root/.agim-workspaces/opencode
 ```
 
 详细使用方式见 [`docs/im-workspaces-guide.md`](./im-workspaces-guide.md)。
@@ -192,16 +192,16 @@ Environment="IMHUB_SESSION_META_TTL_MS=86400000"   # 1 天
 ### 4.1 直接前台运行（用于调试）
 
 ```bash
-im-hub-pro start
+agim start
 ```
 
 ### 4.2 systemd 服务（生产）
 
-`/etc/systemd/system/im-hub.service`：
+`/etc/systemd/system/agim.service`：
 
 ```ini
 [Unit]
-Description=im-hub-pro — IM-to-Agent gateway
+Description=agim — IM-to-Agent gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -221,7 +221,7 @@ Environment="IM_HUB_AUDIT_RETENTION_DAYS=60"
 # 可选：让 LLM 兜底参与意图路由
 # Environment="IM_HUB_LLM_JUDGE_AGENT=claude-code"
 
-ExecStart=/usr/bin/im-hub-pro start
+ExecStart=/usr/bin/agim start
 Restart=always
 RestartSec=5
 
@@ -229,7 +229,7 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/imhub/.im-hub
+ReadWritePaths=/home/imhub/.agim
 PrivateTmp=true
 PrivateDevices=true
 
@@ -241,14 +241,14 @@ WantedBy=multi-user.target
 
 ```bash
 sudo useradd -m -s /bin/bash imhub
-sudo cp im-hub-pro.service /etc/systemd/system/
+sudo cp agim.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now im-hub-pro
-sudo systemctl status im-hub-pro
-sudo journalctl -u im-hub-pro -f
+sudo systemctl enable --now agim
+sudo systemctl status agim
+sudo journalctl -u agim -f
 ```
 
-> 全局安装的 `im-hub-pro` 路径取决于你的 npm prefix。`which im-hub-pro` 找一下，把 `ExecStart` 改成实际路径。
+> 全局安装的 `agim` 路径取决于你的 npm prefix。`which agim` 找一下，把 `ExecStart` 改成实际路径。
 
 ### 4.3 Docker（可选）
 
@@ -269,15 +269,15 @@ CMD ["node", "dist/cli.js", "start"]
 ```
 
 ```bash
-docker build -t im-hub-pro .
+docker build -t agim .
 docker run -d \
-  --name im-hub-pro \
-  -v /opt/im-hub-pro-data:/data \
+  --name agim \
+  -v /opt/agim-data:/data \
   -p 3000:3000 \
   -p 9090:9090 \
   -e LOG_LEVEL=info \
   -e LOG_FORMAT=json \
-  im-hub-pro
+  agim
 ```
 
 ---
@@ -407,20 +407,20 @@ curl http://127.0.0.1:3000/api/health
 
 ## 八、备份
 
-业务数据完全在 `~/.im-hub/` 下，**无外部依赖**。备份策略：
+业务数据完全在 `~/.agim/` 下，**无外部依赖**。备份策略：
 
 ```bash
 # 停服 → 备份 → 起服（推荐：业务低峰）
-sudo systemctl stop im-hub-pro
-tar czf imhub-$(date +%F).tgz -C /home/imhub .im-hub
-sudo systemctl start im-hub-pro
+sudo systemctl stop agim
+tar czf agim-$(date +%F).tgz -C /home/imhub .agim
+sudo systemctl start agim
 
 # 或热备（SQLite WAL 模式安全）
-sqlite3 /home/imhub/.im-hub/audit.db ".backup /backup/audit.db"
-sqlite3 /home/imhub/.im-hub/jobs.db ".backup /backup/jobs.db"
-sqlite3 /home/imhub/.im-hub/schedules.db ".backup /backup/schedules.db"
-cp /home/imhub/.im-hub/config.json /backup/
-cp -r /home/imhub/.im-hub/sessions /backup/
+sqlite3 /home/imhub/.agim/audit.db ".backup /backup/audit.db"
+sqlite3 /home/imhub/.agim/jobs.db ".backup /backup/jobs.db"
+sqlite3 /home/imhub/.agim/schedules.db ".backup /backup/schedules.db"
+cp /home/imhub/.agim/config.json /backup/
+cp -r /home/imhub/.agim/sessions /backup/
 ```
 
 ---
@@ -429,17 +429,17 @@ cp -r /home/imhub/.im-hub/sessions /backup/
 
 ```bash
 # 全局安装
-sudo systemctl stop im-hub-pro
-npm install -g im-hub-pro@latest
-sudo systemctl start im-hub-pro
+sudo systemctl stop agim
+npm install -g agim@latest
+sudo systemctl start agim
 
 # 源码部署
-cd /opt/im-hub
-sudo systemctl stop im-hub-pro
+cd /opt/agim
+sudo systemctl stop agim
 git pull
 npm install
 npm run build
-sudo systemctl start im-hub-pro
+sudo systemctl start agim
 ```
 
 升级前看一下 `CHANGELOG.md`。配置文件向前兼容（新字段都是可选）。
@@ -467,7 +467,7 @@ apk add python3 make g++ sqlite-libs
 或装预编译 binary：
 
 ```bash
-npm install -g im-hub-pro --build-from-source=false
+npm install -g agim --build-from-source=false
 ```
 
 ### 启动后 Web 端 401 / 403
@@ -484,7 +484,7 @@ Agim 1.x 的 Web 控制台无内建鉴权，401/403 一般来自前面的反向�
 export IM_HUB_AUDIT_RETENTION_DAYS=1   # 仍写入但只保留 1 天
 ```
 
-或者直接删 `~/.im-hub/audit.db`，im-hub-pro 会重建空表（重启后生效）。
+或者直接删 `~/.agim/audit.db`，agim 会重建空表（重启后生效）。
 
 ### 飞书 / Telegram bot 有时收不到消息
 
@@ -495,17 +495,17 @@ export IM_HUB_AUDIT_RETENTION_DAYS=1   # 仍写入但只保留 1 天
 v0.2.15 + v2 升级后此问题应已修复（sticky-agent 绝对锁 + meta TTL 7d）。如仍发生：
 
 1. 看 `/audit`（IM 内命令）最近一行 `intent` 字段：应为 `sticky`
-2. 检查 `~/.im-hub/sessions/<key>.json` 是否还在（meta TTL 内不应被删）
+2. 检查 `~/.agim/sessions/<key>.json` 是否还在（meta TTL 内不应被删）
 3. 没有 `.json` → 说明超过 7d 触发 meta cleanup，属于预期；用 `/cc` 或 `/oc` 重新锁定
 4. 有 `.json` 但 agent 还是被改 → 排查 `intent.ts:classifyIntent` 的早返回逻辑是否生效（`bun test test/unit/intent.test.ts`）
 
 ### IM 给 Claude 发 `pwd` 仍返回 `/`
 
-说明 v2 升级后还没重启 im-hub-pro，或 `~/.im-hub-workspaces/` 目录有权限问题。
+说明 v2 升级后还没重启 agim，或 `~/.agim-workspaces/` 目录有权限问题。
 
 ```bash
-sudo systemctl restart im-hub-pro
-ls -la ~/.im-hub-workspaces/      # 确认存在 + im-hub-pro 可写
+sudo systemctl restart agim
+ls -la ~/.agim-workspaces/      # 确认存在 + agim 可写
 ls /root/workspace/imhub/dist/core/agent-cwd.js  # 确认新代码已编译
 ```
 
@@ -536,9 +536,9 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ```bash
 # 1. 服务起来了
-systemctl status agim 2>/dev/null || systemctl status im-hub
+systemctl status agim 2>/dev/null || systemctl status agim
 journalctl -u agim --since "5 min ago" 2>/dev/null || \
-  journalctl -u im-hub --since "5 min ago"
+  journalctl -u agim --since "5 min ago"
 
 # 2. 端口监听
 ss -lntp | grep -E ':(3000|9090)'
@@ -576,7 +576,7 @@ curl -fsS -X POST \
 | `<AGENT>_TIMEOUT_MS` | `1800000` (30min) | 单 agent 超时（如 `OPENCODE_TIMEOUT_MS`） |
 | `IMHUB_SESSION_MESSAGES_TTL_MS` | `1800000` (30min) | 消息历史 idle TTL（v2 拆分） |
 | `IMHUB_SESSION_META_TTL_MS` | `604800000` (7d) | 会话元数据 idle TTL（v2 拆分，sticky agent + Claude resumable id 寿命） |
-| `IMHUB_WORKSPACES_ROOT` | `~/.im-hub-workspaces` | IM Agent 工作区根目录（v2 引入） |
+| `IMHUB_WORKSPACES_ROOT` | `~/.agim-workspaces` | IM Agent 工作区根目录（v2 引入） |
 | `IMHUB_CLAUDE_CODE_CWD` | （未设） | 单独覆盖 IM 入口 Claude 的 cwd |
 | `IMHUB_OPENCODE_CWD` | （未设） | 单独覆盖 IM 入口 opencode 的 cwd |
 
@@ -585,9 +585,9 @@ curl -fsS -X POST \
 ## 十三、卸载
 
 ```bash
-sudo systemctl disable --now im-hub-pro
-sudo rm /etc/systemd/system/im-hub.service
+sudo systemctl disable --now agim
+sudo rm /etc/systemd/system/agim.service
 sudo systemctl daemon-reload
 npm uninstall -g im-hub-pro
-sudo userdel -r imhub          # 同时删 ~/.im-hub 数据
+sudo userdel -r imhub          # 同时删 ~/.agim 数据
 ```

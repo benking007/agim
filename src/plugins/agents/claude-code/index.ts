@@ -16,8 +16,8 @@
 //        --permission-prompt-tool mcp__imhub__request
 //        --mcp-config <tmpfile>
 //      The MCP sidecar (mcp-approval-server.js) is registered via
-//      --mcp-config; it connects to im-hub's approval-bus over a unix
-//      socket, and im-hub surfaces approval prompts to the originating
+//      --mcp-config; it connects to agim's approval-bus over a unix
+//      socket, and agim surfaces approval prompts to the originating
 //      IM thread.
 //
 //   3. Legacy "dontAsk" fallback (env IMHUB_APPROVAL_DISABLED=1, OR no IM
@@ -97,7 +97,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     // Cwd is computed once and shared by all return paths below — both the
     // approval-routed path and every fallback ("dontAsk", missing IM context,
     // tmpdir failure, etc.). Skipping cwd on the fallbacks would silently
-    // demote those calls back to im-hub's "/" cwd and leak across memory.
+    // demote those calls back to agim's "/" cwd and leak across memory.
     const cwd = resolveAgentCwd(this.name, opts)
 
     // Plan mode short-circuits the approval-bus pipeline: claude's `plan`
@@ -142,7 +142,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     if (!threadId || !platform || !channelId) {
       // Non-IM call (web/scheduler/intent-llm) — no thread to route prompts to.
       // resolveAgentCwd returns undefined here too, so cwd ends up undefined and
-      // the spawn inherits im-hub's cwd, matching the historical behavior.
+      // the spawn inherits agim's cwd, matching the historical behavior.
       return { args: this.buildArgs(prompt, opts), cwd }
     }
 

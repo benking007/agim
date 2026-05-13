@@ -14,7 +14,7 @@
 // transient state (parking spot, today's meeting room) self-clean while
 // durable info (birthdays, contacts) persists.
 //
-// Storage: ~/.im-hub/memos.db (SQLite, fail-soft via sqlite-helper).
+// Storage: ~/.agim/memos.db (SQLite, fail-soft via sqlite-helper).
 // Owner-scoped per (platform, user_id), same pattern as /remind, /cron.
 
 import { join } from 'node:path'

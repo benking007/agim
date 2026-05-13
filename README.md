@@ -10,7 +10,7 @@
 > you type. The legacy `im-hub-pro` bin name is kept as an alias so existing
 > systemd units / shell aliases keep working unchanged.
 > On-disk paths default to **`~/.agim/`** for fresh installs but auto-detect
-> and continue using a pre-existing **`~/.im-hub/`** if one is present.
+> and continue using a pre-existing **`~/.agim/`** if one is present.
 > Env vars (`IMHUB_*`), HTTP headers (`X-IM-Hub-Token`), and the systemd
 > unit `im-hub.service` retain their legacy names for drop-in compatibility
 > with installations from the 0.x line — see [Migrating](#migrating).
@@ -57,14 +57,14 @@ Web UI at `http://localhost:3000` — chat at `/`, tasks at `/tasks`, settings a
 
 ### Migrating
 
-#### From the original `im-hub`
+#### From the original `agim`
 ```bash
 npm uninstall -g im-hub
 npm install -g agim-cli
 agim start            # config, env vars, headers all unchanged
 ```
 
-#### From `im-hub-pro` (0.x → 1.0)
+#### From `agim` (0.x → 1.0)
 ```bash
 npm uninstall -g im-hub-pro
 npm install -g agim-cli
@@ -73,9 +73,9 @@ agim start            # same config dir, same env vars, same headers
 
 The npm package is named `agim-cli` (the unscoped name `agim` is reserved
 by npm's anti-typosquat policy); the **binary** it installs is `agim`,
-which is what you'll actually type. `im-hub-pro` is also retained as a
+which is what you'll actually type. `agim` is also retained as a
 binary alias inside the package, so previous shell aliases and systemd
-units that call `im-hub-pro` continue to work without any extra setup.
+units that call `agim` continue to work without any extra setup.
 
 ## Features
 
@@ -101,7 +101,7 @@ agim start --bg            # Start as a background daemon
 agim status                # Show service status (systemd / bg / fg)
 agim restart               # Restart the running service
 agim stop                  # Stop the running service
-agim uninstall             # Uninstall (keeps ~/.im-hub-workspaces/)
+agim uninstall             # Uninstall (keeps ~/.agim-workspaces/)
 agim config wechat         # Configure WeChat
 agim config feishu         # Configure Feishu
 agim config dingtalk       # Configure DingTalk (Stream-mode internal app)
@@ -175,7 +175,7 @@ Built-in `/remind` subsystem — one-shot or recurring, with three creation path
 /remind literal 每5分钟 喝水
 ```
 
-**Three creation paths** (all land in the same `~/.im-hub/reminders.db`):
+**Three creation paths** (all land in the same `~/.agim/reminders.db`):
 
 1. **`/remind` slash** — explicit, structured input
 2. **LLM intent detection** (default-on) — say "明天早上8点提醒我开会" without `/remind`, the bot pops a confirmation card; reply `y` to create
@@ -226,7 +226,7 @@ The agent (claude-code / opencode) sees 5 MCP tools and uses them automatically 
 ## Configuration
 
 ### Config file
-`~/.im-hub/config.json` (validated by zod at startup):
+`~/.agim/config.json` (validated by zod at startup):
 
 ```json
 {

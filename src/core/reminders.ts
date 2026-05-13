@@ -5,7 +5,7 @@
 // plain text back to the originating IM thread via the registry's
 // MessengerAdapter.sendMessage. No LLM is invoked, no Job is created.
 //
-// Storage: a dedicated SQLite file (~/.im-hub/reminders.db) using the
+// Storage: a dedicated SQLite file (~/.agim/reminders.db) using the
 // same fail-soft helper as audit-log / job-board / schedule. Engine is a
 // 5-second tick; pending rows survive process restart.
 
@@ -827,7 +827,7 @@ export function buildContextSnippet(platform: string, userId: string): string {
     return `  #${r.id} ${when}${recur}: ${text}`
   })
   return [
-    '[im-hub context — user\'s pending reminders. Use snooze_reminder / cancel_reminder tools to modify; reference these naturally if relevant. Ignore if unrelated to the current message.]',
+    '[agim context — user\'s pending reminders. Use snooze_reminder / cancel_reminder tools to modify; reference these naturally if relevant. Ignore if unrelated to the current message.]',
     ...lines,
     '',
   ].join('\n')

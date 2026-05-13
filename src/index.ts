@@ -1,4 +1,4 @@
-// im-hub main entry point
+// agim main entry point
 
 export * from './core/types.js'
 export * from './core/registry.js'

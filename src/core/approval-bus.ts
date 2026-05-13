@@ -1,6 +1,6 @@
 // approval-bus — IM 端人工审批的进程内总线
 //
-// 角色：在 im-hub 主进程里跑一个 unix socket 服务，等 claude 子进程的
+// 角色：在 agim 主进程里跑一个 unix socket 服务，等 claude 子进程的
 // MCP "approval sidecar" 通过 socket 连进来发审批请求。bus 自己不决策，
 // 只做三件事：
 //   1. 把请求转给 notifier（由 messenger 层注入：负责推 IM 卡片）
@@ -1168,5 +1168,5 @@ function defaultSocketPath(): string {
   return join(tmpdir(), `imhub-approval-${randomBytes(16).toString('hex')}.sock`)
 }
 
-/** 进程级单例。im-hub 启动时 await approvalBus.start() 一次。 */
+/** 进程级单例。agim 启动时 await approvalBus.start() 一次。 */
 export const approvalBus = new ApprovalBus()

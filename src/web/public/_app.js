@@ -70,7 +70,7 @@
   // Applied as early as possible (before first paint) so the page doesn't
   // flash the wrong theme on load. This file is loaded synchronously in
   // <head> precisely for that reason.
-  const THEME_KEY = 'im-hub-pro-theme'
+  const THEME_KEY = 'agim-theme'
   const VALID_MODES = ['system', 'light', 'dark']
 
   function getThemeMode() {

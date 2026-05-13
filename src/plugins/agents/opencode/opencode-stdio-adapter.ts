@@ -6,10 +6,10 @@
 //   First turn  — no opts.agentSessionId yet. Spawn `opencode run …` plain.
 //                 The adapter watches for `sessionID` on the very first event
 //                 and reports it back via opts.onAgentSessionId so cli can
-//                 persist it on the im-hub Session row.
+//                 persist it on the agim Session row.
 //   Later turns — opts.agentSessionId is the captured ses_… id. We pass
 //                 `--session <id>` so opencode reads the conversation from
-//                 its own DB instead of relying on im-hub stitching the
+//                 its own DB instead of relying on agim stitching the
 //                 history into the prompt. router.callAgentWithHistory
 //                 honours this by zeroing out `effectiveHistory` whenever
 //                 `agentSessionResume` is true.
@@ -74,8 +74,8 @@ export class OpenCodeAdapter extends AgentBase {
 
   /**
    * opencode keys its per-project AGENTS.md and memory off the spawn cwd,
-   * so for IM calls we pin to ~/.im-hub-workspaces/opencode/. Non-IM calls
-   * (web/scheduler) keep cwd undefined and inherit im-hub's cwd, preserving
+   * so for IM calls we pin to ~/.agim-workspaces/opencode/. Non-IM calls
+   * (web/scheduler) keep cwd undefined and inherit agim's cwd, preserving
    * the prior behavior. See agent-cwd.ts for full rationale.
    *
    * MCP context (for the imhub reminder tools): when we have a real IM

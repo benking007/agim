@@ -32,17 +32,17 @@ Bot 页面 → **Reset Token** → 复制 Token（只显示一次，妥善保存
 
 ---
 
-## 二、配置 im-hub-pro
+## 二、配置 agim
 
 ### 交互式配置
 ```bash
-im-hub-pro config discord
+agim config discord
 ```
 
 按提示输入 Bot Token，其余可选跳过。
 
 ### 手动配置
-编辑 `~/.im-hub/config.json`：
+编辑 `~/.agim/config.json`：
 
 ```json
 {
@@ -70,7 +70,7 @@ im-hub-pro config discord
 ## 三、启动
 
 ```bash
-im-hub-pro start
+agim start
 ```
 
 启动后在 Discord 频道中 @Bot 或直接发送消息即可对话。
@@ -102,7 +102,7 @@ Discord 客户端 → 设置 → 高级 → **开发者模式** 开启。
 | 问题 | 原因 | 解决 |
 |------|------|------|
 | Bot 无响应 | 未启用 MESSAGE CONTENT INTENT | Developer Portal → Bot → 开启该意图 |
-| Bot 离线 | Token 错误或未启动 | 检查 Token、重跑 `im-hub-pro start` |
+| Bot 离线 | Token 错误或未启动 | 检查 Token、重跑 `agim start` |
 | 无法发消息 | Bot 权限不足 | OAuth2 重新邀请，勾选 Send Messages 权限 |
 
 ---
@@ -115,4 +115,4 @@ Discord 客户端 → 设置 → 高级 → **开发者模式** 开启。
 | 频道速率 | 5 条 / 5 秒 |
 | 全局速率 | 50 条 / 秒 |
 
-im-hub-pro 自动处理消息分片和速率限制。
+agim 自动处理消息分片和速率限制。

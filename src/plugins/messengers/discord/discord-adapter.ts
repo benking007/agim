@@ -44,11 +44,11 @@ export class DiscordAdapter implements MessengerAdapter {
       const config = JSON.parse(data)
       this.config = config.discord as DiscordConfig
     } catch {
-      throw new Error('Discord config not found. Run "im-hub config discord" first.')
+      throw new Error('Discord config not found. Run "agim config discord" first.')
     }
 
     if (!this.config?.botToken) {
-      throw new Error('Discord bot token not configured. Run "im-hub config discord" first.')
+      throw new Error('Discord bot token not configured. Run "agim config discord" first.')
     }
 
     // Initialize Discord client with required intents

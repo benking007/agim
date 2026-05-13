@@ -9,7 +9,7 @@
 //     with "session already exists".
 //   - codex: same conversation file written by two CLI processes.
 //   - opencode (HTTP): server-side session may queue or reject, but
-//     im-hub's session-update PATCH dedup is the only thing we have.
+//     agim's session-update PATCH dedup is the only thing we have.
 //   - opencode (stdio): two writes interleaved into one stdin pipe.
 //
 // The agent-base.ts contract already says per-call state is local, so

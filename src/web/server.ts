@@ -399,7 +399,7 @@ export async function startWebServer(options: {
       return handleResolveApproval(req, res, approvalResolveMatch[1])
     }
     // PR-D: Agent workspace file browser. Read-only inspection of
-    // ~/.im-hub-workspaces/<agent>/ contents — list dirs, peek small
+    // ~/.agim-workspaces/<agent>/ contents — list dirs, peek small
     // text files. PUT path supports inline editing (annotate CLAUDE.md,
     // AGENTS.md, etc.) — same traversal/size guards as GET.
     if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
@@ -552,7 +552,7 @@ export async function startWebServer(options: {
               // Without the handler, a click would silently no-op forever — the
               // failure mode that PR-A's fix patches. Tell the user and the
               // operator (via log) instead of dropping the click.
-              const why = 'approval handler not bound (router not installed?). Restart im-hub to rebind.'
+              const why = 'approval handler not bound (router not installed?). Restart agim to rebind.'
               webLog.warn({ event: 'approval.web.no_handler', clientId, data: actionData, messageId }, why)
               sendToClient(ws, { type: 'error', message: why })
               return
@@ -894,7 +894,7 @@ function validateWorkspacePayload(raw: unknown, expectedId?: string): { ok: true
 }
 
 /**
- * Persist the workspaces array back to ~/.im-hub/config.json so changes
+ * Persist the workspaces array back to ~/.agim/config.json so changes
  * survive a restart. We do not touch other config fields — settings.html
  * has its own /api/config PUT for that. Best-effort: a write failure is
  * logged but the in-memory registry has already been updated, so the
@@ -1849,7 +1849,7 @@ async function validateWorkspacePath(
 }
 
 /**
- * Read-only view of `~/.im-hub-workspaces/<agent>/`. The Files tab in /tasks
+ * Read-only view of `~/.agim-workspaces/<agent>/`. The Files tab in /tasks
  * uses it to inspect what an IM-context agent is reading and writing into its
  * pinned workspace (CLAUDE.md, AGENTS.md, scratch notes, etc.).
  *

@@ -4,7 +4,7 @@
 
 ### Overview
 
-im-hub-pro is a universal messenger-to-agent bridge (Node.js/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000, ACP server on port 9090.
+Agim is a universal messenger-to-agent bridge (Node.js/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000, ACP server on port 9090.
 
 ### Commands
 
@@ -20,7 +20,7 @@ im-hub-pro is a universal messenger-to-agent bridge (Node.js/TypeScript). Single
 
 ### Running the app locally
 
-1. The app requires a config at `~/.im-hub/config.json`. Without it, an interactive onboarding wizard starts and exits on cancel. Create a minimal config to skip onboarding:
+1. The app requires a config at `~/.agim/config.json`. Without it, an interactive onboarding wizard starts and exits on cancel. Create a minimal config to skip onboarding:
 
 ```json
 {

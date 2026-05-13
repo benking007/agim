@@ -531,7 +531,7 @@ export function formatMessengerStartError(messengerName: string, error: unknown)
   // Check for credential/auth errors
   if (errMsg.toLowerCase().includes('credentials') || errMsg.toLowerCase().includes('auth')) {
     const configName = messengerName.replace('-ilink', '')
-    return `Run "im-hub config ${configName}" to reconfigure.`
+    return `Run "agim config ${configName}" to reconfigure.`
   }
 
   // Generic error

@@ -1,4 +1,4 @@
-// im-hub core types
+// agim core types
 
 import type { Logger } from 'pino'
 
@@ -91,7 +91,7 @@ export interface Session {
   subtasks?: SubtaskMeta[]
   subtaskCounter?: number
   /** UUID we pre-allocate for the claude-code adapter so multiple turns in
-   *  the same im-hub conversation share one resumable claude session
+   *  the same agim conversation share one resumable claude session
    *  (`claude --resume <uuid>`). Persists across restarts. */
   claudeSessionId?: string
   /** Set to true after the first successful claude-code run on this session.
@@ -100,7 +100,7 @@ export interface Session {
   claudeSessionPrimed?: boolean
   /** opencode session id (`ses_…`) discovered from opencode's first JSON event
    *  on a fresh run. Subsequent turns pass `--session <id>` so opencode
-   *  resumes the same conversation from its own DB and im-hub no longer needs
+   *  resumes the same conversation from its own DB and agim no longer needs
    *  to stitch the history into the prompt. Cleared by /new. */
   opencodeSessionId?: string
   /** codex thread id (UUID) discovered from codex's `thread.started` event on
@@ -295,9 +295,9 @@ export interface AgentSendOpts {
    *  this to `--resume <uuid>` instead of `--session-id <uuid>`. */
   agentSessionResume?: boolean
   /** Optional one-shot callback for adapters whose CLI generates the session
-   *  id itself (rather than letting im-hub pre-allocate). opencode emits
+   *  id itself (rather than letting agim pre-allocate). opencode emits
    *  `sessionID` in every JSON event; the adapter calls this when it sees
-   *  the id so cli can persist it on the im-hub session row for next turn.
+   *  the id so cli can persist it on the agim session row for next turn.
    *  Idempotent: same id may fire multiple times per spawn. */
   onAgentSessionId?: (id: string) => void
   /** Optional callback for adapters that surface usage data inline (cost +
@@ -326,7 +326,7 @@ export interface AgentAdapter {
 }
 
 /**
- * Configuration for the im-hub instance
+ * Configuration for the agim instance
  */
 export interface Config {
   messengers: string[]

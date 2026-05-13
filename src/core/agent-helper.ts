@@ -2,7 +2,7 @@
 //
 // Why this layer exists: features that want a small LLM judgement
 // (reminder text polish, reminder-intent detection, etc.) MUST NOT bake in
-// a specific provider (DeepSeek, OpenAI, …). im-hub is shipped as a
+// a specific provider (DeepSeek, OpenAI, …). agim is shipped as a
 // pluggable framework — every user's LLM access goes through the agent
 // they've already registered (claude-code / codex / opencode / copilot /
 // any future ACP-discovered remote). So all helper calls funnel through

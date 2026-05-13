@@ -4,13 +4,13 @@
 //   `opencode run --format json` (the stdio driver in opencode-stdio-adapter.ts)
 //   does NOT emit `permission.asked` events on its stdout stream, and its
 //   inline auto-reject logic occasionally fails to release the prompt
-//   deferred — the process then hangs until im-hub's 30-min hard SIGTERM.
+//   deferred — the process then hangs until agim's 30-min hard SIGTERM.
 //   Audit confirmed this on 2026-05-04 (rows id=283/284, exact 1,800,000 ms).
 //
 // What this driver does instead:
 //   1. Lazily starts a long-lived `opencode serve` daemon on 127.0.0.1
 //      (via OpencodeServeManager). Probes-and-reuses any healthy daemon
-//      already on the configured port so back-to-back im-hub restarts
+//      already on the configured port so back-to-back agim restarts
 //      don't bind-fail on a still-running child.
 //   2. Subscribes to /event SSE so the adapter — not the run-CLI — owns the
 //      authoritative event stream.
@@ -114,9 +114,9 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
   /** null when the bridge is intentionally disabled. */
   private readonly approvalBus: ApprovalBus | null
   /** Set of opencode session ids whose ruleset we've already PATCHed in this
-   *  process lifetime. Lets us re-apply the gate policy when an im-hub
+   *  process lifetime. Lets us re-apply the gate policy when an agim
    *  restart resurfaces an old session, without duplicating rules every
-   *  turn. Cleared only by im-hub restart — that's fine since the rules
+   *  turn. Cleared only by agim restart — that's fine since the rules
    *  the previous run wrote are still in opencode's session DB. */
   private readonly rulesetApplied = new Set<string>()
 
@@ -499,7 +499,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
    * PATCH a resumed session with our gate ruleset so subsequent tool calls
    * surface as `permission.asked` events for the bridge. opencode's update
    * endpoint merges (current + payload) — payload comes last and wins under
-   * findLast semantics. Idempotent across im-hub restarts but NOT within a
+   * findLast semantics. Idempotent across agim restarts but NOT within a
    * single process: the caller (sendPrompt) gates on rulesetApplied.
    */
   private async applyRuleset(baseUrl: string, sessionID: string): Promise<void> {
@@ -548,7 +548,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     //   loose  → only write+edit (drop patch)
     //   none   → no override (mostly for debugging)
     const body: Record<string, unknown> = {
-      title: 'im-hub session',
+      title: 'agim session',
     }
     // Plan mode: route through opencode's built-in `plan` agent and skip our
     // medium-gate ruleset entirely (plan agent's edit-deny-except-plans
@@ -676,7 +676,7 @@ function buildImContextInstruction(opts: AgentSendOpts): string {
   const userId = opts.userId ?? ''
   const ctx = JSON.stringify({ platform, threadId, channelId, userId })
   return [
-    '[im-hub MCP routing — important]',
+    '[agim MCP routing — important]',
     'When you call any imhub tool — reminder family (create_reminder /',
     'list_reminders / cancel_reminder / snooze_reminder) or memo family',
     '(save_memo / search_memos / update_memo / delete_memo /',

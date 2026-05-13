@@ -57,11 +57,11 @@ export class TelegramAdapter implements MessengerAdapter {
       const config = JSON.parse(data)
       this.config = config.telegram as TelegramConfig
     } catch {
-      throw new Error('Telegram config not found. Run "im-hub config telegram" first.')
+      throw new Error('Telegram config not found. Run "agim config telegram" first.')
     }
 
     if (!this.config?.botToken) {
-      throw new Error('Telegram bot token not configured. Run "im-hub config telegram" first.')
+      throw new Error('Telegram bot token not configured. Run "agim config telegram" first.')
     }
 
     // Initialize bot
@@ -334,7 +334,7 @@ export class TelegramAdapter implements MessengerAdapter {
     log.info('Telegram adapter started')
   }
 
-  /** Run media cleanup once now (so a long-running im-hub doesn't accumulate
+  /** Run media cleanup once now (so a long-running agim doesn't accumulate
    *  files indefinitely when restarts are infrequent) and then hourly. The
    *  hourly cadence matches the typical 7-day TTL with plenty of slack. */
   private startMediaCleanup(): void {

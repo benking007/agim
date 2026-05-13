@@ -3,7 +3,7 @@
 // bridge talk to.
 //
 // Design notes:
-//   - Singleton per im-hub process. Multiple IM threads share one daemon —
+//   - Singleton per agim process. Multiple IM threads share one daemon —
 //     opencode's session model is per-session anyway, so collisions don't
 //     happen on the wire.
 //   - First call to ensureRunning() starts the child; readiness is detected
@@ -69,7 +69,7 @@ export class OpencodeServeManager {
 
   getBaseUrl(): string | null { return this.baseUrl }
 
-  /** Stop the daemon. Used by tests and on im-hub shutdown. */
+  /** Stop the daemon. Used by tests and on agim shutdown. */
   async stop(): Promise<void> {
     const child = this.child
     if (!child) return
@@ -91,7 +91,7 @@ export class OpencodeServeManager {
     const { port, hostname, cwd } = this.opts
     const candidateUrl = `http://${hostname}:${port}`
 
-    // Probe before spawn: a previous im-hub run (or our own restart) may have
+    // Probe before spawn: a previous agim run (or our own restart) may have
     // left a healthy `opencode serve` on the same port. Spawning a second one
     // would just bind-fail with code=1 and break the next user message — we
     // saw exactly that in audit row 309 on 2026-05-04. If the port answers

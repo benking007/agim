@@ -5,14 +5,14 @@
 //   First turn  — no opts.agentSessionId yet. Spawn `codex exec --json …`.
 //                 The adapter watches for `thread.started.thread_id` and
 //                 reports it back via opts.onAgentSessionId so cli persists
-//                 it on the im-hub Session row (codexSessionId).
+//                 it on the agim Session row (codexSessionId).
 //   Later turns — opts.agentSessionId is the captured UUID. We spawn
 //                 `codex exec resume <id> --json …` so codex continues from
 //                 its own ~/.codex/sessions store. router.callAgentWithHistory
 //                 honours agentSessionResume by zeroing effectiveHistory so
 //                 we don't double-feed prior turns.
 //
-// Cwd: pinned to ~/.im-hub-workspaces/codex/ for IM calls (per agent-cwd.ts);
+// Cwd: pinned to ~/.agim-workspaces/codex/ for IM calls (per agent-cwd.ts);
 // codex reads its project AGENTS.md from cwd just like opencode.
 //
 // Usage roll-up: `turn.completed.usage` carries token counts (no cost). We
@@ -222,7 +222,7 @@ export class CodexAdapter extends AgentBase {
     // Trade-off: IM-spawned codex gains imhub MCP tool access at the cost
     // of the workspace-write sandbox. Acceptable for our use because:
     //   - the IM user IS the same trust principal as the host
-    //   - codex never had per-tool approval cards in im-hub anyway (no CLI
+    //   - codex never had per-tool approval cards in agim anyway (no CLI
     //     hook; it always ran bash/edit autonomously within sandbox)
     //   - users who want sandbox back can set IMHUB_CODEX_SAFE_MODE=1, at
     //     the cost of MCP tools being unusable
@@ -248,8 +248,8 @@ export class CodexAdapter extends AgentBase {
 
   /**
    * codex reads its project-level AGENTS.md from spawn cwd, so for IM calls we
-   * pin to ~/.im-hub-workspaces/codex/. Non-IM calls (web/scheduler) keep
-   * cwd undefined and inherit im-hub's cwd. See agent-cwd.ts for rationale.
+   * pin to ~/.agim-workspaces/codex/. Non-IM calls (web/scheduler) keep
+   * cwd undefined and inherit agim's cwd. See agent-cwd.ts for rationale.
    *
    * MCP sidecar injection: when we have an IM thread + the bus is up, prepend
    * `-c mcp_servers.imhub.{command,args,env}=...` to register the imhub MCP

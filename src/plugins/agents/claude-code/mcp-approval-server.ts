@@ -1,8 +1,8 @@
 // MCP sidecar — Claude Code 通过 --permission-prompt-tool 调用本进程的 `request` 工具，
-// 本进程把请求转发给 im-hub 主进程的 approval-bus（unix socket），等用户决策回包后
+// 本进程把请求转发给 agim 主进程的 approval-bus（unix socket），等用户决策回包后
 // 翻译成 MCP tool result。
 //
-// 这是个独立进程，由 claude 子进程通过 --mcp-config 启动；与 im-hub 通信只走 socket。
+// 这是个独立进程，由 claude 子进程通过 --mcp-config 启动；与 agim 通信只走 socket。
 // 启动需要两个 env：
 //   IMHUB_APPROVAL_SOCK  unix socket 路径
 //   IMHUB_RUN_ID         本次 claude run 的 ID（与 approvalBus.registerRun 配套）
@@ -310,7 +310,7 @@ export function buildServer(client: ApprovalClient): McpServer {
     {
       title: 'IM hub permission prompt',
       description:
-        'Routes Claude Code permission prompts to im-hub for human approval over IM. ' +
+        'Routes Claude Code permission prompts to agim for human approval over IM. ' +
         'Returns {behavior: "allow"|"deny", ...} as a JSON-encoded text block.',
       inputSchema,
     },
@@ -319,7 +319,7 @@ export function buildServer(client: ApprovalClient): McpServer {
       const input = (args.input ?? {}) as Record<string, unknown>
       const toolUseId = args.tool_use_id ?? args.toolUseId ?? ''
 
-      // Auto-allow im-hub's own MCP tools. These are user-scoped, idempotent,
+      // Auto-allow agim's own MCP tools. These are user-scoped, idempotent,
       // and easily reversible via /remind cancel — asking the user to
       // approve "do you really want this reminder you literally just asked
       // for" is double-confirmation and clutters the chat. The tool body
@@ -458,7 +458,7 @@ export function buildServer(client: ApprovalClient): McpServer {
   //   request_location_capture   one-time HTTPS link for browser GPS;
   //                              creates a NEW memo OR augments an
   //                              existing memo's where_*. Result delivery
-  //                              is async — im-hub pushes "✅ 已记下..."
+  //                              is async — agim pushes "✅ 已记下..."
   //                              to the IM thread once coords arrive.
   //   search_memos               recall: free-text + structured filters.
   //   update_memo                patch an existing memo when user adds
@@ -581,7 +581,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'Returns { url, expiresAt, ttlSeconds, what?, memoId? }. Reply to the user with ' +
         'markdown link syntax `[👉 点击共享当前位置](url)` on its own line so iLink renders ' +
         'a tappable label (the URL itself stays hidden). Do NOT print the raw URL.\n\n' +
-        'After the user taps and grants permission, im-hub pushes a "✅ 已记下..." confirmation ' +
+        'After the user taps and grants permission, agim pushes a "✅ 已记下..." confirmation ' +
         'to this thread directly — you do NOT need to wait. Link is single-use and expires in ' +
         '10 minutes. EXPIRY for the memo itself is set via save_memo separately if needed; ' +
         'capture-flow memos default to permanent unless you call save_memo first with ' +

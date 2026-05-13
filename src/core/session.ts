@@ -1,8 +1,8 @@
 // Session manager — per-conversation state
 //
 // On-disk layout (one directory tree per home):
-//   ~/.im-hub/sessions/<safe-key>.json   — metadata (no messages)
-//   ~/.im-hub/sessions/<safe-key>.log    — append-only JSONL of messages
+//   ~/.agim/sessions/<safe-key>.json   — metadata (no messages)
+//   ~/.agim/sessions/<safe-key>.log    — append-only JSONL of messages
 //
 // Splitting the message log out of the JSON metadata avoids rewriting the
 // entire history on every chat turn (the old behavior was an O(N) write

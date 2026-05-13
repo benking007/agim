@@ -120,14 +120,14 @@ describe('formatMessengerStartError', () => {
     const error = new Error('No credentials found')
     const hint = formatMessengerStartError('wechat-ilink', error)
 
-    expect(hint).toContain('im-hub config wechat')
+    expect(hint).toContain('agim config wechat')
   })
 
   it('shows config hint for auth errors', () => {
     const error = new Error('Authentication failed')
     const hint = formatMessengerStartError('telegram', error)
 
-    expect(hint).toContain('im-hub config telegram')
+    expect(hint).toContain('agim config telegram')
   })
 
   it('returns original message for other errors', () => {
@@ -147,7 +147,7 @@ describe('formatMessengerStartError', () => {
     const error = new Error('No credentials')
     const hint = formatMessengerStartError('wechat-ilink', error)
 
-    expect(hint).toContain('im-hub config wechat')
+    expect(hint).toContain('agim config wechat')
     expect(hint).not.toContain('wechat-ilink')
   })
 })

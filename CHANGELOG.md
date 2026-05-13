@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-14
+
+### Changed — debrand user-facing strings + docs to "agim"
+
+CLI help text, IM messenger adapter error messages, web server log
+lines, and command-palette titles now say `agim` instead of `im-hub`
+or `im-hub-pro`. All non-historical docs (README, deployment,
+session-model, im-workspaces-guide, etc.) were rewritten accordingly,
+including default state-dir / workspace-dir path references
+(`~/.agim/`, `~/.agim-workspaces/`).
+
+### Breaking — Web UI theme key
+
+The localStorage key for the Web UI dark/light theme preference changed
+from `im-hub-pro-theme` to `agim-theme`. Users will see their theme reset
+to system default once on first load after upgrade; re-select if desired.
+
+### Kept for compatibility (intentionally not changed)
+
+The following surfaces still use the legacy `im-hub` / `im-hub-pro`
+identifier and will not change without a major-version bump:
+
+- `im-hub-pro` npm bin alias (`/usr/local/bin/im-hub-pro` continues to
+  resolve to the same CLI as `agim`).
+- `im-hub.service` systemd unit name — installations from the 0.x line
+  keep their existing unit file; v1.0+ fresh installs write
+  `agim.service` and `cli-ui/service.ts` falls back to the legacy name.
+- `X-IM-Hub-Token` HTTP header on the ACP server (`acp-server.ts`).
+- WeChat `client_id: 'im-hub:…'` (IM-platform-side identifier).
+- `~/.im-hub/` data dir + `~/.im-hub-workspaces/` workspace root are
+  still detected by `core/agim-paths.ts` as legacy fallback paths; v1.0+
+  fresh installs land at `~/.agim/` and `~/.agim-workspaces/`.
+- `self-protect.ts` process-name regex still matches
+  `(agim|im-hub-pro|im-hub|dist/cli.js)`.
+- `npm uninstall -g agim-cli im-hub-pro im-hub` (in `cli-ui/cmd-handlers.ts`)
+  continues to clean up all three historical package names.
+
 ## [1.0.14] - 2026-05-13
 
 ### Fixed — same-thread agent invocations now serialize (was: clobbering each other)

@@ -1,4 +1,4 @@
-// ACP Server — expose im-hub as an ACP-compatible Agent
+// ACP Server — expose agim as an ACP-compatible Agent
 //
 // Endpoints (per ACP convention):
 //   GET  /agent/card   → Agent Manifest
@@ -178,7 +178,7 @@ export async function startACPServer(options: {
         const routeCtx: RouteContext = {
           // Use the upstream session_id (when supplied) as the thread key
           // so subsequent calls in the same conversation hit the same
-          // im-hub Session and preserve conversation history.
+          // agim Session and preserve conversation history.
           threadId: upstreamSessionId ? `acp:session:${upstreamSessionId}` : `acp:${taskId}`,
           channelId: 'acp',
           platform: 'acp',

@@ -87,7 +87,7 @@ program
 program
   .command('start')
   .description('Start the Agim server (foreground by default; --bg for detached daemon)')
-  .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.im-hub/)')
+  .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.agim/)')
   .action(async (opts: { bg?: boolean; background?: boolean }) => {
     // `--bg` (or its alias `--background`): hand off to the bg-spawner.
     // It re-execs us with `start` (no flag) inside a detached child so
@@ -153,7 +153,7 @@ program
     await registry.loadBuiltInPlugins()
 
     // Bootstrap per-agent IM workspaces. Idempotent — creates
-    // ~/.im-hub-workspaces/<agent>/ and seeds CLAUDE.md / AGENTS.md only if
+    // ~/.agim-workspaces/<agent>/ and seeds CLAUDE.md / AGENTS.md only if
     // they don't exist yet. See docs/architecture/agent-cwd-and-memory.md.
     try {
       const bootstrapped = await bootstrapAgentWorkspaces()
@@ -1280,7 +1280,7 @@ program
 
 program
   .command('uninstall')
-  .description('Stop service, remove npm install + config; keeps ~/.im-hub-workspaces/')
+  .description('Stop service, remove npm install + config; keeps ~/.agim-workspaces/')
   .action(async () => {
     const { cmdUninstall } = await import('./cli-ui/cmd-handlers.js')
     await cmdUninstall()

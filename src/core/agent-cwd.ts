@@ -1,7 +1,7 @@
 // Per-agent working directory resolution for the IM context.
 //
 // Both Claude Code and opencode key their per-project memory / history off
-// the spawned process's cwd. When im-hub runs as a systemd service, that cwd
+// the spawned process's cwd. When agim runs as a systemd service, that cwd
 // is "/" — so every IM thread, every direct-terminal session, and every
 // background scheduler tick all share the SAME global memory bucket. This
 // is the root cause of:
@@ -12,7 +12,7 @@
 //
 // Fix: when we detect we're in an IM call (threadId + platform both set),
 // pin the agent into a stable per-agent workspace under
-// `~/.im-hub-workspaces/<agent>/`. Non-IM calls (web UI, scheduler,
+// `~/.agim-workspaces/<agent>/`. Non-IM calls (web UI, scheduler,
 // intent-llm judge) keep the inherited cwd, preserving prior behavior.
 //
 // Override path: `IMHUB_<AGENT>_CWD` env var beats everything (e.g.
@@ -49,8 +49,8 @@ function envKeyFor(agentName: string): string {
  * Decision order:
  *   1. Env override `IMHUB_<AGENT>_CWD` always wins.
  *   2. If we're in an IM context (threadId + platform both present), pin to
- *      `~/.im-hub-workspaces/<agent>/`.
- *   3. Otherwise return undefined → adapter inherits im-hub's cwd. This
+ *      `~/.agim-workspaces/<agent>/`.
+ *   3. Otherwise return undefined → adapter inherits agim's cwd. This
  *      keeps web/scheduler/intent-llm judge paths exactly as they were.
  */
 export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string | undefined {
@@ -108,7 +108,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   const claudeSeed = `# Claude Code — IM 入口工作区
 
-> 这是 im-hub 通过 IM 唤起 Claude Code 时的专用工作目录。
+> 这是 agim 通过 IM 唤起 Claude Code 时的专用工作目录。
 > 与你直接在终端里跑 \`claude\` 时使用的全局配置 (~/.claude/CLAUDE.md) 隔离。
 >
 > 文件位置：${defaultAgentCwd('claude-code')}/CLAUDE.md
@@ -127,7 +127,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 ## 注意
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
-- IM 单条消息的硬超时是 30 分钟（im-hub 层），长任务必须走 bgjob
+- IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
 `
 
   result.push({
@@ -137,7 +137,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   const opencodeSeed = `# OpenCode — IM 入口工作区
 
-> 这是 im-hub 通过 IM 唤起 opencode 时的专用工作目录。
+> 这是 agim 通过 IM 唤起 opencode 时的专用工作目录。
 > 与你直接在终端里跑 \`opencode\` 时使用的全局配置 (~/.config/opencode/AGENTS.md) 隔离。
 >
 > 文件位置：${defaultAgentCwd('opencode')}/AGENTS.md
@@ -155,7 +155,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 ## 注意
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
-- IM 单条消息的硬超时是 30 分钟（im-hub 层），长任务必须走 bgjob
+- IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
 `
 
   result.push({
@@ -165,7 +165,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   const codexSeed = `# Codex — IM 入口工作区
 
-> 这是 im-hub 通过 IM 唤起 OpenAI Codex CLI 时的专用工作目录。
+> 这是 agim 通过 IM 唤起 OpenAI Codex CLI 时的专用工作目录。
 > 与你直接在终端里跑 \`codex\` 时使用的全局配置 (~/.codex/config.toml) 隔离。
 >
 > 文件位置：${defaultAgentCwd('codex')}/AGENTS.md
@@ -184,11 +184,11 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 ## 注意
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
-- IM 单条消息的硬超时是 30 分钟（im-hub 层），长任务必须走 bgjob
+- IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
 - bgjob 数据目录：~/.codex/bgjobs/（与 claude / opencode 隔离）
   使用方式：\`/root/.codex/scripts/bgjob start <name> -- <cmd...>\`
 - AGENTS.md 与 opencode 同名但工作区分离 —— codex 只读本目录的 AGENTS.md，
-  不会读 ~/.im-hub-workspaces/opencode/AGENTS.md
+  不会读 ~/.agim-workspaces/opencode/AGENTS.md
 `
 
   result.push({

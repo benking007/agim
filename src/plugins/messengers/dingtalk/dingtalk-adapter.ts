@@ -110,7 +110,7 @@ export class DingTalkAdapter implements MessengerAdapter {
     return false
   }
 
-  /** Build the threadId we expose to the rest of im-hub. 1:1 routes by
+  /** Build the threadId we expose to the rest of agim. 1:1 routes by
    *  sender staffId; group chats route by openConversationId so any
    *  member triggers a shared session in that group. */
   private threadIdFor(msg: DingTalkInboundMessage): string {
@@ -255,7 +255,7 @@ export class DingTalkAdapter implements MessengerAdapter {
   }
 
   /** Image inbound: exchange downloadCode → CDN bytes → save under
-   *  ~/.im-hub/media/dingtalk/<thread>/, then dispatch a Message whose
+   *  ~/.agim/media/dingtalk/<thread>/, then dispatch a Message whose
    *  text contains an `[图片附件：<path>]` marker. claude-code's Read
    *  tool already understands that marker — it'll fetch the file off
    *  disk and pass it to the multimodal model the user is talking to.

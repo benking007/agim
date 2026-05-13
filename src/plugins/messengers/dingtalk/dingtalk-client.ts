@@ -10,7 +10,7 @@
 //     each OpenAPI send and the SDK caches/refreshes as needed.
 //
 // Why not sessionWebhook (the temporary 30s URL each inbound message
-// carries)?  Because im-hub's primary use case is multi-minute agent
+// carries)?  Because agim's primary use case is multi-minute agent
 // runs and the sessionWebhook is always stale by the time the agent
 // finishes. OpenAPI works for any send regardless of elapsed time.
 

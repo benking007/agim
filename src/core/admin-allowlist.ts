@@ -123,7 +123,7 @@ export function denialMessage(platform: string, userId: string | undefined): str
       '🛑 这个 bot 还没配置管理员。\n' +
       '\n' +
       '   如果你是部署者：\n' +
-      '   1. 在服务器终端运行 `journalctl -u im-hub | grep "setup admin"` 查看一次性 token\n' +
+      '   1. 在服务器终端运行 `journalctl -u agim | grep "setup admin"` 查看一次性 token\n' +
       '      （或 `cat ~/.agim/admin-bootstrap-token`）\n' +
       '   2. 在 IM 里发：  /setup admin <token>\n' +
       '   即可把当前账号 (' + platform.toLowerCase() + ':' + (userId ?? '<your-id>') + ') 设为管理员。\n' +

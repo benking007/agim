@@ -1,7 +1,7 @@
 // WeChat media download helper.
 //
 // Downloads image / voice / file / video attachments received via iLink to
-// ~/.im-hub/media/wechat/<userId>/<msgId>.<ext> so downstream agents can
+// ~/.agim/media/wechat/<userId>/<msgId>.<ext> so downstream agents can
 // read them by path (same convention as the Telegram adapter).
 //
 // Cleanup: shares MEDIA_ROOT and the same TTL-based sweep as

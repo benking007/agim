@@ -1,6 +1,6 @@
 // Telegram media download helper.
 //
-// Downloads photo / document attachments to ~/.im-hub/media/telegram/<chatId>/
+// Downloads photo / document attachments to ~/.agim/media/telegram/<chatId>/
 // so the claude-code agent (multimodal) can Read them by path. Decoupled from
 // the adapter class so it's testable in isolation.
 //

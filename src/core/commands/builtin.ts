@@ -28,7 +28,7 @@ function detectLang(args: string | undefined): { lang: Lang; rest: string } {
 }
 
 const HELP_ZH = [
-  'im-hub 命令速查',
+  'agim 命令速查',
   '',
   '/new          开新会话',
   '/agents       列出可用 agent',
@@ -68,7 +68,7 @@ const HELP_ZH = [
 ].join('\n')
 
 const HELP_EN = [
-  'im-hub Commands',
+  'agim Commands',
   '',
   '/new          start a new session',
   '/agents       list available agents',
@@ -112,7 +112,7 @@ const HELP_EN = [
 const SEP = '---'
 
 const START_ZH = [
-  '欢迎使用 im-hub',
+  '欢迎使用 agim',
   '我是你的 AI 助手中枢——发消息我就路由给合适的 agent。',
   '/help      命令速查',
   '/agents    可用 agent',
@@ -120,7 +120,7 @@ const START_ZH = [
 ].join('\n')
 
 const START_EN = [
-  'Welcome to im-hub',
+  'Welcome to agim',
   "I'm your AI assistant hub — send a message and I'll route it to the right agent.",
   '/help      command reference',
   '/agents    available agents',

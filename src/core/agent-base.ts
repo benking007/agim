@@ -112,7 +112,7 @@ export interface SpawnPlan {
    * agent (claude-code, opencode) its own isolated cwd in the IM context, so
    * Claude's per-cwd memory / project history and opencode's AGENTS.md don't
    * collide with the user's terminal sessions. Falls through to inherit
-   * im-hub's own cwd ("/" under systemd) when undefined.
+   * agim's own cwd ("/" under systemd) when undefined.
    */
   cwd?: string
   /** Always called once after the CLI exits, even on error/timeout/abort. */

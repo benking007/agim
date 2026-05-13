@@ -869,7 +869,7 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     console.log(t(lang, 'baidu.howto'))
     console.log()
     // Effective env so a key set via the systemd unit / shell export
-    // still shows up here, not just keys written into ~/.im-hub/env.
+    // still shows up here, not just keys written into ~/.agim/env.
     const current = readEffectiveEnv().IMHUB_BAIDU_MAP_AK
     const status = current ? `${current.slice(0, 6)}…${current.slice(-4)} (set)` : '(unset)'
     const action = (await menu<'set' | 'clear'>({

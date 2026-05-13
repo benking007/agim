@@ -59,11 +59,11 @@ export class FeishuAdapter implements MessengerAdapter {
       const fullConfig = JSON.parse(data)
       this.config = fullConfig.feishu as FeishuConfig
     } catch {
-      throw new Error('Feishu config not found. Run "im-hub config feishu" first.')
+      throw new Error('Feishu config not found. Run "agim config feishu" first.')
     }
 
     if (!this.config?.appId || !this.config?.appSecret) {
-      throw new Error('Feishu App ID or Secret not configured. Run "im-hub config feishu" first.')
+      throw new Error('Feishu App ID or Secret not configured. Run "agim config feishu" first.')
     }
 
     // Initialize client with WebSocket long polling

@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '24'
           # 双通道：
-          # - 优先 OIDC trusted publishing（npmjs.com 上为 im-hub-pro 配置好后自动启用）
+          # - 优先 OIDC trusted publishing（npmjs.com 上为 agim-cli 配置好后自动启用）
           # - 兜底 NPM_TOKEN（automation token，配 id-token:write 同样可带 provenance）
           # registry-url 让 setup-node 把 NODE_AUTH_TOKEN 注入到 ~/.npmrc
           registry-url: 'https://registry.npmjs.org'

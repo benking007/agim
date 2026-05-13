@@ -6,8 +6,8 @@
 
 > **品牌**：英文名 **Agim**（取自 Agent + IM，也有 agile 敏捷的感觉），中文名 **阿吉姆**。
 > npm 包名 **`agim-cli`**（短名 `agim` 被 npm 反 typo-squat 保留），装完后**命令**还是 **`agim`**，
-> 日常打的就是这个。老命令 `im-hub-pro` 也保留为别名，老的 systemd 单元和 shell 别名不会断。
-> 配置目录新装默认 **`~/.agim/`**，已有 **`~/.im-hub/`** 的老用户会被自动识别继续沿用。
+> 日常打的就是这个。老命令 `agim` 也保留为别名，老的 systemd 单元和 shell 别名不会断。
+> 配置目录新装默认 **`~/.agim/`**，已有 **`~/.agim/`** 的老用户会被自动识别继续沿用。
 > 环境变量（`IMHUB_*`）、HTTP 头（`X-IM-Hub-Token`）、systemd 单元 `im-hub.service` 都保留
 > 原名以兼容 0.x 部署——详见 [迁移](#迁移)。
 
@@ -52,14 +52,14 @@ agim start
 
 ### 迁移
 
-#### 从原 `im-hub` 迁移
+#### 从原 `agim` 迁移
 ```bash
 npm uninstall -g im-hub
 npm install -g agim-cli
 agim start            # 配置、环境变量、Header 全部不变
 ```
 
-#### 从 `im-hub-pro`（0.x → 1.0）迁移
+#### 从 `agim`（0.x → 1.0）迁移
 ```bash
 npm uninstall -g im-hub-pro
 npm install -g agim-cli
@@ -67,7 +67,7 @@ agim start            # 配置目录、环境变量、Header 全部不变
 ```
 
 npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；安装后**命令**还是 `agim`，
-日常打命令就是 `agim …`。`im-hub-pro` 命令也保留为别名，原有的 systemd 单元和别名脚本不用动。
+日常打命令就是 `agim …`。`agim` 命令也保留为别名，原有的 systemd 单元和别名脚本不用动。
 
 ## 功能一览
 
@@ -93,7 +93,7 @@ agim start --bg            # 后台守护进程模式
 agim status                # 查看服务状态（systemd / bg / fg）
 agim restart               # 重启正在运行的服务
 agim stop                  # 停止服务
-agim uninstall             # 卸载（保留 ~/.im-hub-workspaces/）
+agim uninstall             # 卸载（保留 ~/.agim-workspaces/）
 agim config wechat         # 配置微信
 agim config feishu         # 配置飞书
 agim config dingtalk       # 配置钉钉（Stream 模式企业内部应用）
@@ -103,7 +103,7 @@ agim config claude         # 配置 Claude Code
 agim config agent          # 接入自定义 ACP Agent
 agim agents                # 列出可用 Agent
 agim messengers            # 列出可用 IM
-# （`im-hub-pro …` 作为别名继续可用）
+# （`agim …` 作为别名继续可用）
 ```
 
 ## 聊天命令
@@ -167,7 +167,7 @@ agim messengers            # 列出可用 IM
 /remind literal 每5分钟 喝水
 ```
 
-**三种创建路径**（最终都落到同一个 `~/.im-hub/reminders.db`）：
+**三种创建路径**（最终都落到同一个 `~/.agim/reminders.db`）：
 
 1. **`/remind` slash** — 显式、结构化输入
 2. **LLM 意图识别**（默认开启）— 直接说"明天早上8点提醒我开会"，机器人弹"要不要为这件事设个提醒？"卡片，回复 `y` 创建
@@ -218,7 +218,7 @@ Agent（claude-code / opencode）能看到 5 个 MCP 工具，遇到值得记的
 ## 配置
 
 ### 配置文件
-`~/.im-hub/config.json`（启动时 zod 校验）：
+`~/.agim/config.json`（启动时 zod 校验）：
 
 ```json
 {
@@ -297,8 +297,8 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 | `IMHUB_TZ_OFFSET_HOURS` | `8` | memo 时间戳的 UTC 偏移（默认 Asia/Shanghai）。仅当部署在其他时区时调整。 |
 | `IMHUB_TELEGRAM_COORDS_GCJ02` | 未设 | 设 `1` 对 Telegram 原生位置/venue 消息做 GCJ-02 → WGS-84 转换。默认关（直通），适合 Telegram Desktop / Android-without-China-GMS / 海外用户。如果你的 Telegram 客户端是国内 iOS 设备（Core Location 会加 GCJ 偏移），打开它。 |
 | `IMHUB_H5_COORDS_GCJ02` | 未设 | 设 `1` 对 `/memo here` H5 抓 GPS 的坐标做 GCJ-02 → WGS-84 转换。默认关（直通），匹配微信 X5 / Android Chrome 直给 WGS-84 的常见情况。如果你的用户主要在 iOS Safari / iOS WebKit 国内打开 H5 链接（Apple 会加 GCJ 偏移），打开它。完整每平台策略见 [`src/core/coord-systems.ts`](src/core/coord-systems.ts)。 |
-| `AGIM_HOME` | 自动 | 用户级配置/数据目录。全新安装默认 `~/.agim/`；从 0.x 升级则自动用现有的 `~/.im-hub/`。如果想固定到具体位置（多机共享、测试场景），显式设置即可。也认旧的 `IMHUB_HOME`。 |
-| `AGIM_WORKSPACES` | 自动 | per-agent 工作区目录。与 `AGIM_HOME` 一样的双探测（优先 `~/.agim-workspaces/`，存在 `~/.im-hub-workspaces/` 时用它）。也认 `IMHUB_WORKSPACES`。 |
+| `AGIM_HOME` | 自动 | 用户级配置/数据目录。全新安装默认 `~/.agim/`；从 0.x 升级则自动用现有的 `~/.agim/`。如果想固定到具体位置（多机共享、测试场景），显式设置即可。也认旧的 `IMHUB_HOME`。 |
+| `AGIM_WORKSPACES` | 自动 | per-agent 工作区目录。与 `AGIM_HOME` 一样的双探测（优先 `~/.agim-workspaces/`，存在 `~/.agim-workspaces/` 时用它）。也认 `IMHUB_WORKSPACES`。 |
 
 ## 架构
 
@@ -392,7 +392,7 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.5.0–0.5.2 | `agim` 双语方向键向导（当时叫 `im-hub-pro`）；按渠道独立配置（微信扫码、飞书 / Telegram / Discord 凭据输入；agent CLI 安装态实时探测）；systemd unit env fallback；完整服务生命周期命令（`status / start --bg / restart / stop / uninstall`） |
 | v0.6.0 | 钉钉 Stream 模式适配器——WebSocket 双向桥、图片消息（`messageFiles/download` → claude-code 多模态 Read）、语音消息（钉钉服务端 ASR `recognition`，whisper.cpp 兜底） |
 | v0.6.3 | 各平台原生位置消息的坐标系按来源处理（Telegram 改为 WGS 直通；H5 改为 WGS 直通解决微信 X5 的偏移；钉钉 link 中的百度地图 URL 走 BD-09→WGS） |
-| **v1.0.0** | 品牌升级为 **Agim · 阿吉姆**。新主命令 `agim`，老命令 `im-hub-pro` 保留为废弃别名。配置目录 / 环境变量 / HTTP 头 / systemd 单元名都保留以兼容 0.x 部署。 |
+| **v1.0.0** | 品牌升级为 **Agim · 阿吉姆**。新主命令 `agim`，老命令 `agim` 保留为废弃别名。配置目录 / 环境变量 / HTTP 头 / systemd 单元名都保留以兼容 0.x 部署。 |
 
 ### v1.1.0（下一版）
 

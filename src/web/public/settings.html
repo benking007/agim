@@ -128,6 +128,17 @@
         svcRestarted: '✓ Service restarted',
         svcStopped: '✓ Service stopped (this page is now disconnected)',
         svcFgWarning: 'Foreground service is running in another terminal — restart it there.',
+
+        // ── Safety / approval gating ─────────────────────────────
+        safetyTitle: 'Safety',
+        safetySkipLabel: 'Skip permission prompts for Claude Code (Dangerous)',
+        safetySkipHint: 'When ON, Claude Code launches with --dangerously-skip-permissions. Every tool call (Bash, Edit, Write, …) runs without approval and without honoring PreToolUse hooks. Only enable on private / sandboxed deployments you fully trust.',
+        safetySkipStatusOn: 'Currently: SKIPPING approvals — DANGEROUS',
+        safetySkipStatusOff: 'Currently: approval prompts enforced (default)',
+        safetySkipConfirmOn: 'Turn OFF approval prompts for Claude Code? Every tool call will run without confirmation. Click OK only if this deployment is private / sandboxed.',
+        safetyRestartHint: 'Click Save & Restart to apply.',
+        safetySaveRestart: 'Save & Restart',
+        safetySaved: '✓ Setting saved',
       },
       zh: {
         title: 'Agim — 设置',
@@ -242,6 +253,17 @@
         svcRestarted: '✓ 服务已重启',
         svcStopped: '✓ 服务已停止（页面已断开连接）',
         svcFgWarning: '前台服务在另一个终端运行——回那个终端重启。',
+
+        // ── Safety / approval gating ─────────────────────────────
+        safetyTitle: '安全',
+        safetySkipLabel: '免审批：Claude Code（危险）',
+        safetySkipHint: '打开后 Claude Code 以 --dangerously-skip-permissions 启动，所有工具调用（Bash / Edit / Write …）不再申请审批，也不走 PreToolUse hooks。仅推荐在你完全信任的私人 / 沙箱环境使用。',
+        safetySkipStatusOn: '当前：免审批 — 危险',
+        safetySkipStatusOff: '当前：审批正常生效（默认）',
+        safetySkipConfirmOn: '关闭 Claude Code 审批？所有工具调用都会不经确认直接执行。仅当此部署是私人 / 沙箱环境时点确定。',
+        safetyRestartHint: '点「保存并重启」让改动生效。',
+        safetySaveRestart: '保存并重启',
+        safetySaved: '✓ 设置已保存',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -682,6 +704,7 @@
       app.innerHTML = `
         <h1>${t('h1')}</h1>
         ${renderServiceCard()}
+        ${renderSafetyCard()}
         ${renderAgentsCard()}
         ${renderMessengersCard()}
         ${renderAcpCard()}
@@ -692,6 +715,67 @@
       // Service status loads asynchronously; the card renders with a
       // placeholder, populated by the first /api/service/status response.
       void loadServiceStatus();
+      // Safety toggle reflects the current env value; load once on render.
+      void loadSafetyState();
+    }
+
+    // ==========================================
+    // Safety card — operator-level approval policy switches.
+    // Right now this has a single toggle (Claude --dangerously-skip-
+    // permissions). Future: codex / opencode equivalents, per-platform
+    // user allowlist, etc.
+    // ==========================================
+    function renderSafetyCard() {
+      return `
+        <div class="card">
+          <h2>${t('safetyTitle')} ⚠️</h2>
+          <div class="agent-row" style="border-bottom:none;padding:8px 0">
+            <div class="left" style="max-width:calc(100% - 60px)">
+              <div>
+                <div class="name">${t('safetySkipLabel')}</div>
+                <div class="hint" style="white-space:normal;line-height:1.5">${t('safetySkipHint')}</div>
+                <div class="hint" id="safety-skip-status" style="margin-top:6px">—</div>
+              </div>
+            </div>
+            <div class="toggle" id="safety-skip-toggle" data-active="0"></div>
+          </div>
+          <div class="hint" style="margin-top:10px">${t('safetyRestartHint')}</div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="safety-save-restart">${t('safetySaveRestart')}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Pending state — what the toggle is set to RIGHT NOW (before save).
+    // Diffed against the on-disk env value to decide if Save-and-Restart
+    // should fire the restart.
+    let safetySkipCurrent = false;
+    let safetySkipPending = false;
+
+    async function loadSafetyState() {
+      try {
+        const data = await authFetch('/api/env').then(r => r.json());
+        // Treat env value '1' as on, anything else as off. /api/env masks
+        // sensitive values but plain '1'/'0' come through verbatim.
+        const v = data && data.env && data.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS;
+        safetySkipCurrent = v === '1';
+        safetySkipPending = safetySkipCurrent;
+        renderSafetyToggleState();
+      } catch (err) {
+        const el = document.getElementById('safety-skip-status');
+        if (el) el.textContent = (t('error') + ': ' + (err && err.message ? err.message : err));
+      }
+    }
+
+    function renderSafetyToggleState() {
+      const toggle = document.getElementById('safety-skip-toggle');
+      const status = document.getElementById('safety-skip-status');
+      if (!toggle || !status) return;
+      toggle.classList.toggle('active', safetySkipPending);
+      toggle.setAttribute('data-active', safetySkipPending ? '1' : '0');
+      status.textContent = safetySkipPending ? t('safetySkipStatusOn') : t('safetySkipStatusOff');
+      status.style.color = safetySkipPending ? 'var(--red)' : 'var(--text-dim)';
     }
 
     // ==========================================
@@ -1218,6 +1302,39 @@
       document.getElementById('svc-restart')?.addEventListener('click', () => svcAction('restart'));
       document.getElementById('svc-stop')?.addEventListener('click', () => svcAction('stop'));
       document.getElementById('svc-start')?.addEventListener('click', () => svcAction('start'));
+
+      // Safety toggle — flip pending state. Save & Restart commits to env.
+      document.getElementById('safety-skip-toggle')?.addEventListener('click', () => {
+        // Going from OFF → ON crosses a security boundary; double-check.
+        if (!safetySkipPending && !confirm(t('safetySkipConfirmOn'))) return;
+        safetySkipPending = !safetySkipPending;
+        renderSafetyToggleState();
+      });
+      document.getElementById('safety-save-restart')?.addEventListener('click', async () => {
+        const wantedOn = safetySkipPending;
+        try {
+          const updates = wantedOn
+            ? { IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: '1' }
+            : { IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: null };
+          const res = await authFetch('/api/env', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates }),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.error || res.statusText);
+          }
+          toast(t('safetySaved'), 'success');
+          safetySkipCurrent = wantedOn;
+          // The env file write only takes effect on the next start. Reuse the
+          // service-control restart path so the user gets the same overlay /
+          // auto-reconnect they get clicking the Restart button manually.
+          await svcAction('restart');
+        } catch (err) {
+          toast(`${t('error')}: ${err && err.message ? err.message : err}`, 'error');
+        }
+      });
 
       // Agent toggles — flip config.agents in memory + auto-manage
       // defaultAgent (promote / demote as needed), then re-render so the

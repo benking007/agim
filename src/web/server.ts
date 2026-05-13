@@ -1479,6 +1479,9 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE',
   'IMHUB_BAIDU_MAP_AK',
   'IMHUB_LOC_BASE_URL', 'IMHUB_TZ_OFFSET_HOURS',
+  // Safety card toggle — drives the Claude --dangerously-skip-permissions
+  // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
+  'IMHUB_DANGEROUSLY_SKIP_PERMISSIONS',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
 

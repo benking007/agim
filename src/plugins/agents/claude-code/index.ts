@@ -1,22 +1,32 @@
 // Claude Code agent adapter
 // Uses --print --output-format stream-json for programmatic interaction
 //
-// Permission flow has two modes, decided per-call in prepareCommand():
+// Permission flow has three modes, decided per-call in prepareCommand():
 //
-//   Approval-routed (default when IM context is present and the bus is up):
-//     --permission-mode default
-//     --permission-prompt-tool mcp__imhub__request
-//     --mcp-config <tmpfile>
-//   The MCP sidecar (mcp-approval-server.js) is registered via --mcp-config;
-//   it connects to im-hub's approval-bus over a unix socket, and im-hub
-//   surfaces approval prompts to the originating IM thread.
+//   1. Skip-permissions opt-in (IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1):
+//        --dangerously-skip-permissions
+//      Bypasses ALL permission checks — approval prompts, PreToolUse hooks,
+//      everything. Mirrors the Claude CLI flag name 1:1 so the safety
+//      tradeoff is obvious. Wins over every other branch below. Intended
+//      for private / sandboxed deployments where the operator trusts every
+//      message coming in over IM.
 //
-//   Legacy "dontAsk" fallback (env IMHUB_APPROVAL_DISABLED=1, OR no IM
-//   thread context, OR approvalBus not started):
-//     --permission-mode dontAsk
-//   Previous behavior — Claude leans entirely on PreToolUse hooks in
-//   ~/.claude/settings.json plus the CLAUDE_VIA_IM env signal injected by
-//   im-hub.service. Use this when human approval over IM isn't available.
+//   2. Approval-routed (default when IM context is present and the bus is up):
+//        --permission-mode default
+//        --permission-prompt-tool mcp__imhub__request
+//        --mcp-config <tmpfile>
+//      The MCP sidecar (mcp-approval-server.js) is registered via
+//      --mcp-config; it connects to im-hub's approval-bus over a unix
+//      socket, and im-hub surfaces approval prompts to the originating
+//      IM thread.
+//
+//   3. Legacy "dontAsk" fallback (env IMHUB_APPROVAL_DISABLED=1, OR no IM
+//      thread context, OR approvalBus not started, OR mcp-config write
+//      fails):
+//        --permission-mode dontAsk
+//      Claude leans on PreToolUse hooks in ~/.claude/settings.json plus
+//      the CLAUDE_VIA_IM env signal injected by im-hub.service. Less
+//      drastic than mode 1 — hooks still gate tools when configured.
 //
 // IMPORTANT: every per-spawn resource (runId, mcp-config dir, registry
 // entry) lives in the SpawnPlan returned by prepareCommand — never on the
@@ -95,8 +105,30 @@ export class ClaudeCodeAdapter extends AgentBase {
     // for the IM bridge to gate. Skipping the mcp-config tmpdir + bus run
     // registration also keeps cleanup trivial. buildArgs picks `--permission-mode plan`
     // when opts.planMode is true.
+    //
+    // Plan wins over IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: read-only mode
+    // is still useful as an exploration step even when the operator has
+    // turned skip-permissions on globally for normal runs.
     if (opts.planMode) {
       return { args: this.buildArgs(prompt, opts), cwd }
+    }
+
+    // Skip-permissions opt-in. Set by the operator (env / Safety toggle in
+    // /settings) when they're OK with Claude running every tool with no
+    // approval and no hooks. Mirrors the CLI flag name so grep-ability
+    // is high.
+    if (process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS === '1') {
+      log.info({ event: 'claude.approval.skip_permissions' },
+        'Claude run launched with --dangerously-skip-permissions (operator opt-in)')
+      return {
+        args: [
+          ...sessionFlag(opts),
+          ...BASE_ARGS,
+          '--dangerously-skip-permissions',
+          prompt,
+        ],
+        cwd,
+      }
     }
 
     if (process.env.IMHUB_APPROVAL_DISABLED === '1') {

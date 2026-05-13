@@ -37,10 +37,12 @@ describe('ClaudeCodeAdapter prepareCommand — fallback paths', () => {
   beforeEach(() => {
     adapter = new ClaudeCodeAdapter()
     delete process.env.IMHUB_APPROVAL_DISABLED
+    delete process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS
   })
 
   afterEach(() => {
     delete process.env.IMHUB_APPROVAL_DISABLED
+    delete process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS
   })
 
   it('falls back to dontAsk when IMHUB_APPROVAL_DISABLED=1', async () => {
@@ -81,6 +83,37 @@ describe('ClaudeCodeAdapter prepareCommand — fallback paths', () => {
     expect(plain[plain.indexOf('--permission-mode') + 1]).toBe('dontAsk')
     const planning = _testInternals.buildArgs(adapter, 'p', { planMode: true })
     expect(planning[planning.indexOf('--permission-mode') + 1]).toBe('plan')
+  })
+
+  it('IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1 emits --dangerously-skip-permissions and skips approval routing', async () => {
+    process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS = '1'
+    const plan = await _testInternals.prepareCommand(adapter, 'hello', FULL_OPTS)
+    expect(plan.args).toContain('--dangerously-skip-permissions')
+    // No approval-bus wiring, no mcp-config tmpdir, no dontAsk fallback.
+    expect(plan.args).not.toContain('--permission-mode')
+    expect(plan.args).not.toContain('--permission-prompt-tool')
+    expect(plan.args).not.toContain('--mcp-config')
+    expect(plan.cleanup).toBeUndefined()
+    // Prompt is still the last arg.
+    expect(plan.args[plan.args.length - 1]).toBe('hello')
+  })
+
+  it('skip-permissions still loses to planMode (read-only wins over bypass)', async () => {
+    // Operator may have flipped the global "skip permissions" toggle, but
+    // an individual plan-mode call should still be read-only — there is
+    // nothing to skip when nothing mutates.
+    process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS = '1'
+    const plan = await _testInternals.prepareCommand(adapter, 'sketch', { ...FULL_OPTS, planMode: true })
+    expect(plan.args).not.toContain('--dangerously-skip-permissions')
+    expect(plan.args[plan.args.indexOf('--permission-mode') + 1]).toBe('plan')
+  })
+
+  it('skip-permissions takes precedence over IMHUB_APPROVAL_DISABLED', async () => {
+    process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS = '1'
+    process.env.IMHUB_APPROVAL_DISABLED = '1'
+    const plan = await _testInternals.prepareCommand(adapter, 'hello', FULL_OPTS)
+    expect(plan.args).toContain('--dangerously-skip-permissions')
+    expect(plan.args).not.toContain('--permission-mode')
   })
 })
 
@@ -159,6 +192,19 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
       expect(plan.args[plan.args.indexOf('--permission-mode') + 1]).toBe('dontAsk')
     } finally {
       delete process.env.IMHUB_APPROVAL_DISABLED
+    }
+  })
+
+  it('IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1 wins even when bus is up and IM ctx is present', async () => {
+    process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS = '1'
+    try {
+      const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
+      expect(plan.args).toContain('--dangerously-skip-permissions')
+      expect(plan.args).not.toContain('--mcp-config')
+      expect(plan.args).not.toContain('--permission-prompt-tool')
+      expect(plan.cleanup).toBeUndefined()
+    } finally {
+      delete process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS
     }
   })
 

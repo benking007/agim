@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-05-13
+
+### Added — opt-in `--dangerously-skip-permissions` for Claude Code
+
+A new opt-in lets the operator turn off every approval prompt for Claude
+Code, by setting:
+
+    IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1
+
+When set, the Claude Code adapter launches with
+`--dangerously-skip-permissions` and skips both the approval-bus pipeline
+and the `dontAsk` fallback entirely. The flag name mirrors the Claude
+CLI 1:1 so the safety tradeoff is obvious from `ps`/logs/CI search.
+
+This is **strictly opt-in**. Default behavior is unchanged: IM-routed
+calls still surface a y/n card to the originating thread via the
+approval-bus, and non-IM calls still degrade to `dontAsk` (which
+respects PreToolUse hooks).
+
+#### Precedence
+
+1. `opts.planMode` → `--permission-mode plan` (read-only wins over bypass —
+   you explicitly asked for an exploratory pass).
+2. `IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1` → `--dangerously-skip-permissions`.
+3. `IMHUB_APPROVAL_DISABLED=1` or no IM context or bus down →
+   `--permission-mode dontAsk` (unchanged).
+4. Default IM-routed → `--permission-mode default --permission-prompt-tool …`
+   (unchanged).
+
+#### Web UI
+
+A new **Safety** card in `/settings` exposes the toggle. ON crosses a
+confirmation prompt that spells out the consequence ("every tool call
+will run without confirmation"); Save & Restart writes the env value to
+`~/.agim/env` and re-runs the service so the change takes effect.
+
+#### Scope
+
+This release only touches Claude Code. Codex and OpenCode keep their
+existing approval models — flipping the Safety toggle won't change how
+they ask. A follow-up will add per-agent toggles if needed.
+
+#### Risk reminder
+
+Skipping permissions means Bash / Edit / Write / WebFetch / every other
+tool runs without any human in the loop. Prompt-injection in IM
+messages becomes a code-execution path. **Only enable on private or
+sandboxed deployments where every IM author is trusted.**
+
 ## [1.0.7] - 2026-05-12
 
 ### Fixed — WeChat QR modal blocked by CSP

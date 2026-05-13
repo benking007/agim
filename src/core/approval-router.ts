@@ -19,6 +19,7 @@ import {
   type ResolvedInfo,
   type ResolutionEvent,
 } from './approval-bus.js'
+import { checkToolUse } from './self-protect.js'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'approval-router' })
@@ -242,6 +243,21 @@ const activeCards = new Map<string, ActiveCard>()
 export function install(opts: InstallOptions): void {
   installed = opts
   approvalBus.setNotifier(async (n: ApprovalNotification) => {
+    // Self-protect: an LLM tried to kill/restart Agim itself. Deny with
+    // a friendly redirect to /restart before bothering the user with a
+    // y/n card. See core/self-protect.ts for the pattern list and why.
+    const selfProtect = checkToolUse(n.toolName, n.input)
+    if (selfProtect) {
+      log.warn({
+        event: 'approval.router.self_protect_block',
+        reqId: n.reqId,
+        toolName: n.toolName,
+        platform: n.ctx.platform,
+        threadId: n.ctx.threadId,
+      }, 'blocked self-targeted tool call; LLM will receive the redirect message')
+      throw new Error(selfProtect.message)
+    }
+
     const m = opts.resolveMessenger(n.ctx.platform)
     if (!m) {
       log.warn({ event: 'approval.router.no_messenger', platform: n.ctx.platform, reqId: n.reqId },

@@ -345,6 +345,42 @@ program
           return
         }
 
+        // Service-control intent detection — catches "重启服务" / "restart
+        // bot" / "状态" etc. BEFORE they reach the LLM, which would
+        // otherwise be tempted to run `kill <pid>` or `systemctl restart`
+        // and bypass the entire pre-flight + completion-push pipeline.
+        // Only on non-slash messages (slash commands have their own
+        // parser); slash forms go through routeMessage normally.
+        if (!ctx.message.text.trim().startsWith('/')) {
+          const { detectServiceIntent } = await import('./core/service-intent.js')
+          const svcIntent = detectServiceIntent(ctx.message.text)
+          if (svcIntent) {
+            ctx.logger.info({
+              event: 'service-intent.matched',
+              intent: svcIntent.intent,
+              confidence: svcIntent.confidence,
+              userId: ctx.message.userId,
+            })
+            const routeCtx: RouteContext = {
+              channelId: ctx.channelId,
+              threadId: ctx.message.threadId,
+              platform: ctx.platform,
+              defaultAgent: config.defaultAgent,
+              traceId,
+              logger: ctx.logger,
+              userId: ctx.message.userId,
+            }
+            const { handleRestartCommand, handleStopCommand, handleStatusCommand } =
+              await import('./core/commands/service.js')
+            let reply: string
+            if (svcIntent.intent === 'restart') reply = await handleRestartCommand('', routeCtx)
+            else if (svcIntent.intent === 'stop') reply = await handleStopCommand('', routeCtx)
+            else reply = await handleStatusCommand('', routeCtx)
+            await messenger.sendMessage(ctx.message.threadId, reply)
+            return
+          }
+        }
+
         // Reminder-intent detector: only on non-slash messages and only
         // when the user has aiwatch on. Cheap regex pre-filter inside the
         // detector skips most messages without a time hint, so the LLM
@@ -455,6 +491,20 @@ program
       console.log(`   ACP Endpoint: http://localhost:${acpServer.port}`)
     }
     console.log('Press Ctrl+C to stop')
+
+    // If we came back from a `/restart`, the previous instance dropped a
+    // ~/.agim/restart-pending.json with the initiator's IM thread. Now
+    // that messengers + agents are all up, push the completion message
+    // (or warning) back to that thread and delete the file. Fire and
+    // forget — never block startup on this.
+    try {
+      const { processRestartPending } = await import('./core/restart-completion.js')
+      void processRestartPending(config.defaultAgent).catch((err) => {
+        console.warn('restart-completion handler threw:', err instanceof Error ? err.message : String(err))
+      })
+    } catch (err) {
+      console.warn('restart-completion module failed to load:', err instanceof Error ? err.message : String(err))
+    }
 
     // Keep process alive
     process.on('SIGINT', async () => {

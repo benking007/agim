@@ -29,7 +29,7 @@ export interface ChatMessage {
  */
 export type ParsedMessage =
   | { type: 'default'; prompt: string }
-  | { type: 'command'; command: 'start' | 'status' | 'help' | 'agents' | 'new'; args?: string }
+  | { type: 'command'; command: 'start' | 'help' | 'agents' | 'new'; args?: string }
   | { type: 'agentCommand'; command: string; prompt: string }
   | { type: 'agent'; agent: string; prompt: string }
   | { type: 'audit'; args: string }
@@ -45,6 +45,7 @@ export type ParsedMessage =
   | { type: 'sessions'; args: string }
   | { type: 'approval'; args: string }
   | { type: 'plan'; args: string }
+  | { type: 'service'; action: 'restart' | 'stop' | 'status'; args: string }
   | { type: 'error'; prompt: string; error: string }
 
 /**

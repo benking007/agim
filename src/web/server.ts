@@ -1085,7 +1085,7 @@ async function handleServiceStop(res: ServerResponse): Promise<void> {
 }
 
 async function handleServiceRestart(res: ServerResponse): Promise<void> {
-  const { detectService, PID_FILE, LOG_FILE } = await import('../cli-ui/service.js')
+  const { detectService } = await import('../cli-ui/service.js')
   const st = detectService()
   if (st.mode === 'systemd') {
     try {
@@ -1105,40 +1105,17 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
     sendJson(res, 409, { error: 'foreground service is running in another terminal; restart it manually (Ctrl-C + re-run)' })
     return
   }
-  // background or 'none': spawn a detached node -e helper that waits
-  // for our PID to die, then starts a fresh daemon. Then SIGTERM self
-  // so the helper's wait-loop unblocks and the new daemon takes over.
-  const __dn = dirname(fileURLToPath(import.meta.url))
-  const cliJs = join(__dn, '..', 'cli.js')
-  const parentPid = process.pid
-  const helperCode =
-    'const{spawn}=require("child_process");' +
-    'const fs=require("fs");' +
-    `const pid=${parentPid};` +
-    'let n=0;' +
-    'const t=setInterval(()=>{' +
-    '  try{process.kill(pid,0)}catch{' +
-    '    clearInterval(t);' +
-    `    const fd=fs.openSync(${JSON.stringify(LOG_FILE)},"a");` +
-    `    const c=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(cliJs)},"start"],{detached:true,stdio:["ignore",fd,fd],env:process.env});` +
-    '    c.unref();' +
-    `    fs.writeFileSync(${JSON.stringify(PID_FILE)},String(c.pid)+"\\n");` +
-    '    fs.closeSync(fd);' +
-    '    process.exit(0);' +
-    '  }' +
-    '  if(++n>150){clearInterval(t);process.exit(1)}' +
-    '},200);'
-  const { spawn: spawnChild } = await import('node:child_process')
-  const helper = spawnChild(process.execPath, ['-e', helperCode], {
-    detached: true,
-    stdio: 'ignore',
-    env: process.env,
-  })
-  helper.unref()
-  sendJson(res, 200, { ok: true, mode: st.mode, restarting: true })
-  setTimeout(() => {
-    try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
-  }, 300)
+  // background or 'none': delegate to the shared restart-flow. The flow
+  // runs pre-flight checks, writes restart-pending.json with source='web'
+  // (so the new daemon doesn't try to push an IM completion message —
+  // browser polling handles that), and spawns the detached helper.
+  const { initiateRestart } = await import('../core/restart-flow.js')
+  const result = await initiateRestart({ source: 'web' })
+  if (!result.ok) {
+    sendJson(res, 409, { error: result.message, details: result.errors })
+    return
+  }
+  sendJson(res, 200, { ok: true, mode: st.mode, restarting: true, message: result.message })
 }
 
 /**

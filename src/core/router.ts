@@ -108,8 +108,12 @@ export function parseMessage(text: string): ParsedMessage {
 
   // Built-in commands
   if (cmd === 'start') return { type: 'command', command: 'start', args: rest }
-  if (cmd === 'status') return { type: 'command', command: 'status' }
   if (cmd === 'help' || cmd === '?') return { type: 'command', command: 'help', args: rest }
+  // Service-control commands. /status read-only / open; /restart + /stop
+  // gated on IMHUB_ADMIN_USERS allowlist (enforced inside the handler).
+  if (cmd === 'status') return { type: 'service', action: 'status', args: rest }
+  if (cmd === 'restart') return { type: 'service', action: 'restart', args: rest }
+  if (cmd === 'stop') return { type: 'service', action: 'stop', args: rest }
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }
   if (cmd === 'audit') return { type: 'audit', args: rest }
@@ -223,6 +227,14 @@ export async function routeMessage(
 
     case 'plan': {
       return handlePlanCommand(parsed.args, ctx)
+    }
+
+    case 'service': {
+      const { handleRestartCommand, handleStopCommand, handleStatusCommand } =
+        await import('./commands/service.js')
+      if (parsed.action === 'restart') return handleRestartCommand(parsed.args, ctx)
+      if (parsed.action === 'stop') return handleStopCommand(parsed.args, ctx)
+      return handleStatusCommand(parsed.args, ctx)
     }
 
     case 'agent': {

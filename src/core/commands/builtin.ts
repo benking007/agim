@@ -48,7 +48,9 @@ const HELP_ZH = [
   '/think on|off 切换深度思考',
   '/plan on|off  切换 plan 模式',
   '/approval     审批规则（别名 /auto）',
-  '/status       连接状态',
+  '/status       服务状态（uptime/agent/messengers）',
+  '/restart      重启服务（仅 admin，可直接说"重启服务"）',
+  '/stop         停止服务（仅 admin）',
   '/audit [n]    查看调用记录',
   '/stats        用量统计（/usage /cost）',
   '/sessions     最近会话',
@@ -85,7 +87,9 @@ const HELP_EN = [
   '/think on|off toggle extended thinking',
   '/plan on|off  toggle plan mode',
   '/approval     tool approval rules (alias /auto)',
-  '/status       connectivity status',
+  '/status       service status (uptime / agent / messengers)',
+  '/restart      restart service (admin only — or just say "restart service")',
+  '/stop         stop service (admin only)',
   '/audit [n]    show invocations',
   '/stats        usage stats (/usage /cost)',
   '/sessions     list recent sessions',
@@ -273,7 +277,7 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
 }
 
 export async function handleBuiltInCommand(
-  command: 'start' | 'status' | 'help' | 'agents' | 'new',
+  command: 'start' | 'help' | 'agents' | 'new',
   ctx: RouteContext,
   args?: string,
 ): Promise<string> {
@@ -282,9 +286,6 @@ export async function handleBuiltInCommand(
       const { lang } = detectLang(args)
       return lang === 'en' ? START_EN : START_ZH
     }
-
-    case 'status':
-      return `📊 IM hub Status\n\nPlatform: Connected\nAgent: Ready\n\nSend a message to start!`
 
     case 'help': {
       const { lang, rest } = detectLang(args)

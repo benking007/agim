@@ -68,9 +68,9 @@ describe('parseMessage', () => {
   })
 
   describe('built-in commands', () => {
-    it('should parse /status command', () => {
+    it('should parse bare /status as a service-control intent', () => {
       const result = parseMessage('/status')
-      expect(result).toEqual({ type: 'command', command: 'status' })
+      expect(result).toEqual({ type: 'service', action: 'status', args: '' })
     })
 
     it('should parse /help command (no args)', () => {
@@ -97,10 +97,21 @@ describe('parseMessage', () => {
       expect(result).toEqual({ type: 'command', command: 'agents' })
     })
 
-    it('should ignore extra text after built-in commands', () => {
-      // Built-in commands don't take arguments
+    it('should parse /status as a service-control intent', () => {
+      // /status migrated from a hardcoded builtin to a real service-status
+      // handler in commands/service.ts. Args are forwarded (currently unused).
       const result = parseMessage('/status extra text')
-      expect(result).toEqual({ type: 'command', command: 'status' })
+      expect(result).toEqual({ type: 'service', action: 'status', args: 'extra text' })
+    })
+
+    it('should parse /restart as a service-control intent', () => {
+      const result = parseMessage('/restart')
+      expect(result).toEqual({ type: 'service', action: 'restart', args: '' })
+    })
+
+    it('should parse /stop as a service-control intent', () => {
+      const result = parseMessage('/stop')
+      expect(result).toEqual({ type: 'service', action: 'stop', args: '' })
     })
   })
 
@@ -252,9 +263,11 @@ describe('routeMessage', () => {
   })
 
   describe('command routing', () => {
-    it('should return status message for /status', async () => {
-      const result = await routeMessage({ type: 'command', command: 'status' }, ctx)
-      expect(result).toContain('IM hub Status')
+    it('should return service-status message for /status', async () => {
+      const result = await routeMessage({ type: 'service', action: 'status', args: '' }, ctx)
+      const text = typeof result === 'string' ? result : ''
+      expect(text).toContain('Agim')
+      expect(text).toContain('agent')
     })
 
     it('should return help message for /help (zh by default)', async () => {

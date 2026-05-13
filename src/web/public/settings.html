@@ -129,16 +129,8 @@
         svcStopped: '✓ Service stopped (this page is now disconnected)',
         svcFgWarning: 'Foreground service is running in another terminal — restart it there.',
 
-        // ── Safety / approval gating ─────────────────────────────
+        // ── Safety / admin allowlist ─────────────────────────────
         safetyTitle: 'Safety',
-        safetySkipLabel: 'Skip permission prompts for Claude Code (Dangerous)',
-        safetySkipHint: 'When ON, Claude Code launches with --dangerously-skip-permissions. Every tool call (Bash, Edit, Write, …) runs without approval and without honoring PreToolUse hooks. Only enable on private / sandboxed deployments you fully trust.',
-        safetySkipStatusOn: 'Currently: SKIPPING approvals — DANGEROUS',
-        safetySkipStatusOff: 'Currently: approval prompts enforced (default)',
-        safetySkipConfirmOn: 'Turn OFF approval prompts for Claude Code? Every tool call will run without confirmation. Click OK only if this deployment is private / sandboxed.',
-        safetyRestartHint: 'Click Save & Restart to apply.',
-        safetySaveRestart: 'Save & Restart',
-        safetySaved: '✓ Setting saved',
         adminListTitle: 'Admin Allowlist',
         adminListHint: 'Only these users can run /restart, /stop, and natural-language equivalents in IM. Edits persist to ~/.agim/env immediately — no restart needed.',
         adminListLoading: 'Loading…',
@@ -264,16 +256,8 @@
         svcStopped: '✓ 服务已停止（页面已断开连接）',
         svcFgWarning: '前台服务在另一个终端运行——回那个终端重启。',
 
-        // ── Safety / approval gating ─────────────────────────────
+        // ── Safety / admin allowlist ─────────────────────────────
         safetyTitle: '安全',
-        safetySkipLabel: '免审批：Claude Code（危险）',
-        safetySkipHint: '打开后 Claude Code 以 --dangerously-skip-permissions 启动，所有工具调用（Bash / Edit / Write …）不再申请审批，也不走 PreToolUse hooks。仅推荐在你完全信任的私人 / 沙箱环境使用。',
-        safetySkipStatusOn: '当前：免审批 — 危险',
-        safetySkipStatusOff: '当前：审批正常生效（默认）',
-        safetySkipConfirmOn: '关闭 Claude Code 审批？所有工具调用都会不经确认直接执行。仅当此部署是私人 / 沙箱环境时点确定。',
-        safetyRestartHint: '点「保存并重启」让改动生效。',
-        safetySaveRestart: '保存并重启',
-        safetySaved: '✓ 设置已保存',
         adminListTitle: '管理员白名单',
         adminListHint: '只有列表里的用户能在 IM 里跑 /restart / /stop 或自然语言"重启服务"。改动会立即写入 ~/.agim/env，无需重启。',
         adminListLoading: '加载中…',
@@ -735,37 +719,22 @@
       // Service status loads asynchronously; the card renders with a
       // placeholder, populated by the first /api/service/status response.
       void loadServiceStatus();
-      // Safety toggle reflects the current env value; load once on render.
-      void loadSafetyState();
       // Admin allowlist list — loads via /api/admin-allowlist.
       void loadAdminList();
     }
 
     // ==========================================
-    // Safety card — operator-level approval policy switches.
-    // Right now this has a single toggle (Claude --dangerously-skip-
-    // permissions). Future: codex / opencode equivalents, per-platform
-    // user allowlist, etc.
+    // Safety card — IM admin allowlist editor.
+    // The Claude --dangerously-skip-permissions toggle was removed in
+    // v1.0.12: Claude CLI refuses that flag when running as root, which
+    // is the default systemd deployment, so the toggle was a footgun.
+    // Operators who still want it can set IMHUB_DANGEROUSLY_SKIP_
+    // PERMISSIONS=1 in ~/.agim/env manually (non-root only).
     // ==========================================
     function renderSafetyCard() {
       return `
         <div class="card">
           <h2>${t('safetyTitle')} ⚠️</h2>
-          <div class="agent-row" style="border-bottom:none;padding:8px 0">
-            <div class="left" style="max-width:calc(100% - 60px)">
-              <div>
-                <div class="name">${t('safetySkipLabel')}</div>
-                <div class="hint" style="white-space:normal;line-height:1.5">${t('safetySkipHint')}</div>
-                <div class="hint" id="safety-skip-status" style="margin-top:6px">—</div>
-              </div>
-            </div>
-            <div class="toggle" id="safety-skip-toggle" data-active="0"></div>
-          </div>
-          <div class="hint" style="margin-top:10px">${t('safetyRestartHint')}</div>
-          <div class="actions">
-            <button type="button" class="btn btn-primary" id="safety-save-restart">${t('safetySaveRestart')}</button>
-          </div>
-          <hr class="divider">
           <div style="font-size:13px;font-weight:600;margin-bottom:6px">${t('adminListTitle')}</div>
           <div class="hint" style="margin-bottom:10px">${t('adminListHint')}</div>
           <div id="admin-list" style="margin-bottom:10px">${t('adminListLoading')}</div>
@@ -787,37 +756,6 @@
           </div>
         </div>
       `;
-    }
-
-    // Pending state — what the toggle is set to RIGHT NOW (before save).
-    // Diffed against the on-disk env value to decide if Save-and-Restart
-    // should fire the restart.
-    let safetySkipCurrent = false;
-    let safetySkipPending = false;
-
-    async function loadSafetyState() {
-      try {
-        const data = await authFetch('/api/env').then(r => r.json());
-        // Treat env value '1' as on, anything else as off. /api/env masks
-        // sensitive values but plain '1'/'0' come through verbatim.
-        const v = data && data.env && data.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS;
-        safetySkipCurrent = v === '1';
-        safetySkipPending = safetySkipCurrent;
-        renderSafetyToggleState();
-      } catch (err) {
-        const el = document.getElementById('safety-skip-status');
-        if (el) el.textContent = (t('error') + ': ' + (err && err.message ? err.message : err));
-      }
-    }
-
-    function renderSafetyToggleState() {
-      const toggle = document.getElementById('safety-skip-toggle');
-      const status = document.getElementById('safety-skip-status');
-      if (!toggle || !status) return;
-      toggle.classList.toggle('active', safetySkipPending);
-      toggle.setAttribute('data-active', safetySkipPending ? '1' : '0');
-      status.textContent = safetySkipPending ? t('safetySkipStatusOn') : t('safetySkipStatusOff');
-      status.style.color = safetySkipPending ? 'var(--red)' : 'var(--text-dim)';
     }
 
     // ─── Admin allowlist editor ──────────────────────────────────
@@ -1407,39 +1345,6 @@
       document.getElementById('svc-restart')?.addEventListener('click', () => svcAction('restart'));
       document.getElementById('svc-stop')?.addEventListener('click', () => svcAction('stop'));
       document.getElementById('svc-start')?.addEventListener('click', () => svcAction('start'));
-
-      // Safety toggle — flip pending state. Save & Restart commits to env.
-      document.getElementById('safety-skip-toggle')?.addEventListener('click', () => {
-        // Going from OFF → ON crosses a security boundary; double-check.
-        if (!safetySkipPending && !confirm(t('safetySkipConfirmOn'))) return;
-        safetySkipPending = !safetySkipPending;
-        renderSafetyToggleState();
-      });
-      document.getElementById('safety-save-restart')?.addEventListener('click', async () => {
-        const wantedOn = safetySkipPending;
-        try {
-          const updates = wantedOn
-            ? { IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: '1' }
-            : { IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: null };
-          const res = await authFetch('/api/env', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates }),
-          });
-          if (!res.ok) {
-            const j = await res.json().catch(() => ({}));
-            throw new Error(j.error || res.statusText);
-          }
-          toast(t('safetySaved'), 'success');
-          safetySkipCurrent = wantedOn;
-          // The env file write only takes effect on the next start. Reuse the
-          // service-control restart path so the user gets the same overlay /
-          // auto-reconnect they get clicking the Restart button manually.
-          await svcAction('restart');
-        } catch (err) {
-          toast(`${t('error')}: ${err && err.message ? err.message : err}`, 'error');
-        }
-      });
 
       // Add admin (Safety card → Admin Allowlist).
       document.getElementById('admin-add')?.addEventListener('click', async () => {

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-05-13
+
+### Removed — Safety card "Skip permissions" toggle
+
+The web /settings Safety card no longer exposes a toggle for
+`IMHUB_DANGEROUSLY_SKIP_PERMISSIONS`. The toggle was a footgun for the
+typical systemd deployment: im-hub runs as root, but Claude CLI itself
+hard-refuses `--dangerously-skip-permissions` for uid=0 with
+
+    claude-code failed (exit 1):
+      --dangerously-skip-permissions cannot be used with root/sudo
+      privileges for security reasons
+
+so flipping the toggle ON only succeeded in breaking every subsequent
+Claude run. Removing the UI control means operators don't trip the
+guard by accident.
+
+The env variable itself is **still honored** by the Claude adapter
+(`src/plugins/agents/claude-code/index.ts`). Non-root deployments that
+genuinely want the bypass can edit `~/.agim/env` manually:
+
+    IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1
+
+The Safety card now contains only the Admin Allowlist editor.
+
 ## [1.0.11] - 2026-05-13
 
 ### Fixed - /restart races systemd own restart in systemd-managed installs

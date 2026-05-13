@@ -37,14 +37,14 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       runId: 'oc-ses-1',
       reqId: 'perm-1',
       toolName: 'external_directory',
-      input: { patterns: ['/root/workspace/im-hub/*'] },
+      input: { patterns: ['/root/workspace/agim/*'] },
       ctx: RUN_CTX,
       dispatch: (d) => { decisions.push(d) },
     })
 
     expect(notified).not.toBeNull()
     expect(notified!.toolName).toBe('external_directory')
-    expect(notified!.input).toEqual({ patterns: ['/root/workspace/im-hub/*'] })
+    expect(notified!.input).toEqual({ patterns: ['/root/workspace/agim/*'] })
     expect(notified!.ctx.threadId).toBe('thread-A')
     expect(bus.hasPendingFor(KEY)).toBe(true)
 

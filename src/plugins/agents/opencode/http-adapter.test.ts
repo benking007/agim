@@ -481,7 +481,7 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
       { type: 'permission.asked', properties: {
           id: 'perm_b1', sessionID: sid,
           permission: 'external_directory',
-          patterns: ['/root/workspace/im-hub/*'],
+          patterns: ['/root/workspace/agim/*'],
         } },
       { type: 'message.part.updated', properties: {
           sessionID: sid,

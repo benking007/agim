@@ -141,6 +141,16 @@
         adminConfirmRemove: 'Remove admin {p}:{u}?',
         adminPublicBindWarn: '⚠️ Web is bound publicly — admin editor disabled to prevent random visitors from granting themselves access. Bind to 127.0.0.1 to enable.',
         adminBootstrapHint: 'Bootstrap token exists at {path}. Run `cat` on the server, then send `/setup admin <token>` in IM to self-onboard.',
+
+        // ── Approval policy (timeout default) ─────────────────────
+        approvalPolicyTitle: 'Approval Policy',
+        approvalPolicyHint: 'What does Agim do when a tool-use approval times out (no IM reply within the budget)? Default deny is strict; switch to allow when you\'ll be away from IM and want the agent to keep moving.',
+        approvalTimeoutDefaultLabel: 'On approval timeout',
+        approvalTimeoutDeny: 'Deny (default — strict, human in the loop)',
+        approvalTimeoutAllow: 'Allow (user-away mode — agent proceeds silently)',
+        approvalPolicySave: 'Save',
+        approvalPolicySaved: 'Saved — applies to the next pending approval, no restart needed.',
+        approvalPolicyLoadFailed: 'Failed to load approval policy',
       },
       zh: {
         title: 'Agim — 设置',
@@ -268,6 +278,16 @@
         adminConfirmRemove: '移除管理员 {p}:{u}？',
         adminPublicBindWarn: '⚠️ web 控制台目前监听公开地址 — 为防止陌生访问者擅自给自己加 admin，此编辑器已禁用。绑回 127.0.0.1 后启用。',
         adminBootstrapHint: '检测到一次性 token 文件在 {path}。在服务器上 `cat` 该文件取 token，然后在 IM 里发 /setup admin <token> 即可把自己设为 admin。',
+
+        // ── 审批策略 (超时默认决策) ───────────────────────────────
+        approvalPolicyTitle: '审批策略',
+        approvalPolicyHint: '当工具调用审批超时（IM 端没在限定时间内回复）时 Agim 该怎么办？默认 deny 严格、人在回路；切到 allow 是"出门模式"，让 agent 继续跑、不卡你。',
+        approvalTimeoutDefaultLabel: '审批超时时',
+        approvalTimeoutDeny: '拒绝（默认 — 严格，人工把关）',
+        approvalTimeoutAllow: '放行（出门模式 — agent 静默继续）',
+        approvalPolicySave: '保存',
+        approvalPolicySaved: '已保存 — 下一个挂起的审批起就生效，无需重启。',
+        approvalPolicyLoadFailed: '加载审批策略失败',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -709,6 +729,7 @@
         <h1>${t('h1')}</h1>
         ${renderServiceCard()}
         ${renderSafetyCard()}
+        ${renderApprovalPolicyCard()}
         ${renderAgentsCard()}
         ${renderMessengersCard()}
         ${renderAcpCard()}
@@ -721,6 +742,8 @@
       void loadServiceStatus();
       // Admin allowlist list — loads via /api/admin-allowlist.
       void loadAdminList();
+      // Approval policy (IMHUB_TIMEOUT_DEFAULT) — loaded via /api/env.
+      void loadApprovalPolicy();
     }
 
     // ==========================================
@@ -838,6 +861,69 @@
           </div>
         </div>
       `;
+    }
+
+    // ==========================================
+    // Approval Policy card — IMHUB_TIMEOUT_DEFAULT (deny|allow).
+    // Hot-reloads via process.env mutation in handlePutEnv, no restart.
+    // ==========================================
+    function renderApprovalPolicyCard() {
+      return `
+        <div class="card">
+          <h2>${t('approvalPolicyTitle')}</h2>
+          <div class="hint" style="margin-bottom:10px">${t('approvalPolicyHint')}</div>
+          <div style="margin-bottom:8px">
+            <label for="approval-timeout-default">${t('approvalTimeoutDefaultLabel')}</label>
+            <select id="approval-timeout-default">
+              <option value="deny">${t('approvalTimeoutDeny')}</option>
+              <option value="allow">${t('approvalTimeoutAllow')}</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="approval-policy-save">${t('approvalPolicySave')}</button>
+            <span id="approval-policy-status" class="hint" style="margin-left:10px"></span>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadApprovalPolicy() {
+      const sel = document.getElementById('approval-timeout-default');
+      const status = document.getElementById('approval-policy-status');
+      if (!sel) return;
+      try {
+        const res = await authFetch('/api/env?reveal=1');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const v = (data.env && typeof data.env.IMHUB_TIMEOUT_DEFAULT === 'string')
+          ? data.env.IMHUB_TIMEOUT_DEFAULT.toLowerCase()
+          : 'deny';
+        sel.value = v === 'allow' ? 'allow' : 'deny';
+      } catch (err) {
+        if (status) status.textContent = t('approvalPolicyLoadFailed');
+      }
+    }
+
+    async function saveApprovalPolicy() {
+      const sel = document.getElementById('approval-timeout-default');
+      const status = document.getElementById('approval-policy-status');
+      if (!sel || !status) return;
+      const v = sel.value === 'allow' ? 'allow' : 'deny';
+      try {
+        // authFetch is a thin fetch wrapper that doesn't check res.ok — a
+        // 5xx from the server still resolves the promise. Without this guard
+        // the UI would lie ("已保存") on a failed write.
+        const res = await authFetch('/api/env', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: { IMHUB_TIMEOUT_DEFAULT: v } }),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        status.textContent = t('approvalPolicySaved');
+        setTimeout(() => { status.textContent = ''; }, 4000);
+      } catch (err) {
+        status.textContent = t('saveFailed');
+      }
     }
 
     // ==========================================
@@ -1345,6 +1431,9 @@
       document.getElementById('svc-restart')?.addEventListener('click', () => svcAction('restart'));
       document.getElementById('svc-stop')?.addEventListener('click', () => svcAction('stop'));
       document.getElementById('svc-start')?.addEventListener('click', () => svcAction('start'));
+
+      // Approval Policy card — IMHUB_TIMEOUT_DEFAULT toggle.
+      document.getElementById('approval-policy-save')?.addEventListener('click', saveApprovalPolicy);
 
       // Add admin (Safety card → Admin Allowlist).
       document.getElementById('admin-add')?.addEventListener('click', async () => {

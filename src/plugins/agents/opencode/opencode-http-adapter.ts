@@ -26,8 +26,10 @@
 //      the adapter falls back to auto-`once` so non-IM call paths (web,
 //      scheduler) keep working.
 //   5. Exits cleanly on `session.status: idle` for the right session,
-//      surfaces `session.error`, and is bounded by OPENCODE_TIMEOUT_MS
-//      (default 30 min).
+//      surfaces `session.error`, and is bounded by an idle watchdog
+//      (OPENCODE_IDLE_TIMEOUT_MS / IMHUB_AGENT_IDLE_TIMEOUT_MS, default
+//      60 min, 0 = disabled) that fires only when the daemon goes
+//      completely silent — slow human approvals don't count.
 //
 // Selection: env IMHUB_OPENCODE_DRIVER=http picks this; anything else (incl
 // unset) picks the stdio adapter. See ./index.ts factory.
@@ -49,7 +51,11 @@ import { approvalBus as defaultApprovalBus, type ApprovalBus, type Decision } fr
 
 const log = rootLogger.child({ component: 'agent.opencode.http' })
 
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
+// Idle (no-SSE-event) timeout — matches the semantics in agent-base.ts: the
+// watchdog re-arms on every event the daemon emits, so slow human-in-the-loop
+// approvals don't count against the budget; only true silence does. Override
+// via OPENCODE_IDLE_TIMEOUT_MS or IMHUB_AGENT_IDLE_TIMEOUT_MS; set 0 to disable.
+const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
 
 /** Shape of an event arriving on opencode's /event SSE stream. Every field
  *  is optional because we are deliberately conservative — opencode's bus is
@@ -309,8 +315,21 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       ;(t as unknown as { unref?: () => void }).unref?.()
     })
 
-    const timeoutMs = resolveTimeout()
-    const timeoutAt = Date.now() + timeoutMs
+    const idleTimeout = resolveIdleTimeout()
+    let watchdogTimedOut = false
+    // Idle watchdog: re-armed on every SSE event. Without this, an SSE that
+    // truly hangs (no events at all) would block the for-await forever — the
+    // old in-loop `Date.now() > timeoutAt` only fired when an event arrived.
+    let watchdog: ReturnType<typeof setTimeout> | null = null
+    const armWatchdog = (): void => {
+      if (idleTimeout <= 0) return
+      if (watchdog) clearTimeout(watchdog)
+      watchdog = setTimeout(() => {
+        watchdogTimedOut = true
+        sse.close()  // unblocks the for-await
+      }, idleTimeout)
+    }
+    armWatchdog()
 
     let surfacedError: string | null = null
     const yieldedPartIds = new Set<string>()
@@ -318,11 +337,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
 
     try {
       for await (const event of sse) {
-        if (Date.now() > timeoutAt) {
-          log.warn({ event: 'opencode.http.timeout', sessionID, timeoutMs }, 'http adapter timed out')
-          yield `\n\n⚠️ 处理超时（已超过 ${Math.round(timeoutMs / 60000)} 分钟）`
-          return
-        }
+        armWatchdog()
 
         if (event.type === 'permission.asked') {
           this.routeAsk(event, baseUrl, sessionID, callOpts)
@@ -347,7 +362,17 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
         }
       }
     } finally {
+      if (watchdog) clearTimeout(watchdog)
       sse.close()
+    }
+
+    if (watchdogTimedOut) {
+      const mins = Math.round(idleTimeout / 60000)
+      log.warn(
+        { event: 'opencode.http.idle-timeout', sessionID, idleTimeoutMs: idleTimeout, reason: 'idle' },
+        `opencode HTTP idle for ${mins}min — assumed hang, terminated`)
+      yield `\n\n⚠️ opencode 子进程 ${mins} 分钟无任何输出，强制超时（可能 hang 或网络挂起）`
+      return
     }
 
     const result = await promptPromise
@@ -702,13 +727,19 @@ function decisionToOpencodeReply(decision: Decision): { reply: 'once' | 'always'
     : { reply: 'reject' }
 }
 
-function resolveTimeout(): number {
-  const raw = process.env.OPENCODE_TIMEOUT_MS
-  if (raw) {
+function resolveIdleTimeout(): number {
+  const sources: Array<[string, string | undefined]> = [
+    ['OPENCODE_IDLE_TIMEOUT_MS', process.env.OPENCODE_IDLE_TIMEOUT_MS],
+    ['IMHUB_AGENT_IDLE_TIMEOUT_MS', process.env.IMHUB_AGENT_IDLE_TIMEOUT_MS],
+  ]
+  for (const [envKey, raw] of sources) {
+    if (raw === undefined) continue
     const n = parseInt(raw, 10)
-    if (Number.isFinite(n) && n > 0) return n
+    if (Number.isFinite(n) && n >= 0) return n
+    log.warn({ event: 'opencode.http.idle-timeout.invalid', raw, envKey },
+      `Invalid idle timeout env "${envKey}=${raw}", trying next source / default`)
   }
-  return DEFAULT_TIMEOUT_MS
+  return DEFAULT_IDLE_TIMEOUT_MS
 }
 
 async function safeText(res: Response): Promise<string> {

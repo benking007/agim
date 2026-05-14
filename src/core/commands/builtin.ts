@@ -180,7 +180,7 @@ const TOPIC_HELP_ZH: Record<string, string> = {
     SEP,
     '审批卡片回复',
     'y 同意 · n 拒绝 · all 本会话同类自动放行',
-    '(5 分钟未回 = 拒绝)',
+    '(超时默认行为见 Web 设置 → 审批策略)',
   ].join('\n'),
   workspaces: [
     '/workspaces (别名 /ws) — workspace 管理',
@@ -239,7 +239,7 @@ const TOPIC_HELP_EN: Record<string, string> = {
     SEP,
     'Approval card replies',
     'y allow · n deny · all auto-allow same kind in this session',
-    '(5 min no reply = deny)',
+    '(timeout policy: see Web Settings → Approval Policy)',
   ].join('\n'),
   workspaces: [
     '/workspaces (alias /ws) — workspace management',

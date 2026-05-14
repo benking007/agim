@@ -14,18 +14,36 @@ import type { AgentAdapter, AgentSendOpts, ChatMessage } from './types.js'
 import { crossSpawn } from '../utils/cross-platform.js'
 import { logger as rootLogger } from './logger.js'
 
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
+const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
 
-/** Resolve per-agent timeout: env var AGENT_TIMEOUT_MS or class default */
-function resolveTimeout(envKey: string, fallback: number): number {
-  const raw = process.env[envKey]
-  if (raw) {
+/**
+ * Idle (no-stdout) timeout for the agent child process.
+ *
+ * Previously a 30-min hard total-time cap that killed agents mid-conversation
+ * when a human took a long time to approve a tool call — "waiting on the
+ * user" is not "agent is dead", but the old setTimeout couldn't tell them
+ * apart. Switched to idle semantics: the watchdog arms a timer that resets
+ * on every stdout/stderr chunk, so slow human round-trips through the IM
+ * approval flow no longer count against the budget; only true silence
+ * (no events at all for `idleTimeout` ms) counts as hang.
+ *
+ * Priority: `${NAME}_IDLE_TIMEOUT_MS` > `IMHUB_AGENT_IDLE_TIMEOUT_MS` > default.
+ * Setting any of these to `0` disables the watchdog entirely (relies on the
+ * agent's internal timeouts plus manual termination).
+ */
+function resolveIdleTimeout(perAgentEnvKey: string): number {
+  const sources: Array<[string, string | undefined]> = [
+    [perAgentEnvKey, process.env[perAgentEnvKey]],
+    ['IMHUB_AGENT_IDLE_TIMEOUT_MS', process.env.IMHUB_AGENT_IDLE_TIMEOUT_MS],
+  ]
+  for (const [envKey, raw] of sources) {
+    if (raw === undefined) continue
     const n = parseInt(raw, 10)
-    if (Number.isFinite(n) && n > 0) return n
-    rootLogger.warn({ event: 'agent.timeout.invalid', raw, envKey, fallback },
-      `Invalid timeout env "${envKey}=${raw}", using default ${Math.round(fallback / 60000)}min`)
+    if (Number.isFinite(n) && n >= 0) return n
+    rootLogger.warn({ event: 'agent.idle-timeout.invalid', raw, envKey },
+      `Invalid idle timeout env "${envKey}=${raw}", trying next source / default`)
   }
-  return fallback
+  return DEFAULT_IDLE_TIMEOUT_MS
 }
 
 /**
@@ -209,9 +227,12 @@ export abstract class AgentBase implements AgentAdapter {
     return `Previous conversation context:\n${historyText}\n\nCurrent request: ${prompt}`
   }
 
-  /** Per-agent timeout in ms. Override or set env var (upper-case name + _TIMEOUT_MS). */
-  protected get timeoutMs(): number {
-    return resolveTimeout(`${this.name.toUpperCase()}_TIMEOUT_MS`, DEFAULT_TIMEOUT_MS)
+  /** Idle (no-stdout) timeout for the agent child process in ms. Override per
+   *  agent via `${NAME}_IDLE_TIMEOUT_MS`, globally via `IMHUB_AGENT_IDLE_TIMEOUT_MS`,
+   *  or set 0 to disable. Default 60 min — long enough to ride out an hour-long
+   *  human-in-the-loop pause, short enough to reap a truly hung child. */
+  protected get idleTimeoutMs(): number {
+    return resolveIdleTimeout(`${this.name.toUpperCase()}_IDLE_TIMEOUT_MS`)
   }
 
   /**
@@ -232,7 +253,7 @@ export abstract class AgentBase implements AgentAdapter {
    * with cleanup of all timers and listeners.
    */
   protected async *spawnStream(prompt: string, signal?: AbortSignal, opts: AgentSendOpts = {}): AsyncGenerator<string> {
-    const timeout = this.timeoutMs
+    const idleTimeout = this.idleTimeoutMs
 
     // prepareCommand returns a self-contained plan — args, optional extra env,
     // optional cleanup. No instance state involved, so concurrent spawnStream
@@ -265,12 +286,11 @@ export abstract class AgentBase implements AgentAdapter {
     const wait = (): Promise<void> => new Promise((resolve) => { notify = resolve })
     const ping = (): void => { const n = notify; notify = null; n?.() }
 
-    const timer = setTimeout(() => {
-      timedOut = true
-      try { proc.kill('SIGTERM') } catch { /* ignore */ }
-      ping()
-    }, timeout)
-
+    // Idle watchdog: re-armed every time stdout or stderr emits a chunk.
+    // Only fires when the child has been completely silent for `idleTimeout`
+    // ms — slow human approvals routed through the IM don't count, because
+    // when the approval finally returns the agent resumes and the next
+    // stdout chunk resets the timer. Pass idleTimeout=0 to disable.
     let killTimer: ReturnType<typeof setTimeout> | null = null
     const scheduleKill = (): void => {
       if (killTimer) return
@@ -278,6 +298,24 @@ export abstract class AgentBase implements AgentAdapter {
         try { proc.kill('SIGKILL') } catch { /* ignore */ }
       }, 5000)
     }
+
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    const armIdleTimer = (): void => {
+      if (idleTimeout <= 0) return
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        timedOut = true
+        try { proc.kill('SIGTERM') } catch { /* ignore */ }
+        // Escalate to SIGKILL after 5s if the child ignores SIGTERM — matches
+        // the abort path. Without this, a process that's wedged in a signal-
+        // ignoring state (uninterruptible syscall, signal mask, ...) would
+        // never die and the spawnStream consumer would hang waiting for the
+        // close event that never comes.
+        scheduleKill()
+        ping()
+      }, idleTimeout)
+    }
+    armIdleTimer()
 
     const onAbort = (): void => {
       aborted = true
@@ -294,6 +332,7 @@ export abstract class AgentBase implements AgentAdapter {
     }
 
     proc.stdout?.on('data', (data: Buffer) => {
+      armIdleTimer()
       const lines = buf.push(data)
       for (const line of lines) {
         if (!line.trim()) continue
@@ -317,6 +356,7 @@ export abstract class AgentBase implements AgentAdapter {
     })
 
     proc.stderr?.on('data', (data: Buffer) => {
+      armIdleTimer()
       stderrAccum += data.toString()
       // Surface to root logger as warn — pino-aware, no console.error noise
       for (const line of stderrBuf.push(data)) {
@@ -368,10 +408,11 @@ export abstract class AgentBase implements AgentAdapter {
       }
 
       if (timedOut) {
-        const mins = Math.round(timeout / 60000)
-        rootLogger.warn({ component: `agent.${this.name}`, agent: this.name, timeoutMs: timeout },
-          `[${this.name}] timeout after ${mins}min`)
-        yield `\n\n⚠️ 处理超时（已超过 ${mins} 分钟）`
+        const mins = Math.round(idleTimeout / 60000)
+        rootLogger.warn(
+          { component: `agent.${this.name}`, agent: this.name, idleTimeoutMs: idleTimeout, reason: 'idle' },
+          `[${this.name}] killed after ${mins}min of no stdout/stderr (likely hang)`)
+        yield `\n\n⚠️ agent 子进程 ${mins} 分钟无任何输出，强制超时（可能 hang 或网络挂起）`
         return
       }
 
@@ -405,7 +446,7 @@ export abstract class AgentBase implements AgentAdapter {
         yield `${this.name} failed (exit ${exitCode})${detail ? `: ${detail}` : ''}`
       }
     } finally {
-      clearTimeout(timer)
+      if (idleTimer) clearTimeout(idleTimer)
       if (killTimer) clearTimeout(killTimer)
       if (signal) signal.removeEventListener('abort', onAbort)
       if (plan.cleanup) {

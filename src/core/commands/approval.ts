@@ -11,15 +11,16 @@
 // per-thread opt-out — both also keyed by the same composite.
 
 import type { RouteContext } from '../router.js'
-import { approvalBus, threadKey } from '../approval-bus.js'
+import { approvalBus, humanizeFingerprint, threadKey } from '../approval-bus.js'
 
 function formatRuleKey(key: string): string {
-  // Keys are stored as `${toolName}::${prefix}` — split for prettier rendering.
+  // Keys are stored as `${toolName}::${fingerprint}`. humanizeFingerprint
+  // translates `cmd:git+status` → `命令 git status`, `dir:/tmp` → `目录 /tmp`,
+  // etc. Legacy/unknown fingerprints pass through unchanged.
   const sep = key.indexOf('::')
   if (sep < 0) return key
   const tool = key.slice(0, sep)
-  const prefix = key.slice(sep + 2)
-  return `• ${tool}  前缀 "${prefix}"`
+  return `• ${tool}  ${humanizeFingerprint(key.slice(sep + 2))}`
 }
 
 export async function handleApprovalCommand(
@@ -76,7 +77,8 @@ export async function handleApprovalCommand(
       '📋 本会话当前没有自动放行规则。',
       '',
       '在审批提示出现时回复 all（或 全部 / 总是）即可启用：',
-      '将以 (工具, 入参前 5 字符) 为粒度，命中后 5s 内自动放行。',
+      '规则粒度按工具语义：Bash 看前两个 token，Read/Write 看目录，WebFetch 看主机',
+      '命中后 5s 内自动放行（点 ❌ 可同时撤销规则）。',
       '',
       roLine,
     ].join('\n')

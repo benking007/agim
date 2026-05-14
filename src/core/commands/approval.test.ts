@@ -70,19 +70,20 @@ describe('handleApprovalCommand', () => {
   it('lists active rules with tool + prefix', async () => {
     const sock1 = await seedRule(path, 'run-X', 'r1', 'Bash', 'git status -s')
     const sock2 = await seedRule(path, 'run-X', 'r2', 'Bash', 'rm -rf /tmp/x')
-    // M13: AUTO_ALLOW_PREFIX_LEN bumped 5 → 10 so the rule keys carry
-    // 10 characters of the input. `git status -s` is 13 chars, prefix10
-    // is `git status`; `rm -rf /tmp/x` is 13 chars, prefix10 is
-    // `rm -rf /tm`.
+    // Bash fingerprint = `cmd:` + first two whitespace tokens. `git status -s`
+    // → `cmd:git+status`; `rm -rf /tmp/x` → `cmd:rm+-rf`.
     expect(approvalBus.getAutoAllowKeys(KEY).sort()).toEqual([
-      'Bash::git status', 'Bash::rm -rf /tm',
+      'Bash::cmd:git+status', 'Bash::cmd:rm+-rf',
     ])
 
     const out = await handleApprovalCommand('', makeRouteCtx())
     expect(out).toContain('本会话自动放行规则 (2)')
     expect(out).toContain('Bash')
-    expect(out).toContain('git status')
-    expect(out).toContain('rm -rf')
+    // formatRuleKey renders `cmd:git+status` as "命令 git status" — the `+`
+    // separator is internal-only, presented as the space the user originally
+    // typed.
+    expect(out).toContain('命令 git status')
+    expect(out).toContain('命令 rm -rf')
 
     sock1.end(); sock2.end()
   })

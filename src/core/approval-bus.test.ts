@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import {
   ApprovalBus,
+  inputFingerprint,
   threadKey,
   type ApprovalNotification,
   type RunContext,
@@ -165,10 +166,11 @@ describe('ApprovalBus', () => {
     const resolved = bus.resolvePending(KEY, { behavior: 'allow' })
     expect(resolved).not.toBeNull()
     expect(resolved?.toolName).toBe('Bash')
-    // M13: fingerprint length bumped 5 → 10 to reduce false matches
-    // (`git p` would alias to `git push` AND `git pull` AND `git pr…`;
-    //  at 10 chars `git push` stays distinct from `git pull` family).
-    expect(resolved?.fingerprint).toBe('git push')
+    // Bash fingerprint = `cmd:` prefix + first two whitespace-separated
+    // tokens. `git push` and `git pull` get distinct keys (`cmd:git+push`
+    // vs `cmd:git+pull`); subcommand variants like `git push -f` share
+    // `cmd:git+push`.
+    expect(resolved?.fingerprint).toBe('cmd:git+push')
     expect(resolved?.platform).toBe('feishu')
     expect(resolved?.wasAutoAllow).toBe(false)
     expect(bus.hasPendingFor(KEY)).toBe(false)
@@ -398,7 +400,7 @@ describe('ApprovalBus', () => {
     expect(connectErr).not.toBeNull()
   })
 
-  it('notifier rejection → auto deny', async () => {
+  it('notifier rejection → auto deny, forwarding the error message', async () => {
     bus.registerRun('run-1', RUN_CTX)
     bus.setNotifier(async () => { throw new Error('messenger down') })
 
@@ -410,8 +412,28 @@ describe('ApprovalBus', () => {
 
     const decision = await client.next()
     expect(decision.behavior).toBe('deny')
-    expect(decision.message).toBe('notifier error')
+    // The notifier's err.message reaches the agent verbatim so users see
+    // meaningful text (e.g. self-protect's redirect to /restart) instead
+    // of a generic "notifier error" string.
+    expect(decision.message).toBe('messenger down')
     expect(bus.hasPendingFor(KEY)).toBe(false)
+
+    await client.close()
+  })
+
+  it('notifier rejection with non-Error throw → fallback message', async () => {
+    bus.registerRun('run-2', RUN_CTX)
+    bus.setNotifier(async () => { throw 'plain string'  /* eslint-disable-line */ })
+
+    const client = await connectClient(path)
+    client.send({
+      v: 1, type: 'approval', runId: 'run-2', reqId: 'req-2',
+      toolName: 'Bash', input: {}, toolUseId: 'tu-2',
+    })
+
+    const decision = await client.next()
+    expect(decision.behavior).toBe('deny')
+    expect(decision.message).toBe('notifier error')
 
     await client.close()
   })
@@ -438,9 +460,9 @@ describe('ApprovalBus', () => {
       expect(d1.behavior).toBe('allow')
       // Wire payload must NOT carry autoAllowFurther — that's internal-only.
       expect(d1.autoAllowFurther).toBeUndefined()
-      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::git status'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::cmd:git+status'])
 
-      // Second call — same tool + same prefix → grace mode
+      // Second call — same Bash verb pair (`git status`) → grace mode
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-2',
         toolName: 'Bash', input: { command: 'git status' }, toolUseId: 'tu-2',
@@ -471,14 +493,15 @@ describe('ApprovalBus', () => {
       // Seed a rule directly via the public path (allow+autoAllowFurther).
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-seed',
-        // Long enough for the 10-char prefix to land on a shared region
-        // with the second call below (`rm -rf /tm` is the fingerprint).
+        // First two tokens (`rm -rf`) form the Bash fingerprint, so this
+        // rule covers the second call below regardless of which path it
+        // targets.
         toolName: 'Bash', input: { command: 'rm -rf /tmp/x' }, toolUseId: 'tu-1',
       })
       await sleep(20)
       fastBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
       await client.next()
-      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::rm -rf /tm'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::cmd:rm+-rf'])
 
       // Second call hits the rule → grace mode. User explicitly denies.
       client.send({
@@ -516,8 +539,8 @@ describe('ApprovalBus', () => {
       await client.next()
 
       // Open a 2nd request that hits the rule (auto-allow grace). Both
-      // commands share the first 10 chars (`ls -la /tm`) so they map to
-      // the same fingerprint after the AUTO_ALLOW_PREFIX_LEN bump.
+      // commands share the first two tokens (`ls -la`) so they map to
+      // the same `cmd:` fingerprint regardless of path argument.
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-2',
         toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-other' }, toolUseId: 'tu-2',
@@ -529,7 +552,7 @@ describe('ApprovalBus', () => {
       fastBus.unregisterRun('run-1')
       const d = await client.next()
       expect(d.behavior).toBe('deny')
-      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::ls -la /tm'])
+      expect(fastBus.getAutoAllowKeys(KEY)).toEqual(['Bash::cmd:ls+-la'])
 
       await client.close()
     } finally {
@@ -619,5 +642,123 @@ describe('ApprovalBus', () => {
     expect(m.totalAllowed + m.totalDenied + m.totalTimedOut).toBe(m.totalResolved)
 
     await client.close()
+  })
+})
+
+describe('inputFingerprint — semantic per-tool keys', () => {
+  describe('Bash', () => {
+    it('keys by first two whitespace-separated tokens', () => {
+      expect(inputFingerprint('Bash', { command: 'git status' })).toBe('cmd:git+status')
+      expect(inputFingerprint('Bash', { command: 'git push origin main' })).toBe('cmd:git+push')
+    })
+    it('subcommand variants share a rule (status / status -s)', () => {
+      expect(inputFingerprint('Bash', { command: 'git status' }))
+        .toBe(inputFingerprint('Bash', { command: 'git status -s' }))
+    })
+    it('different subcommands of the same verb are distinct rules', () => {
+      const a = inputFingerprint('Bash', { command: 'git status' })
+      const b = inputFingerprint('Bash', { command: 'git stash' })
+      const c = inputFingerprint('Bash', { command: 'git submodule update' })
+      expect(a).not.toBe(b)
+      expect(a).not.toBe(c)
+      expect(b).not.toBe(c)
+    })
+    it('single-token commands collapse to `cmd:verb`', () => {
+      expect(inputFingerprint('Bash', { command: 'pwd' })).toBe('cmd:pwd')
+      expect(inputFingerprint('Bash', { command: '  ls   ' })).toBe('cmd:ls')
+    })
+    it('extra whitespace inside the command does not affect the key', () => {
+      expect(inputFingerprint('Bash', { command: '  git    push  ' })).toBe('cmd:git+push')
+    })
+    it('missing command falls back to raw:', () => {
+      expect(inputFingerprint('Bash', {})).toMatch(/^raw:/)
+    })
+  })
+
+  describe('path-based tools (Read/Write/Edit/...)', () => {
+    it('keys by dirname so all files in a directory share a rule', () => {
+      const a = inputFingerprint('Read', { file_path: '/tmp/a.txt' })
+      const b = inputFingerprint('Read', { file_path: '/tmp/b.txt' })
+      expect(a).toBe('dir:/tmp')
+      expect(b).toBe('dir:/tmp')
+      expect(a).toBe(b)
+    })
+    it('different directories are distinct rules', () => {
+      expect(inputFingerprint('Read', { file_path: '/tmp/x' }))
+        .not.toBe(inputFingerprint('Read', { file_path: '/etc/passwd' }))
+    })
+    it('nested subdirs are distinct', () => {
+      expect(inputFingerprint('Read', { file_path: '/tmp/sub/y' })).toBe('dir:/tmp/sub')
+      expect(inputFingerprint('Read', { file_path: '/tmp/sub/y' }))
+        .not.toBe(inputFingerprint('Read', { file_path: '/tmp/y' }))
+    })
+    it('Read and Write for the same dir live under DIFFERENT rule keys', () => {
+      // Rule key = `${toolName}::${fingerprint}`. Same fingerprint, different
+      // tool → different rule. Approving Read /tmp/x does NOT auto-allow
+      // Write /tmp/y.
+      const fpRead = inputFingerprint('Read', { file_path: '/tmp/x' })
+      const fpWrite = inputFingerprint('Write', { file_path: '/tmp/y' })
+      expect(fpRead).toBe(fpWrite) // same fingerprint string
+      // But the bus combines toolName + fingerprint → different rule key.
+      expect(`Read::${fpRead}`).not.toBe(`Write::${fpWrite}`)
+    })
+    it('relative paths with no dirname fall back to path:', () => {
+      expect(inputFingerprint('Read', { file_path: 'file.txt' })).toBe('path:file.txt')
+    })
+    it('falls back to the `path` field when `file_path` is absent', () => {
+      expect(inputFingerprint('LS', { path: '/var/log' })).toBe('dir:/var')
+    })
+    it('missing path falls back to raw:', () => {
+      expect(inputFingerprint('Read', {})).toMatch(/^raw:/)
+    })
+  })
+
+  describe('WebFetch', () => {
+    it('keys by hostname so different paths on the same host share a rule', () => {
+      const a = inputFingerprint('WebFetch', { url: 'https://api.openai.com/v1/foo' })
+      const b = inputFingerprint('WebFetch', { url: 'https://api.openai.com/v2/bar' })
+      expect(a).toBe('host:api.openai.com')
+      expect(a).toBe(b)
+    })
+    it('different hosts are distinct rules', () => {
+      expect(inputFingerprint('WebFetch', { url: 'https://api.openai.com/foo' }))
+        .not.toBe(inputFingerprint('WebFetch', { url: 'https://api.anthropic.com/foo' }))
+    })
+    it('URLs with port strip the port from the hostname', () => {
+      expect(inputFingerprint('WebFetch', { url: 'http://api.x.com:8080/foo' }))
+        .toBe('host:api.x.com')
+    })
+    it('malformed URLs fall back to url: prefix', () => {
+      expect(inputFingerprint('WebFetch', { url: 'not a url' })).toMatch(/^url:/)
+    })
+  })
+
+  describe('WebSearch / Glob / Grep', () => {
+    it('WebSearch keys on query prefix', () => {
+      expect(inputFingerprint('WebSearch', { query: 'agim docs' })).toBe('query:agim docs')
+    })
+    it('Glob keys on pattern prefix', () => {
+      expect(inputFingerprint('Glob', { pattern: '**/*.ts' })).toBe('pat:**/*.ts')
+    })
+    it('Grep keys on pattern prefix', () => {
+      expect(inputFingerprint('Grep', { pattern: 'TODO' })).toBe('pat:TODO')
+    })
+  })
+
+  describe('unknown tools / fallback', () => {
+    it('falls back to raw: JSON prefix', () => {
+      const fp = inputFingerprint('mcp__some__tool', { foo: 'bar', baz: 42 })
+      expect(fp).toMatch(/^raw:/)
+      expect(fp.length).toBeGreaterThan('raw:'.length)
+    })
+  })
+
+  describe('key-space disambiguation', () => {
+    it('prefixes prevent cross-scheme aliasing', () => {
+      // A path that happens to look like a hostname must NOT alias to a host.
+      const path = inputFingerprint('Read', { file_path: '/api.openai.com' })
+      const host = inputFingerprint('WebFetch', { url: 'https://api.openai.com' })
+      expect(path).not.toBe(host)
+    })
   })
 })

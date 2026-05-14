@@ -33,8 +33,8 @@ class ScriptAgent extends AgentBase {
     return ''
   }
 
-  protected get timeoutMs(): number {
-    return this.perAgentTimeoutMs ?? super.timeoutMs
+  protected get idleTimeoutMs(): number {
+    return this.perAgentTimeoutMs ?? super.idleTimeoutMs
   }
 
   protected handleError(code: number, _stderr: string, errorMessage: string): string | null {

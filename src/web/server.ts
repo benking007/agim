@@ -1568,6 +1568,11 @@ const ENV_EDITABLE_KEYS = [
   // Safety card toggle — drives the Claude --dangerously-skip-permissions
   // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
   'IMHUB_DANGEROUSLY_SKIP_PERMISSIONS',
+  // Approval Policy card — 'allow' | 'deny' (default deny). Decides what the
+  // approval bus does when a tool-use prompt times out with no human reply.
+  // Hot-reload: handlePutEnv mutates process.env so approval-bus picks up the
+  // new value on the next timer fire, no restart needed.
+  'IMHUB_TIMEOUT_DEFAULT',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
 
@@ -1615,6 +1620,15 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
     }
     const { updateEnvFile } = await import('../cli-ui/env-file.js')
     updateEnvFile(safe)
+    // Hot-reload: mutate process.env so modules that re-read on use (e.g.
+    // approval-bus's isTimeoutDefaultAllow) pick up the change without
+    // waiting for a service restart. Modules that capture at module load
+    // (most SMTP / Baidu callers) still need a restart to see the new value
+    // — that's a per-module decision, not enforced here.
+    for (const [k, v] of Object.entries(safe)) {
+      if (v === null) delete process.env[k]
+      else process.env[k] = v
+    }
     sendJson(res, 200, { ok: true, updated: Object.keys(safe) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

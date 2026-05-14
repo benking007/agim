@@ -16,22 +16,41 @@
 import { createServer, type Server, type Socket } from 'node:net'
 import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
-// Bumped from 5 min to 30 min so slower IM channels (e.g. Telegram, where
-// notifications can land minutes after the bot.api.sendMessage logs success)
-// have time to round-trip a y/n reply. Aligned with Claude's own 30 min hard
-// timeout so we never outlive the underlying agent process.
+// Default 15 min — long enough for slower IM channels (Telegram, where
+// notifications can land minutes after bot.api.sendMessage logs success) to
+// round-trip a y/n reply, short enough not to block downstream tools for
+// hours. agent-base.ts now uses an idle-based timer (resets on every stdout
+// chunk) instead of a fixed total-time cap, so this approval timeout is no
+// longer constrained to "outlive the agent process" — the agent only dies
+// after IMHUB_AGENT_IDLE_TIMEOUT_MS of complete silence.
 const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
   process.env.IMHUB_APPROVAL_TIMEOUT_MS,
-  30 * 60 * 1000,
+  15 * 60 * 1000,
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
+
+// IMHUB_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
+// returns when a normal-mode approval times out without a user response.
+// Auto-allow grace expiry is unaffected — it always resolves to allow.
+// Setting this to 'allow' is "user away" mode: the agent keeps moving even
+// when nobody's at the IM, at the cost of weaker human oversight on
+// write-side tool calls (Bash/Edit/Write/etc). Default deny preserves the
+// original strict behavior.
+//
+// Read at every timer fire (not captured at module load) so the Web Settings
+// "Approval Policy" card can hot-toggle the value — handlePutEnv mutates
+// process.env after updating ~/.agim/env, and the next timer that expires
+// picks up the new value with no restart.
+export function isTimeoutDefaultAllow(): boolean {
+  return (process.env.IMHUB_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
+}
 
 /**
  * Tools whose contract is "read filesystem state, return it" — no writes,
@@ -70,20 +89,11 @@ function parseEnvMs(raw: string | undefined, fallback: number): number {
 const MAX_LINE_BYTES = 256 * 1024
 const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
 
-/** Length of the input prefix used to fingerprint an auto-allow rule.
- *  `(toolName, input-prefix)` is the dedup key.
- *
- *  Bumped from 5 → 10 (M13). 5 collapsed `bash::git s` so the rule
- *  matched `git status` AND `git stash` AND `git submodule update` — far
- *  broader than users meant when they OK'd a single command. 10 keeps
- *  the three common families distinct (`git status` ≠ `git stash` ≠
- *  `git submo`) while still grouping benign variations of the same
- *  operation (e.g. `git status` ≈ `git status -s`).
- *
- *  Why not longer? Most realistic commands are 6–14 chars, and pushing
- *  past 10 means even `git status` vs `git status -s` are treated as
- *  distinct, defeating the "approve once for variants" UX. 10 is the
- *  sweet spot per CR-2026-05-06. */
+/** Fallback prefix length for tools without a semantic key (Glob/Grep
+ *  patterns, WebSearch queries, unknown tools). The mainline path uses
+ *  per-tool semantic fingerprints — see inputFingerprint() — so this only
+ *  governs the long tail. Kept at 10 for parity with the pre-semantic
+ *  behavior. */
 const AUTO_ALLOW_PREFIX_LEN = 10
 
 export interface RunContext {
@@ -219,8 +229,10 @@ export interface ApprovalBusOptions {
 export class ApprovalBus {
   private server: Server | null = null
   private socketPath: string | null = null
-  private readonly approvalTimeoutMs: number
-  private readonly autoAllowGraceMs: number
+  /** Public so renderers (approval-router plain-text prompt, future card
+   *  variants) can show the actual budget instead of hardcoded "5 分钟". */
+  public readonly approvalTimeoutMs: number
+  public readonly autoAllowGraceMs: number
 
   private runContexts = new Map<string, RunContext>()
   private pendingById = new Map<string, PendingApproval>()
@@ -912,7 +924,7 @@ export class ApprovalBus {
     ctx: RunContext
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
-    const fingerprint = inputFingerprint(args.input)
+    const fingerprint = inputFingerprint(args.toolName, args.input)
     const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
 
     // Readonly auto-allow short-circuit. Must come BEFORE pending registration
@@ -964,6 +976,8 @@ export class ApprovalBus {
       timer: setTimeout(() => {
         if (isAutoAllow) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
+        } else if (isTimeoutDefaultAllow()) {
+          this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
         } else {
           this.cancelPending(pending, { behavior: 'deny', message: 'approval timeout' }, 'timeout')
         }
@@ -1002,7 +1016,12 @@ export class ApprovalBus {
       })
     } catch (err) {
       log.error({ event: 'approval.bus.notifier_error', reqId: args.reqId, err: String(err) })
-      this.cancelPending(pending, { behavior: 'deny', message: 'notifier error' }, 'notifier-error')
+      // Forward the actual error message to the agent so users see meaningful
+      // text — most notably self-protect's "🛑 检测到尝试…请改用 /restart"
+      // redirect, which was previously swallowed and replaced with a useless
+      // "notifier error". For non-Error throws we keep the old fallback.
+      const errMsg = err instanceof Error && err.message ? err.message : 'notifier error'
+      this.cancelPending(pending, { behavior: 'deny', message: errMsg }, 'notifier-error')
     }
   }
 
@@ -1117,7 +1136,22 @@ export class ApprovalBus {
   }
 
   private sendDecision(socket: Socket, reqId: string, decision: Decision): void {
-    if (!socket.writable) return
+    if (!socket.writable) {
+      // Silent drop — agent never gets the decision and hangs until its own
+      // MCP-side timeout. Log loudly so users diagnosing "auto-allow showed
+      // the card but didn't fire" (and similar "approval landed but tool
+      // didn't run" reports) have a breadcrumb. Most often happens when the
+      // sidecar socket entered half-closed state between timer fire and
+      // write (e.g. claude process exited a few ms before grace timer
+      // expiry).
+      log.warn({
+        event: 'approval.bus.send_dropped',
+        reqId,
+        decision: decision.behavior,
+        reason: 'socket-not-writable',
+      }, 'cannot deliver decision: sidecar socket no longer writable')
+      return
+    }
     // Strip internal-only flags (e.g. autoAllowFurther) — sidecar only
     // understands the wire schema.
     const wire: Record<string, unknown> = { v: 1, type: 'decision', reqId, behavior: decision.behavior }
@@ -1138,25 +1172,115 @@ function autoAllowRuleKey(toolName: string, fingerprint: string): string {
 }
 
 /**
- * Pick a stable, short prefix of the input as the auto-allow fingerprint.
+ * Translate a raw fingerprint string (e.g. `cmd:git+status`) into the
+ * human-readable form shown in IM receipts and `/approval` listings
+ * (e.g. `命令 git status`). The inverse of inputFingerprint()'s internal
+ * encoding — keep the scheme list in sync if you add new fingerprint
+ * variants.
  *
- * Strategy: try the field most users mean when they say "this kind of
- * call" for the common Claude tools (Bash → command, Write/Edit/Read →
- * file_path, etc.); fall back to a stringified snapshot. Always truncated
- * to AUTO_ALLOW_PREFIX_LEN so the rule covers small variations of the
- * same operation but not unrelated ones.
+ * Unknown / legacy schemes pass through unchanged so the function is
+ * forward-compatible with future fingerprint additions and backward-
+ * compatible with rules created before the semantic split (no scheme).
  */
-function inputFingerprint(input: Record<string, unknown>): string {
-  const FIELDS = ['command', 'file_path', 'path', 'url', 'pattern', 'query']
-  for (const f of FIELDS) {
-    const v = input[f]
-    if (typeof v === 'string' && v.length > 0) {
-      return v.slice(0, AUTO_ALLOW_PREFIX_LEN)
+export function humanizeFingerprint(fingerprint: string): string {
+  const sep = fingerprint.indexOf(':')
+  if (sep < 0) return fingerprint
+  const scheme = fingerprint.slice(0, sep)
+  const rest = fingerprint.slice(sep + 1)
+  switch (scheme) {
+    case 'cmd':   return `命令 ${rest.replace(/\+/g, ' ')}`
+    case 'dir':   return `目录 ${rest}`
+    case 'host':  return `主机 ${rest}`
+    case 'path':  return `路径 ${rest}`
+    case 'pat':   return `模式 ${rest}`
+    case 'query': return `查询 ${rest}`
+    case 'url':   return `URL ${rest}`
+    case 'raw':   return `入参 ${rest}`
+    default:      return fingerprint
+  }
+}
+
+/**
+ * Compute the auto-allow fingerprint — the "kind" of call that, when
+ * approved with `all`, covers future similar calls.
+ *
+ * Semantic per tool (rather than a uniform prefix slice) — fixes two
+ * footguns of the old prefix-based approach:
+ *   1. `Bash git status` and `git stash` collided at 5 chars but split at
+ *      10 — neither setting matched user intuition. We extract the first
+ *      two tokens (`cmd:git+status` vs `cmd:git+stash`) so the family is
+ *      narrow and predictable.
+ *   2. `Read /tmp/a.txt` and `Read /tmp/b.txt` got distinct fingerprints
+ *      at any prefix length below the filename, forcing users to re-`all`
+ *      every file. We key on dirname (`dir:/tmp`) so one approval covers
+ *      the whole directory.
+ *
+ * Prefixes (`cmd:` / `dir:` / `host:` / `path:` / `pat:` / `query:` /
+ * `url:` / `raw:`) keep the key space disambiguated — rules from
+ * different schemes can never accidentally alias each other, and `raw:`
+ * preserves backward compatibility for unknown tools.
+ *
+ * EXPORTED for unit tests. Not part of the bus's public API; production
+ * call sites all live inside this module.
+ */
+export function inputFingerprint(toolName: string, input: Record<string, unknown>): string {
+  const getStr = (k: string): string | null => {
+    const v = input[k]
+    return typeof v === 'string' && v.length > 0 ? v : null
+  }
+
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = getStr('command')
+      if (!cmd) break
+      // First 1–2 whitespace-separated tokens. Quoted strings aren't
+      // unwrapped — we want `bash -c "..."` to fingerprint as `bash+-c`,
+      // not whatever's inside the quotes (the user is approving "running
+      // bash -c", a meta-pattern).
+      const tokens = cmd.trim().split(/\s+/).slice(0, 2)
+      return `cmd:${tokens.join('+')}`
+    }
+
+    case 'Read': case 'Write': case 'Edit': case 'NotebookEdit':
+    case 'NotebookRead': case 'LS': {
+      const fp = getStr('file_path') ?? getStr('path')
+      if (!fp) break
+      // dirname('/tmp/x.txt') → '/tmp'  (group all files in dir)
+      // dirname('file.txt')   → '.'     (no dir — fall back to the path
+      //                                  itself so we don't lump every
+      //                                  relative-path call together)
+      const d = dirname(fp)
+      return d === '.' || d === '' ? `path:${fp.slice(0, AUTO_ALLOW_PREFIX_LEN)}` : `dir:${d}`
+    }
+
+    case 'WebFetch': {
+      const u = getStr('url')
+      if (!u) break
+      // Hostname captures "calls to this API"; path / query string are
+      // intentionally dropped — they vary per call but the user means
+      // "trust this host" when they say `all`.
+      try { return `host:${new URL(u).hostname}` }
+      catch { return `url:${u.slice(0, AUTO_ALLOW_PREFIX_LEN)}` }
+    }
+
+    case 'WebSearch': {
+      const q = getStr('query')
+      if (!q) break
+      return `query:${q.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
+    }
+
+    case 'Glob': case 'Grep': {
+      const p = getStr('pattern')
+      if (!p) break
+      return `pat:${p.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
     }
   }
+
+  // Unknown tool or known tool whose primary field was missing — fall
+  // back to a stringified prefix so the dedup key remains stable.
   let s: string
   try { s = JSON.stringify(input) } catch { s = '' }
-  return s.slice(0, AUTO_ALLOW_PREFIX_LEN)
+  return `raw:${s.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
 }
 
 function defaultSocketPath(): string {

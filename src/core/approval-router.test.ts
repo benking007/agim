@@ -363,7 +363,8 @@ describe('install / uninstall — full loop with fake messenger', () => {
       toolName: 'Bash', input: { command: 'rm -rf /tmp/y' }, toolUseId: 'tu2',
     })}\n`)
     for (let i = 0; i < 50 && sent.length < 3; i++) await new Promise((r) => setTimeout(r, 10))
-    expect(sent[2].text).toContain('自动放行中')
+    // Plain-text auto-allow header — compact form, just "自动放行 · <tool> · ...".
+    expect(sent[2].text).toContain('自动放行')
 
     // User actively denies → receipt confirms revocation
     tryHandleApprovalReply(KEY, 'n')

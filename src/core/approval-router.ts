@@ -14,6 +14,8 @@ import type {
 } from './types.js'
 import {
   approvalBus,
+  humanizeFingerprint,
+  isTimeoutDefaultAllow,
   type ApprovalNotification,
   type Decision,
   type ResolvedInfo,
@@ -92,67 +94,137 @@ function displayToolName(name: string): string {
   return name
 }
 
-/**
- * Render the input payload as a multiline body. Known tools (Bash / Read /
- * Edit / Write / Grep / Glob / WebFetch) get a single labelled line for
- * their primary field. Unknown tools fall back to compact JSON, truncated.
- *
- * The goal is "user can decide y/n in 1 second" — they shouldn't have to
- * mentally parse JSON for the most common tools.
- */
-function formatInputBody(toolName: string, input: Record<string, unknown>, maxLen: number): string {
-  // Single-field shortcuts for built-in claude-code tools.
-  const single = (label: string, key: string): string | null => {
-    const v = input[key]
-    if (typeof v !== 'string') return null
-    const truncated = v.length > maxLen ? `${v.slice(0, maxLen - 1)}…` : v
-    return `${label}：${truncated}`
+/** Human-readable byte count, no decimals for B, one for KB/MB. */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`
+  return `${(n / 1024 / 1024).toFixed(1)}MB`
+}
+
+/** Pull a string field iff present and (optionally) short enough to inline
+ *  next to the tool name in the header row. Returns null when the field is
+ *  missing, non-string, multi-line, or longer than `max`. */
+function inlineableField(v: unknown, max = 60): string | null {
+  if (typeof v !== 'string') return null
+  if (v.length > max || v.includes('\n')) return null
+  return v
+}
+
+/** Header-row "primary parameter" for common tools — file_path, URL, short
+ *  pattern, or short Bash command. Returns null when the primary field is
+ *  too long for the header; in that case the body block renders it as a
+ *  separate labelled line. */
+function primaryInlineParam(toolName: string, input: Record<string, unknown>): string | null {
+  switch (toolName) {
+    case 'Read': case 'NotebookRead': case 'Edit': case 'Write':
+    case 'NotebookEdit': case 'LS':
+      return inlineableField(input.file_path) ?? inlineableField(input.path)
+    case 'Glob': case 'Grep':
+      return inlineableField(input.pattern)
+    case 'WebFetch':
+      return inlineableField(input.url, 80)
+    case 'WebSearch':
+      return inlineableField(input.query, 80)
+    case 'Bash':
+      return inlineableField(input.command, 80)
   }
+  return null
+}
+
+/**
+ * Render input fields as body lines that go between the header and the
+ * action row. Empty array = nothing to add (primary param already lives in
+ * the header). For big text fields (Write.content, Edit.new_string, long
+ * Bash commands) prepend a "(N 行·X KB)" hint so the user knows what
+ * they're approving even when the preview is truncated.
+ *
+ * The goal is "user can decide y/n in 1 second" — short tools collapse to
+ * a 3-line message; only big fields get an expanded indented block.
+ */
+function formatInputBody(toolName: string, input: Record<string, unknown>, maxLen: number): string[] {
+  const lines: string[] = []
+  const get = (k: string): string | null => typeof input[k] === 'string' ? (input[k] as string) : null
+
+  /** Render a big text field. Inline when it fits on one line; expand with
+   *  size hint + 2-space indent when multi-line or long enough to deserve it. */
+  const big = (label: string, val: string): void => {
+    const truncated = val.length > maxLen ? `${val.slice(0, maxLen - 1)}…` : val
+    const cnt = val.split('\n').length
+    const hint = (cnt > 1 || val.length > 100)
+      ? ` (${cnt} 行·${formatBytes(Buffer.byteLength(val, 'utf-8'))})`
+      : ''
+    if (truncated.includes('\n')) {
+      lines.push(`${label}${hint}：`)
+      for (const ln of truncated.split('\n')) lines.push(`  ${ln}`)
+    } else {
+      lines.push(`${label}${hint}：${truncated}`)
+    }
+  }
+
   switch (toolName) {
     case 'Bash': {
-      const cmd = single('命令', 'command')
-      if (cmd) return cmd
-      break
+      const cmd = get('command')
+      if (cmd && (cmd.length > 80 || cmd.includes('\n'))) big('命令', cmd)
+      return lines
     }
-    case 'Read':
-    case 'Edit':
-    case 'Write':
-    case 'NotebookEdit': {
-      const fp = single('路径', 'file_path')
-      if (fp) return fp
-      break
+    case 'Read': case 'NotebookRead': case 'LS': {
+      const fp = get('file_path') ?? get('path')
+      if (fp && (fp.length > 60 || fp.includes('\n'))) {
+        lines.push(`路径：${fp.length > maxLen ? `${fp.slice(0, maxLen - 1)}…` : fp}`)
+      }
+      return lines
     }
-    case 'Glob': {
-      const p = single('Pattern', 'pattern')
-      if (p) return p
-      break
+    case 'Edit': case 'Write': case 'NotebookEdit': {
+      const fp = get('file_path')
+      const content = get('content') ?? get('new_string') ?? get('new_source')
+      if (fp && (fp.length > 60 || fp.includes('\n'))) {
+        lines.push(`路径：${fp.length > maxLen ? `${fp.slice(0, maxLen - 1)}…` : fp}`)
+      }
+      if (content) big(toolName === 'Edit' ? '新内容' : '内容', content)
+      return lines
     }
-    case 'Grep': {
-      const p = single('查找', 'pattern')
-      if (p) return p
-      break
+    case 'Glob': case 'Grep': {
+      const pat = get('pattern')
+      if (pat && (pat.length > 60 || pat.includes('\n'))) big('Pattern', pat)
+      const path = get('path')
+      if (path) lines.push(`位置：${path}`)
+      const glob = get('glob') ?? get('output_mode')
+      if (glob) lines.push(`Glob：${glob}`)
+      return lines
     }
-    case 'WebFetch':
+    case 'WebFetch': {
+      // Show the URL inline only when it fits the header; long URLs need
+      // their own line so the user can see what they're approving. A 250-char
+      // OAuth callback URL with no body would otherwise be approved blind.
+      const url = get('url')
+      if (url && (url.length > 80 || url.includes('\n'))) {
+        lines.push(`URL：${url.length > maxLen ? `${url.slice(0, maxLen - 1)}…` : url}`)
+      }
+      return lines
+    }
     case 'WebSearch': {
-      const u = single('URL', 'url') ?? single('Query', 'query')
-      if (u) return u
-      break
+      const query = get('query')
+      if (query && (query.length > 80 || query.includes('\n'))) {
+        lines.push(`查询：${query.length > maxLen ? `${query.slice(0, maxLen - 1)}…` : query}`)
+      }
+      return lines
     }
   }
-  // Fallback: JSON dump, but pretty-printed when small enough.
+
+  // Unknown tool — compact JSON dump, indented when multi-line.
   let s: string
   try {
     const pretty = JSON.stringify(input, null, 2)
     s = pretty.length <= maxLen ? pretty : JSON.stringify(input)
-  } catch {
-    s = String(input)
-  }
+  } catch { s = String(input) }
   if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`
-  // For multi-line JSON, indent so it visually groups under the "入参" label.
   if (s.includes('\n')) {
-    return `入参：\n${s.split('\n').map((l) => `  ${l}`).join('\n')}`
+    lines.push('入参：')
+    for (const ln of s.split('\n')) lines.push(`  ${ln}`)
+  } else {
+    lines.push(`入参：${s}`)
   }
-  return `入参：${s}`
+  return lines
 }
 
 /**
@@ -166,30 +238,24 @@ function formatInputBody(toolName: string, input: Record<string, unknown>, maxLe
  */
 export function formatApprovalPrompt(n: ApprovalNotification): string {
   const tool = displayToolName(n.toolName)
+  const primary = primaryInlineParam(n.toolName, n.input)
   const body = formatInputBody(n.toolName, n.input, MAX_INPUT_PREVIEW)
+  const reqShort = n.reqId.slice(0, 8)
+
   if (n.autoAllow) {
     const sec = Math.round(n.autoAllow.graceMs / 1000)
-    return [
-      `⏱ 自动放行中（${sec}s 后执行）`,
-      ``,
-      `工具：${tool}`,
-      body,
-      ``,
-      `回复 n 可拒绝并撤销规则`,
-      `req ${n.reqId.slice(0, 8)}`,
-    ].join('\n')
+    const header = primary ? `⏱ 自动放行 · ${tool} · ${primary}` : `⏱ 自动放行 · ${tool}`
+    return [header, ...body, `${sec}s 后执行 · 回 n 拒绝并撤销规则 · req ${reqShort}`].join('\n')
   }
+
+  const mins = Math.max(1, Math.round(approvalBus.approvalTimeoutMs / 60000))
+  const fallback = isTimeoutDefaultAllow() ? '放行' : '拒绝'
+  const header = primary ? `🔐 审批 · ${tool} · ${primary}` : `🔐 审批 · ${tool}`
   return [
-    `🔐 需要审批`,
-    ``,
-    `工具：${tool}`,
-    body,
-    ``,
-    `y    批准`,
-    `n    拒绝`,
-    `all  本会话同类自动放行`,
-    ``,
-    `5 分钟未回 = 拒绝 · req ${n.reqId.slice(0, 8)}`,
+    header,
+    ...body,
+    `y 批准 · n 拒绝 · all 同类放行`,
+    `${mins}min 未回 → ${fallback} · req ${reqShort}`,
   ].join('\n')
 }
 
@@ -266,7 +332,13 @@ export function install(opts: InstallOptions): void {
       throw new Error(`no messenger for platform ${n.ctx.platform}`)
     }
 
-    // Rich-card path (Telegram inline keyboard).
+    // Rich-card path (Telegram inline keyboard). Retry once with a short
+    // delay before falling back to plain text — the common failure mode is
+    // "Telegram adapter not started" during a bot reconnect (bot=null inside
+    // sendApprovalCard) or a transient 429, both of which clear in well
+    // under a second. Without the retry, the user gets a plain-text card
+    // every time the bot blips, even though the next attempt would've
+    // succeeded.
     if (m.sendApprovalCard) {
       const prompt: ApprovalCardPrompt = {
         reqId: n.reqId,
@@ -275,29 +347,44 @@ export function install(opts: InstallOptions): void {
         mode: n.autoAllow ? 'auto-allow' : 'normal',
         graceSeconds: n.autoAllow ? Math.round(n.autoAllow.graceMs / 1000) : undefined,
       }
-      try {
-        const { messageId } = await m.sendApprovalCard(n.ctx.threadId, prompt)
-        activeCards.set(n.reqId, {
-          platform: n.ctx.platform,
-          threadId: n.ctx.threadId,
-          messageId,
-        })
-        log.info({
-          event: 'approval.router.card_sent',
-          platform: n.ctx.platform,
-          threadId: n.ctx.threadId,
-          reqId: n.reqId,
-          messageId,
-        })
-        return
-      } catch (err) {
-        log.warn({
-          event: 'approval.router.card_failed_fallback',
-          err: String(err),
-          reqId: n.reqId,
-        }, 'sendApprovalCard threw; falling back to text path')
-        // Fall through to text path
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const { messageId } = await m.sendApprovalCard(n.ctx.threadId, prompt)
+          activeCards.set(n.reqId, {
+            platform: n.ctx.platform,
+            threadId: n.ctx.threadId,
+            messageId,
+          })
+          log.info({
+            event: 'approval.router.card_sent',
+            platform: n.ctx.platform,
+            threadId: n.ctx.threadId,
+            reqId: n.reqId,
+            messageId,
+            attempt,
+          })
+          return
+        } catch (err) {
+          lastErr = err
+          if (attempt === 0) {
+            log.warn({
+              event: 'approval.router.card_retry',
+              err: String(err),
+              reqId: n.reqId,
+              platform: n.ctx.platform,
+            }, 'sendApprovalCard threw; retrying once in 200ms')
+            await new Promise<void>((resolve) => setTimeout(resolve, 200))
+          }
+        }
       }
+      log.warn({
+        event: 'approval.router.card_failed_fallback',
+        err: String(lastErr),
+        reqId: n.reqId,
+        platform: n.ctx.platform,
+      }, 'sendApprovalCard threw twice; falling back to text path')
+      // Fall through to text path
     }
 
     // Text path (Feishu / WeChat / any adapter without sendApprovalCard).
@@ -453,7 +540,14 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
 
   if (!info) {
     await cb.ack('请求已过期或已被处理')
-    if (installed) {
+    // Race: if onBusResolution already handled this (auto-allow grace
+    // expired, ran cleanup, edited the card to its terminal state — e.g.
+    // 'allowed' or 'expired'), activeCards has already been pruned for
+    // this reqId. Re-editing now would overwrite the correct terminal
+    // state with 'expired' (e.g. an "allowed" card flips to "expired"
+    // because the user clicked ✅ a few hundred ms after grace fired).
+    // Skip the edit in that case — the card already shows the truth.
+    if (activeCards.has(parsed.reqId) && installed) {
       const m = installed.resolveMessenger(platform)
       if (m?.editApprovalCard) {
         await m.editApprovalCard(cb.threadId, cb.messageId, {
@@ -463,8 +557,8 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
           log.warn({ event: 'approval.router.expire_edit_failed', err: String(err) })
         })
       }
+      activeCards.delete(parsed.reqId)
     }
-    activeCards.delete(parsed.reqId)
     return
   }
 
@@ -566,11 +660,11 @@ function sendReceiptIfAny(info: ResolvedInfo, decision: Decision): void {
   if (decision.behavior === 'allow' && decision.autoAllowFurther) {
     msg = [
       '✅ 已批准并启用自动放行',
-      `规则：${info.toolName} 前缀 "${info.fingerprint}" 5s 内自动放行`,
+      `规则：${info.toolName} · ${humanizeFingerprint(info.fingerprint)} — 5s 内自动放行`,
       '撤销：本会话回 n 单条 / /approval clear 清空',
     ].join('\n')
   } else if (decision.behavior === 'deny' && info.wasAutoAllow) {
-    msg = `❌ 已拒绝并撤销自动放行规则：${info.toolName} "${info.fingerprint}"`
+    msg = `❌ 已拒绝并撤销自动放行规则：${info.toolName} · ${humanizeFingerprint(info.fingerprint)}`
   }
   if (!msg) return
   const m = installed.resolveMessenger(info.platform)

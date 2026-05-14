@@ -15,6 +15,28 @@
 // Claude/Codex/OpenCode reports back to the user verbatim. No IM y/n
 // card appears.
 //
+// DESIGN — split by tool intent, not field name:
+//
+//   - Bash actually EXECUTES shell — its `command` is an action. Match
+//     against BASH_DANGER_PATTERNS (systemctl, pkill, agim restart, ...).
+//
+//   - Edit/Write/NotebookEdit author CONTENT — their `new_string` /
+//     `content` is text being written to a file, not a command being run.
+//     Shell-literal patterns (`systemctl restart agim` as a string in a
+//     doc, i18n string, comment, this very file) MUST NOT trip the guard;
+//     blocking them would mean operators can't debrand / refactor /
+//     document their own service. Match only CODE_DANGER_PATTERNS — JS
+//     code that DYNAMICALLY signals our pid (process.kill).
+//
+//   - Other tools (Read, Grep, Glob, MCP tools) read or query — no shell
+//     execution, no content authoring. Skip the scan entirely.
+//
+// Earlier versions stringified the whole input as a catch-all haystack;
+// that scanned removal-side fields like Edit.old_string and made the
+// guard block edits that *delete* the dangerous literal from a file —
+// the very edits a debrand needs. The split below removes that footgun
+// and the broader "shell literal in a doc trips the guard" class with it.
+//
 // LIMITATIONS:
 // 1. When IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1 (Claude only), no approval
 //    request is ever generated — Claude runs Bash directly. Layer 2
@@ -35,11 +57,11 @@
 
 const PROCESS_NAMES = '(agim|im-hub-pro|im-hub|dist/cli\\.js)'
 
-/** Patterns that, when matched against a tool's input, force a deny.
- *  Tested against the Bash command string OR a stringified form of the
- *  tool input for non-Bash tools (Edit/Write that try to mutate
- *  systemd-unit files). Ordering doesn't matter — first match wins. */
-const SELF_PROTECT_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
+/** Patterns matched against Bash's `command` field. These describe *actions*
+ *  the shell would actually take — they must NOT be applied to text being
+ *  written into a file, because the exact same string can appear as a
+ *  legitimate literal in docs / i18n / source code. */
+const BASH_DANGER_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
   {
     regex: new RegExp(`\\b(systemctl|service)\\s+(restart|stop|kill|reload|disable)\\s+${PROCESS_NAMES}`),
     reason: 'systemctl restart/stop on the Agim service',
@@ -49,9 +71,6 @@ const SELF_PROTECT_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
     reason: 'pkill / killall targeting the Agim service',
   },
   {
-    // kill <pid> where pid happens to be our own — checked dynamically by the
-    // caller; we also match the literal command-name pattern for the case
-    // where the LLM does `kill $(pgrep agim)` etc.
     regex: new RegExp(`\\bkill\\b[^|;&]*\\$\\(\\s*pgrep[^)]*${PROCESS_NAMES}`),
     reason: 'kill $(pgrep agim)',
   },
@@ -63,9 +82,16 @@ const SELF_PROTECT_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
     regex: /\bnpm\s+(restart|stop)\b/,
     reason: 'npm restart/stop',
   },
+]
+
+/** Patterns matched against Edit/Write content fields (`new_string`,
+ *  `content`, `new_source`). These describe code that would dynamically
+ *  signal a process — i.e. the script, once written and executed, would
+ *  kill agim. Pure shell-literal patterns deliberately don't appear here:
+ *  a `.md` file mentioning `systemctl restart agim` is documentation, not
+ *  a weapon. */
+const CODE_DANGER_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
   {
-    // Process.kill JS call in Edit/Write tools — captures attempts to write
-    // a script that signals our PID.
     regex: /process\.kill\s*\(\s*[^,)]+,\s*['"]SIG(TERM|KILL|INT|HUP)['"]?\s*\)/,
     reason: 'process.kill() targeting an Agim signal',
   },
@@ -82,41 +108,50 @@ const REDIRECT_TEMPLATE = (reason: string): string =>
   '   · 终端运行 `agim restart`'
 
 /** Examine a tool-use request from an agent (Claude/Codex/OpenCode MCP
- *  sidecar relays them all through approval-bus).  Returns a deny reason
- *  if it matches a self-protect pattern, otherwise null. */
+ *  sidecar relays them all through approval-bus). Returns a deny reason
+ *  if it matches a self-protect pattern, otherwise null. Dispatch is
+ *  strictly tool-name based — see the DESIGN block above. */
 export function checkToolUse(
   toolName: string,
   input: Record<string, unknown>,
 ): { deny: true; message: string } | null {
-  // Reduce the tool input to a single string for pattern matching. Bash
-  // tools usually carry `command`, Edit/Write carry file contents / paths.
-  const haystacks: string[] = []
-  if (typeof input.command === 'string') haystacks.push(input.command)
-  if (typeof input.content === 'string') haystacks.push(input.content)
-  if (typeof input.new_string === 'string') haystacks.push(input.new_string)
-  if (typeof input.file_path === 'string') haystacks.push(input.file_path)
-  // Stringify the whole input as a fallback so we still catch weird shapes.
-  try { haystacks.push(JSON.stringify(input)) } catch { /* ignore */ }
-
-  for (const hay of haystacks) {
-    for (const { regex, reason } of SELF_PROTECT_PATTERNS) {
-      if (regex.test(hay)) {
-        return { deny: true, message: REDIRECT_TEMPLATE(reason) }
-      }
+  if (toolName === 'Bash') {
+    const cmd = input.command
+    if (typeof cmd !== 'string' || cmd.length === 0) return null
+    for (const { regex, reason } of BASH_DANGER_PATTERNS) {
+      if (regex.test(cmd)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
     }
-  }
-
-  // Bonus: if input contains the literal current PID and looks like a kill
-  // command, deny — covers `kill 3001362` or `kill -9 3001362`.
-  const ourPid = String(process.pid)
-  for (const hay of haystacks) {
-    if (/\bkill\b/.test(hay) && hay.includes(ourPid)) {
+    // PID dynamic check — `kill 3001362`, `kill -9 3001362`, etc.
+    const ourPid = String(process.pid)
+    if (/\bkill\b/.test(cmd) && cmd.includes(ourPid)) {
       return { deny: true, message: REDIRECT_TEMPLATE(`kill ${ourPid} (our pid)`) }
     }
+    return null
   }
 
-  // Suppress unused-var lint for toolName — kept in signature for future
-  // tool-type-aware decisions (Edit-of-/etc/systemd/system/agim.service etc.)
-  void toolName
+  if (toolName === 'Edit' || toolName === 'Write' || toolName === 'NotebookEdit') {
+    const candidates: string[] = []
+    if (typeof input.new_string === 'string') candidates.push(input.new_string)
+    if (typeof input.content === 'string') candidates.push(input.content)
+    if (typeof input.new_source === 'string') candidates.push(input.new_source)
+    if (candidates.length === 0) return null
+
+    const ourPid = String(process.pid)
+    for (const hay of candidates) {
+      for (const { regex, reason } of CODE_DANGER_PATTERNS) {
+        if (regex.test(hay)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
+      }
+      // Author-time PID kill — `process.kill(<ourPid>, 'SIGTERM')`. Narrower
+      // than the Bash `\bkill\b` check because we don't want to match the
+      // word "kill" appearing in arbitrary prose / code comments.
+      if (/process\.kill/.test(hay) && hay.includes(ourPid)) {
+        return { deny: true, message: REDIRECT_TEMPLATE(`process.kill(${ourPid}) (our pid)`) }
+      }
+    }
+    return null
+  }
+
+  // Read, Grep, Glob, LS, NotebookRead, WebFetch, WebSearch, all MCP tools:
+  // no shell execution, no content authoring → nothing to defend against.
   return null
 }

@@ -16,6 +16,7 @@ import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { registry } from './registry.js'
 import { callHelperAgent } from './agent-helper.js'
+import { sink } from './message-sink.js'
 
 const REMINDERS_DB = process.env.IMHUB_REMINDERS_DB
   ?? join(AGIM_HOME, 'reminders.db')
@@ -978,6 +979,10 @@ async function fireOne(r: Reminder, now: Date): Promise<void> {
   ).run(r.id)
   if (claim.changes === 0) return // already taken
 
+  // Pre-flight: confirm an adapter is registered so we can surface a clean
+  // "no messenger" failure without enqueueing into outbox first. Sink also
+  // does this check, but raising it here lets us record the failure on the
+  // reminder row (status='failed', error=...) instead of looping on retries.
   const messenger = resolveMessenger(r.platform)
   if (!messenger) {
     d.prepare("UPDATE reminders SET status = 'failed', error = ? WHERE id = ?")
@@ -1001,7 +1006,13 @@ async function fireOne(r: Reminder, now: Date): Promise<void> {
           'helper agent unavailable — using literal text')
       }
     }
-    await messenger.sendMessage(r.thread_id, formatDelivery(r, body, now))
+    await sink.deliver({
+      platform: r.platform,
+      channelId: r.channel_id,
+      threadId: r.thread_id,
+      payload: formatDelivery(r, body, now),
+      kind: 'text',
+    })
     const firedAtIso = new Date().toISOString()
 
     if (r.recurrence) {

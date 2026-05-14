@@ -11,6 +11,7 @@ import { handleAgentCommand } from './commands/agent.js'
 import { handleAuditCommand } from './commands/audit.js'
 import { handleRouterCommand } from './commands/router.js'
 import { handleJobCommand } from './commands/job.js'
+import { handleOutboxCommand } from './commands/outbox.js'
 import { handleModelCommand } from './commands/model.js'
 import { handleThinkCommand } from './commands/think.js'
 import { handleStatsCommand } from './commands/stats.js'
@@ -126,6 +127,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'memo' || cmd === '记' || cmd === 'note') return { type: 'memo', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
+  if (cmd === 'outbox') return { type: 'outbox', args: rest }
   if (cmd === 'tasks') return { type: 'job', args: 'list' }
   if (cmd === 'check') return { type: 'job', args: `check ${rest}` }
   if (cmd === 'cancel') return { type: 'job', args: `cancel ${rest}` }
@@ -205,6 +207,10 @@ export async function routeMessage(
 
     case 'job': {
       return handleJobCommand(parsed.args, ctx)
+    }
+
+    case 'outbox': {
+      return handleOutboxCommand(parsed.args, ctx)
     }
 
     case 'model': {

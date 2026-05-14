@@ -23,6 +23,7 @@ import {
 } from './approval-bus.js'
 import { checkToolUse } from './self-protect.js'
 import { logger as rootLogger } from './logger.js'
+import { sink } from './message-sink.js'
 
 const log = rootLogger.child({ component: 'approval-router' })
 
@@ -388,8 +389,22 @@ export function install(opts: InstallOptions): void {
     }
 
     // Text path (Feishu / WeChat / any adapter without sendApprovalCard).
+    // priority='high' so sink tries a sync send first; falls back to the
+    // outbox queue on failure (e.g. IM platform glitch). Approval prompts
+    // are time-sensitive — the user expects them to feel synchronous.
+    // We pass `adapter: m` so sink uses the already-resolved messenger
+    // (respects install({ resolveMessenger })'s injection hook used by
+    // tests + multi-tenant setups) instead of re-resolving via registry.
     const text = formatApprovalPrompt(n)
-    await m.sendMessage(n.ctx.threadId, text)
+    await sink.deliver({
+      platform: n.ctx.platform,
+      channelId: n.ctx.channelId,
+      threadId: n.ctx.threadId,
+      payload: text,
+      kind: 'text',
+      priority: 'high',
+      adapter: m,
+    })
     log.info({ event: 'approval.router.prompt_sent', platform: n.ctx.platform, threadId: n.ctx.threadId, reqId: n.reqId })
   })
 
@@ -672,7 +687,21 @@ function sendReceiptIfAny(info: ResolvedInfo, decision: Decision): void {
     log.warn({ event: 'approval.router.receipt_no_messenger', platform: info.platform })
     return
   }
-  m.sendMessage(info.threadId, msg).catch((err) => {
+  // priority='high' to match the approval prompt itself: receipt should
+  // arrive immediately on the happy path. channelId is not part of
+  // ResolvedInfo today (only RunContext carries it) so we pass '' — that
+  // affects the outbox row's thread_key composite but not delivery routing.
+  // adapter: m bypasses sink's global-registry resolve, respecting
+  // install({ resolveMessenger })'s test-friendly indirection.
+  sink.deliver({
+    platform: info.platform,
+    channelId: '',
+    threadId: info.threadId,
+    payload: msg,
+    kind: 'text',
+    priority: 'high',
+    adapter: m,
+  }).catch((err) => {
     log.warn({ event: 'approval.router.receipt_failed', err: String(err) })
   })
 }

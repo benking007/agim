@@ -14,6 +14,7 @@ import { existsSync, readFileSync, unlinkSync, statSync } from 'node:fs'
 import { registry } from './registry.js'
 import { isAgentAvailableCached } from './onboarding.js'
 import { logger as rootLogger } from './logger.js'
+import { sink } from './message-sink.js'
 import type { MessengerAdapter } from './types.js'
 import {
   RESTART_PENDING_FILE,
@@ -147,7 +148,23 @@ async function pushToInitiator(initiator: RestartInitiator, body: string): Promi
   }
 
   try {
-    await adapter.sendMessage(initiator.threadId, body)
+    // priority='high' — restart-completion runs once on startup, the user
+    // is already waiting; sync delivery on the happy path is preferred. If
+    // it fails (messenger still warming up), sink enqueues so the worker
+    // picks it up on the next tick instead of dropping.
+    // channelId is not persisted in the restart-pending state (only
+    // platform/threadId/userId) — pass ''. We pass adapter:adapter so sink
+    // uses the locally-resolved messenger (this module has its own
+    // resolveMessenger doing the same fuzzy match).
+    await sink.deliver({
+      platform: initiator.platform,
+      channelId: '',
+      threadId: initiator.threadId,
+      payload: body,
+      kind: 'text',
+      priority: 'high',
+      adapter,
+    })
     log.info({
       event: 'restart-completion.pushed',
       platform: initiator.platform,

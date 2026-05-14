@@ -34,6 +34,7 @@ import { consumeLocationContext, formatLocationAnnotation } from './core/locatio
 import { tryDetectReminderIntent } from './core/remind-intent.js'
 import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
+import { sink } from './core/message-sink.js'
 import {
   checkMessengerConfig,
   checkAgentAvailability,
@@ -333,7 +334,10 @@ program
         const replyDecision = tryConsumePendingReminderReply(tk, ctx.message.text)
         if (replyDecision) {
           if (replyDecision.decision === 'cancel') {
-            await messenger.sendMessage(ctx.message.threadId, '✅ 已忽略这条提醒建议')
+            await sink.deliver({
+              platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+              payload: '✅ 已忽略这条提醒建议', kind: 'text',
+            })
           } else {
             const p = replyDecision.pending
             try {
@@ -348,11 +352,17 @@ program
                 recurrence: p.recurrence,
               })
               const recurLine = p.recurrence ? `\n   循环：${p.recurrence}` : ''
-              await messenger.sendMessage(ctx.message.threadId,
-                `✅ 已创建提醒 #${id}\n   触发：${p.fireAt.toLocaleString()}${recurLine}\n   内容：${p.text}`)
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: `✅ 已创建提醒 #${id}\n   触发：${p.fireAt.toLocaleString()}${recurLine}\n   内容：${p.text}`,
+                kind: 'text',
+              })
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)
-              await messenger.sendMessage(ctx.message.threadId, `❌ 创建失败：${msg}`)
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: `❌ 创建失败：${msg}`, kind: 'text',
+              })
             }
           }
           ctx.logger.info({ event: 'message.consumed_by_pending_reminder', decision: replyDecision.decision })
@@ -390,7 +400,10 @@ program
             if (svcIntent.intent === 'restart') reply = await handleRestartCommand('', routeCtx)
             else if (svcIntent.intent === 'stop') reply = await handleStopCommand('', routeCtx)
             else reply = await handleStatusCommand('', routeCtx)
-            await messenger.sendMessage(ctx.message.threadId, reply)
+            await sink.deliver({
+              platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+              payload: reply, kind: 'text',
+            })
             return
           }
         }
@@ -409,7 +422,10 @@ program
               text: ctx.message.text,
             })
             if (detected.handled && detected.reply) {
-              await messenger.sendMessage(ctx.message.threadId, detected.reply)
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: detected.reply, kind: 'text',
+              })
               ctx.logger.info({ event: 'message.proposed_reminder' })
               return
             }
@@ -452,18 +468,31 @@ program
       console.log('✅ Approval router wired to messengers')
     }
 
+    // Start the outbox worker AFTER all messengers have been registered/
+    // started. If we started it earlier, every queued row from a prior run
+    // would fail "messenger not registered" on the first tick and bounce
+    // into backoff — minor but pointless. Worker is single-threaded and
+    // ticks at IMHUB_OUTBOX_TICK_MS (default 1s).
+    sink.startWorker()
+    console.log('✅ Message-sink worker started')
+
     // Reminder confirm notifier — used by reminder-rpc.ts when an agent
     // creates a high-frequency + LLM-polish reminder (those go through a
     // y/n card before landing in the DB). Plain message via the same
     // messenger the agent is talking on.
     setReminderConfirmNotifier(async (ctx, message) => {
-      const messenger = registry.getMessenger(platformToMessengerName(ctx.platform))
-        ?? registry.getMessenger(ctx.platform)
-      if (!messenger) {
-        console.warn(`reminder-confirm: no messenger for platform "${ctx.platform}"`)
-        return
-      }
-      await messenger.sendMessage(ctx.threadId, message)
+      // sink resolves the adapter at delivery time; we just need to canonicalize
+      // the messenger name (e.g. 'wechat' → 'wechat-ilink') so the worker picks
+      // the right adapter from the registry.
+      const canonical = platformToMessengerName(ctx.platform)
+      const platform = registry.getMessenger(canonical) ? canonical : ctx.platform
+      await sink.deliver({
+        platform,
+        channelId: ctx.channelId,
+        threadId: ctx.threadId,
+        payload: message,
+        kind: 'text',
+      })
     })
 
     // ============================================
@@ -527,6 +556,11 @@ program
       webServer?.close()
       acpServer?.close()
 
+      // Stop the outbox worker BEFORE messengers so no new send attempts
+      // race the adapter shutdown. Worker is single-threaded so a pending
+      // tick will finish its current row before we move on.
+      try { sink.stopWorker() } catch { /* ignore */ }
+
       // Stop all messengers
       for (const name of registry.listMessengers()) {
         const messenger = registry.getMessenger(name)
@@ -565,6 +599,11 @@ program
       try {
         const { closeMemosDb } = await import('./core/memos.js')
         closeMemosDb()  // also stops the sweep timer
+      } catch { /* ignore */ }
+      try {
+        const { stopOutboxRetentionSweep, closeOutboxDb } = await import('./core/outbox.js')
+        stopOutboxRetentionSweep()
+        closeOutboxDb()
       } catch { /* ignore */ }
 
       process.exit(0)
@@ -738,7 +777,10 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       if (typeof result === 'string') {
         await stopTyping()
         await dismiss()
-        await messenger.sendMessage(message.threadId, await maybePrefix(result))
+        await sink.deliver({
+          platform, channelId: ctx.channelId, threadId: message.threadId,
+          payload: await maybePrefix(result), kind: 'text',
+        })
         logger.info({ event: 'message.sent', responseLen: result.length })
       } else {
         // Stream response chunks
@@ -751,7 +793,10 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await dismiss()
 
         if (fullResponse) {
-          await messenger.sendMessage(message.threadId, await maybePrefix(fullResponse))
+          await sink.deliver({
+            platform, channelId: ctx.channelId, threadId: message.threadId,
+            payload: await maybePrefix(fullResponse), kind: 'text',
+          })
           logger.info({ event: 'message.sent', responseLen: fullResponse.length })
         } else {
           logger.warn({ event: 'message.empty_response' })
@@ -764,14 +809,11 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       await runOnThread(queueKey, runAgentInvocation, {
         onQueued: async (ahead) => {
           logger.info({ event: 'message.queued', ahead, queueKey })
-          try {
-            await messenger.sendMessage(
-              message.threadId,
-              `📥 已收到（前面还有 ${ahead} 条在处理，稍后给你结果）`,
-            )
-          } catch (err) {
-            logger.debug({ err: String(err) }, 'queued-notice send failed')
-          }
+          await sink.deliver({
+            platform, channelId: ctx.channelId, threadId: message.threadId,
+            payload: `📥 已收到（前面还有 ${ahead} 条在处理，稍后给你结果）`,
+            kind: 'text',
+          })
         },
       })
     } else {
@@ -784,11 +826,10 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     if (dismissThinking) {
       try { await dismissThinking() } catch { /* ignore */ }
     }
-    try {
-      await messenger.sendMessage(message.threadId, '❌ An error occurred processing your message.')
-    } catch {
-      // Ignore
-    }
+    await sink.deliver({
+      platform, channelId: ctx.channelId, threadId: message.threadId,
+      payload: '❌ An error occurred processing your message.', kind: 'text',
+    }).catch(() => { /* swallow — sink already logs */ })
   }
 }
 

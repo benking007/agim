@@ -39,6 +39,7 @@ export type ParsedMessage =
   | { type: 'remind'; args: string }
   | { type: 'memo'; args: string }
   | { type: 'job'; args: string }
+  | { type: 'outbox'; args: string }
   | { type: 'model'; args: string }
   | { type: 'think'; args: string }
   | { type: 'stats'; args: string }

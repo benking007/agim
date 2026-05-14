@@ -10,6 +10,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
+import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
@@ -247,8 +248,6 @@ export async function startWebServer(options: {
         webLog.warn({ event: 'web.loc.memo_failed', err: String(err) }, 'failed to write/update memo')
       }
 
-      const messengerName = ctx.platform === 'wechat' ? 'wechat-ilink' : ctx.platform
-      const messenger = registry.getMessenger(messengerName)
       const idTag = memoId ? `#${memoId}` : ''
       const accTxt = accuracy > 0 ? ` (±${Math.round(accuracy)}m)` : ''
       const headLabel = displayWhat ? `'${displayWhat}'` : ''
@@ -260,13 +259,18 @@ export async function startWebServer(options: {
         '',
         `   🗺 [百度地图](${urls.baidu}) · [高德地图](${urls.amap}) · [Google](${urls.google})`,
       ].filter(Boolean).join('\n')
-      if (messenger) {
-        messenger.sendMessage(ctx.threadId, reply).catch((err) => {
-          webLog.warn({ event: 'web.loc.dispatch_failed', threadId: ctx.threadId, err: String(err) })
-        })
-      } else {
-        webLog.warn({ event: 'web.loc.no_messenger', platform: ctx.platform })
-      }
+      // Route via sink — adapter resolution (e.g. 'wechat' → 'wechat-ilink')
+      // happens inside resolveMessenger(). priority='normal': location replies
+      // are non-urgent, queue is fine.
+      sink.deliver({
+        platform: ctx.platform,
+        channelId: ctx.channelId,
+        threadId: ctx.threadId,
+        payload: reply,
+        kind: 'text',
+      }).catch((err) => {
+        webLog.warn({ event: 'web.loc.dispatch_failed', threadId: ctx.threadId, err: String(err) })
+      })
 
       sendJson(res, 200, { ok: true, id: memoId, lat, lng })
       return
@@ -1245,9 +1249,10 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
       return
     }
 
-    // Map platform name to messenger plugin name.
-    const messengerName = platform === 'wechat' ? 'wechat-ilink' : platform
-    const messenger = registry.getMessenger(messengerName)
+    // Pre-flight: confirm a messenger exists so we can return a clean 404
+    // synchronously. sink will resolve again at delivery time — but the
+    // synchronous 404 is part of the API contract.
+    const messenger = resolveMessenger(platform)
     if (!messenger) {
       sendJson(res, 404, { error: `Messenger "${platform}" not registered` })
       return
@@ -1257,10 +1262,18 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
     const log = createLogger({ traceId, platform, component: 'notify' })
     log.info({ threadId, hasCard: !!card, textLen: text?.length || 0 }, 'notify in')
 
-    if (card && typeof messenger.sendCard === 'function') {
-      await messenger.sendCard(threadId, card)
+    // External /api/notify callers don't know the IM channelId, so we pass
+    // 'rest' as a sentinel (consistent with other web-originated rows).
+    if (card) {
+      await sink.deliver({
+        platform, channelId: 'rest', threadId,
+        payload: card as object, kind: 'card',
+      })
     } else if (text) {
-      await messenger.sendMessage(threadId, text)
+      await sink.deliver({
+        platform, channelId: 'rest', threadId,
+        payload: text, kind: 'text',
+      })
     } else {
       sendJson(res, 400, { error: 'card requires sendCard support, otherwise text is required' })
       return

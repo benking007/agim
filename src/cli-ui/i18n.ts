@@ -204,8 +204,8 @@ const en = {
 
   // ─── service mgmt ────────────────────────────────────────────────────
   'svc.status.title': 'Agim · status',
-  'svc.status.systemd_active': 'systemd unit `im-hub.service` is active (pid {pid})',
-  'svc.status.systemd_inactive': 'systemd unit `im-hub.service` exists but is inactive',
+  'svc.status.systemd_active': 'systemd unit `{unit}` is active (pid {pid})',
+  'svc.status.systemd_inactive': 'systemd unit `{unit}` exists but is inactive',
   'svc.status.bg_running': 'background daemon running (pid {pid}, log: {log})',
   'svc.status.fg_running': 'foreground process running (pid {pid})',
   'svc.status.not_running': 'no running Agim instance found',
@@ -216,10 +216,10 @@ const en = {
   'svc.start.starting_bg': 'Starting in background…',
   'svc.start.bg_ready': '✅ Background daemon started (pid {pid}, log: {log})',
   'svc.start.bg_hint': 'Tip: use `agim stop` to terminate; `agim status` to inspect.',
-  'svc.start.systemd_managed': 'A systemd unit already manages im-hub. Use `systemctl start im-hub.service`.',
+  'svc.start.systemd_managed': 'A systemd unit already manages Agim. Use `systemctl start {unit}`.',
   'svc.start.already_running': 'Already running (pid {pid}). Use `agim restart` instead.',
 
-  'svc.stop.stopping_systemd': 'Stopping systemd unit `im-hub.service`…',
+  'svc.stop.stopping_systemd': 'Stopping systemd unit `{unit}`…',
   'svc.stop.stopping_bg': 'Stopping background daemon (pid {pid})…',
   'svc.stop.not_running': 'Nothing to stop — Agim is not running.',
   'svc.stop.stopped': '✅ Stopped.',

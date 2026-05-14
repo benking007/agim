@@ -4,6 +4,95 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-14
+
+### Changed
+
+- **Approval timeout default 30 min → 15 min.** Long enough for slow IM
+  channels to round-trip a y/n; short enough to unblock downstream tools.
+  Override with `IMHUB_APPROVAL_TIMEOUT_MS`.
+- **Agent child-process budget switched from 30-min hard total cap →
+  60-min idle watchdog.** Every stdout / stderr chunk resets the timer,
+  so slow human-in-the-loop approvals no longer eat the budget. A truly
+  hung child (no output for the idle window) still gets SIGTERM →
+  SIGKILL escalation. Covers `agent-base` (claude-code, codex,
+  opencode-stdio) and the opencode HTTP adapter (SSE watchdog).
+- **Auto-allow rule fingerprint is now per-tool semantic, not a fixed
+  10-char input prefix.** Bash keys on `cmd:<verb+arg2>`, file tools key
+  on `dir:<dirname>`, WebFetch keys on `host:<hostname>`, etc. One `all`
+  on `Read /tmp/a.txt` now covers all reads in `/tmp/`; `git status` and
+  `git stash` are correctly distinct rules.
+- **Plain-text approval card layout — compact** (3-line minimum, no
+  blank separators), with `(N 行·X KB)` size hints when a big content
+  field is truncated. Primary param (path, short command, URL) inlined
+  into the header.
+- **Self-protect guard split by tool intent.** `BASH_DANGER_PATTERNS`
+  (systemctl / pkill / agim restart / …) now only scan `Bash.command`;
+  `CODE_DANGER_PATTERNS` (only `process.kill(pid, 'SIGTERM')`) only scan
+  Edit/Write content fields; other tools skip the scan entirely. Fixes
+  the "operator can't debrand / refactor / document their own service
+  because the guard blocks legitimate edits containing the literal
+  `systemctl restart agim`" footgun.
+
+### Added
+
+- **`IMHUB_TIMEOUT_DEFAULT=allow | deny`** env (default `deny`) — what
+  the bus returns when a normal-mode approval times out with no human
+  reply. `allow` is "user away" mode. Hot-reloadable from the new Web
+  Settings → **Approval Policy** card (no service restart needed).
+- **`IMHUB_AGENT_IDLE_TIMEOUT_MS`** global env + `${NAME}_IDLE_TIMEOUT_MS`
+  per-agent override for the idle watchdog. `0` disables.
+- **`OPENCODE_IDLE_TIMEOUT_MS`** env for the opencode HTTP adapter.
+- **`humanizeFingerprint()`** — `/approval` listing and auto-allow
+  receipts now render `命令 git status` / `目录 /tmp` / `主机 api.x.com`
+  instead of leaking internal scheme prefixes (`cmd:`, `dir:`, `host:`).
+- Approval card timeout footer reads the live timeout + the effective
+  `IMHUB_TIMEOUT_DEFAULT` setting (e.g. `15min 未回 → 放行 · req XXX`),
+  instead of hard-coded "5 分钟未回 = 拒绝".
+
+### Fixed
+
+- **Self-protect no longer false-positives on legitimate edits** that
+  delete or insert the literal `systemctl restart agim` in docs / i18n /
+  comments (`old_string` JSON-stringify catch-all removed; `new_string`
+  only scans true code-side dangers like `process.kill`).
+- **Telegram `sendApprovalCard` failure → retry once after 200 ms before
+  falling back to plain text.** The common cause (`Telegram adapter not
+  started` during bot reconnect, transient 429) clears in well under a
+  second; without the retry, every blip dropped the card to plain text.
+- **Button-click race no longer overwrites an already-resolved card.**
+  Late `n`/`y` clicks (after auto-allow grace already fired and edited
+  the card to `allowed`) now skip the re-edit, keeping the visual
+  terminal state correct.
+- **WebFetch / WebSearch approval cards now show the URL / query** even
+  when it's too long to fit in the header row (previously the card
+  rendered as just "🔐 审批 · WebFetch" with no URL info — users were
+  blind-signing arbitrary requests).
+- **`/approval` listings and auto-allow receipts** stop leaking the
+  internal fingerprint scheme (`cmd:git+status`) to users.
+- **idle watchdog now escalates SIGTERM → SIGKILL after 5 s**, matching
+  the abort path. A signal-ignoring child can no longer wedge the
+  parent indefinitely.
+- **`sendDecision` socket-not-writable** previously dropped the decision
+  silently; now logs `approval.bus.send_dropped` so operators can
+  diagnose "auto-allow showed the card but didn't fire" complaints.
+- **Notifier error message** is now forwarded to the agent (and through
+  to the user) instead of being replaced with a generic `'notifier
+  error'`. Self-protect's friendly `/restart` redirect finally reaches
+  the user.
+- **Web UI Approval Policy card** properly surfaces server 5xx errors
+  (previously the UI lied "已保存" even on failed writes).
+
+### Breaking
+
+- Removed env keys `CLAUDECODE_TIMEOUT_MS` / `CODEX_TIMEOUT_MS` /
+  `OPENCODE_TIMEOUT_MS` (per-agent total-time cap). Replaced by
+  `${NAME}_IDLE_TIMEOUT_MS` with idle semantics. No-op for users who
+  never set the old keys.
+- Rule keys in the auto-allow store now have a scheme prefix
+  (`cmd:` / `dir:` / `host:` / …). In-memory only, wiped on restart; no
+  migration needed.
+
 ## [1.1.0] - 2026-05-14
 
 ### Changed — debrand user-facing strings + docs to "agim"

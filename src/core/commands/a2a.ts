@@ -14,6 +14,7 @@ import type Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { logger as rootLogger } from '../logger.js'
 import { AGIM_HOME } from '../agim-paths.js'
+import { listOutputs } from '../artifacts.js'
 
 const log = rootLogger.child({ component: 'cmd.a2a' })
 
@@ -114,14 +115,14 @@ function fmtRecent(d: Database.Database, n: number): string {
   return lines.join('\n')
 }
 
-function fmtTree(d: Database.Database, rootId: number): string {
+async function fmtTree(d: Database.Database, rootId: number): Promise<string> {
   const root = d.prepare(`SELECT * FROM jobs WHERE id = ?`).get(rootId) as A2aRow | undefined
   if (!root) return `❌ 未找到 jobs #${rootId}。`
 
   // Walk down (children of rootId, grandchildren, ...).
   const lines: string[] = []
   const visited = new Set<number>()
-  function walk(id: number, depth: number): void {
+  async function walk(id: number, depth: number): Promise<void> {
     if (visited.has(id) || depth > 10) return
     visited.add(id)
     const row = d.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as A2aRow | undefined
@@ -133,13 +134,25 @@ function fmtTree(d: Database.Database, rootId: number): string {
       row.status === 'running' ? '🔄' : '⏳'
     const preview = row.prompt.replace(/\n/g, ' ').slice(0, 60)
     lines.push(`${indent}${icon} #${row.id} ${row.agent} [${row.status}] ${preview}${row.prompt.length > 60 ? '…' : ''}`)
+    // L2 — show output files alongside the row. Cheap fs hit; tree is a
+    // diagnostic command, not on the hot path.
+    const outs = await listOutputs(row.id)
+    for (const f of outs) {
+      lines.push(`${indent}  📎 ${f.name} (${fmtBytes(f.bytes)})`)
+    }
     const children = d.prepare(
       `SELECT id FROM jobs WHERE parent_id = ? ORDER BY id`,
     ).all(id) as Array<{ id: number }>
-    for (const c of children) walk(c.id, depth + 1)
+    for (const c of children) await walk(c.id, depth + 1)
   }
-  walk(rootId, 0)
+  await walk(rootId, 0)
   return [`🌳 A2A 调用树 (root #${rootId}):`, '', ...lines].join('\n')
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 export async function handleA2ACommand(
@@ -168,7 +181,7 @@ export async function handleA2ACommand(
       case 't': {
         const id = parseInt(parts[1] || '', 10)
         if (!Number.isFinite(id) || id <= 0) return '用法: /a2a tree <id>'
-        return fmtTree(d, id)
+        return await fmtTree(d, id)
       }
       default:
         return [

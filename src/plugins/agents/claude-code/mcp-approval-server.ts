@@ -51,12 +51,18 @@ type PendingMemoRpc = PendingReminderRpc
 // A2A-L1 — Agent-to-Agent call result. Unlike reminder/memo, the wire
 // carries explicit jobId/agent/durationMs on success so the caller agent
 // can include them in its response to the user.
+// L2 fields are optional on the wire — old (L1-only) bus responses
+// simply omit them. The wire envelope is otherwise unchanged.
+type A2aOutputFile = { name: string; bytes: number; mtime: string }
 type A2aSuccess = {
   ok: true
   result: string
   jobId: number
   agent: string
   durationMs: number
+  artifactsDir?: string
+  outputs?: A2aOutputFile[]
+  warnings?: string[]
 }
 type A2aFailure = { ok: false; error: string }
 type A2aResult = A2aSuccess | A2aFailure
@@ -186,10 +192,30 @@ class ApprovalClient {
           && typeof m.jobId === 'number'
           && typeof m.agent === 'string'
           && typeof m.durationMs === 'number') {
-        p.resolve({
+        // L2 fields are optional; ignore them on the wire if the bus
+        // happens to be older. Type-narrow defensively before forwarding.
+        const success: A2aSuccess = {
           ok: true, result: m.result, jobId: m.jobId,
           agent: m.agent, durationMs: m.durationMs,
-        })
+        }
+        if (typeof m.artifactsDir === 'string') success.artifactsDir = m.artifactsDir
+        if (Array.isArray(m.outputs)) {
+          const files: A2aOutputFile[] = []
+          for (const o of m.outputs) {
+            if (o && typeof o === 'object'
+                && typeof (o as Record<string, unknown>).name === 'string'
+                && typeof (o as Record<string, unknown>).bytes === 'number'
+                && typeof (o as Record<string, unknown>).mtime === 'string') {
+              files.push(o as A2aOutputFile)
+            }
+          }
+          if (files.length > 0) success.outputs = files
+        }
+        if (Array.isArray(m.warnings)) {
+          const warns = m.warnings.filter((w): w is string => typeof w === 'string')
+          if (warns.length > 0) success.warnings = warns
+        }
+        p.resolve(success)
       } else {
         const error = typeof m.error === 'string' ? m.error : 'unknown error'
         p.resolve({ ok: false, error })
@@ -313,13 +339,25 @@ class ApprovalClient {
     })
   }
 
-  /** A2A-L1 — ask the bus to invoke another agent. Bus resolves the
+  /** A2A — ask the bus to invoke another agent. Bus resolves the
    *  caller via runId → RunContext, validates depth + self-call, runs
-   *  the callee via a2a.callAgentByName, and writes back the result. */
+   *  the callee via a2a.callAgentByName, and writes back the result.
+   *
+   *  L2 additions (all optional):
+   *    inputs        — file payloads dropped into the callee's
+   *                    _agim-input/ before it runs.
+   *    expectOutputs — filenames the callee is expected to produce;
+   *                    misses become warnings, not failures. */
   async requestCallAgent(payload: {
     agent: string
     prompt: string
     timeoutMs?: number
+    inputs?: Array<
+      | { name: string; fromCallerOutput: string }
+      | { name: string; fromAbsolutePath: string }
+      | { name: string; content: string }
+    >
+    expectOutputs?: string[]
   }): Promise<A2aResult> {
     await this.connectPromise
     if (this.connectErr || this.closed || !this.socket) {
@@ -795,8 +833,17 @@ export function buildServer(client: ApprovalClient): McpServer {
         'what I already said". ' +
         '\n\n' +
         'agim enforces depth limit (default 3) + self-call ban + workspace whitelist so chains ' +
-        'can\'t run away. Returns {ok, result, jobId, agent, durationMs} on success or ' +
-        '{ok: false, error}.',
+        'can\'t run away. ' +
+        '\n\n' +
+        '**Files** (L2): pass `inputs` to drop files into the callee\'s _agim-input/ before it ' +
+        'runs (the callee gets a workspace-block in its prompt listing them with absolute paths), ' +
+        'and pass `expectOutputs` to list filenames the callee should leave in _agim-output/. ' +
+        'On return you get `artifactsDir` + `outputs` (with sizes/mtimes) — read those files ' +
+        'with the Read tool. Expected outputs that didn\'t show up become entries in `warnings`, ' +
+        'never a hard failure. Skip both fields for pure string-in / string-out calls (L1). ' +
+        '\n\n' +
+        'Returns {ok, result, jobId, agent, durationMs, artifactsDir?, outputs?, warnings?} on ' +
+        'success or {ok: false, error}.',
       inputSchema: {
         agent: z.string().describe(
           'Target agent name. One of: claude-code, opencode, codex, copilot. ' +
@@ -812,6 +859,30 @@ export function buildServer(client: ApprovalClient): McpServer {
           '(IMHUB_A2A_TIMEOUT_DEFAULT_MS). The callee keeps running on timeout, but you stop ' +
           'waiting and get an error.',
         ),
+        inputs: z.array(
+          z.object({
+            name: z.string().describe('Filename inside the callee _agim-input/ dir (no slashes, no "..").'),
+            fromAbsolutePath: z.string().optional().describe(
+              'Absolute path on the host to copy from. Hard-linked when same fs, else copied. ' +
+              'Exactly one of fromAbsolutePath / fromCallerOutput / content must be set.',
+            ),
+            fromCallerOutput: z.string().optional().describe(
+              'Filename in YOUR own _agim-output/ — useful for chaining A→B→C, where B forwards ' +
+              'something it just produced as input to C. Resolved relative to caller jobId.',
+            ),
+            content: z.string().optional().describe(
+              'Inline UTF-8 text content. Use for short text inputs; large blobs prefer fromAbsolutePath.',
+            ),
+          }),
+        ).optional().describe(
+          'Files to provision in the callee\'s _agim-input/ before it runs. Each input must ' +
+          'specify exactly one source.',
+        ),
+        expectOutputs: z.array(z.string()).optional().describe(
+          'Filenames you expect the callee to leave in its _agim-output/. Soft contract — ' +
+          'missing files become entries in `warnings`, not a hard error. The callee is told ' +
+          'about these via its prompt envelope.',
+        ),
       },
     },
     async (args) => {
@@ -819,6 +890,8 @@ export function buildServer(client: ApprovalClient): McpServer {
         agent: typeof args.agent === 'string' ? args.agent : '',
         prompt: typeof args.prompt === 'string' ? args.prompt : '',
         ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+        ...(Array.isArray(args.inputs) ? { inputs: args.inputs as Parameters<typeof client.requestCallAgent>[0]['inputs'] } : {}),
+        ...(Array.isArray(args.expectOutputs) ? { expectOutputs: args.expectOutputs as string[] } : {}),
       })
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
     },

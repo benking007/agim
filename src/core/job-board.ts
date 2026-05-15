@@ -851,6 +851,25 @@ export function pruneOldJobs(d: Database.Database = getDb()!, daysRetention: num
     // Two passes — different retention by kind. SQLite can't do this in one
     // statement without a CASE-on-window-or-something gnarly; two prepares
     // keeps it readable and the row counts attributable.
+    //
+    // L2 — collect ids BEFORE delete so we can hand them to artifacts.ts
+    // for matching-dir cleanup. Two-step is unavoidable because SQLite
+    // doesn't have DELETE … RETURNING. The window is tiny and the side
+    // effect (orphaned dirs) is small, so we don't bother with a Tx.
+    const jobIdsToDel = d.prepare(`
+      SELECT id FROM jobs
+      WHERE kind = 'job'
+        AND status IN (${TERMINAL})
+        AND completed_at IS NOT NULL
+        AND completed_at < datetime('now', ?)
+    `).all(`-${daysRetention} days`) as Array<{ id: number }>
+    const inlineIdsToDel = d.prepare(`
+      SELECT id FROM jobs
+      WHERE kind = 'inline'
+        AND status IN (${TERMINAL})
+        AND COALESCE(completed_at, created_at) < datetime('now', ?)
+    `).all(`-${inlineHours} hours`) as Array<{ id: number }>
+
     const jobInfo = d.prepare(`
       DELETE FROM jobs
       WHERE kind = 'job'
@@ -865,6 +884,21 @@ export function pruneOldJobs(d: Database.Database = getDb()!, daysRetention: num
         AND COALESCE(completed_at, created_at) < datetime('now', ?)
     `).run(`-${inlineHours} hours`)
     const total = jobInfo.changes + inlineInfo.changes
+
+    // L2 — drop artifacts dirs for everything we just deleted. inline jobs
+    // are where the artifacts live, but kind='job' rows might also have
+    // them in the future, so we feed both. Fire-and-forget; failures only
+    // leave an orphaned dir, not a broken DB.
+    const allIds = [...jobIdsToDel, ...inlineIdsToDel].map((r) => r.id)
+    if (allIds.length > 0) {
+      void import('./artifacts.js')
+        .then(({ pruneArtifactsBatch }) => pruneArtifactsBatch(allIds))
+        .catch((err) => rootLogger.warn(
+          { component: 'job-board', event: 'job-board.prune.artifacts_failed', err: err instanceof Error ? err.message : String(err) },
+          'pruneArtifactsBatch failed (orphaned dirs may remain)',
+        ))
+    }
+
     if (total > 0) {
       rootLogger.info({
         component: 'job-board', event: 'job-board.pruned',

@@ -34,6 +34,15 @@ import {
   markJobFailed,
 } from './job-board.js'
 import { logInvocation } from './audit-log.js'
+import {
+  buildEnvelope,
+  copyInputs,
+  ensureArtifactsDir,
+  getArtifactsDir,
+  listOutputs,
+  type InputSource,
+  type OutputFile,
+} from './artifacts.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -74,10 +83,30 @@ export interface CallAgentOpts {
   callerAgent?: string
   /** Override timeout. Falls back to env / default. */
   timeoutMs?: number
+  /** L2: files to drop in the callee's _agim-input/ before it runs.
+   *  Each input has a target filename plus exactly one of:
+   *    - fromAbsolutePath: copy/hard-link from a path on disk
+   *    - fromCallerOutput: pull from caller's own _agim-output/
+   *      (requires parentJobId so artifacts knows which job to read)
+   *    - content:          inline string content */
+  inputs?: InputSource[]
+  /** L2: filenames the callee is expected to produce under _agim-output/.
+   *  Missing files at return time become entries in `warnings`, not a
+   *  hard failure — the callee is still allowed to do what it deems
+   *  best. */
+  expectOutputs?: string[]
 }
 
 export type CallAgentResult =
-  | { ok: true;  result: string; jobId: number; agent: string; durationMs: number }
+  | {
+      ok: true;  result: string; jobId: number; agent: string; durationMs: number
+      /** L2: absolute path of the artifacts directory for this run. */
+      artifactsDir: string
+      /** L2: files the callee left under _agim-output/. */
+      outputs: OutputFile[]
+      /** L2: non-fatal advisories — e.g. expectOutputs that didn't show up. */
+      warnings?: string[]
+    }
   | { ok: false; error: string;  jobId?: number; agent?: string }
 
 /** Programmatic A2A entry. Invokes `agentName` with `prompt` under the
@@ -142,6 +171,36 @@ export async function callAgentByName(
   })
   markJobRunning(jobId)
 
+  // L2 — provision artifacts dir + copy inputs BEFORE building the
+  // envelope so the prompt envelope can list real files / sizes. Errors
+  // from copyInputs (bad path, size cap, missing caller output) fail the
+  // job up-front with a clean error message — no agent invocation, no
+  // tokens spent.
+  let copiedInputs: Array<{ name: string; bytes: number }> = []
+  let promptWithEnvelope = prompt
+  try {
+    await ensureArtifactsDir(jobId)
+    if (opts.inputs && opts.inputs.length > 0) {
+      copiedInputs = await copyInputs(jobId, opts.inputs, opts.parentJobId ?? undefined)
+    }
+    const needEnvelope = copiedInputs.length > 0
+      || (opts.expectOutputs && opts.expectOutputs.length > 0)
+    if (needEnvelope) {
+      const envelope = buildEnvelope({
+        jobId,
+        inputs: copiedInputs,
+        expectOutputs: opts.expectOutputs,
+      })
+      promptWithEnvelope = `${envelope}\n${prompt}`
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.warn({ event: 'a2a.artifacts_setup_failed', jobId, err: msg },
+      `A2A artifacts setup failed: ${msg}`)
+    markJobFailed(jobId, msg)
+    return { ok: false, error: msg, jobId, agent: target.name }
+  }
+
   const timeoutMs = opts.timeoutMs ?? getA2ATimeoutMs()
   const started = Date.now()
   log.info({
@@ -149,13 +208,15 @@ export async function callAgentByName(
     callee: target.name, caller: opts.callerAgent ?? 'user',
     jobId, parentJobId: opts.parentJobId ?? null,
     callDepth: nextDepth, timeoutMs, threadId: ctx.threadId,
+    inputCount: copiedInputs.length,
+    expectOutputCount: opts.expectOutputs?.length ?? 0,
   }, `A2A → ${target.name}`)
 
   let result = ''
   let outcome: 'completed' | 'failed' | 'timeout' = 'completed'
   let errMsg = ''
   try {
-    const gen = target.sendPrompt(`a2a-${jobId}`, prompt, [], {
+    const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
       platform: ctx.platform,
       channelId: ctx.channelId,
@@ -210,10 +271,30 @@ export async function callAgentByName(
     return { ok: false, error: errMsg || outcome, jobId, agent: target.name }
   }
 
+  // L2: collect callee outputs + softly verify expectOutputs. Missing
+  // files become entries in `warnings`, never a hard failure — the
+  // callee decided what to produce, our verification is advisory.
+  const outputs = await listOutputs(jobId)
+  const warnings: string[] = []
+  if (opts.expectOutputs && opts.expectOutputs.length > 0) {
+    const produced = new Set(outputs.map((f) => f.name))
+    for (const expected of opts.expectOutputs) {
+      if (!produced.has(expected)) {
+        warnings.push(`expected output not produced: ${expected}`)
+      }
+    }
+  }
+  const artifactsDir = getArtifactsDir(jobId).outputDir
+
   log.info({
-    event: 'a2a.invoke_end', outcome: 'ok', jobId, durationMs, callee: target.name, resultLen: result.length,
-  }, `A2A → ${target.name} ok (${result.length} chars in ${durationMs}ms)`)
-  return { ok: true, result, jobId, agent: target.name, durationMs }
+    event: 'a2a.invoke_end', outcome: 'ok', jobId, durationMs, callee: target.name,
+    resultLen: result.length, outputCount: outputs.length, warningCount: warnings.length,
+  }, `A2A → ${target.name} ok (${result.length} chars, ${outputs.length} outputs, in ${durationMs}ms)`)
+  return {
+    ok: true, result, jobId, agent: target.name, durationMs,
+    artifactsDir, outputs,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  }
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────

@@ -721,6 +721,20 @@ export class ApprovalBus {
     const timeoutMs = typeof payload.timeoutMs === 'number' && payload.timeoutMs > 0
       ? payload.timeoutMs : undefined
 
+    // L2 — caller-supplied artifacts inputs + optional expectOutputs.
+    // We forward as-is; callAgentByName / artifacts.ts validates shape
+    // and returns a clean error for malformed entries.
+    const rawInputs = Array.isArray(payload.inputs) ? payload.inputs : undefined
+    const inputs = rawInputs?.filter(
+      (x): x is Parameters<typeof import('./a2a.js').callAgentByName>[3] extends infer T
+        ? T extends { inputs?: (infer U)[] | undefined } ? U : never
+        : never =>
+        !!x && typeof x === 'object' && !Array.isArray(x)
+        && typeof (x as Record<string, unknown>).name === 'string',
+    )
+    const rawExpect = Array.isArray(payload.expectOutputs) ? payload.expectOutputs : undefined
+    const expectOutputs = rawExpect?.filter((s): s is string => typeof s === 'string')
+
     // Lazy-import so the bus module stays free of router/registry at load
     // time (matters for tests that mock route side effects).
     const { callAgentByName } = await import('./a2a.js')
@@ -741,11 +755,16 @@ export class ApprovalBus {
       callerDepth: ctx.callDepth ?? 0,
       parentJobId: ctx.parentJobId ?? null,
       timeoutMs,
+      ...(inputs && inputs.length > 0 ? { inputs } : {}),
+      ...(expectOutputs && expectOutputs.length > 0 ? { expectOutputs } : {}),
     })
     if (result.ok) {
       this.sendA2AResult(socket, reqId, {
         ok: true, result: result.result, jobId: result.jobId,
         agent: result.agent, durationMs: result.durationMs,
+        artifactsDir: result.artifactsDir,
+        outputs: result.outputs,
+        ...(result.warnings ? { warnings: result.warnings } : {}),
       })
     } else {
       this.sendA2AResult(socket, reqId, { ok: false, error: result.error })
@@ -755,7 +774,12 @@ export class ApprovalBus {
   private sendA2AResult(
     socket: Socket, reqId: string,
     res:
-      | { ok: true;  result: string; jobId: number; agent: string; durationMs: number }
+      | {
+          ok: true;  result: string; jobId: number; agent: string; durationMs: number
+          artifactsDir?: string
+          outputs?: Array<{ name: string; bytes: number; mtime: string }>
+          warnings?: string[]
+        }
       | { ok: false; error: string },
   ): void {
     if (!socket.writable) return
@@ -765,6 +789,9 @@ export class ApprovalBus {
       wire.jobId = res.jobId
       wire.agent = res.agent
       wire.durationMs = res.durationMs
+      if (res.artifactsDir) wire.artifactsDir = res.artifactsDir
+      if (res.outputs && res.outputs.length > 0) wire.outputs = res.outputs
+      if (res.warnings && res.warnings.length > 0) wire.warnings = res.warnings
     } else {
       wire.error = res.error
     }

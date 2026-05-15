@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-05-15
+
+### Fixed — Web console header parity + complete i18n
+
+- **Header parity for Tasks / Reminders / Memos.** All three pages
+  now share the same flex header (gap:16px, h1 flex:1, uniform
+  border-button for nav links / theme toggle / language select).
+  Removed the legacy `<nav>` wrapper from Reminders + Memos so the
+  DOM matches Tasks; the only intended difference per page is the
+  self-referencing nav link being omitted.
+- **Emoji prefix unified.** Page titles consolidated through
+  `T.h1` (`🗂 任务与定时` / `🔔 提醒` / `📋 备忘`) instead of
+  some pages baking the emoji into HTML and others omitting it.
+  Nav-link `↩ Chat` / `↩ 对话` prefix moved into `T.backToChat`.
+- **Complete i18n migration of JS template strings.** Hardcoded
+  English strings in Reminders + Memos JS (loading / empty /
+  snooze / cancel / confirm dialogs / delete / map links / toast
+  text) were missed in the first pass and showed up as mixed
+  zh/en when the language was set to 中文. All ~19 strings now
+  resolve through `T.*` with en + zh parity.
+- **Pre-1.0 schema rows surfacing Invalid Date** in older deploys —
+  belt-and-suspenders fix already in 1.1.4 carried forward.
+
 ## [1.1.4] - 2026-05-15
 
 ### Added — Web console catches up with task-recovery + A2A

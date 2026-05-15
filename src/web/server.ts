@@ -389,6 +389,41 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/audit' && req.method === 'GET') {
       return handleAudit(req, res, url)
     }
+    // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
+    // a retry endpoint for the giving_up row state.
+    if (url.pathname === '/api/outbox' && req.method === 'GET') {
+      return handleListOutbox(req, res, url)
+    }
+    if (url.pathname === '/api/outbox/stats' && req.method === 'GET') {
+      return handleOutboxStats(req, res)
+    }
+    const outboxRetryMatch = url.pathname.match(/^\/api\/outbox\/(\d+)\/retry$/)
+    if (outboxRetryMatch && req.method === 'POST') {
+      return handleOutboxRetry(req, res, parseInt(outboxRetryMatch[1], 10))
+    }
+    // v1.1.3 — A2A tab. Stats over inline rows with parent_id; recent
+    // calls; and a tree walk rooted at a given jobId.
+    if (url.pathname === '/api/a2a/stats' && req.method === 'GET') {
+      return handleA2AStats(req, res)
+    }
+    if (url.pathname === '/api/a2a/recent' && req.method === 'GET') {
+      return handleA2ARecent(req, res, url)
+    }
+    const a2aTreeMatch = url.pathname.match(/^\/api\/a2a\/tree\/(\d+)$/)
+    if (a2aTreeMatch && req.method === 'GET') {
+      return handleA2ATree(req, res, parseInt(a2aTreeMatch[1], 10))
+    }
+    // v1.1.3 — Artifacts. List per-job + download single file. The
+    // download endpoint also doubles as the binary view for the A2A
+    // tab's "📎 commits.txt" link.
+    const artifactsListMatch = url.pathname.match(/^\/api\/artifacts\/(\d+)$/)
+    if (artifactsListMatch && req.method === 'GET') {
+      return handleArtifactsList(req, res, parseInt(artifactsListMatch[1], 10))
+    }
+    const artifactsFileMatch = url.pathname.match(/^\/api\/artifacts\/(\d+)\/file\/([\w.+\-]+)$/)
+    if (artifactsFileMatch && req.method === 'GET') {
+      return handleArtifactsFile(req, res, parseInt(artifactsFileMatch[1], 10), artifactsFileMatch[2])
+    }
     // PR-B: agent health snapshot (circuit breaker + rate-limiter remaining
     // + latency p50/95/99) consumed by the Health tab in /tasks.
     if (url.pathname === '/api/agent-health' && req.method === 'GET') {
@@ -2423,6 +2458,233 @@ function readBody(req: IncomingMessage, res?: ServerResponse): Promise<string> {
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(data))
+}
+
+// ============================================
+// Outbox (v1.1.2)
+// ============================================
+
+async function handleListOutbox(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { listOutbox } = await import('../core/outbox.js')
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
+    const statusRaw = url.searchParams.get('status') || ''
+    const status = ['pending', 'delivered', 'giving_up'].includes(statusRaw)
+      ? (statusRaw as 'pending' | 'delivered' | 'giving_up')
+      : undefined
+    const threadKey = url.searchParams.get('thread') || undefined
+    const rows = listOutbox({ limit, status, threadKey })
+    sendJson(res, 200, { rows })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleOutboxStats(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { getOutboxStats } = await import('../core/outbox.js')
+    sendJson(res, 200, getOutboxStats())
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleOutboxRetry(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+  try {
+    const { retryGivingUp } = await import('../core/outbox.js')
+    const ok = retryGivingUp(id)
+    if (!ok) {
+      sendJson(res, 404, { ok: false, error: `outbox #${id} not found or not in giving_up state` })
+      return
+    }
+    sendJson(res, 200, { ok: true, id })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ============================================
+// A2A (v1.1.3)
+// ============================================
+
+// All three handlers re-use the read-only sqlite shim from
+// commands/a2a.ts — but that file's helper isn't exported and we want
+// to avoid making it public surface. Web takes the simpler route: open
+// its own read-only connection and run the queries inline. Cheap (sqlite
+// open is ~ms) and isolates web reads from the writer.
+function openJobsDbReadOnly(): import('better-sqlite3').Database | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const DBCtor = require('better-sqlite3') as typeof import('better-sqlite3')
+    const path = require('node:path') as typeof import('node:path')
+    const { AGIM_HOME } = require('../core/agim-paths.js') as typeof import('../core/agim-paths.js')
+    const d = new (DBCtor as unknown as { new (p: string, opts?: object): import('better-sqlite3').Database })(
+      path.join(AGIM_HOME, 'jobs.db'),
+      { readonly: true, fileMustExist: true },
+    )
+    d.pragma('journal_mode = WAL')
+    return d
+  } catch {
+    return null
+  }
+}
+
+async function handleA2AStats(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const d = openJobsDbReadOnly()
+  if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
+  try {
+    const total = (d.prepare(
+      "SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL"
+    ).get() as { n: number }).n
+    const recent24h = (d.prepare(
+      "SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL AND created_at >= datetime('now','-1 day')"
+    ).get() as { n: number }).n
+    const maxDepth = (d.prepare(
+      "SELECT MAX(call_depth) AS m FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL"
+    ).get() as { m: number | null }).m ?? 0
+    const byStatus = d.prepare(
+      "SELECT status, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL GROUP BY status"
+    ).all() as Array<{ status: string; n: number }>
+    const byAgent = d.prepare(
+      "SELECT agent, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL GROUP BY agent ORDER BY n DESC LIMIT 10"
+    ).all() as Array<{ agent: string; n: number }>
+    sendJson(res, 200, { total, recent24h, maxDepth, byStatus, byAgent })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  } finally {
+    try { d.close() } catch { /* ignore */ }
+  }
+}
+
+async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const d = openJobsDbReadOnly()
+  if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
+  try {
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 1), 200)
+    const rows = d.prepare(
+      `SELECT id, agent, parent_id, call_depth, status,
+              substr(prompt, 1, 200) AS prompt,
+              substr(result, 1, 500) AS result,
+              error,
+              created_at, started_at, completed_at, delivered_at
+         FROM jobs
+        WHERE kind='inline' AND parent_id IS NOT NULL
+        ORDER BY id DESC
+        LIMIT ?`,
+    ).all(limit)
+    sendJson(res, 200, { rows })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  } finally {
+    try { d.close() } catch { /* ignore */ }
+  }
+}
+
+async function handleA2ATree(_req: IncomingMessage, res: ServerResponse, rootId: number): Promise<void> {
+  const dMaybe = openJobsDbReadOnly()
+  if (!dMaybe) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
+  const d = dMaybe  // captured non-null binding for nested async closures
+  try {
+    const { listOutputs } = await import('../core/artifacts.js')
+    // Walk down (children of rootId, grandchildren, ...). Bounded depth 10
+    // to keep the response size sane even on misbehaving runaway chains.
+    interface Node {
+      id: number; agent: string; status: string; parent_id: number | null
+      call_depth: number; prompt: string; result: string | null; error: string | null
+      created_at: string; started_at: string | null; completed_at: string | null; delivered_at: string | null
+      outputs: Array<{ name: string; bytes: number; mtime: string }>
+      children: Node[]
+    }
+    const rootRow = d.prepare(
+      `SELECT id, agent, status, parent_id, call_depth,
+              substr(prompt, 1, 400) AS prompt,
+              substr(result, 1, 1000) AS result, error,
+              created_at, started_at, completed_at, delivered_at
+         FROM jobs WHERE id = ?`,
+    ).get(rootId) as Omit<Node, 'outputs' | 'children'> | undefined
+    if (!rootRow) { sendJson(res, 404, { error: `job #${rootId} not found` }); return }
+
+    const visited = new Set<number>()
+    async function build(row: Omit<Node, 'outputs' | 'children'>, depth: number): Promise<Node> {
+      visited.add(row.id)
+      const node: Node = { ...row, outputs: await listOutputs(row.id), children: [] }
+      if (depth >= 10) return node
+      const kids = d.prepare(
+        `SELECT id, agent, status, parent_id, call_depth,
+                substr(prompt, 1, 400) AS prompt,
+                substr(result, 1, 1000) AS result, error,
+                created_at, started_at, completed_at, delivered_at
+           FROM jobs WHERE parent_id = ? ORDER BY id`,
+      ).all(row.id) as Array<Omit<Node, 'outputs' | 'children'>>
+      for (const k of kids) {
+        if (!visited.has(k.id)) node.children.push(await build(k, depth + 1))
+      }
+      return node
+    }
+    const tree = await build(rootRow, 0)
+    sendJson(res, 200, { tree })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  } finally {
+    try { d.close() } catch { /* ignore */ }
+  }
+}
+
+// ============================================
+// Artifacts (v1.1.3)
+// ============================================
+
+async function handleArtifactsList(_req: IncomingMessage, res: ServerResponse, jobId: number): Promise<void> {
+  try {
+    const { statJob } = await import('../core/artifacts.js')
+    const s = await statJob(jobId)
+    sendJson(res, 200, { jobId, inputs: s.inputs, outputs: s.outputs, totalBytes: s.bytes })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleArtifactsFile(
+  _req: IncomingMessage, res: ServerResponse, jobId: number, name: string,
+): Promise<void> {
+  try {
+    // Inputs are read-only-from-caller (just copies). Outputs are what
+    // the callee produced. The web caller picks by name; we look in
+    // outputs first (the common case for downloads) and fall back to
+    // inputs if not found.
+    const { readOutput, getArtifactsDir } = await import('../core/artifacts.js')
+    let buf = await readOutput(jobId, name)
+    if (!buf) {
+      // Try inputs dir directly (no helper, reuse fs).
+      const { existsSync, promises: fs } = await import('node:fs')
+      const path = await import('node:path')
+      const { inputDir } = getArtifactsDir(jobId)
+      const p = path.join(inputDir, name)
+      if (existsSync(p) && !name.includes('/') && name !== '..') {
+        buf = await fs.readFile(p)
+      }
+    }
+    if (!buf) { sendJson(res, 404, { error: `artifact ${name} not found for job ${jobId}` }); return }
+    // Best-effort MIME — most agim artifacts are text/JSON/code so we
+    // default to text/plain and let .json / .md / .csv keep their type.
+    const lower = name.toLowerCase()
+    const contentType =
+      lower.endsWith('.json') ? 'application/json' :
+      lower.endsWith('.md')   ? 'text/markdown' :
+      lower.endsWith('.csv')  ? 'text/csv' :
+      lower.endsWith('.html') ? 'text/html' :
+      lower.endsWith('.png')  ? 'image/png' :
+      lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' :
+      'text/plain; charset=utf-8'
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': buf.length,
+      'Content-Disposition': `inline; filename="${name.replace(/"/g, '_')}"`,
+    })
+    res.end(buf)
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 // ============================================

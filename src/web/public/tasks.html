@@ -570,6 +570,8 @@
       <button type="button" class="tab" data-tab="health" id="tab-health"></button>
       <button type="button" class="tab" data-tab="files" id="tab-files"></button>
       <button type="button" class="tab" data-tab="audit" id="tab-audit"></button>
+      <button type="button" class="tab" data-tab="outbox" id="tab-outbox">Outbox</button>
+      <button type="button" class="tab" data-tab="a2a" id="tab-a2a">A2A</button>
     </div>
 
     <section id="jobs-pane">
@@ -689,6 +691,38 @@
       <div class="stats" id="audit-stats"></div>
       <div id="audit-list"></div>
     </section>
+
+    <!-- Outbox tab (v1.1.2) — persistent IM delivery queue -->
+    <section id="outbox-pane" hidden>
+      <div class="toolbar">
+        <select id="outbox-status-filter">
+          <option value="">All</option>
+          <option value="pending">⏳ Pending</option>
+          <option value="delivered">✅ Delivered</option>
+          <option value="giving_up">💀 Giving up</option>
+        </select>
+        <select id="outbox-limit">
+          <option value="20">20</option>
+          <option value="50" selected>50</option>
+          <option value="200">200</option>
+        </select>
+        <button type="button" id="btn-outbox-refresh">Refresh</button>
+      </div>
+      <div class="stats" id="outbox-stats"></div>
+      <div id="outbox-list"></div>
+    </section>
+
+    <!-- A2A tab (v1.1.3) — agent-to-agent call observability + artifacts viewer -->
+    <section id="a2a-pane" hidden>
+      <div class="toolbar">
+        <input type="number" id="a2a-tree-id" placeholder="job id for tree…" min="1" style="width:140px">
+        <button type="button" id="btn-a2a-tree">Tree</button>
+        <button type="button" id="btn-a2a-refresh">Refresh</button>
+      </div>
+      <div class="stats" id="a2a-stats"></div>
+      <div id="a2a-list"></div>
+      <div id="a2a-tree"></div>
+    </section>
   </main>
 
   <div class="modal-bg" id="modal-bg">
@@ -754,6 +788,8 @@
         document.getElementById('approvals-pane').hidden = tab !== 'approvals';
         document.getElementById('health-pane').hidden = tab !== 'health';
         document.getElementById('files-pane').hidden = tab !== 'files';
+        document.getElementById('outbox-pane').hidden = tab !== 'outbox';
+        document.getElementById('a2a-pane').hidden = tab !== 'a2a';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
@@ -762,6 +798,8 @@
         if (tab === 'approvals') loadApprovals();
         if (tab === 'health') loadHealth();
         if (tab === 'files') ensureFilesAgentLoaded().then(() => loadFiles(filesPath));
+        if (tab === 'outbox') loadOutbox();
+        if (tab === 'a2a') loadA2A();
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
         setupApprovalsAutoRefresh();
@@ -1816,6 +1854,176 @@
     }
 
     setupSSE();
+
+    // ============================================
+    // Outbox tab (v1.1.2)
+    // ============================================
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    async function loadOutbox() {
+      const statusEl = document.getElementById('outbox-status-filter');
+      const limitEl = document.getElementById('outbox-limit');
+      const statusFilter = statusEl ? statusEl.value : '';
+      const limit = limitEl ? limitEl.value : '50';
+      try {
+        const statsResp = await fetch('/api/outbox/stats');
+        const stats = await statsResp.json();
+        const statsEl = document.getElementById('outbox-stats');
+        if (statsEl) {
+          statsEl.innerHTML =
+            `<span class="stat">⏳ pending <b>${stats.pending ?? 0}</b></span>` +
+            `<span class="stat">✅ delivered <b>${stats.delivered ?? 0}</b></span>` +
+            `<span class="stat">💀 giving_up <b>${stats.giving_up ?? 0}</b></span>`;
+        }
+        const qs = new URLSearchParams({ limit });
+        if (statusFilter) qs.set('status', statusFilter);
+        const listResp = await fetch('/api/outbox?' + qs);
+        const { rows = [] } = await listResp.json();
+        const listEl = document.getElementById('outbox-list');
+        if (!rows.length) { listEl.innerHTML = '<p style="color:var(--text-muted)">No outbox rows.</p>'; return; }
+        const html = ['<table class="data-table"><thead><tr>',
+          '<th>#</th><th>Status</th><th>Platform</th><th>Kind</th><th>Pri</th>',
+          '<th>Attempts</th><th>Payload</th><th>Error</th><th>Created</th><th></th>',
+          '</tr></thead><tbody>'];
+        for (const r of rows) {
+          const icon = r.status === 'delivered' ? '✅' : r.status === 'giving_up' ? '💀' : '⏳';
+          const preview = (r.payload || '').slice(0, 60).replace(/\n/g, ' ');
+          const errCell = r.last_error ? `<span title="${escapeHtml(r.last_error)}">${escapeHtml(r.last_error.slice(0, 40))}…</span>` : '';
+          const ts = (r.created_at || '').replace('T', ' ').slice(0, 19);
+          const retryBtn = r.status === 'giving_up'
+            ? `<button class="btn-link" data-retry="${r.id}">Retry</button>` : '';
+          html.push(`<tr>
+            <td>#${r.id}</td>
+            <td>${icon} ${escapeHtml(r.status)}</td>
+            <td>${escapeHtml(r.platform)}</td>
+            <td>${escapeHtml(r.kind)}</td>
+            <td>${escapeHtml(r.priority)}</td>
+            <td>${r.attempts}</td>
+            <td title="${escapeHtml(r.payload || '')}">${escapeHtml(preview)}…</td>
+            <td>${errCell}</td>
+            <td>${ts}</td>
+            <td>${retryBtn}</td>
+          </tr>`);
+        }
+        html.push('</tbody></table>');
+        listEl.innerHTML = html.join('');
+        listEl.querySelectorAll('[data-retry]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-retry');
+            const r = await fetch(`/api/outbox/${id}/retry`, { method: 'POST' });
+            const j = await r.json();
+            if (j.ok) { loadOutbox(); }
+            else alert('Retry failed: ' + (j.error || 'unknown'));
+          });
+        });
+      } catch (err) {
+        document.getElementById('outbox-list').innerHTML = `<p style="color:#d00">Failed: ${escapeHtml(String(err))}</p>`;
+      }
+    }
+    document.getElementById('btn-outbox-refresh')?.addEventListener('click', loadOutbox);
+    document.getElementById('outbox-status-filter')?.addEventListener('change', loadOutbox);
+    document.getElementById('outbox-limit')?.addEventListener('change', loadOutbox);
+
+    // ============================================
+    // A2A tab (v1.1.3)
+    // ============================================
+
+    async function loadA2A() {
+      try {
+        const [statsResp, recentResp] = await Promise.all([
+          fetch('/api/a2a/stats'),
+          fetch('/api/a2a/recent?limit=20'),
+        ]);
+        const stats = await statsResp.json();
+        const recent = (await recentResp.json()).rows || [];
+        const statsEl = document.getElementById('a2a-stats');
+        if (statsEl) {
+          const byStatus = (stats.byStatus || []).map(s => `${s.status}:${s.n}`).join(' · ');
+          const byAgent = (stats.byAgent || []).map(s => `${s.agent} <b>${s.n}</b>`).join(' / ');
+          statsEl.innerHTML =
+            `<span class="stat">Total <b>${stats.total ?? 0}</b></span>` +
+            `<span class="stat">24h <b>${stats.recent24h ?? 0}</b></span>` +
+            `<span class="stat">Max depth <b>${stats.maxDepth ?? 0}</b></span>` +
+            (byStatus ? `<span class="stat">${byStatus}</span>` : '') +
+            (byAgent ? `<span class="stat">Top: ${byAgent}</span>` : '');
+        }
+        const listEl = document.getElementById('a2a-list');
+        if (!recent.length) { listEl.innerHTML = '<p style="color:var(--text-muted)">No A2A calls yet.</p>'; return; }
+        const html = ['<h3 style="margin-top:1em">Recent A2A calls</h3>',
+          '<table class="data-table"><thead><tr>',
+          '<th>#</th><th>Caller→Callee</th><th>Depth</th><th>Status</th>',
+          '<th>Prompt</th><th>Started</th><th>Done</th><th>Tree</th>',
+          '</tr></thead><tbody>'];
+        for (const r of recent) {
+          const icon = r.status === 'delivered' || r.status === 'completed' ? '✅'
+            : r.status === 'failed' ? '❌'
+            : r.status === 'running' ? '🔄' : '⏳';
+          const preview = (r.prompt || '').slice(0, 50).replace(/\n/g, ' ');
+          const started = (r.started_at || '').replace('T', ' ').slice(0, 19);
+          const done = (r.completed_at || r.delivered_at || '').replace('T', ' ').slice(0, 19);
+          html.push(`<tr>
+            <td>#${r.id}</td>
+            <td>←#${r.parent_id ?? '?'} → <b>${escapeHtml(r.agent)}</b></td>
+            <td>${r.call_depth}</td>
+            <td>${icon} ${escapeHtml(r.status)}</td>
+            <td title="${escapeHtml(r.prompt || '')}">${escapeHtml(preview)}…</td>
+            <td>${started}</td>
+            <td>${done}</td>
+            <td><button class="btn-link" data-tree="${r.parent_id}">View parent tree</button></td>
+          </tr>`);
+        }
+        html.push('</tbody></table>');
+        listEl.innerHTML = html.join('');
+        listEl.querySelectorAll('[data-tree]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-tree');
+            if (!id || id === 'null') return;
+            document.getElementById('a2a-tree-id').value = id;
+            loadA2ATree(id);
+          });
+        });
+      } catch (err) {
+        document.getElementById('a2a-list').innerHTML = `<p style="color:#d00">Failed: ${escapeHtml(String(err))}</p>`;
+      }
+    }
+
+    async function loadA2ATree(rootId) {
+      const treeEl = document.getElementById('a2a-tree');
+      if (!rootId) return;
+      treeEl.innerHTML = `<p style="color:var(--text-muted)">Loading tree #${rootId}…</p>`;
+      try {
+        const resp = await fetch(`/api/a2a/tree/${rootId}`);
+        const j = await resp.json();
+        if (!resp.ok) { treeEl.innerHTML = `<p style="color:#d00">${escapeHtml(j.error || 'failed')}</p>`; return; }
+        const lines = [`<h3 style="margin-top:1em">🌳 Call tree (root #${rootId})</h3>`];
+        function render(node, depth) {
+          const indent = '&nbsp;'.repeat(depth * 4);
+          const icon = node.status === 'delivered' || node.status === 'completed' ? '✅'
+            : node.status === 'failed' ? '❌'
+            : node.status === 'running' ? '🔄' : '⏳';
+          const preview = (node.prompt || '').slice(0, 70).replace(/\n/g, ' ');
+          lines.push(`<div>${indent}${icon} <b>#${node.id}</b> ${escapeHtml(node.agent)} [${escapeHtml(node.status)}] ${escapeHtml(preview)}…</div>`);
+          for (const f of (node.outputs || [])) {
+            const fmt = (n) => n < 1024 ? `${n} B` : n < 1024*1024 ? `${(n/1024).toFixed(1)} KB` : `${(n/1024/1024).toFixed(1)} MB`;
+            lines.push(`<div>${indent}&nbsp;&nbsp;&nbsp;&nbsp;📎 <a href="/api/artifacts/${node.id}/file/${encodeURIComponent(f.name)}" target="_blank">${escapeHtml(f.name)}</a> (${fmt(f.bytes)})</div>`);
+          }
+          for (const c of (node.children || [])) render(c, depth + 1);
+        }
+        render(j.tree, 0);
+        treeEl.innerHTML = `<div style="font-family:monospace;font-size:13px;line-height:1.6">${lines.join('')}</div>`;
+      } catch (err) {
+        treeEl.innerHTML = `<p style="color:#d00">Tree failed: ${escapeHtml(String(err))}</p>`;
+      }
+    }
+
+    document.getElementById('btn-a2a-refresh')?.addEventListener('click', loadA2A);
+    document.getElementById('btn-a2a-tree')?.addEventListener('click', () => {
+      const id = document.getElementById('a2a-tree-id').value;
+      if (id) loadA2ATree(id);
+    });
 
     // Initial load
     loadJobs();

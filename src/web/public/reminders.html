@@ -15,8 +15,8 @@
       document.documentElement.lang = window.__lang === 'zh' ? 'zh-CN' : 'en';
       const T = {
         en: {
-          title: 'Agim — Reminders', h1: 'Reminders',
-          backToChat: 'Chat', toTasks: 'Tasks', toMemos: 'Memos', toSettings: 'Settings',
+          title: 'Agim — Reminders', h1: '🔔 Reminders',
+          backToChat: '↩ Chat', toTasks: 'Tasks', toMemos: 'Memos', toSettings: 'Settings',
           statusPending: 'Pending', statusFired: 'Fired', statusCancelled: 'Cancelled', statusFailed: 'Failed',
           loading: 'Loading…',
           loadFailed: 'Load failed: {err}',
@@ -29,8 +29,8 @@
           snoozed: '⏰ Snoozed #{id} +5min',
         },
         zh: {
-          title: 'Agim — 提醒', h1: '提醒',
-          backToChat: '对话', toTasks: '任务', toMemos: '备忘', toSettings: '设置',
+          title: 'Agim — 提醒', h1: '🔔 提醒',
+          backToChat: '↩ 对话', toTasks: '任务', toMemos: '备忘', toSettings: '设置',
           statusPending: '待发', statusFired: '已发', statusCancelled: '已取消', statusFailed: '失败',
           loading: '加载中…',
           loadFailed: '加载失败：{err}',
@@ -141,7 +141,7 @@
 </head>
 <body>
 <header>
-  <h1>🔔 <span id="page-title"></span></h1>
+  <h1 id="page-title"></h1>
   <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
   <select id="langSelect" title="Language / 语言">
     <option value="en">EN</option>

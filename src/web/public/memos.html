@@ -14,8 +14,8 @@
       document.documentElement.lang = window.__lang === 'zh' ? 'zh-CN' : 'en';
       const T = {
         en: {
-          title: 'Agim — Memos', h1: 'Memos',
-          backToChat: 'Chat', toTasks: 'Tasks', toReminders: 'Reminders', toSettings: 'Settings',
+          title: 'Agim — Memos', h1: '📋 Memos',
+          backToChat: '↩ Chat', toTasks: 'Tasks', toReminders: 'Reminders', toSettings: 'Settings',
           filterAll: 'All', filterGeo: 'With location', filterExpired: 'Expired',
           searchPlaceholder: 'search (what / memo / who / address …)',
           loading: 'Loading…',
@@ -29,8 +29,8 @@
           mapBaidu: 'Baidu Map', mapAmap: 'Amap', mapGoogle: 'Google Maps',
         },
         zh: {
-          title: 'Agim — 备忘', h1: '备忘',
-          backToChat: '对话', toTasks: '任务', toReminders: '提醒', toSettings: '设置',
+          title: 'Agim — 备忘', h1: '📋 备忘',
+          backToChat: '↩ 对话', toTasks: '任务', toReminders: '提醒', toSettings: '设置',
           filterAll: '全部', filterGeo: '有位置', filterExpired: '已过期',
           searchPlaceholder: '搜索内容（what / memo / who / 地址 …）',
           loading: '加载中…',
@@ -159,7 +159,7 @@
 </head>
 <body>
 <header>
-  <h1>📋 <span id="page-title"></span></h1>
+  <h1 id="page-title"></h1>
   <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
   <select id="langSelect" title="Language / 语言">
     <option value="en">EN</option>

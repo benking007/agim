@@ -25,8 +25,10 @@
     const T = {
       en: {
         title: 'Agim — Tasks',
-        h1: 'Tasks & Schedules',
-        backToChat: 'Chat',
+        h1: '🗂 Tasks & Schedules',
+        backToChat: '↩ Chat',
+        toReminders: 'Reminders',
+        toMemos: 'Memos',
         toSettings: 'Settings',
         tabsJobs: 'Jobs',
         tabsBackground: 'Background',
@@ -231,8 +233,10 @@
       },
       zh: {
         title: 'Agim — 任务',
-        h1: '任务与定时',
-        backToChat: '对话',
+        h1: '🗂 任务与定时',
+        backToChat: '↩ 对话',
+        toReminders: '提醒',
+        toMemos: '备忘',
         toSettings: '设置',
         tabsAudit: '审计',
         tabsJobs: '任务',
@@ -747,14 +751,14 @@
   <header>
     <h1 id="page-title"></h1>
     <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-    <select id="langSelect" title="Language / 语言" style="margin-right:8px">
+    <select id="langSelect" title="Language / 语言">
       <option value="en">EN</option>
       <option value="zh">中文</option>
     </select>
-    <a href="/">↩ <span id="lbl-chat"></span></a>
-    <a href="/reminders" id="lnk-reminders">Reminders</a>
-    <a href="/memos" id="lnk-memos">Memos</a>
-    <a href="/settings" aria-label="Settings"><span id="lbl-settings"></span></a>
+    <a href="/" id="lnk-chat"></a>
+    <a href="/reminders" id="lnk-reminders"></a>
+    <a href="/memos" id="lnk-memos"></a>
+    <a href="/settings" id="lnk-settings"></a>
   </header>
   <main>
     <div class="tabs">
@@ -954,8 +958,10 @@
     // i18n string fills
     document.title = T.title;
     document.getElementById('page-title').textContent = T.h1;
-    document.getElementById('lbl-chat').textContent = T.backToChat;
-    document.getElementById('lbl-settings').textContent = T.toSettings;
+    document.getElementById('lnk-chat').textContent = T.backToChat;
+    document.getElementById('lnk-reminders').textContent = T.toReminders;
+    document.getElementById('lnk-memos').textContent = T.toMemos;
+    document.getElementById('lnk-settings').textContent = T.toSettings;
     document.getElementById('tab-jobs').textContent = T.tabsJobs;
     document.getElementById('tab-background').textContent = T.tabsBackground;
     document.getElementById('tab-subtasks').textContent = T.tabsSubtasks;

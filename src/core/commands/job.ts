@@ -7,8 +7,14 @@ import { AgentBase } from '../agent-base.js'
 import { createJob, getJob, listJobs, cancelJob, runJob, getJobStats, type Job } from '../job-board.js'
 import { workspaceRegistry } from '../workspace.js'
 
+const JOB_STATUS_ICON: Record<string, string> = {
+  pending: '⏳', running: '🔄', completed: '✅', delivered: '📬',
+  failed: '❌', cancelled: '🚫',
+  interrupted: '⚠️', replaced: '🔁', abandoned: '🗑',
+}
+
 function formatJob(j: Job): string {
-  const icon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', cancelled: '🚫' }[j.status] || '❓'
+  const icon = JOB_STATUS_ICON[j.status] || '❓'
   const ts = new Date(`${j.created_at}Z`).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   const preview = j.prompt.substring(0, 50) + (j.prompt.length > 50 ? '...' : '')
   return `${icon} #${j.id} ${j.agent}: ${preview} [${j.status}] · ${ts}`
@@ -84,7 +90,11 @@ Agent: ${agent.name}
       if (Number.isNaN(id)) return '用法: /job check <id>'
       const job = getJob(id, ownerOpts)
       if (!job) return `❌ 未找到任务 #${id}。`
-      const statusLabel = { pending: '⏳ 待执行', running: '🔄 运行中', completed: '✅ 已完成', failed: '❌ 失败', cancelled: '🚫 已取消' }
+      const statusLabel: Record<string, string> = {
+        pending: '⏳ 待执行', running: '🔄 运行中', completed: '✅ 已完成', delivered: '📬 已送达',
+        failed: '❌ 失败', cancelled: '🚫 已取消',
+        interrupted: '⚠️ 已中断', replaced: '🔁 已重发', abandoned: '🗑 已归档',
+      }
       let msg = `📋 **任务 #${job.id}**
 
 Agent: ${job.agent}

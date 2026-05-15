@@ -32,6 +32,7 @@ import {
   enqueue, pickPending, markDelivered, markFailed,
   type OutboxKind, type OutboxPriority, type OutboxRow,
 } from './outbox.js'
+import { markJobDelivered, markJobFailed } from './job-board.js'
 
 const log = rootLogger.child({ component: 'message-sink' })
 
@@ -197,6 +198,9 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
         payload: payloadStr, kind: p.kind, priority, jobId: p.jobId ?? null,
       })
       if (id > 0) markDelivered(id)
+      // Phase 2: cascade delivery confirmation to the linked inline job
+      // so its row transitions completed → delivered alongside the outbox row.
+      if (p.jobId && p.jobId > 0) markJobDelivered(p.jobId)
       return { outboxId: id, immediate: true }
     } catch (err) {
       log.warn({
@@ -279,7 +283,12 @@ async function workerTick(): Promise<void> {
       try {
         await doSend(row)
         markDelivered(row.id)
-        log.debug({ event: 'sink.delivered', id: row.id, platform: row.platform, kind: row.kind },
+        // Phase 2: cascade delivery → linked inline job. row.job_id is
+        // populated when sink.deliver was called with a SinkPayload.jobId.
+        // markJobDelivered no-ops on id<=0 / non-'completed' rows so this
+        // is safe even when the job was cancelled mid-flight.
+        if (row.job_id && row.job_id > 0) markJobDelivered(row.job_id)
+        log.debug({ event: 'sink.delivered', id: row.id, platform: row.platform, kind: row.kind, jobId: row.job_id },
           'outbox row delivered')
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
@@ -291,6 +300,13 @@ async function workerTick(): Promise<void> {
         }, gaveUp
           ? `outbox row ${row.id} gave up after ${attempts} attempts: ${errMsg}`
           : `outbox row ${row.id} failed (attempt ${attempts}), will retry`)
+        // Phase 2: when outbox gives up, the linked job's reply will never
+        // reach the user. Mark the job 'failed' so /jobs accurately reflects
+        // the terminal state. Non-giving-up failures stay 'completed' — the
+        // worker will retry soon and we don't want to flicker the status.
+        if (gaveUp && row.job_id && row.job_id > 0) {
+          markJobFailed(row.job_id, `outbox gave up: ${errMsg}`)
+        }
       }
     }
   } finally {

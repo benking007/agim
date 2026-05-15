@@ -36,6 +36,9 @@ import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
 import { sink } from './core/message-sink.js'
 import {
+  createInlineJob, markJobRunning, markJobCompleted, markJobFailed, linkJobOutbox, updateJobAgent,
+} from './core/job-board.js'
+import {
   checkMessengerConfig,
   checkAgentAvailability,
   runMessengerOnboarding,
@@ -668,6 +671,12 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
   const looksLikeApproval = /^\s*[yn]\s*$/i.test(message.text) ||
     /^\s*(批准|拒绝|同意|不同意|通过|可以|不可以|不行|✅|❌)\s*$/.test(message.text)
 
+  // Inline-job tracking id (Phase 2). Declared at function scope so the
+  // catch block below can mark the row 'failed' on any throw. -1 means
+  // "not tracked": either the message didn't reach willInvokeAgent, or
+  // createInlineJob fell back to in-memory (DB locked / IMHUB_INLINE_JOB_TRACKING=0).
+  let inlineJobId = -1
+
   try {
     if (messenger.sendTyping) {
       messenger.sendTyping(message.threadId, true).catch(() => {})
@@ -743,6 +752,41 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       }
     }
 
+    // Inline-job tracking: every agent-bound inbound message gets a row in
+    // the jobs table (kind='inline') so the state machine survives crashes
+    // and the Phase 3 startup scan can offer the user a retry. Built-ins
+    // (status/audit/router) return string immediately and never touch the
+    // agent — no point tracking them. Inline tracking can be killed wholesale
+    // via env IMHUB_INLINE_JOB_TRACKING=0 (createInlineJob returns -1, every
+    // mark*Job helper no-ops on id<=0). createInlineJob itself never throws —
+    // if the DB is locked or disk-full we get -1 and the user path runs
+    // unchanged on the in-memory fast path.
+    //
+    // We create the row BEFORE entering the runOnThread queue so a stuck
+    // queue (or runAgentInvocation crash before the agent runs) still leaves
+    // a 'pending' record we can attribute to the user. The agent name is
+    // initially defaultAgent and gets corrected from inside onAgentResolved
+    // once routing picks the real one.
+    if (willInvokeAgent) {
+      inlineJobId = createInlineJob({
+        agent: defaultAgent,
+        prompt: message.text,
+        threadKey: `${platform}:${ctx.channelId}:${message.threadId}`,
+        creatorId: message.userId ?? '',
+      })
+    }
+
+    // Chain the agent-name correction onto the existing onAgentResolved
+    // (which already wires native session ids). Both run sequentially —
+    // the inline-job update is fast and best-effort.
+    const prevOnResolved = routeCtx.onAgentResolved
+    if (prevOnResolved || inlineJobId > 0) {
+      routeCtx.onAgentResolved = async (resolvedAgent: string) => {
+        if (prevOnResolved) await prevOnResolved(resolvedAgent)
+        updateJobAgent(inlineJobId, resolvedAgent)
+      }
+    }
+
     // The thinking placeholder + agent invocation + response delivery are
     // wrapped into a closure so agent-bound messages can be serialized
     // per-thread via runOnThread (see core/thread-queue.ts). Without
@@ -764,6 +808,11 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         }
       }
 
+      // Mark inline job 'running' just before the agent actually starts —
+      // anything that throws before this leaves the row in 'pending' which
+      // is the correct "never ran" semantic.
+      markJobRunning(inlineJobId)
+
       const result = await routeMessage(parsed, routeCtx)
 
       const dismiss = async () => {
@@ -777,10 +826,13 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       if (typeof result === 'string') {
         await stopTyping()
         await dismiss()
-        await sink.deliver({
+        markJobCompleted(inlineJobId, result)
+        const sinkRes = await sink.deliver({
           platform, channelId: ctx.channelId, threadId: message.threadId,
           payload: await maybePrefix(result), kind: 'text',
+          jobId: inlineJobId > 0 ? inlineJobId : undefined,
         })
+        if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
         logger.info({ event: 'message.sent', responseLen: result.length })
       } else {
         // Stream response chunks
@@ -793,12 +845,20 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await dismiss()
 
         if (fullResponse) {
-          await sink.deliver({
+          markJobCompleted(inlineJobId, fullResponse)
+          const sinkRes = await sink.deliver({
             platform, channelId: ctx.channelId, threadId: message.threadId,
             payload: await maybePrefix(fullResponse), kind: 'text',
+            jobId: inlineJobId > 0 ? inlineJobId : undefined,
           })
+          if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
           logger.info({ event: 'message.sent', responseLen: fullResponse.length })
         } else {
+          // Empty response is treated as a failure of the inline job —
+          // there's nothing to deliver and we don't want the row stuck in
+          // 'running' forever. The user already sees nothing; the row gets
+          // pruned out of /jobs lists.
+          markJobFailed(inlineJobId, 'agent returned empty response')
           logger.warn({ event: 'message.empty_response' })
         }
       }
@@ -826,6 +886,11 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     if (dismissThinking) {
       try { await dismissThinking() } catch { /* ignore */ }
     }
+    // Mark inline job 'failed' before sending the user error — markJobFailed
+    // is a no-op for id<=0 (built-ins / inline tracking disabled) and for
+    // already-terminal rows. The error blurb still goes through sink so it
+    // survives an IM hiccup.
+    markJobFailed(inlineJobId, errMsg)
     await sink.deliver({
       platform, channelId: ctx.channelId, threadId: message.threadId,
       payload: '❌ An error occurred processing your message.', kind: 'text',

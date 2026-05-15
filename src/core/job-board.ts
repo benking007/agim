@@ -84,7 +84,34 @@ function reapStaleRunning(d: Database.Database): void {
   }
 }
 
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type JobKind = 'job' | 'inline'
+
+/** Lifecycle states.
+ *  - pending     : created, not yet picked up
+ *  - running     : agent currently executing
+ *  - completed   : agent finished, result captured; for inline kind the
+ *                  reply still has to go through the outbox before terminal
+ *                  'delivered' (or 'failed' if the outbox gives up).
+ *  - delivered   : (inline only) reply confirmed sent via outbox.
+ *  - failed      : agent threw OR outbox gave up
+ *  - cancelled   : user-initiated cancel
+ *  - interrupted : (Phase 3) running row was killed by agim shutdown — the
+ *                  startup scan offers the user a retry.
+ *  - replaced    : (Phase 3) interrupted row whose user picked "retry"; the
+ *                  new row's id lands in `replaced_by`.
+ *  - abandoned   : (Phase 3) interrupted row past the 10-minute window — no
+ *                  notification fired, archived for audit.
+ */
+export type JobStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'delivered'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'replaced'
+  | 'abandoned'
 
 export interface Job {
   id: number
@@ -99,29 +126,76 @@ export interface Job {
   creator_id: string
   /** Workspace this job was created under, or '' if unknown. */
   workspace_id: string
+  /** `${platform}:${channelId}:${threadId}` — empty for legacy / system rows. */
+  thread_key: string
+  /** 'job' = explicit /job (30d retention), 'inline' = auto-tracked inbound
+   *  message (24h retention + Phase 3 lifecycle hooks). */
+  kind: JobKind
+  /** ISO when status first transitioned to 'running'. Null for never-run rows. */
+  started_at: string | null
+  /** ISO when the outbox confirmed delivery to IM. Inline kind only. */
+  delivered_at: string | null
+  /** Id of the new job that replaced this one (Phase 3 retry flow). */
+  replaced_by: number | null
+  /** Last outbox row id that tried to deliver this job's result. Reverse
+   *  link to `outbox.job_id`. */
+  last_outbox_id: number | null
 }
 
 type JobRunner = (job: Job, logger: Logger, signal: AbortSignal) => AsyncGenerator<string>
 
 /**
- * Idempotent column-add for ownership tracking. Run on every helper init —
- * SQLite's ALTER TABLE ADD COLUMN throws "duplicate column name" if the
- * column already exists, which we silently swallow. Cheaper than the full
- * pragma table_info() inspection round-trip.
+ * Idempotent column-adds. Run on every helper init — SQLite's ALTER TABLE
+ * ADD COLUMN throws "duplicate column name" if the column already exists,
+ * which we silently swallow. Cheaper than the full pragma table_info()
+ * inspection round-trip.
+ *
+ * Columns added over time:
+ *   - creator_id / workspace_id  : ownership (v1.0.x)
+ *   - thread_key                 : `${platform}:${channelId}:${threadId}` — needed
+ *                                   so Phase 3 can recover an interrupted inline
+ *                                   job back to the right IM thread.
+ *   - kind                       : 'job' (explicit /job, retention 30d) vs
+ *                                   'inline' (auto-tracked inbound, retention 24h).
+ *   - started_at / delivered_at  : finer-grained lifecycle stamps.
+ *   - replaced_by                : when user retries an interrupted job, the
+ *                                   old row points at the new one.
+ *   - last_outbox_id             : link to the outbox row that delivered (or is
+ *                                   trying to deliver) this job's result.
  */
-function migrateOwnership(d: Database.Database): void {
-  for (const col of ['creator_id', 'workspace_id'] as const) {
+function migrateColumns(d: Database.Database): void {
+  // [column, type] — type must include any NOT NULL / DEFAULT clauses.
+  const adds: Array<[string, string]> = [
+    ['creator_id',     `TEXT    NOT NULL DEFAULT ''`],
+    ['workspace_id',   `TEXT    NOT NULL DEFAULT ''`],
+    ['thread_key',     `TEXT    NOT NULL DEFAULT ''`],
+    ['kind',           `TEXT    NOT NULL DEFAULT 'job'`],
+    ['started_at',     `TEXT`],
+    ['delivered_at',   `TEXT`],
+    ['replaced_by',    `INTEGER`],
+    ['last_outbox_id', `INTEGER`],
+  ]
+  for (const [col, type] of adds) {
     try {
-      d.prepare(`ALTER TABLE jobs ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`).run()
+      d.prepare(`ALTER TABLE jobs ADD COLUMN ${col} ${type}`).run()
       rootLogger.info({ component: 'job-board', column: col, event: 'job-board.migration' },
         `Added ${col} column to jobs table`)
     } catch {
       // duplicate column — already migrated
     }
   }
+  // Phase 2 indexes — needed for retention split (kind) and Phase 3 recovery
+  // sweep (kind + status + thread_key). IF NOT EXISTS is idempotent.
+  try {
+    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_kind_status ON jobs(kind, status)`).run()
+    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_thread_key  ON jobs(thread_key)`).run()
+    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_last_outbox ON jobs(last_outbox_id) WHERE last_outbox_id IS NOT NULL`).run()
+  } catch {
+    // shouldn't fail but never let an index error block startup
+  }
 }
 
-/** Default number of days a completed/failed/cancelled job is retained. */
+/** Default retention (days) for terminal explicit /job rows. */
 function resolveRetentionDays(): number {
   const raw = process.env.IM_HUB_JOB_RETENTION_DAYS
   if (raw) {
@@ -129,6 +203,20 @@ function resolveRetentionDays(): number {
     if (Number.isFinite(n) && n > 0) return n
   }
   return 30
+}
+
+/** Retention (hours) for terminal inline jobs. Inline rows are auto-tracked
+ *  from every inbound IM message — they accrue 100s of rows/day even on a
+ *  quiet thread, so the default is much shorter than the explicit /job 30-day
+ *  retention. Phase 3's recovery sweep needs at least the user's "回 1 重发"
+ *  window, so don't drop below ~6h in production. */
+function resolveInlineRetentionHours(): number {
+  const raw = process.env.IMHUB_INLINE_JOB_RETENTION_HOURS
+  if (raw) {
+    const n = parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 24
 }
 
 /** How often pruneOldJobs() is fired by the auto-sweep timer. 0 disables. */
@@ -158,7 +246,7 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
   `,
   init: (d) => {
-    migrateOwnership(d)
+    migrateColumns(d)
     // First-time / cold-start cleanup: any 'running' rows are leftover from a
     // prior process that didn't get to finalize.
     reapStaleRunning(d)
@@ -176,6 +264,23 @@ const helper = createSqliteHelper({
     }
   },
 })
+
+/** Test hook: artificially age a row's completed_at (or created_at) by a
+ *  SQLite modifier like '-2 hours' or '-40 days'. Production code must NOT
+ *  call this; it's the only practical way to exercise retention without
+ *  sleeping in tests. */
+export function _backdateForTests(id: number, modifier: string): void {
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET completed_at = datetime(COALESCE(completed_at, datetime('now')), ?),
+              created_at   = datetime(created_at, ?)
+        WHERE id = ?`,
+    ).run(modifier, modifier, id)
+  } catch { /* tests fail loudly via the next assertion */ }
+}
 
 /** Stop the retention sweep (used by tests + graceful shutdown). */
 export function stopJobRetentionSweep(): void {
@@ -218,17 +323,57 @@ export interface OwnerOpts {
 export interface CreateJobOpts {
   creatorId?: string
   workspaceId?: string
+  /** 'job' (default) for explicit /job, 'inline' for cli auto-tracking. */
+  kind?: JobKind
+  /** `${platform}:${channelId}:${threadId}` — required for inline kind so
+   *  Phase 3 can route recovery notifications back to the originating IM
+   *  thread. Optional for kind='job' (legacy CLI / scheduler callers). */
+  threadKey?: string
 }
 
 export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {}): number {
   const d = getDb()
   if (!d) throw new Error('Job board unavailable (SQLite not initialized)')
   const row = d.prepare(
-    'INSERT INTO jobs (agent, prompt, status, creator_id, workspace_id) VALUES (?, ?, ?, ?, ?)'
-  ).run(agent, prompt, 'pending', opts.creatorId || '', opts.workspaceId || '')
+    `INSERT INTO jobs
+       (agent, prompt, status, creator_id, workspace_id, thread_key, kind)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    agent, prompt, 'pending',
+    opts.creatorId || '', opts.workspaceId || '',
+    opts.threadKey || '', opts.kind || 'job',
+  )
   const id = Number(row.lastInsertRowid)
   eventBus.publish({ type: 'job', phase: 'created', jobId: id, agent })
   return id
+}
+
+/** Inline-job convenience: same as createJob but never throws — returns -1
+ *  when the board is disabled / locked. Caller is expected to log + carry
+ *  on with the in-memory fast path. The whole tracking machinery short-
+ *  circuits when env IMHUB_INLINE_JOB_TRACKING=0. */
+export function createInlineJob(opts: {
+  agent: string
+  prompt: string
+  threadKey: string
+  creatorId?: string
+  workspaceId?: string
+}): number {
+  if (process.env.IMHUB_INLINE_JOB_TRACKING === '0') return -1
+  try {
+    return createJob(opts.agent, opts.prompt, {
+      kind: 'inline',
+      threadKey: opts.threadKey,
+      creatorId: opts.creatorId,
+      workspaceId: opts.workspaceId,
+    })
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'job-board', event: 'job-board.inline_create_failed', err: err instanceof Error ? err.message : String(err) },
+      'createInlineJob fell back to in-memory path',
+    )
+    return -1
+  }
 }
 
 export function getJob(id: number, opts: OwnerOpts = {}): Job | null {
@@ -268,6 +413,116 @@ function updateJob(id: number, fields: Partial<Job>): void {
   }
   if (!sets.length) return
   d.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id)
+}
+
+// ─── Inline-job state-machine helpers ────────────────────────────────
+//
+// All of these are no-op when id<=0 (board disabled / inline tracking off)
+// or when the DB is unavailable. The caller never has to guard.
+
+/** Replace the agent column. Used by inline jobs: cli.ts creates the row with
+ *  the default agent name before routing resolves the actual agent, then this
+ *  fires inside onAgentResolved to correct the record. No-op when status is
+ *  past 'running' so we don't rewrite history. */
+export function updateJobAgent(id: number, agent: string): void {
+  if (id <= 0 || !agent) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(`UPDATE jobs SET agent = ? WHERE id = ? AND status IN ('pending', 'running')`).run(agent, id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'updateJobAgent_failed', id, agent, err: String(err) })
+  }
+}
+
+/** pending → running. Stamps started_at. Idempotent: an already-running row
+ *  keeps its original started_at. */
+export function markJobRunning(id: number): void {
+  if (id <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'running',
+              started_at = COALESCE(started_at, datetime('now'))
+        WHERE id = ? AND status IN ('pending', 'running')`,
+    ).run(id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markJobRunning_failed', id, err: String(err) })
+  }
+}
+
+/** running → completed (result captured). For inline kind 'delivered' is the
+ *  next hop, triggered by the outbox worker once the IM platform confirms.
+ *  For 'job' kind this is the terminal success state (no delivery channel). */
+export function markJobCompleted(id: number, result: string): void {
+  if (id <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'completed',
+              completed_at = datetime('now'),
+              result = ?
+        WHERE id = ? AND status IN ('pending', 'running')`,
+    ).run(result, id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markJobCompleted_failed', id, err: String(err) })
+  }
+}
+
+/** Link a job row to the outbox row that will (try to) deliver its result.
+ *  Worker uses outbox.job_id to find this row; this column is the reverse
+ *  link for /job inspection ("which outbox row carried this reply"). */
+export function linkJobOutbox(id: number, outboxId: number): void {
+  if (id <= 0 || outboxId <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(`UPDATE jobs SET last_outbox_id = ? WHERE id = ?`).run(outboxId, id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'linkJobOutbox_failed', id, outboxId, err: String(err) })
+  }
+}
+
+/** completed → delivered. Called by the outbox worker after the IM platform
+ *  ack. No-op if the row isn't in 'completed' (e.g. user cancelled meanwhile). */
+export function markJobDelivered(id: number): void {
+  if (id <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'delivered',
+              delivered_at = datetime('now')
+        WHERE id = ? AND status = 'completed'`,
+    ).run(id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markJobDelivered_failed', id, err: String(err) })
+  }
+}
+
+/** Terminal failure (agent threw, outbox gave up, etc.). Captures the error
+ *  on the row. completed_at gets stamped so retention sweeps treat the row
+ *  the same as a normal terminal state. */
+export function markJobFailed(id: number, error: string): void {
+  if (id <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'failed',
+              completed_at = datetime('now'),
+              error = ?
+        WHERE id = ? AND status NOT IN ('cancelled', 'replaced', 'abandoned')`,
+    ).run(error.slice(0, 4096), id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markJobFailed_failed', id, err: String(err) })
+  }
 }
 
 /**
@@ -385,20 +640,37 @@ export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
  */
 export function pruneOldJobs(d: Database.Database = getDb()!, daysRetention: number = resolveRetentionDays()): number {
   if (!d) return 0
+  const inlineHours = resolveInlineRetentionHours()
+  // Terminal statuses across both kinds. 'delivered' is inline-only.
+  // 'interrupted' / 'replaced' / 'abandoned' are Phase 3 statuses — pre-
+  // declared here so retention works consistently when Phase 3 lands.
+  const TERMINAL = "'completed','delivered','failed','cancelled','replaced','abandoned'"
   try {
-    const info = d.prepare(`
+    // Two passes — different retention by kind. SQLite can't do this in one
+    // statement without a CASE-on-window-or-something gnarly; two prepares
+    // keeps it readable and the row counts attributable.
+    const jobInfo = d.prepare(`
       DELETE FROM jobs
-      WHERE status IN ('completed', 'failed', 'cancelled')
+      WHERE kind = 'job'
+        AND status IN (${TERMINAL})
         AND completed_at IS NOT NULL
         AND completed_at < datetime('now', ?)
     `).run(`-${daysRetention} days`)
-    if (info.changes > 0) {
+    const inlineInfo = d.prepare(`
+      DELETE FROM jobs
+      WHERE kind = 'inline'
+        AND status IN (${TERMINAL})
+        AND COALESCE(completed_at, created_at) < datetime('now', ?)
+    `).run(`-${inlineHours} hours`)
+    const total = jobInfo.changes + inlineInfo.changes
+    if (total > 0) {
       rootLogger.info({
         component: 'job-board', event: 'job-board.pruned',
-        deleted: info.changes, days: daysRetention,
-      }, `Pruned ${info.changes} job row(s) older than ${daysRetention}d`)
+        deletedJob: jobInfo.changes, deletedInline: inlineInfo.changes,
+        days: daysRetention, inlineHours,
+      }, `Pruned ${jobInfo.changes} job + ${inlineInfo.changes} inline row(s)`)
     }
-    return info.changes
+    return total
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     rootLogger.warn({ component: 'job-board', event: 'job-board.prune.failed', error: msg },

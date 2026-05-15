@@ -505,6 +505,11 @@ export interface OwnerOpts {
    *  (claude-code / opencode / codex tabs); IM commands generally don't
    *  pass it (they want the user's full job history). */
   agent?: string
+  /** Optional kind filter. 'job' = explicit /job rows; 'inline' = the
+   *  per-message rows auto-created by the cli main loop (Phase 2).
+   *  Web /tasks Jobs tab uses this to give the operator a clean
+   *  explicit-only vs inline-only view. */
+  kind?: JobKind
 }
 
 export interface CreateJobOpts {
@@ -600,6 +605,7 @@ export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): 
     params.push(opts.creatorId)
   }
   if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }
+  if (opts.kind) { conditions.push('kind = ?'); params.push(opts.kind) }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   return d.prepare(`SELECT * FROM jobs ${where} ORDER BY created_at DESC LIMIT ?`)
     .all(...params, safeLimit) as Job[]

@@ -419,8 +419,14 @@
     .pill.pending { background: rgba(255, 193, 7, 0.18); color: #b89000; }
     .pill.running { background: rgba(23, 162, 184, 0.18); color: #0d8898; }
     .pill.completed { background: rgba(40, 167, 69, 0.18); color: #1e7c34; }
+    .pill.delivered { background: rgba(40, 167, 69, 0.28); color: #155724; font-weight: 500; }
     .pill.failed { background: rgba(220, 53, 69, 0.18); color: #b32433; }
     .pill.cancelled { background: rgba(108, 117, 125, 0.18); color: #5a6268; }
+    .pill.interrupted { background: rgba(255, 152, 0, 0.22); color: #b35900; }
+    .pill.replaced { background: rgba(94, 53, 177, 0.18); color: #4527a0; }
+    .pill.abandoned { background: rgba(96, 125, 139, 0.18); color: #455a64; }
+    .pill.kind-inline { background: rgba(63, 81, 181, 0.12); color: #3949ab; font-size: 11px; }
+    .pill.kind-job { background: rgba(141, 110, 99, 0.18); color: #5d4037; font-size: 11px; }
     .row-actions button {
       font-size: 12px;
       padding: 3px 8px;
@@ -584,6 +590,15 @@
           <option value="completed"></option>
           <option value="failed"></option>
           <option value="cancelled"></option>
+          <option value="delivered">delivered</option>
+          <option value="interrupted">interrupted</option>
+          <option value="replaced">replaced</option>
+          <option value="abandoned">abandoned</option>
+        </select>
+        <select id="filter-kind" title="kind filter">
+          <option value="">All kinds</option>
+          <option value="job">job (explicit /job)</option>
+          <option value="inline">inline (auto-tracked)</option>
         </select>
         <select id="jobs-agent-filter" data-agent-filter>
           <option value="">All agents</option>
@@ -864,7 +879,10 @@
             <tr>
               <th><input type="checkbox" id="job-select-all" ${allSelected ? 'checked' : ''} title="${T.jobsSelectAll}"></th>
               <th>#</th>
+              <th>Kind</th>
               <th>${T.agent}</th>
+              <th>Parent</th>
+              <th>Depth</th>
               <th>${T.prompt}</th>
               <th>${T.status}</th>
               <th>${T.created}</th>
@@ -872,11 +890,21 @@
             </tr>
           </thead>
           <tbody>
-            ${jobs.map(j => `
+            ${jobs.map(j => {
+              const kind = j.kind || 'job';
+              const kindPill = `<span class="pill kind-${kind}">${esc(kind)}</span>`;
+              const parentLink = (j.parent_id != null && j.parent_id > 0)
+                ? `<a href="#" data-act="parent" data-pid="${j.parent_id}" title="View parent">#${j.parent_id}</a>` : '';
+              const depth = (typeof j.call_depth === 'number' && j.call_depth > 0)
+                ? `<span style="font-size:11px;opacity:0.8">↳${j.call_depth}</span>` : '';
+              return `
               <tr data-id="${j.id}">
                 <td><input type="checkbox" data-sel="${j.id}" ${jobSelection.has(j.id) ? 'checked' : ''}></td>
                 <td>#${j.id}</td>
+                <td>${kindPill}</td>
                 <td><code>${esc(j.agent)}</code></td>
+                <td>${parentLink}</td>
+                <td>${depth}</td>
                 <td class="truncate">${esc(j.prompt)}</td>
                 <td>${statusPill(j.status)}</td>
                 <td>${fmtTime(j.created_at)}</td>
@@ -887,8 +915,8 @@
                   ${j.status === 'pending' || j.status === 'running'
                     ? `<button type="button" data-act="cancel" class="danger">${T.cancel}</button>` : ''}
                 </td>
-              </tr>
-            `).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       `;
@@ -897,6 +925,11 @@
         tr.querySelector('[data-act="view"]')?.addEventListener('click', () => showJob(id));
         tr.querySelector('[data-act="run"]')?.addEventListener('click', () => runJob(id));
         tr.querySelector('[data-act="cancel"]')?.addEventListener('click', () => cancelJob(id));
+        tr.querySelector('[data-act="parent"]')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const pid = parseInt(e.currentTarget.getAttribute('data-pid'), 10);
+          if (pid > 0) showJob(pid);
+        });
         tr.querySelector('[data-sel]')?.addEventListener('change', (e) => {
           if (e.target.checked) jobSelection.add(id);
           else jobSelection.delete(id);
@@ -952,9 +985,11 @@
     async function loadJobs() {
       const status = document.getElementById('filter-status').value;
       const agent = document.getElementById('jobs-agent-filter').value;
+      const kind = document.getElementById('filter-kind')?.value || '';
       const qs = new URLSearchParams({ limit: '100' });
       if (status) qs.set('status', status);
       if (agent) qs.set('agent', agent);
+      if (kind) qs.set('kind', kind);
       try {
         const { jobs, stats } = await api(`/api/jobs?${qs.toString()}`);
         renderStats(stats);
@@ -964,18 +999,46 @@
           `<div class="empty">${T.error}: ${esc(e.message)}</div>`;
       }
     }
+    document.getElementById('filter-kind')?.addEventListener('change', loadJobs);
 
     async function showJob(id) {
       const { job } = await api(`/api/jobs/${id}`);
+      // Fetch artifacts in parallel — non-fatal if 404 / empty.
+      let arts = { inputs: [], outputs: [], totalBytes: 0 };
+      try {
+        const r = await fetch(`/api/artifacts/${id}`);
+        if (r.ok) arts = await r.json();
+      } catch { /* ignore — modal still renders */ }
       const m = document.getElementById('modal');
+      const kind = job.kind || 'job';
+      const kindPill = `<span class="pill kind-${kind}">${esc(kind)}</span>`;
+      const parentLine = (job.parent_id != null && job.parent_id > 0)
+        ? `<p><strong>Parent:</strong> <a href="#" data-act="modal-parent" data-pid="${job.parent_id}">#${job.parent_id}</a> · <strong>Depth:</strong> ${job.call_depth || 0}</p>` : '';
+      const threadLine = job.thread_key
+        ? `<p><strong>Thread:</strong> <code>${esc(job.thread_key)}</code></p>` : '';
+      const replacedLine = (job.replaced_by != null && job.replaced_by > 0)
+        ? `<p><strong>Replaced by:</strong> <a href="#" data-act="modal-parent" data-pid="${job.replaced_by}">#${job.replaced_by}</a></p>` : '';
+      const outboxLine = (job.last_outbox_id != null && job.last_outbox_id > 0)
+        ? `<p><strong>Last outbox:</strong> #${job.last_outbox_id}</p>` : '';
+      const fmt = (n) => n < 1024 ? `${n} B` : n < 1024*1024 ? `${(n/1024).toFixed(1)} KB` : `${(n/1024/1024).toFixed(1)} MB`;
+      const artsBlock = (arts.outputs.length > 0 || arts.inputs.length > 0) ? `
+        <h3>📎 Artifacts (${fmt(arts.totalBytes || 0)})</h3>
+        ${arts.inputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">Inputs:</p><ul>${arts.inputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
+        ${arts.outputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">Outputs:</p><ul>${arts.outputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
+      ` : '';
       m.innerHTML = `
-        <h2>${T.details} #${job.id}</h2>
+        <h2>${T.details} #${job.id} ${kindPill}</h2>
         <p><strong>${T.agent}:</strong> <code>${esc(job.agent)}</code> · <strong>${T.status}:</strong> ${statusPill(job.status)}</p>
-        <p><strong>${T.created}:</strong> ${fmtTime(job.created_at)}${job.completed_at ? ` · <strong>${T.completed}:</strong> ${fmtTime(job.completed_at)}` : ''}</p>
+        ${parentLine}
+        ${threadLine}
+        ${replacedLine}
+        ${outboxLine}
+        <p><strong>${T.created}:</strong> ${fmtTime(job.created_at)}${job.completed_at ? ` · <strong>${T.completed}:</strong> ${fmtTime(job.completed_at)}` : ''}${job.delivered_at ? ` · <strong>Delivered:</strong> ${fmtTime(job.delivered_at)}` : ''}</p>
         <h3>${T.prompt}</h3>
         <pre>${esc(job.prompt)}</pre>
         ${job.result ? `<h3>${T.result}</h3><pre>${esc(job.result)}</pre>` : ''}
         ${job.error ? `<h3>${T.error}</h3><pre>${esc(job.error)}</pre>` : ''}
+        ${artsBlock}
         <div class="modal-actions">
           <button type="button" id="modal-close">${T.close}</button>
         </div>
@@ -983,6 +1046,13 @@
       document.getElementById('modal-bg').classList.add('show');
       document.getElementById('modal-close').onclick = () =>
         document.getElementById('modal-bg').classList.remove('show');
+      m.querySelectorAll('[data-act="modal-parent"]').forEach((a) => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const pid = parseInt(e.currentTarget.getAttribute('data-pid'), 10);
+          if (pid > 0) showJob(pid);
+        });
+      });
     }
 
     async function runJob(id) {

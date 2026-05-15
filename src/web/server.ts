@@ -1396,12 +1396,24 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 
 async function handleListJobs(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
-    const { listJobs, getJobStats } = await import('../core/job-board.js')
+    const jb = await import('../core/job-board.js')
+    type JobStatus = import('../core/job-board.js').JobStatus
+    type JobKind = import('../core/job-board.js').JobKind
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
-    const status = url.searchParams.get('status') as 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
+    const validStatuses = new Set<JobStatus>([
+      'pending', 'running', 'completed', 'delivered', 'failed',
+      'cancelled', 'interrupted', 'replaced', 'abandoned',
+    ])
+    const statusRaw = url.searchParams.get('status') || ''
+    const status = validStatuses.has(statusRaw as JobStatus) ? (statusRaw as JobStatus) : undefined
     const agent = url.searchParams.get('agent') || undefined
-    const jobs = listJobs(limit, status || undefined, agent ? { agent } : {})
-    const stats = getJobStats()
+    const kindRaw = url.searchParams.get('kind') || ''
+    const kind: JobKind | undefined = (kindRaw === 'inline' || kindRaw === 'job') ? kindRaw : undefined
+    const opts: { agent?: string; kind?: JobKind } = {}
+    if (agent) opts.agent = agent
+    if (kind) opts.kind = kind
+    const jobs = jb.listJobs(limit, status, opts)
+    const stats = jb.getJobStats()
     sendJson(res, 200, { jobs, stats })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

@@ -149,6 +149,85 @@
         jobsBatchRun: 'Run selected',
         jobsBatchEmpty: 'No jobs selected.',
         jobsBatchResult: 'Batch result: {ok} ok, {fail} failed',
+        // v1.1.2 / v1.1.3 — new tabs + columns
+        tabsOutbox: 'Outbox',
+        tabsA2A: 'A2A',
+        kindCol: 'Kind',
+        parentCol: 'Parent',
+        depthCol: 'Depth',
+        filterAllKinds: 'All kinds',
+        filterKindJob: 'job (explicit /job)',
+        filterKindInline: 'inline (auto-tracked)',
+        outboxEmpty: 'No outbox rows.',
+        outboxStatusPending: '⏳ Pending',
+        outboxStatusDelivered: '✅ Delivered',
+        outboxStatusGivingUp: '💀 Giving up',
+        outboxRetry: 'Retry',
+        outboxColPlatform: 'Platform',
+        outboxColKind: 'Kind',
+        outboxColPri: 'Pri',
+        outboxColAttempts: 'Attempts',
+        outboxColPayload: 'Payload',
+        outboxColError: 'Error',
+        outboxColCreated: 'Created',
+        a2aEmpty: 'No A2A calls yet.',
+        a2aRecent: 'Recent A2A calls',
+        a2aCallerCallee: 'Caller→Callee',
+        a2aTreeRoot: 'Call tree (root #{id})',
+        a2aTreeInputJob: 'job id for tree…',
+        a2aBtnTree: 'Tree',
+        a2aBtnViewParent: 'View parent tree',
+        a2aStatTotal: 'Total',
+        a2aStat24h: '24h',
+        a2aStatMaxDepth: 'Max depth',
+        a2aStatTop: 'Top:',
+        modalParent: 'Parent',
+        modalDepth: 'Depth',
+        modalThread: 'Thread',
+        modalReplaced: 'Replaced by',
+        modalLastOutbox: 'Last outbox',
+        modalArtifacts: 'Artifacts',
+        modalArtifactsInputs: 'Inputs:',
+        modalArtifactsOutputs: 'Outputs:',
+        modalDelivered: 'Delivered',
+        helpClose: 'Close',
+        // Help tooltips (concept glossary). Used by the (?) icons next to
+        // jargon. Keys are short ids; values are { title, body } in the
+        // 'help' namespace below.
+        help: {
+          outbox: {
+            title: 'Outbox · 投递队列',
+            body: 'Every outbound IM message is first written to a SQLite outbox, then a background worker drains it with exponential backoff. If the messenger glitches or the user is briefly offline, the row stays "pending" and gets retried (1s → 5s → 30s → 5min → 30min → 2h). After 6 failed attempts the row transitions to "giving_up" and stops retrying until you click Retry. Visible in: /tasks Outbox tab, IM command /outbox status.',
+          },
+          inline: {
+            title: 'Inline job · 内联任务',
+            body: 'An inline job is the row agim auto-creates for every inbound IM message that triggers an agent. It tracks the full lifecycle (pending → running → completed → delivered) so a crash or restart never loses work. Distinct from kind=job rows which come from explicit /job create. Retention: 24h (vs 30d for kind=job).',
+          },
+          a2a: {
+            title: 'A2A · Agent-to-Agent',
+            body: 'When the active agent calls another agent via mcp__imhub__call_agent (e.g. claude saying "用 codex 跑 git status"), agim spawns the callee as a fresh inline job whose parent_id points back at the caller. Guardrails enforced by agim: depth ceiling (default 3), self-call ban, workspace whitelist, shared per-user budget. The tree view shows the full caller→callee chain.',
+          },
+          artifacts: {
+            title: 'Artifacts · 共享文件',
+            body: 'A2A Layer 2 lets agents exchange files instead of cramming everything into prompts. Each A2A inline job gets a dedicated ~/.agim/artifacts/<jobId>/_agim-{input,output}/ directory. Caller drops files via `inputs[]`; callee writes results to _agim-output/; caller reads them through this UI or with the agent\'s native Read tool. Retention follows the inline job (24h).',
+          },
+          callDepth: {
+            title: 'Call depth · 调用深度',
+            body: 'How deep this row sits in an A2A chain. 0 = user-originated message. +1 per nested mcp__imhub__call_agent invocation. Configurable max via IMHUB_A2A_MAX_DEPTH (default 3) — exceeding it rejects the call before any tokens are spent.',
+          },
+          parent: {
+            title: 'Parent · 父任务',
+            body: 'For A2A callees, the inline-job id of the row that fired mcp__imhub__call_agent. NULL on user-originated rows. Click to open the parent\'s detail view.',
+          },
+          replacedBy: {
+            title: 'Replaced by · 已被替换为',
+            body: 'For interrupted inline jobs the user retried via "1 重发" after a restart, this points at the new replacement row that ran instead. The old row stays for audit purposes.',
+          },
+          givingUp: {
+            title: 'Giving up · 已放弃',
+            body: 'An outbox row enters this state after 6 failed delivery attempts (cumulative ~3h of backoff). It will no longer be retried automatically. Click "Retry" to put it back into the pending queue from scratch.',
+          },
+        },
       },
       zh: {
         title: 'Agim — 任务',
@@ -276,6 +355,82 @@
         jobsBatchRun: '批量运行',
         jobsBatchEmpty: '未选择任何任务。',
         jobsBatchResult: '批量结果：成功 {ok}，失败 {fail}',
+        // v1.1.2 / v1.1.3 — 新 Tab 与列
+        tabsOutbox: '投递队列',
+        tabsA2A: 'A2A 调用',
+        kindCol: '类型',
+        parentCol: '父任务',
+        depthCol: '深度',
+        filterAllKinds: '全部类型',
+        filterKindJob: 'job（显式 /job 创建）',
+        filterKindInline: 'inline（自动跟踪）',
+        outboxEmpty: '投递队列为空。',
+        outboxStatusPending: '⏳ 待发',
+        outboxStatusDelivered: '✅ 已送达',
+        outboxStatusGivingUp: '💀 已放弃',
+        outboxRetry: '重试',
+        outboxColPlatform: '平台',
+        outboxColKind: '类型',
+        outboxColPri: '优先级',
+        outboxColAttempts: '尝试次数',
+        outboxColPayload: '消息内容',
+        outboxColError: '错误',
+        outboxColCreated: '创建时间',
+        a2aEmpty: '暂无 A2A 调用记录。',
+        a2aRecent: '最近 A2A 调用',
+        a2aCallerCallee: '调用方→被调方',
+        a2aTreeRoot: '调用链树（根 #{id}）',
+        a2aTreeInputJob: '输入 job id 看调用链…',
+        a2aBtnTree: '查看树',
+        a2aBtnViewParent: '查看父任务调用链',
+        a2aStatTotal: '总数',
+        a2aStat24h: '24小时',
+        a2aStatMaxDepth: '最大深度',
+        a2aStatTop: '热门:',
+        modalParent: '父任务',
+        modalDepth: '深度',
+        modalThread: '会话',
+        modalReplaced: '替换为',
+        modalLastOutbox: '最近投递',
+        modalArtifacts: '文件附件',
+        modalArtifactsInputs: '输入:',
+        modalArtifactsOutputs: '输出:',
+        modalDelivered: '送达时间',
+        helpClose: '关闭',
+        help: {
+          outbox: {
+            title: 'Outbox · 投递队列',
+            body: '每条要发到 IM 的消息都先写入 SQLite 投递队列，后台 worker 按指数退避节奏拉走真发：失败时 1s→5s→30s→5min→30min→2h 重试，连续 6 次失败转为「已放弃」直到你手动点重试。这样 IM 抖动 / 短暂断网都不会丢消息。可在 IM 内用 /outbox status 查询。',
+          },
+          inline: {
+            title: 'Inline 任务 · 自动跟踪',
+            body: '每条进入 agim 触发 Agent 的 IM 消息，会自动建一条 inline job 跟踪完整生命周期（待执行 → 运行中 → 已完成 → 已送达）。agim 崩溃 / 重启时绝不丢任务。区别于 kind=job 行（来自显式 /job create）。inline 保留 24 小时，job 保留 30 天。',
+          },
+          a2a: {
+            title: 'A2A · Agent 互调',
+            body: '当前 Agent 可以通过 mcp__imhub__call_agent 工具调用另一个 Agent（比如 claude 说"用 codex 跑 git status"）。agim 会为被调 Agent 建一条新 inline job，parent_id 指向调用方。护栏由 agim 强制：调用深度上限（默认 3）、禁止自调、工作区白名单、按人共享预算。调用树视图展示完整调用链。',
+          },
+          artifacts: {
+            title: 'Artifacts · 共享文件',
+            body: 'A2A Layer 2 让 Agent 之间传文件而非把内容塞进 prompt。每条 A2A 任务有独立工作目录 ~/.agim/artifacts/<jobId>/_agim-{input,output}/。调用方通过 inputs[] 放文件，被调方写到 _agim-output/，调用方在这里点击下载或用 Read 工具读。保留期跟 inline 任务一致（24 小时）。',
+          },
+          callDepth: {
+            title: '调用深度',
+            body: '该任务在 A2A 链中的层数。0 = 用户发起的消息，每多一层 mcp__imhub__call_agent 嵌套 +1。可由 IMHUB_A2A_MAX_DEPTH 配置最大值（默认 3），超过则在花费 token 前就拒绝调用。',
+          },
+          parent: {
+            title: '父任务',
+            body: 'A2A 被调方任务的 parent_id 指向触发此次调用的任务行。用户原发的任务为空。点击可打开父任务详情。',
+          },
+          replacedBy: {
+            title: '已被替换为',
+            body: '服务重启后被中断、用户回复"1 重发"重新发起的任务，其 replaced_by 字段指向新行 id。旧行保留用于审计。',
+          },
+          givingUp: {
+            title: '已放弃',
+            body: '投递队列中连续 6 次失败（累计退避约 3 小时）的行进入此状态，不再自动重试。点击"重试"会将其重新入队、退避计数清零。',
+          },
+        },
       },
     };
     window.__t = T[window.__lang];
@@ -427,6 +582,18 @@
     .pill.abandoned { background: rgba(96, 125, 139, 0.18); color: #455a64; }
     .pill.kind-inline { background: rgba(63, 81, 181, 0.12); color: #3949ab; font-size: 11px; }
     .pill.kind-job { background: rgba(141, 110, 99, 0.18); color: #5d4037; font-size: 11px; }
+    /* Help-tooltip button — small (?) next to jargon, opens centered modal */
+    .help-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; padding: 0; border-radius: 50%;
+      font-size: 11px; font-weight: 700; line-height: 1;
+      background: var(--surface-2, rgba(0,0,0,0.06)); color: var(--text-muted, #666);
+      border: 1px solid var(--border, rgba(0,0,0,0.12));
+      cursor: pointer; transition: all .15s;
+    }
+    .help-btn:hover { background: var(--primary, #3b82f6); color: #fff; border-color: var(--primary, #3b82f6); }
+    .help-modal h2 { margin: 0 0 .5em; font-size: 18px; }
+    .help-modal p { line-height: 1.7; color: var(--text, #333); white-space: pre-wrap; }
     .row-actions button {
       font-size: 12px;
       padding: 3px 8px;
@@ -561,9 +728,13 @@
   <header>
     <h1 id="page-title"></h1>
     <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+    <select id="langSelect" title="Language / 语言" style="margin-right:8px">
+      <option value="en">EN</option>
+      <option value="zh">中文</option>
+    </select>
     <a href="/">↩ <span id="lbl-chat"></span></a>
-    <a href="/reminders">Reminders</a>
-    <a href="/memos">Memos</a>
+    <a href="/reminders" id="lnk-reminders">Reminders</a>
+    <a href="/memos" id="lnk-memos">Memos</a>
     <a href="/settings" aria-label="Settings"><span id="lbl-settings"></span></a>
   </header>
   <main>
@@ -595,10 +766,10 @@
           <option value="replaced">replaced</option>
           <option value="abandoned">abandoned</option>
         </select>
-        <select id="filter-kind" title="kind filter">
-          <option value="">All kinds</option>
-          <option value="job">job (explicit /job)</option>
-          <option value="inline">inline (auto-tracked)</option>
+        <select id="filter-kind" title="kind filter" data-i18n-attr="title:kindCol">
+          <option value="" data-i18n="filterAllKinds">All kinds</option>
+          <option value="job" data-i18n="filterKindJob">job (explicit /job)</option>
+          <option value="inline" data-i18n="filterKindInline">inline (auto-tracked)</option>
         </select>
         <select id="jobs-agent-filter" data-agent-filter>
           <option value="">All agents</option>
@@ -709,19 +880,23 @@
 
     <!-- Outbox tab (v1.1.2) — persistent IM delivery queue -->
     <section id="outbox-pane" hidden>
+      <h2 style="margin-top:0;display:flex;align-items:center;gap:.5em">
+        <span id="hdr-outbox">Outbox</span>
+        <button type="button" class="help-btn" data-help="outbox" title="?">?</button>
+      </h2>
       <div class="toolbar">
         <select id="outbox-status-filter">
-          <option value="">All</option>
-          <option value="pending">⏳ Pending</option>
-          <option value="delivered">✅ Delivered</option>
-          <option value="giving_up">💀 Giving up</option>
+          <option value="" data-i18n="filterAll">All</option>
+          <option value="pending" data-i18n="outboxStatusPending">⏳ Pending</option>
+          <option value="delivered" data-i18n="outboxStatusDelivered">✅ Delivered</option>
+          <option value="giving_up" data-i18n="outboxStatusGivingUp">💀 Giving up</option>
         </select>
         <select id="outbox-limit">
           <option value="20">20</option>
           <option value="50" selected>50</option>
           <option value="200">200</option>
         </select>
-        <button type="button" id="btn-outbox-refresh">Refresh</button>
+        <button type="button" id="btn-outbox-refresh" data-i18n="refresh">Refresh</button>
       </div>
       <div class="stats" id="outbox-stats"></div>
       <div id="outbox-list"></div>
@@ -729,10 +904,15 @@
 
     <!-- A2A tab (v1.1.3) — agent-to-agent call observability + artifacts viewer -->
     <section id="a2a-pane" hidden>
+      <h2 style="margin-top:0;display:flex;align-items:center;gap:.5em">
+        <span id="hdr-a2a">A2A</span>
+        <button type="button" class="help-btn" data-help="a2a" title="?">?</button>
+        <button type="button" class="help-btn" data-help="artifacts" title="?" style="margin-left:-4px" id="hdr-a2a-art-help">📎?</button>
+      </h2>
       <div class="toolbar">
-        <input type="number" id="a2a-tree-id" placeholder="job id for tree…" min="1" style="width:140px">
-        <button type="button" id="btn-a2a-tree">Tree</button>
-        <button type="button" id="btn-a2a-refresh">Refresh</button>
+        <input type="number" id="a2a-tree-id" min="1" style="width:160px" data-i18n-attr="placeholder:a2aTreeInputJob">
+        <button type="button" id="btn-a2a-tree" data-i18n="a2aBtnTree">Tree</button>
+        <button type="button" id="btn-a2a-refresh" data-i18n="refresh">Refresh</button>
       </div>
       <div class="stats" id="a2a-stats"></div>
       <div id="a2a-list"></div>
@@ -765,6 +945,67 @@
     document.getElementById('tab-approvals').textContent = T.tabsApprovals;
     document.getElementById('tab-health').textContent = T.tabsHealth;
     document.getElementById('tab-files').textContent = T.tabsFiles;
+    document.getElementById('tab-outbox').textContent = T.tabsOutbox;
+    document.getElementById('tab-a2a').textContent = T.tabsA2A;
+    document.getElementById('hdr-outbox').textContent = T.tabsOutbox;
+    document.getElementById('hdr-a2a').textContent = T.tabsA2A;
+
+    // data-i18n / data-i18n-attr — sweep static markers so placeholders +
+    // option labels pick up the active language. Same shape as _app.js's
+    // applyI18n but inline here (tasks.html runs before _app.js applies
+    // its sweep to the rest of the doc).
+    (function applyStaticI18n() {
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const k = el.getAttribute('data-i18n');
+        if (k && T[k] != null) el.textContent = T[k];
+      });
+      document.querySelectorAll('[data-i18n-attr]').forEach((el) => {
+        const spec = el.getAttribute('data-i18n-attr') || '';
+        for (const pair of spec.split(';')) {
+          const [attr, key] = pair.split(':').map(s => s && s.trim());
+          if (attr && key && T[key] != null) el.setAttribute(attr, T[key]);
+        }
+      });
+    })();
+
+    // Help-tooltip system — every (?) button opens a centered modal whose
+    // body comes from T.help[<key>]. Reuses the existing modal-bg overlay
+    // so a single Escape press dismisses everything.
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target.closest && ev.target.closest('.help-btn');
+      if (!btn) return;
+      ev.preventDefault();
+      const key = btn.getAttribute('data-help');
+      const def = (T.help && T.help[key]) || null;
+      if (!def) { console.warn('no help def for', key); return; }
+      const m = document.getElementById('modal');
+      m.classList.add('help-modal');
+      m.innerHTML = `
+        <h2>${def.title}</h2>
+        <p>${def.body}</p>
+        <div class="modal-actions">
+          <button type="button" id="help-modal-close">${T.helpClose}</button>
+        </div>
+      `;
+      document.getElementById('modal-bg').classList.add('show');
+      document.getElementById('help-modal-close').onclick = () => {
+        document.getElementById('modal-bg').classList.remove('show');
+        m.classList.remove('help-modal');
+      };
+    });
+    // Language switcher: persist + reload so the IIFE in <head> reads the
+    // new preference and rebuilds T.
+    (function setupLangSwitcher() {
+      const sel = document.getElementById('langSelect');
+      if (!sel) return;
+      sel.value = window.__lang;
+      sel.addEventListener('change', () => {
+        const newLang = sel.value;
+        if (newLang === window.__lang) return;
+        localStorage.setItem('im-hub-lang', newLang);
+        window.location.reload();
+      });
+    })();
     document.getElementById('btn-bg-refresh').textContent = T.refresh;
     document.getElementById('btn-sub-refresh').textContent = T.refresh;
     document.getElementById('btn-approvals-refresh').textContent = T.refresh;
@@ -879,10 +1120,10 @@
             <tr>
               <th><input type="checkbox" id="job-select-all" ${allSelected ? 'checked' : ''} title="${T.jobsSelectAll}"></th>
               <th>#</th>
-              <th>Kind</th>
+              <th>${T.kindCol} <button type="button" class="help-btn" data-help="inline" title="?">?</button></th>
               <th>${T.agent}</th>
-              <th>Parent</th>
-              <th>Depth</th>
+              <th>${T.parentCol} <button type="button" class="help-btn" data-help="parent" title="?">?</button></th>
+              <th>${T.depthCol} <button type="button" class="help-btn" data-help="callDepth" title="?">?</button></th>
               <th>${T.prompt}</th>
               <th>${T.status}</th>
               <th>${T.created}</th>
@@ -1013,18 +1254,18 @@
       const kind = job.kind || 'job';
       const kindPill = `<span class="pill kind-${kind}">${esc(kind)}</span>`;
       const parentLine = (job.parent_id != null && job.parent_id > 0)
-        ? `<p><strong>Parent:</strong> <a href="#" data-act="modal-parent" data-pid="${job.parent_id}">#${job.parent_id}</a> · <strong>Depth:</strong> ${job.call_depth || 0}</p>` : '';
+        ? `<p><strong>${T.modalParent}:</strong> <a href="#" data-act="modal-parent" data-pid="${job.parent_id}">#${job.parent_id}</a> · <strong>${T.modalDepth}:</strong> ${job.call_depth || 0}</p>` : '';
       const threadLine = job.thread_key
-        ? `<p><strong>Thread:</strong> <code>${esc(job.thread_key)}</code></p>` : '';
+        ? `<p><strong>${T.modalThread}:</strong> <code>${esc(job.thread_key)}</code></p>` : '';
       const replacedLine = (job.replaced_by != null && job.replaced_by > 0)
-        ? `<p><strong>Replaced by:</strong> <a href="#" data-act="modal-parent" data-pid="${job.replaced_by}">#${job.replaced_by}</a></p>` : '';
+        ? `<p><strong>${T.modalReplaced}:</strong> <a href="#" data-act="modal-parent" data-pid="${job.replaced_by}">#${job.replaced_by}</a></p>` : '';
       const outboxLine = (job.last_outbox_id != null && job.last_outbox_id > 0)
-        ? `<p><strong>Last outbox:</strong> #${job.last_outbox_id}</p>` : '';
+        ? `<p><strong>${T.modalLastOutbox}:</strong> #${job.last_outbox_id}</p>` : '';
       const fmt = (n) => n < 1024 ? `${n} B` : n < 1024*1024 ? `${(n/1024).toFixed(1)} KB` : `${(n/1024/1024).toFixed(1)} MB`;
       const artsBlock = (arts.outputs.length > 0 || arts.inputs.length > 0) ? `
-        <h3>📎 Artifacts (${fmt(arts.totalBytes || 0)})</h3>
-        ${arts.inputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">Inputs:</p><ul>${arts.inputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
-        ${arts.outputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">Outputs:</p><ul>${arts.outputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
+        <h3>📎 ${T.modalArtifacts} (${fmt(arts.totalBytes || 0)}) <button type="button" class="help-btn" data-help="artifacts" title="?">?</button></h3>
+        ${arts.inputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">${T.modalArtifactsInputs}</p><ul>${arts.inputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
+        ${arts.outputs.length > 0 ? `<p style="font-size:13px;color:var(--muted)">${T.modalArtifactsOutputs}</p><ul>${arts.outputs.map(f => `<li><a href="/api/artifacts/${id}/file/${encodeURIComponent(f.name)}" target="_blank">${esc(f.name)}</a> (${fmt(f.bytes)})</li>`).join('')}</ul>` : ''}
       ` : '';
       m.innerHTML = `
         <h2>${T.details} #${job.id} ${kindPill}</h2>
@@ -1033,7 +1274,7 @@
         ${threadLine}
         ${replacedLine}
         ${outboxLine}
-        <p><strong>${T.created}:</strong> ${fmtTime(job.created_at)}${job.completed_at ? ` · <strong>${T.completed}:</strong> ${fmtTime(job.completed_at)}` : ''}${job.delivered_at ? ` · <strong>Delivered:</strong> ${fmtTime(job.delivered_at)}` : ''}</p>
+        <p><strong>${T.created}:</strong> ${fmtTime(job.created_at)}${job.completed_at ? ` · <strong>${T.completed}:</strong> ${fmtTime(job.completed_at)}` : ''}${job.delivered_at ? ` · <strong>${T.modalDelivered}:</strong> ${fmtTime(job.delivered_at)}` : ''}</p>
         <h3>${T.prompt}</h3>
         <pre>${esc(job.prompt)}</pre>
         ${job.result ? `<h3>${T.result}</h3><pre>${esc(job.result)}</pre>` : ''}
@@ -1944,19 +2185,20 @@
         const statsEl = document.getElementById('outbox-stats');
         if (statsEl) {
           statsEl.innerHTML =
-            `<span class="stat">⏳ pending <b>${stats.pending ?? 0}</b></span>` +
-            `<span class="stat">✅ delivered <b>${stats.delivered ?? 0}</b></span>` +
-            `<span class="stat">💀 giving_up <b>${stats.giving_up ?? 0}</b></span>`;
+            `<span class="stat">${T.outboxStatusPending} <b>${stats.pending ?? 0}</b></span>` +
+            `<span class="stat">${T.outboxStatusDelivered} <b>${stats.delivered ?? 0}</b></span>` +
+            `<span class="stat">${T.outboxStatusGivingUp} <b>${stats.giving_up ?? 0}</b></span> ` +
+            `<button type="button" class="help-btn" data-help="givingUp" title="?">?</button>`;
         }
         const qs = new URLSearchParams({ limit });
         if (statusFilter) qs.set('status', statusFilter);
         const listResp = await fetch('/api/outbox?' + qs);
         const { rows = [] } = await listResp.json();
         const listEl = document.getElementById('outbox-list');
-        if (!rows.length) { listEl.innerHTML = '<p style="color:var(--text-muted)">No outbox rows.</p>'; return; }
+        if (!rows.length) { listEl.innerHTML = `<p style="color:var(--text-muted)">${T.outboxEmpty}</p>`; return; }
         const html = ['<table class="data-table"><thead><tr>',
-          '<th>#</th><th>Status</th><th>Platform</th><th>Kind</th><th>Pri</th>',
-          '<th>Attempts</th><th>Payload</th><th>Error</th><th>Created</th><th></th>',
+          `<th>#</th><th>${T.status}</th><th>${T.outboxColPlatform}</th><th>${T.outboxColKind}</th><th>${T.outboxColPri}</th>`,
+          `<th>${T.outboxColAttempts}</th><th>${T.outboxColPayload}</th><th>${T.outboxColError}</th><th>${T.outboxColCreated}</th><th></th>`,
           '</tr></thead><tbody>'];
         for (const r of rows) {
           const icon = r.status === 'delivered' ? '✅' : r.status === 'giving_up' ? '💀' : '⏳';
@@ -1964,7 +2206,7 @@
           const errCell = r.last_error ? `<span title="${escapeHtml(r.last_error)}">${escapeHtml(r.last_error.slice(0, 40))}…</span>` : '';
           const ts = (r.created_at || '').replace('T', ' ').slice(0, 19);
           const retryBtn = r.status === 'giving_up'
-            ? `<button class="btn-link" data-retry="${r.id}">Retry</button>` : '';
+            ? `<button class="btn-link" data-retry="${r.id}">${T.outboxRetry}</button>` : '';
           html.push(`<tr>
             <td>#${r.id}</td>
             <td>${icon} ${escapeHtml(r.status)}</td>
@@ -2014,18 +2256,18 @@
           const byStatus = (stats.byStatus || []).map(s => `${s.status}:${s.n}`).join(' · ');
           const byAgent = (stats.byAgent || []).map(s => `${s.agent} <b>${s.n}</b>`).join(' / ');
           statsEl.innerHTML =
-            `<span class="stat">Total <b>${stats.total ?? 0}</b></span>` +
-            `<span class="stat">24h <b>${stats.recent24h ?? 0}</b></span>` +
-            `<span class="stat">Max depth <b>${stats.maxDepth ?? 0}</b></span>` +
+            `<span class="stat">${T.a2aStatTotal} <b>${stats.total ?? 0}</b></span>` +
+            `<span class="stat">${T.a2aStat24h} <b>${stats.recent24h ?? 0}</b></span>` +
+            `<span class="stat">${T.a2aStatMaxDepth} <b>${stats.maxDepth ?? 0}</b></span>` +
             (byStatus ? `<span class="stat">${byStatus}</span>` : '') +
-            (byAgent ? `<span class="stat">Top: ${byAgent}</span>` : '');
+            (byAgent ? `<span class="stat">${T.a2aStatTop} ${byAgent}</span>` : '');
         }
         const listEl = document.getElementById('a2a-list');
-        if (!recent.length) { listEl.innerHTML = '<p style="color:var(--text-muted)">No A2A calls yet.</p>'; return; }
-        const html = ['<h3 style="margin-top:1em">Recent A2A calls</h3>',
+        if (!recent.length) { listEl.innerHTML = `<p style="color:var(--text-muted)">${T.a2aEmpty}</p>`; return; }
+        const html = [`<h3 style="margin-top:1em">${T.a2aRecent}</h3>`,
           '<table class="data-table"><thead><tr>',
-          '<th>#</th><th>Caller→Callee</th><th>Depth</th><th>Status</th>',
-          '<th>Prompt</th><th>Started</th><th>Done</th><th>Tree</th>',
+          `<th>#</th><th>${T.a2aCallerCallee}</th><th>${T.depthCol}</th><th>${T.status}</th>`,
+          `<th>${T.prompt}</th><th>${T.created}</th><th>${T.modalDelivered}</th><th></th>`,
           '</tr></thead><tbody>'];
         for (const r of recent) {
           const icon = r.status === 'delivered' || r.status === 'completed' ? '✅'
@@ -2042,7 +2284,7 @@
             <td title="${escapeHtml(r.prompt || '')}">${escapeHtml(preview)}…</td>
             <td>${started}</td>
             <td>${done}</td>
-            <td><button class="btn-link" data-tree="${r.parent_id}">View parent tree</button></td>
+            <td><button class="btn-link" data-tree="${r.parent_id}">${T.a2aBtnViewParent}</button></td>
           </tr>`);
         }
         html.push('</tbody></table>');
@@ -2063,12 +2305,12 @@
     async function loadA2ATree(rootId) {
       const treeEl = document.getElementById('a2a-tree');
       if (!rootId) return;
-      treeEl.innerHTML = `<p style="color:var(--text-muted)">Loading tree #${rootId}…</p>`;
+      treeEl.innerHTML = `<p style="color:var(--text-muted)">${T.loading}</p>`;
       try {
         const resp = await fetch(`/api/a2a/tree/${rootId}`);
         const j = await resp.json();
         if (!resp.ok) { treeEl.innerHTML = `<p style="color:#d00">${escapeHtml(j.error || 'failed')}</p>`; return; }
-        const lines = [`<h3 style="margin-top:1em">🌳 Call tree (root #${rootId})</h3>`];
+        const lines = [`<h3 style="margin-top:1em">🌳 ${T.a2aTreeRoot.replace('{id}', String(rootId))}</h3>`];
         function render(node, depth) {
           const indent = '&nbsp;'.repeat(depth * 4);
           const icon = node.status === 'delivered' || node.status === 'completed' ? '✅'

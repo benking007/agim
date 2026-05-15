@@ -2519,30 +2519,36 @@ async function handleOutboxRetry(_req: IncomingMessage, res: ServerResponse, id:
 // A2A (v1.1.3)
 // ============================================
 
-// All three handlers re-use the read-only sqlite shim from
-// commands/a2a.ts — but that file's helper isn't exported and we want
-// to avoid making it public surface. Web takes the simpler route: open
-// its own read-only connection and run the queries inline. Cheap (sqlite
-// open is ~ms) and isolates web reads from the writer.
-function openJobsDbReadOnly(): import('better-sqlite3').Database | null {
+// Open a read-only handle to jobs.db. We do NOT reuse job-board's
+// writer handle: web reads are read-only, and a separate connection
+// keeps the writer free of long SELECTs (jobs.db is in WAL mode, so
+// concurrent reads alongside the writer are fine).
+//
+// Async because we're under ESM — `require()` isn't available at
+// runtime even though the type imports above keep `import('better-sqlite3').Database`
+// usable at compile time.
+async function openJobsDbReadOnly(): Promise<import('better-sqlite3').Database | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const DBCtor = require('better-sqlite3') as typeof import('better-sqlite3')
-    const path = require('node:path') as typeof import('node:path')
-    const { AGIM_HOME } = require('../core/agim-paths.js') as typeof import('../core/agim-paths.js')
-    const d = new (DBCtor as unknown as { new (p: string, opts?: object): import('better-sqlite3').Database })(
+    const path = await import('node:path')
+    const { AGIM_HOME } = await import('../core/agim-paths.js')
+    const Database = (await import('better-sqlite3')).default
+    const d = new Database(
       path.join(AGIM_HOME, 'jobs.db'),
       { readonly: true, fileMustExist: true },
     )
     d.pragma('journal_mode = WAL')
     return d
-  } catch {
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'web', event: 'web.jobs_db_open_failed', err: err instanceof Error ? err.message : String(err) },
+      'failed to open jobs.db for A2A read',
+    )
     return null
   }
 }
 
 async function handleA2AStats(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const d = openJobsDbReadOnly()
+  const d = await openJobsDbReadOnly()
   if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   try {
     const total = (d.prepare(
@@ -2569,7 +2575,7 @@ async function handleA2AStats(_req: IncomingMessage, res: ServerResponse): Promi
 }
 
 async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-  const d = openJobsDbReadOnly()
+  const d = await openJobsDbReadOnly()
   if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   try {
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 1), 200)
@@ -2593,7 +2599,7 @@ async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: 
 }
 
 async function handleA2ATree(_req: IncomingMessage, res: ServerResponse, rootId: number): Promise<void> {
-  const dMaybe = openJobsDbReadOnly()
+  const dMaybe = await openJobsDbReadOnly()
   if (!dMaybe) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   const d = dMaybe  // captured non-null binding for nested async closures
   try {

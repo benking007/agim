@@ -184,14 +184,29 @@ function migrateColumns(d: Database.Database): void {
       // duplicate column — already migrated
     }
   }
-  // Phase 2 indexes — needed for retention split (kind) and Phase 3 recovery
-  // sweep (kind + status + thread_key). IF NOT EXISTS is idempotent.
-  try {
-    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_kind_status ON jobs(kind, status)`).run()
-    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_thread_key  ON jobs(thread_key)`).run()
-    d.prepare(`CREATE INDEX IF NOT EXISTS idx_jobs_last_outbox ON jobs(last_outbox_id) WHERE last_outbox_id IS NOT NULL`).run()
-  } catch {
-    // shouldn't fail but never let an index error block startup
+  // All indexes that reference columns added by migrateColumns above. Each
+  // create is wrapped individually so a single failure (corrupt index, etc.)
+  // doesn't kill the rest. IF NOT EXISTS handles idempotency on warm starts.
+  const indexes: string[] = [
+    // v1.0 ownership indexes — moved out of the schema string because the
+    // schema runs before migrateColumns, and a pre-v1.0 jobs.db doesn't have
+    // creator_id yet at schema-exec time. Putting them here makes them run
+    // AFTER the ALTER TABLE that adds the column.
+    `CREATE INDEX IF NOT EXISTS idx_jobs_creator         ON jobs(creator_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_jobs_status_created  ON jobs(status, created_at)`,
+    // Phase 2 indexes — retention split (kind) + recovery sweep (kind +
+    // status + thread_key).
+    `CREATE INDEX IF NOT EXISTS idx_jobs_kind_status     ON jobs(kind, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_jobs_thread_key      ON jobs(thread_key)`,
+    `CREATE INDEX IF NOT EXISTS idx_jobs_last_outbox     ON jobs(last_outbox_id) WHERE last_outbox_id IS NOT NULL`,
+  ]
+  for (const sql of indexes) {
+    try { d.prepare(sql).run() } catch (err) {
+      rootLogger.warn(
+        { component: 'job-board', event: 'job-board.index_create_failed', sql, err: err instanceof Error ? err.message : String(err) },
+        'index create failed (continuing)',
+      )
+    }
   }
 }
 
@@ -228,6 +243,16 @@ const helper = createSqliteHelper({
   file: BOARD_DB,
   component: 'job-board',
   logger: rootLogger,
+  // Schema only declares columns that have ALWAYS existed (v0.x onward).
+  // creator_id / workspace_id / Phase-2 columns are added in migrateColumns
+  // via idempotent ALTER TABLE, because legacy production dbs predate the
+  // v1.0 ownership migration. Indexes that reference any of those columns
+  // also live in migrateColumns — running them here against a pre-v1.0
+  // table throws "no such column" and broke the entire helper:
+  //   sqlite-helper enters the "broken" state on any schema exec error
+  //   → every subsequent get() returns null → job-board permanently disabled.
+  // That bug shipped from v1.0 onward but only surfaced once Phase 2
+  // landed and someone ran a fresh agim binary against a legacy jobs.db.
   schema: `
     CREATE TABLE IF NOT EXISTS jobs (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,13 +262,9 @@ const helper = createSqliteHelper({
       result        TEXT,
       error         TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-      completed_at  TEXT,
-      creator_id    TEXT    NOT NULL DEFAULT '',
-      workspace_id  TEXT    NOT NULL DEFAULT ''
+      completed_at  TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
-    CREATE INDEX IF NOT EXISTS idx_jobs_creator ON jobs(creator_id);
-    CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
   `,
   init: (d) => {
     migrateColumns(d)

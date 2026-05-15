@@ -295,9 +295,31 @@ TimeoutStopSec=15s   # 给 graceful 路径 15s 跑完 + 5s agent 子进程 grace
 
 | Phase | 状态 | 完成日 | PR / Commit | 备注 |
 |---|---|---|---|---|
-| 1 Outbox | ⏳ planned | — | — | — |
-| 2 Inline jobs | ⏳ planned | — | — | — |
-| 3 Lifecycle | ⏳ planned | — | — | — |
+| 1 Outbox | ✅ done | 2026-05-14 | 0caf227 | 11 send 调用点收口（文档列 5 处 + 漏掉的 web 2 处 + cli 主回路 4 处）|
+| 2 Inline jobs | ✅ done | 2026-05-15 | 019b934 | 6 列扩展 + 状态机 + outbox↔jobs 级联 + retention 拆分 |
+| 3 Lifecycle | ✅ done | 2026-05-15 | (待 commit) | SIGTERM 修复 + 启动恢复扫描 + 1/2 重发流程 |
+
+### Phase 3 落地后部署须知（systemd unit）
+
+agim 进程级 graceful path 已经支持 SIGTERM，但 `systemctl restart agim` 时
+**子进程（agent CLI）**的行为取决于 unit 文件的 `KillMode`：
+
+- 默认 `KillMode=control-group`：SIGTERM 同时打到主 + 所有子。子可能在 agim
+  gracefulShutdown 还没跑完时被砍。
+- 推荐 `KillMode=mixed`：SIGTERM 只打到主进程；子在 `TimeoutStopSec` 之后才
+  收 SIGKILL，给 agim 时间收尾、标 interrupted 行。
+
+应用方式（运维一次性手动操作）：
+
+```bash
+# /etc/systemd/system/agim.service [Service] 段加：
+KillMode=mixed
+# TimeoutStopSec 已为 30s，不必改
+systemctl daemon-reload
+systemctl restart agim
+```
+
+`TimeoutStopSec` 当前是 30s，足够 gracefulShutdown + agent grace。
 
 ---
 
@@ -306,3 +328,6 @@ TimeoutStopSec=15s   # 给 graceful 路径 15s 跑完 + 5s agent 子进程 grace
 | 日期 | 变更 | 作者 |
 |---|---|---|
 | 2026-05-14 | 初始版本，三 Phase 设计定稿、等待开 feat/task-recovery 实施 | Claude Code |
+| 2026-05-14 | Phase 1（Outbox）落地，0caf227 | Claude Code |
+| 2026-05-15 | Phase 2（Inline jobs）落地，019b934 | Claude Code |
+| 2026-05-15 | Phase 3（Lifecycle）代码落地，部署 systemd unit 改动待运维手动应用 | Claude Code |

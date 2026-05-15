@@ -299,6 +299,58 @@ program
         ctx.logger = createLogger({ traceId, platform: ctx.platform, component: 'cli' })
         ctx.logger.info({ event: 'message.received', text: ctx.message.text.substring(0, 120), userId: ctx.message.userId })
 
+        // Phase 3 — interrupted-job recovery reply. If the user has a
+        // pending "retry / cancel" prompt outstanding on this thread AND
+        // their reply parses as 1/重发/2/取消, consume the message here
+        // before any other interceptor (approval / reminder) sees it.
+        // hasPendingRecovery is a cheap map lookup; we only do the full
+        // parse when the gate is true.
+        const recoveryThreadKey = `${ctx.platform}:${ctx.channelId}:${ctx.message.threadId}`
+        try {
+          const { hasPendingRecovery, tryHandleRecoveryReply } =
+            await import('./core/job-recovery.js')
+          if (hasPendingRecovery(recoveryThreadKey)) {
+            const outcome = tryHandleRecoveryReply(recoveryThreadKey, ctx.message.text)
+            if (outcome.kind === 'retried') {
+              ctx.logger.info({
+                event: 'recovery.retried', oldJobId: outcome.oldJobId, newJobId: outcome.newJobId,
+              })
+              // Substitute the user's "1" with the original prompt so the
+              // rest of the handler reruns the work. handleMessage reads
+              // message.text again on its own, so this is the cheapest
+              // way to re-enter the normal path without duplicating logic.
+              ctx.message.text = outcome.entry.prompt
+              // Send a short "好的，重发中..." acknowledgement first so the
+              // user knows we accepted the choice (the actual agent reply
+              // can take many seconds). priority=normal — slot it after
+              // anything urgent in the outbox.
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: '🔁 好的，重发中…',
+                kind: 'text',
+              })
+              // Fall through to the normal handler below with the rewritten
+              // message text.
+            } else if (outcome.kind === 'cancelled') {
+              ctx.logger.info({ event: 'recovery.cancelled', oldJobId: outcome.oldJobId })
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: '✅ 已取消，不再处理上次的消息。',
+                kind: 'text',
+              })
+              return
+            }
+            // outcome.kind === 'not-recovery-reply' → user typed something
+            // else; fall through to normal handling so we don't swallow
+            // unrelated messages.
+          }
+        } catch (err) {
+          ctx.logger.warn({
+            event: 'recovery.intercept_crashed',
+            err: err instanceof Error ? err.message : String(err),
+          }, 'recovery intercept threw — falling through to normal flow')
+        }
+
         // Approval interception comes BEFORE the agent router. If a pending
         // approval exists for this thread and the message is a y/n-style
         // reply, we resolve the approval and stop. Anything else routes
@@ -479,6 +531,31 @@ program
     sink.startWorker()
     console.log('✅ Message-sink worker started')
 
+    // Phase 3 — startup recovery scan. Look at jobs.db for inline rows
+    // that got 'interrupted' on the previous shutdown and are still inside
+    // the recovery window (default 10 min, env IMHUB_RECOVERY_WINDOW_MS).
+    // For each, send a "回 1 重发 / 2 取消" prompt via sink — outbox will
+    // hold the notification until the messenger is fully connected. Older
+    // interrupted rows transition to 'abandoned' so we don't ask the user
+    // to retry something they sent half an hour ago.
+    try {
+      const { scanInterruptedAndNotify, sweepExpiredPending } =
+        await import('./core/job-recovery.js')
+      const { notified, abandoned } = await scanInterruptedAndNotify()
+      if (notified > 0 || abandoned > 0) {
+        console.log(`✅ Job recovery: ${notified} retry-prompt(s) sent, ${abandoned} abandoned`)
+      }
+      // Tidy expired pending entries every minute. The in-memory map is
+      // cheap but a long-lived process accumulates entries from users who
+      // never reply.
+      const sweepTimer = setInterval(() => { sweepExpiredPending() }, 60_000)
+      if (typeof sweepTimer === 'object' && sweepTimer && 'unref' in sweepTimer) {
+        (sweepTimer as { unref: () => void }).unref()
+      }
+    } catch (err) {
+      console.warn('job-recovery module failed to scan:', err instanceof Error ? err.message : String(err))
+    }
+
     // Reminder confirm notifier — used by reminder-rpc.ts when an agent
     // creates a high-frequency + LLM-polish reminder (those go through a
     // y/n card before landing in the DB). Plain message via the same
@@ -552,9 +629,17 @@ program
       console.warn('restart-completion module failed to load:', err instanceof Error ? err.message : String(err))
     }
 
-    // Keep process alive
-    process.on('SIGINT', async () => {
-      console.log('\n👋 Shutting down...')
+    // Graceful shutdown. Registered for BOTH SIGINT (Ctrl-C from a terminal)
+    // and SIGTERM (systemd / docker stop). Prior to v1.1.2 only SIGINT was
+    // hooked, which meant `systemctl restart agim` skipped this entire path —
+    // sessionManager.stop, WAL checkpoints, etc. — and the next startup had
+    // to recover from a half-flushed state. The handler is idempotent against
+    // duplicate signals.
+    let shuttingDown = false
+    const gracefulShutdown = async (signal: string): Promise<void> => {
+      if (shuttingDown) return
+      shuttingDown = true
+      console.log(`\n👋 Received ${signal}, shutting down...`)
       sessionManager.stop()
       webServer?.close()
       acpServer?.close()
@@ -563,6 +648,15 @@ program
       // race the adapter shutdown. Worker is single-threaded so a pending
       // tick will finish its current row before we move on.
       try { sink.stopWorker() } catch { /* ignore */ }
+
+      // Phase 3: any inline job that was still pending/running gets stamped
+      // 'interrupted' so the next startup's recovery scan can offer the user
+      // a retry. Must happen BEFORE closeJobBoardDb() below, while the
+      // handle is still open.
+      try {
+        const { markRunningInlineJobsInterrupted } = await import('./core/job-board.js')
+        markRunningInlineJobsInterrupted(`agim shutdown (${signal})`)
+      } catch { /* ignore */ }
 
       // Stop all messengers
       for (const name of registry.listMessengers()) {
@@ -610,7 +704,9 @@ program
       } catch { /* ignore */ }
 
       process.exit(0)
-    })
+    }
+    process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })
+    process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM') })
 
     // Wait forever
     await new Promise(() => {})

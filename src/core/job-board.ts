@@ -265,6 +265,152 @@ const helper = createSqliteHelper({
   },
 })
 
+/** Phase 3 — shutdown step. Mark every running inline job as 'interrupted'
+ *  so the next startup can offer the user a retry. Returns the row count for
+ *  logging. Safe to call on a degraded DB (returns 0). */
+export function markRunningInlineJobsInterrupted(reason: string = 'agim shutdown'): number {
+  const d = getDb()
+  if (!d) return 0
+  try {
+    const info = d.prepare(
+      `UPDATE jobs
+          SET status = 'interrupted',
+              completed_at = datetime('now'),
+              error = ?
+        WHERE kind = 'inline'
+          AND status IN ('pending', 'running')`,
+    ).run(reason.slice(0, 1024))
+    if (info.changes > 0) {
+      rootLogger.info(
+        { component: 'job-board', event: 'job-board.interrupted', count: info.changes, reason },
+        `Marked ${info.changes} inline job(s) as interrupted (${reason})`,
+      )
+    }
+    return info.changes
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'job-board', event: 'job-board.interrupt_failed', err: err instanceof Error ? err.message : String(err) },
+      'markRunningInlineJobsInterrupted failed',
+    )
+    return 0
+  }
+}
+
+/** Phase 3 — startup scan. Return interrupted inline jobs that finished
+ *  within the recovery window (default 10 min via IMHUB_RECOVERY_WINDOW_MS).
+ *  Caller iterates the result, sends a per-thread "retry / cancel" prompt,
+ *  and tracks the user's reply via the in-memory pending-retry map.
+ *
+ *  Older interrupted rows are NOT returned — they get swept to 'abandoned'
+ *  by sweepAbandonedInterrupted() so they don't pile up in the table. */
+export function findRecoverableInterrupted(windowMs?: number): Job[] {
+  const d = getDb()
+  if (!d) return []
+  const ms = windowMs ?? resolveRecoveryWindowMs()
+  const seconds = Math.max(1, Math.floor(ms / 1000))
+  try {
+    return d.prepare(
+      `SELECT * FROM jobs
+        WHERE kind = 'inline'
+          AND status = 'interrupted'
+          AND completed_at >= datetime('now', '-' || ? || ' seconds')
+          AND thread_key <> ''
+        ORDER BY completed_at ASC`,
+    ).all(seconds) as Job[]
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'job-board', event: 'job-board.recover_query_failed', err: err instanceof Error ? err.message : String(err) },
+      'findRecoverableInterrupted failed',
+    )
+    return []
+  }
+}
+
+/** Phase 3 — startup sweep. Any 'interrupted' inline row past the recovery
+ *  window transitions to 'abandoned' (preserved for audit but never
+ *  notified). Returns the row count. */
+export function sweepAbandonedInterrupted(windowMs?: number): number {
+  const d = getDb()
+  if (!d) return 0
+  const ms = windowMs ?? resolveRecoveryWindowMs()
+  const seconds = Math.max(1, Math.floor(ms / 1000))
+  try {
+    const info = d.prepare(
+      `UPDATE jobs
+          SET status = 'abandoned'
+        WHERE kind = 'inline'
+          AND status = 'interrupted'
+          AND completed_at < datetime('now', '-' || ? || ' seconds')`,
+    ).run(seconds)
+    if (info.changes > 0) {
+      rootLogger.info(
+        { component: 'job-board', event: 'job-board.abandoned', count: info.changes },
+        `Swept ${info.changes} stale interrupted inline job(s) to 'abandoned'`,
+      )
+    }
+    return info.changes
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'job-board', event: 'job-board.abandon_failed', err: err instanceof Error ? err.message : String(err) },
+      'sweepAbandonedInterrupted failed',
+    )
+    return 0
+  }
+}
+
+/** Phase 3 — link an old interrupted row to its replacement once the user
+ *  picks "1 重发". The new row's id lands in `replaced_by`; the old row
+ *  transitions interrupted → replaced so it stops showing up in any future
+ *  recovery scan. */
+export function markJobReplacedBy(oldId: number, newId: number): void {
+  if (oldId <= 0 || newId <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'replaced',
+              replaced_by = ?
+        WHERE id = ? AND status = 'interrupted'`,
+    ).run(newId, oldId)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markJobReplacedBy_failed', oldId, newId, err: String(err) })
+  }
+}
+
+/** Phase 3 — user picked "2 取消" on the retry prompt. Interrupted → cancelled. */
+export function markInterruptedCancelled(id: number): void {
+  if (id <= 0) return
+  const d = getDb()
+  if (!d) return
+  try {
+    d.prepare(
+      `UPDATE jobs
+          SET status = 'cancelled'
+        WHERE id = ? AND status = 'interrupted'`,
+    ).run(id)
+  } catch (err) {
+    rootLogger.debug({ component: 'job-board', event: 'markInterruptedCancelled_failed', id, err: String(err) })
+  }
+}
+
+/** Recovery window in milliseconds. Default 10 minutes. Env override
+ *  IMHUB_RECOVERY_WINDOW_MS. */
+function resolveRecoveryWindowMs(): number {
+  const raw = process.env.IMHUB_RECOVERY_WINDOW_MS
+  if (raw) {
+    const n = parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 10 * 60 * 1000
+}
+
+/** Exported for the recovery module so it can use the same window for the
+ *  user-facing "10 min 内有效" copy. */
+export function getRecoveryWindowMs(): number {
+  return resolveRecoveryWindowMs()
+}
+
 /** Test hook: artificially age a row's completed_at (or created_at) by a
  *  SQLite modifier like '-2 hours' or '-40 days'. Production code must NOT
  *  call this; it's the only practical way to exercise retention without

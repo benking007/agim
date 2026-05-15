@@ -5,6 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agim — Reminders</title>
   <script src="/_app.js"></script>
+  <script>
+    // i18n bootstrap — mirrors tasks.html. _app.js reads window.__lang.
+    (function () {
+      const LANGS = { en: 'en', zh: 'zh' };
+      const savedLang = localStorage.getItem('im-hub-lang');
+      const browserLang = navigator.language.startsWith('zh') ? 'zh' : 'en';
+      window.__lang = savedLang && LANGS[savedLang] ? savedLang : browserLang;
+      document.documentElement.lang = window.__lang === 'zh' ? 'zh-CN' : 'en';
+      const T = {
+        en: {
+          title: 'Agim — Reminders', h1: 'Reminders',
+          backToChat: 'Chat', toTasks: 'Tasks', toMemos: 'Memos', toSettings: 'Settings',
+          statusPending: 'Pending', statusFired: 'Fired', statusCancelled: 'Cancelled', statusFailed: 'Failed',
+          empty: 'No reminders matching this filter.',
+          searchPlaceholder: 'search…',
+          cancel: 'Cancel', snooze: 'Snooze', delete: 'Delete',
+          fireAt: 'Fires at', recur: 'Repeat',
+        },
+        zh: {
+          title: 'Agim — 提醒', h1: '提醒',
+          backToChat: '对话', toTasks: '任务', toMemos: '备忘', toSettings: '设置',
+          statusPending: '待发', statusFired: '已发', statusCancelled: '已取消', statusFailed: '失败',
+          empty: '当前过滤下暂无提醒。',
+          searchPlaceholder: '搜索…',
+          cancel: '取消', snooze: '推迟', delete: '删除',
+          fireAt: '触发时间', recur: '重复',
+        },
+      };
+      window.__t = T[window.__lang];
+      document.title = T[window.__lang].title;
+    })();
+  </script>
   <style>
     :root {
       --bg: #fafafa; --fg: #222; --muted: #666; --border: #e5e7eb;
@@ -86,20 +118,25 @@
 </head>
 <body>
 <header>
-  <h1>🔔 Reminders</h1>
+  <h1>🔔 <span id="page-title"></span></h1>
+  <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+  <select id="langSelect" title="Language / 语言" style="margin-right:8px">
+    <option value="en">EN</option>
+    <option value="zh">中文</option>
+  </select>
   <nav>
-    <a href="/">Chat</a>
-    <a href="/tasks">Tasks</a>
-    <a href="/memos">Memos</a>
-    <a href="/settings">Settings</a>
+    <a href="/" id="lnk-chat"></a>
+    <a href="/tasks" id="lnk-tasks"></a>
+    <a href="/memos" id="lnk-memos"></a>
+    <a href="/settings" id="lnk-settings"></a>
   </nav>
 </header>
 <main>
   <div class="filters" id="filters">
-    <button type="button" class="filter-btn active" data-status="pending">待发 (Pending)</button>
-    <button type="button" class="filter-btn" data-status="fired">已发</button>
-    <button type="button" class="filter-btn" data-status="cancelled">已取消</button>
-    <button type="button" class="filter-btn" data-status="failed">失败</button>
+    <button type="button" class="filter-btn active" data-status="pending" id="btn-status-pending"></button>
+    <button type="button" class="filter-btn" data-status="fired" id="btn-status-fired"></button>
+    <button type="button" class="filter-btn" data-status="cancelled" id="btn-status-cancelled"></button>
+    <button type="button" class="filter-btn" data-status="failed" id="btn-status-failed"></button>
   </div>
   <div id="list"></div>
 </main>
@@ -107,10 +144,33 @@
 
 <script>
 (() => {
+  const T = window.__t;
   const $list = document.getElementById('list')
   const $toast = document.getElementById('toast')
   const $filters = document.getElementById('filters')
   let currentStatus = 'pending'
+
+  // i18n bind — header labels, status filter labels, lang switcher.
+  document.getElementById('page-title').textContent = T.h1;
+  document.getElementById('lnk-chat').textContent = T.backToChat;
+  document.getElementById('lnk-tasks').textContent = T.toTasks;
+  document.getElementById('lnk-memos').textContent = T.toMemos;
+  document.getElementById('lnk-settings').textContent = T.toSettings;
+  document.getElementById('btn-status-pending').textContent = T.statusPending;
+  document.getElementById('btn-status-fired').textContent = T.statusFired;
+  document.getElementById('btn-status-cancelled').textContent = T.statusCancelled;
+  document.getElementById('btn-status-failed').textContent = T.statusFailed;
+  if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
+  (function setupLangSwitcher() {
+    const sel = document.getElementById('langSelect');
+    if (!sel) return;
+    sel.value = window.__lang;
+    sel.addEventListener('change', () => {
+      if (sel.value === window.__lang) return;
+      localStorage.setItem('im-hub-lang', sel.value);
+      window.location.reload();
+    });
+  })();
 
   function toast(msg, isErr = false) {
     $toast.textContent = msg
@@ -119,17 +179,31 @@
     setTimeout(() => { $toast.style.display = 'none' }, 2500)
   }
 
-  function fmtTime(iso) {
+  function fmtTime(s) {
+    if (!s) return '-'
+    // Normalize SQLite "YYYY-MM-DD HH:MM:SS" to RFC3339 — Safari/WebView
+    // reject the space-separated form (Invalid Date).
+    let iso = String(s).trim()
+    if (iso && !iso.includes('T')) iso = iso.replace(' ', 'T')
+    if (iso && !/[Z+]/.test(iso.slice(-6))) iso = iso + 'Z'
     const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return iso
+    if (Number.isNaN(d.getTime())) return s
+    const isZh = window.__lang === 'zh'
     const now = new Date()
     const diffMs = d.getTime() - now.getTime()
     const absMin = Math.abs(Math.round(diffMs / 60000))
+    const past = diffMs <= 0
     let rel = ''
-    if (Math.abs(diffMs) < 60_000) rel = '刚才'
-    else if (absMin < 60) rel = `${(diffMs > 0 ? '' : '已过 ') + absMin} 分钟${diffMs > 0 ? '后' : ''}`
-    else if (absMin < 1440) rel = `${(diffMs > 0 ? '' : '已过 ') + (absMin / 60).toFixed(1)} 小时${diffMs > 0 ? '后' : ''}`
-    else rel = `${(diffMs > 0 ? '' : '已过 ') + (absMin / 1440).toFixed(1)} 天${diffMs > 0 ? '后' : ''}`
+    if (Math.abs(diffMs) < 60_000) rel = isZh ? '刚才' : 'just now'
+    else if (absMin < 60) rel = isZh
+      ? `${past ? '已过 ' : ''}${absMin} 分钟${past ? '' : '后'}`
+      : `${absMin} min ${past ? 'ago' : 'from now'}`
+    else if (absMin < 1440) rel = isZh
+      ? `${past ? '已过 ' : ''}${(absMin / 60).toFixed(1)} 小时${past ? '' : '后'}`
+      : `${(absMin / 60).toFixed(1)} h ${past ? 'ago' : 'from now'}`
+    else rel = isZh
+      ? `${past ? '已过 ' : ''}${(absMin / 1440).toFixed(1)} 天${past ? '' : '后'}`
+      : `${(absMin / 1440).toFixed(1)} d ${past ? 'ago' : 'from now'}`
     return `${d.toLocaleString()} · ${rel}`
   }
 

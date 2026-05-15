@@ -582,6 +582,25 @@
     .pill.abandoned { background: rgba(96, 125, 139, 0.18); color: #455a64; }
     .pill.kind-inline { background: rgba(63, 81, 181, 0.12); color: #3949ab; font-size: 11px; }
     .pill.kind-job { background: rgba(141, 110, 99, 0.18); color: #5d4037; font-size: 11px; }
+    /* Mobile-friendly: wide tables (Jobs / Outbox / A2A / Audit) get a
+       horizontal scrollbar inside their pane instead of overflowing the
+       viewport. WeChat/Telegram in-app WebView is the common entry. */
+    #jobs-list, #outbox-list, #a2a-list, #audit-list, #subtasks-list, #bg-list, #schedules-list {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #jobs-list table, #outbox-list table, #a2a-list table, #audit-list table {
+      min-width: 720px;  /* allow horizontal scroll instead of squishing cells */
+    }
+    /* Tab bar should also scroll horizontally on narrow screens rather
+       than wrapping (10 tabs don't fit on a phone otherwise). */
+    .tabs {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      white-space: nowrap;
+      flex-wrap: nowrap;
+    }
+    .tabs .tab { flex-shrink: 0; }
     /* Help-tooltip button — small (?) next to jargon, opens centered modal */
     .help-btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -1073,7 +1092,15 @@
 
     function fmtTime(s) {
       if (!s) return '-';
-      const d = new Date(s.endsWith('Z') ? s : `${s}Z`);
+      // SQLite datetime('now') produces "2026-05-15 14:02:50" — space-separated
+      // and no zone. Safari + iOS WebView refuse that string (Invalid Date);
+      // Chrome happens to parse it. Normalize to RFC3339 by swapping space for
+      // T and forcing UTC. Also accept already-ISO strings unchanged.
+      let iso = String(s).trim();
+      if (iso && !iso.includes('T')) iso = iso.replace(' ', 'T');
+      if (iso && !/[Z+]/.test(iso.slice(-6))) iso = iso + 'Z';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return s;  // fall back to raw if still bad
       return d.toLocaleString();
     }
 
@@ -2204,7 +2231,7 @@
           const icon = r.status === 'delivered' ? '✅' : r.status === 'giving_up' ? '💀' : '⏳';
           const preview = (r.payload || '').slice(0, 60).replace(/\n/g, ' ');
           const errCell = r.last_error ? `<span title="${escapeHtml(r.last_error)}">${escapeHtml(r.last_error.slice(0, 40))}…</span>` : '';
-          const ts = (r.created_at || '').replace('T', ' ').slice(0, 19);
+          const ts = fmtTime(r.created_at);
           const retryBtn = r.status === 'giving_up'
             ? `<button class="btn-link" data-retry="${r.id}">${T.outboxRetry}</button>` : '';
           html.push(`<tr>
@@ -2274,8 +2301,8 @@
             : r.status === 'failed' ? '❌'
             : r.status === 'running' ? '🔄' : '⏳';
           const preview = (r.prompt || '').slice(0, 50).replace(/\n/g, ' ');
-          const started = (r.started_at || '').replace('T', ' ').slice(0, 19);
-          const done = (r.completed_at || r.delivered_at || '').replace('T', ' ').slice(0, 19);
+          const started = fmtTime(r.started_at);
+          const done = fmtTime(r.completed_at || r.delivered_at);
           html.push(`<tr>
             <td>#${r.id}</td>
             <td>←#${r.parent_id ?? '?'} → <b>${escapeHtml(r.agent)}</b></td>

@@ -5,6 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agim — Memos</title>
   <script src="/_app.js"></script>
+  <script>
+    (function () {
+      const LANGS = { en: 'en', zh: 'zh' };
+      const savedLang = localStorage.getItem('im-hub-lang');
+      const browserLang = navigator.language.startsWith('zh') ? 'zh' : 'en';
+      window.__lang = savedLang && LANGS[savedLang] ? savedLang : browserLang;
+      document.documentElement.lang = window.__lang === 'zh' ? 'zh-CN' : 'en';
+      const T = {
+        en: {
+          title: 'Agim — Memos', h1: 'Memos',
+          backToChat: 'Chat', toTasks: 'Tasks', toReminders: 'Reminders', toSettings: 'Settings',
+          filterAll: 'All', filterGeo: 'With location', filterExpired: 'Expired',
+          searchPlaceholder: 'search (what / memo / who / address …)',
+          empty: 'No memos matching this filter.',
+          delete: 'Delete', edit: 'Edit',
+        },
+        zh: {
+          title: 'Agim — 备忘', h1: '备忘',
+          backToChat: '对话', toTasks: '任务', toReminders: '提醒', toSettings: '设置',
+          filterAll: '全部', filterGeo: '有位置', filterExpired: '已过期',
+          searchPlaceholder: '搜索内容（what / memo / who / 地址 …）',
+          empty: '当前过滤下暂无备忘。',
+          delete: '删除', edit: '编辑',
+        },
+      };
+      window.__t = T[window.__lang];
+      document.title = T[window.__lang].title;
+    })();
+  </script>
   <style>
     :root {
       --bg: #fafafa; --fg: #222; --muted: #666; --border: #e5e7eb;
@@ -103,20 +132,25 @@
 </head>
 <body>
 <header>
-  <h1>📋 Memos</h1>
+  <h1>📋 <span id="page-title"></span></h1>
+  <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+  <select id="langSelect" title="Language / 语言" style="margin-right:8px">
+    <option value="en">EN</option>
+    <option value="zh">中文</option>
+  </select>
   <nav>
-    <a href="/">Chat</a>
-    <a href="/tasks">Tasks</a>
-    <a href="/reminders">Reminders</a>
-    <a href="/settings">Settings</a>
+    <a href="/" id="lnk-chat"></a>
+    <a href="/tasks" id="lnk-tasks"></a>
+    <a href="/reminders" id="lnk-reminders"></a>
+    <a href="/settings" id="lnk-settings"></a>
   </nav>
 </header>
 <main>
   <div class="toolbar">
-    <input type="text" id="q" placeholder="搜索内容（what / memo / who / 地址 …）" />
-    <button type="button" class="filter-btn active" data-filter="all">全部</button>
-    <button type="button" class="filter-btn" data-filter="geo">有位置</button>
-    <button type="button" class="filter-btn" data-filter="expired">已过期</button>
+    <input type="text" id="q" />
+    <button type="button" class="filter-btn active" data-filter="all" id="btn-filter-all"></button>
+    <button type="button" class="filter-btn" data-filter="geo" id="btn-filter-geo"></button>
+    <button type="button" class="filter-btn" data-filter="expired" id="btn-filter-expired"></button>
     <span class="stats" id="stats"></span>
   </div>
   <div id="list"></div>
@@ -125,6 +159,7 @@
 
 <script>
 (() => {
+  const T = window.__t;
   const $list = document.getElementById('list')
   const $toast = document.getElementById('toast')
   const $q = document.getElementById('q')
@@ -132,6 +167,28 @@
   let currentFilter = 'all'
   let queryStr = ''
   let debounceTimer = null
+
+  // i18n bind
+  document.getElementById('page-title').textContent = T.h1;
+  document.getElementById('lnk-chat').textContent = T.backToChat;
+  document.getElementById('lnk-tasks').textContent = T.toTasks;
+  document.getElementById('lnk-reminders').textContent = T.toReminders;
+  document.getElementById('lnk-settings').textContent = T.toSettings;
+  document.getElementById('btn-filter-all').textContent = T.filterAll;
+  document.getElementById('btn-filter-geo').textContent = T.filterGeo;
+  document.getElementById('btn-filter-expired').textContent = T.filterExpired;
+  $q.placeholder = T.searchPlaceholder;
+  if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
+  (function setupLangSwitcher() {
+    const sel = document.getElementById('langSelect');
+    if (!sel) return;
+    sel.value = window.__lang;
+    sel.addEventListener('change', () => {
+      if (sel.value === window.__lang) return;
+      localStorage.setItem('im-hub-lang', sel.value);
+      window.location.reload();
+    });
+  })();
 
   function toast(msg, isErr = false) {
     $toast.textContent = msg
@@ -150,18 +207,17 @@
   function fmtTime(iso) {
     if (!iso) return ''
     // memos use 'YYYY-MM-DD HH:MM:SS' (UTC+8 bare-local).
-    // Parse via Date and present as local. Worst case display drift is
-    // 0 (the user is also in UTC+8 because we already assume that).
     const d = new Date(iso.replace(' ', 'T') + '+08:00')
     if (Number.isNaN(d.getTime())) return iso
+    const isZh = window.__lang === 'zh'
     const now = new Date()
     const diffMs = now.getTime() - d.getTime()
     const absMin = Math.abs(Math.round(diffMs / 60000))
     let rel = ''
-    if (Math.abs(diffMs) < 60_000) rel = '刚才'
-    else if (absMin < 60) rel = `${absMin} 分钟前`
-    else if (absMin < 1440) rel = `${(absMin / 60).toFixed(1)} 小时前`
-    else rel = `${(absMin / 1440).toFixed(1)} 天前`
+    if (Math.abs(diffMs) < 60_000) rel = isZh ? '刚才' : 'just now'
+    else if (absMin < 60) rel = isZh ? `${absMin} 分钟前` : `${absMin} min ago`
+    else if (absMin < 1440) rel = isZh ? `${(absMin / 60).toFixed(1)} 小时前` : `${(absMin / 60).toFixed(1)} h ago`
+    else rel = isZh ? `${(absMin / 1440).toFixed(1)} 天前` : `${(absMin / 1440).toFixed(1)} d ago`
     return `${d.toLocaleString()} · ${rel}`
   }
 

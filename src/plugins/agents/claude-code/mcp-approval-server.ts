@@ -770,17 +770,33 @@ export function buildServer(client: ApprovalClient): McpServer {
     {
       title: 'Call another agent',
       description:
-        'Programmatically invoke another agent (claude-code / opencode / codex / copilot) ' +
-        'and wait for its reply, then continue your own reasoning. Use sparingly — each call ' +
-        'costs API tokens and adds latency. Good fits: ' +
-        '(a) delegate a single well-scoped sub-task that the other agent is clearly better at ' +
-        '(e.g. claude asking codex to run a shell-heavy investigation, or asking opencode to ' +
-        'execute a one-off code change in its sandbox); ' +
+        '**USE THIS TOOL whenever the user names a different agent and asks you to do something via it.** ' +
+        'Hand the sub-task to that agent and wait for its reply, then continue your reasoning. ' +
+        'Do NOT respond "I can\'t call X" — this tool is exactly that capability. ' +
+        '\n\n' +
+        '**Trigger phrases (Chinese)** — call this tool, do not refuse: ' +
+        '「用 codex 帮我 …」「让 opencode 跑 …」「请 copilot 写 …」「叫 codex 看一下 …」' +
+        '「把这个交给 opencode」「让 codex 总结 …」「codex / opencode / copilot 帮我处理 …」. ' +
+        '\n\n' +
+        '**Trigger phrases (English)**: "ask codex to …", "have opencode run …", ' +
+        '"get copilot to write …", "use codex for …", "let opencode handle …". ' +
+        '\n\n' +
+        '**Decision rule**: if the user explicitly names a callee agent (claude-code / opencode / ' +
+        'codex / copilot) and asks for an action — call this tool. Don\'t second-guess "I could ' +
+        'do it myself" — the user picked that other agent on purpose. ' +
+        '\n\n' +
+        '**Good fits when the user did NOT name an agent**: ' +
+        '(a) delegate a well-scoped sub-task another agent is clearly better at (e.g. codex for ' +
+        'shell-heavy investigation, opencode for sandboxed one-off code changes); ' +
         '(b) get a second opinion on a tricky design before committing. ' +
-        'NOT for: trivial tasks you can do yourself, fetching external data (use a real tool ' +
-        'or web_search), or "let another agent re-summarize what I already said". ' +
-        'The agim depth limit (default 3) and self-call ban prevent infinite chains. ' +
-        'Returns {ok, result, jobId, agent, durationMs} on success or {ok: false, error}.',
+        '\n\n' +
+        '**Don\'t use for** (when no agent was named): trivial tasks you can do yourself, ' +
+        'fetching external data (use a real tool / web_search), or "let another agent re-summarize ' +
+        'what I already said". ' +
+        '\n\n' +
+        'agim enforces depth limit (default 3) + self-call ban + workspace whitelist so chains ' +
+        'can\'t run away. Returns {ok, result, jobId, agent, durationMs} on success or ' +
+        '{ok: false, error}.',
       inputSchema: {
         agent: z.string().describe(
           'Target agent name. One of: claude-code, opencode, codex, copilot. ' +

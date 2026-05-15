@@ -18,19 +18,29 @@
           title: 'Agim — Reminders', h1: 'Reminders',
           backToChat: 'Chat', toTasks: 'Tasks', toMemos: 'Memos', toSettings: 'Settings',
           statusPending: 'Pending', statusFired: 'Fired', statusCancelled: 'Cancelled', statusFailed: 'Failed',
-          empty: 'No reminders matching this filter.',
-          searchPlaceholder: 'search…',
-          cancel: 'Cancel', snooze: 'Snooze', delete: 'Delete',
+          loading: 'Loading…',
+          loadFailed: 'Load failed: {err}',
+          emptyStatus: 'No {status} reminders.',
+          cancel: 'Cancel', snooze: 'Snooze +5min', delete: 'Delete',
           fireAt: 'Fires at', recur: 'Repeat',
+          literalText: 'literal',
+          confirmCancel: 'Cancel reminder #{id}? (Recurring reminders will stop the whole loop.)',
+          cancelled: '✅ Cancelled #{id}',
+          snoozed: '⏰ Snoozed #{id} +5min',
         },
         zh: {
           title: 'Agim — 提醒', h1: '提醒',
           backToChat: '对话', toTasks: '任务', toMemos: '备忘', toSettings: '设置',
           statusPending: '待发', statusFired: '已发', statusCancelled: '已取消', statusFailed: '失败',
-          empty: '当前过滤下暂无提醒。',
-          searchPlaceholder: '搜索…',
-          cancel: '取消', snooze: '推迟', delete: '删除',
+          loading: '加载中…',
+          loadFailed: '加载失败：{err}',
+          emptyStatus: '没有{status}的提醒',
+          cancel: '取消', snooze: '延 5 分钟', delete: '删除',
           fireAt: '触发时间', recur: '重复',
+          literalText: '字面文本',
+          confirmCancel: '取消提醒 #{id}？（循环提醒会终止整条循环）',
+          cancelled: '✅ 已取消 #{id}',
+          snoozed: '⏰ 已延后 #{id} 5 分钟',
         },
       };
       window.__t = T[window.__lang];
@@ -53,17 +63,30 @@
       background: var(--bg); color: var(--fg);
       margin: 0; padding: 0;
     }
+    /* Header — kept in sync with tasks.html so all dashboard pages share
+       the same layout. Flex with h1 flex:1 to push toggles + nav to the
+       right; uniform border-button look across <a> and <button>. */
     header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
       background: var(--card);
     }
-    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-    header nav a {
-      margin-left: 12px; color: var(--muted); text-decoration: none;
-      font-size: 13px;
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; flex: 1; }
+    header a, header button, header select {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+      background: none;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
     }
-    header nav a:hover { color: var(--accent); }
+    header select { color: var(--fg); }
+    header a:hover, header button:hover { border-color: var(--accent); }
     main { max-width: 880px; margin: 24px auto; padding: 0 16px; }
     .filters {
       display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
@@ -120,16 +143,14 @@
 <header>
   <h1>🔔 <span id="page-title"></span></h1>
   <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-  <select id="langSelect" title="Language / 语言" style="margin-right:8px">
+  <select id="langSelect" title="Language / 语言">
     <option value="en">EN</option>
     <option value="zh">中文</option>
   </select>
-  <nav>
-    <a href="/" id="lnk-chat"></a>
-    <a href="/tasks" id="lnk-tasks"></a>
-    <a href="/memos" id="lnk-memos"></a>
-    <a href="/settings" id="lnk-settings"></a>
-  </nav>
+  <a href="/" id="lnk-chat"></a>
+  <a href="/tasks" id="lnk-tasks"></a>
+  <a href="/memos" id="lnk-memos"></a>
+  <a href="/settings" id="lnk-settings"></a>
 </header>
 <main>
   <div class="filters" id="filters">
@@ -208,19 +229,19 @@
   }
 
   async function load() {
-    $list.innerHTML = '<div class="empty">加载中…</div>'
+    $list.innerHTML = `<div class="empty">${T.loading}</div>`
     try {
       const data = await window.imhub.api(`/api/reminders?status=${encodeURIComponent(currentStatus)}`)
       render(data.reminders || [])
     } catch (err) {
       $list.innerHTML = ''
-      toast(`加载失败：${err.message}`, true)
+      toast(T.loadFailed.replace('{err}', err.message), true)
     }
   }
 
   function render(items) {
     if (!items.length) {
-      $list.innerHTML = `<div class="empty">没有${statusLabel(currentStatus)}的提醒</div>`
+      $list.innerHTML = `<div class="empty">${T.emptyStatus.replace('{status}', statusLabel(currentStatus))}</div>`
       return
     }
     $list.innerHTML = items.map((r) => {
@@ -228,14 +249,14 @@
       const recurMeta = r.recurrence_label
         ? `<span class="recur">↻ ${escapeHtml(r.recurrence_label)}</span>` : ''
       const literalMeta = r.prompt_mode === 'literal'
-        ? '<span class="literal">字面文本</span>' : ''
+        ? `<span class="literal">${T.literalText}</span>` : ''
       const platformMeta = r.platform
         ? `<span>${escapeHtml(r.platform)}</span>` : ''
       const showActions = currentStatus === 'pending'
       const actions = showActions
         ? `<div class="actions">
-             <button class="btn" data-act="snooze" data-id="${r.id}">延 5 分钟</button>
-             <button class="btn danger" data-act="cancel" data-id="${r.id}">取消</button>
+             <button class="btn" data-act="snooze" data-id="${r.id}">${T.snooze}</button>
+             <button class="btn danger" data-act="cancel" data-id="${r.id}">${T.cancel}</button>
            </div>`
         : ''
       return `<div class="reminder">
@@ -262,7 +283,10 @@
   }
 
   function statusLabel(s) {
-    return ({ pending: '待发', fired: '已发', cancelled: '已取消', failed: '失败' })[s] || s
+    return ({
+      pending: T.statusPending, fired: T.statusFired,
+      cancelled: T.statusCancelled, failed: T.statusFailed,
+    })[s] || s
   }
 
   $filters.addEventListener('click', (e) => {
@@ -281,19 +305,19 @@
     btn.disabled = true
     try {
       if (act === 'cancel') {
-        if (!confirm(`取消提醒 #${id}？（循环提醒会终止整条循环）`)) return
+        if (!confirm(T.confirmCancel.replace('{id}', id))) return
         await window.imhub.api(`/api/reminders/${id}/cancel`, { method: 'POST' })
-        toast(`✅ 已取消 #${id}`)
+        toast(T.cancelled.replace('{id}', id))
       } else if (act === 'snooze') {
         await window.imhub.api(`/api/reminders/${id}/snooze`, {
           method: 'POST',
           body: JSON.stringify({ duration: '5m' }),
         })
-        toast(`✅ #${id} 已延后 5 分钟`)
+        toast(T.snoozed.replace('{id}', id))
       }
       await load()
     } catch (err) {
-      toast(`操作失败：${err.message}`, true)
+      toast(T.loadFailed.replace('{err}', err.message), true)
     } finally {
       btn.disabled = false
     }

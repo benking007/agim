@@ -318,6 +318,15 @@ export interface AgentSendOpts {
    *  translates it to `--agent plan` (stdio) or `agent: 'plan'` in the HTTP
    *  body. Other adapters ignore this. See Session.planMode for lifecycle. */
   planMode?: boolean
+  /** A2A-L1: the inline-jobs row id that's tracking THIS run. Adapters
+   *  forward it into RunContext.parentJobId so that any
+   *  mcp__imhub__call_agent invocation from inside the run stamps the
+   *  new callee row with parent_id = this id. */
+  parentJobId?: number
+  /** A2A-L1: this run's call_depth (0 = user-originated; +1 per nested
+   *  call_agent hop). Adapters forward it into RunContext.callDepth so
+   *  the bus can enforce IMHUB_A2A_MAX_DEPTH on the next hop. */
+  callDepth?: number
 }
 
 /**

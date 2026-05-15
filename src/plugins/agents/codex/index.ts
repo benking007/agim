@@ -284,6 +284,10 @@ export class CodexAdapter extends AgentBase {
     approvalBus.registerRun(runId, {
       threadId, platform, userId: userId ?? '', channelId,
       callerAgent: this.name,
+      // A2A-L1: forward parent + depth so any mcp__imhub__call_agent
+      // invocation from inside this run can be linked + depth-checked.
+      ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
+      ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
     })
     log.info({ event: 'codex.mcp.run_registered', runId, threadId, platform },
       'Codex run registered with bus for imhub MCP tools')

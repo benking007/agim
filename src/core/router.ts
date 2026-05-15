@@ -57,6 +57,14 @@ export interface RouteContext {
    *  agent sessions (Claude UUID, opencode session, etc.) only for the
    *  agent that will actually run. */
   onAgentResolved?: (agentName: string) => Promise<void>
+  /** A2A-L1: inline-jobs row id tracking THIS run. cli.ts stashes the
+   *  freshly-created inlineJobId here so callAgentWithHistory forwards it
+   *  into AgentSendOpts → adapter.registerRun → RunContext.parentJobId.
+   *  Any mcp__imhub__call_agent fired from inside the run then knows what
+   *  parent_id to stamp on its callee row. */
+  parentJobId?: number
+  /** A2A-L1: call_depth (0 for user-originated runs). */
+  callDepth?: number
 }
 
 export interface AgentCallOptions {
@@ -521,6 +529,10 @@ export async function callAgentWithHistory(
     onAgentSessionId,
     onUsage,
     planMode: effectivePlanMode || undefined,
+    // A2A-L1: forward the caller's tracking id + call depth so the
+    // adapter can stamp RunContext (consumed by bus.handleA2A).
+    parentJobId: ctx.parentJobId,
+    callDepth: ctx.callDepth,
   })
 
   return (async function* (): AsyncGenerator<string> {

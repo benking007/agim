@@ -103,6 +103,10 @@ export class OpenCodeAdapter extends AgentBase {
       userId: opts.userId ?? '',
       channelId: opts.channelId as string,
       callerAgent: this.name,
+      // A2A-L1: forward parent + depth so any mcp__imhub__call_agent
+      // invocation from inside this run can be linked + depth-checked.
+      ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
+      ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
     })
     log.info({ event: 'opencode.mcp.run_registered', runId, threadId: opts.threadId },
       'opencode run registered with bus for MCP reminder tools')

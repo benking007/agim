@@ -160,6 +160,13 @@ export async function callAgentByName(
       platform: ctx.platform,
       channelId: ctx.channelId,
       userId: ctx.userId,
+      // A2A-L1: forward our own jobId + nextDepth so the callee's adapter
+      // stamps RunContext correctly. If the callee then fires
+      // mcp__imhub__call_agent itself, its bus.handleA2A sees
+      // callDepth = our nextDepth → +1 = grand-callee depth, and
+      // parent_id = jobId (our callee row).
+      parentJobId: jobId,
+      callDepth: nextDepth,
     })
     result = await accumulateWithTimeout(gen, timeoutMs)
   } catch (err) {

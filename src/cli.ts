@@ -887,6 +887,20 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           creatorId: message.userId ?? '',
         })
       }
+      // A2A-L1: stash on routeCtx so callAgentWithHistory can forward it
+      // through AgentSendOpts → adapter.registerRun → RunContext. When the
+      // agent fires mcp__imhub__call_agent the bus then knows what
+      // parent_id to stamp on the callee inline-job row. User-originated
+      // runs are call_depth=0; nested runs (A2A callees) reach this same
+      // handler with their own ctx.inlineJobId and ctx.callDepth set.
+      if (inlineJobId > 0) {
+        routeCtx.parentJobId = inlineJobId
+        // handleMessage is only the user-inbound path — callDepth is
+        // always 0 here. (A2A callees don't traverse this handler; they
+        // go through a2a.callAgentByName which passes its own callDepth
+        // directly to target.sendPrompt.)
+        routeCtx.callDepth = 0
+      }
     }
 
     // Chain the agent-name correction onto the existing onAgentResolved

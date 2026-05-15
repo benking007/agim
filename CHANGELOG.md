@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-05-15
+
+### Added — Agent-to-Agent Layer 2 (shared artifacts)
+
+- **File exchange between agents.** `mcp__imhub__call_agent` now accepts
+  optional `inputs[]` and `expectOutputs[]` so caller and callee can
+  hand off files instead of round-tripping bytes through prompts /
+  results.
+  - `inputs` entries pick a source: `fromAbsolutePath` (host file),
+    `fromCallerOutput` (caller's own `_agim-output/`), or inline
+    `content` (UTF-8 string).
+  - `expectOutputs` is a soft contract — missing files become entries
+    in `warnings`, never a hard failure.
+  - Each A2A run gets `~/.agim/artifacts/<jobId>/{_agim-input,_agim-output}/`.
+    The callee learns about its workspace through a `[A2A workspace]`
+    envelope prepended to its prompt: absolute paths, input inventory
+    with sizes, expected-output checklist.
+  - Response includes `artifactsDir`, `outputs[]` (name + bytes + mtime),
+    and optional `warnings[]`. Caller reads `outputs[]` and uses the
+    `Read` tool to pull file contents on demand.
+- **Hard-link first, copy second.** `fromAbsolutePath` and
+  `fromCallerOutput` use `link(2)` when source and destination share a
+  filesystem — near-zero cost for read-only inputs. Falls back to plain
+  copy on EXDEV.
+- **Size caps**: `IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_FILE` (default 50 MB),
+  `IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_JOB` (200 MB),
+  `IMHUB_A2A_ARTIFACT_MAX_FILES_PER_JOB` (200). Failed setup fails the
+  job before any tokens are spent.
+- **Retention follows the inline-job row.** When job-board's sweep
+  deletes a row, `pruneArtifactsBatch` removes its directory. Fire-and-
+  forget — orphan dirs (if disk pruning fails) never block DB cleanup.
+- **`/a2a tree <id>`** now lists `📎 <name> (<size>)` under each row
+  that left files in `_agim-output/`.
+
+### Changed
+
+- `mcp__imhub__call_agent` description grew a paragraph documenting the
+  L2 fields; existing L1 callers (no `inputs` / `expectOutputs`) keep
+  the L1 string-in / string-out behavior unchanged.
+
+### Reference docs
+
+- `docs/a2a-l2-plan.md` — full Layer 2 design, decision register, and
+  the L3 punt list (cross-thread artifacts, remote ACP artifacts,
+  versioning) are documented but not implemented.
+
 ## [1.1.2] - 2026-05-15
 
 ### Added — Task recovery (3-phase, all on by default)

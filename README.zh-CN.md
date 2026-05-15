@@ -15,6 +15,7 @@
 
 - **5 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
 - **Agent 之间互调（A2A）** — Agent 可以在自己的工具循环里直接调另一个 Agent，比如直接说「用 codex 帮我跑 git status」/「让 opencode 跑一下测试」。护栏在 agim 里强制：递归深度限制（默认 3）、禁止自调、工作区白名单、按人预算共享；可观测：`/a2a stats | recent | tree <id>`；`IMHUB_A2A_ENABLED=0` 关闭
+- **A2A 共享文件传递（v1.1.3+）** — caller 可通过 `inputs[]`（`fromAbsolutePath` / `fromCallerOutput` / 内联 `content`）把文件放进 callee 工作区；callee 把产物写到 `~/.agim/artifacts/<jobId>/_agim-output/`，返回的 `outputs[]` 让 caller 按需读。同文件系统优先 hard-link，否则复制。大小上限 env 可调
 - **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
 - **崩溃中断可恢复** — 每条入站消息都建一条 inline job（`pending → running → completed → delivered`）。agim 重启时正在跑的任务会标 `interrupted`，下次启动 10 分钟窗口内对每条受影响的会话发：「⚠️ 上次的消息被服务重启中断了：「…」回复 1 重发 / 2 取消」。每条 job 的完整生命周期可在 `/job list` + `/job check <id>` 查看
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递

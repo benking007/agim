@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-05-15
+
+### Added — Web console catches up with task-recovery + A2A
+
+- **Outbox tab in /tasks** — three-color stats (pending / delivered /
+  giving_up), filterable table, per-row Retry button for `giving_up`
+  rows. Backed by `GET /api/outbox{,/stats}` + `POST
+  /api/outbox/:id/retry`. Same machinery the IM `/outbox` command
+  drives.
+- **A2A tab in /tasks** — stats card (total / 24h / max depth /
+  by-status / top callees), recent-calls table, depth-bounded tree
+  walk rooted at any job id. Tree nodes link directly to artifact
+  downloads (`📎 commits.txt`). Backed by `GET /api/a2a/{stats,recent}`
+  and `GET /api/a2a/tree/:id`.
+- **Artifacts download API** — `GET /api/artifacts/:jobId` lists
+  inputs+outputs, `GET /api/artifacts/:jobId/file/:name` streams the
+  file (Content-Type auto-detected from extension, inline disposition).
+  Used by the A2A tab and the Job-detail modal.
+- **Jobs tab enrichment** — table grows Kind / Parent / Depth columns;
+  status filter gains the Phase 3 values (delivered / interrupted /
+  replaced / abandoned); kind filter (all / job / inline). Click a
+  parent link to re-open showJob() on that row.
+- **Job-detail modal** — surfaces kind pill, parent + depth, thread
+  key, replaced_by, last_outbox_id, delivered_at. New `📎 Artifacts`
+  section listing inputs/outputs with download links when files exist.
+- **Help-tooltip system** — small `(?)` button next to jargon
+  (Outbox / Inline / A2A / Artifacts / Call depth / Parent /
+  Replaced-by / Giving-up) opens a centered modal explaining the
+  concept in the active language. Eight entries; en + zh.
+- **Language switcher on Reminders + Memos pages** — they had English
+  hard-coded headers and no langSelect. Now match the Tasks layout
+  (themed h1 + theme-toggle + EN/中文 dropdown + nav links), with
+  full en/zh dictionaries for filter labels, status pills, time
+  helpers ("just now" / "刚才", "5 min ago" / "5 分钟前").
+
+### Fixed
+
+- **Invalid Date** across Outbox / A2A / Audit time cells. Safari and
+  iOS WebView reject the space-separated `"YYYY-MM-DD HH:MM:SS"` SQLite
+  emits; Chrome happens to parse it. `fmtTime` now normalizes to
+  RFC3339 (swap space for T, suffix Z) and falls back to the raw
+  string if the result is still NaN. Outbox + A2A tables also stopped
+  slicing the timestamps raw and route through fmtTime for locale
+  rendering.
+- **`/api/a2a/*` returning 503** — the read-only sqlite helper in
+  web/server.ts used CommonJS `require('better-sqlite3')` under ESM
+  (no `require` at runtime). Switched to dynamic `await import(...)`
+  and added the `await` at three call sites (stats / recent / tree).
+  This is why the live A2A tab showed empty data on first deploy.
+
+### Changed
+
+- **Mobile usability** — the Tasks page tab bar (10 tabs) and the new
+  wide tables (10 columns each) used to overflow phone-width WebViews.
+  Tab bar now horizontally scrolls (`white-space: nowrap`), tables get
+  `overflow-x: auto` + `min-width: 720px` so cells stay legible and
+  the user scrolls horizontally instead of seeing squished content.
+
 ## [1.1.3] - 2026-05-15
 
 ### Added — Agent-to-Agent Layer 2 (shared artifacts)

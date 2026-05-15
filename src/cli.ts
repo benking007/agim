@@ -320,6 +320,12 @@ program
               // message.text again on its own, so this is the cheapest
               // way to re-enter the normal path without duplicating logic.
               ctx.message.text = outcome.entry.prompt
+              // Hand the freshly-created replacement job id to handleMessage
+              // so it doesn't build a second inline row (the recovery flow
+              // already created newJobId + stamped replaced_by on the old
+              // row). Without this we'd accumulate orphan 'pending' rows
+              // that retention eventually GCs — visible but harmless.
+              ctx.inlineJobId = outcome.newJobId
               // Send a short "好的，重发中..." acknowledgement first so the
               // user knows we accepted the choice (the actual agent reply
               // can take many seconds). priority=normal — slot it after
@@ -863,13 +869,24 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     // a 'pending' record we can attribute to the user. The agent name is
     // initially defaultAgent and gets corrected from inside onAgentResolved
     // once routing picks the real one.
+    //
+    // EXCEPTION: when the cli's recovery interceptor handed us a pre-created
+    // replacement-job id via ctx.inlineJobId, reuse it. The recovery path
+    // had to create the row up-front so it could stamp replaced_by on the
+    // old interrupted row atomically; building a second row here would
+    // leave the recovery-created one as an orphan 'pending' that retention
+    // eventually GCs.
     if (willInvokeAgent) {
-      inlineJobId = createInlineJob({
-        agent: defaultAgent,
-        prompt: message.text,
-        threadKey: `${platform}:${ctx.channelId}:${message.threadId}`,
-        creatorId: message.userId ?? '',
-      })
+      if (ctx.inlineJobId && ctx.inlineJobId > 0) {
+        inlineJobId = ctx.inlineJobId
+      } else {
+        inlineJobId = createInlineJob({
+          agent: defaultAgent,
+          prompt: message.text,
+          threadKey: `${platform}:${ctx.channelId}:${message.threadId}`,
+          creatorId: message.userId ?? '',
+        })
+      }
     }
 
     // Chain the agent-name correction onto the existing onAgentResolved

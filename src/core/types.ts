@@ -63,6 +63,13 @@ export interface MessageContext {
   traceId?: string
   /** Child logger bound to this request's traceId */
   logger?: Logger
+  /** Phase 3 recovery hand-off: when the cli intercepts a retry reply
+   *  ("1") for an interrupted job, it pre-creates the replacement inline
+   *  job row (so replaced_by can be stamped immediately) and stashes the
+   *  new id here. handleMessage sees this and skips its own createInlineJob
+   *  so the row machinery doesn't double-count. -1 / undefined = no
+   *  hand-off; handleMessage takes the normal path. */
+  inlineJobId?: number
 }
 
 /**

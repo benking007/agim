@@ -283,6 +283,7 @@ export class CodexAdapter extends AgentBase {
 
     approvalBus.registerRun(runId, {
       threadId, platform, userId: userId ?? '', channelId,
+      callerAgent: this.name,
     })
     log.info({ event: 'codex.mcp.run_registered', runId, threadId, platform },
       'Codex run registered with bus for imhub MCP tools')

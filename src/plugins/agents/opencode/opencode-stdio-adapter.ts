@@ -102,6 +102,7 @@ export class OpenCodeAdapter extends AgentBase {
       platform: opts.platform as string,
       userId: opts.userId ?? '',
       channelId: opts.channelId as string,
+      callerAgent: this.name,
     })
     log.info({ event: 'opencode.mcp.run_registered', runId, threadId: opts.threadId },
       'opencode run registered with bus for MCP reminder tools')

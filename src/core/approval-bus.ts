@@ -101,6 +101,20 @@ export interface RunContext {
   platform: string
   userId: string
   channelId: string
+  /** A2A-L1: name of the agent this run is executing under (claude-code /
+   *  opencode / codex / …). Adapters fill this when calling
+   *  approvalBus.registerRun so bus.handleA2A can reject self-calls and
+   *  audit can record the chain. Optional for legacy callers; the
+   *  self-call check just no-ops when absent. */
+  callerAgent?: string
+  /** A2A-L1: this run's own call_depth. 0 for user-originated runs;
+   *  bumped to caller.callDepth+1 when an A2A invocation spawns a new
+   *  agent run. Used to enforce IMHUB_A2A_MAX_DEPTH. */
+  callDepth?: number
+  /** A2A-L1: id of the inline-jobs row that's tracking this run, when
+   *  the run was spawned from another agent's mcp__imhub__call_agent
+   *  call. Optional for top-level runs. */
+  parentJobId?: number
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -645,7 +659,118 @@ export class ApprovalBus {
       await this.handleMemo(m, socket)
       return
     }
+    if (m.type === 'a2a') {
+      await this.handleA2A(m, socket)
+      return
+    }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
+  }
+
+  /**
+   * Handle an A2A call RPC sent by the MCP sidecar. Wire format:
+   *
+   *   {
+   *     v: 1, type: 'a2a', reqId, runId,
+   *     payload: { agent: string, prompt: string, timeoutMs?: number }
+   *   }
+   *
+   * Response (sent via {@link sendA2AResult}):
+   *
+   *   { v: 1, type: 'a2a.result', reqId,
+   *     ok: true,  result, jobId, agent, durationMs }
+   *   | { v: 1, type: 'a2a.result', reqId,
+   *       ok: false, error }
+   *
+   * Validation order:
+   *   1. reqId/runId/payload shape — wire-level
+   *   2. runId → RunContext (no _im_context fallback for A2A: a forged
+   *      context could let a compromised callee escalate to a different
+   *      user's workspace, and the cost is real money)
+   *   3. agent + prompt presence
+   *   4. self-call check (caller agent vs target agent)
+   *   5. depth check (handled inside a2a.callAgentByName)
+   */
+  private async handleA2A(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+
+    if (!reqId) {
+      log.warn({ event: 'a2a.bus.missing_reqId' })
+      return
+    }
+    if (!runId) {
+      this.sendA2AResult(socket, reqId, { ok: false, error: 'missing runId' })
+      return
+    }
+    const ctx = this.runContexts.get(runId)
+    if (!ctx) {
+      this.sendA2AResult(socket, reqId, { ok: false, error: `unknown runId: ${runId}` })
+      return
+    }
+    const agentName = typeof payload.agent === 'string' ? payload.agent : ''
+    const prompt    = typeof payload.prompt === 'string' ? payload.prompt : ''
+    if (!agentName || !prompt) {
+      this.sendA2AResult(socket, reqId, {
+        ok: false, error: 'payload.agent and payload.prompt are required',
+      })
+      return
+    }
+    const timeoutMs = typeof payload.timeoutMs === 'number' && payload.timeoutMs > 0
+      ? payload.timeoutMs : undefined
+
+    // Lazy-import so the bus module stays free of router/registry at load
+    // time (matters for tests that mock route side effects).
+    const { callAgentByName } = await import('./a2a.js')
+    // Synthesize a minimal RouteContext from the RunContext. logger is a
+    // child of the bus log so we get traceability without dragging the
+    // cli's logger plumbing through the bus.
+    const routeCtx = {
+      threadId: ctx.threadId,
+      channelId: ctx.channelId,
+      platform: ctx.platform,
+      defaultAgent: agentName,  // not strictly used by callAgentByName
+      traceId: reqId,
+      logger: log,
+      userId: ctx.userId,
+    } as Parameters<typeof callAgentByName>[2]
+    const result = await callAgentByName(agentName, prompt, routeCtx, {
+      callerAgent: ctx.callerAgent,
+      callerDepth: ctx.callDepth ?? 0,
+      parentJobId: ctx.parentJobId ?? null,
+      timeoutMs,
+    })
+    if (result.ok) {
+      this.sendA2AResult(socket, reqId, {
+        ok: true, result: result.result, jobId: result.jobId,
+        agent: result.agent, durationMs: result.durationMs,
+      })
+    } else {
+      this.sendA2AResult(socket, reqId, { ok: false, error: result.error })
+    }
+  }
+
+  private sendA2AResult(
+    socket: Socket, reqId: string,
+    res:
+      | { ok: true;  result: string; jobId: number; agent: string; durationMs: number }
+      | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'a2a.result', reqId, ok: res.ok }
+    if (res.ok) {
+      wire.result = res.result
+      wire.jobId = res.jobId
+      wire.agent = res.agent
+      wire.durationMs = res.durationMs
+    } else {
+      wire.error = res.error
+    }
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'a2a.bus.write_failed', reqId, err: String(err) })
+    })
   }
 
   /**

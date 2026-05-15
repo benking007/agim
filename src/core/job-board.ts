@@ -140,6 +140,13 @@ export interface Job {
   /** Last outbox row id that tried to deliver this job's result. Reverse
    *  link to `outbox.job_id`. */
   last_outbox_id: number | null
+  /** A2A-L1: id of the inline job whose agent invoked us via
+   *  mcp__imhub__call_agent. NULL for user-originated rows. */
+  parent_id: number | null
+  /** A2A-L1: how deep in the call chain this row sits. 0 = user;
+   *  caller.call_depth + 1 for each A2A hop. Used to enforce
+   *  IMHUB_A2A_MAX_DEPTH. */
+  call_depth: number
 }
 
 type JobRunner = (job: Job, logger: Logger, signal: AbortSignal) => AsyncGenerator<string>
@@ -162,6 +169,13 @@ type JobRunner = (job: Job, logger: Logger, signal: AbortSignal) => AsyncGenerat
  *                                   old row points at the new one.
  *   - last_outbox_id             : link to the outbox row that delivered (or is
  *                                   trying to deliver) this job's result.
+ *   - parent_id                  : Phase A2A-L1 — when one agent calls another via
+ *                                   mcp__imhub__call_agent, the callee's row points
+ *                                   back at the caller's row. NULL on user-originated
+ *                                   rows.
+ *   - call_depth                 : Phase A2A-L1 — 0 for user-originated rows; +1 per
+ *                                   nesting level. Lets us reject runaway chains
+ *                                   (IMHUB_A2A_MAX_DEPTH, default 3).
  */
 function migrateColumns(d: Database.Database): void {
   // [column, type] — type must include any NOT NULL / DEFAULT clauses.
@@ -174,6 +188,8 @@ function migrateColumns(d: Database.Database): void {
     ['delivered_at',   `TEXT`],
     ['replaced_by',    `INTEGER`],
     ['last_outbox_id', `INTEGER`],
+    ['parent_id',      `INTEGER`],
+    ['call_depth',     `INTEGER NOT NULL DEFAULT 0`],
   ]
   for (const [col, type] of adds) {
     try {
@@ -199,6 +215,10 @@ function migrateColumns(d: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_jobs_kind_status     ON jobs(kind, status)`,
     `CREATE INDEX IF NOT EXISTS idx_jobs_thread_key      ON jobs(thread_key)`,
     `CREATE INDEX IF NOT EXISTS idx_jobs_last_outbox     ON jobs(last_outbox_id) WHERE last_outbox_id IS NOT NULL`,
+    // A2A-L1 — fast "children of parent_id" lookup for /a2a stats + audit
+    // join. parent_id is sparse (only rows from mcp__imhub__call_agent) so
+    // the partial index keeps it small.
+    `CREATE INDEX IF NOT EXISTS idx_jobs_parent          ON jobs(parent_id) WHERE parent_id IS NOT NULL`,
   ]
   for (const sql of indexes) {
     try { d.prepare(sql).run() } catch (err) {
@@ -496,6 +516,11 @@ export interface CreateJobOpts {
    *  Phase 3 can route recovery notifications back to the originating IM
    *  thread. Optional for kind='job' (legacy CLI / scheduler callers). */
   threadKey?: string
+  /** A2A-L1: id of the inline job whose agent invoked this one. NULL on
+   *  user-originated rows. */
+  parentId?: number | null
+  /** A2A-L1: call depth (caller.call_depth + 1). 0 for user-originated. */
+  callDepth?: number
 }
 
 export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {}): number {
@@ -503,12 +528,13 @@ export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {
   if (!d) throw new Error('Job board unavailable (SQLite not initialized)')
   const row = d.prepare(
     `INSERT INTO jobs
-       (agent, prompt, status, creator_id, workspace_id, thread_key, kind)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (agent, prompt, status, creator_id, workspace_id, thread_key, kind, parent_id, call_depth)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     agent, prompt, 'pending',
     opts.creatorId || '', opts.workspaceId || '',
     opts.threadKey || '', opts.kind || 'job',
+    opts.parentId ?? null, opts.callDepth ?? 0,
   )
   const id = Number(row.lastInsertRowid)
   eventBus.publish({ type: 'job', phase: 'created', jobId: id, agent })
@@ -518,13 +544,20 @@ export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {
 /** Inline-job convenience: same as createJob but never throws — returns -1
  *  when the board is disabled / locked. Caller is expected to log + carry
  *  on with the in-memory fast path. The whole tracking machinery short-
- *  circuits when env IMHUB_INLINE_JOB_TRACKING=0. */
+ *  circuits when env IMHUB_INLINE_JOB_TRACKING=0.
+ *
+ *  parentId/callDepth are A2A-L1 hand-offs: when an agent tool-calls
+ *  another agent via mcp__imhub__call_agent, the bus routes through here
+ *  to record the parent/depth relationship. User-originated rows leave
+ *  these undefined → NULL parent, depth=0. */
 export function createInlineJob(opts: {
   agent: string
   prompt: string
   threadKey: string
   creatorId?: string
   workspaceId?: string
+  parentId?: number | null
+  callDepth?: number
 }): number {
   if (process.env.IMHUB_INLINE_JOB_TRACKING === '0') return -1
   try {
@@ -533,6 +566,8 @@ export function createInlineJob(opts: {
       threadKey: opts.threadKey,
       creatorId: opts.creatorId,
       workspaceId: opts.workspaceId,
+      parentId: opts.parentId ?? null,
+      callDepth: opts.callDepth ?? 0,
     })
   } catch (err) {
     rootLogger.warn(

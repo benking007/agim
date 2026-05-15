@@ -40,6 +40,7 @@ export type ParsedMessage =
   | { type: 'memo'; args: string }
   | { type: 'job'; args: string }
   | { type: 'outbox'; args: string }
+  | { type: 'a2a'; args: string }
   | { type: 'model'; args: string }
   | { type: 'think'; args: string }
   | { type: 'stats'; args: string }

@@ -182,6 +182,7 @@ export class ClaudeCodeAdapter extends AgentBase {
 
     approvalBus.registerRun(runId, {
       threadId, platform, userId: userId ?? '', channelId,
+      callerAgent: this.name,
     })
 
     log.info({ event: 'claude.approval.routed', runId, threadId, platform },

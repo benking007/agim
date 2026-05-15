@@ -48,12 +48,27 @@ interface PendingReminderRpc {
 type MemoResult = ReminderResult
 type PendingMemoRpc = PendingReminderRpc
 
+// A2A-L1 — Agent-to-Agent call result. Unlike reminder/memo, the wire
+// carries explicit jobId/agent/durationMs on success so the caller agent
+// can include them in its response to the user.
+type A2aSuccess = {
+  ok: true
+  result: string
+  jobId: number
+  agent: string
+  durationMs: number
+}
+type A2aFailure = { ok: false; error: string }
+type A2aResult = A2aSuccess | A2aFailure
+interface PendingA2aRpc { resolve: (r: A2aResult) => void }
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
   private pending = new Map<string, PendingRequest>()
   private pendingReminders = new Map<string, PendingReminderRpc>()
   private pendingMemos = new Map<string, PendingMemoRpc>()
+  private pendingA2A = new Map<string, PendingA2aRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -159,6 +174,28 @@ class ApprovalClient {
       }
       return
     }
+
+    if (m.type === 'a2a.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingA2A.get(reqId)
+      if (!p) return
+      this.pendingA2A.delete(reqId)
+      if (m.ok === true
+          && typeof m.result === 'string'
+          && typeof m.jobId === 'number'
+          && typeof m.agent === 'string'
+          && typeof m.durationMs === 'number') {
+        p.resolve({
+          ok: true, result: m.result, jobId: m.jobId,
+          agent: m.agent, durationMs: m.durationMs,
+        })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
   }
 
   private onClose(): void {
@@ -176,6 +213,10 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingMemos.clear()
+    for (const [, p] of this.pendingA2A) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingA2A.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -266,6 +307,35 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingMemos.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /** A2A-L1 — ask the bus to invoke another agent. Bus resolves the
+   *  caller via runId → RunContext, validates depth + self-call, runs
+   *  the callee via a2a.callAgentByName, and writes back the result. */
+  async requestCallAgent(payload: {
+    agent: string
+    prompt: string
+    timeoutMs?: number
+  }): Promise<A2aResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1, type: 'a2a',
+      runId: this.runId, reqId,
+      payload,
+    })}\n`
+    return new Promise<A2aResult>((resolve) => {
+      this.pendingA2A.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingA2A.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -687,6 +757,55 @@ export function buildServer(client: ApprovalClient): McpServer {
       },
     },
     wrapMemo('delete'),
+  )
+
+  // ─── A2A — agent-to-agent call ────────────────────────────────────
+  // Lets the running agent program-call another agent (claude-code /
+  // opencode / codex) and wait for the result inside its own tool
+  // loop. Bus enforces depth + self-call rejection + workspace
+  // whitelist; the callee runs in a fresh inline-job row with
+  // parent_id pointing back at this run.
+  server.registerTool(
+    'call_agent',
+    {
+      title: 'Call another agent',
+      description:
+        'Programmatically invoke another agent (claude-code / opencode / codex / copilot) ' +
+        'and wait for its reply, then continue your own reasoning. Use sparingly — each call ' +
+        'costs API tokens and adds latency. Good fits: ' +
+        '(a) delegate a single well-scoped sub-task that the other agent is clearly better at ' +
+        '(e.g. claude asking codex to run a shell-heavy investigation, or asking opencode to ' +
+        'execute a one-off code change in its sandbox); ' +
+        '(b) get a second opinion on a tricky design before committing. ' +
+        'NOT for: trivial tasks you can do yourself, fetching external data (use a real tool ' +
+        'or web_search), or "let another agent re-summarize what I already said". ' +
+        'The agim depth limit (default 3) and self-call ban prevent infinite chains. ' +
+        'Returns {ok, result, jobId, agent, durationMs} on success or {ok: false, error}.',
+      inputSchema: {
+        agent: z.string().describe(
+          'Target agent name. One of: claude-code, opencode, codex, copilot. ' +
+          'Must not be the calling agent itself.',
+        ),
+        prompt: z.string().describe(
+          'The full prompt to send to the target agent. Self-contained — the callee does NOT ' +
+          'see your conversation history. Include any code snippets, file paths, or context ' +
+          'the callee needs to do the job.',
+        ),
+        timeoutMs: z.number().int().positive().optional().describe(
+          'Optional override for the wait timeout. Defaults to 10 minutes ' +
+          '(IMHUB_A2A_TIMEOUT_DEFAULT_MS). The callee keeps running on timeout, but you stop ' +
+          'waiting and get an error.',
+        ),
+      },
+    },
+    async (args) => {
+      const result = await client.requestCallAgent({
+        agent: typeof args.agent === 'string' ? args.agent : '',
+        prompt: typeof args.prompt === 'string' ? args.prompt : '',
+        ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+      })
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
   )
 
   return server

@@ -14,6 +14,9 @@
 ## 亮点
 
 - **5 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
+- **Agent 之间互调（A2A）** — Agent 可以在自己的工具循环里直接调另一个 Agent，比如直接说「用 codex 帮我跑 git status」/「让 opencode 跑一下测试」。护栏在 agim 里强制：递归深度限制（默认 3）、禁止自调、工作区白名单、按人预算共享；可观测：`/a2a stats | recent | tree <id>`；`IMHUB_A2A_ENABLED=0` 关闭
+- **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
+- **崩溃中断可恢复** — 每条入站消息都建一条 inline job（`pending → running → completed → delivered`）。agim 重启时正在跑的任务会标 `interrupted`，下次启动 10 分钟窗口内对每条受影响的会话发：「⚠️ 上次的消息被服务重启中断了：「…」回复 1 重发 / 2 取消」。每条 job 的完整生命周期可在 `/job list` + `/job check <id>` 查看
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
 - **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
 - **浏览器控制台** — 对话界面、任务面板（Jobs / 调度 / 审批 / 健康 / 文件 / 审计）、提醒面板、设置页含工作区 CRUD
@@ -21,7 +24,7 @@
 - **微信 / Telegram / 钉钉 富媒体** — 接收图片、文件、视频；语音消息按平台走最佳转写链路：微信 STT、钉钉服务端 ASR、OpenAI Whisper、whisper.cpp
 - **智能路由** — 意图分类（中英文）、Sticky 会话、断路器、限流器
 - **多租户工作区** — 按工作区隔离 Agent 白名单、限流、命令级 ACL
-- **持久化任务与定时** — SQLite 落地，重启不丢，30 天自动修剪
+- **持久化任务与定时** — SQLite 落地，重启不丢，显式 `/job` 30 天 / 自动跟踪的 inline job 24 小时
 - **可观测** — 结构化日志（pino + traceId）、Prometheus 指标、审计日志
 - **安全** — 常量时鉴权、SSRF 防护、凭证文件权限、审批 socket 熵值
 
@@ -118,8 +121,11 @@ agim messengers            # 列出可用 IM
 | `/remind …` | 提醒子系统 — 详见 [提醒](#提醒) |
 | `/memo …` | 5W1H 持久记忆库 — 详见 [备忘](#备忘)（别名 `/记`、`/note`）|
 | `/job`、`/cron`、`/audit`、`/stats` | 管理任务、定时、审计、统计（`/schedule` 仍是 `/cron` 别名，v0.4.0 移除） |
+| `/outbox status\|list\|failed\|retry <id>` | 查看与重发 IM 投递队列（v1.1.2+） |
+| `/a2a stats\|recent\|tree <id>` | 查看 Agent 之间互调的统计 / 最近 N 次 / 调用链树（v1.1.2+） |
 | `/router status\|explain` | 查看路由策略 |
 | `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝（工具调用 或 提醒确认卡片） |
+| `1` / `2` | 服务重启后看到「上次消息中断」提示时，回 `1` 重发 / `2` 取消（10 分钟内有效） |
 
 ## 工具调用人审
 

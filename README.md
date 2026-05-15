@@ -18,6 +18,9 @@
 ## Highlights
 
 - **5 messengers + email, 4+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Telegram, Discord, Email (SMTP); Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
+- **Agent-to-Agent (A2A)** — agents call other agents inline via `mcp__imhub__call_agent`. Just say *"用 codex 帮我跑 git status"* / *"ask opencode to run the tests"* — the active agent hands off, waits, integrates the reply. Guardrails: depth limit (default 3), self-call ban, workspace whitelist, per-user budget. Observability: `/a2a stats | recent | tree <id>`. Disable with `IMHUB_A2A_ENABLED=0`.
+- **Crash-safe delivery** — every outbound message (replies, reminders, approvals, restart notices) flows through a SQLite outbox; a worker drains pending rows with exponential backoff. IM glitches and brief disconnects no longer drop replies. `/outbox status | list | failed | retry <id>`.
+- **In-flight job recovery** — every inbound message becomes a tracked inline job (`pending → running → completed → delivered`). When agim is restarted mid-flight, the next startup pings each affected thread within 10 min: *"⚠️ 上次的消息被服务重启中断了：「…」回复 1 重发 / 2 取消"*. Per-job lifecycle visible in `/job list` and `/job check <id>`.
 - **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
 - **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
 - **Browser dashboard** — chat UI, tasks panel (jobs / schedules / approvals / health / files / audit), reminders panel, settings page with workspace CRUD
@@ -25,7 +28,7 @@
 - **Rich media in WeChat / Telegram / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
 - **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
 - **Multi-tenant workspaces** — per-workspace agent whitelist, rate limits, command-level ACL
-- **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention
+- **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention (24h for auto-tracked inline jobs)
 - **Observability** — structured logging (pino + traceId), Prometheus metrics, audit log
 - **Security** — timing-safe auth, SSRF guards, credential file permissions, approval socket entropy
 
@@ -126,8 +129,11 @@ agim messengers            # List available messengers
 | `/remind …` | Reminders — see [Reminders](#reminders) below |
 | `/memo …` | 5W1H persistent memory — see [Memos](#memos) below (aliases `/记`, `/note`) |
 | `/job`, `/cron`, `/audit`, `/stats` | Manage jobs, cron schedules, audit, stats (`/schedule` aliases `/cron` until v0.4.0) |
+| `/outbox status\|list\|failed\|retry <id>` | Inspect & operate the persistent IM delivery queue (v1.1.2+) |
+| `/a2a stats\|recent\|tree <id>` | Agent-to-Agent observability — chain, latency, callee histogram (v1.1.2+) |
 | `/router status\|explain` | Inspect routing decisions |
 | `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
+| `1` / `2` | After a service restart, reply `1` to redo the interrupted message or `2` to cancel (10 min window) |
 
 ## Human-in-the-loop Tool Approval
 

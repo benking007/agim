@@ -4,6 +4,107 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-15
+
+### Added — Task recovery (3-phase, all on by default)
+
+- **Outbox-backed IM delivery.** Every outbound message (replies, reminder
+  fires, approval prompts/receipts, restart-completion notices, web
+  notifications) now flows through a SQLite-backed outbox in
+  `~/.agim/outbox.db`. A worker drains pending rows with exponential
+  backoff (1s → 5s → 30s → 5min → 30min → 2h → `giving_up`). Replies
+  survive IM platform glitches, brief disconnects, and adapter restarts
+  — no more "agent answered but the user never got it" black holes.
+  - `/outbox status` aggregate counts.
+  - `/outbox list [N]` recent rows.
+  - `/outbox failed` rows in `giving_up`.
+  - `/outbox retry <id>` resurrect a `giving_up` row.
+  - Retention: 24h after `delivered` / `giving_up`. Override with
+    `IMHUB_OUTBOX_RETENTION_HOURS`.
+- **Inline-job tracking.** Every inbound agent-bound message now creates
+  a row in `jobs.db` with `kind='inline'`, going through the full
+  lifecycle `pending → running → completed → delivered` (or `failed`).
+  The state machine survives crashes; this is the substrate Phase 3
+  recovery and A2A both rely on.
+  - Visible in `/job list` and per-row in `/job check <id>`.
+  - Retention: 24h (vs 30d for `kind='job'` rows from explicit `/job
+    create`). Override with `IMHUB_INLINE_JOB_RETENTION_HOURS`.
+  - Kill switch: `IMHUB_INLINE_JOB_TRACKING=0` disables creation; the
+    user reply path falls back to the unchanged in-memory pipeline.
+- **Crash-recovery flow.** When agim exits (SIGTERM/SIGINT/crash), any
+  in-flight inline job is stamped `interrupted`. On startup, jobs
+  interrupted within the last 10 minutes get a per-thread retry prompt
+  through the outbox: `⚠️ 上次的消息被服务重启中断了：「<prompt 摘要>…」
+  回复 1 重发 / 2 取消（10 分钟内有效）`.
+  - Reply `1` → fresh inline job with the original prompt, old row
+    stamped `replaced_by=<new id>`.
+  - Reply `2` → old row marked `cancelled`.
+  - No reply → old row swept to `abandoned` by the next startup.
+  - Window override: `IMHUB_RECOVERY_WINDOW_MS` (default 600000).
+
+### Added — Agent-to-Agent (A2A) Layer 1
+
+- **`mcp__imhub__call_agent` MCP tool.** A running agent (claude-code /
+  opencode / codex / copilot) can now program-call another agent and
+  wait for the result inside its own tool loop. The tool description
+  uses imperative + Chinese trigger phrases so models invoke it
+  naturally when the user says e.g. "用 codex 帮我跑 git status" or
+  "ask opencode to run the tests".
+- **Guardrails enforced inside agim, not on the model**:
+  - `IMHUB_A2A_MAX_DEPTH` (default 3) — caps nested call chains.
+  - Self-call ban — `claude-code` can't recursively call `claude-code`.
+  - Workspace whitelist — callee must be in the caller's workspace
+    `agents[]`. Caller's `userId` carries through.
+  - `IMHUB_A2A_TIMEOUT_DEFAULT_MS` (default 600_000) — accumulation
+    timeout. Callee keeps running on timeout; caller stops waiting.
+  - Kill switch: `IMHUB_A2A_ENABLED=0` disables the whole feature.
+- **`/a2a stats | recent [N] | tree <id>`** — observability for A2A
+  traffic. Each callee row is linked to its caller via `parent_id`
+  + `call_depth`, so `/a2a tree <root>` renders the full chain.
+- **Audit integration** — `intent='a2a'` lights up in `/audit` queries
+  and feeds the same per-user budget that user-originated calls do.
+
+### Changed
+
+- `SIGTERM` now reuses the same graceful-shutdown path as `SIGINT`.
+  Prior to 1.1.2, `systemctl restart` invocations skipped session-
+  manager / WAL-checkpoint cleanup because only `SIGINT` was hooked.
+  Recommended systemd unit drop-in: `KillMode=mixed` so children get
+  `TimeoutStopSec` of grace before SIGKILL.
+- `jobs` table schema migrated (idempotent ALTER TABLE) with
+  `thread_key`, `kind`, `started_at`, `delivered_at`, `replaced_by`,
+  `last_outbox_id`, `parent_id`, `call_depth`. Pre-v1.0 databases
+  (which still had only the original 8 columns) are auto-upgraded
+  on first startup.
+- `MessengerAdapter.sendMessage` call sites consolidated through
+  `core/message-sink.ts`. Reminder polish / memo polish run upstream of
+  sink and are unaffected; sink only takes the final plain payload.
+
+### Fixed
+
+- Schema-vs-migrate ordering broke job-board on legacy databases. The
+  v1.0 ownership migration's `CREATE INDEX idx_jobs_creator ON
+  jobs(creator_id)` was inside the schema string, which `sqlite-helper`
+  exec()s **before** `migrateOwnership`. Against a pre-v1.0
+  `~/.agim/jobs.db` (no `creator_id` column yet) this threw
+  `no such column: creator_id` and disabled the entire job-board for
+  the lifetime of the process. The bug shipped silently in v1.0 and
+  only surfaced when Phase 2 forced everyone to actually look at the
+  jobs table. Column-dependent indexes now live inside `migrateColumns`,
+  after the ALTER TABLE pass.
+- Recovery retry path no longer creates orphan `pending` rows. The
+  retry interceptor's pre-created replacement job (so it could stamp
+  `replaced_by` atomically) is now reused by `handleMessage` instead
+  of being shadowed by a second `createInlineJob` call.
+
+### Reference docs
+
+- `docs/task-recovery-plan.md` — 3-phase design + risk register +
+  cross-session handoff guide.
+- `docs/task-recovery-testing.md` — grey-deploy step-by-step verifier.
+- `docs/agent-to-agent-plan.md` — 3-layer A2A design (L1 implemented;
+  L2 shared-artifacts and L3 workflow-DSL are documented for later).
+
 ## [1.1.1] - 2026-05-14
 
 ### Changed

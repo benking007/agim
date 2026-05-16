@@ -70,6 +70,20 @@ export interface SinkPayload {
    *  outbox row is still recorded with platform=<name>; if the sync
    *  attempt fails, the worker re-resolves via registry the normal way. */
   adapter?: MessengerAdapter
+  /**
+   * Origin of the message. Determines whether the viewer router gets to
+   * truncate-and-link the payload.
+   *   - 'agent'  → freeform LLM output. Long replies may route to the
+   *               web viewer; the IM gets a summary + link.
+   *   - 'system' (default) → operational confirmations, approval cards,
+   *               reminders, restart notices, error blurbs, command
+   *               outputs. ALWAYS inline, regardless of length —
+   *               truncating these would hide the actual answer (e.g.
+   *               a memo-creation confirmation, an approval prompt, an
+   *               error message). Default is 'system' so any new
+   *               callsite stays inline unless the dev opts in.
+   */
+  source?: 'agent' | 'system'
 }
 
 export interface SinkResult {
@@ -211,11 +225,13 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
   const threadKey = defaultThreadKey(p)
   let payloadStr = payloadToString(p.payload)
 
-  // v1.2 — viewer routing. For text payloads, decide whether to inline,
-  // truncate-and-link, or save the agent's <im-summary>/<full-md> envelope
-  // and replace with summary + link. Card / typing kinds are untouched
-  // (cards have their own structure; typing is fire-and-forget).
-  if (p.kind === 'text' && payloadStr.length > 0) {
+  // v1.1.6+ — viewer routing. Only freeform agent replies (source='agent')
+  // are eligible. System messages (memo confirmations, approvals, reminders,
+  // restart notices, error blurbs, command outputs) are ALWAYS inline so
+  // the user actually sees the operational reply — truncating them would
+  // bury the result behind a link nobody opens. Card / typing kinds are
+  // also untouched (cards have their own structure; typing is fire-and-forget).
+  if (p.kind === 'text' && p.source === 'agent' && payloadStr.length > 0) {
     payloadStr = applyViewerRouting(payloadStr, p, threadKey)
   }
 

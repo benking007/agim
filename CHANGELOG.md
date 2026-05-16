@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-05-16
+
+### Fixed — Viewer no longer steals operational/system replies
+
+Memo confirmations, reminder fires, approval cards, restart notices,
+error blurbs and command outputs all run through `sink.deliver()` —
+and v1.1.6's viewer router happily picked them up the moment their
+char count crossed the threshold (the encoded Baidu map URL in a memo
+confirmation is enough to do it). The result: a `✅ 已记下'<地点>'`
+reply got hidden behind a `📎 https://…/v/<uuid>` link, defeating the
+point — the user wanted to *see* the operational outcome in chat.
+
+**Fix**: `SinkPayload` gains a `source: 'agent' | 'system'` field,
+defaulting to `'system'`. The viewer router now only fires when
+`source === 'agent'`. Updated the two freeform-LLM callsites in
+`cli.ts` to pass `source: 'agent'`; every other call path keeps the
+default and stays inline. Future system message types stay inline
+automatically — no opt-out needed.
+
+This means anything from `/memo`, `/remind`, `/approval`, `/restart`,
+`/job`, `/outbox`, `/a2a`, queued / error / recovery / restart-completion
+notices, web `/api/notify` pushes, and the location-capture
+confirmation now always render in full inside the IM thread,
+regardless of length.
+
 ## [1.1.8] - 2026-05-16
 
 ### Added — Viewer auto-tunnel (cloudflared quick mode)

@@ -986,6 +986,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           platform, channelId: ctx.channelId, threadId: message.threadId,
           payload: await maybePrefix(result), kind: 'text',
           jobId: inlineJobId > 0 ? inlineJobId : undefined,
+          source: 'agent', // freeform LLM output → eligible for viewer routing
         })
         if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
         logger.info({ event: 'message.sent', responseLen: result.length })
@@ -1005,6 +1006,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
             platform, channelId: ctx.channelId, threadId: message.threadId,
             payload: await maybePrefix(fullResponse), kind: 'text',
             jobId: inlineJobId > 0 ? inlineJobId : undefined,
+            source: 'agent', // freeform LLM output → eligible for viewer routing
           })
           if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
           logger.info({ event: 'message.sent', responseLen: fullResponse.length })

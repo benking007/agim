@@ -596,6 +596,26 @@ program
       console.warn(`⚠️ Web chat server failed to start: ${errMsg}`)
     }
 
+    // v1.1.8 — Viewer auto-tunnel. If the operator opted into the
+    // cloudflared quick-tunnel mode AND there's no static public URL set,
+    // fork cloudflared so /v/:id links the agent puts in IM are reachable
+    // from a phone without any reverse-proxy setup. URL is ephemeral —
+    // see src/core/tunnel.ts for the trade-off discussion.
+    try {
+      const { getViewerConfig } = await import('./core/viewer-config.js')
+      const { startTunnel, findCloudflared } = await import('./core/tunnel.js')
+      const vcfg = getViewerConfig()
+      if (vcfg.enabled && vcfg.tunnelMode === 'quick' && !vcfg.publicBaseUrl && webServer) {
+        if (findCloudflared()) {
+          startTunnel(webServer.port)
+        } else {
+          console.warn('⚠️ Viewer quick-tunnel mode is on, but cloudflared is not installed. Install via your package manager or download from https://github.com/cloudflare/cloudflared/releases — viewer links will fall back to inline truncation until then.')
+        }
+      }
+    } catch (err) {
+      console.warn('Viewer tunnel start failed:', err instanceof Error ? err.message : String(err))
+    }
+
     // ============================================
     // START ACP SERVER
     // ============================================
@@ -649,6 +669,14 @@ program
       sessionManager.stop()
       webServer?.close()
       acpServer?.close()
+
+      // Stop the cloudflared subprocess (if we forked one for viewer auto-tunnel).
+      // Doing this early gives it a clean SIGTERM exit before we tear down the
+      // rest; otherwise it would exit on parent-process close with no cleanup.
+      try {
+        const { stopTunnel } = await import('./core/tunnel.js')
+        stopTunnel()
+      } catch { /* ignore */ }
 
       // Stop the outbox worker BEFORE messengers so no new send attempts
       // race the adapter shutdown. Worker is single-threaded so a pending

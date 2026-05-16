@@ -5,6 +5,9 @@
 // JSON-config schema dance, no on-disk state — change env, restart, done.
 
 import { DEFAULT_THRESHOLDS, type ViewerThresholds } from './render-router.js'
+import { getCurrentTunnelUrl } from './tunnel.js'
+
+export type ViewerTunnelMode = 'off' | 'quick'
 
 export interface ViewerConfig {
   /** Master switch. When false, all replies are sent inline regardless of length. */
@@ -16,6 +19,13 @@ export interface ViewerConfig {
    * IM clients on phones will obviously not be able to open it.
    */
   publicBaseUrl: string
+  /**
+   * Auto-tunnel mode for operators without a public URL.
+   *   - 'off'   (default): use publicBaseUrl as-is.
+   *   - 'quick': launch cloudflared quick tunnel on startup; URL is
+   *              `https://*.trycloudflare.com` and changes per agim restart.
+   */
+  tunnelMode: ViewerTunnelMode
   /** Char / line / code-block thresholds for routing to web. */
   thresholds: ViewerThresholds
 }
@@ -30,9 +40,12 @@ export function getViewerConfig(): ViewerConfig {
   const enabledRaw = (process.env.IMHUB_VIEWER_ENABLED || '').toLowerCase()
   const enabled = enabledRaw === '1' || enabledRaw === 'true' || enabledRaw === 'yes'
   const publicBaseUrl = (process.env.IMHUB_VIEWER_PUBLIC_BASE_URL || '').replace(/\/$/, '')
+  const tunnelModeRaw = (process.env.IMHUB_VIEWER_TUNNEL_MODE || 'off').toLowerCase()
+  const tunnelMode: ViewerTunnelMode = tunnelModeRaw === 'quick' ? 'quick' : 'off'
   return {
     enabled,
     publicBaseUrl,
+    tunnelMode,
     thresholds: {
       chars: parsePositiveInt(process.env.IMHUB_VIEWER_CHARS, DEFAULT_THRESHOLDS.chars),
       lines: parsePositiveInt(process.env.IMHUB_VIEWER_LINES, DEFAULT_THRESHOLDS.lines),
@@ -42,13 +55,30 @@ export function getViewerConfig(): ViewerConfig {
 }
 
 /**
+ * Resolve the effective public base URL. Order of preference:
+ *   1. Explicit IMHUB_VIEWER_PUBLIC_BASE_URL (operator-managed reverse proxy)
+ *   2. Auto-tunnel URL if tunnel_mode=quick and cloudflared has acquired a URL
+ *   3. Caller-supplied fallback
+ *
+ * Returns empty string when nothing usable is available.
+ */
+export function getEffectivePublicBaseUrl(fallback?: string): string {
+  const cfg = getViewerConfig()
+  if (cfg.publicBaseUrl) return cfg.publicBaseUrl
+  if (cfg.tunnelMode === 'quick') {
+    const tu = getCurrentTunnelUrl()
+    if (tu) return tu
+  }
+  return (fallback || '').replace(/\/$/, '')
+}
+
+/**
  * Build the URL placed in the IM reply for a saved paste. Returns null if
  * no public base URL is configured AND no fallback was provided. Caller
  * should treat null as "viewer can't produce a usable link — degrade".
  */
 export function buildPasteUrl(id: string, fallbackBaseUrl?: string): string | null {
-  const cfg = getViewerConfig()
-  const base = cfg.publicBaseUrl || fallbackBaseUrl || ''
+  const base = getEffectivePublicBaseUrl(fallbackBaseUrl)
   if (!base) return null
   return `${base.replace(/\/$/, '')}/v/${id}`
 }

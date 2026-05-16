@@ -168,6 +168,16 @@
         viewerSaved: 'Saved — change takes effect on the next reply.',
         viewerSaveFailed: 'Failed to save viewer settings',
         viewerMissingUrl: '⚠️ Public URL is empty — Agim will fall back to inline text for long replies (no link can be built).',
+        viewerTunnelMode: 'Auto-tunnel (cloudflared)',
+        viewerTunnelHint: 'For users without a public domain. Agim launches a cloudflared quick tunnel on startup and auto-detects a temporary `*.trycloudflare.com` URL. Requires the `cloudflared` binary to be installed (`brew install cloudflared` / `apt install cloudflared`). URL changes per restart — old paste links die. Leave off when you have a static reverse proxy.',
+        viewerTunnelOff: 'Off (use Public URL above)',
+        viewerTunnelQuick: 'Quick tunnel (temporary URL, no domain needed)',
+        viewerTunnelStatus: 'Tunnel status',
+        viewerTunnelRunning: 'Running',
+        viewerTunnelNotRunning: 'Not running',
+        viewerTunnelBinaryMissing: 'cloudflared not installed',
+        viewerTunnelCurrentUrl: 'Current URL',
+        viewerTunnelRefresh: 'Refresh',
       },
       zh: {
         title: 'Agim — 设置',
@@ -322,6 +332,16 @@
         viewerSaved: '已保存 — 下一条回复生效。',
         viewerSaveFailed: '保存 Viewer 配置失败',
         viewerMissingUrl: '⚠️ 公网域名为空 — 长回复将退回到内联文本（无法构造跳转链接）。',
+        viewerTunnelMode: '自动 tunnel（cloudflared）',
+        viewerTunnelHint: '给没有公网域名的用户。Agim 启动时自动拉起 cloudflared quick tunnel，拿一个临时 `*.trycloudflare.com` URL。需要先装 `cloudflared`（`brew install cloudflared` / `apt install cloudflared`）。**重启后 URL 会变，旧 paste 链接打不开**。有反代域名的话保持关闭即可。',
+        viewerTunnelOff: '关闭（用上面的公网域名）',
+        viewerTunnelQuick: 'Quick tunnel（临时 URL，无需域名）',
+        viewerTunnelStatus: 'Tunnel 状态',
+        viewerTunnelRunning: '运行中',
+        viewerTunnelNotRunning: '未运行',
+        viewerTunnelBinaryMissing: '未安装 cloudflared',
+        viewerTunnelCurrentUrl: '当前 URL',
+        viewerTunnelRefresh: '刷新',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -1419,6 +1439,18 @@
           <input type="text" id="viewerPublicUrl" placeholder="https://agim.example.com" style="max-width:480px" />
           <p class="muted" style="margin-top:4px;font-size:12px">${t('viewerPublicUrlHint')}</p>
 
+          <label style="margin-top:12px;display:block">${t('viewerTunnelMode')}</label>
+          <select id="viewerTunnelMode" style="max-width:480px">
+            <option value="off">${t('viewerTunnelOff')}</option>
+            <option value="quick">${t('viewerTunnelQuick')}</option>
+          </select>
+          <p class="muted" style="margin-top:4px;font-size:12px">${t('viewerTunnelHint')}</p>
+          <div id="viewerTunnelStatusBox" style="margin-top:6px;padding:8px 10px;border:1px solid var(--border, #d0d7de);border-radius:6px;font-size:12px;display:none">
+            <div><strong>${t('viewerTunnelStatus')}:</strong> <span id="viewerTunnelState">—</span></div>
+            <div style="margin-top:4px"><strong>${t('viewerTunnelCurrentUrl')}:</strong> <code id="viewerTunnelCurrentUrl" style="word-break:break-all">—</code></div>
+            <button type="button" class="btn" id="viewerTunnelRefreshBtn" style="margin-top:6px;padding:4px 10px;font-size:12px">${t('viewerTunnelRefresh')}</button>
+          </div>
+
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:12px;max-width:720px">
             <div>
               <label>${t('viewerChars')}</label>
@@ -1462,6 +1494,32 @@
       `;
     }
 
+    async function refreshViewerTunnelStatus() {
+      const stateEl = document.getElementById('viewerTunnelState');
+      const urlEl = document.getElementById('viewerTunnelCurrentUrl');
+      if (!stateEl || !urlEl) return;
+      stateEl.textContent = '…';
+      urlEl.textContent = '—';
+      try {
+        const data = await authFetch('/api/viewer/tunnel').then(r => r.json());
+        const tun = data && data.tunnel ? data.tunnel : {};
+        if (!tun.binaryFound) {
+          stateEl.textContent = t('viewerTunnelBinaryMissing');
+          stateEl.style.color = '#c0392b';
+        } else if (tun.running) {
+          stateEl.textContent = '✓ ' + t('viewerTunnelRunning');
+          stateEl.style.color = '#16a34a';
+        } else {
+          stateEl.textContent = t('viewerTunnelNotRunning');
+          stateEl.style.color = '';
+        }
+        urlEl.textContent = tun.url || (data && data.effectivePublicUrl) || '—';
+      } catch (err) {
+        stateEl.textContent = 'error';
+        urlEl.textContent = (err && err.message) || String(err);
+      }
+    }
+
     async function loadEnvSection(reveal) {
       try {
         const url = reveal ? '/api/env?reveal=1' : '/api/env';
@@ -1490,6 +1548,16 @@
         set('viewerLines', 'IMHUB_VIEWER_LINES');
         set('viewerCodeLines', 'IMHUB_VIEWER_CODE_LINES');
         set('viewerMaxPastes', 'IMHUB_VIEWER_MAX_PASTES');
+        const vTunnelMode = document.getElementById('viewerTunnelMode');
+        if (vTunnelMode) {
+          vTunnelMode.value = (env['IMHUB_VIEWER_TUNNEL_MODE'] || 'off').toLowerCase() === 'quick' ? 'quick' : 'off';
+        }
+        // Show tunnel status panel only when tunnel mode = quick.
+        const tunnelBox = document.getElementById('viewerTunnelStatusBox');
+        if (tunnelBox) {
+          tunnelBox.style.display = (vTunnelMode && vTunnelMode.value === 'quick') ? 'block' : 'none';
+          if (vTunnelMode && vTunnelMode.value === 'quick') void refreshViewerTunnelStatus();
+        }
         const viewerStatus = document.getElementById('viewerStatus');
         if (viewerStatus) {
           if (!env['IMHUB_VIEWER_PUBLIC_BASE_URL']) {
@@ -1801,6 +1869,13 @@
       });
       document.getElementById('revealBaidu')?.addEventListener('click', () => loadEnvSection(true));
 
+      // Tunnel mode dropdown — show/hide status panel on change.
+      document.getElementById('viewerTunnelMode')?.addEventListener('change', (e) => {
+        const box = document.getElementById('viewerTunnelStatusBox');
+        if (box) box.style.display = e.target.value === 'quick' ? 'block' : 'none';
+      });
+      document.getElementById('viewerTunnelRefreshBtn')?.addEventListener('click', () => refreshViewerTunnelStatus());
+
       // Viewer card — save toggle + URL + thresholds in one round-trip.
       document.getElementById('saveViewer')?.addEventListener('click', async () => {
         const enabled = document.getElementById('viewerEnabled')?.checked ? '1' : '0';
@@ -1809,6 +1884,7 @@
         const lines = (document.getElementById('viewerLines')?.value || '').trim();
         const codeLines = (document.getElementById('viewerCodeLines')?.value || '').trim();
         const maxPastes = (document.getElementById('viewerMaxPastes')?.value || '').trim();
+        const tunnelMode = document.getElementById('viewerTunnelMode')?.value || 'off';
         const status = document.getElementById('viewerStatus');
         try {
           await authFetch('/api/env', {
@@ -1822,6 +1898,7 @@
                 IMHUB_VIEWER_LINES: lines || null,
                 IMHUB_VIEWER_CODE_LINES: codeLines || null,
                 IMHUB_VIEWER_MAX_PASTES: maxPastes || null,
+                IMHUB_VIEWER_TUNNEL_MODE: tunnelMode || 'off',
               },
             }),
           });

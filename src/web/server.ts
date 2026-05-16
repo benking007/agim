@@ -442,6 +442,9 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/viewer' && req.method === 'GET') {
       return handleViewerList(req, res, url)
     }
+    if (url.pathname === '/api/viewer/tunnel' && req.method === 'GET') {
+      return handleViewerTunnelStatus(req, res)
+    }
     const viewerIdMatch = url.pathname.match(/^\/api\/viewer\/([0-9a-f-]{8,})$/i)
     if (viewerIdMatch && req.method === 'GET') {
       return handleViewerGet(req, res, viewerIdMatch[1])
@@ -1667,6 +1670,7 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_VIEWER_LINES',
   'IMHUB_VIEWER_CODE_LINES',
   'IMHUB_VIEWER_MAX_PASTES',
+  'IMHUB_VIEWER_TUNNEL_MODE',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
 
@@ -2796,6 +2800,20 @@ async function handleViewerDelete(_req: IncomingMessage, res: ServerResponse, id
   const ok = deletePaste(id)
   if (!ok) { sendJson(res, 404, { error: 'not_found' }); return }
   sendJson(res, 200, { ok: true })
+}
+
+async function handleViewerTunnelStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const { getTunnelStatus } = await import('../core/tunnel.js')
+  const { getViewerConfig, getEffectivePublicBaseUrl } = await import('../core/viewer-config.js')
+  const cfg = getViewerConfig()
+  const tunnel = getTunnelStatus()
+  sendJson(res, 200, {
+    enabled: cfg.enabled,
+    tunnelMode: cfg.tunnelMode,
+    staticPublicUrl: cfg.publicBaseUrl,
+    effectivePublicUrl: getEffectivePublicBaseUrl(),
+    tunnel,
+  })
 }
 
 // ============================================

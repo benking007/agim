@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-05-16
+
+### Added — Viewer auto-tunnel (cloudflared quick mode)
+
+For operators who don't have a public domain / reverse proxy and can't
+otherwise expose their agim host, the viewer can now auto-launch a
+cloudflared "quick tunnel" so /v/:id links in IM are reachable from
+a phone with zero infrastructure setup.
+
+- **New env var `IMHUB_VIEWER_TUNNEL_MODE`** — `off` (default) or
+  `quick`. When `quick`, agim startup forks `cloudflared tunnel --url`
+  pointing at the local web port and captures the assigned
+  `https://*.trycloudflare.com` URL from its log output. The URL
+  becomes the effective base for link building.
+- **Precedence**: `IMHUB_VIEWER_PUBLIC_BASE_URL` always wins when set.
+  Tunnel is only used as a fallback. So operators can keep their
+  static reverse proxy and only switch to tunnel during travel /
+  testing without changing anything else.
+- **Auto-restart** — if cloudflared exits non-cleanly (network blip,
+  upstream restart), agim waits 30 s and respawns. The URL after
+  respawn is different; in-flight IM links from before become dead.
+- **Clean shutdown** — cloudflared is SIGTERM'd as part of agim's
+  graceful shutdown before WAL checkpoints.
+- **Binary detection** — agim does NOT bundle cloudflared (binary is
+  architecture-specific + ~30 MB). It checks `$PATH` plus a few
+  common locations (`/usr/local/bin`, `/opt/homebrew/bin`,
+  `~/.agim/bin`). When missing, agim logs a friendly install hint and
+  silently keeps the tunnel disabled — viewer falls back to inline
+  truncation for long replies.
+- **`GET /api/viewer/tunnel`** — read-only status (`{ running, url,
+  binaryFound, binaryPath, lastError, startedAt }`) consumed by the
+  Settings page tunnel panel.
+- **Settings page** — Viewer card now has a "Auto-tunnel" dropdown
+  (off / quick) and a live status panel showing whether the tunnel is
+  running, the current trycloudflare.com URL, and an install hint when
+  cloudflared is missing.
+
+### Trade-off
+
+Quick-tunnel URLs are ephemeral — they change every time cloudflared
+process (re)starts. Old `/v/:id` links in IM thus become dead after a
+restart. Operators who want permanent links should configure a static
+reverse proxy (cloudflared named tunnel, caddy, tailscale funnel,
+nginx, …) and set `IMHUB_VIEWER_PUBLIC_BASE_URL` instead. The
+auto-tunnel mode is intentionally a "zero-config fallback", not a
+recommended permanent deployment.
+
+### Install cloudflared
+
+```
+# macOS
+brew install cloudflared
+
+# Debian/Ubuntu
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cf.deb
+sudo dpkg -i /tmp/cf.deb
+
+# Generic Linux binary
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o ~/.agim/bin/cloudflared
+chmod +x ~/.agim/bin/cloudflared
+```
+
 ## [1.1.7] - 2026-05-16
 
 ### Fixed — Viewer page leaked the IM user id

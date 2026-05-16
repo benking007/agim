@@ -151,6 +151,23 @@
         approvalPolicySave: 'Save',
         approvalPolicySaved: 'Saved — applies to the next pending approval, no restart needed.',
         approvalPolicyLoadFailed: 'Failed to load approval policy',
+
+        // ── Viewer (long-message web rendering) ────────────────────
+        viewerTitle: 'IM Long-Message Viewer',
+        viewerHint: 'When an agent reply is too long or contains a markdown table / large code block, Agim stores it locally in ~/.agim/viewer.db (permanent, never leaves this host) and sends the IM a short summary + a link. Set the public URL of your reverse-proxied Agim web here so the link is reachable from your phone.',
+        viewerEnabled: 'Enabled',
+        viewerDisabled: 'Disabled',
+        viewerEnabledLabel: 'Viewer mode',
+        viewerPublicUrl: 'Public base URL',
+        viewerPublicUrlHint: 'Your public URL pointing at this Agim web (e.g. https://agim.example.com). Use cloudflared / caddy / tailscale to expose port 3000.',
+        viewerChars: 'Char threshold',
+        viewerLines: 'Line threshold',
+        viewerCodeLines: 'Code-block line threshold',
+        viewerMaxPastes: 'Max stored pastes (LRU prune)',
+        viewerSave: 'Save',
+        viewerSaved: 'Saved — change takes effect on the next reply.',
+        viewerSaveFailed: 'Failed to save viewer settings',
+        viewerMissingUrl: '⚠️ Public URL is empty — Agim will fall back to inline text for long replies (no link can be built).',
       },
       zh: {
         title: 'Agim — 设置',
@@ -288,6 +305,23 @@
         approvalPolicySave: '保存',
         approvalPolicySaved: '已保存 — 下一个挂起的审批起就生效，无需重启。',
         approvalPolicyLoadFailed: '加载审批策略失败',
+
+        // ── Viewer (长内容 web 渲染) ─────────────────────────────
+        viewerTitle: 'IM 长内容 Viewer',
+        viewerHint: 'Agent 回答过长或含 markdown 表格 / 大段代码时，Agim 把全文存到本机 ~/.agim/viewer.db（永久保存，绝不离开本机），IM 里只发短摘要 + 跳转链接。这里填你反代到本机 Agim web 的公网域名，链接才能让手机/微信打开。',
+        viewerEnabled: '开启',
+        viewerDisabled: '关闭',
+        viewerEnabledLabel: 'Viewer 状态',
+        viewerPublicUrl: '公网域名',
+        viewerPublicUrlHint: '指向本机 Agim web 的公网域名（例如 https://agim.example.com）。用 cloudflared / caddy / tailscale 把 3000 端口暴露出去即可。',
+        viewerChars: '字符阈值',
+        viewerLines: '行数阈值',
+        viewerCodeLines: '代码块行数阈值',
+        viewerMaxPastes: '本机最多保留条数（LRU 淘汰）',
+        viewerSave: '保存',
+        viewerSaved: '已保存 — 下一条回复生效。',
+        viewerSaveFailed: '保存 Viewer 配置失败',
+        viewerMissingUrl: '⚠️ 公网域名为空 — 长回复将退回到内联文本（无法构造跳转链接）。',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -1369,6 +1403,47 @@
           <p class="muted" id="smtpStatus" style="margin-top:8px;font-size:12px"></p>
         </div>
 
+        <!-- Viewer (env-file) — long-message web rendering -->
+        <div class="card">
+          <h2>📄 ${t('viewerTitle')}</h2>
+          <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px">${t('viewerHint')}</p>
+
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+              <input type="checkbox" id="viewerEnabled" />
+              ${t('viewerEnabledLabel')}
+            </label>
+          </div>
+
+          <label>${t('viewerPublicUrl')}</label>
+          <input type="text" id="viewerPublicUrl" placeholder="https://agim.example.com" style="max-width:480px" />
+          <p class="muted" style="margin-top:4px;font-size:12px">${t('viewerPublicUrlHint')}</p>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:12px;max-width:720px">
+            <div>
+              <label>${t('viewerChars')}</label>
+              <input type="number" id="viewerChars" min="100" max="10000" placeholder="500" />
+            </div>
+            <div>
+              <label>${t('viewerLines')}</label>
+              <input type="number" id="viewerLines" min="5" max="200" placeholder="12" />
+            </div>
+            <div>
+              <label>${t('viewerCodeLines')}</label>
+              <input type="number" id="viewerCodeLines" min="5" max="200" placeholder="10" />
+            </div>
+            <div>
+              <label>${t('viewerMaxPastes')}</label>
+              <input type="number" id="viewerMaxPastes" min="100" max="1000000" placeholder="10000" />
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn btn-primary" id="saveViewer">${t('viewerSave')}</button>
+          </div>
+          <p class="muted" id="viewerStatus" style="margin-top:8px;font-size:12px"></p>
+        </div>
+
         <!-- Baidu Maps AK (env-file) — feeds /memo address geocoding -->
         <div class="card">
           <h2>🗺 Baidu Maps AK</h2>
@@ -1404,6 +1479,28 @@
         const sec = document.getElementById('smtpSecure');
         if (sec) sec.value = env['IMHUB_SMTP_SECURE'] || 'auto';
         set('baiduAk', 'IMHUB_BAIDU_MAP_AK');
+        // Viewer card fields
+        const vEnabled = document.getElementById('viewerEnabled');
+        if (vEnabled) {
+          const v = (env['IMHUB_VIEWER_ENABLED'] || '').toLowerCase();
+          vEnabled.checked = v === '1' || v === 'true' || v === 'yes';
+        }
+        set('viewerPublicUrl', 'IMHUB_VIEWER_PUBLIC_BASE_URL');
+        set('viewerChars', 'IMHUB_VIEWER_CHARS');
+        set('viewerLines', 'IMHUB_VIEWER_LINES');
+        set('viewerCodeLines', 'IMHUB_VIEWER_CODE_LINES');
+        set('viewerMaxPastes', 'IMHUB_VIEWER_MAX_PASTES');
+        const viewerStatus = document.getElementById('viewerStatus');
+        if (viewerStatus) {
+          if (!env['IMHUB_VIEWER_PUBLIC_BASE_URL']) {
+            viewerStatus.textContent = t('viewerMissingUrl');
+          } else if ((env['IMHUB_VIEWER_ENABLED'] || '').toLowerCase() === '1' ||
+                     (env['IMHUB_VIEWER_ENABLED'] || '').toLowerCase() === 'true') {
+            viewerStatus.textContent = `✓ ${t('viewerEnabled')} → ${env['IMHUB_VIEWER_PUBLIC_BASE_URL']}`;
+          } else {
+            viewerStatus.textContent = `${t('viewerDisabled')} (${env['IMHUB_VIEWER_PUBLIC_BASE_URL']})`;
+          }
+        }
         const smtpStatus = document.getElementById('smtpStatus');
         const baiduStatus = document.getElementById('baiduStatus');
         if (smtpStatus) smtpStatus.textContent = env['IMHUB_SMTP_HOST']
@@ -1703,6 +1800,37 @@
         }
       });
       document.getElementById('revealBaidu')?.addEventListener('click', () => loadEnvSection(true));
+
+      // Viewer card — save toggle + URL + thresholds in one round-trip.
+      document.getElementById('saveViewer')?.addEventListener('click', async () => {
+        const enabled = document.getElementById('viewerEnabled')?.checked ? '1' : '0';
+        const url = (document.getElementById('viewerPublicUrl')?.value || '').trim();
+        const chars = (document.getElementById('viewerChars')?.value || '').trim();
+        const lines = (document.getElementById('viewerLines')?.value || '').trim();
+        const codeLines = (document.getElementById('viewerCodeLines')?.value || '').trim();
+        const maxPastes = (document.getElementById('viewerMaxPastes')?.value || '').trim();
+        const status = document.getElementById('viewerStatus');
+        try {
+          await authFetch('/api/env', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              updates: {
+                IMHUB_VIEWER_ENABLED: enabled,
+                IMHUB_VIEWER_PUBLIC_BASE_URL: url || null,
+                IMHUB_VIEWER_CHARS: chars || null,
+                IMHUB_VIEWER_LINES: lines || null,
+                IMHUB_VIEWER_CODE_LINES: codeLines || null,
+                IMHUB_VIEWER_MAX_PASTES: maxPastes || null,
+              },
+            }),
+          });
+          if (status) status.textContent = t('viewerSaved');
+          await loadEnvSection();
+        } catch (err) {
+          if (status) status.textContent = t('viewerSaveFailed') + ': ' + (err && err.message ? err.message : err);
+        }
+      });
 
       // ==========================================
       // Workspaces (PR-C)

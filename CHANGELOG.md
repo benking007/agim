@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-05-16
+
+### Added — IM long-message viewer (local-first, never leaves your host)
+
+- **Local viewer for long agent replies.** When the agent's reply
+  exceeds the size threshold (default: > 500 chars / > 12 lines /
+  contains a markdown table / contains a code block ≥ 10 lines),
+  agim stashes the full markdown in a brand-new **local-only**
+  SQLite at `~/.agim/viewer.db` and replaces the IM payload with
+  a short summary plus a `📎 https://<your-host>/v/<uuid>` link.
+  The link is served by agim's own web console — the content
+  **never leaves your machine**; the public URL is a reverse-proxy
+  pass-through to your local web port.
+- **`GET /v/:id`** — public render route on the web console. Renders
+  the stored markdown with `marked` + `DOMPurify` + `highlight.js`
+  (loaded from jsdelivr CDN). Mobile-friendly, dark-mode aware,
+  `noindex,nofollow`, copy-raw button.
+- **`GET /api/viewer{,/:id}`** + **`DELETE /api/viewer/:id`** —
+  list / read / delete pastes from the dashboard or via curl.
+- **Permanent storage by default.** No TTL; rows are kept until
+  `IMHUB_VIEWER_MAX_PASTES` (default 10 000) is exceeded, at which
+  point oldest rows are LRU-pruned.
+- **Two-section envelope for agents.** Router prepends a small
+  `[IM-render hint]` block to every prompt when the viewer is
+  enabled, asking the agent to wrap long answers in
+  `<im-summary>…</im-summary><full-md>…</full-md>`. agim falls back
+  to first-paragraph truncation if the agent ignores the envelope.
+- **Standalone reference service.** A separate
+  [`agim-viewer`](https://github.com/benking007/agim-viewer)
+  repo provides the same routes packaged as a Docker container —
+  for the small set of users who can't expose their agim host but
+  can run a dedicated public service. The local mode in agim is
+  the recommended deployment.
+
+### Config
+
+| Env var | Default | Notes |
+|---|---|---|
+| `IMHUB_VIEWER_ENABLED` | `false` | Master switch. |
+| `IMHUB_VIEWER_PUBLIC_BASE_URL` | _(empty)_ | Your public URL pointing at this agim host, e.g. `https://agim.example.com`. Used to build the link placed in IM. |
+| `IMHUB_VIEWER_CHARS` | `500` | Char-count threshold above which routing to web kicks in. |
+| `IMHUB_VIEWER_LINES` | `12` | Line-count threshold. |
+| `IMHUB_VIEWER_CODE_LINES` | `10` | Single-fence code-block line threshold. |
+| `IMHUB_VIEWER_MAX_PASTES` | `10000` | Local SQLite row cap (LRU prune). |
+
+### Notes
+
+- Reverse-proxy your agim web port (default 3000) to a public
+  hostname via cloudflared / caddy / tailscale-funnel etc. Set
+  `IMHUB_VIEWER_PUBLIC_BASE_URL` to that hostname.
+- Privacy posture: content is stored locally on your host only.
+  The link uses an unguessable uuidv4 — treat it like a private
+  share link.
+
 ## [1.1.5] - 2026-05-15
 
 ### Fixed — Web console header parity + complete i18n

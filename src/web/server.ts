@@ -137,6 +137,16 @@ export async function startWebServer(options: {
       return serveStatic(res, join(PUBLIC_DIR, 'loc.html'), 'text/html; charset=utf-8')
     }
 
+    // v1.2 — Viewer: rendered markdown for long IM messages. URL is
+    // unguessable uuidv4; same trust model as /loc (public-on-purpose,
+    // operator fronts the web with their reverse proxy / tunnel).
+    // Content stays in ~/.agim/viewer.db on this host — the public URL
+    // is just a proxy back to here. See src/core/viewer-local.ts.
+    const viewerMatch = url.pathname.match(/^\/v\/([0-9a-f-]{8,})$/i)
+    if (viewerMatch && req.method === 'GET') {
+      return handleViewerPage(res, viewerMatch[1])
+    }
+
     // Short alias: /l/<token> serves the same H5 page. The page auto-detects
     // either ?t= query or /l/<token> path. Lets us issue ~38-char URLs
     // (vs 70+ for /loc?t=<32-hex>) which keeps WeChat chat cleaner.
@@ -423,6 +433,21 @@ export async function startWebServer(options: {
     const artifactsFileMatch = url.pathname.match(/^\/api\/artifacts\/(\d+)\/file\/([\w.+\-]+)$/)
     if (artifactsFileMatch && req.method === 'GET') {
       return handleArtifactsFile(req, res, parseInt(artifactsFileMatch[1], 10), artifactsFileMatch[2])
+    }
+
+    // v1.2 — Viewer pastes (long markdown stash for IM short-link replies).
+    // GET /api/viewer        — list pastes (newest first), for the web console.
+    // GET /api/viewer/:id    — raw JSON of one paste.
+    // DELETE /api/viewer/:id — remove a paste (operator can clean up).
+    if (url.pathname === '/api/viewer' && req.method === 'GET') {
+      return handleViewerList(req, res, url)
+    }
+    const viewerIdMatch = url.pathname.match(/^\/api\/viewer\/([0-9a-f-]{8,})$/i)
+    if (viewerIdMatch && req.method === 'GET') {
+      return handleViewerGet(req, res, viewerIdMatch[1])
+    }
+    if (viewerIdMatch && req.method === 'DELETE') {
+      return handleViewerDelete(req, res, viewerIdMatch[1])
     }
     // PR-B: agent health snapshot (circuit breaker + rate-limiter remaining
     // + latency p50/95/99) consumed by the Health tab in /tasks.
@@ -1633,6 +1658,15 @@ const ENV_EDITABLE_KEYS = [
   // Hot-reload: handlePutEnv mutates process.env so approval-bus picks up the
   // new value on the next timer fire, no restart needed.
   'IMHUB_TIMEOUT_DEFAULT',
+  // v1.2 — IM long-message viewer. Operator sets the public URL pointing at
+  // their reverse-proxied agim web port; thresholds tune when routing kicks
+  // in. Hot-reload works because viewer-config reads process.env every call.
+  'IMHUB_VIEWER_ENABLED',
+  'IMHUB_VIEWER_PUBLIC_BASE_URL',
+  'IMHUB_VIEWER_CHARS',
+  'IMHUB_VIEWER_LINES',
+  'IMHUB_VIEWER_CODE_LINES',
+  'IMHUB_VIEWER_MAX_PASTES',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
 
@@ -2703,6 +2737,65 @@ async function handleArtifactsFile(
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
+}
+
+// ─── Viewer handlers ───
+// v1.2 — Render a stored paste as an HTML page. URL is unguessable uuidv4
+// (32 hex chars including dashes); we still cap the length match to a
+// reasonable max in the router to avoid pathological lookups.
+
+async function handleViewerPage(res: ServerResponse, id: string): Promise<void> {
+  const { getPaste, bumpViewCount } = await import('../core/viewer-local.js')
+  const { renderPasteHtml, renderNotFoundHtml } = await import('./viewer-render.js')
+  const row = getPaste(id)
+  if (!row) {
+    res.writeHead(404, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'X-Robots-Tag': 'noindex, nofollow',
+    })
+    res.end(renderNotFoundHtml())
+    return
+  }
+  bumpViewCount(id)
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Robots-Tag': 'noindex, nofollow',
+    'Cache-Control': 'no-store',
+  })
+  res.end(renderPasteHtml(row))
+}
+
+async function handleViewerList(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const { listPastes, countPastes } = await import('../core/viewer-local.js')
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
+  const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0)
+  const rows = listPastes({ limit, offset })
+  // Strip content from list response to keep payload light; UI loads full row via GET /api/viewer/:id.
+  const items = rows.map((r) => ({
+    id: r.id,
+    content_type: r.content_type,
+    title: r.title,
+    source: r.source,
+    job_id: r.job_id,
+    created_at: r.created_at,
+    view_count: r.view_count,
+    bytes: Buffer.byteLength(r.content, 'utf8'),
+  }))
+  sendJson(res, 200, { total: countPastes(), limit, offset, items })
+}
+
+async function handleViewerGet(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+  const { getPaste } = await import('../core/viewer-local.js')
+  const row = getPaste(id)
+  if (!row) { sendJson(res, 404, { error: 'not_found' }); return }
+  sendJson(res, 200, row)
+}
+
+async function handleViewerDelete(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+  const { deletePaste } = await import('../core/viewer-local.js')
+  const ok = deletePaste(id)
+  if (!ok) { sendJson(res, 404, { error: 'not_found' }); return }
+  sendJson(res, 200, { ok: true })
 }
 
 // ============================================

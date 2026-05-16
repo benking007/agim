@@ -33,6 +33,9 @@ import {
   type OutboxKind, type OutboxPriority, type OutboxRow,
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
+import { decideRender } from './render-router.js'
+import { getViewerConfig, buildPasteUrl } from './viewer-config.js'
+import { savePaste } from './viewer-local.js'
 
 const log = rootLogger.child({ component: 'message-sink' })
 
@@ -154,13 +157,67 @@ async function doSend(row: OutboxRow, overrideAdapter?: MessengerAdapter): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Viewer routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the agent text through render-router and, when routing to web, persist
+ * the full markdown to viewer-local and replace the IM-facing string with
+ * `<summary>\n\n📎 <url>`. Designed to be a pure transformation — on any
+ * fallback path (viewer disabled, save failed, base URL missing) it returns
+ * the original or a lightly-degraded string so the message still ships.
+ */
+function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): string {
+  const cfg = getViewerConfig()
+  const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: cfg.enabled })
+
+  if (decision.mode === 'inline') {
+    return decision.inlineText ?? text
+  }
+
+  // truncate-link / summary-link both want a saved paste + a link.
+  const fullMd = decision.fullMd ?? text
+  const summary = decision.summary ?? ''
+
+  const id = savePaste({
+    content: fullMd,
+    content_type: 'markdown',
+    title: undefined,
+    source: threadKey,
+    job_id: p.jobId ?? undefined,
+  })
+  if (!id) {
+    log.warn({ event: 'sink.viewer.save_failed', threadId: p.threadId },
+      'viewer-local.savePaste returned null; degrading to inline')
+    return summary || fullMd
+  }
+
+  const url = buildPasteUrl(id)
+  if (!url) {
+    log.warn({ event: 'sink.viewer.no_base_url', threadId: p.threadId },
+      'IMHUB_VIEWER_PUBLIC_BASE_URL is not set; degrading to inline')
+    return summary || fullMd
+  }
+
+  return summary ? `${summary}\n\n📎 ${url}` : `📎 ${url}`
+}
+
+// ---------------------------------------------------------------------------
 // Public API: deliver()
 // ---------------------------------------------------------------------------
 
 export async function deliver(p: SinkPayload): Promise<SinkResult> {
   const priority: SinkPriority = p.priority ?? 'normal'
   const threadKey = defaultThreadKey(p)
-  const payloadStr = payloadToString(p.payload)
+  let payloadStr = payloadToString(p.payload)
+
+  // v1.2 — viewer routing. For text payloads, decide whether to inline,
+  // truncate-and-link, or save the agent's <im-summary>/<full-md> envelope
+  // and replace with summary + link. Card / typing kinds are untouched
+  // (cards have their own structure; typing is fire-and-forget).
+  if (p.kind === 'text' && payloadStr.length > 0) {
+    payloadStr = applyViewerRouting(payloadStr, p, threadKey)
+  }
 
   // Typing indicators are pure UX hints — never persist them. If the worker
   // delivered a "start typing" row two minutes later it would be ridiculous.

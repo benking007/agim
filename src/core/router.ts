@@ -22,6 +22,8 @@ import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
+import { buildViewerHintSnippet } from './render-router.js'
+import { getViewerConfig } from './viewer-config.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
 import { logInvocation } from './audit-log.js'
@@ -515,7 +517,16 @@ export async function callAgentWithHistory(
   // history clean (already addMessage'd above) so context isn't duplicated
   // turn-after-turn. Empty when no pending OR no userId (non-IM call).
   const reminderContext = buildReminderContextSnippet(ctx.platform, ctx.userId ?? '')
-  const augmentedPrompt = reminderContext ? `${reminderContext}\n${prompt}` : prompt
+  // v1.2 — prepend a small IM-render hint when the viewer is enabled so the
+  // agent knows to wrap long answers in <im-summary>/<full-md>. Falls back
+  // gracefully (sink truncates and links) if the agent ignores the hint.
+  const viewerCfg = getViewerConfig()
+  const viewerHint = buildViewerHintSnippet({
+    viewerEnabled: viewerCfg.enabled && ctx.platform !== 'web',
+    thresholds: viewerCfg.thresholds,
+  })
+  const headerBlocks = [viewerHint, reminderContext].filter(Boolean)
+  const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
 
   const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
     model,

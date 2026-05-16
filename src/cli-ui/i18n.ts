@@ -32,8 +32,24 @@ const en = {
   'menu.start_bg': 'Start the service (background)',
   'menu.restart': 'Restart the service',
   'menu.stop': 'Stop the service',
+  'menu.token': 'Manage web access tokens',
   'menu.uninstall': 'Uninstall Agim (keeps workspaces)',
   'menu.quit': 'Quit',
+
+  // ─── token management submenu ────────────────────────────────────────
+  'token.title': 'Web access tokens',
+  'token.subtitle': 'Tokens grant access to the web console at http://<host>:3000/.',
+  'token.choice.create': 'Generate a new token',
+  'token.choice.list': 'List existing tokens',
+  'token.choice.revoke': 'Revoke a token',
+  'token.choice.back': '← Back',
+  'token.create.label_prompt': 'Optional label (e.g. "macbook"):',
+  'token.create.printed': 'Save this token now — the raw value is not recoverable later:',
+  'token.list.empty': '(no tokens yet)',
+  'token.revoke.prompt': 'Pick a token to revoke:',
+  'token.revoke.confirm': 'Revoke {label} ({id})?',
+  'token.revoke.success': '✓ token revoked',
+  'token.revoke.not_found': '✗ token not found',
 
   // ─── config root ─────────────────────────────────────────────────────
   'config.title': 'Agim · config',
@@ -272,8 +288,24 @@ const zh: Record<Key, string> = {
   'menu.start_bg': '启动服务（后台）',
   'menu.restart': '重启服务',
   'menu.stop': '停止服务',
+  'menu.token': '管理 Web 访问 Token',
   'menu.uninstall': '卸载阿吉姆（保留 workspaces）',
   'menu.quit': '退出',
+
+  // ─── token management submenu ────────────────────────────────────
+  'token.title': 'Web 访问 Token',
+  'token.subtitle': 'Token 用于登录 Web 控制台（http://<主机>:3000/）。',
+  'token.choice.create': '生成新 Token',
+  'token.choice.list': '查看现有 Token',
+  'token.choice.revoke': '撤销 Token',
+  'token.choice.back': '← 返回',
+  'token.create.label_prompt': '可选 label（例如 "macbook"）：',
+  'token.create.printed': '请立即保存这个 Token —— 原文不可再次找回：',
+  'token.list.empty': '（暂无 Token）',
+  'token.revoke.prompt': '选择要撤销的 Token：',
+  'token.revoke.confirm': '撤销 {label} ({id})？',
+  'token.revoke.success': '✓ Token 已撤销',
+  'token.revoke.not_found': '✗ 找不到对应 Token',
 
   // ─── config root ─────────────────────────────────────────────────
   'config.title': '阿吉姆 · 配置',

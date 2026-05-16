@@ -52,6 +52,111 @@ interface ClientConnection {
   agent: string
 }
 
+/** v1.1.10 — paths that never require a web token. */
+const PUBLIC_EXACT_PATHS = new Set<string>([
+  '/login', '/login.html',
+  '/api/auth/login',
+  '/api/health',
+  '/_app.js',
+  '/loc', '/loc.html',
+  // POST /api/loc (the bare path, no trailing slash) is the H5 page's
+  // "submit my coordinates" endpoint. It's authenticated by the single-use
+  // location token in the request body, NOT by the web access token.
+  '/api/loc',
+  '/favicon.ico', '/favicon.svg',
+])
+const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/']
+const PUBLIC_API_VIEWER_RE = /^\/api\/viewer\/[0-9a-f-]{8,}$/i
+
+function isPublicPath(pathname: string, method: string): boolean {
+  if (PUBLIC_EXACT_PATHS.has(pathname)) return true
+  for (const p of PUBLIC_PREFIX_PATHS) if (pathname.startsWith(p)) return true
+  // Single-paste JSON read mirrors /v/:id (same anyone-with-the-url policy);
+  // DELETE on the same path still needs a token.
+  if (method === 'GET' && PUBLIC_API_VIEWER_RE.test(pathname)) return true
+  return false
+}
+
+function isLoopbackPeer(req: IncomingMessage): boolean {
+  const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  return ip === '127.0.0.1' || ip === '::1' || ip === ''
+}
+
+function extractToken(req: IncomingMessage, url: URL): string | null {
+  // 1. Authorization: Bearer <token>
+  const auth = req.headers['authorization']
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    const v = auth.slice(7).trim()
+    if (v) return v
+  }
+  // 2. Cookie agim_token=<token>
+  const cookie = req.headers['cookie']
+  if (typeof cookie === 'string') {
+    for (const part of cookie.split(';')) {
+      const [k, ...rest] = part.trim().split('=')
+      if (k === 'agim_token') return decodeURIComponent(rest.join('=').trim())
+    }
+  }
+  // 3. ?token=...  (last resort, for WS upgrade / iframe)
+  const q = url.searchParams.get('token')
+  if (q) return q
+  return null
+}
+
+/** Returns true if the request is authenticated (or auth not required). */
+function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+  // 1. Disabled by env → pass through.
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
+  // 2. Loopback → pass through (local CLI / browser-on-same-host).
+  if (isLoopbackPeer(req)) return true
+  // 3. Public-by-design path → pass through.
+  if (isPublicPath(url.pathname, req.method || 'GET')) return true
+
+  // 4. Verify token from header / cookie / query.
+  const tok = extractToken(req, url)
+  if (tok) {
+    // Lazy import avoids loading SQLite-adjacent modules in test stubs etc.
+    // The synchronous verifyToken touches the small tokens.json only.
+    // We require require()-style top-level access by deferring resolution:
+    // but ESM has no require — use a global cache instead.
+    const id = verifyTokenSync(tok)
+    if (id) return true
+  }
+
+  // 5. No / invalid token. /api/* → 401 JSON; static page → 302 to /login.
+  if (url.pathname.startsWith('/api/')) {
+    res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ error: 'unauthorized', loginUrl: '/login' }))
+    return false
+  }
+  if (url.pathname.startsWith('/ws') || req.headers.upgrade === 'websocket') {
+    res.writeHead(401)
+    res.end()
+    return false
+  }
+  // HTML / static — redirect.
+  const next = encodeURIComponent(url.pathname + url.search)
+  res.writeHead(302, { Location: `/login?next=${next}` })
+  res.end()
+  return false
+}
+
+// access-token.verifyToken cached lookup. We avoid await in checkAuth by
+// pre-loading via a small wrapper. ESM top-level await isn't an option in
+// the codebase style, so import on first use and stash the handle.
+let _tokenModule: typeof import('../core/access-token.js') | null = null
+function verifyTokenSync(raw: string): string | null {
+  if (!_tokenModule) {
+    // Synchronous resolution via the dist file path. We rely on Node's
+    // require-via-createRequire only when running compiled; in production
+    // the module is already loaded by bootstrapIfEmpty above so this
+    // branch is mostly defensive. Worst case we deny one request while the
+    // dynamic import resolves.
+    return null
+  }
+  return _tokenModule.verifyToken(raw)
+}
+
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
   let queue: Promise<void> = Promise.resolve()
   return (fn: () => Promise<void>): void => {
@@ -72,25 +177,39 @@ export async function startWebServer(options: {
   const bindHost = process.env.IMHUB_WEB_BIND || '127.0.0.1'
   const clients = new Map<string, ClientConnection>()
 
-  // Agim's web console intentionally ships with NO built-in auth — neither
-  // for localhost nor for public binds. Operators putting it on 0.0.0.0 are
-  // responsible for fronting it with a reverse proxy / firewall / SSH tunnel
-  // / VPN of their choice. See README "Web console exposure".
+  // v1.1.10+: token-based auth for the web console.
+  // ─ loopback peers (127.0.0.1 / ::1) bypass auth (local CLI / curl)
+  // ─ public viewer pages (/v/:id, /loc, /l/<token>) remain public
+  // ─ IMHUB_WEB_AUTH=off disables the gate entirely (for ops with proxy auth)
+  // On first start, bootstrapIfEmpty() generates a one-time bootstrap token
+  // and prints it to stdout + the logger so the operator finds it in journalctl.
+  const accessTokenModule = await import('../core/access-token.js')
+  _tokenModule = accessTokenModule
+  const { bootstrapIfEmpty, isAuthEnabled } = accessTokenModule
+  try { bootstrapIfEmpty() } catch (err) {
+    webLog.warn({ event: 'web.auth_bootstrap_failed', err: String(err) })
+  }
   const isPublicBind = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
-  if (isPublicBind) {
+  if (isPublicBind && !isAuthEnabled()) {
     webLog.warn({
-      event: 'web.public_bind_warning',
+      event: 'web.auth_disabled_on_public_bind',
       bind: bindHost,
-    }, 'Web server bound to a non-localhost address with NO built-in auth — front it with a reverse proxy / firewall / VPN')
+    }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
   }
   webLog.info({
     event: 'web.auth_mode',
     bind: bindHost,
-  }, 'Web console: open access (no built-in auth — access control is upstream)')
+    enabled: isAuthEnabled(),
+  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'}`)
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
+
+    // ─── v1.1.10 auth gate ───────────────────────────────────────────
+    // Always run first so unauthenticated requests never reach handlers.
+    // Loopback peers + the public paths below bypass.
+    if (!checkAuth(req, res, url)) return
 
     // Static pages — direct serve, no auth gate.
     if (
@@ -115,6 +234,18 @@ export async function startWebServer(options: {
     // know the web token. Returns only operational status, not config.
     if (url.pathname === '/api/health' && req.method === 'GET') {
       return handleHealth(req, res)
+    }
+
+    // v1.1.10 — auth endpoints. /login is a public path; the auth gate
+    // above lets it through. These do the actual validation + cookie set.
+    if (url.pathname === '/api/auth/login' && req.method === 'POST') {
+      return handleAuthLogin(req, res)
+    }
+    if (url.pathname === '/api/auth/logout' && req.method === 'POST') {
+      return handleAuthLogout(req, res)
+    }
+    if (url.pathname === '/login' && req.method === 'GET') {
+      return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
     }
 
     // Shared web-console utilities (theme manager + i18n + error boundary
@@ -1671,6 +1802,12 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_VIEWER_CODE_LINES',
   'IMHUB_VIEWER_MAX_PASTES',
   'IMHUB_VIEWER_TUNNEL_MODE',
+  // v1.1.10 — A2A notification settings (see src/core/a2a-notify.ts).
+  'IMHUB_A2A_TIMEOUT_DEFAULT_MS',
+  'IMHUB_A2A_MAX_TIMEOUT_MS',
+  'IMHUB_A2A_NOTIFY_MODE',
+  'IMHUB_A2A_NOTIFY_MAX_DEPTH',
+  'IMHUB_A2A_HEARTBEAT_MIN',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
 
@@ -2741,6 +2878,38 @@ async function handleArtifactsFile(
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
+}
+
+// ─── v1.1.10 auth handlers ───
+async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { token?: string }
+    const token = (parsed.token || '').trim()
+    if (!token) { sendJson(res, 400, { error: 'token required' }); return }
+    if (!_tokenModule) { sendJson(res, 503, { error: 'auth module not ready' }); return }
+    const id = _tokenModule.verifyToken(token)
+    if (!id) { sendJson(res, 401, { error: 'invalid token' }); return }
+    // 30-day cookie, Path=/, SameSite=Strict. Not HttpOnly so the page JS
+    // can also read it back if needed (e.g. to attach Authorization header
+    // on fetch — though the cookie alone suffices).
+    const maxAge = 30 * 24 * 60 * 60
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Set-Cookie': `agim_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Strict`,
+    })
+    res.end(JSON.stringify({ ok: true, tokenId: id }))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+function handleAuthLogout(_req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Set-Cookie': 'agim_token=; Path=/; Max-Age=0; SameSite=Strict',
+  })
+  res.end(JSON.stringify({ ok: true }))
 }
 
 // ─── Viewer handlers ───

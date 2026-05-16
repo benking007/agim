@@ -43,11 +43,25 @@ import {
   type InputSource,
   type OutputFile,
 } from './artifacts.js'
+import {
+  notifyA2AStart,
+  notifyA2AComplete,
+  notifyA2ATimeout,
+  notifyA2AFailed,
+  startHeartbeat,
+} from './a2a-notify.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
 export const A2A_MAX_DEPTH_DEFAULT = 3
-export const A2A_TIMEOUT_MS_DEFAULT = 10 * 60 * 1000  // 10 min
+// v1.1.10: bumped from 10 min to 30 min after the HSTECH debate run revealed
+// codex routinely takes 15-25 min when the prompt asks for ~4 API pulls + a
+// report. 10 min cut codex off mid-write and produced orphan output files.
+export const A2A_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000  // 30 min
+/** Hard upper bound — refuse caller-supplied `timeoutMs` larger than this so
+ *  an agent can't accidentally write `timeoutMs: 86400000` and block A2A
+ *  forever. Override with IMHUB_A2A_MAX_TIMEOUT_MS. */
+export const A2A_TIMEOUT_MS_MAX = 60 * 60 * 1000  // 1 h
 
 export function isA2AEnabled(): boolean {
   return process.env.IMHUB_A2A_ENABLED !== '0'
@@ -66,9 +80,18 @@ export function getA2ATimeoutMs(): number {
   const raw = process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS
   if (raw) {
     const n = parseInt(raw, 10)
-    if (Number.isFinite(n) && n > 0) return n
+    if (Number.isFinite(n) && n > 0) return Math.min(n, getA2AMaxTimeoutMs())
   }
   return A2A_TIMEOUT_MS_DEFAULT
+}
+
+export function getA2AMaxTimeoutMs(): number {
+  const raw = process.env.IMHUB_A2A_MAX_TIMEOUT_MS
+  if (raw) {
+    const n = parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return A2A_TIMEOUT_MS_MAX
 }
 
 export interface CallAgentOpts {
@@ -201,7 +224,9 @@ export async function callAgentByName(
     return { ok: false, error: msg, jobId, agent: target.name }
   }
 
-  const timeoutMs = opts.timeoutMs ?? getA2ATimeoutMs()
+  // v1.1.10: clamp caller-supplied timeoutMs to the configured max so an
+  // agent can't ask for an obscenely long timeout that blocks A2A.
+  const timeoutMs = Math.min(opts.timeoutMs ?? getA2ATimeoutMs(), getA2AMaxTimeoutMs())
   const started = Date.now()
   log.info({
     event: 'a2a.invoke_start',
@@ -212,9 +237,26 @@ export async function callAgentByName(
     expectOutputCount: opts.expectOutputs?.length ?? 0,
   }, `A2A → ${target.name}`)
 
+  // v1.1.10: surface intermediate state to the caller's IM thread. start
+  // notice fires here, terminal notices after the call returns. fire-and-
+  // forget — never let a notify failure break A2A.
+  void notifyA2AStart(ctx, nextDepth, {
+    jobId,
+    callee: target.name,
+    inputCount: copiedInputs.length,
+    expectOutputs: opts.expectOutputs,
+    callerAgent: opts.callerAgent,
+  })
+  const heartbeat = startHeartbeat(ctx, nextDepth, jobId, target.name)
+
   let result = ''
   let outcome: 'completed' | 'failed' | 'timeout' = 'completed'
   let errMsg = ''
+  // v1.1.10: abortController is passed into sendPrompt so the underlying
+  // child process actually terminates on timeout. Without this the callee
+  // (codex / claude / opencode) keeps running and writes "orphan" files
+  // into _agim-output/ long after agim has given up.
+  const abortController = new AbortController()
   try {
     const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
@@ -228,12 +270,19 @@ export async function callAgentByName(
       // parent_id = jobId (our callee row).
       parentJobId: jobId,
       callDepth: nextDepth,
+      signal: abortController.signal,
     })
     result = await accumulateWithTimeout(gen, timeoutMs)
   } catch (err) {
     outcome = err instanceof TimeoutError ? 'timeout' : 'failed'
     errMsg = err instanceof Error ? err.message : String(err)
+    // Cancel the in-flight child. spawnStream listens on the signal and
+    // sends SIGTERM (then SIGKILL after a grace period) to the agent CLI.
+    try { abortController.abort() } catch { /* noop */ }
   }
+
+  // Stop heartbeat ASAP so we don't race the terminal notice.
+  heartbeat.stop()
 
   const durationMs = Date.now() - started
 
@@ -268,6 +317,11 @@ export async function callAgentByName(
     log.warn({
       event: 'a2a.invoke_end', outcome, jobId, durationMs, callee: target.name, err: errMsg,
     }, `A2A → ${target.name} ${outcome}: ${errMsg}`)
+    if (outcome === 'timeout') {
+      void notifyA2ATimeout(ctx, nextDepth, { jobId, callee: target.name, durationMs })
+    } else {
+      void notifyA2AFailed(ctx, nextDepth, { jobId, callee: target.name, durationMs, error: errMsg || outcome })
+    }
     return { ok: false, error: errMsg || outcome, jobId, agent: target.name }
   }
 
@@ -290,6 +344,12 @@ export async function callAgentByName(
     event: 'a2a.invoke_end', outcome: 'ok', jobId, durationMs, callee: target.name,
     resultLen: result.length, outputCount: outputs.length, warningCount: warnings.length,
   }, `A2A → ${target.name} ok (${result.length} chars, ${outputs.length} outputs, in ${durationMs}ms)`)
+  void notifyA2AComplete(ctx, nextDepth, {
+    jobId,
+    callee: target.name,
+    durationMs,
+    outputs: outputs.map((o) => ({ name: o.name, bytes: o.bytes })),
+  })
   return {
     ok: true, result, jobId, agent: target.name, durationMs,
     artifactsDir, outputs,

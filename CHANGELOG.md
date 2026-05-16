@@ -4,6 +4,91 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-05-16
+
+### Added — Web console token authentication
+
+Web console used to ship with **no built-in auth**: anyone who could reach
+the port (after a reverse-proxy / tunnel) had full dashboard access. v1.1.10
+adds token-gated login.
+
+- **`agim token` CLI**: `create [label]` / `list` / `revoke <id>`.
+  Bootstrap token auto-generated at first start and printed to stdout +
+  `journalctl -u agim` so the operator can copy it from logs.
+- **Interactive menu**: bare `agim` → "Manage web access tokens" submenu
+  (create / list / revoke). Mirrors the CLI flow for non-power-users.
+- **`/login` page** (bilingual EN/中文) with step-by-step instructions
+  for getting a token from the terminal.
+- **Auth gate** in `web/server.ts`:
+  - Loopback peers (127.0.0.1 / ::1) bypass (local dev unaffected).
+  - Public paths bypass: `/v/:id` viewer pages, `/loc` location capture,
+    `/l/<token>` short links, `/api/health`, `/api/loc{,/*}` (single-use
+    location token still required by the loc layer itself).
+  - All other paths require an `Authorization: Bearer <token>`, an
+    `agim_token` cookie, or `?token=` query (for WS upgrade).
+  - 401 for `/api/*`; 302 → `/login?next=…` for HTML routes.
+- **Storage**: `~/.agim/tokens.json` (chmod 600). Server only stores
+  SHA-256; raw token is shown once at create time.
+- **Cookie**: 30-day `agim_token` cookie set on successful login;
+  `SameSite=Strict`, `Path=/`. Logout via `POST /api/auth/logout`.
+- **Disable**: `IMHUB_WEB_AUTH=off` reverts to pre-1.1.10 open access
+  (for ops who do auth at the reverse proxy layer).
+- **Global fetch interceptor** in `_app.js` auto-attaches `Authorization`
+  + redirects to `/login` on 401. Existing pages keep working without
+  changes; new tabs get auth transparently.
+
+### Changed — A2A robustness
+
+The HSTECH / Lens debate sessions surfaced two pain points:
+
+- **Default timeout raised from 10 min → 30 min** (`IMHUB_A2A_TIMEOUT_DEFAULT_MS`).
+  Codex routinely takes 15-25 min for a 4-API-pull + writing-a-report job;
+  the old 10 min cutoff killed it mid-flight and left orphan files in
+  `_agim-output/`. New `IMHUB_A2A_MAX_TIMEOUT_MS` (default 1h) caps the
+  ceiling so an agent can't accidentally write `timeoutMs: 86400000`.
+- **Abort on timeout** — `AgentSendOpts.signal` plumbed through `sendPrompt`
+  → `spawnStream` so callees actually get SIGTERM'd when A2A gives up.
+  No more orphan child processes writing into shared output dirs.
+- **New `src/core/a2a-notify.ts`** pushes 4 lifecycle events to the
+  caller's IM thread so users see what's happening downstream:
+  - `🔀 转给 codex (#jobId · depth N)` — start
+  - `✓ codex 完成 (耗时 5m20s) 📎 file.md 🔗 viewer-link` — complete
+    with auto-snapshot of the first `.md` output as a viewer paste
+  - `⌛ codex 超时 (10m 未返回) — 子进程已停` — timeout
+  - `❌ codex 失败 ... <err>` — failure
+- **Verbose heartbeat mode** detects file changes in `_agim-output/`
+  every `IMHUB_A2A_HEARTBEAT_MIN` minutes (default 5):
+  - With change: lists new files + links the first new `.md` once.
+  - Without change: "still thinking" note.
+- **Notify scope**: source='system' (never routes through viewer);
+  default mode 'essential' (start + terminal events only); depth ≤1
+  by default (no spam on deep call chains).
+- **Settings UI** has a new 🔀 A2A Notifications card (timeouts in
+  minutes, mode dropdown, depth, heartbeat interval — bilingual).
+
+### Fixed
+
+- **Restart message order**: `/restart` used to send "🔄 重启中…" via the
+  outbox queue, which the dying process never drained — the new process's
+  high-priority "✅ 已重启完成…" then arrived first. Now `initiateRestart()`
+  delivers the in-flight ack synchronously (`priority: 'high'`) before
+  spawning `systemctl restart`. Command return becomes `''` so the
+  pipeline doesn't double-deliver.
+- **Slash command outputs no longer route through viewer**: `cli.ts`
+  string-branch was incorrectly tagged `source: 'agent'` in 1.1.9.
+  Corrected to `source: 'system'` so `/job list`, `/a2a tree`, `/outbox`,
+  `/audit` etc always render inline regardless of length.
+
+### Migration
+
+- After upgrade, **set up at least one access token** before exposing the
+  web port publicly. First start auto-creates a bootstrap token — copy
+  the value from `journalctl -u agim` or `agim status` output.
+- Existing users on a reverse proxy with their own auth: set
+  `IMHUB_WEB_AUTH=off` if you don't want a second factor.
+- Local-only / loopback users: nothing changes (auth bypassed on
+  127.0.0.1).
+
 ## [1.1.9] - 2026-05-16
 
 ### Fixed — Viewer no longer steals operational/system replies

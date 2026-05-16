@@ -158,7 +158,25 @@
     if (init.body && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json'
     }
+    // v1.1.10: attach the web access token from localStorage (set after a
+    // successful /login). Cookie is also set by /api/auth/login, but adding
+    // the header makes the API directly usable via curl + a bearer prefix.
+    if (!headers['Authorization']) {
+      try {
+        const tk = localStorage.getItem('agim_token')
+        if (tk) headers['Authorization'] = `Bearer ${tk}`
+      } catch { /* ignore */ }
+    }
     const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
+    if (res.status === 401) {
+      // Token missing / invalid / expired — kick the user to /login.
+      try { localStorage.removeItem('agim_token') } catch { /* ignore */ }
+      const next = encodeURIComponent(location.pathname + location.search)
+      location.href = `/login?next=${next}`
+      const err = new Error('unauthorized')
+      err.status = 401
+      throw err
+    }
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`
       try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* ignore */ }
@@ -170,6 +188,47 @@
     const ct = res.headers.get('content-type') || ''
     return ct.includes('application/json') ? res.json() : res.text()
   }
+
+  // ============================================================
+  // Global fetch interceptor (v1.1.10)
+  // ============================================================
+  // Static pages (tasks.html / reminders.html / memos.html) often call
+  // `fetch('/api/foo')` directly without going through apiFetch. Patch
+  // window.fetch so the access token attaches automatically + 401 kicks
+  // the user back to /login.
+  ;(function installFetchAuth(){
+    if (window.__agimFetchPatched) return
+    window.__agimFetchPatched = true
+    var origFetch = window.fetch.bind(window)
+    window.fetch = function(input, init){
+      var opts = init || {}
+      var url = typeof input === 'string' ? input : (input && input.url) || ''
+      // Only inject for same-origin API paths (/api/...) and the static
+      // route serving — leave external fetches (CDN) alone.
+      var isLocalApi = url.startsWith('/') || url.startsWith(location.origin)
+      if (isLocalApi) {
+        var headers = new Headers(opts.headers || (typeof input !== 'string' ? input.headers : undefined))
+        if (!headers.has('Authorization')) {
+          try {
+            var tk = localStorage.getItem('agim_token')
+            if (tk) headers.set('Authorization', 'Bearer ' + tk)
+          } catch { /* ignore */ }
+        }
+        opts = Object.assign({}, opts, { headers, credentials: opts.credentials || 'same-origin' })
+      }
+      return origFetch(input, opts).then(function(res){
+        if (res.status === 401 && isLocalApi && !url.startsWith('/api/auth/')) {
+          try { localStorage.removeItem('agim_token') } catch {}
+          var next = encodeURIComponent(location.pathname + location.search)
+          // Only redirect from non-login pages to avoid loops.
+          if (!location.pathname.startsWith('/login')) {
+            location.href = '/login?next=' + next
+          }
+        }
+        return res
+      })
+    }
+  })()
 
   // ============================================================
   // Expose

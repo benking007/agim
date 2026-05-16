@@ -461,10 +461,16 @@ program
             if (svcIntent.intent === 'restart') reply = await handleRestartCommand('', routeCtx)
             else if (svcIntent.intent === 'stop') reply = await handleStopCommand('', routeCtx)
             else reply = await handleStatusCommand('', routeCtx)
-            await sink.deliver({
-              platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
-              payload: reply, kind: 'text',
-            })
+            // v1.1.10: /restart now delivers its "重启中…" ack synchronously
+            // from inside initiateRestart() to win the race against the new
+            // process's "✅ 已重启完成…" push. In that case the handler
+            // returns an empty string — skip the duplicate sink call.
+            if (reply && reply.length > 0) {
+              await sink.deliver({
+                platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+                payload: reply, kind: 'text',
+              })
+            }
             return
           }
         }
@@ -982,13 +988,26 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await stopTyping()
         await dismiss()
         markJobCompleted(inlineJobId, result)
-        const sinkRes = await sink.deliver({
-          platform, channelId: ctx.channelId, threadId: message.threadId,
-          payload: await maybePrefix(result), kind: 'text',
-          jobId: inlineJobId > 0 ? inlineJobId : undefined,
-          source: 'agent', // freeform LLM output → eligible for viewer routing
-        })
-        if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
+        // v1.1.10: string branch is the slash-command path (e.g. /job list,
+        // /a2a tree, /outbox status, /restart, /audit). These are
+        // operational replies and must stay inline regardless of length —
+        // truncating a /job list table behind a viewer link defeats the
+        // command. Only the streaming-generator branch below is true
+        // freeform agent output and gets source: 'agent'.
+        //
+        // Empty-string return signals "I already delivered the reply
+        // myself" — used by /restart which pushes its in-flight ack via
+        // sink with priority='high' to win the race against the new
+        // process's completion push. Skip the duplicate sink call.
+        if (result.length > 0) {
+          const sinkRes = await sink.deliver({
+            platform, channelId: ctx.channelId, threadId: message.threadId,
+            payload: await maybePrefix(result), kind: 'text',
+            jobId: inlineJobId > 0 ? inlineJobId : undefined,
+            source: 'system',
+          })
+          if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
+        }
         logger.info({ event: 'message.sent', responseLen: result.length })
       } else {
         // Stream response chunks
@@ -1549,6 +1568,60 @@ program
     await cmdUninstall()
   })
 
+// ─── access tokens for the web console (v1.1.10+) ───────────────────
+//
+// Generates / lists / revokes tokens stored under ~/.agim/tokens.json.
+// Required to log into the web UI when bound to a non-loopback address.
+// See src/core/access-token.ts for storage details + bootstrap behavior.
+
+const tokenCmd = program.command('token').description('Manage web console access tokens')
+
+tokenCmd
+  .command('create [label]')
+  .description('Create a new web access token (raw value printed once)')
+  .action(async (label?: string) => {
+    const { createToken } = await import('./core/access-token.js')
+    const t = createToken(label || '')
+    console.log('')
+    console.log('✓ New access token created.')
+    console.log(`   id    : ${t.id}`)
+    console.log(`   label : ${label || '(unlabeled)'}`)
+    console.log(`   token : ${t.raw}`)
+    console.log('')
+    console.log('⚠️ This is the only time the raw value is shown. Save it now.')
+    console.log('   Paste it at the /login page or send it as an "Authorization: Bearer <token>" header.')
+  })
+
+tokenCmd
+  .command('list')
+  .description('List existing tokens (no secrets shown)')
+  .action(async () => {
+    const { listTokens, TOKENS_FILE_PATH } = await import('./core/access-token.js')
+    const rows = listTokens()
+    console.log(`Stored at: ${TOKENS_FILE_PATH}`)
+    if (rows.length === 0) {
+      console.log('(no tokens — run `agim token create` to create one)')
+      return
+    }
+    for (const r of rows) {
+      const created = new Date(r.created_at * 1000).toISOString().replace('T', ' ').slice(0, 19)
+      const lastUsed = r.last_used_at
+        ? new Date(r.last_used_at * 1000).toISOString().replace('T', ' ').slice(0, 19)
+        : '(never)'
+      console.log(`  ${r.id}  label=${r.label}  created=${created}  last_used=${lastUsed}`)
+    }
+  })
+
+tokenCmd
+  .command('revoke <id>')
+  .description('Revoke (delete) a token by id')
+  .action(async (id: string) => {
+    const { revokeToken } = await import('./core/access-token.js')
+    const ok = revokeToken(id)
+    if (ok) console.log(`✓ token ${id} revoked.`)
+    else { console.log(`✗ token ${id} not found.`); process.exit(1) }
+  })
+
 // ─── bare `agim` → entry menu (v0.5.0+) ─────────────────────────────
 // If the user invoked us with no args (just `agim`), drop them at
 // the language picker + maintenance menu instead of dumping --help text.
@@ -1599,6 +1672,11 @@ async function maybeRunEntryMenu(): Promise<boolean> {
     case 'stop':
       await cmdStop()
       return true
+    case 'token': {
+      const { runTokenMenu } = await import('./cli-ui/token-menu.js')
+      await runTokenMenu(lang)
+      return true
+    }
     case 'uninstall':
       await cmdUninstall()
       return true

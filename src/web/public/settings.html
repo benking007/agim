@@ -178,6 +178,23 @@
         viewerTunnelBinaryMissing: 'cloudflared not installed',
         viewerTunnelCurrentUrl: 'Current URL',
         viewerTunnelRefresh: 'Refresh',
+        a2aNotifyTitle: 'A2A Notifications',
+        a2aNotifyHint: 'Push intermediate state to your IM thread when one agent calls another (e.g. Claude → Codex). Keeps you in the loop during long handoffs.',
+        a2aDefaultTimeout: 'Default A2A timeout (minutes)',
+        a2aDefaultTimeoutHint: 'How long agim waits for a child agent before timing out. Raised from 10 min to 30 min in v1.1.10 — long enough for Codex to do ~4 API pulls + write a report.',
+        a2aMaxTimeout: 'Max allowed timeout (minutes)',
+        a2aMaxTimeoutHint: 'Hard ceiling. Refuses caller-supplied timeoutMs larger than this so an agent can\'t block A2A forever.',
+        a2aNotifyMode: 'Notify mode',
+        a2aNotifyOff: 'Off',
+        a2aNotifyEssential: 'Essential (start + complete/timeout/failed)',
+        a2aNotifyVerbose: 'Verbose (add heartbeats on file changes)',
+        a2aMaxDepth: 'Max notify depth',
+        a2aMaxDepthHint: 'Only notify for callees up to this nesting depth (1 = direct child only). Avoids spamming on deep call chains.',
+        a2aHeartbeatMin: 'Heartbeat interval (minutes, verbose only)',
+        a2aHeartbeatHint: 'Checks the callee\'s _agim-output/ directory; pushes a note if files changed or a "still thinking" note otherwise.',
+        a2aSave: 'Save',
+        a2aSaved: 'Saved — applies to the next A2A invocation, no restart needed.',
+        a2aSaveFailed: 'Failed to save A2A settings',
       },
       zh: {
         title: 'Agim — 设置',
@@ -342,6 +359,23 @@
         viewerTunnelBinaryMissing: '未安装 cloudflared',
         viewerTunnelCurrentUrl: '当前 URL',
         viewerTunnelRefresh: '刷新',
+        a2aNotifyTitle: 'A2A 中间状态通知',
+        a2aNotifyHint: '当一个 agent 调另一个 agent（例如 Claude → Codex）时，把开始/进度/完成/超时的状态推到你的 IM 会话，避免长任务"哑巴等"。',
+        a2aDefaultTimeout: 'A2A 默认超时（分钟）',
+        a2aDefaultTimeoutHint: 'agim 等子 agent 的时长上限。v1.1.10 从 10 min 提到 30 min — 足够 Codex 拉几次 API + 写报告。',
+        a2aMaxTimeout: 'A2A 最大允许超时（分钟）',
+        a2aMaxTimeoutHint: '硬上限。agent 调用时即使传更大的 timeoutMs 也会被截到这个值。防止 A2A 被永久卡住。',
+        a2aNotifyMode: '通知模式',
+        a2aNotifyOff: '关闭',
+        a2aNotifyEssential: '精简（仅 start + 终态）',
+        a2aNotifyVerbose: '详细（额外在文件变化时推 heartbeat）',
+        a2aMaxDepth: '最大通知深度',
+        a2aMaxDepthHint: '只对嵌套深度 ≤ 此值的子调用发通知（1 = 仅直接子调用）。避免深度嵌套刷屏。',
+        a2aHeartbeatMin: 'Heartbeat 间隔（分钟，详细模式生效）',
+        a2aHeartbeatHint: '每隔这么久检查一次子 agent 的 _agim-output/ 目录；有新文件就推一条，没变化就推"仍在 think"。',
+        a2aSave: '保存',
+        a2aSaved: '已保存 — 下次 A2A 调用生效，无需重启。',
+        a2aSaveFailed: '保存 A2A 配置失败',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -744,7 +778,23 @@
     // (if any reverse-proxy added one) is sent automatically.
     function authFetch(url, init = {}) {
       const headers = { ...(init.headers || {}) };
-      return fetch(url, { ...init, headers, credentials: 'same-origin' });
+      // v1.1.10: attach access token (Bearer + Cookie both work, but
+      // setting Bearer ensures direct curl-style usage from devtools also
+      // succeeds). 401 → redirect to /login with `next` set to current URL.
+      if (!headers['Authorization']) {
+        try {
+          const tk = localStorage.getItem('agim_token');
+          if (tk) headers['Authorization'] = `Bearer ${tk}`;
+        } catch { /* ignore */ }
+      }
+      return fetch(url, { ...init, headers, credentials: 'same-origin' }).then(r => {
+        if (r.status === 401) {
+          try { localStorage.removeItem('agim_token'); } catch {}
+          const next = encodeURIComponent(location.pathname + location.search);
+          location.href = `/login?next=${next}`;
+        }
+        return r;
+      });
     }
 
     // Fetch config on load
@@ -1476,6 +1526,50 @@
           <p class="muted" id="viewerStatus" style="margin-top:8px;font-size:12px"></p>
         </div>
 
+        <!-- A2A Notifications (env-file) — push intermediate state during agent-to-agent handoffs -->
+        <div class="card">
+          <h2>🔀 ${t('a2aNotifyTitle')}</h2>
+          <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px">${t('a2aNotifyHint')}</p>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:720px">
+            <div>
+              <label>${t('a2aDefaultTimeout')}</label>
+              <input type="number" id="a2aDefaultTimeout" min="1" max="60" placeholder="30" />
+              <p class="muted" style="margin-top:4px;font-size:11px">${t('a2aDefaultTimeoutHint')}</p>
+            </div>
+            <div>
+              <label>${t('a2aMaxTimeout')}</label>
+              <input type="number" id="a2aMaxTimeout" min="1" max="180" placeholder="60" />
+              <p class="muted" style="margin-top:4px;font-size:11px">${t('a2aMaxTimeoutHint')}</p>
+            </div>
+          </div>
+
+          <label style="margin-top:12px;display:block">${t('a2aNotifyMode')}</label>
+          <select id="a2aNotifyMode" style="max-width:480px">
+            <option value="off">${t('a2aNotifyOff')}</option>
+            <option value="essential" selected>${t('a2aNotifyEssential')}</option>
+            <option value="verbose">${t('a2aNotifyVerbose')}</option>
+          </select>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px;max-width:720px">
+            <div>
+              <label>${t('a2aMaxDepth')}</label>
+              <input type="number" id="a2aMaxDepth" min="0" max="5" placeholder="1" />
+              <p class="muted" style="margin-top:4px;font-size:11px">${t('a2aMaxDepthHint')}</p>
+            </div>
+            <div>
+              <label>${t('a2aHeartbeatMin')}</label>
+              <input type="number" id="a2aHeartbeatMin" min="1" max="60" placeholder="5" />
+              <p class="muted" style="margin-top:4px;font-size:11px">${t('a2aHeartbeatHint')}</p>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn btn-primary" id="saveA2A">${t('a2aSave')}</button>
+          </div>
+          <p class="muted" id="a2aStatus" style="margin-top:8px;font-size:12px"></p>
+        </div>
+
         <!-- Baidu Maps AK (env-file) — feeds /memo address geocoding -->
         <div class="card">
           <h2>🗺 Baidu Maps AK</h2>
@@ -1548,6 +1642,22 @@
         set('viewerLines', 'IMHUB_VIEWER_LINES');
         set('viewerCodeLines', 'IMHUB_VIEWER_CODE_LINES');
         set('viewerMaxPastes', 'IMHUB_VIEWER_MAX_PASTES');
+        // A2A card — values stored as ms / direct values; UI uses minutes for the timeouts.
+        const a2aDt = document.getElementById('a2aDefaultTimeout');
+        if (a2aDt) {
+          const ms = parseInt(env['IMHUB_A2A_TIMEOUT_DEFAULT_MS'] || '', 10);
+          a2aDt.value = Number.isFinite(ms) && ms > 0 ? String(Math.round(ms / 60000)) : '';
+        }
+        const a2aMt = document.getElementById('a2aMaxTimeout');
+        if (a2aMt) {
+          const ms = parseInt(env['IMHUB_A2A_MAX_TIMEOUT_MS'] || '', 10);
+          a2aMt.value = Number.isFinite(ms) && ms > 0 ? String(Math.round(ms / 60000)) : '';
+        }
+        const a2aMode = document.getElementById('a2aNotifyMode');
+        if (a2aMode) a2aMode.value = (env['IMHUB_A2A_NOTIFY_MODE'] || 'essential').toLowerCase();
+        set('a2aMaxDepth', 'IMHUB_A2A_NOTIFY_MAX_DEPTH');
+        set('a2aHeartbeatMin', 'IMHUB_A2A_HEARTBEAT_MIN');
+
         const vTunnelMode = document.getElementById('viewerTunnelMode');
         if (vTunnelMode) {
           vTunnelMode.value = (env['IMHUB_VIEWER_TUNNEL_MODE'] || 'off').toLowerCase() === 'quick' ? 'quick' : 'off';
@@ -1868,6 +1978,35 @@
         }
       });
       document.getElementById('revealBaidu')?.addEventListener('click', () => loadEnvSection(true));
+
+      // A2A card — save timeouts (min → ms) + mode + depth + heartbeat.
+      document.getElementById('saveA2A')?.addEventListener('click', async () => {
+        const dtMin = parseInt(document.getElementById('a2aDefaultTimeout')?.value || '', 10);
+        const mtMin = parseInt(document.getElementById('a2aMaxTimeout')?.value || '', 10);
+        const mode = document.getElementById('a2aNotifyMode')?.value || 'essential';
+        const depth = (document.getElementById('a2aMaxDepth')?.value || '').trim();
+        const heartbeat = (document.getElementById('a2aHeartbeatMin')?.value || '').trim();
+        const status = document.getElementById('a2aStatus');
+        try {
+          await authFetch('/api/env', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              updates: {
+                IMHUB_A2A_TIMEOUT_DEFAULT_MS: Number.isFinite(dtMin) && dtMin > 0 ? String(dtMin * 60000) : null,
+                IMHUB_A2A_MAX_TIMEOUT_MS: Number.isFinite(mtMin) && mtMin > 0 ? String(mtMin * 60000) : null,
+                IMHUB_A2A_NOTIFY_MODE: mode,
+                IMHUB_A2A_NOTIFY_MAX_DEPTH: depth || null,
+                IMHUB_A2A_HEARTBEAT_MIN: heartbeat || null,
+              },
+            }),
+          });
+          if (status) status.textContent = t('a2aSaved');
+          await loadEnvSection();
+        } catch (err) {
+          if (status) status.textContent = t('a2aSaveFailed') + ': ' + (err && err.message ? err.message : err);
+        }
+      });
 
       // Tunnel mode dropdown — show/hide status panel on change.
       document.getElementById('viewerTunnelMode')?.addEventListener('change', (e) => {

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Agim · Login</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f8fa;--fg:#1f2328;--card:#ffffff;--border:#d0d7de;--muted:#656d76;--accent:#0969da;--accent-hover:#0860c9;--ok:#1a7f37;--err:#cf222e;--code:#f4f6f8}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--card:#161b22;--border:#30363d;--muted:#8d96a0;--accent:#2f81f7;--accent-hover:#388bfd;--ok:#3fb950;--err:#f85149;--code:#21262d}}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji"}
+.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:460px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:28px 28px 24px;box-shadow:0 4px 16px rgba(0,0,0,0.06)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+header .lock{font-size:24px}
+header h1{margin:0;font-size:18px;font-weight:600}
+.sub{margin:0 0 18px;color:var(--muted);font-size:13px}
+label{display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--muted)}
+input[type=text],input[type=password]{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+button{margin-top:14px;width:100%;padding:9px 12px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer}
+button:hover{background:var(--accent-hover)}
+button:disabled{opacity:0.6;cursor:default}
+.msg{margin-top:12px;font-size:13px;min-height:18px}
+.msg.err{color:var(--err)}
+.msg.ok{color:var(--ok)}
+.divider{margin:22px 0 12px;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+.howto{font-size:13px;color:var(--muted);line-height:1.7}
+.howto h2{margin:0 0 8px;font-size:13px;color:var(--fg);font-weight:600}
+.howto ol{padding-left:18px;margin:0 0 8px}
+.howto li{margin:2px 0}
+.howto code{background:var(--code);padding:1px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--fg)}
+.howto .hint{font-size:12px;color:var(--muted);margin-top:8px}
+.lang{position:absolute;top:20px;right:24px}
+.lang button{margin:0;padding:4px 10px;background:transparent;color:var(--muted);border:1px solid var(--border);width:auto;font-size:11px;font-weight:500;border-radius:14px}
+.lang button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="lang">
+  <button id="lang-en" class="active" type="button">EN</button>
+  <button id="lang-zh" type="button">中文</button>
+</div>
+<div class="wrap">
+  <div class="card">
+    <header>
+      <span class="lock">🔒</span>
+      <h1 id="t-title">Agim Console</h1>
+    </header>
+    <p class="sub" id="t-sub">Enter your access token to continue.</p>
+
+    <form id="login-form">
+      <label for="token" id="t-label">Access token</label>
+      <input id="token" type="password" autocomplete="off" autofocus placeholder="agim_xxxxxxxxxxxxxx" />
+      <button type="submit" id="t-submit">Sign in →</button>
+    </form>
+    <div id="msg" class="msg"></div>
+
+    <div class="divider" id="t-howto-title">How to get a token</div>
+    <div class="howto">
+      <ol>
+        <li id="t-step1">SSH into the Agim host and run <code>agim</code></li>
+        <li id="t-step2">Pick <em>Manage web access tokens</em></li>
+        <li id="t-step3">Pick <em>Generate a new token</em></li>
+        <li id="t-step4">Paste the printed value above</li>
+      </ol>
+      <div class="hint" id="t-hint">⚠️ The raw token is shown only once on the terminal — save it in a password manager.<br>Power users: <code>agim token create</code> works one-shot.</div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  // i18n
+  var T = {
+    en: {
+      title: 'Agim Console',
+      sub:   'Enter your access token to continue.',
+      label: 'Access token',
+      submit: 'Sign in →',
+      submitting: 'Signing in…',
+      howto: 'How to get a token',
+      step1: 'SSH into the Agim host and run <code>agim</code>',
+      step2: 'Pick <em>Manage web access tokens</em>',
+      step3: 'Pick <em>Generate a new token</em>',
+      step4: 'Paste the printed value above',
+      hint:  '⚠️ The raw token is shown only once on the terminal — save it in a password manager.<br>Power users: <code>agim token create</code> works one-shot.',
+      bad:   'Invalid token. Run <code>agim token create</code> to generate a new one.',
+      err:   'Login failed: ',
+      ok:    '✓ Authenticated, redirecting…',
+    },
+    zh: {
+      title: 'Agim 控制台',
+      sub:   '请输入访问 Token 继续。',
+      label: '访问 Token',
+      submit: '登录 →',
+      submitting: '验证中…',
+      howto: '如何获取 Token',
+      step1: 'SSH 登录 Agim 主机，执行 <code>agim</code>',
+      step2: '选择"管理 Web 访问 Token"',
+      step3: '选择"生成新 Token"',
+      step4: '把终端打印的 Token 粘贴到上方',
+      hint:  '⚠️ 原文只在终端显示一次，请妥善保存到密码管理器。<br>快捷方式：<code>agim token create</code> 一键生成。',
+      bad:   'Token 无效。可在终端执行 <code>agim token create</code> 生成新 Token。',
+      err:   '登录失败：',
+      ok:    '✓ 验证通过，正在跳转…',
+    },
+  };
+
+  function applyLang(lang){
+    var t = T[lang];
+    document.getElementById('t-title').textContent = t.title;
+    document.getElementById('t-sub').textContent = t.sub;
+    document.getElementById('t-label').textContent = t.label;
+    document.getElementById('t-submit').textContent = t.submit;
+    document.getElementById('t-howto-title').textContent = t.howto;
+    document.getElementById('t-step1').innerHTML = t.step1;
+    document.getElementById('t-step2').innerHTML = t.step2;
+    document.getElementById('t-step3').innerHTML = t.step3;
+    document.getElementById('t-step4').innerHTML = t.step4;
+    document.getElementById('t-hint').innerHTML = t.hint;
+    document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-zh').classList.toggle('active', lang === 'zh');
+    localStorage.setItem('im-hub-lang', lang);
+    window.__lang = lang;
+  }
+  var initial = localStorage.getItem('im-hub-lang') || (navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+  applyLang(initial);
+  document.getElementById('lang-en').addEventListener('click', function(){ applyLang('en'); });
+  document.getElementById('lang-zh').addEventListener('click', function(){ applyLang('zh'); });
+
+  function nextUrl(){
+    var p = new URLSearchParams(location.search);
+    var n = p.get('next') || '/';
+    // Disallow open redirects to other hosts.
+    try {
+      var u = new URL(n, location.origin);
+      if (u.origin !== location.origin) return '/';
+      return u.pathname + u.search;
+    } catch { return '/'; }
+  }
+
+  var form = document.getElementById('login-form');
+  var msg = document.getElementById('msg');
+  var input = document.getElementById('token');
+  var btn = document.getElementById('t-submit');
+
+  form.addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var token = (input.value || '').trim();
+    if (!token) return;
+    var t = T[window.__lang || 'en'];
+    msg.className = 'msg';
+    msg.innerHTML = '';
+    btn.disabled = true;
+    btn.textContent = t.submitting;
+    try {
+      var r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token }),
+      });
+      if (r.status === 401) {
+        msg.className = 'msg err';
+        msg.innerHTML = t.bad;
+        btn.disabled = false;
+        btn.textContent = t.submit;
+        input.select();
+        return;
+      }
+      if (!r.ok) {
+        var body = await r.text();
+        msg.className = 'msg err';
+        msg.textContent = t.err + (r.status + ' ' + body.slice(0, 200));
+        btn.disabled = false;
+        btn.textContent = t.submit;
+        return;
+      }
+      // Also stash in localStorage so old _app.js code paths that read it still work.
+      localStorage.setItem('agim_token', token);
+      msg.className = 'msg ok';
+      msg.textContent = t.ok;
+      setTimeout(function(){ location.href = nextUrl(); }, 350);
+    } catch (err) {
+      msg.className = 'msg err';
+      msg.textContent = t.err + (err && err.message || String(err));
+      btn.disabled = false;
+      btn.textContent = t.submit;
+    }
+  });
+})();
+</script>
+</body>
+</html>

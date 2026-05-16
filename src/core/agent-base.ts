@@ -210,7 +210,10 @@ export abstract class AgentBase implements AgentAdapter {
     rootLogger.info({ component: `agent.${this.name}`, agent: this.name, historyLen: history?.length || 0 },
       `[${this.name}] sendPrompt`)
     const contextualPrompt = this.buildContextualPrompt(prompt, history)
-    yield* this.spawnStream(contextualPrompt, undefined, opts || {})
+    // v1.1.10: forward opts.signal so callers (A2A) can abort hanging child
+    // processes on timeout. agent-specific adapters that override sendPrompt
+    // should do the same.
+    yield* this.spawnStream(contextualPrompt, opts?.signal, opts || {})
   }
 
   /**

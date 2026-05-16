@@ -165,6 +165,17 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
       ? 'agim.service'
       : (existsSync('/etc/systemd/system/im-hub.service') ? 'im-hub.service' : null)
     if (unitName) {
+      // v1.1.10: deliver the "🔄 重启中…" ack SYNCHRONOUSLY before issuing
+      // systemctl restart. Otherwise the message sits in outbox while the
+      // process dies, the new process pushes "✅ 已重启完成…" first via
+      // priority='high', and the worker only flushes the ack afterwards.
+      // Result: completion appears in IM BEFORE the in-flight notice — the
+      // exact reversal the screenshot showed.
+      const ackMessage = pre.warnings.length === 0
+        ? '🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。'
+        : `🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。\n   注意：${pre.warnings.join('；')}`
+      await deliverRestartAck(initiator, ackMessage)
+
       log.info({
         event: 'restart-flow.systemd_restart',
         unit: unitName,
@@ -181,12 +192,9 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
           err: err instanceof Error ? err.message : String(err),
         })
       }
-      return {
-        ok: true,
-        message: pre.warnings.length === 0
-          ? '🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。'
-          : `🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。\n   注意：${pre.warnings.join('；')}`,
-      }
+      // ack already in flight — return empty message so the command handler
+      // doesn't push a duplicate via the normal reply pipeline.
+      return { ok: true, message: '' }
     }
     log.warn({ event: 'restart-flow.systemd_unit_missing' },
       'detectService said systemd but no unit file found; falling through to background helper')
@@ -217,15 +225,46 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
     }
   }
 
+  // v1.1.10: deliver the ack synchronously so it arrives before the
+  // shutdown signal lands. Otherwise the new process's "✅ 已重启完成…"
+  // push (priority='high') reaches IM first and the worker only flushes
+  // this ack afterwards — reversing the order seen in chat.
+  const helperAck = pre.warnings.length === 0
+    ? '🔄 重启中… 预计 5–10 秒内回来。'
+    : `🔄 重启中… 预计 5–10 秒内回来。\n   注意：${pre.warnings.join('；')}`
+  await deliverRestartAck(initiator, helperAck)
+
   setTimeout(() => {
     try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
   }, 300)
 
-  return {
-    ok: true,
-    message: pre.warnings.length === 0
-      ? '🔄 重启中… 预计 5–10 秒内回来。'
-      : `🔄 重启中… 预计 5–10 秒内回来。\n   注意：${pre.warnings.join('；')}`,
+  return { ok: true, message: '' }
+}
+
+/**
+ * Push the "🔄 重启中…" notice via sink with priority='high' so the
+ * adapter actually delivers it before the process exits. Non-IM initiators
+ * (web / CLI) get the message back through their own return channel and
+ * don't need a push — we skip in those cases.
+ */
+async function deliverRestartAck(initiator: RestartInitiator, body: string): Promise<void> {
+  if (initiator.source !== 'im' || !initiator.platform || !initiator.threadId) return
+  try {
+    const { sink } = await import('./message-sink.js')
+    await sink.deliver({
+      platform: initiator.platform,
+      channelId: initiator.channelId ?? '',
+      threadId: initiator.threadId,
+      payload: body,
+      kind: 'text',
+      priority: 'high',
+      source: 'system',
+    })
+  } catch (err) {
+    log.warn({
+      event: 'restart-flow.ack_deliver_failed',
+      err: err instanceof Error ? err.message : String(err),
+    }, 'failed to deliver restart-in-progress ack; falling back to return-message path')
   }
 }
 

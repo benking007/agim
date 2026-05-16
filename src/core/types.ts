@@ -327,6 +327,12 @@ export interface AgentSendOpts {
    *  call_agent hop). Adapters forward it into RunContext.callDepth so
    *  the bus can enforce IMHUB_A2A_MAX_DEPTH on the next hop. */
   callDepth?: number
+  /** Optional AbortSignal. When aborted, the adapter should terminate the
+   *  underlying child process (SIGTERM, then SIGKILL after a brief grace
+   *  period). A2A wires this from its per-call timeout so timeout failures
+   *  don't leave orphan codex / claude / opencode processes writing into
+   *  `_agim-output/` long after agim has given up on the result. */
+  signal?: AbortSignal
 }
 
 /**

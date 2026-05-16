@@ -21,7 +21,9 @@ function fmtDate(unix: number): string {
 export function renderPasteHtml(row: PasteRow): string {
   const isMd = row.content_type !== 'plain'
   const title = row.title || (isMd ? 'agim · markdown' : 'agim · plaintext')
-  const source = row.source ? `<span class="source">${escapeHtml(row.source)}</span>` : ''
+  // Intentionally do NOT render `source` (thread_key). It contains the IM
+  // user id (wxid / telegram id), and the /v/:id URL is anyone-with-link.
+  // Source stays in the DB for the operator's own dashboard.
   const created = fmtDate(row.created_at)
 
   const body = isMd
@@ -76,7 +78,6 @@ footer a{color:#0969da;text-decoration:none}
 <div class="wrap">
   <header>
     <div class="title">${escapeHtml(title)}</div>
-    ${source}
     <span class="meta">${created}</span>
     <button id="copy-btn" title="copy raw">📋 Copy</button>
   </header>

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-05-16
+
+### Fixed — Viewer page leaked the IM user id
+
+- `/v/:id` rendered the `source` field (thread key
+  `platform:channelId:threadId`) in the page header. That string
+  contains the IM user id (wxid on WeChat, numeric id on Telegram).
+  Since the `/v/:id` URL is anyone-with-link, this exposed the user
+  id to anyone the link was forwarded to. The render template now
+  omits `source` entirely — the field stays in the local DB for the
+  operator's own dashboard but no longer ships in HTML.
+
 ## [1.1.6] - 2026-05-16
 
 ### Added — IM long-message viewer (local-first, never leaves your host)

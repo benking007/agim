@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-05-17
+
+### Fixed — Viewer page unreadable in OS dark mode
+
+`/v/:id` loaded `github-markdown-light.min.css` + `highlight.js github.min.css`
+— both light-mode-only stylesheets. When the user's OS / browser was in
+dark mode, the page background flipped (via our custom dark-mode CSS) but
+the markdown body kept its hard-coded dark text on the new dark background,
+rendering as low-contrast grey-on-black.
+
+Fix: switch to `github-markdown-css`'s auto-mode bundle (`github-markdown.min.css`,
+respects `prefers-color-scheme`) and load both highlight.js light + dark
+themes gated by `media="(prefers-color-scheme: …)"` so the right code-block
+palette loads per OS preference.
+
 ## [1.1.10] - 2026-05-16
 
 ### Added — Web console token authentication

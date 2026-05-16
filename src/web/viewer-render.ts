@@ -38,8 +38,9 @@ export function renderPasteHtml(row: PasteRow): string {
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <title>${escapeHtml(title)}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown-light.min.css" crossorigin="anonymous">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css" media="(prefers-color-scheme: light)" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)" crossorigin="anonymous">
 <style>
 :root{color-scheme:light dark}
 *{box-sizing:border-box}
@@ -51,8 +52,11 @@ header .source{color:#0969da;font-size:12px}
 header .meta{font-size:12px;color:#656d76}
 header button{background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;color:#1f2328}
 header button:hover{background:#eef0f3}
+/* github-markdown.css already styles .markdown-body for both color schemes.
+   We only override what doesn't fit the page chrome: transparent bg (the
+   page already has its own bg), horizontal-scroll for wide tables on
+   mobile, image cap, and a light vs dark plain-text container. */
 .markdown-body{background:transparent;padding:0;font-size:15px;word-wrap:break-word}
-.markdown-body pre{background:#f6f8fa;border-radius:6px;padding:12px;overflow:auto;font-size:13px}
 .markdown-body table{display:block;overflow-x:auto;white-space:nowrap;font-size:13px}
 .markdown-body img{max-width:100%;height:auto}
 .plain{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-size:13px;line-height:1.6}
@@ -65,7 +69,6 @@ footer a{color:#0969da;text-decoration:none}
   header button{background:#21262d;border-color:#30363d;color:#e6edf3}
   header button:hover{background:#30363d}
   .plain{background:#161b22;border-color:#30363d;color:#e6edf3}
-  .markdown-body pre{background:#161b22}
 }
 @media (max-width:600px){
   .wrap{padding:8px}

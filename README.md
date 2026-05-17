@@ -22,10 +22,14 @@
 - **A2A shared artifacts (v1.1.3+)** — caller drops files into the callee's workspace via `inputs[]` (`fromAbsolutePath` / `fromCallerOutput` / inline `content`), and callee writes products to `~/.agim/artifacts/<jobId>/_agim-output/`. Returned `outputs[]` lets the caller read files on demand. Hard-link first, copy fallback. Size caps configurable.
 - **IM long-message viewer (v1.1.6+)** — WeChat / Feishu and friends render rich markdown poorly. When an agent's reply exceeds the size threshold (or contains a markdown table / large code block), agim stashes the full markdown in `~/.agim/viewer.db` (permanent, local-only — content never leaves your host) and sends the IM a short summary + a link `https://<your-host>/v/<uuid>`. The link is served by agim's own web console — operator exposes the web port (cloudflared / caddy / tailscale of choice). Agents can opt in explicitly by wrapping long answers in `<im-summary>…</im-summary><full-md>…</full-md>`. Enable with `IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-host`.
 - **Crash-safe delivery** — every outbound message (replies, reminders, approvals, restart notices) flows through a SQLite outbox; a worker drains pending rows with exponential backoff. IM glitches and brief disconnects no longer drop replies. `/outbox status | list | failed | retry <id>`.
-- **In-flight job recovery** — every inbound message becomes a tracked inline job (`pending → running → completed → delivered`). When agim is restarted mid-flight, the next startup pings each affected thread within 10 min: *"⚠️ 上次的消息被服务重启中断了：「…」回复 1 重发 / 2 取消"*. Per-job lifecycle visible in `/job list` and `/job check <id>`.
+- **In-flight job recovery** — every inbound message becomes a tracked inline job. When agim is restarted mid-flight, the next startup notifies each affected thread within 10 min. **v1.2.0+** uses native inline-button cards (`🔁 重发 / ✖ 取消`) on Telegram / Feishu, falling back to text on adapters without buttons. Bystander-safe: only the original requester can resolve in group chats.
+- **Long-term memory (v1.2.0+)** — per-user fact store + auto-distilled "persona" summary injected into every prompt. SQLite + FTS5 default; optional vector retrieval (local BGE via `@xenova/transformers` ONNX, or any OpenAI-compatible `/v1/embeddings` endpoint) with reciprocal-rank fusion. Default OFF; enable in Settings → 自动化记忆. Web admin tab `/tasks#memory` exposes per-user persona editor + paginated facts table + JSON export. All data stays in `~/.agim/memory.db` locally.
+- **Cost & Health dashboard (v1.2.0+)** — `/tasks#cost` aggregates per-day spend / calls / errors / p95 latency from the audit log. Filter 1 / 7 / 30 / 90 days; top-N by user / agent / platform; daily trend chart with metric toggle. Claude per-run cost extracted from `--output-format json`.
+- **Agent-initiated push (v1.2.0+)** — `mcp__imhub__push_message` MCP tool lets a running agent push a follow-up message back into the IM thread without an inbound trigger (long-running jobs, schedule-aware notifications). `POST /api/notify` exposes the same primitive to webhooks / cron. Per-user rate limit + cross-thread gating.
+- **Admin invite (v1.2.2+)** — `agim admin invite` (or the entry-menu's "邀请新管理员" option) generates a single-use IM token; the invitee runs `/setup admin <token>` to onboard without ever touching `~/.agim/env`. `agim admin list` shows the current allowlist.
 - **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
 - **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
-- **Browser dashboard** — chat UI; Tasks panel with 10 tabs (jobs / background / subtasks / schedules / approvals / health / files / audit / **outbox / a2a**); reminders panel; memos panel; settings page with workspace CRUD. Bilingual (EN / 中文) with per-page lang switcher and contextual `(?)` help tooltips on jargon (v1.1.4+)
+- **Browser dashboard** — chat UI; Tasks panel with 12 tabs (jobs / background / subtasks / schedules / approvals / health / files / audit / outbox / a2a / **cost / memory**); reminders panel; memos panel; settings page with workspace CRUD + admin allowlist + Safety card (restart / stop). Bilingual (EN / 中文) with per-page lang switcher and contextual `(?)` help tooltips on jargon (v1.1.4+)
 - **Human-in-the-loop tool approval** — Claude tool calls pause for `y`/`n` in IM or in-page card; works across all platforms
 - **Rich media in WeChat / Telegram / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
 - **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
@@ -409,13 +413,22 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | v0.6.0 | DingTalk Stream-mode adapter — bidirectional bot bridge via WebSocket, image inbound (`messageFiles/download` → claude-code multimodal Read), voice inbound (server-side ASR `recognition` field, whisper.cpp fallback) |
 | v0.6.3 | Per-platform coord-system handling for native location messages (Telegram defaults WGS pass-through; H5 WGS pass-through fixes WeChat-X5 markers; DingTalk routes Baidu link URLs through BD-09→WGS) |
 | **v1.0.0** | Brand rename to **Agim · 阿吉姆**. New canonical bin `agim`; `im-hub-pro` retained as deprecation alias. On-disk paths / env vars / HTTP headers / systemd unit name kept stable for drop-in compat with 0.x installs. |
+| v1.1.2–1.1.3 | A2A L1 (call chain visualization) + L2 (shared artifact pool between agents) |
+| v1.1.4 | Web dashboard bilingual + jargon tooltips |
+| v1.1.6–1.1.8 | IM long-message viewer + cloudflared auto-tunnel |
+| v1.1.10 | Web console token authentication (cookie + Bearer + loopback bypass), restart message-order fix |
+| v1.1.11 | Viewer dark-mode readability |
+| **v1.2.0** | **Long-term memory** (SQLite + FTS5 + persona + 4 MCP tools + auto-distillation + Web admin tab); **vector retrieval** (local BGE / OpenAI-compatible, RRF fusion); **Cost & Health dashboard**; **agent-initiated push** (`mcp__imhub__push_message`); recovery card with native inline buttons. |
+| v1.2.1 | Vector backend auto-warm on restart; Memory + Cost tab i18n. |
+| v1.2.2 | `agim admin invite` for onboarding additional admins via IM; vector eager-warm at boot; async consolidate (jobId + polling). |
 
-### v1.1.0 (next)
+### Next
 
 - [ ] Slack adapter
-- [ ] Feishu / DingTalk / Discord button-style approval cards
+- [ ] DingTalk button-style approval cards (Telegram + Feishu done)
 - [ ] Multi-instance event bus (Redis Streams / NATS)
 - [ ] Workspace member picker UI
+- [ ] Memory consolidation: scheduled boot+5min first run (currently waits a full 24h)
 
 ## Community
 

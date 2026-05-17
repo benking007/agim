@@ -18,10 +18,14 @@
 - **A2A 共享文件传递（v1.1.3+）** — caller 可通过 `inputs[]`（`fromAbsolutePath` / `fromCallerOutput` / 内联 `content`）把文件放进 callee 工作区；callee 把产物写到 `~/.agim/artifacts/<jobId>/_agim-output/`，返回的 `outputs[]` 让 caller 按需读。同文件系统优先 hard-link，否则复制。大小上限 env 可调
 - **IM 长内容 viewer（v1.1.6+）** — 微信 / 飞书等对富 markdown 渲染差。Agent 回复超过阈值（行数 / 字符数 / 含表格 / 大段代码）时，agim 把完整 markdown 永久存进本机 `~/.agim/viewer.db`（**永远不离开你的机器**），IM 里只发短摘要 + 链接 `https://<你的域名>/v/<uuid>`。链接背后是 agim 自己的 web console，由你自己反代（cloudflared / caddy / tailscale 任选）。Agent 可显式用 `<im-summary>…</im-summary><full-md>…</full-md>` 包装长回答获得最干净体验。开启：`IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://你的域名`
 - **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
-- **崩溃中断可恢复** — 每条入站消息都建一条 inline job（`pending → running → completed → delivered`）。agim 重启时正在跑的任务会标 `interrupted`，下次启动 10 分钟窗口内对每条受影响的会话发：「⚠️ 上次的消息被服务重启中断了：「…」回复 1 重发 / 2 取消」。每条 job 的完整生命周期可在 `/job list` + `/job check <id>` 查看
+- **崩溃中断可恢复** — 每条入站消息建 inline job；agim 重启时正在跑的会标 `interrupted`，下次启动 10 分钟窗口内通知对应会话。**v1.2.0+** 在 Telegram / 飞书等支持的渠道走原生 `🔁 重发 / ✖ 取消` 内联按钮卡片，其余渠道兜底为文字提示。群聊内只有原发起者可点按钮
+- **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理 Tab `/tasks#memory` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
+- **成本与健康仪表盘（v1.2.0+）** — `/tasks#cost` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
+- **Agent 主动推送（v1.2.0+）** — 新的 `mcp__imhub__push_message` MCP 工具让运行中的 agent 不需要外部触发就把后续消息推回原 IM 会话（长任务通知、定时类提醒）。`POST /api/notify` 同一能力也暴露给 webhook / 外部脚本。每用户限流 + 跨会话开关防刷屏
+- **管理员邀请（v1.2.2+）** — `agim admin invite`（或 `agim` 交互菜单「邀请新管理员」）生成一次性 IM token，受邀者在 IM 发 `/setup admin <token>` 即升级，不用动 `~/.agim/env`。`agim admin list` 查当前白名单
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
 - **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
-- **浏览器控制台** — 对话界面；任务面板含 10 个 Tab（Jobs / 后台脚本 / 子任务 / 定时 / 审批 / 健康 / 工作区 / 审计 / **投递队列 / A2A 调用**）；提醒、备忘、设置页含工作区 CRUD。完整中英双语 + 每页语言切换 + 专业名词 `(?)` 帮助弹窗（v1.1.4+）
+- **浏览器控制台** — 对话界面；任务面板含 12 个 Tab（Jobs / 后台脚本 / 子任务 / 定时 / 审批 / 健康 / 工作区 / 审计 / 投递队列 / A2A 调用 / **成本与健康 / 记忆**）；提醒、备忘、设置页含工作区 CRUD + 管理员白名单 + Safety 卡片（重启 / 停止）。完整中英双语 + 每页语言切换 + 专业名词 `(?)` 帮助弹窗（v1.1.4+）
 - **工具调用人审（HITL）** — Claude 调用工具时暂停，IM 回复 `y`/`n` 或在页面点卡片审批；全平台一致
 - **微信 / Telegram / 钉钉 富媒体** — 接收图片、文件、视频；语音消息按平台走最佳转写链路：微信 STT、钉钉服务端 ASR、OpenAI Whisper、whisper.cpp
 - **智能路由** — 意图分类（中英文）、Sticky 会话、断路器、限流器
@@ -400,14 +404,23 @@ systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/dep
 | v0.5.0–0.5.2 | `agim` 双语方向键向导（当时叫 `im-hub-pro`）；按渠道独立配置（微信扫码、飞书 / Telegram / Discord 凭据输入；agent CLI 安装态实时探测）；systemd unit env fallback；完整服务生命周期命令（`status / start --bg / restart / stop / uninstall`） |
 | v0.6.0 | 钉钉 Stream 模式适配器——WebSocket 双向桥、图片消息（`messageFiles/download` → claude-code 多模态 Read）、语音消息（钉钉服务端 ASR `recognition`，whisper.cpp 兜底） |
 | v0.6.3 | 各平台原生位置消息的坐标系按来源处理（Telegram 改为 WGS 直通；H5 改为 WGS 直通解决微信 X5 的偏移；钉钉 link 中的百度地图 URL 走 BD-09→WGS） |
-| **v1.0.0** | 品牌升级为 **Agim · 阿吉姆**。新主命令 `agim`，老命令 `agim` 保留为废弃别名。配置目录 / 环境变量 / HTTP 头 / systemd 单元名都保留以兼容 0.x 部署。 |
+| **v1.0.0** | 品牌升级为 **Agim · 阿吉姆**。新主命令 `agim`，老命令 `im-hub-pro` 保留为废弃别名。配置目录 / 环境变量 / HTTP 头 / systemd 单元名都保留以兼容 0.x 部署。 |
+| v1.1.2–1.1.3 | A2A L1（调用链可视化）+ L2（Agent 之间共享 artifact 池） |
+| v1.1.4 | Web 仪表盘双语 + 专业名词 (?) 帮助弹窗 |
+| v1.1.6–1.1.8 | IM 长消息 viewer + cloudflared 自动开隧道 |
+| v1.1.10 | Web 控制台 token 鉴权（cookie + Bearer + loopback 旁路）；重启消息顺序修复 |
+| v1.1.11 | Viewer 暗黑模式可读性修复 |
+| **v1.2.0** | **长期记忆**（SQLite + FTS5 + 记忆画像 + 4 个 MCP 工具 + 自动蒸馏 + Web 管理 Tab）；**向量召回**（本地 BGE / OpenAI 兼容、RRF 融合）；**成本与健康仪表盘**；**Agent 主动推送**（`mcp__imhub__push_message`）；带原生内联按钮的崩溃恢复卡片 |
+| v1.2.1 | 向量后端重启后自动加载；Memory + Cost tab 中文 i18n |
+| v1.2.2 | `agim admin invite` 通过 IM 邀请新管理员；向量后端 boot 时主动 warm；consolidate 改异步（jobId + 轮询） |
 
-### v1.1.0（下一版）
+### 接下来
 
 - [ ] Slack 适配器
-- [ ] 飞书 / 钉钉 / Discord 卡片按钮版审批
+- [ ] 钉钉卡片按钮版审批（Telegram + 飞书已完成）
 - [ ] 多实例事件总线（Redis Streams / NATS）
 - [ ] 工作区成员选择 UI
+- [ ] 记忆 consolidation：boot 后 5 分钟先跑一次（当前要等满 24h）
 
 ## 社区
 

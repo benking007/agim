@@ -173,4 +173,106 @@ cwd 注入只发生在 IM 上下文（threadId + platform 都有值）。Web/sch
 | Claude adapter | `src/plugins/agents/claude-code/index.ts` |
 | opencode adapter | `src/plugins/agents/opencode/index.ts` |
 | 主流程入口 | `src/cli.ts` |
-| systemd unit（生产） | `/etc/systemd/system/im-hub.service` |
+| systemd unit（生产） | `/etc/systemd/system/agim.service` |
+
+---
+
+## 四、v1.x 演化（后续增量）
+
+v0.2.x 的进程内多面体网关形态没变，但 1.0 后加了几条横切层。简要图示：
+
+```
+                              ┌────────────────────────────────────┐
+                              │  Approval Bus (Unix socket)        │
+                              │  approval / reminder / memo /      │
+                              │  push / memory / a2a 全部走它       │
+                              └──┬───────────────────────┬─────────┘
+                                 │                       │
+                  ┌──── MCP sidecars ────┐    ┌── Web /api/notify ──┐
+                  │ claude-code / opencode│    │ HTTP 入口 push       │
+                  │  daemon → tools       │    └──────────────────────┘
+                  └──────────────────────┘
+```
+
+### 4.1 Approval Bus（v0.2.x 起 → v1.0 收口）
+
+`src/core/approval-bus.ts` 是 MCP 工具 ↔ agim 主进程的统一通道，line-delimited JSON over Unix socket。
+runId → RunContext 解析负责把 LLM 调起的工具绑定回真实的 IM 用户：
+
+| 消息类型 | runId 路径 | `_im_context` fallback |
+|---|---|---|
+| approval | 必须 | 不支持 |
+| reminder | 优先 | ✅ 支持（单用户 MCP 用） |
+| memo | 优先 | ✅ 支持 |
+| **memory** | **必须** | **不支持（v1.2.0 关闭，防共享 daemon 跨用户伪造）** |
+| **push** | **必须** | **不支持（同上）** |
+| a2a | 必须 | 不支持 |
+
+### 4.2 长期记忆子系统（v1.2.0+）
+
+```
+~/.agim/memory.db
+├── persona_profile (user_key TEXT PK, summary TEXT, updated_at)
+└── facts (id, user_key, what, who, when_text, where_label, why,
+            category, confidence, source, created_at,
+            embedding BLOB, embedding_model, embedding_dims, embedded_at)
+    + facts_fts (FTS5 virtual, unicode61 tokenizer + 手动 CJK 单字分词)
+```
+
+数据流：
+
+```
+agent reply → router → scheduleDistillation()  ─┐
+                                                 ▼
+                            memory-distill (LLM JSON 抽取)
+                                                 │
+                                                 ▼
+                            memory.saveFact() ┌──┴───────────────┐
+                                              │ INSERT facts +   │
+                                              │ INSERT facts_fts │
+                                              │ (transaction)    │
+                                              └───┬──────────────┘
+                                                  │ setImmediate
+                                                  ▼
+                                        embedAndStoreFact()
+                                              │
+                                              ▼  (lazy / autowarm)
+                                  memory-vector.getActiveBackend()
+                                              │
+                                ┌─────────────┼──────────────┐
+                                ▼             ▼              ▼
+                          OffBackend    LocalBgeBackend  OpenAIBackend
+                                        (Xenova/BGE-zh    (/v1/embeddings,
+                                        ONNX, lazy load)   30s timeout)
+```
+
+检索：`router.ts` 注入 `[long-term memory]` 块到 prompt → `persona.ts` 拼装；Agent 主动用 `mcp__imhub__memory_query` 走 `queryFactsHybrid()`（FTS5 + 向量 RRF 融合）。
+
+每日 `memory-consolidate` cron（24h；可手动触发 `POST /api/memory/consolidate`）：把最近 N 条 facts 喂 LLM 合并成 ≤600 字符的 persona summary。
+
+### 4.3 Crash-safe delivery 全套（v1.1+）
+
+```
+agent reply ──► message-sink ──► SQLite outbox ──► outbox-worker (指数退避)
+                                                    │
+                                                    ▼
+                                              messenger.send()
+                                                  ↓ 失败
+                                              retry / abandon
+```
+
+inline-job 跟踪每条入站消息：`pending → running → completed → delivered`。重启时 `job-recovery.scanInterruptedAndNotify()` 找回 10min 内被中断的 row，对每个 thread 发原生按钮卡（Telegram / 飞书）或文字提示。
+
+### 4.4 Web 控制台 v1.1.10 鉴权
+
+- 默认 token 鉴权（cookie `agim_token` + `Authorization: Bearer` + 127.0.0.1 旁路）
+- 公开路径：`/v/:id` viewer / `/loc` 定位捕获 / `/l/<token>` 短链 / `/api/health`
+- `agim token create / list / revoke` 管理
+- v1.2.0 SECRET_KEYS 加入 `IMHUB_MEMORY_VECTOR_OPENAI_API_KEY`（mask 返回 + 写入时检测掩码值跳过）
+
+### 4.5 Admin 白名单（v1.0+，v1.2.2 加 invite）
+
+- `IMHUB_ADMIN_USERS=platform:userId,...`（首字段大小写无关）
+- 首次部署：`~/.agim/admin-bootstrap-token` 单次消费，IM 发 `/setup admin <token>` 自助
+- v1.2.2：现有管理员可用 `agim admin invite` / 交互菜单生成新一次性 token 拉人入伙
+- 守卫范围：`/restart` / `/stop` IM 命令 + `POST /api/service/*` Web 端点

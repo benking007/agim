@@ -231,6 +231,8 @@
           },
         },
         // ── v1.2 Cost & Health tab ──
+        tabsCost: '💰 Cost & Health',
+        tabsMemory: '🧠 Memory',
         costH2: '💰 Cost & Health',
         costWindow: 'Window',
         costDays1: '1 day',
@@ -502,6 +504,8 @@
           },
         },
         // ── v1.2 Cost & Health tab ──
+        tabsCost: '💰 成本与健康',
+        tabsMemory: '🧠 记忆',
         costH2: '💰 成本与健康',
         costWindow: '窗口',
         costDays1: '1 天',
@@ -1310,6 +1314,8 @@
     document.getElementById('tab-files').textContent = T.tabsFiles;
     document.getElementById('tab-outbox').textContent = T.tabsOutbox;
     document.getElementById('tab-a2a').textContent = T.tabsA2A;
+    if (T.tabsCost) document.getElementById('tab-cost').textContent = T.tabsCost;
+    if (T.tabsMemory) document.getElementById('tab-memory').textContent = T.tabsMemory;
     document.getElementById('hdr-outbox').textContent = T.tabsOutbox;
     document.getElementById('hdr-a2a').textContent = T.tabsA2A;
 
@@ -2892,10 +2898,18 @@
         const cov = data.coverage || { total: 0, withEmbedding: 0 };
         const badge = document.getElementById('mem-vec-status-badge');
         if (badge) {
-          badge.textContent = s.ready
-            ? `✓ ${s.backend} · dim ${s.dims} · 索引 ${cov.withEmbedding}/${cov.total}`
-            : `○ ${s.backend} · 未就绪${s.lastError ? ' (' + s.lastError.slice(0, 60) + ')' : ''}`;
-          badge.style.color = s.ready ? '#16a34a' : 'var(--muted, #656d76)';
+          if (s.ready) {
+            badge.textContent = `✓ ${s.backend} · dim ${s.dims} · 索引 ${cov.withEmbedding}/${cov.total}`;
+            badge.style.color = '#16a34a';
+          } else if (s.downloaded) {
+            // Model files on disk but pipeline not loaded yet — happens
+            // after a service restart while the auto-warm finishes.
+            badge.textContent = `↻ ${s.backend} · 模型已下载，加载中…`;
+            badge.style.color = '#d97706';
+          } else {
+            badge.textContent = `○ ${s.backend} · 未就绪${s.lastError ? ' (' + s.lastError.slice(0, 60) + ')' : ''}`;
+            badge.style.color = 'var(--muted, #656d76)';
+          }
         }
         const detail = document.getElementById('mem-vec-status-detail');
         if (detail) {
@@ -2926,8 +2940,9 @@
         const dlBtn = document.getElementById('btn-mem-vec-download');
         if (dlBtn) {
           const hasDownloading = (data.jobs || []).some(j => j.kind === 'download' && j.phase === 'running');
-          dlBtn.disabled = hasDownloading || s.ready;
+          dlBtn.disabled = hasDownloading || s.ready || s.downloaded;
           if (s.ready) dlBtn.textContent = '✓ 已就绪';
+          else if (s.downloaded) dlBtn.textContent = '✓ 已下载（加载中）';
           else if (hasDownloading) dlBtn.textContent = '⏳ 下载中…';
           else dlBtn.textContent = '📥 下载模型（首次 5-10 min，建议 WiFi）';
         }

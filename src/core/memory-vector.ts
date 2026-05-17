@@ -18,7 +18,10 @@
 // (off | local | openai). Status / download / test endpoints in
 // web/server.ts read from `getActiveBackend()` to drive the UI.
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
+import { AGIM_HOME } from './agim-paths.js'
 
 const log = rootLogger.child({ component: 'memory-vector' })
 
@@ -44,6 +47,9 @@ export interface BackendStatus {
   dims: number
   modelId: string
   lastError: string | null
+  /** Local-only: model files present on disk. ready may still be false if
+   *  the in-process pipeline hasn't loaded them yet (post-restart warmup). */
+  downloaded?: boolean
   /** Backend-specific extra info (model file size, baseUrl, etc.) */
   detail: Record<string, unknown>
 }
@@ -94,6 +100,28 @@ class LocalBgeBackend implements EmbeddingBackend {
 
   constructor(modelId: string) {
     this.modelId = modelId
+    // Auto-warm: if the model is already on disk from a previous run,
+    // load it in the background so `ready` flips to true within seconds.
+    // Without this, the backend stays "not ready" after every restart
+    // until the user clicks 📥 download / 🧪 test, AND saveFact silently
+    // skips embedding writes in the meantime.
+    if (this.isDownloaded()) {
+      void this.ensureReady().catch((err) => {
+        log.warn({
+          event: 'vector.local.autowarm_failed', modelId: this.modelId,
+          err: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
+
+  /** Cheap check: are model files on disk? Used to flip the UI's
+   *  "downloaded but loading" hint and to gate auto-warm. */
+  isDownloaded(): boolean {
+    try {
+      const onnx = join(AGIM_HOME, 'cache', 'transformers', this.modelId, 'onnx', 'model_quantized.onnx')
+      return existsSync(onnx)
+    } catch { return false }
   }
 
   get ready(): boolean {
@@ -140,8 +168,6 @@ class LocalBgeBackend implements EmbeddingBackend {
     // over $HOME. allowLocalModels stays default (true) — cached models
     // load offline after first download.
     try {
-      const { join } = await import('node:path')
-      const { AGIM_HOME } = await import('./agim-paths.js')
       tf.env.cacheDir = join(AGIM_HOME, 'cache', 'transformers')
     } catch (e) {
       log.debug({ event: 'vector.local.cachedir_set_failed', err: String(e) })
@@ -198,6 +224,7 @@ class LocalBgeBackend implements EmbeddingBackend {
       backend: 'local', ready: this.ready, dims: this.dims,
       modelId: this.modelId,
       lastError: this.lastError,
+      downloaded: this.isDownloaded(),
       detail: { progress: this.getProgress() },
     }
   }

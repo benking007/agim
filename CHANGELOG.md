@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-17
+
+Hotfix for two issues found right after 1.2.0 went live.
+
+### Fixed — Vector backend stays "not ready" after restart
+
+The local BGE backend's `ready` flag only flipped to true after `embed()` /
+`test()` / `download` actively loaded the pipeline. On every service
+restart it reset to false — even when the model files were sitting in
+`~/.agim/cache/transformers/`. Result: saveFact silently skipped embedding
+writes until the user clicked something.
+
+- `LocalBgeBackend` constructor now auto-warms (fire-and-forget
+  `ensureReady()`) when `isDownloaded()` is true, so the in-memory pipeline
+  loads within seconds of boot.
+- New `downloaded: true | false` field on the backend status; UI shows
+  `↻ local · 模型已下载，加载中…` (amber) during the warmup window
+  instead of the misleading `○ local · 未就绪`.
+- Initial `isDownloaded()` used `require()` inside an ESM module — the
+  ReferenceError was caught by a try/catch and returned false silently.
+  Replaced with static `import { existsSync } from 'node:fs'`.
+
+### Fixed — Cost & Health / Memory tab labels untranslated
+
+Tab nav buttons `tab-cost` / `tab-memory` had hardcoded English text in
+the HTML and weren't in the explicit `textContent = T.tabsXxx` boot
+sweep. Other tabs are filled by JS at boot; these two were missed.
+Added `tabsCost` + `tabsMemory` to en/zh dicts and wired the assignments.
+
 ## [1.2.0] - 2026-05-17
 
 The biggest agim release since 1.0: long-term memory, agent-initiated push,

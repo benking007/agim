@@ -128,6 +128,10 @@ class LocalBgeBackend implements EmbeddingBackend {
     this.progress.error = null
 
     // Dynamic import so the runtime cost is only paid when the backend is on.
+    // @xenova/transformers is in optionalDependencies (skipped on CI install
+    // to avoid a large ONNX postinstall hang); ts-ignore needed so tsc
+    // doesn't error when the module isn't on disk at build time.
+    // @ts-ignore -- optional dep, may not be installed at build time
     const tf = await import('@xenova/transformers') as {
       pipeline: (task: string, model: string, opts?: Record<string, unknown>) => Promise<unknown>
       env: { allowLocalModels: boolean; cacheDir?: string }

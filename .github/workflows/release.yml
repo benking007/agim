@@ -55,7 +55,12 @@ jobs:
 
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        run: npm ci || npm install
+        # --omit=optional skips @xenova/transformers (huge ONNX binary that
+        # triggers "Exit handler never called!" in npm during postinstall).
+        # End users still get it by default when running `npm install -g
+        # agim-cli`; we only skip in CI because the publish artifact doesn't
+        # need it (it's a runtime-only dep loaded via dynamic import).
+        run: npm ci --omit=optional || npm install --omit=optional
 
       - name: Build
         if: steps.version.outputs.changed == 'true'

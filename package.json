@@ -65,7 +65,6 @@
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/nodemailer": "^8.0.0",
-    "@xenova/transformers": "^2.17.2",
     "better-sqlite3": "^12.9.0",
     "commander": "^11.0.0",
     "dingtalk-stream": "^2.1.5",
@@ -78,6 +77,9 @@
     "qrcode": "^1.5.4",
     "ws": "^8.20.0",
     "zod": "^4.4.1"
+  },
+  "optionalDependencies": {
+    "@xenova/transformers": "^2.17.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.14",

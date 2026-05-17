@@ -387,7 +387,7 @@ npm run typecheck  # tsc --noEmit
 
 ## Deployment
 
-See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monitoring, and upgrade instructions.
+See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monitoring, admin-allowlist management, backup, and upgrade instructions. For long-term memory + vector retrieval setup / tuning / privacy, see [`docs/memory-and-vector.md`](docs/memory-and-vector.md).
 
 ## Roadmap
 

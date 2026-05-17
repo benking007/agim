@@ -379,7 +379,7 @@ npm run typecheck  # tsc --noEmit
 
 ## 部署
 
-systemd、Docker、nginx、监控与升级详见 [`docs/deployment.md`](docs/deployment.md)。
+systemd、Docker、nginx、监控、管理员管理、备份、升级详见 [`docs/deployment.md`](docs/deployment.md)。长期记忆 + 向量召回的启用 / 调优 / 隐私见 [`docs/memory-and-vector.md`](docs/memory-and-vector.md)。
 
 ## 路线图
 

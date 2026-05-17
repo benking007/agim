@@ -415,17 +415,93 @@ sudo systemctl stop agim
 tar czf agim-$(date +%F).tgz -C /home/imhub .agim
 sudo systemctl start agim
 
-# 或热备（SQLite WAL 模式安全）
-sqlite3 /home/imhub/.agim/audit.db ".backup /backup/audit.db"
-sqlite3 /home/imhub/.agim/jobs.db ".backup /backup/jobs.db"
+# 或热备（SQLite WAL 模式安全；v1.2.0+ 加了 memory.db）
+sqlite3 /home/imhub/.agim/audit.db    ".backup /backup/audit.db"
+sqlite3 /home/imhub/.agim/jobs.db     ".backup /backup/jobs.db"
 sqlite3 /home/imhub/.agim/schedules.db ".backup /backup/schedules.db"
+sqlite3 /home/imhub/.agim/outbox.db   ".backup /backup/outbox.db"
+sqlite3 /home/imhub/.agim/memos.db    ".backup /backup/memos.db"
+sqlite3 /home/imhub/.agim/reminders.db ".backup /backup/reminders.db"
+sqlite3 /home/imhub/.agim/memory.db   ".backup /backup/memory.db"   # v1.2.0+
+sqlite3 /home/imhub/.agim/viewer.db   ".backup /backup/viewer.db"   # v1.1.6+
 cp /home/imhub/.agim/config.json /backup/
+cp /home/imhub/.agim/env         /backup/   # 含 IMHUB_ADMIN_USERS / SMTP 等
+cp /home/imhub/.agim/tokens.json /backup/   # v1.1.10+ Web 鉴权 token
 cp -r /home/imhub/.agim/sessions /backup/
+# 不需要备份的：cache/ (transformers 模型，重启会重下) / *.log / *.pid
 ```
+
+**v1.2.0+ 记忆数据**：`memory.db` 体积小（每用户 < 1MB / 千条 fact），但**含用户偏好 / 隐私信息**，建议加密备份或限定备份目标。模型缓存 `~/.agim/cache/transformers/` 不用备份——重新启用 vector 时按需重下即可。
 
 ---
 
-## 九、升级
+## 九、管理员管理（v1.0+，v1.2.2 加 invite）
+
+服务管控类操作（`/restart` / `/stop` / 自然语言"重启服务" / web Safety 卡片）都要 admin。
+
+### 9.1 首次部署：bootstrap token
+
+agim 启动时检测 `IMHUB_ADMIN_USERS` 为空，会自动生成 12 字符 base32 一次性 token 写到 `~/.agim/admin-bootstrap-token`（chmod 600）+ 日志：
+
+```
+journalctl -u agim | grep "setup admin"
+# 或
+cat ~/.agim/admin-bootstrap-token
+```
+
+在 IM 里发：
+
+```
+/setup admin <token>
+```
+
+token 消费后被 unlink，你当前账号 (platform:userId) 写入 `~/.agim/env` 的 `IMHUB_ADMIN_USERS`。
+
+### 9.2 新增管理员（v1.2.2+）
+
+**方式 A · 已有 admin 在终端**：
+
+```bash
+agim admin invite
+# 输出：
+#   ✓ Admin invite token generated.
+#       token : ABCD-EFGH-IJKL
+#   Forward this to the invitee:
+#       /setup admin ABCD-EFGH-IJKL
+```
+
+把 `/setup admin <token>` 那条发给被邀人，他在自己的 IM（任意接入的渠道）里粘贴即升级。**单次有效**，再生成新 invite 会作废上一个未消费的。
+
+**方式 B · 已有 admin 用交互菜单**：
+
+```bash
+agim              # 进入主菜单
+# 选「邀请新管理员（生成一次性 IM token）」/「Invite a new admin」
+```
+
+**方式 C · web Safety 卡片**：Settings 页 → 安全 → 直接填 platform + user id（适合你已经知道对方 ID 的场景）。
+
+### 9.3 查看 / 删除
+
+```bash
+agim admin list
+# Admins (2):
+#   wechat:wxid_abc123
+#   telegram:8754479311
+
+# 删除：直接编辑 ~/.agim/env 的 IMHUB_ADMIN_USERS 逗号分隔列表，重启服务
+# 或 web Safety 卡片点「移除」按钮（即时生效，无需重启）
+```
+
+### 9.4 拒绝 / 被忽悠的场景
+
+- 非 admin 在 IM 发 `/restart` → `🛑 你没有权限执行此操作`
+- 完全没配 admin 的全新部署 → 引导消息显示如何取 bootstrap token
+- 群聊里别人点你的恢复卡按钮 → v1.2.0+ 校验 creator_id，bystander 被拒
+
+---
+
+## 十、升级
 
 ```bash
 # 全局安装
@@ -448,7 +524,7 @@ sudo systemctl start agim
 
 ---
 
-## 十、常见问题
+## 十一、常见问题
 
 ### `better-sqlite3` 装不上
 
@@ -530,7 +606,7 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ---
 
-## 十一、自检清单
+## 十二、自检清单
 
 部署完跑一遍：
 
@@ -563,7 +639,7 @@ curl -fsS -X POST \
 
 ---
 
-## 十二、环境变量速查
+## 十三、环境变量速查
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -579,10 +655,26 @@ curl -fsS -X POST \
 | `IMHUB_WORKSPACES_ROOT` | `~/.agim-workspaces` | IM Agent 工作区根目录（v2 引入） |
 | `IMHUB_CLAUDE_CODE_CWD` | （未设） | 单独覆盖 IM 入口 Claude 的 cwd |
 | `IMHUB_OPENCODE_CWD` | （未设） | 单独覆盖 IM 入口 opencode 的 cwd |
+| `IMHUB_ADMIN_USERS` | （空：拒绝所有服务管控命令） | 逗号分隔 `platform:userId`；管理 `/restart` / `/stop` / Safety 卡片权限。一般通过 `agim admin invite` 或 web UI 管理，不手动编辑 |
+| `IMHUB_WEB_AUTH` | `on` | `off` 退回 1.1.10 之前的无 token 模式（自担风险） |
+| **v1.2.0+ 记忆** | | |
+| `IMHUB_MEMORY_ENABLED` | `0` | `1`/`true`/`yes` 启用记忆 + 蒸馏 |
+| `IMHUB_MEMORY_CONSOLIDATE_ENABLED` | `1` | 单独关闭 daily consolidation（保留蒸馏） |
+| `IMHUB_MEMORY_CONSOLIDATE_HOURS` | `24` | consolidation 周期 |
+| `IMHUB_MEMORY_VECTOR_BACKEND` | `off` | `off` / `local` / `openai` |
+| `IMHUB_MEMORY_VECTOR_LOCAL_MODEL` | `Xenova/bge-base-zh-v1.5` | HuggingFace repo id；预设：small/base/large 三档 |
+| `IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容端点 |
+| `IMHUB_MEMORY_VECTOR_OPENAI_MODEL` | `text-embedding-3-small` | 嵌入模型 id |
+| `IMHUB_MEMORY_VECTOR_OPENAI_API_KEY` | （空） | API key（secret，web UI 默认掩码） |
+| `IMHUB_PUSH_RATE_PER_HOUR` | `20` | 单用户 push 每小时上限 |
+| `IMHUB_PUSH_CROSS_THREAD` | `0` | `1` 允许 push 到非原发起 thread |
+| **v1.1.6+ Viewer** | | |
+| `IMHUB_VIEWER_ENABLED` | `0` | `1` 启用长消息 viewer |
+| `IMHUB_VIEWER_PUBLIC_BASE_URL` | （空） | 反代后的公网域名，例如 `https://agim.example.com` |
 
 ---
 
-## 十三、卸载
+## 十四、卸载
 
 ```bash
 sudo systemctl disable --now agim

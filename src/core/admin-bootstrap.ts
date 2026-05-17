@@ -96,6 +96,28 @@ export function ensureBootstrapTokenIfNeeded(): string | null {
 }
 
 /**
+ * v1.2.2 — generate an admin INVITE token unconditionally (even when an
+ * admin already exists). Reuses the same bootstrap-token file + the same
+ * `/setup admin <token>` IM flow. Overwrites any existing unconsumed
+ * token so only the latest invite is valid at any time.
+ *
+ * Intended for an existing admin to onboard additional admins without
+ * SSH'ing into the server to look up the autogen bootstrap token.
+ * Triggered by `agim admin invite` CLI / the entry-menu option.
+ */
+export function generateAdminInviteToken(): { token: string; file: string } {
+  const token = generateToken()
+  mkdirSync(dirname(BOOTSTRAP_TOKEN_FILE), { recursive: true })
+  writeFileSync(BOOTSTRAP_TOKEN_FILE, token + '\n')
+  chmodSync(BOOTSTRAP_TOKEN_FILE, 0o600)
+  log.info({
+    event: 'admin-bootstrap.invite_generated',
+    file: BOOTSTRAP_TOKEN_FILE,
+  }, 'admin invite token generated (existing admin invoked invite flow)')
+  return { token, file: BOOTSTRAP_TOKEN_FILE }
+}
+
+/**
  * Verify a candidate token + promote the caller to admin on success.
  * Returns the outcome so the slash-command handler can craft the right
  * reply. On success, the token file is unlinked (single-use).

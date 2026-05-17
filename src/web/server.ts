@@ -640,6 +640,14 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/memory/vector/clear' && req.method === 'POST') {
       return handleVectorClear(req, res, url)
     }
+    // v1.2.2 — manual trigger for the daily consolidation. Useful when the
+    // user just wants a persona summary now without waiting 24h.
+    if (url.pathname === '/api/memory/consolidate' && req.method === 'POST') {
+      return handleMemoryConsolidate(req, res)
+    }
+    if (url.pathname === '/api/memory/consolidate/status' && req.method === 'GET') {
+      return handleMemoryConsolidateStatus(req, res)
+    }
     // PR-B: HITL approvals — global pending list + per-reqId resolve.
     if (url.pathname === '/api/approvals' && req.method === 'GET') {
       return handleListApprovals(req, res)
@@ -2355,6 +2363,63 @@ async function handleVectorBackfill(req: IncomingMessage, res: ServerResponse, u
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
+}
+
+// v1.2.2 — async consolidate. Per-user LLM call can take 30-60s; a
+// long-held POST routinely hits intermediary timeouts (cloudflare, nginx,
+// browser fetch defaults). Same pattern as vector download/backfill:
+// register a job + return 202 immediately; client polls /status for state.
+type ConsolidateJob = {
+  id: string
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  result: { users?: number; updated?: number; error?: string }
+}
+const consolidateJobs = new Map<string, ConsolidateJob>()
+function pickRecentConsolidate(): ConsolidateJob[] {
+  return Array.from(consolidateJobs.values())
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 5)
+}
+
+async function handleMemoryConsolidate(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    // Dedupe: if a consolidate is already running, return that jobId.
+    for (const j of consolidateJobs.values()) {
+      if (j.phase === 'running') {
+        sendJson(res, 202, { ok: true, jobId: j.id, alreadyRunning: true })
+        return
+      }
+    }
+    const id = `consolidate-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const job: ConsolidateJob = { id, startedAt: Date.now(), finishedAt: null, phase: 'running', result: {} }
+    consolidateJobs.set(id, job)
+    if (consolidateJobs.size > 50) {
+      const oldest = Array.from(consolidateJobs.values()).sort((a, b) => a.startedAt - b.startedAt)[0]
+      if (oldest) consolidateJobs.delete(oldest.id)
+    }
+    void (async () => {
+      try {
+        const { runConsolidationOnce } = await import('../core/memory-consolidate.js')
+        const r = await runConsolidationOnce()
+        job.finishedAt = Date.now()
+        job.phase = 'done'
+        job.result = r
+      } catch (err) {
+        job.finishedAt = Date.now()
+        job.phase = 'failed'
+        job.result = { error: err instanceof Error ? err.message : String(err) }
+      }
+    })()
+    sendJson(res, 202, { ok: true, jobId: id, hint: 'poll /api/memory/consolidate/status for progress' })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryConsolidateStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  sendJson(res, 200, { jobs: pickRecentConsolidate() })
 }
 
 async function handleVectorClear(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {

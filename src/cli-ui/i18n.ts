@@ -33,8 +33,13 @@ const en = {
   'menu.restart': 'Restart the service',
   'menu.stop': 'Stop the service',
   'menu.token': 'Manage web access tokens',
+  'menu.invite_admin': 'Invite a new admin (one-time IM token)',
   'menu.uninstall': 'Uninstall Agim (keeps workspaces)',
   'menu.quit': 'Quit',
+  'invite_admin.title': '👥 Admin invite',
+  'invite_admin.generated': '✓ Invite token generated:',
+  'invite_admin.howto': 'Forward this command to the invitee — they paste it into IM (any messenger this bot is on):',
+  'invite_admin.note': '⚠️ Single-use. Generating another invite invalidates the previous one. Token also at:',
 
   // ─── token management submenu ────────────────────────────────────────
   'token.title': 'Web access tokens',
@@ -289,8 +294,13 @@ const zh: Record<Key, string> = {
   'menu.restart': '重启服务',
   'menu.stop': '停止服务',
   'menu.token': '管理 Web 访问 Token',
+  'menu.invite_admin': '邀请新管理员（生成一次性 IM token）',
   'menu.uninstall': '卸载阿吉姆（保留 workspaces）',
   'menu.quit': '退出',
+  'invite_admin.title': '👥 邀请新管理员',
+  'invite_admin.generated': '✓ 已生成邀请 token：',
+  'invite_admin.howto': '把下面这条命令发给受邀者，让他粘到 IM 里（本 bot 接入的任何渠道）：',
+  'invite_admin.note': '⚠️ 单次有效。再生成新的会作废上一个未消费的。Token 同时写入：',
 
   // ─── token management submenu ────────────────────────────────────
   'token.title': 'Web 访问 Token',

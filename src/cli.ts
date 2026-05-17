@@ -717,6 +717,19 @@ program
       console.log(`   Boot ready in ${(info.msSinceStart / 1000).toFixed(1)}s`)
     } catch { /* ignore */ }
 
+    // v1.2.2 — eager-warm the vector backend so post-restart status is
+    // accurate without waiting for the first inbound message / Memory tab
+    // visit. The constructor's autowarm only fires when getActiveBackend()
+    // is first called, so we trigger it here. Fire-and-forget; failures
+    // are logged inside the backend.
+    try {
+      const { isMemoryEnabled } = await import('./core/persona.js')
+      if (isMemoryEnabled()) {
+        const { getActiveBackend } = await import('./core/memory-vector.js')
+        getActiveBackend()  // constructor → autowarm
+      }
+    } catch { /* ignore */ }
+
     // If we came back from a `/restart`, the previous instance dropped a
     // ~/.agim/restart-pending.json with the initiator's IM thread. Now
     // that messengers + agents are all up, push the completion message
@@ -1698,6 +1711,54 @@ tokenCmd
     else { console.log(`✗ token ${id} not found.`); process.exit(1) }
   })
 
+// ─── admin allowlist management (v1.2.2+) ───────────────────────────
+//
+// Non-interactive companion to the entry menu's "邀请新管理员" option.
+// Useful from ansible / setup scripts.
+
+const adminCmd = program.command('admin').description('Manage the admin allowlist')
+
+adminCmd
+  .command('invite')
+  .description('Generate a one-time IM invite token. The invitee runs `/setup admin <token>` to onboard.')
+  .action(async () => {
+    const { generateAdminInviteToken } = await import('./core/admin-bootstrap.js')
+    const { token, file } = generateAdminInviteToken()
+    console.log('')
+    console.log('✓ Admin invite token generated.')
+    console.log(`    token : ${token}`)
+    console.log(`    file  : ${file}`)
+    console.log('')
+    console.log('Forward this to the invitee:')
+    console.log(`    /setup admin ${token}`)
+    console.log('')
+    console.log('⚠️  Single-use. Generating another invite invalidates the previous one.')
+  })
+
+adminCmd
+  .command('list')
+  .description('List current admins (env + runtime-added)')
+  .action(async () => {
+    // Load ~/.agim/env so IMHUB_ADMIN_USERS is visible when this CLI runs
+    // outside the daemon's process env (e.g. fresh shell invoking the CLI
+    // directly). The daemon already loads this at start.
+    try {
+      const { readEnvFile } = await import('./cli-ui/env-file.js')
+      const f = readEnvFile()
+      if (f.IMHUB_ADMIN_USERS && !process.env.IMHUB_ADMIN_USERS) {
+        process.env.IMHUB_ADMIN_USERS = f.IMHUB_ADMIN_USERS
+      }
+    } catch { /* ignore */ }
+    const { listAdmins } = await import('./core/admin-allowlist.js')
+    const rows = listAdmins()
+    if (rows.length === 0) {
+      console.log('(no admins configured — run `agim admin invite` and have the invitee onboard via /setup admin <token>)')
+      return
+    }
+    console.log(`Admins (${rows.length}):`)
+    for (const r of rows) console.log(`  ${r.platform}:${r.userId}`)
+  })
+
 // ─── bare `agim` → entry menu (v0.5.0+) ─────────────────────────────
 // If the user invoked us with no args (just `agim`), drop them at
 // the language picker + maintenance menu instead of dumping --help text.
@@ -1751,6 +1812,22 @@ async function maybeRunEntryMenu(): Promise<boolean> {
     case 'token': {
       const { runTokenMenu } = await import('./cli-ui/token-menu.js')
       await runTokenMenu(lang)
+      return true
+    }
+    case 'invite_admin': {
+      const { generateAdminInviteToken } = await import('./core/admin-bootstrap.js')
+      const { t } = await import('./cli-ui/i18n.js')
+      const { token, file } = generateAdminInviteToken()
+      console.log()
+      console.log(t(lang, 'invite_admin.title'))
+      console.log()
+      console.log(`  ${t(lang, 'invite_admin.generated')} ${token}`)
+      console.log()
+      console.log(`  ${t(lang, 'invite_admin.howto')}`)
+      console.log(`      /setup admin ${token}`)
+      console.log()
+      console.log(`  ${t(lang, 'invite_admin.note')} ${file}`)
+      console.log()
       return true
     }
     case 'uninstall':

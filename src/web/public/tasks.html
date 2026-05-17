@@ -259,6 +259,7 @@
         memoryPersonaPlaceholder: '(No persona for this user yet — will be auto-generated at next consolidation, or write one manually.)',
         memoryPersonaSave: 'Save persona',
         memoryPersonaDelete: 'Delete persona',
+        memoryPersonaConsolidate: '🔁 Rebuild persona now',
         memoryFactsCard: 'Facts',
         memoryFactsSearch: 'Search (FTS5)',
         memoryFactsCatAll: 'All types',
@@ -532,6 +533,7 @@
         memoryPersonaPlaceholder: '（此用户暂无记忆画像 — 等下次 consolidation 自动生成，或手动写入）',
         memoryPersonaSave: '保存记忆画像',
         memoryPersonaDelete: '删除记忆画像',
+        memoryPersonaConsolidate: '🔁 立刻重建画像',
         memoryFactsCard: 'Facts',
         memoryFactsSearch: '搜索（FTS5）',
         memoryFactsCatAll: '所有类型',
@@ -1244,9 +1246,10 @@
           <span class="muted" id="mem-persona-meta" style="font-size:12px"></span>
         </div>
         <textarea id="mem-persona-text" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box" data-i18n-attr="placeholder:memoryPersonaPlaceholder" placeholder="（此用户暂无记忆画像 — 等下次 consolidation 自动生成，或手动写入）"></textarea>
-        <div class="actions" style="margin-top:8px;display:flex;gap:8px">
+        <div class="actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" id="btn-mem-persona-save" class="btn btn-primary" data-i18n="memoryPersonaSave">保存记忆画像</button>
           <button type="button" id="btn-mem-persona-delete" class="btn" data-i18n="memoryPersonaDelete">删除记忆画像</button>
+          <button type="button" id="btn-mem-persona-consolidate" class="btn" title="立刻跑一次 consolidation 重建画像，不等 24h 周期" data-i18n="memoryPersonaConsolidate">🔁 立刻重建画像</button>
         </div>
         <p class="muted" id="mem-persona-status" style="margin-top:6px;font-size:12px"></p>
       </div>
@@ -3327,6 +3330,57 @@
         await loadMemoryUserDetail();
       } catch (err) {
         if (status) status.textContent = '删除失败: ' + (err.message || err);
+      }
+    });
+    document.getElementById('btn-mem-persona-consolidate')?.addEventListener('click', async () => {
+      const status = document.getElementById('mem-persona-status');
+      const btn = document.getElementById('btn-mem-persona-consolidate');
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = '⏳ 已提交后台任务（每用户 1 次 LLM 调用，10–60 秒）…';
+      let pollTimer = null;
+      const stopPoll = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+      try {
+        // Async kickoff: server returns 202 + jobId immediately, then the
+        // LLM call runs in the background. Polling avoids cloudflare /
+        // nginx / browser fetch timeouts on long-held POSTs.
+        const r = await api('/api/memory/consolidate', { method: 'POST' });
+        const targetJobId = r.jobId;
+        if (!targetJobId) throw new Error('server did not return jobId');
+        const startedAt = Date.now();
+        pollTimer = setInterval(async () => {
+          try {
+            const s = await api('/api/memory/consolidate/status');
+            const job = (s.jobs || []).find(j => j.id === targetJobId);
+            if (!job) return;
+            const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
+            if (job.phase === 'running') {
+              if (status) status.textContent = `⏳ 重建中 (${elapsed}s)…`;
+              return;
+            }
+            stopPoll();
+            if (btn) btn.disabled = false;
+            if (job.phase === 'done') {
+              const u = (job.result && job.result.updated) || 0;
+              const n = (job.result && job.result.users) || 0;
+              if (status) status.textContent = `✓ 完成 (${elapsed}s) · 处理 ${n} 个用户、更新 ${u} 个画像`;
+              await loadMemoryUserDetail();
+            } else {
+              const e = (job.result && job.result.error) || 'unknown error';
+              if (status) status.textContent = '失败: ' + e;
+            }
+          } catch (pollErr) {
+            // Poll failures are non-fatal; UI keeps trying. Stop after 5 min.
+            if (Date.now() - startedAt > 300_000) {
+              stopPoll();
+              if (btn) btn.disabled = false;
+              if (status) status.textContent = '轮询超时（>5min），请刷新查看实际结果';
+            }
+          }
+        }, 2000);
+      } catch (err) {
+        if (status) status.textContent = '失败: ' + (err.message || err);
+        if (btn) btn.disabled = false;
+        stopPoll();
       }
     });
     document.getElementById('btn-mem-facts-clear-lowconf')?.addEventListener('click', async () => {

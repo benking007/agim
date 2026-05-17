@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-05-17
+
+Three small but noticeable hotfixes on top of 1.2.1:
+
+### Added — Admin invite from CLI / interactive menu
+
+Onboarding the FIRST admin uses an auto-generated bootstrap token. Adding
+MORE admins after the fact required either editing `~/.agim/env` by hand
+or having the new admin send their `platform:userId` to the existing
+admin so it could be typed into the web Safety card. Tedious.
+
+- `agim admin invite` (CLI) — generates a fresh single-use token,
+  overwrites `~/.agim/admin-bootstrap-token`, and prints
+  `/setup admin <token>` ready to forward to the invitee.
+- `agim admin list` (CLI) — show current allowlist (env + runtime).
+- Entry menu (bare `agim`) gains "邀请新管理员 / Invite a new admin"
+  between "Manage web access tokens" and "Uninstall".
+- Reuses the existing `/setup admin <token>` IM flow — no IM-side code
+  changes; works on every messenger the bot is on.
+- Invite tokens stay single-use and overwrite the previous unconsumed
+  one, so abandoned invites can't accumulate.
+
+### Changed — Vector backend eager-warm at boot
+
+`LocalBgeBackend`'s autowarm (1.2.1) only fired when `getActiveBackend()`
+was first called — i.e. on the first inbound message OR the first Memory
+tab visit. In quiet periods the backend stayed cold and the status badge
+showed "未就绪" until something poked it.
+
+- `cli.ts` boot now calls `getActiveBackend()` once after `setBootPhase('ready')`
+  when memory is enabled, triggering the constructor's autowarm
+  immediately. Status badge flips to `↻ 加载中…` → `✓ ready` within a
+  few seconds of restart.
+
+### Changed — Async consolidate (no more "失败: 554" timeout)
+
+`POST /api/memory/consolidate` used to hold the connection for the full
+30–60s LLM call. Intermediate proxies / cloudflare / browser fetch
+defaults would close the connection long before the work finished,
+surfacing as a cryptic "失败: 554" in the UI even when the persona was
+actually rebuilt.
+
+- Endpoint now returns `202 + { jobId }` immediately and runs the
+  consolidation in the background.
+- New `GET /api/memory/consolidate/status` returns the recent jobs +
+  phase (`running` / `done` / `failed`).
+- Memory tab button polls every 2s, shows elapsed seconds during
+  `running`, terminal text on completion. 5min poll cap; UI hint to
+  refresh if exceeded.
+- Concurrent click protection: a 2nd POST while one is `running`
+  returns the same `jobId`.
+
 ## [1.2.1] - 2026-05-17
 
 Hotfix for two issues found right after 1.2.0 went live.

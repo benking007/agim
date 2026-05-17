@@ -195,6 +195,14 @@
         a2aSave: 'Save',
         a2aSaved: 'Saved — applies to the next A2A invocation, no restart needed.',
         a2aSaveFailed: 'Failed to save A2A settings',
+        memoryTitle: 'Long-term Memory',
+        memoryHint: 'After every reply, agim asynchronously extracts "facts worth remembering" (preferences / holdings / projects / …) from the exchange and stores them in ~/.agim/memory.db. Next turns get a small (~150-300 token) persona summary in the prompt header plus an on-demand memory_query MCP tool for specific facts. Adds one extra LLM call per turn using the same agent the user just talked to — watch the Cost & Health tab if you turn it on.',
+        memoryEnable: 'Enabled',
+        memoryDisable: 'Off',
+        memoryEnableLabel: 'Auto memory',
+        memorySave: 'Save',
+        memorySaved: 'Saved — fact accumulation begins after the next reply.',
+        memorySaveFailed: 'Failed to save memory settings',
       },
       zh: {
         title: 'Agim — 设置',
@@ -376,6 +384,14 @@
         a2aSave: '保存',
         a2aSaved: '已保存 — 下次 A2A 调用生效，无需重启。',
         a2aSaveFailed: '保存 A2A 配置失败',
+        memoryTitle: '长期记忆',
+        memoryHint: 'agent 在每次回复后异步从对话中提取"值得长期记住的事实"（用户偏好 / 持仓 / 项目等），存入本机 ~/.agim/memory.db；下一次对话自动注入一个 ~150-300 字符的 persona 摘要到提示头部，并通过 memory_query MCP 工具按需检索具体事实。开启后会有额外 LLM 调用（用当前对话使用的 agent，不强制 Claude），可在 Cost & Health 里观察成本。',
+        memoryEnable: '启用',
+        memoryDisable: '关闭',
+        memoryEnableLabel: '自动化记忆',
+        memorySave: '保存',
+        memorySaved: '已保存 — 下次回复后开始累积事实。',
+        memorySaveFailed: '保存记忆配置失败',
       },
     };
     function t(key) { return T[window.__lang][key] || T.en[key] || key; }
@@ -1570,6 +1586,22 @@
           <p class="muted" id="a2aStatus" style="margin-top:8px;font-size:12px"></p>
         </div>
 
+        <!-- Long-term memory (env-file) — auto fact extraction + persona injection -->
+        <div class="card">
+          <h2>🧠 ${t('memoryTitle')}</h2>
+          <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px">${t('memoryHint')}</p>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:600">
+              <input type="checkbox" id="memoryEnabled" />
+              ${t('memoryEnableLabel')}
+            </label>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn btn-primary" id="saveMemory">${t('memorySave')}</button>
+          </div>
+          <p class="muted" id="memoryStatus" style="margin-top:8px;font-size:12px"></p>
+        </div>
+
         <!-- Baidu Maps AK (env-file) — feeds /memo address geocoding -->
         <div class="card">
           <h2>🗺 Baidu Maps AK</h2>
@@ -1642,6 +1674,19 @@
         set('viewerLines', 'IMHUB_VIEWER_LINES');
         set('viewerCodeLines', 'IMHUB_VIEWER_CODE_LINES');
         set('viewerMaxPastes', 'IMHUB_VIEWER_MAX_PASTES');
+        // Memory card — single boolean toggle.
+        const memoryEnabledEl = document.getElementById('memoryEnabled');
+        if (memoryEnabledEl) {
+          const v = (env['IMHUB_MEMORY_ENABLED'] || '').toLowerCase();
+          memoryEnabledEl.checked = v === '1' || v === 'true' || v === 'yes';
+        }
+        const memoryStatus = document.getElementById('memoryStatus');
+        if (memoryStatus) {
+          memoryStatus.textContent = memoryEnabledEl?.checked
+            ? '✓ ' + t('memoryEnable')
+            : t('memoryDisable');
+        }
+
         // A2A card — values stored as ms / direct values; UI uses minutes for the timeouts.
         const a2aDt = document.getElementById('a2aDefaultTimeout');
         if (a2aDt) {
@@ -1979,6 +2024,23 @@
       });
       document.getElementById('revealBaidu')?.addEventListener('click', () => loadEnvSection(true));
 
+      // Memory card — save toggle.
+      document.getElementById('saveMemory')?.addEventListener('click', async () => {
+        const on = document.getElementById('memoryEnabled')?.checked ? '1' : '0';
+        const status = document.getElementById('memoryStatus');
+        try {
+          await authFetch('/api/env', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: { IMHUB_MEMORY_ENABLED: on } }),
+          });
+          if (status) status.textContent = t('memorySaved');
+          await loadEnvSection();
+        } catch (err) {
+          if (status) status.textContent = t('memorySaveFailed') + ': ' + (err && err.message ? err.message : err);
+        }
+      });
+
       // A2A card — save timeouts (min → ms) + mode + depth + heartbeat.
       document.getElementById('saveA2A')?.addEventListener('click', async () => {
         const dtMin = parseInt(document.getElementById('a2aDefaultTimeout')?.value || '', 10);
@@ -2294,12 +2356,26 @@
       const confirmKey = action === 'stop' ? 'svcConfirmStop' : action === 'restart' ? 'svcConfirmRestart' : null;
       if (confirmKey && !confirm(t(confirmKey))) return;
       const stateEl = document.getElementById('svc-state');
+
+      // v1.5 — Update UI BEFORE firing the fetch. The restart POST can
+      // take 5-10s server-side (systemctl restart waits for stop+start)
+      // and the previous code only updated state after that resolved —
+      // making the button look frozen + tempting double clicks. Also
+      // disable the action buttons so the user can't trigger a second
+      // restart while one is in flight.
+      const btns = ['svc-restart', 'svc-stop', 'svc-start']
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+      btns.forEach(b => b.disabled = true);
+      if (action === 'restart' && stateEl) {
+        stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcRestarting'));
+      } else if (action === 'stop' && stateEl) {
+        stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcStopped'));
+      }
+
       try {
         const res = await authFetch('/api/service/' + action, { method: 'POST' });
         if (action === 'restart') {
-          // The HTTP response may not arrive before the parent process
-          // SIGTERMs itself. Either way, drop into a "wait for reconnect" loop.
-          if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcRestarting'));
           await waitForServiceBack(stateEl);
           if (stateEl) {
             // loadServiceStatus refreshes the badge to live state.
@@ -2309,7 +2385,6 @@
           return;
         }
         if (action === 'stop') {
-          if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('svcStopped'));
           // Don't poll — the server is gone.
           return;
         }
@@ -2320,23 +2395,44 @@
         await loadServiceStatus();
       } catch (err) {
         toast(t('error') + ': ' + (err && err.message ? err.message : err), 'error');
+      } finally {
+        // loadServiceStatus re-enables the buttons based on live state.
+        // Restart re-enables them via the polling-back-up path; stop
+        // leaves them disabled (server is gone).
       }
     }
     async function waitForServiceBack(stateEl) {
-      // The new daemon takes ~2-4s to come back. Poll /api/service/status
-      // every 700ms for up to 30s. Each successful response means the new
-      // process has bound the port.
+      // v1.5 — wait for full readiness, not just HTTP up. /api/service/status
+      // returns bootPhase; we treat 'ready' as done. While waiting, show
+      // a phase-specific status text so the user sees real progress instead
+      // of a blank "..." spinner.
+      const phaseLabels = {
+        starting: '⏳ 启动中…',
+        messengers_loading: '⏳ 加载消息通道…',
+        web_ready: '⏳ Web 已就绪，等待全部子系统…',
+        ready: '✓ 完全就绪',
+      };
       const start = Date.now();
+      let lastPhaseShown = null;
       for (;;) {
-        if (Date.now() - start > 30000) {
+        if (Date.now() - start > 60000) {
           if (stateEl) stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(t('error'));
           return;
         }
         try {
           const r = await fetch('/api/service/status', { credentials: 'same-origin' });
-          if (r.ok) return;
+          if (r.ok) {
+            const j = await r.json().catch(() => ({}));
+            const phase = j.bootPhase || 'starting';
+            if (phase === 'ready') return;
+            if (phase !== lastPhaseShown && stateEl) {
+              const label = phaseLabels[phase] || ('⏳ ' + phase);
+              stateEl.innerHTML = '<span class="dot dot-off"></span>' + esc(label);
+              lastPhaseShown = phase;
+            }
+          }
         } catch { /* not back yet */ }
-        await new Promise(r => setTimeout(r, 700));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 

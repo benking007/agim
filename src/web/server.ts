@@ -588,6 +588,58 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/agent-health' && req.method === 'GET') {
       return handleAgentHealth(req, res)
     }
+    // v1.3 — Cost & Health: aggregated metrics from the audit-log used by
+    // the new Cost & Health tab. summary returns daily totals + KPI cards;
+    // topn returns ranked groups by user / agent / platform / intent.
+    if (url.pathname === '/api/health/summary' && req.method === 'GET') {
+      return handleHealthSummary(req, res, url)
+    }
+    if (url.pathname === '/api/health/topn' && req.method === 'GET') {
+      return handleHealthTopN(req, res, url)
+    }
+    // v1.5 — Memory admin: enumerate users, list / delete facts, view /
+    // edit / delete persona, export. Backs the Memory tab in /tasks.
+    if (url.pathname === '/api/memory/users' && req.method === 'GET') {
+      return handleMemoryUsers(req, res)
+    }
+    if (url.pathname === '/api/memory/facts' && req.method === 'GET') {
+      return handleMemoryFacts(req, res, url)
+    }
+    if (url.pathname === '/api/memory/facts' && req.method === 'DELETE') {
+      return handleMemoryBulkDelete(req, res, url)
+    }
+    const memFactIdMatch = url.pathname.match(/^\/api\/memory\/facts\/(\d+)$/)
+    if (memFactIdMatch && req.method === 'DELETE') {
+      return handleMemoryDeleteOne(req, res, url, parseInt(memFactIdMatch[1], 10))
+    }
+    if (url.pathname === '/api/memory/persona' && req.method === 'GET') {
+      return handleMemoryPersona(req, res, url)
+    }
+    if (url.pathname === '/api/memory/persona' && req.method === 'PUT') {
+      return handleMemoryPersonaPut(req, res, url)
+    }
+    if (url.pathname === '/api/memory/persona' && req.method === 'DELETE') {
+      return handleMemoryPersonaDelete(req, res, url)
+    }
+    if (url.pathname === '/api/memory/export' && req.method === 'GET') {
+      return handleMemoryExport(req, res, url)
+    }
+    // v1.6 — vector backend control + index ops.
+    if (url.pathname === '/api/memory/vector/status' && req.method === 'GET') {
+      return handleVectorStatus(req, res, url)
+    }
+    if (url.pathname === '/api/memory/vector/test' && req.method === 'POST') {
+      return handleVectorTest(req, res)
+    }
+    if (url.pathname === '/api/memory/vector/download' && req.method === 'POST') {
+      return handleVectorDownload(req, res)
+    }
+    if (url.pathname === '/api/memory/vector/backfill' && req.method === 'POST') {
+      return handleVectorBackfill(req, res, url)
+    }
+    if (url.pathname === '/api/memory/vector/clear' && req.method === 'POST') {
+      return handleVectorClear(req, res, url)
+    }
     // PR-B: HITL approvals — global pending list + per-reqId resolve.
     if (url.pathname === '/api/approvals' && req.method === 'GET') {
       return handleListApprovals(req, res)
@@ -1241,14 +1293,21 @@ async function handleWechatQrStatus(res: ServerResponse, url: URL): Promise<void
 async function handleServiceStatus(res: ServerResponse): Promise<void> {
   try {
     const { detectService, formatUptime, readWebEndpoint } = await import('../cli-ui/service.js')
+    const { getBootInfo } = await import('../core/boot-state.js')
     const st = detectService()
     const web = readWebEndpoint()
+    const boot = getBootInfo()
     sendJson(res, 200, {
       mode: st.mode,
       pid: st.pid,
       uptimeSec: st.uptimeSec ?? null,
       uptime: typeof st.uptimeSec === 'number' ? formatUptime(st.uptimeSec) : null,
       web,
+      // v1.5 — fine-grained boot phase so the web restart-polling UI can
+      // wait for full readiness instead of merely "HTTP server is up".
+      bootPhase: boot.phase,
+      bootMsSinceStart: boot.msSinceStart,
+      bootPhaseTimings: boot.phaseTimings,
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -1301,12 +1360,20 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
   const st = detectService()
   if (st.mode === 'systemd') {
     try {
-      const { execSync } = await import('node:child_process')
+      const { spawn } = await import('node:child_process')
       const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
-      execSync(`systemctl restart ${unitName}`)
-      sendJson(res, 200, { ok: true, mode: 'systemd' })
+      // v1.5 — fire-and-forget. execSync blocked the HTTP response until
+      // systemctl had finished stop+start (5-10s), making the web button
+      // look frozen to the user. Detach the child so we can ACK the
+      // request immediately and let systemd do its thing.
+      const child = spawn('systemctl', ['restart', unitName], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.unref()
+      sendJson(res, 200, { ok: true, mode: 'systemd', restarting: true })
     } catch (err) {
-      sendJson(res, 500, { error: 'systemctl restart failed: ' + (err instanceof Error ? err.message : String(err)) })
+      sendJson(res, 500, { error: 'systemctl restart spawn failed: ' + (err instanceof Error ? err.message : String(err)) })
     }
     return
   }
@@ -1808,8 +1875,18 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_A2A_NOTIFY_MODE',
   'IMHUB_A2A_NOTIFY_MAX_DEPTH',
   'IMHUB_A2A_HEARTBEAT_MIN',
+  // v1.5 — long-term memory (see src/core/memory.ts + persona.ts).
+  'IMHUB_MEMORY_ENABLED',
+  // v1.6 — vector retrieval (opt-in, OFF by default).
+  'IMHUB_MEMORY_VECTOR_BACKEND',
+  'IMHUB_MEMORY_VECTOR_LOCAL_MODEL',
+  'IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL',
+  'IMHUB_MEMORY_VECTOR_OPENAI_MODEL',
+  'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
+  'IMHUB_MEMORY_VECTOR_BATCH_SIZE',
+  'IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT',
 ] as const
-const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK'])
+const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 
 function maskSecret(v: string): string {
   if (!v) return ''
@@ -1847,7 +1924,13 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
     const safe: Record<string, string | null> = {}
     for (const [k, v] of Object.entries(updates)) {
       if (!(ENV_EDITABLE_KEYS as readonly string[]).includes(k)) continue
-      if (v === null || typeof v === 'string') safe[k] = v
+      if (v === null || typeof v === 'string') {
+        // Defense in depth: if the client echoes a masked secret value
+        // (e.g. "abcd****wxyz") back into PUT, treat it as "no change" and
+        // skip the update so the real value isn't overwritten by the mask.
+        if (SECRET_KEYS.has(k) && typeof v === 'string' && isMasked(v)) continue
+        safe[k] = v
+      }
     }
     if (Object.keys(safe).length === 0) {
       sendJson(res, 400, { error: 'no editable keys in updates' })
@@ -1958,6 +2041,333 @@ async function handleAudit(_req: IncomingMessage, res: ServerResponse, url: URL)
  * No persistence — pure read of in-memory state. Cheap to call (<1 ms for
  * a typical agent fleet) so the page is happy to poll on a 5 s tick.
  */
+async function handleHealthSummary(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const days = Math.min(Math.max(parseInt(url.searchParams.get('days') || '7', 10) || 7, 1), 365)
+    const { getHealthSummary } = await import('../core/audit-log.js')
+    sendJson(res, 200, getHealthSummary(days))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleHealthTopN(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const dimRaw = (url.searchParams.get('dim') || 'user').toLowerCase()
+    const metricRaw = (url.searchParams.get('by') || 'cost').toLowerCase()
+    const days = Math.min(Math.max(parseInt(url.searchParams.get('days') || '7', 10) || 7, 1), 365)
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '10', 10) || 10, 1), 100)
+    const validDims = new Set(['user', 'agent', 'platform', 'intent'])
+    const validMetrics = new Set(['cost', 'calls', 'errors', 'avg_latency'])
+    if (!validDims.has(dimRaw)) {
+      sendJson(res, 400, { error: `dim must be one of ${[...validDims].join(',')}` })
+      return
+    }
+    if (!validMetrics.has(metricRaw)) {
+      sendJson(res, 400, { error: `by must be one of ${[...validMetrics].join(',')}` })
+      return
+    }
+    const { getTopN } = await import('../core/audit-log.js')
+    const items = getTopN(dimRaw as 'user' | 'agent' | 'platform' | 'intent',
+                         metricRaw as 'cost' | 'calls' | 'errors' | 'avg_latency',
+                         days, limit)
+    sendJson(res, 200, { dim: dimRaw, by: metricRaw, days, items })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ─── v1.5 Memory admin handlers ──────────────────────────────────────
+
+function readUserKey(url: URL): string | null {
+  const k = url.searchParams.get('user_key')
+  if (!k || !k.includes(':')) return null
+  return k
+}
+
+async function handleMemoryUsers(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { listUsers } = await import('../core/memory.js')
+    sendJson(res, 200, { users: listUsers() })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryFacts(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required (platform:userId)' }); return }
+    const { listFacts } = await import('../core/memory.js')
+    const query = url.searchParams.get('query') || ''
+    const category = url.searchParams.get('category') || ''
+    const limit = parseInt(url.searchParams.get('limit') || '50', 10) || 50
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10) || 0
+    const validCats = new Set(['fact', 'preference', 'goal', 'history', 'profile'])
+    const cat = validCats.has(category) ? category as 'fact' | 'preference' | 'goal' | 'history' | 'profile' : undefined
+    sendJson(res, 200, listFacts({ user_key, query, category: cat, limit, offset }))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryDeleteOne(req: IncomingMessage, res: ServerResponse, url: URL, id: number): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const { deleteFact } = await import('../core/memory.js')
+    const ok = deleteFact(id, user_key)
+    sendJson(res, ok ? 200 : 404, { ok, id })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+  void req
+}
+
+async function handleMemoryBulkDelete(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const body = await readBody(req, res)
+    const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
+    const { bulkDeleteFacts } = await import('../core/memory.js')
+    const idsRaw = parsed.ids
+    const ids = Array.isArray(idsRaw) ? idsRaw.filter((n): n is number => typeof n === 'number') : undefined
+    const category = typeof parsed.category === 'string' ? parsed.category : undefined
+    const max_confidence = typeof parsed.max_confidence === 'number' ? parsed.max_confidence : undefined
+    const confirm_clear = parsed.confirm_clear === true
+    const validCats = new Set(['fact', 'preference', 'goal', 'history', 'profile'])
+    const deleted = bulkDeleteFacts({
+      user_key,
+      ids: ids && ids.length > 0 ? ids : undefined,
+      category: category && validCats.has(category) ? category as 'fact' | 'preference' | 'goal' | 'history' | 'profile' : undefined,
+      max_confidence,
+      confirm_clear,
+    })
+    sendJson(res, 200, { deleted })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryPersona(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const { getPersona } = await import('../core/memory.js')
+    const p = getPersona(user_key)
+    if (!p) { sendJson(res, 404, { error: 'no persona for user_key', user_key }); return }
+    sendJson(res, 200, p)
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryPersonaPut(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const body = await readBody(req, res)
+    const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
+    const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : ''
+    if (!summary) { sendJson(res, 400, { error: 'summary required (non-empty string)' }); return }
+    const { upsertPersona } = await import('../core/memory.js')
+    const ok = upsertPersona(user_key, summary)
+    sendJson(res, ok ? 200 : 500, { ok })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryPersonaDelete(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const { deletePersona } = await import('../core/memory.js')
+    const ok = deletePersona(user_key)
+    sendJson(res, ok ? 200 : 404, { ok })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryExport(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const user_key = readUserKey(url)
+    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    const { exportUserMemory } = await import('../core/memory.js')
+    const data = exportUserMemory(user_key)
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="agim-memory-${user_key.replace(/[^a-zA-Z0-9_-]+/g, '_')}.json"`,
+    })
+    res.end(JSON.stringify(data, null, 2))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ─── v1.6 vector backend handlers ────────────────────────────────────
+
+async function handleVectorStatus(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { getActiveBackend } = await import('../core/memory-vector.js')
+    const { getVectorCoverage } = await import('../core/memory.js')
+    const backend = getActiveBackend()
+    const userKeyParam = url.searchParams.get('user_key') || undefined
+    const coverage = getVectorCoverage(userKeyParam)
+    sendJson(res, 200, {
+      status: backend.describe(),
+      coverage,
+      // Backfill / download jobs share an in-memory map for progress polling.
+      jobs: pickPublicJobs(),
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleVectorTest(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { testActiveBackend } = await import('../core/memory-vector.js')
+    const r = await testActiveBackend()
+    sendJson(res, r.ok ? 200 : 400, r)
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// In-memory async job tracker for download + backfill. Polling-driven UI
+// reads these via /api/memory/vector/status. Single in-flight per kind.
+interface VectorJob {
+  id: string
+  kind: 'download' | 'backfill'
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  message: string
+  details: Record<string, unknown>
+}
+const vectorJobs = new Map<string, VectorJob>()
+function pickPublicJobs(): VectorJob[] {
+  const all = Array.from(vectorJobs.values()).sort((a, b) => b.startedAt - a.startedAt)
+  return all.slice(0, 5)
+}
+function newJob(kind: VectorJob['kind']): VectorJob {
+  const id = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const j: VectorJob = {
+    id, kind, startedAt: Date.now(), finishedAt: null,
+    phase: 'running', message: 'started', details: {},
+  }
+  vectorJobs.set(id, j)
+  // P2 cleanup: bound the map size — keep up to 100 entries, oldest first.
+  if (vectorJobs.size > 100) {
+    const oldest = Array.from(vectorJobs.values())
+      .sort((a, b) => a.startedAt - b.startedAt)[0]
+    if (oldest) vectorJobs.delete(oldest.id)
+  }
+  return j
+}
+function findRunningJob(kind: VectorJob['kind']): VectorJob | undefined {
+  for (const j of vectorJobs.values()) {
+    if (j.kind === kind && j.phase === 'running') return j
+  }
+  return undefined
+}
+function finishJob(id: string, ok: boolean, message: string, details: Record<string, unknown> = {}): void {
+  const j = vectorJobs.get(id)
+  if (!j) return
+  j.finishedAt = Date.now()
+  j.phase = ok ? 'done' : 'failed'
+  j.message = message
+  j.details = details
+}
+
+async function handleVectorDownload(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { triggerLocalDownload, getActiveBackend } = await import('../core/memory-vector.js')
+    const b = getActiveBackend()
+    if (b.name !== 'local') {
+      sendJson(res, 400, { error: `backend is "${b.name}", switch to "local" first` })
+      return
+    }
+    if (b.ready) {
+      sendJson(res, 200, { ok: true, alreadyReady: true })
+      return
+    }
+    // P1-10: dedupe concurrent download attempts. Two browser tabs (or a
+    // double-click) would otherwise spawn parallel triggerLocalDownload
+    // calls that race on the same model cache directory.
+    const inflight = findRunningJob('download')
+    if (inflight) {
+      sendJson(res, 202, { ok: true, jobId: inflight.id, alreadyRunning: true })
+      return
+    }
+    const job = newJob('download')
+    // Kick off async; respond immediately so the UI doesn't block.
+    void (async () => {
+      try {
+        const r = await triggerLocalDownload()
+        if (r.ok) finishJob(job.id, true, 'model ready', { modelId: b.modelId, dims: b.dims })
+        else finishJob(job.id, false, r.error || 'unknown error', {})
+      } catch (err) {
+        finishJob(job.id, false, err instanceof Error ? err.message : String(err), {})
+      }
+    })()
+    sendJson(res, 202, { ok: true, jobId: job.id, hint: 'poll /api/memory/vector/status for progress' })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleVectorBackfill(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { backfillEmbeddings } = await import('../core/memory.js')
+    const { getActiveBackend } = await import('../core/memory-vector.js')
+    const b = getActiveBackend()
+    if (!b.ready) {
+      sendJson(res, 400, { error: `vector backend not ready (${b.name})` })
+      return
+    }
+    const user_key = url.searchParams.get('user_key') || undefined
+    const body = await readBody(req, res).catch(() => '')
+    const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
+    const maxRows = typeof parsed.max_rows === 'number' ? parsed.max_rows : undefined
+
+    // P1-10: dedupe concurrent backfill — backfill is idempotent at the
+    // UPDATE layer, but running two passes wastes inference budget +
+    // makes the progress display jump around.
+    const inflight = findRunningJob('backfill')
+    if (inflight) {
+      sendJson(res, 202, { ok: true, jobId: inflight.id, alreadyRunning: true })
+      return
+    }
+    const job = newJob('backfill')
+    void (async () => {
+      try {
+        const r = await backfillEmbeddings({ user_key, maxRows })
+        finishJob(job.id, !r.errored, r.errored || `${r.succeeded}/${r.processed} ok (failed ${r.failed})`, r)
+      } catch (err) {
+        finishJob(job.id, false, err instanceof Error ? err.message : String(err), {})
+      }
+    })()
+    sendJson(res, 202, { ok: true, jobId: job.id, hint: 'poll /api/memory/vector/status for progress' })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleVectorClear(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { clearEmbeddings } = await import('../core/memory.js')
+    const user_key = url.searchParams.get('user_key') || undefined
+    const cleared = clearEmbeddings(user_key)
+    sendJson(res, 200, { ok: true, cleared })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 async function handleAgentHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const { circuitBreaker } = await import('../core/circuit-breaker.js')

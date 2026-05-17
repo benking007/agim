@@ -68,6 +68,15 @@ type A2aFailure = { ok: false; error: string }
 type A2aResult = A2aSuccess | A2aFailure
 interface PendingA2aRpc { resolve: (r: A2aResult) => void }
 
+// v1.3 — push_message RPC: agent-initiated message to an IM thread.
+// Wire success result is { outboxId, immediate, targetThread }.
+type PushResult = ReminderResult
+type PendingPushRpc = PendingReminderRpc
+
+// v1.5 — long-term memory RPC (memory_query / save / list / delete).
+type MemoryResult = ReminderResult
+type PendingMemoryRpc = PendingReminderRpc
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
@@ -75,6 +84,8 @@ class ApprovalClient {
   private pendingReminders = new Map<string, PendingReminderRpc>()
   private pendingMemos = new Map<string, PendingMemoRpc>()
   private pendingA2A = new Map<string, PendingA2aRpc>()
+  private pendingPush = new Map<string, PendingPushRpc>()
+  private pendingMemory = new Map<string, PendingMemoryRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -181,6 +192,38 @@ class ApprovalClient {
       return
     }
 
+    if (m.type === 'push.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingPush.get(reqId)
+      if (!p) return
+      this.pendingPush.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
+
+    if (m.type === 'memory.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingMemory.get(reqId)
+      if (!p) return
+      this.pendingMemory.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
+
     if (m.type === 'a2a.result') {
       const reqId = typeof m.reqId === 'string' ? m.reqId : null
       if (!reqId) return
@@ -243,6 +286,14 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingA2A.clear()
+    for (const [, p] of this.pendingPush) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingPush.clear()
+    for (const [, p] of this.pendingMemory) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingMemory.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -306,6 +357,52 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingReminders.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /** v1.5 — long-term memory ops via approval-bus. */
+  async requestMemory(op: string, payload: Record<string, unknown>): Promise<MemoryResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1, type: 'memory', runId: this.runId, reqId, op, payload,
+    })}\n`
+    return new Promise<MemoryResult>((resolve) => {
+      this.pendingMemory.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingMemory.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /** v1.3 — agent-initiated push to an IM thread. */
+  async requestPush(payload: Record<string, unknown>): Promise<PushResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1,
+      type: 'push',
+      runId: this.runId,
+      reqId,
+      payload,
+    })}\n`
+    return new Promise<PushResult>((resolve) => {
+      this.pendingPush.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingPush.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -795,6 +892,130 @@ export function buildServer(client: ApprovalClient): McpServer {
       },
     },
     wrapMemo('delete'),
+  )
+
+  // ─── v1.3 — agent-initiated push to an IM thread ─────────────────
+  // Lets the running agent send a message to its own (or a same-platform/
+  // same-user) IM thread without waiting for a user prompt. Use cases:
+  // monitoring loops, long-task progress updates, scheduled analyses.
+  //
+  // Default scope = caller's own thread. Cross-thread requires
+  // IMHUB_PUSH_CROSS_THREAD=on. Rate limit IMHUB_PUSH_RATE_PER_MINUTE
+  // (default 10/min/user).
+  server.registerTool(
+    'push_message',
+    {
+      title: 'Push a proactive message to the IM thread',
+      description:
+        '**USE THIS TOOL when you need to send a message to the user without waiting for them to ask first** — ' +
+        'monitoring alerts, long task progress, scheduled analysis results. ' +
+        'By default the message goes to YOUR OWN current IM thread (the same thread that invoked you). ' +
+        'Cross-thread pushes require the operator to enable IMHUB_PUSH_CROSS_THREAD=on AND must target the ' +
+        'same platform AND same user as the caller — there is no "push to anyone" capability.\n\n' +
+        'Rate limit: 10 pushes/min/user by default (IMHUB_PUSH_RATE_PER_MINUTE). Above cap → returns error.\n\n' +
+        'Returns { ok: true, result: { outboxId, immediate, targetThread } } on success.\n\n' +
+        'Triggers (Chinese): 「监控到 X 时通知我」「这个任务跑完时告诉我」「每天 8 点把 X 推给我」 — ' +
+        'when you finally HAVE the result, call this tool to push.\n\n' +
+        'Do NOT use for: ordinary replies to user messages (those go via your normal output stream).',
+      inputSchema: {
+        text: z.string().min(1).max(4000).describe('Message body. Plain text or markdown. Required.'),
+        toThread: z.string().optional().describe(
+          'Optional override: "platform:channelId:threadId". Same-platform same-user only; requires IMHUB_PUSH_CROSS_THREAD=on. Omit for caller\'s own thread.',
+        ),
+        _im_context: imContextSchema,
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      const result = await client.requestPush(args)
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+
+  // ─── v1.5 — long-term memory ──────────────────────────────────────
+  // FTS5-backed fact store + persona profile. Use memory_query when the
+  // user references something they've previously told you (preferences,
+  // holdings, projects, names, places). Use memory_save when you learn
+  // something worth remembering long-term.
+  const wrapMemory = (op: string) => async (args: Record<string, unknown>) => {
+    const result = await client.requestMemory(op, args)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+  }
+
+  server.registerTool(
+    'memory_query',
+    {
+      title: 'Recall facts about the current user',
+      description:
+        '**USE THIS TOOL when the user references something they\'ve told you before** — preferences, '
+        + 'holdings, projects, family / friend names, places, recurring tasks. The persona summary in '
+        + 'your system prompt covers the top-level "who is this person"; memory_query digs into '
+        + 'specific facts. Hybrid retrieval: FTS5 keyword + recency. Returns { matched, facts[] } where '
+        + 'each fact has { id, what, who, when_text, where_label, why, category, confidence }. Use '
+        + 'confidence to weigh how much to trust each fact. Empty query → most-recent N facts.\n\n'
+        + 'Triggers (Chinese): 「我之前说过 X」「我的 Y 是什么来着」「上次提到的 Z」 — query then answer.',
+      inputSchema: {
+        query: z.string().optional().describe('Free-text query. Leave empty for most-recent N facts.'),
+        category: z.enum(['fact', 'preference', 'goal', 'history', 'profile']).optional(),
+        k: z.number().int().min(1).max(50).optional().describe('Max facts to return (default 5)'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemory('query'),
+  )
+
+  server.registerTool(
+    'memory_save',
+    {
+      title: 'Remember a fact about the current user long-term',
+      description:
+        '**Call this when you LEARN something worth remembering** that the post-reply auto-distillation '
+        + 'might miss. Examples: user explicitly says "记住 X" / "我喜欢 Y", or you infer a strong '
+        + 'preference / commitment that should persist across sessions. Returns { id } on success. '
+        + 'Set confidence > 0.8 when the user said it directly, ~0.6 when inferred. Use sparingly — '
+        + 'auto-distillation already runs after every reply.',
+      inputSchema: {
+        what: z.string().min(1).max(500).describe('1-sentence fact. Required.'),
+        who: z.string().optional().describe('Subject (user / 用户 / friend name)'),
+        when_text: z.string().optional().describe('Time reference if relevant'),
+        where_label: z.string().optional().describe('Place if relevant'),
+        why: z.string().optional().describe('Context / motivation if relevant'),
+        category: z.enum(['fact', 'preference', 'goal', 'history', 'profile']).optional(),
+        confidence: z.number().min(0).max(1).optional().describe('0-1; default 0.6'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemory('save'),
+  )
+
+  server.registerTool(
+    'memory_list',
+    {
+      title: 'List recent facts for inspection',
+      description:
+        'Lists the user\'s most recent N facts (no query filter). Mainly for debugging / when the '
+        + 'user asks "你记得我什么". Prefer memory_query for normal recall flows.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(500).optional().describe('Default 50'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemory('list'),
+  )
+
+  server.registerTool(
+    'memory_delete',
+    {
+      title: 'Delete a fact by id',
+      description:
+        'Removes a fact by id (from memory_list or memory_query). CALL THIS when the user says '
+        + '"忘掉这个" / "这条不对" — they\'re correcting a wrong / stale fact. Returns { deleted: '
+        + 'bool }.',
+      inputSchema: {
+        id: z.number().int().positive().describe('Fact id from memory_query / memory_list'),
+        _im_context: imContextSchema,
+      },
+    },
+    wrapMemory('delete'),
   )
 
   // ─── A2A — agent-to-agent call ────────────────────────────────────

@@ -223,6 +223,162 @@ export function closeAuditDb(): void {
   helper.close()
 }
 
+// ─── v1.3 — Cost & Health aggregations ─────────────────────────────────
+//
+// Shared SQL helpers backing /api/health/*. All accept a `days` window
+// (relative to now()) and return small JSON-friendly objects.
+
+function safeDays(d: number): number {
+  if (!Number.isFinite(d) || d <= 0) return 7
+  return Math.min(Math.floor(d), 365)
+}
+
+/**
+ * Top-line metrics for a recent window: total calls, total cost, error
+ * rate, average + p95 latency. Used by /api/health/summary's KPI cards.
+ */
+export interface HealthSummary {
+  since: string
+  until: string
+  days: number
+  totals: {
+    calls: number
+    cost: number
+    errors: number
+    errorRate: number
+    avgLatencyMs: number
+    p95LatencyMs: number
+  }
+  byDay: Array<{ date: string; calls: number; cost: number; errors: number; avgLatencyMs: number }>
+}
+
+export function getHealthSummary(days: number): HealthSummary {
+  const window = safeDays(days)
+  const now = new Date()
+  const until = now.toISOString().slice(0, 10)
+  const since = new Date(now.getTime() - window * 86400_000).toISOString().slice(0, 10)
+  const empty: HealthSummary = {
+    since, until, days: window,
+    totals: { calls: 0, cost: 0, errors: 0, errorRate: 0, avgLatencyMs: 0, p95LatencyMs: 0 },
+    byDay: [],
+  }
+  const d = getDb()
+  if (!d) return empty
+  try {
+    const tot = d.prepare(`
+      SELECT
+        COUNT(*) AS calls,
+        COALESCE(SUM(cost), 0) AS cost,
+        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS errors,
+        COALESCE(AVG(duration_ms), 0) AS avg_latency
+      FROM invocations
+      WHERE ts >= datetime('now', ?)
+    `).get(`-${window} days`) as { calls: number; cost: number; errors: number; avg_latency: number }
+
+    // p95 — pull all latencies (capped) into JS for percentile calc. For
+    // huge tables this is suboptimal; switch to per-bucket histogram later.
+    const lats = d.prepare(`
+      SELECT duration_ms FROM invocations
+      WHERE ts >= datetime('now', ?) AND duration_ms > 0
+      ORDER BY duration_ms ASC LIMIT 100000
+    `).all(`-${window} days`) as Array<{ duration_ms: number }>
+    let p95 = 0
+    if (lats.length > 0) {
+      const idx = Math.max(0, Math.floor(lats.length * 0.95) - 1)
+      p95 = lats[idx].duration_ms
+    }
+
+    const dayRows = d.prepare(`
+      SELECT
+        substr(ts, 1, 10) AS date,
+        COUNT(*) AS calls,
+        COALESCE(SUM(cost), 0) AS cost,
+        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS errors,
+        COALESCE(AVG(duration_ms), 0) AS avg_latency
+      FROM invocations
+      WHERE ts >= datetime('now', ?)
+      GROUP BY date
+      ORDER BY date ASC
+    `).all(`-${window} days`) as Array<{ date: string; calls: number; cost: number; errors: number; avg_latency: number }>
+
+    return {
+      since, until, days: window,
+      totals: {
+        calls: tot.calls,
+        cost: Math.round(tot.cost * 10000) / 10000,
+        errors: tot.errors,
+        errorRate: tot.calls > 0 ? Math.round((tot.errors / tot.calls) * 10000) / 10000 : 0,
+        avgLatencyMs: Math.round(tot.avg_latency),
+        p95LatencyMs: p95,
+      },
+      byDay: dayRows.map((r) => ({
+        date: r.date,
+        calls: r.calls,
+        cost: Math.round(r.cost * 10000) / 10000,
+        errors: r.errors,
+        avgLatencyMs: Math.round(r.avg_latency),
+      })),
+    }
+  } catch (err) {
+    log.warn({ event: 'audit-log.summary_failed', err: String(err) })
+    return empty
+  }
+}
+
+export type TopNDim = 'user' | 'agent' | 'platform' | 'intent'
+export type TopNMetric = 'cost' | 'calls' | 'errors' | 'avg_latency'
+
+export interface TopNItem {
+  key: string
+  calls: number
+  cost: number
+  errors: number
+  avgLatencyMs: number
+}
+
+/**
+ * Top-N grouped by `dim`, sorted by `metric` desc. Used to surface
+ * "which users / agents / platforms drove the most cost / errors".
+ */
+export function getTopN(dim: TopNDim, metric: TopNMetric, days: number, limit: number = 10): TopNItem[] {
+  const window = safeDays(days)
+  const lim = Math.min(Math.max(Math.floor(limit), 1), 100)
+  const d = getDb()
+  if (!d) return []
+  const col = ({ user: 'user_id', agent: 'agent', platform: 'platform', intent: 'intent' } as const)[dim]
+  const orderCol = ({
+    cost: 'SUM(cost)',
+    calls: 'COUNT(*)',
+    errors: 'SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END)',
+    avg_latency: 'AVG(duration_ms)',
+  } as const)[metric]
+  try {
+    const rows = d.prepare(`
+      SELECT
+        ${col} AS key,
+        COUNT(*) AS calls,
+        COALESCE(SUM(cost), 0) AS cost,
+        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS errors,
+        COALESCE(AVG(duration_ms), 0) AS avg_latency
+      FROM invocations
+      WHERE ts >= datetime('now', ?)
+      GROUP BY ${col}
+      ORDER BY ${orderCol} DESC
+      LIMIT ?
+    `).all(`-${window} days`, lim) as Array<{ key: string; calls: number; cost: number; errors: number; avg_latency: number }>
+    return rows.map((r) => ({
+      key: r.key || '(empty)',
+      calls: r.calls,
+      cost: Math.round(r.cost * 10000) / 10000,
+      errors: r.errors,
+      avgLatencyMs: Math.round(r.avg_latency),
+    }))
+  } catch (err) {
+    log.warn({ event: 'audit-log.topn_failed', err: String(err) })
+    return []
+  }
+}
+
 export function getStats(): { total: number; byAgent: Record<string, number>; totalCost: number } {
   const d = getDb()
   if (!d) return { total: 0, byAgent: {}, totalCost: 0 }

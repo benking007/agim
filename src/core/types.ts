@@ -207,6 +207,24 @@ export interface MessengerAdapter {
    * resolved on the bus side.
    */
   editApprovalCard?(threadId: string, messageId: string, outcome: ApprovalCardOutcome): Promise<void>
+  /**
+   * v1.2 — generic choice card: a short prompt body + 1-3 action buttons.
+   * Used for confirm flows that aren't full tool-use approvals (e.g. job
+   * recovery "重发 / 取消", reminder snooze list, /memo confirm).
+   *
+   * `prompt.choices[*].data` is opaque to the adapter; consumers parse it
+   * out of ButtonCallback.data inside their onButtonCallback handler.
+   * Adapters that have native inline buttons (Telegram / Discord / Feishu)
+   * SHOULD implement this; adapters that don't (WeChat-iLink, DingTalk
+   * text-mode) may omit it and the caller falls back to plain text with
+   * "回 1 / 回 2" instructions.
+   */
+  sendChoiceCard?(threadId: string, prompt: ChoiceCardPrompt): Promise<{ messageId: string }>
+  /**
+   * Replace a choice card's body after a button has been tapped (or the
+   * card has otherwise expired). Mirrors editApprovalCard. Best-effort.
+   */
+  editChoiceCard?(threadId: string, messageId: string, finalText: string): Promise<void>
 }
 
 /**
@@ -253,6 +271,25 @@ export interface ApprovalCardPrompt {
   mode: 'normal' | 'auto-allow'
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
+}
+
+/**
+ * Generic choice-card prompt. The card renders `body` (and optional `title`)
+ * with one button per `choices` entry. When the user taps, the adapter fires
+ * an onButtonCallback event with `data` set to the matching choice's `data`
+ * — the caller parses that to figure out what to do.
+ *
+ * Total UTF-8 byte length of any `data` MUST stay under 64 (Telegram cap).
+ * Adapters that round-trip via JSON-RPC may have stricter limits — pick a
+ * compact discriminator like `rec:JOB_ID:y` or `snz:REM_ID:5m`.
+ */
+export interface ChoiceCardPrompt {
+  /** Optional title rendered above the body (bold / header style per platform). */
+  title?: string
+  /** Body text. May contain newlines. Platform may sanitize HTML / markdown. */
+  body: string
+  /** 1-3 buttons (rows). Each row holds 1-2 buttons depending on platform. */
+  choices: Array<{ label: string; data: string }>
 }
 
 /**

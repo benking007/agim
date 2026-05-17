@@ -65,6 +65,24 @@ interface ClaudeEvent {
   message?: {
     content: Array<{ type: string; text?: string; thinking?: string }>
     role: string
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+    }
+  }
+  // 'result' event — the final summary line emitted by `claude --print
+  // --output-format stream-json` once the run finishes. Claude Code CLI
+  // 2.x+ includes total_cost_usd here (already priced per current Anthropic
+  // rates including any cache hit/miss math). Older builds may only have
+  // `usage`; we fall back to that and let upstream price it.
+  total_cost_usd?: number
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
   }
 }
 
@@ -224,6 +242,38 @@ export class ClaudeCodeAdapter extends AgentBase {
       return parts.join('')
     }
     return ''
+  }
+
+  /**
+   * v1.3 — surface Claude Code's own cost + token usage so the audit-log
+   * actually records non-zero numbers for claude invocations. Claude Code
+   * CLI 2.x emits a `result` event at the end of each run with
+   * `total_cost_usd` (already priced) and `usage` (token counts). We pipe
+   * both through `opts.onUsage`, which the router accumulates and writes
+   * into invocations.cost.
+   */
+  protected inspectEvent(event: unknown, opts: AgentSendOpts): void {
+    if (!opts.onUsage) return
+    const e = event as ClaudeEvent
+    if (e.type !== 'result') return
+    const delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number } = {}
+    if (typeof e.total_cost_usd === 'number' && Number.isFinite(e.total_cost_usd) && e.total_cost_usd >= 0) {
+      delta.costUsd = e.total_cost_usd
+    }
+    const usage = e.usage
+    if (usage) {
+      const cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0
+      const cacheCreate = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0
+      const rawInput = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0
+      const totalInput = rawInput + cacheRead + cacheCreate
+      if (totalInput > 0) delta.tokensInput = totalInput
+      if (typeof usage.output_tokens === 'number' && usage.output_tokens > 0) {
+        delta.tokensOutput = usage.output_tokens
+      }
+    }
+    if (delta.costUsd !== undefined || delta.tokensInput !== undefined || delta.tokensOutput !== undefined) {
+      try { opts.onUsage(delta) } catch { /* never propagate callback errors */ }
+    }
   }
 }
 

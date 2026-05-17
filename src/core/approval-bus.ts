@@ -663,6 +663,14 @@ export class ApprovalBus {
       await this.handleA2A(m, socket)
       return
     }
+    if (m.type === 'push') {
+      await this.handlePush(m, socket)
+      return
+    }
+    if (m.type === 'memory') {
+      await this.handleMemory(m, socket)
+      return
+    }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
   }
 
@@ -960,6 +968,105 @@ export class ApprovalBus {
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
       if (err) log.warn({ event: 'memo.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * v1.3 — agent-initiated push (`mcp__imhub__push_message`). Wire format:
+   *   { v: 1, type: 'push', runId, reqId, payload: { text, toThread?, kind? } }
+   * Response: { v: 1, type: 'push.result', reqId, ok, result?, error? }
+   *
+   * Context resolution mirrors handleReminder / handleMemo: runId → ctx
+   * with an inline _im_context fallback for single-user MCP setups.
+   * Per-user rate limit + cross-thread gating are enforced in push-rpc.
+   */
+  private async handlePush(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'push.bus.missing_reqId' }); return }
+    // _im_context fallback is intentionally NOT supported for push. push
+    // sends a message to a user's IM thread — accepting an agent-asserted
+    // identity would let any caller spoof userId and push to other users
+    // when MCP daemons are shared across users (e.g. opencode's single
+    // long-lived MCP process). Force runId resolution.
+    if (payload._im_context) delete payload._im_context
+    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
+    if (!ctx) {
+      this.sendPushResult(socket, reqId, {
+        ok: false, error: `unknown runId: ${runId} — push requires a live runContext (no _im_context fallback)`,
+      })
+      return
+    }
+
+    const { handlePushOp } = await import('./push-rpc.js')
+    const result = await handlePushOp(payload as import('./push-rpc.js').PushPayload, ctx)
+    this.sendPushResult(socket, reqId, result)
+  }
+
+  private sendPushResult(
+    socket: Socket, reqId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'push.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'push.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * v1.5 — long-term memory ops (memory_query / save / list / delete).
+   * Same dispatch pattern as handleReminder / handlePush. Context resolved
+   * from runId; inline _im_context fallback supported for single-user MCP.
+   */
+  private async handleMemory(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const op = typeof m.op === 'string' ? m.op : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'memory.bus.missing_reqId' }); return }
+    if (!op) {
+      this.sendMemoryResult(socket, reqId, { ok: false, error: 'invalid memory message (op missing)' })
+      return
+    }
+
+    // _im_context fallback is intentionally NOT supported for memory ops.
+    // memory_query / memory_save / memory_list / memory_delete are scoped
+    // by RunContext.userId; accepting an agent-asserted identity would let
+    // any caller read or modify other users' memory when MCP daemons are
+    // shared across users (e.g. opencode's single long-lived MCP process).
+    // Force runId resolution.
+    if (payload._im_context) delete payload._im_context
+    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
+    if (!ctx) {
+      this.sendMemoryResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} — memory ops require a live runContext (no _im_context fallback)`,
+      })
+      return
+    }
+    const { handleMemoryOp } = await import('./memory-rpc.js')
+    const result = await handleMemoryOp(op, payload, ctx)
+    this.sendMemoryResult(socket, reqId, result)
+  }
+
+  private sendMemoryResult(
+    socket: Socket, reqId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'memory.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'memory.bus.write_failed', reqId, err: String(err) })
     })
   }
 

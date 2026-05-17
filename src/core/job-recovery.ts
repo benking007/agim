@@ -35,9 +35,14 @@ import {
   markJobReplacedBy,
   sweepAbandonedInterrupted,
 } from './job-board.js'
-import { sink } from './message-sink.js'
+import { sink, resolveMessenger } from './message-sink.js'
+import type { ButtonCallback } from './types.js'
 
 const log = rootLogger.child({ component: 'job-recovery' })
+
+/** Choice-card `data` prefix this module owns. approval-router's button
+ *  dispatch forwards taps starting with this prefix to handleRecoveryButton. */
+const RECOVERY_CB_PREFIX = 'rec:'
 
 interface PendingRetry {
   jobId: number
@@ -50,6 +55,11 @@ interface PendingRetry {
   creatorId: string
   /** ms-epoch when the entry expires (interrupted_at + window). */
   expiresAt: number
+  /** v1.2 — id of the choice card we sent for this entry (if the adapter
+   *  supported sendChoiceCard). Used to edit the card to its terminal text
+   *  after the user picks a button or replies via text. Null when we fell
+   *  back to plain text. */
+  cardMessageId: string | null
 }
 
 /** Thread-keyed pending entries. One per thread — if a thread happens to
@@ -57,9 +67,32 @@ interface PendingRetry {
  *  and the rest get swept to 'abandoned' next sweep. */
 const pending: Map<string, PendingRetry> = new Map()
 
+/**
+ * v1.2 — executor hook injected by cli.ts at boot. When the user accepts
+ * a retry (via text "1" OR button "🔁 重发"), the new inline-job row is
+ * created here but the agent never runs unless we feed a synthetic
+ * MessageContext through cli's handleMessage. cli.ts owns that closure
+ * (it has the registry, sink, agent dispatcher) so we register the
+ * callback here and invoke it after a successful retry.
+ *
+ * Without this hook the row stays in 'pending' forever. That bug
+ * affected the button path only (text path was working via the
+ * messenger's own onMessage chain).
+ */
+export interface RecoveryExecutorArgs {
+  entry: PendingRetry
+  newJobId: number
+}
+export type RecoveryExecutor = (args: RecoveryExecutorArgs) => Promise<void>
+let recoveryExecutor: RecoveryExecutor | null = null
+export function setRecoveryExecutor(fn: RecoveryExecutor | null): void {
+  recoveryExecutor = fn
+}
+
 /** Test hook — wipe the in-memory state. */
 export function _resetPendingForTests(): void {
   pending.clear()
+  recoveryExecutor = null
 }
 
 /** Test hook — inspect current state. */
@@ -125,7 +158,7 @@ export async function scanInterruptedAndNotify(): Promise<{ notified: number; ab
     const interruptedAtMs = j.completed_at
       ? Date.parse(`${j.completed_at}Z`)
       : Date.now()
-    pending.set(key, {
+    const entry: PendingRetry = {
       jobId: j.id,
       agent: j.agent,
       prompt: j.prompt,
@@ -135,7 +168,20 @@ export async function scanInterruptedAndNotify(): Promise<{ notified: number; ab
       threadId: parsed.threadId,
       creatorId: j.creator_id,
       expiresAt: interruptedAtMs + windowMs,
-    })
+      cardMessageId: null,
+    }
+    pending.set(key, entry)
+
+    // v1.2 — try the platform's native choice card first; fall back to plain
+    // text when the adapter doesn't implement sendChoiceCard (WeChat-iLink,
+    // DingTalk text mode, …). Both paths support text replies ("1" / "重发")
+    // so the user always has a way out.
+    const cardSent = await trySendRecoveryCard(entry, windowMin)
+    if (cardSent) {
+      entry.cardMessageId = cardSent
+      notified++
+      continue
+    }
     try {
       await sink.deliver({
         platform: parsed.platform,
@@ -144,6 +190,7 @@ export async function scanInterruptedAndNotify(): Promise<{ notified: number; ab
         payload: formatNotice(j, windowMin),
         kind: 'text',
         priority: 'normal',
+        source: 'system',
       })
       notified++
     } catch (err) {
@@ -184,9 +231,30 @@ export type RecoveryReplyOutcome =
   | { kind: 'retried'; newJobId: number; oldJobId: number; entry: PendingRetry }
   | { kind: 'cancelled'; oldJobId: number }
 
+async function editCardForTextReply(entry: PendingRetry, finalText: string): Promise<void> {
+  const adapter = resolveMessenger(entry.platform)
+  if (!adapter?.editChoiceCard || !entry.cardMessageId) return
+  try {
+    await adapter.editChoiceCard(entry.threadId, entry.cardMessageId, finalText)
+    log.info({
+      event: 'recovery.text_reply.card_edited',
+      jobId: entry.jobId, finalText: finalText.slice(0, 60),
+    })
+  } catch (err) {
+    log.warn({
+      event: 'recovery.text_reply.card_edit_failed',
+      jobId: entry.jobId, err: err instanceof Error ? err.message : String(err),
+    }, 'editing card after text reply failed — buttons may stay live until card expires')
+  }
+}
+
 /** Try to interpret a user's reply as a recovery decision. Returns an
  *  outcome the caller can render. Side-effect: on a recognized decision,
- *  the pending entry is removed and the DB row transitions. */
+ *  the pending entry is removed and the DB row transitions. When the
+ *  entry was originally sent as a native choice card, this also edits
+ *  the card to its terminal state so its buttons can't be tapped after
+ *  the user already replied with text — otherwise a stale tap would
+ *  hit the "请求已过期" branch and read as a glitch. */
 export function tryHandleRecoveryReply(threadKey: string, text: string): RecoveryReplyOutcome {
   const entry = pending.get(threadKey)
   if (!entry) return { kind: 'not-pending' }
@@ -198,6 +266,16 @@ export function tryHandleRecoveryReply(threadKey: string, text: string): Recover
   if (!isRetry && !isCancel) return { kind: 'not-recovery-reply' }
 
   pending.delete(threadKey)
+
+  // Fire-and-forget: if there's a card attached to this entry, edit it
+  // to terminal text + strip buttons. Errors logged but don't block the
+  // outcome the caller is waiting on.
+  if (entry.cardMessageId) {
+    const finalText = isRetry
+      ? `🔁 已重发 · ${nowHm()}\n「${entry.prompt.replace(/\s+/g, ' ').slice(0, 60)}…」`
+      : `✖ 已取消 · ${nowHm()}`
+    void editCardForTextReply(entry, finalText)
+  }
 
   if (isCancel) {
     markInterruptedCancelled(entry.jobId)
@@ -228,4 +306,171 @@ export function tryHandleRecoveryReply(threadKey: string, text: string): Recover
  *  interceptors when the user is replying to a recovery prompt. */
 export function hasPendingRecovery(threadKey: string): boolean {
   return pending.has(threadKey)
+}
+
+// ─── v1.2: native choice-card flow ────────────────────────────────────
+
+/** Render the card prompt for one interrupted entry. */
+function buildChoiceCard(entry: PendingRetry, windowMin: number): import('./types.js').ChoiceCardPrompt {
+  const flat = entry.prompt.replace(/\s+/g, ' ').trim()
+  const preview = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
+  return {
+    title: '⚠️ 上次的消息被服务重启中断了',
+    body: `「${preview}」\n${windowMin} 分钟内有效`,
+    choices: [
+      { label: '🔁 重发', data: `${RECOVERY_CB_PREFIX}${entry.jobId}:y` },
+      { label: '✖ 取消', data: `${RECOVERY_CB_PREFIX}${entry.jobId}:n` },
+    ],
+  }
+}
+
+/** Try to send a native choice card via the adapter. Returns the new
+ *  message id on success, null if the adapter doesn't support it (so caller
+ *  can fall back to plain text). */
+async function trySendRecoveryCard(entry: PendingRetry, windowMin: number): Promise<string | null> {
+  const adapter = resolveMessenger(entry.platform)
+  if (!adapter?.sendChoiceCard) return null
+  try {
+    const sent = await adapter.sendChoiceCard(entry.threadId, buildChoiceCard(entry, windowMin))
+    log.info({
+      event: 'recovery.card_sent',
+      jobId: entry.jobId,
+      platform: entry.platform,
+      messageId: sent.messageId,
+    })
+    return sent.messageId
+  } catch (err) {
+    log.warn({
+      event: 'recovery.card_send_failed',
+      jobId: entry.jobId,
+      err: err instanceof Error ? err.message : String(err),
+    }, 'sendChoiceCard threw — falling back to plain text')
+    return null
+  }
+}
+
+/**
+ * True if the given callback_data belongs to a recovery prompt — used by
+ * approval-router's button dispatcher to route the tap to us instead of
+ * the approval flow.
+ */
+export function isRecoveryButtonData(data: string): boolean {
+  return typeof data === 'string' && data.startsWith(RECOVERY_CB_PREFIX)
+}
+
+/** In-process dedupe of repeated callback_query deliveries — Telegram may
+ *  retry the callback if it doesn't see an ack in time. Without this,
+ *  the second delivery sees an empty pending map → "expired" branch fires
+ *  and may overwrite the just-set terminal card. */
+const recentClicks = new Map<string, number>()  // `${jobId}:${choice}` → ts
+const CLICK_DEDUPE_MS = 30_000
+
+function isDuplicateClick(jobId: number, choice: string): boolean {
+  const key = `${jobId}:${choice}`
+  const ts = Date.now()
+  // Sweep stale entries opportunistically.
+  for (const [k, t] of recentClicks.entries()) {
+    if (ts - t > CLICK_DEDUPE_MS) recentClicks.delete(k)
+  }
+  if (recentClicks.has(key)) return true
+  recentClicks.set(key, ts)
+  return false
+}
+
+function nowHm(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * Handle a button tap on a recovery card. Mirrors tryHandleRecoveryReply's
+ * semantics: returns the outcome the caller can act on. Also edits the
+ * card (drops the buttons) so a stale tap can't fire twice.
+ */
+export async function handleRecoveryButton(platform: string, cb: ButtonCallback): Promise<RecoveryReplyOutcome | null> {
+  const remainder = cb.data.slice(RECOVERY_CB_PREFIX.length)  // e.g. "42:y"
+  const [jobIdStr, choice] = remainder.split(':')
+  const jobId = Number.parseInt(jobIdStr, 10)
+  if (!Number.isFinite(jobId) || (choice !== 'y' && choice !== 'n')) {
+    log.warn({ event: 'recovery.button.bad_data', data: cb.data })
+    await cb.ack('按钮数据格式错误').catch(() => {})
+    return null
+  }
+
+  log.info({
+    event: 'recovery.button.received',
+    platform, jobId, choice, threadId: cb.threadId, messageId: cb.messageId,
+  })
+
+  // Dedupe identical clicks within a short window — Telegram resends
+  // callbacks when ack times out; we don't want to double-process.
+  if (isDuplicateClick(jobId, choice)) {
+    log.info({ event: 'recovery.button.dedup_skip', jobId, choice })
+    await cb.ack().catch(() => {})  // silent ack; no card edit
+    return null
+  }
+
+  // Look up the pending entry by jobId.
+  let entry: PendingRetry | undefined
+  let entryKey: string | undefined
+  for (const [k, v] of pending.entries()) {
+    if (v.jobId === jobId) { entry = v; entryKey = k; break }
+  }
+  if (!entry || !entryKey) {
+    await cb.ack('请求已过期').catch(() => {})
+    const adapter = resolveMessenger(platform)
+    if (adapter?.editChoiceCard) {
+      await adapter.editChoiceCard(cb.threadId, cb.messageId, `⏱ 已过期 · ${nowHm()}`).catch(() => {})
+    }
+    return null
+  }
+
+  // Only the original requester may resolve the card. In group chats
+  // anyone can see the buttons; without this check a bystander could
+  // tap "取消" and kill someone else's retry — or worse, tap "重发" and
+  // re-run a prompt that wasn't theirs.
+  if (entry.creatorId && cb.userId && entry.creatorId !== cb.userId) {
+    log.warn({
+      event: 'recovery.button.unauthorized_tapper',
+      jobId, expected: entry.creatorId, actual: cb.userId,
+    })
+    await cb.ack('只有发起者可以处理这条消息').catch(() => {})
+    return null
+  }
+
+  const reply = choice === 'y' ? '1' : '2'
+  const outcome = tryHandleRecoveryReply(entryKey, reply)
+
+  const ackText = choice === 'y' ? '🔁 已请求重发' : '✖ 已取消'
+  await cb.ack(ackText).catch(() => {})
+
+  // Append a HH:MM marker to the edit text so a retry-delivery's "not
+  // modified" edit doesn't silently swallow the visual update (Telegram
+  // rejects edits whose new content matches the current).
+  const adapter = resolveMessenger(platform)
+  if (adapter?.editChoiceCard) {
+    const finalText = choice === 'y'
+      ? `🔁 已重发 · ${nowHm()}\n「${entry.prompt.replace(/\s+/g, ' ').slice(0, 60)}…」`
+      : `✖ 已取消 · ${nowHm()}`
+    await adapter.editChoiceCard(cb.threadId, cb.messageId, finalText).catch(() => {})
+    log.info({ event: 'recovery.button.edited', jobId, choice, finalText: finalText.slice(0, 60) })
+  }
+
+  // P0-3 fix: button-tap path was creating the replacement row but never
+  // running the agent. Invoke the executor cli.ts registered at boot.
+  if (outcome.kind === 'retried' && recoveryExecutor) {
+    try {
+      await recoveryExecutor({ entry: outcome.entry, newJobId: outcome.newJobId })
+    } catch (err) {
+      log.warn({
+        event: 'recovery.button.executor_failed', jobId, err: String(err),
+      }, 'retry executor threw — replacement job created but agent did not run')
+    }
+  } else if (outcome.kind === 'retried' && !recoveryExecutor) {
+    log.warn({
+      event: 'recovery.button.no_executor', jobId,
+    }, 'no executor registered — replacement job will stay pending')
+  }
+
+  return outcome
 }

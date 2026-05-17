@@ -545,6 +545,18 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
  * clean terminal view.
  */
 async function handleButtonCallback(platform: string, cb: ButtonCallback): Promise<void> {
+  // v1.2 — dispatch by callback_data prefix. job-recovery owns `rec:`.
+  // Adding a new prefix? Add a guard here + import the matching handler.
+  try {
+    const { isRecoveryButtonData, handleRecoveryButton } = await import('./job-recovery.js')
+    if (isRecoveryButtonData(cb.data)) {
+      await handleRecoveryButton(platform, cb)
+      return
+    }
+  } catch (err) {
+    log.warn({ event: 'approval.router.recovery_dispatch_failed', err: String(err) })
+  }
+
   const parsed = parseCallbackData(cb.data)
   if (!parsed) {
     await cb.ack('未识别的按钮')

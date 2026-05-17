@@ -9,6 +9,7 @@ import type {
   ButtonCallback,
   ApprovalCardPrompt,
   ApprovalCardOutcome,
+  ChoiceCardPrompt,
 } from '../../../core/types.js'
 import type { TelegramConfig } from './types.js'
 import { markdownToTelegramHtml } from './markdown-to-html.js'
@@ -806,6 +807,91 @@ export class TelegramAdapter implements MessengerAdapter {
       // Common: "message is not modified", "message can't be edited" (>48h),
       // "message to edit not found". All non-fatal — bus already resolved.
       log.warn({ err: String(err), messageId }, 'editApprovalCard failed (non-fatal)')
+    }
+  }
+
+  async sendChoiceCard(
+    threadId: string,
+    prompt: ChoiceCardPrompt,
+  ): Promise<{ messageId: string }> {
+    if (!this.bot) throw new Error('Telegram adapter not started')
+    const title = prompt.title ? `<b>${escapeHtml(prompt.title)}</b>\n` : ''
+    const text = `${title}${escapeHtml(prompt.body)}`
+    // Layout: 1 button → single row; 2 → two on one row; 3+ → each on its own row.
+    const rows = prompt.choices.length <= 2
+      ? [prompt.choices.map((c) => ({ text: c.label, callback_data: c.data }))]
+      : prompt.choices.map((c) => [{ text: c.label, callback_data: c.data }])
+    const sent = await this.bot.api.sendMessage(threadId, text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: rows },
+    })
+    return { messageId: sent.message_id.toString() }
+  }
+
+  async editChoiceCard(
+    threadId: string,
+    messageId: string,
+    finalText: string,
+  ): Promise<void> {
+    if (!this.bot) return
+    const numericId = Number.parseInt(messageId, 10)
+    if (!Number.isFinite(numericId)) {
+      log.warn({ messageId }, 'editChoiceCard: non-numeric messageId')
+      return
+    }
+    // Try editing both text + reply_markup in one call. Several Telegram
+    // errors are routine and don't indicate a real problem — classify them
+    // so log noise stays low:
+    //   - "message is not modified" → text matches; still strip buttons
+    //   - "message to edit not found" / "MESSAGE_ID_INVALID" → user
+    //     deleted it or it's too old; skip silently
+    //   - "message can't be edited" → past edit window (>48h); skip silently
+    //   - "Too Many Requests" / 429 → rate limit; skip + brief log
+    //   - everything else → warn
+    const bot = this.bot
+    const classify = (raw: string): 'not-modified' | 'gone' | 'too-old' | 'rate-limit' | 'other' => {
+      if (/message is not modified/i.test(raw)) return 'not-modified'
+      if (/message to edit not found|MESSAGE_ID_INVALID/i.test(raw)) return 'gone'
+      if (/message can't be edited|message_too_long/i.test(raw)) return 'too-old'
+      if (/Too Many Requests|429/i.test(raw)) return 'rate-limit'
+      return 'other'
+    }
+    try {
+      await bot.api.editMessageText(threadId, numericId, escapeHtml(finalText), {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [] },
+      })
+      return
+    } catch (err) {
+      const msg = String(err)
+      const kind = classify(msg)
+      if (kind === 'gone' || kind === 'too-old') {
+        log.debug({ messageId, kind }, 'editChoiceCard: card no longer editable, skipping')
+        return
+      }
+      if (kind === 'rate-limit') {
+        log.info({ messageId, err: msg }, 'editChoiceCard: rate-limited, skipping (buttons remain live)')
+        return
+      }
+      log.warn({
+        err: msg, messageId, kind,
+      }, 'editChoiceCard editMessageText failed')
+      // Only fall through to button-only strip when text matched.
+      if (kind !== 'not-modified') return
+    }
+    try {
+      await bot.api.editMessageReplyMarkup(threadId, numericId, {
+        reply_markup: { inline_keyboard: [] },
+      })
+      log.info({ messageId }, 'editChoiceCard: stripped buttons after not-modified')
+    } catch (err) {
+      const msg = String(err)
+      const kind = classify(msg)
+      if (kind === 'gone' || kind === 'too-old' || kind === 'rate-limit') {
+        log.debug({ messageId, kind }, 'editChoiceCard reply-markup strip skipped')
+        return
+      }
+      log.warn({ err: msg, messageId, kind }, 'editChoiceCard editMessageReplyMarkup failed')
     }
   }
 

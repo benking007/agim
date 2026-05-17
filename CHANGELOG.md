@@ -4,6 +4,146 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-17
+
+The biggest agim release since 1.0: long-term memory, agent-initiated push,
+a Cost & Health dashboard, native inline-button recovery cards on Telegram,
+and a handful of P0 / P1 hardening fixes uncovered in pre-release CR.
+
+### Added — Long-term memory (`memory.db`)
+
+Persistent per-user fact store + auto-distilled "persona" summary that gets
+injected into every agent prompt. Default OFF; opt in via Settings →
+**自动化记忆** toggle (or `IMHUB_MEMORY_ENABLED=1`).
+
+- **Storage**: `~/.agim/memory.db` (SQLite). FTS5 index for keyword recall.
+  Per-user partition key `${platform}:${userId}` so the same human across
+  multiple IMs converges to one memory.
+- **Auto-distillation**: after each agent reply, a small JSON-extraction
+  prompt runs on the SAME agent (no Claude lock-in) and writes 0–5 facts
+  to the user's row. Fire-and-forget; never blocks the user.
+- **Daily consolidation cron**: rebuilds the persona summary from the
+  newest 50 facts so the always-on snippet stays small (~150–300 tokens).
+- **4 MCP tools** so agents can introspect / extend memory:
+  `mcp__imhub__memory_query`, `_save`, `_list`, `_delete`.
+- **Web admin tab** (`/tasks#memory`): per-user user selector → persona
+  text editor + paginated facts table with FTS5 search + bulk-delete
+  filters + JSON export.
+- **Slash command** `/memo …` still works — writes go to memory.db now.
+
+### Added — Vector retrieval (optional)
+
+Layer dense-vector recall on top of FTS5 for synonym / cross-lingual /
+conceptual queries. Default OFF; opt in per user via the Memory tab's
+🔍 vector card. Two backends:
+
+- **Local BGE** (`@xenova/transformers` + Xenova BGE-zh ONNX): one-time
+  ~100 / 250 / 500 MB download (small / base / large preset). Runs fully
+  offline after that. CPU inference, no GPU required.
+- **OpenAI-compatible** (`baseUrl + model + apiKey`): works with the
+  OpenAI cloud, Azure, Ollama, 智谱 — anyone serving `/v1/embeddings`.
+
+Reciprocal-Rank-Fusion (k=60) merges FTS5 + vector top-K into a single
+ranked list. Backfill button generates embeddings for existing facts.
+Clear button wipes the index when switching backends (different model =
+incompatible vector space).
+
+### Added — Agent-initiated push (`mcp__imhub__push_message`)
+
+Lets a running agent push a follow-up message back into the IM thread
+without an inbound trigger. Useful for long-running jobs ("CI green") or
+schedule-aware notifications.
+
+- Per-user rate limit (`IMHUB_PUSH_RATE_PER_HOUR`, default 20).
+- Cross-thread push gated by `IMHUB_PUSH_CROSS_THREAD` (default off:
+  push must target the same thread the run started in).
+- `POST /api/notify` HTTP endpoint exposes the same primitive for
+  webhooks / cron / external tools.
+
+### Added — Cost & Health dashboard (`/tasks#cost`)
+
+Per-day spend / calls / errors / p95 latency from the audit log.
+
+- Window selector: 1 / 7 / 30 / 90 days.
+- KPI cards: total spend, p95 latency, error rate.
+- Daily trend chart with metric toggle (calls / cost / errors / avg latency).
+- Top-N by user / agent / platform with ordering toggle.
+- Claude per-run cost now auto-extracted from `--output-format json` and
+  fed into `audit-log` (Claude was previously the only adapter not
+  reporting cost — now matches OpenAI / Codex / Copilot).
+
+### Added — Recovery card with inline buttons (Telegram, Feishu)
+
+The 1.1.x crash-recovery flow used to send a plain "回复 1 重发 / 2 取消"
+text prompt. v1.2.0 now sends a **native inline-button card** on
+adapters that support it (`sendChoiceCard`); falls back to text on
+WeChat-iLink / DingTalk where buttons aren't a primitive.
+
+- Tap `🔁 重发` → original prompt re-runs in the same thread.
+- Tap `✖ 取消` → row marked cancelled.
+- Buttons disappear after a tap (card edited to terminal text) so a
+  stale tap can't double-fire.
+- Text reply ("1" / "重发") also edits the card to the same terminal
+  state — no orphan buttons after the choice is already made.
+- Group-chat safety: only the original requester (`creator_id`) can
+  resolve the card; bystanders get a toast "只有发起者可以处理".
+
+### Changed — Web auth / env editor
+
+- `IMHUB_MEMORY_VECTOR_OPENAI_API_KEY` joins the SECRET_KEYS allowlist:
+  masked on GET, click-to-reveal for editing, masked-value writes are
+  no-ops (defense in depth so a stale masked echo can't overwrite).
+- `PUT /api/env` rejects masked echoes for any secret key (was only
+  protected for nested telegram/feishu structs before).
+- Restart UX: spawn detached + unref so the HTTP response returns
+  immediately; client polls `bootPhase` not just HTTP-up. The IM ack
+  ("重启中…") now arrives before the web button visibly updates.
+
+### Fixed — Pre-release CR (P0 / P1 hardening)
+
+- **P0** persona-injection sanitization: stored facts containing
+  `[/long-term memory]` / `<system>` markers no longer escape the
+  always-on memory envelope (persona.ts).
+- **P0** memory + push: removed agent-asserted `_im_context` fallback
+  in approval-bus to prevent a shared-MCP daemon (opencode-style) from
+  spoofing userId across users. Reminder + memo still keep the fallback
+  (single-user MCP daemons).
+- **P0** recovery `🔁 重发` button used to create the replacement
+  inline-job row but never run the agent (orphan row stayed pending).
+  Now invokes an executor cli.ts registers at boot that synthesizes a
+  MessageContext and runs handleMessage.
+- **P0** `bufferToFloat32` crash from better-sqlite3's non-aligned
+  BLOB buffer (memory-vector.ts) — copy into a fresh ArrayBuffer first.
+- **P1** FTS5 `MATCH` injection: wrap user queries in `"…"` so `C++`,
+  `foo:bar`, `(`, `OR`, etc. stop crashing the prepared statement.
+- **P1** CJK tokenization: pre-tokenize by inserting spaces between
+  adjacent CJK chars so "杭州" actually matches a fact indexed as
+  "用户在杭州工作" (unicode61 doesn't bigram CJK).
+- **P1** hybrid retrieval now filters candidates by
+  `embedding_model = active`, not just `embedding_dims`, so swapping
+  vector backends doesn't poison the cosine ranking with stale vectors.
+- **P1** silent-embed-skip: warn once per session when a fact saves
+  without an embedding because the vector backend is configured but
+  not ready.
+- **P1** distill call now passes `onUsage` + writes an audit row
+  (intent=`memory.distill`) so memory cost shows up in Cost & Health.
+- **P1** saveFact / deleteFact wrapped in transactions so a crash
+  between row and FTS index leaves no orphan rows.
+- **P1** Telegram `editChoiceCard` classifies errors: not-modified /
+  gone / too-old / rate-limited are silent; only "other" warns.
+- **P1** vector download / backfill in-flight check prevents concurrent
+  jobs from racing on the model cache.
+- **P1** Memory tab auto-stops its 2 s status poller once nothing is
+  running; skips loading the vector card when memory is disabled.
+
+### Changed — Telemetry / data
+
+- `IMHUB_MEMORY_*` env keys editable via `PUT /api/env`.
+- `~/.agim/memory.db` is new; safe to delete — recreated on next save.
+- Vector cache: `~/.agim/cache/transformers` (BGE ONNX model files).
+- `audit-log` adds `intent='memory.distill'` rows so distillation cost
+  is filterable in Cost & Health.
+
 ## [1.1.11] - 2026-05-17
 
 ### Fixed — Viewer page unreadable in OS dark mode

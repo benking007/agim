@@ -24,6 +24,7 @@ import { handleMemoCommand } from './commands/memo.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig } from './viewer-config.js'
+import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
 import { logInvocation } from './audit-log.js'
@@ -525,7 +526,14 @@ export async function callAgentWithHistory(
     viewerEnabled: viewerCfg.enabled && ctx.platform !== 'web',
     thresholds: viewerCfg.thresholds,
   })
-  const headerBlocks = [viewerHint, reminderContext].filter(Boolean)
+  // v1.5 — long-term memory persona block. Tiny header (~150-300 tokens)
+  // listing what we know about the user, plus a nudge to call memory_query
+  // for details beyond the summary. Empty for first-time users.
+  const personaSnippet = buildPersonaSnippet({
+    platform: ctx.platform,
+    userId: ctx.userId ?? '',
+  })
+  const headerBlocks = [personaSnippet, viewerHint, reminderContext].filter(Boolean)
   const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
 
   const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
@@ -608,6 +616,22 @@ export async function callAgentWithHistory(
           responseChars: fullResponse.length,
           durationMs,
         })
+        // v1.5 — memory distillation. Fire-and-forget post-reply hook.
+        // Runs only when IMHUB_MEMORY_ENABLED is on; uses the same agent
+        // we just talked to (model-agnostic). Skipped for tiny exchanges.
+        try {
+          const { scheduleDistillation } = await import('./memory-distill.js')
+          scheduleDistillation({
+            platform: ctx.platform,
+            userId: ctx.userId ?? '',
+            userMessage: prompt,
+            agentReply: fullResponse,
+            agent,
+            traceId: ctx.traceId,
+          })
+        } catch (err) {
+          ctx.logger.debug({ event: 'memory.distill.schedule_failed', err: String(err) })
+        }
       }
     }
   })()

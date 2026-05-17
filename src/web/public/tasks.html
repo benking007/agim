@@ -230,6 +230,72 @@
             body: 'An outbox row enters this state after 6 failed delivery attempts (cumulative ~3h of backoff). It will no longer be retried automatically. Click "Retry" to put it back into the pending queue from scratch.',
           },
         },
+        // ── v1.2 Cost & Health tab ──
+        costH2: '💰 Cost & Health',
+        costWindow: 'Window',
+        costDays1: '1 day',
+        costDays7: '7 days',
+        costDays30: '30 days',
+        costDays90: '90 days',
+        costRefresh: 'Refresh',
+        costDailyTrend: 'Daily trend',
+        costMetricCalls: 'Calls',
+        costMetricCost: 'Cost ($)',
+        costMetricErrors: 'Errors',
+        costMetricLatency: 'Avg latency (ms)',
+        costTopUser: 'Top by User',
+        costTopAgent: 'Top by Agent',
+        costTopPlatform: 'Top by Platform',
+        // ── v1.5/1.6 Memory tab ──
+        memoryH2: '🧠 Long-term memory',
+        memoryIntro: 'Facts auto-extracted from conversations + persona summary. Pick a user → view / edit / delete. All data lives in ~/.agim/memory.db locally; nothing is uploaded.',
+        memoryUser: 'User',
+        memoryUserLoading: '— loading —',
+        memoryReloadUsers: '🔄 Reload users',
+        memoryExportUser: '📦 Export user JSON',
+        memoryPersonaCard: 'Persona summary',
+        memoryPersonaPlaceholder: '(No persona for this user yet — will be auto-generated at next consolidation, or write one manually.)',
+        memoryPersonaSave: 'Save persona',
+        memoryPersonaDelete: 'Delete persona',
+        memoryFactsCard: 'Facts',
+        memoryFactsSearch: 'Search (FTS5)',
+        memoryFactsCatAll: 'All types',
+        memoryFactsQuery: 'Query',
+        memoryFactsSelectUser: '(Select a user)',
+        memoryFactsPrev: '← Prev',
+        memoryFactsNext: 'Next →',
+        memoryFactsClearLowConf: '🗑 Clear low-confidence',
+        memoryFactsClearAll: '⚠️ Clear all',
+        // ── v1.6 Vector card ──
+        vecTitle: '🔍 Vector retrieval',
+        vecSubtitle: '(optional enhancement · default off)',
+        vecWhyHeading: 'Why add vectors?',
+        vecWhyDefault: 'Default (FTS5 keyword): only literal hits — "Tencent" → facts containing "Tencent".',
+        vecWhyAdded: 'With vectors: also recall synonyms / cross-lingual / conceptual queries:',
+        vecWhyEx1: '▸ "investment preference" → recalls "user prefers low-drawdown, steady"',
+        vecWhyEx2: '▸ "Beijing" → recalls "user works in 北京"',
+        vecWhyEx3: '▸ "my son\'s birthday" → recalls "Tom born 2018-03-15"',
+        vecWhenHeading: 'When to enable',
+        vecWhenBody: '50+ facts stored AND agent often "forgets" what the user said. Stock install does not need it — FTS5 is enough.',
+        vecBackend: 'Backend',
+        vecBackendOff: 'Off (FTS5 only)',
+        vecBackendLocal: 'Local BGE (one-time download ~250MB)',
+        vecBackendOpenai: 'Remote OpenAI-compatible (baseUrl + key)',
+        vecLocalModel: 'Local model',
+        vecLocalSmall: 'Small (small, ~100MB, speed-first)',
+        vecLocalBase: 'Medium (base, ~250MB, recommended)',
+        vecLocalLarge: 'Large (large, ~500MB, accuracy-first)',
+        vecLocalCustom: 'Custom…',
+        vecLocalHint: 'All three presets are BGE Chinese-optimized models (open-sourced by BAAI; Xenova provides ONNX quantized builds on HuggingFace). First download goes to ~/.agim/cache/transformers.',
+        vecDownloadBtn: '📥 Download model (first time 5–10 min, WiFi recommended)',
+        vecOpenaiKey: 'API Key',
+        vecOpenaiReveal: '🔓 Reveal & edit',
+        vecOpenaiKeyHint: 'Masked by default; if you don\'t click reveal, save will not overwrite the existing value.',
+        vecTestBtn: '🧪 Test connection (10s timeout)',
+        vecSaveBtn: 'Save config',
+        vecBackfillBtn: '🔄 Backfill all',
+        vecClearBtn: '🗑 Clear vector index',
+        vecMemoryDisabled: '○ Memory not enabled (turn on in Settings → automation)',
       },
       zh: {
         title: 'Agim — 任务',
@@ -435,6 +501,72 @@
             body: '投递队列中连续 6 次失败（累计退避约 3 小时）的行进入此状态，不再自动重试。点击"重试"会将其重新入队、退避计数清零。',
           },
         },
+        // ── v1.2 Cost & Health tab ──
+        costH2: '💰 成本与健康',
+        costWindow: '窗口',
+        costDays1: '1 天',
+        costDays7: '7 天',
+        costDays30: '30 天',
+        costDays90: '90 天',
+        costRefresh: '刷新',
+        costDailyTrend: '每日趋势',
+        costMetricCalls: '调用数',
+        costMetricCost: '成本($)',
+        costMetricErrors: '错误数',
+        costMetricLatency: '平均耗时(ms)',
+        costTopUser: '用户排行',
+        costTopAgent: 'Agent 排行',
+        costTopPlatform: '平台排行',
+        // ── v1.5/1.6 Memory tab ──
+        memoryH2: '🧠 长期记忆管理',
+        memoryIntro: 'agent 自动从对话中提取的事实 + 记忆画像（persona summary）。选用户 → 查看 / 编辑 / 删除。全部数据存在本机 ~/.agim/memory.db，不会上传到任何外部服务。',
+        memoryUser: '用户',
+        memoryUserLoading: '— 加载中 —',
+        memoryReloadUsers: '🔄 重载用户列表',
+        memoryExportUser: '📦 导出此用户 JSON',
+        memoryPersonaCard: '记忆画像',
+        memoryPersonaPlaceholder: '（此用户暂无记忆画像 — 等下次 consolidation 自动生成，或手动写入）',
+        memoryPersonaSave: '保存记忆画像',
+        memoryPersonaDelete: '删除记忆画像',
+        memoryFactsCard: 'Facts',
+        memoryFactsSearch: '搜索（FTS5）',
+        memoryFactsCatAll: '所有类型',
+        memoryFactsQuery: '查询',
+        memoryFactsSelectUser: '（请选择用户）',
+        memoryFactsPrev: '← 上一页',
+        memoryFactsNext: '下一页 →',
+        memoryFactsClearLowConf: '🗑 清低置信度',
+        memoryFactsClearAll: '⚠️ 清空所有',
+        // ── v1.6 Vector card ──
+        vecTitle: '🔍 向量召回',
+        vecSubtitle: '（可选增强 · 默认关闭）',
+        vecWhyHeading: '为什么加向量？',
+        vecWhyDefault: '默认（FTS5 关键词）：只能命中字面 — 「腾讯」→ 含「腾讯」字样的事实。',
+        vecWhyAdded: '加向量后：召回同义 / 跨语言 / 概念性查询：',
+        vecWhyEx1: '▸ 「投资偏好」→ 召回「用户偏好低回撤、稳健」',
+        vecWhyEx2: '▸ 「Beijing」→ 召回「用户在北京工作」',
+        vecWhyEx3: '▸ 「我儿子生日」→ 召回「Tom 2018-03-15 出生」',
+        vecWhenHeading: '何时启用',
+        vecWhenBody: '积累 50+ 条事实、agent 经常"忘了用户说过 X"。初装不需要 — FTS5 已经够用。',
+        vecBackend: '后端',
+        vecBackendOff: '关闭（仅 FTS5）',
+        vecBackendLocal: '本地 BGE（一次性下载 ~250MB）',
+        vecBackendOpenai: '远程 OpenAI 兼容（baseUrl + key）',
+        vecLocalModel: '本地模型',
+        vecLocalSmall: '小（small，~100MB，速度优先）',
+        vecLocalBase: '中（base，~250MB，推荐）',
+        vecLocalLarge: '大（large，~500MB，精度优先）',
+        vecLocalCustom: '自定义…',
+        vecLocalHint: '三个预设都是 BGE 中文模型（智源研究院开源，HuggingFace 上 Xenova 提供 ONNX 量化版）。首次下载到 ~/.agim/cache/transformers',
+        vecDownloadBtn: '📥 下载模型（首次 5-10 min，建议 WiFi）',
+        vecOpenaiKey: 'API Key',
+        vecOpenaiReveal: '🔓 显示并编辑',
+        vecOpenaiKeyHint: '默认掩码显示；保存时如未点开「显示」，原值不会被覆盖。',
+        vecTestBtn: '🧪 测试连接（10s 超时）',
+        vecSaveBtn: '保存配置',
+        vecBackfillBtn: '🔄 回填全部',
+        vecClearBtn: '🗑 清空向量索引',
+        vecMemoryDisabled: '○ 记忆未启用（在 Settings → 自动化记忆开启）',
       },
     };
     window.__t = T[window.__lang];
@@ -772,6 +904,8 @@
       <button type="button" class="tab" data-tab="audit" id="tab-audit"></button>
       <button type="button" class="tab" data-tab="outbox" id="tab-outbox">Outbox</button>
       <button type="button" class="tab" data-tab="a2a" id="tab-a2a">A2A</button>
+      <button type="button" class="tab" data-tab="cost" id="tab-cost">💰 Cost &amp; Health</button>
+      <button type="button" class="tab" data-tab="memory" id="tab-memory">🧠 Memory</button>
     </div>
 
     <section id="jobs-pane">
@@ -941,6 +1075,210 @@
       <div id="a2a-list"></div>
       <div id="a2a-tree"></div>
     </section>
+
+    <!-- v1.3 — Cost & Health: aggregated metrics from the audit-log -->
+    <section id="cost-pane" hidden>
+      <h2 style="margin-top:0" data-i18n="costH2">💰 Cost &amp; Health</h2>
+      <div class="toolbar" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label><span data-i18n="costWindow">窗口</span>：
+          <select id="cost-days">
+            <option value="1" data-i18n="costDays1">1 天</option>
+            <option value="7" selected data-i18n="costDays7">7 天</option>
+            <option value="30" data-i18n="costDays30">30 天</option>
+            <option value="90" data-i18n="costDays90">90 天</option>
+          </select>
+        </label>
+        <button type="button" id="btn-cost-refresh" data-i18n="costRefresh">刷新</button>
+        <span class="muted" id="cost-range" style="font-size:12px"></span>
+      </div>
+
+      <!-- KPI cards -->
+      <div id="cost-kpi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
+
+      <!-- Daily trendline -->
+      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong data-i18n="costDailyTrend">每日趋势</strong>
+          <div style="font-size:12px" class="muted">
+            <label><input type="radio" name="cost-trend-metric" value="calls" checked> <span data-i18n="costMetricCalls">调用数</span></label>
+            <label style="margin-left:8px"><input type="radio" name="cost-trend-metric" value="cost"> <span data-i18n="costMetricCost">成本($)</span></label>
+            <label style="margin-left:8px"><input type="radio" name="cost-trend-metric" value="errors"> <span data-i18n="costMetricErrors">错误数</span></label>
+            <label style="margin-left:8px"><input type="radio" name="cost-trend-metric" value="avgLatencyMs"> <span data-i18n="costMetricLatency">平均耗时(ms)</span></label>
+          </div>
+        </div>
+        <div style="position:relative;height:280px"><canvas id="cost-trend"></canvas></div>
+      </div>
+
+      <!-- Top-N tables -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">
+        <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong data-i18n="costTopUser">Top by User</strong>
+            <select class="cost-topn-by" data-target="user">
+              <option value="cost">cost</option>
+              <option value="calls" selected>calls</option>
+              <option value="errors">errors</option>
+              <option value="avg_latency">avg latency</option>
+            </select>
+          </div>
+          <div id="cost-topn-user"></div>
+        </div>
+        <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong data-i18n="costTopAgent">Top by Agent</strong>
+            <select class="cost-topn-by" data-target="agent">
+              <option value="cost">cost</option>
+              <option value="calls" selected>calls</option>
+              <option value="errors">errors</option>
+              <option value="avg_latency">avg latency</option>
+            </select>
+          </div>
+          <div id="cost-topn-agent"></div>
+        </div>
+        <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong data-i18n="costTopPlatform">Top by Platform</strong>
+            <select class="cost-topn-by" data-target="platform">
+              <option value="cost">cost</option>
+              <option value="calls" selected>calls</option>
+              <option value="errors">errors</option>
+              <option value="avg_latency">avg latency</option>
+            </select>
+          </div>
+          <div id="cost-topn-platform"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- v1.5 — Memory admin tab: per-user persona + facts inspection / edit -->
+    <section id="memory-pane" hidden>
+      <h2 style="margin-top:0" data-i18n="memoryH2">🧠 长期记忆管理</h2>
+      <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px" data-i18n="memoryIntro">
+        agent 自动从对话中提取的事实 + 记忆画像（persona summary）。选用户 → 查看 / 编辑 / 删除。
+        全部数据存在本机 ~/.agim/memory.db，不会上传到任何外部服务。
+      </p>
+      <div class="toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <label><span data-i18n="memoryUser">用户</span>：
+          <select id="mem-user-select" style="min-width:280px">
+            <option value="" data-i18n="memoryUserLoading">— 加载中 —</option>
+          </select>
+        </label>
+        <button type="button" id="btn-mem-refresh-users" data-i18n="memoryReloadUsers">🔄 重载用户列表</button>
+        <a id="btn-mem-export" href="#" target="_blank" style="display:none" data-i18n="memoryExportUser">📦 导出此用户 JSON</a>
+      </div>
+
+      <!-- v1.6 — Vector retrieval (optional enhancement) -->
+      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong><span data-i18n="vecTitle">🔍 向量召回</span> <span class="muted" style="font-weight:400;font-size:12px" data-i18n="vecSubtitle">（可选增强 · 默认关闭）</span></strong>
+          <span class="muted" id="mem-vec-status-badge" style="font-size:12px">—</span>
+        </div>
+        <div style="background:var(--code,#f4f6f8);padding:10px;border-radius:6px;font-size:12px;color:var(--muted,#656d76);margin-bottom:10px;line-height:1.6">
+          <strong style="color:var(--fg,#1f2328)" data-i18n="vecWhyHeading">为什么加向量？</strong><br>
+          <span data-i18n="vecWhyDefault">默认（FTS5 关键词）：只能命中字面 — 「腾讯」→ 含「腾讯」字样的事实。</span><br>
+          <span data-i18n="vecWhyAdded">加向量后：召回同义 / 跨语言 / 概念性查询：</span><br>
+          <span data-i18n="vecWhyEx1">▸ 「投资偏好」→ 召回「用户偏好低回撤、稳健」</span><br>
+          <span data-i18n="vecWhyEx2">▸ 「Beijing」→ 召回「用户在北京工作」</span><br>
+          <span data-i18n="vecWhyEx3">▸ 「我儿子生日」→ 召回「Tom 2018-03-15 出生」</span><br>
+          <strong style="color:var(--fg,#1f2328)" data-i18n="vecWhenHeading">何时启用</strong>：<span data-i18n="vecWhenBody">积累 50+ 条事实、agent 经常"忘了用户说过 X"。初装不需要 — FTS5 已经够用。</span>
+        </div>
+
+        <label data-i18n="vecBackend">后端</label>
+        <select id="mem-vec-backend" style="max-width:280px">
+          <option value="off" data-i18n="vecBackendOff">关闭（仅 FTS5）</option>
+          <option value="local" data-i18n="vecBackendLocal">本地 BGE（一次性下载 ~250MB）</option>
+          <option value="openai" data-i18n="vecBackendOpenai">远程 OpenAI 兼容（baseUrl + key）</option>
+        </select>
+
+        <!-- Local config (shown when backend === 'local') -->
+        <div id="mem-vec-local-cfg" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--border,#d0d7de);border-radius:6px">
+          <label data-i18n="vecLocalModel">本地模型</label>
+          <select id="mem-vec-local-preset" style="max-width:400px">
+            <option value="Xenova/bge-small-zh-v1.5" data-i18n="vecLocalSmall">小（small，~100MB，速度优先）</option>
+            <option value="Xenova/bge-base-zh-v1.5" selected data-i18n="vecLocalBase">中（base，~250MB，推荐）</option>
+            <option value="Xenova/bge-large-zh-v1.5" data-i18n="vecLocalLarge">大（large，~500MB，精度优先）</option>
+            <option value="__custom__" data-i18n="vecLocalCustom">自定义…</option>
+          </select>
+          <input type="text" id="mem-vec-local-model" placeholder="Xenova/your-model" style="max-width:400px;margin-top:6px;display:none" />
+          <div class="muted" style="font-size:11px;margin-top:4px" data-i18n="vecLocalHint">三个预设都是 BGE 中文模型（智源研究院开源，HuggingFace 上 Xenova 提供 ONNX 量化版）。首次下载到 ~/.agim/cache/transformers</div>
+          <div style="margin-top:8px">
+            <button type="button" id="btn-mem-vec-download" class="btn" data-i18n="vecDownloadBtn">📥 下载模型（首次 5-10 min，建议 WiFi）</button>
+            <span id="mem-vec-download-progress" class="muted" style="font-size:12px;margin-left:8px"></span>
+          </div>
+        </div>
+
+        <!-- OpenAI config (shown when backend === 'openai') -->
+        <div id="mem-vec-openai-cfg" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--border,#d0d7de);border-radius:6px">
+          <label>Base URL</label>
+          <input type="text" id="mem-vec-openai-url" placeholder="https://api.openai.com/v1" style="max-width:400px" />
+          <label style="margin-top:6px">Model</label>
+          <input type="text" id="mem-vec-openai-model" placeholder="text-embedding-3-small" style="max-width:400px" />
+          <label style="margin-top:6px" data-i18n="vecOpenaiKey">API Key</label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="password" id="mem-vec-openai-key" placeholder="sk-..." style="max-width:400px;background:#f6f8fa;color:#57606a" autocomplete="off" readonly />
+            <button type="button" id="btn-mem-vec-openai-reveal" class="btn" style="font-size:12px;padding:2px 8px" data-i18n="vecOpenaiReveal">🔓 显示并编辑</button>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:4px" data-i18n="vecOpenaiKeyHint">默认掩码显示；保存时如未点开「显示」，原值不会被覆盖。</div>
+          <div style="margin-top:8px">
+            <button type="button" id="btn-mem-vec-test" class="btn" data-i18n="vecTestBtn">🧪 测试连接（10s 超时）</button>
+            <span id="mem-vec-test-result" class="muted" style="font-size:12px;margin-left:8px"></span>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btn-mem-vec-save" class="btn btn-primary" data-i18n="vecSaveBtn">保存配置</button>
+          <button type="button" id="btn-mem-vec-backfill" class="btn" data-i18n="vecBackfillBtn">🔄 回填全部</button>
+          <button type="button" id="btn-mem-vec-clear" class="btn" data-i18n="vecClearBtn">🗑 清空向量索引</button>
+        </div>
+        <p class="muted" id="mem-vec-status-detail" style="margin-top:8px;font-size:12px"></p>
+      </div>
+
+      <!-- 记忆画像 display + editor -->
+      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong data-i18n="memoryPersonaCard">记忆画像</strong>
+          <span class="muted" id="mem-persona-meta" style="font-size:12px"></span>
+        </div>
+        <textarea id="mem-persona-text" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box" data-i18n-attr="placeholder:memoryPersonaPlaceholder" placeholder="（此用户暂无记忆画像 — 等下次 consolidation 自动生成，或手动写入）"></textarea>
+        <div class="actions" style="margin-top:8px;display:flex;gap:8px">
+          <button type="button" id="btn-mem-persona-save" class="btn btn-primary" data-i18n="memoryPersonaSave">保存记忆画像</button>
+          <button type="button" id="btn-mem-persona-delete" class="btn" data-i18n="memoryPersonaDelete">删除记忆画像</button>
+        </div>
+        <p class="muted" id="mem-persona-status" style="margin-top:6px;font-size:12px"></p>
+      </div>
+
+      <!-- Facts table + filters -->
+      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <strong><span data-i18n="memoryFactsCard">Facts</span> <span id="mem-facts-total" class="muted" style="font-weight:400;font-size:12px"></span></strong>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="mem-facts-query" data-i18n-attr="placeholder:memoryFactsSearch" placeholder="搜索（FTS5）" style="width:200px;font-size:12px" />
+            <select id="mem-facts-category" style="font-size:12px">
+              <option value="" data-i18n="memoryFactsCatAll">所有类型</option>
+              <option value="fact">fact</option>
+              <option value="preference">preference</option>
+              <option value="goal">goal</option>
+              <option value="history">history</option>
+              <option value="profile">profile</option>
+            </select>
+            <button type="button" id="btn-mem-facts-refresh" style="font-size:12px" data-i18n="memoryFactsQuery">查询</button>
+          </div>
+        </div>
+        <div id="mem-facts-list" data-i18n="memoryFactsSelectUser">（请选择用户）</div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;align-items:center">
+          <div class="muted">
+            <button type="button" id="btn-mem-facts-prev" data-i18n="memoryFactsPrev">← 上一页</button>
+            <span id="mem-facts-pagelabel">—</span>
+            <button type="button" id="btn-mem-facts-next" data-i18n="memoryFactsNext">下一页 →</button>
+          </div>
+          <div>
+            <button type="button" id="btn-mem-facts-clear-lowconf" class="btn" title="删除 confidence ≤ 0.4 的所有事实" data-i18n="memoryFactsClearLowConf">🗑 清低置信度</button>
+            <button type="button" id="btn-mem-facts-clear-all" class="btn" style="color:#cf222e" title="慎用：清空此用户的所有事实" data-i18n="memoryFactsClearAll">⚠️ 清空所有</button>
+          </div>
+        </div>
+        <p class="muted" id="mem-facts-status" style="margin-top:6px;font-size:12px"></p>
+      </div>
+    </section>
   </main>
 
   <div class="modal-bg" id="modal-bg">
@@ -1071,6 +1409,8 @@
         document.getElementById('files-pane').hidden = tab !== 'files';
         document.getElementById('outbox-pane').hidden = tab !== 'outbox';
         document.getElementById('a2a-pane').hidden = tab !== 'a2a';
+        document.getElementById('cost-pane').hidden = tab !== 'cost';
+        document.getElementById('memory-pane').hidden = tab !== 'memory';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
@@ -1081,6 +1421,15 @@
         if (tab === 'files') ensureFilesAgentLoaded().then(() => loadFiles(filesPath));
         if (tab === 'outbox') loadOutbox();
         if (tab === 'a2a') loadA2A();
+        if (tab === 'cost') loadCost();
+        if (tab === 'memory') {
+          loadMemoryUsers();
+          // P1-9: only load vector card + poll status when memory is
+          // actually enabled. Otherwise the dashboard would burn requests
+          // and confuse users on a stock install where memory is off.
+          checkMemoryEnabledThen(() => { loadMemVecConfig(); loadMemVecStatus(); });
+        }
+        if (tab !== 'memory') stopMemVecPolling();
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
         setupApprovalsAutoRefresh();
@@ -1092,7 +1441,19 @@
     async function api(path, init) {
       const headers = { 'Content-Type': 'application/json', ...(init?.headers) };
       const res = await fetch(path, { ...init, headers, credentials: 'same-origin' });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        // v1.5 — attach status + try to surface server-provided error so
+        // callers can branch on `err.status === 404` etc. Falls back to a
+        // plain statusText when the body isn't JSON.
+        let msg = `${res.status} ${res.statusText}`;
+        try {
+          const j = await res.json();
+          if (j && j.error) msg = `${res.status} ${j.error}`;
+        } catch { /* not JSON; keep statusText */ }
+        const err = new Error(msg);
+        err.status = res.status;
+        throw err;
+      }
       return res.json();
     }
 
@@ -2368,6 +2729,621 @@
     document.getElementById('btn-a2a-tree')?.addEventListener('click', () => {
       const id = document.getElementById('a2a-tree-id').value;
       if (id) loadA2ATree(id);
+    });
+
+    // ─── v1.3 — Cost & Health tab ────────────────────────────────────
+    let costChart = null;
+    let costChartJsLoaded = null;
+
+    function ensureChartJs() {
+      if (window.Chart) return Promise.resolve();
+      if (costChartJsLoaded) return costChartJsLoaded;
+      costChartJsLoaded = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+        s.crossOrigin = 'anonymous';
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('chart.js failed to load'));
+        document.head.appendChild(s);
+      });
+      return costChartJsLoaded;
+    }
+
+    function fmtCost(n) { return '$' + (Math.round(n * 10000) / 10000).toFixed(4); }
+    function fmtMs(n) {
+      if (n < 1000) return n + 'ms';
+      if (n < 60000) return (n / 1000).toFixed(1) + 's';
+      return (n / 60000).toFixed(1) + 'm';
+    }
+    function fmtPct(n) { return (n * 100).toFixed(2) + '%'; }
+
+    async function loadCost() {
+      const days = parseInt(document.getElementById('cost-days').value, 10) || 7;
+      try {
+        const data = await api('/api/health/summary?days=' + days);
+        renderCostKpis(data);
+        renderCostRange(data);
+        await ensureChartJs().catch(() => null);
+        renderCostTrend(data);
+      } catch (err) {
+        document.getElementById('cost-kpi').innerHTML = '<div class="error">加载失败: ' + (err.message || err) + '</div>';
+      }
+      // Load three top-N tables in parallel.
+      for (const dim of ['user', 'agent', 'platform']) {
+        const sel = document.querySelector('.cost-topn-by[data-target="' + dim + '"]');
+        loadTopN(dim, sel ? sel.value : 'calls');
+      }
+    }
+
+    function renderCostKpis(data) {
+      const t = data.totals;
+      const card = (label, value, sub) => `
+        <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px">
+          <div style="font-size:11px;color:var(--muted,#656d76);text-transform:uppercase;letter-spacing:.5px">${label}</div>
+          <div style="font-size:22px;font-weight:600;margin-top:4px">${value}</div>
+          ${sub ? '<div style="font-size:11px;color:var(--muted,#656d76);margin-top:2px">' + sub + '</div>' : ''}
+        </div>`;
+      document.getElementById('cost-kpi').innerHTML = [
+        card('调用数', t.calls.toLocaleString()),
+        card('成本', fmtCost(t.cost), '近 ' + data.days + ' 天'),
+        card('错误率', fmtPct(t.errorRate), t.errors + ' / ' + t.calls),
+        card('平均耗时', fmtMs(t.avgLatencyMs), 'p95: ' + fmtMs(t.p95LatencyMs)),
+      ].join('');
+    }
+
+    function renderCostRange(data) {
+      document.getElementById('cost-range').textContent = data.since + ' → ' + data.until;
+    }
+
+    function renderCostTrend(data) {
+      const canvas = document.getElementById('cost-trend');
+      if (!canvas || !window.Chart) return;
+      const metric = (document.querySelector('input[name="cost-trend-metric"]:checked')?.value) || 'calls';
+      const labels = data.byDay.map(d => d.date);
+      const values = data.byDay.map(d => d[metric]);
+      const labelMap = { calls: '调用数', cost: '成本($)', errors: '错误数', avgLatencyMs: '平均耗时(ms)' };
+      if (costChart) costChart.destroy();
+      costChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: labelMap[metric] || metric,
+            data: values,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.10)',
+            tension: 0.25,
+            fill: true,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+    }
+
+    async function loadTopN(dim, by) {
+      const wrap = document.getElementById('cost-topn-' + dim);
+      if (!wrap) return;
+      wrap.innerHTML = '<div class="muted">加载中…</div>';
+      const days = parseInt(document.getElementById('cost-days').value, 10) || 7;
+      try {
+        const data = await api('/api/health/topn?dim=' + dim + '&by=' + by + '&days=' + days + '&limit=10');
+        if (!data.items.length) { wrap.innerHTML = '<div class="muted">（无数据）</div>'; return; }
+        wrap.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<thead><tr style="border-bottom:1px solid var(--border,#d0d7de)">' +
+          '<th style="text-align:left;padding:4px 6px;font-weight:600">key</th>' +
+          '<th style="text-align:right;padding:4px 6px">calls</th>' +
+          '<th style="text-align:right;padding:4px 6px">cost</th>' +
+          '<th style="text-align:right;padding:4px 6px">err</th>' +
+          '<th style="text-align:right;padding:4px 6px">avg ms</th>' +
+          '</tr></thead><tbody>' +
+          data.items.map(it => `<tr style="border-bottom:1px solid var(--border,#d0d7de)">
+            <td style="padding:4px 6px;word-break:break-all;font-family:ui-monospace,monospace">${escapeHtmlSafe(it.key).slice(0, 50)}</td>
+            <td style="text-align:right;padding:4px 6px">${it.calls}</td>
+            <td style="text-align:right;padding:4px 6px">${fmtCost(it.cost)}</td>
+            <td style="text-align:right;padding:4px 6px">${it.errors}</td>
+            <td style="text-align:right;padding:4px 6px">${fmtMs(it.avgLatencyMs)}</td>
+          </tr>`).join('') + '</tbody></table>';
+      } catch (err) {
+        wrap.innerHTML = '<div class="error">加载失败: ' + (err.message || err) + '</div>';
+      }
+    }
+
+    function escapeHtmlSafe(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    document.getElementById('btn-cost-refresh')?.addEventListener('click', loadCost);
+    document.getElementById('cost-days')?.addEventListener('change', loadCost);
+    document.querySelectorAll('input[name="cost-trend-metric"]').forEach(el => {
+      el.addEventListener('change', () => loadCost());
+    });
+    document.querySelectorAll('.cost-topn-by').forEach(el => {
+      el.addEventListener('change', () => loadTopN(el.dataset.target, el.value));
+    });
+
+    // ─── v1.5 — Memory admin tab ──────────────────────────────────────
+    let memCurrentUser = '';
+    let memFactsPage = { offset: 0, limit: 20, total: 0 };
+
+    function fmtMemDate(unix) {
+      if (!unix) return '—';
+      return new Date(unix * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    }
+
+    // ─── v1.6 vector backend UI ────────────────────────────────────
+    let memVecPollTimer = null;
+
+    function showVecBackendCfg(backend) {
+      const local = document.getElementById('mem-vec-local-cfg');
+      const openai = document.getElementById('mem-vec-openai-cfg');
+      if (local) local.style.display = backend === 'local' ? 'block' : 'none';
+      if (openai) openai.style.display = backend === 'openai' ? 'block' : 'none';
+    }
+
+    async function loadMemVecStatus() {
+      try {
+        const data = await api('/api/memory/vector/status' + (memCurrentUser ? '?user_key=' + encodeURIComponent(memCurrentUser) : ''));
+        const s = data.status || {};
+        const cov = data.coverage || { total: 0, withEmbedding: 0 };
+        const badge = document.getElementById('mem-vec-status-badge');
+        if (badge) {
+          badge.textContent = s.ready
+            ? `✓ ${s.backend} · dim ${s.dims} · 索引 ${cov.withEmbedding}/${cov.total}`
+            : `○ ${s.backend} · 未就绪${s.lastError ? ' (' + s.lastError.slice(0, 60) + ')' : ''}`;
+          badge.style.color = s.ready ? '#16a34a' : 'var(--muted, #656d76)';
+        }
+        const detail = document.getElementById('mem-vec-status-detail');
+        if (detail) {
+          const lines = [];
+          if (s.detail && s.detail.progress) {
+            const p = s.detail.progress;
+            if (p.phase === 'downloading') {
+              const pct = p.bytesTotal > 0 ? Math.round(p.bytesDone / p.bytesTotal * 100) : 0;
+              lines.push(`📥 下载中：${p.filesDone}/${p.filesTotal} 文件，${(p.bytesDone / 1024 / 1024).toFixed(1)} / ${(p.bytesTotal / 1024 / 1024).toFixed(1)} MB (${pct}%)`);
+            } else if (p.phase === 'ready') {
+              lines.push(`✓ 模型就绪（耗时 ${((p.finishedAt - p.startedAt) / 1000).toFixed(1)}s）`);
+            } else if (p.phase === 'failed') {
+              lines.push(`❌ 下载失败：${escapeHtmlSafe(p.error || '未知错误')}`);
+            }
+          }
+          if (data.jobs && data.jobs.length > 0) {
+            data.jobs.forEach(j => {
+              const elapsed = ((j.finishedAt || Date.now()) - j.startedAt) / 1000;
+              // Note: lines already contain escaped fragments — joining
+              // raw avoids the double-escape that mangled `<`/`&` chars
+              // in error messages.
+              lines.push(`[${escapeHtmlSafe(j.kind)}] ${escapeHtmlSafe(j.phase)} · ${elapsed.toFixed(1)}s · ${escapeHtmlSafe(j.message)}`);
+            });
+          }
+          detail.innerHTML = lines.join('<br>') || '';
+        }
+        // Update download button if a job is in flight.
+        const dlBtn = document.getElementById('btn-mem-vec-download');
+        if (dlBtn) {
+          const hasDownloading = (data.jobs || []).some(j => j.kind === 'download' && j.phase === 'running');
+          dlBtn.disabled = hasDownloading || s.ready;
+          if (s.ready) dlBtn.textContent = '✓ 已就绪';
+          else if (hasDownloading) dlBtn.textContent = '⏳ 下载中…';
+          else dlBtn.textContent = '📥 下载模型（首次 5-10 min，建议 WiFi）';
+        }
+        return data;
+      } catch (err) {
+        const badge = document.getElementById('mem-vec-status-badge');
+        if (badge) badge.textContent = '状态加载失败: ' + (err.message || err);
+      }
+    }
+
+    function startMemVecPolling() {
+      stopMemVecPolling();
+      memVecPollTimer = setInterval(async () => {
+        const data = await loadMemVecStatus();
+        // P1-8: auto-stop once there's nothing to watch. Without this the
+        // 2 s poll keeps firing forever and floods the server log.
+        const s = (data && data.status) || {};
+        const running = ((data && data.jobs) || []).some(j => j.phase === 'running');
+        if (!running && s.ready) stopMemVecPolling();
+        if (!running && !s.ready && s.backend === 'off') stopMemVecPolling();
+      }, 2000);
+    }
+    function stopMemVecPolling() {
+      if (memVecPollTimer) { clearInterval(memVecPollTimer); memVecPollTimer = null; }
+    }
+
+    async function checkMemoryEnabledThen(fn) {
+      try {
+        const data = await api('/api/env');
+        const env = data.env || {};
+        const raw = String(env.IMHUB_MEMORY_ENABLED || '').toLowerCase();
+        const enabled = raw === '1' || raw === 'true' || raw === 'yes';
+        if (enabled) {
+          fn();
+          return;
+        }
+        // Render a disabled state in the vector card area so the user
+        // understands why nothing else loads.
+        const badge = document.getElementById('mem-vec-status-badge');
+        if (badge) {
+          badge.textContent = (T && T.vecMemoryDisabled) || '○ 记忆未启用（在 Settings → 自动化记忆开启）';
+          badge.style.color = 'var(--muted, #656d76)';
+        }
+      } catch { /* fall through silently */ }
+    }
+
+    async function loadMemVecConfig() {
+      try {
+        // P1-7: do NOT auto-reveal secrets on tab open. Load masked; user
+        // explicitly clicks 「🔓 显示」 to unmask the OpenAI key when they
+        // want to edit it.
+        const data = await api('/api/env');
+        const env = data.env || {};
+        const backend = (env['IMHUB_MEMORY_VECTOR_BACKEND'] || 'off').toLowerCase();
+        document.getElementById('mem-vec-backend').value = ['off', 'local', 'openai'].includes(backend) ? backend : 'off';
+        const lmPreset = document.getElementById('mem-vec-local-preset');
+        const lmInput = document.getElementById('mem-vec-local-model');
+        const presetVals = ['Xenova/bge-small-zh-v1.5','Xenova/bge-base-zh-v1.5','Xenova/bge-large-zh-v1.5'];
+        const customLm = (env['IMHUB_MEMORY_VECTOR_LOCAL_MODEL'] || '').trim();
+        if (customLm && presetVals.includes(customLm)) {
+          lmPreset.value = customLm;
+          lmInput.style.display = 'none';
+          lmInput.value = '';
+        } else if (customLm) {
+          lmPreset.value = '__custom__';
+          lmInput.value = customLm;
+          lmInput.style.display = 'block';
+        } else {
+          lmPreset.value = 'Xenova/bge-base-zh-v1.5';
+          lmInput.style.display = 'none';
+          lmInput.value = '';
+        }
+        document.getElementById('mem-vec-openai-url').value = env['IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL'] || '';
+        document.getElementById('mem-vec-openai-model').value = env['IMHUB_MEMORY_VECTOR_OPENAI_MODEL'] || '';
+        document.getElementById('mem-vec-openai-key').value = env['IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'] || '';
+        showVecBackendCfg(document.getElementById('mem-vec-backend').value);
+      } catch { /* ignore */ }
+    }
+
+    document.getElementById('mem-vec-backend')?.addEventListener('change', (e) => {
+      showVecBackendCfg(e.target.value);
+    });
+    document.getElementById('mem-vec-local-preset')?.addEventListener('change', (e) => {
+      const lm = document.getElementById('mem-vec-local-model');
+      if (e.target.value === '__custom__') {
+        lm.style.display = 'block';
+        lm.focus();
+      } else {
+        lm.style.display = 'none';
+      }
+    });
+    document.getElementById('btn-mem-vec-openai-reveal')?.addEventListener('click', async () => {
+      const input = document.getElementById('mem-vec-openai-key');
+      try {
+        const data = await api('/api/env?reveal=1');
+        input.value = (data.env && data.env['IMHUB_MEMORY_VECTOR_OPENAI_API_KEY']) || '';
+        input.readOnly = false;
+        input.style.background = '';
+        input.style.color = '';
+        input.type = 'text';
+        input.focus();
+        const btn = document.getElementById('btn-mem-vec-openai-reveal');
+        if (btn) btn.style.display = 'none';
+      } catch (err) {
+        alert('显示失败: ' + (err.message || err));
+      }
+    });
+    // True when the OpenAI key field holds the actual key (user clicked
+    // 「显示」). False when it's still the masked default — save handler
+    // omits the field in that case so the server doesn't overwrite.
+    function openAiKeyWasRevealed() {
+      const input = document.getElementById('mem-vec-openai-key');
+      return input && !input.readOnly;
+    }
+    function resolveLocalModel() {
+      const preset = document.getElementById('mem-vec-local-preset').value;
+      if (preset === '__custom__') {
+        return document.getElementById('mem-vec-local-model').value.trim() || null;
+      }
+      if (preset === 'Xenova/bge-base-zh-v1.5') return null; // default
+      return preset;
+    }
+    document.getElementById('btn-mem-vec-save')?.addEventListener('click', async () => {
+      const backend = document.getElementById('mem-vec-backend').value;
+      const updates = {
+        IMHUB_MEMORY_VECTOR_BACKEND: backend,
+        IMHUB_MEMORY_VECTOR_LOCAL_MODEL: resolveLocalModel(),
+        IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL: document.getElementById('mem-vec-openai-url').value.trim() || null,
+        IMHUB_MEMORY_VECTOR_OPENAI_MODEL: document.getElementById('mem-vec-openai-model').value.trim() || null,
+      };
+      // Only send the API key when the user actually revealed + edited it.
+      // Otherwise the input still holds the masked value; the server-side
+      // guard would skip it anyway, but omitting client-side avoids the
+      // round-trip and makes intent explicit.
+      if (openAiKeyWasRevealed()) {
+        updates.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY =
+          document.getElementById('mem-vec-openai-key').value.trim() || null;
+      }
+      const detail = document.getElementById('mem-vec-status-detail');
+      try {
+        await api('/api/env', { method: 'PUT', body: JSON.stringify({ updates }) });
+        if (detail) detail.innerHTML = '✓ 已保存。切换后端后注意：embedding 模型变了，旧的向量索引不可比，建议「清空向量索引」+「回填全部」。';
+        await loadMemVecStatus();
+      } catch (err) {
+        if (detail) detail.innerHTML = '保存失败: ' + escapeHtmlSafe(err.message || String(err));
+      }
+    });
+    // Auto-save the current dropdown selection to env before the action,
+    // so users who pick "local" / "openai" and immediately click download
+    // / test don't get a "backend is off" 400 from the previous saved state.
+    async function ensureVecBackendApplied(requiredBackend) {
+      const cur = document.getElementById('mem-vec-backend').value;
+      if (cur !== requiredBackend) {
+        document.getElementById('mem-vec-backend').value = requiredBackend;
+        showVecBackendCfg(requiredBackend);
+      }
+      const updates = {
+        IMHUB_MEMORY_VECTOR_BACKEND: requiredBackend,
+        IMHUB_MEMORY_VECTOR_LOCAL_MODEL: resolveLocalModel(),
+        IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL: document.getElementById('mem-vec-openai-url').value.trim() || null,
+        IMHUB_MEMORY_VECTOR_OPENAI_MODEL: document.getElementById('mem-vec-openai-model').value.trim() || null,
+      };
+      if (openAiKeyWasRevealed()) {
+        updates.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY =
+          document.getElementById('mem-vec-openai-key').value.trim() || null;
+      }
+      await api('/api/env', { method: 'PUT', body: JSON.stringify({ updates }) });
+    }
+
+    document.getElementById('btn-mem-vec-download')?.addEventListener('click', async () => {
+      try {
+        await ensureVecBackendApplied('local');
+        await api('/api/memory/vector/download', { method: 'POST' });
+        startMemVecPolling();
+      } catch (err) {
+        alert('启动下载失败: ' + (err.message || err));
+      }
+    });
+    document.getElementById('btn-mem-vec-test')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('mem-vec-test-result');
+      if (resultEl) resultEl.textContent = '⏳ 测试中…';
+      try {
+        await ensureVecBackendApplied('openai');
+        const r = await api('/api/memory/vector/test', { method: 'POST' });
+        if (r.ok) {
+          if (resultEl) resultEl.textContent = `✓ 通过 · dim ${r.dims} · ${r.latencyMs}ms`;
+        } else {
+          if (resultEl) resultEl.textContent = '❌ ' + (r.error || '未知错误');
+        }
+      } catch (err) {
+        if (resultEl) resultEl.textContent = '❌ ' + (err.message || err);
+      }
+    });
+    document.getElementById('btn-mem-vec-backfill')?.addEventListener('click', async () => {
+      if (!confirm('回填所有未索引事实的 embedding？（按当前后端模型）')) return;
+      try {
+        await api('/api/memory/vector/backfill' + (memCurrentUser ? '?user_key=' + encodeURIComponent(memCurrentUser) : ''), {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+        startMemVecPolling();
+      } catch (err) {
+        alert('启动回填失败: ' + (err.message || err));
+      }
+    });
+    document.getElementById('btn-mem-vec-clear')?.addEventListener('click', async () => {
+      if (!confirm('清空所有 embedding？（不会删 fact 本身；下次回填可重建）')) return;
+      try {
+        const r = await api('/api/memory/vector/clear' + (memCurrentUser ? '?user_key=' + encodeURIComponent(memCurrentUser) : ''), {
+          method: 'POST',
+        });
+        alert(`已清空 ${r.cleared} 条 embedding`);
+        await loadMemVecStatus();
+      } catch (err) {
+        alert('失败: ' + (err.message || err));
+      }
+    });
+
+    async function loadMemoryUsers() {
+      const select = document.getElementById('mem-user-select');
+      if (!select) return;
+      try {
+        const data = await api('/api/memory/users');
+        const prev = memCurrentUser || select.value;
+        select.innerHTML = '<option value="">— 选择用户 —</option>' +
+          data.users.map(u =>
+            `<option value="${escapeHtmlSafe(u.user_key)}">${escapeHtmlSafe(u.user_key)} · ${u.fact_count} 条事实 · ${u.has_persona ? '✓ 记忆画像' : '无记忆画像'}</option>`
+          ).join('');
+        if (prev && data.users.some(u => u.user_key === prev)) {
+          select.value = prev;
+          memCurrentUser = prev;
+          loadMemoryUserDetail();
+        }
+      } catch (err) {
+        select.innerHTML = '<option value="">加载失败: ' + (err.message || err) + '</option>';
+      }
+    }
+
+    async function loadMemoryUserDetail() {
+      if (!memCurrentUser) return;
+      // Update export link
+      const exportLink = document.getElementById('btn-mem-export');
+      if (exportLink) {
+        exportLink.href = '/api/memory/export?user_key=' + encodeURIComponent(memCurrentUser);
+        exportLink.style.display = 'inline';
+      }
+      // Persona
+      const personaText = document.getElementById('mem-persona-text');
+      const personaMeta = document.getElementById('mem-persona-meta');
+      try {
+        const p = await api('/api/memory/persona?user_key=' + encodeURIComponent(memCurrentUser));
+        if (personaText) personaText.value = p.summary || '';
+        if (personaMeta) personaMeta.textContent = 'updated ' + fmtMemDate(p.updated_at);
+      } catch (err) {
+        if (err.status === 404) {
+          if (personaText) personaText.value = '';
+          if (personaMeta) personaMeta.textContent = '（暂无记忆画像）';
+        } else {
+          if (personaMeta) personaMeta.textContent = '加载失败: ' + (err.message || err);
+        }
+      }
+      // Facts
+      memFactsPage = { offset: 0, limit: 20, total: 0 };
+      await loadMemoryFacts();
+    }
+
+    async function loadMemoryFacts() {
+      if (!memCurrentUser) return;
+      const listEl = document.getElementById('mem-facts-list');
+      const totalEl = document.getElementById('mem-facts-total');
+      const pageLabel = document.getElementById('mem-facts-pagelabel');
+      if (listEl) listEl.innerHTML = '<span class="muted">加载中…</span>';
+      const query = document.getElementById('mem-facts-query')?.value?.trim() || '';
+      const category = document.getElementById('mem-facts-category')?.value || '';
+      const qs = new URLSearchParams({
+        user_key: memCurrentUser,
+        limit: String(memFactsPage.limit),
+        offset: String(memFactsPage.offset),
+      });
+      if (query) qs.append('query', query);
+      if (category) qs.append('category', category);
+      try {
+        const data = await api('/api/memory/facts?' + qs.toString());
+        memFactsPage.total = data.total;
+        if (totalEl) totalEl.textContent = `(共 ${data.total} 条)`;
+        if (pageLabel) {
+          const start = data.total === 0 ? 0 : data.offset + 1;
+          const end = Math.min(data.offset + data.limit, data.total);
+          pageLabel.textContent = `${start}-${end} / ${data.total}`;
+        }
+        if (data.facts.length === 0) {
+          listEl.innerHTML = '<div class="muted">（无匹配事实）</div>';
+          return;
+        }
+        listEl.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<thead><tr style="border-bottom:1px solid var(--border,#d0d7de)">' +
+          '<th style="text-align:left;padding:4px 6px;width:50px">id</th>' +
+          '<th style="text-align:left;padding:4px 6px">what</th>' +
+          '<th style="text-align:left;padding:4px 6px;width:90px">category</th>' +
+          '<th style="text-align:right;padding:4px 6px;width:60px">conf</th>' +
+          '<th style="text-align:left;padding:4px 6px;width:140px">created</th>' +
+          '<th style="text-align:center;padding:4px 6px;width:60px">删除</th>' +
+          '</tr></thead><tbody>' +
+          data.facts.map(f => `<tr style="border-bottom:1px solid var(--border,#d0d7de)" data-id="${f.id}">
+            <td style="padding:4px 6px;font-family:ui-monospace,monospace">${f.id}</td>
+            <td style="padding:4px 6px">${escapeHtmlSafe(f.what)}${f.who ? ' <span class="muted">(' + escapeHtmlSafe(f.who) + ')</span>' : ''}</td>
+            <td style="padding:4px 6px"><code>${escapeHtmlSafe(f.category)}</code></td>
+            <td style="text-align:right;padding:4px 6px">${(f.confidence * 100).toFixed(0)}%</td>
+            <td style="padding:4px 6px;font-size:11px">${escapeHtmlSafe(String(f.created_at).replace('T', ' ').slice(0, 19))}</td>
+            <td style="text-align:center;padding:4px 6px"><button type="button" class="btn-mem-del" data-id="${f.id}" style="font-size:11px;padding:2px 6px">🗑</button></td>
+          </tr>`).join('') +
+          '</tbody></table>';
+        // Wire delete buttons.
+        listEl.querySelectorAll('.btn-mem-del').forEach(b => {
+          b.addEventListener('click', async () => {
+            const id = parseInt(b.dataset.id, 10);
+            if (!confirm(`删除事实 #${id}？`)) return;
+            try {
+              await api('/api/memory/facts/' + id + '?user_key=' + encodeURIComponent(memCurrentUser), { method: 'DELETE' });
+              await loadMemoryFacts();
+            } catch (err) {
+              alert('删除失败: ' + (err.message || err));
+            }
+          });
+        });
+      } catch (err) {
+        listEl.innerHTML = '<div class="error">加载失败: ' + (err.message || err) + '</div>';
+      }
+    }
+
+    document.getElementById('mem-user-select')?.addEventListener('change', (e) => {
+      memCurrentUser = e.target.value;
+      if (memCurrentUser) loadMemoryUserDetail();
+    });
+    document.getElementById('btn-mem-refresh-users')?.addEventListener('click', loadMemoryUsers);
+    document.getElementById('btn-mem-facts-refresh')?.addEventListener('click', () => {
+      memFactsPage.offset = 0;
+      loadMemoryFacts();
+    });
+    document.getElementById('mem-facts-query')?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') { memFactsPage.offset = 0; loadMemoryFacts(); }
+    });
+    document.getElementById('mem-facts-category')?.addEventListener('change', () => {
+      memFactsPage.offset = 0;
+      loadMemoryFacts();
+    });
+    document.getElementById('btn-mem-facts-prev')?.addEventListener('click', () => {
+      if (memFactsPage.offset > 0) {
+        memFactsPage.offset = Math.max(0, memFactsPage.offset - memFactsPage.limit);
+        loadMemoryFacts();
+      }
+    });
+    document.getElementById('btn-mem-facts-next')?.addEventListener('click', () => {
+      if (memFactsPage.offset + memFactsPage.limit < memFactsPage.total) {
+        memFactsPage.offset += memFactsPage.limit;
+        loadMemoryFacts();
+      }
+    });
+    document.getElementById('btn-mem-persona-save')?.addEventListener('click', async () => {
+      if (!memCurrentUser) return;
+      const summary = document.getElementById('mem-persona-text')?.value?.trim() || '';
+      if (!summary) { alert('记忆画像内容不能为空（要删除请用"删除记忆画像"按钮）'); return; }
+      const status = document.getElementById('mem-persona-status');
+      try {
+        await api('/api/memory/persona?user_key=' + encodeURIComponent(memCurrentUser), {
+          method: 'PUT',
+          body: JSON.stringify({ summary }),
+        });
+        if (status) status.textContent = '✓ 已保存';
+        await loadMemoryUserDetail();
+      } catch (err) {
+        if (status) status.textContent = '保存失败: ' + (err.message || err);
+      }
+    });
+    document.getElementById('btn-mem-persona-delete')?.addEventListener('click', async () => {
+      if (!memCurrentUser) return;
+      if (!confirm('删除此用户的记忆画像？（事实保留，下次 consolidation 会重新生成）')) return;
+      const status = document.getElementById('mem-persona-status');
+      try {
+        await api('/api/memory/persona?user_key=' + encodeURIComponent(memCurrentUser), { method: 'DELETE' });
+        if (status) status.textContent = '✓ 已删除';
+        await loadMemoryUserDetail();
+      } catch (err) {
+        if (status) status.textContent = '删除失败: ' + (err.message || err);
+      }
+    });
+    document.getElementById('btn-mem-facts-clear-lowconf')?.addEventListener('click', async () => {
+      if (!memCurrentUser) return;
+      if (!confirm('删除 confidence ≤ 40% 的所有事实？')) return;
+      const status = document.getElementById('mem-facts-status');
+      try {
+        const r = await api('/api/memory/facts?user_key=' + encodeURIComponent(memCurrentUser), {
+          method: 'DELETE',
+          body: JSON.stringify({ max_confidence: 0.4 }),
+        });
+        if (status) status.textContent = `✓ 删除了 ${r.deleted} 条低置信度事实`;
+        await loadMemoryFacts();
+      } catch (err) {
+        if (status) status.textContent = '失败: ' + (err.message || err);
+      }
+    });
+    document.getElementById('btn-mem-facts-clear-all')?.addEventListener('click', async () => {
+      if (!memCurrentUser) return;
+      if (!confirm('⚠️ 真的要清空此用户的所有事实吗？此操作不可撤销。')) return;
+      if (!confirm('再次确认：所有事实将被永久删除（persona 不动）')) return;
+      const status = document.getElementById('mem-facts-status');
+      try {
+        const r = await api('/api/memory/facts?user_key=' + encodeURIComponent(memCurrentUser), {
+          method: 'DELETE',
+          body: JSON.stringify({ confirm_clear: true }),
+        });
+        if (status) status.textContent = `✓ 清空了 ${r.deleted} 条事实`;
+        await loadMemoryFacts();
+      } catch (err) {
+        if (status) status.textContent = '失败: ' + (err.message || err);
+      }
     });
 
     // Initial load

@@ -285,6 +285,52 @@ program
     }
 
     // Start messenger adapters
+    try {
+      const { setBootPhase } = await import('./core/boot-state.js')
+      setBootPhase('messengers_loading')
+    } catch { /* ignore */ }
+
+    // Register the recovery-button executor. When a user taps "🔁 重发" on
+    // a recovery card, job-recovery creates the replacement row + invokes
+    // this callback to actually run the agent. Without this the button
+    // creates an orphan inline-job that never executes.
+    try {
+      const { setRecoveryExecutor } = await import('./core/job-recovery.js')
+      setRecoveryExecutor(async ({ entry, newJobId }) => {
+        const synthCtx: MessageContext = {
+          platform: entry.platform,
+          channelId: entry.channelId,
+          traceId: generateTraceId(),
+          inlineJobId: newJobId,
+          message: {
+            id: `recovery-${newJobId}`,
+            threadId: entry.threadId,
+            userId: entry.creatorId,
+            text: entry.prompt,
+            timestamp: new Date(),
+            channelId: entry.channelId,
+          },
+        }
+        synthCtx.logger = createLogger({
+          traceId: synthCtx.traceId, platform: entry.platform, component: 'cli',
+        })
+        synthCtx.logger.info({
+          event: 'recovery.button.execute', newJobId, oldJobId: entry.jobId,
+          agent: entry.agent, promptPreview: entry.prompt.substring(0, 80),
+        })
+        // Tell the user we're on it before the agent's (possibly slow) reply.
+        try {
+          await sink.deliver({
+            platform: entry.platform, channelId: entry.channelId, threadId: entry.threadId,
+            payload: '🔁 好的，重发中…', kind: 'text',
+          })
+        } catch { /* sink already queues — best-effort */ }
+        await handleMessage(synthCtx, config.defaultAgent)
+      })
+    } catch (err) {
+      console.warn('⚠️ failed to register recovery executor:', err)
+    }
+
     for (const name of messengersToStart) {
       const messenger = registry.getMessenger(name)
       if (!messenger) {
@@ -597,9 +643,24 @@ program
         port: config.webPort as number | undefined,
         defaultAgent: config.defaultAgent,
       })
+      try {
+        const { setBootPhase } = await import('./core/boot-state.js')
+        setBootPhase('web_ready')
+      } catch { /* ignore */ }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       console.warn(`⚠️ Web chat server failed to start: ${errMsg}`)
+    }
+
+    // v1.5 — long-term memory consolidator. Runs periodically (default
+    // every 24h) to refresh persona_profile from accumulated facts using
+    // the user's most recently active agent. No-op when
+    // IMHUB_MEMORY_ENABLED != 1.
+    try {
+      const { startMemoryConsolidator } = await import('./core/memory-consolidate.js')
+      startMemoryConsolidator()
+    } catch (err) {
+      console.warn('Memory consolidator failed to start:', err instanceof Error ? err.message : String(err))
     }
 
     // v1.1.8 — Viewer auto-tunnel. If the operator opted into the
@@ -647,6 +708,15 @@ program
     }
     console.log('Press Ctrl+C to stop')
 
+    // v1.5 — flip boot phase to 'ready' so the web restart-polling UI
+    // can wait for full readiness instead of merely "HTTP server up".
+    try {
+      const { setBootPhase, getBootInfo } = await import('./core/boot-state.js')
+      setBootPhase('ready')
+      const info = getBootInfo()
+      console.log(`   Boot ready in ${(info.msSinceStart / 1000).toFixed(1)}s`)
+    } catch { /* ignore */ }
+
     // If we came back from a `/restart`, the previous instance dropped a
     // ~/.agim/restart-pending.json with the initiator's IM thread. Now
     // that messengers + agents are all up, push the completion message
@@ -682,6 +752,12 @@ program
       try {
         const { stopTunnel } = await import('./core/tunnel.js')
         stopTunnel()
+      } catch { /* ignore */ }
+
+      // v1.5 — stop the memory consolidator timer.
+      try {
+        const { stopMemoryConsolidator } = await import('./core/memory-consolidate.js')
+        stopMemoryConsolidator()
       } catch { /* ignore */ }
 
       // Stop the outbox worker BEFORE messengers so no new send attempts

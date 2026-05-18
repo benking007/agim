@@ -89,11 +89,12 @@ export function exceedsThreshold(text: string, t: ViewerThresholds): boolean {
 
 function maxCodeBlockLines(text: string): number {
   let max = 0
-  let m: RegExpExecArray | null
   FENCE_RE.lastIndex = 0
-  while ((m = FENCE_RE.exec(text)) !== null) {
+  let m = FENCE_RE.exec(text)
+  while (m !== null) {
     const lines = m[1].split('\n').length
     if (lines > max) max = lines
+    m = FENCE_RE.exec(text)
   }
   return max
 }

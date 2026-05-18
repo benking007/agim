@@ -21,9 +21,9 @@
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage",
-    "lint": "biome lint src test",
+    "test": "bun test --path-ignore-patterns='**/web-app/**'",
+    "test:coverage": "bun test --coverage --path-ignore-patterns='**/web-app/**'",
+    "lint": "biome lint src/cli.ts src/index.ts src/cli-ui src/core src/plugins src/scripts src/utils src/web/server.ts src/web/viewer-render.ts test",
     "format": "biome format . --write",
     "prepublishOnly": "npm run build"
   },

@@ -82,6 +82,43 @@ function isLoopbackPeer(req: IncomingMessage): boolean {
   return ip === '127.0.0.1' || ip === '::1' || ip === ''
 }
 
+/**
+ * Decide whether loopback peers (`req.socket.remoteAddress` is
+ * 127.0.0.1 / ::1) should be auto-authenticated.
+ *
+ *   IMHUB_TRUST_LOOPBACK   effect
+ *   ────────────────────────────────────────────────────────────────────
+ *   on  (or 1 / true)      always trust (legacy 0.x / 1.x behavior)
+ *   off (or 0 / false)     never trust — all requests carry a token
+ *   auto (default)         trust only when bound to a loopback address
+ *                          (`IMHUB_WEB_BIND` ∈ 127.0.0.1 / ::1 / localhost).
+ *                          When bound publicly (0.0.0.0 / a routable IP)
+ *                          we distrust loopback peers because they may be
+ *                          a reverse-proxy hop forwarding an
+ *                          unauthenticated upstream request — the canonical
+ *                          "nginx on the same host terminating TLS"
+ *                          deployment shape would otherwise grant blanket
+ *                          access to anyone the proxy forwards to us.
+ *
+ * Process-wide setting because the bind socket is fixed at boot.
+ */
+function shouldTrustLoopbackBypass(bindHost: string): boolean {
+  const mode = (process.env.IMHUB_TRUST_LOOPBACK || 'auto').toLowerCase()
+  if (mode === 'on' || mode === '1' || mode === 'true') return true
+  if (mode === 'off' || mode === '0' || mode === 'false') return false
+  // auto
+  return bindHost === '127.0.0.1' || bindHost === '::1' || bindHost === 'localhost'
+}
+
+// Set by startWebServer() at boot. Defaults to true so existing call paths
+// (tests, ad-hoc createServer wrappers) keep their old behavior until
+// startWebServer takes over the explicit value.
+let _trustLoopback = true
+
+/** Test-only / wiring hook so external callers can resolve the same way. */
+export function _setTrustLoopbackForTest(v: boolean): void { _trustLoopback = v }
+export { shouldTrustLoopbackBypass }
+
 function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
   const auth = req.headers['authorization']
@@ -158,8 +195,11 @@ export function buildSessionCookie(req: IncomingMessage, token: string, maxAgeSe
 function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   // 1. Disabled by env → pass through.
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
-  // 2. Loopback → pass through (local CLI / browser-on-same-host).
-  if (isLoopbackPeer(req)) return true
+  // 2. Loopback → pass through *only* when the trust gate is open. When
+  //    deployed behind a reverse proxy on the same host, every request
+  //    appears to come from 127.0.0.1 — auto-trusting that would let the
+  //    proxy forward unauthenticated traffic straight in.
+  if (_trustLoopback && isLoopbackPeer(req)) return true
   // 3. Public-by-design path → pass through.
   if (isPublicPath(url.pathname, req.method || 'GET')) return true
 
@@ -247,11 +287,19 @@ export async function startWebServer(options: {
       bind: bindHost,
     }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
   }
+  _trustLoopback = shouldTrustLoopbackBypass(bindHost)
+  if (isPublicBind && _trustLoopback) {
+    webLog.warn({
+      event: 'web.loopback_trust_on_public_bind',
+      bind: bindHost,
+    }, 'IMHUB_TRUST_LOOPBACK=on with public bind — reverse-proxy hops from 127.0.0.1 will bypass auth; set IMHUB_TRUST_LOOPBACK=off when fronted by a proxy')
+  }
   webLog.info({
     event: 'web.auth_mode',
     bind: bindHost,
     enabled: isAuthEnabled(),
-  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'}`)
+    trustLoopback: _trustLoopback,
+  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'} (loopback-bypass=${_trustLoopback ? 'on' : 'off'})`)
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {

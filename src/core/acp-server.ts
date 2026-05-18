@@ -29,6 +29,67 @@ const LEGACY_TOKEN_FILE = join(AGIM_HOME, 'web-token')
 /** Max POST body size (per ACP request). Larger requests get 413. */
 const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
 
+/**
+ * Parse the configured CORS allowlist. ACP previously echoed
+ * `Access-Control-Allow-Origin: *`, which combined with Bearer auth let any
+ * page on any origin enumerate the API surface (the 401 response shape and
+ * `/agent/card` capabilities). The new default is **no CORS headers** —
+ * browser-based callers must be explicitly opted in via
+ * `IMHUB_ACP_CORS_ORIGINS=https://app.example.com,https://other.example.com`.
+ * Non-browser clients (curl, the ACP discovery handler in the web console,
+ * server-to-server) are not affected: they don't enforce CORS at all.
+ *
+ * Special value `*` reinstates the legacy wildcard for operators who
+ * deliberately want it (e.g. fully-private VPN deployments).
+ *
+ * Returns null when no allowlist is configured.
+ */
+export function parseAcpCorsOrigins(raw: string | undefined): { wildcard: true } | { wildcard: false; origins: Set<string> } | null {
+  const v = (raw || '').trim()
+  if (!v) return null
+  if (v === '*') return { wildcard: true }
+  const origins = new Set(v.split(',').map((s) => s.trim()).filter(Boolean))
+  if (origins.size === 0) return null
+  return { wildcard: false, origins }
+}
+
+/**
+ * Apply CORS headers for a request iff its `Origin` is in the allowlist.
+ * Returns true if CORS handling consumed the request (i.e. it was a
+ * preflight OPTIONS that we replied to); callers should `return` in that
+ * case.
+ */
+export function applyAcpCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowlist: ReturnType<typeof parseAcpCorsOrigins>,
+): boolean {
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : ''
+  if (allowlist) {
+    let allow: string | null = null
+    if (allowlist.wildcard) allow = origin || '*'
+    else if (origin && allowlist.origins.has(origin)) allow = origin
+    if (allow) {
+      res.setHeader('Access-Control-Allow-Origin', allow)
+      // When echoing a specific origin (not *), tell caches the response
+      // varies on Origin so they don't poison entries across origins.
+      if (allow !== '*') res.setHeader('Vary', 'Origin')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-IM-Hub-Token, X-Trace-Id')
+      res.setHeader('Access-Control-Max-Age', '600')
+    }
+  }
+  if (req.method === 'OPTIONS') {
+    // Preflight (or a plain OPTIONS probe): reply 204 regardless. If the
+    // origin wasn't allowlisted the browser will refuse to proceed; we
+    // don't need to leak that decision back via 4xx.
+    res.writeHead(204)
+    res.end()
+    return true
+  }
+  return false
+}
+
 function getOrCreateAcpToken(): string {
   if (existsSync(ACP_TOKEN_FILE)) {
     return readFileSync(ACP_TOKEN_FILE, 'utf-8').trim()
@@ -113,15 +174,27 @@ export async function startACPServer(options: {
 }): Promise<{ close: () => void; port: number }> {
   const port = options.port || DEFAULT_ACP_PORT
   const agents = registry.listAgents()
+  // Resolved at boot: switching CORS modes mid-flight is rare and would
+  // require port rebinding anyway.
+  const corsAllowlist = parseAcpCorsOrigins(process.env.IMHUB_ACP_CORS_ORIGINS)
+  if (corsAllowlist) {
+    rootLogger.info({
+      component: 'acp',
+      event: 'acp.cors.configured',
+      mode: corsAllowlist.wildcard ? 'wildcard' : 'allowlist',
+      origins: corsAllowlist.wildcard ? '*' : [...corsAllowlist.origins],
+    }, corsAllowlist.wildcard
+      ? 'ACP CORS allowlist = * (legacy wildcard; consider restricting)'
+      : `ACP CORS allowlist: ${[...corsAllowlist.origins].join(', ')}`)
+  }
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
-    // CORS for browser-based ACP clients
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-IM-Hub-Token')
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+    // CORS for browser-based ACP clients — opt-in via IMHUB_ACP_CORS_ORIGINS.
+    // Non-browser callers (curl, server-to-server, the agim web console)
+    // never invoke CORS and are unaffected.
+    if (applyAcpCors(req, res, corsAllowlist)) return
 
     const auth = parseAuth(req)
     if (!auth.ok) { sendJson(res, 401, { error: auth.error }); return }

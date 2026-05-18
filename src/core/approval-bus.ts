@@ -96,6 +96,58 @@ const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
  *  behavior. */
 const AUTO_ALLOW_PREFIX_LEN = 10
 
+/**
+ * Inline-context (`_im_context` in a reminder/memo payload) is how the
+ * opencode HTTP bridge identifies the user/thread when its long-lived
+ * shared MCP server can't carry per-spawn env vars. It is **agent-asserted**
+ * — i.e. the LLM itself stamps `userId`, `platform`, `threadId` into the
+ * payload — so accepting it is only safe when one human is the only caller.
+ * In a multi-tenant deployment, a malicious or buggy agent can forge
+ * `userId` to schedule reminders / write memos on behalf of someone else.
+ *
+ *   IMHUB_RPC_INLINE_CTX_MODE  effect
+ *   ──────────────────────────────────────────────────────────────────────
+ *   off (or 0 / false)         never accept `_im_context`; runId is required.
+ *                              Recommended for multi-tenant deployments.
+ *   single-user (default)      accept `_im_context` (current behavior).
+ *                              Mirrors v1.x default to avoid breaking
+ *                              existing opencode-http installs on upgrade.
+ *
+ * Push RPC ignores this setting and always rejects `_im_context` — see
+ * handlePush for the rationale.
+ */
+export type InlineCtxMode = 'off' | 'single-user'
+export function inlineCtxMode(): InlineCtxMode {
+  const raw = (process.env.IMHUB_RPC_INLINE_CTX_MODE || 'single-user').toLowerCase()
+  if (raw === 'off' || raw === '0' || raw === 'false') return 'off'
+  return 'single-user'
+}
+
+/**
+ * Pull a RunContext out of an agent-asserted `_im_context` payload field,
+ * gated by {@link inlineCtxMode}. Mutates `payload` to strip the field
+ * on success so downstream RPC field validators don't trip on it.
+ *
+ * Returns null when the gate is closed, the field is missing/malformed,
+ * or required keys (platform/threadId/channelId) are absent.
+ */
+export function resolveInlineContext(payload: Record<string, unknown>): RunContext | null {
+  if (inlineCtxMode() === 'off') return null
+  const inlineCtx = payload._im_context
+  if (!inlineCtx || typeof inlineCtx !== 'object' || Array.isArray(inlineCtx)) return null
+  const ic = inlineCtx as Record<string, unknown>
+  if (typeof ic.platform !== 'string' || typeof ic.threadId !== 'string'
+      || typeof ic.channelId !== 'string') return null
+  const ctx: RunContext = {
+    platform: ic.platform,
+    threadId: ic.threadId,
+    channelId: ic.channelId,
+    userId: typeof ic.userId === 'string' ? ic.userId : '',
+  }
+  delete payload._im_context
+  return ctx
+}
+
 export interface RunContext {
   threadId: string
   platform: string
@@ -841,39 +893,27 @@ export class ApprovalBus {
       return
     }
 
-    // Resolve context: runId path first, then inline _im_context fallback.
+    // Resolve context: runId path first, then inline _im_context fallback
+    // (gated by IMHUB_RPC_INLINE_CTX_MODE — see resolveInlineContext).
     let ctx: RunContext | null = null
-    if (runId) {
-      ctx = this.runContexts.get(runId) ?? null
-    }
+    if (runId) ctx = this.runContexts.get(runId) ?? null
     if (!ctx) {
-      // Try to extract _im_context from the payload itself (path 2)
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'reminder.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'reminder using agent-asserted _im_context (single-user mode)')
-          // Strip _im_context from payload so it doesn't leak into the
-          // RPC handler's field validation.
-          delete payload._im_context
-        }
+      ctx = resolveInlineContext(payload)
+      if (ctx) {
+        log.info({
+          event: 'reminder.bus.inline_ctx',
+          platform: ctx.platform, threadId: ctx.threadId, runId,
+        }, 'reminder using agent-asserted _im_context (single-user mode)')
       }
     }
 
     if (!ctx) {
+      const gateClosed = inlineCtxMode() === 'off' && !!payload._im_context
       this.sendReminderResult(socket, reqId, {
         ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+        error: gateClosed
+          ? `unknown runId: ${runId} (_im_context fallback disabled by IMHUB_RPC_INLINE_CTX_MODE=off)`
+          : `unknown runId: ${runId} (and no _im_context fallback provided)`,
       })
       return
     }
@@ -926,30 +966,22 @@ export class ApprovalBus {
     let ctx: RunContext | null = null
     if (runId) ctx = this.runContexts.get(runId) ?? null
     if (!ctx) {
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'memo.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'memo using agent-asserted _im_context (single-user mode)')
-          delete payload._im_context
-        }
+      ctx = resolveInlineContext(payload)
+      if (ctx) {
+        log.info({
+          event: 'memo.bus.inline_ctx',
+          platform: ctx.platform, threadId: ctx.threadId, runId,
+        }, 'memo using agent-asserted _im_context (single-user mode)')
       }
     }
 
     if (!ctx) {
+      const gateClosed = inlineCtxMode() === 'off' && !!payload._im_context
       this.sendMemoResult(socket, reqId, {
         ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+        error: gateClosed
+          ? `unknown runId: ${runId} (_im_context fallback disabled by IMHUB_RPC_INLINE_CTX_MODE=off)`
+          : `unknown runId: ${runId} (and no _im_context fallback provided)`,
       })
       return
     }

@@ -14,6 +14,10 @@
 import { client } from './client'
 import type {
   A2AStats,
+  ACPDiscoverBody,
+  ACPDiscoverResponse,
+  ACPTestBody,
+  ACPTestResponse,
   AppConfig,
   AddAdminBody,
   AdminAllowlistResponse,
@@ -108,13 +112,18 @@ export const api = {
   getAgentHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/agent-health', opts),
 
-  /** POST /api/agents/acp/discover */
-  discoverAcpAgents: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/agents/acp/discover', opts),
+  /** POST /api/agents/acp/discover — probe a `<baseUrl>/.well-known/acp`
+   *  document. With `register: true` the server also hot-loads the
+   *  discovered agents into the in-memory registry; persisting them
+   *  across restarts still requires PUT /api/config { acpAgents }. */
+  discoverAcpAgents: (body: ACPDiscoverBody) =>
+    client.post<ACPDiscoverResponse>('/api/agents/acp/discover', { body }),
 
-  /** POST /api/agents/acp/test */
-  testAcpAgent: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/agents/acp/test', opts),
+  /** POST /api/agents/acp/test — probe a single agent endpoint by
+   *  fetching its `/agent/card` manifest. Used by the "Test" buttons
+   *  in /settings/agents to validate an ACP entry before saving. */
+  testAcpAgent: (body: ACPTestBody) =>
+    client.post<ACPTestResponse>('/api/agents/acp/test', { body }),
 
   /** GET /api/agents/status — agent name → online boolean map */
   getAgentsStatus: () =>

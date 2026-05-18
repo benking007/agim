@@ -3,11 +3,71 @@
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
     "messengers": "IM 平台",
+    "agents":     "Agent",
     "policy":     "策略",
     "workspaces": "工作区",
     "admins":     "管理员",
     "env":        "环境变量",
     "service":    "服务"
+  },
+  "agents": {
+    "title": "Agent",
+    "subtitle": "内置 Agent 适配器。启用宿主机已安装 CLI 的；并选择一个作为默认 Agent（用于路由无法判定的消息）。",
+    "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
+    "aliasesLabel":   "别名",
+    "online":         "在线",
+    "offline":        "未就绪",
+    "defaultAgent":   "默认 Agent",
+    "defaultAgentHint": "意图分类无判定时使用（新建 web 线程等）。下拉只列出已启用且在线的 Agent。",
+    "noEligible":     "无可选默认",
+    "saveBtn":        "保存",
+    "saving":         "保存中…",
+    "dirtyHint":      "有未保存改动",
+    "discard":        "放弃改动",
+    "toast": {
+      "saved":  "已保存"
+    },
+    "acp": {
+      "title":      "远程 Agent (ACP)",
+      "subtitle":   "通过 Agent Communication Protocol 接入的 HTTP Agent。每个条目持久化到 config，下次服务重启时注册。",
+      "discoverBtn":"批量发现",
+      "runDiscover":"探测",
+      "baseUrl":    "发现地址",
+      "baseUrlHint":"探测 `<base>/.well-known/acp` 并追加返回的 Agent；同名条目自动跳过。",
+      "addTitle":   "新增 Agent",
+      "name":       "名称",
+      "nameHint":   "稳定标识；只允许 字母 数字 `._-`。",
+      "aliases":    "别名",
+      "aliasesHint":"逗号分隔；在 IM 内通过 `/alias` 路由。",
+      "endpoint":   "Endpoint",
+      "endpointHint":"Agent 的 ACP 根路径（不带尾部 `/`）。",
+      "authType":   "鉴权",
+      "auth": {
+        "none":   "无",
+        "apikey": "API key",
+        "bearer": "Bearer"
+      },
+      "token":           "Token",
+      "tokenPlaceholder":"粘贴 token",
+      "testBtn":     "测试",
+      "addBtn":      "新增",
+      "removeBtn":   "移除",
+      "on":          "已启用",
+      "off":         "已停用",
+      "dupName":     "已存在同名 Agent。",
+      "empty": {
+        "title":       "暂无远程 Agent",
+        "description": "下方填写 ACP endpoint 新增，或使用「批量发现」自动从 `.well-known/acp` 导入。"
+      },
+      "toast": {
+        "staged":         "已暂存，点击「保存」生效。",
+        "testOk":         "已联通 `{{name}}`",
+        "testMasked":     "Token 是掩码态，请先保存后再测试。",
+        "discoverEmpty":  "没有可新增的 Agent。",
+        "discoverAdded_one":   "已新增 {{count}} 个 Agent。",
+        "discoverAdded_other": "已新增 {{count}} 个 Agent。"
+      }
+    }
   },
   "policy": {
     "title": "策略与开关",

@@ -1154,7 +1154,10 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
 
     const result = validateConfig(merged)
     if (!result.ok) {
-      sendJson(res, 400, { error: 'Config validation failed', details: result.errors })
+      sendError(res, 400, 'CONFIG_INVALID', {
+        message: 'Config validation failed',
+        extra: { details: result.errors },
+      })
       return
     }
 
@@ -1162,7 +1165,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     sendJson(res, 200, { ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    sendJson(res, 400, { error: msg })
+    sendError(res, 400, 'CONFIG_SAVE_FAILED', { detail: msg })
   }
 }
 
@@ -2001,7 +2004,7 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
     const parsed = JSON.parse(body || '{}') as { updates?: Record<string, string | null> }
     const updates = parsed.updates
     if (!updates || typeof updates !== 'object') {
-      sendJson(res, 400, { error: 'updates object required' })
+      sendError(res, 400, 'ENV_UPDATES_REQUIRED', { message: 'updates object required' })
       return
     }
     // Filter to whitelist — never let arbitrary keys through.
@@ -2017,7 +2020,7 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
       }
     }
     if (Object.keys(safe).length === 0) {
-      sendJson(res, 400, { error: 'no editable keys in updates' })
+      sendError(res, 400, 'ENV_NO_EDITABLE_KEYS', { message: 'no editable keys in updates' })
       return
     }
     const { updateEnvFile } = await import('../cli-ui/env-file.js')
@@ -2051,7 +2054,10 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
     const user = process.env.IMHUB_SMTP_USER?.trim()
     const pass = process.env.IMHUB_SMTP_PASS
     if (!host || !user || !pass) {
-      sendJson(res, 400, { ok: false, error: 'SMTP not configured (host / user / pass required)' })
+      sendError(res, 400, 'EMAIL_NOT_CONFIGURED', {
+        message: 'SMTP not configured (host / user / pass required)',
+        extra: { ok: false },
+      })
       return
     }
     const portRaw = process.env.IMHUB_SMTP_PORT?.trim()
@@ -2080,7 +2086,10 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    sendJson(res, 400, { ok: false, error: msg })
+    sendError(res, 400, 'EMAIL_VERIFY_FAILED', {
+      detail: msg,
+      extra: { ok: false },
+    })
   }
 }
 
@@ -2228,7 +2237,7 @@ async function handleMemoryUsers(_req: IncomingMessage, res: ServerResponse): Pr
 async function handleMemoryFacts(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required (platform:userId)' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required (platform:userId)' }); return }
     const { listFacts } = await import('../core/memory.js')
     const query = url.searchParams.get('query') || ''
     const category = url.searchParams.get('category') || ''
@@ -2245,7 +2254,7 @@ async function handleMemoryFacts(_req: IncomingMessage, res: ServerResponse, url
 async function handleMemoryDeleteOne(req: IncomingMessage, res: ServerResponse, url: URL, id: number): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const { deleteFact } = await import('../core/memory.js')
     const ok = deleteFact(id, user_key)
     sendJson(res, ok ? 200 : 404, { ok, id })
@@ -2258,7 +2267,7 @@ async function handleMemoryDeleteOne(req: IncomingMessage, res: ServerResponse, 
 async function handleMemoryBulkDelete(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const body = await readBody(req, res)
     const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
     const { bulkDeleteFacts } = await import('../core/memory.js')
@@ -2284,7 +2293,7 @@ async function handleMemoryBulkDelete(req: IncomingMessage, res: ServerResponse,
 async function handleMemoryPersona(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const { getPersona } = await import('../core/memory.js')
     const p = getPersona(user_key)
     if (!p) { sendJson(res, 404, { error: 'no persona for user_key', user_key }); return }
@@ -2297,7 +2306,7 @@ async function handleMemoryPersona(_req: IncomingMessage, res: ServerResponse, u
 async function handleMemoryPersonaPut(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const body = await readBody(req, res)
     const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
     const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : ''
@@ -2313,7 +2322,7 @@ async function handleMemoryPersonaPut(req: IncomingMessage, res: ServerResponse,
 async function handleMemoryPersonaDelete(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const { deletePersona } = await import('../core/memory.js')
     const ok = deletePersona(user_key)
     sendJson(res, ok ? 200 : 404, { ok })
@@ -2325,7 +2334,7 @@ async function handleMemoryPersonaDelete(_req: IncomingMessage, res: ServerRespo
 async function handleMemoryExport(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const user_key = readUserKey(url)
-    if (!user_key) { sendJson(res, 400, { error: 'user_key required' }); return }
+    if (!user_key) { sendError(res, 400, 'MEMORY_USER_KEY_REQUIRED', { message: 'user_key required' }); return }
     const { exportUserMemory } = await import('../core/memory.js')
     const data = exportUserMemory(user_key)
     res.writeHead(200, {
@@ -3325,7 +3334,7 @@ async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Pro
     const body = await readBody(req, res)
     const { baseUrl, register } = JSON.parse(body) as { baseUrl?: string; register?: boolean }
     if (!baseUrl) {
-      sendJson(res, 400, { error: 'Missing baseUrl' })
+      sendError(res, 400, 'ACP_BASEURL_REQUIRED', { message: 'Missing baseUrl' })
       return
     }
     const { discoverAgents } = await import('../plugins/agents/acp/discovery.js')
@@ -3339,7 +3348,12 @@ async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Pro
     if (e?.handled) return
     const status = e?.statusCode || 500
     const msg = e instanceof Error ? e.message : String(err)
-    if (!res.headersSent) sendJson(res, status, { ok: false, error: msg })
+    if (!res.headersSent) {
+      sendError(res, status, 'ACP_DISCOVER_FAILED', {
+        detail: msg,
+        extra: { ok: false },
+      })
+    }
   }
 }
 
@@ -3353,12 +3367,18 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
     try {
       parsed = JSON.parse(body) as { endpoint?: string; auth?: unknown }
     } catch {
-      sendJson(res, 400, { ok: false, error: 'Invalid JSON body' })
+      sendError(res, 400, 'INVALID_JSON_BODY', {
+        message: 'Invalid JSON body',
+        extra: { ok: false },
+      })
       return
     }
     const { endpoint, auth } = parsed
     if (!endpoint || typeof endpoint !== 'string') {
-      sendJson(res, 400, { ok: false, error: 'Missing or invalid "endpoint"' })
+      sendError(res, 400, 'ACP_ENDPOINT_REQUIRED', {
+        message: 'Missing or invalid "endpoint"',
+        extra: { ok: false },
+      })
       return
     }
 
@@ -3374,7 +3394,10 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    sendJson(res, 400, { ok: false, error: msg })
+    sendError(res, 400, 'ACP_TEST_FAILED', {
+      detail: msg,
+      extra: { ok: false },
+    })
   }
 }
 
@@ -3443,6 +3466,37 @@ function readBody(req: IncomingMessage, res?: ServerResponse): Promise<string> {
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(data))
+}
+
+/**
+ * Send a machine-readable error response. The SPA's `lib/api/client.ts`
+ * reads `body.code` and maps it through `errors.json` → user-facing text;
+ * the legacy `error` string remains as a fallback for tools that don't
+ * speak the code dictionary (curl, older clients, tests grepping the
+ * response).
+ *
+ * Convention: codes are UPPER_SNAKE, namespaced by feature when needed
+ * (e.g. `EMAIL_NOT_CONFIGURED`, `MEMORY_USER_KEY_REQUIRED`). Bare names
+ * like `VALIDATION` / `NOT_FOUND` cover broad buckets. Add new entries
+ * to `src/web-app/src/i18n/locales/{en,zh}/errors.json` together with
+ * the call site so the SPA picks up the human text.
+ *
+ * Use `detail` when the human message has variable parts the SPA can
+ * interpolate (`{{detail}}` in the i18n template). Use `message` when
+ * you want a fully-formed line that's safe to surface verbatim (the
+ * SPA fallback path renders this when no per-code key exists).
+ */
+function sendError(
+  res: ServerResponse,
+  status: number,
+  code: string,
+  options?: { message?: string; detail?: string; extra?: Record<string, unknown> },
+): void {
+  const message = options?.message ?? options?.detail ?? code
+  const body: Record<string, unknown> = { error: message, code }
+  if (options?.detail !== undefined) body.detail = options.detail
+  if (options?.extra) Object.assign(body, options.extra)
+  sendJson(res, status, body)
 }
 
 // ============================================
@@ -3684,10 +3738,10 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { token?: string }
     const token = (parsed.token || '').trim()
-    if (!token) { sendJson(res, 400, { error: 'token required' }); return }
-    if (!_tokenModule) { sendJson(res, 503, { error: 'auth module not ready' }); return }
+    if (!token) { sendError(res, 400, 'AUTH_TOKEN_REQUIRED', { message: 'token required' }); return }
+    if (!_tokenModule) { sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' }); return }
     const id = _tokenModule.verifyToken(token)
-    if (!id) { sendJson(res, 401, { error: 'invalid token' }); return }
+    if (!id) { sendError(res, 401, 'AUTH_INVALID', { message: 'invalid token' }); return }
     // 30-day cookie, Path=/, SameSite=Strict. Not HttpOnly so the page JS
     // can also read it back if needed (e.g. to attach Authorization header
     // on fetch — though the cookie alone suffices).

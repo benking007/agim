@@ -50,5 +50,19 @@
     "deleteTitle": "Delete this item?",
     "deleteDescription": "This cannot be undone.",
     "destructiveAction": "Delete"
+  },
+  "login": {
+    "intro": "Paste your access token from ~/.agim/tokens.json or `agim token list`.",
+    "tokenLabel": "Access token",
+    "submit": "Sign in",
+    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with IMHUB_TRUST_LOOPBACK=off."
+  },
+  "home": {
+    "placeholder": "Signed in. The chat surface ships in PR-6; this route is intentionally blank for now.",
+    "healthCheck": "Backend reachable"
+  },
+  "notFound": {
+    "title": "Nothing here.",
+    "description": "The page you're looking for doesn't exist."
   }
 }

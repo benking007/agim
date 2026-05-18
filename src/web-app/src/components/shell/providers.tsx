@@ -18,6 +18,7 @@ import { syncI18nLanguage } from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { useApplyTheme, usePrefs } from '@/stores/prefs'
+import { bindAuthToStorage } from '@/stores/auth'
 import '@/i18n'
 
 function LanguageBinder({ children }: { children: React.ReactNode }): JSX.Element {
@@ -39,15 +40,25 @@ function ThemeBinder({ children }: { children: React.ReactNode }): JSX.Element {
   return <>{children}</>
 }
 
+function AuthBinder({ children }: { children: React.ReactNode }): JSX.Element {
+  // Cross-tab sync: sign-out in one tab flips others to /login on
+  // their next render. The lib/api/client.ts 401 handler covers the
+  // single-tab case; this catches the multi-tab one.
+  useEffect(() => bindAuthToStorage(), [])
+  return <>{children}</>
+}
+
 export function Providers({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
       <LanguageBinder>
         <ThemeBinder>
-          <TooltipProvider>
-            {children}
-            <Toaster />
-          </TooltipProvider>
+          <AuthBinder>
+            <TooltipProvider>
+              {children}
+              <Toaster />
+            </TooltipProvider>
+          </AuthBinder>
         </ThemeBinder>
       </LanguageBinder>
     </QueryClientProvider>

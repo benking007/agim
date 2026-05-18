@@ -50,5 +50,19 @@
     "deleteTitle": "确认删除？",
     "deleteDescription": "操作不可撤销。",
     "destructiveAction": "删除"
+  },
+  "login": {
+    "intro": "粘贴 ~/.agim/tokens.json 里的访问令牌（或运行 `agim token list` 查看）。",
+    "tokenLabel": "访问令牌",
+    "submit": "登录",
+    "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 IMHUB_TRUST_LOOPBACK=off 时才会看到此页。"
+  },
+  "home": {
+    "placeholder": "已登录。聊天界面将在 PR-6 落地；当前页暂为占位。",
+    "healthCheck": "后端可达"
+  },
+  "notFound": {
+    "title": "什么也没找到。",
+    "description": "你要找的页面不存在。"
   }
 }

@@ -100,6 +100,19 @@ export default function OutboxRoute(): JSX.Element {
         headClassName: 'w-28',
       },
       {
+        id: 'preview',
+        header: t('outbox.col.preview'),
+        cell: (r) => (
+          <span
+            className="line-clamp-2 text-text"
+            title={r.payload}
+          >
+            {previewPayload(r.payload, r.kind)}
+          </span>
+        ),
+        asCardTitle: true,
+      },
+      {
         id: 'thread',
         header: t('outbox.col.thread'),
         cell: (r) => (
@@ -110,7 +123,8 @@ export default function OutboxRoute(): JSX.Element {
             {r.thread_key}
           </span>
         ),
-        asCardTitle: true,
+        headClassName: 'w-44',
+        hideOnMobile: true,
       },
       {
         id: 'kind',
@@ -296,6 +310,27 @@ function StatCard({ label, value, tone }: StatCardProps): JSX.Element {
       <div className="text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   )
+}
+
+/** Render a one-line preview of an outbox row's payload.
+ *
+ * Card payloads are JSON encoded by the agent. We pluck the most
+ * likely "message" field if we can parse it; otherwise we fall back
+ * to the raw string. Text payloads are returned as-is, truncated
+ * by the surrounding `line-clamp-2`. */
+function previewPayload(payload: string, kind: string): string {
+  if (!payload) return '—'
+  if (kind === 'text') return payload
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>
+    const text = (parsed.text ?? parsed.message ?? parsed.title ?? parsed.body ?? null) as string | null
+    if (typeof text === 'string' && text.length > 0) return text
+    // Fallback: serialise the object compactly so the operator still
+    // sees something useful.
+    return JSON.stringify(parsed)
+  } catch {
+    return payload
+  }
 }
 
 function formatTime(iso: string | null): string {

@@ -12,10 +12,10 @@
  */
 
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { CheckCircle, Download, Loader2, Play, RefreshCcw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle, Download, ExternalLink, Loader2, Play, RefreshCcw, Trash2, XCircle } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { EmptyState } from '@/components/common/empty-state'
@@ -126,6 +126,32 @@ export default function MemoryVectorRoute(): JSX.Element {
         </div>
         <p className="text-sm text-text-dim">{t('vector.subtitle')}</p>
       </header>
+
+      {/* Backend configuration hint — points the operator at the
+          env editor where the IMHUB_MEMORY_VECTOR_* keys live
+          (backend / model / openai base url + api key / batch size /
+          hybrid weight). */}
+      <div className="rounded-md border border-info/30 bg-info-bg/30 px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-text">{t('vector.config.title')}</span>
+          <Button asChild variant="ghost" size="sm" className="ml-auto">
+            <Link to="/settings/env?q=IMHUB_MEMORY_VECTOR">
+              <ExternalLink className="h-3 w-3" />
+              {t('vector.config.editLink')}
+            </Link>
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-text-dim">{t('vector.config.hint')}</p>
+        <ul className="mt-2 grid grid-cols-1 gap-x-3 gap-y-0.5 text-xs font-mono text-text-dim sm:grid-cols-2">
+          <li>IMHUB_MEMORY_VECTOR_BACKEND</li>
+          <li>IMHUB_MEMORY_VECTOR_LOCAL_MODEL</li>
+          <li>IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL</li>
+          <li>IMHUB_MEMORY_VECTOR_OPENAI_MODEL</li>
+          <li>IMHUB_MEMORY_VECTOR_OPENAI_API_KEY</li>
+          <li>IMHUB_MEMORY_VECTOR_BATCH_SIZE</li>
+          <li>IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT</li>
+        </ul>
+      </div>
 
       {/* Status + Coverage */}
       <div className="grid gap-3 md:grid-cols-2">

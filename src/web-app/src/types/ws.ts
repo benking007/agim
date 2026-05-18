@@ -16,6 +16,12 @@ export type ChatOutgoing =
   | { type: 'switch-agent'; agent: string }
   | { type: 'get-agents' }
   | { type: 'get-history' }
+  /** Clear messages + per-agent CLI bindings + auto-allow rules. The
+   *  server replies with an empty `history` so the UI repaints clear. */
+  | { type: 'new-conversation' }
+  /** Approval card button click. `data` MUST be the
+   *  `apv:<reqId>:<y|n|a>` callback_data that approval-router's
+   *  `parseCallbackData` expects — v2 routes it through unchanged. */
   | { type: 'approval-action'; data: string; messageId: string }
 
 /** Server → Client */
@@ -28,9 +34,43 @@ export type ChatIncoming =
   | { type: 'done'; text: string }
   | { type: 'error'; message: string }
   | { type: 'approval-text'; text: string }
-  | { type: 'approval-card'; messageId: string; prompt: string }
-  | { type: 'approval-card-edit'; messageId: string; outcome: 'allow' | 'deny' | 'timeout' }
+  | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
+  | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }
   | { type: 'metrics'; agents: AgentMetric[]; timestamp: string }
+
+/** Mirror of src/core/types.ts:ApprovalCardPrompt — the structured
+ *  body of an approval-card message. v1 rendered toolName + inputJson
+ *  in distinct slots; v2 does the same. */
+export interface ApprovalCardPrompt {
+  /** Bus-side request id; embedded in callback_data so the button click
+   *  can address the right pending approval. Treat as opaque. */
+  reqId: string
+  toolName: string
+  /** Stringified input, already display-capped server-side. */
+  inputJson: string
+  /** `normal` = ask user; `auto-allow` = grace window before automatic
+   *  allow (only the deny button is meaningful in that mode). */
+  mode: 'normal' | 'auto-allow'
+  /** Auto-allow grace window in seconds, present iff mode = `auto-allow`. */
+  graceSeconds?: number
+}
+
+/** Mirror of src/core/types.ts:ApprovalCardOutcome — five decisions
+ *  distinguish "allowed + pinned for the rest of session" and "denied,
+ *  also revoked an existing auto-allow rule" from the basic
+ *  allow/deny/timeout triplet. */
+export interface ApprovalCardOutcome {
+  decision:
+    | 'allowed'
+    | 'allowed-pinned'
+    | 'denied'
+    | 'denied-revoked'
+    | 'expired'
+  /** "@user" or first name of the human who decided, if known. */
+  byUserDisplay?: string
+  /** ISO date — server stringifies the core `atDate: Date` field. */
+  atDate?: string
+}
 
 export interface HistoryMessage {
   role: 'user' | 'assistant'

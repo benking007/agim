@@ -92,11 +92,25 @@
     "welcomeTitle": "开始对话",
     "welcomeBody": "输入消息向当前 Agent 提问。点上方下拉可切换 Agent。",
     "inputPlaceholder": "输入消息……（Enter 发送，Shift+Enter 换行）",
-    "approvalTitle": "🔐 工具授权",
-    "approvalAllow": "批准",
-    "approvalDeny": "拒绝",
-    "approvalAllowed": "✅ 已批准",
-    "approvalDenied": "❌ 已拒绝",
-    "approvalTimeout": "⏱ 已超时"
+    "newConv":     "新对话",
+    "newConvHint": "清空消息并开启新会话",
+    "newConvToast":"已开启新对话",
+    "approvalTitle":         "🔐 工具授权",
+    "approvalAutoBadge":     "自动放行",
+    "approvalAutoIn":        "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
+    "approvalAutoResolving": "正在自动放行…",
+    "approvalToolLabel":     "工具",
+    "approvalInputLabel":    "输入",
+    "approvalAllow":         "批准",
+    "approvalAuto":          "本类自动放行",
+    "approvalAutoTip":       "批准并对本会话内同类调用自动放行",
+    "approvalDeny":          "拒绝",
+    "outcome": {
+      "allowed":        "✅ 已批准",
+      "allowedPinned":  "✅ 已批准 · 后续同类自动放行",
+      "denied":         "❌ 已拒绝",
+      "deniedRevoked":  "❌ 已拒绝（撤销自动放行）",
+      "expired":        "⏱ 已超时"
+    }
   }
 }

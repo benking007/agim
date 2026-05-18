@@ -17,9 +17,16 @@
 
 import { useEffect, useReducer, useRef } from 'react'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
-import type { ChatIncoming } from '@/types/ws'
+import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming } from '@/types/ws'
 
 export type MessageRole = 'user' | 'assistant' | 'system'
+
+/** Three click outcomes the chat surface sends back. Maps 1:1 to the
+ *  callback_data trailing letter that approval-router expects:
+ *    `y` → allow
+ *    `n` → deny
+ *    `a` → allow + auto-allow further (the "Auto for similar" button) */
+export type ApprovalChoice = 'y' | 'n' | 'a'
 
 export interface ChatMessage {
   id: string
@@ -27,11 +34,16 @@ export interface ChatMessage {
   content: string
   agent?: string
   timestamp: number
-  /** Approval cards land here as a system message with embedded data. */
+  /** Approval cards land here as a system message with embedded data.
+   *  `prompt` is the full structured payload from the server (toolName,
+   *  inputJson, mode, graceSeconds, reqId). `text` is a plain string
+   *  used for the legacy approval-text fallback path. */
   approval?: {
     messageId: string
-    prompt: string
-    outcome?: 'allow' | 'deny' | 'timeout'
+    prompt?: ApprovalCardPrompt
+    /** Legacy `approval-text` body (no buttons, no tool input). */
+    text?: string
+    outcome?: ApprovalCardOutcome
   }
 }
 
@@ -65,8 +77,10 @@ type Action =
   | { kind: 'CHUNK'; replyId: string; text: string }
   | { kind: 'DONE'; replyId: string; finalText: string }
   | { kind: 'ERROR'; message: string }
-  | { kind: 'APPROVAL_CARD'; messageId: string; prompt: string }
-  | { kind: 'APPROVAL_EDIT'; messageId: string; outcome: 'allow' | 'deny' | 'timeout' }
+  | { kind: 'APPROVAL_CARD'; messageId: string; prompt: ApprovalCardPrompt }
+  | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
+  | { kind: 'APPROVAL_EDIT'; messageId: string; outcome: ApprovalCardOutcome }
+  | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
 
 function reducer(s: ChatState, a: Action): ChatState {
@@ -127,6 +141,20 @@ function reducer(s: ChatState, a: Action): ChatState {
           },
         ],
       }
+    case 'APPROVAL_TEXT':
+      return {
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            id: `approval-${a.messageId}`,
+            role: 'system',
+            content: '',
+            timestamp: Date.now(),
+            approval: { messageId: a.messageId, text: a.text },
+          },
+        ],
+      }
     case 'APPROVAL_EDIT': {
       const idx = s.messages.findIndex(
         (m) => m.approval?.messageId === a.messageId,
@@ -139,6 +167,17 @@ function reducer(s: ChatState, a: Action): ChatState {
       }
       return { ...s, messages: next }
     }
+    case 'RESET_CONVERSATION':
+      // Clear all chat state but keep WS status + agent list + current
+      // agent. The server is the source of truth for messages; it
+      // replies with an empty `history` after the reset, which we
+      // optimistically pre-render.
+      return {
+        ...s,
+        messages: [],
+        currentReplyId: null,
+        error: null,
+      }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
   }
@@ -160,7 +199,14 @@ export interface UseChat {
   state: ChatState
   send: (text: string) => void
   switchAgent: (name: string) => void
-  approvalClick: (messageId: string, decision: 'allow' | 'deny') => void
+  /** Approval card button click. The hook composes the
+   *  `apv:<reqId>:<y|n|a>` callback_data that approval-router expects;
+   *  callers only pass the messageId + reqId + the user's choice. */
+  approvalClick: (messageId: string, reqId: string, choice: ApprovalChoice) => void
+  /** Drop all messages + tell the server to fork a new session
+   *  (resetConversation: new id, drops CLI session pins + auto-allow
+   *  rules + plan-mode). The server replies with empty history. */
+  newConversation: () => void
   clearError: () => void
 }
 
@@ -262,11 +308,13 @@ export function useChat(): UseChat {
         })
         return
       case 'approval-text':
-        // Surface as system message; reuse approval slot.
+        // approval-text is the legacy fallback path used by adapters
+        // that can't render cards (or for "receipt" lines after a
+        // card resolves). No reqId / toolName — just a string body.
         dispatch({
-          kind: 'APPROVAL_CARD',
+          kind: 'APPROVAL_TEXT',
           messageId: `text-${Date.now()}`,
-          prompt: msg.text,
+          text: msg.text,
         })
         return
       case 'metrics':
@@ -324,8 +372,22 @@ export function useChat(): UseChat {
     wsRef.current.send({ type: 'switch-agent', agent: name })
   }
 
-  function approvalClick(messageId: string, decision: 'allow' | 'deny'): void {
-    wsRef.current.send({ type: 'approval-action', data: decision, messageId })
+  function approvalClick(messageId: string, reqId: string, choice: ApprovalChoice): void {
+    // approval-router parses `apv:<reqId>:<y|n|a>`. v1 composed this
+    // client-side too; we route through unchanged because the router
+    // is the canonical sink and ignores any other prefix.
+    wsRef.current.send({
+      type: 'approval-action',
+      data: `apv:${reqId}:${choice}`,
+      messageId,
+    })
+  }
+
+  function newConversation(): void {
+    // Optimistic clear so the UI repaints empty immediately; the server's
+    // follow-up `history` message with messages=[] reconfirms the state.
+    dispatch({ kind: 'RESET_CONVERSATION' })
+    wsRef.current.send({ type: 'new-conversation' })
   }
 
   return {
@@ -333,6 +395,7 @@ export function useChat(): UseChat {
     send,
     switchAgent,
     approvalClick,
+    newConversation,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
   }
 }

@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, AlertCircle } from 'lucide-react'
+import { Send, AlertCircle, MessageSquarePlus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
@@ -34,7 +34,9 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
-  const { state, send, switchAgent, approvalClick, clearError } = useChat()
+  const {
+    state, send, switchAgent, approvalClick, newConversation, clearError,
+  } = useChat()
   const [input, setInput] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -100,6 +102,25 @@ export default function ChatRoute(): JSX.Element {
           title={state.status}
         />
         <span className="hidden text-xs text-text-dim sm:inline">{state.status}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            newConversation()
+            toast.success(t('chat.newConvToast', { defaultValue: 'Started a new conversation' }))
+            requestAnimationFrame(() => inputRef.current?.focus())
+          }}
+          disabled={state.status !== 'open'}
+          title={t('chat.newConvHint', {
+            defaultValue: 'Clear messages and start a fresh session',
+          })}
+          aria-label={t('chat.newConv', { defaultValue: 'New conversation' })}
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          <span className="hidden text-xs sm:inline">
+            {t('chat.newConv', { defaultValue: 'New' })}
+          </span>
+        </Button>
         <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
       </Topbar>
 
@@ -139,7 +160,11 @@ export default function ChatRoute(): JSX.Element {
             </div>
           )}
           {state.messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} onApprove={approvalClick} />
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+            />
           ))}
         </div>
       </div>

@@ -759,24 +759,167 @@ export interface AppConfig {
  * Health / Observability
  * ============================================================ */
 
+/** Mirror of src/core/audit-log.ts:HealthSummary. */
 export interface HealthSummary {
-  uptimeSec: number
-  agents: Record<string, boolean>
-  totalsByDay?: Array<{ date: string; calls: number; cost: number; errors: number; avgLatencyMs: number }>
-  kpis?: {
-    totalCalls: number
-    totalCost: number
+  /** Window start (YYYY-MM-DD). */
+  since: string
+  until: string
+  days: number
+  totals: {
+    calls: number
+    cost: number
+    errors: number
     errorRate: number
     avgLatencyMs: number
+    p95LatencyMs: number
   }
+  byDay: Array<{
+    date: string
+    calls: number
+    cost: number
+    errors: number
+    avgLatencyMs: number
+  }>
 }
 
-export interface TopNRow {
-  rank: number
-  name: string
-  value: number
+export type TopNDim = 'user' | 'agent' | 'platform' | 'intent'
+export type TopNMetric = 'cost' | 'calls' | 'errors' | 'avg_latency'
+
+export interface TopNItem {
+  key: string
+  calls: number
+  cost: number
+  errors: number
+  avgLatencyMs: number
 }
 
 export interface TopNResponse {
-  topN: TopNRow[]
+  dim: TopNDim
+  by: TopNMetric
+  days: number
+  items: TopNItem[]
+}
+
+/** Mirror of src/core/audit-log.ts:InvocationRow. */
+export interface InvocationRow {
+  id: number
+  trace_id: string
+  /** ISO timestamp; SQLite stores as TEXT. */
+  ts: string
+  user_id: string
+  platform: string
+  agent: string
+  intent: string
+  prompt_len: number
+  response_len: number
+  duration_ms: number
+  cost: number
+  /** Stored as 0/1 in SQLite. */
+  success: number
+  error: string | null
+}
+
+export interface AuditStats {
+  total: number
+  byAgent: Record<string, number>
+  totalCost: number
+}
+
+export interface AuditResponse {
+  invocations: InvocationRow[]
+  stats: AuditStats
+}
+
+export interface ListAuditQuery {
+  limit?: number
+  days?: number
+  agent?: string
+  platform?: string
+  user?: string
+  intent?: string
+}
+
+/* ============================================================
+ * Settings — env file, service control.
+ * ============================================================ */
+
+export interface EnvResponse {
+  /** Editable env-file values keyed by IMHUB_*. Secrets are masked
+   *  unless ?reveal=1 was passed (only last 4 chars visible). */
+  env: Record<string, string>
+  /** Subset of env keys whose values are treated as secrets — the
+   *  UI should hide their values by default and use a Reveal toggle. */
+  secretKeys: string[]
+}
+
+export interface UpdateEnvBody {
+  /** Map of key → new value. Pass `null` to unset a key. Only keys
+   *  on the backend's `ENV_EDITABLE_KEYS` allowlist are accepted;
+   *  anything else is silently dropped. */
+  updates: Record<string, string | null>
+}
+
+export type ServiceMode = 'systemd' | 'background' | 'foreground' | 'none'
+
+export interface ServiceStatus {
+  mode: ServiceMode
+  pid: number | null
+  uptimeSec: number | null
+  /** Human-rendered uptime (e.g. "3h 12m"). */
+  uptime: string | null
+  /** Public web endpoint, when known. */
+  web: {
+    bind: string
+    port: number
+  } | null
+  /** Boot lifecycle phase from core/boot-state.ts. */
+  bootPhase: string
+  bootMsSinceStart: number
+  bootPhaseTimings: Record<string, number>
+}
+
+export interface ServiceActionResponse {
+  ok: boolean
+  mode?: ServiceMode
+  pid?: number
+  alreadyRunning?: boolean
+}
+
+/* ============================================================
+ * Admin allowlist — users who can run admin-tier commands.
+ * Editor only works when web is bound locally (the backend
+ * gates POST + DELETE on isLocalBind).
+ * ============================================================ */
+
+export interface AdminEntry {
+  platform: string
+  userId: string
+}
+
+export interface AdminAllowlistResponse {
+  admins: AdminEntry[]
+  /** True once at least one admin has been set. When false, the
+   *  CLI's bootstrap token is the only privileged path. */
+  configured: boolean
+  /** Bootstrap token file present on disk — operator can use it
+   *  to seed the first admin. */
+  bootstrapAvailable: boolean
+  bootstrapTokenPath: string
+}
+
+export interface AddAdminBody {
+  platform: string
+  userId: string
+}
+
+export interface RemoveAdminBody {
+  platform: string
+  userId: string
+}
+
+export interface AdminMutationResponse {
+  ok: boolean
+  added?: boolean
+  removed?: boolean
+  admins: AdminEntry[]
 }

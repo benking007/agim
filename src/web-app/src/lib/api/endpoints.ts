@@ -15,13 +15,25 @@ import { client } from './client'
 import type {
   A2AStats,
   AppConfig,
+  AddAdminBody,
+  AdminAllowlistResponse,
+  AdminMutationResponse,
+  AuditResponse,
   BatchJobBody,
+  EnvResponse,
+  RemoveAdminBody,
+  ServiceActionResponse,
+  ServiceStatus,
+  UpdateEnvBody,
   CreateJobBody,
   CreateJobResponse,
   HealthSummary,
   ListA2ARecentQuery,
   ListA2ARecentResponse,
   ListApprovalsResponse,
+  ListAuditQuery,
+  TopNDim,
+  TopNMetric,
   ResolveApprovalBody,
   ResolveApprovalResponse,
   CancelReminderResponse,
@@ -78,16 +90,16 @@ export const api = {
     client.get<A2AStats>('/api/a2a/stats'),
 
   /** DELETE /api/admin-allowlist */
-  removeAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.delete<unknown>('/api/admin-allowlist', opts),
+  removeAdminAllowlist: (body: RemoveAdminBody) =>
+    client.delete<AdminMutationResponse>('/api/admin-allowlist', { body }),
 
   /** GET /api/admin-allowlist */
-  listAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/admin-allowlist', opts),
+  listAdminAllowlist: () =>
+    client.get<AdminAllowlistResponse>('/api/admin-allowlist'),
 
   /** POST /api/admin-allowlist */
-  addAdminAllowlist: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/admin-allowlist', opts),
+  addAdminAllowlist: (body: AddAdminBody) =>
+    client.post<AdminMutationResponse>('/api/admin-allowlist', { body }),
 
   /** GET /api/agent-health */
   getAgentHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -114,8 +126,8 @@ export const api = {
     client.post<ResolveApprovalResponse>(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, { body }),
 
   /** GET /api/audit */
-  getAudit: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/audit', opts),
+  getAudit: (query: ListAuditQuery) =>
+    client.get<AuditResponse>('/api/audit', { query }),
 
   /** POST /api/auth/login (public) */
   login: (body: LoginBody) =>
@@ -138,12 +150,12 @@ export const api = {
     client.put<unknown>('/api/config', opts),
 
   /** GET /api/env */
-  getEnv: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/env', opts),
+  getEnv: (query: { reveal?: boolean }) =>
+    client.get<EnvResponse>('/api/env', { query }),
 
   /** PUT /api/env */
-  updateEnv: (opts?: { body?: unknown }) =>
-    client.put<unknown>('/api/env', opts),
+  updateEnv: (body: UpdateEnvBody) =>
+    client.put<EnvResponse>('/api/env', { body }),
 
   /** GET /api/health (public) */
   getHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -154,7 +166,7 @@ export const api = {
     client.get<HealthSummary>('/api/health/summary', { query }),
 
   /** GET /api/health/topn */
-  getHealthTopN: (query: { dim: "user"|"agent"|"platform"; by: "calls"|"cost"|"errors"|"avg_latency"; days?: number; limit?: number }) =>
+  getHealthTopN: (query: { dim: TopNDim; by: TopNMetric; days?: number; limit?: number }) =>
     client.get<TopNResponse>('/api/health/topn', { query }),
 
   /** POST /api/invoke */
@@ -299,20 +311,20 @@ export const api = {
     client.get<ListSchedulesResponse>('/api/schedules', { query }),
 
   /** POST /api/service/restart */
-  restartService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/restart', opts),
+  restartService: () =>
+    client.post<ServiceActionResponse>('/api/service/restart'),
 
   /** POST /api/service/start */
-  startService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/start', opts),
+  startService: () =>
+    client.post<ServiceActionResponse>('/api/service/start'),
 
   /** GET /api/service/status */
-  getServiceStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/service/status', opts),
+  getServiceStatus: () =>
+    client.get<ServiceStatus>('/api/service/status'),
 
   /** POST /api/service/stop */
-  stopService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/stop', opts),
+  stopService: () =>
+    client.post<ServiceActionResponse>('/api/service/stop'),
 
   /** GET /api/skills */
   listSkills: () =>

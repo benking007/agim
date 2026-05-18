@@ -77,6 +77,12 @@
     "title": "什么也没找到。",
     "description": "你要找的页面不存在。"
   },
+  "errorBoundary": {
+    "title": "出错了。",
+    "description": "页面渲染过程中遇到了未预期的错误。可以尝试刷新或返回主页；若问题反复出现，请复制下方错误信息反馈。",
+    "reload": "刷新",
+    "home":   "返回主页"
+  },
   "chat": {
     "send": "发送",
     "streaming": "… 接收中",

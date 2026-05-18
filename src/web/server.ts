@@ -3881,6 +3881,18 @@ async function handleClientMessage(
       await sendSessionHistory(ws, clientId, defaultAgent)
       break
     }
+
+    // v1's "New conversation" button in the web chat. Clears the
+    // session messages, forks a fresh session id, drops per-agent CLI
+    // session bindings (Claude/opencode/codex) and any auto-allow
+    // approval rules, so the next prompt starts on a clean slate. The
+    // WS client receives a follow-up `history` message with an empty
+    // list so the UI repaints the cleared state.
+    case 'new-conversation': {
+      await sessionManager.resetConversation('web', 'web', clientId)
+      sendToClient(ws, { type: 'history', messages: [], agent: client.agent })
+      break
+    }
   }
 }
 

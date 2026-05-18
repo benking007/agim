@@ -18,6 +18,17 @@ import {
   type ChatMessage,
   type ChatState,
 } from './use-chat'
+import type { ApprovalCardPrompt } from '@/types/ws'
+
+function mkPrompt(over: Partial<ApprovalCardPrompt> = {}): ApprovalCardPrompt {
+  return {
+    reqId: 'req-1',
+    toolName: 'Bash',
+    inputJson: 'rm -rf /',
+    mode: 'normal',
+    ...over,
+  }
+}
 
 function userMsg(id: string, content = ''): ChatMessage {
   return { id, role: 'user', content, timestamp: 0 }
@@ -140,32 +151,66 @@ describe('chatReducer', () => {
     expect(s1).toMatchObject({ agents: ['claude', 'codex'], agent: 'codex' })
   })
 
-  it('APPROVAL_CARD appends a system message with the approval payload', () => {
+  it('APPROVAL_CARD appends a system message with the structured prompt', () => {
     const after = reduce(
       initialChatState,
-      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: 'run rm -rf?' },
+      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: mkPrompt({ inputJson: 'rm -rf /' }) },
     )
     expect(after.messages).toHaveLength(1)
     const m = after.messages[0]!
     expect(m.role).toBe('system')
-    expect(m.approval).toMatchObject({ messageId: 'msg-7', prompt: 'run rm -rf?' })
+    expect(m.approval).toMatchObject({
+      messageId: 'msg-7',
+      prompt: { reqId: 'req-1', toolName: 'Bash', inputJson: 'rm -rf /' },
+    })
     expect(m.approval?.outcome).toBeUndefined()
+  })
+
+  it('APPROVAL_TEXT appends a text-only system approval (legacy path)', () => {
+    const after = reduce(initialChatState,
+      { kind: 'APPROVAL_TEXT', messageId: 'msg-8', text: 'something happened' },
+    )
+    expect(after.messages[0]?.approval).toMatchObject({
+      messageId: 'msg-8',
+      text: 'something happened',
+    })
+    expect(after.messages[0]?.approval?.prompt).toBeUndefined()
   })
 
   it('APPROVAL_EDIT updates the outcome on the matching approval card', () => {
     const card = reduce(initialChatState,
-      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: 'p' },
-      { kind: 'APPROVAL_EDIT', messageId: 'msg-7', outcome: 'allow' },
+      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: mkPrompt() },
+      { kind: 'APPROVAL_EDIT', messageId: 'msg-7', outcome: { decision: 'allowed-pinned', byUserDisplay: '@alice' } },
     )
-    expect(card.messages[0]?.approval?.outcome).toBe('allow')
+    expect(card.messages[0]?.approval?.outcome).toMatchObject({
+      decision: 'allowed-pinned',
+      byUserDisplay: '@alice',
+    })
   })
 
   it('APPROVAL_EDIT for an unknown messageId is a no-op', () => {
     const before = reduce(initialChatState,
-      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: 'p' },
+      { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: mkPrompt() },
     )
-    const after = reduce(before, { kind: 'APPROVAL_EDIT', messageId: 'never', outcome: 'deny' })
+    const after = reduce(before, { kind: 'APPROVAL_EDIT', messageId: 'never', outcome: { decision: 'denied' } })
     expect(after).toBe(before)
+  })
+
+  it('RESET_CONVERSATION clears messages + reply id + error; keeps agents + agent', () => {
+    const seeded = reduce(initialChatState,
+      { kind: 'WS_STATUS', status: 'open' },
+      { kind: 'INIT', agents: ['claude', 'codex'], defaultAgent: 'claude' },
+      { kind: 'SEND_USER', message: userMsg('u-1', 'hi'), placeholder: asstMsg('p-1') },
+      { kind: 'ERROR', message: 'old' },
+    )
+    const after = reduce(seeded, { kind: 'RESET_CONVERSATION' })
+    expect(after.messages).toEqual([])
+    expect(after.currentReplyId).toBeNull()
+    expect(after.error).toBeNull()
+    // Preserved
+    expect(after.status).toBe('open')
+    expect(after.agents).toEqual(['claude', 'codex'])
+    expect(after.agent).toBe('claude')
   })
 
   it('a full happy-path session: connect → init → send → stream → done', () => {

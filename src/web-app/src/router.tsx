@@ -114,9 +114,10 @@ const router = createBrowserRouter([
     lazy: authedLazy(() => import('@/routes/settings/layout')),
     children: [
       { index: true,     element: <Navigate to="env" replace /> },
-      { path: 'env',     lazy: lazy(() => import('@/routes/settings/env')) },
-      { path: 'service', lazy: lazy(() => import('@/routes/settings/service')) },
-      { path: 'admins',  lazy: lazy(() => import('@/routes/settings/admins')) },
+      { path: 'env',        lazy: lazy(() => import('@/routes/settings/env')) },
+      { path: 'service',    lazy: lazy(() => import('@/routes/settings/service')) },
+      { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
+      { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

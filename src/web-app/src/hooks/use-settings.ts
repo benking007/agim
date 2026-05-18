@@ -18,18 +18,22 @@ import type {
   AddAdminBody,
   AdminAllowlistResponse,
   AdminMutationResponse,
+  AppConfig,
   EnvResponse,
   RemoveAdminBody,
   ServiceActionResponse,
   ServiceStatus,
   UpdateEnvBody,
+  WorkspaceConfig,
 } from '@/types/api'
 
 export const settingsKeys = {
-  all:     ['settings'] as const,
-  env:     (reveal: boolean) => ['settings', 'env', reveal] as const,
-  service: ['settings', 'service'] as const,
-  admins:  ['settings', 'admins'] as const,
+  all:        ['settings'] as const,
+  env:        (reveal: boolean) => ['settings', 'env', reveal] as const,
+  service:    ['settings', 'service'] as const,
+  admins:     ['settings', 'admins'] as const,
+  config:     ['settings', 'config'] as const,
+  workspaces: ['settings', 'workspaces'] as const,
 }
 
 export function useEnv(opts: { reveal?: boolean } = {}) {
@@ -104,5 +108,43 @@ export function useRemoveAdmin() {
   return useMutation<AdminMutationResponse, Error, RemoveAdminBody>({
     mutationFn: (body) => api.removeAdminAllowlist(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.admins }),
+  })
+}
+
+/* ─────────────── App config ─────────────── */
+
+export function useConfig() {
+  return useQuery<AppConfig>({
+    queryKey: settingsKeys.config,
+    queryFn: () => api.getConfig(),
+  })
+}
+
+export function useUpdateConfig() {
+  const qc = useQueryClient()
+  return useMutation<AppConfig, Error, Partial<AppConfig>>({
+    mutationFn: (body) => api.updateConfig(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.config }),
+  })
+}
+
+/* ─────────────── Workspaces ─────────────── */
+
+export function useWorkspaces() {
+  return useQuery<{ workspaces: WorkspaceConfig[] }>({
+    queryKey: settingsKeys.workspaces,
+    queryFn: () => api.listWorkspacesFull(),
+  })
+}
+
+export function useUpsertWorkspace() {
+  const qc = useQueryClient()
+  return useMutation<
+    { ok: boolean; workspace: WorkspaceConfig },
+    Error,
+    WorkspaceConfig
+  >({
+    mutationFn: (body) => api.upsertWorkspace(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.workspaces }),
   })
 }

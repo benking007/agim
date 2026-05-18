@@ -22,6 +22,7 @@ import type {
   BatchJobBody,
   EnvResponse,
   RemoveAdminBody,
+  WorkspaceConfig,
   ServiceActionResponse,
   ServiceStatus,
   UpdateEnvBody,
@@ -142,12 +143,22 @@ export const api = {
     client.get<ListBgjobsResponse>('/api/bgjobs', { query }),
 
   /** GET /api/config */
-  getConfig: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<AppConfig>('/api/config', opts),
+  getConfig: () =>
+    client.get<AppConfig>('/api/config'),
 
   /** PUT /api/config */
-  updateConfig: (opts?: { body?: unknown }) =>
-    client.put<unknown>('/api/config', opts),
+  updateConfig: (body: Partial<AppConfig>) =>
+    client.put<AppConfig>('/api/config', { body }),
+
+  /** GET /api/workspaces — summary shape by default; pass full: true
+   *  for the editor (returns members array, not count). */
+  listWorkspacesFull: () =>
+    client.get<{ workspaces: WorkspaceConfig[] }>('/api/workspaces', { query: { full: true } }),
+
+  /** POST /api/workspaces — upsert a workspace; backend wipes
+   *  members === [] to "open" workspace. */
+  upsertWorkspace: (body: WorkspaceConfig) =>
+    client.post<{ ok: boolean; workspace: WorkspaceConfig }>('/api/workspaces', { body }),
 
   /** GET /api/env */
   getEnv: (query: { reveal?: boolean }) =>
@@ -359,13 +370,5 @@ export const api = {
   /** PUT /api/workspace-files */
   writeWorkspaceFile: (query: { agent: string; path: string }, body: WriteWorkspaceFileBody) =>
     client.put<WriteWorkspaceFileResponse>('/api/workspace-files', { query, body }),
-
-  /** GET /api/workspaces */
-  listWorkspaces: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/workspaces', opts),
-
-  /** POST /api/workspaces */
-  createWorkspace: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/workspaces', opts),
 
 } as const

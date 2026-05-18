@@ -2,9 +2,50 @@
   "pageTitle": "设置",
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
-    "env":     "环境变量",
-    "service": "服务",
-    "admins":  "管理员"
+    "env":        "环境变量",
+    "service":    "服务",
+    "admins":     "管理员",
+    "workspaces": "工作区"
+  },
+  "workspaces": {
+    "title": "工作区",
+    "subtitle": "多租户工作区注册表。每个工作区有独立的 Agent 白名单、限流配置以及（可选的）成员名单。`default` 工作区承接所有未匹配的用户。",
+    "empty": {
+      "title": "只有默认工作区",
+      "description": "在下方添加工作区，可按团队 / 项目 / 客户分隔。每个工作区有独立的 Agent 白名单与限流。"
+    },
+    "col": {
+      "id":        "ID",
+      "name":      "名称",
+      "agents":    "Agent 白名单",
+      "members":   "成员",
+      "rateLimit": "限流"
+    },
+    "rateLimitFormat": "{{rate}} / {{intervalSec}}s，突发 {{burst}}",
+    "membersOpen": "开放（任何用户）",
+    "membersCount_one":   "{{count}} 位成员",
+    "membersCount_other": "{{count}} 位成员",
+    "edit":   "编辑",
+    "form": {
+      "title":         "新增或编辑工作区",
+      "subtitleEdit":  "编辑已有工作区 — 改 ID 可克隆，保持原 ID 即 upsert。",
+      "id":            "ID",
+      "idHint":        "稳定标识符；只允许 [a-zA-Z0-9_-]+；`default` 为保留名。",
+      "name":          "显示名",
+      "agents":        "Agent 白名单",
+      "agentsHint":    "逗号分隔；为空 = 允许所有已注册 Agent。",
+      "members":       "成员用户 ID",
+      "membersHint":   "逗号分隔，形如 `platform:userId`；为空 = 开放工作区。",
+      "rateLimit":     "限流（可选）",
+      "rate":          "调用数",
+      "intervalSec":   "周期（秒）",
+      "burst":         "突发上限",
+      "submit":        "保存工作区",
+      "reset":         "清空表单"
+    },
+    "toast": {
+      "saved": "工作区已保存"
+    }
   },
   "env": {
     "title": "环境变量",

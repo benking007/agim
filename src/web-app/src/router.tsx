@@ -1,43 +1,53 @@
 /**
  * router.tsx — single source of truth for the SPA routing config.
  *
- * PR-5 split: /login public, / protected, * → 404.
- * PR-6: `/` is the chat surface (was a placeholder).
+ * Routes split into two tiers:
+ *   * Eager: /login + / (chat) — entry points the operator hits
+ *     immediately, so loading them inline avoids a chunk fetch on
+ *     the critical first-paint path.
+ *   * Lazy: everything else, via react-router's `lazy:` property.
+ *     Each `() => import(...)` produces its own Vite chunk, so
+ *     /memory etc. only pay their KB when the user navigates there.
  *
- * Subsequent PRs add /tasks /approvals /reminders /memos /memory
- * /workspace /observability /settings as lazy-imported children of
- * the RequireAuth-wrapped root.
+ * The whole tree is wrapped in <ErrorBoundary> at the root so an
+ * uncaught render error in any child route falls back to the
+ * friendly "Something went wrong" surface instead of a blank page.
  */
 
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { RequireAuth } from '@/components/shell/require-auth'
+import { ErrorBoundary } from '@/components/shell/error-boundary'
 
 import LoginRoute from '@/routes/login'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
-import TasksLayout from '@/routes/tasks/layout'
-import JobsRoute from '@/routes/tasks/jobs'
-import SubtasksRoute from '@/routes/tasks/subtasks'
-import BgjobsRoute from '@/routes/tasks/bgjobs'
-import SchedulesRoute from '@/routes/tasks/schedules'
-import OutboxRoute from '@/routes/tasks/outbox'
-import A2ARoute from '@/routes/tasks/a2a'
-import ApprovalsRoute from '@/routes/approvals'
-import RemindersRoute from '@/routes/reminders'
-import MemosRoute from '@/routes/memos'
-import MemoryLayout from '@/routes/memory/layout'
-import MemoryFactsRoute from '@/routes/memory/facts'
-import MemoryPersonaRoute from '@/routes/memory/persona'
-import MemoryVectorRoute from '@/routes/memory/vector'
-import MemorySkillsRoute from '@/routes/memory/skills'
-import WorkspaceRoute from '@/routes/workspace'
-import ObservabilityLayout from '@/routes/observability/layout'
-import ObservabilityHealthRoute from '@/routes/observability/health'
-import ObservabilityTopNRoute from '@/routes/observability/topn'
-import ObservabilityAuditRoute from '@/routes/observability/audit'
-import SettingsLayout from '@/routes/settings/layout'
-import SettingsEnvRoute from '@/routes/settings/env'
-import SettingsServiceRoute from '@/routes/settings/service'
+
+/** Wrap a `lazy:` factory so the route renders behind RequireAuth.
+ *  We can't apply the auth wrapper via element AND lazy, so the
+ *  wrap happens once the module loads. */
+function authedLazy(factory: () => Promise<{ default: React.ComponentType }>) {
+  return async () => {
+    const mod = await factory()
+    const Cmp = mod.default
+    return {
+      element: (
+        <RequireAuth>
+          <Cmp />
+        </RequireAuth>
+      ),
+    }
+  }
+}
+
+/** Plain `lazy:` for nested route children — they inherit auth from
+ *  the parent route's element. */
+function lazy(factory: () => Promise<{ default: React.ComponentType }>) {
+  return async () => {
+    const mod = await factory()
+    const Cmp = mod.default
+    return { element: <Cmp /> }
+  }
+}
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -51,98 +61,70 @@ const router = createBrowserRouter([
   },
   {
     path: '/tasks',
-    element: (
-      <RequireAuth>
-        <TasksLayout />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/tasks/layout')),
     children: [
       { index: true,       element: <Navigate to="jobs" replace /> },
-      { path: 'jobs',      element: <JobsRoute /> },
-      { path: 'subtasks',  element: <SubtasksRoute /> },
-      { path: 'bgjobs',    element: <BgjobsRoute /> },
-      { path: 'schedules', element: <SchedulesRoute /> },
-      { path: 'outbox',    element: <OutboxRoute /> },
-      { path: 'a2a',       element: <A2ARoute /> },
+      { path: 'jobs',      lazy: lazy(() => import('@/routes/tasks/jobs')) },
+      { path: 'subtasks',  lazy: lazy(() => import('@/routes/tasks/subtasks')) },
+      { path: 'bgjobs',    lazy: lazy(() => import('@/routes/tasks/bgjobs')) },
+      { path: 'schedules', lazy: lazy(() => import('@/routes/tasks/schedules')) },
+      { path: 'outbox',    lazy: lazy(() => import('@/routes/tasks/outbox')) },
+      { path: 'a2a',       lazy: lazy(() => import('@/routes/tasks/a2a')) },
     ],
   },
   {
     path: '/approvals',
-    element: (
-      <RequireAuth>
-        <ApprovalsRoute />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/approvals')),
   },
   {
     path: '/reminders',
-    element: (
-      <RequireAuth>
-        <RemindersRoute />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/reminders')),
   },
   {
     path: '/memos',
-    element: (
-      <RequireAuth>
-        <MemosRoute />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/memos')),
   },
   {
     path: '/memory',
-    element: (
-      <RequireAuth>
-        <MemoryLayout />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/memory/layout')),
     children: [
       { index: true,     element: <Navigate to="facts" replace /> },
-      { path: 'facts',   element: <MemoryFactsRoute /> },
-      { path: 'persona', element: <MemoryPersonaRoute /> },
-      { path: 'vector',  element: <MemoryVectorRoute /> },
-      { path: 'skills',  element: <MemorySkillsRoute /> },
+      { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
+      { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
+      { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
+      { path: 'skills',  lazy: lazy(() => import('@/routes/memory/skills')) },
     ],
   },
   {
     path: '/workspace',
-    element: (
-      <RequireAuth>
-        <WorkspaceRoute />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/workspace')),
   },
   {
     path: '/observability',
-    element: (
-      <RequireAuth>
-        <ObservabilityLayout />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/observability/layout')),
     children: [
       { index: true,    element: <Navigate to="health" replace /> },
-      { path: 'health', element: <ObservabilityHealthRoute /> },
-      { path: 'topn',   element: <ObservabilityTopNRoute /> },
-      { path: 'audit',  element: <ObservabilityAuditRoute /> },
+      { path: 'health', lazy: lazy(() => import('@/routes/observability/health')) },
+      { path: 'topn',   lazy: lazy(() => import('@/routes/observability/topn')) },
+      { path: 'audit',  lazy: lazy(() => import('@/routes/observability/audit')) },
     ],
   },
   {
     path: '/settings',
-    element: (
-      <RequireAuth>
-        <SettingsLayout />
-      </RequireAuth>
-    ),
+    lazy: authedLazy(() => import('@/routes/settings/layout')),
     children: [
       { index: true,     element: <Navigate to="env" replace /> },
-      { path: 'env',     element: <SettingsEnvRoute /> },
-      { path: 'service', element: <SettingsServiceRoute /> },
+      { path: 'env',     lazy: lazy(() => import('@/routes/settings/env')) },
+      { path: 'service', lazy: lazy(() => import('@/routes/settings/service')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },
 ])
 
 export function AppRouter(): JSX.Element {
-  return <RouterProvider router={router} />
+  return (
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
+  )
 }

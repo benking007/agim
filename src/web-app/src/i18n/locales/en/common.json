@@ -77,6 +77,12 @@
     "title": "Nothing here.",
     "description": "The page you're looking for doesn't exist."
   },
+  "errorBoundary": {
+    "title": "Something went wrong.",
+    "description": "An unexpected error broke the page render. Try reloading or heading back to the home screen; if it persists, copy the message below and report it.",
+    "reload": "Reload",
+    "home":   "Home"
+  },
   "chat": {
     "send": "Send",
     "streaming": "… streaming",

@@ -231,6 +231,160 @@
   })()
 
   // ============================================================
+  // Shell — unified topbar + design tokens for non-chat pages
+  // ============================================================
+  //
+  // Goal: every secondary page (tasks / approvals / reminders / memos /
+  // memory / workspace / observability / settings) shares the same
+  // topbar instead of each rolling its own. Pages only ship their
+  // domain content; navigation is one source of truth here.
+  //
+  // Usage from a page:
+  //
+  //   <body class="ag-shell">
+  //     <!-- ag-topbar injected here -->
+  //     <main>...page content...</main>
+  //   </body>
+  //   <script src="/_app.js"></script>
+  //   <script>imhub.shell.mount({ active: 'tasks' })</script>
+  //
+  // The nav definition lives here so adding a new page is a one-line
+  // change (NAV.push(...)). Order = visual order; the `groupAfter`
+  // flag inserts a 1px divider before the item so daily tools / assets
+  // / observability stay visually segmented even on one row.
+  const NAV = [
+    { id: 'chat',          href: '/',              icon: '💬', en: 'Chat',         zh: '对话' },
+    { id: 'tasks',         href: '/tasks',         icon: '📋', en: 'Tasks',        zh: '任务' },
+    { id: 'approvals',     href: '/approvals',     icon: '🔐', en: 'Approvals',    zh: '审批' },
+    { id: 'reminders',     href: '/reminders',     icon: '🔔', en: 'Reminders',    zh: '提醒' },
+    { id: 'memos',         href: '/memos',         icon: '📝', en: 'Memos',        zh: '备忘' },
+    { id: 'memory',        href: '/memory',        icon: '🧠', en: 'Memory',       zh: '记忆', groupAfter: true },
+    { id: 'workspace',     href: '/workspace',     icon: '📂', en: 'Workspace',    zh: '工作区' },
+    { id: 'observability', href: '/observability', icon: '📊', en: 'Observability',zh: '观测' },
+    { id: 'settings',      href: '/settings',      icon: '⚙️', en: 'Settings',     zh: '设置', groupAfter: true, align: 'right' },
+  ]
+
+  function ensureShellCss() {
+    if (document.getElementById('ag-shell-css-link')) return
+    const link = document.createElement('link')
+    link.id = 'ag-shell-css-link'
+    link.rel = 'stylesheet'
+    link.href = '/_shell.css'
+    document.head.appendChild(link)
+  }
+
+  function renderTopbar({ active }) {
+    const lang = (window.__lang === 'zh') ? 'zh' : 'en'
+    const bar = document.createElement('header')
+    bar.className = 'ag-topbar'
+    bar.setAttribute('role', 'navigation')
+
+    // Brand at the far left links to the chat page — discoverable
+    // "go home" affordance.
+    const brand = document.createElement('a')
+    brand.className = 'ag-topbar__brand'
+    brand.href = '/'
+    brand.innerHTML = '<span style="font-size:18px">🤖</span><span>Agim</span>'
+    bar.appendChild(brand)
+
+    // Main nav (chat is doubled as brand → exclude from the nav list to
+    // avoid a duplicate active state)
+    const nav = document.createElement('nav')
+    nav.className = 'ag-topbar__nav'
+    for (const item of NAV) {
+      if (item.id === 'chat') continue           // brand stands in
+      if (item.align === 'right') continue       // handled below
+      const a = document.createElement('a')
+      a.className = 'ag-topbar__nav-item'
+      if (item.id === active) a.classList.add('is-active')
+      a.href = item.href
+      a.title = item[lang]
+      a.innerHTML = `<span class="ag-topbar__nav-icon">${item.icon}</span><span>${item[lang]}</span>`
+      nav.appendChild(a)
+    }
+    bar.appendChild(nav)
+
+    // Right-aligned controls: theme toggle, lang select, right-aligned
+    // nav items (settings).
+    const actions = document.createElement('div')
+    actions.className = 'ag-topbar__actions'
+
+    const themeBtn = document.createElement('button')
+    themeBtn.type = 'button'
+    themeBtn.className = 'ag-topbar__action'
+    themeBtn.setAttribute('data-shell-theme-toggle', '')
+    actions.appendChild(themeBtn)
+
+    const langWrap = document.createElement('label')
+    langWrap.className = 'ag-topbar__action'
+    const langSel = document.createElement('select')
+    langSel.setAttribute('data-shell-lang-select', '')
+    langSel.innerHTML = '<option value="en">EN</option><option value="zh">中文</option>'
+    langWrap.appendChild(langSel)
+    actions.appendChild(langWrap)
+
+    for (const item of NAV) {
+      if (item.align !== 'right') continue
+      const a = document.createElement('a')
+      a.className = 'ag-topbar__action'
+      a.href = item.href
+      a.title = item[lang]
+      a.innerHTML = `<span>${item.icon}</span><span>${item[lang]}</span>`
+      if (item.id === active) a.style.color = 'var(--ag-accent)'
+      actions.appendChild(a)
+    }
+
+    bar.appendChild(actions)
+    return bar
+  }
+
+  /**
+   * Inject the shared topbar + design tokens at the top of <body>.
+   * Pages may pass `active` to highlight the current nav item. Replaces
+   * any element marked `data-shell-replace` so a page can render a
+   * placeholder server-side and have it swapped on script load — keeps
+   * the no-JS render from showing nothing.
+   *
+   * Safe to call multiple times; subsequent calls just refresh the
+   * active state.
+   */
+  function mountShell(opts = {}) {
+    ensureShellCss()
+    document.body.classList.add('ag-shell')
+
+    const existing = document.getElementById('ag-topbar')
+    if (existing) existing.remove()
+
+    const bar = renderTopbar({ active: opts.active || '' })
+    bar.id = 'ag-topbar'
+
+    const placeholder = document.querySelector('[data-shell-replace]')
+    if (placeholder) {
+      placeholder.replaceWith(bar)
+    } else {
+      document.body.prepend(bar)
+    }
+
+    // Wire theme toggle to the existing helper.
+    const themeBtn = bar.querySelector('[data-shell-theme-toggle]')
+    if (themeBtn) bindThemeToggle(themeBtn)
+
+    // Wire lang select. We persist via the same `im-hub-lang` key all
+    // existing pages read at the top of their <head> IIFE — see
+    // tasks.html / reminders.html for the read path. Reload so that
+    // pre-script IIFE rebuilds the i18n table for the new language.
+    const langSel = bar.querySelector('[data-shell-lang-select]')
+    if (langSel) {
+      const cur = (window.__lang === 'zh') ? 'zh' : 'en'
+      langSel.value = cur
+      langSel.addEventListener('change', () => {
+        try { localStorage.setItem('im-hub-lang', langSel.value) } catch { /* ignore */ }
+        location.reload()
+      })
+    }
+  }
+
+  // ============================================================
   // Expose
   // ============================================================
   window.imhub = Object.freeze({
@@ -244,5 +398,6 @@
     },
     i18n: { apply: applyI18n },
     api: apiFetch,
+    shell: { mount: mountShell, NAV },
   })
 })()

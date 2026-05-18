@@ -58,6 +58,7 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   '/api/auth/login',
   '/api/health',
   '/_app.js',
+  '/_shell.css',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use
@@ -316,14 +317,31 @@ export async function startWebServer(options: {
       url.pathname === '/settings' || url.pathname === '/settings.html' ||
       url.pathname === '/tasks' || url.pathname === '/tasks.html' ||
       url.pathname === '/reminders' || url.pathname === '/reminders.html' ||
-      url.pathname === '/memos' || url.pathname === '/memos.html'
+      url.pathname === '/memos' || url.pathname === '/memos.html' ||
+      // v1.3 IA — secondary pages split out from /tasks so each URL owns
+      // a single domain (approvals / memory+skills / workspace files /
+      // observability=health+audit+cost). The catch-all entry point on
+      // chrome navigation stays /tasks; the other URLs are deep-linkable.
+      url.pathname === '/approvals' || url.pathname === '/approvals.html' ||
+      url.pathname === '/memory' || url.pathname === '/memory.html' ||
+      url.pathname === '/workspace' || url.pathname === '/workspace.html' ||
+      url.pathname === '/observability' || url.pathname === '/observability.html'
     ) {
+      // The four new URLs route to the SAME tasks.html file. The page's
+      // JS reads location.pathname and renders only the panes that belong
+      // to the current mode — see PAGE_MODE in tasks.html. This keeps the
+      // 3700-line domain JS in one place and avoids a risky split, while
+      // giving each domain its own deep-linkable, semantically-named URL.
       const fileMap: Record<string, string> = {
         '/': 'index.html', '/index.html': 'index.html',
         '/settings': 'settings.html', '/settings.html': 'settings.html',
         '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
         '/reminders': 'reminders.html', '/reminders.html': 'reminders.html',
         '/memos': 'memos.html', '/memos.html': 'memos.html',
+        '/approvals': 'tasks.html', '/approvals.html': 'tasks.html',
+        '/memory': 'tasks.html', '/memory.html': 'tasks.html',
+        '/workspace': 'tasks.html', '/workspace.html': 'tasks.html',
+        '/observability': 'tasks.html', '/observability.html': 'tasks.html',
       }
       return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
@@ -351,6 +369,12 @@ export async function startWebServer(options: {
     // + auth-aware fetch). Loaded synchronously by every static page in
     // <head> so the theme can apply before first paint. No secrets — safe
     // to serve un-authenticated.
+    if (url.pathname === '/_shell.css' && req.method === 'GET') {
+      // Shared design tokens + component classes. Loaded by imhub.shell
+      // .mount() on every secondary page. No secrets — safe to serve
+      // un-authenticated alongside _app.js.
+      return serveStatic(res, join(PUBLIC_DIR, '_shell.css'), 'text/css; charset=utf-8')
+    }
     if (url.pathname === '/_app.js' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }

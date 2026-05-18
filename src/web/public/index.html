@@ -425,10 +425,17 @@
       </select>
       <button type="button" class="btn" id="newChatBtn"></button>
       <button class="btn" id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-      <a class="btn" href="/tasks" title="Tasks" style="text-decoration:none;font-size:16px;line-height:1">&#9776;</a>
-      <a class="btn" href="/reminders" title="Reminders" style="text-decoration:none;font-size:14px;line-height:1">🔔</a>
-      <a class="btn" href="/memos" title="Memos" style="text-decoration:none;font-size:14px;line-height:1">📋</a>
-      <a class="btn" href="/settings" title="Settings" style="text-decoration:none;font-size:16px;line-height:1">&#9881;</a>
+      <!-- v1.3 IA — the chat page keeps its compact icon-only nav (status
+           dot + agent picker take precedence) but the destinations now
+           match the shell topbar so users always see the same 8 routes. -->
+      <a class="btn" href="/tasks" title="Tasks · 任务" style="text-decoration:none;font-size:14px;line-height:1">📋</a>
+      <a class="btn" href="/approvals" title="Approvals · 审批" style="text-decoration:none;font-size:14px;line-height:1">🔐</a>
+      <a class="btn" href="/reminders" title="Reminders · 提醒" style="text-decoration:none;font-size:14px;line-height:1">🔔</a>
+      <a class="btn" href="/memos" title="Memos · 备忘" style="text-decoration:none;font-size:14px;line-height:1">📝</a>
+      <a class="btn" href="/memory" title="Memory · 记忆" style="text-decoration:none;font-size:14px;line-height:1">🧠</a>
+      <a class="btn" href="/workspace" title="Workspace · 工作区" style="text-decoration:none;font-size:14px;line-height:1">📂</a>
+      <a class="btn" href="/observability" title="Observability · 观测" style="text-decoration:none;font-size:14px;line-height:1">📊</a>
+      <a class="btn" href="/settings" title="Settings · 设置" style="text-decoration:none;font-size:16px;line-height:1">&#9881;</a>
     </div>
   </div>
 

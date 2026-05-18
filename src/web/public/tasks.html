@@ -25,7 +25,11 @@
     const T = {
       en: {
         title: 'Agim — Tasks',
-        h1: '🗂 Tasks & Schedules',
+        h1: '📋 Tasks',
+        // Page titles for the secondary URLs that share this file —
+        // PAGE_MODE.titleKey selects one of these via the page mode lookup.
+        navMemoryTitle: '🧠 Memory & Skills',
+        navObservabilityTitle: '📊 Observability',
         backToChat: '↩ Chat',
         toReminders: 'Reminders',
         toMemos: 'Memos',
@@ -318,7 +322,9 @@
       },
       zh: {
         title: 'Agim — 任务',
-        h1: '🗂 任务与定时',
+        h1: '📋 任务',
+        navMemoryTitle: '🧠 记忆与技能',
+        navObservabilityTitle: '📊 观测',
         backToChat: '↩ 对话',
         toReminders: '提醒',
         toMemos: '备忘',
@@ -918,21 +924,17 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1 id="page-title"></h1>
-    <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-    <select id="langSelect" title="Language / 语言">
-      <option value="en">EN</option>
-      <option value="zh">中文</option>
-    </select>
-    <a href="/" id="lnk-chat"></a>
-    <a href="/reminders" id="lnk-reminders"></a>
-    <a href="/memos" id="lnk-memos"></a>
-    <a href="/settings" id="lnk-settings"></a>
-  </header>
-  <main>
+  <!-- imhub.shell.mount() injects the unified topbar here on script load.
+       The old header / theme / lang controls were moved into the shell so
+       every secondary page reads from one source. -->
+  <div data-shell-replace></div>
+  <div class="ag-page-header">
+    <h1 id="page-title" class="ag-page-header__title"></h1>
+    <p id="page-subtitle" class="ag-page-header__subtitle" hidden></p>
+  </div>
+  <main class="ag-page-body">
     <div class="tabs">
-      <button type="button" class="tab active" data-tab="jobs" id="tab-jobs"></button>
+      <button type="button" class="tab" data-tab="jobs" id="tab-jobs"></button>
       <button type="button" class="tab" data-tab="background" id="tab-background"></button>
       <button type="button" class="tab" data-tab="subtasks" id="tab-subtasks"></button>
       <button type="button" class="tab" data-tab="schedules" id="tab-schedules"></button>
@@ -1365,33 +1367,104 @@
   <script>
     const T = window.__t;
 
-    // Theme toggle (light / dark / system). _app.js applied the theme
-    // synchronously in <head>; here we wire the button so clicks cycle
-    // and the label re-renders.
-    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
+    // ───────────────────────────────────────────────────────────────
+    // PAGE_MODE — single file, four URLs.
+    //
+    // tasks.html is served at /tasks plus four secondary URLs that
+    // each carve out a subset of its tabs. The IA cleanup is purely a
+    // URL-routing change (server.ts fileMap); this block reads the
+    // current pathname and tells the rest of the page which tabs are
+    // in-scope. Tabs outside the scope hide; the first in-scope tab
+    // becomes active by default.
+    //
+    // Single-tab modes (Approvals, Workspace) hide the tab bar entirely
+    // since one option isn't a choice — saves visual noise.
+    // ───────────────────────────────────────────────────────────────
+    const PAGE_MODE = (() => {
+      const p = (location.pathname || '/').replace(/\.html$/, '');
+      switch (p) {
+        case '/approvals':
+          return { id: 'approvals', tabs: ['approvals'], titleKey: 'tabsApprovals' };
+        case '/memory':
+          return { id: 'memory', tabs: ['memory', 'skills'], titleKey: 'navMemoryTitle' };
+        case '/workspace':
+          return { id: 'workspace', tabs: ['files'], titleKey: 'tabsFiles' };
+        case '/observability':
+          return { id: 'observability', tabs: ['health', 'audit', 'cost'], titleKey: 'navObservabilityTitle' };
+        default:
+          return {
+            id: 'tasks',
+            tabs: ['jobs', 'background', 'subtasks', 'schedules', 'outbox', 'a2a'],
+            titleKey: 'h1',
+          };
+      }
+    })();
 
-    // i18n string fills
-    document.title = T.title;
-    document.getElementById('page-title').textContent = T.h1;
-    document.getElementById('lnk-chat').textContent = T.backToChat;
-    document.getElementById('lnk-reminders').textContent = T.toReminders;
-    document.getElementById('lnk-memos').textContent = T.toMemos;
-    document.getElementById('lnk-settings').textContent = T.toSettings;
-    document.getElementById('tab-jobs').textContent = T.tabsJobs;
-    document.getElementById('tab-background').textContent = T.tabsBackground;
-    document.getElementById('tab-subtasks').textContent = T.tabsSubtasks;
-    document.getElementById('tab-schedules').textContent = T.tabsSchedules;
-    document.getElementById('tab-audit').textContent = T.tabsAudit;
-    document.getElementById('tab-approvals').textContent = T.tabsApprovals;
-    document.getElementById('tab-health').textContent = T.tabsHealth;
-    document.getElementById('tab-files').textContent = T.tabsFiles;
-    document.getElementById('tab-outbox').textContent = T.tabsOutbox;
-    document.getElementById('tab-a2a').textContent = T.tabsA2A;
-    if (T.tabsCost) document.getElementById('tab-cost').textContent = T.tabsCost;
-    if (T.tabsMemory) document.getElementById('tab-memory').textContent = T.tabsMemory;
-    if (T.tabsSkills) document.getElementById('tab-skills').textContent = T.tabsSkills;
-    document.getElementById('hdr-outbox').textContent = T.tabsOutbox;
-    document.getElementById('hdr-a2a').textContent = T.tabsA2A;
+    // i18n string fills (defensive — every getElementById is null-safe
+    // so a future refactor of the shell template doesn't crash this
+    // bootstrap on missing elements that moved into the topbar).
+    const pageTitleText = T[PAGE_MODE.titleKey] || T.h1;
+    // Browser tab title gets the page-specific title without the emoji
+    // so it reads cleanly in the OS tab strip.
+    const cleanTitle = String(pageTitleText).replace(/^\s*\p{Extended_Pictographic}\s*/u, '').trim();
+    document.title = `Agim — ${cleanTitle}`;
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) titleEl.textContent = pageTitleText;
+    const setIfPresent = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setIfPresent('tab-jobs', T.tabsJobs);
+    setIfPresent('tab-background', T.tabsBackground);
+    setIfPresent('tab-subtasks', T.tabsSubtasks);
+    setIfPresent('tab-schedules', T.tabsSchedules);
+    setIfPresent('tab-audit', T.tabsAudit);
+    setIfPresent('tab-approvals', T.tabsApprovals);
+    setIfPresent('tab-health', T.tabsHealth);
+    setIfPresent('tab-files', T.tabsFiles);
+    setIfPresent('tab-outbox', T.tabsOutbox);
+    setIfPresent('tab-a2a', T.tabsA2A);
+    if (T.tabsCost) setIfPresent('tab-cost', T.tabsCost);
+    if (T.tabsMemory) setIfPresent('tab-memory', T.tabsMemory);
+    if (T.tabsSkills) setIfPresent('tab-skills', T.tabsSkills);
+    setIfPresent('hdr-outbox', T.tabsOutbox);
+    setIfPresent('hdr-a2a', T.tabsA2A);
+
+    // Mount the shared topbar. Highlights the current page so the user
+    // can see the IA grouping at a glance.
+    if (window.imhub && window.imhub.shell) {
+      window.imhub.shell.mount({ active: PAGE_MODE.id });
+    }
+
+    // Hide tabs outside the current page's scope. If the scope is a
+    // single tab, drop the tab bar entirely — no choice means no chrome.
+    // Also seeds the initial active tab + pane visibility so the click
+    // handler binding below has a consistent starting state regardless
+    // of which URL the user landed on.
+    const KNOWN_TABS = ['jobs','background','subtasks','schedules','approvals','health','files','audit','outbox','a2a','cost','memory','skills'];
+    (function applyPageMode() {
+      const inScope = new Set(PAGE_MODE.tabs);
+      for (const t of KNOWN_TABS) {
+        const btn = document.getElementById('tab-' + t);
+        if (btn && !inScope.has(t)) btn.style.display = 'none';
+        const pane = document.getElementById(t + '-pane');
+        if (pane) pane.hidden = (t !== PAGE_MODE.tabs[0]);
+      }
+      // First in-scope tab gets the active class.
+      const firstBtn = document.getElementById('tab-' + PAGE_MODE.tabs[0]);
+      if (firstBtn) firstBtn.classList.add('active', 'ag-subnav__item', 'is-active');
+      for (const t of PAGE_MODE.tabs.slice(1)) {
+        const btn = document.getElementById('tab-' + t);
+        if (btn) btn.classList.add('ag-subnav__item');
+      }
+      // Restyle the tab bar as an ag-subnav so it visually matches the
+      // shell. Hide entirely on single-tab modes.
+      const tabsBar = document.querySelector('.tabs');
+      if (tabsBar) {
+        if (PAGE_MODE.tabs.length <= 1) {
+          tabsBar.style.display = 'none';
+        } else {
+          tabsBar.classList.add('ag-subnav');
+        }
+      }
+    })();
 
     // data-i18n / data-i18n-attr — sweep static markers so placeholders +
     // option labels pick up the active language. Same shape as _app.js's
@@ -1477,7 +1550,13 @@
     // Tab switching
     document.querySelectorAll('.tab').forEach(t => {
       t.onclick = () => {
-        document.querySelectorAll('.tab').forEach(x => { x.classList.toggle('active', x === t); });
+        document.querySelectorAll('.tab').forEach(x => {
+          // Keep the legacy `.active` class for the original CSS, plus
+          // the shell's `.is-active` so the ag-subnav underline tracks
+          // the current tab when tasks.html is mounted under PAGE_MODE.
+          x.classList.toggle('active', x === t);
+          x.classList.toggle('is-active', x === t);
+        });
         const tab = t.dataset.tab;
         document.getElementById('jobs-pane').hidden = tab !== 'jobs';
         document.getElementById('background-pane').hidden = tab !== 'background';

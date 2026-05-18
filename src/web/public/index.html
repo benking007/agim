@@ -7,6 +7,12 @@
   <!-- Shared utilities: theme manager (applies before first paint), error
        boundary (surfaces silent script failures), i18n + api helpers. -->
   <script src="/_app.js"></script>
+  <!-- Shell design tokens only — we don't add body.ag-shell because the
+       chat surface (messages stream + input area) has bespoke layout
+       that the shell-wide legacy-class overrides would interfere with.
+       Just having the --ag-* variables in scope lets the chat's own
+       header styling adopt the canonical palette + spacing. -->
+  <link rel="stylesheet" href="/_shell.css">
   <script>
     // i18n — detect browser language, store preference in localStorage
     const LANGS = { en: 'English', zh: '中文' };
@@ -141,49 +147,112 @@
       flex-direction: column;
     }
 
-    /* Header */
+    /* Header — visually adopts the shell topbar treatment (same height,
+       borders, button shape) while keeping chat-specific inline
+       controls (status dot, agent picker, new-chat). The shell tokens
+       are loaded via /_shell.css; we just consume them here so the chat
+       page reads as part of the same product as /tasks / /memory etc.
+       Reaching for `var(--ag-foo, var(--foo))` keeps the page legible
+       even if /_shell.css fails to load (CDN hiccup, offline mode). */
     .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      gap: var(--ag-space-4, 16px);
+      padding: var(--ag-space-3, 12px) var(--ag-space-5, 20px);
+      background: var(--ag-surface, var(--surface));
+      border-bottom: 1px solid var(--ag-border, var(--border));
+      min-height: 56px;
+      box-sizing: border-box;
     }
     .header-left {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--ag-space-3, 12px);
     }
     .logo {
-      font-weight: 700;
-      font-size: 16px;
-      color: var(--accent);
+      font-weight: 600;
+      font-size: var(--ag-font-md, 15px);
+      color: var(--ag-text, var(--text));
+      display: flex;
+      align-items: center;
+      gap: var(--ag-space-2, 8px);
+    }
+    .logo::before {
+      content: "🤖";
+      font-size: 18px;
     }
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--yellow);
+      background: var(--ag-warning, var(--yellow));
       display: inline-block;
     }
-    .status-dot.connected { background: var(--green); }
-    .status-dot.disconnected { background: var(--red); }
-    .status-text { font-size: 12px; color: var(--text-dim); }
-    .header-right { display: flex; align-items: center; gap: 10px; }
+    .status-dot.connected { background: var(--ag-success, var(--green)); }
+    .status-dot.disconnected { background: var(--ag-danger, var(--red)); }
+    .status-text {
+      font-size: var(--ag-font-sm, 12px);
+      color: var(--ag-text-dim, var(--text-dim));
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: var(--ag-space-2, 8px);
+      margin-left: auto;
+    }
+    /* Inline icon buttons on the chat header take the shell-action look:
+       muted text, subtle border, accent on hover. Distinct from the
+       primary newChatBtn which carries action weight. */
+    .header-right .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--ag-space-1, 4px);
+      padding: var(--ag-space-2, 8px) var(--ag-space-3, 12px);
+      background: transparent;
+      border: 1px solid var(--ag-border, var(--border));
+      border-radius: var(--ag-radius-md, 6px);
+      color: var(--ag-text-dim, var(--text-dim));
+      font-size: var(--ag-font-sm, 12px);
+      font-family: inherit;
+      cursor: pointer;
+      transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .header-right .btn:hover {
+      background: var(--ag-surface-hover, var(--surface2));
+      border-color: var(--ag-border-strong, var(--border));
+      color: var(--ag-text, var(--text));
+    }
+    .header-right .btn#newChatBtn {
+      background: var(--ag-accent, var(--accent));
+      border-color: var(--ag-accent, var(--accent));
+      color: #fff;
+    }
+    .header-right .btn#newChatBtn:hover {
+      background: var(--ag-accent-hover, var(--accent-dim));
+      border-color: var(--ag-accent-hover, var(--accent-dim));
+    }
 
-    /* Agent selector */
-    .agent-select {
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 13px;
+    /* Agent + language selects sit alongside the icon buttons; match the
+       shell action visual so the header reads as one coherent toolbar. */
+    .agent-select, .lang-select {
+      background: var(--ag-surface, var(--surface2));
+      color: var(--ag-text, var(--text));
+      border: 1px solid var(--ag-border, var(--border));
+      border-radius: var(--ag-radius-md, 6px);
+      padding: var(--ag-space-2, 8px) var(--ag-space-3, 12px);
+      font-size: var(--ag-font-sm, 13px);
+      font-family: inherit;
       cursor: pointer;
       outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .agent-select:focus { border-color: var(--accent); }
+    .agent-select:focus, .lang-select:focus {
+      border-color: var(--ag-accent, var(--accent));
+      box-shadow: 0 0 0 3px var(--ag-accent-bg, transparent);
+    }
 
     .btn {
       background: var(--surface2);

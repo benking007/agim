@@ -679,3 +679,316 @@ body.ag-shell {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ─── Legacy-class overrides ──────────────────────────────────────── *
+ * Existing pages use `.stats`, `.toolbar`, `.data-table`, `.pill`, etc.
+ * Rather than rewrite hundreds of class attributes, we scope shell-
+ * canonical visuals to body.ag-shell + the legacy selectors. Pages
+ * that haven't migrated their markup still light up with the new
+ * design simply by mounting the shell.
+ *
+ * Specificity note: `body.ag-shell .stats` (0,2,1) beats a page's
+ * own `.stats { ... }` (0,1,0) so these overrides win without !important.
+ */
+
+/* Stats tiles: grid of value cards. Tasks / Audit / Outbox / A2A each
+   ship a #stats div populated server-side with one or more cells; the
+   grid + card visual makes it scan top-of-page. */
+body.ag-shell .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--ag-space-3);
+  margin-bottom: var(--ag-space-5);
+}
+body.ag-shell .stats > div,
+body.ag-shell .stats > a {
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  padding: var(--ag-space-4) var(--ag-space-5);
+  box-shadow: var(--ag-shadow-sm);
+  text-decoration: none;
+  color: inherit;
+}
+body.ag-shell .stats > div > div:first-child,
+body.ag-shell .stats > a > div:first-child {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  font-weight: 500;
+  margin-bottom: var(--ag-space-2);
+}
+body.ag-shell .stats > div > div:last-child,
+body.ag-shell .stats > a > div:last-child {
+  font-size: var(--ag-font-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Toolbar (filter / action row above lists). */
+body.ag-shell .toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--ag-space-4);
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+}
+body.ag-shell .toolbar > label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+}
+
+/* Form controls — input / select / textarea. Page-local styles for
+   `width`, `min-width`, `style="..."` inline still win when present;
+   we only set the visual chrome. */
+body.ag-shell input[type="text"],
+body.ag-shell input[type="search"],
+body.ag-shell input[type="number"],
+body.ag-shell input[type="email"],
+body.ag-shell input[type="url"],
+body.ag-shell input[type="password"],
+body.ag-shell select,
+body.ag-shell textarea {
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-base);
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+body.ag-shell input[type="text"]:focus,
+body.ag-shell input[type="search"]:focus,
+body.ag-shell input[type="number"]:focus,
+body.ag-shell input[type="email"]:focus,
+body.ag-shell input[type="url"]:focus,
+body.ag-shell input[type="password"]:focus,
+body.ag-shell select:focus,
+body.ag-shell textarea:focus {
+  outline: none;
+  border-color: var(--ag-accent);
+  box-shadow: 0 0 0 3px var(--ag-accent-bg);
+}
+body.ag-shell input[type="checkbox"] { accent-color: var(--ag-accent); }
+
+/* Buttons — page-local `button:not(.ag-btn)`. Keep them recognisable
+   as buttons even if the page emits them with no class. The page-level
+   `.primary` / `.danger` modifier classes get colored variants. */
+body.ag-shell button:not(.ag-btn):not(.tab):not(.filter-btn):not(.help-btn) {
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+body.ag-shell button:not(.ag-btn):not(.tab):not(.filter-btn):not(.help-btn):hover:not(:disabled) {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border-strong);
+}
+body.ag-shell button:not(.ag-btn):disabled { opacity: 0.55; cursor: not-allowed; }
+body.ag-shell button.primary {
+  background: var(--ag-accent);
+  border-color: var(--ag-accent);
+  color: #fff;
+}
+body.ag-shell button.primary:hover:not(:disabled) {
+  background: var(--ag-accent-hover);
+  border-color: var(--ag-accent-hover);
+  color: #fff;
+}
+body.ag-shell button.danger {
+  background: var(--ag-surface);
+  border-color: var(--ag-danger);
+  color: var(--ag-danger);
+}
+body.ag-shell button.danger:hover:not(:disabled) {
+  background: var(--ag-danger);
+  color: #fff;
+}
+
+/* Data table — used by tasks.html for Jobs / Audit / Outbox / A2A lists. */
+body.ag-shell .data-table {
+  width: 100%;
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  font-size: var(--ag-font-base);
+}
+body.ag-shell .data-table th,
+body.ag-shell .data-table td {
+  padding: var(--ag-space-3) var(--ag-space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--ag-border);
+  vertical-align: middle;
+}
+body.ag-shell .data-table thead th {
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-weight: 600;
+  font-size: var(--ag-font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+body.ag-shell .data-table tbody tr:last-child td { border-bottom: 0; }
+body.ag-shell .data-table tbody tr:hover td { background: var(--ag-surface-hover); }
+
+/* Tabs — the legacy `.tabs` container morphs into ag-subnav. tasks.html
+   adds `.ag-subnav` + `.ag-subnav__item` via JS for the active page;
+   this block makes the same visual apply when the JS hasn't run yet. */
+body.ag-shell .tabs {
+  display: flex;
+  gap: var(--ag-space-1);
+  margin-bottom: var(--ag-space-5);
+  border-bottom: 1px solid var(--ag-border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+body.ag-shell .tabs .tab {
+  position: relative;
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: transparent;
+  border: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+body.ag-shell .tabs .tab:hover { color: var(--ag-text); }
+body.ag-shell .tabs .tab.active,
+body.ag-shell .tabs .tab.is-active { color: var(--ag-accent); }
+body.ag-shell .tabs .tab.active::after,
+body.ag-shell .tabs .tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: var(--ag-accent);
+  border-radius: 2px;
+}
+
+/* Filter buttons (reminders / memos) — pill-row style. */
+body.ag-shell .filters,
+body.ag-shell .filter-row {
+  display: flex;
+  gap: var(--ag-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--ag-space-4);
+}
+body.ag-shell .filter-btn {
+  padding: var(--ag-space-1) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: 999px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+body.ag-shell .filter-btn:hover { color: var(--ag-text); border-color: var(--ag-border-strong); }
+body.ag-shell .filter-btn.active {
+  background: var(--ag-accent-bg);
+  border-color: var(--ag-accent-bg);
+  color: var(--ag-accent);
+}
+
+/* Status pills — already styled per-page (`.pill.delivered` etc.); the
+   shell only enforces consistent box shape so dark theme blends. */
+body.ag-shell .pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--ag-space-2);
+  border-radius: 999px;
+  font-size: var(--ag-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/* Modal overlay — pages use `.modal-bg` / `.modal-content` / `.modal`. */
+body.ag-shell .modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 21, 0.5);
+  z-index: var(--ag-z-modal);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ag-space-4);
+}
+body.ag-shell .modal-bg.show { display: flex; }
+body.ag-shell .modal,
+body.ag-shell .modal-content {
+  background: var(--ag-surface);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-shadow-lg);
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--ag-space-5);
+}
+body.ag-shell .modal h2,
+body.ag-shell .modal-content h2 {
+  margin: 0 0 var(--ag-space-4);
+  font-size: var(--ag-font-lg);
+  font-weight: 600;
+}
+body.ag-shell .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ag-space-2);
+  margin-top: var(--ag-space-4);
+  padding-top: var(--ag-space-4);
+  border-top: 1px solid var(--ag-border);
+}
+
+/* Toast — bottom-of-viewport ephemeral status. */
+body.ag-shell .toast {
+  position: fixed;
+  bottom: var(--ag-space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--ag-space-3) var(--ag-space-5);
+  background: var(--ag-text);
+  color: var(--ag-bg);
+  border-radius: var(--ag-radius-md);
+  box-shadow: var(--ag-shadow-md);
+  font-size: var(--ag-font-sm);
+  z-index: var(--ag-z-toast);
+}
+body.ag-shell .toast.error { background: var(--ag-danger); color: #fff; }
+
+/* Make help/code blocks readable in the shell. */
+body.ag-shell code {
+  background: var(--ag-surface-2);
+  padding: 2px 6px;
+  border-radius: var(--ag-radius-sm);
+  font-size: 0.9em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+body.ag-shell .muted { color: var(--ag-text-dim); }
+body.ag-shell h2 { font-size: var(--ag-font-lg); font-weight: 600; }
+body.ag-shell h3 { font-size: var(--ag-font-md); font-weight: 600; }

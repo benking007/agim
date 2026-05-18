@@ -5,7 +5,51 @@
     "env":        "Environment",
     "service":    "Service",
     "admins":     "Admins",
-    "workspaces": "Workspaces"
+    "workspaces": "Workspaces",
+    "messengers": "Messengers"
+  },
+  "messengers": {
+    "title": "Messengers",
+    "subtitle": "Per-IM-platform connection settings. Toggle a platform on, fill in its credentials, and Save. The next service restart picks up the new config.",
+    "saveAll":     "Save all",
+    "saving":      "Saving…",
+    "savedToast":  "Configuration saved",
+    "discardAll":  "Discard changes",
+    "dirtyHint":   "Unsaved changes",
+    "platform": {
+      "wechat":   "WeChat",
+      "telegram": "Telegram",
+      "feishu":   "Feishu (Lark)",
+      "dingtalk": "DingTalk",
+      "discord":  "Discord"
+    },
+    "hint": {
+      "wechat":   "iLink-based QR login. Click Scan, scan the QR with your phone WeChat, confirm — the bot logs in as that account.",
+      "telegram": "Bot API token from @BotFather; channel id is optional and only used when targeting a specific chat.",
+      "feishu":   "App credentials from the Lark developer console. App must have the messaging scopes.",
+      "dingtalk": "Stream API client credentials from the DingTalk developer console.",
+      "discord":  "Bot token from the Discord developer portal. The bot must be invited to the target channel."
+    },
+    "enabled":   "Enabled",
+    "disabled":  "Disabled",
+    "scanQr":    "Scan QR",
+    "fields": {
+      "botToken":     "Bot token",
+      "appId":        "App ID",
+      "appSecret":    "App secret",
+      "clientId":     "Client ID",
+      "clientSecret": "Client secret",
+      "channelId":    "Channel ID"
+    },
+    "qr": {
+      "title":      "Scan WeChat QR",
+      "description":"Open WeChat on your phone, scan this code, then confirm the login prompt inside WeChat.",
+      "starting":   "Starting QR session…",
+      "loadFailed": "Failed to start QR session",
+      "expired":    "QR code expired — close and start a new one.",
+      "cancelled":  "Cancelled.",
+      "confirmed":  "Login confirmed — wechat-ilink will start on the next service restart."
+    }
   },
   "workspaces": {
     "title": "Workspaces",

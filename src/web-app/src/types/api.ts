@@ -925,6 +925,34 @@ export interface AdminMutationResponse {
 }
 
 /* ============================================================
+ * WeChat QR login flow (messengers card).
+ * ============================================================ */
+
+export interface WechatQrStartResponse {
+  qrUrl: string
+  qrToken: string
+  /** PNG data: URL produced server-side via the `qrcode` lib —
+   *  drop into `<img src>` directly. */
+  qrImage: string
+}
+
+export type WechatQrStatus =
+  | 'pending'
+  | 'scanned'
+  | 'confirmed'
+  | 'expired'
+  | 'cancelled'
+
+export interface WechatQrStatusResponse {
+  status: WechatQrStatus
+  /** When status='confirmed', backend has already persisted the
+   *  wechat-ilink slot in config.messengers. */
+  wxid?: string
+  nickname?: string
+  expiresIn?: number
+}
+
+/* ============================================================
  * Workspaces — multi-tenant registry.
  * ============================================================ */
 

@@ -923,3 +923,20 @@ export interface AdminMutationResponse {
   removed?: boolean
   admins: AdminEntry[]
 }
+
+/* ============================================================
+ * Workspaces — multi-tenant registry.
+ * ============================================================ */
+
+export interface WorkspaceConfig {
+  id: string
+  name: string
+  /** Whitelist of agent names available in this workspace. Empty
+   *  array = unrestricted (any registered agent works). */
+  agents: string[]
+  /** Per-workspace rate-limit settings; undefined = use defaults. */
+  rateLimit?: { rate: number; intervalSec: number; burst: number }
+  /** Member userIds (`platform:userId`) with access. Empty array or
+   *  undefined = open workspace (any user can use it). */
+  members?: string[]
+}

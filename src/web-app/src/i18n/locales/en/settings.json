@@ -2,9 +2,50 @@
   "pageTitle": "Settings",
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
-    "env":     "Environment",
-    "service": "Service",
-    "admins":  "Admins"
+    "env":        "Environment",
+    "service":    "Service",
+    "admins":     "Admins",
+    "workspaces": "Workspaces"
+  },
+  "workspaces": {
+    "title": "Workspaces",
+    "subtitle": "Multi-tenant workspace registry. Each workspace has its own agent whitelist, rate-limit, and (optionally) member list. The `default` workspace catches every unrouted user.",
+    "empty": {
+      "title": "Only the default workspace",
+      "description": "Add a workspace below to partition a team / project / customer. Each one gets its own agent whitelist + rate-limit."
+    },
+    "col": {
+      "id":        "ID",
+      "name":      "Name",
+      "agents":    "Agents",
+      "members":   "Members",
+      "rateLimit": "Rate limit"
+    },
+    "rateLimitFormat": "{{rate}} per {{intervalSec}}s, burst {{burst}}",
+    "membersOpen": "open (any user)",
+    "membersCount_one":   "{{count}} member",
+    "membersCount_other": "{{count}} members",
+    "edit":   "Edit",
+    "form": {
+      "title":         "Add or edit a workspace",
+      "subtitleEdit":  "Editing existing workspace — change id to clone, keep to upsert.",
+      "id":            "ID",
+      "idHint":        "Stable identifier; [a-zA-Z0-9_-]+; the special name `default` is reserved.",
+      "name":          "Display name",
+      "agents":        "Agent whitelist",
+      "agentsHint":    "Comma-separated; empty = allow every registered agent.",
+      "members":       "Member user IDs",
+      "membersHint":   "Comma-separated `platform:userId`; empty = open workspace.",
+      "rateLimit":     "Rate limit (optional)",
+      "rate":          "Calls",
+      "intervalSec":   "Per (seconds)",
+      "burst":         "Burst",
+      "submit":        "Save workspace",
+      "reset":         "Clear form"
+    },
+    "toast": {
+      "saved": "Workspace saved"
+    }
   },
   "env": {
     "title": "Environment variables",

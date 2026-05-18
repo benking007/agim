@@ -1,8 +1,12 @@
 /**
  * Input — single-line text input with shell-style focus ring.
- * Mobile: 16px font-size on first focus (font-size sm 12px would
- * trigger iOS auto-zoom on focus), but we counteract via max-scale=1
- * in viewport meta; staying on `text-sm` keeps the desktop density.
+ *
+ * Density: h-8 (32px). The original shadcn default is h-9 (36px),
+ * but real-world feedback found 36px rows visually inflated against
+ * shadcn-style table cells (h-10 at most). 32px sits closer to
+ * Linear / Notion density. iOS auto-zoom is suppressed via
+ * `maximum-scale=1` in viewport meta, so text-sm (14px) is safe
+ * here without inflating to 16px.
  */
 
 import * as React from 'react'
@@ -14,7 +18,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
       <input
         type={type}
         className={cn(
-          'flex h-9 w-full rounded-md border border-border bg-surface',
+          'flex h-8 w-full rounded-md border border-border bg-surface',
           'px-3 py-1 text-sm shadow-sm',
           'file:border-0 file:bg-transparent file:text-sm file:font-medium',
           'placeholder:text-text-muted',

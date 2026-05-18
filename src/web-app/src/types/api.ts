@@ -189,8 +189,103 @@ export interface Schedule {
   notify_url?: string
 }
 
+export interface ListSchedulesQuery {
+  agent?: string
+}
+
 export interface ListSchedulesResponse {
   schedules: Schedule[]
+}
+
+/* ============================================================
+ * Outbox — delivery queue for IM platform replies. Each row
+ * represents one outbound message; status moves
+ * pending → delivered (or → giving_up on hard failure).
+ * ============================================================ */
+
+export type OutboxStatus = 'pending' | 'delivered' | 'giving_up'
+export type OutboxKind = 'text' | 'card' | 'typing'
+export type OutboxPriority = 'high' | 'normal'
+
+export interface OutboxRow {
+  id: number
+  job_id: number | null
+  thread_key: string
+  platform: string
+  channel_id: string
+  thread_id: string
+  payload: string
+  kind: OutboxKind
+  priority: OutboxPriority
+  status: OutboxStatus
+  attempts: number
+  last_attempt_at: string | null
+  last_error: string | null
+  delivered_at: string | null
+  next_attempt_at: string | null
+  created_at: string
+}
+
+export interface ListOutboxQuery {
+  status?: OutboxStatus
+  thread?: string
+  limit?: number
+}
+
+export interface ListOutboxResponse {
+  rows: OutboxRow[]
+}
+
+export interface OutboxStats {
+  pending: number
+  delivered: number
+  giving_up: number
+  total: number
+  /** Last successful delivery timestamp, or null when none. */
+  lastDeliveredAt?: string | null
+}
+
+export interface OutboxRetryResponse extends OkResponse {
+  id: number
+}
+
+/* ============================================================
+ * Agent-to-Agent (A2A) — inline jobs spawned with parent_id set,
+ * representing one agent invoking another. Read-only views over
+ * jobs.db.
+ * ============================================================ */
+
+export interface A2AStats {
+  total: number
+  recent24h: number
+  maxDepth: number
+  byStatus: Array<{ status: string; n: number }>
+  byAgent:  Array<{ agent: string; n: number }>
+}
+
+export interface A2ARow {
+  id: number
+  agent: string
+  parent_id: number | null
+  call_depth: number
+  status: string
+  /** First 200 chars of the prompt (server-side truncated). */
+  prompt: string | null
+  /** First 500 chars of the result (server-side truncated). */
+  result: string | null
+  error: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  delivered_at: string | null
+}
+
+export interface ListA2ARecentQuery {
+  limit?: number
+}
+
+export interface ListA2ARecentResponse {
+  rows: A2ARow[]
 }
 
 /* ============================================================

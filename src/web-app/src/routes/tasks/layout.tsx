@@ -23,12 +23,12 @@ interface SubTab {
 }
 
 const SUB_TABS: SubTab[] = [
-  { to: 'jobs',      i18nKey: 'subnav.jobs',      mounted: true  },
-  { to: 'subtasks',  i18nKey: 'subnav.subtasks',  mounted: true  },
-  { to: 'bgjobs',    i18nKey: 'subnav.bgjobs',    mounted: true  },
-  { to: 'schedules', i18nKey: 'subnav.schedules', mounted: false },
-  { to: 'outbox',    i18nKey: 'subnav.outbox',    mounted: false },
-  { to: 'a2a',       i18nKey: 'subnav.a2a',       mounted: false },
+  { to: 'jobs',      i18nKey: 'subnav.jobs',      mounted: true },
+  { to: 'subtasks',  i18nKey: 'subnav.subtasks',  mounted: true },
+  { to: 'bgjobs',    i18nKey: 'subnav.bgjobs',    mounted: true },
+  { to: 'schedules', i18nKey: 'subnav.schedules', mounted: true },
+  { to: 'outbox',    i18nKey: 'subnav.outbox',    mounted: true },
+  { to: 'a2a',       i18nKey: 'subnav.a2a',       mounted: true },
 ]
 
 export default function TasksLayout(): JSX.Element {

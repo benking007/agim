@@ -19,6 +19,9 @@ import TasksLayout from '@/routes/tasks/layout'
 import JobsRoute from '@/routes/tasks/jobs'
 import SubtasksRoute from '@/routes/tasks/subtasks'
 import BgjobsRoute from '@/routes/tasks/bgjobs'
+import SchedulesRoute from '@/routes/tasks/schedules'
+import OutboxRoute from '@/routes/tasks/outbox'
+import A2ARoute from '@/routes/tasks/a2a'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -42,6 +45,9 @@ const router = createBrowserRouter([
       { path: 'jobs',      element: <JobsRoute /> },
       { path: 'subtasks',  element: <SubtasksRoute /> },
       { path: 'bgjobs',    element: <BgjobsRoute /> },
+      { path: 'schedules', element: <SchedulesRoute /> },
+      { path: 'outbox',    element: <OutboxRoute /> },
+      { path: 'a2a',       element: <A2ARoute /> },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

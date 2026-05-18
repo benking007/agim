@@ -119,5 +119,91 @@
     },
     "exitOk":   "ok",
     "stillRunning": "—"
+  },
+  "schedules": {
+    "title": "Schedules",
+    "subtitle": "Cron-style triggers that re-invoke an agent with a fixed prompt.",
+    "empty": {
+      "title": "No schedules configured",
+      "description": "Create a schedule from the agent's chat via `/cron set` or by running `agim cron create` in the CLI."
+    },
+    "filter": {
+      "agent":    "Agent",
+      "agentAny": "Any agent"
+    },
+    "col": {
+      "id":       "ID",
+      "name":     "Name",
+      "agent":    "Agent",
+      "cron":     "Cron",
+      "prompt":   "Prompt",
+      "enabled":  "Enabled",
+      "nextRun":  "Next run",
+      "lastRun":  "Last run"
+    },
+    "enabled":  "On",
+    "disabled": "Off"
+  },
+  "outbox": {
+    "title": "Outbox",
+    "subtitle": "Pending IM-platform deliveries. The crash-safe queue retries on transient failures and parks unrecoverable ones in `giving_up`.",
+    "empty": {
+      "title": "Outbox is empty",
+      "description": "Messages move through the queue and are deleted on successful delivery. A non-empty outbox here means the queue is actively flushing or a delivery is stuck."
+    },
+    "filter": {
+      "status":     "Status",
+      "statusAny":  "Any status",
+      "thread":     "Thread key"
+    },
+    "stats": {
+      "pending":    "Pending",
+      "giving_up":  "Giving up",
+      "delivered":  "Delivered (lifetime)",
+      "lastDelivered": "Last delivery"
+    },
+    "col": {
+      "id":          "ID",
+      "status":      "Status",
+      "platform":    "Platform",
+      "thread":      "Thread",
+      "kind":        "Kind",
+      "attempts":    "Attempts",
+      "createdAt":   "Created",
+      "lastError":   "Last error",
+      "jobId":       "Job"
+    },
+    "status": {
+      "pending":   "Pending",
+      "delivered": "Delivered",
+      "giving_up": "Giving up"
+    },
+    "action": {
+      "retry":         "Retry",
+      "confirmRetry":  "Re-queue this delivery?",
+      "confirmRetryDesc": "The row's status flips back to pending and the sender will attempt delivery again on the next tick."
+    }
+  },
+  "a2a": {
+    "title": "Agent ↔ Agent",
+    "subtitle": "Recent inline jobs spawned with a parent (one agent invoking another).",
+    "empty": {
+      "title": "No agent-to-agent calls yet",
+      "description": "Inline a2a calls appear here once an agent uses the `agim --invoke` tool with a parent context."
+    },
+    "stats": {
+      "total":      "Total",
+      "recent24h":  "Last 24h",
+      "maxDepth":   "Max depth"
+    },
+    "col": {
+      "id":         "ID",
+      "agent":      "Agent",
+      "parent":     "Parent",
+      "depth":      "Depth",
+      "status":     "Status",
+      "prompt":     "Prompt",
+      "createdAt":  "Created"
+    }
   }
 }

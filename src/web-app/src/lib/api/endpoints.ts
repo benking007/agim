@@ -13,11 +13,14 @@
 
 import { client } from './client'
 import type {
+  A2AStats,
   AppConfig,
   BatchJobBody,
   CreateJobBody,
   CreateJobResponse,
   HealthSummary,
+  ListA2ARecentQuery,
+  ListA2ARecentResponse,
   ListApprovalsResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
@@ -27,14 +30,19 @@ import type {
   ListMemoryFactsResponse,
   ListMemosQuery,
   ListMemosResponse,
+  ListOutboxQuery,
+  ListOutboxResponse,
   ListRemindersQuery,
   ListRemindersResponse,
+  ListSchedulesQuery,
   ListSchedulesResponse,
   ListSubtasksQuery,
   ListSubtasksResponse,
   LoginBody,
   LoginResponse,
   OkResponse,
+  OutboxRetryResponse,
+  OutboxStats,
   Persona,
   TopNResponse,
   UpdatePersonaBody,
@@ -43,12 +51,12 @@ import type {
 
 export const api = {
   /** GET /api/a2a/recent */
-  getA2ARecent: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/a2a/recent', opts),
+  getA2ARecent: (query: ListA2ARecentQuery) =>
+    client.get<ListA2ARecentResponse>('/api/a2a/recent', { query }),
 
   /** GET /api/a2a/stats */
-  getA2AStats: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/a2a/stats', opts),
+  getA2AStats: () =>
+    client.get<A2AStats>('/api/a2a/stats'),
 
   /** DELETE /api/admin-allowlist */
   removeAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -231,20 +239,24 @@ export const api = {
     client.post<unknown>('/api/notify', opts),
 
   /** GET /api/outbox */
-  listOutbox: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/outbox', opts),
+  listOutbox: (query: ListOutboxQuery) =>
+    client.get<ListOutboxResponse>('/api/outbox', { query }),
 
   /** GET /api/outbox/stats */
-  getOutboxStats: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/outbox/stats', opts),
+  getOutboxStats: () =>
+    client.get<OutboxStats>('/api/outbox/stats'),
+
+  /** POST /api/outbox/:id/retry */
+  retryOutbox: (id: number) =>
+    client.post<OutboxRetryResponse>(`/api/outbox/${id}/retry`),
 
   /** GET /api/reminders */
   listReminders: (query: ListRemindersQuery) =>
     client.get<ListRemindersResponse>('/api/reminders', { query }),
 
   /** GET /api/schedules */
-  listSchedules: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<ListSchedulesResponse>('/api/schedules', opts),
+  listSchedules: (query: ListSchedulesQuery) =>
+    client.get<ListSchedulesResponse>('/api/schedules', { query }),
 
   /** POST /api/service/restart */
   restartService: (opts?: { body?: unknown }) =>

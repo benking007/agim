@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { registry } from './registry.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { loadSecrets, saveSecrets, mergeSecrets, splitConfig, listSensitivePathsInConfig } from './secrets-store.js'
+import { logger as rootLogger } from './logger.js'
 
 const CONFIG_DIR = AGIM_HOME
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
@@ -84,22 +86,45 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
 // ============================================
 
 export async function loadConfig(): Promise<Config> {
+  let publicCfg: Record<string, unknown>
   try {
     const data = await readFile(CONFIG_FILE, 'utf-8')
-    return JSON.parse(data)
+    publicCfg = JSON.parse(data)
   } catch {
-    return {
+    publicCfg = {
       messengers: [],
       agents: [],
       defaultAgent: 'claude-code',
     }
   }
+  // M-N17: overlay secrets.json on top of config.json. Adapters consume
+  // the merged shape unchanged. If config.json still has sensitive
+  // fields (pre-migration deploy), they win — secrets.json doesn't
+  // shadow them silently. Migration happens on the next saveConfig.
+  const secrets = loadSecrets()
+  const merged = mergeSecrets(publicCfg, secrets) as Config
+  // One-time visibility log: tell the operator about leftover secrets in
+  // config.json so they know what the next save will migrate.
+  const leftover = listSensitivePathsInConfig(publicCfg)
+  if (leftover.length > 0 && Object.keys(secrets).length === 0) {
+    rootLogger.info({
+      component: 'config',
+      event: 'config.secrets_migration_pending',
+      paths: leftover,
+    }, `secrets still in config.json (${leftover.join(', ')}); next saveConfig will move them to secrets.json`)
+  }
+  return merged
 }
 
 export async function saveConfig(config: Config): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 })
+  // M-N17: split into { public, secrets } and persist each to its own
+  // file. secrets.json is 0o600 + atomic-renamed via secrets-store. The
+  // public half stays at config.json with the existing 0o600 enforcement.
+  const { publicCfg, secrets } = splitConfig(config as Record<string, unknown>)
+  await writeFile(CONFIG_FILE, JSON.stringify(publicCfg, null, 2), { mode: 0o600 })
   await chmod(CONFIG_FILE, 0o600)
+  saveSecrets(secrets)
 }
 
 // ============================================

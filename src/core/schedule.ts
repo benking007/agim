@@ -237,6 +237,23 @@ function dueSchedules(d: Database.Database, now: Date): Schedule[] {
 /**
  * Execute a single scheduled run: create a Job, kick it off through Job
  * Board (which honors the concurrency cap), bump next_run.
+ *
+ * M-N11 — atomic claim. Two threats this protects against:
+ *
+ *   1. Reentrancy. If a tick takes longer than TICK_INTERVAL_MS (slow
+ *      Job Board boot, fat user list, lock contention), setInterval
+ *      fires a second tick mid-flight. Both call dueSchedules → both
+ *      see the same row → both fire. Reminders solve this with a
+ *      `UPDATE … WHERE status='pending'` CAS; we do the equivalent on
+ *      `next_run` here.
+ *
+ *   2. Clock skew. If the system clock jumps backward (NTP correction,
+ *      container migration, manual `date -s`), a row whose next_run we
+ *      already advanced past wouldn't trigger this tick, but a row that
+ *      was *about* to fire (next_run = T+1s) and then time jumped back
+ *      to T-1s could re-fire on the same expression. By keying the CAS
+ *      on the read next_run, the bump is idempotent — once advanced,
+ *      the same row can't fire again until the new next_run.
  */
 async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
   const d = getDb()
@@ -248,26 +265,40 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     return
   }
 
+  // Compute next_run + atomically claim ownership of this firing. If
+  // another tick already advanced the row (concurrent dispatch), the
+  // UPDATE's WHERE next_run=? predicate misses and we bail without
+  // calling createJob.
+  let nextIso: string | null = null
+  try {
+    const nextSpec = parseCron(s.cron)
+    const next = nextOccurrence(nextSpec, new Date())
+    if (next) nextIso = next.toISOString()
+  } catch {
+    // Bad cron at this point would only happen if it was edited externally.
+    // Disable rather than re-fire forever.
+    d.prepare('UPDATE schedules SET enabled = 0 WHERE id = ?').run(s.id)
+    return
+  }
+  if (!nextIso) {
+    // No future occurrence — disable to avoid the tick burning CPU re-evaluating.
+    d.prepare('UPDATE schedules SET enabled = 0 WHERE id = ?').run(s.id)
+    return
+  }
+  const claim = d.prepare(
+    'UPDATE schedules SET last_run = ?, next_run = ? WHERE id = ? AND next_run = ? AND enabled = 1'
+  ).run(new Date().toISOString(), nextIso, s.id, s.next_run)
+  if (claim.changes === 0) {
+    // Another tick won this row, or the row was disabled / deleted
+    // between dueSchedules() and now. No-op.
+    return
+  }
+
   const jobId = createJob(s.agent, s.prompt, {
     creatorId: s.creator_id,
     workspaceId: s.workspace_id,
   })
   logger.info({ scheduleId: s.id, jobId, name: s.name }, 'Schedule fired')
-
-  // Compute next_run BEFORE running so even a long-running job doesn't
-  // block the next tick.
-  try {
-    const nextSpec = parseCron(s.cron)
-    const next = nextOccurrence(nextSpec, new Date())
-    if (next) {
-      d.prepare('UPDATE schedules SET last_run = ?, next_run = ? WHERE id = ?')
-        .run(new Date().toISOString(), next.toISOString(), s.id)
-    }
-  } catch {
-    // Bad cron at this point would only happen if it was edited externally.
-    // Disable rather than re-fire forever.
-    d.prepare('UPDATE schedules SET enabled = 0 WHERE id = ?').run(s.id)
-  }
 
   // Run via Job Board so the result is persisted + bounded concurrency.
   void runJob(jobId, async function* (job, _jobLogger, signal) {
@@ -346,10 +377,29 @@ export async function tick(now: Date = new Date()): Promise<number> {
   return due.length
 }
 
+/** Re-entrancy guard. setInterval doesn't await the previous handler;
+ *  if a tick takes longer than TICK_INTERVAL_MS (slow Job Board boot,
+ *  fat user list, lock contention), the next interval fires while the
+ *  previous one is still iterating. The atomic claim in fireSchedule
+ *  prevents double-fire of an individual row, but the second tick still
+ *  burns DB roundtrips re-discovering the same set and racing on every
+ *  UPDATE. This guard short-circuits the second tick cleanly. */
+let tickInFlight = false
+
 /** Start the periodic ticker. Idempotent. */
 export function startScheduler(): void {
   if (tickTimer) return
-  tickTimer = setInterval(() => { void tick() }, TICK_INTERVAL_MS)
+  tickTimer = setInterval(() => {
+    if (tickInFlight) {
+      log.warn({ event: 'schedule.tick_overlap' },
+        'previous scheduler tick still running; skipping this interval')
+      return
+    }
+    tickInFlight = true
+    void tick()
+      .catch((err) => log.error({ event: 'schedule.tick_failed', err: String(err) }))
+      .finally(() => { tickInFlight = false })
+  }, TICK_INTERVAL_MS)
   if (typeof tickTimer === 'object' && tickTimer && 'unref' in tickTimer) {
     (tickTimer as { unref: () => void }).unref()
   }

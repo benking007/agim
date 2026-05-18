@@ -22,7 +22,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -36,7 +35,7 @@ jobs:
       # `npm install -g agim-cli`; CI doesn't exercise the vector path.
       # Same flag as release.yml.
       - name: Install root dependencies
-        run: npm ci --omit=optional --no-audit --no-fund || npm install --omit=optional --no-audit --no-fund
+        run: npm install --omit=optional --no-audit --no-fund
 
       - name: Backend typecheck
         run: npm run typecheck

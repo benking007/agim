@@ -26,6 +26,47 @@
     "discard":        "放弃改动",
     "toast": {
       "saved":  "已保存"
+    },
+    "acp": {
+      "title":      "远程 Agent (ACP)",
+      "subtitle":   "通过 Agent Communication Protocol 接入的 HTTP Agent。每个条目持久化到 config，下次服务重启时注册。",
+      "discoverBtn":"批量发现",
+      "runDiscover":"探测",
+      "baseUrl":    "发现地址",
+      "baseUrlHint":"探测 `<base>/.well-known/acp` 并追加返回的 Agent；同名条目自动跳过。",
+      "addTitle":   "新增 Agent",
+      "name":       "名称",
+      "nameHint":   "稳定标识；只允许 字母 数字 `._-`。",
+      "aliases":    "别名",
+      "aliasesHint":"逗号分隔；在 IM 内通过 `/alias` 路由。",
+      "endpoint":   "Endpoint",
+      "endpointHint":"Agent 的 ACP 根路径（不带尾部 `/`）。",
+      "authType":   "鉴权",
+      "auth": {
+        "none":   "无",
+        "apikey": "API key",
+        "bearer": "Bearer"
+      },
+      "token":           "Token",
+      "tokenPlaceholder":"粘贴 token",
+      "testBtn":     "测试",
+      "addBtn":      "新增",
+      "removeBtn":   "移除",
+      "on":          "已启用",
+      "off":         "已停用",
+      "dupName":     "已存在同名 Agent。",
+      "empty": {
+        "title":       "暂无远程 Agent",
+        "description": "下方填写 ACP endpoint 新增，或使用「批量发现」自动从 `.well-known/acp` 导入。"
+      },
+      "toast": {
+        "staged":         "已暂存，点击「保存」生效。",
+        "testOk":         "已联通 `{{name}}`",
+        "testMasked":     "Token 是掩码态，请先保存后再测试。",
+        "discoverEmpty":  "没有可新增的 Agent。",
+        "discoverAdded_one":   "已新增 {{count}} 个 Agent。",
+        "discoverAdded_other": "已新增 {{count}} 个 Agent。"
+      }
     }
   },
   "policy": {

@@ -26,6 +26,47 @@
     "discard":        "Discard",
     "toast": {
       "saved":  "Saved"
+    },
+    "acp": {
+      "title":      "Remote agents (ACP)",
+      "subtitle":   "Agents reachable over HTTP via the Agent Communication Protocol. Each entry persists in config and registers on the next service restart.",
+      "discoverBtn":"Discover",
+      "runDiscover":"Probe",
+      "baseUrl":    "Discovery URL",
+      "baseUrlHint":"Probes `<base>/.well-known/acp` and adds the entries it lists. Skips names already present.",
+      "addTitle":   "Add agent",
+      "name":       "Name",
+      "nameHint":   "Stable identifier; letters, digits, `._-`.",
+      "aliases":    "Aliases",
+      "aliasesHint":"Comma-separated; routed via `/alias` in chat.",
+      "endpoint":   "Endpoint",
+      "endpointHint":"Base URL of the agent's ACP root (no trailing `/`).",
+      "authType":   "Auth",
+      "auth": {
+        "none":   "None",
+        "apikey": "API key",
+        "bearer": "Bearer"
+      },
+      "token":           "Token",
+      "tokenPlaceholder":"Paste token",
+      "testBtn":     "Test",
+      "addBtn":      "Add",
+      "removeBtn":   "Remove",
+      "on":          "on",
+      "off":         "off",
+      "dupName":     "An agent with this name already exists.",
+      "empty": {
+        "title":       "No remote agents",
+        "description": "Add an ACP endpoint below or use Discover for a `.well-known/acp` directory."
+      },
+      "toast": {
+        "staged":         "Staged. Save to persist.",
+        "testOk":         "Reached `{{name}}`",
+        "testMasked":     "Save first — token is masked, can't test in place.",
+        "discoverEmpty":  "Nothing new to add.",
+        "discoverAdded_one":   "Added {{count}} agent.",
+        "discoverAdded_other": "Added {{count}} agents."
+      }
     }
   },
   "policy": {

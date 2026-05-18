@@ -744,15 +744,54 @@ export interface AppConfig {
   feishu?: { appId?: string; appSecret?: string; channelId?: string }
   dingtalk?: { clientId?: string; clientSecret?: string; channelId?: string }
   discord?: { botToken?: string; channelId?: string }
-  acpAgents?: Array<{
-    name: string
-    aliases?: string[]
-    endpoint: string
-    enabled?: boolean
-  }>
+  acpAgents?: ACPAgentConfig[]
   agentStatus?: Record<string, boolean>
   /** Open-ended for forward-compat. */
   [key: string]: unknown
+}
+
+/* ============================================================
+ * Remote ACP (Agent Communication Protocol) agents
+ * ============================================================ */
+
+export type ACPAuthType = 'none' | 'apikey' | 'bearer'
+
+export interface ACPAuthConfig {
+  type: ACPAuthType
+  /** Masked in GET /api/config responses; client should treat strings
+   *  that look like masked tokens (`ab****yz`) as "leave unchanged". */
+  token?: string
+}
+
+export interface ACPAgentConfig {
+  name: string
+  endpoint: string
+  aliases?: string[]
+  auth?: ACPAuthConfig
+  enabled?: boolean
+}
+
+export interface ACPDiscoverBody {
+  baseUrl: string
+  /** When true, server hot-loads discovered agents into the registry. */
+  register?: boolean
+}
+
+export interface ACPDiscoverResponse {
+  ok: true
+  baseUrl: string
+  agents: ACPAgentConfig[]
+}
+
+export interface ACPTestBody {
+  endpoint: string
+  auth?: ACPAuthConfig
+}
+
+export interface ACPTestResponse {
+  ok: true
+  name: string
+  description?: string
 }
 
 /* ============================================================

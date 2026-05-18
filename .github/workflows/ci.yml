@@ -23,25 +23,53 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package.json
+            src/web-app/package.json
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      # ───── Backend (agim-cli) ─────
+      - name: Install root dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Typecheck (src + test)
+      - name: Backend typecheck
         run: npm run typecheck
 
-      - name: Lint
+      - name: Backend lint
         run: npm run lint
 
-      - name: Build
-        run: npm run build
-
-      - name: Test
+      - name: Backend test
         run: npm test
         env:
           LOG_LEVEL: error
+
+      # ───── Frontend (src/web-app) ─────
+      # M1 web rewrite stack — see /root/.claude/plans/web-web-web-web-ui-bug-...md.
+      # The web-app project lives in its own Vite workspace with its own
+      # deps + tsconfig. CI runs it as a separate npm root so the backend
+      # build pipeline stays decoupled from the SPA build pipeline.
+      - name: Install web-app dependencies
+        run: npm --prefix src/web-app install --no-audit --no-fund
+
+      - name: Web-app typecheck
+        run: npm --prefix src/web-app run typecheck
+
+      - name: Web-app test (vitest)
+        run: npm --prefix src/web-app test -- --run
+        env:
+          CI: 'true'
+
+      - name: Web-app build
+        run: npm --prefix src/web-app run build
+
+      # ───── Backend full build (with web-app dist in place) ─────
+      # Backend build copies frontend dist/* into dist/web/public/ in M5
+      # (PR with the build-script wiring). Until then this is just the
+      # backend's own `tsc + cp src/web/public`, kept on its own line so
+      # the CI still validates it independently.
+      - name: Backend build
+        run: npm run build

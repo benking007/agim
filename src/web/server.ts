@@ -881,6 +881,20 @@ export async function startWebServer(options: {
     return 100
   })()
 
+  // M-N10: per-message size cap. The WS handler JSON.parses every inbound
+  // frame; without this, a hostile or buggy client can dump a multi-MiB
+  // deeply-nested JSON and pin the event loop on parse alone. 1 MiB is
+  // 100× the largest legitimate UI payload we've measured (settings save,
+  // long chat message).
+  const maxWsMsgBytes = (() => {
+    const raw = process.env.IMHUB_MAX_WS_MSG_BYTES
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 1 * 1024 * 1024
+  })()
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     if (clients.size >= maxWsClients) {
       // 1013 = "Try Again Later" per RFC 6455. Slightly nicer than a flat
@@ -914,6 +928,19 @@ export async function startWebServer(options: {
     const enqueueInbound = createSerialQueue()
 
     ws.on('message', (data: Buffer) => {
+      // M-N10: drop frames over the configured cap before they reach
+      // JSON.parse. 1009 = "Message Too Big" per RFC 6455. We close the
+      // socket rather than just dropping the frame because a client that
+      // sent one giant frame is likely to send more — close-on-bad-input
+      // is a stronger signal to the page JS to back off.
+      if (data.length > maxWsMsgBytes) {
+        webLog.warn({
+          event: 'ws.oversized_message',
+          clientId, size: data.length, cap: maxWsMsgBytes,
+        })
+        try { ws.close(1009, 'Message too large') } catch { /* peer already gone */ }
+        return
+      }
       enqueueInbound(async () => {
         try {
           const msg = JSON.parse(data.toString())

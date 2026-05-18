@@ -112,20 +112,39 @@ async function request<T>(
   if (!res.ok) {
     let code = `HTTP_${res.status}`
     let message = res.statusText
+    let hadExplicitCode = false
     if (isJson) {
       try {
         const body = (await res.json()) as { error?: string; code?: string }
         if (body.error) message = body.error
-        if (body.code) code = body.code
-        // Heuristic: agim's legacy backend returns chinese phrases like
-        // "Unauthorized" / "token required" — recognize a handful so
-        // PR-4's i18n table can map to a key.
-        if (res.status === 401) code = 'AUTH_INVALID'
-        if (res.status === 403) code = 'FORBIDDEN'
-        if (res.status === 404) code = 'NOT_FOUND'
-        if (res.status === 413) code = 'PAYLOAD_TOO_LARGE'
+        if (body.code) {
+          code = body.code
+          hadExplicitCode = true
+        }
       } catch {
         /* keep default */
+      }
+    }
+    // Map common HTTP status → stable codes the i18n table covers.
+    // Only apply when the backend didn't send an explicit `code` —
+    // forward-compat for when agim's server returns machine codes
+    // (independent PR; see plan deferred item).
+    if (!hadExplicitCode) {
+      if (res.status === 401) code = 'AUTH_INVALID'
+      if (res.status === 403) code = 'FORBIDDEN'
+      if (res.status === 404) code = 'NOT_FOUND'
+      if (res.status === 413) code = 'PAYLOAD_TOO_LARGE'
+    }
+    if (res.status === 401 && !path.startsWith('/api/auth/')) {
+      // Token missing / invalid / expired → kick the user to /login.
+      // Skip when the failing call IS the auth endpoint, otherwise we
+      // loop on a fresh invalid-token submission.
+      try { localStorage.removeItem(TOKEN_STORAGE_KEY) } catch { /* private mode */ }
+      const next = encodeURIComponent(location.pathname + location.search)
+      // Only redirect from non-login pages to avoid loops with
+      // pre-mount fetches against the auth endpoint itself.
+      if (!location.pathname.startsWith('/login')) {
+        location.href = `/login?next=${next}`
       }
     }
     throw new ApiClientError({ code, message, status: res.status })

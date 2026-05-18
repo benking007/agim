@@ -1,0 +1,54 @@
+{
+  "appName": "Agim",
+  "actions": {
+    "refresh": "Refresh",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "submit": "Submit",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "create": "Create",
+    "search": "Search",
+    "retry": "Retry",
+    "confirm": "Confirm"
+  },
+  "states": {
+    "loading": "Loading…",
+    "empty": "No data",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Something went wrong"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "cycleHint": "Click to cycle theme"
+  },
+  "lang": {
+    "label": "Language",
+    "en": "English",
+    "zh": "中文"
+  },
+  "nav": {
+    "chat": "Chat",
+    "tasks": "Tasks",
+    "approvals": "Approvals",
+    "reminders": "Reminders",
+    "memos": "Memos",
+    "memory": "Memory",
+    "workspace": "Workspace",
+    "observability": "Observability",
+    "settings": "Settings"
+  },
+  "confirm": {
+    "deleteTitle": "Delete this item?",
+    "deleteDescription": "This cannot be undone.",
+    "destructiveAction": "Delete"
+  }
+}

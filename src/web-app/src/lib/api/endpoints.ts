@@ -30,6 +30,11 @@ import type {
   DeleteMemoResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
+  ListSkillsResponse,
+  SkillDetail,
+  VectorActionResponse,
+  VectorClearResponse,
+  VectorTestResponse,
   ListJobsQuery,
   ListJobsResponse,
   DeleteMemoryFactsBody,
@@ -219,24 +224,24 @@ export const api = {
     client.get<ListMemoryUsersResponse>('/api/memory/users'),
 
   /** POST /api/memory/vector/backfill */
-  backfillMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/backfill', opts),
+  backfillMemoryVector: (query: { user_key?: string }, body?: { max_rows?: number }) =>
+    client.post<VectorActionResponse>('/api/memory/vector/backfill', { query, body }),
 
   /** POST /api/memory/vector/clear */
-  clearMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/clear', opts),
+  clearMemoryVector: (query: { user_key?: string }) =>
+    client.post<VectorClearResponse>('/api/memory/vector/clear', { query }),
 
   /** POST /api/memory/vector/download */
-  downloadMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/download', opts),
+  downloadMemoryVector: () =>
+    client.post<VectorActionResponse>('/api/memory/vector/download'),
 
   /** GET /api/memory/vector/status */
   getMemoryVectorStatus: (query: { user_key?: string }) =>
     client.get<VectorStatus>('/api/memory/vector/status', { query }),
 
   /** POST /api/memory/vector/test */
-  testMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/test', opts),
+  testMemoryVector: () =>
+    client.post<VectorTestResponse>('/api/memory/vector/test'),
 
   /** GET /api/memos */
   listMemos: (query: ListMemosQuery) =>
@@ -307,12 +312,17 @@ export const api = {
     client.post<unknown>('/api/service/stop', opts),
 
   /** GET /api/skills */
-  listSkills: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/skills', opts),
+  listSkills: () =>
+    client.get<ListSkillsResponse>('/api/skills'),
 
-  /** GET /api/skills/remote/hot */
-  getSkillsRemoteHot: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/skills/remote/hot', opts),
+  /** GET /api/skills/:slug */
+  getSkillDetail: (slug: string) =>
+    client.get<SkillDetail>(`/api/skills/${encodeURIComponent(slug)}`),
+
+  /** GET /api/skills/remote/hot — proxy to skillhub.cn with 5min
+   *  cache. Loose response since the upstream shape changes. */
+  getSkillsRemoteHot: () =>
+    client.get<Record<string, unknown>>('/api/skills/remote/hot'),
 
   /** GET /api/subtasks */
   listSubtasks: (query: ListSubtasksQuery) =>

@@ -28,6 +28,8 @@ import MemosRoute from '@/routes/memos'
 import MemoryLayout from '@/routes/memory/layout'
 import MemoryFactsRoute from '@/routes/memory/facts'
 import MemoryPersonaRoute from '@/routes/memory/persona'
+import MemoryVectorRoute from '@/routes/memory/vector'
+import MemorySkillsRoute from '@/routes/memory/skills'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -91,6 +93,8 @@ const router = createBrowserRouter([
       { index: true,     element: <Navigate to="facts" replace /> },
       { path: 'facts',   element: <MemoryFactsRoute /> },
       { path: 'persona', element: <MemoryPersonaRoute /> },
+      { path: 'vector',  element: <MemoryVectorRoute /> },
+      { path: 'skills',  element: <MemorySkillsRoute /> },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

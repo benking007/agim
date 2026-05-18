@@ -567,12 +567,99 @@ export interface ConsolidateStatusResponse {
   jobs: ConsolidateJob[]
 }
 
-export interface VectorStatus {
-  backend: 'off' | 'local' | 'openai'
+export type VectorBackendName = 'off' | 'local' | 'openai'
+
+/** Mirror of src/core/memory-vector.ts:BackendStatus. */
+export interface VectorBackendStatus {
+  backend: VectorBackendName
   ready: boolean
-  modelId?: string
-  itemCount?: number
-  lastSync?: string
+  dims: number
+  modelId: string
+  lastError: string | null
+  /** Local-only: model files present on disk. ready may still be
+   *  false if the in-process pipeline hasn't loaded them yet. */
+  downloaded?: boolean
+  /** Backend-specific extra info — varies by adapter. */
+  detail: Record<string, unknown>
+}
+
+/** Per-user (or global, when user_key omitted) embedding coverage. */
+export interface VectorCoverage {
+  total: number
+  withEmbedding: number
+  withDifferentModel: number
+}
+
+/** Async job tracker for backfill / download. */
+export interface VectorJob {
+  id: string
+  kind: 'download' | 'backfill'
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  message: string
+  details: Record<string, unknown>
+}
+
+/** Response shape of GET /api/memory/vector/status. */
+export interface VectorStatus {
+  status: VectorBackendStatus
+  coverage: VectorCoverage
+  jobs: VectorJob[]
+}
+
+/** Common shape returned by POST /api/memory/vector/{download,
+ *  backfill}: 202 with a jobId the client polls via the status
+ *  endpoint, or 200 with `alreadyReady` when the action is a no-op. */
+export interface VectorActionResponse {
+  ok: boolean
+  jobId?: string
+  alreadyRunning?: boolean
+  alreadyReady?: boolean
+  hint?: string
+}
+
+export interface VectorClearResponse {
+  ok: true
+  cleared: number
+}
+
+export interface VectorTestResponse {
+  ok: boolean
+  error?: string
+  /** Backend-specific extras (latency, sample embedding length, etc.). */
+  [extra: string]: unknown
+}
+
+/* ============================================================
+ * Skills — read-only browse over ~/.claude/skills + opencode dirs.
+ * ============================================================ */
+
+export type SkillAgent = 'claude' | 'opencode'
+
+export interface SkillMeta {
+  slug: string
+  name: string
+  description: string
+  category: string
+  agents: SkillAgent[]
+  /** Canonical SKILL.md path — used as the cache key for the
+   *  detail fetch, not displayed. */
+  path: string
+}
+
+export interface ListSkillsResponse {
+  total: number
+  /** Tally per category for the grouped list view. */
+  byCategory: Record<string, number>
+  skills: SkillMeta[]
+  /** Configured source directories — surfaces empty/missing roots. */
+  sources: { claude: string; opencode: string }
+}
+
+/** GET /api/skills/:slug response — meta + full markdown body. */
+export interface SkillDetail extends SkillMeta {
+  content: string
 }
 
 /* ============================================================

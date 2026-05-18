@@ -18,10 +18,11 @@ interface SubTab {
 
 const SUB_TABS: SubTab[] = [
   { to: 'messengers', i18nKey: 'tabs.messengers', mounted: true },
+  { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true },
+  { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true },
+  { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
   { to: 'env',        i18nKey: 'tabs.env',        mounted: true },
   { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
-  { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
-  { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true },
 ]
 
 export default function SettingsLayout(): JSX.Element {

@@ -2,11 +2,48 @@
   "pageTitle": "设置",
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
-    "env":        "环境变量",
-    "service":    "服务",
-    "admins":     "管理员",
+    "messengers": "IM 平台",
+    "policy":     "策略",
     "workspaces": "工作区",
-    "messengers": "IM 平台"
+    "admins":     "管理员",
+    "env":        "环境变量",
+    "service":    "服务"
+  },
+  "policy": {
+    "title": "策略与开关",
+    "subtitle": "高频切换的开关，底层操作的是 env 值。每个开关变更后立即持久化；多数模块支持热加载，少数需要等下次服务重启。",
+    "savingToast":  "已保存",
+    "safety": {
+      "title":    "跳过权限确认（危险）",
+      "description": "打开后，Claude Code 适配器会向 CLI 传递 `--dangerously-skip-permissions`，跳过所有工具调用确认。生产环境强烈建议保持关闭；仅在隔离的可信工作区内启用。",
+      "envKey":   "IMHUB_DANGEROUSLY_SKIP_PERMISSIONS",
+      "tagWarn":  "生产部署建议保持关闭"
+    },
+    "approval": {
+      "title":    "审批超时默认行为",
+      "description": "当 pending 的工具调用无人响应而超时时审批 bus 的行为。`拒绝` 是安全默认值，会让 Bash / Edit / Write 等写入调用保持阻断；`放行` 是\"用户离开\"模式，让 Agent 继续运行。",
+      "envKey":   "IMHUB_TIMEOUT_DEFAULT",
+      "valDeny":  "超时拒绝",
+      "valAllow": "超时放行"
+    },
+    "memory": {
+      "title":    "长期记忆",
+      "description": "每用户记忆子系统（事实 + persona + 向量检索）的总开关。关闭后停止抽取新事实和 persona 整理；已有数据保留在磁盘。",
+      "envKey":   "IMHUB_MEMORY_ENABLED"
+    },
+    "viewer": {
+      "title":    "长消息查看器",
+      "description": "打开后，超过阈值的 IM 回复会被上传到本地 paste 存储，IM 消息变成一个可点击的短链。关闭则消息会被 IM 平台截断。",
+      "envKey":   "IMHUB_VIEWER_ENABLED"
+    },
+    "a2aNotify": {
+      "title":    "A2A 通知模式",
+      "description": "Agent 间互相调用时 bus 的提示详细程度。`essential`（默认）仅发关键事件；`verbose` 包含每次状态切换；`off` 完全静默跨 Agent 通知。",
+      "envKey":   "IMHUB_A2A_NOTIFY_MODE",
+      "valEssential": "关键事件",
+      "valVerbose":   "详细",
+      "valOff":       "关闭"
+    }
   },
   "messengers": {
     "title": "IM 平台",

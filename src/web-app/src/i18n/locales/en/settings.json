@@ -2,11 +2,48 @@
   "pageTitle": "Settings",
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
-    "env":        "Environment",
-    "service":    "Service",
-    "admins":     "Admins",
+    "messengers": "Messengers",
+    "policy":     "Policy",
     "workspaces": "Workspaces",
-    "messengers": "Messengers"
+    "admins":     "Admins",
+    "env":        "Environment",
+    "service":    "Service"
+  },
+  "policy": {
+    "title": "Policy & toggles",
+    "subtitle": "Frequently-flipped switches that operate on env values under the hood. Each toggle persists immediately; the change applies on the next service restart unless the relevant module supports hot-reload (most do).",
+    "savingToast":  "Saved",
+    "safety": {
+      "title":    "Skip permissions (DANGEROUS)",
+      "description": "When ON, the Claude Code adapter passes `--dangerously-skip-permissions` to the wrapped CLI, bypassing every tool-use confirmation. Recommended OFF for production. Only enable for trusted, isolated workspaces.",
+      "envKey":   "IMHUB_DANGEROUSLY_SKIP_PERMISSIONS",
+      "tagWarn":  "production deployments should keep this OFF"
+    },
+    "approval": {
+      "title":    "Approval timeout default",
+      "description": "What the approval bus does when a pending tool-use request expires with no human reply. `Deny` is the safe default and keeps write-side calls (Bash / Edit / Write) gated; `Allow` is \"user away\" mode and lets the agent keep moving.",
+      "envKey":   "IMHUB_TIMEOUT_DEFAULT",
+      "valDeny":  "Deny on timeout",
+      "valAllow": "Allow on timeout"
+    },
+    "memory": {
+      "title":    "Long-term memory",
+      "description": "Master switch for the per-user memory subsystem (facts + persona + vector retrieval). Disabling stops new fact extraction and persona consolidation; the existing bank stays on disk.",
+      "envKey":   "IMHUB_MEMORY_ENABLED"
+    },
+    "viewer": {
+      "title":    "Long-message viewer",
+      "description": "When ON, IM replies that exceed the viewer threshold are uploaded to the local paste store and the IM message becomes a short URL the user can click. Without it, long replies get truncated by the messenger.",
+      "envKey":   "IMHUB_VIEWER_ENABLED"
+    },
+    "a2aNotify": {
+      "title":    "A2A notify mode",
+      "description": "How verbose the bus is when one agent calls another. `essential` (default) sends only headline events; `verbose` includes every transition; `off` silences cross-agent notifications entirely.",
+      "envKey":   "IMHUB_A2A_NOTIFY_MODE",
+      "valEssential": "Essential",
+      "valVerbose":   "Verbose",
+      "valOff":       "Off"
+    }
   },
   "messengers": {
     "title": "Messengers",

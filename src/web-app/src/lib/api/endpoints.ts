@@ -24,6 +24,7 @@ import type {
   ListApprovalsResponse,
   ResolveApprovalBody,
   ResolveApprovalResponse,
+  CancelReminderResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListJobsQuery,
@@ -46,6 +47,8 @@ import type {
   OutboxRetryResponse,
   OutboxStats,
   Persona,
+  SnoozeReminderBody,
+  SnoozeReminderResponse,
   TopNResponse,
   UpdatePersonaBody,
   VectorStatus,
@@ -259,6 +262,14 @@ export const api = {
   /** GET /api/reminders */
   listReminders: (query: ListRemindersQuery) =>
     client.get<ListRemindersResponse>('/api/reminders', { query }),
+
+  /** POST /api/reminders/:id/cancel */
+  cancelReminder: (id: number) =>
+    client.post<CancelReminderResponse>(`/api/reminders/${id}/cancel`),
+
+  /** POST /api/reminders/:id/snooze */
+  snoozeReminder: (id: number, body: SnoozeReminderBody) =>
+    client.post<SnoozeReminderResponse>(`/api/reminders/${id}/snooze`, { body }),
 
   /** GET /api/schedules */
   listSchedules: (query: ListSchedulesQuery) =>

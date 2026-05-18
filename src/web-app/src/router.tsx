@@ -23,6 +23,7 @@ import SchedulesRoute from '@/routes/tasks/schedules'
 import OutboxRoute from '@/routes/tasks/outbox'
 import A2ARoute from '@/routes/tasks/a2a'
 import ApprovalsRoute from '@/routes/approvals'
+import RemindersRoute from '@/routes/reminders'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -56,6 +57,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <ApprovalsRoute />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/reminders',
+    element: (
+      <RequireAuth>
+        <RemindersRoute />
       </RequireAuth>
     ),
   },

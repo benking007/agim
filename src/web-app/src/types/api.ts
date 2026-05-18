@@ -294,19 +294,34 @@ export interface ListA2ARecentResponse {
 
 export type ReminderStatus = 'pending' | 'firing' | 'fired' | 'cancelled' | 'failed'
 
+/** Source of the reminder — how it was created. */
+export type ReminderSource = 'slash' | 'mcp' | 'api'
+
+/** 'llm'   — at fire time, treat `text` as a prompt and ask the active
+ *            agent to compose the actual delivery.
+ *  'literal' — deliver `text` as-is. */
+export type ReminderPromptMode = 'llm' | 'literal'
+
 export interface Reminder {
-  id: string
+  id: number
+  fire_at: string
+  text: string
   platform: string
   channel_id: string
   thread_id: string
   user_id: string
-  text: string
-  fire_at: string
   status: ReminderStatus
-  recurrence?: string
-  recurrence_label?: string
-  fired_at?: string
-  error?: string
+  created_at: string
+  fired_at: string | null
+  error: string | null
+  source: ReminderSource
+  parent_id: number | null
+  recurrence: string | null
+  last_fired_at: string | null
+  prompt_mode: ReminderPromptMode
+  /** Server-rendered "every Monday at 9am" style label.
+   *  Null when the reminder isn't recurring. */
+  recurrence_label?: string | null
 }
 
 export interface ListRemindersQuery extends PageQuery {
@@ -317,13 +332,20 @@ export interface ListRemindersResponse {
   reminders: Reminder[]
 }
 
+export interface CancelReminderResponse extends OkResponse {
+  id: number
+}
+
 export interface SnoozeReminderBody {
+  /** Duration string the backend parses ("5m", "30m", "1h",
+   *  "tomorrow", ...). The page surfaces a fixed set; the field is
+   *  free-form to honor the backend's parseDuration() contract. */
   duration: string
 }
 
 export interface SnoozeReminderResponse extends OkResponse {
-  originalId: string
-  newId: string
+  originalId: number
+  newId: number
   duration: string
 }
 

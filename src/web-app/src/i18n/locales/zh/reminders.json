@@ -1,0 +1,58 @@
+{
+  "pageTitle": "提醒",
+  "subtitle": "排队待触发的提醒。可对 pending 的提醒做取消 / 延后；已触发与已取消的记录保留以备审计。",
+  "filter": {
+    "status":    "状态",
+    "statusAny": "全部状态"
+  },
+  "status": {
+    "pending":   "等待中",
+    "firing":    "触发中",
+    "fired":     "已触发",
+    "cancelled": "已取消",
+    "failed":    "失败"
+  },
+  "source": {
+    "slash": "/remind",
+    "mcp":   "MCP",
+    "api":   "API"
+  },
+  "promptMode": {
+    "literal": "原文",
+    "llm":     "LLM"
+  },
+  "empty": {
+    "title": "暂无提醒",
+    "description": "当 Agent 通过 /remind、MCP 或 API 创建提醒时，记录会出现在这里。可切换状态查看已触发或已取消的记录。"
+  },
+  "col": {
+    "id":         "ID",
+    "fireAt":     "触发时间",
+    "text":       "内容",
+    "status":     "状态",
+    "platform":   "平台",
+    "thread":     "Thread",
+    "source":     "来源",
+    "recurrence": "周期",
+    "createdAt":  "创建时间"
+  },
+  "action": {
+    "cancel":             "取消",
+    "snooze":             "延后",
+    "confirmCancel":      "确认取消这条提醒？",
+    "confirmCancelDesc":  "该提醒会被移出队列。周期提醒在未重新创建前不会再触发。"
+  },
+  "snooze": {
+    "title":      "延后提醒",
+    "description":"延后多久？",
+    "preset5m":   "5 分钟",
+    "preset30m":  "30 分钟",
+    "preset1h":   "1 小时",
+    "preset1d":   "1 天",
+    "submit":     "确认延后",
+    "toastOk":    "已延后 {{duration}}"
+  },
+  "toast": {
+    "cancelled": "已取消"
+  }
+}

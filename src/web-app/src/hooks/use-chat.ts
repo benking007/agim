@@ -150,6 +150,12 @@ function mkId(prefix: string): string {
   return `${prefix}-${Date.now()}-${messageCounter}`
 }
 
+/** Pure exports for unit tests. The hook itself is the public
+ *  interface; these let test files exercise the reducer directly
+ *  without spinning up a WebSocket. */
+export { reducer as chatReducer, initialState as initialChatState }
+export type ChatAction = Action
+
 export interface UseChat {
   state: ChatState
   send: (text: string) => void

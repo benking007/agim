@@ -21,8 +21,17 @@ import { ApiClientError } from './client'
  */
 export function describeError(err: unknown, t: TFunction): { code: string; message: string } {
   if (err instanceof ApiClientError) {
+    // The fallback path also gets `detail` so `errors:UNKNOWN` can
+    // interpolate the raw backend message. Without this the
+    // "Something went wrong ({{detail}})." template fell through
+    // empty when the per-code key didn't exist in the dict.
+    const fallback = t('errors:UNKNOWN', {
+      code: err.code,
+      detail: err.message,
+      defaultValue: err.message,
+    })
     const message = t(`errors:${err.code}`, {
-      defaultValue: t('errors:UNKNOWN', { code: err.code, defaultValue: err.message }),
+      defaultValue: fallback,
       detail: err.message,
     })
     return { code: err.code, message }

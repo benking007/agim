@@ -64,5 +64,21 @@
   "notFound": {
     "title": "什么也没找到。",
     "description": "你要找的页面不存在。"
+  },
+  "chat": {
+    "send": "发送",
+    "streaming": "… 接收中",
+    "notConnected": "未连接，正在重连…",
+    "connecting": "正在连接 agim…",
+    "disconnected": "已断开，自动重连中；可以继续输入。",
+    "welcomeTitle": "开始对话",
+    "welcomeBody": "输入消息向当前 Agent 提问。点上方下拉可切换 Agent。",
+    "inputPlaceholder": "输入消息……（Enter 发送，Shift+Enter 换行）",
+    "approvalTitle": "🔐 工具授权",
+    "approvalAllow": "批准",
+    "approvalDeny": "拒绝",
+    "approvalAllowed": "✅ 已批准",
+    "approvalDenied": "❌ 已拒绝",
+    "approvalTimeout": "⏱ 已超时"
   }
 }

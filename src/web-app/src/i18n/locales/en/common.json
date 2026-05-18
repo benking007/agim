@@ -64,5 +64,21 @@
   "notFound": {
     "title": "Nothing here.",
     "description": "The page you're looking for doesn't exist."
+  },
+  "chat": {
+    "send": "Send",
+    "streaming": "… streaming",
+    "notConnected": "Not connected. Reconnecting…",
+    "connecting": "Connecting to agim…",
+    "disconnected": "Disconnected. Reconnecting automatically; you can keep typing.",
+    "welcomeTitle": "Start a conversation",
+    "welcomeBody": "Type a message to ask the active agent. Use the agent dropdown to switch.",
+    "inputPlaceholder": "Message… (Enter sends, Shift+Enter newlines)",
+    "approvalTitle": "🔐 Tool approval",
+    "approvalAllow": "Allow",
+    "approvalDeny": "Deny",
+    "approvalAllowed": "✅ Allowed",
+    "approvalDenied": "❌ Denied",
+    "approvalTimeout": "⏱ Timed out"
   }
 }

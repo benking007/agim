@@ -59,7 +59,12 @@ const STOPPED_STATUS = {
 
 describe('/settings/service', () => {
   it('renders status when running; Start disabled, Stop+Restart enabled', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(RUNNING_STATUS))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = String(input)
+      if (u === '/api/service/status') return jsonResponse(RUNNING_STATUS)
+      if (u === '/api/config')         return jsonResponse({})
+      return jsonResponse({})
+    })
     renderPage()
     await waitFor(() => {
       expect(screen.getByText('systemd')).toBeInTheDocument()
@@ -80,6 +85,7 @@ describe('/settings/service', () => {
         return jsonResponse({ ok: true })
       }
       if (u === '/api/service/status') return jsonResponse(RUNNING_STATUS)
+      if (u === '/api/config')         return jsonResponse({})
       return jsonResponse({})
     })
     renderPage()
@@ -108,6 +114,7 @@ describe('/settings/service', () => {
         return jsonResponse({ ok: true, mode: 'background', pid: 9999 })
       }
       if (u === '/api/service/status') return jsonResponse(STOPPED_STATUS)
+      if (u === '/api/config')         return jsonResponse({})
       return jsonResponse({})
     })
     renderPage()

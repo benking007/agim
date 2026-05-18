@@ -25,6 +25,7 @@ import type {
   ResolveApprovalBody,
   ResolveApprovalResponse,
   CancelReminderResponse,
+  DeleteMemoResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListJobsQuery,
@@ -230,6 +231,10 @@ export const api = {
   /** GET /api/memos */
   listMemos: (query: ListMemosQuery) =>
     client.get<ListMemosResponse>('/api/memos', { query }),
+
+  /** DELETE /api/memos/:id */
+  deleteMemo: (id: number) =>
+    client.delete<DeleteMemoResponse>(`/api/memos/${id}`),
 
   /** POST /api/messengers/wechat/qr-start */
   startWechatQr: (opts?: { body?: unknown }) =>

@@ -24,6 +24,7 @@ import OutboxRoute from '@/routes/tasks/outbox'
 import A2ARoute from '@/routes/tasks/a2a'
 import ApprovalsRoute from '@/routes/approvals'
 import RemindersRoute from '@/routes/reminders'
+import MemosRoute from '@/routes/memos'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -65,6 +66,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <RemindersRoute />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/memos',
+    element: (
+      <RequireAuth>
+        <MemosRoute />
       </RequireAuth>
     ),
   },

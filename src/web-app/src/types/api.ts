@@ -353,20 +353,31 @@ export interface SnoozeReminderResponse extends OkResponse {
  * Memos
  * ============================================================ */
 
+/** Field naming reflects the WIRE format produced by handleListMemos
+ *  in src/web/server.ts (snake_case in the DB, camelCase on the API
+ *  for timestamps + ids, but where_* stays snake_case to match the
+ *  location bundle the IM-side picker speaks). */
 export interface Memo {
-  id: string
+  id: number
   platform: string
   userId: string
   what: string
-  who?: string
-  when_text?: string
-  where_label?: string
-  why?: string
-  where_lat?: number
-  where_lng?: number
+  who: string | null
+  whenAt: string | null
+  whenText: string | null
+  where_lat: number | null
+  where_lng: number | null
+  where_label: string | null
+  how: string | null
+  why: string | null
+  memo: string | null
+  source: string | null
+  expiresAt: string | null
+  createdAt: string
+  updatedAt: string | null
+  /** Present only when both where_lat AND where_lng are non-null.
+   *  Provider → URL map (Baidu / Apple / Google / OSM). */
   mapUrls?: Record<string, string>
-  expires_at?: string
-  created_at: string
 }
 
 export interface ListMemosQuery extends PageQuery {
@@ -374,10 +385,15 @@ export interface ListMemosQuery extends PageQuery {
   who?: string
   what?: string
   has_location?: boolean
+  include_expired?: boolean
 }
 
 export interface ListMemosResponse {
   memos: Memo[]
+}
+
+export interface DeleteMemoResponse extends OkResponse {
+  id: number
 }
 
 /* ============================================================

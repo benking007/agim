@@ -35,9 +35,10 @@ describe('Topbar', () => {
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Reminders' })).toBeInTheDocument()
-    // /memos etc. are not yet mounted.
-    expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Memos' })).toBeInTheDocument()
+    // /memory etc. are not yet mounted.
     expect(screen.queryByRole('link', { name: 'Memory' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Workspace' })).not.toBeInTheDocument()
   })
 
   it('marks the active route with the accent style', () => {

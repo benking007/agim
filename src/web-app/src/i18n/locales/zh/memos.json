@@ -1,0 +1,40 @@
+{
+  "pageTitle": "备忘",
+  "subtitle": "操作员为 Agent 记下的长期备忘 — 可按内容、人物、地点检索。",
+  "search": {
+    "placeholder":   "搜索备忘…",
+    "who":           "谁",
+    "what":          "做什么",
+    "hasLocation":   "含位置",
+    "includeExpired":"包含过期"
+  },
+  "empty": {
+    "title": "未匹配到备忘",
+    "description": "备忘通过聊天中的 `/memo` 命令或记忆子系统自动抽取生成。可清空筛选或放宽搜索条件再试。"
+  },
+  "col": {
+    "id":         "ID",
+    "what":       "事项",
+    "who":        "对象",
+    "when":       "时间",
+    "where":      "地点",
+    "platform":   "平台",
+    "createdAt":  "创建时间",
+    "expiresAt":  "过期时间"
+  },
+  "action": {
+    "delete":            "删除",
+    "confirmDelete":     "确认删除此备忘？",
+    "confirmDeleteDesc": "操作不可撤销。记忆子系统中由此备忘衍生的 embedding 在下一次 backfill 清理前仍会保留。"
+  },
+  "openMap": {
+    "label":  "在地图中打开",
+    "baidu":  "百度地图",
+    "apple":  "Apple 地图",
+    "google": "Google 地图",
+    "osm":    "OpenStreetMap"
+  },
+  "toast": {
+    "deleted": "已删除"
+  }
+}

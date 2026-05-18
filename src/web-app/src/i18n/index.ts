@@ -38,19 +38,21 @@ import approvalsEn from './locales/en/approvals.json'
 import approvalsZh from './locales/zh/approvals.json'
 import remindersEn from './locales/en/reminders.json'
 import remindersZh from './locales/zh/reminders.json'
+import memosEn from './locales/en/memos.json'
+import memosZh from './locales/zh/memos.json'
 
 void i18n
   .use(HttpBackend)
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn },
-      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh },
+      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn },
+      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh },
     },
     lng: detectInitialLang(),
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders'],
+    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos'],
     defaultNS: 'common',
     interpolation: { escapeValue: false }, // React already escapes
     react: { useSuspense: false },         // we render skeletons ourselves

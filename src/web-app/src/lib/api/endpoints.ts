@@ -19,6 +19,8 @@ import type {
   CreateJobResponse,
   HealthSummary,
   ListApprovalsResponse,
+  ListBgjobsQuery,
+  ListBgjobsResponse,
   ListJobsQuery,
   ListJobsResponse,
   ListMemoryFactsQuery,
@@ -28,6 +30,8 @@ import type {
   ListRemindersQuery,
   ListRemindersResponse,
   ListSchedulesResponse,
+  ListSubtasksQuery,
+  ListSubtasksResponse,
   LoginBody,
   LoginResponse,
   OkResponse,
@@ -91,8 +95,8 @@ export const api = {
     client.post<OkResponse>('/api/auth/logout', opts),
 
   /** GET /api/bgjobs */
-  listBgJobs: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/bgjobs', opts),
+  listBgJobs: (query: ListBgjobsQuery) =>
+    client.get<ListBgjobsResponse>('/api/bgjobs', { query }),
 
   /** GET /api/config */
   getConfig: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -267,8 +271,8 @@ export const api = {
     client.get<unknown>('/api/skills/remote/hot', opts),
 
   /** GET /api/subtasks */
-  listSubtasks: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/subtasks', opts),
+  listSubtasks: (query: ListSubtasksQuery) =>
+    client.get<ListSubtasksResponse>('/api/subtasks', { query }),
 
   /** GET /api/viewer */
   listViewerPastes: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

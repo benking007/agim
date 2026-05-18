@@ -68,5 +68,56 @@
       "reconnecting": "● Reconnecting",
       "closed":       "● Offline"
     }
+  },
+  "subtasks": {
+    "title": "Subtasks",
+    "subtitle": "Per-conversation child tasks spawned by the parent agent.",
+    "empty": {
+      "title": "No subtasks yet",
+      "description": "Subtasks appear when an agent dispatches work to another agent inside a chat thread."
+    },
+    "filter": {
+      "agent":    "Parent agent",
+      "agentAny": "Any agent"
+    },
+    "col": {
+      "id":           "ID",
+      "agent":        "Agent",
+      "prompt":       "Prompt",
+      "status":       "Status",
+      "parent":       "Parent",
+      "platform":     "Platform",
+      "createdAt":    "Created"
+    },
+    "status": {
+      "pending":   "Pending",
+      "running":   "Running",
+      "completed": "Completed",
+      "failed":    "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "bgjobs": {
+    "title": "Background jobs",
+    "subtitle": "Long-running scripts the agent wrappers (Claude Code / opencode / codex) launched via bgjob.",
+    "empty": {
+      "title": "No background jobs",
+      "description": "Background jobs show up here once an agent has used its bgjob wrapper. Roots come from ~/.claude/bgjobs/, ~/.config/opencode/bgjobs/, ~/.codex/bgjobs/ (override via IMHUB_BGJOB_ROOTS)."
+    },
+    "filter": {
+      "root":    "Root",
+      "rootAny": "All roots"
+    },
+    "col": {
+      "name":      "Name",
+      "status":    "Status",
+      "root":      "Root",
+      "pid":       "PID",
+      "startedAt": "Started",
+      "endedAt":   "Ended",
+      "exit":      "Exit"
+    },
+    "exitOk":   "ok",
+    "stillRunning": "—"
   }
 }

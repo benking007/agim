@@ -102,6 +102,78 @@ export interface BatchJobBody {
 }
 
 /* ============================================================
+ * Subtasks — flattened view of session.subtasks across all
+ * conversations. Read-only.
+ * ============================================================ */
+
+export type SubtaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface Subtask {
+  id: number
+  agent: string
+  prompt: string
+  status: SubtaskStatus
+  result?: string
+  /** ISO timestamp (Date on the backend; JSON wire format is string). */
+  createdAt: string
+  completedAt?: string
+  /** Parent session context. Useful to navigate back to chat history. */
+  platform: string
+  channelId: string
+  threadId: string
+  parentAgent: string
+  parentSessionId: string
+}
+
+export interface ListSubtasksQuery {
+  agent?: string
+}
+
+export interface ListSubtasksResponse {
+  subtasks: Subtask[]
+}
+
+/* ============================================================
+ * Background jobs — read-only proxy onto Claude Code / opencode /
+ * codex bgjob directories. Defined by src/core/bgjob-reader.ts.
+ * ============================================================ */
+
+export interface BgjobRoot {
+  /** Stable id — 'claude' / 'opencode' / 'codex' / custom-basename. */
+  id: string
+  label: string
+  path: string
+}
+
+export interface BgjobSummary {
+  id: string
+  name: string
+  /** Free-form: running / completed / failed / killed / stale / … */
+  status: string
+  pid: number | null
+  started_at: string | null
+  ended_at: string | null
+  exit_code: number | null
+  restart_generation: number
+  rootId: string
+}
+
+export interface ListBgjobsQuery {
+  /** Filter to a single root id; omit for all roots. */
+  root?: string
+}
+
+/** Response shape varies based on whether `root` is set:
+ *  - With root  : { roots: [oneRoot], jobs: BgjobSummary[] }
+ *  - Without    : { roots: [...], groups: [{ rootId, jobs[] }] }
+ *  We accept both via optional fields. */
+export interface ListBgjobsResponse {
+  roots: BgjobRoot[]
+  jobs?: BgjobSummary[]
+  groups?: Array<{ rootId: string; jobs: BgjobSummary[] }>
+}
+
+/* ============================================================
  * Schedules
  * ============================================================ */
 

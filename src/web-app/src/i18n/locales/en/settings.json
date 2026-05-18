@@ -3,11 +3,30 @@
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
     "messengers": "Messengers",
+    "agents":     "Agents",
     "policy":     "Policy",
     "workspaces": "Workspaces",
     "admins":     "Admins",
     "env":        "Environment",
     "service":    "Service"
+  },
+  "agents": {
+    "title": "Agents",
+    "subtitle": "Built-in agent adapters. Enable the ones whose CLI is installed on this host; pick which one handles unrouted messages by default.",
+    "installHint": "Not installed. `npm install -g {{pkg}}` on the host.",
+    "aliasesLabel":   "Aliases",
+    "online":         "online",
+    "offline":        "offline",
+    "defaultAgent":   "Default agent",
+    "defaultAgentHint": "Used when the intent classifier has no preference (new web threads, etc.). Only enabled + online agents appear here.",
+    "noEligible":     "No eligible default",
+    "saveBtn":        "Save",
+    "saving":         "Saving…",
+    "dirtyHint":      "Unsaved changes",
+    "discard":        "Discard",
+    "toast": {
+      "saved":  "Saved"
+    }
   },
   "policy": {
     "title": "Policy & toggles",

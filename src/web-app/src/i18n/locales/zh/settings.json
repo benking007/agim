@@ -3,11 +3,30 @@
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
     "messengers": "IM 平台",
+    "agents":     "Agent",
     "policy":     "策略",
     "workspaces": "工作区",
     "admins":     "管理员",
     "env":        "环境变量",
     "service":    "服务"
+  },
+  "agents": {
+    "title": "Agent",
+    "subtitle": "内置 Agent 适配器。启用宿主机已安装 CLI 的；并选择一个作为默认 Agent（用于路由无法判定的消息）。",
+    "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
+    "aliasesLabel":   "别名",
+    "online":         "在线",
+    "offline":        "未就绪",
+    "defaultAgent":   "默认 Agent",
+    "defaultAgentHint": "意图分类无判定时使用（新建 web 线程等）。下拉只列出已启用且在线的 Agent。",
+    "noEligible":     "无可选默认",
+    "saveBtn":        "保存",
+    "saving":         "保存中…",
+    "dirtyHint":      "有未保存改动",
+    "discard":        "放弃改动",
+    "toast": {
+      "saved":  "已保存"
+    }
   },
   "policy": {
     "title": "策略与开关",

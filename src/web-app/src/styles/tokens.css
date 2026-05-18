@@ -1,0 +1,129 @@
+/*
+ * Design tokens — HSL channel values referenced by tailwind.config.ts
+ * via `hsl(var(--ag-foo))`. Two layers:
+ *
+ *   :root              — light mode (matches OS when data-theme absent
+ *                        AND prefers-color-scheme: light).
+ *   [data-theme="dark"]— explicit dark mode set by user.
+ *   prefers-color-scheme block — system dark when no explicit choice.
+ *
+ * Token names mirror the prior _shell.css `--ag-*` scheme so the
+ * follow-up shadcn/ui drop-in references the same theme by Tailwind
+ * utility class (bg-surface, text-text-dim, etc.).
+ *
+ * Values are stored as space-separated HSL channels (no `hsl()` wrap)
+ * so Tailwind can compose them with opacity modifiers
+ * (e.g. `bg-accent/20`).
+ */
+
+:root {
+  /* Surfaces */
+  --ag-bg:           220 14% 96%;
+  --ag-surface:      0 0% 100%;
+  --ag-surface-2:    220 14% 94%;
+  --ag-surface-hover:220 14% 92%;
+
+  /* Borders */
+  --ag-border:        220 13% 90%;
+  --ag-border-strong: 220 10% 80%;
+
+  /* Text */
+  --ag-text:       220 13% 13%;
+  --ag-text-dim:   220 6% 38%;
+  --ag-text-muted: 220 6% 58%;
+
+  /* Brand / semantic */
+  --ag-accent:        246 80% 60%;
+  --ag-accent-fg:     0 0% 100%;
+  --ag-accent-hover:  246 80% 52%;
+  --ag-accent-bg:     246 100% 96%;
+
+  --ag-success:   158 75% 39%;
+  --ag-success-bg:158 75% 95%;
+
+  --ag-warning:    38 95% 50%;
+  --ag-warning-bg: 38 95% 95%;
+
+  --ag-danger:    0 78% 56%;
+  --ag-danger-bg: 0 78% 96%;
+
+  --ag-info:    217 91% 60%;
+  --ag-info-bg: 217 91% 96%;
+
+  /* Shadows — kept as full var strings so we can stay on real px values */
+  --ag-shadow-sm: 0 1px 2px hsl(220 13% 13% / 0.05);
+  --ag-shadow-md: 0 2px 8px hsl(220 13% 13% / 0.08);
+  --ag-shadow-lg: 0 8px 24px hsl(220 13% 13% / 0.12);
+}
+
+:root[data-theme="dark"] {
+  --ag-bg:           220 10% 7%;
+  --ag-surface:      220 12% 11%;
+  --ag-surface-2:    220 12% 14%;
+  --ag-surface-hover:220 12% 16%;
+
+  --ag-border:        220 10% 20%;
+  --ag-border-strong: 220 10% 28%;
+
+  --ag-text:       220 14% 91%;
+  --ag-text-dim:   220 8% 68%;
+  --ag-text-muted: 220 8% 50%;
+
+  --ag-accent:        246 90% 72%;
+  --ag-accent-fg:     220 30% 5%;
+  --ag-accent-hover:  246 90% 80%;
+  --ag-accent-bg:     246 30% 22%;
+
+  --ag-success:   158 70% 50%;
+  --ag-success-bg:158 60% 20%;
+
+  --ag-warning:    38 90% 60%;
+  --ag-warning-bg: 38 60% 20%;
+
+  --ag-danger:    0 85% 67%;
+  --ag-danger-bg: 0 60% 22%;
+
+  --ag-info:    217 90% 70%;
+  --ag-info-bg: 217 60% 25%;
+
+  --ag-shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --ag-shadow-md: 0 2px 8px hsl(0 0% 0% / 0.5);
+  --ag-shadow-lg: 0 8px 24px hsl(0 0% 0% / 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --ag-bg:           220 10% 7%;
+    --ag-surface:      220 12% 11%;
+    --ag-surface-2:    220 12% 14%;
+    --ag-surface-hover:220 12% 16%;
+
+    --ag-border:        220 10% 20%;
+    --ag-border-strong: 220 10% 28%;
+
+    --ag-text:       220 14% 91%;
+    --ag-text-dim:   220 8% 68%;
+    --ag-text-muted: 220 8% 50%;
+
+    --ag-accent:        246 90% 72%;
+    --ag-accent-fg:     220 30% 5%;
+    --ag-accent-hover:  246 90% 80%;
+    --ag-accent-bg:     246 30% 22%;
+
+    --ag-success:   158 70% 50%;
+    --ag-success-bg:158 60% 20%;
+
+    --ag-warning:    38 90% 60%;
+    --ag-warning-bg: 38 60% 20%;
+
+    --ag-danger:    0 85% 67%;
+    --ag-danger-bg: 0 60% 22%;
+
+    --ag-info:    217 90% 70%;
+    --ag-info-bg: 217 60% 25%;
+
+    --ag-shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+    --ag-shadow-md: 0 2px 8px hsl(0 0% 0% / 0.5);
+    --ag-shadow-lg: 0 8px 24px hsl(0 0% 0% / 0.6);
+  }
+}

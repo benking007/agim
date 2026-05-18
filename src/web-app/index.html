@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover so iOS safe-area-inset-* actually has values to
+       expose; initial-scale=1 + maximum-scale=1 keeps mobile chrome from
+       auto-zooming on focused inputs (we control text size ourselves). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0e0f12" media="(prefers-color-scheme: dark)" />
+  <meta name="description" content="agim — multi-agent gateway console" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>Agim</title>
+  <!--
+    Synchronous theme bootstrap. Reads localStorage 'agim-theme' BEFORE
+    the React bundle parses + renders, so the first paint already has
+    the right `data-theme` attribute on <html>. Without this, the page
+    flashes light-themed for ~80ms on dark-mode setups (the JS render
+    happens after first paint).
+
+    Mirrors the same key + state machine that agim-cli's old _app.js
+    used — keeps user preference continuous across the v1 → v2
+    upgrade.
+  -->
+  <script>
+    (function () {
+      try {
+        var m = localStorage.getItem('agim-theme')
+        if (m === 'light' || m === 'dark') {
+          document.documentElement.setAttribute('data-theme', m)
+        }
+      } catch (e) { /* private-mode storage exceptions: noop */ }
+    })()
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

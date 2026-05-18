@@ -1,0 +1,454 @@
+{
+  "generatedFrom": "src/web/server.ts",
+  "count": 64,
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/a2a/recent",
+      "isPrefix": false,
+      "name": "getA2ARecent",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/a2a/stats",
+      "isPrefix": false,
+      "name": "getA2AStats",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin-allowlist",
+      "isPrefix": false,
+      "name": "removeAdminAllowlist",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin-allowlist",
+      "isPrefix": false,
+      "name": "listAdminAllowlist",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin-allowlist",
+      "isPrefix": false,
+      "name": "addAdminAllowlist",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-health",
+      "isPrefix": false,
+      "name": "getAgentHealth",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/agents/acp/discover",
+      "isPrefix": false,
+      "name": "discoverAcpAgents",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/agents/acp/test",
+      "isPrefix": false,
+      "name": "testAcpAgent",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/status",
+      "isPrefix": false,
+      "name": "getAgentsStatus",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/approvals",
+      "isPrefix": false,
+      "name": "listApprovals",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/audit",
+      "isPrefix": false,
+      "name": "getAudit",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "isPrefix": false,
+      "name": "login",
+      "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "isPrefix": false,
+      "name": "logout",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/bgjobs",
+      "isPrefix": false,
+      "name": "listBgJobs",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/config",
+      "isPrefix": false,
+      "name": "getConfig",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/config",
+      "isPrefix": false,
+      "name": "updateConfig",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/env",
+      "isPrefix": false,
+      "name": "getEnv",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/env",
+      "isPrefix": false,
+      "name": "updateEnv",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "isPrefix": false,
+      "name": "getHealth",
+      "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/health/summary",
+      "isPrefix": false,
+      "name": "getHealthSummary",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/health/topn",
+      "isPrefix": false,
+      "name": "getHealthTopN",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/invoke",
+      "isPrefix": false,
+      "name": "invoke",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/jobs",
+      "isPrefix": false,
+      "name": "listJobs",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs",
+      "isPrefix": false,
+      "name": "createJob",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs/batch-cancel",
+      "isPrefix": false,
+      "name": "batchCancelJobs",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs/batch-run",
+      "isPrefix": false,
+      "name": "batchRunJobs",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/loc",
+      "isPrefix": false,
+      "name": "submitLoc",
+      "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/loc/info",
+      "isPrefix": false,
+      "name": "getLocInfo",
+      "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/consolidate",
+      "isPrefix": false,
+      "name": "consolidateMemory",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/consolidate/status",
+      "isPrefix": false,
+      "name": "getMemoryConsolidateStatus",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/export",
+      "isPrefix": false,
+      "name": "exportMemory",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memory/facts",
+      "isPrefix": false,
+      "name": "deleteMemoryFacts",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/facts",
+      "isPrefix": false,
+      "name": "listMemoryFacts",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memory/persona",
+      "isPrefix": false,
+      "name": "deleteMemoryPersona",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/persona",
+      "isPrefix": false,
+      "name": "getMemoryPersona",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/memory/persona",
+      "isPrefix": false,
+      "name": "updateMemoryPersona",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/users",
+      "isPrefix": false,
+      "name": "listMemoryUsers",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/vector/backfill",
+      "isPrefix": false,
+      "name": "backfillMemoryVector",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/vector/clear",
+      "isPrefix": false,
+      "name": "clearMemoryVector",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/vector/download",
+      "isPrefix": false,
+      "name": "downloadMemoryVector",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/vector/status",
+      "isPrefix": false,
+      "name": "getMemoryVectorStatus",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/vector/test",
+      "isPrefix": false,
+      "name": "testMemoryVector",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memos",
+      "isPrefix": false,
+      "name": "listMemos",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/messengers/wechat/qr-start",
+      "isPrefix": false,
+      "name": "startWechatQr",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/messengers/wechat/qr-status",
+      "isPrefix": false,
+      "name": "getWechatQrStatus",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics",
+      "isPrefix": false,
+      "name": "getMetrics",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/notify",
+      "isPrefix": false,
+      "name": "notify",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/outbox",
+      "isPrefix": false,
+      "name": "listOutbox",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/outbox/stats",
+      "isPrefix": false,
+      "name": "getOutboxStats",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/reminders",
+      "isPrefix": false,
+      "name": "listReminders",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/schedules",
+      "isPrefix": false,
+      "name": "listSchedules",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/service/restart",
+      "isPrefix": false,
+      "name": "restartService",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/service/start",
+      "isPrefix": false,
+      "name": "startService",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/service/status",
+      "isPrefix": false,
+      "name": "getServiceStatus",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/service/stop",
+      "isPrefix": false,
+      "name": "stopService",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills",
+      "isPrefix": false,
+      "name": "listSkills",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills/remote/hot",
+      "isPrefix": false,
+      "name": "getSkillsRemoteHot",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/subtasks",
+      "isPrefix": false,
+      "name": "listSubtasks",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/viewer",
+      "isPrefix": false,
+      "name": "listViewerPastes",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/viewer/tunnel",
+      "isPrefix": false,
+      "name": "getViewerTunnel",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspace-files",
+      "isPrefix": false,
+      "name": "getWorkspaceFiles",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/workspace-files",
+      "isPrefix": false,
+      "name": "writeWorkspaceFile",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspaces",
+      "isPrefix": false,
+      "name": "listWorkspaces",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces",
+      "isPrefix": false,
+      "name": "createWorkspace",
+      "authRequired": true
+    }
+  ]
+}

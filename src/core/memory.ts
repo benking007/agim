@@ -352,7 +352,7 @@ export async function queryFactsHybrid(opts: QueryOpts): Promise<QueryResult> {
   const k = Math.min(Math.max(opts.k ?? 5, 1), 50)
   const q = (opts.query || '').trim()
   if (!q) return queryFacts(opts)
-  let backend
+  let backend: import('./memory-vector.js').EmbeddingBackend
   try {
     backend = (await import('./memory-vector.js')).getActiveBackend()
   } catch {
@@ -435,7 +435,7 @@ export async function backfillEmbeddings(opts: {
 }): Promise<{ processed: number; succeeded: number; failed: number; errored?: string }> {
   const db = helper.get()
   if (!db) return { processed: 0, succeeded: 0, failed: 0, errored: 'db unavailable' }
-  let backend
+  let backend: import('./memory-vector.js').EmbeddingBackend
   try {
     backend = (await import('./memory-vector.js')).getActiveBackend()
   } catch (err) {

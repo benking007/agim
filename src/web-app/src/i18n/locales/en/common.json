@@ -1,0 +1,84 @@
+{
+  "appName": "Agim",
+  "actions": {
+    "refresh": "Refresh",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "submit": "Submit",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "create": "Create",
+    "search": "Search",
+    "retry": "Retry",
+    "confirm": "Confirm"
+  },
+  "states": {
+    "loading": "Loading…",
+    "empty": "No data",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Something went wrong"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "cycleHint": "Click to cycle theme"
+  },
+  "lang": {
+    "label": "Language",
+    "en": "English",
+    "zh": "中文"
+  },
+  "nav": {
+    "chat": "Chat",
+    "tasks": "Tasks",
+    "approvals": "Approvals",
+    "reminders": "Reminders",
+    "memos": "Memos",
+    "memory": "Memory",
+    "workspace": "Workspace",
+    "observability": "Observability",
+    "settings": "Settings"
+  },
+  "confirm": {
+    "deleteTitle": "Delete this item?",
+    "deleteDescription": "This cannot be undone.",
+    "destructiveAction": "Delete"
+  },
+  "login": {
+    "intro": "Paste your access token from ~/.agim/tokens.json or `agim token list`.",
+    "tokenLabel": "Access token",
+    "submit": "Sign in",
+    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with IMHUB_TRUST_LOOPBACK=off."
+  },
+  "home": {
+    "placeholder": "Signed in. The chat surface ships in PR-6; this route is intentionally blank for now.",
+    "healthCheck": "Backend reachable"
+  },
+  "notFound": {
+    "title": "Nothing here.",
+    "description": "The page you're looking for doesn't exist."
+  },
+  "chat": {
+    "send": "Send",
+    "streaming": "… streaming",
+    "notConnected": "Not connected. Reconnecting…",
+    "connecting": "Connecting to agim…",
+    "disconnected": "Disconnected. Reconnecting automatically; you can keep typing.",
+    "welcomeTitle": "Start a conversation",
+    "welcomeBody": "Type a message to ask the active agent. Use the agent dropdown to switch.",
+    "inputPlaceholder": "Message… (Enter sends, Shift+Enter newlines)",
+    "approvalTitle": "🔐 Tool approval",
+    "approvalAllow": "Allow",
+    "approvalDeny": "Deny",
+    "approvalAllowed": "✅ Allowed",
+    "approvalDenied": "❌ Denied",
+    "approvalTimeout": "⏱ Timed out"
+  }
+}

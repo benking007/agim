@@ -1,0 +1,20 @@
+{
+  "NETWORK": "Couldn't reach the server. Check your connection and retry.",
+  "AUTH_INVALID": "Your session expired. Please sign in again.",
+  "AUTH_REQUIRED": "Sign-in required.",
+  "FORBIDDEN": "You don't have permission to do that.",
+  "NOT_FOUND": "The requested resource wasn't found.",
+  "PAYLOAD_TOO_LARGE": "That request is too big — try splitting it.",
+  "VALIDATION": "The server rejected the request: {{detail}}",
+  "UNKNOWN": "Something went wrong (code {{code}}).",
+  "HTTP_400": "Bad request.",
+  "HTTP_401": "Sign-in required.",
+  "HTTP_403": "Forbidden.",
+  "HTTP_404": "Not found.",
+  "HTTP_409": "Conflict — refresh and try again.",
+  "HTTP_413": "Request too large.",
+  "HTTP_500": "Server error.",
+  "HTTP_502": "Gateway error.",
+  "HTTP_503": "Service unavailable.",
+  "HTTP_504": "Gateway timeout."
+}

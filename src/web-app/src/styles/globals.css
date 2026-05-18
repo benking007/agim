@@ -1,0 +1,95 @@
+/*
+ * agim web v2 — global stylesheet.
+ *
+ * Layer order:
+ *   tokens (HSL custom properties + dark mode)
+ *     ↓
+ *   tailwind base (preflight reset)
+ *     ↓
+ *   tailwind components (extracted reusable classes)
+ *     ↓
+ *   tailwind utilities (atomic classes the JSX uses)
+ *     ↓
+ *   custom utilities (safe-area, tap-highlight, etc.)
+ */
+
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-bg text-text antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+      "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+    /* Mobile: disable double-tap-zoom on text and tone down the tap
+       highlight color. We still keep focus-visible outlines for keyboard
+       users via Tailwind's preflight + shadcn defaults. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: hsl(var(--ag-accent) / 0.15);
+  }
+
+  /* Touch-friendly hit targets across the board. Tailwind class-only
+     `min-h-11 min-w-11` works too; setting it on common interactive
+     elements catches anything the component author forgets. */
+  button, [role="button"], a, input[type="button"], input[type="submit"] {
+    -webkit-tap-highlight-color: hsl(var(--ag-accent) / 0.15);
+  }
+
+  /* Scrollbar styling: subtle on desktop, hidden on mobile. */
+  @media (pointer: fine) {
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: hsl(var(--ag-border-strong));
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background: hsl(var(--ag-text-muted));
+      background-clip: content-box;
+    }
+  }
+}
+
+@layer utilities {
+  /* iOS / Android safe-area insets. Pages that pin chrome to the edges
+     (topbar, chat input bar) compose these. Tailwind doesn't ship safe
+     utilities out of the box; defining them here keeps the project
+     plugin-free. */
+  .pt-safe { padding-top: max(0px, env(safe-area-inset-top)); }
+  .pb-safe { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+  .pl-safe { padding-left: max(0px, env(safe-area-inset-left)); }
+  .pr-safe { padding-right: max(0px, env(safe-area-inset-right)); }
+  .px-safe {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+  .py-safe {
+    padding-top: max(0px, env(safe-area-inset-top));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+  .mb-safe { margin-bottom: max(0px, env(safe-area-inset-bottom)); }
+
+  /* Dynamic viewport height — honors the actual visible viewport on
+     mobile (excluding URL bar + soft keyboard) where supported, with a
+     desktop fallback. Used by full-bleed routes like /chat and /loc. */
+  .h-dvh   { height: 100vh; height: 100dvh; }
+  .min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+
+  /* Ensure touch targets meet 44×44 hit-target guidance. Apply via
+     `tap-target` to icon buttons whose visual padding would otherwise
+     make them too small for thumbs. */
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

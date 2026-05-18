@@ -211,7 +211,51 @@ export async function startWebServer(options: {
     // Loopback peers + the public paths below bypass.
     if (!checkAuth(req, res, url)) return
 
-    // Static pages — direct serve, no auth gate.
+    // v2 SPA fallback — opt-in via IMHUB_WEB_V2=1. When enabled, any
+    // GET that doesn't match an API / WS / SSE / static-asset path
+    // and isn't a public SSR page falls through to serving the v2
+    // index.html. The client-side router (react-router) then resolves
+    // the path. Anything served from src/web-app/dist/* is built in
+    // the M5 PR; until then, set IMHUB_WEB_V2=1 only if you've run
+    // `npm --prefix src/web-app run build` and copied dist/* into
+    // src/web/public/`.
+    //
+    // Default IMHUB_WEB_V2=0 → existing behavior unchanged: tasks.html
+    // / reminders.html / memos.html / settings.html / index.html are
+    // served as before. Zero impact on production deployments.
+    if (process.env.IMHUB_WEB_V2 === '1' && req.method === 'GET') {
+      const p = url.pathname
+      const isApi = p.startsWith('/api/')
+      const isWs = p.startsWith('/ws')
+      const isSse = p === '/events'
+      const isVendor = p.startsWith('/vendor/')
+      const isLegacyShared = p === '/_app.js' || p === '/_shell.css'
+      const isPublicSsr = p === '/loc' || p === '/loc.html' || p.startsWith('/l/') || p.startsWith('/v/')
+      if (!isApi && !isWs && !isSse && !isVendor && !isLegacyShared && !isPublicSsr) {
+        // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
+        // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
+        // Otherwise fall back to /index.html so the router handles it.
+        const trimmed = p.replace(/^\//, '')
+        const candidate = join(PUBLIC_DIR, trimmed)
+        if (trimmed && existsSync(candidate) && !candidate.endsWith('.html')) {
+          // Best-effort content-type guess; serveStatic handles binary
+          // + sets cache headers.
+          const ct =
+            candidate.endsWith('.js')    ? 'application/javascript; charset=utf-8' :
+            candidate.endsWith('.css')   ? 'text/css; charset=utf-8' :
+            candidate.endsWith('.svg')   ? 'image/svg+xml' :
+            candidate.endsWith('.webmanifest') ? 'application/manifest+json' :
+            candidate.endsWith('.json')  ? 'application/json; charset=utf-8' :
+            'application/octet-stream'
+          return serveStatic(res, candidate, ct)
+        }
+        return servePageHtml(res, join(PUBLIC_DIR, 'index.html'))
+      }
+      // Falls through to API / WS / SSR-page handlers below.
+    }
+
+    // Static pages — direct serve, no auth gate. This is the v1
+    // routing path; v2 takes precedence when IMHUB_WEB_V2=1 (above).
     if (
       url.pathname === '/' || url.pathname === '/index.html' ||
       url.pathname === '/settings' || url.pathname === '/settings.html' ||

@@ -3,6 +3,7 @@
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
     "messengers": "IM 平台",
+    "email":      "邮件 (SMTP)",
     "agents":     "Agent",
     "policy":     "策略",
     "workspaces": "工作区",
@@ -146,6 +147,41 @@
       "expired":    "二维码已过期 — 关闭并重新发起。",
       "cancelled":  "已取消。",
       "confirmed":  "登录成功 — wechat-ilink 将在下次服务重启后启用。"
+    }
+  },
+  "email": {
+    "title":      "邮件 (SMTP)",
+    "subtitle":   "用于 `/remind email me@x.com …` 的对外邮件投递。凭据保存在 `~/.agim/.env`，留空即停用。",
+    "cardTitle":  "SMTP 凭据",
+    "statusOn":   "已配置",
+    "statusOff":  "未配置",
+    "host":       "Host",
+    "hostHint":   "邮件服务器域名（如 `smtp.gmail.com`）。",
+    "port":       "Port",
+    "portHint":   "通常 465 (SSL) 或 587 (STARTTLS)。",
+    "user":       "用户名",
+    "userHint":   "登录邮箱；通常也是发件人地址。",
+    "pass":       "密码 / 应用 Token",
+    "passHint":   "保存到 `~/.agim/.env`（chmod 600）。默认遮罩，按「显示」可查看。",
+    "from":       "发件人",
+    "fromHint":   "发件 header；为空则使用用户名。",
+    "secure":     "TLS 模式",
+    "secureHint": "`auto` 按端口判定；如运营商要求可强制 SSL 或 STARTTLS。",
+    "secureAuto":  "auto（按端口）",
+    "secureTrue":  "true（SSL，对应 465）",
+    "secureFalse": "false（STARTTLS，对应 587）",
+    "reveal":     "显示",
+    "hide":       "隐藏",
+    "testBtn":    "测试连接",
+    "testNeedsConfigured": "请先保存 host / user / password。",
+    "disableBtn": "停用 SMTP",
+    "saveBtn":    "保存",
+    "saving":     "保存中…",
+    "discard":    "放弃改动",
+    "toast": {
+      "saved":      "SMTP 已保存",
+      "disabled":   "SMTP 已停用",
+      "noChanges":  "无可保存的改动"
     }
   },
   "workspaces": {

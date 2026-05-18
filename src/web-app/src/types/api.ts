@@ -795,6 +795,16 @@ export interface ACPTestResponse {
 }
 
 /* ============================================================
+ * SMTP email — verify-only "Test connection" endpoint
+ * ============================================================ */
+
+export interface EmailTestResponse {
+  ok: true
+  /** Human-readable success line, e.g. `Connected to smtp.gmail.com:465`. */
+  message: string
+}
+
+/* ============================================================
  * Health / Observability
  * ============================================================ */
 

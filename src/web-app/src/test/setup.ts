@@ -12,6 +12,17 @@
  */
 
 import '@testing-library/jest-dom/vitest'
+import { afterEach } from 'vitest'
+import { cleanup } from '@testing-library/react'
+
+// vitest is configured with `globals: false`, so RTL's auto-cleanup
+// (which keys off a global `afterEach`) doesn't activate by default.
+// Register it explicitly so JSX renders don't leak DOM between tests
+// — without this, repeated render() calls in the same file shadow
+// getByTestId / getByRole queries with "found multiple elements".
+afterEach(() => {
+  cleanup()
+})
 
 // Make sure private-mode style storage exceptions don't bubble into
 // tests as uncaught errors. Tests that want to assert the catch

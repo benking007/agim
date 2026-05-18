@@ -51,6 +51,18 @@
     "deleteDescription": "This cannot be undone.",
     "destructiveAction": "Delete"
   },
+  "pagination": {
+    "label": "Pagination",
+    "perPage": "Per page",
+    "firstPage": "First page",
+    "lastPage": "Last page",
+    "pageOfTotal": "Page {{page}} of {{totalPages}}",
+    "range": "{{from}}–{{to}} of {{total}}"
+  },
+  "table": {
+    "selectAll": "Select all rows",
+    "selectRow": "Select row"
+  },
   "login": {
     "intro": "Paste your access token from ~/.agim/tokens.json or `agim token list`.",
     "tokenLabel": "Access token",

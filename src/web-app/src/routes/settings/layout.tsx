@@ -17,6 +17,7 @@ interface SubTab {
 }
 
 const SUB_TABS: SubTab[] = [
+  { to: 'messengers', i18nKey: 'tabs.messengers', mounted: true },
   { to: 'env',        i18nKey: 'tabs.env',        mounted: true },
   { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
   { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },

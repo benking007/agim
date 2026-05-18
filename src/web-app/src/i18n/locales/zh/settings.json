@@ -5,7 +5,51 @@
     "env":        "环境变量",
     "service":    "服务",
     "admins":     "管理员",
-    "workspaces": "工作区"
+    "workspaces": "工作区",
+    "messengers": "IM 平台"
+  },
+  "messengers": {
+    "title": "IM 平台",
+    "subtitle": "各 IM 平台的连接配置。打开开关、填写凭据、保存；下次服务重启即生效。",
+    "saveAll":     "全部保存",
+    "saving":      "保存中…",
+    "savedToast":  "配置已保存",
+    "discardAll":  "放弃改动",
+    "dirtyHint":   "有未保存的改动",
+    "platform": {
+      "wechat":   "微信",
+      "telegram": "Telegram",
+      "feishu":   "飞书",
+      "dingtalk": "钉钉",
+      "discord":  "Discord"
+    },
+    "hint": {
+      "wechat":   "基于 iLink 的扫码登录。点击 \"扫码登录\"，用手机微信扫码并在弹窗中确认；机器人以该微信账号登录。",
+      "telegram": "@BotFather 申请的 Bot Token；Channel ID 可选，仅用于定向到特定群组。",
+      "feishu":   "飞书开放平台的应用凭据。应用需开启消息权限。",
+      "dingtalk": "钉钉开发者后台的 Stream API 客户端凭据。",
+      "discord":  "Discord 开发者门户的 Bot Token。需将机器人邀请到目标频道。"
+    },
+    "enabled":   "已启用",
+    "disabled":  "未启用",
+    "scanQr":    "扫码登录",
+    "fields": {
+      "botToken":     "Bot Token",
+      "appId":        "App ID",
+      "appSecret":    "App Secret",
+      "clientId":     "Client ID",
+      "clientSecret": "Client Secret",
+      "channelId":    "Channel ID"
+    },
+    "qr": {
+      "title":      "扫码登录微信",
+      "description":"打开手机微信扫一扫这个二维码，然后在微信内确认登录。",
+      "starting":   "正在启动 QR 会话…",
+      "loadFailed": "QR 启动失败",
+      "expired":    "二维码已过期 — 关闭并重新发起。",
+      "cancelled":  "已取消。",
+      "confirmed":  "登录成功 — wechat-ilink 将在下次服务重启后启用。"
+    }
   },
   "workspaces": {
     "title": "工作区",

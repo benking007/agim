@@ -22,6 +22,8 @@ import type {
   BatchJobBody,
   EnvResponse,
   RemoveAdminBody,
+  WechatQrStartResponse,
+  WechatQrStatusResponse,
   WorkspaceConfig,
   ServiceActionResponse,
   ServiceStatus,
@@ -160,6 +162,17 @@ export const api = {
   upsertWorkspace: (body: WorkspaceConfig) =>
     client.post<{ ok: boolean; workspace: WorkspaceConfig }>('/api/workspaces', { body }),
 
+  /** POST /api/messengers/wechat/qr-start — start the WeChat
+   *  login QR session. Returns a PNG data: URL of the QR + a
+   *  token to poll status with. */
+  startWechatQr: () =>
+    client.post<WechatQrStartResponse>('/api/messengers/wechat/qr-start'),
+
+  /** GET /api/messengers/wechat/qr-status?token=… — poll for
+   *  status. Server persists wechat-ilink to config on `confirmed`. */
+  getWechatQrStatus: (query: { token: string }) =>
+    client.get<WechatQrStatusResponse>('/api/messengers/wechat/qr-status', { query }),
+
   /** GET /api/env */
   getEnv: (query: { reveal?: boolean }) =>
     client.get<EnvResponse>('/api/env', { query }),
@@ -277,13 +290,7 @@ export const api = {
   deleteMemo: (id: number) =>
     client.delete<DeleteMemoResponse>(`/api/memos/${id}`),
 
-  /** POST /api/messengers/wechat/qr-start */
-  startWechatQr: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/messengers/wechat/qr-start', opts),
-
-  /** GET /api/messengers/wechat/qr-status */
-  getWechatQrStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/messengers/wechat/qr-status', opts),
+  // (WeChat QR start + status are defined earlier with typed responses.)
 
   /** GET /api/metrics */
   getMetrics: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

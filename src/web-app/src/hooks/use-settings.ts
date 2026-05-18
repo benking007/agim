@@ -24,6 +24,8 @@ import type {
   ServiceActionResponse,
   ServiceStatus,
   UpdateEnvBody,
+  WechatQrStartResponse,
+  WechatQrStatusResponse,
   WorkspaceConfig,
 } from '@/types/api'
 
@@ -146,5 +148,27 @@ export function useUpsertWorkspace() {
   >({
     mutationFn: (body) => api.upsertWorkspace(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.workspaces }),
+  })
+}
+
+/* ─────────────── WeChat QR ─────────────── */
+
+export function useStartWechatQr() {
+  return useMutation<WechatQrStartResponse, Error, void>({
+    mutationFn: () => api.startWechatQr(),
+  })
+}
+
+/** Poll the QR status every 2s while the modal is open. Caller
+ *  passes `token` once it has it from the start mutation; passing
+ *  null disables the polling. On status='confirmed' the backend
+ *  persists wechat-ilink → re-fetch config to update the toggle. */
+export function useWechatQrStatus(token: string | null) {
+  return useQuery<WechatQrStatusResponse>({
+    queryKey: ['settings', 'wechat-qr', token ?? ''],
+    queryFn: () => api.getWechatQrStatus({ token: token as string }),
+    enabled: Boolean(token),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   })
 }

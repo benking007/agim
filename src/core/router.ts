@@ -366,7 +366,7 @@ export async function routeMessage(
       let ruleScore = 0
 
       try {
-        const classification = classifyIntent(parsed.prompt, stickyAgent, ctx.logger)
+        const classification = classifyIntent(parsed.prompt, stickyAgent, ctx.logger, ctx.defaultAgent)
         agentName = classification.agent
         intent = classification.triggeredBy
         ruleScore = classification.score

@@ -52,7 +52,7 @@ export async function handleRouterCommand(
       const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
       const sticky = session?.agent
 
-      const result = classifyIntent(rest, sticky, ctx.logger)
+      const result = classifyIntent(rest, sticky, ctx.logger, ctx.defaultAgent)
       return `🔍 **路由预测**
 
 消息: "${rest.substring(0, 80)}${rest.length > 80 ? '...' : ''}"

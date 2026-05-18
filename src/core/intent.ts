@@ -87,16 +87,26 @@ export interface IntentResult {
   agent: string
   score: number
   reason: string
-  triggeredBy: 'explicit' | 'sticky' | 'keyword' | 'topic' | 'fallback'
+  triggeredBy: 'explicit' | 'sticky' | 'keyword' | 'topic' | 'default' | 'fallback'
 }
 
 /**
  * Classify a user message and return the best agent to handle it.
+ *
+ * `defaultAgent` is the operator-configured fallback (config.defaultAgent).
+ * Without it, a generic message like "hello" on a fresh thread used to fall
+ * through to the first agent in PROFILES declaration order (opencode),
+ * regardless of what the operator picked as default — the web chat surface
+ * hit this every time a new conversation was started. We give defaultAgent
+ * a small score bias (smaller than topic +2 / keyword +1*weight, larger
+ * than base weight) so explicit topic/keyword signal still wins, but
+ * ambiguous messages route to the operator's chosen default.
  */
 export function classifyIntent(
   text: string,
   stickyAgent?: string,
-  logger?: Logger
+  logger?: Logger,
+  defaultAgent?: string,
 ): IntentResult {
   const available = registry.listAgents().filter(a => !circuitBreaker.isOpen(a))
   if (available.length === 0) {
@@ -174,14 +184,25 @@ export function classifyIntent(
     s.reasons.push('sticky: last used agent')
   }
 
+  // 4b. Default-agent bias. Smaller than topic (+2) and keyword (+1*weight,
+  // typically 0.8-1.0), so explicit signal still wins. Larger than base
+  // weight (0.4-0.5) so it breaks ties on generic messages.
+  if (defaultAgent && defaultAgent !== stickyAgent && scores.has(defaultAgent)) {
+    const s = scores.get(defaultAgent)!
+    s.score += 1
+    s.reasons.push('default agent')
+  }
+
   // Tie-break order:
   //   1. higher score wins
   //   2. sticky agent (if present in scores)
-  //   3. PROFILES declaration order (preserves intentional priority)
-  //   4. alphabetical, for full determinism
+  //   3. defaultAgent (if present and not sticky)
+  //   4. PROFILES declaration order (preserves intentional priority)
+  //   5. alphabetical, for full determinism
   const profileOrder = Object.keys(PROFILES)
   const rankOf = (agent: string): number => {
-    if (stickyAgent && agent === stickyAgent) return -1
+    if (stickyAgent && agent === stickyAgent) return -2
+    if (defaultAgent && agent === defaultAgent) return -1
     const idx = profileOrder.indexOf(agent)
     return idx === -1 ? profileOrder.length : idx
   }
@@ -207,12 +228,14 @@ export function classifyIntent(
   }
 
   const isSticky = stickyAgent === best.agent && best.reasons.includes('sticky: last used agent')
+  const isDefault = defaultAgent === best.agent && best.reasons.includes('default agent')
   const hasTopic = best.reasons.some(r => r.startsWith('topic:'))
   const hasKeyword = best.reasons.some(r => r.startsWith('keyword:'))
   const triggeredBy: IntentResult['triggeredBy'] =
     hasTopic ? 'topic'
     : hasKeyword ? 'keyword'
     : isSticky ? 'sticky'
+    : isDefault ? 'default'
     : 'fallback'
 
   return {

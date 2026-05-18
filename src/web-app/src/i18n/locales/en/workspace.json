@@ -1,0 +1,37 @@
+{
+  "pageTitle": "Workspace",
+  "subtitle": "Read and edit files in the per-agent working directories (`AGENT_CWD`).",
+  "agentPicker": {
+    "label":     "Agent",
+    "placeholder": "Pick an agent",
+    "online":    "online",
+    "offline":   "offline"
+  },
+  "noAgent": {
+    "title": "Pick an agent to browse its workspace",
+    "description": "Each registered agent runs from its own CWD. The picker lists every agent the registry knows about; the green dot next to a name means it reports available."
+  },
+  "tree": {
+    "title": "Files",
+    "loading": "Loading…",
+    "empty":   "(empty directory)",
+    "up":      "Up",
+    "rootLabel": "(workspace root)",
+    "binary":  "binary",
+    "symlinkEscape": "symlink → outside workspace, hidden",
+    "broken":  "unreadable"
+  },
+  "editor": {
+    "noFile":    "Select a file from the tree to view or edit it.",
+    "binary":    "This file looks binary (base64-encoded) — editing not supported.",
+    "truncated": "File is over 1 MiB; only the first 1 MiB is shown. Saving from here would replace the whole file with the truncated content — close without saving.",
+    "save":      "Save",
+    "saving":    "Saving…",
+    "savedMeta": "Saved · {{size}} bytes · {{at}}",
+    "dirtyHint": "Unsaved changes",
+    "loadFailed":"Failed to load file"
+  },
+  "toast": {
+    "saved":     "Saved {{path}}"
+  }
+}

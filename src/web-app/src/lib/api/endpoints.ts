@@ -35,6 +35,9 @@ import type {
   VectorActionResponse,
   VectorClearResponse,
   VectorTestResponse,
+  WorkspaceFilesResponse,
+  WriteWorkspaceFileBody,
+  WriteWorkspaceFileResponse,
   ListJobsQuery,
   ListJobsResponse,
   DeleteMemoryFactsBody,
@@ -98,9 +101,9 @@ export const api = {
   testAcpAgent: (opts?: { body?: unknown }) =>
     client.post<unknown>('/api/agents/acp/test', opts),
 
-  /** GET /api/agents/status */
-  getAgentsStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/agents/status', opts),
+  /** GET /api/agents/status — agent name → online boolean map */
+  getAgentsStatus: () =>
+    client.get<Record<string, boolean>>('/api/agents/status'),
 
   /** GET /api/approvals */
   listApprovals: () =>
@@ -336,13 +339,14 @@ export const api = {
   getViewerTunnel: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/viewer/tunnel', opts),
 
-  /** GET /api/workspace-files */
-  getWorkspaceFiles: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/workspace-files', opts),
+  /** GET /api/workspace-files — discriminated union response on
+   *  ?path= (dir listing vs file content). */
+  getWorkspaceFiles: (query: { agent: string; path?: string }) =>
+    client.get<WorkspaceFilesResponse>('/api/workspace-files', { query }),
 
   /** PUT /api/workspace-files */
-  writeWorkspaceFile: (opts?: { body?: unknown }) =>
-    client.put<unknown>('/api/workspace-files', opts),
+  writeWorkspaceFile: (query: { agent: string; path: string }, body: WriteWorkspaceFileBody) =>
+    client.put<WriteWorkspaceFileResponse>('/api/workspace-files', { query, body }),
 
   /** GET /api/workspaces */
   listWorkspaces: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

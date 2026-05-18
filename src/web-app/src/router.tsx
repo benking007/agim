@@ -30,6 +30,7 @@ import MemoryFactsRoute from '@/routes/memory/facts'
 import MemoryPersonaRoute from '@/routes/memory/persona'
 import MemoryVectorRoute from '@/routes/memory/vector'
 import MemorySkillsRoute from '@/routes/memory/skills'
+import WorkspaceRoute from '@/routes/workspace'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -96,6 +97,14 @@ const router = createBrowserRouter([
       { path: 'vector',  element: <MemoryVectorRoute /> },
       { path: 'skills',  element: <MemorySkillsRoute /> },
     ],
+  },
+  {
+    path: '/workspace',
+    element: (
+      <RequireAuth>
+        <WorkspaceRoute />
+      </RequireAuth>
+    ),
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

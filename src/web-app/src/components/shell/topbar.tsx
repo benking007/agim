@@ -37,7 +37,7 @@ const NAV: Array<NavEntry & { mounted: boolean }> = [
   { to: '/reminders',     i18nKey: 'nav.reminders',     mounted: true  },
   { to: '/memos',         i18nKey: 'nav.memos',         mounted: true  },
   { to: '/memory',        i18nKey: 'nav.memory',        mounted: true  },
-  { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: false },
+  { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: true  },
   { to: '/observability', i18nKey: 'nav.observability', mounted: false },
   { to: '/settings',      i18nKey: 'nav.settings',      mounted: false },
 ]

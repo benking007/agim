@@ -663,6 +663,62 @@ export interface SkillDetail extends SkillMeta {
 }
 
 /* ============================================================
+ * Workspace files — agent CWD browser + editor.
+ * ============================================================ */
+
+export interface WorkspaceFileEntry {
+  name: string
+  isDir: boolean
+  /** Bytes; null when not a regular file. */
+  size: number | null
+  /** ISO timestamp; null when not a regular file. */
+  mtime: string | null
+  /** Set when readdir hit an unreadable child. */
+  broken?: boolean
+  /** Set when a symlink resolves outside the workspace root. The
+   *  child stays in the listing so the operator can see + fix it. */
+  symlink_escape?: boolean
+}
+
+export interface WorkspaceDirListing {
+  type: 'dir'
+  agent: string
+  /** Path relative to the workspace root (empty string for root). */
+  path: string
+  base: string
+  entries: WorkspaceFileEntry[]
+}
+
+export interface WorkspaceFileContent {
+  type: 'file'
+  agent: string
+  path: string
+  size: number
+  /** ISO timestamp. */
+  mtime: string
+  encoding: 'utf-8' | 'base64'
+  /** UTF-8 text when encoding=utf-8; base64 when binary. */
+  content: string
+  /** True when file > WORKSPACE_FILE_MAX_BYTES (1 MiB) and only the
+   *  first MiB was returned. */
+  truncated: boolean
+}
+
+export type WorkspaceFilesResponse = WorkspaceDirListing | WorkspaceFileContent
+
+export interface WriteWorkspaceFileBody {
+  content: string
+}
+
+export interface WriteWorkspaceFileResponse {
+  ok: true
+  agent: string
+  path: string
+  size: number
+  mtime: string
+}
+
+/* ============================================================
  * Auth
  * ============================================================ */
 

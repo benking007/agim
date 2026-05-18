@@ -1,0 +1,37 @@
+{
+  "pageTitle": "工作区",
+  "subtitle": "在每个 Agent 的工作目录（`AGENT_CWD`）下浏览与编辑文件。",
+  "agentPicker": {
+    "label":     "Agent",
+    "placeholder": "选择一个 Agent",
+    "online":    "在线",
+    "offline":   "离线"
+  },
+  "noAgent": {
+    "title": "选择一个 Agent 来浏览其工作区",
+    "description": "每个已注册的 Agent 都有自己的 CWD。下拉列出注册表中所有已知的 Agent；名字旁的绿点表示该 Agent 当前可用。"
+  },
+  "tree": {
+    "title": "文件",
+    "loading": "加载中…",
+    "empty":   "（目录为空）",
+    "up":      "返回上级",
+    "rootLabel": "（工作区根目录）",
+    "binary":  "二进制",
+    "symlinkEscape": "符号链接指向工作区外，已隐藏",
+    "broken":  "不可读"
+  },
+  "editor": {
+    "noFile":    "从左侧选择一个文件查看或编辑。",
+    "binary":    "该文件是二进制（base64 编码）— 不支持编辑。",
+    "truncated": "文件超过 1 MiB；仅显示前 1 MiB。直接保存会用截断内容覆盖整个文件 — 请关闭而不要保存。",
+    "save":      "保存",
+    "saving":    "保存中…",
+    "savedMeta": "已保存 · {{size}} 字节 · {{at}}",
+    "dirtyHint": "有未保存的修改",
+    "loadFailed":"加载文件失败"
+  },
+  "toast": {
+    "saved":     "已保存 {{path}}"
+  }
+}

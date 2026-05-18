@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { AgentPicker } from '@/components/chat/agent-picker'
-import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
+import { Topbar } from '@/components/shell/topbar'
 import { cn } from '@/lib/utils'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -75,6 +75,14 @@ export default function ChatRoute(): JSX.Element {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // Respect IME composition: CJK input methods use Enter to commit
+    // candidates. Without this guard, pressing Enter to confirm a
+    // Chinese candidate would also submit the message — the textarea
+    // sees an Enter event the IME hasn't yet "consumed". `isComposing`
+    // is true while the composition span is active; `keyCode === 229`
+    // is the legacy fallback for browsers that don't expose the flag.
+    const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+    if (ne.isComposing || e.keyCode === 229) return
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       onSubmit()
@@ -83,19 +91,17 @@ export default function ChatRoute(): JSX.Element {
 
   return (
     <div className="flex h-dvh flex-col bg-bg">
-      {/* Topbar */}
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-surface px-4 py-3 pt-safe shadow-sm">
-        <span className="text-md font-semibold">
-          <span className="mr-2">🤖</span>
-          {t('appName')}
-        </span>
-        <span className={cn('inline-block h-2 w-2 rounded-full', STATUS_STYLES[state.status])} title={state.status} />
+      {/* App-wide Topbar (brand + nav + theme/lang). Chat-specific
+          chrome — WS status pill + agent picker — slots into the
+          children prop so it stays on the right of the topbar. */}
+      <Topbar>
+        <span
+          className={cn('inline-block h-2 w-2 rounded-full', STATUS_STYLES[state.status])}
+          title={state.status}
+        />
         <span className="hidden text-xs text-text-dim sm:inline">{state.status}</span>
-        <div className="ml-auto flex items-center gap-2">
-          <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
-          <ThemeAndLangControls />
-        </div>
-      </header>
+        <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
+      </Topbar>
 
       {/* Message list */}
       <div
@@ -104,12 +110,14 @@ export default function ChatRoute(): JSX.Element {
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6 sm:px-6">
           {state.messages.length === 0 && state.status === 'open' && (
-            <div className="grid place-items-center py-16 text-center">
-              <div className="text-4xl">💬</div>
-              <h2 className="mt-3 text-lg font-semibold">
+            <div className="flex flex-col items-center gap-2 py-16 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-2xl">
+                💬
+              </div>
+              <h2 className="text-base font-semibold">
                 {t('chat.welcomeTitle', { defaultValue: 'Start a conversation' })}
               </h2>
-              <p className="mt-1 max-w-md text-sm text-text-dim">
+              <p className="max-w-md text-sm text-text-dim">
                 {t('chat.welcomeBody', {
                   defaultValue:
                     'Type a message to ask the active agent. Use the agent dropdown to switch.',

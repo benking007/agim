@@ -166,6 +166,7 @@
       "id":          "ID",
       "status":      "Status",
       "platform":    "Platform",
+      "preview":     "Preview",
       "thread":      "Thread",
       "kind":        "Kind",
       "attempts":    "Attempts",

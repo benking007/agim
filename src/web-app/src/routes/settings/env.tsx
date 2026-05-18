@@ -13,6 +13,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Loader2, RefreshCcw, Save, X } from 'lucide-react'
@@ -38,7 +39,11 @@ export default function SettingsEnvRoute(): JSX.Element {
 
   /** Edits keyed by env name. null sentinel = explicit unset. */
   const [edits, setEdits] = useState<Map<string, string | null>>(() => new Map())
-  const [filter, setFilter] = useState('')
+  // Pre-seed the filter from `?q=` so deep-links like
+  // /settings/env?q=IMHUB_MEMORY_VECTOR open straight to the
+  // matching subset.
+  const [params] = useSearchParams()
+  const [filter, setFilter] = useState(params.get('q') ?? '')
 
   const updateEnv = useUpdateEnv()
 

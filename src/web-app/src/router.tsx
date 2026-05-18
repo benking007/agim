@@ -9,12 +9,14 @@
  * the RequireAuth-wrapped root.
  */
 
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { RequireAuth } from '@/components/shell/require-auth'
 
 import LoginRoute from '@/routes/login'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
+import TasksLayout from '@/routes/tasks/layout'
+import JobsRoute from '@/routes/tasks/jobs'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -25,6 +27,18 @@ const router = createBrowserRouter([
         <ChatRoute />
       </RequireAuth>
     ),
+  },
+  {
+    path: '/tasks',
+    element: (
+      <RequireAuth>
+        <TasksLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true,       element: <Navigate to="jobs" replace /> },
+      { path: 'jobs',      element: <JobsRoute /> },
+    ],
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

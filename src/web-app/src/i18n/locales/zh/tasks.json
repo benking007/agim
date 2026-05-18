@@ -1,0 +1,72 @@
+{
+  "pageTitle": "任务",
+  "subnav": {
+    "jobs":      "作业",
+    "subtasks":  "子任务",
+    "bgjobs":    "后台脚本",
+    "schedules": "定时任务",
+    "outbox":    "投递队列",
+    "a2a":       "Agent 互调"
+  },
+  "jobs": {
+    "title": "作业",
+    "subtitle": "Agent 的长任务调用与结果。",
+    "empty": {
+      "title": "暂无作业",
+      "description": "通过 `agim --invoke` 或聊天里的 /run 命令异步启动 Agent 时会自动生成作业记录。"
+    },
+    "filter": {
+      "status":     "状态",
+      "statusAny":  "全部状态",
+      "agent":      "Agent",
+      "agentAny":   "全部 Agent",
+      "kind":       "类型",
+      "kindAny":    "全部类型"
+    },
+    "col": {
+      "id":        "ID",
+      "agent":     "Agent",
+      "prompt":    "Prompt",
+      "status":    "状态",
+      "createdAt": "创建时间",
+      "duration":  "耗时",
+      "cost":      "成本"
+    },
+    "status": {
+      "pending":     "等待中",
+      "running":     "运行中",
+      "completed":   "已完成",
+      "delivered":   "已送达",
+      "failed":      "失败",
+      "cancelled":   "已取消",
+      "interrupted": "已中断",
+      "replaced":    "已替换",
+      "abandoned":   "已放弃"
+    },
+    "kind": {
+      "job":    "作业",
+      "inline": "即时"
+    },
+    "stats": {
+      "pending":   "等待中",
+      "running":   "运行中",
+      "completed": "已完成",
+      "failed":    "失败"
+    },
+    "batch": {
+      "selected":         "已选 {{count}} 项",
+      "cancel":           "取消所选",
+      "rerun":            "重跑所选",
+      "confirmCancel":    "确认取消 {{count}} 个作业？",
+      "confirmCancelDesc":"运行中的作业会收到停止信号。已完成的作业不受影响。",
+      "confirmRerun":     "确认重跑 {{count}} 个作业？",
+      "confirmRerunDesc": "将根据原 Prompt 重新创建作业。"
+    },
+    "live": {
+      "connected":    "● 实时",
+      "connecting":   "● 连接中",
+      "reconnecting": "● 重连中",
+      "closed":       "● 离线"
+    }
+  }
+}

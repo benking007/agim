@@ -1,0 +1,72 @@
+{
+  "pageTitle": "Tasks",
+  "subnav": {
+    "jobs":      "Jobs",
+    "subtasks":  "Subtasks",
+    "bgjobs":    "Background",
+    "schedules": "Schedules",
+    "outbox":    "Outbox",
+    "a2a":       "Agent ↔ Agent"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "subtitle": "Long-running agent invocations and their results.",
+    "empty": {
+      "title": "No jobs yet",
+      "description": "Jobs are created when an agent runs in async mode — via `agim --invoke` or an inline /run command from chat."
+    },
+    "filter": {
+      "status":     "Status",
+      "statusAny":  "Any status",
+      "agent":      "Agent",
+      "agentAny":   "Any agent",
+      "kind":       "Kind",
+      "kindAny":    "Any kind"
+    },
+    "col": {
+      "id":        "ID",
+      "agent":     "Agent",
+      "prompt":    "Prompt",
+      "status":    "Status",
+      "createdAt": "Created",
+      "duration":  "Duration",
+      "cost":      "Cost"
+    },
+    "status": {
+      "pending":     "Pending",
+      "running":     "Running",
+      "completed":   "Completed",
+      "delivered":   "Delivered",
+      "failed":      "Failed",
+      "cancelled":   "Cancelled",
+      "interrupted": "Interrupted",
+      "replaced":    "Replaced",
+      "abandoned":   "Abandoned"
+    },
+    "kind": {
+      "job":    "Job",
+      "inline": "Inline"
+    },
+    "stats": {
+      "pending":   "Pending",
+      "running":   "Running",
+      "completed": "Completed",
+      "failed":    "Failed"
+    },
+    "batch": {
+      "selected":         "{{count}} selected",
+      "cancel":           "Cancel selected",
+      "rerun":            "Re-run selected",
+      "confirmCancel":    "Cancel {{count}} job(s)?",
+      "confirmCancelDesc":"Running jobs will be sent a stop signal. Already-completed jobs are unaffected.",
+      "confirmRerun":     "Re-run {{count}} job(s)?",
+      "confirmRerunDesc": "New jobs will be created from the original prompts."
+    },
+    "live": {
+      "connected":    "● Live",
+      "connecting":   "● Connecting",
+      "reconnecting": "● Reconnecting",
+      "closed":       "● Offline"
+    }
+  }
+}

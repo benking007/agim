@@ -4,6 +4,7 @@
   "tabs": {
     "messengers": "Messengers",
     "email":      "Email (SMTP)",
+    "viewer":     "Viewer & Maps",
     "agents":     "Agents",
     "policy":     "Policy",
     "workspaces": "Workspaces",
@@ -182,6 +183,66 @@
       "saved":      "SMTP saved",
       "disabled":   "SMTP disabled",
       "noChanges":  "Nothing to save"
+    }
+  },
+  "viewerSettings": {
+    "title":     "Viewer & Maps",
+    "subtitle":  "Public-facing surfaces: the long-message Viewer (turns >threshold replies into a `/v/<id>` short link) and Baidu Maps AK (drives `/memo` address geocoding).",
+    "reveal":    "Reveal",
+    "hide":      "Hide",
+    "save":      "Save",
+    "saving":    "Saving…",
+    "discard":   "Discard",
+    "dirtyHint": "Unsaved changes",
+    "toast": {
+      "saved":   "Viewer settings saved"
+    },
+    "viewer": {
+      "title":    "Viewer (long-message links)",
+      "subtitle": "Replies longer than the chars / lines threshold are uploaded to the local paste store and the IM message becomes a short `/v/<id>` link.",
+      "on":           "enabled",
+      "off":          "disabled",
+      "enableLabel":  "Enable the long-message Viewer",
+      "publicUrl":    "Public base URL",
+      "publicUrlHint":"What the operator's reverse proxy / tunnel exposes. Used to build `/v/<id>` links.",
+      "tunnelMode":   "Tunnel mode",
+      "tunnelOff":    "off (use Public base URL)",
+      "tunnelQuick":  "quick (cloudflared)",
+      "tunnelHint":   "`quick` launches a Cloudflare quick tunnel and uses its URL when the operator hasn't fronted agim themselves.",
+      "tunnelStatus":     "Tunnel status",
+      "refreshTunnel":    "Refresh",
+      "tunnelRunning":    "Running",
+      "yes":              "yes",
+      "no":               "no",
+      "tunnelUrl":        "Live URL",
+      "effectiveUrl":     "Effective URL",
+      "binary":           "cloudflared binary",
+      "binaryMissing":    "not found in PATH — install from cloudflare/cloudflared releases",
+      "lastError":        "Last error",
+      "tunnelLoading":    "Loading tunnel status…",
+      "thresholds":   "Thresholds",
+      "chars":        "Max chars",
+      "charsHint":    "Replies above this length route through Viewer.",
+      "lines":        "Max lines",
+      "linesHint":    "Same routing decision, on line count.",
+      "codeLines":    "Max code lines",
+      "codeLinesHint":"Lower threshold for replies inside code fences.",
+      "maxPastes":    "Paste store cap",
+      "maxPastesHint":"Older pastes are evicted FIFO once the count exceeds this."
+    },
+    "baidu": {
+      "title":      "Baidu Maps AK",
+      "subtitle":   "Enables `/memo` address-to-coords lookup. Without it, /memo still works via raw coords or browser GPS share. Free AK: lbsyun.baidu.com → Console → Application → Server-side API.",
+      "configured": "configured",
+      "empty":      "not set",
+      "placeholder":"32-char AK starting with a non-digit",
+      "hint":       "Stored in `~/.agim/.env` (chmod 600). Masked unless Reveal is on.",
+      "suspicious": "AK length is {{length}} — usually a Baidu AK is 32 characters. Double-check?",
+      "clear":      "Clear AK",
+      "toast": {
+        "saved":   "Baidu Maps AK saved",
+        "cleared": "Baidu Maps AK cleared"
+      }
     }
   },
   "workspaces": {

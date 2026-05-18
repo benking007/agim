@@ -20,6 +20,7 @@ import type {
   ACPTestResponse,
   AppConfig,
   EmailTestResponse,
+  ViewerTunnelStatusResponse,
   AddAdminBody,
   AdminAllowlistResponse,
   AdminMutationResponse,
@@ -381,9 +382,11 @@ export const api = {
   listViewerPastes: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/viewer', opts),
 
-  /** GET /api/viewer/tunnel */
-  getViewerTunnel: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/viewer/tunnel', opts),
+  /** GET /api/viewer/tunnel — combined viewer config + cloudflared
+   *  tunnel state (running, URL, binary location, last error). The UI
+   *  polls this card whenever the operator clicks Refresh. */
+  getViewerTunnel: () =>
+    client.get<ViewerTunnelStatusResponse>('/api/viewer/tunnel'),
 
   /** GET /api/workspace-files — discriminated union response on
    *  ?path= (dir listing vs file content). */

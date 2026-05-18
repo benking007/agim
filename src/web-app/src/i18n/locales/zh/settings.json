@@ -4,6 +4,7 @@
   "tabs": {
     "messengers": "IM 平台",
     "email":      "邮件 (SMTP)",
+    "viewer":     "Viewer & 地图",
     "agents":     "Agent",
     "policy":     "策略",
     "workspaces": "工作区",
@@ -182,6 +183,66 @@
       "saved":      "SMTP 已保存",
       "disabled":   "SMTP 已停用",
       "noChanges":  "无可保存的改动"
+    }
+  },
+  "viewerSettings": {
+    "title":     "Viewer & 地图",
+    "subtitle":  "公开访问的两个外设：长消息 Viewer（超过阈值的回复转成 `/v/<id>` 短链）+ Baidu Maps AK（驱动 `/memo` 地址解析）。",
+    "reveal":    "显示",
+    "hide":      "隐藏",
+    "save":      "保存",
+    "saving":    "保存中…",
+    "discard":   "放弃改动",
+    "dirtyHint": "有未保存改动",
+    "toast": {
+      "saved":   "Viewer 设置已保存"
+    },
+    "viewer": {
+      "title":    "Viewer（长消息短链）",
+      "subtitle": "超过字符 / 行数阈值的回复会被上传到本地 paste 存储，IM 消息变成一条 `/v/<id>` 短链。",
+      "on":           "已启用",
+      "off":          "未启用",
+      "enableLabel":  "启用长消息 Viewer",
+      "publicUrl":    "公开基础 URL",
+      "publicUrlHint":"反代 / 隧道暴露给外网的地址。用于拼接 `/v/<id>` 短链。",
+      "tunnelMode":   "隧道模式",
+      "tunnelOff":    "关闭（使用上方公开 URL）",
+      "tunnelQuick":  "quick（cloudflared 临时隧道）",
+      "tunnelHint":   "`quick` 会本地拉起 Cloudflare quick tunnel；当运营商自己没有反代 agim 时启用。",
+      "tunnelStatus":     "隧道状态",
+      "refreshTunnel":    "刷新",
+      "tunnelRunning":    "运行中",
+      "yes":              "是",
+      "no":               "否",
+      "tunnelUrl":        "实时 URL",
+      "effectiveUrl":     "生效 URL",
+      "binary":           "cloudflared 二进制",
+      "binaryMissing":    "PATH 中未找到 — 请从 cloudflare/cloudflared releases 安装",
+      "lastError":        "最近一次错误",
+      "tunnelLoading":    "正在加载隧道状态…",
+      "thresholds":   "路由阈值",
+      "chars":        "字符上限",
+      "charsHint":    "回复超过此长度走 Viewer。",
+      "lines":        "行数上限",
+      "linesHint":    "相同的路由判定，按行数。",
+      "codeLines":    "代码行数上限",
+      "codeLinesHint":"代码块内回复的更低阈值。",
+      "maxPastes":    "Paste 存储上限",
+      "maxPastesHint":"超过此数量后按 FIFO 淘汰旧 paste。"
+    },
+    "baidu": {
+      "title":      "Baidu Maps AK",
+      "subtitle":   "启用 `/memo` 的地址→坐标解析。不配置 AK，/memo 仍可通过裸坐标或浏览器 GPS 分享工作。免费 AK：lbsyun.baidu.com → 控制台 → 应用管理 → 创建应用 → 服务端 API。",
+      "configured": "已配置",
+      "empty":      "未配置",
+      "placeholder":"32 位 AK，首字符非数字",
+      "hint":       "保存到 `~/.agim/.env`（chmod 600），默认遮罩，按「显示」可查看。",
+      "suspicious": "AK 长度为 {{length}}，通常 Baidu AK 是 32 位 — 请核对。",
+      "clear":      "清除 AK",
+      "toast": {
+        "saved":   "Baidu Maps AK 已保存",
+        "cleared": "Baidu Maps AK 已清除"
+      }
     }
   },
   "workspaces": {

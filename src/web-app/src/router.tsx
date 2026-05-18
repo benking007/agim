@@ -116,6 +116,7 @@ const router = createBrowserRouter([
       { index: true,        element: <Navigate to="messengers" replace /> },
       { path: 'messengers', lazy: lazy(() => import('@/routes/settings/messengers')) },
       { path: 'email',      lazy: lazy(() => import('@/routes/settings/email')) },
+      { path: 'viewer',     lazy: lazy(() => import('@/routes/settings/viewer')) },
       { path: 'agents',     lazy: lazy(() => import('@/routes/settings/agents')) },
       { path: 'policy',     lazy: lazy(() => import('@/routes/settings/policy')) },
       { path: 'env',        lazy: lazy(() => import('@/routes/settings/env')) },

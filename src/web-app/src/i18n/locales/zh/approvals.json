@@ -1,0 +1,30 @@
+{
+  "pageTitle": "审批",
+  "subtitle": "Agent 等待批准的工具调用。",
+  "live": {
+    "connected":    "● 实时",
+    "connecting":   "● 连接中",
+    "reconnecting": "● 重连中",
+    "closed":       "● 离线"
+  },
+  "stats": {
+    "pending":           "待审批",
+    "totalAllowed":      "累计放行",
+    "totalDenied":       "累计拒绝",
+    "totalTimedOut":     "超时",
+    "totalReadonly":     "只读自动放行"
+  },
+  "empty": {
+    "title": "暂无待审批请求",
+    "description": "队列为空。当 Agent 调用尚未加入白名单的工具时，请求会在这里出现。"
+  },
+  "threadLabel":      "Thread",
+  "autoAllowedTag":   "自动放行",
+  "autoAllowedTitle": "后端已对该只读工具自动放行；此处仅供可见性展示。",
+  "allow": "放行",
+  "deny":  "拒绝",
+  "toast": {
+    "allowedShort": "已放行",
+    "deniedShort":  "已拒绝"
+  }
+}

@@ -33,7 +33,7 @@ interface NavEntry {
 const NAV: Array<NavEntry & { mounted: boolean }> = [
   { to: '/',              i18nKey: 'nav.chat',          mounted: true  },
   { to: '/tasks',         i18nKey: 'nav.tasks',         mounted: true  },
-  { to: '/approvals',     i18nKey: 'nav.approvals',     mounted: false },
+  { to: '/approvals',     i18nKey: 'nav.approvals',     mounted: true  },
   { to: '/reminders',     i18nKey: 'nav.reminders',     mounted: false },
   { to: '/memos',         i18nKey: 'nav.memos',         mounted: false },
   { to: '/memory',        i18nKey: 'nav.memory',        mounted: false },

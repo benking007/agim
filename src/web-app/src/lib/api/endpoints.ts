@@ -22,6 +22,8 @@ import type {
   ListA2ARecentQuery,
   ListA2ARecentResponse,
   ListApprovalsResponse,
+  ResolveApprovalBody,
+  ResolveApprovalResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListJobsQuery,
@@ -87,8 +89,12 @@ export const api = {
     client.get<unknown>('/api/agents/status', opts),
 
   /** GET /api/approvals */
-  listApprovals: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<ListApprovalsResponse>('/api/approvals', opts),
+  listApprovals: () =>
+    client.get<ListApprovalsResponse>('/api/approvals'),
+
+  /** POST /api/approvals/:reqId/resolve */
+  resolveApproval: (reqId: string, body: ResolveApprovalBody) =>
+    client.post<ResolveApprovalResponse>(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, { body }),
 
   /** GET /api/audit */
   getAudit: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

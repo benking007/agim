@@ -362,29 +362,63 @@ export interface ListMemosResponse {
  * Approvals
  * ============================================================ */
 
+/** Tracks an approval's lifecycle on the SSE channel.
+ *  `requested` fires when one enqueues; `resolved` on disposition. */
 export type ApprovalPhase = 'requested' | 'resolved'
 export type ApprovalOutcome = 'allow' | 'deny' | 'timeout'
 
+/** Pending approval as exposed by GET /api/approvals (approvalBus.
+ *  listPending()). Field naming + types match the bus's snapshot
+ *  contract — see src/core/approval-bus.ts. */
 export interface Approval {
   reqId: string
-  toolName: string
-  phase: ApprovalPhase
-  outcome?: ApprovalOutcome
+  runId: string
   threadId: string
   platform: string
-  channelId: string
-  userId?: string
-  input?: unknown
+  toolName: string
+  /** Raw tool input — passed verbatim from the agent. Render via
+   *  JsonViewer or a truncated preview; do not interpret. */
+  input: Record<string, unknown>
+  fingerprint: string
+  autoAllow: boolean
+  /** Epoch ms when the bus accepted the request. */
   registeredAt: number
-  ageMs?: number
+  /** Server-computed age at fetch time (ms). The UI shows
+   *  `formatDuration(ageMs)` and refreshes via SSE + the next
+   *  poll. */
+  ageMs: number
+}
+
+export interface ApprovalMetrics {
+  pending: number
+  totalRequests: number
+  totalResolved: number
+  totalAllowed: number
+  totalDenied: number
+  totalTimedOut: number
+  totalReadonlyAutoAllowed: number
 }
 
 export interface ListApprovalsResponse {
-  approvals: Approval[]
+  pending: Approval[]
+  metrics: ApprovalMetrics
 }
 
+export type ApprovalBehavior = 'allow' | 'deny'
+
+/** POST body for /api/approvals/:reqId/resolve.
+ *  - `allow`  with `autoAllowFurther: true` whitelists the agent
+ *    on this thread for the same tool — caller's choice.
+ *  - `deny`   accepts an optional `message` surfaced back to the
+ *    agent as the denial reason. */
 export interface ResolveApprovalBody {
-  outcome: 'allow' | 'deny'
+  behavior: ApprovalBehavior
+  autoAllowFurther?: boolean
+  message?: string
+}
+
+export interface ResolveApprovalResponse extends OkResponse {
+  resolved: boolean
 }
 
 /* ============================================================

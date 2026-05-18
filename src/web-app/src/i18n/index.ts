@@ -34,19 +34,21 @@ import errorsZh from './locales/zh/errors.json'
 // the count grows past ~6 we'll graduate to http-backend lazy loads.
 import tasksEn from './locales/en/tasks.json'
 import tasksZh from './locales/zh/tasks.json'
+import approvalsEn from './locales/en/approvals.json'
+import approvalsZh from './locales/zh/approvals.json'
 
 void i18n
   .use(HttpBackend)
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, errors: errorsEn, tasks: tasksEn },
-      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh },
+      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn },
+      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh },
     },
     lng: detectInitialLang(),
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors', 'tasks'],
+    ns: ['common', 'errors', 'tasks', 'approvals'],
     defaultNS: 'common',
     interpolation: { escapeValue: false }, // React already escapes
     react: { useSuspense: false },         // we render skeletons ourselves

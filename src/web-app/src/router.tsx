@@ -22,6 +22,7 @@ import BgjobsRoute from '@/routes/tasks/bgjobs'
 import SchedulesRoute from '@/routes/tasks/schedules'
 import OutboxRoute from '@/routes/tasks/outbox'
 import A2ARoute from '@/routes/tasks/a2a'
+import ApprovalsRoute from '@/routes/approvals'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -49,6 +50,14 @@ const router = createBrowserRouter([
       { path: 'outbox',    element: <OutboxRoute /> },
       { path: 'a2a',       element: <A2ARoute /> },
     ],
+  },
+  {
+    path: '/approvals',
+    element: (
+      <RequireAuth>
+        <ApprovalsRoute />
+      </RequireAuth>
+    ),
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

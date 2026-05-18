@@ -29,13 +29,14 @@ describe('Topbar', () => {
     expect(screen.getByText('Agim')).toBeInTheDocument()
   })
 
-  it('renders only the mounted nav links (Chat + Tasks in PR-10a)', () => {
+  it('renders only the mounted nav links', () => {
     renderAt('/')
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
-    // /approvals etc. are not yet mounted.
-    expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()
+    // /reminders etc. are not yet mounted.
     expect(screen.queryByRole('link', { name: 'Reminders' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
   })
 
   it('marks the active route with the accent style', () => {

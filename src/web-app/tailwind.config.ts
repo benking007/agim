@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import tailwindcssAnimate from 'tailwindcss-animate'
 
 /**
  * Tailwind 3 theme for agim web v2.
@@ -86,6 +87,25 @@ export default {
         md: 'var(--ag-shadow-md)',
         lg: 'var(--ag-shadow-lg)',
       },
+      keyframes: {
+        // Radix popover / dropdown / select / tooltip overlay animations.
+        // tailwindcss-animate ships `data-state` driven utilities that
+        // expect these names; the Tailwind `animate-in / animate-out`
+        // helpers fall back to these for any component the plugin
+        // doesn't already cover.
+        'accordion-down': {
+          from: { height: '0' },
+          to:   { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to:   { height: '0' },
+        },
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up':   'accordion-up 0.2s ease-out',
+      },
       // Mobile-friendly height units. `100dvh` honors the actual visible
       // viewport (excluding mobile URL bar / on-screen keyboard) where
       // available, with `100vh` as the desktop fallback.
@@ -125,5 +145,5 @@ export default {
       '2xl': '1536px',
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 } satisfies Config

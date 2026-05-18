@@ -19,6 +19,7 @@ import type {
   ACPTestBody,
   ACPTestResponse,
   AppConfig,
+  EmailTestResponse,
   AddAdminBody,
   AdminAllowlistResponse,
   AdminMutationResponse,
@@ -124,6 +125,12 @@ export const api = {
    *  in /settings/agents to validate an ACP entry before saving. */
   testAcpAgent: (body: ACPTestBody) =>
     client.post<ACPTestResponse>('/api/agents/acp/test', { body }),
+
+  /** POST /api/messengers/email/test — run nodemailer.verify() against
+   *  the SMTP creds currently in process.env. No mail is sent. Operators
+   *  fill the form, Save (PUT /api/env), then click Test. */
+  testEmail: () =>
+    client.post<EmailTestResponse>('/api/messengers/email/test'),
 
   /** GET /api/agents/status — agent name → online boolean map */
   getAgentsStatus: () =>

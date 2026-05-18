@@ -3,6 +3,7 @@
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
     "messengers": "Messengers",
+    "email":      "Email (SMTP)",
     "agents":     "Agents",
     "policy":     "Policy",
     "workspaces": "Workspaces",
@@ -146,6 +147,41 @@
       "expired":    "QR code expired — close and start a new one.",
       "cancelled":  "Cancelled.",
       "confirmed":  "Login confirmed — wechat-ilink will start on the next service restart."
+    }
+  },
+  "email": {
+    "title":      "Email (SMTP)",
+    "subtitle":   "Outbound mail delivery for `/remind email me@x.com …`. Credentials persist to `~/.agim/.env`. Leave blank to disable.",
+    "cardTitle":  "SMTP credentials",
+    "statusOn":   "configured",
+    "statusOff":  "disabled",
+    "host":       "Host",
+    "hostHint":   "Mail server hostname (e.g. `smtp.gmail.com`).",
+    "port":       "Port",
+    "portHint":   "Usually 465 (SSL) or 587 (STARTTLS).",
+    "user":       "Username",
+    "userHint":   "Login email; often the sender address too.",
+    "pass":       "Password / app token",
+    "passHint":   "Stored in `~/.agim/.env` (chmod 600). Masked unless Reveal is on.",
+    "from":       "From",
+    "fromHint":   "Sender header. Defaults to the username when blank.",
+    "secure":     "TLS mode",
+    "secureHint": "`auto` follows the port; force SSL or STARTTLS if your provider requires it.",
+    "secureAuto":  "auto (port-based)",
+    "secureTrue":  "true (SSL, port 465)",
+    "secureFalse": "false (STARTTLS, port 587)",
+    "reveal":     "Reveal",
+    "hide":       "Hide",
+    "testBtn":    "Test connection",
+    "testNeedsConfigured": "Save host / user / password first.",
+    "disableBtn": "Disable SMTP",
+    "saveBtn":    "Save",
+    "saving":     "Saving…",
+    "discard":    "Discard",
+    "toast": {
+      "saved":      "SMTP saved",
+      "disabled":   "SMTP disabled",
+      "noChanges":  "Nothing to save"
     }
   },
   "workspaces": {

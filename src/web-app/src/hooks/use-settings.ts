@@ -19,6 +19,7 @@ import type {
   ACPDiscoverResponse,
   ACPTestBody,
   ACPTestResponse,
+  EmailTestResponse,
   AddAdminBody,
   AdminAllowlistResponse,
   AdminMutationResponse,
@@ -192,5 +193,14 @@ export function useTestAcp() {
 export function useDiscoverAcp() {
   return useMutation<ACPDiscoverResponse, Error, ACPDiscoverBody>({
     mutationFn: (body) => api.discoverAcpAgents(body),
+  })
+}
+
+/** Verify SMTP creds in the running env. Doesn't actually send mail —
+ *  just `nodemailer.verify()`. Returns `{ ok, message }` on success or
+ *  throws ApiError otherwise (the route catches + toasts the message). */
+export function useTestEmail() {
+  return useMutation<EmailTestResponse, Error, void>({
+    mutationFn: () => api.testEmail(),
   })
 }

@@ -572,6 +572,9 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/env' && req.method === 'PUT') {
       return handlePutEnv(req, res)
     }
+    if (url.pathname === '/api/messengers/email/test' && req.method === 'POST') {
+      return handleEmailTest(req, res)
+    }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
     }
@@ -2031,6 +2034,53 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
     sendJson(res, 200, { ok: true, updated: Object.keys(safe) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// POST /api/messengers/email/test — verify SMTP credentials currently in
+// process.env by opening a fresh nodemailer transporter and calling
+// `verify()`. Doesn't actually send mail. Returns { ok, message } on
+// success or { ok: false, error } with a clean error string. Operators
+// save first, then click "Test" — same UX as v1's settings page.
+async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    // Drain body even though we don't use it, so the connection doesn't
+    // stall under keep-alive.
+    await readBody(req, res)
+    const host = process.env.IMHUB_SMTP_HOST?.trim()
+    const user = process.env.IMHUB_SMTP_USER?.trim()
+    const pass = process.env.IMHUB_SMTP_PASS
+    if (!host || !user || !pass) {
+      sendJson(res, 400, { ok: false, error: 'SMTP not configured (host / user / pass required)' })
+      return
+    }
+    const portRaw = process.env.IMHUB_SMTP_PORT?.trim()
+    const portNum = portRaw ? Number.parseInt(portRaw, 10) : 465
+    const port = Number.isFinite(portNum) && portNum > 0 && portNum <= 65535 ? portNum : 465
+    const secureRaw = process.env.IMHUB_SMTP_SECURE?.trim().toLowerCase()
+    const secure = secureRaw !== undefined
+      ? (secureRaw === '1' || secureRaw === 'true' || secureRaw === 'yes')
+      : port === 465
+
+    const nodemailer = (await import('nodemailer')).default
+    const tx = nodemailer.createTransport({
+      host, port, secure,
+      auth: { user, pass },
+      // Short timeouts — the UI should see a result within ~10s rather
+      // than hanging on an unreachable host.
+      connectionTimeout: 8000,
+      greetingTimeout: 6000,
+      socketTimeout: 8000,
+    })
+    try {
+      await tx.verify()
+      sendJson(res, 200, { ok: true, message: `Connected to ${host}:${port}` })
+    } finally {
+      tx.close()
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    sendJson(res, 400, { ok: false, error: msg })
   }
 }
 

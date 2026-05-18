@@ -103,6 +103,57 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
   return null
 }
 
+/**
+ * Decide whether the session cookie should carry the `Secure` flag.
+ *
+ *   IMHUB_WEB_COOKIE_SECURE  effect
+ *   ────────────────────────────────────────────────────────────────────
+ *   on (or "1" / "true")     always include Secure
+ *   off (or "0" / "false")   never include Secure
+ *   auto (default)           include Secure when the request looks HTTPS
+ *                            (req.socket.encrypted, OR x-forwarded-proto
+ *                            === "https" — the canonical signal from
+ *                            nginx/Caddy/Cloudflare reverse proxies)
+ *
+ * Pure HTTP on a loopback bind is the common dev / single-user deploy
+ * shape; forcing Secure there would silently drop the cookie and lock
+ * the operator out. Hence the auto default rather than always-on.
+ */
+export function shouldUseSecureCookie(req: IncomingMessage): boolean {
+  const mode = (process.env.IMHUB_WEB_COOKIE_SECURE || 'auto').toLowerCase()
+  if (mode === 'on' || mode === '1' || mode === 'true') return true
+  if (mode === 'off' || mode === '0' || mode === 'false') return false
+  // auto
+  const socket = req.socket as IncomingMessage['socket'] & { encrypted?: boolean }
+  if (socket.encrypted) return true
+  const xfp = req.headers['x-forwarded-proto']
+  if (typeof xfp === 'string' && xfp.split(',')[0].trim().toLowerCase() === 'https') return true
+  return false
+}
+
+/**
+ * Build a `Set-Cookie` value for the `agim_token` session cookie.
+ * `maxAgeSec=0` produces a logout cookie that still matches the issued
+ * cookie's attributes (Path/SameSite/HttpOnly/Secure) — browsers ignore
+ * deletion attempts with mismatched attributes.
+ *
+ * Always `HttpOnly`: the page JS uses localStorage for token storage and
+ * attaches `Authorization: Bearer` on fetches (see `_app.js`), so the
+ * cookie itself never needs to be readable from script. Closing this
+ * door eliminates the easiest XSS-to-session-takeover path.
+ */
+export function buildSessionCookie(req: IncomingMessage, token: string, maxAgeSec: number): string {
+  const parts = [
+    `agim_token=${encodeURIComponent(token)}`,
+    'Path=/',
+    `Max-Age=${maxAgeSec}`,
+    'SameSite=Strict',
+    'HttpOnly',
+  ]
+  if (shouldUseSecureCookie(req)) parts.push('Secure')
+  return parts.join('; ')
+}
+
 /** Returns true if the request is authenticated (or auth not required). */
 function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   // 1. Disabled by env → pass through.
@@ -3594,13 +3645,15 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
     if (!_tokenModule) { sendJson(res, 503, { error: 'auth module not ready' }); return }
     const id = _tokenModule.verifyToken(token)
     if (!id) { sendJson(res, 401, { error: 'invalid token' }); return }
-    // 30-day cookie, Path=/, SameSite=Strict. Not HttpOnly so the page JS
-    // can also read it back if needed (e.g. to attach Authorization header
-    // on fetch — though the cookie alone suffices).
+    // 30-day session cookie. HttpOnly + SameSite=Strict + conditional
+    // Secure — see buildSessionCookie() for the full attribute rationale.
+    // The page JS stores the token in localStorage independently and
+    // attaches `Authorization: Bearer ...` on fetches, so HttpOnly
+    // does not break the front-end (verified in login.html / _app.js).
     const maxAge = 30 * 24 * 60 * 60
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Set-Cookie': `agim_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Strict`,
+      'Set-Cookie': buildSessionCookie(req, token, maxAge),
     })
     res.end(JSON.stringify({ ok: true, tokenId: id }))
   } catch (err) {
@@ -3608,10 +3661,12 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-function handleAuthLogout(_req: IncomingMessage, res: ServerResponse): void {
+function handleAuthLogout(req: IncomingMessage, res: ServerResponse): void {
+  // Match the issued cookie's attributes; browsers ignore deletion
+  // attempts where Path/SameSite/Secure/HttpOnly differ.
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Set-Cookie': 'agim_token=; Path=/; Max-Age=0; SameSite=Strict',
+    'Set-Cookie': buildSessionCookie(req, '', 0),
   })
   res.end(JSON.stringify({ ok: true }))
 }

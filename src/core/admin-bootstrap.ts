@@ -32,6 +32,7 @@ import { join, dirname } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { isAllowlistConfigured, promoteAdmin } from './admin-allowlist.js'
 import { logger as rootLogger } from './logger.js'
+import { safeEqual } from '../utils/safe-equal.js'
 
 const log = rootLogger.child({ component: 'admin-bootstrap' })
 
@@ -144,9 +145,13 @@ export async function consumeBootstrapToken(
     return { ok: false, reason: 'no_token_file' }
   }
 
-  // Constant-time-ish compare; we have no timing attacker over IM, but
-  // matching the project's existing safeEqual hygiene.
-  if (stored.length !== candidate.length || stored !== candidate) {
+  // Use the shared constant-time comparator. The bootstrap token is only
+  // consumed via the IM `/setup admin <token>` slash command — IM channels
+  // hide network timing noise, so the attack surface is narrow. The switch
+  // exists to keep token-comparison hygiene uniform across the project
+  // (matches access-token.ts, acp-server.ts) so any future REST surface that
+  // ends up touching this path inherits the safe default.
+  if (!safeEqual(stored, candidate)) {
     return { ok: false, reason: 'mismatch' }
   }
 

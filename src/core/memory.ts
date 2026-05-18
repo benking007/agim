@@ -84,6 +84,23 @@ function migrateVectorColumns(db: import('better-sqlite3').Database): void {
       }
     }
   }
+  // M-N3: partial index for queryFactsHybrid's vector-candidate scan.
+  // Must be created AFTER the ALTER TABLE above because the partial WHERE
+  // references the `embedding` column. Without it, `WHERE user_key=? AND
+  // embedding IS NOT NULL AND embedding_dims=? AND embedding_model=?`
+  // fell back to a user-keyed scan + filter; with a few thousand facts
+  // per user this dominated hybrid-search latency. Partial WHERE keeps
+  // the index dense — newly-saved facts (embedding still NULL until the
+  // async embed worker fills it) don't bloat it.
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_facts_embedded
+        ON facts(user_key, embedding_model, embedding_dims)
+        WHERE embedding IS NOT NULL
+    `)
+  } catch (err) {
+    rootLogger.warn({ event: 'memory.migrate_failed', col: 'idx_facts_embedded', err: String(err) })
+  }
 }
 
 const helper = createSqliteHelper({
@@ -229,33 +246,67 @@ export function saveFact(input: SaveFactInput): number | null {
 // and users would be confused why memory_query falls back to FTS5-only.
 let _embedNotReadyWarned = false
 
+/** Retry policy for the async embed-and-store path.
+ *
+ *  Transient failures (OpenAI 429 / 5xx, local ONNX still warming, brief
+ *  network blips) are common and recoverable; without retry the fact
+ *  stays embeddingless and only the next /memory backfill rescues it.
+ *  Three attempts with exponential backoff (200 ms / 800 ms / 3.2 s)
+ *  cover the typical recovery window without delaying GC of the
+ *  in-process closure.
+ */
+const EMBED_MAX_ATTEMPTS = 3
+const EMBED_BACKOFF_BASE_MS = 200
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function embedAndStoreFact(factId: number, text: string): Promise<void> {
-  try {
-    const { getActiveBackend, float32ToBuffer } = await import('./memory-vector.js')
-    const backend = getActiveBackend()
-    if (!backend.ready) {
-      if (backend.name !== 'off' && !_embedNotReadyWarned) {
-        _embedNotReadyWarned = true
-        log.info({
-          event: 'memory.embed.backend_not_ready',
-          backend: backend.name, modelId: backend.modelId,
-        }, 'vector backend configured but not ready — facts saved without embeddings; run /memory backfill once it becomes ready')
+  let lastErr: unknown = null
+  for (let attempt = 0; attempt < EMBED_MAX_ATTEMPTS; attempt++) {
+    try {
+      const { getActiveBackend, float32ToBuffer } = await import('./memory-vector.js')
+      const backend = getActiveBackend()
+      if (!backend.ready) {
+        if (backend.name !== 'off' && !_embedNotReadyWarned) {
+          _embedNotReadyWarned = true
+          log.info({
+            event: 'memory.embed.backend_not_ready',
+            backend: backend.name, modelId: backend.modelId,
+          }, 'vector backend configured but not ready — facts saved without embeddings; run /memory backfill once it becomes ready')
+        }
+        return  // not a retryable failure — backfill will pick it up
+      }
+      const vecs = await backend.embed([text])
+      const v = vecs[0]
+      if (!v || v.length === 0) return
+      const db = helper.get()
+      if (!db) return
+      db.prepare(`
+        UPDATE facts SET embedding = ?, embedding_model = ?, embedding_dims = ?, embedded_at = ?
+        WHERE id = ?
+      `).run(float32ToBuffer(v), `${backend.name}:${backend.modelId}`, v.length, nowSec(), factId)
+      if (attempt > 0) {
+        log.debug({ event: 'memory.embed_async_recovered', factId, attempt })
       }
       return
+    } catch (err) {
+      lastErr = err
+      const isLast = attempt === EMBED_MAX_ATTEMPTS - 1
+      if (!isLast) {
+        await sleep(EMBED_BACKOFF_BASE_MS * 4 ** attempt)
+      }
     }
-    const vecs = await backend.embed([text])
-    const v = vecs[0]
-    if (!v || v.length === 0) return
-    const db = helper.get()
-    if (!db) return
-    db.prepare(`
-      UPDATE facts SET embedding = ?, embedding_model = ?, embedding_dims = ?, embedded_at = ?
-      WHERE id = ?
-    `).run(float32ToBuffer(v), `${backend.name}:${backend.modelId}`, v.length, nowSec(), factId)
-  } catch (err) {
-    // Embedding failures must never break fact storage. Already persisted.
-    log.debug({ event: 'memory.embed_async_failed', factId, err: String(err) })
   }
+  // Out of retries. Fact stays persisted with embedding=NULL — the next
+  // /memory backfill (manual or scheduled) will sweep it.
+  log.warn({
+    event: 'memory.embed_async_failed',
+    factId,
+    attempts: EMBED_MAX_ATTEMPTS,
+    err: String(lastErr),
+  }, 'embed failed after retries; fact stored without vector (backfill required)')
 }
 
 export function deleteFact(id: number, user_key: string): boolean {

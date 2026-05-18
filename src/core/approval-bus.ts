@@ -89,12 +89,92 @@ function parseEnvMs(raw: string | undefined, fallback: number): number {
 const MAX_LINE_BYTES = 256 * 1024
 const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
 
+/**
+ * M-N6 — heartbeat / dead-peer detection.
+ *
+ * The bus communicates with MCP sidecars over a long-lived Unix socket.
+ * Sidecar process death is detected by the TCP-style close event, but a
+ * *wedged* sidecar (deadlocked, blocked in a syscall, suspended) holds
+ * the socket open with no data flowing. Pending approvals on such a
+ * peer would otherwise sit until the IMHUB_APPROVAL_TIMEOUT_MS budget
+ * (15 min default) before resolving — a quarter-hour where the user
+ * sees an "awaiting tool approval" card that's actually dead.
+ *
+ * Strategy: track lastActivity per socket; once per HEARTBEAT_INTERVAL_MS
+ * we sweep connections — if a socket has been idle for IDLE_THRESHOLD_MS
+ * AND has at least one pending approval, send a single `ping` frame; if
+ * no activity within HEARTBEAT_GRACE_MS after that, destroy the socket
+ * (which fires the close handler and denies its pendings).
+ *
+ * The sidecar doesn't have to understand `ping` — any inbound frame
+ * resets the lastActivity timer, and unknown types are logged + ignored
+ * upstream. Bus-side liveness works either way.
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000
+const IDLE_THRESHOLD_MS = 60_000
+const HEARTBEAT_GRACE_MS = 30_000
+
+const socketLastActivity = new WeakMap<Socket, number>()
+const socketPingSentAt = new WeakMap<Socket, number>()
+
 /** Fallback prefix length for tools without a semantic key (Glob/Grep
  *  patterns, WebSearch queries, unknown tools). The mainline path uses
  *  per-tool semantic fingerprints — see inputFingerprint() — so this only
  *  governs the long tail. Kept at 10 for parity with the pre-semantic
  *  behavior. */
 const AUTO_ALLOW_PREFIX_LEN = 10
+
+/**
+ * Inline-context (`_im_context` in a reminder/memo payload) is how the
+ * opencode HTTP bridge identifies the user/thread when its long-lived
+ * shared MCP server can't carry per-spawn env vars. It is **agent-asserted**
+ * — i.e. the LLM itself stamps `userId`, `platform`, `threadId` into the
+ * payload — so accepting it is only safe when one human is the only caller.
+ * In a multi-tenant deployment, a malicious or buggy agent can forge
+ * `userId` to schedule reminders / write memos on behalf of someone else.
+ *
+ *   IMHUB_RPC_INLINE_CTX_MODE  effect
+ *   ──────────────────────────────────────────────────────────────────────
+ *   off (or 0 / false)         never accept `_im_context`; runId is required.
+ *                              Recommended for multi-tenant deployments.
+ *   single-user (default)      accept `_im_context` (current behavior).
+ *                              Mirrors v1.x default to avoid breaking
+ *                              existing opencode-http installs on upgrade.
+ *
+ * Push RPC ignores this setting and always rejects `_im_context` — see
+ * handlePush for the rationale.
+ */
+export type InlineCtxMode = 'off' | 'single-user'
+export function inlineCtxMode(): InlineCtxMode {
+  const raw = (process.env.IMHUB_RPC_INLINE_CTX_MODE || 'single-user').toLowerCase()
+  if (raw === 'off' || raw === '0' || raw === 'false') return 'off'
+  return 'single-user'
+}
+
+/**
+ * Pull a RunContext out of an agent-asserted `_im_context` payload field,
+ * gated by {@link inlineCtxMode}. Mutates `payload` to strip the field
+ * on success so downstream RPC field validators don't trip on it.
+ *
+ * Returns null when the gate is closed, the field is missing/malformed,
+ * or required keys (platform/threadId/channelId) are absent.
+ */
+export function resolveInlineContext(payload: Record<string, unknown>): RunContext | null {
+  if (inlineCtxMode() === 'off') return null
+  const inlineCtx = payload._im_context
+  if (!inlineCtx || typeof inlineCtx !== 'object' || Array.isArray(inlineCtx)) return null
+  const ic = inlineCtx as Record<string, unknown>
+  if (typeof ic.platform !== 'string' || typeof ic.threadId !== 'string'
+      || typeof ic.channelId !== 'string') return null
+  const ctx: RunContext = {
+    platform: ic.platform,
+    threadId: ic.threadId,
+    channelId: ic.channelId,
+    userId: typeof ic.userId === 'string' ? ic.userId : '',
+  }
+  delete payload._im_context
+  return ctx
+}
 
 export interface RunContext {
   threadId: string
@@ -243,6 +323,8 @@ export interface ApprovalBusOptions {
 export class ApprovalBus {
   private server: Server | null = null
   private socketPath: string | null = null
+  /** M-N6 — heartbeat sweep timer handle. */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   /** Public so renderers (approval-router plain-text prompt, future card
    *  variants) can show the actual budget instead of hardcoded "5 分钟". */
   public readonly approvalTimeoutMs: number
@@ -251,6 +333,12 @@ export class ApprovalBus {
   private runContexts = new Map<string, RunContext>()
   private pendingById = new Map<string, PendingApproval>()
   private pendingByThread = new Map<string, PendingApproval[]>()
+  /** M-N13: runId → set of pending requests under that run. Maintained
+   *  alongside pendingById so unregisterRun() can deny only the affected
+   *  pendings without scanning the entire pendingById map (which was
+   *  O(n) per run-termination and noticeable under A2A fan-out where a
+   *  parent run can spawn dozens of nested approvals before terminating). */
+  private pendingByRunId = new Map<string, Set<PendingApproval>>()
   private connections = new Set<Socket>()
   private notifier: ApprovalNotifier | null = null
   private resolutionListener: ResolutionListener | null = null
@@ -332,6 +420,10 @@ export class ApprovalBus {
             }
           } catch { /* non-fatal */ }
         })()
+        // M-N6: arm the heartbeat sweep. unref() so the timer alone
+        // doesn't keep the process alive past graceful shutdown.
+        this.heartbeatTimer = setInterval(() => this.heartbeatSweep(), HEARTBEAT_INTERVAL_MS)
+        this.heartbeatTimer.unref?.()
         log.info({ event: 'approval.bus.started', path })
         resolve(path)
       })
@@ -339,6 +431,10 @@ export class ApprovalBus {
   }
 
   async stop(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
     // Reject everything still pending
     for (const p of [...this.pendingById.values()]) {
       this.cancelPending(p, { behavior: 'deny', message: 'approval-bus shutting down' }, 'shutdown')
@@ -346,6 +442,7 @@ export class ApprovalBus {
     this.runContexts.clear()
     this.pendingById.clear()
     this.pendingByThread.clear()
+    this.pendingByRunId.clear()
     this.autoAllowByThread.clear()
     this.readonlyAutoAllowDisabledThreads.clear()
     // Reset lifetime counters so a restarted process starts at 0 — keeps
@@ -382,10 +479,13 @@ export class ApprovalBus {
   /** 进程结束时调。pending 全 deny，runContext 清掉。 */
   unregisterRun(runId: string): void {
     this.runContexts.delete(runId)
-    for (const p of [...this.pendingById.values()]) {
-      if (p.runId === runId) {
-        this.cancelPending(p, { behavior: 'deny', message: 'run terminated' }, 'run-terminated')
-      }
+    // M-N13: O(k) over this run's pendings via the runId index, instead
+    // of O(n) over every pending in the bus. cancelPending → removePending
+    // mutates pendingByRunId, so we snapshot before iterating.
+    const byRun = this.pendingByRunId.get(runId)
+    if (!byRun || byRun.size === 0) return
+    for (const p of [...byRun]) {
+      this.cancelPending(p, { behavior: 'deny', message: 'run terminated' }, 'run-terminated')
     }
   }
 
@@ -579,26 +679,22 @@ export class ApprovalBus {
     this.connections.add(socket)
     let buf = ''
     socket.setEncoding('utf8')
+    // M-N6: liveness tracking. Each inbound byte refreshes lastActivity;
+    // an idle reaper sweeps the connections Set and pings / closes peers
+    // that have gone silent. See {@link installHeartbeat} for the timer.
+    socketLastActivity.set(socket, Date.now())
 
     socket.on('data', (chunk: string) => {
       buf += chunk
-      if (buf.length > MAX_BUFFER_BYTES) {
-        log.warn({ event: 'approval.bus.buffer_overflow', bytes: buf.length })
-        // L10: best-effort signal to the sidecar BEFORE we close. The
-        // legacy `socket.destroy()` left the sidecar's pending request
-        // hanging on its own timeout (Claude's MCP layer typically
-        // 30 min). A wire-shaped 'fatal' line gives the sidecar a
-        // recognizable reason; if it doesn't parse the new type it still
-        // observes the socket close and bails through its disconnect
-        // handler — strictly better than the silent destroy.
-        try {
-          socket.write(`${JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' })}\n`)
-          socket.end()
-        } catch {
-          socket.destroy()
-        }
-        return
-      }
+      socketLastActivity.set(socket, Date.now())
+      const overflow = buf.length > MAX_BUFFER_BYTES
+      // M-N4: even on overflow, the buffer's leading bytes may contain
+      // complete \n-terminated requests the sidecar already finished
+      // sending — those are real pending approvals. Drain them first so
+      // we don't black-hole work the sidecar is now waiting on. Only
+      // after draining do we send `fatal` and close. The legacy code
+      // dropped these lines and the sidecar then waited out its own 30-
+      // min MCP timeout on each.
       while (true) {
         const nl = buf.indexOf('\n')
         if (nl === -1) break
@@ -613,6 +709,26 @@ export class ApprovalBus {
           log.error({ event: 'approval.bus.handle_error', err: String(err) })
         })
       }
+      if (overflow) {
+        log.warn({
+          event: 'approval.bus.buffer_overflow',
+          bytes: buf.length,
+          maxBytes: MAX_BUFFER_BYTES,
+        }, 'sidecar exceeded buffer cap; drained complete lines, closing connection')
+        // L10: best-effort signal to the sidecar BEFORE we close. The
+        // legacy `socket.destroy()` left the sidecar's pending request
+        // hanging on its own timeout (Claude's MCP layer typically
+        // 30 min). A wire-shaped 'fatal' line gives the sidecar a
+        // recognizable reason; if it doesn't parse the new type it still
+        // observes the socket close and bails through its disconnect
+        // handler — strictly better than the silent destroy.
+        try {
+          socket.write(`${JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' })}\n`)
+          socket.end()
+        } catch {
+          socket.destroy()
+        }
+      }
     })
 
     socket.on('error', (err) => {
@@ -621,6 +737,7 @@ export class ApprovalBus {
 
     socket.on('close', () => {
       this.connections.delete(socket)
+      socketLastActivity.delete(socket)
       // sidecar 掉线：相关 pending 全 deny（claude 那边大概率也已经死了，写不写都无所谓）
       for (const p of [...this.pendingById.values()]) {
         if (p.socket === socket) {
@@ -628,6 +745,61 @@ export class ApprovalBus {
         }
       }
     })
+  }
+
+  /**
+   * M-N6 — heartbeat sweep. Called once per HEARTBEAT_INTERVAL_MS while
+   * the bus is running. For each connection that has pending approvals
+   * AND has been silent past IDLE_THRESHOLD_MS, send a one-shot `ping`;
+   * if the connection still has not produced traffic after
+   * HEARTBEAT_GRACE_MS, tear it down (the close handler then denies its
+   * pendings). Connections without any pendings are left alone — silence
+   * on an idle sidecar isn't a fault, the bus is request-driven.
+   */
+  private heartbeatSweep(): void {
+    if (this.connections.size === 0) return
+    const now = Date.now()
+    for (const socket of this.connections) {
+      // Cheap O(1) check: does this socket own any pending? Without one
+      // there's no liveness signal to chase.
+      let hasPending = false
+      for (const p of this.pendingById.values()) {
+        if (p.socket === socket) { hasPending = true; break }
+      }
+      if (!hasPending) continue
+
+      const last = socketLastActivity.get(socket) ?? now
+      const idleMs = now - last
+      if (idleMs < IDLE_THRESHOLD_MS) continue
+
+      const pingedAt = socketPingSentAt.get(socket)
+      if (pingedAt !== undefined) {
+        // Already pinged this socket; check whether the grace window
+        // elapsed without any inbound data.
+        if (now - pingedAt > HEARTBEAT_GRACE_MS) {
+          log.warn({
+            event: 'approval.bus.heartbeat_dead',
+            idleMs, sincePingMs: now - pingedAt,
+          }, 'sidecar unresponsive after ping; closing connection')
+          socketPingSentAt.delete(socket)
+          try { socket.destroy() } catch { /* peer already dropped */ }
+        }
+        continue
+      }
+
+      // First ping. The frame is recognized by sidecars that speak our
+      // protocol; older ones log "unknown_type" and ignore — either way
+      // any inbound traffic in response refreshes lastActivity.
+      try {
+        socket.write(`${JSON.stringify({ v: 1, type: 'ping', ts: now })}\n`)
+        socketPingSentAt.set(socket, now)
+        log.debug({ event: 'approval.bus.heartbeat_ping', idleMs })
+      } catch {
+        // write failed → socket is broken. Destroy now; close handler
+        // denies the pendings.
+        try { socket.destroy() } catch { /* already gone */ }
+      }
+    }
   }
 
   private async handleLine(line: string, socket: Socket): Promise<void> {
@@ -644,7 +816,39 @@ export class ApprovalBus {
     }
     const m = msg as Record<string, unknown>
     if (m.v !== 1) {
+      // M-N5: was a silent drop. A future v2-speaking sidecar would then
+      // hang on its own 30-min MCP timeout for every reqId because no
+      // decision frame ever arrived. Echo a v1 error back so the peer
+      // sees the version mismatch immediately; if it also includes a
+      // reqId we mirror it so the sidecar's per-request future settles
+      // with a clear reason.
       log.warn({ event: 'approval.bus.unsupported_version', v: m.v })
+      if (socket.writable) {
+        const reqId = typeof m.reqId === 'string' ? m.reqId : undefined
+        const wire: Record<string, unknown> = {
+          v: 1, type: 'error',
+          reason: `unsupported protocol version: ${String(m.v)} (server speaks v1)`,
+        }
+        if (reqId) wire.reqId = reqId
+        try { socket.write(`${JSON.stringify(wire)}\n`) } catch { /* peer dead */ }
+      }
+      return
+    }
+    // M-N6 — peer-driven heartbeat. Either side may send `ping`; the
+    // recipient replies with `pong`. Pure liveness frame, no payload
+    // contract beyond `v:1`. We treat both as no-op-after-activity-touch
+    // so heartbeats don't show up in any of the metric counters.
+    if (m.type === 'ping') {
+      if (socket.writable) {
+        try { socket.write(`${JSON.stringify({ v: 1, type: 'pong' })}\n`) }
+        catch { /* peer dropped */ }
+      }
+      return
+    }
+    if (m.type === 'pong') {
+      // The activity timestamp was already refreshed by the data handler.
+      // Clear the outstanding-ping marker so the next sweep starts fresh.
+      socketPingSentAt.delete(socket)
       return
     }
     if (m.type === 'approval') {
@@ -841,39 +1045,27 @@ export class ApprovalBus {
       return
     }
 
-    // Resolve context: runId path first, then inline _im_context fallback.
+    // Resolve context: runId path first, then inline _im_context fallback
+    // (gated by IMHUB_RPC_INLINE_CTX_MODE — see resolveInlineContext).
     let ctx: RunContext | null = null
-    if (runId) {
-      ctx = this.runContexts.get(runId) ?? null
-    }
+    if (runId) ctx = this.runContexts.get(runId) ?? null
     if (!ctx) {
-      // Try to extract _im_context from the payload itself (path 2)
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'reminder.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'reminder using agent-asserted _im_context (single-user mode)')
-          // Strip _im_context from payload so it doesn't leak into the
-          // RPC handler's field validation.
-          delete payload._im_context
-        }
+      ctx = resolveInlineContext(payload)
+      if (ctx) {
+        log.info({
+          event: 'reminder.bus.inline_ctx',
+          platform: ctx.platform, threadId: ctx.threadId, runId,
+        }, 'reminder using agent-asserted _im_context (single-user mode)')
       }
     }
 
     if (!ctx) {
+      const gateClosed = inlineCtxMode() === 'off' && !!payload._im_context
       this.sendReminderResult(socket, reqId, {
         ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+        error: gateClosed
+          ? `unknown runId: ${runId} (_im_context fallback disabled by IMHUB_RPC_INLINE_CTX_MODE=off)`
+          : `unknown runId: ${runId} (and no _im_context fallback provided)`,
       })
       return
     }
@@ -926,30 +1118,22 @@ export class ApprovalBus {
     let ctx: RunContext | null = null
     if (runId) ctx = this.runContexts.get(runId) ?? null
     if (!ctx) {
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'memo.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'memo using agent-asserted _im_context (single-user mode)')
-          delete payload._im_context
-        }
+      ctx = resolveInlineContext(payload)
+      if (ctx) {
+        log.info({
+          event: 'memo.bus.inline_ctx',
+          platform: ctx.platform, threadId: ctx.threadId, runId,
+        }, 'memo using agent-asserted _im_context (single-user mode)')
       }
     }
 
     if (!ctx) {
+      const gateClosed = inlineCtxMode() === 'off' && !!payload._im_context
       this.sendMemoResult(socket, reqId, {
         ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
+        error: gateClosed
+          ? `unknown runId: ${runId} (_im_context fallback disabled by IMHUB_RPC_INLINE_CTX_MODE=off)`
+          : `unknown runId: ${runId} (and no _im_context fallback provided)`,
       })
       return
     }
@@ -1246,6 +1430,9 @@ export class ApprovalBus {
     const q = this.pendingByThread.get(cKey) ?? []
     q.push(pending)
     this.pendingByThread.set(cKey, q)
+    let byRun = this.pendingByRunId.get(args.runId)
+    if (!byRun) { byRun = new Set(); this.pendingByRunId.set(args.runId, byRun) }
+    byRun.add(pending)
     this.metricsSnapshot.totalRequests++
 
     // Event-bus fan-out so the dashboard's /events SSE consumer can pop
@@ -1388,10 +1575,18 @@ export class ApprovalBus {
   private removePending(p: PendingApproval): void {
     this.pendingById.delete(p.reqId)
     const q = this.pendingByThread.get(p.compositeKey)
-    if (!q) return
-    const idx = q.indexOf(p)
-    if (idx >= 0) q.splice(idx, 1)
-    if (q.length === 0) this.pendingByThread.delete(p.compositeKey)
+    if (q) {
+      const idx = q.indexOf(p)
+      if (idx >= 0) q.splice(idx, 1)
+      if (q.length === 0) this.pendingByThread.delete(p.compositeKey)
+    }
+    // M-N13: keep the runId index in sync. Without this, an unregisterRun
+    // call later on stale ids would walk dead entries (cheap but noisy).
+    const byRun = this.pendingByRunId.get(p.runId)
+    if (byRun) {
+      byRun.delete(p)
+      if (byRun.size === 0) this.pendingByRunId.delete(p.runId)
+    }
   }
 
   private sendDecision(socket: Socket, reqId: string, decision: Decision): void {

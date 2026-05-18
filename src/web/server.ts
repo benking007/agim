@@ -58,6 +58,7 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   '/api/auth/login',
   '/api/health',
   '/_app.js',
+  '/_shell.css',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use
@@ -82,6 +83,43 @@ function isLoopbackPeer(req: IncomingMessage): boolean {
   return ip === '127.0.0.1' || ip === '::1' || ip === ''
 }
 
+/**
+ * Decide whether loopback peers (`req.socket.remoteAddress` is
+ * 127.0.0.1 / ::1) should be auto-authenticated.
+ *
+ *   IMHUB_TRUST_LOOPBACK   effect
+ *   ────────────────────────────────────────────────────────────────────
+ *   on  (or 1 / true)      always trust (legacy 0.x / 1.x behavior)
+ *   off (or 0 / false)     never trust — all requests carry a token
+ *   auto (default)         trust only when bound to a loopback address
+ *                          (`IMHUB_WEB_BIND` ∈ 127.0.0.1 / ::1 / localhost).
+ *                          When bound publicly (0.0.0.0 / a routable IP)
+ *                          we distrust loopback peers because they may be
+ *                          a reverse-proxy hop forwarding an
+ *                          unauthenticated upstream request — the canonical
+ *                          "nginx on the same host terminating TLS"
+ *                          deployment shape would otherwise grant blanket
+ *                          access to anyone the proxy forwards to us.
+ *
+ * Process-wide setting because the bind socket is fixed at boot.
+ */
+function shouldTrustLoopbackBypass(bindHost: string): boolean {
+  const mode = (process.env.IMHUB_TRUST_LOOPBACK || 'auto').toLowerCase()
+  if (mode === 'on' || mode === '1' || mode === 'true') return true
+  if (mode === 'off' || mode === '0' || mode === 'false') return false
+  // auto
+  return bindHost === '127.0.0.1' || bindHost === '::1' || bindHost === 'localhost'
+}
+
+// Set by startWebServer() at boot. Defaults to true so existing call paths
+// (tests, ad-hoc createServer wrappers) keep their old behavior until
+// startWebServer takes over the explicit value.
+let _trustLoopback = true
+
+/** Test-only / wiring hook so external callers can resolve the same way. */
+export function _setTrustLoopbackForTest(v: boolean): void { _trustLoopback = v }
+export { shouldTrustLoopbackBypass }
+
 function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
   const auth = req.headers['authorization']
@@ -103,12 +141,66 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
   return null
 }
 
+/**
+ * Decide whether the session cookie should carry the `Secure` flag.
+ *
+ *   IMHUB_WEB_COOKIE_SECURE  effect
+ *   ────────────────────────────────────────────────────────────────────
+ *   on (or "1" / "true")     always include Secure
+ *   off (or "0" / "false")   never include Secure
+ *   auto (default)           include Secure when the request looks HTTPS
+ *                            (req.socket.encrypted, OR x-forwarded-proto
+ *                            === "https" — the canonical signal from
+ *                            nginx/Caddy/Cloudflare reverse proxies)
+ *
+ * Pure HTTP on a loopback bind is the common dev / single-user deploy
+ * shape; forcing Secure there would silently drop the cookie and lock
+ * the operator out. Hence the auto default rather than always-on.
+ */
+export function shouldUseSecureCookie(req: IncomingMessage): boolean {
+  const mode = (process.env.IMHUB_WEB_COOKIE_SECURE || 'auto').toLowerCase()
+  if (mode === 'on' || mode === '1' || mode === 'true') return true
+  if (mode === 'off' || mode === '0' || mode === 'false') return false
+  // auto
+  const socket = req.socket as IncomingMessage['socket'] & { encrypted?: boolean }
+  if (socket.encrypted) return true
+  const xfp = req.headers['x-forwarded-proto']
+  if (typeof xfp === 'string' && xfp.split(',')[0].trim().toLowerCase() === 'https') return true
+  return false
+}
+
+/**
+ * Build a `Set-Cookie` value for the `agim_token` session cookie.
+ * `maxAgeSec=0` produces a logout cookie that still matches the issued
+ * cookie's attributes (Path/SameSite/HttpOnly/Secure) — browsers ignore
+ * deletion attempts with mismatched attributes.
+ *
+ * Always `HttpOnly`: the page JS uses localStorage for token storage and
+ * attaches `Authorization: Bearer` on fetches (see `_app.js`), so the
+ * cookie itself never needs to be readable from script. Closing this
+ * door eliminates the easiest XSS-to-session-takeover path.
+ */
+export function buildSessionCookie(req: IncomingMessage, token: string, maxAgeSec: number): string {
+  const parts = [
+    `agim_token=${encodeURIComponent(token)}`,
+    'Path=/',
+    `Max-Age=${maxAgeSec}`,
+    'SameSite=Strict',
+    'HttpOnly',
+  ]
+  if (shouldUseSecureCookie(req)) parts.push('Secure')
+  return parts.join('; ')
+}
+
 /** Returns true if the request is authenticated (or auth not required). */
 function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   // 1. Disabled by env → pass through.
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
-  // 2. Loopback → pass through (local CLI / browser-on-same-host).
-  if (isLoopbackPeer(req)) return true
+  // 2. Loopback → pass through *only* when the trust gate is open. When
+  //    deployed behind a reverse proxy on the same host, every request
+  //    appears to come from 127.0.0.1 — auto-trusting that would let the
+  //    proxy forward unauthenticated traffic straight in.
+  if (_trustLoopback && isLoopbackPeer(req)) return true
   // 3. Public-by-design path → pass through.
   if (isPublicPath(url.pathname, req.method || 'GET')) return true
 
@@ -196,11 +288,19 @@ export async function startWebServer(options: {
       bind: bindHost,
     }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
   }
+  _trustLoopback = shouldTrustLoopbackBypass(bindHost)
+  if (isPublicBind && _trustLoopback) {
+    webLog.warn({
+      event: 'web.loopback_trust_on_public_bind',
+      bind: bindHost,
+    }, 'IMHUB_TRUST_LOOPBACK=on with public bind — reverse-proxy hops from 127.0.0.1 will bypass auth; set IMHUB_TRUST_LOOPBACK=off when fronted by a proxy')
+  }
   webLog.info({
     event: 'web.auth_mode',
     bind: bindHost,
     enabled: isAuthEnabled(),
-  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'}`)
+    trustLoopback: _trustLoopback,
+  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'} (loopback-bypass=${_trustLoopback ? 'on' : 'off'})`)
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -217,14 +317,31 @@ export async function startWebServer(options: {
       url.pathname === '/settings' || url.pathname === '/settings.html' ||
       url.pathname === '/tasks' || url.pathname === '/tasks.html' ||
       url.pathname === '/reminders' || url.pathname === '/reminders.html' ||
-      url.pathname === '/memos' || url.pathname === '/memos.html'
+      url.pathname === '/memos' || url.pathname === '/memos.html' ||
+      // v1.3 IA — secondary pages split out from /tasks so each URL owns
+      // a single domain (approvals / memory+skills / workspace files /
+      // observability=health+audit+cost). The catch-all entry point on
+      // chrome navigation stays /tasks; the other URLs are deep-linkable.
+      url.pathname === '/approvals' || url.pathname === '/approvals.html' ||
+      url.pathname === '/memory' || url.pathname === '/memory.html' ||
+      url.pathname === '/workspace' || url.pathname === '/workspace.html' ||
+      url.pathname === '/observability' || url.pathname === '/observability.html'
     ) {
+      // The four new URLs route to the SAME tasks.html file. The page's
+      // JS reads location.pathname and renders only the panes that belong
+      // to the current mode — see PAGE_MODE in tasks.html. This keeps the
+      // 3700-line domain JS in one place and avoids a risky split, while
+      // giving each domain its own deep-linkable, semantically-named URL.
       const fileMap: Record<string, string> = {
         '/': 'index.html', '/index.html': 'index.html',
         '/settings': 'settings.html', '/settings.html': 'settings.html',
         '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
         '/reminders': 'reminders.html', '/reminders.html': 'reminders.html',
         '/memos': 'memos.html', '/memos.html': 'memos.html',
+        '/approvals': 'tasks.html', '/approvals.html': 'tasks.html',
+        '/memory': 'tasks.html', '/memory.html': 'tasks.html',
+        '/workspace': 'tasks.html', '/workspace.html': 'tasks.html',
+        '/observability': 'tasks.html', '/observability.html': 'tasks.html',
       }
       return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
     }
@@ -252,7 +369,18 @@ export async function startWebServer(options: {
     // + auth-aware fetch). Loaded synchronously by every static page in
     // <head> so the theme can apply before first paint. No secrets — safe
     // to serve un-authenticated.
+    if (url.pathname === '/_shell.css' && req.method === 'GET') {
+      // Shared design tokens + component classes. Loaded by imhub.shell
+      // .mount() on every secondary page. No secrets — safe to serve
+      // un-authenticated alongside _app.js.
+      // no-cache so a server upgrade that changes the shell isn't
+      // silently shadowed by a browser holding an older copy (caused a
+      // user-visible "no topbar" bug after the 2026-05-18 review).
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate')
+      return serveStatic(res, join(PUBLIC_DIR, '_shell.css'), 'text/css; charset=utf-8')
+    }
     if (url.pathname === '/_app.js' && req.method === 'GET') {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate')
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 
@@ -782,6 +910,20 @@ export async function startWebServer(options: {
     return 100
   })()
 
+  // M-N10: per-message size cap. The WS handler JSON.parses every inbound
+  // frame; without this, a hostile or buggy client can dump a multi-MiB
+  // deeply-nested JSON and pin the event loop on parse alone. 1 MiB is
+  // 100× the largest legitimate UI payload we've measured (settings save,
+  // long chat message).
+  const maxWsMsgBytes = (() => {
+    const raw = process.env.IMHUB_MAX_WS_MSG_BYTES
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 1 * 1024 * 1024
+  })()
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     if (clients.size >= maxWsClients) {
       // 1013 = "Try Again Later" per RFC 6455. Slightly nicer than a flat
@@ -815,6 +957,19 @@ export async function startWebServer(options: {
     const enqueueInbound = createSerialQueue()
 
     ws.on('message', (data: Buffer) => {
+      // M-N10: drop frames over the configured cap before they reach
+      // JSON.parse. 1009 = "Message Too Big" per RFC 6455. We close the
+      // socket rather than just dropping the frame because a client that
+      // sent one giant frame is likely to send more — close-on-bad-input
+      // is a stronger signal to the page JS to back off.
+      if (data.length > maxWsMsgBytes) {
+        webLog.warn({
+          event: 'ws.oversized_message',
+          clientId, size: data.length, cap: maxWsMsgBytes,
+        })
+        try { ws.close(1009, 'Message too large') } catch { /* peer already gone */ }
+        return
+      }
       enqueueInbound(async () => {
         try {
           const msg = JSON.parse(data.toString())
@@ -3594,13 +3749,15 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
     if (!_tokenModule) { sendJson(res, 503, { error: 'auth module not ready' }); return }
     const id = _tokenModule.verifyToken(token)
     if (!id) { sendJson(res, 401, { error: 'invalid token' }); return }
-    // 30-day cookie, Path=/, SameSite=Strict. Not HttpOnly so the page JS
-    // can also read it back if needed (e.g. to attach Authorization header
-    // on fetch — though the cookie alone suffices).
+    // 30-day session cookie. HttpOnly + SameSite=Strict + conditional
+    // Secure — see buildSessionCookie() for the full attribute rationale.
+    // The page JS stores the token in localStorage independently and
+    // attaches `Authorization: Bearer ...` on fetches, so HttpOnly
+    // does not break the front-end (verified in login.html / _app.js).
     const maxAge = 30 * 24 * 60 * 60
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Set-Cookie': `agim_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Strict`,
+      'Set-Cookie': buildSessionCookie(req, token, maxAge),
     })
     res.end(JSON.stringify({ ok: true, tokenId: id }))
   } catch (err) {
@@ -3608,10 +3765,12 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-function handleAuthLogout(_req: IncomingMessage, res: ServerResponse): void {
+function handleAuthLogout(req: IncomingMessage, res: ServerResponse): void {
+  // Match the issued cookie's attributes; browsers ignore deletion
+  // attempts where Path/SameSite/Secure/HttpOnly differ.
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Set-Cookie': 'agim_token=; Path=/; Max-Age=0; SameSite=Strict',
+    'Set-Cookie': buildSessionCookie(req, '', 0),
   })
   res.end(JSON.stringify({ ok: true }))
 }

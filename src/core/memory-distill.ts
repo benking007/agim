@@ -29,8 +29,27 @@ import { logger as rootLogger } from './logger.js'
 import { saveFact, userKey, type FactCategory } from './memory.js'
 import { isMemoryEnabled } from './persona.js'
 import { logInvocation } from './audit-log.js'
+import { LlmBudget, LlmCircuitBreaker, resolveLlmGuardConfig } from './llm-budget.js'
 
 const log = rootLogger.child({ component: 'memory-distill' })
+
+// Distill fires per user turn — a hung call should die in tens of
+// seconds, and a runaway daily spend should cap before the operator
+// notices it on the bill. Defaults tuned for that envelope.
+const GUARD = resolveLlmGuardConfig('distill', {
+  timeoutMs:         30_000,
+  budgetUsd:         0.10,                  // per user per UTC day
+  circuitThreshold:  3,                     // 3 consecutive fails
+  circuitCooldownMs: 10 * 60_000,           // 10 min cooldown
+})
+
+const budget = new LlmBudget('distill', GUARD.budgetUsd)
+const circuit = new LlmCircuitBreaker('distill', GUARD.circuitThreshold, GUARD.circuitCooldownMs)
+
+/** Test/diagnostic accessors. */
+export function _getDistillBudget(): LlmBudget { return budget }
+export function _getDistillCircuit(): LlmCircuitBreaker { return circuit }
+export function _getDistillGuardConfig(): typeof GUARD { return GUARD }
 
 export interface DistillationInput {
   /** The IM platform (telegram / wechat / ...). */
@@ -145,6 +164,21 @@ export async function runDistillation(input: DistillationInput): Promise<number>
   const source = input.traceId ? `trace:${input.traceId}` : 'auto'
   const traceId = input.traceId || `distill-${Date.now()}`
 
+  // Hard guards before paying for the LLM call:
+  //   1. circuit breaker — N consecutive failures jam this purpose. The
+  //      operator probably has an unrelated outage; spamming the agent
+  //      with distill calls only buries the real signal.
+  //   2. daily budget — bound a runaway by user. Once exceeded, distill
+  //      sits out for the rest of the UTC day.
+  if (!circuit.isClosed()) {
+    log.debug({ event: 'memory.distill.skip_circuit', user_key: key })
+    return 0
+  }
+  if (!budget.check(key)) {
+    log.info({ event: 'memory.distill.skip_budget', user_key: key, capUsd: GUARD.budgetUsd })
+    return 0
+  }
+
   // Single-shot extraction. We use a synthetic session id so the agent
   // doesn't pollute the user's real conversation history.
   const extractionPrompt = buildExtractionPrompt(input.userMessage, input.agentReply)
@@ -152,12 +186,19 @@ export async function runDistillation(input: DistillationInput): Promise<number>
   let costAccum = 0
   const startedAt = Date.now()
   let agentFailed: Error | null = null
+  // Real wall-clock timeout. The previous `Date.now() > deadline` check
+  // inside the chunk loop is useless when the agent stalls before the
+  // first chunk arrives — the AbortSignal hangs through the transport
+  // and the adapter terminates the child process cleanly.
+  const abortController = new AbortController()
+  const timeoutHandle = setTimeout(() => abortController.abort(), GUARD.timeoutMs)
   try {
     const gen = input.agent.sendPrompt(`memory-distill-${Date.now()}`, extractionPrompt, [], {
       // platform='memory-distill' keeps distill rows separate from real IM
       // turns in the audit view (and in Cost & Health pivots).
       platform: 'memory-distill',
       userId: input.userId,
+      signal: abortController.signal,
       // P1-5: account for distill cost so Cost & Health reports the true
       // operator spend, not just user-facing turns.
       onUsage: (delta) => {
@@ -173,7 +214,15 @@ export async function runDistillation(input: DistillationInput): Promise<number>
   } catch (err) {
     agentFailed = err instanceof Error ? err : new Error(String(err))
     log.warn({ event: 'memory.distill.agent_failed', err: String(err) })
+  } finally {
+    clearTimeout(timeoutHandle)
   }
+
+  // Always record the realized cost — circuit + budget care about it
+  // even when the call failed (a hung call that times out still bills).
+  if (costAccum > 0) budget.record(key, costAccum)
+  if (agentFailed) circuit.recordFailure()
+  else circuit.recordSuccess()
 
   // Audit every distill attempt — success or failure — so operators can
   // see how often distillation runs, what it costs, and when it errors.

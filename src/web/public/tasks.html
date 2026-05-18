@@ -8,6 +8,12 @@
        boundary surfaces silent script failures, i18n + api helpers are
        used by the page-specific script below. -->
   <script src="/_app.js"></script>
+  <!-- Eager <link> to the shell stylesheet so the topbar + page chrome
+       paint correctly on first frame. mountShell() also lazy-injects this
+       (same id) so removing the line wouldn't break correctness — but the
+       JS-only path produces a 1-2 frame flash of unstyled content during
+       navigation. -->
+  <link id="ag-shell-css-link" rel="stylesheet" href="/_shell.css">
   <script>
     // Wrapped in an IIFE so `const T` / `LANGS` / `savedLang` / `browserLang`
     // stay out of the global script scope. Without this, the second
@@ -25,7 +31,17 @@
     const T = {
       en: {
         title: 'Agim — Tasks',
-        h1: '🗂 Tasks & Schedules',
+        h1: '📋 Tasks',
+        // Page titles for the secondary URLs that share this file —
+        // PAGE_MODE.titleKey selects one of these via the page mode lookup.
+        navMemoryTitle: '🧠 Memory & Skills',
+        navObservabilityTitle: '📊 Observability',
+        // One-line "what is this page for" used as the page subtitle.
+        navTasksSub: 'Run, schedule, and observe agent jobs.',
+        navApprovalsSub: 'Approve or deny tool calls the agents queue up for human review.',
+        navMemorySub: "Inspect and edit each user's facts + persona summary, and configure vector retrieval.",
+        navWorkspaceSub: "Browse the agents' per-user working directories.",
+        navObservabilitySub: 'Health, audit trail, and cost dashboards in one place.',
         backToChat: '↩ Chat',
         toReminders: 'Reminders',
         toMemos: 'Memos',
@@ -318,7 +334,14 @@
       },
       zh: {
         title: 'Agim — 任务',
-        h1: '🗂 任务与定时',
+        h1: '📋 任务',
+        navMemoryTitle: '🧠 记忆与技能',
+        navObservabilityTitle: '📊 观测',
+        navTasksSub: '运行、调度、观测 Agent 的任务执行。',
+        navApprovalsSub: 'Agent 工具调用需要人工把关时，在这里批准或拒绝。',
+        navMemorySub: '查看 / 编辑每个用户的事实库 + persona 摘要，配置向量召回。',
+        navWorkspaceSub: '浏览各 Agent 的用户工作目录。',
+        navObservabilitySub: '健康、审计、成本仪表板集中视图。',
         backToChat: '↩ 对话',
         toReminders: '提醒',
         toMemos: '备忘',
@@ -918,21 +941,17 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1 id="page-title"></h1>
-    <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-    <select id="langSelect" title="Language / 语言">
-      <option value="en">EN</option>
-      <option value="zh">中文</option>
-    </select>
-    <a href="/" id="lnk-chat"></a>
-    <a href="/reminders" id="lnk-reminders"></a>
-    <a href="/memos" id="lnk-memos"></a>
-    <a href="/settings" id="lnk-settings"></a>
-  </header>
-  <main>
+  <!-- imhub.shell.mount() injects the unified topbar here on script load.
+       The old header / theme / lang controls were moved into the shell so
+       every secondary page reads from one source. -->
+  <div data-shell-replace></div>
+  <div class="ag-page-header">
+    <h1 id="page-title" class="ag-page-header__title"></h1>
+    <p id="page-subtitle" class="ag-page-header__subtitle" hidden></p>
+  </div>
+  <main class="ag-page-body">
     <div class="tabs">
-      <button type="button" class="tab active" data-tab="jobs" id="tab-jobs"></button>
+      <button type="button" class="tab" data-tab="jobs" id="tab-jobs"></button>
       <button type="button" class="tab" data-tab="background" id="tab-background"></button>
       <button type="button" class="tab" data-tab="subtasks" id="tab-subtasks"></button>
       <button type="button" class="tab" data-tab="schedules" id="tab-schedules"></button>
@@ -1189,14 +1208,22 @@
       </div>
     </section>
 
-    <!-- v1.5 — Memory admin tab: per-user persona + facts inspection / edit -->
+    <!-- v1.5 — Memory admin: per-user persona + facts.
+         v1.3 (this commit) reorder: persona + facts (the daily-use
+         content) sit above the vector-backend setup card (one-time
+         config), and the vector block is wrapped in <details> so it
+         stays out of the way until the operator wants to tune it. All
+         element IDs are preserved so the existing JS bindings keep
+         working without churn. -->
     <section id="memory-pane" hidden>
-      <h2 style="margin-top:0" data-i18n="memoryH2">🧠 长期记忆管理</h2>
-      <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px" data-i18n="memoryIntro">
+      <p class="muted" style="margin-top:-4px;margin-bottom:16px;font-size:13px" data-i18n="memoryIntro">
         agent 自动从对话中提取的事实 + 记忆画像（persona summary）。选用户 → 查看 / 编辑 / 删除。
         全部数据存在本机 ~/.agim/memory.db，不会上传到任何外部服务。
       </p>
-      <div class="toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+
+      <!-- User picker — always visible, since every card below scopes
+           to a single user. -->
+      <div class="toolbar">
         <label><span data-i18n="memoryUser">用户</span>：
           <select id="mem-user-select" style="min-width:280px">
             <option value="" data-i18n="memoryUserLoading">— 加载中 —</option>
@@ -1206,91 +1233,30 @@
         <a id="btn-mem-export" href="#" target="_blank" style="display:none" data-i18n="memoryExportUser">📦 导出此用户 JSON</a>
       </div>
 
-      <!-- v1.6 — Vector retrieval (optional enhancement) -->
-      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong><span data-i18n="vecTitle">🔍 向量召回</span> <span class="muted" style="font-weight:400;font-size:12px" data-i18n="vecSubtitle">（可选增强 · 默认关闭）</span></strong>
-          <span class="muted" id="mem-vec-status-badge" style="font-size:12px">—</span>
-        </div>
-        <div style="background:var(--code,#f4f6f8);padding:10px;border-radius:6px;font-size:12px;color:var(--muted,#656d76);margin-bottom:10px;line-height:1.6">
-          <strong style="color:var(--fg,#1f2328)" data-i18n="vecWhyHeading">为什么加向量？</strong><br>
-          <span data-i18n="vecWhyDefault">默认（FTS5 关键词）：只能命中字面 — 「腾讯」→ 含「腾讯」字样的事实。</span><br>
-          <span data-i18n="vecWhyAdded">加向量后：召回同义 / 跨语言 / 概念性查询：</span><br>
-          <span data-i18n="vecWhyEx1">▸ 「投资偏好」→ 召回「用户偏好低回撤、稳健」</span><br>
-          <span data-i18n="vecWhyEx2">▸ 「Beijing」→ 召回「用户在北京工作」</span><br>
-          <span data-i18n="vecWhyEx3">▸ 「我儿子生日」→ 召回「Tom 2018-03-15 出生」</span><br>
-          <strong style="color:var(--fg,#1f2328)" data-i18n="vecWhenHeading">何时启用</strong>：<span data-i18n="vecWhenBody">积累 50+ 条事实、agent 经常"忘了用户说过 X"。初装不需要 — FTS5 已经够用。</span>
-        </div>
-
-        <label data-i18n="vecBackend">后端</label>
-        <select id="mem-vec-backend" style="max-width:280px">
-          <option value="off" data-i18n="vecBackendOff">关闭（仅 FTS5）</option>
-          <option value="local" data-i18n="vecBackendLocal">本地 BGE（一次性下载 ~250MB）</option>
-          <option value="openai" data-i18n="vecBackendOpenai">远程 OpenAI 兼容（baseUrl + key）</option>
-        </select>
-
-        <!-- Local config (shown when backend === 'local') -->
-        <div id="mem-vec-local-cfg" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--border,#d0d7de);border-radius:6px">
-          <label data-i18n="vecLocalModel">本地模型</label>
-          <select id="mem-vec-local-preset" style="max-width:400px">
-            <option value="Xenova/bge-small-zh-v1.5" data-i18n="vecLocalSmall">小（small，~100MB，速度优先）</option>
-            <option value="Xenova/bge-base-zh-v1.5" selected data-i18n="vecLocalBase">中（base，~250MB，推荐）</option>
-            <option value="Xenova/bge-large-zh-v1.5" data-i18n="vecLocalLarge">大（large，~500MB，精度优先）</option>
-            <option value="__custom__" data-i18n="vecLocalCustom">自定义…</option>
-          </select>
-          <input type="text" id="mem-vec-local-model" placeholder="Xenova/your-model" style="max-width:400px;margin-top:6px;display:none" />
-          <div class="muted" style="font-size:11px;margin-top:4px" data-i18n="vecLocalHint">三个预设都是 BGE 中文模型（智源研究院开源，HuggingFace 上 Xenova 提供 ONNX 量化版）。首次下载到 ~/.agim/cache/transformers</div>
-          <div style="margin-top:8px">
-            <button type="button" id="btn-mem-vec-download" class="btn" data-i18n="vecDownloadBtn">📥 下载模型（首次 5-10 min，建议 WiFi）</button>
-            <span id="mem-vec-download-progress" class="muted" style="font-size:12px;margin-left:8px"></span>
-          </div>
-        </div>
-
-        <!-- OpenAI config (shown when backend === 'openai') -->
-        <div id="mem-vec-openai-cfg" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--border,#d0d7de);border-radius:6px">
-          <label>Base URL</label>
-          <input type="text" id="mem-vec-openai-url" placeholder="https://api.openai.com/v1" style="max-width:400px" />
-          <label style="margin-top:6px">Model</label>
-          <input type="text" id="mem-vec-openai-model" placeholder="text-embedding-3-small" style="max-width:400px" />
-          <label style="margin-top:6px" data-i18n="vecOpenaiKey">API Key</label>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <input type="password" id="mem-vec-openai-key" placeholder="sk-..." style="max-width:400px;background:#f6f8fa;color:#57606a" autocomplete="off" readonly />
-            <button type="button" id="btn-mem-vec-openai-reveal" class="btn" style="font-size:12px;padding:2px 8px" data-i18n="vecOpenaiReveal">🔓 显示并编辑</button>
-          </div>
-          <div class="muted" style="font-size:11px;margin-top:4px" data-i18n="vecOpenaiKeyHint">默认掩码显示；保存时如未点开「显示」，原值不会被覆盖。</div>
-          <div style="margin-top:8px">
-            <button type="button" id="btn-mem-vec-test" class="btn" data-i18n="vecTestBtn">🧪 测试连接（10s 超时）</button>
-            <span id="mem-vec-test-result" class="muted" style="font-size:12px;margin-left:8px"></span>
-          </div>
-        </div>
-
-        <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" id="btn-mem-vec-save" class="btn btn-primary" data-i18n="vecSaveBtn">保存配置</button>
-          <button type="button" id="btn-mem-vec-backfill" class="btn" data-i18n="vecBackfillBtn">🔄 回填全部</button>
-          <button type="button" id="btn-mem-vec-clear" class="btn" data-i18n="vecClearBtn">🗑 清空向量索引</button>
-        </div>
-        <p class="muted" id="mem-vec-status-detail" style="margin-top:8px;font-size:12px"></p>
-      </div>
-
-      <!-- 记忆画像 display + editor -->
-      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong data-i18n="memoryPersonaCard">记忆画像</strong>
+      <!-- Persona — the agent-injectable summary. Top spot because it's
+           the highest-leverage edit (one row → every future prompt). -->
+      <div class="ag-card">
+        <div class="ag-card__head">
+          <h3 class="ag-card__title" data-i18n="memoryPersonaCard">记忆画像</h3>
           <span class="muted" id="mem-persona-meta" style="font-size:12px"></span>
         </div>
         <textarea id="mem-persona-text" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box" data-i18n-attr="placeholder:memoryPersonaPlaceholder" placeholder="（此用户暂无记忆画像 — 等下次 consolidation 自动生成，或手动写入）"></textarea>
-        <div class="actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" id="btn-mem-persona-save" class="btn btn-primary" data-i18n="memoryPersonaSave">保存记忆画像</button>
-          <button type="button" id="btn-mem-persona-delete" class="btn" data-i18n="memoryPersonaDelete">删除记忆画像</button>
-          <button type="button" id="btn-mem-persona-consolidate" class="btn" title="立刻跑一次 consolidation 重建画像，不等 24h 周期" data-i18n="memoryPersonaConsolidate">🔁 立刻重建画像</button>
+        <div class="actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btn-mem-persona-save" class="primary" data-i18n="memoryPersonaSave">保存记忆画像</button>
+          <button type="button" id="btn-mem-persona-delete" data-i18n="memoryPersonaDelete">删除记忆画像</button>
+          <button type="button" id="btn-mem-persona-consolidate" title="立刻跑一次 consolidation 重建画像，不等 24h 周期" data-i18n="memoryPersonaConsolidate">🔁 立刻重建画像</button>
         </div>
         <p class="muted" id="mem-persona-status" style="margin-top:6px;font-size:12px"></p>
       </div>
 
-      <!-- Facts table + filters -->
-      <div style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:12px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-          <strong><span data-i18n="memoryFactsCard">Facts</span> <span id="mem-facts-total" class="muted" style="font-weight:400;font-size:12px"></span></strong>
+      <!-- Facts — the raw extraction list. Second because it's frequent
+           but lower-impact than persona. -->
+      <div class="ag-card">
+        <div class="ag-card__head">
+          <h3 class="ag-card__title">
+            <span data-i18n="memoryFactsCard">Facts</span>
+            <span id="mem-facts-total" class="muted" style="font-weight:400;font-size:12px;margin-left:8px"></span>
+          </h3>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <input type="text" id="mem-facts-query" data-i18n-attr="placeholder:memoryFactsSearch" placeholder="搜索（FTS5）" style="width:200px;font-size:12px" />
             <select id="mem-facts-category" style="font-size:12px">
@@ -1305,19 +1271,92 @@
           </div>
         </div>
         <div id="mem-facts-list" data-i18n="memoryFactsSelectUser">（请选择用户）</div>
-        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;align-items:center">
-          <div class="muted">
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;align-items:center;flex-wrap:wrap;gap:8px">
+          <div class="muted" style="display:flex;align-items:center;gap:6px">
             <button type="button" id="btn-mem-facts-prev" data-i18n="memoryFactsPrev">← 上一页</button>
             <span id="mem-facts-pagelabel">—</span>
             <button type="button" id="btn-mem-facts-next" data-i18n="memoryFactsNext">下一页 →</button>
           </div>
-          <div>
-            <button type="button" id="btn-mem-facts-clear-lowconf" class="btn" title="删除 confidence ≤ 0.4 的所有事实" data-i18n="memoryFactsClearLowConf">🗑 清低置信度</button>
-            <button type="button" id="btn-mem-facts-clear-all" class="btn" style="color:#cf222e" title="慎用：清空此用户的所有事实" data-i18n="memoryFactsClearAll">⚠️ 清空所有</button>
+          <div style="display:flex;gap:6px">
+            <button type="button" id="btn-mem-facts-clear-lowconf" title="删除 confidence ≤ 0.4 的所有事实" data-i18n="memoryFactsClearLowConf">🗑 清低置信度</button>
+            <button type="button" id="btn-mem-facts-clear-all" class="danger" title="慎用：清空此用户的所有事实" data-i18n="memoryFactsClearAll">⚠️ 清空所有</button>
           </div>
         </div>
         <p class="muted" id="mem-facts-status" style="margin-top:6px;font-size:12px"></p>
       </div>
+
+      <!-- Vector backend — one-time setup, collapsed by default so the
+           daily workflow above isn't crowded. Operators expand it to
+           switch backend or backfill. -->
+      <details class="ag-card" style="padding:0">
+        <summary style="cursor:pointer;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:8px;list-style:none">
+          <strong>
+            <span data-i18n="vecTitle">🔍 向量召回</span>
+            <span class="muted" style="font-weight:400;font-size:12px;margin-left:6px" data-i18n="vecSubtitle">（可选增强 · 默认关闭）</span>
+          </strong>
+          <span class="muted" id="mem-vec-status-badge" style="font-size:12px">—</span>
+        </summary>
+        <div style="padding:0 20px 20px">
+          <div style="background:var(--ag-surface-2,var(--code,#f4f6f8));padding:12px;border-radius:6px;font-size:12px;color:var(--ag-text-dim,var(--muted,#656d76));margin-bottom:12px;line-height:1.6">
+            <strong style="color:var(--ag-text,var(--fg,#1f2328))" data-i18n="vecWhyHeading">为什么加向量？</strong><br>
+            <span data-i18n="vecWhyDefault">默认（FTS5 关键词）：只能命中字面 — 「腾讯」→ 含「腾讯」字样的事实。</span><br>
+            <span data-i18n="vecWhyAdded">加向量后：召回同义 / 跨语言 / 概念性查询：</span><br>
+            <span data-i18n="vecWhyEx1">▸ 「投资偏好」→ 召回「用户偏好低回撤、稳健」</span><br>
+            <span data-i18n="vecWhyEx2">▸ 「Beijing」→ 召回「用户在北京工作」</span><br>
+            <span data-i18n="vecWhyEx3">▸ 「我儿子生日」→ 召回「Tom 2018-03-15 出生」</span><br>
+            <strong style="color:var(--ag-text,var(--fg,#1f2328))" data-i18n="vecWhenHeading">何时启用</strong>：<span data-i18n="vecWhenBody">积累 50+ 条事实、agent 经常"忘了用户说过 X"。初装不需要 — FTS5 已经够用。</span>
+          </div>
+
+          <label data-i18n="vecBackend">后端</label>
+          <select id="mem-vec-backend" style="max-width:280px;display:block;margin-top:6px">
+            <option value="off" data-i18n="vecBackendOff">关闭（仅 FTS5）</option>
+            <option value="local" data-i18n="vecBackendLocal">本地 BGE（一次性下载 ~250MB）</option>
+            <option value="openai" data-i18n="vecBackendOpenai">远程 OpenAI 兼容（baseUrl + key）</option>
+          </select>
+
+          <!-- Local config (shown when backend === 'local') -->
+          <div id="mem-vec-local-cfg" style="display:none;margin-top:12px;padding:12px;border:1px dashed var(--ag-border,var(--border,#d0d7de));border-radius:6px">
+            <label data-i18n="vecLocalModel">本地模型</label>
+            <select id="mem-vec-local-preset" style="max-width:400px;display:block;margin-top:6px">
+              <option value="Xenova/bge-small-zh-v1.5" data-i18n="vecLocalSmall">小（small，~100MB，速度优先）</option>
+              <option value="Xenova/bge-base-zh-v1.5" selected data-i18n="vecLocalBase">中（base，~250MB，推荐）</option>
+              <option value="Xenova/bge-large-zh-v1.5" data-i18n="vecLocalLarge">大（large，~500MB，精度优先）</option>
+              <option value="__custom__" data-i18n="vecLocalCustom">自定义…</option>
+            </select>
+            <input type="text" id="mem-vec-local-model" placeholder="Xenova/your-model" style="max-width:400px;margin-top:6px;display:none" />
+            <div class="muted" style="font-size:11px;margin-top:6px" data-i18n="vecLocalHint">三个预设都是 BGE 中文模型（智源研究院开源，HuggingFace 上 Xenova 提供 ONNX 量化版）。首次下载到 ~/.agim/cache/transformers</div>
+            <div style="margin-top:10px">
+              <button type="button" id="btn-mem-vec-download" data-i18n="vecDownloadBtn">📥 下载模型（首次 5-10 min，建议 WiFi）</button>
+              <span id="mem-vec-download-progress" class="muted" style="font-size:12px;margin-left:8px"></span>
+            </div>
+          </div>
+
+          <!-- OpenAI config (shown when backend === 'openai') -->
+          <div id="mem-vec-openai-cfg" style="display:none;margin-top:12px;padding:12px;border:1px dashed var(--ag-border,var(--border,#d0d7de));border-radius:6px">
+            <label>Base URL</label>
+            <input type="text" id="mem-vec-openai-url" placeholder="https://api.openai.com/v1" style="max-width:400px;display:block;margin-top:6px" />
+            <label style="margin-top:10px;display:block">Model</label>
+            <input type="text" id="mem-vec-openai-model" placeholder="text-embedding-3-small" style="max-width:400px;display:block;margin-top:6px" />
+            <label style="margin-top:10px;display:block" data-i18n="vecOpenaiKey">API Key</label>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+              <input type="password" id="mem-vec-openai-key" placeholder="sk-..." style="max-width:400px" autocomplete="off" readonly />
+              <button type="button" id="btn-mem-vec-openai-reveal" style="font-size:12px;padding:4px 10px" data-i18n="vecOpenaiReveal">🔓 显示并编辑</button>
+            </div>
+            <div class="muted" style="font-size:11px;margin-top:6px" data-i18n="vecOpenaiKeyHint">默认掩码显示；保存时如未点开「显示」，原值不会被覆盖。</div>
+            <div style="margin-top:10px">
+              <button type="button" id="btn-mem-vec-test" data-i18n="vecTestBtn">🧪 测试连接（10s 超时）</button>
+              <span id="mem-vec-test-result" class="muted" style="font-size:12px;margin-left:8px"></span>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="btn-mem-vec-save" class="primary" data-i18n="vecSaveBtn">保存配置</button>
+            <button type="button" id="btn-mem-vec-backfill" data-i18n="vecBackfillBtn">🔄 回填全部</button>
+            <button type="button" id="btn-mem-vec-clear" class="danger" data-i18n="vecClearBtn">🗑 清空向量索引</button>
+          </div>
+          <p class="muted" id="mem-vec-status-detail" style="margin-top:8px;font-size:12px"></p>
+        </div>
+      </details>
     </section>
 
     <!-- v1.2.3 — Skills browser: read-only inventory of installed claude /
@@ -1365,33 +1404,117 @@
   <script>
     const T = window.__t;
 
-    // Theme toggle (light / dark / system). _app.js applied the theme
-    // synchronously in <head>; here we wire the button so clicks cycle
-    // and the label re-renders.
-    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
+    // ───────────────────────────────────────────────────────────────
+    // PAGE_MODE — single file, four URLs.
+    //
+    // tasks.html is served at /tasks plus four secondary URLs that
+    // each carve out a subset of its tabs. The IA cleanup is purely a
+    // URL-routing change (server.ts fileMap); this block reads the
+    // current pathname and tells the rest of the page which tabs are
+    // in-scope. Tabs outside the scope hide; the first in-scope tab
+    // becomes active by default.
+    //
+    // Single-tab modes (Approvals, Workspace) hide the tab bar entirely
+    // since one option isn't a choice — saves visual noise.
+    // ───────────────────────────────────────────────────────────────
+    const PAGE_MODE = (() => {
+      const p = (location.pathname || '/').replace(/\.html$/, '');
+      switch (p) {
+        case '/approvals':
+          return { id: 'approvals', tabs: ['approvals'], titleKey: 'tabsApprovals',
+                   subtitleKey: 'navApprovalsSub' };
+        case '/memory':
+          return { id: 'memory', tabs: ['memory', 'skills'], titleKey: 'navMemoryTitle',
+                   subtitleKey: 'navMemorySub' };
+        case '/workspace':
+          return { id: 'workspace', tabs: ['files'], titleKey: 'tabsFiles',
+                   subtitleKey: 'navWorkspaceSub' };
+        case '/observability':
+          return { id: 'observability', tabs: ['health', 'audit', 'cost'],
+                   titleKey: 'navObservabilityTitle', subtitleKey: 'navObservabilitySub' };
+        default:
+          return {
+            id: 'tasks',
+            tabs: ['jobs', 'background', 'subtasks', 'schedules', 'outbox', 'a2a'],
+            titleKey: 'h1',
+            subtitleKey: 'navTasksSub',
+          };
+      }
+    })();
 
-    // i18n string fills
-    document.title = T.title;
-    document.getElementById('page-title').textContent = T.h1;
-    document.getElementById('lnk-chat').textContent = T.backToChat;
-    document.getElementById('lnk-reminders').textContent = T.toReminders;
-    document.getElementById('lnk-memos').textContent = T.toMemos;
-    document.getElementById('lnk-settings').textContent = T.toSettings;
-    document.getElementById('tab-jobs').textContent = T.tabsJobs;
-    document.getElementById('tab-background').textContent = T.tabsBackground;
-    document.getElementById('tab-subtasks').textContent = T.tabsSubtasks;
-    document.getElementById('tab-schedules').textContent = T.tabsSchedules;
-    document.getElementById('tab-audit').textContent = T.tabsAudit;
-    document.getElementById('tab-approvals').textContent = T.tabsApprovals;
-    document.getElementById('tab-health').textContent = T.tabsHealth;
-    document.getElementById('tab-files').textContent = T.tabsFiles;
-    document.getElementById('tab-outbox').textContent = T.tabsOutbox;
-    document.getElementById('tab-a2a').textContent = T.tabsA2A;
-    if (T.tabsCost) document.getElementById('tab-cost').textContent = T.tabsCost;
-    if (T.tabsMemory) document.getElementById('tab-memory').textContent = T.tabsMemory;
-    if (T.tabsSkills) document.getElementById('tab-skills').textContent = T.tabsSkills;
-    document.getElementById('hdr-outbox').textContent = T.tabsOutbox;
-    document.getElementById('hdr-a2a').textContent = T.tabsA2A;
+    // i18n string fills (defensive — every getElementById is null-safe
+    // so a future refactor of the shell template doesn't crash this
+    // bootstrap on missing elements that moved into the topbar).
+    const pageTitleText = T[PAGE_MODE.titleKey] || T.h1;
+    // Browser tab title gets the page-specific title without the emoji
+    // so it reads cleanly in the OS tab strip.
+    const cleanTitle = String(pageTitleText).replace(/^\s*\p{Extended_Pictographic}\s*/u, '').trim();
+    document.title = `Agim — ${cleanTitle}`;
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) titleEl.textContent = pageTitleText;
+    // Subtitle ("what this page is for") — only show when the i18n
+    // dictionary actually has the key, so future modes that don't set
+    // subtitleKey don't render an empty paragraph.
+    const subtitleEl = document.getElementById('page-subtitle');
+    if (subtitleEl && PAGE_MODE.subtitleKey && T[PAGE_MODE.subtitleKey]) {
+      subtitleEl.textContent = T[PAGE_MODE.subtitleKey];
+      subtitleEl.hidden = false;
+    }
+    const setIfPresent = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setIfPresent('tab-jobs', T.tabsJobs);
+    setIfPresent('tab-background', T.tabsBackground);
+    setIfPresent('tab-subtasks', T.tabsSubtasks);
+    setIfPresent('tab-schedules', T.tabsSchedules);
+    setIfPresent('tab-audit', T.tabsAudit);
+    setIfPresent('tab-approvals', T.tabsApprovals);
+    setIfPresent('tab-health', T.tabsHealth);
+    setIfPresent('tab-files', T.tabsFiles);
+    setIfPresent('tab-outbox', T.tabsOutbox);
+    setIfPresent('tab-a2a', T.tabsA2A);
+    if (T.tabsCost) setIfPresent('tab-cost', T.tabsCost);
+    if (T.tabsMemory) setIfPresent('tab-memory', T.tabsMemory);
+    if (T.tabsSkills) setIfPresent('tab-skills', T.tabsSkills);
+    setIfPresent('hdr-outbox', T.tabsOutbox);
+    setIfPresent('hdr-a2a', T.tabsA2A);
+
+    // Mount the shared topbar. Highlights the current page so the user
+    // can see the IA grouping at a glance.
+    if (window.imhub && window.imhub.shell) {
+      window.imhub.shell.mount({ active: PAGE_MODE.id });
+    }
+
+    // Hide tabs outside the current page's scope. If the scope is a
+    // single tab, drop the tab bar entirely — no choice means no chrome.
+    // Also seeds the initial active tab + pane visibility so the click
+    // handler binding below has a consistent starting state regardless
+    // of which URL the user landed on.
+    const KNOWN_TABS = ['jobs','background','subtasks','schedules','approvals','health','files','audit','outbox','a2a','cost','memory','skills'];
+    (function applyPageMode() {
+      const inScope = new Set(PAGE_MODE.tabs);
+      for (const t of KNOWN_TABS) {
+        const btn = document.getElementById('tab-' + t);
+        if (btn && !inScope.has(t)) btn.style.display = 'none';
+        const pane = document.getElementById(t + '-pane');
+        if (pane) pane.hidden = (t !== PAGE_MODE.tabs[0]);
+      }
+      // First in-scope tab gets the active class.
+      const firstBtn = document.getElementById('tab-' + PAGE_MODE.tabs[0]);
+      if (firstBtn) firstBtn.classList.add('active', 'ag-subnav__item', 'is-active');
+      for (const t of PAGE_MODE.tabs.slice(1)) {
+        const btn = document.getElementById('tab-' + t);
+        if (btn) btn.classList.add('ag-subnav__item');
+      }
+      // Restyle the tab bar as an ag-subnav so it visually matches the
+      // shell. Hide entirely on single-tab modes.
+      const tabsBar = document.querySelector('.tabs');
+      if (tabsBar) {
+        if (PAGE_MODE.tabs.length <= 1) {
+          tabsBar.style.display = 'none';
+        } else {
+          tabsBar.classList.add('ag-subnav');
+        }
+      }
+    })();
 
     // data-i18n / data-i18n-attr — sweep static markers so placeholders +
     // option labels pick up the active language. Same shape as _app.js's
@@ -1477,7 +1600,13 @@
     // Tab switching
     document.querySelectorAll('.tab').forEach(t => {
       t.onclick = () => {
-        document.querySelectorAll('.tab').forEach(x => { x.classList.toggle('active', x === t); });
+        document.querySelectorAll('.tab').forEach(x => {
+          // Keep the legacy `.active` class for the original CSS, plus
+          // the shell's `.is-active` so the ag-subnav underline tracks
+          // the current tab when tasks.html is mounted under PAGE_MODE.
+          x.classList.toggle('active', x === t);
+          x.classList.toggle('is-active', x === t);
+        });
         const tab = t.dataset.tab;
         document.getElementById('jobs-pane').hidden = tab !== 'jobs';
         document.getElementById('background-pane').hidden = tab !== 'background';

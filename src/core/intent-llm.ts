@@ -2,7 +2,7 @@
 //
 // When the rule-based classifier produces a low-confidence result we
 // ask a configured "judge agent" — itself one of the registered agents
-// — to pick the best agent. Opt-in via env (IM_HUB_LLM_JUDGE_AGENT)
+// — to pick the best agent. Opt-in via env (IMHUB_LLM_JUDGE_AGENT)
 // or programmatic configureLLMJudge() so we never silently spend
 // tokens by default.
 //
@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'
+import { readEnvCompat } from './env-compat.js'
 
 const log = rootLogger.child({ component: 'intent-llm' })
 
@@ -88,9 +89,9 @@ export function getLLMJudge(): LLMJudgeConfig | null {
 
 /** Probe env on first import so common deployments get auto-config. */
 function autoFromEnv(): void {
-  const name = process.env.IM_HUB_LLM_JUDGE_AGENT
+  const name = readEnvCompat('IMHUB_LLM_JUDGE_AGENT', 'IM_HUB_LLM_JUDGE_AGENT')
   if (name && !config) {
-    const threshold = parseFloat(process.env.IM_HUB_LLM_JUDGE_THRESHOLD || '1.0')
+    const threshold = parseFloat(readEnvCompat('IMHUB_LLM_JUDGE_THRESHOLD', 'IM_HUB_LLM_JUDGE_THRESHOLD') || '1.0')
     config = {
       agentName: name,
       threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : 1.0,

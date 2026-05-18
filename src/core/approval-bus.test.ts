@@ -292,6 +292,42 @@ describe('ApprovalBus', () => {
     await client.close()
   })
 
+  // M-N13 — pendingByRunId index: unregisterRun cleans up ONLY the
+  // targeted run's pendings. Without the index this was correct but
+  // O(n) over all pendings in the bus, and an off-by-one in the loop
+  // could easily wipe everyone else by mistake.
+  it('unregisterRun does not affect pendings on other runs', async () => {
+    const RUN_CTX_2: RunContext = { ...RUN_CTX, threadId: 'thread-B' }
+    const KEY_2 = threadKey(RUN_CTX_2.platform, RUN_CTX_2.channelId, RUN_CTX_2.threadId)
+    bus.registerRun('run-A', RUN_CTX)
+    bus.registerRun('run-B', RUN_CTX_2)
+    bus.setNotifier(async () => {})
+
+    const client = await connectClient(path)
+    client.send({
+      v: 1, type: 'approval', runId: 'run-A', reqId: 'req-A',
+      toolName: 'Bash', input: {}, toolUseId: 'tu-A',
+    })
+    client.send({
+      v: 1, type: 'approval', runId: 'run-B', reqId: 'req-B',
+      toolName: 'Bash', input: {}, toolUseId: 'tu-B',
+    })
+    await sleep(40)
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    expect(bus.hasPendingFor(KEY_2)).toBe(true)
+
+    bus.unregisterRun('run-A')
+    // run-A's pending was denied with "run terminated" — read it off the
+    // wire so the next() call below picks up run-B's eventual timeout.
+    const decisionA = await client.next()
+    expect(decisionA.reqId).toBe('req-A')
+    expect(decisionA.behavior).toBe('deny')
+
+    // run-B's pending must still be on the bus.
+    expect(bus.hasPendingFor(KEY_2)).toBe(true)
+    await client.close()
+  })
+
   it('socket close denies pending for that connection', async () => {
     bus.registerRun('run-1', RUN_CTX)
     bus.setNotifier(async () => {})
@@ -328,7 +364,11 @@ describe('ApprovalBus', () => {
     await client.close()
   })
 
-  it('unsupported version is ignored, no decision sent', async () => {
+  // M-N5 — pre-update behavior was a silent drop; a future v2-speaking
+  // sidecar would then sit on its own 30-min MCP timeout for every
+  // reqId. We now echo a v1 `error` frame back so the peer sees the
+  // version mismatch immediately.
+  it('unsupported version: server replies with v1 error frame (M-N5)', async () => {
     bus.registerRun('run-1', RUN_CTX)
     bus.setNotifier(async () => {})
 
@@ -337,11 +377,26 @@ describe('ApprovalBus', () => {
       v: 999, type: 'approval', runId: 'run-1', reqId: 'req-1',
       toolName: 'Bash', input: {}, toolUseId: 'tu-1',
     })
-    // Should NOT receive a decision for v:999
-    let received: unknown = null
-    try { received = await client.next(150) } catch { /* expected timeout */ }
-    expect(received).toBeNull()
+    const errFrame = await client.next()
+    expect(errFrame.v).toBe(1)
+    expect(errFrame.type).toBe('error')
+    expect(errFrame.reqId).toBe('req-1')      // mirrored so the sidecar can settle the right future
+    expect(String(errFrame.reason)).toMatch(/version/i)
+    // And the malformed request never became a pending — there's
+    // nothing to time out on the bus side.
     expect(bus.hasPendingFor(KEY)).toBe(false)
+    await client.close()
+  })
+
+  // M-N6 — peer-driven heartbeat: sending `ping` always elicits `pong`,
+  // independent of any pending state. Useful for sidecars that want to
+  // probe liveness on a quiet connection.
+  it('ping → pong (M-N6)', async () => {
+    const client = await connectClient(path)
+    client.send({ v: 1, type: 'ping', ts: Date.now() })
+    const frame = await client.next()
+    expect(frame.v).toBe(1)
+    expect(frame.type).toBe('pong')
     await client.close()
   })
 
@@ -642,6 +697,48 @@ describe('ApprovalBus', () => {
     expect(m.totalAllowed + m.totalDenied + m.totalTimedOut).toBe(m.totalResolved)
 
     await client.close()
+  })
+
+  // M-N4 — buffer overflow used to silently drop any \n-terminated lines
+  // that had already arrived in the same chunk as the oversized tail.
+  // The fix is "drain complete lines first, then close" — the leading
+  // approval still becomes a pending request the bus notifies for, and
+  // the sidecar still gets a clean `fatal` frame before disconnect.
+  it('buffer overflow drains complete lines before closing', async () => {
+    bus.registerRun('run-1', RUN_CTX)
+    let notified = 0
+    bus.setNotifier(async () => { notified++ })
+
+    const client = await connectClient(path)
+
+    // Craft a single chunk containing:
+    //   1. a complete, valid approval line (the sidecar's last legitimate
+    //      request before its buffer ran away),
+    //   2. >1 MiB of garbage with no trailing newline (the runaway tail
+    //      that trips MAX_BUFFER_BYTES).
+    const valid = JSON.stringify({
+      v: 1, type: 'approval', runId: 'run-1', reqId: 'drain-me',
+      toolName: 'Bash', input: { command: 'ls' }, toolUseId: 'tu-drain',
+    }) + '\n'
+    const garbage = 'X'.repeat(1024 * 1024 + 1024) // 1 MiB + 1 KiB, no \n
+    client.socket.write(valid + garbage)
+
+    // The drained approval reaches the notifier even though the same
+    // chunk caused an overflow. Without M-N4 the line was dropped and
+    // the sidecar waited out its 30-min MCP timeout.
+    for (let i = 0; i < 100 && notified === 0; i++) await sleep(10)
+    expect(notified).toBe(1)
+
+    // The server-initiated close runs afterwards (denying the leftover
+    // pending in the same code path that handles a clean disconnect).
+    await new Promise<void>((resolve) => {
+      if (client.socket.destroyed) { resolve(); return }
+      client.socket.once('close', () => resolve())
+      setTimeout(() => resolve(), 1000)
+    })
+    // Pending was cleared via the close handler's deny-all sweep.
+    for (let i = 0; i < 50 && bus.hasPendingFor(KEY); i++) await sleep(10)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 })
 

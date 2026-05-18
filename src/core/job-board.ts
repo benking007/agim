@@ -16,7 +16,7 @@
 //     scoped query (so an upgrade doesn't appear to vanish the user's
 //     prior history).
 //   - pruneOldJobs() walks completed/failed/cancelled rows older than
-//     `IM_HUB_JOB_RETENTION_DAYS` (default 30) and deletes them; runs every
+//     `IMHUB_JOB_RETENTION_DAYS` (default 30) and deletes them; runs every
 //     6h via setInterval, mirroring audit-log.
 
 import type Database from 'better-sqlite3'
@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import type { Logger } from 'pino'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
+import { readEnvCompat } from './env-compat.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { AGIM_HOME } from './agim-paths.js'
 
@@ -46,9 +47,9 @@ function resolveMaxResultBytes(): number {
 
 /** Hard cap on concurrent runJob() invocations. Spawning more than this
  * would let a few /job run X requests OOM the host (each agent process
- * carries hundreds of MB). Override via env IM_HUB_MAX_CONCURRENT_JOBS. */
+ * carries hundreds of MB). Override via env IMHUB_MAX_CONCURRENT_JOBS. */
 function resolveMaxConcurrent(): number {
-  const raw = process.env.IM_HUB_MAX_CONCURRENT_JOBS
+  const raw = readEnvCompat('IMHUB_MAX_CONCURRENT_JOBS', 'IM_HUB_MAX_CONCURRENT_JOBS')
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -232,7 +233,7 @@ function migrateColumns(d: Database.Database): void {
 
 /** Default retention (days) for terminal explicit /job rows. */
 function resolveRetentionDays(): number {
-  const raw = process.env.IM_HUB_JOB_RETENTION_DAYS
+  const raw = readEnvCompat('IMHUB_JOB_RETENTION_DAYS', 'IM_HUB_JOB_RETENTION_DAYS')
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n

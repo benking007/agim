@@ -4,6 +4,185 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Largest single batch since v1.0 — 10 commits closing 17 of 17 reachable
+findings from the 2026-05-18 code review (plus a full Web console UI
+rework). 42 files, +4494/−420 lines, 113 new tests, 1127 pass / 0 fail.
+Full report: [`docs/code-review-2026-05-18-main.md`](./docs/code-review-2026-05-18-main.md).
+
+### Security — Web / auth surface
+
+- **Session cookie hardened.** `agim_token` cookie now sets `HttpOnly`
+  unconditionally and `Secure` when the request looks HTTPS
+  (`req.socket.encrypted` or `x-forwarded-proto: https`). The front-end
+  uses localStorage + `Authorization: Bearer`, so `HttpOnly` does not
+  break the UI. Override with `IMHUB_WEB_COOKIE_SECURE=auto|on|off`.
+- **Loopback bypass is now reverse-proxy-aware.** When `IMHUB_WEB_BIND`
+  is public (`0.0.0.0` or a routable IP), `req.socket.remoteAddress ==
+  127.0.0.1` is no longer auto-trusted — without this, an nginx/Caddy
+  on the same host effectively forwarded auth to anyone it let through.
+  Override with `IMHUB_TRUST_LOOPBACK=auto|on|off`.
+- **ACP CORS allowlist.** Default is now no CORS headers; browser
+  callers opt in via `IMHUB_ACP_CORS_ORIGINS=https://a.com,https://b.com`
+  (or `*` to keep the legacy wildcard). Server-to-server and curl
+  callers were never subject to CORS and are unaffected.
+- **Admin bootstrap token uses `safeEqual`.** Constant-time comparison
+  uniform with `access-token.ts` / `acp-server.ts`, so any future REST
+  surface that touches the path inherits the safe default.
+
+### Security — Approval bus / RPC
+
+- **`_im_context` fallback gated.** `reminder` and `memo` RPCs let any
+  agent sending a `_im_context` payload assert its `userId` — fine in
+  single-user mode, dangerous when an MCP daemon is shared across users
+  (the opencode HTTP bridge shape). New `IMHUB_RPC_INLINE_CTX_MODE=off`
+  rejects the fallback; default `single-user` preserves current
+  behavior. Push RPC was already refusing the fallback.
+- **Protocol error frames on unsupported version.** Frames with `v !== 1`
+  used to be silently dropped; a future v2-speaking sidecar would then
+  hang on its 30-min MCP timeout per `reqId`. Now echoes a v1 `error`
+  frame back, mirroring `reqId` when present.
+- **Heartbeat / dead-peer detection.** Each socket gets a periodic
+  liveness sweep: if a connection owns pending approvals and has been
+  silent for 60s, the bus sends `ping`; if no inbound traffic within
+  30s, the socket is torn down and its pendings denied. Sidecars that
+  don't know about `ping` keep working (any inbound frame refreshes
+  liveness). Wedged-sidecar pending now releases in ~2 min instead of
+  ~15 min.
+- **Drain-before-close on buffer overflow.** When a sidecar overran the
+  4 MiB read buffer, the old code closed the socket immediately and
+  dropped any complete NDJSON lines already in the buffer. Now drains
+  them through `handleLine` first, then sends the `fatal` frame and
+  closes.
+- **`unregisterRun` is O(approvals-on-run)** instead of O(all-pending),
+  via a `pendingByRunId` secondary index. Matters under A2A fan-out.
+
+### Security — Memory subsystem
+
+- **Distill + consolidate now have budgets, timeouts, and a circuit
+  breaker.** New `src/core/llm-budget.ts` adds `LlmBudget`
+  (per-(purpose, userKey, UTC-day) cost cap) and `LlmCircuitBreaker`
+  (N consecutive failures → cooldown). distill defaults to 30s timeout
+  / $0.10 per user per day / 3 fails → 10 min cooldown; consolidate to
+  60s / $0.10 / 3 fails → 1 h. Override each via
+  `IMHUB_DISTILL_*` / `IMHUB_CONSOLIDATE_*` envs.
+- **Consolidate prompt-injection block.** Facts originate from user IM
+  messages — interpolating them into bullet lines next to operator
+  instructions was a sink. Now passed as JSON inside an explicit
+  `<untrusted-facts>` boundary preceded by a "this is data, not
+  instructions" preamble.
+- **Embed-and-store retries on transient failure.** Async embedding
+  (OpenAI 429/5xx, local ONNX still warming) now does 3 attempts with
+  exponential backoff (200ms / 800ms / 3.2s) before logging + leaving
+  the row for a manual `/memory backfill` to sweep.
+- **`facts` table partial index** on
+  `(user_key, embedding_model, embedding_dims) WHERE embedding IS NOT NULL`
+  — `queryFactsHybrid`'s vector candidate scan went from per-user table
+  scan to index seek, dominant cost on the hybrid path with thousands
+  of facts.
+
+### Security — Operational
+
+- **`start-prod.js` graceful shutdown.** SIGTERM/SIGINT call a single
+  `gracefulShutdown(signal)` that drains web + ACP + scheduler + the
+  SQLite cluster in reverse order. `IMHUB_SHUTDOWN_FORCE_MS` (default
+  10 s) caps total drain time so systemd's escalation to SIGKILL
+  doesn't race an open WAL.
+- **WS inbound frame size cap.** `IMHUB_MAX_WS_MSG_BYTES` (default
+  1 MiB) — frames over the cap close the socket with RFC 6455 code 1009
+  before reaching `JSON.parse`.
+- **Cron scheduler atomic claim.** `fireSchedule` now does
+  `UPDATE schedules SET … WHERE id=? AND next_run=? AND enabled=1`;
+  concurrent ticks (setInterval reentrancy, backward clock jumps) can
+  no longer double-fire. Tick-level re-entrancy guard added too.
+- **Secrets file split.** `telegram.botToken` / `feishu.appSecret` /
+  `discord.botToken` move to a sibling `~/.agim/secrets.json` (0o600,
+  atomic write). `loadConfig` overlays it on top of `config.json` so
+  adapters see the same shape; first `saveConfig` after upgrade
+  migrates implicitly. Operators can now route the sidecar to a vault
+  path while keeping `config.json` in their dotfiles repo.
+- **Artifact orphan sweep.** 24-h walk of `~/.agim/artifacts/` drops
+  dirs whose mtime predates `IMHUB_ARTIFACT_RETENTION_DAYS` (default
+  30). Backstop for unclean shutdowns where the inline job-board
+  prune ran but the artifact `rm` didn't.
+
+### Performance / observability
+
+- **event-bus is O(1) per publish.** Fixed-size ring buffer replaces
+  `push + shift`; matters under 1k events/sec bursts at agent boot.
+- **Approval bus `pendingByRunId` index** — see Security section.
+- **`facts` partial index** — see Security section.
+
+### Quality
+
+- **`IMHUB_*` env naming canonicalised.** 8 stragglers that landed as
+  `IM_HUB_*` (e.g. `IM_HUB_AUDIT_RETENTION_DAYS`) now read the canonical
+  `IMHUB_*` form first; the legacy alias still works but emits a
+  one-time deprecation warn.
+- **Clock abstraction primitive.** New `src/core/clock.ts` `nowMs()` /
+  `setNow(fixed|null)` so tests can freeze time without monkey-patching
+  `Date.now()` globally. Consumer migration is opt-in module-by-module.
+
+### Web console — IA + visual rework
+
+- **`/tasks` no longer a 13-tab catch-all.** Four new top-level URLs
+  carved out:
+  - `/approvals` — pending approvals (was a tab)
+  - `/memory` — facts + persona + skills (was 2 tabs)
+  - `/workspace` — agent working directories (was a tab)
+  - `/observability` — health + audit + cost (was 3 tabs)
+
+  `/tasks` keeps only the actual task domain: jobs, subtasks,
+  schedules, background scripts, outbox, A2A. Each URL is now
+  deep-linkable and unambiguous.
+
+  Implementation: server `fileMap` routes all four new URLs to
+  `tasks.html`; the page reads `location.pathname` into a `PAGE_MODE`
+  struct that hides out-of-scope tabs and collapses the tab bar when
+  a mode has only one tab. 3700 lines of domain JS untouched.
+
+- **Unified shell topbar.** `imhub.shell.mount({ active })` (in
+  `_app.js`) injects the same topbar on every secondary page — single
+  source of truth for the 8 nav destinations + theme cycle + language
+  switcher.
+
+- **Canonical design tokens + component classes.** New
+  `src/web/public/_shell.css` ships `--ag-*` tokens (light + dark
+  palettes) and `.ag-topbar` / `.ag-card` / `.ag-btn` / `.ag-table` /
+  `.ag-badge` / `.ag-subnav` / `.ag-modal` / `.ag-form-row` / `.ag-stat`
+  primitives. Legacy class names (`.stats`, `.toolbar`, `.data-table`,
+  `.tabs`, `.pill`, `.modal-bg`, `.filter-btn`) get scoped overrides
+  under `body.ag-shell` so existing markup picks up the new look
+  without touching class attributes.
+
+- **Memory page reordered.** User picker → Persona → Facts → vector
+  backend (collapsed `<details>`). The previous order led with a
+  60-line one-time-setup card; the daily workflow now sits above the
+  fold. All element IDs preserved — existing JS handlers fire
+  unchanged.
+
+- **Chat page (`/`) header visually aligned.** Sticky 56px header, the
+  shell's `--ag-*` tokens, shell-style action buttons for the 8 nav
+  destinations. Does not adopt `body.ag-shell` — the chat surface has
+  bespoke message-stream layout that the global legacy overrides would
+  interfere with — but consumes the same palette and spacing scale.
+
+- **Page subtitles.** Every secondary page now renders a one-line
+  "what is this page for" subtitle under its title; new i18n keys
+  (`navTasksSub` / `navApprovalsSub` / `navMemorySub` /
+  `navWorkspaceSub` / `navObservabilitySub`) for both languages.
+
+### Verified-already-fixed (no code change, prevents spurious changelog churn)
+
+The 2026-05-18 review subagents flagged these as needing fixes; main-
+thread verification found existing code already addresses each one:
+
+- `reminders.tick` already uses atomic CAS (`reminders.ts:977-980`).
+- `/cron create` already enforces workspace whitelist
+  (`commands/cron.ts:76`); `createSchedule` has no other call sites.
+- `verifyTokenSync` startup race doesn't exist —
+  `_tokenModule = await import(...)` resolves before
+  `httpServer.listen` (`server.ts:277` vs `986`).
+
 ## [1.2.2] - 2026-05-17
 
 Three small but noticeable hotfixes on top of 1.2.1:

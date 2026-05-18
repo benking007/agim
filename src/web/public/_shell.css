@@ -1,0 +1,995 @@
+/* agim shell — canonical design tokens + shared component classes.
+ *
+ * Loaded once by imhub.shell.mount(). Tokens are prefixed `--ag-` so they
+ * don't clash with page-specific variables (each page predates this
+ * shell and defines its own --bg / --text / etc.). Components use the
+ * `ag-` class prefix for the same reason.
+ *
+ * Rule of thumb for pages: use the shell tokens for anything topbar /
+ * card / table / button related; keep page-specific styling for layout
+ * primitives until a follow-up consolidates them.
+ */
+
+:root {
+  /* Spacing — 4px scale */
+  --ag-space-1: 4px;
+  --ag-space-2: 8px;
+  --ag-space-3: 12px;
+  --ag-space-4: 16px;
+  --ag-space-5: 20px;
+  --ag-space-6: 24px;
+  --ag-space-7: 32px;
+  --ag-space-8: 48px;
+
+  /* Radius */
+  --ag-radius-sm: 4px;
+  --ag-radius-md: 6px;
+  --ag-radius-lg: 10px;
+
+  /* Type scale */
+  --ag-font-xs: 11px;
+  --ag-font-sm: 12px;
+  --ag-font-base: 14px;
+  --ag-font-md: 15px;
+  --ag-font-lg: 18px;
+  --ag-font-xl: 22px;
+  --ag-font-2xl: 28px;
+
+  /* Z-index */
+  --ag-z-topbar: 100;
+  --ag-z-modal: 1000;
+  --ag-z-toast: 2000;
+
+  /* Light theme — canonical surface palette */
+  --ag-bg: #f7f8fa;
+  --ag-surface: #ffffff;
+  --ag-surface-2: #f1f3f5;
+  --ag-surface-hover: #f6f8fa;
+  --ag-border: #e1e5ea;
+  --ag-border-strong: #c8cdd4;
+  --ag-text: #1a1d23;
+  --ag-text-dim: #5a6471;
+  --ag-text-muted: #8a94a3;
+  --ag-accent: #4f46e5;
+  --ag-accent-hover: #4338ca;
+  --ag-accent-dim: #818cf8;
+  --ag-accent-bg: #eef2ff;
+  --ag-success: #10b981;
+  --ag-success-bg: #ecfdf5;
+  --ag-warning: #f59e0b;
+  --ag-warning-bg: #fffbeb;
+  --ag-danger: #ef4444;
+  --ag-danger-bg: #fef2f2;
+  --ag-info: #3b82f6;
+  --ag-info-bg: #eff6ff;
+  --ag-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.05);
+  --ag-shadow-md: 0 2px 8px rgba(17, 24, 39, 0.08);
+  --ag-shadow-lg: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+/* OS-level dark preference, only when no explicit theme is set on <html>. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --ag-bg: #0e0f12;
+    --ag-surface: #161820;
+    --ag-surface-2: #1d2029;
+    --ag-surface-hover: #20242e;
+    --ag-border: #2a2f3a;
+    --ag-border-strong: #3a4050;
+    --ag-text: #e8eaee;
+    --ag-text-dim: #a6acb8;
+    --ag-text-muted: #6e7585;
+    --ag-accent: #818cf8;
+    --ag-accent-hover: #a5b4fc;
+    --ag-accent-dim: #6366f1;
+    --ag-accent-bg: #1e1b4b;
+    --ag-success: #34d399;
+    --ag-success-bg: #064e3b;
+    --ag-warning: #fbbf24;
+    --ag-warning-bg: #451a03;
+    --ag-danger: #f87171;
+    --ag-danger-bg: #450a0a;
+    --ag-info: #60a5fa;
+    --ag-info-bg: #1e3a8a;
+    --ag-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ag-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+    --ag-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Explicit dark theme — always wins. */
+:root[data-theme="dark"] {
+  --ag-bg: #0e0f12;
+  --ag-surface: #161820;
+  --ag-surface-2: #1d2029;
+  --ag-surface-hover: #20242e;
+  --ag-border: #2a2f3a;
+  --ag-border-strong: #3a4050;
+  --ag-text: #e8eaee;
+  --ag-text-dim: #a6acb8;
+  --ag-text-muted: #6e7585;
+  --ag-accent: #818cf8;
+  --ag-accent-hover: #a5b4fc;
+  --ag-accent-dim: #6366f1;
+  --ag-accent-bg: #1e1b4b;
+  --ag-success: #34d399;
+  --ag-success-bg: #064e3b;
+  --ag-warning: #fbbf24;
+  --ag-warning-bg: #451a03;
+  --ag-danger: #f87171;
+  --ag-danger-bg: #450a0a;
+  --ag-info: #60a5fa;
+  --ag-info-bg: #1e3a8a;
+  --ag-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ag-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --ag-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* ─── Topbar ──────────────────────────────────────────────────────── */
+
+.ag-topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ag-z-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-4);
+  padding: var(--ag-space-3) var(--ag-space-5);
+  background: var(--ag-surface);
+  border-bottom: 1px solid var(--ag-border);
+  min-height: 56px;
+  box-sizing: border-box;
+}
+
+.ag-topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  font-weight: 600;
+  font-size: var(--ag-font-md);
+  color: var(--ag-text);
+  text-decoration: none;
+  padding: var(--ag-space-1) var(--ag-space-2);
+  margin-right: var(--ag-space-2);
+}
+
+.ag-topbar__brand:hover { color: var(--ag-accent); }
+
+.ag-topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-1);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.ag-topbar__nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2) var(--ag-space-3);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text-dim);
+  text-decoration: none;
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.ag-topbar__nav-item:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text);
+}
+
+.ag-topbar__nav-item.is-active {
+  background: var(--ag-accent-bg);
+  color: var(--ag-accent);
+}
+
+.ag-topbar__nav-icon {
+  font-size: var(--ag-font-md);
+  line-height: 1;
+}
+
+.ag-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  margin-left: auto;
+}
+
+.ag-topbar__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-1);
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: transparent;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.ag-topbar__action:hover {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border-strong);
+  color: var(--ag-text);
+}
+
+.ag-topbar__action select {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Mobile / narrow viewport — collapse nav to icon-only */
+@media (max-width: 880px) {
+  .ag-topbar { padding-left: var(--ag-space-3); padding-right: var(--ag-space-3); }
+  .ag-topbar__nav-item span:not(.ag-topbar__nav-icon) { display: none; }
+  .ag-topbar__nav-item { padding: var(--ag-space-2); }
+}
+
+/* ─── Page header (below topbar) ──────────────────────────────────── */
+
+.ag-page-header {
+  padding: var(--ag-space-6) var(--ag-space-7) var(--ag-space-4);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.ag-page-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-3);
+  font-size: var(--ag-font-2xl);
+  font-weight: 600;
+  color: var(--ag-text);
+  margin: 0;
+}
+
+.ag-page-header__subtitle {
+  margin-top: var(--ag-space-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-base);
+}
+
+.ag-page-body {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 var(--ag-space-7) var(--ag-space-7);
+}
+
+@media (max-width: 880px) {
+  .ag-page-header { padding: var(--ag-space-4) var(--ag-space-4) var(--ag-space-3); }
+  .ag-page-body { padding: 0 var(--ag-space-4) var(--ag-space-5); }
+}
+
+/* ─── Cards ───────────────────────────────────────────────────────── */
+
+.ag-card {
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  padding: var(--ag-space-5);
+  box-shadow: var(--ag-shadow-sm);
+}
+
+.ag-card + .ag-card { margin-top: var(--ag-space-4); }
+
+.ag-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--ag-space-4);
+  gap: var(--ag-space-3);
+}
+
+.ag-card__title {
+  font-size: var(--ag-font-md);
+  font-weight: 600;
+  color: var(--ag-text);
+  margin: 0;
+}
+
+.ag-card__hint {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  margin-top: var(--ag-space-2);
+  line-height: 1.5;
+}
+
+/* Stat tiles — same visual weight as before but tighter and using shell tokens. */
+.ag-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--ag-space-3);
+  margin-bottom: var(--ag-space-5);
+}
+
+.ag-stat {
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  padding: var(--ag-space-4) var(--ag-space-5);
+  box-shadow: var(--ag-shadow-sm);
+}
+
+.ag-stat__label {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  font-weight: 500;
+  margin-bottom: var(--ag-space-2);
+}
+
+.ag-stat__value {
+  font-size: var(--ag-font-2xl);
+  font-weight: 600;
+  color: var(--ag-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ag-stat__value--success { color: var(--ag-success); }
+.ag-stat__value--warning { color: var(--ag-warning); }
+.ag-stat__value--danger { color: var(--ag-danger); }
+.ag-stat__value--accent { color: var(--ag-accent); }
+
+/* ─── Buttons ─────────────────────────────────────────────────────── */
+
+.ag-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2) var(--ag-space-4);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.ag-btn:hover:not(:disabled) {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border-strong);
+}
+
+.ag-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ag-btn--primary {
+  background: var(--ag-accent);
+  border-color: var(--ag-accent);
+  color: #fff;
+}
+.ag-btn--primary:hover:not(:disabled) {
+  background: var(--ag-accent-hover);
+  border-color: var(--ag-accent-hover);
+  color: #fff;
+}
+
+.ag-btn--danger {
+  background: var(--ag-surface);
+  border-color: var(--ag-danger);
+  color: var(--ag-danger);
+}
+.ag-btn--danger:hover:not(:disabled) {
+  background: var(--ag-danger);
+  color: #fff;
+}
+
+.ag-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ag-text-dim);
+}
+.ag-btn--ghost:hover:not(:disabled) {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text);
+}
+
+.ag-btn--sm {
+  padding: var(--ag-space-1) var(--ag-space-3);
+  font-size: var(--ag-font-sm);
+}
+
+/* ─── Forms ───────────────────────────────────────────────────────── */
+
+.ag-input,
+.ag-select,
+.ag-textarea {
+  display: block;
+  width: 100%;
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font-size: var(--ag-font-base);
+  font-family: inherit;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.ag-input:focus,
+.ag-select:focus,
+.ag-textarea:focus {
+  outline: none;
+  border-color: var(--ag-accent);
+  box-shadow: 0 0 0 3px var(--ag-accent-bg);
+}
+
+.ag-textarea { min-height: 96px; resize: vertical; }
+
+.ag-form-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--ag-space-4);
+  align-items: start;
+  margin-bottom: var(--ag-space-4);
+}
+
+.ag-form-row__label {
+  padding-top: 6px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+}
+
+.ag-form-row__hint {
+  margin-top: var(--ag-space-2);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-font-sm);
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .ag-form-row { grid-template-columns: 1fr; gap: var(--ag-space-2); }
+}
+
+/* ─── Tables ──────────────────────────────────────────────────────── */
+
+.ag-table {
+  width: 100%;
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  font-size: var(--ag-font-base);
+}
+
+.ag-table th,
+.ag-table td {
+  padding: var(--ag-space-3) var(--ag-space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--ag-border);
+  vertical-align: middle;
+}
+
+.ag-table thead th {
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-weight: 600;
+  font-size: var(--ag-font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  position: sticky;
+  top: 56px; /* below topbar */
+  z-index: 1;
+}
+
+.ag-table tbody tr:last-child td { border-bottom: 0; }
+.ag-table tbody tr:hover td { background: var(--ag-surface-hover); }
+
+.ag-table--clickable tbody tr { cursor: pointer; }
+
+/* ─── Badges ──────────────────────────────────────────────────────── */
+
+.ag-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--ag-space-2);
+  border-radius: 999px;
+  font-size: var(--ag-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+}
+
+.ag-badge--success { background: var(--ag-success-bg); color: var(--ag-success); }
+.ag-badge--warning { background: var(--ag-warning-bg); color: var(--ag-warning); }
+.ag-badge--danger { background: var(--ag-danger-bg); color: var(--ag-danger); }
+.ag-badge--info { background: var(--ag-info-bg); color: var(--ag-info); }
+.ag-badge--accent { background: var(--ag-accent-bg); color: var(--ag-accent); }
+
+/* ─── Sub-nav (for multi-section pages like /memory or /observability) ─ */
+
+.ag-subnav {
+  display: flex;
+  gap: var(--ag-space-1);
+  margin-bottom: var(--ag-space-5);
+  border-bottom: 1px solid var(--ag-border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.ag-subnav__item {
+  position: relative;
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: transparent;
+  border: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.ag-subnav__item:hover { color: var(--ag-text); }
+
+.ag-subnav__item.is-active {
+  color: var(--ag-accent);
+}
+
+.ag-subnav__item.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ag-accent);
+  border-radius: 2px;
+}
+
+/* ─── Modal ───────────────────────────────────────────────────────── */
+
+.ag-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 21, 0.5);
+  z-index: var(--ag-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ag-space-4);
+}
+
+.ag-modal {
+  background: var(--ag-surface);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-shadow-lg);
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ag-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ag-space-4) var(--ag-space-5);
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.ag-modal__title {
+  font-size: var(--ag-font-lg);
+  font-weight: 600;
+  margin: 0;
+}
+
+.ag-modal__close {
+  background: transparent;
+  border: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-lg);
+  cursor: pointer;
+  padding: var(--ag-space-1);
+}
+
+.ag-modal__close:hover { color: var(--ag-text); }
+
+.ag-modal__body {
+  padding: var(--ag-space-5);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ag-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-3) var(--ag-space-5);
+  border-top: 1px solid var(--ag-border);
+}
+
+/* ─── Empty state ─────────────────────────────────────────────────── */
+
+.ag-empty {
+  text-align: center;
+  padding: var(--ag-space-8) var(--ag-space-5);
+  color: var(--ag-text-dim);
+}
+
+.ag-empty__icon {
+  font-size: 48px;
+  opacity: 0.4;
+  margin-bottom: var(--ag-space-3);
+}
+
+.ag-empty__text {
+  font-size: var(--ag-font-base);
+  margin-bottom: var(--ag-space-2);
+}
+
+.ag-empty__hint {
+  font-size: var(--ag-font-sm);
+  color: var(--ag-text-muted);
+}
+
+/* ─── Toolbar ─────────────────────────────────────────────────────── */
+
+.ag-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--ag-space-4);
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+}
+
+.ag-toolbar > .ag-toolbar__spacer { flex: 1; }
+
+/* ─── Base body for new pages ─────────────────────────────────────── */
+
+body.ag-shell {
+  margin: 0;
+  background: var(--ag-bg);
+  color: var(--ag-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: var(--ag-font-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Legacy-class overrides ──────────────────────────────────────── *
+ * Existing pages use `.stats`, `.toolbar`, `.data-table`, `.pill`, etc.
+ * Rather than rewrite hundreds of class attributes, we scope shell-
+ * canonical visuals to body.ag-shell + the legacy selectors. Pages
+ * that haven't migrated their markup still light up with the new
+ * design simply by mounting the shell.
+ *
+ * Specificity note: `body.ag-shell .stats` (0,2,1) beats a page's
+ * own `.stats { ... }` (0,1,0) so these overrides win without !important.
+ */
+
+/* Stats tiles: grid of value cards. Tasks / Audit / Outbox / A2A each
+   ship a #stats div populated server-side with one or more cells; the
+   grid + card visual makes it scan top-of-page. */
+body.ag-shell .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--ag-space-3);
+  margin-bottom: var(--ag-space-5);
+}
+body.ag-shell .stats > div,
+body.ag-shell .stats > a {
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  padding: var(--ag-space-4) var(--ag-space-5);
+  box-shadow: var(--ag-shadow-sm);
+  text-decoration: none;
+  color: inherit;
+}
+body.ag-shell .stats > div > div:first-child,
+body.ag-shell .stats > a > div:first-child {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  font-weight: 500;
+  margin-bottom: var(--ag-space-2);
+}
+body.ag-shell .stats > div > div:last-child,
+body.ag-shell .stats > a > div:last-child {
+  font-size: var(--ag-font-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Toolbar (filter / action row above lists). */
+body.ag-shell .toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--ag-space-4);
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+}
+body.ag-shell .toolbar > label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+}
+
+/* Form controls — input / select / textarea. Page-local styles for
+   `width`, `min-width`, `style="..."` inline still win when present;
+   we only set the visual chrome. */
+body.ag-shell input[type="text"],
+body.ag-shell input[type="search"],
+body.ag-shell input[type="number"],
+body.ag-shell input[type="email"],
+body.ag-shell input[type="url"],
+body.ag-shell input[type="password"],
+body.ag-shell select,
+body.ag-shell textarea {
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-base);
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+body.ag-shell input[type="text"]:focus,
+body.ag-shell input[type="search"]:focus,
+body.ag-shell input[type="number"]:focus,
+body.ag-shell input[type="email"]:focus,
+body.ag-shell input[type="url"]:focus,
+body.ag-shell input[type="password"]:focus,
+body.ag-shell select:focus,
+body.ag-shell textarea:focus {
+  outline: none;
+  border-color: var(--ag-accent);
+  box-shadow: 0 0 0 3px var(--ag-accent-bg);
+}
+body.ag-shell input[type="checkbox"] { accent-color: var(--ag-accent); }
+
+/* Buttons — page-local `button:not(.ag-btn)`. Keep them recognisable
+   as buttons even if the page emits them with no class. The page-level
+   `.primary` / `.danger` modifier classes get colored variants. */
+body.ag-shell button:not(.ag-btn):not(.tab):not(.filter-btn):not(.help-btn) {
+  padding: var(--ag-space-2) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+body.ag-shell button:not(.ag-btn):not(.tab):not(.filter-btn):not(.help-btn):hover:not(:disabled) {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border-strong);
+}
+body.ag-shell button:not(.ag-btn):disabled { opacity: 0.55; cursor: not-allowed; }
+body.ag-shell button.primary {
+  background: var(--ag-accent);
+  border-color: var(--ag-accent);
+  color: #fff;
+}
+body.ag-shell button.primary:hover:not(:disabled) {
+  background: var(--ag-accent-hover);
+  border-color: var(--ag-accent-hover);
+  color: #fff;
+}
+body.ag-shell button.danger {
+  background: var(--ag-surface);
+  border-color: var(--ag-danger);
+  color: var(--ag-danger);
+}
+body.ag-shell button.danger:hover:not(:disabled) {
+  background: var(--ag-danger);
+  color: #fff;
+}
+
+/* Data table — used by tasks.html for Jobs / Audit / Outbox / A2A lists. */
+body.ag-shell .data-table {
+  width: 100%;
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  font-size: var(--ag-font-base);
+}
+body.ag-shell .data-table th,
+body.ag-shell .data-table td {
+  padding: var(--ag-space-3) var(--ag-space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--ag-border);
+  vertical-align: middle;
+}
+body.ag-shell .data-table thead th {
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-weight: 600;
+  font-size: var(--ag-font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+body.ag-shell .data-table tbody tr:last-child td { border-bottom: 0; }
+body.ag-shell .data-table tbody tr:hover td { background: var(--ag-surface-hover); }
+
+/* Tabs — the legacy `.tabs` container morphs into ag-subnav. tasks.html
+   adds `.ag-subnav` + `.ag-subnav__item` via JS for the active page;
+   this block makes the same visual apply when the JS hasn't run yet. */
+body.ag-shell .tabs {
+  display: flex;
+  gap: var(--ag-space-1);
+  margin-bottom: var(--ag-space-5);
+  border-bottom: 1px solid var(--ag-border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+body.ag-shell .tabs .tab {
+  position: relative;
+  padding: var(--ag-space-3) var(--ag-space-4);
+  background: transparent;
+  border: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-base);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+body.ag-shell .tabs .tab:hover { color: var(--ag-text); }
+body.ag-shell .tabs .tab.active,
+body.ag-shell .tabs .tab.is-active { color: var(--ag-accent); }
+body.ag-shell .tabs .tab.active::after,
+body.ag-shell .tabs .tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: var(--ag-accent);
+  border-radius: 2px;
+}
+
+/* Filter buttons (reminders / memos) — pill-row style. */
+body.ag-shell .filters,
+body.ag-shell .filter-row {
+  display: flex;
+  gap: var(--ag-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--ag-space-4);
+}
+body.ag-shell .filter-btn {
+  padding: var(--ag-space-1) var(--ag-space-3);
+  background: var(--ag-surface);
+  border: 1px solid var(--ag-border);
+  border-radius: 999px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+body.ag-shell .filter-btn:hover { color: var(--ag-text); border-color: var(--ag-border-strong); }
+body.ag-shell .filter-btn.active {
+  background: var(--ag-accent-bg);
+  border-color: var(--ag-accent-bg);
+  color: var(--ag-accent);
+}
+
+/* Status pills — already styled per-page (`.pill.delivered` etc.); the
+   shell only enforces consistent box shape so dark theme blends. */
+body.ag-shell .pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--ag-space-2);
+  border-radius: 999px;
+  font-size: var(--ag-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/* Modal overlay — pages use `.modal-bg` / `.modal-content` / `.modal`. */
+body.ag-shell .modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 21, 0.5);
+  z-index: var(--ag-z-modal);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ag-space-4);
+}
+body.ag-shell .modal-bg.show { display: flex; }
+body.ag-shell .modal,
+body.ag-shell .modal-content {
+  background: var(--ag-surface);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-shadow-lg);
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--ag-space-5);
+}
+body.ag-shell .modal h2,
+body.ag-shell .modal-content h2 {
+  margin: 0 0 var(--ag-space-4);
+  font-size: var(--ag-font-lg);
+  font-weight: 600;
+}
+body.ag-shell .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ag-space-2);
+  margin-top: var(--ag-space-4);
+  padding-top: var(--ag-space-4);
+  border-top: 1px solid var(--ag-border);
+}
+
+/* Toast — bottom-of-viewport ephemeral status. */
+body.ag-shell .toast {
+  position: fixed;
+  bottom: var(--ag-space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--ag-space-3) var(--ag-space-5);
+  background: var(--ag-text);
+  color: var(--ag-bg);
+  border-radius: var(--ag-radius-md);
+  box-shadow: var(--ag-shadow-md);
+  font-size: var(--ag-font-sm);
+  z-index: var(--ag-z-toast);
+}
+body.ag-shell .toast.error { background: var(--ag-danger); color: #fff; }
+
+/* Make help/code blocks readable in the shell. */
+body.ag-shell code {
+  background: var(--ag-surface-2);
+  padding: 2px 6px;
+  border-radius: var(--ag-radius-sm);
+  font-size: 0.9em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+body.ag-shell .muted { color: var(--ag-text-dim); }
+body.ag-shell h2 { font-size: var(--ag-font-lg); font-weight: 600; }
+body.ag-shell h3 { font-size: var(--ag-font-md); font-weight: 600; }

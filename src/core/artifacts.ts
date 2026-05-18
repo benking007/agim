@@ -224,6 +224,96 @@ export async function pruneArtifactsBatch(jobIds: number[]): Promise<number> {
   return n
 }
 
+// ─── M-N16: orphan-dir sweep ────────────────────────────────────────
+//
+// The job-board retention sweep calls pruneArtifactsBatch with the ids
+// it just deleted, so the common path is already covered. This sweep
+// is the safety net for orphans:
+//   - process killed between SQLite DELETE and artifact rm
+//   - SQLite recovered from WAL but the artifact rm never ran
+//   - artifact dir created by an older agim version that didn't track it
+//
+// Strategy is intentionally simple: walk ROOT, delete any `<jobId>` dir
+// whose mtime is older than the retention window. We don't cross-
+// reference job-board's SQLite (would couple two retention policies
+// that already have their own); age alone is a sufficient signal because
+// job-board's max retention is 30d.
+
+const DEFAULT_ORPHAN_RETENTION_DAYS = 30
+const ORPHAN_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000   // 24h
+
+function resolveOrphanRetentionDays(): number {
+  const raw = process.env.IMHUB_ARTIFACT_RETENTION_DAYS
+  if (raw) { const n = parseInt(raw, 10); if (Number.isFinite(n) && n > 0) return n }
+  return DEFAULT_ORPHAN_RETENTION_DAYS
+}
+
+/**
+ * Walk ROOT once; delete any direct child whose mtime predates the
+ * retention cutoff. Returns the number of dirs removed. Safe to call
+ * on a missing or empty ROOT.
+ */
+export async function sweepOrphanArtifacts(now: number = Date.now()): Promise<number> {
+  if (!existsSync(ROOT)) return 0
+  const retentionDays = resolveOrphanRetentionDays()
+  const cutoff = now - retentionDays * 24 * 60 * 60 * 1000
+  let dropped = 0
+  let entries: string[]
+  try {
+    entries = await readdir(ROOT)
+  } catch (err) {
+    log.warn({ event: 'artifacts.sweep.readdir_failed', err: String(err) })
+    return 0
+  }
+  for (const name of entries) {
+    // We only created dirs named like an integer jobId. Skip anything
+    // else (operator-stashed file, lockfile, etc.) so we don't surprise
+    // them by deleting it.
+    if (!/^\d+$/.test(name)) continue
+    const dir = join(ROOT, name)
+    try {
+      const st = await stat(dir)
+      if (!st.isDirectory()) continue
+      if (st.mtimeMs >= cutoff) continue
+      await rm(dir, { recursive: true, force: true })
+      dropped++
+    } catch (err) {
+      log.warn({ event: 'artifacts.sweep.rm_failed', dir, err: String(err) })
+    }
+  }
+  if (dropped > 0) {
+    log.info({ event: 'artifacts.sweep.done', dropped, retentionDays },
+      `swept ${dropped} orphan artifact dir(s)`)
+  }
+  return dropped
+}
+
+let orphanSweepTimer: ReturnType<typeof setInterval> | null = null
+
+/** Start the 24h orphan sweep timer. Idempotent. */
+export function startArtifactOrphanSweep(): void {
+  if (orphanSweepTimer) return
+  // Run once on boot too — picks up dirs left behind by a previous
+  // unclean shutdown without waiting a full day.
+  void sweepOrphanArtifacts().catch((err) =>
+    log.warn({ event: 'artifacts.sweep.boot_failed', err: String(err) }))
+  orphanSweepTimer = setInterval(() => {
+    void sweepOrphanArtifacts().catch((err) =>
+      log.warn({ event: 'artifacts.sweep.tick_failed', err: String(err) }))
+  }, ORPHAN_SWEEP_INTERVAL_MS)
+  if (orphanSweepTimer && typeof orphanSweepTimer === 'object' && 'unref' in orphanSweepTimer) {
+    (orphanSweepTimer as { unref: () => void }).unref()
+  }
+}
+
+/** Stop the periodic sweep. Called by graceful shutdown. */
+export function stopArtifactOrphanSweep(): void {
+  if (orphanSweepTimer) {
+    clearInterval(orphanSweepTimer)
+    orphanSweepTimer = null
+  }
+}
+
 /** Compute per-job totals (used by tests + future /a2a stats extension). */
 export async function statJob(jobId: number): Promise<{ files: number; bytes: number; outputs: OutputFile[]; inputs: Array<{ name: string; bytes: number }> }> {
   const dirs = getArtifactsDir(jobId)

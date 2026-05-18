@@ -7,6 +7,8 @@
   <!-- Shared utilities: theme manager (applies before first paint), error
        boundary (surfaces silent script failures), i18n + api helpers. -->
   <script src="/_app.js"></script>
+  <!-- Eager shell stylesheet to avoid FOUC. mountShell() lazy-injects same id. -->
+  <link id="ag-shell-css-link" rel="stylesheet" href="/_shell.css">
   <script>
     const LANGS = { en: 'English', zh: '中文' };
     const savedLang = localStorage.getItem('im-hub-lang');
@@ -723,18 +725,11 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="brand">
-      <a href="/" id="backToChat" aria-label="Back to chat"></a>
-      <span class="title" id="settingsTitle"></span>
-    </div>
-    <div class="controls">
-      <select id="langSelect">
-        <option value="en">EN</option>
-        <option value="zh">中文</option>
-      </select>
-      <button id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
-    </div>
+  <!-- Unified topbar — see _app.js imhub.shell.mount. The old per-page
+       backToChat / lang / theme controls live there now. -->
+  <div data-shell-replace></div>
+  <div class="ag-page-header">
+    <h1 id="settingsTitle" class="ag-page-header__title"></h1>
   </div>
 
   <div class="container" id="app">
@@ -752,23 +747,18 @@
     function applyLang() {
       document.title = t('title');
       document.documentElement.lang = window.__lang === 'zh' ? 'zh-CN' : 'en';
-      document.getElementById('backToChat').textContent = t('backToChat');
-      document.getElementById('settingsTitle').textContent = t('settingsTitle');
+      // backToChat label moved to the shell brand; settingsTitle stays
+      // on the page header. Be defensive in case the element was removed.
+      const titleEl = document.getElementById('settingsTitle');
+      if (titleEl) titleEl.textContent = t('settingsTitle');
     }
 
-    // Theme toggle (light / dark / system). _app.js applied theme already;
-    // here we wire the click handler so cycling re-renders the icon/label.
-    if (window.imhub) imhub.theme.bindToggle(document.getElementById('theme-toggle'));
-
-    // Language selector
-    const langSelect = document.getElementById('langSelect');
-    langSelect.value = window.__lang;
-    langSelect.addEventListener('change', () => {
-      window.__lang = langSelect.value;
-      localStorage.setItem('im-hub-lang', window.__lang);
-      applyLang();
-      render();
-    });
+    // Theme toggle + lang switcher live on the shared shell topbar now;
+    // mount it here once i18n strings are ready so the brand / nav /
+    // controls all render in the chosen language.
+    if (window.imhub && window.imhub.shell) {
+      window.imhub.shell.mount({ active: 'settings' });
+    }
 
     // State
     let config = null;

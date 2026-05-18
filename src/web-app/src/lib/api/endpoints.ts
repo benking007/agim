@@ -17,6 +17,10 @@ import type {
   AppConfig,
   AuditResponse,
   BatchJobBody,
+  EnvResponse,
+  ServiceActionResponse,
+  ServiceStatus,
+  UpdateEnvBody,
   CreateJobBody,
   CreateJobResponse,
   HealthSummary,
@@ -142,12 +146,12 @@ export const api = {
     client.put<unknown>('/api/config', opts),
 
   /** GET /api/env */
-  getEnv: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/env', opts),
+  getEnv: (query: { reveal?: boolean }) =>
+    client.get<EnvResponse>('/api/env', { query }),
 
   /** PUT /api/env */
-  updateEnv: (opts?: { body?: unknown }) =>
-    client.put<unknown>('/api/env', opts),
+  updateEnv: (body: UpdateEnvBody) =>
+    client.put<EnvResponse>('/api/env', { body }),
 
   /** GET /api/health (public) */
   getHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -303,20 +307,20 @@ export const api = {
     client.get<ListSchedulesResponse>('/api/schedules', { query }),
 
   /** POST /api/service/restart */
-  restartService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/restart', opts),
+  restartService: () =>
+    client.post<ServiceActionResponse>('/api/service/restart'),
 
   /** POST /api/service/start */
-  startService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/start', opts),
+  startService: () =>
+    client.post<ServiceActionResponse>('/api/service/start'),
 
   /** GET /api/service/status */
-  getServiceStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/service/status', opts),
+  getServiceStatus: () =>
+    client.get<ServiceStatus>('/api/service/status'),
 
   /** POST /api/service/stop */
-  stopService: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/service/stop', opts),
+  stopService: () =>
+    client.post<ServiceActionResponse>('/api/service/stop'),
 
   /** GET /api/skills */
   listSkills: () =>

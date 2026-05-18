@@ -39,7 +39,7 @@ const NAV: Array<NavEntry & { mounted: boolean }> = [
   { to: '/memory',        i18nKey: 'nav.memory',        mounted: true  },
   { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: true  },
   { to: '/observability', i18nKey: 'nav.observability', mounted: true  },
-  { to: '/settings',      i18nKey: 'nav.settings',      mounted: false },
+  { to: '/settings',      i18nKey: 'nav.settings',      mounted: true  },
 ]
 
 export interface TopbarProps {

@@ -1,0 +1,52 @@
+{
+  "pageTitle": "设置",
+  "subtitle": "运维配置：环境变量与服务生命周期。",
+  "tabs": {
+    "env":     "环境变量",
+    "service": "服务"
+  },
+  "env": {
+    "title": "环境变量",
+    "subtitle": "编辑 `~/.agim/.env` 中的值。敏感字段默认遮罩，可切换显示查看完整值。",
+    "reveal":   "显示敏感值",
+    "search":   "按 Key 过滤",
+    "secretTag": "敏感",
+    "empty":    "未找到可编辑的 Key。",
+    "save":     "保存",
+    "savedToast": "已保存 {{count}} 项",
+    "discard":  "放弃修改",
+    "dirtyHint": "{{count}} 项未保存",
+    "unsetButton": "清除",
+    "unset": "（未设置）",
+    "noChanges": "无修改"
+  },
+  "service": {
+    "title": "服务",
+    "subtitle": "查看运行中的 agim 进程，并启动 / 停止 / 重启它。",
+    "modeLabel":      "运行模式",
+    "pidLabel":       "PID",
+    "uptimeLabel":    "运行时长",
+    "webLabel":       "Web 端口",
+    "bootPhaseLabel": "启动阶段",
+    "mode": {
+      "systemd":    "systemd",
+      "background": "后台",
+      "foreground": "前台",
+      "none":       "未运行"
+    },
+    "actions": {
+      "start":         "启动",
+      "stop":          "停止",
+      "restart":       "重启",
+      "confirmStop":   "停止 agim 服务？",
+      "confirmStopDesc":"Web 控制台、消息适配器、所有正在进行的作业都会停止。需要重新启动后才能继续使用。",
+      "confirmRestart":"重启 agim 服务？",
+      "confirmRestartDesc":"进程会先停止再启动。进行中的作业会被取消；投递队列与已排队的提醒会保留。重启期间 Web 控制台不可达，通常 5-30 秒。"
+    },
+    "toast": {
+      "started":   "服务已启动",
+      "stopped":   "服务已停止",
+      "restarted": "服务已重启"
+    }
+  }
+}

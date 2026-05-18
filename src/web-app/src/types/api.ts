@@ -838,3 +838,49 @@ export interface ListAuditQuery {
   user?: string
   intent?: string
 }
+
+/* ============================================================
+ * Settings — env file, service control.
+ * ============================================================ */
+
+export interface EnvResponse {
+  /** Editable env-file values keyed by IMHUB_*. Secrets are masked
+   *  unless ?reveal=1 was passed (only last 4 chars visible). */
+  env: Record<string, string>
+  /** Subset of env keys whose values are treated as secrets — the
+   *  UI should hide their values by default and use a Reveal toggle. */
+  secretKeys: string[]
+}
+
+export interface UpdateEnvBody {
+  /** Map of key → new value. Pass `null` to unset a key. Only keys
+   *  on the backend's `ENV_EDITABLE_KEYS` allowlist are accepted;
+   *  anything else is silently dropped. */
+  updates: Record<string, string | null>
+}
+
+export type ServiceMode = 'systemd' | 'background' | 'foreground' | 'none'
+
+export interface ServiceStatus {
+  mode: ServiceMode
+  pid: number | null
+  uptimeSec: number | null
+  /** Human-rendered uptime (e.g. "3h 12m"). */
+  uptime: string | null
+  /** Public web endpoint, when known. */
+  web: {
+    bind: string
+    port: number
+  } | null
+  /** Boot lifecycle phase from core/boot-state.ts. */
+  bootPhase: string
+  bootMsSinceStart: number
+  bootPhaseTimings: Record<string, number>
+}
+
+export interface ServiceActionResponse {
+  ok: boolean
+  mode?: ServiceMode
+  pid?: number
+  alreadyRunning?: boolean
+}

@@ -35,6 +35,9 @@ import ObservabilityLayout from '@/routes/observability/layout'
 import ObservabilityHealthRoute from '@/routes/observability/health'
 import ObservabilityTopNRoute from '@/routes/observability/topn'
 import ObservabilityAuditRoute from '@/routes/observability/audit'
+import SettingsLayout from '@/routes/settings/layout'
+import SettingsEnvRoute from '@/routes/settings/env'
+import SettingsServiceRoute from '@/routes/settings/service'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -122,6 +125,19 @@ const router = createBrowserRouter([
       { path: 'health', element: <ObservabilityHealthRoute /> },
       { path: 'topn',   element: <ObservabilityTopNRoute /> },
       { path: 'audit',  element: <ObservabilityAuditRoute /> },
+    ],
+  },
+  {
+    path: '/settings',
+    element: (
+      <RequireAuth>
+        <SettingsLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true,     element: <Navigate to="env" replace /> },
+      { path: 'env',     element: <SettingsEnvRoute /> },
+      { path: 'service', element: <SettingsServiceRoute /> },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

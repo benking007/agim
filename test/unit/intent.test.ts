@@ -117,4 +117,37 @@ describe('classifyIntent', () => {
     const stickyResult = classifyIntent('ok thanks', 'codex')
     expect(stickyResult.agent).toBe('codex')
   })
+
+  it('routes generic messages to defaultAgent when no sticky/topic/keyword signal', () => {
+    // Without defaultAgent, a generic "hello" falls into PROFILES order
+    // (opencode wins). With defaultAgent set, the bias should route it to
+    // the operator's chosen agent — matches the web /chat fresh-thread
+    // path where there's no sticky session yet.
+    const r = classifyIntent('hello', undefined, undefined, 'claude-code')
+    expect(r.agent).toBe('claude-code')
+    expect(r.triggeredBy).toBe('default')
+  })
+
+  it('defaultAgent loses to an explicit topic match', () => {
+    // Even with defaultAgent=claude-code, a "git commit" message must still
+    // route to opencode — explicit topic signal overrides the default bias.
+    const r = classifyIntent('git commit and push to main', undefined, undefined, 'claude-code')
+    expect(r.agent).toBe('opencode')
+    expect(r.triggeredBy).toBe('topic')
+  })
+
+  it('defaultAgent loses to sticky', () => {
+    // Sticky session is an absolute lock; defaultAgent never overrides it.
+    const r = classifyIntent('hello', 'codex', undefined, 'claude-code')
+    expect(r.agent).toBe('codex')
+    expect(r.triggeredBy).toBe('sticky')
+  })
+
+  it('defaultAgent that is not registered is ignored', () => {
+    // An operator who configures defaultAgent to an unregistered name
+    // shouldn't crash routing — we silently fall back to PROFILES order.
+    const r = classifyIntent('hello', undefined, undefined, 'no-such-agent')
+    expect(['opencode', 'claude-code', 'codex', 'copilot']).toContain(r.agent)
+    expect(r.triggeredBy).not.toBe('default')
+  })
 })

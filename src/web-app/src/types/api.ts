@@ -759,24 +759,82 @@ export interface AppConfig {
  * Health / Observability
  * ============================================================ */
 
+/** Mirror of src/core/audit-log.ts:HealthSummary. */
 export interface HealthSummary {
-  uptimeSec: number
-  agents: Record<string, boolean>
-  totalsByDay?: Array<{ date: string; calls: number; cost: number; errors: number; avgLatencyMs: number }>
-  kpis?: {
-    totalCalls: number
-    totalCost: number
+  /** Window start (YYYY-MM-DD). */
+  since: string
+  until: string
+  days: number
+  totals: {
+    calls: number
+    cost: number
+    errors: number
     errorRate: number
     avgLatencyMs: number
+    p95LatencyMs: number
   }
+  byDay: Array<{
+    date: string
+    calls: number
+    cost: number
+    errors: number
+    avgLatencyMs: number
+  }>
 }
 
-export interface TopNRow {
-  rank: number
-  name: string
-  value: number
+export type TopNDim = 'user' | 'agent' | 'platform' | 'intent'
+export type TopNMetric = 'cost' | 'calls' | 'errors' | 'avg_latency'
+
+export interface TopNItem {
+  key: string
+  calls: number
+  cost: number
+  errors: number
+  avgLatencyMs: number
 }
 
 export interface TopNResponse {
-  topN: TopNRow[]
+  dim: TopNDim
+  by: TopNMetric
+  days: number
+  items: TopNItem[]
+}
+
+/** Mirror of src/core/audit-log.ts:InvocationRow. */
+export interface InvocationRow {
+  id: number
+  trace_id: string
+  /** ISO timestamp; SQLite stores as TEXT. */
+  ts: string
+  user_id: string
+  platform: string
+  agent: string
+  intent: string
+  prompt_len: number
+  response_len: number
+  duration_ms: number
+  cost: number
+  /** Stored as 0/1 in SQLite. */
+  success: number
+  error: string | null
+}
+
+export interface AuditStats {
+  total: number
+  byAgent: Record<string, number>
+  totalCost: number
+}
+
+export interface AuditResponse {
+  invocations: InvocationRow[]
+  stats: AuditStats
+}
+
+export interface ListAuditQuery {
+  limit?: number
+  days?: number
+  agent?: string
+  platform?: string
+  user?: string
+  intent?: string
 }

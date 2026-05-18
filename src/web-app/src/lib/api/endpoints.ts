@@ -15,6 +15,7 @@ import { client } from './client'
 import type {
   A2AStats,
   AppConfig,
+  AuditResponse,
   BatchJobBody,
   CreateJobBody,
   CreateJobResponse,
@@ -22,6 +23,9 @@ import type {
   ListA2ARecentQuery,
   ListA2ARecentResponse,
   ListApprovalsResponse,
+  ListAuditQuery,
+  TopNDim,
+  TopNMetric,
   ResolveApprovalBody,
   ResolveApprovalResponse,
   CancelReminderResponse,
@@ -114,8 +118,8 @@ export const api = {
     client.post<ResolveApprovalResponse>(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, { body }),
 
   /** GET /api/audit */
-  getAudit: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/audit', opts),
+  getAudit: (query: ListAuditQuery) =>
+    client.get<AuditResponse>('/api/audit', { query }),
 
   /** POST /api/auth/login (public) */
   login: (body: LoginBody) =>
@@ -154,7 +158,7 @@ export const api = {
     client.get<HealthSummary>('/api/health/summary', { query }),
 
   /** GET /api/health/topn */
-  getHealthTopN: (query: { dim: "user"|"agent"|"platform"; by: "calls"|"cost"|"errors"|"avg_latency"; days?: number; limit?: number }) =>
+  getHealthTopN: (query: { dim: TopNDim; by: TopNMetric; days?: number; limit?: number }) =>
     client.get<TopNResponse>('/api/health/topn', { query }),
 
   /** POST /api/invoke */

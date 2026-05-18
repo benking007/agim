@@ -1,0 +1,101 @@
+{
+  "pageTitle": "Observability",
+  "subtitle": "Operational health: invocation totals, top-N leaderboards, and the audit timeline.",
+  "tabs": {
+    "health": "Health",
+    "topn":   "Top-N",
+    "audit":  "Audit"
+  },
+  "window": {
+    "label":  "Window",
+    "days_one":   "{{count}} day",
+    "days_other": "{{count}} days"
+  },
+  "health": {
+    "title":    "Health",
+    "totals":   "Totals",
+    "byDay":    "By day",
+    "kpi": {
+      "calls":          "Calls",
+      "cost":           "Cost",
+      "errors":         "Errors",
+      "errorRate":      "Error rate",
+      "avgLatencyMs":   "Avg latency",
+      "p95LatencyMs":   "P95 latency"
+    },
+    "byDayCol": {
+      "date":           "Date",
+      "calls":          "Calls",
+      "cost":           "Cost",
+      "errors":         "Errors",
+      "avgLatencyMs":   "Avg latency"
+    },
+    "empty": {
+      "title": "No data in this window",
+      "description": "No invocations recorded in the selected time window. Widen the window or wait for an agent call to fire."
+    }
+  },
+  "topn": {
+    "title": "Top-N",
+    "filter": {
+      "dim":    "Group by",
+      "metric": "Rank by"
+    },
+    "dim": {
+      "user":     "User",
+      "agent":    "Agent",
+      "platform": "Platform",
+      "intent":   "Intent"
+    },
+    "metric": {
+      "cost":         "Cost",
+      "calls":        "Calls",
+      "errors":       "Errors",
+      "avg_latency":  "Avg latency"
+    },
+    "col": {
+      "rank":           "#",
+      "key":            "Key",
+      "calls":          "Calls",
+      "cost":           "Cost",
+      "errors":         "Errors",
+      "avgLatencyMs":   "Avg latency"
+    },
+    "empty": {
+      "title": "No data",
+      "description": "No invocations matched the filters."
+    }
+  },
+  "audit": {
+    "title":  "Audit",
+    "stats": {
+      "total":      "Total",
+      "totalCost":  "Total cost"
+    },
+    "filter": {
+      "agent":     "Agent",
+      "platform":  "Platform",
+      "user":      "User",
+      "intent":    "Intent"
+    },
+    "col": {
+      "ts":        "Time",
+      "trace":     "Trace",
+      "agent":     "Agent",
+      "platform":  "Platform",
+      "user":      "User",
+      "intent":    "Intent",
+      "duration":  "Duration",
+      "cost":      "Cost",
+      "outcome":   "Outcome"
+    },
+    "outcome": {
+      "ok":   "ok",
+      "fail": "fail"
+    },
+    "empty": {
+      "title": "No invocations",
+      "description": "Audit rows appear here when an agent is invoked. Adjust filters or widen the window."
+    }
+  }
+}

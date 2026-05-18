@@ -1,0 +1,101 @@
+{
+  "pageTitle": "观测",
+  "subtitle": "运行健康：调用总量、Top-N 排行与审计时间线。",
+  "tabs": {
+    "health": "健康",
+    "topn":   "Top-N",
+    "audit":  "审计"
+  },
+  "window": {
+    "label":  "时间窗口",
+    "days_one":   "{{count}} 天",
+    "days_other": "{{count}} 天"
+  },
+  "health": {
+    "title":    "健康",
+    "totals":   "总览",
+    "byDay":    "每日明细",
+    "kpi": {
+      "calls":          "调用",
+      "cost":           "成本",
+      "errors":         "错误",
+      "errorRate":      "错误率",
+      "avgLatencyMs":   "平均延迟",
+      "p95LatencyMs":   "P95 延迟"
+    },
+    "byDayCol": {
+      "date":           "日期",
+      "calls":          "调用",
+      "cost":           "成本",
+      "errors":         "错误",
+      "avgLatencyMs":   "平均延迟"
+    },
+    "empty": {
+      "title": "时间窗口内无数据",
+      "description": "所选时间范围内没有任何调用记录。可以放宽时间窗口或等待 Agent 被调用。"
+    }
+  },
+  "topn": {
+    "title": "Top-N",
+    "filter": {
+      "dim":    "分组维度",
+      "metric": "排序依据"
+    },
+    "dim": {
+      "user":     "用户",
+      "agent":    "Agent",
+      "platform": "平台",
+      "intent":   "意图"
+    },
+    "metric": {
+      "cost":         "成本",
+      "calls":        "调用",
+      "errors":       "错误",
+      "avg_latency":  "平均延迟"
+    },
+    "col": {
+      "rank":           "#",
+      "key":            "Key",
+      "calls":          "调用",
+      "cost":           "成本",
+      "errors":         "错误",
+      "avgLatencyMs":   "平均延迟"
+    },
+    "empty": {
+      "title": "暂无数据",
+      "description": "当前筛选下没有调用记录。"
+    }
+  },
+  "audit": {
+    "title":  "审计",
+    "stats": {
+      "total":      "累计",
+      "totalCost":  "累计成本"
+    },
+    "filter": {
+      "agent":     "Agent",
+      "platform":  "平台",
+      "user":      "用户",
+      "intent":    "意图"
+    },
+    "col": {
+      "ts":        "时间",
+      "trace":     "Trace",
+      "agent":     "Agent",
+      "platform":  "平台",
+      "user":      "用户",
+      "intent":    "意图",
+      "duration":  "耗时",
+      "cost":      "成本",
+      "outcome":   "结果"
+    },
+    "outcome": {
+      "ok":   "成功",
+      "fail": "失败"
+    },
+    "empty": {
+      "title": "暂无调用",
+      "description": "当 Agent 被调用时，审计记录会出现在这里。可调整筛选或放宽时间窗口。"
+    }
+  }
+}

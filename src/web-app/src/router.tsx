@@ -31,6 +31,10 @@ import MemoryPersonaRoute from '@/routes/memory/persona'
 import MemoryVectorRoute from '@/routes/memory/vector'
 import MemorySkillsRoute from '@/routes/memory/skills'
 import WorkspaceRoute from '@/routes/workspace'
+import ObservabilityLayout from '@/routes/observability/layout'
+import ObservabilityHealthRoute from '@/routes/observability/health'
+import ObservabilityTopNRoute from '@/routes/observability/topn'
+import ObservabilityAuditRoute from '@/routes/observability/audit'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -105,6 +109,20 @@ const router = createBrowserRouter([
         <WorkspaceRoute />
       </RequireAuth>
     ),
+  },
+  {
+    path: '/observability',
+    element: (
+      <RequireAuth>
+        <ObservabilityLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true,    element: <Navigate to="health" replace /> },
+      { path: 'health', element: <ObservabilityHealthRoute /> },
+      { path: 'topn',   element: <ObservabilityTopNRoute /> },
+      { path: 'audit',  element: <ObservabilityAuditRoute /> },
+    ],
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

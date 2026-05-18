@@ -38,8 +38,8 @@ describe('Topbar', () => {
     expect(screen.getByRole('link', { name: 'Memos' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Workspace' })).toBeInTheDocument()
-    // /observability etc. are not yet mounted.
-    expect(screen.queryByRole('link', { name: 'Observability' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Observability' })).toBeInTheDocument()
+    // /settings is not yet mounted.
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
   })
 

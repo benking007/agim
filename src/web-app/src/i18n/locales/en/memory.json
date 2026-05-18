@@ -1,0 +1,62 @@
+{
+  "pageTitle": "Memory",
+  "subtitle": "Per-user facts the agent has accumulated. Long-term memory that survives session resets.",
+  "userPicker": {
+    "label":      "User",
+    "placeholder":"Pick a user",
+    "factsLabel": "{{count}} facts",
+    "personaTag": "persona"
+  },
+  "noUserSelected": {
+    "title": "Pick a user to view their memory",
+    "description": "Memory is partitioned per user_key (platform:userId). The dropdown above lists every user whose memory has any rows in the bank."
+  },
+  "tabs": {
+    "facts":   "Facts",
+    "persona": "Persona",
+    "vector":  "Vector",
+    "skills":  "Skills"
+  },
+  "facts": {
+    "title": "Facts",
+    "empty": {
+      "title": "No facts yet",
+      "description": "Facts accumulate as the agent extracts them from chat history during memory consolidation. Triggering `/memory consolidate` from chat (or the Persona tab's button when it lands) seeds this list."
+    },
+    "filter": {
+      "search":      "Search",
+      "category":    "Category",
+      "categoryAny": "Any category"
+    },
+    "category": {
+      "fact":       "Fact",
+      "preference": "Preference",
+      "goal":       "Goal",
+      "history":    "History",
+      "profile":    "Profile"
+    },
+    "col": {
+      "id":          "ID",
+      "what":        "What",
+      "category":    "Category",
+      "confidence":  "Confidence",
+      "source":      "Source",
+      "createdAt":   "Created"
+    },
+    "batch": {
+      "selected":             "{{count}} selected",
+      "deleteSelected":       "Delete selected",
+      "confirmDelete":        "Delete {{count}} fact(s)?",
+      "confirmDeleteDesc":    "This removes the rows from the bank. The vector index keeps any embedding derived from these rows until the next backfill prune."
+    },
+    "action": {
+      "delete":             "Delete",
+      "confirmDelete":      "Delete this fact?",
+      "confirmDeleteDesc":  "This row is removed permanently. The vector index retains its embedding until the next backfill prune."
+    },
+    "toast": {
+      "deletedOne":  "Fact deleted",
+      "deletedMany": "Deleted {{count}} facts"
+    }
+  }
+}

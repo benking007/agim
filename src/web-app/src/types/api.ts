@@ -465,19 +465,23 @@ export interface ResolveApprovalResponse extends OkResponse {
 
 export type FactCategory = 'fact' | 'preference' | 'goal' | 'history' | 'profile'
 
+/** Mirror of src/core/memory.ts:Fact — every field is required on the
+ *  wire (the backend stores empty strings, not null, for the
+ *  optional-feeling text columns). Timestamps are epoch-ms numbers,
+ *  not ISO strings. */
 export interface Fact {
   id: number
   user_key: string
   what: string
-  who?: string
-  when_text?: string
-  where_label?: string
-  why?: string
+  who: string
+  when_text: string
+  where_label: string
+  why: string
   category: FactCategory
   confidence: number
+  last_referenced_at: number
   source: string
   created_at: number
-  embedded_at?: number
 }
 
 export interface ListMemoryFactsQuery {
@@ -488,9 +492,46 @@ export interface ListMemoryFactsQuery {
   offset?: number
 }
 
+/** Mirrors core/memory.ts:FactPage. The backend always returns
+ *  `total + limit + offset + facts` (it's a paginated view, not a
+ *  flat list). */
 export interface ListMemoryFactsResponse {
+  total: number
+  limit: number
+  offset: number
   facts: Fact[]
-  total?: number
+}
+
+/** Body of DELETE /api/memory/facts — bulk-delete with optional
+ *  filters. At least one of `ids` / `category` / `max_confidence`
+ *  must be set, OR `confirm_clear: true` for a wipe. The backend
+ *  enforces this; the DTO mirrors what it accepts. */
+export interface DeleteMemoryFactsBody {
+  ids?: number[]
+  category?: FactCategory
+  /** Drop facts whose confidence is at or below this threshold. */
+  max_confidence?: number
+  /** Required `true` for a wipe-everything semantic; ignored otherwise. */
+  confirm_clear?: boolean
+}
+
+export interface DeleteMemoryFactsResponse {
+  deleted: number
+}
+
+/** Per-user summary returned by GET /api/memory/users. Mirrors
+ *  core/memory.ts:UserSummary. */
+export interface MemoryUserSummary {
+  user_key: string
+  fact_count: number
+  oldest_fact_at: number | null
+  newest_fact_at: number | null
+  has_persona: boolean
+  persona_updated_at: number | null
+}
+
+export interface ListMemoryUsersResponse {
+  users: MemoryUserSummary[]
 }
 
 export interface Persona {

@@ -30,8 +30,11 @@ import type {
   ListBgjobsResponse,
   ListJobsQuery,
   ListJobsResponse,
+  DeleteMemoryFactsBody,
+  DeleteMemoryFactsResponse,
   ListMemoryFactsQuery,
   ListMemoryFactsResponse,
+  ListMemoryUsersResponse,
   ListMemosQuery,
   ListMemosResponse,
   ListOutboxQuery,
@@ -184,9 +187,14 @@ export const api = {
   exportMemory: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/memory/export', opts),
 
-  /** DELETE /api/memory/facts */
-  deleteMemoryFacts: (query: { user_key: string; ids?: string }) =>
-    client.delete<OkResponse>('/api/memory/facts', { query }),
+  /** DELETE /api/memory/facts (bulk; body specifies ids / category /
+   *  max_confidence / confirm_clear). */
+  deleteMemoryFacts: (query: { user_key: string }, body: DeleteMemoryFactsBody) =>
+    client.delete<DeleteMemoryFactsResponse>('/api/memory/facts', { query, body }),
+
+  /** DELETE /api/memory/facts/:id (single-fact delete; user_key in query). */
+  deleteMemoryFactById: (id: number, query: { user_key: string }) =>
+    client.delete<OkResponse & { id: number }>(`/api/memory/facts/${id}`, { query }),
 
   /** GET /api/memory/facts */
   listMemoryFacts: (query: ListMemoryFactsQuery) =>
@@ -205,8 +213,8 @@ export const api = {
     client.put<OkResponse>('/api/memory/persona', { query, body }),
 
   /** GET /api/memory/users */
-  listMemoryUsers: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<{ users: string[] }>('/api/memory/users', opts),
+  listMemoryUsers: () =>
+    client.get<ListMemoryUsersResponse>('/api/memory/users'),
 
   /** POST /api/memory/vector/backfill */
   backfillMemoryVector: (opts?: { body?: unknown }) =>

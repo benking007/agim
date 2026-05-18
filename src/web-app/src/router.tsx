@@ -25,6 +25,8 @@ import A2ARoute from '@/routes/tasks/a2a'
 import ApprovalsRoute from '@/routes/approvals'
 import RemindersRoute from '@/routes/reminders'
 import MemosRoute from '@/routes/memos'
+import MemoryLayout from '@/routes/memory/layout'
+import MemoryFactsRoute from '@/routes/memory/facts'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -76,6 +78,18 @@ const router = createBrowserRouter([
         <MemosRoute />
       </RequireAuth>
     ),
+  },
+  {
+    path: '/memory',
+    element: (
+      <RequireAuth>
+        <MemoryLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true,    element: <Navigate to="facts" replace /> },
+      { path: 'facts',  element: <MemoryFactsRoute /> },
+    ],
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

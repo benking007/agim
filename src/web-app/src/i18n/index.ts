@@ -40,19 +40,21 @@ import remindersEn from './locales/en/reminders.json'
 import remindersZh from './locales/zh/reminders.json'
 import memosEn from './locales/en/memos.json'
 import memosZh from './locales/zh/memos.json'
+import memoryEn from './locales/en/memory.json'
+import memoryZh from './locales/zh/memory.json'
 
 void i18n
   .use(HttpBackend)
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn },
-      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh },
+      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn },
+      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh },
     },
     lng: detectInitialLang(),
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos'],
+    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory'],
     defaultNS: 'common',
     interpolation: { escapeValue: false }, // React already escapes
     react: { useSuspense: false },         // we render skeletons ourselves

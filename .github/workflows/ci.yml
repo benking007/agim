@@ -33,8 +33,13 @@ jobs:
           bun-version: latest
 
       # ───── Backend (agim-cli) ─────
+      # --omit=optional skips @xenova/transformers (ONNX binary) which
+      # triggers npm's "Exit handler never called!" regression during
+      # postinstall on Node 22+. End users still get the optional dep on
+      # `npm install -g agim-cli`; CI doesn't exercise the vector path.
+      # Same flag as release.yml.
       - name: Install root dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --omit=optional --no-audit --no-fund || npm install --omit=optional --no-audit --no-fund
 
       - name: Backend typecheck
         run: npm run typecheck

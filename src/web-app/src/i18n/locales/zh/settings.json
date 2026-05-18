@@ -327,6 +327,22 @@
       "started":   "服务已启动",
       "stopped":   "服务已停止",
       "restarted": "服务已重启"
+    },
+    "ports": {
+      "title":           "端口",
+      "subtitle":        "agim 启动时监听的端口。留空使用默认值；改动需下次服务重启生效（保存后点下方「重启」按钮）。",
+      "webPort":         "Web 端口",
+      "webPortHint":     "聊天 UI + REST API 的 HTTP 服务端口。默认 {{default}}。",
+      "acpPort":         "ACP 端口",
+      "acpPortHint":     "Agent Communication Protocol 服务端口（远程 Agent 接入面）。默认 {{default}}。",
+      "invalidPort":     "需为 1-65535 之间的数字。",
+      "restartRequired": "需重启生效",
+      "save":            "保存",
+      "saving":          "保存中…",
+      "discard":         "放弃改动",
+      "toast": {
+        "saved":         "端口已保存 — 重启 agim 以绑定新端口"
+      }
     }
   },
   "admins": {

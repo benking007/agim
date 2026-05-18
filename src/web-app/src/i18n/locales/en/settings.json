@@ -327,6 +327,22 @@
       "started":   "Service started",
       "stopped":   "Service stopped",
       "restarted": "Service restarted"
+    },
+    "ports": {
+      "title":           "Ports",
+      "subtitle":        "Which ports agim binds when started. Leave blank to use the default. Changes apply on the next service restart (use the Restart button below after saving).",
+      "webPort":         "Web port",
+      "webPortHint":     "HTTP server for the chat UI + REST API. Default: {{default}}.",
+      "acpPort":         "ACP port",
+      "acpPortHint":     "Agent Communication Protocol server (remote agent surface). Default: {{default}}.",
+      "invalidPort":     "Must be a number between 1 and 65535.",
+      "restartRequired": "Restart required",
+      "save":            "Save",
+      "saving":          "Saving…",
+      "discard":         "Discard",
+      "toast": {
+        "saved":         "Ports saved — restart agim to bind the new ports"
+      }
     }
   },
   "admins": {

@@ -233,6 +233,22 @@
         // ── v1.2 Cost & Health tab ──
         tabsCost: '💰 Cost & Health',
         tabsMemory: '🧠 Memory',
+        tabsSkills: '🛠 Skills',
+        skillsH2: '🛠 Installed Skills',
+        skillsIntro: 'Read-only inventory of skills installed for claude-code / opencode on this host. Click a row for the full description. To install a new skill, send <code>/find-skills</code> in IM, or browse the skillhub.cn hot list below.',
+        skillsSearchPh: 'Search (name / description)',
+        skillsCatAll: 'All categories',
+        skillsRemoteH2: 'Hot on skillhub.cn',
+        skillsRemoteOpen: 'Open skillhub.cn ↗',
+        skillsRemoteIntro: 'Live top-50 hot downloads from skillhub.cn (5-min cache). Click any entry for the description + install instructions. agim never auto-runs installs — you copy the command and paste into shell or IM.',
+        skillsRemoteCached: 'cache hit',
+        skillsRemoteStale: 'upstream down, serving cached',
+        skillsCol: 'slug',
+        skillsName: 'name / description',
+        skillsStars: '⭐ stars',
+        skillsInstalls: '⬇ installs',
+        skillsHowInstall: 'Install (pick one; agim never auto-runs)',
+        skillsHostHint: 'The first two require skillhub CLI on the host. See docs/skills.md or skillhub.cn.',
         costH2: '💰 Cost & Health',
         costWindow: 'Window',
         costDays1: '1 day',
@@ -507,6 +523,22 @@
         // ── v1.2 Cost & Health tab ──
         tabsCost: '💰 成本与健康',
         tabsMemory: '🧠 记忆',
+        tabsSkills: '🛠 技能',
+        skillsH2: '🛠 已安装的技能',
+        skillsIntro: '本机已安装的 claude / opencode skills 索引。点击行查看完整描述。要安装新 skill 请在 IM 里发 <code>/find-skills</code>，或浏览下方 skillhub.cn 热门榜。',
+        skillsSearchPh: '搜索（名称 / 描述）',
+        skillsCatAll: '所有类别',
+        skillsRemoteH2: 'skillhub.cn 热门',
+        skillsRemoteOpen: '前往 skillhub.cn ↗',
+        skillsRemoteIntro: '实时拉取 skillhub.cn top 50 热门下载（5 分钟缓存）。点击任意条目查看描述 + 安装命令。agim 不会自动跑安装——命令复制后由你贴去 shell 或 IM 触发。',
+        skillsRemoteCached: '缓存命中',
+        skillsRemoteStale: '上游不可达，用旧数据',
+        skillsCol: 'slug',
+        skillsName: '名称 / 描述',
+        skillsStars: '⭐ stars',
+        skillsInstalls: '⬇ installs',
+        skillsHowInstall: '安装方式（任选一个；agim 不会自动跑）',
+        skillsHostHint: '前两条要先在 host 上跑 skillhub install.sh。详见 docs/skills.md 或 skillhub.cn。',
         costH2: '💰 成本与健康',
         costWindow: '窗口',
         costDays1: '1 天',
@@ -912,6 +944,7 @@
       <button type="button" class="tab" data-tab="a2a" id="tab-a2a">A2A</button>
       <button type="button" class="tab" data-tab="cost" id="tab-cost">💰 Cost &amp; Health</button>
       <button type="button" class="tab" data-tab="memory" id="tab-memory">🧠 Memory</button>
+      <button type="button" class="tab" data-tab="skills" id="tab-skills">🛠 Skills</button>
     </div>
 
     <section id="jobs-pane">
@@ -1286,6 +1319,43 @@
         <p class="muted" id="mem-facts-status" style="margin-top:6px;font-size:12px"></p>
       </div>
     </section>
+
+    <!-- v1.2.3 — Skills browser: read-only inventory of installed claude /
+         opencode skills + a remote "hot on skillhub.cn" panel. -->
+    <section id="skills-pane" hidden>
+      <h2 style="margin-top:0" data-i18n="skillsH2">🛠 已安装的 Skills</h2>
+      <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px" data-i18n="skillsIntro">
+        本机已安装的 claude / opencode skills 索引。点击行查看完整描述。
+        要安装新 skill 请在 IM 里发 <code>/find-skills</code>，或浏览下方 skillhub.cn 热门榜。
+      </p>
+      <div class="toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <input type="text" id="skills-search" placeholder="搜索（名称 / 描述）" data-i18n-attr="placeholder:skillsSearchPh" style="width:240px;font-size:13px" />
+        <select id="skills-cat-filter" style="font-size:13px;min-width:160px">
+          <option value="" data-i18n="skillsCatAll">所有类别</option>
+        </select>
+        <button type="button" id="btn-skills-refresh" data-i18n="refresh">刷新</button>
+        <span id="skills-stats" class="muted" style="font-size:12px;margin-left:8px"></span>
+      </div>
+      <div id="skills-list">…</div>
+
+      <!-- Remote: skillhub.cn hot showcase -->
+      <div style="margin-top:32px;border-top:1px solid var(--border,#d0d7de);padding-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <h2 style="margin:0">🔥 <span data-i18n="skillsRemoteH2">skillhub.cn 热门</span>
+            <span id="skills-remote-meta" class="muted" style="font-weight:400;font-size:12px"></span>
+          </h2>
+          <div>
+            <a href="https://skillhub.cn" target="_blank" rel="noopener" class="btn" data-i18n="skillsRemoteOpen">前往 skillhub.cn ↗</a>
+            <button type="button" id="btn-skills-remote-refresh" class="btn" data-i18n="refresh" style="margin-left:6px">刷新</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:12px;margin:0 0 12px" data-i18n="skillsRemoteIntro">
+          实时拉取 skillhub.cn top 50 热门下载（5 分钟缓存）。点击任意条目查看描述。
+          安装提示见弹窗末端 — 用 skillhub CLI 或在 IM 里告诉 agent 通过 skillhub 安装。
+        </p>
+        <div id="skills-remote-list"><p class="muted">…</p></div>
+      </div>
+    </section>
   </main>
 
   <div class="modal-bg" id="modal-bg">
@@ -1319,6 +1389,7 @@
     document.getElementById('tab-a2a').textContent = T.tabsA2A;
     if (T.tabsCost) document.getElementById('tab-cost').textContent = T.tabsCost;
     if (T.tabsMemory) document.getElementById('tab-memory').textContent = T.tabsMemory;
+    if (T.tabsSkills) document.getElementById('tab-skills').textContent = T.tabsSkills;
     document.getElementById('hdr-outbox').textContent = T.tabsOutbox;
     document.getElementById('hdr-a2a').textContent = T.tabsA2A;
 
@@ -1420,6 +1491,7 @@
         document.getElementById('a2a-pane').hidden = tab !== 'a2a';
         document.getElementById('cost-pane').hidden = tab !== 'cost';
         document.getElementById('memory-pane').hidden = tab !== 'memory';
+        document.getElementById('skills-pane').hidden = tab !== 'skills';
         // Lazy-load on first activation; auto-refresh hooks below kick in too.
         if (tab === 'schedules') loadSchedules();
         if (tab === 'background') { ensureBgRootsLoaded().then(loadBgjobs); }
@@ -1439,6 +1511,7 @@
           checkMemoryEnabledThen(() => { loadMemVecConfig(); loadMemVecStatus(); });
         }
         if (tab !== 'memory') stopMemVecPolling();
+        if (tab === 'skills') loadSkills();
         // Pause/resume auto-refresh so hidden tabs don't poll.
         setupBgAutoRefresh();
         setupApprovalsAutoRefresh();
@@ -2747,14 +2820,19 @@
     function ensureChartJs() {
       if (window.Chart) return Promise.resolve();
       if (costChartJsLoaded) return costChartJsLoaded;
-      costChartJsLoaded = new Promise((resolve, reject) => {
+      // v1.2.3 — try the vendored copy first (no CDN dependency, works in
+      // CN where jsdelivr is often blocked). Fall back to jsdelivr if the
+      // vendor file is missing (e.g. dev hot-reload before build copied it).
+      const tryLoad = (src) => new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+        s.src = src;
         s.crossOrigin = 'anonymous';
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error('chart.js failed to load'));
+        s.onerror = () => reject(new Error('failed: ' + src));
         document.head.appendChild(s);
       });
+      costChartJsLoaded = tryLoad('/vendor/chart.umd.min.js')
+        .catch(() => tryLoad('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'));
       return costChartJsLoaded;
     }
 
@@ -2772,8 +2850,22 @@
         const data = await api('/api/health/summary?days=' + days);
         renderCostKpis(data);
         renderCostRange(data);
-        await ensureChartJs().catch(() => null);
-        renderCostTrend(data);
+        let chartLoadErr = null;
+        await ensureChartJs().catch((e) => { chartLoadErr = e; });
+        if (chartLoadErr) {
+          // Visible hint when both the vendored copy AND CDN fail
+          // (cached browser, blocked CDN, etc). Without this, the chart
+          // area is empty + silent.
+          const c = document.getElementById('cost-trend');
+          if (c && c.parentElement) {
+            c.parentElement.innerHTML = `<p style="color:#d00;font-size:12px">
+              chart.js 加载失败：${escapeHtmlSafe(String(chartLoadErr.message || chartLoadErr))}
+              （检查 /vendor/chart.umd.min.js 是否存在，或浏览器是否屏蔽了 jsdelivr）
+            </p>`;
+          }
+        } else {
+          renderCostTrend(data);
+        }
       } catch (err) {
         document.getElementById('cost-kpi').innerHTML = '<div class="error">加载失败: ' + (err.message || err) + '</div>';
       }
@@ -3414,6 +3506,216 @@
         if (status) status.textContent = '失败: ' + (err.message || err);
       }
     });
+
+    // ============================================
+    // v1.2.3 — Skills tab
+    // ============================================
+    let skillsCache = null;  // {total, byCategory, skills}
+    async function loadSkills() {
+      const listEl = document.getElementById('skills-list');
+      if (listEl) listEl.innerHTML = '<p class="muted">' + (T.loading || 'Loading…') + '</p>';
+      try {
+        const data = await api('/api/skills');
+        skillsCache = data;
+        renderSkillsCatFilter(data);
+        renderSkills();
+        const stats = document.getElementById('skills-stats');
+        if (stats) {
+          const cats = Object.keys(data.byCategory || {}).length;
+          stats.textContent = `· ${data.total} skills · ${cats} categories`;
+        }
+      } catch (err) {
+        if (listEl) listEl.innerHTML = '<p style="color:#d00">' + escapeHtmlSafe(String(err.message || err)) + '</p>';
+      }
+      // Kick off remote hot panel in parallel — fire-and-forget; its own
+      // error rendering is in loadSkillsRemote.
+      loadSkillsRemote();
+    }
+    function renderSkillsCatFilter(data) {
+      const sel = document.getElementById('skills-cat-filter');
+      if (!sel) return;
+      const prev = sel.value;
+      // Keep first option (all), append discovered categories
+      const allOpt = sel.options[0];
+      sel.innerHTML = '';
+      sel.appendChild(allOpt);
+      const cats = Object.keys(data.byCategory || {}).sort();
+      for (const c of cats) {
+        const o = document.createElement('option');
+        o.value = c;
+        o.textContent = `${c} (${data.byCategory[c]})`;
+        sel.appendChild(o);
+      }
+      sel.value = prev;
+    }
+    function renderSkills() {
+      if (!skillsCache) return;
+      const listEl = document.getElementById('skills-list');
+      if (!listEl) return;
+      const q = (document.getElementById('skills-search')?.value || '').toLowerCase().trim();
+      const cat = document.getElementById('skills-cat-filter')?.value || '';
+      const filtered = skillsCache.skills.filter(s => {
+        if (cat && s.category !== cat) return false;
+        if (!q) return true;
+        return s.slug.toLowerCase().includes(q)
+            || (s.name || '').toLowerCase().includes(q)
+            || (s.description || '').toLowerCase().includes(q);
+      });
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<p class="muted">(no skills match)</p>';
+        return;
+      }
+      // Group by category for clearer scan
+      const byCat = {};
+      for (const s of filtered) {
+        if (!byCat[s.category]) byCat[s.category] = [];
+        byCat[s.category].push(s);
+      }
+      const html = [];
+      for (const cat of Object.keys(byCat).sort()) {
+        html.push(`<h3 style="margin:18px 0 8px;font-size:14px;color:var(--muted,#656d76)">${escapeHtmlSafe(cat)} <span style="font-weight:400">(${byCat[cat].length})</span></h3>`);
+        html.push('<table class="data-table"><tbody>');
+        for (const s of byCat[cat]) {
+          const agentBadge = s.agents.map(a => `<span style="display:inline-block;padding:1px 6px;margin-right:4px;border-radius:3px;background:${a==='claude'?'#fde68a':'#bfdbfe'};font-size:11px;color:#1f2328">${a}</span>`).join('');
+          const descPreview = (s.description || '').slice(0, 140) + ((s.description || '').length > 140 ? '…' : '');
+          html.push(`<tr style="cursor:pointer" data-skill="${escapeHtmlSafe(s.slug)}">
+            <td style="width:240px;vertical-align:top"><code>${escapeHtmlSafe(s.slug)}</code></td>
+            <td style="width:120px;vertical-align:top">${agentBadge}</td>
+            <td style="vertical-align:top;color:var(--muted,#656d76)">${escapeHtmlSafe(descPreview)}</td>
+          </tr>`);
+        }
+        html.push('</tbody></table>');
+      }
+      listEl.innerHTML = html.join('');
+      listEl.querySelectorAll('[data-skill]').forEach(tr => {
+        tr.addEventListener('click', () => openSkillModal(tr.getAttribute('data-skill')));
+      });
+    }
+    async function openSkillModal(slug) {
+      const m = document.getElementById('modal');
+      const bg = document.getElementById('modal-bg');
+      m.innerHTML = `<p class="muted">Loading ${escapeHtmlSafe(slug)}…</p>`;
+      bg.classList.add('show');
+      try {
+        const data = await api('/api/skills/' + encodeURIComponent(slug));
+        // Render the SKILL.md content. Strip the frontmatter block, then
+        // run through marked() if available, otherwise plain <pre>.
+        let body = data.content || '';
+        if (body.startsWith('---')) {
+          const end = body.indexOf('\n---', 3);
+          if (end >= 0) body = body.slice(end + 4).trimStart();
+        }
+        const rendered = (window.marked && typeof marked.parse === 'function')
+          ? marked.parse(body)
+          : `<pre style="white-space:pre-wrap;font-size:12px">${escapeHtmlSafe(body)}</pre>`;
+        const agentBadge = data.agents.map(a => `<span style="display:inline-block;padding:1px 6px;margin-right:4px;border-radius:3px;background:${a==='claude'?'#fde68a':'#bfdbfe'};font-size:11px;color:#1f2328">${a}</span>`).join('');
+        m.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+            <h2 style="margin:0"><code>${escapeHtmlSafe(data.slug)}</code></h2>
+            <button type="button" class="btn" onclick="document.getElementById('modal-bg').classList.remove('show')">${T.close || 'Close'}</button>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">
+            ${agentBadge} · <strong>${escapeHtmlSafe(data.category)}</strong>
+            · <code style="font-size:11px">${escapeHtmlSafe(data.path)}</code>
+          </p>
+          <p style="margin:0 0 16px"><strong>${escapeHtmlSafe(data.name)}</strong> — ${escapeHtmlSafe(data.description)}</p>
+          <div class="markdown-body" style="border-top:1px solid var(--border,#d0d7de);padding-top:12px;max-height:60vh;overflow-y:auto">${rendered}</div>
+        `;
+      } catch (err) {
+        m.innerHTML = `<p style="color:#d00">${escapeHtmlSafe(String(err.message || err))}</p>
+          <button type="button" class="btn" onclick="document.getElementById('modal-bg').classList.remove('show')">${T.close || 'Close'}</button>`;
+      }
+    }
+    document.getElementById('skills-search')?.addEventListener('input', renderSkills);
+    document.getElementById('skills-cat-filter')?.addEventListener('change', renderSkills);
+    document.getElementById('btn-skills-refresh')?.addEventListener('click', loadSkills);
+
+    // ─── skillhub.cn remote hot ───
+    async function loadSkillsRemote() {
+      const listEl = document.getElementById('skills-remote-list');
+      const metaEl = document.getElementById('skills-remote-meta');
+      if (listEl) listEl.innerHTML = '<p class="muted">' + (T.loading || 'Loading…') + '</p>';
+      try {
+        const data = await api('/api/skills/remote/hot');
+        const skills = (data && data.skills) || [];
+        if (metaEl) {
+          const cacheStr = data.cached
+            ? ` · ${T.skillsRemoteCached || '缓存命中'}`
+            : '';
+          const staleStr = data.stale ? ` · ⚠️ ${T.skillsRemoteStale || '上游不可达，用旧数据'}` : '';
+          metaEl.textContent = `(${skills.length}${cacheStr}${staleStr})`;
+        }
+        const html = ['<table class="data-table"><thead><tr>',
+          `<th style="width:200px">${T.skillsCol || 'slug'}</th>`,
+          `<th>${T.skillsName || '名称 / 描述'}</th>`,
+          `<th style="width:100px;text-align:right">${T.skillsStars || '⭐ stars'}</th>`,
+          `<th style="width:110px;text-align:right">${T.skillsInstalls || '⬇ installs'}</th>`,
+          '</tr></thead><tbody>'];
+        for (const s of skills) {
+          const desc = (s.description || '').replace(/\n+/g, ' ').slice(0, 150);
+          const more = (s.description || '').length > 150 ? '…' : '';
+          html.push(`<tr style="cursor:pointer" data-remote-slug="${escapeHtmlSafe(s.slug)}">
+            <td style="vertical-align:top"><code>${escapeHtmlSafe(s.slug)}</code><div class="muted" style="font-size:11px">${escapeHtmlSafe(s.category||'')}</div></td>
+            <td style="vertical-align:top">
+              <div><strong>${escapeHtmlSafe(s.name||s.slug)}</strong> <span class="muted" style="font-size:11px">v${escapeHtmlSafe(s.version||'?')}</span></div>
+              <div class="muted" style="font-size:12px;margin-top:2px">${escapeHtmlSafe(desc)}${more}</div>
+            </td>
+            <td style="vertical-align:top;text-align:right">${(s.stars||0).toLocaleString()}</td>
+            <td style="vertical-align:top;text-align:right">${(s.installs||0).toLocaleString()}</td>
+          </tr>`);
+        }
+        html.push('</tbody></table>');
+        if (skills.length === 0) listEl.innerHTML = '<p class="muted">(empty)</p>';
+        else listEl.innerHTML = html.join('');
+        listEl.querySelectorAll('[data-remote-slug]').forEach(tr => {
+          tr.addEventListener('click', () => openRemoteSkillModal(tr.getAttribute('data-remote-slug'), skills));
+        });
+      } catch (err) {
+        if (listEl) listEl.innerHTML = '<p style="color:#d00">' + escapeHtmlSafe(String(err.message || err)) + '</p>';
+      }
+    }
+    function openRemoteSkillModal(slug, skills) {
+      const s = skills.find(x => x.slug === slug);
+      if (!s) return;
+      const m = document.getElementById('modal');
+      const bg = document.getElementById('modal-bg');
+      const desc = escapeHtmlSafe(s.description || '');
+      // Three install paths the user can pick. We never auto-execute —
+      // operator's choice to copy + paste into shell or forward to agent.
+      const installCmds = [
+        { label: 'CLI (host)', cmd: 'skillhub install ' + s.slug },
+        { label: 'CLI dry-run', cmd: 'skillhub search ' + s.slug },
+        { label: 'IM 让 agent 安装', cmd: '请用 skillhub 安装 ' + s.slug + ' 技能' },
+      ];
+      const cmdRows = installCmds.map(c =>
+        `<div style="margin-top:6px"><span class="muted" style="font-size:11px;display:inline-block;width:130px">${escapeHtmlSafe(c.label)}</span>
+          <code style="font-size:12px">${escapeHtmlSafe(c.cmd)}</code>
+          <button type="button" class="btn" style="font-size:11px;padding:1px 6px;margin-left:6px" onclick="navigator.clipboard.writeText('${c.cmd.replace(/'/g,"\\'")}').then(()=>{this.textContent='✓'; setTimeout(()=>{this.textContent='复制';},1500);})">复制</button>
+        </div>`).join('');
+      m.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+          <h2 style="margin:0">${escapeHtmlSafe(s.name || s.slug)} <span class="muted" style="font-size:13px;font-weight:400">v${escapeHtmlSafe(s.version || '?')}</span></h2>
+          <button type="button" class="btn" onclick="document.getElementById('modal-bg').classList.remove('show')">${T.close || 'Close'}</button>
+        </div>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">
+          <code>${escapeHtmlSafe(s.slug)}</code>
+          ${s.category ? ' · ' + escapeHtmlSafe(s.category) : ''}
+          · ⭐ ${(s.stars||0).toLocaleString()}
+          · ⬇ ${(s.installs||0).toLocaleString()} installs
+          · ${(s.downloads||0).toLocaleString()} downloads
+        </p>
+        <div style="white-space:pre-wrap;border-top:1px solid var(--border,#d0d7de);padding-top:10px;font-size:13px">${desc}</div>
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border,#d0d7de)">
+          <strong style="font-size:13px">${T.skillsHowInstall || '安装方式（任选一个；agim 不会自动跑）'}</strong>
+          ${cmdRows}
+          <p class="muted" style="font-size:11px;margin-top:8px">
+            ${T.skillsHostHint || '前两条要先在 host 上跑 skillhub install.sh。详见 docs/memory-and-vector.md 或 skillhub.cn。'}
+          </p>
+        </div>
+      `;
+      bg.classList.add('show');
+    }
+    document.getElementById('btn-skills-remote-refresh')?.addEventListener('click', loadSkillsRemote);
 
     // Initial load
     loadJobs();

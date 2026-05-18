@@ -1,7 +1,7 @@
 // Web chat server — HTTP + WebSocket for browser-based agent interaction
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,7 +65,7 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   '/api/loc',
   '/favicon.ico', '/favicon.svg',
 ])
-const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/']
+const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/']
 const PUBLIC_API_VIEWER_RE = /^\/api\/viewer\/[0-9a-f-]{8,}$/i
 
 function isPublicPath(pathname: string, method: string): boolean {
@@ -254,6 +254,23 @@ export async function startWebServer(options: {
     // to serve un-authenticated.
     if (url.pathname === '/_app.js' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
+    }
+
+    // v1.2.3 — vendored third-party assets (Chart.js etc). Whitelist by
+    // filename pattern to keep the static surface tight. Public on
+    // purpose — no auth gate (third-party libs aren't secrets).
+    if (req.method === 'GET' && url.pathname.startsWith('/vendor/')) {
+      const fname = url.pathname.slice('/vendor/'.length)
+      // Only allow plain filenames (no traversal, no nested dirs).
+      if (!/^[A-Za-z0-9._-]+\.(js|css|map)$/.test(fname)) {
+        res.statusCode = 404
+        res.end('vendor file not whitelisted')
+        return
+      }
+      const ct = fname.endsWith('.css') ? 'text/css; charset=utf-8'
+        : fname.endsWith('.map') ? 'application/json; charset=utf-8'
+        : 'application/javascript; charset=utf-8'
+      return serveStatic(res, join(PUBLIC_DIR, 'vendor', fname), ct)
     }
 
     // ─── Location capture endpoints (public; auth via single-use token) ───
@@ -647,6 +664,18 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/api/memory/consolidate/status' && req.method === 'GET') {
       return handleMemoryConsolidateStatus(req, res)
+    }
+    // v1.2.3 — Skills browser. Lists locally-installed claude/opencode
+    // skills with frontmatter; modal renders the full SKILL.md markdown.
+    if (url.pathname === '/api/skills' && req.method === 'GET') {
+      return handleSkillsList(req, res)
+    }
+    if (url.pathname === '/api/skills/remote/hot' && req.method === 'GET') {
+      return handleSkillsRemoteHot(req, res)
+    }
+    const skillDetailMatch = url.pathname.match(/^\/api\/skills\/([A-Za-z0-9._-]+)$/)
+    if (skillDetailMatch && req.method === 'GET') {
+      return handleSkillDetail(req, res, skillDetailMatch[1])
     }
     // PR-B: HITL approvals — global pending list + per-reqId resolve.
     if (url.pathname === '/api/approvals' && req.method === 'GET') {
@@ -2420,6 +2449,206 @@ async function handleMemoryConsolidate(_req: IncomingMessage, res: ServerRespons
 
 async function handleMemoryConsolidateStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   sendJson(res, 200, { jobs: pickRecentConsolidate() })
+}
+
+// v1.2.3 — Skills browser
+// ────────────────────────
+// Scans ~/.claude/skills/ and ~/.config/opencode/skills/ for SKILL.md
+// frontmatter (`name`, `description`). Most installs symlink both dirs
+// to a shared source, so we dedupe by slug and tag which adapters each
+// skill is visible to. Categories are inferred from the slug prefix
+// (fin-data-*, white-pig-*, etc.) — robust across machines that don't
+// have a hand-maintained INDEX.md.
+//
+// Single-flight cache: re-scans on every request, cheap (~5ms for 100
+// skills on tmpfs). No watcher; if the user installs a skill they
+// refresh the page.
+
+interface SkillMeta {
+  slug: string
+  name: string
+  description: string
+  category: string
+  agents: ('claude' | 'opencode')[]
+  path: string  // canonical path used to read SKILL.md on detail
+}
+
+function inferCategory(slug: string): string {
+  if (slug.startsWith('fin-data-') || slug.startsWith('mx_') || slug.startsWith('ttfund-')
+      || slug.startsWith('ash-') || slug.startsWith('low-position-pick')
+      || slug.startsWith('overnight-') || slug.startsWith('garp-')
+      || slug.startsWith('gold') || slug === 'precious-metals-report') return '金融数据 / 行情'
+  if (slug.startsWith('white-pig-') || slug.startsWith('add-white-pig')
+      || slug.startsWith('renew-white-pig') || slug.startsWith('deduct-white-pig')
+      || slug.startsWith('delete-white-pig') || slug.startsWith('modify-white-pig')
+      || slug.startsWith('add-white-pig-') || slug.startsWith('query-account')
+      || slug.startsWith('query-white-pig') || slug.startsWith('set-kol')
+      || slug.startsWith('statistics-sales')) return '白猪运营'
+  if (slug.startsWith('metaso-') || slug === 'multi-search-engine'
+      || slug === 'news-summary' || slug === 'global-financial-headlines'
+      || slug.startsWith('qveris')) return '搜索 / 资讯'
+  if (slug.startsWith('mailsender') || slug === 'sendmail') return '邮件 / 通讯'
+  if (slug.startsWith('claude-api') || slug === 'security-review' || slug === 'review'
+      || slug === 'simplify' || slug === 'first-principles-decomposer'
+      || slug === 'session_summary' || slug === 'init') return '开发 / 评审'
+  if (slug === 'find-skills' || slug === 'update-config' || slug === 'keybindings-help'
+      || slug === 'fewer-permission-prompts' || slug === 'loop' || slug === 'schedule'
+      || slug === 'yanshen-manual') return '元能力 / 平台'
+  return '其他'
+}
+
+function readSkillFrontmatter(skillMdPath: string): { name?: string; description?: string } | null {
+  try {
+    const raw = readFileSync(skillMdPath, 'utf-8')
+    if (!raw.startsWith('---')) return null
+    const end = raw.indexOf('\n---', 3)
+    if (end < 0) return null
+    const fm = raw.slice(3, end)
+    const out: { name?: string; description?: string } = {}
+    for (const line of fm.split('\n')) {
+      const m = line.match(/^(\w+)\s*:\s*(.+?)\s*$/)
+      if (!m) continue
+      const k = m[1].toLowerCase()
+      const v = m[2].replace(/^["']|["']$/g, '')
+      if (k === 'name') out.name = v
+      else if (k === 'description') out.description = v
+    }
+    return out
+  } catch { return null }
+}
+
+function scanSkillDir(rootDir: string): Array<{ slug: string; skillMd: string }> {
+  try {
+    if (!existsSync(rootDir)) return []
+    const out: Array<{ slug: string; skillMd: string }> = []
+    for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+      const md = join(rootDir, entry.name, 'SKILL.md')
+      if (existsSync(md)) out.push({ slug: entry.name, skillMd: md })
+    }
+    return out
+  } catch { return [] }
+}
+
+const HOME = process.env.HOME || '/root'
+const CLAUDE_SKILLS = `${HOME}/.claude/skills`
+const OPENCODE_SKILLS = `${HOME}/.config/opencode/skills`
+
+function listSkills(): SkillMeta[] {
+  const fromClaude = scanSkillDir(CLAUDE_SKILLS)
+  const fromOpencode = scanSkillDir(OPENCODE_SKILLS)
+  const map = new Map<string, SkillMeta>()
+  for (const { slug, skillMd } of fromClaude) {
+    const fm = readSkillFrontmatter(skillMd)
+    if (!fm?.name) continue
+    map.set(slug, {
+      slug,
+      name: fm.name,
+      description: fm.description || '',
+      category: inferCategory(slug),
+      agents: ['claude'],
+      path: skillMd,
+    })
+  }
+  for (const { slug, skillMd } of fromOpencode) {
+    const fm = readSkillFrontmatter(skillMd)
+    if (!fm?.name) continue
+    const existing = map.get(slug)
+    if (existing) {
+      if (!existing.agents.includes('opencode')) existing.agents.push('opencode')
+    } else {
+      map.set(slug, {
+        slug,
+        name: fm.name,
+        description: fm.description || '',
+        category: inferCategory(slug),
+        agents: ['opencode'],
+        path: skillMd,
+      })
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.category !== b.category) return a.category.localeCompare(b.category)
+    return a.slug.localeCompare(b.slug)
+  })
+}
+
+async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const skills = listSkills()
+    const byCategory: Record<string, number> = {}
+    for (const s of skills) byCategory[s.category] = (byCategory[s.category] || 0) + 1
+    sendJson(res, 200, {
+      total: skills.length,
+      byCategory,
+      skills,
+      sources: { claude: CLAUDE_SKILLS, opencode: OPENCODE_SKILLS },
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// skillhub.cn proxy with 5-min cache — shows top-50 popular skills so the
+// user can discover new ones without leaving the dashboard. The actual
+// install still happens via the skillhub CLI on the host (see docs).
+let remoteHotCache: { fetchedAt: number; data: unknown } | null = null
+const REMOTE_HOT_TTL_MS = 5 * 60_000
+
+async function handleSkillsRemoteHot(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    if (remoteHotCache && Date.now() - remoteHotCache.fetchedAt < REMOTE_HOT_TTL_MS) {
+      sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt })
+      return
+    }
+    const r = await fetch('https://api.skillhub.cn/api/v1/showcase/hot', {
+      signal: AbortSignal.timeout(8000),
+      headers: { accept: 'application/json' },
+    })
+    if (!r.ok) {
+      // Serve stale-while-error if we have any cache
+      if (remoteHotCache) {
+        sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt, stale: true, upstreamStatus: r.status })
+        return
+      }
+      sendJson(res, 502, { error: `skillhub upstream ${r.status}` })
+      return
+    }
+    const json = await r.json() as Record<string, unknown>
+    remoteHotCache = { fetchedAt: Date.now(), data: json }
+    sendJson(res, 200, { ...json, cached: false, fetchedAt: remoteHotCache.fetchedAt })
+  } catch (err) {
+    if (remoteHotCache) {
+      sendJson(res, 200, {
+        ...(remoteHotCache.data as Record<string, unknown>),
+        cached: true, fetchedAt: remoteHotCache.fetchedAt, stale: true,
+        upstreamError: err instanceof Error ? err.message : String(err),
+      })
+      return
+    }
+    sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleSkillDetail(_req: IncomingMessage, res: ServerResponse, slug: string): Promise<void> {
+  try {
+    // Guard against traversal — only allow slug chars (already enforced by
+    // the route regex but check again here to be safe).
+    if (!/^[A-Za-z0-9._-]+$/.test(slug)) {
+      sendJson(res, 400, { error: 'bad slug' })
+      return
+    }
+    const skills = listSkills()
+    const meta = skills.find((s) => s.slug === slug)
+    if (!meta) {
+      sendJson(res, 404, { error: 'skill not found' })
+      return
+    }
+    const raw = readFileSync(meta.path, 'utf-8')
+    sendJson(res, 200, { ...meta, content: raw })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 async function handleVectorClear(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {

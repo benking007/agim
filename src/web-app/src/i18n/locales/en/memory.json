@@ -58,5 +58,29 @@
       "deletedOne":  "Fact deleted",
       "deletedMany": "Deleted {{count}} facts"
     }
+  },
+  "persona": {
+    "title": "Persona",
+    "subtitle": "Long-form summary of who this user is, refined by periodic consolidation of their facts.",
+    "empty": {
+      "title": "No persona yet",
+      "description": "Personas are written by the consolidation pass — run it from the button below once enough facts have accumulated."
+    },
+    "updated":     "Updated {{at}}",
+    "editorLabel": "Persona summary",
+    "save":        "Save",
+    "saved":       "Saved",
+    "delete":      "Delete persona",
+    "confirmDelete":     "Delete this persona?",
+    "confirmDeleteDesc": "The persona summary is removed from the bank. Facts the persona was derived from stay in place; the next consolidate pass will rewrite a fresh one.",
+    "consolidate": {
+      "trigger":      "Run consolidation",
+      "triggering":   "Starting…",
+      "running":      "Consolidation running…",
+      "doneOk":       "Consolidation complete",
+      "doneFailed":   "Consolidation failed",
+      "lastRun":      "Last run {{at}}",
+      "result":       "Processed {{users}} user(s), {{updated}} persona(s) updated"
+    }
   }
 }

@@ -27,6 +27,7 @@ import RemindersRoute from '@/routes/reminders'
 import MemosRoute from '@/routes/memos'
 import MemoryLayout from '@/routes/memory/layout'
 import MemoryFactsRoute from '@/routes/memory/facts'
+import MemoryPersonaRoute from '@/routes/memory/persona'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
@@ -87,8 +88,9 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true,    element: <Navigate to="facts" replace /> },
-      { path: 'facts',  element: <MemoryFactsRoute /> },
+      { index: true,     element: <Navigate to="facts" replace /> },
+      { path: 'facts',   element: <MemoryFactsRoute /> },
+      { path: 'persona', element: <MemoryPersonaRoute /> },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

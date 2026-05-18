@@ -25,6 +25,8 @@ import type {
   ResolveApprovalBody,
   ResolveApprovalResponse,
   CancelReminderResponse,
+  ConsolidateMemoryResponse,
+  ConsolidateStatusResponse,
   DeleteMemoResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
@@ -176,12 +178,12 @@ export const api = {
     client.get<unknown>('/api/loc/info', opts),
 
   /** POST /api/memory/consolidate */
-  consolidateMemory: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/consolidate', opts),
+  consolidateMemory: () =>
+    client.post<ConsolidateMemoryResponse>('/api/memory/consolidate'),
 
   /** GET /api/memory/consolidate/status */
-  getMemoryConsolidateStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/memory/consolidate/status', opts),
+  getMemoryConsolidateStatus: () =>
+    client.get<ConsolidateStatusResponse>('/api/memory/consolidate/status'),
 
   /** GET /api/memory/export */
   exportMemory: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -202,7 +204,7 @@ export const api = {
 
   /** DELETE /api/memory/persona */
   deleteMemoryPersona: (query: { user_key: string }) =>
-    client.delete<OkResponse>('/api/memory/persona', { query }),
+    client.delete<{ ok: boolean }>('/api/memory/persona', { query }),
 
   /** GET /api/memory/persona */
   getMemoryPersona: (query: { user_key: string }) =>
@@ -210,7 +212,7 @@ export const api = {
 
   /** PUT /api/memory/persona */
   updateMemoryPersona: (query: { user_key: string }, body: UpdatePersonaBody) =>
-    client.put<OkResponse>('/api/memory/persona', { query, body }),
+    client.put<{ ok: boolean }>('/api/memory/persona', { query, body }),
 
   /** GET /api/memory/users */
   listMemoryUsers: () =>

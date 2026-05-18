@@ -537,11 +537,34 @@ export interface ListMemoryUsersResponse {
 export interface Persona {
   user_key: string
   summary: string
+  /** Epoch ms. */
   updated_at: number
 }
 
+/** POST /api/memory/persona body — the backend's persona table is
+ *  a single `summary` column, not a free-form `persona`. */
 export interface UpdatePersonaBody {
-  persona: string
+  summary: string
+}
+
+/** Consolidate-job lifecycle row. */
+export interface ConsolidateJob {
+  id: string
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  result: { users?: number; updated?: number; error?: string }
+}
+
+export interface ConsolidateMemoryResponse {
+  ok: true
+  jobId: string
+  hint?: string
+  alreadyRunning?: boolean
+}
+
+export interface ConsolidateStatusResponse {
+  jobs: ConsolidateJob[]
 }
 
 export interface VectorStatus {

@@ -58,5 +58,29 @@
       "deletedOne":  "已删除",
       "deletedMany": "已删除 {{count}} 条"
     }
+  },
+  "persona": {
+    "title": "Persona",
+    "subtitle": "该用户的长篇画像，由记忆整理任务从事实库中提炼。",
+    "empty": {
+      "title": "暂无 Persona",
+      "description": "Persona 由整理任务生成。当事实积累到一定量后，点击下方按钮运行整理。"
+    },
+    "updated":     "更新于 {{at}}",
+    "editorLabel": "Persona 内容",
+    "save":        "保存",
+    "saved":       "已保存",
+    "delete":      "删除 Persona",
+    "confirmDelete":     "确认删除此 Persona？",
+    "confirmDeleteDesc": "Persona 概要会从库中删除。生成它的事实仍保留，下一次整理会重新生成。",
+    "consolidate": {
+      "trigger":      "运行整理",
+      "triggering":   "启动中…",
+      "running":      "整理进行中…",
+      "doneOk":       "整理完成",
+      "doneFailed":   "整理失败",
+      "lastRun":      "上次运行：{{at}}",
+      "result":       "处理 {{users}} 位用户，更新 {{updated}} 条 Persona"
+    }
   }
 }

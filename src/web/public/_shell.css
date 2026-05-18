@@ -67,9 +67,9 @@
   --ag-shadow-lg: 0 8px 24px rgba(17, 24, 39, 0.12);
 }
 
-:root[data-theme="dark"],
+/* OS-level dark preference, only when no explicit theme is set on <html>. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --ag-bg: #0e0f12;
     --ag-surface: #161820;
     --ag-surface-2: #1d2029;
@@ -97,6 +97,7 @@
   }
 }
 
+/* Explicit dark theme — always wins. */
 :root[data-theme="dark"] {
   --ag-bg: #0e0f12;
   --ag-surface: #161820;

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agim — Memos</title>
   <script src="/_app.js"></script>
+  <!-- Eager shell stylesheet to avoid FOUC. mountShell() lazy-injects same id. -->
+  <link id="ag-shell-css-link" rel="stylesheet" href="/_shell.css">
   <script>
     (function () {
       const LANGS = { en: 'en', zh: 'zh' };

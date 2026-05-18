@@ -7,6 +7,8 @@
   <!-- Shared utilities: theme manager (applies before first paint), error
        boundary (surfaces silent script failures), i18n + api helpers. -->
   <script src="/_app.js"></script>
+  <!-- Eager shell stylesheet to avoid FOUC. mountShell() lazy-injects same id. -->
+  <link id="ag-shell-css-link" rel="stylesheet" href="/_shell.css">
   <script>
     const LANGS = { en: 'English', zh: '中文' };
     const savedLang = localStorage.getItem('im-hub-lang');

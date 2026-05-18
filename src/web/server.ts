@@ -373,9 +373,14 @@ export async function startWebServer(options: {
       // Shared design tokens + component classes. Loaded by imhub.shell
       // .mount() on every secondary page. No secrets — safe to serve
       // un-authenticated alongside _app.js.
+      // no-cache so a server upgrade that changes the shell isn't
+      // silently shadowed by a browser holding an older copy (caused a
+      // user-visible "no topbar" bug after the 2026-05-18 review).
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate')
       return serveStatic(res, join(PUBLIC_DIR, '_shell.css'), 'text/css; charset=utf-8')
     }
     if (url.pathname === '/_app.js' && req.method === 'GET') {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate')
       return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 

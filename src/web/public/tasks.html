@@ -8,6 +8,12 @@
        boundary surfaces silent script failures, i18n + api helpers are
        used by the page-specific script below. -->
   <script src="/_app.js"></script>
+  <!-- Eager <link> to the shell stylesheet so the topbar + page chrome
+       paint correctly on first frame. mountShell() also lazy-injects this
+       (same id) so removing the line wouldn't break correctness — but the
+       JS-only path produces a 1-2 frame flash of unstyled content during
+       navigation. -->
+  <link id="ag-shell-css-link" rel="stylesheet" href="/_shell.css">
   <script>
     // Wrapped in an IIFE so `const T` / `LANGS` / `savedLang` / `browserLang`
     // stay out of the global script scope. Without this, the second

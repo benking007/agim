@@ -634,23 +634,14 @@ export class ApprovalBus {
 
     socket.on('data', (chunk: string) => {
       buf += chunk
-      if (buf.length > MAX_BUFFER_BYTES) {
-        log.warn({ event: 'approval.bus.buffer_overflow', bytes: buf.length })
-        // L10: best-effort signal to the sidecar BEFORE we close. The
-        // legacy `socket.destroy()` left the sidecar's pending request
-        // hanging on its own timeout (Claude's MCP layer typically
-        // 30 min). A wire-shaped 'fatal' line gives the sidecar a
-        // recognizable reason; if it doesn't parse the new type it still
-        // observes the socket close and bails through its disconnect
-        // handler — strictly better than the silent destroy.
-        try {
-          socket.write(`${JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' })}\n`)
-          socket.end()
-        } catch {
-          socket.destroy()
-        }
-        return
-      }
+      const overflow = buf.length > MAX_BUFFER_BYTES
+      // M-N4: even on overflow, the buffer's leading bytes may contain
+      // complete \n-terminated requests the sidecar already finished
+      // sending — those are real pending approvals. Drain them first so
+      // we don't black-hole work the sidecar is now waiting on. Only
+      // after draining do we send `fatal` and close. The legacy code
+      // dropped these lines and the sidecar then waited out its own 30-
+      // min MCP timeout on each.
       while (true) {
         const nl = buf.indexOf('\n')
         if (nl === -1) break
@@ -664,6 +655,26 @@ export class ApprovalBus {
         this.handleLine(line, socket).catch((err) => {
           log.error({ event: 'approval.bus.handle_error', err: String(err) })
         })
+      }
+      if (overflow) {
+        log.warn({
+          event: 'approval.bus.buffer_overflow',
+          bytes: buf.length,
+          maxBytes: MAX_BUFFER_BYTES,
+        }, 'sidecar exceeded buffer cap; drained complete lines, closing connection')
+        // L10: best-effort signal to the sidecar BEFORE we close. The
+        // legacy `socket.destroy()` left the sidecar's pending request
+        // hanging on its own timeout (Claude's MCP layer typically
+        // 30 min). A wire-shaped 'fatal' line gives the sidecar a
+        // recognizable reason; if it doesn't parse the new type it still
+        // observes the socket close and bails through its disconnect
+        // handler — strictly better than the silent destroy.
+        try {
+          socket.write(`${JSON.stringify({ v: 1, type: 'fatal', reason: 'buffer overflow' })}\n`)
+          socket.end()
+        } catch {
+          socket.destroy()
+        }
       }
     })
 

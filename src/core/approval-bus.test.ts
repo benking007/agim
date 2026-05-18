@@ -643,6 +643,48 @@ describe('ApprovalBus', () => {
 
     await client.close()
   })
+
+  // M-N4 — buffer overflow used to silently drop any \n-terminated lines
+  // that had already arrived in the same chunk as the oversized tail.
+  // The fix is "drain complete lines first, then close" — the leading
+  // approval still becomes a pending request the bus notifies for, and
+  // the sidecar still gets a clean `fatal` frame before disconnect.
+  it('buffer overflow drains complete lines before closing', async () => {
+    bus.registerRun('run-1', RUN_CTX)
+    let notified = 0
+    bus.setNotifier(async () => { notified++ })
+
+    const client = await connectClient(path)
+
+    // Craft a single chunk containing:
+    //   1. a complete, valid approval line (the sidecar's last legitimate
+    //      request before its buffer ran away),
+    //   2. >1 MiB of garbage with no trailing newline (the runaway tail
+    //      that trips MAX_BUFFER_BYTES).
+    const valid = JSON.stringify({
+      v: 1, type: 'approval', runId: 'run-1', reqId: 'drain-me',
+      toolName: 'Bash', input: { command: 'ls' }, toolUseId: 'tu-drain',
+    }) + '\n'
+    const garbage = 'X'.repeat(1024 * 1024 + 1024) // 1 MiB + 1 KiB, no \n
+    client.socket.write(valid + garbage)
+
+    // The drained approval reaches the notifier even though the same
+    // chunk caused an overflow. Without M-N4 the line was dropped and
+    // the sidecar waited out its 30-min MCP timeout.
+    for (let i = 0; i < 100 && notified === 0; i++) await sleep(10)
+    expect(notified).toBe(1)
+
+    // The server-initiated close runs afterwards (denying the leftover
+    // pending in the same code path that handles a clean disconnect).
+    await new Promise<void>((resolve) => {
+      if (client.socket.destroyed) { resolve(); return }
+      client.socket.once('close', () => resolve())
+      setTimeout(() => resolve(), 1000)
+    })
+    // Pending was cleared via the close handler's deny-all sweep.
+    for (let i = 0; i < 50 && bus.hasPendingFor(KEY); i++) await sleep(10)
+    expect(bus.hasPendingFor(KEY)).toBe(false)
+  })
 })
 
 describe('inputFingerprint — semantic per-tool keys', () => {

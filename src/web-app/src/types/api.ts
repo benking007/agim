@@ -805,6 +805,33 @@ export interface EmailTestResponse {
 }
 
 /* ============================================================
+ * Viewer + cloudflared tunnel
+ * ============================================================ */
+
+/** Mirror of src/core/tunnel.ts:TunnelStatus, plus what
+ *  handleViewerTunnelStatus also folds in (viewer config + computed
+ *  effective public URL). */
+export interface ViewerTunnelStatusResponse {
+  /** From IMHUB_VIEWER_ENABLED. */
+  enabled: boolean
+  /** From IMHUB_VIEWER_TUNNEL_MODE — `off` or `quick`. */
+  tunnelMode: 'off' | 'quick'
+  /** From IMHUB_VIEWER_PUBLIC_BASE_URL — operator-set static URL. */
+  staticPublicUrl: string | null
+  /** Computed by viewer-config — the live tunnel URL when quick mode is
+   *  connected, else the static URL. This is what `/v/<id>` links use. */
+  effectivePublicUrl: string | null
+  tunnel: {
+    running: boolean
+    url: string | null
+    binaryFound: boolean
+    binaryPath: string | null
+    lastError: string | null
+    startedAt: number | null
+  }
+}
+
+/* ============================================================
  * Health / Observability
  * ============================================================ */
 

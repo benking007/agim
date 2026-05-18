@@ -20,6 +20,7 @@ import type {
   ACPTestBody,
   ACPTestResponse,
   EmailTestResponse,
+  ViewerTunnelStatusResponse,
   AddAdminBody,
   AdminAllowlistResponse,
   AdminMutationResponse,
@@ -202,5 +203,17 @@ export function useDiscoverAcp() {
 export function useTestEmail() {
   return useMutation<EmailTestResponse, Error, void>({
     mutationFn: () => api.testEmail(),
+  })
+}
+
+/** Live viewer config + cloudflared tunnel state. Used by the Viewer
+ *  card on /settings/viewer to render the "Tunnel: running / URL: X /
+ *  binary: …" panel. Operators click a manual Refresh button to
+ *  re-fetch — no auto-polling because tunnel state is essentially
+ *  static between operator actions (start / stop / link expiry). */
+export function useViewerTunnel() {
+  return useQuery<ViewerTunnelStatusResponse>({
+    queryKey: ['settings', 'viewer-tunnel'],
+    queryFn: () => api.getViewerTunnel(),
   })
 }

@@ -1,0 +1,58 @@
+{
+  "pageTitle": "Reminders",
+  "subtitle": "Queued reminders waiting to fire. Cancel or snooze pending ones; fired and cancelled rows are kept for audit.",
+  "filter": {
+    "status":    "Status",
+    "statusAny": "Any status"
+  },
+  "status": {
+    "pending":   "Pending",
+    "firing":    "Firing",
+    "fired":     "Fired",
+    "cancelled": "Cancelled",
+    "failed":    "Failed"
+  },
+  "source": {
+    "slash": "/remind",
+    "mcp":   "MCP",
+    "api":   "API"
+  },
+  "promptMode": {
+    "literal": "Literal",
+    "llm":     "LLM"
+  },
+  "empty": {
+    "title": "Nothing scheduled",
+    "description": "Reminders show up here once an agent (via /remind, MCP, or API) queues one. Filter by status to see fired or cancelled ones."
+  },
+  "col": {
+    "id":         "ID",
+    "fireAt":     "Fires",
+    "text":       "Text",
+    "status":     "Status",
+    "platform":   "Platform",
+    "thread":     "Thread",
+    "source":     "Source",
+    "recurrence": "Recurrence",
+    "createdAt":  "Created"
+  },
+  "action": {
+    "cancel":             "Cancel",
+    "snooze":             "Snooze",
+    "confirmCancel":      "Cancel this reminder?",
+    "confirmCancelDesc":  "The reminder is removed from the queue. Recurring reminders won't fire again unless re-created."
+  },
+  "snooze": {
+    "title":      "Snooze reminder",
+    "description":"How long should it be pushed back?",
+    "preset5m":   "5 minutes",
+    "preset30m":  "30 minutes",
+    "preset1h":   "1 hour",
+    "preset1d":   "1 day",
+    "submit":     "Snooze",
+    "toastOk":    "Snoozed for {{duration}}"
+  },
+  "toast": {
+    "cancelled": "Reminder cancelled"
+  }
+}

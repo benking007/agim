@@ -28,19 +28,35 @@ import commonEn from './locales/en/common.json'
 import commonZh from './locales/zh/common.json'
 import errorsEn from './locales/en/errors.json'
 import errorsZh from './locales/zh/errors.json'
+// Page-level namespaces. Eager-loaded for now — the per-page JSON
+// chunks are small (≤ 4 KB each), and pre-loading sidesteps the need
+// to host them as static assets under /locales/<lng>/<ns>.json. When
+// the count grows past ~6 we'll graduate to http-backend lazy loads.
+import tasksEn from './locales/en/tasks.json'
+import tasksZh from './locales/zh/tasks.json'
+import approvalsEn from './locales/en/approvals.json'
+import approvalsZh from './locales/zh/approvals.json'
+import remindersEn from './locales/en/reminders.json'
+import remindersZh from './locales/zh/reminders.json'
+import memosEn from './locales/en/memos.json'
+import memosZh from './locales/zh/memos.json'
+import memoryEn from './locales/en/memory.json'
+import memoryZh from './locales/zh/memory.json'
+import workspaceEn from './locales/en/workspace.json'
+import workspaceZh from './locales/zh/workspace.json'
 
 void i18n
   .use(HttpBackend)
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, errors: errorsEn },
-      zh: { common: commonZh, errors: errorsZh },
+      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn, workspace: workspaceEn },
+      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh, workspace: workspaceZh },
     },
     lng: detectInitialLang(),
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors'],
+    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory', 'workspace'],
     defaultNS: 'common',
     interpolation: { escapeValue: false }, // React already escapes
     react: { useSuspense: false },         // we render skeletons ourselves

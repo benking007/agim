@@ -1,0 +1,30 @@
+{
+  "pageTitle": "Approvals",
+  "subtitle": "Pending tool invocations the agent is asking permission for.",
+  "live": {
+    "connected":    "● Live",
+    "connecting":   "● Connecting",
+    "reconnecting": "● Reconnecting",
+    "closed":       "● Offline"
+  },
+  "stats": {
+    "pending":           "Pending",
+    "totalAllowed":      "Total allowed",
+    "totalDenied":       "Total denied",
+    "totalTimedOut":     "Timed out",
+    "totalReadonly":     "Read-only auto-allowed"
+  },
+  "empty": {
+    "title": "No approvals waiting",
+    "description": "The queue is empty. Tool requests show up here when an agent calls a tool that's not on its allow-list yet."
+  },
+  "threadLabel":      "Thread",
+  "autoAllowedTag":   "auto-allow",
+  "autoAllowedTitle": "Backend auto-allowed this read-only tool; the card is shown for visibility only.",
+  "allow": "Allow",
+  "deny":  "Deny",
+  "toast": {
+    "allowedShort": "Allowed",
+    "deniedShort":  "Denied"
+  }
+}

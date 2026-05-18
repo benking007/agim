@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint not yet configured for web-app — landed in a follow-up PR'",
-    "test": "vitest"
+    "test": "vitest",
+    "check-i18n": "node tools/check-i18n.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

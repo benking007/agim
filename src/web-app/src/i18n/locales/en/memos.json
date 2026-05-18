@@ -1,0 +1,40 @@
+{
+  "pageTitle": "Memos",
+  "subtitle": "Long-term notes the operator captured for the agent — searchable by content, person, or location.",
+  "search": {
+    "placeholder":   "Search memos…",
+    "who":           "Who",
+    "what":          "What",
+    "hasLocation":   "Has location",
+    "includeExpired":"Include expired"
+  },
+  "empty": {
+    "title": "No memos match",
+    "description": "Memos are created from chat via `/memo` or auto-extracted by the memory subsystem. Try clearing filters or widening the search."
+  },
+  "col": {
+    "id":         "ID",
+    "what":       "What",
+    "who":        "Who",
+    "when":       "When",
+    "where":      "Where",
+    "platform":   "Platform",
+    "createdAt":  "Created",
+    "expiresAt":  "Expires"
+  },
+  "action": {
+    "delete":            "Delete",
+    "confirmDelete":     "Delete this memo?",
+    "confirmDeleteDesc": "This cannot be undone. The memory subsystem still has any embeddings derived from this memo until a backfill prune lands."
+  },
+  "openMap": {
+    "label":  "Open map",
+    "baidu":  "Baidu Maps",
+    "apple":  "Apple Maps",
+    "google": "Google Maps",
+    "osm":    "OpenStreetMap"
+  },
+  "toast": {
+    "deleted": "Memo deleted"
+  }
+}

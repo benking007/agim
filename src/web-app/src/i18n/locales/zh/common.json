@@ -51,6 +51,18 @@
     "deleteDescription": "操作不可撤销。",
     "destructiveAction": "删除"
   },
+  "pagination": {
+    "label": "分页",
+    "perPage": "每页",
+    "firstPage": "首页",
+    "lastPage": "末页",
+    "pageOfTotal": "第 {{page}} / {{totalPages}} 页",
+    "range": "{{from}}–{{to}} / 共 {{total}}"
+  },
+  "table": {
+    "selectAll": "全选",
+    "selectRow": "选中此行"
+  },
   "login": {
     "intro": "粘贴 ~/.agim/tokens.json 里的访问令牌（或运行 `agim token list` 查看）。",
     "tokenLabel": "访问令牌",

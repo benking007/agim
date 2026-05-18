@@ -1,0 +1,158 @@
+{
+  "pageTitle": "记忆",
+  "subtitle": "Agent 为每个用户积累的事实库。跨会话保留的长期记忆。",
+  "userPicker": {
+    "label":      "用户",
+    "placeholder":"选择一个用户",
+    "factsLabel": "{{count}} 条事实",
+    "personaTag": "persona"
+  },
+  "noUserSelected": {
+    "title": "选择一个用户查看其记忆",
+    "description": "记忆按 user_key（platform:userId）分隔。上方下拉列出每位在库中有任何记忆数据的用户。"
+  },
+  "tabs": {
+    "facts":   "事实",
+    "persona": "Persona",
+    "vector":  "向量",
+    "skills":  "技能"
+  },
+  "facts": {
+    "title": "事实",
+    "empty": {
+      "title": "暂无事实",
+      "description": "Agent 在记忆整理过程中会从聊天历史中抽取事实。可在聊天里运行 `/memory consolidate` 或后续 Persona 子页内的按钮触发整理。"
+    },
+    "filter": {
+      "search":      "搜索",
+      "category":    "类别",
+      "categoryAny": "全部类别"
+    },
+    "category": {
+      "fact":       "事实",
+      "preference": "偏好",
+      "goal":       "目标",
+      "history":    "历史",
+      "profile":    "档案"
+    },
+    "col": {
+      "id":          "ID",
+      "what":        "内容",
+      "category":    "类别",
+      "confidence":  "置信度",
+      "source":      "来源",
+      "createdAt":   "创建时间"
+    },
+    "batch": {
+      "selected":             "已选 {{count}} 项",
+      "deleteSelected":       "删除所选",
+      "confirmDelete":        "确认删除 {{count}} 条事实？",
+      "confirmDeleteDesc":    "记忆库中的这些行将被删除。向量索引中相应的 embedding 在下一次 backfill 清理前仍会保留。"
+    },
+    "action": {
+      "delete":             "删除",
+      "confirmDelete":      "确认删除此事实？",
+      "confirmDeleteDesc":  "该行被永久删除。向量索引会在下一次 backfill 清理前保留对应 embedding。"
+    },
+    "toast": {
+      "deletedOne":  "已删除",
+      "deletedMany": "已删除 {{count}} 条"
+    }
+  },
+  "persona": {
+    "title": "Persona",
+    "subtitle": "该用户的长篇画像，由记忆整理任务从事实库中提炼。",
+    "empty": {
+      "title": "暂无 Persona",
+      "description": "Persona 由整理任务生成。当事实积累到一定量后，点击下方按钮运行整理。"
+    },
+    "updated":     "更新于 {{at}}",
+    "editorLabel": "Persona 内容",
+    "save":        "保存",
+    "saved":       "已保存",
+    "delete":      "删除 Persona",
+    "confirmDelete":     "确认删除此 Persona？",
+    "confirmDeleteDesc": "Persona 概要会从库中删除。生成它的事实仍保留，下一次整理会重新生成。",
+    "consolidate": {
+      "trigger":      "运行整理",
+      "triggering":   "启动中…",
+      "running":      "整理进行中…",
+      "doneOk":       "整理完成",
+      "doneFailed":   "整理失败",
+      "lastRun":      "上次运行：{{at}}",
+      "result":       "处理 {{users}} 位用户，更新 {{updated}} 条 Persona"
+    }
+  },
+  "vector": {
+    "title": "向量后端",
+    "subtitle": "Embedding 驱动事实库的混合检索。当前后端、模型与每位用户的覆盖情况都在这里。",
+    "backendLabel":  "后端",
+    "modelLabel":    "模型",
+    "dimsLabel":     "维度",
+    "readyTrue":     "就绪",
+    "readyFalse":    "未就绪",
+    "downloadedTrue":"已下载",
+    "lastError":     "最近错误",
+    "coverage": {
+      "title":              "覆盖率",
+      "total":              "事实总数",
+      "withEmbedding":      "已嵌入",
+      "withDifferentModel": "模型不匹配",
+      "scope_user":         "（针对 {{userKey}}）",
+      "scope_global":       "（全部用户）"
+    },
+    "actions": {
+      "title":    "维护",
+      "test":     "测试",
+      "testOk":   "后端测试通过",
+      "testFail": "后端测试失败：{{detail}}",
+      "download":             "下载模型",
+      "downloadStarted":      "下载已开始",
+      "downloadAlreadyReady": "模型已就绪",
+      "backfill":             "回填 embedding",
+      "backfillStarted":      "回填已开始",
+      "backfillNotReady":     "后端未就绪 — 请先下载",
+      "clear":                "清空 embedding",
+      "clearStarted":         "已清空 {{count}} 条",
+      "confirmClear":         "确认清空全部 embedding？",
+      "confirmClearDesc":     "会丢弃 {{scope}} 的 embedding 列。事实本身保留；下次回填前向量检索不可用。"
+    },
+    "jobs": {
+      "title":      "近期任务",
+      "empty":      "暂无任务",
+      "phase": {
+        "running":  "运行中",
+        "done":     "完成",
+        "failed":   "失败"
+      }
+    }
+  },
+  "skills": {
+    "title": "技能",
+    "subtitle": "宿主 Agent 从 ~/.claude/skills/ + ~/.config/opencode/skills/ 中识别的 SKILL.md 文件。",
+    "empty": {
+      "title": "暂无技能",
+      "description": "在已配置的 root 目录下放一个带 `name` + `description` frontmatter 的 SKILL.md，然后刷新。"
+    },
+    "filter": {
+      "search":       "搜索",
+      "category":     "类别",
+      "categoryAny":  "全部类别"
+    },
+    "sources": {
+      "title":    "源目录",
+      "claude":   "Claude Code",
+      "opencode": "opencode"
+    },
+    "agentTag": {
+      "claude":   "claude",
+      "opencode": "opencode"
+    },
+    "detail": {
+      "loading":    "正在加载 SKILL.md…",
+      "loadFailed": "加载技能详情失败",
+      "metadataLabel": "元数据",
+      "agentsLabel":   "可用于"
+    }
+  }
+}

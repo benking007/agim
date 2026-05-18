@@ -102,6 +102,78 @@ export interface BatchJobBody {
 }
 
 /* ============================================================
+ * Subtasks — flattened view of session.subtasks across all
+ * conversations. Read-only.
+ * ============================================================ */
+
+export type SubtaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface Subtask {
+  id: number
+  agent: string
+  prompt: string
+  status: SubtaskStatus
+  result?: string
+  /** ISO timestamp (Date on the backend; JSON wire format is string). */
+  createdAt: string
+  completedAt?: string
+  /** Parent session context. Useful to navigate back to chat history. */
+  platform: string
+  channelId: string
+  threadId: string
+  parentAgent: string
+  parentSessionId: string
+}
+
+export interface ListSubtasksQuery {
+  agent?: string
+}
+
+export interface ListSubtasksResponse {
+  subtasks: Subtask[]
+}
+
+/* ============================================================
+ * Background jobs — read-only proxy onto Claude Code / opencode /
+ * codex bgjob directories. Defined by src/core/bgjob-reader.ts.
+ * ============================================================ */
+
+export interface BgjobRoot {
+  /** Stable id — 'claude' / 'opencode' / 'codex' / custom-basename. */
+  id: string
+  label: string
+  path: string
+}
+
+export interface BgjobSummary {
+  id: string
+  name: string
+  /** Free-form: running / completed / failed / killed / stale / … */
+  status: string
+  pid: number | null
+  started_at: string | null
+  ended_at: string | null
+  exit_code: number | null
+  restart_generation: number
+  rootId: string
+}
+
+export interface ListBgjobsQuery {
+  /** Filter to a single root id; omit for all roots. */
+  root?: string
+}
+
+/** Response shape varies based on whether `root` is set:
+ *  - With root  : { roots: [oneRoot], jobs: BgjobSummary[] }
+ *  - Without    : { roots: [...], groups: [{ rootId, jobs[] }] }
+ *  We accept both via optional fields. */
+export interface ListBgjobsResponse {
+  roots: BgjobRoot[]
+  jobs?: BgjobSummary[]
+  groups?: Array<{ rootId: string; jobs: BgjobSummary[] }>
+}
+
+/* ============================================================
  * Schedules
  * ============================================================ */
 
@@ -117,8 +189,103 @@ export interface Schedule {
   notify_url?: string
 }
 
+export interface ListSchedulesQuery {
+  agent?: string
+}
+
 export interface ListSchedulesResponse {
   schedules: Schedule[]
+}
+
+/* ============================================================
+ * Outbox — delivery queue for IM platform replies. Each row
+ * represents one outbound message; status moves
+ * pending → delivered (or → giving_up on hard failure).
+ * ============================================================ */
+
+export type OutboxStatus = 'pending' | 'delivered' | 'giving_up'
+export type OutboxKind = 'text' | 'card' | 'typing'
+export type OutboxPriority = 'high' | 'normal'
+
+export interface OutboxRow {
+  id: number
+  job_id: number | null
+  thread_key: string
+  platform: string
+  channel_id: string
+  thread_id: string
+  payload: string
+  kind: OutboxKind
+  priority: OutboxPriority
+  status: OutboxStatus
+  attempts: number
+  last_attempt_at: string | null
+  last_error: string | null
+  delivered_at: string | null
+  next_attempt_at: string | null
+  created_at: string
+}
+
+export interface ListOutboxQuery {
+  status?: OutboxStatus
+  thread?: string
+  limit?: number
+}
+
+export interface ListOutboxResponse {
+  rows: OutboxRow[]
+}
+
+export interface OutboxStats {
+  pending: number
+  delivered: number
+  giving_up: number
+  total: number
+  /** Last successful delivery timestamp, or null when none. */
+  lastDeliveredAt?: string | null
+}
+
+export interface OutboxRetryResponse extends OkResponse {
+  id: number
+}
+
+/* ============================================================
+ * Agent-to-Agent (A2A) — inline jobs spawned with parent_id set,
+ * representing one agent invoking another. Read-only views over
+ * jobs.db.
+ * ============================================================ */
+
+export interface A2AStats {
+  total: number
+  recent24h: number
+  maxDepth: number
+  byStatus: Array<{ status: string; n: number }>
+  byAgent:  Array<{ agent: string; n: number }>
+}
+
+export interface A2ARow {
+  id: number
+  agent: string
+  parent_id: number | null
+  call_depth: number
+  status: string
+  /** First 200 chars of the prompt (server-side truncated). */
+  prompt: string | null
+  /** First 500 chars of the result (server-side truncated). */
+  result: string | null
+  error: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  delivered_at: string | null
+}
+
+export interface ListA2ARecentQuery {
+  limit?: number
+}
+
+export interface ListA2ARecentResponse {
+  rows: A2ARow[]
 }
 
 /* ============================================================
@@ -127,19 +294,34 @@ export interface ListSchedulesResponse {
 
 export type ReminderStatus = 'pending' | 'firing' | 'fired' | 'cancelled' | 'failed'
 
+/** Source of the reminder — how it was created. */
+export type ReminderSource = 'slash' | 'mcp' | 'api'
+
+/** 'llm'   — at fire time, treat `text` as a prompt and ask the active
+ *            agent to compose the actual delivery.
+ *  'literal' — deliver `text` as-is. */
+export type ReminderPromptMode = 'llm' | 'literal'
+
 export interface Reminder {
-  id: string
+  id: number
+  fire_at: string
+  text: string
   platform: string
   channel_id: string
   thread_id: string
   user_id: string
-  text: string
-  fire_at: string
   status: ReminderStatus
-  recurrence?: string
-  recurrence_label?: string
-  fired_at?: string
-  error?: string
+  created_at: string
+  fired_at: string | null
+  error: string | null
+  source: ReminderSource
+  parent_id: number | null
+  recurrence: string | null
+  last_fired_at: string | null
+  prompt_mode: ReminderPromptMode
+  /** Server-rendered "every Monday at 9am" style label.
+   *  Null when the reminder isn't recurring. */
+  recurrence_label?: string | null
 }
 
 export interface ListRemindersQuery extends PageQuery {
@@ -150,13 +332,20 @@ export interface ListRemindersResponse {
   reminders: Reminder[]
 }
 
+export interface CancelReminderResponse extends OkResponse {
+  id: number
+}
+
 export interface SnoozeReminderBody {
+  /** Duration string the backend parses ("5m", "30m", "1h",
+   *  "tomorrow", ...). The page surfaces a fixed set; the field is
+   *  free-form to honor the backend's parseDuration() contract. */
   duration: string
 }
 
 export interface SnoozeReminderResponse extends OkResponse {
-  originalId: string
-  newId: string
+  originalId: number
+  newId: number
   duration: string
 }
 
@@ -164,20 +353,31 @@ export interface SnoozeReminderResponse extends OkResponse {
  * Memos
  * ============================================================ */
 
+/** Field naming reflects the WIRE format produced by handleListMemos
+ *  in src/web/server.ts (snake_case in the DB, camelCase on the API
+ *  for timestamps + ids, but where_* stays snake_case to match the
+ *  location bundle the IM-side picker speaks). */
 export interface Memo {
-  id: string
+  id: number
   platform: string
   userId: string
   what: string
-  who?: string
-  when_text?: string
-  where_label?: string
-  why?: string
-  where_lat?: number
-  where_lng?: number
+  who: string | null
+  whenAt: string | null
+  whenText: string | null
+  where_lat: number | null
+  where_lng: number | null
+  where_label: string | null
+  how: string | null
+  why: string | null
+  memo: string | null
+  source: string | null
+  expiresAt: string | null
+  createdAt: string
+  updatedAt: string | null
+  /** Present only when both where_lat AND where_lng are non-null.
+   *  Provider → URL map (Baidu / Apple / Google / OSM). */
   mapUrls?: Record<string, string>
-  expires_at?: string
-  created_at: string
 }
 
 export interface ListMemosQuery extends PageQuery {
@@ -185,39 +385,78 @@ export interface ListMemosQuery extends PageQuery {
   who?: string
   what?: string
   has_location?: boolean
+  include_expired?: boolean
 }
 
 export interface ListMemosResponse {
   memos: Memo[]
 }
 
+export interface DeleteMemoResponse extends OkResponse {
+  id: number
+}
+
 /* ============================================================
  * Approvals
  * ============================================================ */
 
+/** Tracks an approval's lifecycle on the SSE channel.
+ *  `requested` fires when one enqueues; `resolved` on disposition. */
 export type ApprovalPhase = 'requested' | 'resolved'
 export type ApprovalOutcome = 'allow' | 'deny' | 'timeout'
 
+/** Pending approval as exposed by GET /api/approvals (approvalBus.
+ *  listPending()). Field naming + types match the bus's snapshot
+ *  contract — see src/core/approval-bus.ts. */
 export interface Approval {
   reqId: string
-  toolName: string
-  phase: ApprovalPhase
-  outcome?: ApprovalOutcome
+  runId: string
   threadId: string
   platform: string
-  channelId: string
-  userId?: string
-  input?: unknown
+  toolName: string
+  /** Raw tool input — passed verbatim from the agent. Render via
+   *  JsonViewer or a truncated preview; do not interpret. */
+  input: Record<string, unknown>
+  fingerprint: string
+  autoAllow: boolean
+  /** Epoch ms when the bus accepted the request. */
   registeredAt: number
-  ageMs?: number
+  /** Server-computed age at fetch time (ms). The UI shows
+   *  `formatDuration(ageMs)` and refreshes via SSE + the next
+   *  poll. */
+  ageMs: number
+}
+
+export interface ApprovalMetrics {
+  pending: number
+  totalRequests: number
+  totalResolved: number
+  totalAllowed: number
+  totalDenied: number
+  totalTimedOut: number
+  totalReadonlyAutoAllowed: number
 }
 
 export interface ListApprovalsResponse {
-  approvals: Approval[]
+  pending: Approval[]
+  metrics: ApprovalMetrics
 }
 
+export type ApprovalBehavior = 'allow' | 'deny'
+
+/** POST body for /api/approvals/:reqId/resolve.
+ *  - `allow`  with `autoAllowFurther: true` whitelists the agent
+ *    on this thread for the same tool — caller's choice.
+ *  - `deny`   accepts an optional `message` surfaced back to the
+ *    agent as the denial reason. */
 export interface ResolveApprovalBody {
-  outcome: 'allow' | 'deny'
+  behavior: ApprovalBehavior
+  autoAllowFurther?: boolean
+  message?: string
+}
+
+export interface ResolveApprovalResponse extends OkResponse {
+  resolved: boolean
 }
 
 /* ============================================================
@@ -226,19 +465,23 @@ export interface ResolveApprovalBody {
 
 export type FactCategory = 'fact' | 'preference' | 'goal' | 'history' | 'profile'
 
+/** Mirror of src/core/memory.ts:Fact — every field is required on the
+ *  wire (the backend stores empty strings, not null, for the
+ *  optional-feeling text columns). Timestamps are epoch-ms numbers,
+ *  not ISO strings. */
 export interface Fact {
   id: number
   user_key: string
   what: string
-  who?: string
-  when_text?: string
-  where_label?: string
-  why?: string
+  who: string
+  when_text: string
+  where_label: string
+  why: string
   category: FactCategory
   confidence: number
+  last_referenced_at: number
   source: string
   created_at: number
-  embedded_at?: number
 }
 
 export interface ListMemoryFactsQuery {
@@ -249,27 +492,230 @@ export interface ListMemoryFactsQuery {
   offset?: number
 }
 
+/** Mirrors core/memory.ts:FactPage. The backend always returns
+ *  `total + limit + offset + facts` (it's a paginated view, not a
+ *  flat list). */
 export interface ListMemoryFactsResponse {
+  total: number
+  limit: number
+  offset: number
   facts: Fact[]
-  total?: number
+}
+
+/** Body of DELETE /api/memory/facts — bulk-delete with optional
+ *  filters. At least one of `ids` / `category` / `max_confidence`
+ *  must be set, OR `confirm_clear: true` for a wipe. The backend
+ *  enforces this; the DTO mirrors what it accepts. */
+export interface DeleteMemoryFactsBody {
+  ids?: number[]
+  category?: FactCategory
+  /** Drop facts whose confidence is at or below this threshold. */
+  max_confidence?: number
+  /** Required `true` for a wipe-everything semantic; ignored otherwise. */
+  confirm_clear?: boolean
+}
+
+export interface DeleteMemoryFactsResponse {
+  deleted: number
+}
+
+/** Per-user summary returned by GET /api/memory/users. Mirrors
+ *  core/memory.ts:UserSummary. */
+export interface MemoryUserSummary {
+  user_key: string
+  fact_count: number
+  oldest_fact_at: number | null
+  newest_fact_at: number | null
+  has_persona: boolean
+  persona_updated_at: number | null
+}
+
+export interface ListMemoryUsersResponse {
+  users: MemoryUserSummary[]
 }
 
 export interface Persona {
   user_key: string
   summary: string
+  /** Epoch ms. */
   updated_at: number
 }
 
+/** POST /api/memory/persona body — the backend's persona table is
+ *  a single `summary` column, not a free-form `persona`. */
 export interface UpdatePersonaBody {
-  persona: string
+  summary: string
 }
 
-export interface VectorStatus {
-  backend: 'off' | 'local' | 'openai'
+/** Consolidate-job lifecycle row. */
+export interface ConsolidateJob {
+  id: string
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  result: { users?: number; updated?: number; error?: string }
+}
+
+export interface ConsolidateMemoryResponse {
+  ok: true
+  jobId: string
+  hint?: string
+  alreadyRunning?: boolean
+}
+
+export interface ConsolidateStatusResponse {
+  jobs: ConsolidateJob[]
+}
+
+export type VectorBackendName = 'off' | 'local' | 'openai'
+
+/** Mirror of src/core/memory-vector.ts:BackendStatus. */
+export interface VectorBackendStatus {
+  backend: VectorBackendName
   ready: boolean
-  modelId?: string
-  itemCount?: number
-  lastSync?: string
+  dims: number
+  modelId: string
+  lastError: string | null
+  /** Local-only: model files present on disk. ready may still be
+   *  false if the in-process pipeline hasn't loaded them yet. */
+  downloaded?: boolean
+  /** Backend-specific extra info — varies by adapter. */
+  detail: Record<string, unknown>
+}
+
+/** Per-user (or global, when user_key omitted) embedding coverage. */
+export interface VectorCoverage {
+  total: number
+  withEmbedding: number
+  withDifferentModel: number
+}
+
+/** Async job tracker for backfill / download. */
+export interface VectorJob {
+  id: string
+  kind: 'download' | 'backfill'
+  startedAt: number
+  finishedAt: number | null
+  phase: 'running' | 'done' | 'failed'
+  message: string
+  details: Record<string, unknown>
+}
+
+/** Response shape of GET /api/memory/vector/status. */
+export interface VectorStatus {
+  status: VectorBackendStatus
+  coverage: VectorCoverage
+  jobs: VectorJob[]
+}
+
+/** Common shape returned by POST /api/memory/vector/{download,
+ *  backfill}: 202 with a jobId the client polls via the status
+ *  endpoint, or 200 with `alreadyReady` when the action is a no-op. */
+export interface VectorActionResponse {
+  ok: boolean
+  jobId?: string
+  alreadyRunning?: boolean
+  alreadyReady?: boolean
+  hint?: string
+}
+
+export interface VectorClearResponse {
+  ok: true
+  cleared: number
+}
+
+export interface VectorTestResponse {
+  ok: boolean
+  error?: string
+  /** Backend-specific extras (latency, sample embedding length, etc.). */
+  [extra: string]: unknown
+}
+
+/* ============================================================
+ * Skills — read-only browse over ~/.claude/skills + opencode dirs.
+ * ============================================================ */
+
+export type SkillAgent = 'claude' | 'opencode'
+
+export interface SkillMeta {
+  slug: string
+  name: string
+  description: string
+  category: string
+  agents: SkillAgent[]
+  /** Canonical SKILL.md path — used as the cache key for the
+   *  detail fetch, not displayed. */
+  path: string
+}
+
+export interface ListSkillsResponse {
+  total: number
+  /** Tally per category for the grouped list view. */
+  byCategory: Record<string, number>
+  skills: SkillMeta[]
+  /** Configured source directories — surfaces empty/missing roots. */
+  sources: { claude: string; opencode: string }
+}
+
+/** GET /api/skills/:slug response — meta + full markdown body. */
+export interface SkillDetail extends SkillMeta {
+  content: string
+}
+
+/* ============================================================
+ * Workspace files — agent CWD browser + editor.
+ * ============================================================ */
+
+export interface WorkspaceFileEntry {
+  name: string
+  isDir: boolean
+  /** Bytes; null when not a regular file. */
+  size: number | null
+  /** ISO timestamp; null when not a regular file. */
+  mtime: string | null
+  /** Set when readdir hit an unreadable child. */
+  broken?: boolean
+  /** Set when a symlink resolves outside the workspace root. The
+   *  child stays in the listing so the operator can see + fix it. */
+  symlink_escape?: boolean
+}
+
+export interface WorkspaceDirListing {
+  type: 'dir'
+  agent: string
+  /** Path relative to the workspace root (empty string for root). */
+  path: string
+  base: string
+  entries: WorkspaceFileEntry[]
+}
+
+export interface WorkspaceFileContent {
+  type: 'file'
+  agent: string
+  path: string
+  size: number
+  /** ISO timestamp. */
+  mtime: string
+  encoding: 'utf-8' | 'base64'
+  /** UTF-8 text when encoding=utf-8; base64 when binary. */
+  content: string
+  /** True when file > WORKSPACE_FILE_MAX_BYTES (1 MiB) and only the
+   *  first MiB was returned. */
+  truncated: boolean
+}
+
+export type WorkspaceFilesResponse = WorkspaceDirListing | WorkspaceFileContent
+
+export interface WriteWorkspaceFileBody {
+  content: string
+}
+
+export interface WriteWorkspaceFileResponse {
+  ok: true
+  agent: string
+  path: string
+  size: number
+  mtime: string
 }
 
 /* ============================================================

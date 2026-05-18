@@ -1,0 +1,158 @@
+{
+  "pageTitle": "Memory",
+  "subtitle": "Per-user facts the agent has accumulated. Long-term memory that survives session resets.",
+  "userPicker": {
+    "label":      "User",
+    "placeholder":"Pick a user",
+    "factsLabel": "{{count}} facts",
+    "personaTag": "persona"
+  },
+  "noUserSelected": {
+    "title": "Pick a user to view their memory",
+    "description": "Memory is partitioned per user_key (platform:userId). The dropdown above lists every user whose memory has any rows in the bank."
+  },
+  "tabs": {
+    "facts":   "Facts",
+    "persona": "Persona",
+    "vector":  "Vector",
+    "skills":  "Skills"
+  },
+  "facts": {
+    "title": "Facts",
+    "empty": {
+      "title": "No facts yet",
+      "description": "Facts accumulate as the agent extracts them from chat history during memory consolidation. Triggering `/memory consolidate` from chat (or the Persona tab's button when it lands) seeds this list."
+    },
+    "filter": {
+      "search":      "Search",
+      "category":    "Category",
+      "categoryAny": "Any category"
+    },
+    "category": {
+      "fact":       "Fact",
+      "preference": "Preference",
+      "goal":       "Goal",
+      "history":    "History",
+      "profile":    "Profile"
+    },
+    "col": {
+      "id":          "ID",
+      "what":        "What",
+      "category":    "Category",
+      "confidence":  "Confidence",
+      "source":      "Source",
+      "createdAt":   "Created"
+    },
+    "batch": {
+      "selected":             "{{count}} selected",
+      "deleteSelected":       "Delete selected",
+      "confirmDelete":        "Delete {{count}} fact(s)?",
+      "confirmDeleteDesc":    "This removes the rows from the bank. The vector index keeps any embedding derived from these rows until the next backfill prune."
+    },
+    "action": {
+      "delete":             "Delete",
+      "confirmDelete":      "Delete this fact?",
+      "confirmDeleteDesc":  "This row is removed permanently. The vector index retains its embedding until the next backfill prune."
+    },
+    "toast": {
+      "deletedOne":  "Fact deleted",
+      "deletedMany": "Deleted {{count}} facts"
+    }
+  },
+  "persona": {
+    "title": "Persona",
+    "subtitle": "Long-form summary of who this user is, refined by periodic consolidation of their facts.",
+    "empty": {
+      "title": "No persona yet",
+      "description": "Personas are written by the consolidation pass — run it from the button below once enough facts have accumulated."
+    },
+    "updated":     "Updated {{at}}",
+    "editorLabel": "Persona summary",
+    "save":        "Save",
+    "saved":       "Saved",
+    "delete":      "Delete persona",
+    "confirmDelete":     "Delete this persona?",
+    "confirmDeleteDesc": "The persona summary is removed from the bank. Facts the persona was derived from stay in place; the next consolidate pass will rewrite a fresh one.",
+    "consolidate": {
+      "trigger":      "Run consolidation",
+      "triggering":   "Starting…",
+      "running":      "Consolidation running…",
+      "doneOk":       "Consolidation complete",
+      "doneFailed":   "Consolidation failed",
+      "lastRun":      "Last run {{at}}",
+      "result":       "Processed {{users}} user(s), {{updated}} persona(s) updated"
+    }
+  },
+  "vector": {
+    "title": "Vector backend",
+    "subtitle": "Embeddings power hybrid recall on memory facts. The active backend, model, and per-user coverage live here.",
+    "backendLabel":  "Backend",
+    "modelLabel":    "Model",
+    "dimsLabel":     "Dimensions",
+    "readyTrue":     "Ready",
+    "readyFalse":    "Not ready",
+    "downloadedTrue":"Files on disk",
+    "lastError":     "Last error",
+    "coverage": {
+      "title":              "Coverage",
+      "total":              "Facts",
+      "withEmbedding":      "Embedded",
+      "withDifferentModel": "Mismatched model",
+      "scope_user":         "for {{userKey}}",
+      "scope_global":       "across every user"
+    },
+    "actions": {
+      "title":    "Maintenance",
+      "test":     "Test",
+      "testOk":   "Backend test OK",
+      "testFail": "Backend test failed: {{detail}}",
+      "download":             "Download model",
+      "downloadStarted":      "Download started",
+      "downloadAlreadyReady": "Model is already ready",
+      "backfill":             "Backfill embeddings",
+      "backfillStarted":      "Backfill started",
+      "backfillNotReady":     "Backend not ready — run download first",
+      "clear":                "Clear embeddings",
+      "clearStarted":         "Cleared {{count}} embedding(s)",
+      "confirmClear":         "Clear all embeddings?",
+      "confirmClearDesc":     "Drops the embedding column for {{scope}}. Facts themselves stay; you'll need to backfill again before vector recall works."
+    },
+    "jobs": {
+      "title":      "Recent jobs",
+      "empty":      "No recent jobs",
+      "phase": {
+        "running":  "Running",
+        "done":     "Done",
+        "failed":   "Failed"
+      }
+    }
+  },
+  "skills": {
+    "title": "Skills",
+    "subtitle": "SKILL.md files the host agents pick up from ~/.claude/skills/ + ~/.config/opencode/skills/.",
+    "empty": {
+      "title": "No skills installed",
+      "description": "Drop a SKILL.md (with `name` and `description` frontmatter) under one of the configured roots and refresh."
+    },
+    "filter": {
+      "search":       "Search",
+      "category":     "Category",
+      "categoryAny":  "All categories"
+    },
+    "sources": {
+      "title":    "Source directories",
+      "claude":   "Claude Code",
+      "opencode": "opencode"
+    },
+    "agentTag": {
+      "claude":   "claude",
+      "opencode": "opencode"
+    },
+    "detail": {
+      "loading":    "Loading SKILL.md…",
+      "loadFailed": "Failed to load skill detail",
+      "metadataLabel": "Metadata",
+      "agentsLabel":   "Available to"
+    }
+  }
+}

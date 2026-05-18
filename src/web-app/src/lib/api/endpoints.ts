@@ -13,25 +13,56 @@
 
 import { client } from './client'
 import type {
+  A2AStats,
   AppConfig,
   BatchJobBody,
   CreateJobBody,
   CreateJobResponse,
   HealthSummary,
+  ListA2ARecentQuery,
+  ListA2ARecentResponse,
   ListApprovalsResponse,
+  ResolveApprovalBody,
+  ResolveApprovalResponse,
+  CancelReminderResponse,
+  ConsolidateMemoryResponse,
+  ConsolidateStatusResponse,
+  DeleteMemoResponse,
+  ListBgjobsQuery,
+  ListBgjobsResponse,
+  ListSkillsResponse,
+  SkillDetail,
+  VectorActionResponse,
+  VectorClearResponse,
+  VectorTestResponse,
+  WorkspaceFilesResponse,
+  WriteWorkspaceFileBody,
+  WriteWorkspaceFileResponse,
   ListJobsQuery,
   ListJobsResponse,
+  DeleteMemoryFactsBody,
+  DeleteMemoryFactsResponse,
   ListMemoryFactsQuery,
   ListMemoryFactsResponse,
+  ListMemoryUsersResponse,
   ListMemosQuery,
   ListMemosResponse,
+  ListOutboxQuery,
+  ListOutboxResponse,
   ListRemindersQuery,
   ListRemindersResponse,
+  ListSchedulesQuery,
   ListSchedulesResponse,
+  ListSubtasksQuery,
+  ListSubtasksResponse,
   LoginBody,
   LoginResponse,
   OkResponse,
+  OutboxRetryResponse,
+  OutboxStats,
   Persona,
+  SnoozeReminderBody,
+  SnoozeReminderResponse,
   TopNResponse,
   UpdatePersonaBody,
   VectorStatus,
@@ -39,12 +70,12 @@ import type {
 
 export const api = {
   /** GET /api/a2a/recent */
-  getA2ARecent: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/a2a/recent', opts),
+  getA2ARecent: (query: ListA2ARecentQuery) =>
+    client.get<ListA2ARecentResponse>('/api/a2a/recent', { query }),
 
   /** GET /api/a2a/stats */
-  getA2AStats: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/a2a/stats', opts),
+  getA2AStats: () =>
+    client.get<A2AStats>('/api/a2a/stats'),
 
   /** DELETE /api/admin-allowlist */
   removeAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -70,13 +101,17 @@ export const api = {
   testAcpAgent: (opts?: { body?: unknown }) =>
     client.post<unknown>('/api/agents/acp/test', opts),
 
-  /** GET /api/agents/status */
-  getAgentsStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/agents/status', opts),
+  /** GET /api/agents/status — agent name → online boolean map */
+  getAgentsStatus: () =>
+    client.get<Record<string, boolean>>('/api/agents/status'),
 
   /** GET /api/approvals */
-  listApprovals: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<ListApprovalsResponse>('/api/approvals', opts),
+  listApprovals: () =>
+    client.get<ListApprovalsResponse>('/api/approvals'),
+
+  /** POST /api/approvals/:reqId/resolve */
+  resolveApproval: (reqId: string, body: ResolveApprovalBody) =>
+    client.post<ResolveApprovalResponse>(`/api/approvals/${encodeURIComponent(reqId)}/resolve`, { body }),
 
   /** GET /api/audit */
   getAudit: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -91,8 +126,8 @@ export const api = {
     client.post<OkResponse>('/api/auth/logout', opts),
 
   /** GET /api/bgjobs */
-  listBgJobs: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/bgjobs', opts),
+  listBgJobs: (query: ListBgjobsQuery) =>
+    client.get<ListBgjobsResponse>('/api/bgjobs', { query }),
 
   /** GET /api/config */
   getConfig: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -151,20 +186,25 @@ export const api = {
     client.get<unknown>('/api/loc/info', opts),
 
   /** POST /api/memory/consolidate */
-  consolidateMemory: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/consolidate', opts),
+  consolidateMemory: () =>
+    client.post<ConsolidateMemoryResponse>('/api/memory/consolidate'),
 
   /** GET /api/memory/consolidate/status */
-  getMemoryConsolidateStatus: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/memory/consolidate/status', opts),
+  getMemoryConsolidateStatus: () =>
+    client.get<ConsolidateStatusResponse>('/api/memory/consolidate/status'),
 
   /** GET /api/memory/export */
   exportMemory: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/memory/export', opts),
 
-  /** DELETE /api/memory/facts */
-  deleteMemoryFacts: (query: { user_key: string; ids?: string }) =>
-    client.delete<OkResponse>('/api/memory/facts', { query }),
+  /** DELETE /api/memory/facts (bulk; body specifies ids / category /
+   *  max_confidence / confirm_clear). */
+  deleteMemoryFacts: (query: { user_key: string }, body: DeleteMemoryFactsBody) =>
+    client.delete<DeleteMemoryFactsResponse>('/api/memory/facts', { query, body }),
+
+  /** DELETE /api/memory/facts/:id (single-fact delete; user_key in query). */
+  deleteMemoryFactById: (id: number, query: { user_key: string }) =>
+    client.delete<OkResponse & { id: number }>(`/api/memory/facts/${id}`, { query }),
 
   /** GET /api/memory/facts */
   listMemoryFacts: (query: ListMemoryFactsQuery) =>
@@ -172,7 +212,7 @@ export const api = {
 
   /** DELETE /api/memory/persona */
   deleteMemoryPersona: (query: { user_key: string }) =>
-    client.delete<OkResponse>('/api/memory/persona', { query }),
+    client.delete<{ ok: boolean }>('/api/memory/persona', { query }),
 
   /** GET /api/memory/persona */
   getMemoryPersona: (query: { user_key: string }) =>
@@ -180,35 +220,39 @@ export const api = {
 
   /** PUT /api/memory/persona */
   updateMemoryPersona: (query: { user_key: string }, body: UpdatePersonaBody) =>
-    client.put<OkResponse>('/api/memory/persona', { query, body }),
+    client.put<{ ok: boolean }>('/api/memory/persona', { query, body }),
 
   /** GET /api/memory/users */
-  listMemoryUsers: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<{ users: string[] }>('/api/memory/users', opts),
+  listMemoryUsers: () =>
+    client.get<ListMemoryUsersResponse>('/api/memory/users'),
 
   /** POST /api/memory/vector/backfill */
-  backfillMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/backfill', opts),
+  backfillMemoryVector: (query: { user_key?: string }, body?: { max_rows?: number }) =>
+    client.post<VectorActionResponse>('/api/memory/vector/backfill', { query, body }),
 
   /** POST /api/memory/vector/clear */
-  clearMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/clear', opts),
+  clearMemoryVector: (query: { user_key?: string }) =>
+    client.post<VectorClearResponse>('/api/memory/vector/clear', { query }),
 
   /** POST /api/memory/vector/download */
-  downloadMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/download', opts),
+  downloadMemoryVector: () =>
+    client.post<VectorActionResponse>('/api/memory/vector/download'),
 
   /** GET /api/memory/vector/status */
   getMemoryVectorStatus: (query: { user_key?: string }) =>
     client.get<VectorStatus>('/api/memory/vector/status', { query }),
 
   /** POST /api/memory/vector/test */
-  testMemoryVector: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/memory/vector/test', opts),
+  testMemoryVector: () =>
+    client.post<VectorTestResponse>('/api/memory/vector/test'),
 
   /** GET /api/memos */
   listMemos: (query: ListMemosQuery) =>
     client.get<ListMemosResponse>('/api/memos', { query }),
+
+  /** DELETE /api/memos/:id */
+  deleteMemo: (id: number) =>
+    client.delete<DeleteMemoResponse>(`/api/memos/${id}`),
 
   /** POST /api/messengers/wechat/qr-start */
   startWechatQr: (opts?: { body?: unknown }) =>
@@ -227,20 +271,32 @@ export const api = {
     client.post<unknown>('/api/notify', opts),
 
   /** GET /api/outbox */
-  listOutbox: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/outbox', opts),
+  listOutbox: (query: ListOutboxQuery) =>
+    client.get<ListOutboxResponse>('/api/outbox', { query }),
 
   /** GET /api/outbox/stats */
-  getOutboxStats: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/outbox/stats', opts),
+  getOutboxStats: () =>
+    client.get<OutboxStats>('/api/outbox/stats'),
+
+  /** POST /api/outbox/:id/retry */
+  retryOutbox: (id: number) =>
+    client.post<OutboxRetryResponse>(`/api/outbox/${id}/retry`),
 
   /** GET /api/reminders */
   listReminders: (query: ListRemindersQuery) =>
     client.get<ListRemindersResponse>('/api/reminders', { query }),
 
+  /** POST /api/reminders/:id/cancel */
+  cancelReminder: (id: number) =>
+    client.post<CancelReminderResponse>(`/api/reminders/${id}/cancel`),
+
+  /** POST /api/reminders/:id/snooze */
+  snoozeReminder: (id: number, body: SnoozeReminderBody) =>
+    client.post<SnoozeReminderResponse>(`/api/reminders/${id}/snooze`, { body }),
+
   /** GET /api/schedules */
-  listSchedules: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<ListSchedulesResponse>('/api/schedules', opts),
+  listSchedules: (query: ListSchedulesQuery) =>
+    client.get<ListSchedulesResponse>('/api/schedules', { query }),
 
   /** POST /api/service/restart */
   restartService: (opts?: { body?: unknown }) =>
@@ -259,16 +315,21 @@ export const api = {
     client.post<unknown>('/api/service/stop', opts),
 
   /** GET /api/skills */
-  listSkills: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/skills', opts),
+  listSkills: () =>
+    client.get<ListSkillsResponse>('/api/skills'),
 
-  /** GET /api/skills/remote/hot */
-  getSkillsRemoteHot: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/skills/remote/hot', opts),
+  /** GET /api/skills/:slug */
+  getSkillDetail: (slug: string) =>
+    client.get<SkillDetail>(`/api/skills/${encodeURIComponent(slug)}`),
+
+  /** GET /api/skills/remote/hot — proxy to skillhub.cn with 5min
+   *  cache. Loose response since the upstream shape changes. */
+  getSkillsRemoteHot: () =>
+    client.get<Record<string, unknown>>('/api/skills/remote/hot'),
 
   /** GET /api/subtasks */
-  listSubtasks: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/subtasks', opts),
+  listSubtasks: (query: ListSubtasksQuery) =>
+    client.get<ListSubtasksResponse>('/api/subtasks', { query }),
 
   /** GET /api/viewer */
   listViewerPastes: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -278,13 +339,14 @@ export const api = {
   getViewerTunnel: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/viewer/tunnel', opts),
 
-  /** GET /api/workspace-files */
-  getWorkspaceFiles: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/workspace-files', opts),
+  /** GET /api/workspace-files — discriminated union response on
+   *  ?path= (dir listing vs file content). */
+  getWorkspaceFiles: (query: { agent: string; path?: string }) =>
+    client.get<WorkspaceFilesResponse>('/api/workspace-files', { query }),
 
   /** PUT /api/workspace-files */
-  writeWorkspaceFile: (opts?: { body?: unknown }) =>
-    client.put<unknown>('/api/workspace-files', opts),
+  writeWorkspaceFile: (query: { agent: string; path: string }, body: WriteWorkspaceFileBody) =>
+    client.put<WriteWorkspaceFileResponse>('/api/workspace-files', { query, body }),
 
   /** GET /api/workspaces */
   listWorkspaces: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

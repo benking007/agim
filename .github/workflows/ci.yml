@@ -71,6 +71,11 @@ jobs:
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck
 
+      # i18n parity gate — fails fast if any en/zh dictionary drifts
+      # so a forgotten translation can't land alongside a feature.
+      - name: Web-app i18n parity (en ⇄ zh)
+        run: npm --prefix src/web-app run check-i18n
+
       - name: Web-app test (vitest)
         run: npm --prefix src/web-app test -- --run
         env:

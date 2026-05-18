@@ -24,8 +24,8 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: |
-            package.json
-            src/web-app/package.json
+            package-lock.json
+            src/web-app/package-lock.json
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

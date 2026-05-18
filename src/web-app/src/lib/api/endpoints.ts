@@ -15,9 +15,13 @@ import { client } from './client'
 import type {
   A2AStats,
   AppConfig,
+  AddAdminBody,
+  AdminAllowlistResponse,
+  AdminMutationResponse,
   AuditResponse,
   BatchJobBody,
   EnvResponse,
+  RemoveAdminBody,
   ServiceActionResponse,
   ServiceStatus,
   UpdateEnvBody,
@@ -86,16 +90,16 @@ export const api = {
     client.get<A2AStats>('/api/a2a/stats'),
 
   /** DELETE /api/admin-allowlist */
-  removeAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.delete<unknown>('/api/admin-allowlist', opts),
+  removeAdminAllowlist: (body: RemoveAdminBody) =>
+    client.delete<AdminMutationResponse>('/api/admin-allowlist', { body }),
 
   /** GET /api/admin-allowlist */
-  listAdminAllowlist: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
-    client.get<unknown>('/api/admin-allowlist', opts),
+  listAdminAllowlist: () =>
+    client.get<AdminAllowlistResponse>('/api/admin-allowlist'),
 
   /** POST /api/admin-allowlist */
-  addAdminAllowlist: (opts?: { body?: unknown }) =>
-    client.post<unknown>('/api/admin-allowlist', opts),
+  addAdminAllowlist: (body: AddAdminBody) =>
+    client.post<AdminMutationResponse>('/api/admin-allowlist', { body }),
 
   /** GET /api/agent-health */
   getAgentHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

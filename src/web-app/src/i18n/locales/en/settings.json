@@ -3,7 +3,8 @@
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
     "env":     "Environment",
-    "service": "Service"
+    "service": "Service",
+    "admins":  "Admins"
   },
   "env": {
     "title": "Environment variables",
@@ -47,6 +48,34 @@
       "started":   "Service started",
       "stopped":   "Service stopped",
       "restarted": "Service restarted"
+    }
+  },
+  "admins": {
+    "title": "Admin allowlist",
+    "subtitle": "IM-side users who can run admin-tier commands (`/admin promote`, `/admin token`, etc.). The list lives in `IMHUB_ADMIN_USERS`; this editor only works when the agim web port is bound locally.",
+    "configured":      "Allowlist configured",
+    "notConfigured":   "Allowlist not configured — anyone with the CLI bootstrap token can self-promote.",
+    "bootstrapAvailable": "Bootstrap token file present",
+    "bootstrapPath":   "Token path",
+    "empty":           "No admins added yet.",
+    "col": {
+      "platform": "Platform",
+      "userId":   "User ID"
+    },
+    "add": {
+      "title":   "Add admin",
+      "platform":"Platform",
+      "userId":  "User ID",
+      "submit":  "Add"
+    },
+    "remove": {
+      "label":             "Remove",
+      "confirmTitle":      "Remove this admin?",
+      "confirmDescription":"They lose access to all admin-tier commands. Re-add to restore."
+    },
+    "toast": {
+      "added":   "Admin added",
+      "removed": "Admin removed"
     }
   }
 }

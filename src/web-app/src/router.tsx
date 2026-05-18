@@ -116,6 +116,7 @@ const router = createBrowserRouter([
       { index: true,     element: <Navigate to="env" replace /> },
       { path: 'env',     lazy: lazy(() => import('@/routes/settings/env')) },
       { path: 'service', lazy: lazy(() => import('@/routes/settings/service')) },
+      { path: 'admins',  lazy: lazy(() => import('@/routes/settings/admins')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

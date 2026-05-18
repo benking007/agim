@@ -3,7 +3,8 @@
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
     "env":     "环境变量",
-    "service": "服务"
+    "service": "服务",
+    "admins":  "管理员"
   },
   "env": {
     "title": "环境变量",
@@ -47,6 +48,34 @@
       "started":   "服务已启动",
       "stopped":   "服务已停止",
       "restarted": "服务已重启"
+    }
+  },
+  "admins": {
+    "title": "管理员名单",
+    "subtitle": "可执行管理员级命令的 IM 用户（`/admin promote`、`/admin token` 等）。名单保存在 `IMHUB_ADMIN_USERS` 环境变量；仅当 agim Web 端口本地绑定时才能在此编辑。",
+    "configured":      "名单已配置",
+    "notConfigured":   "尚未配置名单 — 任何持有 CLI bootstrap token 的人都可自我提权。",
+    "bootstrapAvailable": "Bootstrap token 文件存在",
+    "bootstrapPath":   "文件路径",
+    "empty":           "暂无管理员。",
+    "col": {
+      "platform": "平台",
+      "userId":   "用户 ID"
+    },
+    "add": {
+      "title":   "添加管理员",
+      "platform":"平台",
+      "userId":  "用户 ID",
+      "submit":  "添加"
+    },
+    "remove": {
+      "label":             "移除",
+      "confirmTitle":      "确认移除该管理员？",
+      "confirmDescription":"该用户将失去所有管理员命令访问权限。可再次添加恢复。"
+    },
+    "toast": {
+      "added":   "已添加",
+      "removed": "已移除"
     }
   }
 }

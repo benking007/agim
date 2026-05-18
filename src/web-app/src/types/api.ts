@@ -884,3 +884,42 @@ export interface ServiceActionResponse {
   pid?: number
   alreadyRunning?: boolean
 }
+
+/* ============================================================
+ * Admin allowlist — users who can run admin-tier commands.
+ * Editor only works when web is bound locally (the backend
+ * gates POST + DELETE on isLocalBind).
+ * ============================================================ */
+
+export interface AdminEntry {
+  platform: string
+  userId: string
+}
+
+export interface AdminAllowlistResponse {
+  admins: AdminEntry[]
+  /** True once at least one admin has been set. When false, the
+   *  CLI's bootstrap token is the only privileged path. */
+  configured: boolean
+  /** Bootstrap token file present on disk — operator can use it
+   *  to seed the first admin. */
+  bootstrapAvailable: boolean
+  bootstrapTokenPath: string
+}
+
+export interface AddAdminBody {
+  platform: string
+  userId: string
+}
+
+export interface RemoveAdminBody {
+  platform: string
+  userId: string
+}
+
+export interface AdminMutationResponse {
+  ok: boolean
+  added?: boolean
+  removed?: boolean
+  admins: AdminEntry[]
+}

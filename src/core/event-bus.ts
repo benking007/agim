@@ -85,14 +85,30 @@ export interface MetricsEvent {
 
 export type ImhubEvent = AuditEvent | ApprovalEvent | JobEvent | MetricsEvent
 
+/** Cap at 200 entries — enough for the dashboard to show a meaningful
+ *  "what just happened" feed without bloating process memory. Module-
+ *  level so the class's instance-field initializer can reference it
+ *  without tripping TS's "used-before-initialization" check on a
+ *  static field. */
+const RECENT_CAP = 200
+
 class ImhubEventBus extends EventEmitter {
   /** Bounded recent-event log so a freshly-connected SSE client can
    *  catch up on what happened in the last few seconds without needing
-   *  a separate REST poll. Cap at 200 entries — enough for the dashboard
-   *  to show a meaningful "what just happened" feed without bloating
-   *  process memory. */
-  private recent: ImhubEvent[] = []
-  private static readonly RECENT_CAP = 200
+   *  a separate REST poll.
+   *
+   *  Implementation: a fixed-size ring buffer. The previous design used
+   *  `push` + `shift` once the cap was reached; `Array.shift()` is O(n)
+   *  (it physically rewrites the backing storage) and was a measurable
+   *  hot-path cost under approval / audit storms (~1k events / second
+   *  bursts during agent boot). Ring write is O(1); the only O(n) work
+   *  is in {@link getRecent}, which is rare (once per SSE connect).
+   */
+  private recent: (ImhubEvent | undefined)[] = new Array(RECENT_CAP)
+  /** Next write slot (also = oldest slot when buffer is full). */
+  private recentHead = 0
+  /** Valid entry count — ramps from 0 to RECENT_CAP then stays there. */
+  private recentSize = 0
 
   constructor() {
     super()
@@ -108,8 +124,9 @@ class ImhubEventBus extends EventEmitter {
    * a bad subscriber can't break audit-log / approval-bus / job-board.
    */
   publish(event: ImhubEvent): void {
-    this.recent.push(event)
-    while (this.recent.length > ImhubEventBus.RECENT_CAP) this.recent.shift()
+    this.recent[this.recentHead] = event
+    this.recentHead = (this.recentHead + 1) % RECENT_CAP
+    if (this.recentSize < RECENT_CAP) this.recentSize++
     try {
       this.emit('event', event)
     } catch {
@@ -117,11 +134,35 @@ class ImhubEventBus extends EventEmitter {
     }
   }
 
-  /** Snapshot of the recent ring buffer. Used by SSE handler on
-   *  connection to replay the last N events to a fresh client. */
+  /** Snapshot of the recent ring buffer, oldest-first. Used by SSE
+   *  handler on connection to replay recent events to a fresh client. */
   getRecent(): ImhubEvent[] {
-    return this.recent.slice()
+    const out: ImhubEvent[] = []
+    if (this.recentSize < RECENT_CAP) {
+      // Buffer still filling: entries 0..recentHead-1 are valid in order.
+      for (let i = 0; i < this.recentHead; i++) {
+        const ev = this.recent[i]
+        if (ev) out.push(ev)
+      }
+      return out
+    }
+    // Full: oldest entry is at recentHead; walk forward, wrapping once.
+    for (let i = 0; i < RECENT_CAP; i++) {
+      const ev = this.recent[(this.recentHead + i) % RECENT_CAP]
+      if (ev) out.push(ev)
+    }
+    return out
   }
+
+  /** Test-only — reset buffer state. */
+  _resetRecent(): void {
+    this.recent = new Array(RECENT_CAP)
+    this.recentHead = 0
+    this.recentSize = 0
+  }
+
+  /** Test/diagnostic: capacity of the recent-event ring. */
+  static get RECENT_CAP(): number { return RECENT_CAP }
 }
 
 export const eventBus = new ImhubEventBus()

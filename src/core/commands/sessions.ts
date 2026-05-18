@@ -10,6 +10,7 @@ import http from 'node:http'
 import https from 'node:https'
 import { URL } from 'node:url'
 import type { RouteContext } from '../router.js'
+import { readEnvCompat } from '../env-compat.js'
 
 const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:8001'
 const REQUEST_TIMEOUT_MS = 5_000
@@ -26,7 +27,9 @@ interface DashboardResponse {
 }
 
 function dashboardUrl(): string {
-  return process.env.IM_HUB_DASHBOARD_URL || DEFAULT_DASHBOARD_URL
+  // M-N7: prefer the canonical IMHUB_ name; keep IM_HUB_ as a deprecated alias
+  // so existing systemd unit files / docs continue to work.
+  return readEnvCompat('IMHUB_DASHBOARD_URL', 'IM_HUB_DASHBOARD_URL') || DEFAULT_DASHBOARD_URL
 }
 
 function fetchJson(url: string): Promise<DashboardResponse> {
@@ -69,7 +72,7 @@ export async function handleSessionsCommand(_args: string, _ctx: RouteContext): 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
-      return `⚠️ 无法连接 dashboard (${base})。\n\n确认 dashboard 服务已启动，或设置 \`IM_HUB_DASHBOARD_URL\` 环境变量指向正确的地址。`
+      return `⚠️ 无法连接 dashboard (${base})。\n\n确认 dashboard 服务已启动，或设置 \`IMHUB_DASHBOARD_URL\` 环境变量指向正确的地址。`
     }
     if (msg === 'timeout') {
       return `⚠️ Dashboard 响应超时 (${REQUEST_TIMEOUT_MS}ms): ${base}`

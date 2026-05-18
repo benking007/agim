@@ -84,6 +84,23 @@ function migrateVectorColumns(db: import('better-sqlite3').Database): void {
       }
     }
   }
+  // M-N3: partial index for queryFactsHybrid's vector-candidate scan.
+  // Must be created AFTER the ALTER TABLE above because the partial WHERE
+  // references the `embedding` column. Without it, `WHERE user_key=? AND
+  // embedding IS NOT NULL AND embedding_dims=? AND embedding_model=?`
+  // fell back to a user-keyed scan + filter; with a few thousand facts
+  // per user this dominated hybrid-search latency. Partial WHERE keeps
+  // the index dense — newly-saved facts (embedding still NULL until the
+  // async embed worker fills it) don't bloat it.
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_facts_embedded
+        ON facts(user_key, embedding_model, embedding_dims)
+        WHERE embedding IS NOT NULL
+    `)
+  } catch (err) {
+    rootLogger.warn({ event: 'memory.migrate_failed', col: 'idx_facts_embedded', err: String(err) })
+  }
 }
 
 const helper = createSqliteHelper({

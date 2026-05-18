@@ -5,7 +5,7 @@
 //   - Skips the interactive onboarding (no readline prompts).
 //   - Skips the messenger startup (Telegram/WeChat/Feishu) — this script
 //     is intended for deployments that only expose the Web/REST/ACP
-//     surfaces. Set IM_HUB_ENABLE_MESSENGERS=1 to opt in.
+//     surfaces. Set IMHUB_ENABLE_MESSENGERS=1 to opt in (IM_HUB_ENABLE_MESSENGERS still works as a deprecated alias).
 //
 // Everything else mirrors cli.ts: load config, plugins, ACP agents,
 // auto-discovery, scheduler, audit retention sweep — so /api/jobs,
@@ -51,7 +51,7 @@ if (Array.isArray(config.acpDiscoveryUrls) && config.acpDiscoveryUrls.length > 0
 // Optional: enable IM messengers when explicitly requested. cli.ts has
 // the full onboarding flow for new users; here we only wire the ones
 // already configured so a misconfigured machine doesn't crash boot.
-if (process.env.IM_HUB_ENABLE_MESSENGERS === '1') {
+if ((process.env.IMHUB_ENABLE_MESSENGERS === '1' || process.env.IM_HUB_ENABLE_MESSENGERS === '1')) {
   for (const name of config.messengers || []) {
     const messenger = registry.getMessenger(name)
     if (messenger) {
@@ -108,7 +108,7 @@ async function gracefulShutdown(signal) {
   try { acpServer?.close() } catch (err) { log.warn({ err: String(err) }, 'acp close failed') }
 
   // Stop messengers if we started any.
-  if (process.env.IM_HUB_ENABLE_MESSENGERS === '1') {
+  if ((process.env.IMHUB_ENABLE_MESSENGERS === '1' || process.env.IM_HUB_ENABLE_MESSENGERS === '1')) {
     for (const name of registry.listMessengers()) {
       const messenger = registry.getMessenger(name)
       if (messenger) {

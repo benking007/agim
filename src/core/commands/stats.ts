@@ -11,6 +11,7 @@
 
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
+import { readEnvCompat } from '../env-compat.js'
 
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return '0'
@@ -29,7 +30,7 @@ function fmtDuration(ms: number): string {
 }
 
 function fxRate(): number {
-  const raw = process.env.IM_HUB_USD_TO_CNY
+  const raw = readEnvCompat('IMHUB_USD_TO_CNY', 'IM_HUB_USD_TO_CNY')
   if (raw) {
     const n = parseFloat(raw)
     if (Number.isFinite(n) && n > 0) return n

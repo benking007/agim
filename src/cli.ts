@@ -209,6 +209,13 @@ program
     const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
     startMemoSweep()
 
+    // M-N16 — orphan-artifact sweep (24 h). The common case (job-board
+    // retention deletes a row → pruneArtifactsBatch removes the dir) is
+    // already covered inline; this catches dirs that survived an unclean
+    // shutdown or an older agim version that didn't track them.
+    const { startArtifactOrphanSweep } = await import('./core/artifacts.js')
+    startArtifactOrphanSweep()
+
     // First-run admin onboarding: if IMHUB_ADMIN_USERS is unset, write a
     // one-time bootstrap token to ~/.agim/admin-bootstrap-token and print
     // a prominent banner so the operator can self-onboard via
@@ -830,6 +837,10 @@ program
         const { stopOutboxRetentionSweep, closeOutboxDb } = await import('./core/outbox.js')
         stopOutboxRetentionSweep()
         closeOutboxDb()
+      } catch { /* ignore */ }
+      try {
+        const { stopArtifactOrphanSweep } = await import('./core/artifacts.js')
+        stopArtifactOrphanSweep()
       } catch { /* ignore */ }
 
       process.exit(0)

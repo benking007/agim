@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { recordInvocation, recordAuditPruneFailure } from './metrics.js'
 import { eventBus } from './event-bus.js'
+import { readEnvCompat } from './env-compat.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { AGIM_HOME } from './agim-paths.js'
 
@@ -17,7 +18,7 @@ const AUDIT_DB = join(AGIM_HOME, 'audit.db')
 
 /** Default number of days to keep audit rows. Override via env. */
 function resolveRetentionDays(): number {
-  const raw = process.env.IM_HUB_AUDIT_RETENTION_DAYS
+  const raw = readEnvCompat('IMHUB_AUDIT_RETENTION_DAYS', 'IM_HUB_AUDIT_RETENTION_DAYS')
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.18] - 2026-05-20
+
+### Fixed
+
+- **opencode MCP sidecar silently exits when probe-reuse picks up a stale
+  serve.** `approval-bus` picks a fresh random socket path on every agim
+  start (`/tmp/imhub-approval-<32hex>.sock`); any pre-existing
+  `opencode serve` left over from a previous agim run carries the old
+  path in its environ snapshot. `OpencodeServeManager` previously reused
+  the listener unconditionally, so every new MCP sidecar that the
+  serve forked tried to connect to a deleted socket and exited at
+  startup — `mcp__imhub__save_memo`, `mcp__imhub__create_reminder`,
+  and friends silently dropped out of opencode's tool set.
+- The probe-reuse path now reads `/proc/<listener-pid>/environ`, compares
+  `IMHUB_APPROVAL_SOCK` against the live bus path, and SIGTERMs +
+  respawns when they mismatch (escalates to SIGKILL after 800 ms).
+- Spawn path makes the env injection explicit and warns loudly if
+  `IMHUB_APPROVAL_SOCK` is unset at the moment we launch the serve.
+
+(`1.2.3` through `1.2.17` were auto-bumped by the merge-bot but never
+manually published; this is the first npm publish since `1.2.2`.)
+
 ## [1.2.2] - 2026-05-17
 
 Three small but noticeable hotfixes on top of 1.2.1:

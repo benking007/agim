@@ -19,6 +19,7 @@
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
+import { useIsDesktop } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
 
 interface NavEntry {
@@ -53,6 +54,12 @@ export interface TopbarProps {
 
 export function Topbar({ children }: TopbarProps): JSX.Element {
   const { t } = useTranslation()
+  // R10: render nav exactly once. Pre-R10 we rendered it both in the
+  // `hidden sm:flex` desktop slot AND a `sm:hidden` mobile row, relying
+  // on CSS to hide one. That left two copies in the accessibility tree
+  // (and the test DOM), breaking `getByRole` lookups and announcing
+  // every nav item twice to screen readers.
+  const isDesktop = useIsDesktop()
   const navLinks = (
     <nav
       className={cn(
@@ -116,10 +123,9 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
           <span className="hidden sm:inline">{t('appName')}</span>
         </NavLink>
 
-        {/* Inline nav on desktop only */}
-        <div className="hidden sm:flex flex-1 min-w-0">
-          {navLinks}
-        </div>
+        {/* Desktop nav lives inline on row 1; the mobile copy is on
+            row 2 below. Render only one based on the viewport. */}
+        {isDesktop && <div className="flex flex-1 min-w-0">{navLinks}</div>}
 
         {children && <div className="flex items-center gap-2">{children}</div>}
 
@@ -129,9 +135,9 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
       </div>
 
       {/* Row 2 (mobile only) — scrollable nav strip */}
-      <div className="sm:hidden border-t border-border px-3 py-1">
-        {navLinks}
-      </div>
+      {!isDesktop && (
+        <div className="border-t border-border px-3 py-1">{navLinks}</div>
+      )}
     </header>
   )
 }

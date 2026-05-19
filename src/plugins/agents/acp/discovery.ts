@@ -76,6 +76,10 @@ export async function discoverAgents(baseUrl: string): Promise<DiscoveryResult> 
   const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
+    // SSRF defence-in-depth: an allowed baseUrl could 302 the request
+    // into 169.254.169.254 / 127.0.0.1. `manual` makes the redirect a
+    // visible response with status 3xx instead of silently following.
+    redirect: 'manual',
   })
   if (!res.ok) {
     throw new Error(`Discovery failed: ${res.status} ${res.statusText}`)

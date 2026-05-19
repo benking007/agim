@@ -172,15 +172,20 @@ describe('Web REST API', () => {
       expect(res.status).toBe(400)
     })
 
-    it('returns error JSON on unreachable host', async () => {
+    it('refuses loopback baseUrl with 400 ACP_URL_BLOCKED (R9 SSRF guard)', async () => {
+      // Pre-R9 this case exercised the unreachable-host error mapping
+      // (any 200-ok-false or 500). R9 short-circuits before the fetch
+      // because 127.0.0.1 is private-addr blocked. The dev escape hatch
+      // IMHUB_ACP_ALLOW_LOOPBACK=1 restores the old behaviour.
       const res = await fetch(url('/api/agents/acp/discover'), {
         method: 'POST',
         headers: { ...auth, 'content-type': 'application/json' },
         body: JSON.stringify({ baseUrl: 'http://127.0.0.1:1' }),
       })
-      // Either 500 (network error) or 200 with ok:false depending on the
-      // server's error mapping — both valid as long as no agent registered.
-      expect([200, 500]).toContain(res.status)
+      expect(res.status).toBe(400)
+      const body = await res.json() as { code?: string; reason?: string }
+      expect(body.code).toBe('ACP_URL_BLOCKED')
+      expect(body.reason).toBe('private_address')
     })
   })
 

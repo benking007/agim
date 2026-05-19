@@ -230,7 +230,7 @@ export default function OutboxRoute(): JSX.Element {
             value={status ?? '__any__'}
             onValueChange={(v) => patchParams({ status: v === '__any__' ? null : v })}
           >
-            <SelectTrigger id="status-filter" className="h-9 w-[160px]">
+            <SelectTrigger id="status-filter" className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -252,7 +252,7 @@ export default function OutboxRoute(): JSX.Element {
             value={thread}
             onChange={(e) => patchParams({ thread: e.target.value })}
             placeholder="wechat:room:..."
-            className="h-9 w-72 font-mono text-xs"
+            className="w-72 font-mono text-xs"
           />
         </div>
       </div>

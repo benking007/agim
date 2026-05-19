@@ -92,7 +92,19 @@ const router = createBrowserRouter([
       { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
       { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
       { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
-      { path: 'skills',  lazy: lazy(() => import('@/routes/memory/skills')) },
+      // Skills moved out to its own top-level /skills tab in 2026-05.
+      // Keep a redirect so any bookmark to /memory/skills lands on the
+      // new home without a 404.
+      { path: 'skills',  element: <Navigate to="/skills/installed" replace /> },
+    ],
+  },
+  {
+    path: '/skills',
+    lazy: authedLazy(() => import('@/routes/skills/layout')),
+    children: [
+      { index: true,        element: <Navigate to="installed" replace /> },
+      { path: 'installed',  lazy: lazy(() => import('@/routes/skills/installed')) },
+      { path: 'hot',        lazy: lazy(() => import('@/routes/skills/hot')) },
     ],
   },
   {

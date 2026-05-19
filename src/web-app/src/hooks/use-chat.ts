@@ -217,6 +217,16 @@ export function useChat(): UseChat {
   // per frame so we avoid 60 setState/sec.
   const chunkBuf = useRef<Map<string, string>>(new Map())
   const flushScheduled = useRef(false)
+  // Mirror of state.currentReplyId, kept current so bufferChunk doesn't
+  // read a stale closure value. Without this, the WS subscription
+  // (mounted once with useEffect([])) captures the first-render `state`
+  // where currentReplyId is null, every chunk gets early-returned, and
+  // the assistant bubble stays stuck on "…" until React re-renders for
+  // an unrelated reason (e.g. tab switch).
+  const currentReplyIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    currentReplyIdRef.current = state.currentReplyId
+  }, [state.currentReplyId])
 
   useEffect(() => {
     const ws = wsRef.current
@@ -228,17 +238,41 @@ export function useChat(): UseChat {
       type: 'message',
       fn: (msg: ChatIncoming) => onIncoming(msg),
     })
-    // On mount, ask the backend to replay history. The server's `init`
-    // already sent agents + clientId; `get-history` triggers the
-    // separate `history` message.
-    if (ws.status() === 'open') ws.send({ type: 'get-history' })
+    // 2026-05-19: persist a per-browser threadId so refresh / re-open
+    // resumes the same server-side session. Generated once on first
+    // chat and stored in localStorage; sent with every `get-history`.
+    // Server falls back to its own clientId if we don't send one.
+    function loadOrCreateThreadId(): string {
+      try {
+        const existing = localStorage.getItem('agim-web-thread-id')
+        if (existing && /^web-[A-Za-z0-9_-]{4,64}$/.test(existing)) return existing
+      } catch { /* private mode */ }
+      const fresh = `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      try { localStorage.setItem('agim-web-thread-id', fresh) } catch { /* ignore */ }
+      return fresh
+    }
+    const threadId = loadOrCreateThreadId()
+
+    // On mount, ask the backend to:
+    //   * replay history (rekey session to our persisted threadId)
+    //   * re-send the agents list — the WS connection is a module-level
+    //     singleton, so the server's `init` (agents + clientId) only
+    //     fires on the FIRST mount of the whole app. When the user
+    //     navigates away from /chat and back, `useChat()` re-mounts with
+    //     a fresh empty reducer state but the WS doesn't re-emit `init`,
+    //     leaving the agent picker empty. `get-agents` re-publishes.
+    function bootstrap(): void {
+      ws.send({ type: 'get-history', threadId })
+      ws.send({ type: 'get-agents' })
+    }
+    if (ws.status() === 'open') bootstrap()
     else {
       // Wait for OPEN to ask — subscribe a one-shot.
       const off3 = ws.subscribe({
         type: 'status',
         fn: (s) => {
           if (s === 'open') {
-            ws.send({ type: 'get-history' })
+            bootstrap()
             off3()
           }
         },
@@ -285,7 +319,8 @@ export function useChat(): UseChat {
         flushChunks()
         dispatch({
           kind: 'DONE',
-          replyId: state.currentReplyId ?? '',
+          // Same stale-closure trap as bufferChunk — read via ref.
+          replyId: currentReplyIdRef.current ?? '',
           finalText: msg.text,
         })
         return
@@ -326,7 +361,7 @@ export function useChat(): UseChat {
   }
 
   function bufferChunk(text: string): void {
-    const replyId = state.currentReplyId
+    const replyId = currentReplyIdRef.current
     if (!replyId) return
     const cur = chunkBuf.current.get(replyId) ?? ''
     chunkBuf.current.set(replyId, cur + text)

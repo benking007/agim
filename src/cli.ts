@@ -1759,6 +1759,48 @@ adminCmd
     for (const r of rows) console.log(`  ${r.platform}:${r.userId}`)
   })
 
+// ─── `agim web` — print the web console URL ─────────────────────────
+//
+// Reads the same Viewer config the IM `/web` command uses, but resolves
+// from env directly (no running daemon needed for the env / publicBaseUrl
+// branch). Cloudflared URLs live in the daemon's memory — when the
+// operator uses tunnel-mode but isn't running the daemon, we surface a
+// hint to use IM `/web` instead.
+
+program
+  .command('web')
+  .description('Print the URL of this host\'s web console')
+  .action(async () => {
+    // Pull ~/.agim/env into process.env so IMHUB_VIEWER_* configured via
+    // the entry menu is visible when this CLI runs in a fresh shell.
+    try {
+      const { readEnvFile } = await import('./cli-ui/env-file.js')
+      const f = readEnvFile()
+      for (const k of ['IMHUB_VIEWER_PUBLIC_BASE_URL', 'IMHUB_VIEWER_TUNNEL_MODE', 'IMHUB_VIEWER_ENABLED']) {
+        if (f[k] && !process.env[k]) process.env[k] = f[k]
+      }
+    } catch { /* ignore */ }
+    const { getEffectivePublicBaseUrl, getViewerConfig } = await import('./core/viewer-config.js')
+    const cfg = getViewerConfig()
+    const url = getEffectivePublicBaseUrl()
+    if (url) {
+      const source = cfg.publicBaseUrl ? 'IMHUB_VIEWER_PUBLIC_BASE_URL' : 'cloudflared tunnel'
+      console.log(url)
+      console.log(`(来源: ${source})`)
+      return
+    }
+    if (cfg.tunnelMode === 'quick') {
+      console.log('Web 后台地址当前由 cloudflared 临时隧道提供，但本进程查不到隧道 URL。')
+      console.log('请在 IM 内发送 /web 让运行中的 daemon 返回最新地址。')
+      process.exit(2)
+    }
+    console.log('Web 后台地址未配置。')
+    console.log('设置以下任一项后重启服务：')
+    console.log('  IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代 / 自定义域名)')
+    console.log('  IMHUB_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)')
+    process.exit(2)
+  })
+
 // ─── bare `agim` → entry menu (v0.5.0+) ─────────────────────────────
 // If the user invoked us with no args (just `agim`), drop them at
 // the language picker + maintenance menu instead of dumping --help text.

@@ -112,7 +112,7 @@ export default function SettingsEnvRoute(): JSX.Element {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t('env.search')}
-          className="h-9 w-64"
+          className="w-64"
         />
         <Button
           type="button"
@@ -208,7 +208,7 @@ function EnvRow({
         <Input
           value={draft}
           onChange={(e) => onChange(e.target.value)}
-          className="h-9 font-mono text-xs"
+          className="font-mono text-xs"
           placeholder={serverValue}
         />
       )}

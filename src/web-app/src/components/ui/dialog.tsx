@@ -46,9 +46,13 @@ const DialogContent = React.forwardRef<
       className={cn(
         'fixed left-[50%] top-[50%] z-50 grid w-full max-w-[calc(100vw-2rem)] sm:max-w-lg',
         'translate-x-[-50%] translate-y-[-50%] gap-4',
-        'border border-border bg-surface p-6 shadow-lg',
+        'border border-border bg-surface p-4 shadow-lg',
         'rounded-lg',
-        'max-h-[90dvh] overflow-y-auto pb-safe',
+        // pb-safe alone gives ~34px for the home-indicator, but iOS Safari
+        // can slide the URL bar back in on tap and eat another ~50px of
+        // viewport. Reserve a generous floor so the last action button
+        // never lands under the toolbar.
+        'max-h-[85dvh] overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+1.5rem)]',
         'duration-200',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',

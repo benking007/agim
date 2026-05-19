@@ -129,7 +129,7 @@ export default function ChatRoute(): JSX.Element {
         ref={listRef}
         className="flex-1 overflow-y-auto"
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6 sm:px-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-2 px-3 py-3 sm:px-4">
           {state.messages.length === 0 && state.status === 'open' && (
             <div className="flex flex-col items-center gap-2 py-16 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-2xl">
@@ -169,10 +169,12 @@ export default function ChatRoute(): JSX.Element {
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input — height matches the h-8 topbar widgets (agent picker /
+          lang select / theme button) so the whole chat surface has one
+          consistent vertical rhythm. */}
       <form
         onSubmit={onSubmit}
-        className="sticky bottom-0 border-t border-border bg-surface px-4 py-3 pb-safe sm:px-6"
+        className="sticky bottom-0 border-t border-border bg-surface px-4 py-2 pb-safe sm:px-6"
       >
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <textarea
@@ -186,16 +188,16 @@ export default function ChatRoute(): JSX.Element {
             rows={1}
             className={cn(
               'flex-1 resize-none rounded-md border border-border bg-bg',
-              'px-3 py-2 text-sm leading-6',
+              'px-3 py-1.5 text-sm leading-5',
               'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 focus:ring-offset-bg',
-              'max-h-32 min-h-9',
+              'max-h-32 min-h-8',
             )}
           />
           <Button
             type="submit"
-            size="icon"
             disabled={!input.trim() || state.status !== 'open'}
             aria-label={t('chat.send', { defaultValue: 'Send' })}
+            className="h-8 w-8 p-0"
           >
             <Send className="h-4 w-4" />
           </Button>

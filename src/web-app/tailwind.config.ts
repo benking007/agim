@@ -73,13 +73,16 @@ export default {
         xl: '14px',
       },
       fontSize: {
-        xs:   ['11px', { lineHeight: '14px' }],
-        sm:   ['12px', { lineHeight: '18px' }],
-        base: ['14px', { lineHeight: '20px' }],
-        md:   ['15px', { lineHeight: '22px' }],
-        lg:   ['18px', { lineHeight: '26px' }],
-        xl:   ['22px', { lineHeight: '30px' }],
-        '2xl':['28px', { lineHeight: '36px' }],
+        // Bumped one step (2026-05-19) — operator said the compact default
+        // was too small on mobile. Line-height bumped proportionally so
+        // h-8 controls still fit (32px - py-1*2 = 24px available for content).
+        xs:   ['12px', { lineHeight: '16px' }],
+        sm:   ['13px', { lineHeight: '20px' }],
+        base: ['15px', { lineHeight: '22px' }],
+        md:   ['16px', { lineHeight: '24px' }],
+        lg:   ['20px', { lineHeight: '28px' }],
+        xl:   ['24px', { lineHeight: '32px' }],
+        '2xl':['30px', { lineHeight: '38px' }],
       },
       boxShadow: {
         sm: 'var(--ag-shadow-sm)',

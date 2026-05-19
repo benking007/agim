@@ -114,7 +114,7 @@ export default function WorkspaceRoute(): JSX.Element {
               {t('agentPicker.label')}
             </Label>
             <Select value={agent || '__placeholder__'} onValueChange={(v) => setAgent(v === '__placeholder__' ? '' : v)}>
-              <SelectTrigger id="agent" className="h-9 w-64">
+              <SelectTrigger id="agent" className="w-64">
                 <SelectValue placeholder={t('agentPicker.placeholder')} />
               </SelectTrigger>
               <SelectContent>

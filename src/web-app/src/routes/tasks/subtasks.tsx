@@ -151,7 +151,7 @@ export default function SubtasksRoute(): JSX.Element {
             value={agent}
             onChange={(e) => setAgentFilter(e.target.value)}
             placeholder={t('subtasks.filter.agentAny')}
-            className="h-9 w-48"
+            className="w-48"
           />
         </div>
       </div>

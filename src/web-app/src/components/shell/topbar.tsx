@@ -37,6 +37,7 @@ const NAV: Array<NavEntry & { mounted: boolean }> = [
   { to: '/reminders',     i18nKey: 'nav.reminders',     mounted: true  },
   { to: '/memos',         i18nKey: 'nav.memos',         mounted: true  },
   { to: '/memory',        i18nKey: 'nav.memory',        mounted: true  },
+  { to: '/skills',        i18nKey: 'nav.skills',        mounted: true  },
   { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: true  },
   { to: '/observability', i18nKey: 'nav.observability', mounted: true  },
   { to: '/settings',      i18nKey: 'nav.settings',      mounted: true  },
@@ -52,57 +53,84 @@ export interface TopbarProps {
 
 export function Topbar({ children }: TopbarProps): JSX.Element {
   const { t } = useTranslation()
+  const navLinks = (
+    <nav
+      className={cn(
+        'flex flex-1 min-w-0 items-center gap-1',
+        'overflow-x-auto scrollbar-thin',
+        '[&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:bg-border',
+      )}
+      aria-label={t('appName')}
+    >
+      {NAV.filter((n) => n.mounted).map((n) => (
+        <NavLink
+          key={n.to}
+          to={n.to}
+          end={n.to === '/'}
+          className={({ isActive }) =>
+            cn(
+              'shrink-0 rounded-md px-2.5 py-1.5 text-sm no-underline',
+              'transition-colors tap-target',
+              isActive
+                ? 'bg-accent-bg text-accent font-medium'
+                : 'text-text-dim hover:bg-surface-hover hover:text-text',
+            )
+          }
+        >
+          {t(n.i18nKey)}
+        </NavLink>
+      ))}
+    </nav>
+  )
+
   return (
     <header
       className={cn(
         'sticky top-0 z-20',
-        'flex items-center gap-3',
+        // Mobile (<sm): two-row layout — brand + widgets on row 1, nav
+        // links on row 2 (horizontally scrollable). Desktop (≥sm): single
+        // row, nav inline. Avoids the "brand + 4 widgets squeeze nav off-
+        // screen" issue on /chat where children = AgentPicker pushes the
+        // nav width below the threshold to even show the active item.
+        'flex flex-col sm:flex-row sm:items-center sm:gap-3',
         'border-b border-border bg-surface',
-        'px-3 sm:px-4 py-2 pt-safe',
+        'pt-safe',
         'shadow-sm',
       )}
     >
-      <NavLink
-        to="/"
-        className="flex shrink-0 items-center gap-1 text-md font-semibold no-underline"
-        end
-      >
-        <span aria-hidden="true">🤖</span>
-        <span className="hidden sm:inline">{t('appName')}</span>
-      </NavLink>
-
-      <nav
+      {/* Row 1 (mobile) / left half (desktop) — brand + widgets */}
+      <div
         className={cn(
-          'flex flex-1 min-w-0 items-center gap-1',
-          'overflow-x-auto scrollbar-thin',
-          '[&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:bg-border',
+          'flex items-center gap-2 sm:gap-3',
+          'overflow-x-hidden',
+          'px-3 sm:px-4 py-2 sm:py-2',
+          'sm:flex-1 sm:min-w-0',
         )}
-        aria-label={t('appName')}
       >
-        {NAV.filter((n) => n.mounted).map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            end={n.to === '/'}
-            className={({ isActive }) =>
-              cn(
-                'shrink-0 rounded-md px-2.5 py-1.5 text-sm no-underline',
-                'transition-colors tap-target',
-                isActive
-                  ? 'bg-accent-bg text-accent font-medium'
-                  : 'text-text-dim hover:bg-surface-hover hover:text-text',
-              )
-            }
-          >
-            {t(n.i18nKey)}
-          </NavLink>
-        ))}
-      </nav>
+        <NavLink
+          to="/"
+          className="flex shrink-0 items-center gap-1 text-md font-semibold no-underline"
+          end
+        >
+          <span aria-hidden="true">🤖</span>
+          <span className="hidden sm:inline">{t('appName')}</span>
+        </NavLink>
 
-      {children && <div className="flex items-center gap-2">{children}</div>}
+        {/* Inline nav on desktop only */}
+        <div className="hidden sm:flex flex-1 min-w-0">
+          {navLinks}
+        </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <ThemeAndLangControls />
+        {children && <div className="flex items-center gap-2">{children}</div>}
+
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeAndLangControls />
+        </div>
+      </div>
+
+      {/* Row 2 (mobile only) — scrollable nav strip */}
+      <div className="sm:hidden border-t border-border px-3 py-1">
+        {navLinks}
       </div>
     </header>
   )

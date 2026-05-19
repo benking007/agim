@@ -38,7 +38,7 @@ const TabsTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'relative inline-flex items-center justify-center whitespace-nowrap',
-      'px-4 py-3 text-sm font-medium text-text-dim',
+      'px-3 py-1.5 text-sm font-medium text-text-dim',
       'scroll-mx-4',
       'transition-colors hover:text-text',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',

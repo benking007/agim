@@ -245,7 +245,7 @@ export default function RemindersRoute(): JSX.Element {
             value={status}
             onValueChange={(v) => patchParams({ status: v })}
           >
-            <SelectTrigger id="status-filter" className="h-9 w-[160px]">
+            <SelectTrigger id="status-filter" className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

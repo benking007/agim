@@ -21,7 +21,7 @@ export interface AgentPickerProps {
 export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.Element {
   return (
     <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-36 text-xs">
+      <SelectTrigger className="h-7 w-28 sm:w-36 text-xs">
         <SelectValue placeholder={agents[0] ?? '—'} />
       </SelectTrigger>
       <SelectContent>

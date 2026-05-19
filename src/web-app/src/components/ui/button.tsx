@@ -43,11 +43,13 @@ const buttonVariants = cva(
           'bg-transparent text-accent underline-offset-4 hover:underline px-0 h-auto',
       },
       size: {
-        default: 'h-9 px-4 py-2',
-        sm:      'h-8 px-3 py-1 text-xs',
-        lg:      'h-10 px-6',
-        // Icon button — 44×44 hit target for thumbs on mobile.
-        icon:    'h-11 w-11',
+        // Compact 32px rhythm — matches h-8 Input / Select / Topbar widgets.
+        // Trade-off: tighter than the 44×44 mobile touch ideal, but the
+        // operator asked for a uniform compact UI across the whole console.
+        default: 'h-8 px-3 py-1 text-sm',
+        sm:      'h-7 px-2.5 py-1 text-xs',
+        lg:      'h-9 px-5',
+        icon:    'h-8 w-8',
       },
     },
     defaultVariants: {

@@ -42,6 +42,8 @@ import memosEn from './locales/en/memos.json'
 import memosZh from './locales/zh/memos.json'
 import memoryEn from './locales/en/memory.json'
 import memoryZh from './locales/zh/memory.json'
+import skillsEn from './locales/en/skills.json'
+import skillsZh from './locales/zh/skills.json'
 import workspaceEn from './locales/en/workspace.json'
 import workspaceZh from './locales/zh/workspace.json'
 import observabilityEn from './locales/en/observability.json'
@@ -54,13 +56,13 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn, workspace: workspaceEn, observability: observabilityEn, settings: settingsEn },
-      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh, workspace: workspaceZh, observability: observabilityZh, settings: settingsZh },
+      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn, skills: skillsEn, workspace: workspaceEn, observability: observabilityEn, settings: settingsEn },
+      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh, skills: skillsZh, workspace: workspaceZh, observability: observabilityZh, settings: settingsZh },
     },
     lng: detectInitialLang(),
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory', 'workspace', 'observability', 'settings'],
+    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory', 'skills', 'workspace', 'observability', 'settings'],
     defaultNS: 'common',
     interpolation: { escapeValue: false }, // React already escapes
     react: { useSuspense: false },         // we render skeletons ourselves

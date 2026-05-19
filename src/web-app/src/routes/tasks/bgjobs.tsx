@@ -148,7 +148,7 @@ export default function BgjobsRoute(): JSX.Element {
           value={rootFilter ?? '__any__'}
           onValueChange={(v) => setRoot(v === '__any__' ? null : v)}
         >
-          <SelectTrigger id="root-filter" className="h-9 w-[180px]">
+          <SelectTrigger id="root-filter" className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

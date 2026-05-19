@@ -224,7 +224,7 @@ export default function MemosRoute(): JSX.Element {
               value={qDraft}
               onChange={(e) => setQDraft(e.target.value)}
               placeholder={t('search.placeholder')}
-              className="h-9 pl-7"
+              className="pl-7"
             />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-end">
@@ -236,7 +236,7 @@ export default function MemosRoute(): JSX.Element {
                 id="who-filter"
                 value={who}
                 onChange={(e) => patchParams({ who: e.target.value || null })}
-                className="h-9 w-36"
+                className="w-36"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -247,7 +247,7 @@ export default function MemosRoute(): JSX.Element {
                 id="what-filter"
                 value={what}
                 onChange={(e) => patchParams({ what: e.target.value || null })}
-                className="h-9 w-36"
+                className="w-36"
               />
             </div>
           </div>

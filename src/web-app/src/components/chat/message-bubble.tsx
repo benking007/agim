@@ -42,7 +42,7 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'max-w-[85%] sm:max-w-[75%] rounded-lg px-4 py-3 shadow-sm',
+          'max-w-[85%] sm:max-w-[75%] rounded-lg px-3 py-2 shadow-sm',
           isUser
             ? 'bg-accent text-accent-fg'
             : 'bg-surface text-text border border-border',

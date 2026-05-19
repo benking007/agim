@@ -1,12 +1,15 @@
 /**
- * /memory/skills — read-only browse of SKILL.md files the host
+ * /skills/installed — read-only browse of SKILL.md files the host
  * agents pick up. Search + category filter; row click opens a
  * detail Dialog with the raw SKILL.md content.
  *
- * No markdown rendering for now — we'd need marked + DOMPurify to
+ * Moved from /memory/skills in 2026-05 so skills sit at the top
+ * level. The render logic is unchanged from the previous home —
+ * only the `useTranslation` namespace and i18n key prefix shifted.
+ *
+ * No markdown rendering for now: we'd need marked + DOMPurify to
  * safely render arbitrary skill content, and the raw text is what
- * the host agent reads anyway. Future: lazy-load marked when the
- * user opens a detail.
+ * the host agent reads anyway.
  */
 
 import { useMemo, useState } from 'react'
@@ -36,8 +39,8 @@ import { useSkills, useSkillDetail } from '@/hooks/use-skills'
 import type { SkillMeta } from '@/types/api'
 import { cn } from '@/lib/utils'
 
-export default function MemorySkillsRoute(): JSX.Element {
-  const { t } = useTranslation(['memory', 'common'])
+export default function SkillsInstalledRoute(): JSX.Element {
+  const { t } = useTranslation(['skills', 'common'])
   const { data, isLoading, isFetching, refetch } = useSkills()
   const skills = data?.skills ?? []
   const sources = data?.sources
@@ -65,7 +68,6 @@ export default function MemorySkillsRoute(): JSX.Element {
     })
   }, [skills, q, cat])
 
-  /** Group filtered by category for the rendered list. */
   const grouped = useMemo(() => {
     const m = new Map<string, SkillMeta[]>()
     for (const s of filtered) {
@@ -80,7 +82,7 @@ export default function MemorySkillsRoute(): JSX.Element {
     <div className="mx-auto flex max-w-5xl flex-col gap-4">
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">{t('skills.title')}</h1>
+          <h1 className="text-xl font-semibold">{t('installed.title')}</h1>
           <Button
             variant="ghost"
             size="sm"
@@ -93,52 +95,48 @@ export default function MemorySkillsRoute(): JSX.Element {
             <span className="hidden sm:inline">{t('actions.refresh', { ns: 'common' })}</span>
           </Button>
         </div>
-        <p className="text-sm text-text-dim">{t('skills.subtitle')}</p>
+        <p className="text-sm text-text-dim">{t('installed.subtitle')}</p>
       </header>
 
-      {/* Source dirs reminder */}
       {sources && (
         <div className="rounded-md border border-border bg-surface p-3 text-xs text-text-dim">
-          <div className="font-medium text-text mb-1">{t('skills.sources.title')}</div>
+          <div className="font-medium text-text mb-1">{t('installed.sources.title')}</div>
           <div className="font-mono">
-            <div>{t('skills.sources.claude')}: <span className="text-text">{sources.claude}</span></div>
-            <div>{t('skills.sources.opencode')}: <span className="text-text">{sources.opencode}</span></div>
+            <div>{t('installed.sources.claude')}: <span className="text-text">{sources.claude}</span></div>
+            <div>{t('installed.sources.opencode')}: <span className="text-text">{sources.opencode}</span></div>
           </div>
         </div>
       )}
 
-      {/* Filter row */}
       {skills.length > 0 && (
         <div className="flex flex-wrap items-end gap-2">
           <div className="relative flex-1 min-w-[180px] max-w-md">
             <Label htmlFor="skill-search" className="text-xs text-text-dim">
-              {t('skills.filter.search')}
+              {t('installed.filter.search')}
             </Label>
             <Search className="pointer-events-none absolute left-2 bottom-2 h-4 w-4 text-text-muted" />
             <Input
               id="skill-search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="h-9 pl-7 mt-1"
+              className="pl-7 mt-1"
             />
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="skill-cat" className="text-xs text-text-dim">
-              {t('skills.filter.category')}
+              {t('installed.filter.category')}
             </Label>
             <Select
               value={cat ?? '__any__'}
               onValueChange={(v) => setCat(v === '__any__' ? null : v)}
             >
-              <SelectTrigger id="skill-cat" className="h-9 w-[160px]">
+              <SelectTrigger id="skill-cat" className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__any__">{t('skills.filter.categoryAny')}</SelectItem>
+                <SelectItem value="__any__">{t('installed.filter.categoryAny')}</SelectItem>
                 {categories.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -146,14 +144,13 @@ export default function MemorySkillsRoute(): JSX.Element {
         </div>
       )}
 
-      {/* List */}
       {isLoading ? (
         <div className="h-48 w-full rounded-md bg-surface-2 animate-pulse" />
       ) : skills.length === 0 ? (
         <EmptyState
           icon={<BookOpen />}
-          title={t('skills.empty.title')}
-          description={t('skills.empty.description')}
+          title={t('installed.empty.title')}
+          description={t('installed.empty.description')}
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -178,7 +175,9 @@ export default function MemorySkillsRoute(): JSX.Element {
                         <span className="text-text-muted text-xs font-mono">{s.slug}</span>
                         <div className="ml-auto flex gap-1">
                           {s.agents.map((a) => (
-                            <Badge key={a} variant="secondary">{t(`skills.agentTag.${a}`, { defaultValue: a })}</Badge>
+                            <Badge key={a} variant="secondary">
+                              {t(`installed.agentTag.${a}`, { defaultValue: a })}
+                            </Badge>
                           ))}
                         </div>
                       </div>
@@ -206,7 +205,7 @@ interface SkillDetailDialogProps {
 }
 
 function SkillDetailDialog({ slug, onOpenChange }: SkillDetailDialogProps): JSX.Element {
-  const { t } = useTranslation('memory')
+  const { t } = useTranslation('skills')
   const { data, isLoading, isError } = useSkillDetail(slug)
   return (
     <Dialog open={slug != null} onOpenChange={onOpenChange}>
@@ -216,16 +215,18 @@ function SkillDetailDialog({ slug, onOpenChange }: SkillDetailDialogProps): JSX.
           {data && <DialogDescription>{data.description}</DialogDescription>}
         </DialogHeader>
         {isLoading ? (
-          <div className="text-sm text-text-dim">{t('skills.detail.loading')}</div>
+          <div className="text-sm text-text-dim">{t('installed.detail.loading')}</div>
         ) : isError ? (
-          <div className="text-sm text-danger">{t('skills.detail.loadFailed')}</div>
+          <div className="text-sm text-danger">{t('installed.detail.loadFailed')}</div>
         ) : data ? (
           <>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-text-dim">{t('skills.detail.agentsLabel')}</dt>
+              <dt className="text-text-dim">{t('installed.detail.agentsLabel')}</dt>
               <dd className="flex gap-1">
                 {data.agents.map((a) => (
-                  <Badge key={a} variant="secondary">{t(`skills.agentTag.${a}`, { defaultValue: a })}</Badge>
+                  <Badge key={a} variant="secondary">
+                    {t(`installed.agentTag.${a}`, { defaultValue: a })}
+                  </Badge>
                 ))}
               </dd>
               <dt className="text-text-dim">slug</dt>

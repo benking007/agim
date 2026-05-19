@@ -75,7 +75,7 @@ export default function ObservabilityTopNRoute(): JSX.Element {
         <div className="flex flex-col gap-1">
           <Label htmlFor="dim" className="text-xs text-text-dim">{t('topn.filter.dim')}</Label>
           <Select value={dim} onValueChange={(v) => patchParams({ dim: v === 'agent' ? null : v })}>
-            <SelectTrigger id="dim" className="h-9 w-32">
+            <SelectTrigger id="dim" className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -88,7 +88,7 @@ export default function ObservabilityTopNRoute(): JSX.Element {
         <div className="flex flex-col gap-1">
           <Label htmlFor="by" className="text-xs text-text-dim">{t('topn.filter.metric')}</Label>
           <Select value={by} onValueChange={(v) => patchParams({ by: v === 'cost' ? null : v })}>
-            <SelectTrigger id="by" className="h-9 w-36">
+            <SelectTrigger id="by" className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

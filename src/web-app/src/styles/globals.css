@@ -64,20 +64,26 @@
   /* iOS / Android safe-area insets. Pages that pin chrome to the edges
      (topbar, chat input bar) compose these. Tailwind doesn't ship safe
      utilities out of the box; defining them here keeps the project
-     plugin-free. */
-  .pt-safe { padding-top: max(0px, env(safe-area-inset-top)); }
-  .pb-safe { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
-  .pl-safe { padding-left: max(0px, env(safe-area-inset-left)); }
-  .pr-safe { padding-right: max(0px, env(safe-area-inset-right)); }
+     plugin-free.
+     2026-05-19: every direction adds a 0.5rem (8px) buffer on top of
+     env(safe-area-inset-*). Without it the topbar / input bar sits
+     flush against iOS Safari's URL-bar chrome (which is OUTSIDE the
+     safe-area zone) the moment the user taps and the URL bar slides
+     back in. The buffer is small enough that desktop / non-mobile
+     contexts (where inset is 0) just get a sensible 8px margin. */
+  .pt-safe { padding-top: calc(env(safe-area-inset-top) + 0.5rem); }
+  .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
+  .pl-safe { padding-left: calc(env(safe-area-inset-left) + 0.5rem); }
+  .pr-safe { padding-right: calc(env(safe-area-inset-right) + 0.5rem); }
   .px-safe {
-    padding-left: max(0px, env(safe-area-inset-left));
-    padding-right: max(0px, env(safe-area-inset-right));
+    padding-left: calc(env(safe-area-inset-left) + 0.5rem);
+    padding-right: calc(env(safe-area-inset-right) + 0.5rem);
   }
   .py-safe {
-    padding-top: max(0px, env(safe-area-inset-top));
-    padding-bottom: max(0px, env(safe-area-inset-bottom));
+    padding-top: calc(env(safe-area-inset-top) + 0.5rem);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
   }
-  .mb-safe { margin-bottom: max(0px, env(safe-area-inset-bottom)); }
+  .mb-safe { margin-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
 
   /* Dynamic viewport height — honors the actual visible viewport on
      mobile (excluding URL bar + soft keyboard) where supported, with a
@@ -85,11 +91,13 @@
   .h-dvh   { height: 100vh; height: 100dvh; }
   .min-h-dvh { min-height: 100vh; min-height: 100dvh; }
 
-  /* Ensure touch targets meet 44×44 hit-target guidance. Apply via
-     `tap-target` to icon buttons whose visual padding would otherwise
-     make them too small for thumbs. */
+  /* Per-operator request (2026-05-19): uniform 32px compact rhythm
+     across the whole console. Was 44×44 (mobile touch ideal) but
+     made sub-tabs / pills visibly chunkier than every other control.
+     Trade-off: tighter than the WCAG 2.5.5 (44px) touch target, but
+     matches h-8 Input / Select / Button rhythm. */
   .tap-target {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 32px;
+    min-width: 32px;
   }
 }

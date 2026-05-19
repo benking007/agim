@@ -160,7 +160,7 @@ export default function SettingsAdminsRoute(): JSX.Element {
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
               placeholder="wechat"
-              className="h-9 font-mono text-xs"
+              className="font-mono text-xs"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -172,7 +172,7 @@ export default function SettingsAdminsRoute(): JSX.Element {
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               placeholder="wxid_abc123"
-              className="h-9 font-mono text-xs"
+              className="font-mono text-xs"
             />
           </div>
           <Button

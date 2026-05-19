@@ -27,6 +27,7 @@ import { getViewerConfig } from './viewer-config.js'
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
+import { handleWebCommand } from './commands/web.js'
 import { logInvocation } from './audit-log.js'
 import { circuitBreaker } from './circuit-breaker.js'
 import { classifyIntent } from './intent.js'
@@ -155,6 +156,8 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'sessions') return { type: 'sessions', args: rest }
   if (cmd === 'approval' || cmd === 'auto') return { type: 'approval', args: rest }
   if (cmd === 'plan') return { type: 'plan', args: rest }
+  // /web — print the web console URL (Viewer's public base URL or cloudflared tunnel).
+  if (cmd === 'web' || cmd === 'console' || cmd === 'url') return { type: 'web', args: rest }
   // Convenience aliases that map to /plan on|off without typing the subcommand.
   if (cmd === 'plan-on' || cmd === 'planon') return { type: 'plan', args: 'on' }
   if (cmd === 'plan-off' || cmd === 'planoff') return { type: 'plan', args: 'off' }
@@ -252,6 +255,10 @@ export async function routeMessage(
 
     case 'plan': {
       return handlePlanCommand(parsed.args, ctx)
+    }
+
+    case 'web': {
+      return handleWebCommand(parsed.args, ctx)
     }
 
     case 'service': {

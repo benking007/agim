@@ -7,9 +7,9 @@
  * user is held in URL state (?user=) so sub-tabs read it via
  * useSearchParams.
  *
- * Sub-tabs in PR-16a: only Facts is wired. Persona / Vector /
- * Skills land in PR-16b/c (same `mounted` flag pattern as /tasks
- * used).
+ * Sub-tabs: facts / persona / vector. Skills used to live here too
+ * but was promoted to its own top-level /skills tab in 2026-05 — the
+ * router keeps a redirect for old /memory/skills bookmarks.
  */
 
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
@@ -28,7 +28,7 @@ const SUB_TABS: SubTab[] = [
   { to: 'facts',   i18nKey: 'tabs.facts',   mounted: true },
   { to: 'persona', i18nKey: 'tabs.persona', mounted: true },
   { to: 'vector',  i18nKey: 'tabs.vector',  mounted: true },
-  { to: 'skills',  i18nKey: 'tabs.skills',  mounted: true },
+  // 'skills' was here; promoted to top-level /skills in 2026-05.
 ]
 
 export default function MemoryLayout(): JSX.Element {

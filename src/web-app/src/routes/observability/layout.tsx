@@ -44,7 +44,7 @@ export default function ObservabilityLayout(): JSX.Element {
         <div className="mx-auto flex max-w-7xl items-center gap-3">
           <span className="text-sm text-text-dim shrink-0">{t('window.label')}</span>
           <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
-            <SelectTrigger className="h-9 w-32">
+            <SelectTrigger className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

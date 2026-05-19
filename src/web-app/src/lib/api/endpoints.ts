@@ -52,6 +52,7 @@ import type {
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListSkillsResponse,
+  RemoteHotSkillsResponse,
   SkillDetail,
   VectorActionResponse,
   VectorClearResponse,
@@ -370,9 +371,10 @@ export const api = {
     client.get<SkillDetail>(`/api/skills/${encodeURIComponent(slug)}`),
 
   /** GET /api/skills/remote/hot — proxy to skillhub.cn with 5min
-   *  cache. Loose response since the upstream shape changes. */
+   *  server cache. Per-entry fields are optional in case the upstream
+   *  shape changes. */
   getSkillsRemoteHot: () =>
-    client.get<Record<string, unknown>>('/api/skills/remote/hot'),
+    client.get<RemoteHotSkillsResponse>('/api/skills/remote/hot'),
 
   /** GET /api/subtasks */
   listSubtasks: (query: ListSubtasksQuery) =>

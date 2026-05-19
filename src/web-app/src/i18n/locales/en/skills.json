@@ -1,0 +1,67 @@
+{
+  "pageTitle": "Skills",
+  "subnav": {
+    "installed": "Installed",
+    "hot":       "Hot on skillhub.cn"
+  },
+  "installed": {
+    "title":    "Installed skills",
+    "subtitle": "SKILL.md files the host agents pick up from ~/.claude/skills/ + ~/.config/opencode/skills/.",
+    "empty": {
+      "title":       "No skills",
+      "description": "Drop a SKILL.md with `name` + `description` frontmatter under a configured root and refresh."
+    },
+    "filter": {
+      "search":       "Search",
+      "category":     "Category",
+      "categoryAny":  "Any category"
+    },
+    "sources": {
+      "title":    "Sources",
+      "claude":   "Claude Code",
+      "opencode": "opencode"
+    },
+    "agentTag": {
+      "claude":   "claude",
+      "opencode": "opencode"
+    },
+    "detail": {
+      "loading":       "Loading SKILL.md…",
+      "loadFailed":    "Failed to load skill detail",
+      "metadataLabel": "Metadata",
+      "agentsLabel":   "Picked up by"
+    }
+  },
+  "hot": {
+    "title":      "Hot on skillhub.cn",
+    "subtitle":   "Live top entries from skillhub.cn (cached 5 min on the server). Click a row for the install commands. agim never auto-runs installs — you copy the command and paste into shell or IM.",
+    "openHub":    "Open skillhub.cn",
+    "loading":    "Loading…",
+    "empty":      "No data",
+    "cached":     "cache hit",
+    "stale":      "upstream unreachable — serving stale",
+    "updatedAt":  "updated {{at}}",
+    "col": {
+      "slug":     "slug",
+      "name":     "Name / description",
+      "stars":    "stars",
+      "installs": "installs"
+    },
+    "detail": {
+      "version":      "Version",
+      "category":     "Category",
+      "stars":        "Stars",
+      "installs":     "Installs",
+      "downloads":    "Downloads",
+      "howInstall":   "How to install (pick one; agim never auto-runs)",
+      "copy":         "Copy",
+      "copied":       "Copied",
+      "label": {
+        "cliInstall": "On host (recommended)",
+        "cliSearch":  "Dry-run first",
+        "imAsk":      "Ask an IM agent"
+      },
+      "hint":         "The two CLI commands need skillhub CLI installed on the host first. See docs/skills.md or skillhub.cn."
+    }
+  }
+}

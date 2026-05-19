@@ -246,7 +246,7 @@ export default function MemoryFactsRoute(): JSX.Element {
             id="search"
             value={qDraft}
             onChange={(e) => setQDraft(e.target.value)}
-            className="h-9 pl-7 mt-1"
+            className="pl-7 mt-1"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -257,7 +257,7 @@ export default function MemoryFactsRoute(): JSX.Element {
             value={cat ?? '__any__'}
             onValueChange={(v) => patchParams({ cat: v === '__any__' ? null : v })}
           >
-            <SelectTrigger id="category" className="h-9 w-[140px]">
+            <SelectTrigger id="category" className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -15,7 +15,7 @@ export type ChatOutgoing =
   | { type: 'message'; text: string; agent?: string }
   | { type: 'switch-agent'; agent: string }
   | { type: 'get-agents' }
-  | { type: 'get-history' }
+  | { type: 'get-history'; threadId?: string }
   /** Clear messages + per-agent CLI bindings + auto-allow rules. The
    *  server replies with an empty `history` so the UI repaints clear. */
   | { type: 'new-conversation' }

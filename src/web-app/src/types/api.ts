@@ -662,6 +662,33 @@ export interface SkillDetail extends SkillMeta {
   content: string
 }
 
+/** One entry in the skillhub.cn hot list. The upstream shape changes
+ *  over time and not every field is guaranteed; everything is narrowed
+ *  to `?` so a missing column doesn't crash the row renderer. */
+export interface RemoteSkill {
+  slug: string
+  name?: string
+  description?: string
+  version?: string
+  category?: string
+  stars?: number
+  installs?: number
+  downloads?: number
+}
+
+/** Response shape of GET /api/skills/remote/hot — proxy of
+ *  https://api.skillhub.cn/api/v1/showcase/hot with 5-min server cache.
+ *  `stale` is set when the upstream call failed and we returned the
+ *  last cached payload anyway. */
+export interface RemoteHotSkillsResponse {
+  skills: RemoteSkill[]
+  cached: boolean
+  fetchedAt: number
+  stale?: boolean
+  upstreamStatus?: number
+  upstreamError?: string
+}
+
 /* ============================================================
  * Workspace files — agent CWD browser + editor.
  * ============================================================ */

@@ -26,7 +26,7 @@ export function ThemeAndLangControls(): JSX.Element {
   return (
     <>
       <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
-        <SelectTrigger className="h-8 w-20 text-xs" aria-label={t('lang.label')}>
+        <SelectTrigger className="h-7 w-16 sm:w-20 text-xs" aria-label={t('lang.label')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -35,7 +35,7 @@ export function ThemeAndLangControls(): JSX.Element {
         </SelectContent>
       </Select>
       <Select value={theme} onValueChange={(v) => setTheme(v as ThemeMode)}>
-        <SelectTrigger className="h-8 w-24 text-xs sm:w-28" aria-label={t('theme.label')}>
+        <SelectTrigger className="h-7 w-16 text-xs sm:w-28" aria-label={t('theme.label')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

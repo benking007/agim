@@ -1,0 +1,67 @@
+{
+  "pageTitle": "技能",
+  "subnav": {
+    "installed": "已安装",
+    "hot":       "skillhub.cn 热门"
+  },
+  "installed": {
+    "title":    "已安装的技能",
+    "subtitle": "宿主 Agent 从 ~/.claude/skills/ + ~/.config/opencode/skills/ 中识别的 SKILL.md 文件。",
+    "empty": {
+      "title":       "暂无技能",
+      "description": "在已配置的 root 目录下放一个带 `name` + `description` frontmatter 的 SKILL.md，然后刷新。"
+    },
+    "filter": {
+      "search":       "搜索",
+      "category":     "类别",
+      "categoryAny":  "全部类别"
+    },
+    "sources": {
+      "title":    "源目录",
+      "claude":   "Claude Code",
+      "opencode": "opencode"
+    },
+    "agentTag": {
+      "claude":   "claude",
+      "opencode": "opencode"
+    },
+    "detail": {
+      "loading":       "正在加载 SKILL.md…",
+      "loadFailed":    "加载技能详情失败",
+      "metadataLabel": "元数据",
+      "agentsLabel":   "可用于"
+    }
+  },
+  "hot": {
+    "title":      "skillhub.cn 热门",
+    "subtitle":   "实时拉取 skillhub.cn 热门下载（服务端 5 分钟缓存）。点击任意条目查看安装命令。agim 不会自动跑安装——命令复制后由你贴去 shell 或 IM 触发。",
+    "openHub":    "前往 skillhub.cn",
+    "loading":    "正在加载…",
+    "empty":      "暂无数据",
+    "cached":     "缓存命中",
+    "stale":      "上游不可达，使用旧数据",
+    "updatedAt":  "更新于 {{at}}",
+    "col": {
+      "slug":     "slug",
+      "name":     "名称 / 描述",
+      "stars":    "stars",
+      "installs": "installs"
+    },
+    "detail": {
+      "version":      "版本",
+      "category":     "类别",
+      "stars":        "stars",
+      "installs":     "installs",
+      "downloads":    "downloads",
+      "howInstall":   "安装方式（任选一个；agim 不会自动跑）",
+      "copy":         "复制",
+      "copied":       "已复制",
+      "label": {
+        "cliInstall": "Host 上跑（推荐）",
+        "cliSearch":  "先查再装",
+        "imAsk":      "在 IM 里让 agent 装"
+      },
+      "hint":         "前两条要先在 host 上安装 skillhub CLI。详见 docs/skills.md 或 skillhub.cn。"
+    }
+  }
+}

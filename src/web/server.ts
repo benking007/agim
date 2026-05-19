@@ -873,9 +873,16 @@ export async function startWebServer(options: {
           if (msg && msg.type === 'approval-action') {
             const actionData: string = String(msg.data || '')
             const messageId: string = String(msg.messageId || '')
+            // Use `client.id` (mutable; updated on session rekey) — not
+            // the original `clientId` const — so the threadId we hand
+            // to the bus matches the threadId the bus stamped on the
+            // pending approval request. Without this, a session that
+            // was rekeyed via `get-history` reports the stale id and
+            // the bus can't find the open req to resolve.
+            const liveId = client.id
             webLog.info({
               event: 'approval.web.click_received',
-              clientId, data: actionData, messageId,
+              clientId: liveId, data: actionData, messageId,
               handlerBound: !!webButtonHandler,
             })
             if (!actionData || !messageId) {
@@ -887,7 +894,7 @@ export async function startWebServer(options: {
               // failure mode that PR-A's fix patches. Tell the user and the
               // operator (via log) instead of dropping the click.
               const why = 'approval handler not bound (router not installed?). Restart agim to rebind.'
-              webLog.warn({ event: 'approval.web.no_handler', clientId, data: actionData, messageId }, why)
+              webLog.warn({ event: 'approval.web.no_handler', clientId: liveId, data: actionData, messageId }, why)
               sendToClient(ws, { type: 'error', message: why })
               return
             }
@@ -897,33 +904,50 @@ export async function startWebServer(options: {
               // ack is a no-op resolving to the in-page status the page itself
               // chose to render after click.
               await webButtonHandler({
-                data: actionData, threadId: clientId, userId: `web:${clientId}`,
+                data: actionData, threadId: liveId, userId: `web:${liveId}`,
                 userDisplay: 'Web', messageId, ack: async () => {},
               })
-              webLog.info({ event: 'approval.web.click_resolved', clientId, data: actionData })
+              webLog.info({ event: 'approval.web.click_resolved', clientId: liveId, data: actionData })
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err)
-              webLog.error({ event: 'approval.web.click_failed', clientId, data: actionData, err: errMsg })
+              webLog.error({ event: 'approval.web.click_failed', clientId: liveId, data: actionData, err: errMsg })
               sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
             }
             return
           }
-          await handleClientMessage(client, msg, options.defaultAgent)
+          // Pass an onRekey callback so handleClientMessage can keep
+          // the `clients` map in sync when a browser refresh resumes
+          // with its persisted threadId. Otherwise the map stays keyed
+          // by the WS-assigned id, and the web messenger's outbound
+          // approval-card lookup misses the live client.
+          await handleClientMessage(client, msg, options.defaultAgent, (oldId, newId) => {
+            // Only reassign if we actually owned `oldId` — defensive
+            // against the (impossible-but-cheap-to-guard) case of two
+            // clients colliding on the rekey path.
+            if (clients.get(oldId) === client) clients.delete(oldId)
+            clients.set(newId, client)
+          })
         } catch (err) {
-          webLog.error({ clientId, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
+          webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
           sendToClient(ws, { type: 'error', message: 'Invalid message format' })
         }
       })
     })
 
     ws.on('close', () => {
-      webLog.info({ clientId }, 'Client disconnected')
-      clients.delete(clientId)
+      // Use `client.id` rather than the closure-captured `clientId` so
+      // we delete whichever key the map is actually using after a
+      // potential rekey. The map maintenance on rekey deletes the old
+      // key, so this just covers the live one.
+      const liveId = client.id
+      webLog.info({ clientId: liveId }, 'Client disconnected')
+      clients.delete(liveId)
     })
 
     ws.on('error', (err) => {
-      webLog.error({ clientId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
-      clients.delete(clientId)
+      const liveId = client.id
+      webLog.error({ clientId: liveId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
+      clients.delete(liveId)
     })
   })
 
@@ -3733,6 +3757,23 @@ async function handleArtifactsFile(
 }
 
 // ─── v1.1.10 auth handlers ───
+/** Build the cookie attribute string. When the request looks HTTPS
+ *  (req.socket.encrypted OR x-forwarded-proto=https from a reverse
+ *  proxy / cloudflared / nginx), include `Secure`. Without `Secure`,
+ *  modern Chrome / Safari downgrade or REJECT cookies with
+ *  `SameSite=Strict` on HTTPS pages, which manifests as "logged in
+ *  works on the same tab once, but a refresh kicks back to /login"
+ *  — the symptom the operator reported 2026-05-19.
+ *  Also relax SameSite=Strict → Lax so following an external link
+ *  back to the dashboard doesn't lose the session. */
+function buildAuthCookie(req: IncomingMessage, token: string | null, maxAgeSec: number): string {
+  const isHttps = (req.socket as { encrypted?: boolean }).encrypted === true
+    || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https'
+  const secure = isHttps ? '; Secure' : ''
+  const value = token === null ? '' : encodeURIComponent(token)
+  return `agim_token=${value}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax${secure}`
+}
+
 async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const body = await readBody(req, res)
@@ -3742,13 +3783,11 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
     if (!_tokenModule) { sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' }); return }
     const id = _tokenModule.verifyToken(token)
     if (!id) { sendError(res, 401, 'AUTH_INVALID', { message: 'invalid token' }); return }
-    // 30-day cookie, Path=/, SameSite=Strict. Not HttpOnly so the page JS
-    // can also read it back if needed (e.g. to attach Authorization header
-    // on fetch — though the cookie alone suffices).
+    // 30-day cookie. SameSite=Lax + conditional Secure — see buildAuthCookie.
     const maxAge = 30 * 24 * 60 * 60
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Set-Cookie': `agim_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Strict`,
+      'Set-Cookie': buildAuthCookie(req, token, maxAge),
     })
     res.end(JSON.stringify({ ok: true, tokenId: id }))
   } catch (err) {
@@ -3756,10 +3795,10 @@ async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-function handleAuthLogout(_req: IncomingMessage, res: ServerResponse): void {
+function handleAuthLogout(req: IncomingMessage, res: ServerResponse): void {
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Set-Cookie': 'agim_token=; Path=/; Max-Age=0; SameSite=Strict',
+    'Set-Cookie': buildAuthCookie(req, null, 0),
   })
   res.end(JSON.stringify({ ok: true }))
 }
@@ -3846,10 +3885,19 @@ async function handleViewerTunnelStatus(_req: IncomingMessage, res: ServerRespon
  */
 async function handleClientMessage(
   client: ClientConnection,
-  msg: { type: string; text?: string; agent?: string },
-  defaultAgent: string
+  msg: { type: string; text?: string; agent?: string; threadId?: string },
+  defaultAgent: string,
+  /** Notify the caller that the client's id changed mid-handler so the
+   *  WS handler can keep its `clients` map keyed by the live id. Without
+   *  this the approval-card sender (which does clients.get(threadId))
+   *  silently misses the rekeyed client and the approval lands only in
+   *  the global /approvals tab. */
+  onRekey?: (oldId: string, newId: string) => void,
 ): Promise<void> {
-  const { ws, id: clientId } = client
+  const { ws } = client
+  // Read client.id fresh — `get-history` may rekey it mid-handler so the
+  // session lookup matches the client's persisted threadId.
+  let clientId = client.id
 
   switch (msg.type) {
     case 'message': {
@@ -3932,6 +3980,22 @@ async function handleClientMessage(
     }
 
     case 'get-history': {
+      // 2026-05-19: support client-supplied threadId so a browser refresh
+      // (or returning to the chat after a navigation) resumes the existing
+      // conversation instead of starting fresh. Client persists the id in
+      // localStorage; if it provides one, we treat it as the authoritative
+      // session key going forward. We update client.id (so subsequent
+      // `message` / `switch-agent` ops use the persisted thread) but leave
+      // the clients map alone — push-by-clientId is a separate code path
+      // that doesn't rely on the persisted id today.
+      const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
+      if (wantedThreadId && /^web-[A-Za-z0-9_-]{4,64}$/.test(wantedThreadId) && wantedThreadId !== clientId) {
+        const oldId = clientId
+        client.id = wantedThreadId
+        clientId = wantedThreadId
+        onRekey?.(oldId, wantedThreadId)
+        webLog.info({ clientId, oldId, event: 'web.session.rekey' }, 'WS client adopted persisted threadId')
+      }
       await sendSessionHistory(ws, clientId, defaultAgent)
       break
     }

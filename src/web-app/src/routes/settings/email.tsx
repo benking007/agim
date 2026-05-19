@@ -110,20 +110,22 @@ export default function SettingsEmailRoute(): JSX.Element {
   const env = envQuery.data?.env ?? {}
 
   const [draft, setDraft] = useState<Draft>(emptyDraft)
-  // Sync draft from server whenever a fresh env arrives (initial load
-  // + reveal toggle + post-save refetch). Local edits that diverge stay
-  // until the user Saves or Discards.
-  const [syncedHash, setSyncedHash] = useState<string>('')
+  // R11: sync on react-query refetch boundary (dataUpdatedAt change).
+  // The pre-R11 path compared JSON.stringify(draftFromEnv(env)) against
+  // a stored hash — when a background refetch returned identical-by-
+  // value but new-by-identity data, the hash matched (no-op) which was
+  // fine for that case, but a freshly-refetched env with even one
+  // changed value would overwrite the operator's local edits. The
+  // dataUpdatedAt number changes exactly once per fetch, so two
+  // separate edits can't trip the same sync twice.
+  const [syncedAt, setSyncedAt] = useState(0)
   useEffect(() => {
     if (!envQuery.data) return
-    const next = draftFromEnv(env)
-    const hash = JSON.stringify(next)
-    if (hash !== syncedHash) {
-      setDraft(next)
-      setSyncedHash(hash)
-    }
+    if (envQuery.dataUpdatedAt === syncedAt) return
+    setDraft(draftFromEnv(env))
+    setSyncedAt(envQuery.dataUpdatedAt)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envQuery.dataUpdatedAt])
+  }, [envQuery.data, envQuery.dataUpdatedAt])
 
   const isConfigured = !!(env.IMHUB_SMTP_HOST && env.IMHUB_SMTP_USER && env.IMHUB_SMTP_PASS)
 

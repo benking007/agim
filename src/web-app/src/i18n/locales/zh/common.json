@@ -3,6 +3,9 @@
   "actions": {
     "refresh": "刷新",
     "save": "保存",
+    "saving": "保存中…",
+    "discard": "放弃改动",
+    "unsavedChanges": "有未保存改动",
     "cancel": "取消",
     "delete": "删除",
     "edit": "编辑",

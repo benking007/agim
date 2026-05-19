@@ -17,8 +17,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Loader2, Network, Play, RefreshCcw, RotateCcw, Save, Square, X,
+  Loader2, Network, Play, RefreshCcw, RotateCcw, Square,
 } from 'lucide-react'
+import { DirtySaveBar } from '@/components/common/dirty-save-bar'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -303,31 +304,19 @@ function PortsCard(): JSX.Element {
         />
       </div>
 
-      {isDirty && (
-        <div className="flex items-center gap-2 border-t border-border px-4 py-3">
-          <Badge variant="warning">{t('service.ports.restartRequired')}</Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={onDiscard}
-            disabled={updateCfg.isPending}
-          >
-            <X className="h-4 w-4" />
-            {t('service.ports.discard')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void onSave()}
-            disabled={updateCfg.isPending || webInvalid || acpInvalid}
-          >
-            {updateCfg.isPending
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Save className="h-4 w-4" />}
-            {updateCfg.isPending ? t('service.ports.saving') : t('service.ports.save')}
-          </Button>
-        </div>
-      )}
+      <DirtySaveBar
+        dirty={isDirty}
+        saving={updateCfg.isPending}
+        saveDisabled={webInvalid || acpInvalid}
+        onSave={() => void onSave()}
+        onDiscard={onDiscard}
+        // Ports use a 'warning' badge (semantically "needs restart")
+        // rather than the default 'info' badge — pass a node.
+        hintNode={<Badge variant="warning">{t('service.ports.restartRequired')}</Badge>}
+        discardLabel={t('service.ports.discard')}
+        saveLabel={t('service.ports.save')}
+        savingLabel={t('service.ports.saving')}
+      />
     </section>
   )
 }

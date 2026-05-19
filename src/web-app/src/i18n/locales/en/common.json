@@ -3,6 +3,9 @@
   "actions": {
     "refresh": "Refresh",
     "save": "Save",
+    "saving": "Saving…",
+    "discard": "Discard",
+    "unsavedChanges": "Unsaved changes",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",

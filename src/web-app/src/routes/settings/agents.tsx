@@ -24,8 +24,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bot, Loader2, Network, Plus, RefreshCcw, Save, Search, Trash2, X,
+  Bot, Loader2, Network, Plus, RefreshCcw, Search, Trash2,
 } from 'lucide-react'
+import { DirtySaveBar } from '@/components/common/dirty-save-bar'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -225,29 +226,19 @@ export default function SettingsAgentsRoute(): JSX.Element {
             onChange={updateAcp}
           />
 
-          {/* Save bar */}
-          {isDirty && (
-            <div className="sticky bottom-0 flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 shadow-md">
-              <Badge variant="info">{t('agents.dirtyHint')}</Badge>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onDiscard}
-                disabled={updateCfg.isPending}
-              >
-                <X className="h-4 w-4" />
-                {t('agents.discard')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => void onSave()}
-                disabled={updateCfg.isPending}
-              >
-                {updateCfg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {updateCfg.isPending ? t('agents.saving') : t('agents.saveBtn')}
-              </Button>
-            </div>
-          )}
+          {/* Save bar — R11 converged on shared DirtySaveBar. */}
+          <DirtySaveBar
+            dirty={isDirty}
+            saving={updateCfg.isPending}
+            onSave={() => void onSave()}
+            onDiscard={onDiscard}
+            sticky
+            hint={t('agents.dirtyHint')}
+            discardLabel={t('agents.discard')}
+            saveLabel={t('agents.saveBtn')}
+            savingLabel={t('agents.saving')}
+            className="rounded-md border border-border shadow-md"
+          />
         </>
       )}
     </div>
@@ -310,9 +301,12 @@ function AgentRow({
 const AUTH_TYPES: ACPAuthType[] = ['none', 'apikey', 'bearer']
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
-/** Compare two ACP lists by value. Order matters because the backend
- *  preserves index identity (`existing.acpAgents[i]`) when merging
- *  masked tokens — reordering = mask drift risk. */
+/** Compare two ACP lists by value. Order is part of the value (the
+ *  operator-visible row order). R12 changed the backend's mask-restore
+ *  to match by `name` rather than array index, so a reorder no longer
+ *  swaps tokens — but the dirty check still wants to detect "user
+ *  dragged rows," so we keep order significance here. Auth is
+ *  normalised so `undefined` and `{type:'none'}` compare equal. */
 function acpEqual(a: ACPAgentConfig[], b: ACPAgentConfig[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {

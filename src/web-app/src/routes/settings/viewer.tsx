@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DirtySaveBar } from '@/components/common/dirty-save-bar'
 import {
   Select,
   SelectContent,
@@ -87,8 +88,8 @@ export default function SettingsViewerRoute(): JSX.Element {
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
       ) : (
         <>
-          <ViewerCard env={envQuery.data?.env ?? {}} />
-          <BaiduCard env={envQuery.data?.env ?? {}} />
+          <ViewerCard env={envQuery.data?.env ?? {}} envUpdatedAt={envQuery.dataUpdatedAt} />
+          <BaiduCard env={envQuery.data?.env ?? {}} envUpdatedAt={envQuery.dataUpdatedAt} />
         </>
       )}
     </div>
@@ -119,27 +120,28 @@ function viewerDraftFromEnv(env: Record<string, string>): ViewerDraft {
   }
 }
 
-function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
+function ViewerCard({
+  env,
+  envUpdatedAt,
+}: { env: Record<string, string>; envUpdatedAt: number }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const updateEnv = useUpdateEnv()
   const tunnelQuery = useViewerTunnel()
 
   const [draft, setDraft] = useState<ViewerDraft>(() => viewerDraftFromEnv(env))
-  const [syncedHash, setSyncedHash] = useState('')
-
-  // Sync draft when env changes (initial load + post-save refetch).
+  // R11: react-query's `dataUpdatedAt` increments only when a fetch
+  // produces a fresh data object (initial load, post-save refetch,
+  // explicit refetch). The pre-R11 `JSON.stringify(env)` hash also
+  // changed when react-query's background refetch returned an
+  // identical-by-content but new-by-identity object — which silently
+  // stomped the operator's local edits between page visits. Aligning
+  // on dataUpdatedAt + service.tsx's pattern is the fix.
+  const [syncedAt, setSyncedAt] = useState(0)
   useEffect(() => {
-    const next = viewerDraftFromEnv(env)
-    const hash = JSON.stringify(next)
-    if (hash !== syncedHash) {
-      setDraft(next)
-      setSyncedHash(hash)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.IMHUB_VIEWER_ENABLED, env.IMHUB_VIEWER_PUBLIC_BASE_URL,
-      env.IMHUB_VIEWER_TUNNEL_MODE, env.IMHUB_VIEWER_CHARS,
-      env.IMHUB_VIEWER_LINES, env.IMHUB_VIEWER_CODE_LINES,
-      env.IMHUB_VIEWER_MAX_PASTES])
+    if (envUpdatedAt === 0 || envUpdatedAt === syncedAt) return
+    setDraft(viewerDraftFromEnv(env))
+    setSyncedAt(envUpdatedAt)
+  }, [env, envUpdatedAt, syncedAt])
 
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
   const isDirty = useMemo(
@@ -329,31 +331,16 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
       </div>
 
       {/* Save bar */}
-      {isDirty && (
-        <div className="flex items-center gap-2 border-t border-border px-4 py-3">
-          <Badge variant="info">{t('viewerSettings.dirtyHint')}</Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={onDiscard}
-            disabled={updateEnv.isPending}
-          >
-            <X className="h-4 w-4" />
-            {t('viewerSettings.discard')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void onSave()}
-            disabled={updateEnv.isPending}
-          >
-            {updateEnv.isPending
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Save className="h-4 w-4" />}
-            {updateEnv.isPending ? t('viewerSettings.saving') : t('viewerSettings.save')}
-          </Button>
-        </div>
-      )}
+      <DirtySaveBar
+        dirty={isDirty}
+        saving={updateEnv.isPending}
+        onSave={() => void onSave()}
+        onDiscard={onDiscard}
+        hint={t('viewerSettings.dirtyHint')}
+        discardLabel={t('viewerSettings.discard')}
+        saveLabel={t('viewerSettings.save')}
+        savingLabel={t('viewerSettings.saving')}
+      />
     </section>
   )
 }
@@ -364,20 +351,23 @@ function isMasked(s: string): boolean {
   return /\*{3,}/.test(s)
 }
 
-function BaiduCard({ env }: { env: Record<string, string> }): JSX.Element {
+function BaiduCard({
+  env,
+  envUpdatedAt,
+}: { env: Record<string, string>; envUpdatedAt: number }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const updateEnv = useUpdateEnv()
 
   const currentAk = env.IMHUB_BAIDU_MAP_AK ?? ''
   const [draftAk, setDraftAk] = useState(currentAk)
-  const [syncedHash, setSyncedHash] = useState('')
-
+  // R11: same pattern as ViewerCard — sync on react-query refetch
+  // boundary (dataUpdatedAt change), not on string value equality.
+  const [syncedAt, setSyncedAt] = useState(0)
   useEffect(() => {
-    if (currentAk !== syncedHash) {
-      setDraftAk(currentAk)
-      setSyncedHash(currentAk)
-    }
-  }, [currentAk, syncedHash])
+    if (envUpdatedAt === 0 || envUpdatedAt === syncedAt) return
+    setDraftAk(currentAk)
+    setSyncedAt(envUpdatedAt)
+  }, [currentAk, envUpdatedAt, syncedAt])
 
   const isConfigured = !!currentAk
   // Treat masked echo as no-change. Operator either typed something

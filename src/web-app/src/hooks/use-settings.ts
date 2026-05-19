@@ -46,9 +46,16 @@ export const settingsKeys = {
 
 export function useEnv(opts: { reveal?: boolean } = {}) {
   const reveal = !!opts.reveal
+  // R11: staleTime keeps the masked + revealed caches warm across
+  // route hops. Without it, each `<EnvCard>` mount or Reveal toggle
+  // refetches /api/env and (with the JSON.stringify-hash sync pattern
+  // that R11 also fixes) could stomp the operator's local edits.
+  // 30s matches the global queryClient default; we set it explicitly
+  // so anyone reading useEnv sees the intent.
   return useQuery<EnvResponse>({
     queryKey: settingsKeys.env(reveal),
     queryFn: () => api.getEnv({ reveal }),
+    staleTime: 30_000,
   })
 }
 

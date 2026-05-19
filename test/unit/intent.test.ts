@@ -150,4 +150,23 @@ describe('classifyIntent', () => {
     expect(['opencode', 'claude-code', 'codex', 'copilot']).toContain(r.agent)
     expect(r.triggeredBy).not.toBe('default')
   })
+
+  it('defaultAgent === stickyAgent: sticky wins, no double-counted bias', () => {
+    // R13: regression lock for the `defaultAgent !== stickyAgent` guard
+    // in classifyIntent. When the operator's default equals the current
+    // sticky agent, the function must NOT credit a second +1 bias on
+    // top of the sticky's +3 — that would be cosmetically fine (sticky
+    // still wins) but would corrupt the score field used for
+    // observability (router.intent log line) and confuse the dirty
+    // edge cases in scoring tie-breaks if topic / keyword ever land
+    // on the sticky agent.
+    const r = classifyIntent('hello', 'codex', undefined, 'codex')
+    expect(r.agent).toBe('codex')
+    expect(r.triggeredBy).toBe('sticky')
+    // Sticky short-circuit returns early with score:0 — no scoring
+    // pass ran, so the defaultAgent bias path is unreachable. Verify
+    // we get the short-circuit shape (not the regular scoring path).
+    expect(r.score).toBe(0)
+    expect(r.reason).toBe('sticky lock (no classification)')
+  })
 })

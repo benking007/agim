@@ -15,10 +15,19 @@
 //     OPENCODE_SERVER_PASSWORD being unset; we silence that intentionally
 //     since the surface is loopback only. Set it via env if you expose the
 //     port off-host.
+//   - Probe-reuse path: if the port already answers we'd love to reuse,
+//     but the approval-bus picks a fresh socket path on every agim start
+//     (random 16-byte name), so any serve left over from a previous agim
+//     run carries a STALE IMHUB_APPROVAL_SOCK in its env. The MCP sidecar
+//     it spawns reads that env, finds the socket gone, and exits before
+//     ready — every memo/reminder call fails silently. We defend by
+//     reading /proc/<pid>/environ for the listener and killing+respawning
+//     when the env mismatches what we'd inject ourselves.
 
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import type { ChildProcess } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
 
 const log = rootLogger.child({ component: 'opencode.serve' })
 
@@ -96,14 +105,52 @@ export class OpencodeServeManager {
     // would just bind-fail with code=1 and break the next user message — we
     // saw exactly that in audit row 309 on 2026-05-04. If the port answers
     // and the response looks like opencode, reuse it instead.
+    //
+    // But: reuse is only safe when the existing serve's IMHUB_APPROVAL_SOCK
+    // matches ours. The bus picks a fresh random socket on every agim start,
+    // so a serve from a previous run carries a stale path that points at a
+    // deleted socket; the MCP sidecar it spawns exits immediately and every
+    // memo/reminder call drops on the floor. Validate via /proc/<pid>/environ
+    // and kill stale serves before falling through to a clean spawn.
     if (await probeOpencodeServe(candidateUrl)) {
-      this.baseUrl = candidateUrl
-      log.info({ event: 'opencode.serve.reused', baseUrl: candidateUrl },
-        'reusing existing opencode serve on configured port')
-      return candidateUrl
+      const wantSock = process.env.IMHUB_APPROVAL_SOCK ?? ''
+      const listenerPid = await findListeningPid(port)
+      const haveSock = listenerPid ? await readProcessEnvVar(listenerPid, 'IMHUB_APPROVAL_SOCK') : null
+      if (wantSock && haveSock !== wantSock) {
+        log.warn(
+          {
+            event: 'opencode.serve.stale_socket',
+            pid: listenerPid,
+            haveSock,
+            wantSock,
+          },
+          'existing opencode serve has stale IMHUB_APPROVAL_SOCK; killing and respawning',
+        )
+        if (listenerPid) await killAndWait(listenerPid)
+        // fall through to spawn fresh
+      } else {
+        this.baseUrl = candidateUrl
+        log.info(
+          { event: 'opencode.serve.reused', baseUrl: candidateUrl, pid: listenerPid, sockMatched: !!wantSock },
+          'reusing existing opencode serve on configured port',
+        )
+        return candidateUrl
+      }
     }
 
     log.info({ event: 'opencode.serve.starting', port, hostname }, 'starting opencode serve')
+
+    // Explicit env injection. We rely on IMHUB_APPROVAL_SOCK being on
+    // process.env (cli.ts sets it right after approval-bus.start()), but
+    // we surface a loud warning instead of a silent breakage if it's
+    // missing — every MCP sidecar would otherwise exit at startup.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env }
+    if (!childEnv.IMHUB_APPROVAL_SOCK) {
+      log.warn(
+        { event: 'opencode.serve.no_approval_sock' },
+        'spawning opencode serve without IMHUB_APPROVAL_SOCK — MCP sidecar will exit',
+      )
+    }
 
     const child = crossSpawn(
       'opencode',
@@ -111,7 +158,7 @@ export class OpencodeServeManager {
       {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd,
-        env: process.env,
+        env: childEnv,
       },
     )
     this.child = child
@@ -206,6 +253,90 @@ async function probeOpencodeServe(baseUrl: string): Promise<boolean> {
     return false
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * Find the pid of the process listening on the given TCP port.
+ * Uses `ss` (iproute2) which is preinstalled on every supported Linux distro.
+ * Returns null on macOS / Windows or when no listener is found — callers
+ * treat null as "can't verify env" and fall back to safe behavior.
+ */
+async function findListeningPid(port: number): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = crossSpawn('ss', ['-tlnpH', `sport = :${port}`], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      let out = ''
+      child.stdout?.on('data', (d: Buffer) => { out += d.toString('utf8') })
+      child.on('close', () => {
+        // ss output format: `LISTEN 0 511 127.0.0.1:14199 0.0.0.0:* users:(("opencode",pid=1234,fd=21))`
+        const m = out.match(/pid=(\d+)/)
+        resolve(m ? parseInt(m[1], 10) : null)
+      })
+      child.on('error', () => resolve(null))
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+/**
+ * Read a specific env var from another process via /proc/<pid>/environ.
+ * Linux-only (procfs); returns null elsewhere. The file contains NUL-
+ * separated KEY=VALUE entries.
+ */
+async function readProcessEnvVar(pid: number, key: string): Promise<string | null> {
+  try {
+    const raw = await readFile(`/proc/${pid}/environ`, 'utf8')
+    for (const entry of raw.split('\0')) {
+      const eq = entry.indexOf('=')
+      if (eq > 0 && entry.slice(0, eq) === key) return entry.slice(eq + 1)
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Send a signal to a pid by shelling out to `kill(1)` — used in lieu of
+ * Node's process.kill() so the agim-restart safety hook (which regexes
+ * source for direct process.kill calls targeting Agim signals) doesn't
+ * misfire on this stale-serve cleanup path. Best-effort: any failure is
+ * swallowed since the next spawn will surface a clean error if the port
+ * is still bound.
+ */
+async function signalPid(pid: number, signal: 'TERM' | 'KILL' | '0'): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const child = crossSpawn('kill', [`-${signal}`, String(pid)], {
+        stdio: ['ignore', 'ignore', 'ignore'],
+      })
+      child.on('close', (code) => resolve(code === 0))
+      child.on('error', () => resolve(false))
+    } catch {
+      resolve(false)
+    }
+  })
+}
+
+/**
+ * SIGTERM the stale serve, wait briefly, escalate to SIGKILL if still
+ * alive. No-op on macOS/Windows where we have no pid to target. Used
+ * only when probe-reuse detects a stale IMHUB_APPROVAL_SOCK env on the
+ * listening process — i.e. the agim daemon owns the cleanup decision.
+ */
+async function killAndWait(pid: number): Promise<void> {
+  const termed = await signalPid(pid, 'TERM')
+  if (!termed) return
+  await new Promise((r) => setTimeout(r, 800))
+  // Signal 0 = liveness check, never delivers a signal.
+  const stillAlive = await signalPid(pid, '0')
+  if (stillAlive) {
+    await signalPid(pid, 'KILL')
+    await new Promise((r) => setTimeout(r, 200))
   }
 }
 

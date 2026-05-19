@@ -73,7 +73,12 @@ function emptyDraft(): Draft {
   }
 }
 
-function normalizeSecure(raw: string | undefined): SecureMode {
+// R13: exported so the unit suite can lock the env-string → SecureMode
+// mapping without spinning up Radix Select (whose trigger label isn't
+// readable in jsdom). Mirrors the operator's mental model: anything
+// that reads as "yes/true/on" maps to true; "no/false/off" to false;
+// blank / unknown to auto (defer to port-based heuristic at send time).
+export function normalizeSecure(raw: string | undefined): SecureMode {
   const v = (raw ?? '').trim().toLowerCase()
   if (v === '1' || v === 'true' || v === 'yes')   return 'true'
   if (v === '0' || v === 'false' || v === 'no')   return 'false'

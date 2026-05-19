@@ -265,10 +265,18 @@ export function useChat(): UseChat {
       ws.send({ type: 'get-history', threadId })
       ws.send({ type: 'get-agents' })
     }
-    if (ws.status() === 'open') bootstrap()
-    else {
-      // Wait for OPEN to ask — subscribe a one-shot.
-      const off3 = ws.subscribe({
+    // R10: previously the open-branch returned a cleanup that only
+    // unsubscribed off1/off2, while the not-open branch returned a
+    // cleanup that ALSO unsubscribed the one-shot off3. Under
+    // StrictMode + route hops (/chat → /tasks → /chat) the off1/off2
+    // subscriptions leaked across remounts. Unify: always declare off3
+    // (no-op when we already saw 'open'), always return a single
+    // cleanup that drops all three.
+    let off3: () => void = () => {}
+    if (ws.status() === 'open') {
+      bootstrap()
+    } else {
+      off3 = ws.subscribe({
         type: 'status',
         fn: (s) => {
           if (s === 'open') {
@@ -277,14 +285,8 @@ export function useChat(): UseChat {
           }
         },
       })
-      return () => {
-        off1(); off2(); off3()
-      }
     }
-
-    return () => {
-      off1(); off2()
-    }
+    return () => { off1(); off2(); off3() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ws is module-singleton
   }, [])
 

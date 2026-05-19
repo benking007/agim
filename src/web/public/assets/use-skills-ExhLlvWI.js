@@ -1,2 +1,0 @@
-import{u as l}from"./useQuery-DEXY1lWr.js";import{q as t}from"./index-B0LvUFlx.js";const s={all:["skills"],list:["skills","list"],detail:e=>["skills","detail",e],remoteHot:["skills","remote","hot"]};function r(){return l({queryKey:s.list,queryFn:()=>t.listSkills()})}function u(e){return l({queryKey:s.detail(e??""),queryFn:()=>t.getSkillDetail(e),enabled:!!e})}function a(){return l({queryKey:s.remoteHot,queryFn:()=>t.getSkillsRemoteHot(),staleTime:6e4})}export{r as a,a as b,u};
-//# sourceMappingURL=use-skills-ExhLlvWI.js.map

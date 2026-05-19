@@ -1248,11 +1248,27 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         continue
       }
       if (key === 'acpAgents' && Array.isArray(val)) {
-        merged.acpAgents = (val as unknown[]).map((item: unknown, i: number) => {
+        // R12: match the existing entry by `name`, not by array index.
+        // The pre-R12 positional match silently restored the WRONG
+        // old token whenever the operator reordered agents in the UI
+        // (rows are draggable in /settings/agents): the masked token
+        // at the new position `i` mapped to whatever lived at `i` in
+        // the prior config, regardless of whether the same agent
+        // moved positions. Now: masked → look up the prior entry
+        // with the same `name` and reuse its token. Unknown name →
+        // leave the masked sentinel through validateConfig, which
+        // will reject it loudly (better than a silent wrong-token).
+        const existingByName = new Map(
+          (existing.acpAgents ?? []).map((a) => [a.name, a]),
+        )
+        merged.acpAgents = (val as unknown[]).map((item: unknown) => {
           const a = item as Record<string, unknown> | undefined
-          const old = existing.acpAgents?.[i]
-          if (a?.auth && typeof a.auth === 'object' && typeof (a.auth as Record<string, unknown>).token === 'string' && isMasked((a.auth as Record<string, unknown>).token as string)) {
-            return { ...a, auth: { ...(a.auth as Record<string, unknown>), token: old?.auth?.token } }
+          if (!a) return a
+          const name = typeof a.name === 'string' ? a.name : ''
+          const old = existingByName.get(name)
+          const auth = a.auth as Record<string, unknown> | undefined
+          if (auth && typeof auth.token === 'string' && isMasked(auth.token)) {
+            return { ...a, auth: { ...auth, token: old?.auth?.token } }
           }
           return a
         })
@@ -2155,18 +2171,48 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
 // `verify()`. Doesn't actually send mail. Returns { ok, message } on
 // success or { ok: false, error } with a clean error string. Operators
 // save first, then click "Test" — same UX as v1's settings page.
+//
+// R12: per-token rate limit. Each verify spends up to 22s of timeouts
+// (8 + 6 + 8). Without a gate, a leaked / shared token could open
+// dozens of parallel SMTP connections to the configured host. The
+// cooldown is per-tokenId, so multiple admins don't block each other,
+// and intentionally NOT shared across the SMTP host so a single user
+// can probe their own config back-to-back after they realise they
+// fat-fingered the port.
+const emailTestCooldown = new Map<string, number>()
+const EMAIL_TEST_COOLDOWN_MS = 30_000
+
 async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     // Drain body even though we don't use it, so the connection doesn't
     // stall under keep-alive.
     await readBody(req, res)
+
+    // Rate limit check. The R9 verifyClient path attaches _agimTokenId
+    // to upgraded requests; for REST checkAuth runs prior and the
+    // tokenId is verified but not retained. Re-extract here so we
+    // have a key. Loopback / IMHUB_WEB_AUTH=off → 'anon' (one shared
+    // bucket; fine for the local-CLI use case).
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+    const tok = extractToken(req, url)
+    const tokenId = (tok ? verifyTokenSync(tok) : null) ?? 'anon'
+    const last = emailTestCooldown.get(tokenId)
+    if (last !== undefined && Date.now() - last < EMAIL_TEST_COOLDOWN_MS) {
+      const waitSec = Math.ceil((EMAIL_TEST_COOLDOWN_MS - (Date.now() - last)) / 1000)
+      sendError(res, 429, 'RATE_LIMITED', {
+        detail: `Wait ${waitSec}s before testing SMTP again`,
+        extra: { retryAfterSec: waitSec },
+      })
+      return
+    }
+    emailTestCooldown.set(tokenId, Date.now())
+
     const host = process.env.IMHUB_SMTP_HOST?.trim()
     const user = process.env.IMHUB_SMTP_USER?.trim()
     const pass = process.env.IMHUB_SMTP_PASS
     if (!host || !user || !pass) {
       sendError(res, 400, 'EMAIL_NOT_CONFIGURED', {
         message: 'SMTP not configured (host / user / pass required)',
-        extra: { ok: false },
       })
       return
     }
@@ -2196,10 +2242,7 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    sendError(res, 400, 'EMAIL_VERIFY_FAILED', {
-      detail: msg,
-      extra: { ok: false },
-    })
+    sendError(res, 400, 'EMAIL_VERIFY_FAILED', { detail: msg })
   }
 }
 
@@ -3458,7 +3501,7 @@ async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Pro
       await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
     } catch (err) {
       if (err instanceof UnsafeAcpUrlError) {
-        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
+        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { reason: err.reason } })
         return
       }
       throw err
@@ -3475,10 +3518,7 @@ async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Pro
     const status = e?.statusCode || 500
     const msg = e instanceof Error ? e.message : String(err)
     if (!res.headersSent) {
-      sendError(res, status, 'ACP_DISCOVER_FAILED', {
-        detail: msg,
-        extra: { ok: false },
-      })
+      sendError(res, status, 'ACP_DISCOVER_FAILED', { detail: msg })
     }
   }
 }
@@ -3493,18 +3533,12 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
     try {
       parsed = JSON.parse(body) as { endpoint?: string; auth?: unknown }
     } catch {
-      sendError(res, 400, 'INVALID_JSON_BODY', {
-        message: 'Invalid JSON body',
-        extra: { ok: false },
-      })
+      sendError(res, 400, 'INVALID_JSON_BODY', { message: 'Invalid JSON body' })
       return
     }
     const { endpoint, auth } = parsed
     if (!endpoint || typeof endpoint !== 'string') {
-      sendError(res, 400, 'ACP_ENDPOINT_REQUIRED', {
-        message: 'Missing or invalid "endpoint"',
-        extra: { ok: false },
-      })
+      sendError(res, 400, 'ACP_ENDPOINT_REQUIRED', { message: 'Missing or invalid "endpoint"' })
       return
     }
 
@@ -3522,7 +3556,7 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
       await assertSafeAcpUrl(endpoint, { forwardsCredentials: hasAuthToken })
     } catch (err) {
       if (err instanceof UnsafeAcpUrlError) {
-        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
+        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { reason: err.reason } })
         return
       }
       throw err
@@ -3540,10 +3574,7 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    sendError(res, 400, 'ACP_TEST_FAILED', {
-      detail: msg,
-      extra: { ok: false },
-    })
+    sendError(res, 400, 'ACP_TEST_FAILED', { detail: msg })
   }
 }
 
@@ -3639,7 +3670,13 @@ function sendError(
   options?: { message?: string; detail?: string; extra?: Record<string, unknown> },
 ): void {
   const message = options?.message ?? options?.detail ?? code
-  const body: Record<string, unknown> = { error: message, code }
+  // R12: always include `ok: false` so legacy SPA / curl tooling that
+  // grepped the response for that flag keeps working through the
+  // mid-migration window. Pre-R12 only the ACP / email subset spliced
+  // it via `extra`, leaving CONFIG_* / ENV_* / MEMORY_* paths bare.
+  // Listing it first in the body keeps it predictable for line-oriented
+  // tools (curl | grep ok=false).
+  const body: Record<string, unknown> = { ok: false, error: message, code }
   if (options?.detail !== undefined) body.detail = options.detail
   if (options?.extra) Object.assign(body, options.extra)
   sendJson(res, status, body)

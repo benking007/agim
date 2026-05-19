@@ -13,6 +13,7 @@ import { registry } from '../core/registry.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
+import { isMasked, maskSecret } from './env-mask.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -41,10 +42,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, 'public')
 const DEFAULT_PORT = 3000
 
-function isMasked(value: string | undefined): boolean {
-  if (!value) return false
-  return /^.{0,2}\*{2,}.{0,2}$/.test(value)
-}
+// isMasked + maskSecret extracted to ./env-mask.ts so the bun unit
+// suite can verify maskSecret() round-trips through isMasked() — the
+// pre-R9 regex didn't, leaving a "lockout via masked-echo" gap.
 
 interface ClientConnection {
   ws: WebSocket
@@ -78,8 +78,12 @@ function isPublicPath(pathname: string, method: string): boolean {
 }
 
 function isLoopbackPeer(req: IncomingMessage): boolean {
+  // Treat an empty / missing remoteAddress as untrusted: under exotic
+  // transports or post-close sockets the field can read empty, which
+  // pre-R9 would silently pass auth. Tighten to exact loopback IPs
+  // (with the IPv4-mapped IPv6 form Node uses on dual-stack servers).
   const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
-  return ip === '127.0.0.1' || ip === '::1' || ip === ''
+  return ip === '127.0.0.1' || ip === '::1'
 }
 
 function extractToken(req: IncomingMessage, url: URL): string | null {
@@ -176,6 +180,13 @@ export async function startWebServer(options: {
   const port = options.port || DEFAULT_PORT
   const bindHost = process.env.IMHUB_WEB_BIND || '127.0.0.1'
   const clients = new Map<string, ClientConnection>()
+  // R9: threadId → tokenId ownership. A WS peer claims a threadId on
+  // first connection (verifyClient already verified the token); later
+  // `get-history { threadId }` rekey requests must come from a peer
+  // holding the same tokenId, otherwise an authenticated operator could
+  // adopt and wipe another operator's session. Survives reconnects
+  // within the process lifetime so a page refresh still works.
+  const threadOwners = new Map<string, string>()
 
   // v1.1.10+: token-based auth for the web console.
   // ─ loopback peers (127.0.0.1 / ::1) bypass auth (local CLI / curl)
@@ -813,8 +824,51 @@ export async function startWebServer(options: {
     res.end('Not found')
   })
 
-  // WebSocket server
-  const wss = new WebSocketServer({ server: httpServer })
+  // WebSocket server with auth + same-origin gate. Before R9 the WS
+  // upgrade event bypassed checkAuth entirely (the upgrade path isn't
+  // a normal HTTP request handler), leaving every chat / approval-card
+  // socket open to anyone reachable on the port. verifyClient runs the
+  // same token check as the REST path and locks Origin to the request's
+  // host so a third-party page can't open a cross-site WS.
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info, cb) => {
+      // Auth-off / loopback bypass — mirror checkAuth's two short-circuits
+      // so dev / local CLI sessions still work without a token.
+      if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
+      if (isLoopbackPeer(info.req as IncomingMessage)) return cb(true)
+
+      // Origin check: cookie SameSite=Lax handles most of the CSWSH
+      // surface, but defence-in-depth — reject when Origin's host
+      // doesn't match the request Host header. Origin can be absent
+      // (non-browser clients); we allow that since they can't carry a
+      // browser cookie anyway and must supply Bearer.
+      const origin = info.origin || info.req.headers.origin
+      if (typeof origin === 'string' && origin) {
+        try {
+          if (new URL(origin).host !== info.req.headers.host) {
+            return cb(false, 403, 'origin mismatch')
+          }
+        } catch {
+          return cb(false, 400, 'invalid origin')
+        }
+      }
+
+      // Auth: token from Authorization / Cookie / ?token=.
+      try {
+        const url = new URL(info.req.url || '/ws', `http://${info.req.headers.host}`)
+        const tok = extractToken(info.req as IncomingMessage, url)
+        const tokenId = tok ? verifyTokenSync(tok) : null
+        if (!tokenId) return cb(false, 401, 'auth required')
+        // Attach the verified tokenId to the request — the connection
+        // handler reads it from here so we don't re-parse on every msg.
+        ;(info.req as IncomingMessage & { _agimTokenId?: string })._agimTokenId = tokenId
+        cb(true)
+      } catch {
+        cb(false, 500, 'auth error')
+      }
+    },
+  })
 
   // M3: cap concurrent WS clients so a leaked / shared web token can't OOM
   // the host by opening unbounded connections. Default 100 is generous for
@@ -841,10 +895,26 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
-    // No auth gate — access control is upstream (reverse proxy / firewall).
-    const clientId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // R9: token verified at upgrade time by verifyClient; we read the
+    // tokenId here so get-history can enforce ownership when the client
+    // wants to rekey to a persisted threadId. 'anon' is the loopback /
+    // auth-off path — still safe because those paths trust the peer.
+    const tokenId =
+      (req as IncomingMessage & { _agimTokenId?: string })._agimTokenId ?? 'anon'
+
+    // R9: crypto.randomBytes(12) → 96 bits of base64url entropy
+    // (~16 chars). The pre-R9 `Date.now() + Math.random().slice(2,8)`
+    // gave ~30 bits and a publicly enumerable timestamp prefix — enough
+    // for an authenticated peer to brute-force another live session's
+    // id. With H2 ownership-by-tokenId the impact is bounded to
+    // same-tokenId tabs (which is fine), but the stronger id closes the
+    // pre-rekey race window.
+    const clientId = `web-${randomBytes(12).toString('base64url')}`
     const client: ClientConnection = { ws, id: clientId, agent: options.defaultAgent }
     clients.set(clientId, client)
+    // First-claim ownership: this connection's tokenId owns this
+    // brand-new threadId until disconnect.
+    threadOwners.set(clientId, tokenId)
 
     webLog.info({ clientId }, 'Client connected')
 
@@ -920,13 +990,26 @@ export async function startWebServer(options: {
           // with its persisted threadId. Otherwise the map stays keyed
           // by the WS-assigned id, and the web messenger's outbound
           // approval-card lookup misses the live client.
-          await handleClientMessage(client, msg, options.defaultAgent, (oldId, newId) => {
-            // Only reassign if we actually owned `oldId` — defensive
-            // against the (impossible-but-cheap-to-guard) case of two
-            // clients colliding on the rekey path.
-            if (clients.get(oldId) === client) clients.delete(oldId)
-            clients.set(newId, client)
-          })
+          await handleClientMessage(
+            client, msg, options.defaultAgent,
+            (oldId, newId) => {
+              // Only reassign if we actually owned `oldId` — defensive
+              // against the (impossible-but-cheap-to-guard) case of two
+              // clients colliding on the rekey path.
+              if (clients.get(oldId) === client) clients.delete(oldId)
+              clients.set(newId, client)
+              // R9: keep the ownership map aligned with the live id so
+              // a subsequent rekey from another connection (same token,
+              // e.g. a second tab) succeeds with the new threadId.
+              const owner = threadOwners.get(oldId)
+              if (owner !== undefined) {
+                threadOwners.delete(oldId)
+                threadOwners.set(newId, owner)
+              }
+            },
+            tokenId,
+            threadOwners,
+          )
         } catch (err) {
           webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
           sendToClient(ws, { type: 'error', message: 'Invalid message format' })
@@ -942,12 +1025,18 @@ export async function startWebServer(options: {
       const liveId = client.id
       webLog.info({ clientId: liveId }, 'Client disconnected')
       clients.delete(liveId)
+      // R9: drop the ownership entry only for server-generated ids that
+      // were never rekeyed to a persistent client-side threadId. Rekeyed
+      // ids stay registered so the operator's next reconnect with the
+      // same localStorage id finds its previous owner.
+      if (liveId === clientId) threadOwners.delete(liveId)
     })
 
     ws.on('error', (err) => {
       const liveId = client.id
       webLog.error({ clientId: liveId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
       clients.delete(liveId)
+      if (liveId === clientId) threadOwners.delete(liveId)
     })
   })
 
@@ -1999,11 +2088,8 @@ const ENV_EDITABLE_KEYS = [
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 
-function maskSecret(v: string): string {
-  if (!v) return ''
-  if (v.length <= 8) return '*'.repeat(v.length)
-  return v.slice(0, 4) + '*'.repeat(Math.max(0, v.length - 8)) + v.slice(-4)
-}
+// maskSecret moved to ./env-mask.ts (imported at the top of this file
+// alongside isMasked).
 
 async function handleGetEnv(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
@@ -3356,10 +3442,26 @@ async function handleEventsSSE(req: IncomingMessage, res: ServerResponse): Promi
 async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const body = await readBody(req, res)
-    const { baseUrl, register } = JSON.parse(body) as { baseUrl?: string; register?: boolean }
+    const parsed = JSON.parse(body) as { baseUrl?: unknown; register?: unknown }
+    const baseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : ''
+    // Strict-boolean: only literal `true` enables auto-registration. A
+    // truthy `{}` / 'yes' / 1 won't trip it.
+    const register = parsed.register === true
     if (!baseUrl) {
       sendError(res, 400, 'ACP_BASEURL_REQUIRED', { message: 'Missing baseUrl' })
       return
+    }
+    // Guard SSRF: discovery doesn't forward auth, but a malicious baseUrl
+    // can still probe internal services (e.g. cloud metadata).
+    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+    try {
+      await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
+    } catch (err) {
+      if (err instanceof UnsafeAcpUrlError) {
+        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
+        return
+      }
+      throw err
     }
     const { discoverAgents } = await import('../plugins/agents/acp/discovery.js')
     const result = await discoverAgents(baseUrl)
@@ -3404,6 +3506,26 @@ async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise
         extra: { ok: false },
       })
       return
+    }
+
+    // Guard SSRF + credential exfil: the manifest fetch carries the
+    // operator-supplied auth.token in the Authorization header, so a
+    // malicious endpoint URL would have it on the wire. Require https
+    // when a token would travel.
+    const hasAuthToken = !!(
+      auth && typeof auth === 'object'
+      && typeof (auth as Record<string, unknown>).token === 'string'
+      && (auth as Record<string, string>).token.length > 0
+    )
+    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+    try {
+      await assertSafeAcpUrl(endpoint, { forwardsCredentials: hasAuthToken })
+    } catch (err) {
+      if (err instanceof UnsafeAcpUrlError) {
+        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
+        return
+      }
+      throw err
     }
 
     // Dynamic import to avoid circular deps
@@ -3893,6 +4015,12 @@ async function handleClientMessage(
    *  silently misses the rekeyed client and the approval lands only in
    *  the global /approvals tab. */
   onRekey?: (oldId: string, newId: string) => void,
+  /** R9: token id of the connecting peer (or 'anon' on loopback /
+   *  auth-off). Used to enforce thread ownership on get-history rekey. */
+  tokenId?: string,
+  /** R9: shared threadId → tokenId map. The handler validates
+   *  ownership before adopting a client-supplied threadId. */
+  threadOwners?: Map<string, string>,
 ): Promise<void> {
   const { ws } = client
   // Read client.id fresh — `get-history` may rekey it mid-handler so the
@@ -3988,11 +4116,32 @@ async function handleClientMessage(
       // `message` / `switch-agent` ops use the persisted thread) but leave
       // the clients map alone — push-by-clientId is a separate code path
       // that doesn't rely on the persisted id today.
+      //
+      // R9: before adopting the threadId, validate ownership. The
+      // pre-R9 path accepted any well-formed `web-*` id, letting an
+      // authenticated peer enumerate Date.now()-based ids and hijack
+      // (or wipe via new-conversation) another peer's chat session.
+      // Now the threadId is owned by the tokenId that first claimed it;
+      // a rekey from a different tokenId is refused.
       const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
       if (wantedThreadId && /^web-[A-Za-z0-9_-]{4,64}$/.test(wantedThreadId) && wantedThreadId !== clientId) {
+        const peer = tokenId ?? 'anon'
+        const owner = threadOwners?.get(wantedThreadId)
+        if (owner !== undefined && owner !== peer) {
+          webLog.warn({
+            event: 'web.session.rekey_denied',
+            clientId, wantedThreadId, peer,
+          }, 'WS get-history rekey refused — threadId owned by a different token')
+          sendToClient(ws, { type: 'error', message: 'thread not owned by this session' })
+          return
+        }
+        // First-claim OK (owner === undefined) or same-owner reconnect.
         const oldId = clientId
         client.id = wantedThreadId
         clientId = wantedThreadId
+        if (threadOwners && owner === undefined) {
+          threadOwners.set(wantedThreadId, peer)
+        }
         onRekey?.(oldId, wantedThreadId)
         webLog.info({ clientId, oldId, event: 'web.session.rekey' }, 'WS client adopted persisted threadId')
       }

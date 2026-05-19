@@ -37,6 +37,11 @@ export class ACPClient {
     const res = await fetch(`${this.baseUrl}/agent/card`, {
       headers: { ...this.authHeaders, Accept: 'application/json' },
       signal: AbortSignal.timeout(10000),
+      // SSRF defence-in-depth — see discovery.ts:75 for context. Tasks
+      // posted later (`runTaskSync` / `runTaskStream`) share this
+      // posture so a saved-but-malicious agent URL can't redirect into
+      // private space mid-call.
+      redirect: 'manual',
     })
 
     if (!res.ok) {
@@ -84,6 +89,7 @@ export class ACPClient {
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(300000), // 5min timeout for long tasks
+      redirect: 'manual',
     })
 
     if (!res.ok) {
@@ -174,6 +180,7 @@ export class ACPClient {
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(300000),
+      redirect: 'manual',
     })
 
     if (!res.ok) {

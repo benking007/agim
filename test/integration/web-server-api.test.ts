@@ -252,12 +252,14 @@ describe('Web REST API', () => {
 
   describe('Static tasks page', () => {
     // No built-in auth — /tasks serves directly. Access control is upstream
-    // (reverse proxy / firewall / SSH tunnel).
-    it('GET /tasks serves the page without a session', async () => {
+    // (reverse proxy / firewall / SSH tunnel). Since 1.2.22 the v2 SPA
+    // fallback is default-on, so this path now serves the SPA shell
+    // (`<div id="root">`) and react-router resolves /tasks on the client.
+    it('GET /tasks serves the SPA shell without a session', async () => {
       const res = await fetch(url('/tasks'))
       expect(res.status).toBe(200)
       const text = await res.text()
-      expect(text).toContain('Tasks')
+      expect(text).toContain('<div id="root">')
     })
   })
 

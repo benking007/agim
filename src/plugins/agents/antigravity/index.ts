@@ -39,7 +39,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -186,7 +186,23 @@ export class AntigravityAdapter extends AgentBase {
   }
 
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
-    const cwd = resolveAgentCwd(this.name, opts)
+    let cwd = resolveAgentCwd(this.name, opts)
+    // Defensive cwd existence check. resolveAgentCwd returns a path under
+    // ~/.agim-workspaces/<agent>/ that bootstrapAgentWorkspaces creates at
+    // agim startup — but if the dir is missing (bootstrap not yet run for
+    // a freshly-added agent, operator wiped the tree, etc.) Node's spawn
+    // rejects with ENOENT *on the binary path* (misleading: it's actually
+    // the cwd that doesn't exist). Lazy-create to avoid that whole class
+    // of failures.
+    if (cwd) {
+      try {
+        if (!existsSync(cwd)) await mkdir(cwd, { recursive: true })
+      } catch (err) {
+        log.warn({ event: 'antigravity.cwd.mkdir_failed', cwd, err: String(err) },
+          'falling back to inherited cwd because workspace dir could not be created')
+        cwd = undefined
+      }
+    }
     // Workspace exposure: agy refuses to operate outside its trusted /
     // workspace list (see ~/.gemini/antigravity-cli/settings.json
     // `trustedWorkspaces`). We push the per-agent cwd in explicitly via

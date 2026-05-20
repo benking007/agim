@@ -196,5 +196,37 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
     dir: await ensureAgentWorkspace('codex', { filename: 'AGENTS.md', content: codexSeed }),
   })
 
+  const antigravitySeed = `# Antigravity — IM 入口工作区
+
+> 这是 agim 通过 IM 唤起 Google Antigravity (agy) 时的专用工作目录。
+> 与你直接在终端里跑 \`agy\` 时使用的 \`~/.gemini/antigravity-cli/\` 隔离。
+>
+> 文件位置：${defaultAgentCwd('antigravity')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）唤起的 Antigravity。
+回复要简洁、可在 IM 里阅读，避免大段代码块除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex 工作区互不干扰
+- agy 自己的 conversation 历史落在 ~/.gemini/antigravity-cli/conversations/，由 agim 通过
+  \`--conversation <uuid>\` 续接，无需手工管理
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
+- agy 启动时 agim 自动通过 \`--add-dir <cwd>\` 把本目录加进可信工作区，
+  无需在 ~/.gemini/antigravity-cli/settings.json 的 trustedWorkspaces 手填
+`
+
+  result.push({
+    agent: 'antigravity',
+    dir: await ensureAgentWorkspace('antigravity', { filename: 'AGENTS.md', content: antigravitySeed }),
+  })
+
   return result
 }

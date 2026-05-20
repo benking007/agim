@@ -261,6 +261,17 @@ export class AntigravityAdapter extends AgentBase {
     // newly-created UUID after the run completes.
     const beforeSnapshot = await this.snapshotConversationMtimes()
 
+    // agy is a Go binary that reads $HOME directly to locate
+    // ~/.gemini/antigravity-cli/ (creds, conversations, settings). Under
+    // systemd, root services often launch with HOME unset (only USER and
+    // a stripped PATH are present), and agy then exits 1 with
+    // `$HOME is not defined` deep in third_party/jetski/fs/local. Other
+    // adapters get away with it because they look up paths via Node's
+    // os.homedir() which falls back to /etc/passwd; agy doesn't.
+    // homedir() does that fallback for us when env HOME is absent, so we
+    // resolve once and pass it through.
+    const childHome = process.env.HOME || homedir()
+
     return {
       args: baseArgs,
       cwd,
@@ -268,6 +279,8 @@ export class AntigravityAdapter extends AgentBase {
         // IMHUB_RUN_ID flows into the imhub MCP sidecar's process env;
         // approval-router uses it to look up the registered run.
         IMHUB_RUN_ID: runId,
+        // Force HOME present in the child env (systemd may have stripped it).
+        HOME: childHome,
       },
       cleanup: async () => {
         if (registered) approvalBus.unregisterRun(runId)

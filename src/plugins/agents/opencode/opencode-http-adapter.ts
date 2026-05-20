@@ -322,14 +322,28 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     //   text-part ids are tracked so we don't emit them twice when draining
     //   the POST body. Once POST settles we schedule a brief grace then close
     //   SSE, which exits the for-await loop on the broken-stream case.
+    //
+    // Permission-poller (also SSE-broken fallback): permission.asked events
+    // ride the same dead bus channel, so without this poller routeAsk is
+    // never called and edit/write/patch hang until opencode's body timeout
+    // fires. See startPermissionPoller for the contract.
     const sse = await this.openEventStream(baseUrl)
+    const stopPoller = this.startPermissionPoller(baseUrl, sessionID, callOpts)
     const promptPromise = this.postPrompt(baseUrl, sessionID, finalPrompt, callOpts)
       .catch((err: unknown) => ({ error: err instanceof Error ? err : new Error(String(err)) } as const))
 
     // 500ms after POST resolves, force-close SSE so the for-await exits even
     // when the daemon never emits session.idle. Short enough that latency
     // stays low; long enough to flush any final events that did stream.
+    //
+    // The permission poller MUST also live until promptPromise settles —
+    // not until for-await exits — because opencode 1.14.46's SSE closes
+    // immediately after server.connected, which would end for-await within
+    // milliseconds while POST is still blocked waiting for tool-permission
+    // reply. Stopping the poller in the for-await finally would orphan
+    // the permission with no one polling.
     promptPromise.finally(() => {
+      stopPoller()
       const t = setTimeout(() => { sse.close() }, 500)
       // Don't keep the event loop alive solely for the grace-close timer.
       ;(t as unknown as { unref?: () => void }).unref?.()
@@ -383,6 +397,8 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       }
     } finally {
       if (watchdog) clearTimeout(watchdog)
+      // stopPoller is intentionally NOT called here — see the comment on
+      // promptPromise.finally above for the lifecycle rationale.
       sse.close()
     }
 
@@ -673,6 +689,84 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       return await res.json() as OpencodeMessageResponse
     } catch {
       return {}
+    }
+  }
+
+  /**
+   * Poll `GET /permission` as the fallback channel for permission.asked when
+   * opencode's SSE bus is broken (1.14.45+). Every tick lists pending
+   * permissions for the daemon, filters to this session, and feeds new
+   * entries through routeAsk — the same bridge the SSE path would have used.
+   *
+   * Local `seen` Set keeps a turn from re-routing the same reqId on every
+   * tick. The bus also dedupes by reqId in registerSyntheticPending, so a
+   * future opencode build that fixes SSE won't cause double-routing.
+   *
+   * The first tick fires immediately so a permission already pending at
+   * sendPrompt entry (e.g. one persisted from a previous opencode serve
+   * lifetime) surfaces without waiting an interval.
+   *
+   * Returns a stop function. Caller MUST invoke it in finally{} to prevent
+   * the interval from leaking once the turn ends.
+   */
+  private startPermissionPoller(
+    baseUrl: string,
+    sessionID: string,
+    opts: AgentSendOpts,
+  ): () => void {
+    const seen = new Set<string>()
+    let stopped = false
+
+    const tick = async (): Promise<void> => {
+      if (stopped) return
+      try {
+        const res = await this.fetchImpl(`${baseUrl}/permission`)
+        if (!res.ok) return
+        const list = await res.json() as Array<{
+          id?: unknown
+          sessionID?: unknown
+          permission?: unknown
+          patterns?: unknown
+          metadata?: unknown
+        }>
+        if (!Array.isArray(list)) return
+        for (const item of list) {
+          if (typeof item.id !== 'string') continue
+          if (item.sessionID !== sessionID) continue
+          if (seen.has(item.id)) continue
+          seen.add(item.id)
+          const event: OpencodeEvent = {
+            type: 'permission.asked',
+            properties: {
+              id: item.id,
+              permission: typeof item.permission === 'string' ? item.permission : undefined,
+              patterns: Array.isArray(item.patterns) ? item.patterns as string[] : undefined,
+              metadata: (item.metadata && typeof item.metadata === 'object')
+                ? item.metadata as Record<string, unknown>
+                : undefined,
+            },
+          }
+          log.info(
+            { event: 'opencode.http.poll_routed', sessionID, reqId: item.id, permission: event.properties?.permission },
+            'pending permission surfaced via REST poll (SSE broken)',
+          )
+          this.routeAsk(event, baseUrl, sessionID, opts)
+        }
+      } catch (err) {
+        log.warn({
+          event: 'opencode.http.poll_pending_failed',
+          err: String(err),
+          sessionID,
+        })
+      }
+    }
+
+    const interval = setInterval(() => { void tick() }, 1500)
+    void tick()
+
+    return () => {
+      stopped = true
+      clearInterval(interval)
     }
   }
 

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.20] - 2026-05-20
+
+### Fixed
+
+- **opencode "fetch failed" after exactly 5 minutes on long agent runs.**
+  Node's built-in fetch (undici) ships with a 300_000 ms default
+  `bodyTimeout`, and opencode 1.14.45+ blocks
+  `POST /session/:id/message` until the assistant message is fully
+  composed. Any turn that took longer than 5 minutes — tool-heavy
+  searches, multi-file reads, large model deliberations — surfaced
+  back to the IM/web user as a `opencode failed: fetch failed` toast,
+  even though opencode itself was still working and would have
+  succeeded if given more time.
+- The prompt POST now uses an undici Agent with `bodyTimeout: 0` and
+  `headersTimeout: 0`. Liveness is still bounded by the SSE-side idle
+  watchdog (`OPENCODE_IDLE_TIMEOUT_MS` / `IMHUB_AGENT_IDLE_TIMEOUT_MS`),
+  so an actually-hung opencode is still reported — we just stop
+  killing healthy long-running responses.
+- The `opencode.http.prompt_failed` log now captures `error.cause`
+  fields (`name`, `code`, `message`), so future occurrences of the
+  outer `TypeError: fetch failed` expose the real socket-level reason
+  (`UND_ERR_BODY_TIMEOUT`, `ECONNRESET`, etc.). The user-facing reply
+  also appends the cause code when present.
+
 ## [1.2.19] - 2026-05-20
 
 ### Fixed

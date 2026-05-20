@@ -48,6 +48,26 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { type OpencodeServeManager, opencodeServe as defaultServe } from './serve-manager.js'
 import { approvalBus as defaultApprovalBus, type ApprovalBus, type Decision } from '../../../core/approval-bus.js'
+import { Agent as UndiciAgent } from 'undici'
+
+/**
+ * Long-running dispatcher used for the prompt POST.
+ *
+ * opencode 1.14.45+ blocks `POST /session/:id/message` until the assistant
+ * message is fully composed — for tool-heavy or model-heavy turns that
+ * routinely exceeds Node's built-in fetch (undici) default 5-minute
+ * `bodyTimeout`, surfacing as `TypeError: fetch failed` exactly 300_000 ms
+ * after the request was sent. The SSE side (handled separately by
+ * openEventStream) already has its own idle watchdog, so disabling the
+ * underlying socket timeouts here doesn't reintroduce a hang risk — it
+ * just stops undici from preemptively killing a long but healthy response.
+ */
+const longRunningDispatcher = new UndiciAgent({
+  bodyTimeout: 0,
+  headersTimeout: 0,
+  // keepAliveTimeout matches default; not relevant here but keeps explicit.
+  keepAliveTimeout: 4_000,
+})
 
 const log = rootLogger.child({ component: 'agent.opencode.http' })
 
@@ -377,8 +397,23 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
 
     const result = await promptPromise
     if (result && typeof result === 'object' && 'error' in result) {
-      log.warn({ event: 'opencode.http.prompt_failed', err: String(result.error) }, 'prompt POST failed')
-      yield `opencode failed: ${result.error.message}`
+      // undici wraps the real socket-level error on .cause; the bare
+      // .message is just "fetch failed". Log both so an operator can tell
+      // a 5-min bodyTimeout (UND_ERR_BODY_TIMEOUT) apart from ECONNRESET,
+      // ETIMEDOUT, ECONNREFUSED, etc.
+      const e = result.error as Error & { cause?: { code?: string; message?: string; name?: string } }
+      const cause = e.cause
+      log.warn(
+        {
+          event: 'opencode.http.prompt_failed',
+          err: String(e),
+          causeName: cause?.name,
+          causeCode: cause?.code,
+          causeMessage: cause?.message,
+        },
+        'prompt POST failed',
+      )
+      yield `opencode failed: ${e.message}${cause?.code ? ` (${cause.code})` : ''}`
       return
     }
 
@@ -619,10 +654,14 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     // that were originally created under build. opencode's per-message `agent`
     // field overrides the session's default agent for this single turn.
     if (opts.planMode) body.agent = 'plan'
+    // `dispatcher` is an undici-only fetch option (Node's fetch IS undici).
+    // See the `longRunningDispatcher` comment at the top of this file for
+    // why we disable the underlying socket timeouts here.
     const res = await this.fetchImpl(`${baseUrl}/session/${sessionID}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      dispatcher: longRunningDispatcher,
     })
     if (!res.ok) {
       throw new Error(`opencode prompt failed: HTTP ${res.status} ${await safeText(res)}`)

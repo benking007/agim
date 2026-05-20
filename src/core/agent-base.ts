@@ -375,6 +375,26 @@ export abstract class AgentBase implements AgentAdapter {
       ping()
     })
 
+    // 'exit' fires the moment the kernel reaps the child; 'close' waits for
+    // ALL inherited stdio file descriptors to also close. Some agents
+    // (notably Antigravity / agy) leak stdout/stderr into MCP sidecar
+    // sub-processes — when the agent itself exits, those sidecars get
+    // re-parented to init (PPID=1) and keep the pipe open, so Node never
+    // emits 'close' on the parent ChildProcess. Without this, the
+    // spawnStream consumer hangs forever on its `await wait()` despite
+    // the agent being long gone.
+    //
+    // Workaround: on 'exit', destroy our end of stdout/stderr ourselves.
+    // The streams' own 'close' then fires (since the reader side ended),
+    // which lets the ChildProcess emit its 'close' event normally and the
+    // existing handler below does its usual cleanup. This is idempotent —
+    // if agents don't have the leak, destroy() is a no-op against an
+    // already-closed stream.
+    proc.on('exit', () => {
+      try { proc.stdout?.destroy() } catch { /* already closed */ }
+      try { proc.stderr?.destroy() } catch { /* already closed */ }
+    })
+
     proc.on('close', (code) => {
       exitCode = code
       closed = true

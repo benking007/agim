@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.22] - 2026-05-20
+
+### Fixed
+
+- **Fresh install white-screens on the web console.** `index.html`
+  shipped in `dist/web/public/` is the v2 SPA shell since M1 / R10,
+  but the static-asset router that serves `/assets/<chunk>.js` was
+  gated behind `IMHUB_WEB_V2=1`. New installs without that env var
+  set received the SPA HTML (which references `/assets/index-…js`)
+  but every chunk request fell through to the catch-all 404 — the
+  browser parsed the shell, failed every module import, and stuck
+  on a white screen with no obvious error short of devtools.
+- Default flipped to ON. Set `IMHUB_WEB_V2=0` to drop back to the
+  legacy v1 page handler (still serves the older
+  `tasks.html` / `reminders.html` / `memos.html` / `settings.html`
+  for any operator who customised those files; new operators get
+  the SPA out of the box).
+
+(1.2.21 was an unrelated opencode permission-polling fix landed in
+parallel; this release bumps to 1.2.22 to stay above it.)
+
 ## [1.2.20] - 2026-05-20
 
 ### Fixed

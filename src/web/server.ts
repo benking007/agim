@@ -222,19 +222,20 @@ export async function startWebServer(options: {
     // Loopback peers + the public paths below bypass.
     if (!checkAuth(req, res, url)) return
 
-    // v2 SPA fallback — opt-in via IMHUB_WEB_V2=1. When enabled, any
-    // GET that doesn't match an API / WS / SSE / static-asset path
-    // and isn't a public SSR page falls through to serving the v2
-    // index.html. The client-side router (react-router) then resolves
-    // the path. Anything served from src/web-app/dist/* is built in
-    // the M5 PR; until then, set IMHUB_WEB_V2=1 only if you've run
-    // `npm --prefix src/web-app run build` and copied dist/* into
-    // src/web/public/`.
+    // v2 SPA fallback — default ON since 1.2.21 (the v2 SPA shell is now
+    // the only `index.html` we ship; the v1 monolithic HTML was retired
+    // during M1 / R10). This branch serves the SPA chunks under
+    // `/assets/*.js`, the favicon / manifest, and falls back to
+    // index.html for any client-side route. Without this branch a fresh
+    // install hits a white screen — `<script src="/assets/…js">` 404s
+    // because no other handler claims that path.
     //
-    // Default IMHUB_WEB_V2=0 → existing behavior unchanged: tasks.html
-    // / reminders.html / memos.html / settings.html / index.html are
-    // served as before. Zero impact on production deployments.
-    if (process.env.IMHUB_WEB_V2 === '1' && req.method === 'GET') {
+    // Operators on a deeply-customised v1 layout can opt out with
+    // `IMHUB_WEB_V2=0`; that drops back into the v1 handler block below,
+    // which still serves the legacy `tasks.html` / `reminders.html` /
+    // `memos.html` / `settings.html` directly. The default-off shape
+    // shipped through 1.2.20.
+    if (process.env.IMHUB_WEB_V2 !== '0' && req.method === 'GET') {
       const p = url.pathname
       const isApi = p.startsWith('/api/')
       const isWs = p.startsWith('/ws')

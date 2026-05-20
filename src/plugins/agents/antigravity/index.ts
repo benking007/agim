@@ -38,6 +38,7 @@
 //   stdout. inspectEvent is unused for the same reason.
 
 import { randomUUID } from 'node:crypto'
+import { existsSync, statSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -72,8 +73,52 @@ export class AntigravityAdapter extends AgentBase {
   // (which agim doesn't ship today — if/when we add it, rename this alias).
   readonly aliases = ['agy', 'gemini', 'ag']
 
+  /** Resolved once on first use — survives the process lifetime.
+   *  null = "we haven't probed yet"; undefined = "probed and didn't find". */
+  private resolvedBin: string | null | undefined = null
+
   protected get commandName(): string {
-    return process.env.IMHUB_ANTIGRAVITY_BIN || DEFAULT_BIN
+    // 1. Explicit override always wins.
+    const override = process.env.IMHUB_ANTIGRAVITY_BIN
+    if (override) return override
+
+    // 2. Cached lookup result if we already probed.
+    if (this.resolvedBin !== null) return this.resolvedBin ?? DEFAULT_BIN
+
+    // 3. Probe common install locations.
+    //
+    //    The official install.sh drops the binary in `~/.local/bin/agy`
+    //    (XDG user-local convention) and edits the user's shell rc to add
+    //    that dir to PATH. agim runs under systemd, which doesn't source
+    //    user shell rcs, so PATH lookup ('agy') fails on a stock daemon
+    //    even when the binary is there. Add the well-known candidates so
+    //    operators don't have to hand-set IMHUB_ANTIGRAVITY_BIN just to
+    //    get past isAvailable().
+    const candidates = [
+      join(homedir(), '.local', 'bin', 'agy'),
+      '/usr/local/bin/agy',
+      '/opt/antigravity/bin/agy',
+    ]
+    for (const p of candidates) {
+      try {
+        const s = statSync(p)
+        // executable bit check is loose — file existence + mode is enough
+        // for our boot-time probe; spawn will surface real EACCES if any.
+        if (s.isFile() && (s.mode & 0o111) !== 0) {
+          this.resolvedBin = p
+          log.info({ event: 'antigravity.bin.resolved', path: p },
+            'resolved agy outside PATH')
+          return p
+        }
+      } catch {
+        /* not here */
+      }
+    }
+
+    // 4. Final fallback: bare 'agy' (lets PATH lookup try, and gives a
+    //    consistent error path if neither PATH nor candidates have it).
+    this.resolvedBin = undefined
+    return DEFAULT_BIN
   }
 
   /** Lazy mcp-config write guard. Without this, every send would touch

@@ -446,6 +446,31 @@ class SessionManager {
   }
 
   /**
+   * Persist Antigravity's (`agy`) conversation UUID after the first run
+   * creates `~/.gemini/antigravity-cli/conversations/<uuid>.pb`. The
+   * adapter detects the file via a before/after readdir snapshot and
+   * calls back via `opts.onAgentSessionId(id)`; this setter persists
+   * it so the next turn passes `--conversation <id>`. Mirrors
+   * setOpencodeSessionId / setCodexSessionId. Cleared by /new.
+   */
+  async setAntigravitySessionId(
+    platform: string, channelId: string, threadId: string,
+    antigravitySessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.antigravitySessionId === antigravitySessionId) return session
+      session.antigravitySessionId = antigravitySessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
    * Increment the per-session usage roll-up after a successful agent
    * invocation. Used by router.callAgentWithHistory to power /stats.
    */
@@ -500,6 +525,7 @@ class SessionManager {
         delete session.claudeSessionPrimed
         delete session.opencodeSessionId
         delete session.codexSessionId
+        delete session.antigravitySessionId
         // Plan mode is per-conversation intent ("先规划再动手") — a fresh
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.

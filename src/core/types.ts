@@ -118,6 +118,11 @@ export interface Session {
    *  continues the same session from its own ~/.codex/sessions store. Cleared
    *  by /new. */
   codexSessionId?: string
+  /** Antigravity (Google `agy`) conversation UUID discovered from
+   *  ~/.gemini/antigravity-cli/conversations/<uuid>.pb the CLI writes
+   *  after the first turn. Subsequent calls pass `--conversation <uuid>`
+   *  so we continue the same session and history. Cleared by /new. */
+  antigravitySessionId?: string
   /** Plan mode flag — toggled by /plan on / /plan off. When true:
    *    • claude-code adapter spawns with `--permission-mode plan` and bypasses
    *      the IM approval bus (plan mode is read-only, no mutations to gate).

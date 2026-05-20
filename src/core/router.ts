@@ -508,6 +508,9 @@ export async function callAgentWithHistory(
     } else if (name === 'codex') {
       void sessionManager.setCodexSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
         .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCodexSessionId failed'))
+    } else if (name === 'antigravity') {
+      void sessionManager.setAntigravitySessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setAntigravitySessionId failed'))
     }
     // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
   }

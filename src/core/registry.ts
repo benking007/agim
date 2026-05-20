@@ -148,6 +148,9 @@ class PluginRegistry {
     const { opencodeAdapter } = await import('../plugins/agents/opencode/index.js')
     this.registerAgent(opencodeAdapter)
 
+    const { antigravityAdapter } = await import('../plugins/agents/antigravity/index.js')
+    this.registerAgent(antigravityAdapter)
+
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')
   }

@@ -973,6 +973,19 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           await sessionManager.getOrCreateSession(
             platform, ctx.channelId, message.threadId, resolvedAgent,
           )
+        } else if (resolvedAgent === 'antigravity') {
+          const agId = stickySession?.antigravitySessionId
+          if (agId) {
+            routeCtx.agentSessionId = agId
+            // agy: pass via --conversation; "resume" is the only relevant
+            // mode (no separate "create-with-this-id" form like claude).
+            // The adapter ignores agentSessionResume for now; left true for
+            // semantic consistency with the other adapters.
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
+          )
         }
       }
     }

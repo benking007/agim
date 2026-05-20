@@ -263,9 +263,32 @@ export function deleteFact(id: number, user_key: string): boolean {
   if (!db) return false
   try {
     return db.transaction((): boolean => {
+      // facts_fts is contentless (content=''), so a plain
+      // `DELETE FROM facts_fts WHERE rowid = ?` throws
+      // "cannot DELETE from contentless fts5 table". The canonical way
+      // to remove a row from a contentless FTS5 index is the
+      // `INSERT INTO <fts>(<fts>, rowid, <columns>) VALUES('delete', ...)`
+      // command — the values must match what was indexed (so SQLite can
+      // subtract the per-term counts). We rebuild that text from the
+      // row's 5W1H slots using the same indexableText() saveFact used.
+      const row = db
+        .prepare('SELECT what, who, when_text, where_label, why FROM facts WHERE id = ? AND user_key = ?')
+        .get(id, user_key) as
+        | { what: string; who: string | null; when_text: string | null; where_label: string | null; why: string | null }
+        | undefined
       const r = db.prepare('DELETE FROM facts WHERE id = ? AND user_key = ?').run(id, user_key)
-      if (r.changes > 0) {
-        db.prepare('DELETE FROM facts_fts WHERE rowid = ?').run(id)
+      if (r.changes > 0 && row) {
+        const text = indexableText({
+          user_key,
+          what: row.what,
+          who: row.who ?? '',
+          when_text: row.when_text ?? '',
+          where_label: row.where_label ?? '',
+          why: row.why ?? '',
+        })
+        db.prepare(
+          "INSERT INTO facts_fts(facts_fts, rowid, user_key, text) VALUES ('delete', ?, ?, ?)",
+        ).run(id, user_key, text)
       }
       return r.changes > 0
     })()
@@ -737,12 +760,39 @@ export function bulkDeleteFacts(opts: {
   }
   const where = filters.join(' AND ')
   try {
-    // Need ids first to also drop from FTS.
-    const targets = db.prepare(`SELECT id FROM facts WHERE ${where}`).all(...params) as Array<{ id: number }>
+    // Need ids + indexed text for each — facts_fts is contentless so we
+    // must drive its index via the per-row `INSERT(..., 'delete', ...)`
+    // command rather than a single SQL DELETE. The 5W1H columns let us
+    // reconstruct the text saveFact originally indexed.
+    type FtsRow = {
+      id: number
+      user_key: string
+      what: string
+      who: string | null
+      when_text: string | null
+      where_label: string | null
+      why: string | null
+    }
+    const targets = db
+      .prepare(`SELECT id, user_key, what, who, when_text, where_label, why FROM facts WHERE ${where}`)
+      .all(...params) as FtsRow[]
     if (targets.length === 0) return 0
+    const ftsDel = db.prepare(
+      "INSERT INTO facts_fts(facts_fts, rowid, user_key, text) VALUES ('delete', ?, ?, ?)",
+    )
+    for (const t of targets) {
+      const text = indexableText({
+        user_key: t.user_key,
+        what: t.what,
+        who: t.who ?? '',
+        when_text: t.when_text ?? '',
+        where_label: t.where_label ?? '',
+        why: t.why ?? '',
+      })
+      ftsDel.run(t.id, t.user_key, text)
+    }
     const ids = targets.map((t) => t.id)
     const idPlaceholders = ids.map(() => '?').join(',')
-    db.prepare(`DELETE FROM facts_fts WHERE rowid IN (${idPlaceholders})`).run(...ids)
     const r = db.prepare(`DELETE FROM facts WHERE id IN (${idPlaceholders})`).run(...ids)
     return r.changes
   } catch (err) {

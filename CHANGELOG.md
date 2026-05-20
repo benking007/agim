@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.19] - 2026-05-20
+
+### Fixed
+
+- **Fact deletion failed with "cannot DELETE from contentless fts5
+  table: facts_fts".** `facts_fts` is declared `content=''` (so the
+  index is contentless and the row body stays in `facts`), which means
+  SQLite rejects a direct `DELETE FROM facts_fts WHERE rowid = ?`. The
+  Memory tab's "delete fact" button surfaced the error; the bulk
+  delete path (`deleteFactsBy`) hit the same wall.
+- Both call sites now drop the FTS row via the canonical contentless
+  form: `INSERT INTO facts_fts(facts_fts, rowid, user_key, text)
+  VALUES ('delete', ?, ?, ?)`. The indexed text is reconstructed from
+  the row's 5W1H slots using the same `indexableText()` `saveFact`
+  used, so per-term counts decrement correctly.
+
 ## [1.2.18] - 2026-05-20
 
 ### Fixed

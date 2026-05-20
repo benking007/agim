@@ -34,8 +34,14 @@ export interface AgentCheckResult {
 
 export interface AgentInstallHint {
   agent: string
+  /** Default install path = `npm i -g <npmPackage>`. Empty when the agent
+   *  ships outside the npm registry (e.g. Antigravity's curl install) — in
+   *  that case set `installCmd` to the canonical one-liner. */
   npmPackage: string
   command: string
+  /** Optional override for the install hint string. When set, formatters
+   *  use this verbatim instead of synthesising `npm i -g <npmPackage>`. */
+  installCmd?: string
 }
 
 export interface Config {
@@ -72,6 +78,16 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
   'codex': { agent: 'codex', npmPackage: '@openai/codex', command: 'codex' },
   'copilot': { agent: 'copilot', npmPackage: '@github/copilot', command: 'copilot' },
   'opencode': { agent: 'opencode', npmPackage: 'opencode-ai', command: 'opencode' },
+  'antigravity': {
+    agent: 'antigravity',
+    npmPackage: '',
+    command: 'agy',
+    // Google's official Antigravity CLI is distributed via an install
+    // script, not npm. Surface that one-liner so the user-facing hint
+    // doesn't tell people to `npm i -g antigravity` (which would 404
+    // or install some unrelated package).
+    installCmd: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+  },
 }
 
 // ============================================
@@ -247,6 +263,7 @@ export function formatAgentInstallHint(missing: string[]): string {
   const getInstallHint = (name: string): string => {
     const hint = AGENT_PACKAGES[name]
     if (!hint) return `npm i -g ${name}`
+    if (hint.installCmd) return hint.installCmd
     return `npm i -g ${hint.npmPackage}`
   }
 
@@ -271,12 +288,17 @@ export function formatAgentNotAvailableError(agentName: string): string {
   brew install copilot-cli (macOS)
   winget install GitHub.Copilot (Windows)
   或安装 VS Code Copilot Chat 扩展`
+  } else if (agentName === 'antigravity') {
+    installHint = `安装方式:
+  curl -fsSL https://antigravity.google/cli/install.sh | bash
+然后跑一次 \`agy\` 走 Google 账号 OAuth 完成首次登录。`
   } else {
     const hint = AGENT_PACKAGES[agentName]
-    installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
+    if (hint?.installCmd) installHint = hint.installCmd
+    else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
   }
 
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /cc - Claude Code\n  /cx - Codex\n  /co - Copilot\n  /oc - OpenCode`
+  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /cc - Claude Code\n  /cx - Codex\n  /co - Copilot\n  /oc - OpenCode\n  /agy - Antigravity`
 }
 
 // ============================================

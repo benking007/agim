@@ -84,11 +84,50 @@ export async function ensureAgentWorkspace(
   await mkdir(dir, { recursive: true })
 
   const seedPath = join(dir, seed.filename)
+  let existingContent: string | null = null
   try {
     await access(seedPath)
-    // already exists — leave the user's customizations alone
+    // already exists — leave the user's customizations alone but read
+    // to scan for injection signals (R13 B2).
+    try {
+      const { readFile } = await import('node:fs/promises')
+      existingContent = await readFile(seedPath, 'utf8')
+    } catch { /* not fatal — skip the scan */ }
   } catch {
     await writeFile(seedPath, seed.content, 'utf8')
+  }
+
+  // R13 B2 — scan AGENTS.md / CLAUDE.md content for the most obvious
+  // prompt-injection signatures and audit-log any hits. We don't
+  // block the agent from starting (operator's own edits can hit
+  // false positives) but we surface the warning so post-incident
+  // forensics can correlate "agent did something weird" with
+  // "operator-edited guide contained 'always allow'".
+  if (existingContent !== null) {
+    try {
+      const { scanForInjectionAttempts } = await import('./prompt-injection-guard.js')
+      const scan = scanForInjectionAttempts(existingContent)
+      if (scan.suspicious) {
+        const { logger } = await import('./logger.js')
+        logger.warn({
+          component: 'agent-cwd',
+          event: 'agent.guide.injection_signals',
+          agent: agentName,
+          file: seedPath,
+          matched: scan.matched,
+        }, `${seed.filename} contains prompt-injection-style language; review the file`)
+        try {
+          const { logAuditEvent } = await import('./audit-log.js')
+          logAuditEvent({
+            eventType: 'config.put',
+            actor: 'system',
+            target: seedPath,
+            outcome: 'ok',
+            details: { reason: 'agent_guide_injection_signals', matched: scan.matched },
+          })
+        } catch { /* best-effort */ }
+      }
+    } catch { /* best-effort scan */ }
   }
 
   return dir

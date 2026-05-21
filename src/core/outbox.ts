@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { scrubOutboundText } from './sensitive-paths.js'
 
 const OUTBOX_DB = join(AGIM_HOME, 'outbox.db')
 
@@ -146,10 +147,56 @@ function getDb(): Database.Database | null {
 }
 
 /** Insert a new pending row. Returns the row id, or -1 if the DB is broken
- *  (caller should fall back to direct send). */
+ *  (caller should fall back to direct send).
+ *
+ *  R13 B5 — outbound text payloads are scrubbed for secret-shaped
+ *  substrings before insert. Defense-in-depth tail behind B1's hard
+ *  denylist: if an agent dumps a token / private key / .env block
+ *  via a path the denylist missed, the scrubber catches it on the
+ *  way out. The scrubbed payload is what hits SQLite + the wire;
+ *  the original never persists. */
 export function enqueue(opts: EnqueueOpts): number {
   const d = getDb()
   if (!d) return -1
+
+  let payload = opts.payload
+  if (opts.kind === 'text' && typeof payload === 'string' && payload.length > 0) {
+    try {
+      const scrub = scrubOutboundText(payload)
+      if (scrub.redactedKinds.length > 0) {
+        rootLogger.warn(
+          {
+            component: 'outbox',
+            event: 'outbox.outbound_secret_redacted',
+            kinds: scrub.redactedKinds,
+            threadKey: opts.threadKey,
+            jobId: opts.jobId ?? null,
+          },
+          'redacted secret-shaped substring(s) from outbound IM payload',
+        )
+        // Best-effort audit row so operators can see the rate via
+        // /api/audit/events without parsing pino journal lines.
+        void (async () => {
+          try {
+            const { logAuditEvent } = await import('./audit-log.js')
+            logAuditEvent({
+              eventType: 'approval.deny',
+              actor: `${opts.platform}:${opts.threadId}`,
+              target: 'outbox.send',
+              outcome: 'denied',
+              details: { reason: 'outbound_secret_redacted', kinds: scrub.redactedKinds },
+            })
+          } catch { /* best-effort */ }
+        })()
+        payload = scrub.text
+      }
+    } catch (err) {
+      // Scrubber must never block delivery. Worst case: original
+      // payload goes out unchanged, same as pre-R13 behavior.
+      rootLogger.debug({ component: 'outbox', event: 'outbox.scrubber_failed', err: String(err) })
+    }
+  }
+
   try {
     const row = d.prepare(
       `INSERT INTO outbox
@@ -162,7 +209,7 @@ export function enqueue(opts: EnqueueOpts): number {
       opts.platform,
       opts.channelId,
       opts.threadId,
-      opts.payload,
+      payload,
       opts.kind,
       opts.priority ?? 'normal',
     )

@@ -1186,6 +1186,52 @@ export class ApprovalBus {
     const fingerprint = inputFingerprint(args.toolName, args.input)
     const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
 
+    // R13 B1 — hard-denylist for sensitive paths / commands. Must come
+    // BEFORE the readonly auto-allow so even Read("~/.agim/env") is
+    // rejected without prompting the user (operator might click
+    // "approve" without realizing the output is about to land in a
+    // public IM channel). No IM card, no opt-in path — the only way
+    // to lift this gate is to edit src/core/sensitive-paths.ts.
+    {
+      const { checkSensitiveToolUse } = await import('./sensitive-paths.js')
+      const guard = checkSensitiveToolUse(args.toolName, args.input)
+      if (guard.deny) {
+        this.metricsSnapshot.totalRequests++
+        this.metricsSnapshot.totalResolved++
+        this.metricsSnapshot.totalDenied++
+        log.warn({
+          event: 'approval.bus.sensitive_blocked',
+          toolName: args.toolName,
+          reqId: args.reqId,
+          runId: args.runId,
+          compositeKey: cKey,
+          reason: guard.reason,
+        }, 'tool call hard-denied: targets sensitive path')
+        try {
+          const { logAuditEvent } = await import('./audit-log.js')
+          logAuditEvent({
+            eventType: 'approval.deny',
+            actor: `${args.ctx.platform}:${args.ctx.threadId}`,
+            target: args.toolName,
+            outcome: 'denied',
+            details: { reqId: args.reqId, reason: 'sensitive_path', sensitive: guard.reason },
+          })
+        } catch { /* best-effort */ }
+        const decision: Decision = {
+          behavior: 'deny',
+          message: `🛑 已拒绝：该工具调用尝试访问敏感路径。\n   原因：${guard.reason ?? 'protected resource'}\n   即便管理员同意，此请求也不会被放行 — 请改用 IM 外的安全通道传递这些内容。`,
+        }
+        if ('socket' in args.transport) {
+          this.sendDecision(args.transport.socket, args.reqId, decision)
+        } else {
+          try { args.transport.dispatch(decision) } catch (err) {
+            log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(err) })
+          }
+        }
+        return
+      }
+    }
+
     // Readonly auto-allow short-circuit. Must come BEFORE pending registration
     // / notifier so it costs zero IM round-trips. Counts toward totals so the
     // metrics dashboard still reflects activity, but never fires the SSE

@@ -1494,6 +1494,11 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
         remoteAgent: showRemoteAgent,
       },
       webPort: config.webPort,
+      // R15 — acpPort travels only when remote-agent feature is on.
+      // Pairs with the SPA hiding the ACP-port input under the same
+      // gate (see web-app/src/routes/settings/service.tsx). When off,
+      // PUT /api/config also drops incoming.acpPort (below).
+      acpPort: showRemoteAgent ? config.acpPort : undefined,
       agentStatus,
     })
   } catch (_err) {
@@ -1528,6 +1533,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     }
     if (!isRemoteAgentEnabled()) {
       delete incoming.acpAgents
+      delete incoming.acpPort
     }
 
     const merged: Record<string, unknown> = { ...existing }

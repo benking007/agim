@@ -46,7 +46,7 @@ function cliAvailable(cmd: string): Promise<boolean> {
   })
 }
 
-type Section = 'messengers' | 'agents' | 'acp' | 'smtp' | 'baidu' | 'done'
+type Section = 'messengers' | 'agents' | 'acp' | 'web' | 'smtp' | 'baidu' | 'done'
 
 export async function runConfigWizard(lang: Lang): Promise<void> {
   let config = await loadConfig()
@@ -70,6 +70,7 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
         sectionChoices.push({ value: 'acp', name: t(lang, 'config.section.acp') })
       }
       sectionChoices.push(
+        { value: 'web', name: t(lang, 'config.section.web') },
         { value: 'smtp', name: t(lang, 'config.section.smtp') },
         { value: 'baidu', name: t(lang, 'config.section.baidu') },
         { value: 'done', name: t(lang, 'config.section.done'), separatorBefore: true },
@@ -89,6 +90,7 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
       if (picked === 'messengers') config = await sectionMessengers(lang, config)
       else if (picked === 'agents') config = await sectionAgents(lang, config)
       else if (picked === 'acp') config = await sectionAcp(lang, config)
+      else if (picked === 'web') config = await sectionWeb(lang, config)
       else if (picked === 'smtp') await sectionSmtp(lang)
       else if (picked === 'baidu') await sectionBaidu(lang)
     } catch (err) {
@@ -910,6 +912,109 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     console.log(t(lang, 'baidu.saved', { file: ENV_FILE }))
     if (hasProcessEnvOverride('IMHUB_BAIDU_MAP_AK')) {
       console.log(t(lang, 'env.shadowed_warn', { key: 'IMHUB_BAIDU_MAP_AK', file: ENV_FILE }))
+    }
+  }
+}
+
+// ─── Web bind / port section (R15) ──────────────────────────────────
+//
+// Two values to edit:
+//   * IMHUB_WEB_BIND  (env-file) — listen address. Default 127.0.0.1
+//                     (loopback). Operators behind a TLS reverse proxy
+//                     can opt-in to 0.0.0.0 with an explicit warning
+//                     about the deployment checklist.
+//   * webPort         (config.json) — listen port. Default 3000.
+//
+// Bind lives in env, not config.json, because startWebServer reads
+// process.env at boot — making it a runtime-overridable knob. Port
+// lives in config because the daemon honours it from saveConfig
+// directly. We don't try to unify the two; matches existing schema.
+async function sectionWeb(lang: Lang, cfg: Config): Promise<Config> {
+  let config = cfg
+  while (true) {
+    console.log()
+    console.log(t(lang, 'web.title'))
+    console.log(t(lang, 'web.subtitle'))
+    console.log()
+
+    const effective = readEffectiveEnv()
+    const currentBind = effective.IMHUB_WEB_BIND || '127.0.0.1'
+    const currentPort = (config.webPort as number | undefined) ?? 3000
+
+    const action = (await menu<'bind' | 'port'>({
+      lang,
+      message: t(lang, 'web.current', { bind: currentBind, port: String(currentPort) }),
+      choices: [
+        { value: 'bind', name: t(lang, 'web.action.bind') },
+        { value: 'port', name: t(lang, 'web.action.port') },
+      ],
+      back: 'web.action.back',
+    })) as 'bind' | 'port' | typeof BACK
+    if (action === BACK) return config
+
+    if (action === 'bind') {
+      // Choose-one menu instead of free-text so we can keep the
+      // operator on a known-safe path. "Other" is intentionally absent
+      // — anyone setting a specific NIC IP can edit ~/.agim/env
+      // directly.
+      const next = (await menu<'127.0.0.1' | '0.0.0.0'>({
+        lang,
+        message: t(lang, 'web.bind.prompt'),
+        choices: [
+          { value: '127.0.0.1', name: t(lang, 'web.bind.option.loopback') },
+          { value: '0.0.0.0', name: t(lang, 'web.bind.option.public') },
+        ],
+        back: 'web.action.back',
+      })) as '127.0.0.1' | '0.0.0.0' | typeof BACK
+      if (next === BACK) continue
+
+      if (next === '0.0.0.0') {
+        // Belt + suspenders confirmation. The boot-time banner (R13 C2)
+        // already warns; the wizard makes the operator say "yes" before
+        // we even write the env line.
+        console.log()
+        console.log(t(lang, 'web.bind.public_warn'))
+        console.log()
+        const ok = await yesNo({
+          message: t(lang, 'web.bind.public_confirm'),
+          default: false,
+        })
+        if (!ok) continue
+      }
+
+      if (next === '127.0.0.1') {
+        // 127.0.0.1 is the agim default — unset the env var instead of
+        // pinning the value, so future changes to the default propagate.
+        unsetEnvKey('IMHUB_WEB_BIND')
+      } else {
+        updateEnvFile({ IMHUB_WEB_BIND: next })
+      }
+      console.log(t(lang, 'web.bind.saved', { bind: next, file: ENV_FILE }))
+      if (hasProcessEnvOverride('IMHUB_WEB_BIND')) {
+        console.log(t(lang, 'env.shadowed_warn', { key: 'IMHUB_WEB_BIND', file: ENV_FILE }))
+      }
+      continue
+    }
+
+    if (action === 'port') {
+      const portStr = await inputText({
+        message: t(lang, 'web.port.prompt', { current: String(currentPort) }),
+        default: String(currentPort),
+        validate: (v) => {
+          if (!v.trim()) return 'Required (or pick ← Back)'
+          const n = parseInt(v, 10)
+          if (!Number.isFinite(n)) return 'Must be a number'
+          if (n < 1 || n > 65535) return 'Must be in 1..65535'
+          if (n < 1024) return 'Ports < 1024 require root; pick something >= 1024'
+          return true
+        },
+      })
+      const port = parseInt(portStr, 10)
+      const next = { ...config, webPort: port }
+      await saveConfig(next)
+      config = next
+      console.log(t(lang, 'web.port.saved', { port: String(port) }))
+      continue
     }
   }
 }

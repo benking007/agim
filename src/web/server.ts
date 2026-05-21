@@ -1423,6 +1423,17 @@ export async function startWebServer(options: {
       }
       wss.close()
       httpServer.close()
+      // R14 — force-drop in-flight HTTP connections so the listening
+      // port releases immediately. httpServer.close() alone only stops
+      // accepting NEW connections; existing keep-alive sockets keep
+      // port 3000 bound until they drain, which races a `systemctl
+      // restart` and produces EADDRINUSE on the new process.
+      // closeAllConnections is Node 18.2+; older runtimes get the
+      // legacy (slower) behavior.
+      try {
+        const fn = (httpServer as unknown as { closeAllConnections?: () => void }).closeAllConnections
+        if (typeof fn === 'function') fn.call(httpServer)
+      } catch { /* ignore */ }
     },
   }
 }
@@ -1904,9 +1915,46 @@ async function handleServiceStop(res: ServerResponse): Promise<void> {
 }
 
 async function handleServiceRestart(res: ServerResponse): Promise<void> {
-  const { detectService } = await import('../cli-ui/service.js')
+  const { detectService, reapStrayAgimProcesses } = await import('../cli-ui/service.js')
   const st = detectService()
   if (st.mode === 'systemd') {
+    // R14 — reap stray agim processes BEFORE systemctl restart. The
+    // motivating bug: a dbus-run-session wrapper in keyring.conf
+    // detached its children from systemd's cgroup, so old agim
+    // outlived `systemctl stop` and the new instance hit EADDRINUSE
+    // on port 3000. We can't fix the unit file from here, but we can
+    // make web restart self-healing by sweeping pids that pgrep can
+    // still see. excludePids = the current MainPID (systemd will
+    // handle that one) and our own pid (this very web request is
+    // running inside agim).
+    try {
+      const result = await reapStrayAgimProcesses({
+        excludePids: st.pid != null ? [st.pid] : [],
+        sigtermTimeoutMs: 5_000,
+      })
+      if (result.reaped.length > 0 || result.survived.length > 0) {
+        webLog.warn({
+          event: 'web.service.restart.reap',
+          reaped: result.reaped,
+          survived: result.survived,
+        }, `R14 reap: killed ${result.reaped.length} stray agim pid(s), ${result.survived.length} survived to SIGKILL`)
+        try {
+          const { logAuditEvent } = await import('../core/audit-log.js')
+          logAuditEvent({
+            eventType: 'config.put',
+            actor: 'system',
+            target: 'service.restart.reap',
+            outcome: 'ok',
+            details: { reaped: result.reaped.length, survived: result.survived.length, mainPid: st.pid },
+          })
+        } catch { /* best-effort */ }
+      }
+    } catch (err) {
+      // Reap is best-effort — log + continue to systemctl. If reap
+      // failed because pgrep isn't available, systemctl restart will
+      // still try (and may succeed if the cgroup is OK).
+      webLog.warn({ event: 'web.service.restart.reap_failed', err: String(err) })
+    }
     try {
       const { spawn } = await import('node:child_process')
       const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'

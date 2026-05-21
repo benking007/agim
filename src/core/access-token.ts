@@ -37,6 +37,8 @@ import { AGIM_HOME } from './agim-paths.js'
 const TOKENS_FILE = join(AGIM_HOME, 'tokens.json')
 const log = rootLogger.child({ component: 'access-token' })
 
+export type TokenRole = 'admin' | 'user'
+
 export interface TokenRow {
   id: string
   label: string
@@ -44,6 +46,13 @@ export interface TokenRow {
   hash: string
   created_at: number
   last_used_at: number | null
+  /** Granted role. Optional on disk for back-compat with pre-R12 token
+   *  files — readers MUST treat missing field as 'admin' since that was
+   *  the implicit behaviour before role gating landed. New tokens
+   *  default to 'admin' too (operator-friendly); the operator can
+   *  explicitly demote by passing `role: 'user'` to createToken or via
+   *  the PATCH /api/tokens/:id endpoint. */
+  role?: TokenRole
 }
 
 interface TokenFile {
@@ -82,16 +91,18 @@ function newId(): string {
 
 /** Create + persist a new token. Returns the raw value (caller must
  *  surface it to the operator immediately — it is NOT recoverable later). */
-export function createToken(label: string, opts?: { actor?: string; traceId?: string }): { id: string; raw: string; createdAt: number } {
+export function createToken(label: string, opts?: { actor?: string; traceId?: string; role?: TokenRole }): { id: string; raw: string; createdAt: number; role: TokenRole } {
   const data = readFile()
   const raw = generateRawToken()
   const id = newId()
+  const role: TokenRole = opts?.role === 'user' ? 'user' : 'admin'
   const row: TokenRow = {
     id,
     label: label || `token-${data.tokens.length + 1}`,
     hash: sha256Hex(raw),
     created_at: Math.floor(Date.now() / 1000),
     last_used_at: null,
+    role,
   }
   data.tokens.push(row)
   writeFile(data)
@@ -106,11 +117,11 @@ export function createToken(label: string, opts?: { actor?: string; traceId?: st
         actor: opts?.actor ?? 'system',
         target: id,
         outcome: 'ok',
-        details: { label: row.label },
+        details: { label: row.label, role },
       })
     } catch { /* best-effort */ }
   })()
-  return { id, raw, createdAt: row.created_at }
+  return { id, raw, createdAt: row.created_at, role }
 }
 
 /** List tokens with secrets stripped. */
@@ -120,7 +131,46 @@ export function listTokens(): Array<Omit<TokenRow, 'hash'>> {
     label: t.label,
     created_at: t.created_at,
     last_used_at: t.last_used_at,
+    role: t.role ?? 'admin',
   }))
+}
+
+/** Resolve the role of a token by id. Missing field reads as 'admin'
+ *  for back-compat with pre-R12 tokens.json files. */
+export function getTokenRole(id: string): TokenRole {
+  if (!id) return 'admin'  // empty id never returned by verifyToken; defensive default
+  const row = readFile().tokens.find((t) => t.id === id)
+  return row?.role ?? 'admin'
+}
+
+/** Convenience: true iff the token's role is 'admin'. */
+export function isAdminTokenId(id: string): boolean {
+  return getTokenRole(id) === 'admin'
+}
+
+/** Demote / promote an existing token. Returns true on change. */
+export function setTokenRole(id: string, role: TokenRole, opts?: { actor?: string; traceId?: string }): boolean {
+  const data = readFile()
+  const row = data.tokens.find((t) => t.id === id)
+  if (!row) return false
+  const prev: TokenRole = row.role ?? 'admin'
+  if (prev === role) return false
+  row.role = role
+  writeFile(data)
+  void (async () => {
+    try {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        traceId: opts?.traceId,
+        eventType: role === 'admin' ? 'admin.elevate' : 'admin.revoke',
+        actor: opts?.actor ?? 'system',
+        target: id,
+        outcome: 'ok',
+        details: { from: prev, to: role, label: row.label },
+      })
+    } catch { /* best-effort */ }
+  })()
+  return true
 }
 
 /** Revoke (delete) a token by id. Returns true if a row was removed. */
@@ -175,33 +225,63 @@ export function hasAnyToken(): boolean {
   return readFile().tokens.length > 0
 }
 
+/** Cache the raw bootstrap token so a one-shot CLI (`agim token bootstrap`)
+ *  can fetch it via an in-process call without parsing stdout. Cleared
+ *  after first retrieval. Process-local; never written to disk. */
+let _bootstrapRawHolder: { raw: string; id: string } | null = null
+
+/** Consume the in-memory bootstrap-token holder. Intended for interactive
+ *  CLI flows that need the raw value once and then drop it. Returns null
+ *  after the first call or when no bootstrap happened. */
+export function consumeBootstrapTokenRaw(): { raw: string; id: string } | null {
+  const v = _bootstrapRawHolder
+  _bootstrapRawHolder = null
+  return v
+}
+
 /**
  * First-launch helper. If no token exists and IMHUB_WEB_AUTH !== 'off',
- * create a bootstrap token and surface the raw value to stdout + the pino
- * logger. Idempotent — does nothing if any token already exists. Returns
- * the raw value when generated, null otherwise.
+ * create a bootstrap token. Idempotent — does nothing if any token
+ * already exists. Returns the raw value when generated, null otherwise.
+ *
+ * Compliance note (R13 A3): the raw token value is NEVER written to
+ * stdout or pino — both go to journald in systemd deployments where any
+ * `journalctl -u agim` reader could harvest the token before the
+ * operator consumes it. Instead we:
+ *
+ *   - print a banner that *points* at tokens.json + invites the
+ *     operator to run `agim token bootstrap` (an interactive CLI that
+ *     reads the cached value via consumeBootstrapTokenRaw)
+ *   - emit a structured log with the id only (no raw)
+ *
+ * The raw is still returned from this function (callers like the
+ * interactive setup may print it directly to their TTY), so existing
+ * behaviour for non-systemd installs is preserved.
  */
 export function bootstrapIfEmpty(): string | null {
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return null
   if (hasAnyToken()) return null
-  const t = createToken('bootstrap')
+  const t = createToken('bootstrap', { role: 'admin' })
+  _bootstrapRawHolder = { raw: t.raw, id: t.id }
   log.warn({
     event: 'access-token.bootstrap_generated',
     id: t.id,
-    msg: 'web auth bootstrap token generated (see stdout for the raw value)',
-  })
+  }, 'web auth bootstrap token generated (run `agim token bootstrap` on the host to print the raw value once)')
   const banner = [
     '',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '🔑 Web auth bootstrap token (paste this at /login):',
-    '',
-    `   ${t.raw}`,
+    '🔑 Web auth bootstrap token generated.',
     '',
     `   id    : ${t.id}`,
-    `   path  : ${TOKENS_FILE}`,
+    `   file  : ${TOKENS_FILE}  (chmod 0o600)`,
     '',
-    '   Manage tokens later with:  agim token list | create | revoke',
-    '   Disable auth entirely with:  IMHUB_WEB_AUTH=off',
+    '   To retrieve the raw token (one-time, on this host):',
+    '       agim token bootstrap',
+    '',
+    '   Or rotate to a fresh token:',
+    '       agim token create <label>',
+    '',
+    '   Disable auth entirely:  IMHUB_WEB_AUTH=off',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '',
   ].join('\n')

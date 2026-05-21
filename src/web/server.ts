@@ -181,6 +181,44 @@ function getRequestActor(req: IncomingMessage): string {
   return 'web:unknown'
 }
 
+/** Resolve whether the request's actor has admin role. Used to gate
+ *  mutation + privileged-read endpoints so a stolen viewer-role token
+ *  can't elevate to control plane (R13 A1).
+ *
+ *  Trust order:
+ *    1. IMHUB_WEB_AUTH=off  → admin (operator explicitly disabled auth)
+ *    2. Loopback peer       → admin (operator on the host)
+ *    3. Bearer token        → token.role === 'admin'
+ *    4. Otherwise           → not admin
+ *
+ *  Note: when no token has been created yet (pre-bootstrap), the
+ *  loopback-peer branch still grants admin so the CLI bootstrap flow
+ *  works. */
+function isRequestAdmin(req: IncomingMessage): boolean {
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
+  if (isLoopbackPeer(req)) return true
+  let url: URL
+  try { url = new URL(req.url || '', 'http://localhost') } catch { return false }
+  const tok = extractToken(req, url)
+  if (!tok) return false
+  const id = verifyTokenSync(tok)
+  if (!id) return false
+  if (!_tokenModule) return false
+  // isAdminTokenId returns true for legacy tokens missing the role
+  // field (back-compat) so existing deployments stay functional after
+  // upgrade — see access-token.ts:getTokenRole.
+  return _tokenModule.isAdminTokenId(id)
+}
+
+/** Send 403 and return false when the actor isn't admin. Use as guard:
+ *  `if (!requireAdmin(req, res)) return` */
+function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
+  if (isRequestAdmin(req)) return true
+  res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify({ error: 'forbidden', message: 'admin role required' }))
+  return false
+}
+
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
   let queue: Promise<void> = Promise.resolve()
   return (fn: () => Promise<void>): void => {
@@ -517,6 +555,7 @@ export async function startWebServer(options: {
       return handleGetConfig(req, res)
     }
     if (url.pathname === '/api/config' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handlePutConfig(req, res)
     }
     if (url.pathname === '/api/agents/status' && req.method === 'GET') {
@@ -602,6 +641,7 @@ export async function startWebServer(options: {
       return handleGetEnv(req, res, url)
     }
     if (url.pathname === '/api/env' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handlePutEnv(req, res)
     }
     if (url.pathname === '/api/messengers/email/test' && req.method === 'POST') {
@@ -611,25 +651,31 @@ export async function startWebServer(options: {
       return handleListWorkspaces(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleCreateOrUpdateWorkspace(req, res)
     }
     const workspaceIdMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/)
     if (workspaceIdMatch && req.method === 'PATCH') {
+      if (!requireAdmin(req, res)) return
       return handleCreateOrUpdateWorkspace(req, res, workspaceIdMatch[1])
     }
     if (workspaceIdMatch && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleDeleteWorkspace(req, res, workspaceIdMatch[1])
     }
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
       return handleMetrics(req, res, url)
     }
     if (url.pathname === '/api/audit' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAudit(req, res, url)
     }
     // R12 ⑤ — governance audit events (approvals, admin changes, config /
     // env / token / workspace mutations). Separate retention from
-    // invocations (default 180d).
+    // invocations (default 180d). Admin-only — these rows can expose
+    // who promoted whom and which config keys were rotated when.
     if (url.pathname === '/api/audit/events' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAuditEvents(req, res, url)
     }
     // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
@@ -708,6 +754,7 @@ export async function startWebServer(options: {
       return handleMemoryFacts(req, res, url)
     }
     if (url.pathname === '/api/memory/facts' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryBulkDelete(req, res, url)
     }
     const memFactIdMatch = url.pathname.match(/^\/api\/memory\/facts\/(\d+)$/)
@@ -718,9 +765,11 @@ export async function startWebServer(options: {
       return handleMemoryPersona(req, res, url)
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryPersonaPut(req, res, url)
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryPersonaDelete(req, res, url)
     }
     if (url.pathname === '/api/memory/export' && req.method === 'GET') {
@@ -731,20 +780,25 @@ export async function startWebServer(options: {
       return handleVectorStatus(req, res, url)
     }
     if (url.pathname === '/api/memory/vector/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorTest(req, res)
     }
     if (url.pathname === '/api/memory/vector/download' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorDownload(req, res)
     }
     if (url.pathname === '/api/memory/vector/backfill' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorBackfill(req, res, url)
     }
     if (url.pathname === '/api/memory/vector/clear' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorClear(req, res, url)
     }
     // v1.2.2 — manual trigger for the daily consolidation. Useful when the
     // user just wants a persona summary now without waiting 24h.
     if (url.pathname === '/api/memory/consolidate' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryConsolidate(req, res)
     }
     if (url.pathname === '/api/memory/consolidate/status' && req.method === 'GET') {
@@ -778,15 +832,18 @@ export async function startWebServer(options: {
       return handleWorkspaceFiles(req, res, url)
     }
     if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handleWorkspaceFileWrite(req, res, url)
     }
     // PR-D: Job batch operations. Same semantics as /api/jobs/:id/cancel
     // and /run but accepts an array of ids in one request — saves N
     // round-trips when the user multi-selects a long list.
     if (url.pathname === '/api/jobs/batch-cancel' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleBatchJob(req, res, 'cancel')
     }
     if (url.pathname === '/api/jobs/batch-run' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleBatchJob(req, res, 'run', options.defaultAgent)
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
@@ -808,6 +865,7 @@ export async function startWebServer(options: {
     // credentials to disk AND adds 'wechat-ilink' into config.messengers
     // so the next service restart picks the channel up.
     if (url.pathname === '/api/messengers/wechat/qr-start' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleWechatQrStart(res)
     }
     if (url.pathname === '/api/messengers/wechat/qr-status' && req.method === 'GET') {
@@ -824,12 +882,15 @@ export async function startWebServer(options: {
       return handleServiceStatus(res)
     }
     if (url.pathname === '/api/service/start' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceStart(res)
     }
     if (url.pathname === '/api/service/stop' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceStop(res)
     }
     if (url.pathname === '/api/service/restart' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceRestart(res)
     }
 
@@ -841,9 +902,11 @@ export async function startWebServer(options: {
       return handleAdminAllowlistGet(res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistAdd(req, res, bindHost)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistRemove(req, res, bindHost)
     }
 

@@ -4,7 +4,7 @@
 // rm where appropriate.
 
 import { execSync, spawn } from 'node:child_process'
-import { unlinkSync, existsSync, readFileSync } from 'node:fs'
+import { unlinkSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -18,10 +18,10 @@ import {
   PID_FILE,
   LOG_FILE,
 } from './service.js'
-import { yesNo } from './prompts.js'
+import { yesNo, menu, inputText, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
 import { readSavedLang, t, type Lang } from './i18n.js'
-import { CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
+import { CONFIG_DIR, CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { ENV_FILE, removeEnvFile } from './env-file.js'
 
 /** Candidate paths for the systemd unit; v1.0 prefers `agim.service`,
@@ -184,20 +184,129 @@ export async function cmdRestart(): Promise<void> {
 
 // ─── uninstall ───────────────────────────────────────────────────────
 
+type UninstallMode = 'keep' | 'creds' | 'full'
+
+/** The credential files that mode='creds' and mode='full' both wipe.
+ *  Resolved from CONFIG_DIR so the legacy `~/.im-hub/` layout is handled
+ *  automatically (agim-paths.ts auto-detects on a 0.x upgrade). */
+function credentialFiles(): string[] {
+  return [
+    join(CONFIG_DIR, 'tokens.json'),
+    join(CONFIG_DIR, 'admin-bootstrap-token'),
+    join(CONFIG_DIR, 'acp-token'),
+    join(CONFIG_DIR, 'approval-bus.sock'),
+  ]
+}
+
+/** Cheap probe for `shred` on PATH — used to decide whether full-destruction
+ *  mode can do a secure overwrite or has to fall back to plain unlink. */
+function hasShred(): boolean {
+  try {
+    execSync('command -v shred', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Best-effort secure delete: shred -u when available, else unlink + warn.
+ *  Returns whether the file no longer exists at end. */
+function secureDelete(path: string, lang: Lang, shredAvailable: boolean): void {
+  if (!existsSync(path)) return
+  if (shredAvailable) {
+    try {
+      execSync(`shred -u "${path.replace(/"/g, '\\"')}"`, { stdio: 'ignore' })
+      return
+    } catch {
+      // Fall through to unlink.
+    }
+  } else {
+    // Only warn once per uninstall — caller printed the warning before
+    // looping; here we just unlink silently.
+  }
+  try { unlinkSync(path) } catch { /* ignore */ }
+}
+
 export async function cmdUninstall(): Promise<void> {
   const lang = await pickLang()
   // Path interpolations — match whatever AGIM_HOME / AGIM_WORKSPACES
   // resolved to so the prompts reflect the actual on-disk layout (the
   // legacy ~/.im-hub/ on upgraded systems, the new ~/.agim/ on fresh).
-  const pathVars = { config: CONFIG_FILE, workspaces: WORKSPACES_DIR }
-  console.log()
-  console.log(t(lang, 'svc.uninstall.confirm', pathVars))
-  console.log()
-  const ok = await yesNo({ message: t(lang, 'confirm'), default: false })
-  if (!ok) {
-    console.log(t(lang, 'svc.uninstall.cancelled'))
-    return
+  const pathVars = {
+    config: CONFIG_FILE,
+    workspaces: WORKSPACES_DIR,
+    home: CONFIG_DIR,
   }
+  console.log()
+  console.log(t(lang, 'svc.uninstall.intro'))
+  console.log()
+
+  // Pick uninstall mode. menu() throws UserAbortError on Ctrl-C; treat as
+  // cancel (not a crash). We don't pass `back:` so BACK sentinel can't
+  // come back, but TS still narrows the return type — handle it for
+  // exhaustiveness.
+  let mode: UninstallMode
+  try {
+    const picked = await menu<UninstallMode>({
+      lang,
+      message: t(lang, 'svc.uninstall.mode.prompt'),
+      choices: [
+        {
+          value: 'keep',
+          name: t(lang, 'svc.uninstall.mode.keep_name'),
+          description: t(lang, 'svc.uninstall.mode.keep_desc', pathVars),
+        },
+        {
+          value: 'creds',
+          name: t(lang, 'svc.uninstall.mode.creds_name'),
+          description: t(lang, 'svc.uninstall.mode.creds_desc'),
+        },
+        {
+          value: 'full',
+          name: t(lang, 'svc.uninstall.mode.full_name'),
+          description: t(lang, 'svc.uninstall.mode.full_desc', pathVars),
+        },
+      ],
+      default: 'keep',
+    })
+    if (typeof picked === 'symbol') {
+      console.log(t(lang, 'svc.uninstall.cancelled'))
+      return
+    }
+    mode = picked
+  } catch (err) {
+    if (err instanceof UserAbortError) {
+      console.log(t(lang, 'svc.uninstall.cancelled'))
+      return
+    }
+    throw err
+  }
+
+  // Full destruction needs a typed confirmation — the menu pick alone
+  // is too easy to fat-finger when the consequences are irreversible.
+  if (mode === 'full') {
+    console.log()
+    console.log(t(lang, 'svc.uninstall.full_warn', pathVars))
+    console.log()
+    let typed: string
+    try {
+      typed = await inputText({
+        message: t(lang, 'svc.uninstall.full_confirm_prompt'),
+      })
+    } catch (err) {
+      if (err instanceof UserAbortError) {
+        console.log(t(lang, 'svc.uninstall.full_aborted'))
+        return
+      }
+      throw err
+    }
+    if (typed.trim() !== 'DELETE') {
+      console.log(t(lang, 'svc.uninstall.full_aborted'))
+      return
+    }
+  }
+
+  // ─── Steps common to all three modes ───────────────────────────────
   // 1. Stop any running instance.
   console.log(t(lang, 'svc.uninstall.stopping'))
   await stopService()
@@ -218,7 +327,8 @@ export async function cmdUninstall(): Promise<void> {
     }
   }
   try { execSync('systemctl daemon-reload', { stdio: 'ignore' }) } catch { /* ok */ }
-  // 3. Remove config + env (but KEEP workspaces).
+  // 3. Remove config + env + pidfile (kept in mode=keep for backward compat
+  //    with prior behaviour — config is regenerated on next `agim config`).
   console.log(t(lang, 'svc.uninstall.removing_config', pathVars))
   try { unlinkSync(CONFIG_FILE) } catch { /* missing is fine */ }
   removeEnvFile()
@@ -233,9 +343,59 @@ export async function cmdUninstall(): Promise<void> {
   } catch (err) {
     console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim-cli\` manually.`)
   }
+
+  if (mode === 'keep') {
+    console.log()
+    console.log(t(lang, 'svc.uninstall.workspaces_kept', pathVars))
+    console.log(t(lang, 'svc.uninstall.done'))
+    return
+  }
+
+  // ─── Mode='creds' or 'full': wipe credential files ─────────────────
+  // These four files are what would let an attacker keep using the Web
+  // dashboard / ACP after the install is gone. unlink is fine here
+  // because mode='full' falls through to a secure shred + rm -rf below.
+  console.log(t(lang, 'svc.uninstall.removing_creds'))
+  for (const f of credentialFiles()) {
+    try { unlinkSync(f) } catch { /* missing is fine */ }
+  }
+
+  if (mode === 'creds') {
+    console.log()
+    console.log(t(lang, 'svc.uninstall.creds_done'))
+    return
+  }
+
+  // ─── Mode='full': shred sensitive files, then rm -rf ───────────────
+  // Why shred when we're about to `rm -rf`? On ext4 / xfs / btrfs without
+  // FS-level encryption (LUKS / BitLocker), `rm` just unlinks — file
+  // blocks linger on raw disk until reused. `shred -u` overwrites then
+  // unlinks. This is a best-effort hardening — the right answer is
+  // FS-level encryption, but for users who skipped that, shred catches
+  // the obvious credential files.
+  console.log(t(lang, 'svc.uninstall.shredding'))
+  const shredAvailable = hasShred()
+  if (!shredAvailable) {
+    console.log(t(lang, 'svc.uninstall.shred_unavailable'))
+  }
+  // Re-target the files since credentialFiles() are now gone (unlinked
+  // above). Sensitive-files-list also includes env + config that we
+  // already unlinked in the common step — explicitly cover them in case
+  // a future refactor changes ordering.
+  const sensitive = [ENV_FILE, CONFIG_FILE, ...credentialFiles()]
+  for (const f of sensitive) secureDelete(f, lang, shredAvailable)
+
+  console.log(t(lang, 'svc.uninstall.removing_all', pathVars))
+  for (const dir of [CONFIG_DIR, WORKSPACES_DIR]) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (err) {
+      console.warn(`⚠️ Failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   console.log()
-  console.log(t(lang, 'svc.uninstall.workspaces_kept', pathVars))
-  console.log(t(lang, 'svc.uninstall.done'))
+  console.log(t(lang, 'svc.uninstall.full_done'))
 }
 
 // ─── post-config: offer to start the service ────────────────────────

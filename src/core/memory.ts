@@ -86,12 +86,53 @@ function migrateVectorColumns(db: import('better-sqlite3').Database): void {
   }
 }
 
+/** Default retention windows. 0 disables → permanent (back-compat). */
+function resolveFactRetentionDays(): number {
+  const raw = process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS
+  if (raw === undefined) return 90
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 90
+  return n
+}
+function resolvePersonaRetentionDays(): number {
+  const raw = process.env.IMHUB_PERSONA_RETENTION_DAYS
+  if (raw === undefined) return 180
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 180
+  return n
+}
+
+const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
+let sweepTimer: ReturnType<typeof setInterval> | null = null
+
 const helper = createSqliteHelper({
   file: MEMORY_DB,
   schema: SCHEMA,
   logger: log,
   component: 'memory',
-  init: (d) => { migrateVectorColumns(d) },
+  init: (d) => {
+    migrateVectorColumns(d)
+    // R12 ② — TTL sweep on startup + every 6 hours. With LRU semantics
+    // (uses last_referenced_at, not created_at) so frequently-queried
+    // facts survive. Set retention to 0 to disable.
+    try { pruneExpiredFactsInternal(d) } catch (err) {
+      log.warn({ event: 'memory.prune_facts_init_failed', err: String(err) })
+    }
+    try { pruneExpiredPersonaInternal(d) } catch (err) {
+      log.warn({ event: 'memory.prune_persona_init_failed', err: String(err) })
+    }
+    if (RETENTION_SWEEP_INTERVAL_MS > 0 && sweepTimer === null) {
+      sweepTimer = setInterval(() => {
+        const live = helper.get()
+        if (!live) return
+        try { pruneExpiredFactsInternal(live) } catch { /* logged inside */ }
+        try { pruneExpiredPersonaInternal(live) } catch { /* logged inside */ }
+      }, RETENTION_SWEEP_INTERVAL_MS)
+      if (typeof sweepTimer === 'object' && sweepTimer && 'unref' in sweepTimer) {
+        (sweepTimer as { unref: () => void }).unref()
+      }
+    }
+  },
 })
 
 export type FactCategory = 'fact' | 'preference' | 'goal' | 'history' | 'profile'
@@ -828,7 +869,98 @@ export function exportUserMemory(user_key: string): {
   }
 }
 
+// ─── Retention sweep (R12 ②) ────────────────────────────────────────
+//
+// LRU TTL: `last_referenced_at` is bumped by queryFacts /
+// queryFactsHybrid, so a fact that's been recalled within the window
+// survives even if its `created_at` is old. This intentionally
+// preserves high-value facts (e.g. operator's name, billing project)
+// while letting one-shot facts drop off.
+//
+// Persona uses `updated_at` (set by upsertPersona via distillation).
+//
+// `pruneExpired*Internal(db)` accept an explicit Database handle so
+// they can be called from the helper init callback (where helper.get()
+// would re-enter). Public wrappers call helper.get() the usual way.
+
+function pruneExpiredFactsInternal(db: import('better-sqlite3').Database): number {
+  const days = resolveFactRetentionDays()
+  if (days <= 0) return 0
+  const cutoff = nowSec() - days * 86400
+  // Need 5W1H columns to feed facts_fts reverse-delete (contentless FTS).
+  const candidates = db.prepare(`
+    SELECT id, user_key, what, who, when_text, where_label, why
+    FROM facts WHERE last_referenced_at < ?
+  `).all(cutoff) as Array<{
+    id: number; user_key: string; what: string;
+    who: string | null; when_text: string | null;
+    where_label: string | null; why: string | null;
+  }>
+  if (candidates.length === 0) return 0
+  const deleted = db.transaction((): number => {
+    const ftsDel = db.prepare(
+      "INSERT INTO facts_fts(facts_fts, rowid, user_key, text) VALUES ('delete', ?, ?, ?)",
+    )
+    for (const c of candidates) {
+      const text = indexableText({
+        user_key: c.user_key,
+        what: c.what,
+        who: c.who ?? '',
+        when_text: c.when_text ?? '',
+        where_label: c.where_label ?? '',
+        why: c.why ?? '',
+      })
+      try { ftsDel.run(c.id, c.user_key, text) } catch { /* contentless FTS rebuild quirk; row delete is what matters */ }
+    }
+    const ids = candidates.map((c) => c.id)
+    const placeholders = ids.map(() => '?').join(',')
+    return db.prepare(`DELETE FROM facts WHERE id IN (${placeholders})`).run(...ids).changes
+  })()
+  if (deleted > 0) {
+    log.info({ event: 'memory.pruned_facts', deleted, days }, `Pruned ${deleted} fact(s) older than ${days}d`)
+  }
+  return deleted
+}
+
+function pruneExpiredPersonaInternal(db: import('better-sqlite3').Database): number {
+  const days = resolvePersonaRetentionDays()
+  if (days <= 0) return 0
+  const cutoff = nowSec() - days * 86400
+  const r = db.prepare('DELETE FROM persona_profile WHERE updated_at < ?').run(cutoff)
+  if (r.changes > 0) {
+    log.info({ event: 'memory.pruned_persona', deleted: r.changes, days })
+  }
+  return r.changes
+}
+
+/** Public retention API — useful for /api/memory/prune endpoint + tests. */
+export function pruneExpiredFacts(): number {
+  const db = helper.get()
+  if (!db) return 0
+  try { return pruneExpiredFactsInternal(db) } catch (err) {
+    log.warn({ event: 'memory.prune_facts_failed', err: String(err) })
+    return 0
+  }
+}
+export function pruneExpiredPersona(): number {
+  const db = helper.get()
+  if (!db) return 0
+  try { return pruneExpiredPersonaInternal(db) } catch (err) {
+    log.warn({ event: 'memory.prune_persona_failed', err: String(err) })
+    return 0
+  }
+}
+
+/** Stop the periodic retention sweep (tests + graceful shutdown). */
+export function stopMemoryRetentionSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer)
+    sweepTimer = null
+  }
+}
+
 export function closeMemoryDb(): void {
+  stopMemoryRetentionSweep()
   helper.close()
 }
 

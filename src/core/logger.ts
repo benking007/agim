@@ -1,7 +1,7 @@
 // Structured logging with trace id support
 
 import pino from 'pino'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 
 const level = process.env.LOG_LEVEL || 'info'
 const usePretty = process.env.LOG_FORMAT === 'pretty' || (
@@ -45,6 +45,52 @@ const root = pino({
     censor: '[REDACTED]',
   },
 })
+
+/**
+ * Sanitise free-form user text for safe inclusion in structured logs.
+ *
+ * Pre-existing behaviour: `text.substring(0, 120)` put the first 120
+ * characters of every user message verbatim into stdout. With
+ * systemd-journald persistence + SIEM forwarding, that meant sensitive
+ * chat (credentials pasted by a user, PII, internal product names)
+ * ended up archived in the security-event store indefinitely.
+ *
+ * The replacement returns three short fields:
+ *
+ *   * `len`    — full length in characters (operationally useful)
+ *   * `prefix` — first 6 chars only, for "is this what I expected?" sanity
+ *   * `hash`   — sha256 first 12 hex chars of the FULL text, lets the
+ *                operator correlate the same message across multiple
+ *                log lines or with the original (if the user later
+ *                provides it) without storing the message itself
+ *
+ * Designed to be spread into a structured log call:
+ *   `logger.info({ event: 'message.received', ...sanitizeUserText(text) })`
+ *
+ * Operators who need the verbatim text (e.g. for debugging) can re-enable
+ * by setting `IMHUB_LOG_USER_TEXT=1` — that path is intentionally noisy
+ * (`WARN` level) so it surfaces in default LOG_LEVEL=info deployments.
+ */
+export function sanitizeUserText(text: string): {
+  len: number
+  prefix: string
+  hash: string
+  text?: string  // only present when IMHUB_LOG_USER_TEXT=1 (debug)
+} {
+  const safe = typeof text === 'string' ? text : String(text ?? '')
+  const out: { len: number; prefix: string; hash: string; text?: string } = {
+    len: safe.length,
+    prefix: safe.slice(0, 6),
+    hash: createHash('sha256').update(safe).digest('hex').slice(0, 12),
+  }
+  // Opt-in escape hatch — only for live debugging on a controlled host.
+  // We keep the 120-char cap as a guardrail against accidental log
+  // flooding when this flag is set.
+  if (process.env.IMHUB_LOG_USER_TEXT === '1') {
+    out.text = safe.slice(0, 120)
+  }
+  return out
+}
 
 export function generateTraceId(): string {
   // 16 hex chars (≈ 2^64). 12 hex (≈ 2^48) collides ~once per 16M ids on

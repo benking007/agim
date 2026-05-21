@@ -82,7 +82,7 @@ function newId(): string {
 
 /** Create + persist a new token. Returns the raw value (caller must
  *  surface it to the operator immediately — it is NOT recoverable later). */
-export function createToken(label: string): { id: string; raw: string; createdAt: number } {
+export function createToken(label: string, opts?: { actor?: string; traceId?: string }): { id: string; raw: string; createdAt: number } {
   const data = readFile()
   const raw = generateRawToken()
   const id = newId()
@@ -95,6 +95,21 @@ export function createToken(label: string): { id: string; raw: string; createdAt
   }
   data.tokens.push(row)
   writeFile(data)
+  // R12 ⑤ — persistent audit row. Label is operator-supplied and
+  // intended for display, so it goes into details (not the raw token).
+  void (async () => {
+    try {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        traceId: opts?.traceId,
+        eventType: 'token.create',
+        actor: opts?.actor ?? 'system',
+        target: id,
+        outcome: 'ok',
+        details: { label: row.label },
+      })
+    } catch { /* best-effort */ }
+  })()
   return { id, raw, createdAt: row.created_at }
 }
 
@@ -109,12 +124,24 @@ export function listTokens(): Array<Omit<TokenRow, 'hash'>> {
 }
 
 /** Revoke (delete) a token by id. Returns true if a row was removed. */
-export function revokeToken(id: string): boolean {
+export function revokeToken(id: string, opts?: { actor?: string; traceId?: string }): boolean {
   const data = readFile()
   const before = data.tokens.length
   data.tokens = data.tokens.filter((t) => t.id !== id)
   if (data.tokens.length === before) return false
   writeFile(data)
+  void (async () => {
+    try {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        traceId: opts?.traceId,
+        eventType: 'token.revoke',
+        actor: opts?.actor ?? 'system',
+        target: id,
+        outcome: 'ok',
+      })
+    } catch { /* best-effort */ }
+  })()
   return true
 }
 

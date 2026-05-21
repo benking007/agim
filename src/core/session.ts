@@ -319,8 +319,13 @@ class SessionManager {
       session.lastActivity = new Date()
       this.sessions.set(key, session)
       // Append-only log avoids rewriting the entire history per turn.
+      // Security: explicit mode 0o600 so session history isn't readable
+      // by other users on the same host even when umask is lax (e.g.
+      // 0022). NB: appendFile honors `mode` only on the first call when
+      // the file is created — subsequent appends preserve the existing
+      // perms, so the first message of every new thread locks it down.
       try {
-        await appendFile(sessionLogPath(key), `${JSON.stringify(message)}\n`)
+        await appendFile(sessionLogPath(key), `${JSON.stringify(message)}\n`, { mode: 0o600 })
       } catch (appendErr) {
         log.warn({ event: 'session.append_failed', key, err: String(appendErr) },
           'JSONL append failed, falling back to full save')
@@ -787,11 +792,13 @@ class SessionManager {
   private async atomicWrite(filePath: string, contents: string): Promise<void> {
     const tmp = `${filePath}.${randomBytes(4).toString('hex')}.tmp`
     try {
-      await writeFile(tmp, contents)
+      // mode 0o600 so the temp file (and the renamed-into final file)
+      // is unreadable by other users even when umask is lax.
+      await writeFile(tmp, contents, { mode: 0o600 })
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        await mkdir(SESSIONS_DIR, { recursive: true })
-        await writeFile(tmp, contents)
+        await mkdir(SESSIONS_DIR, { recursive: true, mode: 0o700 })
+        await writeFile(tmp, contents, { mode: 0o600 })
       } else {
         throw err
       }

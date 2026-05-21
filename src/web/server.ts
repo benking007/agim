@@ -11,7 +11,7 @@ import { parseMessage, routeMessage, type RouteContext } from '../core/router.js
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
-import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
+import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { isMasked, maskSecret } from './env-mask.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
@@ -159,6 +159,26 @@ function verifyTokenSync(raw: string): string | null {
     return null
   }
   return _tokenModule.verifyToken(raw)
+}
+
+/** Resolve a stable actor string for audit-event rows. Mirrors checkAuth's
+ *  identity model:
+ *    - auth disabled → 'web:auth-off'
+ *    - loopback peer (no auth needed) → 'web:loopback'
+ *    - verified token → 'web:<tokenId>'
+ *    - otherwise → 'web:unknown' (request should already have been rejected
+ *      by checkAuth — this branch exists for defensive logging). */
+function getRequestActor(req: IncomingMessage): string {
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
+  if (isLoopbackPeer(req)) return 'web:loopback'
+  let url: URL
+  try { url = new URL(req.url || '', 'http://localhost') } catch { return 'web:unknown' }
+  const tok = extractToken(req, url)
+  if (tok) {
+    const id = verifyTokenSync(tok)
+    if (id) return `web:${id}`
+  }
+  return 'web:unknown'
 }
 
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
@@ -605,6 +625,12 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/api/audit' && req.method === 'GET') {
       return handleAudit(req, res, url)
+    }
+    // R12 ⑤ — governance audit events (approvals, admin changes, config /
+    // env / token / workspace mutations). Separate retention from
+    // invocations (default 180d).
+    if (url.pathname === '/api/audit/events' && req.method === 'GET') {
+      return handleAuditEvents(req, res, url)
     }
     // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
     // a retry endpoint for the giving_up row state.
@@ -1276,6 +1302,19 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     }
 
     await saveConfig(result.config as unknown as Config)
+    // R12 ⑤ — persistent audit. `details.keys` is the list of top-level
+    // config keys touched (e.g. ['feishu', 'discord']) — never the raw
+    // values, which would leak tokens / app secrets through the audit
+    // table.
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'config.put',
+        actor: getRequestActor(req),
+        outcome: 'ok',
+        details: { keys: Object.keys(incoming) },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1375,13 +1414,25 @@ async function handleCreateOrUpdateWorkspace(req: IncomingMessage, res: ServerRe
     await persistWorkspacesToConfig(
       workspaceRegistry.listFull().filter((w) => w.id !== 'default')
     )
+    // R12 ⑤ — persistent audit. Only id + agent count go into details;
+    // member list (potentially identifiers) stays out of the audit row.
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'workspace.add',
+        actor: getRequestActor(req),
+        target: v.cfg.id,
+        outcome: 'ok',
+        details: { agents: v.cfg.agents.length, members: v.cfg.members?.length ?? 0 },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true, workspace: v.cfg })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
 
-async function handleDeleteWorkspace(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+async function handleDeleteWorkspace(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
   try {
     const { workspaceRegistry } = await import('../core/workspace.js')
     if (id === 'default') {
@@ -1396,6 +1447,15 @@ async function handleDeleteWorkspace(_req: IncomingMessage, res: ServerResponse,
     await persistWorkspacesToConfig(
       workspaceRegistry.listFull().filter((w) => w.id !== 'default')
     )
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'workspace.delete',
+        actor: getRequestActor(req),
+        target: id,
+        outcome: 'ok',
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
@@ -2145,6 +2205,17 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
       if (v === null) delete process.env[k]
       else process.env[k] = v
     }
+    // R12 ⑤ — persistent audit. Track WHICH keys were touched, never the
+    // values themselves (env can hold SMTP_PASS, BAIDU_AK, etc.).
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'env.put',
+        actor: getRequestActor(req),
+        outcome: 'ok',
+        details: { keys: Object.keys(safe) },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true, updated: Object.keys(safe) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2276,6 +2347,37 @@ async function handleAudit(_req: IncomingMessage, res: ServerResponse, url: URL)
     const rows = queryInvocations({ limit, days, agent, platform, userId, intent })
     const stats = getStats()
     sendJson(res, 200, { invocations: rows, stats })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** R12 ⑤ — GET /api/audit/events. Queryable by type, actor, days, limit.
+ *  Returns the JSON-encoded `details` field as a string; the client can
+ *  JSON.parse on demand (avoids accidental schema coupling). */
+async function handleAuditEvents(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { queryAuditEvents } = await import('../core/audit-log.js')
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 1000)
+    const days = parseInt(url.searchParams.get('days') || '30', 10) || 30
+    const actor = url.searchParams.get('actor') || undefined
+    const typesParam = url.searchParams.get('types')
+    // Accept comma-separated event types; reject anything not in the
+    // known union (defensive against open-ended filters that miss the
+    // SQL prepared-statement param check).
+    const KNOWN_TYPES = [
+      'approval.allow', 'approval.deny',
+      'admin.elevate', 'admin.revoke',
+      'config.put', 'env.put',
+      'token.create', 'token.revoke',
+      'workspace.add', 'workspace.delete',
+    ] as const
+    type T = (typeof KNOWN_TYPES)[number]
+    const types: T[] | undefined = typesParam
+      ? typesParam.split(',').map((s) => s.trim()).filter((s): s is T => (KNOWN_TYPES as readonly string[]).includes(s))
+      : undefined
+    const events = queryAuditEvents({ limit, days, actor, types })
+    sendJson(res, 200, { events })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -2806,10 +2908,30 @@ async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Pro
 // skillhub.cn proxy with 5-min cache — shows top-50 popular skills so the
 // user can discover new ones without leaving the dashboard. The actual
 // install still happens via the skillhub CLI on the host (see docs).
+//
+// Enterprise / air-gapped deployments can disable this endpoint via
+// `IMHUB_SKILLHUB_ENABLED=0`. When disabled, the API returns a stub
+// shape `{ disabled: true, items: [] }` so the UI can show "disabled
+// by enterprise policy" without breaking the page. This is the only
+// product-default outbound call to a non-IM domain, so the toggle
+// matters for organisations doing tcpdump-level egress audits.
 let remoteHotCache: { fetchedAt: number; data: unknown } | null = null
 const REMOTE_HOT_TTL_MS = 5 * 60_000
 
+function isSkillhubEnabled(): boolean {
+  const v = (process.env.IMHUB_SKILLHUB_ENABLED ?? '1').trim().toLowerCase()
+  return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off'
+}
+
 async function handleSkillsRemoteHot(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!isSkillhubEnabled()) {
+    // Disabled by enterprise policy. Return an empty-but-valid shape
+    // so the SPA can render "disabled" copy without a network error
+    // toast. Status 200 because this is a deliberate operator choice,
+    // not a transient failure.
+    sendJson(res, 200, { disabled: true, items: [], reason: 'IMHUB_SKILLHUB_ENABLED=0' })
+    return
+  }
   try {
     if (remoteHotCache && Date.now() - remoteHotCache.fetchedAt < REMOTE_HOT_TTL_MS) {
       sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt })
@@ -4053,7 +4175,7 @@ async function handleClientMessage(
           userId: `web:${clientId}`,
         }
 
-        logger.info({ event: 'message.received', text: text.substring(0, 120) })
+        logger.info({ event: 'message.received', ...sanitizeUserText(text) })
 
         const result = await routeMessage(parsed, routeCtx)
 

@@ -22,7 +22,7 @@
 //   - mirrors the file/jobs.db split — workspace cwds are conceptual
 //     home directories, artifacts/ is per-call scratch.
 
-import { mkdir, copyFile, link, readFile, writeFile, readdir, stat, rm } from 'node:fs/promises'
+import { mkdir, copyFile, link, readFile, writeFile, readdir, stat, rm, chmod } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, isAbsolute, dirname, basename } from 'node:path'
 import { logger as rootLogger } from './logger.js'
@@ -83,11 +83,19 @@ export function getArtifactsDir(jobId: number): JobArtifactDirs {
   }
 }
 
-/** Make sure all three dirs exist; idempotent. */
+/** Make sure all three dirs exist; idempotent.
+ *
+ *  Security: dir mode 0o700 so other users on the host can't traverse
+ *  into a job's artifacts (which may contain operator code copies,
+ *  A2A intermediate files, etc). Files inside get mode 0o600 on write.
+ *  Note: mkdir's `mode` is masked by the process umask on most systems,
+ *  but with default umask 0022 this still produces 0o700 → 0o700 ∩ 0o755 = 0o700,
+ *  so the explicit mode dominates the OS default.
+ */
 export async function ensureArtifactsDir(jobId: number): Promise<JobArtifactDirs> {
   const dirs = getArtifactsDir(jobId)
-  await mkdir(dirs.inputDir, { recursive: true })
-  await mkdir(dirs.outputDir, { recursive: true })
+  await mkdir(dirs.inputDir, { recursive: true, mode: 0o700 })
+  await mkdir(dirs.outputDir, { recursive: true, mode: 0o700 })
   return dirs
 }
 
@@ -141,6 +149,12 @@ export async function copyInputs(
         await copyFile(inp.fromAbsolutePath, dest)
         void err
       }
+      // chmod 0o600 unconditionally — both link() and copyFile() may
+      // inherit lax permissions from the source. Hard links share an
+      // inode (changing one changes the source) — acceptable here
+      // because the source is operator-controlled; we don't expect
+      // permissions to be looser than 0o600 after this.
+      await chmod(dest, 0o600).catch(() => { /* best-effort */ })
     } else if ('fromCallerOutput' in inp) {
       if (typeof callerJobId !== 'number' || callerJobId <= 0) {
         throw new Error(`artifacts: fromCallerOutput requires a callerJobId`)
@@ -154,13 +168,16 @@ export async function copyInputs(
       if (st.size > maxFile) throw new Error(`artifacts: ${inp.name} exceeds per-file cap (${st.size} > ${maxFile})`)
       bytes = st.size
       try { await link(src, dest) } catch { await copyFile(src, dest) }
+      await chmod(dest, 0o600).catch(() => { /* best-effort */ })
     } else if ('content' in inp) {
       const buf = Buffer.from(inp.content, 'utf-8')
       if (buf.length > maxFile) {
         throw new Error(`artifacts: ${inp.name} content exceeds per-file cap (${buf.length} > ${maxFile})`)
       }
       bytes = buf.length
-      await writeFile(dest, buf)
+      // mode 0o600 — same posture as session logs; A2A inline content
+      // may contain operator code / secrets.
+      await writeFile(dest, buf, { mode: 0o600 })
     } else {
       throw new Error(`artifacts: input '${inputName}' missing fromAbsolutePath / fromCallerOutput / content`)
     }

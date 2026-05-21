@@ -270,11 +270,39 @@ export async function startACPServer(options: {
     sendJson(res, 404, { error: 'Not found' })
   })
 
+  // R13 A2 — bind defaults to 127.0.0.1 (loopback only). Operators
+  // who run A2A across hosts can opt-in with IMHUB_ACP_BIND=<addr>.
+  // We warn loudly when non-loopback so the deployment audit log
+  // captures the elevation; the bearer-token gate (parseAuth)
+  // remains the only client-facing protection regardless.
+  const bind = (process.env.IMHUB_ACP_BIND || '127.0.0.1').trim()
+  const isLoopback = bind === '127.0.0.1' || bind === '::1' || bind === 'localhost'
   await new Promise<void>((resolve) => {
-    server.listen(port, '127.0.0.1', () => resolve())
+    server.listen(port, bind, () => resolve())
   })
 
-  rootLogger.info({ component: 'acp', port }, `ACP Server listening on http://127.0.0.1:${port}`)
+  if (!isLoopback) {
+    rootLogger.warn({
+      component: 'acp',
+      event: 'acp.server.non_loopback_bind',
+      bind, port,
+    }, `⚠️  ACP Server bound to ${bind}:${port} — accessible beyond loopback. `
+       + `Ensure your firewall restricts ${bind}:${port} to trusted hosts; `
+       + `bearer-token gate is the only client-facing protection.`)
+    // Also emit a persistent audit row so the binding decision is
+    // visible in /api/audit/events long after the boot log rolls.
+    try {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        eventType: 'config.put',
+        actor: 'system',
+        target: 'acp-server.bind',
+        outcome: 'ok',
+        details: { bind, port, loopback: false },
+      })
+    } catch { /* best-effort */ }
+  }
+  rootLogger.info({ component: 'acp', port, bind }, `ACP Server listening on http://${bind}:${port}`)
 
   return {
     port,

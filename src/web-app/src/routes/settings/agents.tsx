@@ -219,11 +219,15 @@ export default function SettingsAgentsRoute(): JSX.Element {
             </Select>
           </section>
 
-          {/* Remote (ACP) agents */}
-          <AcpCard
-            agents={acpAgents}
-            onChange={updateAcp}
-          />
+          {/* Remote (ACP) agents — gated by features.remoteAgent
+              (IMHUB_ENABLE_REMOTE_AGENT on server). Card is omitted
+              entirely; no breadcrumb hint shown. */}
+          {cfg?.features?.remoteAgent ? (
+            <AcpCard
+              agents={acpAgents}
+              onChange={updateAcp}
+            />
+          ) : null}
 
           {/* Save bar */}
           {isDirty && (

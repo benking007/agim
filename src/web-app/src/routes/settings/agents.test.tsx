@@ -63,6 +63,10 @@ const CONFIG = {
   acpAgents: [],
   defaultAgentDescription: '',
   messengers: [],
+  // R12 compliance gate — ACP card is rendered only when the server
+  // advertises features.remoteAgent. Tests cover the gated-on path;
+  // the gated-off path is exercised by R12's server tests.
+  features: { remoteAgent: true, globalIm: true },
 }
 
 const STATUS = {

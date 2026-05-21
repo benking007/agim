@@ -52,6 +52,88 @@ export function isTimeoutDefaultAllow(): boolean {
   return (process.env.IMHUB_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
 }
 
+// R13 C1 — visibility for "user away" mode. When IMHUB_TIMEOUT_DEFAULT is
+// `allow`, every approval that times out without IM response auto-approves
+// — that's a meaningful weakening of the human-in-the-loop guarantee.
+// Operators flip it during long-running automation and forget; the warning
+// trail makes the elevated risk surface in journals + persistent audit so
+// post-incident review can correlate "this batch ran without supervision"
+// with the policy state.
+let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
+
+/** Print a prominent stdout banner + emit a structured warn log + write
+ *  an audit-event row when the timeout-default policy is `allow` at
+ *  startup. Idempotent — subsequent calls log only the structured warn,
+ *  not the banner (to keep the journal readable on restarts). Also
+ *  starts an hourly reminder timer so a long-running deployment that
+ *  forgot to revert sees the warning re-surface in `journalctl --since
+ *  '-1h'`. */
+export function announceTimeoutDefaultIfAllow(): void {
+  if (!isTimeoutDefaultAllow()) {
+    // Operator flipped back to deny — stop reminding.
+    if (_timeoutAllowHourlyTimer) {
+      clearInterval(_timeoutAllowHourlyTimer)
+      _timeoutAllowHourlyTimer = null
+    }
+    return
+  }
+  const banner = [
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '⚠️  APPROVAL TIMEOUT POLICY: allow',
+    '',
+    '   IMHUB_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
+    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
+    '   Revert with: IMHUB_TIMEOUT_DEFAULT=deny (or unset).',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '',
+  ].join('\n')
+  process.stdout.write(banner)
+  log.warn({
+    event: 'approval.bus.timeout_default_allow',
+    msg: 'IMHUB_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
+  })
+  try {
+    void (async () => {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        eventType: 'config.put',
+        actor: 'system',
+        target: 'approval.timeout_default',
+        outcome: 'ok',
+        details: { value: 'allow', startup: true },
+      })
+    })()
+  } catch { /* best-effort */ }
+  if (_timeoutAllowHourlyTimer === null) {
+    _timeoutAllowHourlyTimer = setInterval(() => {
+      if (!isTimeoutDefaultAllow()) {
+        if (_timeoutAllowHourlyTimer) {
+          clearInterval(_timeoutAllowHourlyTimer)
+          _timeoutAllowHourlyTimer = null
+        }
+        return
+      }
+      log.warn({
+        event: 'approval.bus.timeout_default_allow.reminder',
+        msg: 'reminder: IMHUB_TIMEOUT_DEFAULT=allow still in effect',
+      })
+    }, 60 * 60 * 1000)
+    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
+        && 'unref' in _timeoutAllowHourlyTimer) {
+      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
+    }
+  }
+}
+
+/** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */
+export function stopTimeoutDefaultReminder(): void {
+  if (_timeoutAllowHourlyTimer) {
+    clearInterval(_timeoutAllowHourlyTimer)
+    _timeoutAllowHourlyTimer = null
+  }
+}
+
 /**
  * Tools whose contract is "read filesystem state, return it" — no writes,
  * no shell exec, no network. These short-circuit the approval flow with an
@@ -1185,6 +1267,52 @@ export class ApprovalBus {
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.toolName, args.input)
     const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
+
+    // R13 B1 — hard-denylist for sensitive paths / commands. Must come
+    // BEFORE the readonly auto-allow so even Read("~/.agim/env") is
+    // rejected without prompting the user (operator might click
+    // "approve" without realizing the output is about to land in a
+    // public IM channel). No IM card, no opt-in path — the only way
+    // to lift this gate is to edit src/core/sensitive-paths.ts.
+    {
+      const { checkSensitiveToolUse } = await import('./sensitive-paths.js')
+      const guard = checkSensitiveToolUse(args.toolName, args.input)
+      if (guard.deny) {
+        this.metricsSnapshot.totalRequests++
+        this.metricsSnapshot.totalResolved++
+        this.metricsSnapshot.totalDenied++
+        log.warn({
+          event: 'approval.bus.sensitive_blocked',
+          toolName: args.toolName,
+          reqId: args.reqId,
+          runId: args.runId,
+          compositeKey: cKey,
+          reason: guard.reason,
+        }, 'tool call hard-denied: targets sensitive path')
+        try {
+          const { logAuditEvent } = await import('./audit-log.js')
+          logAuditEvent({
+            eventType: 'approval.deny',
+            actor: `${args.ctx.platform}:${args.ctx.threadId}`,
+            target: args.toolName,
+            outcome: 'denied',
+            details: { reqId: args.reqId, reason: 'sensitive_path', sensitive: guard.reason },
+          })
+        } catch { /* best-effort */ }
+        const decision: Decision = {
+          behavior: 'deny',
+          message: `🛑 已拒绝：该工具调用尝试访问敏感路径。\n   原因：${guard.reason ?? 'protected resource'}\n   即便管理员同意，此请求也不会被放行 — 请改用 IM 外的安全通道传递这些内容。`,
+        }
+        if ('socket' in args.transport) {
+          this.sendDecision(args.transport.socket, args.reqId, decision)
+        } else {
+          try { args.transport.dispatch(decision) } catch (err) {
+            log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(err) })
+          }
+        }
+        return
+      }
+    }
 
     // Readonly auto-allow short-circuit. Must come BEFORE pending registration
     // / notifier so it costs zero IM round-trips. Counts toward totals so the

@@ -11,7 +11,7 @@ import { parseMessage, routeMessage, type RouteContext } from '../core/router.js
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
-import { generateTraceId, createLogger, logger as rootLogger } from '../core/logger.js'
+import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { isMasked, maskSecret } from './env-mask.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
@@ -86,6 +86,12 @@ function isLoopbackPeer(req: IncomingMessage): boolean {
   return ip === '127.0.0.1' || ip === '::1'
 }
 
+/** R13 A5 — track once-per-process whether the deprecated `?token=`
+ *  URL fallback has been used, so we warn at most once per service
+ *  lifetime instead of spamming the journal. Cleared by tests via
+ *  re-importing the module fresh. */
+let _queryTokenWarned = false
+
 function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
   const auth = req.headers['authorization']
@@ -101,9 +107,43 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
       if (k === 'agim_token') return decodeURIComponent(rest.join('=').trim())
     }
   }
-  // 3. ?token=...  (last resort, for WS upgrade / iframe)
+  // 3. ?token=...  (deprecated — kept for WS upgrade / iframe compat)
+  //
+  // R13 A5 — query-string tokens leak to:
+  //   * browser history / bookmarks
+  //   * Referer headers when the page links to a third party
+  //   * any HTTP-proxy / WAF / CDN access log between client and agim
+  //
+  // We warn loudly the first time it's used per process lifetime
+  // (rate-limited so a misbehaving client doesn't fill the journal)
+  // + emit a one-shot audit-event row. Operators should migrate
+  // callers to Authorization: Bearer or the agim_token cookie.
   const q = url.searchParams.get('token')
-  if (q) return q
+  if (q) {
+    if (!_queryTokenWarned) {
+      _queryTokenWarned = true
+      rootLogger.warn({
+        component: 'web',
+        event: 'web.auth.query_token_used',
+        path: url.pathname,
+        msg: '?token= URL fallback used; prefer Authorization: Bearer or agim_token cookie '
+          + '(query token leaks to browser history / Referer / proxy logs)',
+      })
+      try {
+        void (async () => {
+          const { logAuditEvent } = await import('../core/audit-log.js')
+          logAuditEvent({
+            eventType: 'config.put',
+            actor: 'system',
+            target: 'web.auth.query_token',
+            outcome: 'ok',
+            details: { reason: 'query_token_used', path: url.pathname },
+          })
+        })()
+      } catch { /* best-effort */ }
+    }
+    return q
+  }
   return null
 }
 
@@ -161,6 +201,64 @@ function verifyTokenSync(raw: string): string | null {
   return _tokenModule.verifyToken(raw)
 }
 
+/** Resolve a stable actor string for audit-event rows. Mirrors checkAuth's
+ *  identity model:
+ *    - auth disabled → 'web:auth-off'
+ *    - loopback peer (no auth needed) → 'web:loopback'
+ *    - verified token → 'web:<tokenId>'
+ *    - otherwise → 'web:unknown' (request should already have been rejected
+ *      by checkAuth — this branch exists for defensive logging). */
+function getRequestActor(req: IncomingMessage): string {
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
+  if (isLoopbackPeer(req)) return 'web:loopback'
+  let url: URL
+  try { url = new URL(req.url || '', 'http://localhost') } catch { return 'web:unknown' }
+  const tok = extractToken(req, url)
+  if (tok) {
+    const id = verifyTokenSync(tok)
+    if (id) return `web:${id}`
+  }
+  return 'web:unknown'
+}
+
+/** Resolve whether the request's actor has admin role. Used to gate
+ *  mutation + privileged-read endpoints so a stolen viewer-role token
+ *  can't elevate to control plane (R13 A1).
+ *
+ *  Trust order:
+ *    1. IMHUB_WEB_AUTH=off  → admin (operator explicitly disabled auth)
+ *    2. Loopback peer       → admin (operator on the host)
+ *    3. Bearer token        → token.role === 'admin'
+ *    4. Otherwise           → not admin
+ *
+ *  Note: when no token has been created yet (pre-bootstrap), the
+ *  loopback-peer branch still grants admin so the CLI bootstrap flow
+ *  works. */
+function isRequestAdmin(req: IncomingMessage): boolean {
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
+  if (isLoopbackPeer(req)) return true
+  let url: URL
+  try { url = new URL(req.url || '', 'http://localhost') } catch { return false }
+  const tok = extractToken(req, url)
+  if (!tok) return false
+  const id = verifyTokenSync(tok)
+  if (!id) return false
+  if (!_tokenModule) return false
+  // isAdminTokenId returns true for legacy tokens missing the role
+  // field (back-compat) so existing deployments stay functional after
+  // upgrade — see access-token.ts:getTokenRole.
+  return _tokenModule.isAdminTokenId(id)
+}
+
+/** Send 403 and return false when the actor isn't admin. Use as guard:
+ *  `if (!requireAdmin(req, res)) return` */
+function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
+  if (isRequestAdmin(req)) return true
+  res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify({ error: 'forbidden', message: 'admin role required' }))
+  return false
+}
+
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
   let queue: Promise<void> = Promise.resolve()
   return (fn: () => Promise<void>): void => {
@@ -206,6 +304,49 @@ export async function startWebServer(options: {
       event: 'web.auth_disabled_on_public_bind',
       bind: bindHost,
     }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
+  }
+  // R13 C2 — when binding to a non-loopback address, the operator
+  // almost certainly intends to put a TLS-terminating reverse proxy
+  // in front of agim. We can't reliably detect from inside whether
+  // that's been done (X-Forwarded-Proto could be forged), so we
+  // surface a one-time banner + audit row at boot. Suppress with
+  // IMHUB_WEB_TLS_ACK=1 for the operator who's already done the
+  // checklist and wants quiet logs.
+  if (isPublicBind && process.env.IMHUB_WEB_TLS_ACK !== '1') {
+    const banner = [
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      `⚠️  WEB SERVER BOUND TO ${bindHost}:${port} (non-loopback)`,
+      '',
+      '   Tokens travel as Bearer headers / cookies — if any leg between',
+      '   client and agim is HTTP, they go on the wire in cleartext.',
+      '   Confirm a TLS-terminating reverse proxy fronts this listener',
+      '   (nginx, caddy, traefik, k8s ingress, …) before exposing it to',
+      '   any network you do not control.',
+      '',
+      '   Silence this banner once your terminator is verified:',
+      '       IMHUB_WEB_TLS_ACK=1',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+    ].join('\n')
+    process.stdout.write(banner)
+    webLog.warn({
+      event: 'web.public_bind_no_tls_ack',
+      bind: bindHost,
+      port,
+    }, `non-loopback bind without IMHUB_WEB_TLS_ACK=1 — confirm reverse-proxy TLS termination`)
+    try {
+      void (async () => {
+        const { logAuditEvent } = await import('../core/audit-log.js')
+        logAuditEvent({
+          eventType: 'config.put',
+          actor: 'system',
+          target: 'web.bind',
+          outcome: 'ok',
+          details: { bind: bindHost, port, tls_ack: false },
+        })
+      })()
+    } catch { /* best-effort */ }
   }
   webLog.info({
     event: 'web.auth_mode',
@@ -497,15 +638,18 @@ export async function startWebServer(options: {
       return handleGetConfig(req, res)
     }
     if (url.pathname === '/api/config' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handlePutConfig(req, res)
     }
     if (url.pathname === '/api/agents/status' && req.method === 'GET') {
       return handleAgentsStatus(req, res)
     }
     if (url.pathname === '/api/agents/acp/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAcpTest(req, res)
     }
     if (url.pathname === '/api/agents/acp/discover' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAcpDiscover(req, res)
     }
 
@@ -582,29 +726,43 @@ export async function startWebServer(options: {
       return handleGetEnv(req, res, url)
     }
     if (url.pathname === '/api/env' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handlePutEnv(req, res)
     }
     if (url.pathname === '/api/messengers/email/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleEmailTest(req, res)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleCreateOrUpdateWorkspace(req, res)
     }
     const workspaceIdMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/)
     if (workspaceIdMatch && req.method === 'PATCH') {
+      if (!requireAdmin(req, res)) return
       return handleCreateOrUpdateWorkspace(req, res, workspaceIdMatch[1])
     }
     if (workspaceIdMatch && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleDeleteWorkspace(req, res, workspaceIdMatch[1])
     }
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
       return handleMetrics(req, res, url)
     }
     if (url.pathname === '/api/audit' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAudit(req, res, url)
+    }
+    // R12 ⑤ — governance audit events (approvals, admin changes, config /
+    // env / token / workspace mutations). Separate retention from
+    // invocations (default 180d). Admin-only — these rows can expose
+    // who promoted whom and which config keys were rotated when.
+    if (url.pathname === '/api/audit/events' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleAuditEvents(req, res, url)
     }
     // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
     // a retry endpoint for the giving_up row state.
@@ -616,6 +774,7 @@ export async function startWebServer(options: {
     }
     const outboxRetryMatch = url.pathname.match(/^\/api\/outbox\/(\d+)\/retry$/)
     if (outboxRetryMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleOutboxRetry(req, res, parseInt(outboxRetryMatch[1], 10))
     }
     // v1.1.3 — A2A tab. Stats over inline rows with parent_id; recent
@@ -682,6 +841,7 @@ export async function startWebServer(options: {
       return handleMemoryFacts(req, res, url)
     }
     if (url.pathname === '/api/memory/facts' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryBulkDelete(req, res, url)
     }
     const memFactIdMatch = url.pathname.match(/^\/api\/memory\/facts\/(\d+)$/)
@@ -692,9 +852,11 @@ export async function startWebServer(options: {
       return handleMemoryPersona(req, res, url)
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryPersonaPut(req, res, url)
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryPersonaDelete(req, res, url)
     }
     if (url.pathname === '/api/memory/export' && req.method === 'GET') {
@@ -705,20 +867,25 @@ export async function startWebServer(options: {
       return handleVectorStatus(req, res, url)
     }
     if (url.pathname === '/api/memory/vector/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorTest(req, res)
     }
     if (url.pathname === '/api/memory/vector/download' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorDownload(req, res)
     }
     if (url.pathname === '/api/memory/vector/backfill' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorBackfill(req, res, url)
     }
     if (url.pathname === '/api/memory/vector/clear' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleVectorClear(req, res, url)
     }
     // v1.2.2 — manual trigger for the daily consolidation. Useful when the
     // user just wants a persona summary now without waiting 24h.
     if (url.pathname === '/api/memory/consolidate' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryConsolidate(req, res)
     }
     if (url.pathname === '/api/memory/consolidate/status' && req.method === 'GET') {
@@ -752,15 +919,18 @@ export async function startWebServer(options: {
       return handleWorkspaceFiles(req, res, url)
     }
     if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return
       return handleWorkspaceFileWrite(req, res, url)
     }
     // PR-D: Job batch operations. Same semantics as /api/jobs/:id/cancel
     // and /run but accepts an array of ids in one request — saves N
     // round-trips when the user multi-selects a long list.
     if (url.pathname === '/api/jobs/batch-cancel' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleBatchJob(req, res, 'cancel')
     }
     if (url.pathname === '/api/jobs/batch-run' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleBatchJob(req, res, 'run', options.defaultAgent)
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
@@ -770,9 +940,11 @@ export async function startWebServer(options: {
       return handleEventsSSE(req, res)
     }
     if (url.pathname === '/api/notify' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleNotify(req, res)
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleInvoke(req, res, options.defaultAgent)
     }
 
@@ -782,6 +954,7 @@ export async function startWebServer(options: {
     // credentials to disk AND adds 'wechat-ilink' into config.messengers
     // so the next service restart picks the channel up.
     if (url.pathname === '/api/messengers/wechat/qr-start' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleWechatQrStart(res)
     }
     if (url.pathname === '/api/messengers/wechat/qr-status' && req.method === 'GET') {
@@ -798,12 +971,15 @@ export async function startWebServer(options: {
       return handleServiceStatus(res)
     }
     if (url.pathname === '/api/service/start' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceStart(res)
     }
     if (url.pathname === '/api/service/stop' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceStop(res)
     }
     if (url.pathname === '/api/service/restart' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleServiceRestart(res)
     }
 
@@ -815,9 +991,11 @@ export async function startWebServer(options: {
       return handleAdminAllowlistGet(res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistAdd(req, res, bindHost)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistRemove(req, res, bindHost)
     }
 
@@ -834,6 +1012,19 @@ export async function startWebServer(options: {
   const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info, cb) => {
+      // R13 A4 — per-IP rate limit runs BEFORE auth so an attacker
+      // hammering verifyClient with bad tokens can't burn CPU on
+      // sha256-hashing every attempt.
+      const limit = checkWsIpRateLimit(info.req as IncomingMessage)
+      if (!limit.ok) {
+        webLog.warn({
+          event: 'ws.rate_limited',
+          ip: peerIp(info.req as IncomingMessage),
+          reason: limit.reason,
+        }, 'WS upgrade refused (per-IP rate limit)')
+        return cb(false, 429, 'rate limited')
+      }
+
       // Auth-off / loopback bypass — mirror checkAuth's two short-circuits
       // so dev / local CLI sessions still work without a token.
       if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
@@ -884,6 +1075,81 @@ export async function startWebServer(options: {
     return 100
   })()
 
+  // R13 A4 — per-IP rate limit. The per-token cap above protects
+  // memory but not connection rate; one attacker IP with a valid
+  // token can still spawn N parallel browser tabs / processes and
+  // saturate the file-descriptor pool.
+  //
+  //   IMHUB_WS_MAX_PER_IP            active connections per IP (default 20)
+  //   IMHUB_WS_MAX_NEW_PER_IP_PER_MIN  new connections per IP per minute (default 30)
+  //
+  // Loopback bypasses both — local dev / CLI tooling makes many
+  // short connections legitimately.
+  const wsMaxPerIp = (() => {
+    const raw = process.env.IMHUB_WS_MAX_PER_IP
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 20
+  })()
+  const wsMaxNewPerIpPerMin = (() => {
+    const raw = process.env.IMHUB_WS_MAX_NEW_PER_IP_PER_MIN
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 30
+  })()
+  /** Per-IP active count + recent connection timestamps for sliding-window
+   *  rate limiting. We don't periodically prune unused entries — at
+   *  reasonable defaults the map size is bounded by the number of distinct
+   *  client IPs in any 60-second window, far below memory concerns. */
+  const wsPerIp = new Map<string, { active: number; recent: number[] }>()
+  function peerIp(req: IncomingMessage): string {
+    return (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  }
+  /** Returns {ok:true} when the IP may open a new WS, else {ok:false, reason}. */
+  function checkWsIpRateLimit(req: IncomingMessage): { ok: true } | { ok: false; reason: string } {
+    if (isLoopbackPeer(req)) return { ok: true }
+    const ip = peerIp(req)
+    if (!ip) return { ok: false, reason: 'empty peer ip' }  // defensive — matches isLoopbackPeer policy
+    const now = Date.now()
+    const cutoff = now - 60_000
+    const slot = wsPerIp.get(ip) ?? { active: 0, recent: [] }
+    slot.recent = slot.recent.filter((t) => t > cutoff)
+    if (slot.active >= wsMaxPerIp) {
+      return { ok: false, reason: `per-IP active cap (${slot.active}/${wsMaxPerIp})` }
+    }
+    if (slot.recent.length >= wsMaxNewPerIpPerMin) {
+      return { ok: false, reason: `per-IP new-conn cap (${slot.recent.length}/${wsMaxNewPerIpPerMin}/min)` }
+    }
+    return { ok: true }
+  }
+  function recordWsIpOpen(req: IncomingMessage): void {
+    if (isLoopbackPeer(req)) return
+    const ip = peerIp(req)
+    if (!ip) return
+    const slot = wsPerIp.get(ip) ?? { active: 0, recent: [] }
+    slot.active++
+    slot.recent.push(Date.now())
+    wsPerIp.set(ip, slot)
+  }
+  function recordWsIpClose(req: IncomingMessage): void {
+    if (isLoopbackPeer(req)) return
+    const ip = peerIp(req)
+    if (!ip) return
+    const slot = wsPerIp.get(ip)
+    if (!slot) return
+    slot.active = Math.max(0, slot.active - 1)
+    // GC empty slots so the map doesn't grow unboundedly across the
+    // lifetime of the process. A slot is "empty" iff no active conn
+    // AND no recent connection within the window.
+    if (slot.active === 0 && slot.recent.filter((t) => t > Date.now() - 60_000).length === 0) {
+      wsPerIp.delete(ip)
+    }
+  }
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     if (clients.size >= maxWsClients) {
       // 1013 = "Try Again Later" per RFC 6455. Slightly nicer than a flat
@@ -896,6 +1162,9 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
+    // R13 A4 — book the per-IP slot now that we know the upgrade
+    // succeeded. The matching close hook decrements below.
+    recordWsIpOpen(req)
     // R9: token verified at upgrade time by verifyClient; we read the
     // tokenId here so get-history can enforce ownership when the client
     // wants to rekey to a persisted threadId. 'anon' is the loopback /
@@ -1026,6 +1295,7 @@ export async function startWebServer(options: {
       const liveId = client.id
       webLog.info({ clientId: liveId }, 'Client disconnected')
       clients.delete(liveId)
+      recordWsIpClose(req)  // R13 A4
       // R9: drop the ownership entry only for server-generated ids that
       // were never rekeyed to a persistent client-side threadId. Rekeyed
       // ids stay registered so the operator's next reconnect with the
@@ -1037,6 +1307,7 @@ export async function startWebServer(options: {
       const liveId = client.id
       webLog.error({ clientId: liveId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
       clients.delete(liveId)
+      recordWsIpClose(req)  // R13 A4
       if (liveId === clientId) threadOwners.delete(liveId)
     })
   })
@@ -1165,11 +1436,19 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     const config = await loadConfig()
     const agentStatus = await getAgentStatuses()
 
+    // Compliance gates — when the env flag is off, strip the
+    // corresponding keys from the response so the settings UI never
+    // sees them and renders no tabs / cards. On-disk config is left
+    // untouched: flipping the env back on restores visibility.
+    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    const showGlobalIm = isGlobalImEnabled()
+    const showRemoteAgent = isRemoteAgentEnabled()
+
     sendJson(res, 200, {
       messengers: config.messengers,
       agents: config.agents,
       defaultAgent: config.defaultAgent,
-      telegram: config.telegram
+      telegram: showGlobalIm && config.telegram
         ? { botToken: mask(config.telegram.botToken), channelId: config.telegram.channelId }
         : undefined,
       feishu: config.feishu
@@ -1178,7 +1457,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       dingtalk: config.dingtalk
         ? { clientId: config.dingtalk.clientId, clientSecret: mask(config.dingtalk.clientSecret), channelId: config.dingtalk.channelId }
         : undefined,
-      discord: config.discord
+      discord: showGlobalIm && config.discord
         ? {
             botToken: mask(config.discord.botToken),
             channelId: config.discord.channelId,
@@ -1186,12 +1465,23 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
             allowedChannels: config.discord.allowedChannels,
           }
         : undefined,
-      acpAgents: config.acpAgents?.map(a => ({
-        ...a,
-        auth: a.auth
-          ? { ...a.auth, token: a.auth.token ? mask(a.auth.token) : undefined }
-          : undefined,
-      })),
+      acpAgents: showRemoteAgent
+        ? config.acpAgents?.map(a => ({
+            ...a,
+            auth: a.auth
+              ? { ...a.auth, token: a.auth.token ? mask(a.auth.token) : undefined }
+              : undefined,
+          }))
+        : undefined,
+      // Feature flags surfaced for the SPA so it can hide the
+      // corresponding tabs / nav entries. Field names are
+      // intentionally neutral — they don't reveal which IMs / agent
+      // types the flag controls beyond what the settings page
+      // already exposes.
+      features: {
+        globalIm: showGlobalIm,
+        remoteAgent: showRemoteAgent,
+      },
       webPort: config.webPort,
       agentStatus,
     })
@@ -1205,6 +1495,29 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     const body = await readBody(req, res)
     const incoming = JSON.parse(body) as Record<string, unknown>
     const existing = await loadConfig()
+
+    // Compliance gates — silently drop keys the operator's deployment
+    // is not allowed to surface. We don't 4xx here because the SPA may
+    // round-trip a stale snapshot that happens to include these keys;
+    // dropping them keeps existing on-disk values untouched (the
+    // round-trip becomes a no-op for that field).
+    //
+    // We also scrub `messengers[]` so a hidden slot can't be toggled
+    // via direct PUT (the SPA filters in render but a stale draft from
+    // before the env flag was disabled would otherwise re-add the
+    // entry on next save).
+    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    if (!isGlobalImEnabled()) {
+      delete incoming.telegram
+      delete incoming.discord
+      if (Array.isArray(incoming.messengers)) {
+        incoming.messengers = (incoming.messengers as unknown[])
+          .filter((m) => m !== 'telegram' && m !== 'discord')
+      }
+    }
+    if (!isRemoteAgentEnabled()) {
+      delete incoming.acpAgents
+    }
 
     const merged: Record<string, unknown> = { ...existing }
 
@@ -1276,6 +1589,19 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     }
 
     await saveConfig(result.config as unknown as Config)
+    // R12 ⑤ — persistent audit. `details.keys` is the list of top-level
+    // config keys touched (e.g. ['feishu', 'discord']) — never the raw
+    // values, which would leak tokens / app secrets through the audit
+    // table.
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'config.put',
+        actor: getRequestActor(req),
+        outcome: 'ok',
+        details: { keys: Object.keys(incoming) },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1375,13 +1701,25 @@ async function handleCreateOrUpdateWorkspace(req: IncomingMessage, res: ServerRe
     await persistWorkspacesToConfig(
       workspaceRegistry.listFull().filter((w) => w.id !== 'default')
     )
+    // R12 ⑤ — persistent audit. Only id + agent count go into details;
+    // member list (potentially identifiers) stays out of the audit row.
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'workspace.add',
+        actor: getRequestActor(req),
+        target: v.cfg.id,
+        outcome: 'ok',
+        details: { agents: v.cfg.agents.length, members: v.cfg.members?.length ?? 0 },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true, workspace: v.cfg })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
 
-async function handleDeleteWorkspace(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+async function handleDeleteWorkspace(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
   try {
     const { workspaceRegistry } = await import('../core/workspace.js')
     if (id === 'default') {
@@ -1396,6 +1734,15 @@ async function handleDeleteWorkspace(_req: IncomingMessage, res: ServerResponse,
     await persistWorkspacesToConfig(
       workspaceRegistry.listFull().filter((w) => w.id !== 'default')
     )
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'workspace.delete',
+        actor: getRequestActor(req),
+        target: id,
+        outcome: 'ok',
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true })
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
@@ -2145,6 +2492,17 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
       if (v === null) delete process.env[k]
       else process.env[k] = v
     }
+    // R12 ⑤ — persistent audit. Track WHICH keys were touched, never the
+    // values themselves (env can hold SMTP_PASS, BAIDU_AK, etc.).
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'env.put',
+        actor: getRequestActor(req),
+        outcome: 'ok',
+        details: { keys: Object.keys(safe) },
+      })
+    } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true, updated: Object.keys(safe) })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2276,6 +2634,37 @@ async function handleAudit(_req: IncomingMessage, res: ServerResponse, url: URL)
     const rows = queryInvocations({ limit, days, agent, platform, userId, intent })
     const stats = getStats()
     sendJson(res, 200, { invocations: rows, stats })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** R12 ⑤ — GET /api/audit/events. Queryable by type, actor, days, limit.
+ *  Returns the JSON-encoded `details` field as a string; the client can
+ *  JSON.parse on demand (avoids accidental schema coupling). */
+async function handleAuditEvents(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { queryAuditEvents } = await import('../core/audit-log.js')
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 1000)
+    const days = parseInt(url.searchParams.get('days') || '30', 10) || 30
+    const actor = url.searchParams.get('actor') || undefined
+    const typesParam = url.searchParams.get('types')
+    // Accept comma-separated event types; reject anything not in the
+    // known union (defensive against open-ended filters that miss the
+    // SQL prepared-statement param check).
+    const KNOWN_TYPES = [
+      'approval.allow', 'approval.deny',
+      'admin.elevate', 'admin.revoke',
+      'config.put', 'env.put',
+      'token.create', 'token.revoke',
+      'workspace.add', 'workspace.delete',
+    ] as const
+    type T = (typeof KNOWN_TYPES)[number]
+    const types: T[] | undefined = typesParam
+      ? typesParam.split(',').map((s) => s.trim()).filter((s): s is T => (KNOWN_TYPES as readonly string[]).includes(s))
+      : undefined
+    const events = queryAuditEvents({ limit, days, actor, types })
+    sendJson(res, 200, { events })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -2806,10 +3195,30 @@ async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Pro
 // skillhub.cn proxy with 5-min cache — shows top-50 popular skills so the
 // user can discover new ones without leaving the dashboard. The actual
 // install still happens via the skillhub CLI on the host (see docs).
+//
+// Enterprise / air-gapped deployments can disable this endpoint via
+// `IMHUB_SKILLHUB_ENABLED=0`. When disabled, the API returns a stub
+// shape `{ disabled: true, items: [] }` so the UI can show "disabled
+// by enterprise policy" without breaking the page. This is the only
+// product-default outbound call to a non-IM domain, so the toggle
+// matters for organisations doing tcpdump-level egress audits.
 let remoteHotCache: { fetchedAt: number; data: unknown } | null = null
 const REMOTE_HOT_TTL_MS = 5 * 60_000
 
+function isSkillhubEnabled(): boolean {
+  const v = (process.env.IMHUB_SKILLHUB_ENABLED ?? '1').trim().toLowerCase()
+  return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off'
+}
+
 async function handleSkillsRemoteHot(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!isSkillhubEnabled()) {
+    // Disabled by enterprise policy. Return an empty-but-valid shape
+    // so the SPA can render "disabled" copy without a network error
+    // toast. Status 200 because this is a deliberate operator choice,
+    // not a transient failure.
+    sendJson(res, 200, { disabled: true, items: [], reason: 'IMHUB_SKILLHUB_ENABLED=0' })
+    return
+  }
   try {
     if (remoteHotCache && Date.now() - remoteHotCache.fetchedAt < REMOTE_HOT_TTL_MS) {
       sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt })
@@ -4053,7 +4462,7 @@ async function handleClientMessage(
           userId: `web:${clientId}`,
         }
 
-        logger.info({ event: 'message.received', text: text.substring(0, 120) })
+        logger.info({ event: 'message.received', ...sanitizeUserText(text) })
 
         const result = await routeMessage(parsed, routeCtx)
 

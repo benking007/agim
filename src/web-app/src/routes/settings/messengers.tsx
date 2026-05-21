@@ -202,25 +202,27 @@ export default function SettingsMessengersRoute(): JSX.Element {
             </Button>
           </PlatformCard>
 
-          <PlatformCard
-            slot="telegram"
-            label={t('messengers.platform.telegram')}
-            hint={t('messengers.hint.telegram')}
-            enabled={draft.telegram.enabled}
-            onToggle={(v) => patchSlot('telegram', { enabled: v })}
-          >
-            <FieldRow
-              id="tg-token"  label={t('messengers.fields.botToken')}
-              value={draft.telegram.telegram?.botToken ?? ''}
-              type="password"
-              onChange={(v) => patchSlot('telegram', { telegram: { ...draft.telegram.telegram, botToken: v } })}
-            />
-            <FieldRow
-              id="tg-channel" label={t('messengers.fields.channelId')}
-              value={draft.telegram.telegram?.channelId ?? ''}
-              onChange={(v) => patchSlot('telegram', { telegram: { ...draft.telegram.telegram, channelId: v } })}
-            />
-          </PlatformCard>
+          {cfg.features?.globalIm ? (
+            <PlatformCard
+              slot="telegram"
+              label={t('messengers.platform.telegram')}
+              hint={t('messengers.hint.telegram')}
+              enabled={draft.telegram.enabled}
+              onToggle={(v) => patchSlot('telegram', { enabled: v })}
+            >
+              <FieldRow
+                id="tg-token"  label={t('messengers.fields.botToken')}
+                value={draft.telegram.telegram?.botToken ?? ''}
+                type="password"
+                onChange={(v) => patchSlot('telegram', { telegram: { ...draft.telegram.telegram, botToken: v } })}
+              />
+              <FieldRow
+                id="tg-channel" label={t('messengers.fields.channelId')}
+                value={draft.telegram.telegram?.channelId ?? ''}
+                onChange={(v) => patchSlot('telegram', { telegram: { ...draft.telegram.telegram, channelId: v } })}
+              />
+            </PlatformCard>
+          ) : null}
 
           <PlatformCard
             slot="feishu"
@@ -272,25 +274,27 @@ export default function SettingsMessengersRoute(): JSX.Element {
             />
           </PlatformCard>
 
-          <PlatformCard
-            slot="discord"
-            label={t('messengers.platform.discord')}
-            hint={t('messengers.hint.discord')}
-            enabled={draft.discord.enabled}
-            onToggle={(v) => patchSlot('discord', { enabled: v })}
-          >
-            <FieldRow
-              id="dc-token" label={t('messengers.fields.botToken')}
-              value={draft.discord.discord?.botToken ?? ''}
-              type="password"
-              onChange={(v) => patchSlot('discord', { discord: { ...draft.discord.discord, botToken: v } })}
-            />
-            <FieldRow
-              id="dc-channel" label={t('messengers.fields.channelId')}
-              value={draft.discord.discord?.channelId ?? ''}
-              onChange={(v) => patchSlot('discord', { discord: { ...draft.discord.discord, channelId: v } })}
-            />
-          </PlatformCard>
+          {cfg.features?.globalIm ? (
+            <PlatformCard
+              slot="discord"
+              label={t('messengers.platform.discord')}
+              hint={t('messengers.hint.discord')}
+              enabled={draft.discord.enabled}
+              onToggle={(v) => patchSlot('discord', { enabled: v })}
+            >
+              <FieldRow
+                id="dc-token" label={t('messengers.fields.botToken')}
+                value={draft.discord.discord?.botToken ?? ''}
+                type="password"
+                onChange={(v) => patchSlot('discord', { discord: { ...draft.discord.discord, botToken: v } })}
+              />
+              <FieldRow
+                id="dc-channel" label={t('messengers.fields.channelId')}
+                value={draft.discord.discord?.channelId ?? ''}
+                onChange={(v) => patchSlot('discord', { discord: { ...draft.discord.discord, channelId: v } })}
+              />
+            </PlatformCard>
+          ) : null}
         </div>
       )}
 

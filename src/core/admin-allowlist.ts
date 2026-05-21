@@ -83,7 +83,7 @@ export function listAdmins(): Array<{ platform: string; userId: string }> {
 /** Add an admin at runtime: in-memory immediately + persist to env file so
  *  the next restart still has them. Idempotent — duplicates are skipped.
  *  Returns true if added, false if already present. */
-export async function promoteAdmin(platform: string, userId: string): Promise<boolean> {
+export async function promoteAdmin(platform: string, userId: string, opts?: { actor?: string; traceId?: string }): Promise<boolean> {
   if (!userId) throw new Error('userId required')
   const p = platform.toLowerCase()
   if (getEntries().some((e) => e.platform === p && e.userId === userId)) return false
@@ -107,6 +107,18 @@ export async function promoteAdmin(platform: string, userId: string): Promise<bo
       err: err instanceof Error ? err.message : String(err),
     }, 'in-memory admin add succeeded but env-file write failed; will be lost on restart')
   }
+  // R12 ⑤ — persistent audit row. Tracks who got admin'd, by whom, when.
+  try {
+    const { logAuditEvent } = await import('./audit-log.js')
+    logAuditEvent({
+      traceId: opts?.traceId,
+      eventType: 'admin.elevate',
+      actor: opts?.actor ?? 'system',
+      target: `${p}:${userId}`,
+      outcome: 'ok',
+      details: { total: getEntries().length },
+    })
+  } catch { /* audit best-effort */ }
   return true
 }
 

@@ -25,6 +25,16 @@ function resolveRetentionDays(): number {
   return 30
 }
 
+/** R12 ⑤ — events table retention. Default 180d is GDPR-friendly and
+ *  satisfies 等保 2.0 三级 (≥ 6 months). 0 = permanent. */
+function resolveAuditEventsRetentionDays(): number {
+  const raw = process.env.IMHUB_AUDIT_EVENTS_RETENTION_DAYS
+  if (raw === undefined) return 180
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 180
+  return n
+}
+
 /** How often to run the retention sweep (epoch-ms). 0 disables. */
 const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
 
@@ -56,13 +66,35 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_inv_user ON invocations(user_id);
     CREATE INDEX IF NOT EXISTS idx_inv_platform ON invocations(platform);
     CREATE INDEX IF NOT EXISTS idx_inv_intent ON invocations(intent);
+
+    -- R12 ⑤ — persistent audit table for governance events (approvals,
+    -- admin elevations, config / env / token / workspace mutations).
+    -- Separate from invocations because retention requirements differ
+    -- (compliance asks for ≥ 6 months on access-control events; calls
+    -- are typically 30 days).
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts         TEXT    NOT NULL DEFAULT (datetime('now')),
+      trace_id   TEXT    NOT NULL DEFAULT '',
+      event_type TEXT    NOT NULL,
+      actor      TEXT    NOT NULL DEFAULT '',
+      target     TEXT    NOT NULL DEFAULT '',
+      outcome    TEXT    NOT NULL DEFAULT 'ok',
+      details    TEXT    NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor);
   `,
   init: (d) => {
     pruneExpired(d)
+    pruneExpiredEvents(d)
     if (RETENTION_SWEEP_INTERVAL_MS > 0 && sweepTimer === null) {
       sweepTimer = setInterval(() => {
         const live = helper.get()
-        if (live) pruneExpired(live)
+        if (!live) return
+        pruneExpired(live)
+        pruneExpiredEvents(live)
       }, RETENTION_SWEEP_INTERVAL_MS)
       if (typeof sweepTimer === 'object' && sweepTimer && 'unref' in sweepTimer) {
         (sweepTimer as { unref: () => void }).unref()
@@ -205,6 +237,129 @@ export function pruneExpired(d: Database.Database = getDb()!): number {
     // M7: surface as Prometheus counter so a stuck retention loop becomes
     // observable beyond a stderr warn line. Alert on any non-zero rate.
     recordAuditPruneFailure()
+    return 0
+  }
+}
+
+// ─── R12 ⑤ — Governance audit events ────────────────────────────────
+//
+// A second table in the same audit.db captures 6 categories of high-
+// risk control-plane events that previously only hit pino stdout. With
+// systemd-journald restart, those events vanished — making post-hoc
+// "who promoted X to admin?" or "which token revoked the wechat hook?"
+// impossible to answer beyond the live journal window.
+//
+// Design contract:
+//   - `details` is a small JSON blob: field names, lengths, hash prefixes
+//     only. NEVER put plaintext credentials, prompt bodies, or PII here.
+//     The injection sites are responsible for stripping; this layer just
+//     persists what it's given.
+//   - Schema is fixed (no extra columns) — query by event_type + actor
+//     + time range covers every audit need we have.
+//   - Retention is separate from invocations (IMHUB_AUDIT_EVENTS_RETENTION_DAYS,
+//     default 180d). 0 = permanent.
+
+export type AuditEventType =
+  | 'approval.allow'
+  | 'approval.deny'
+  | 'admin.elevate'
+  | 'admin.revoke'
+  | 'config.put'
+  | 'env.put'
+  | 'token.create'
+  | 'token.revoke'
+  | 'workspace.add'
+  | 'workspace.delete'
+
+export interface AuditEvent {
+  traceId?: string
+  eventType: AuditEventType
+  actor: string                          // platform:userId or 'system'
+  target?: string                        // affected object (token id, workspace name, etc.)
+  outcome?: 'ok' | 'denied' | 'error'
+  details?: Record<string, unknown>      // sanitized — field names + lengths + hash prefixes only
+}
+
+export interface AuditEventRow {
+  id: number
+  ts: string
+  trace_id: string
+  event_type: string
+  actor: string
+  target: string
+  outcome: string
+  details: string  // JSON-encoded; caller can JSON.parse if it wants the object back
+}
+
+export function logAuditEvent(ev: AuditEvent): void {
+  const d = getDb()
+  if (!d) return
+  try {
+    const detailsJson = JSON.stringify(ev.details ?? {})
+    d.prepare(`
+      INSERT INTO audit_events (trace_id, event_type, actor, target, outcome, details)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      ev.traceId ?? '',
+      ev.eventType,
+      ev.actor,
+      ev.target ?? '',
+      ev.outcome ?? 'ok',
+      detailsJson,
+    )
+  } catch (err) {
+    // Best-effort — audit logging must never break the caller's request.
+    log.warn({ event: 'audit-events.write_failed', err: String(err) })
+  }
+}
+
+export interface AuditEventQueryOpts {
+  types?: AuditEventType[]
+  actor?: string
+  days?: number
+  limit?: number
+}
+
+export function queryAuditEvents(opts: AuditEventQueryOpts = {}): AuditEventRow[] {
+  const d = getDb()
+  if (!d) return []
+  const conditions: string[] = []
+  const params: unknown[] = []
+  if (opts.types && opts.types.length > 0) {
+    const placeholders = opts.types.map(() => '?').join(',')
+    conditions.push(`event_type IN (${placeholders})`)
+    params.push(...opts.types)
+  }
+  if (opts.actor) { conditions.push('actor = ?'); params.push(opts.actor) }
+  if (opts.days && Number.isFinite(opts.days) && opts.days > 0) {
+    conditions.push("ts >= datetime('now', ?)")
+    params.push(`-${Math.floor(opts.days)} days`)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rawLimit = opts.limit
+  const limit = Number.isFinite(rawLimit) && rawLimit! > 0 ? Math.min(Math.floor(rawLimit!), 1000) : 100
+  try {
+    return d.prepare(`SELECT * FROM audit_events ${where} ORDER BY ts DESC LIMIT ?`)
+      .all(...params, limit) as AuditEventRow[]
+  } catch {
+    return []
+  }
+}
+
+export function pruneExpiredEvents(d: Database.Database = getDb()!): number {
+  if (!d) return 0
+  const days = resolveAuditEventsRetentionDays()
+  if (days <= 0) return 0
+  try {
+    const info = d.prepare("DELETE FROM audit_events WHERE ts < datetime('now', ?)")
+      .run(`-${days} days`)
+    if (info.changes > 0) {
+      log.info({ event: 'audit-events.pruned', deleted: info.changes, days },
+        `Pruned ${info.changes} audit event row(s) older than ${days}d`)
+    }
+    return info.changes
+  } catch (err) {
+    log.warn({ event: 'audit-events.prune.failed', error: String(err) })
     return 0
   }
 }

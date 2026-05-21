@@ -517,7 +517,24 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
   if (decision) {
     const info = approvalBus.resolvePending(key, decision)
     log.info({ event: 'approval.router.resolved', key, behavior: decision.behavior })
+    // R12 ⑤ — persistent audit. ResolvedInfo has platform + threadId +
+    // toolName but no user_id (the IM reply identifies a thread, not a
+    // person directly); we record thread granularity which is enough to
+    // correlate "this thread approved this tool at this time" with the
+    // IM platform's own conversation logs for the human-level lookup.
     if (info) {
+      void (async () => {
+        try {
+          const { logAuditEvent } = await import('./audit-log.js')
+          logAuditEvent({
+            eventType: decision.behavior === 'allow' ? 'approval.allow' : 'approval.deny',
+            actor: `${info.platform}:${info.threadId}`,
+            target: info.toolName,
+            outcome: decision.behavior === 'allow' ? 'ok' : 'denied',
+            details: { reqId: info.reqId, wasAutoAllow: info.wasAutoAllow },
+          })
+        } catch { /* best-effort */ }
+      })()
       editCardOnThreadResolution(info, decision, undefined)
       sendReceiptIfAny(info, decision)
     }

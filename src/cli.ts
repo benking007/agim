@@ -23,7 +23,7 @@ import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
 import { crossSpawn, isMac, isWindows } from './utils/cross-platform.js'
 import type { MessageContext } from './core/types.js'
-import { generateTraceId, createLogger } from './core/logger.js'
+import { generateTraceId, createLogger, sanitizeUserText } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
 import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
@@ -136,6 +136,12 @@ program
       try {
         const sockPath = await approvalBus.start()
         console.log(`✅ Approval bus listening on ${sockPath}`)
+        // R13 C1 — surface the timeout-default policy at startup so
+        // operators don't forget `allow` is in effect.
+        try {
+          const { announceTimeoutDefaultIfAllow } = await import('./core/approval-bus.js')
+          announceTimeoutDefaultIfAllow()
+        } catch { /* best-effort */ }
         // Expose the path through env so long-lived child processes
         // (notably `opencode serve`, which spawns the MCP sidecar with
         // `env: process.env`) can connect without per-spawn config.
@@ -343,7 +349,11 @@ program
         const traceId = generateTraceId()
         ctx.traceId = traceId
         ctx.logger = createLogger({ traceId, platform: ctx.platform, component: 'cli' })
-        ctx.logger.info({ event: 'message.received', text: ctx.message.text.substring(0, 120), userId: ctx.message.userId })
+        ctx.logger.info({
+          event: 'message.received',
+          userId: ctx.message.userId,
+          ...sanitizeUserText(ctx.message.text),
+        })
 
         // Phase 3 — interrupted-job recovery reply. If the user has a
         // pending "retry / cancel" prompt outstanding on this thread AND

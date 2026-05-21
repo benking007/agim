@@ -37,11 +37,40 @@ const SCHEMA = `
 
 const viewerLog = rootLogger.child({ component: 'viewer-local' })
 
+/** Default 30-day TTL. 0 disables → permanent (back-compat for operators who
+ *  treat pastes as long-term archive). LRU cap (IMHUB_VIEWER_MAX_PASTES) still
+ *  applies on top of this. */
+function resolvePasteRetentionDays(): number {
+  const raw = process.env.IMHUB_PASTE_RETENTION_DAYS
+  if (raw === undefined) return 30
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 30
+  return n
+}
+
+const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
+let sweepTimer: ReturnType<typeof setInterval> | null = null
+
 const helper = createSqliteHelper({
   file: VIEWER_DB,
   schema: SCHEMA,
   logger: viewerLog,
   component: 'viewer-local',
+  init: (d) => {
+    try { pruneExpiredPastesInternal(d) } catch (err) {
+      viewerLog.warn({ event: 'viewer.prune_init_failed', err: String(err) })
+    }
+    if (RETENTION_SWEEP_INTERVAL_MS > 0 && sweepTimer === null) {
+      sweepTimer = setInterval(() => {
+        const live = helper.get()
+        if (!live) return
+        try { pruneExpiredPastesInternal(live) } catch { /* logged inside */ }
+      }, RETENTION_SWEEP_INTERVAL_MS)
+      if (typeof sweepTimer === 'object' && sweepTimer && 'unref' in sweepTimer) {
+        (sweepTimer as { unref: () => void }).unref()
+      }
+    }
+  },
 })
 
 export type PasteContentType = 'markdown' | 'plain'
@@ -176,6 +205,43 @@ export function countPastes(): number {
   return row.n
 }
 
+// ─── Retention sweep (R12 ②) ────────────────────────────────────────
+//
+// Time-based TTL on `created_at`. This runs *in addition to* the LRU
+// capacity cap inside savePaste — so an operator who hits 10K pastes in
+// a week still gets the LRU evict, and an operator with 100 pastes that
+// have aged past 30 days gets the TTL evict.
+
+function pruneExpiredPastesInternal(db: import('better-sqlite3').Database): number {
+  const days = resolvePasteRetentionDays()
+  if (days <= 0) return 0
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400
+  const r = db.prepare('DELETE FROM pastes WHERE created_at < ?').run(cutoff)
+  if (r.changes > 0) {
+    viewerLog.info({ event: 'viewer.pruned', deleted: r.changes, days }, `Pruned ${r.changes} paste(s) older than ${days}d`)
+  }
+  return r.changes
+}
+
+/** Public retention API — used by tests + manual /api/viewer/prune. */
+export function pruneExpiredPastes(): number {
+  const db = helper.get()
+  if (!db) return 0
+  try { return pruneExpiredPastesInternal(db) } catch (err) {
+    viewerLog.warn({ event: 'viewer.prune_failed', err: String(err) })
+    return 0
+  }
+}
+
+/** Stop the periodic retention sweep (tests + graceful shutdown). */
+export function stopViewerRetentionSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer)
+    sweepTimer = null
+  }
+}
+
 export function closeViewerDb(): void {
+  stopViewerRetentionSweep()
   helper.close()
 }

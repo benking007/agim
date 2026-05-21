@@ -83,13 +83,17 @@ export function ensureBootstrapTokenIfNeeded(): string | null {
     return null
   }
 
-  log.info({ event: 'admin-bootstrap.ready', token, file: BOOTSTRAP_TOKEN_FILE })
-  // Also print prominent stdout banner so the operator notices in the
-  // systemd journal / log tail without having to grep for it.
+  // Compliance (R13 A3): never put the raw token in the pino log or
+  // unconditionally on stdout — both go to journald and would let any
+  // journal reader race the operator. We log only the file path; the
+  // token lives in 0o600 on disk and operators retrieve it via
+  // `cat ~/.agim/admin-bootstrap-token`.
+  log.info({ event: 'admin-bootstrap.ready', file: BOOTSTRAP_TOKEN_FILE },
+    'admin-bootstrap token written; retrieve from file on the host')
   console.log()
   console.log('⚙️  No admin configured. To onboard yourself:')
-  console.log(`     · In IM, send:  /setup admin ${token}`)
-  console.log(`     · Token also in: ${BOOTSTRAP_TOKEN_FILE}`)
+  console.log(`     1. On the host, run:   cat ${BOOTSTRAP_TOKEN_FILE}`)
+  console.log('     2. In IM, send:        /setup admin <paste-token-here>')
   console.log('     · Token regenerates on every restart while no admin is set.')
   console.log()
   return token

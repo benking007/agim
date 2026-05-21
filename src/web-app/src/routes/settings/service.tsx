@@ -292,15 +292,21 @@ function PortsCard(): JSX.Element {
           invalid={webInvalid}
           placeholder={String(DEFAULT_WEB_PORT)}
         />
-        <PortField
-          id="acp-port"
-          label={t('service.ports.acpPort')}
-          hint={t('service.ports.acpPortHint', { default: DEFAULT_ACP_PORT })}
-          value={acpDraft}
-          onChange={setAcpDraft}
-          invalid={acpInvalid}
-          placeholder={String(DEFAULT_ACP_PORT)}
-        />
+        {/* R15 — acpPort hidden when remote-agent feature is off (same
+            gate as the ACP card in /settings/agents). Server already
+            strips acpPort from GET /api/config and drops it from
+            incoming PUT in the off state. */}
+        {cfg?.features?.remoteAgent ? (
+          <PortField
+            id="acp-port"
+            label={t('service.ports.acpPort')}
+            hint={t('service.ports.acpPortHint', { default: DEFAULT_ACP_PORT })}
+            value={acpDraft}
+            onChange={setAcpDraft}
+            invalid={acpInvalid}
+            placeholder={String(DEFAULT_ACP_PORT)}
+          />
+        ) : null}
       </div>
 
       {isDirty && (

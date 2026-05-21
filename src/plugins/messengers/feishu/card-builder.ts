@@ -68,7 +68,6 @@ export class CardBuilder {
     const agentEmoji: Record<string, string> = {
       'claude-code': '🧠',
       'codex': '⚡',
-      'copilot': '🤖',
       'opencode': '🔧'
     }
     const emoji = agentEmoji[agent] || '🤖'

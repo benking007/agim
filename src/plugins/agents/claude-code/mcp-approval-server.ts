@@ -1034,14 +1034,14 @@ export function buildServer(client: ApprovalClient): McpServer {
         'Do NOT respond "I can\'t call X" — this tool is exactly that capability. ' +
         '\n\n' +
         '**Trigger phrases (Chinese)** — call this tool, do not refuse: ' +
-        '「用 codex 帮我 …」「让 opencode 跑 …」「请 copilot 写 …」「叫 codex 看一下 …」' +
-        '「把这个交给 opencode」「让 codex 总结 …」「codex / opencode / copilot 帮我处理 …」. ' +
+        '「用 codex 帮我 …」「让 opencode 跑 …」「叫 codex 看一下 …」' +
+        '「把这个交给 opencode」「让 codex 总结 …」「codex / opencode 帮我处理 …」. ' +
         '\n\n' +
         '**Trigger phrases (English)**: "ask codex to …", "have opencode run …", ' +
-        '"get copilot to write …", "use codex for …", "let opencode handle …". ' +
+        '"use codex for …", "let opencode handle …". ' +
         '\n\n' +
         '**Decision rule**: if the user explicitly names a callee agent (claude-code / opencode / ' +
-        'codex / copilot) and asks for an action — call this tool. Don\'t second-guess "I could ' +
+        'codex) and asks for an action — call this tool. Don\'t second-guess "I could ' +
         'do it myself" — the user picked that other agent on purpose. ' +
         '\n\n' +
         '**Good fits when the user did NOT name an agent**: ' +
@@ -1067,7 +1067,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'success or {ok: false, error}.',
       inputSchema: {
         agent: z.string().describe(
-          'Target agent name. One of: claude-code, opencode, codex, copilot. ' +
+          'Target agent name. One of: claude-code, opencode, codex. ' +
           'Must not be the calling agent itself.',
         ),
         prompt: z.string().describe(

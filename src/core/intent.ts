@@ -36,10 +36,6 @@ const PROFILES: Record<string, AgentProfile> = {
     keywords: ['代码', 'code', 'bug', 'fix', '修复', 'quick', '快速', 'small', '简单', 'simple'],
     weight: 0.9,
   },
-  'copilot': {
-    keywords: ['代码', 'code', 'suggest', '建议', 'autocomplete', '补全', 'copilot'],
-    weight: 0.8,
-  },
 }
 
 // Additional routing: global topic fallbacks

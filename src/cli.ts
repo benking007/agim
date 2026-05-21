@@ -21,7 +21,7 @@ import { registry } from './core/registry.js'
 import { sessionManager } from './core/session.js'
 import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
-import { crossSpawn, isMac, isWindows } from './utils/cross-platform.js'
+import { crossSpawn } from './utils/cross-platform.js'
 import type { MessageContext } from './core/types.js'
 import { generateTraceId, createLogger, sanitizeUserText } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
@@ -1572,34 +1572,6 @@ program
           config.agents.push('opencode')
         }
         config.defaultAgent = 'opencode'
-        break
-      }
-
-      case 'copilot': {
-        console.log('🤖 Configuring GitHub Copilot CLI agent...')
-        // Check if copilot CLI is available (multiple installation methods)
-        const { copilotAdapter } = await import('./plugins/agents/copilot/index.js')
-        const copilotAvailable = await copilotAdapter.isAvailable()
-        if (copilotAvailable) {
-          console.log('✅ GitHub Copilot CLI found!')
-        } else {
-          console.log('❌ GitHub Copilot CLI not found.')
-          console.log('\n安装方式 (选择其一):')
-          console.log('  npm i -g @github/copilot')
-          console.log('  gh extension install github/gh-copilot')
-          if (isMac) {
-            console.log('  brew install copilot-cli')
-          }
-          if (isWindows) {
-            console.log('  winget install GitHub.Copilot')
-          }
-          console.log('  或安装 VS Code Copilot Chat 扩展')
-          console.log('\n详情: https://github.com/features/copilot/cli')
-        }
-        if (!config.agents.includes('copilot')) {
-          config.agents.push('copilot')
-        }
-        config.defaultAgent = 'copilot'
         break
       }
 

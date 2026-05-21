@@ -6,7 +6,7 @@
 //
 //   * Use the SAME agent that just produced the reply. agim is model-agnostic
 //     — assuming claude / haiku is always available would lock out operators
-//     who only have codex / opencode / copilot. Cost is the user's already-
+//     who only have codex / opencode. Cost is the user's already-
 //     budgeted agent; quality matches their setup.
 //
 //   * Single shot, JSON-out. No tool loop, no chat — extraction is a pure

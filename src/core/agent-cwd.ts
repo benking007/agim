@@ -138,7 +138,7 @@ export async function ensureAgentWorkspace(
  * default. Safe to call multiple times. Returns a summary suitable for
  * logging.
  *
- * Other agents (codex, copilot, ACP-imported) don't need cwd isolation
+ * Other agents (codex, ACP-imported) don't need cwd isolation
  * either because they don't have per-cwd memory, or because they're
  * remote — they'll pass through with cwd undefined like before.
  */

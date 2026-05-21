@@ -645,9 +645,11 @@ export async function startWebServer(options: {
       return handleAgentsStatus(req, res)
     }
     if (url.pathname === '/api/agents/acp/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAcpTest(req, res)
     }
     if (url.pathname === '/api/agents/acp/discover' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleAcpDiscover(req, res)
     }
 
@@ -728,6 +730,7 @@ export async function startWebServer(options: {
       return handlePutEnv(req, res)
     }
     if (url.pathname === '/api/messengers/email/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleEmailTest(req, res)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
@@ -771,6 +774,7 @@ export async function startWebServer(options: {
     }
     const outboxRetryMatch = url.pathname.match(/^\/api\/outbox\/(\d+)\/retry$/)
     if (outboxRetryMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleOutboxRetry(req, res, parseInt(outboxRetryMatch[1], 10))
     }
     // v1.1.3 — A2A tab. Stats over inline rows with parent_id; recent
@@ -936,9 +940,11 @@ export async function startWebServer(options: {
       return handleEventsSSE(req, res)
     }
     if (url.pathname === '/api/notify' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleNotify(req, res)
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleInvoke(req, res, options.defaultAgent)
     }
 

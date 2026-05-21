@@ -221,9 +221,34 @@ Environment="IM_HUB_AUDIT_RETENTION_DAYS=60"
 # 可选：让 LLM 兜底参与意图路由
 # Environment="IM_HUB_LLM_JUDGE_AGENT=claude-code"
 
-ExecStart=/usr/bin/agim start
-Restart=always
+# ⚠️ 务必直接 exec /usr/local/bin/agim start
+# 不要用 ExecStart=/usr/bin/dbus-run-session -- /bin/bash -c 'exec agim start'
+# 之类的 wrapper —— dbus / 子 shell 会把 agim 子进程从 cgroup 里挂出去,
+# systemctl stop 之后 cgroup-kill 失败、老进程残留、新进程 EADDRINUSE
+# (这就是 R14 修复的故障模式).
+# 如果一定要起 keyring / dbus, 把它们放进 ExecStartPre=, 见
+# docs/keyring-integration.md.
+ExecStart=/usr/local/bin/agim start
+
+# R14 — 生命周期 + 失败处理
+# - on-failure (不要 always): EADDRINUSE / pid 自检退出 (exit 2) 应该让
+#   人介入, 不要每 5 秒重撞.
+# - StartLimit*: 60s 内最多 3 次, 超过转 failed 状态停止自动重启.
+# - RestartPreventExitStatus=2: cli.ts 启动期 PID 自检失败用 exit 2 表
+#   示 "已有另一个 agim 在跑", systemd 应该尊重这个决定.
+Restart=on-failure
 RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+RestartPreventExitStatus=2
+
+# R14 — 优雅退出 + cgroup 完整性
+# - TimeoutStopSec=30: 与 agim 内置 25s 硬截止 (src/cli.ts) 配合, 留
+#   5s 缓冲. systemd 在 30s 后 SIGKILL.
+# - KillMode=control-group: 整组 kill 比 mixed 更可靠, 遇孤儿态时整组
+#   清理. 不要用 mixed —— 它只对 MainPID SIGTERM, 子进程要等超时.
+TimeoutStopSec=30
+KillMode=control-group
 
 # 安全加固
 NoNewPrivileges=true
@@ -249,6 +274,8 @@ sudo journalctl -u agim -f
 ```
 
 > 全局安装的 `agim` 路径取决于你的 npm prefix。`which agim` 找一下，把 `ExecStart` 改成实际路径。
+
+> **如果你的部署需要 gnome-keyring / dbus**（典型场景：cloudflared 需要在无 GUI session 的情况下拿 OAuth 凭据），**不要**用 `dbus-run-session` wrapper —— 见 [`docs/keyring-integration.md`](./keyring-integration.md) 的正反例。
 
 ### 4.3 Docker（可选）
 

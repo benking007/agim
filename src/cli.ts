@@ -103,6 +103,76 @@ program
     }
     console.log('🚀 Starting Agim (阿吉姆)…')
 
+    // R14 — pre-flight self-check. Two failure modes the operator
+    // hit before this guard existed:
+    //
+    //   (a) An old agim from a botched restart still owns port 3000.
+    //       systemd's TimeoutStopSec elapsed but cgroup-kill failed
+    //       (dbus-run-session wrapper escaped the control group), so
+    //       systemctl restart spawns a NEW agim that EADDRINUSE-loops.
+    //       PID file detection catches the obvious case: if a pid
+    //       file exists and points at a live process that is NOT us,
+    //       exit immediately rather than racing the port bind.
+    //
+    //   (b) Operator runs `agim start` by hand on a host where systemd
+    //       already manages agim. Two competing instances are nearly
+    //       impossible to debug. Warn loudly + write a marker file so
+    //       post-incident `journalctl -u agim` correlates with this
+    //       run.
+    try {
+      const { PID_FILE } = await import('./cli-ui/service.js')
+      const { existsSync: _exists, readFileSync: _read } = await import('node:fs')
+      if (_exists(PID_FILE)) {
+        const recorded = parseInt(_read(PID_FILE, 'utf-8').trim(), 10)
+        if (Number.isFinite(recorded) && recorded > 0 && recorded !== process.pid) {
+          // Is the recorded pid alive?
+          let alive = false
+          try { process.kill(recorded, 0); alive = true } catch { /* stale */ }
+          if (alive) {
+            console.error()
+            console.error('🛑 Another agim process is already running:')
+            console.error(`   pid:  ${recorded}`)
+            console.error(`   file: ${PID_FILE}`)
+            console.error()
+            console.error('   If that pid is stale (process actually dead), remove the file and retry:')
+            console.error(`     rm ${PID_FILE}`)
+            console.error()
+            console.error('   If systemd manages agim, prefer:')
+            console.error('     systemctl restart agim.service')
+            console.error()
+            process.exit(2)
+          }
+        }
+      }
+    } catch { /* defensive — fall through to start if probe failed */ }
+    // Soft warning: not inside systemd's cgroup but a unit file exists.
+    // INVOCATION_ID is injected by systemd on every Exec*= so its
+    // absence is a reliable "not under systemd" signal. We don't
+    // refuse to start (the operator may be debugging foreground), but
+    // we leave a journal-visible warn line + an anomaly marker.
+    try {
+      const inSystemd = typeof process.env.INVOCATION_ID === 'string' && process.env.INVOCATION_ID.length > 0
+      if (!inSystemd) {
+        const { existsSync: _exists2 } = await import('node:fs')
+        const hasUnit = _exists2('/etc/systemd/system/agim.service') || _exists2('/etc/systemd/system/im-hub.service')
+        if (hasUnit) {
+          console.warn()
+          console.warn('⚠️  agim is starting OUTSIDE systemd, but a systemd unit exists on this host.')
+          console.warn('   Two competing instances will fight for port 3000. If unintended:')
+          console.warn('     systemctl start agim.service   # let systemd own this process')
+          console.warn()
+          try {
+            const { writeFileSync: _write } = await import('node:fs')
+            const { join: _join } = await import('node:path')
+            const { AGIM_HOME: _home } = await import('./core/agim-paths.js')
+            _write(_join(_home, 'start-anomaly.log'),
+              `${new Date().toISOString()} agim started outside systemd while unit file exists (pid=${process.pid})\n`,
+              { flag: 'a', mode: 0o600 })
+          } catch { /* anomaly log is best-effort */ }
+        }
+      }
+    } catch { /* defensive */ }
+
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
 
@@ -761,13 +831,41 @@ program
     // to recover from a half-flushed state. The handler is idempotent against
     // duplicate signals.
     let shuttingDown = false
+    // R14 — hard deadline. If anything in the teardown chain hangs (DB
+    // checkpoint, stuck child wait, sidecar TCP keepalive), we still
+    // force-exit within 25s so a follow-up `systemctl restart` finds
+    // the port released. systemd's TimeoutStopSec is 30s; we leave a
+    // 5s buffer so the process exits on our terms (exit code 1)
+    // before systemd escalates to SIGKILL.
+    const HARD_SHUTDOWN_MS = 25_000
     const gracefulShutdown = async (signal: string): Promise<void> => {
       if (shuttingDown) return
       shuttingDown = true
       console.log(`\n👋 Received ${signal}, shutting down...`)
+
+      const hardKill = setTimeout(() => {
+        console.error(`⏱  Graceful shutdown exceeded ${HARD_SHUTDOWN_MS}ms — forcing exit(1).`)
+        // Last-ditch: try to release the port before the kernel does
+        // it on exit. close() is safe to call from a fired timer
+        // because shuttingDown is true so nothing re-enters this fn.
+        try { webServer?.close() } catch { /* ignore */ }
+        try { acpServer?.close() } catch { /* ignore */ }
+        process.exit(1)
+      }, HARD_SHUTDOWN_MS)
+      // Don't keep the event loop alive solely for this timer; if
+      // shutdown completes naturally, clearTimeout below + the natural
+      // process.exit(0) wins.
+      if (typeof hardKill.unref === 'function') hardKill.unref()
+
+      // PORT RELEASE FIRST — close webServer + acpServer at the top of
+      // the chain (was previously after sessionManager.stop, which is
+      // cheap but unnecessary friction). closeAllConnections() (added
+      // inside startWebServer/startACPServer in R14) force-drops
+      // in-flight sockets so the listener actually releases the port
+      // before any DB / messenger teardown begins.
       sessionManager.stop()
-      webServer?.close()
-      acpServer?.close()
+      try { webServer?.close() } catch { /* ignore */ }
+      try { acpServer?.close() } catch { /* ignore */ }
 
       // Stop the cloudflared subprocess (if we forked one for viewer auto-tunnel).
       // Doing this early gives it a clean SIGTERM exit before we tear down the
@@ -842,6 +940,18 @@ program
         closeOutboxDb()
       } catch { /* ignore */ }
 
+      // R14 — kill the opencode-serve daemon (singleton subprocess).
+      // Before R14 this was never stopped explicitly; it relied on
+      // parent-exit propagation, which leaves the child as a zombie
+      // when agim is killed by SIGKILL or when the cgroup is broken
+      // (the exact failure mode that motivated R14). Inline import
+      // keeps the lazy graph clean for non-opencode deployments.
+      try {
+        const { opencodeServe } = await import('./plugins/agents/opencode/serve-manager.js')
+        await opencodeServe.stop()
+      } catch { /* ignore — opencode wasn't configured / never spawned */ }
+
+      clearTimeout(hardKill)
       process.exit(0)
     }
     process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })

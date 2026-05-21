@@ -57,6 +57,12 @@ export interface ServiceState {
   pid: number | null
   /** Approximate uptime in seconds — from systemd timestamp or proc start time. */
   uptimeSec?: number
+  /** Raw `systemctl is-active` value when mode === 'systemd'. R14 — we
+   *  return mode='systemd' as soon as the unit is enabled, even when
+   *  state is `activating` / `failed` / `inactive`, so callers that
+   *  care about the difference can inspect this field. Undefined for
+   *  other modes. */
+  active?: string
 }
 
 /** Check if a unix pid is alive. */
@@ -99,26 +105,45 @@ export function formatUptime(sec: number): string {
  *  pid-file, then a foreground pgrep match. Returns `{mode:'none', pid:null}`
  *  when nothing is running. */
 export function detectService(): ServiceState {
-  // 1. systemd — check whichever unit name exists (agim.service first,
-  //    im-hub.service fallback for pre-1.0 installs).
+  // 1. systemd — R14: authority test is "unit file exists AND is
+  //    enabled", NOT "currently active". The old check returned
+  //    mode='background' during the activating-auto-restart loop or
+  //    after a failed start, which then made web restart fall back to
+  //    spawnBackground — bypassing systemd entirely and producing two
+  //    competing instances (the EADDRINUSE failure mode that
+  //    motivated R14). When systemd owns the unit, every stop / start
+  //    / restart MUST route through systemctl so systemd is the only
+  //    converger.
   const unit = getSystemdUnit()
   if (unit) {
     try {
-      const active = execSync(`systemctl is-active ${unit.name} 2>&1`, { encoding: 'utf-8' }).trim()
-      if (active === 'active') {
+      const enabled = execSync(`systemctl is-enabled ${unit.name} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+      if (enabled === 'enabled' || enabled === 'static' || enabled === 'alias') {
         let pid: number | null = null
+        let active = 'unknown'
+        try {
+          active = execSync(`systemctl is-active ${unit.name} 2>&1`, { encoding: 'utf-8' }).trim() || 'unknown'
+        } catch (err) {
+          // systemctl is-active exits non-zero when inactive — keep
+          // the captured stderr as the state. execSync attaches the
+          // failed-process output to err.stdout / err.stderr.
+          const stdout = (err as { stdout?: Buffer }).stdout
+          if (stdout) active = String(stdout).trim() || 'inactive'
+          else active = 'inactive'
+        }
         try {
           const out = execSync(`systemctl show -p MainPID --value ${unit.name}`, { encoding: 'utf-8' }).trim()
           const n = parseInt(out, 10)
           if (Number.isFinite(n) && n > 0) pid = n
-        } catch { /* keep null */ }
+        } catch { /* keep null — systemd may be between states */ }
         return {
           mode: 'systemd',
           pid,
           uptimeSec: pid ? uptimeOfPid(pid) : undefined,
+          active,
         }
       }
-    } catch { /* systemctl not on PATH, e.g. macOS — fall through */ }
+    } catch { /* systemctl not on PATH (macOS) / is-enabled failed — fall through */ }
   }
 
   // 2. background pid file
@@ -229,4 +254,82 @@ export function readWebEndpoint(): { bind: string; port: number } | null {
     const port = typeof cfg.web?.port === 'number' ? cfg.web.port : 3000
     return { bind, port }
   } catch { return null }
+}
+
+/** R14 — find every agim/im-hub-pro process running on this host.
+ *  Includes pids from background spawns AND systemd-spawned children
+ *  that may have escaped the cgroup (the failure mode that motivated
+ *  R14: a dbus-run-session wrapper detaches its children from
+ *  systemd's control group, leaving the old agim alive after
+ *  `systemctl stop` "succeeds"). */
+export function findAgimProcesses(): number[] {
+  try {
+    const out = execSync('pgrep -af "agim start|im-hub-pro start|dist/cli.js start"', {
+      encoding: 'utf-8',
+    }).trim()
+    const lines = out.split('\n').filter(Boolean)
+    const pids: number[] = []
+    for (const line of lines) {
+      const pid = parseInt(line.split(' ')[0], 10)
+      if (Number.isFinite(pid) && pid > 0) pids.push(pid)
+    }
+    return pids
+  } catch {
+    return []
+  }
+}
+
+/** R14 — SIGTERM then SIGKILL any agim process not in the excludeSet.
+ *  Used by the web restart handler to clear stray instances that
+ *  escaped systemd's cgroup before invoking `systemctl restart` (the
+ *  cgroup-kill on stop will then have nothing left to fail on, and
+ *  the new MainPID gets a clean port).
+ *
+ *  Returns the pids actually reaped (signalled + confirmed dead).
+ *  Best-effort: a pid we can't signal (permissions, already exited)
+ *  is silently dropped — caller is interested in "what we killed",
+ *  not in surfacing failures the OS already handled. */
+export async function reapStrayAgimProcesses(opts: {
+  excludePids?: number[]
+  sigtermTimeoutMs?: number
+} = {}): Promise<{ reaped: number[]; survived: number[] }> {
+  const exclude = new Set<number>([process.pid, ...(opts.excludePids ?? [])])
+  const sigtermTimeoutMs = opts.sigtermTimeoutMs ?? 5_000
+  const candidates = findAgimProcesses().filter((pid) => !exclude.has(pid))
+  if (candidates.length === 0) return { reaped: [], survived: [] }
+
+  // Phase 1: SIGTERM everyone. We don't wait between signals — the
+  // pids represent independent processes, so a delay would
+  // sequentially expose us to a worst-case (N * sigtermTimeoutMs).
+  for (const pid of candidates) {
+    try { process.kill(pid, 'SIGTERM') } catch { /* already gone / no perms */ }
+  }
+
+  // Poll until either everyone exited or the timeout fires. 200ms
+  // poll is cheap and matches the dominant "well-behaved process
+  // exits in <1s" case.
+  const deadline = Date.now() + sigtermTimeoutMs
+  while (Date.now() < deadline) {
+    const stillAlive = candidates.filter((pid) => pidAlive(pid))
+    if (stillAlive.length === 0) {
+      return { reaped: candidates, survived: [] }
+    }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+
+  // Phase 2: SIGKILL stragglers. They had sigtermTimeoutMs to clean
+  // up; we now release the port and leave the OS to GC them.
+  const stillAlive = candidates.filter((pid) => pidAlive(pid))
+  for (const pid of stillAlive) {
+    try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+  }
+  // Last sweep — distinguish reaped (we did kill, now dead) from
+  // survived (we tried but kernel still shows alive, e.g. zombie
+  // parent).
+  await new Promise((r) => setTimeout(r, 200))
+  const survived = stillAlive.filter((pid) => pidAlive(pid))
+  return {
+    reaped: candidates.filter((pid) => !survived.includes(pid)),
+    survived,
+  }
 }

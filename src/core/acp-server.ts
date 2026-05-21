@@ -306,6 +306,16 @@ export async function startACPServer(options: {
 
   return {
     port,
-    close: () => { server.close() },
+    close: () => {
+      server.close()
+      // R14 — force-drop in-flight connections so port releases
+      // immediately (mirror of the web server close behavior). Without
+      // this, a long /tasks SSE stream keeps port 9090 bound across
+      // restarts.
+      try {
+        const fn = (server as unknown as { closeAllConnections?: () => void }).closeAllConnections
+        if (typeof fn === 'function') fn.call(server)
+      } catch { /* ignore */ }
+    },
   }
 }

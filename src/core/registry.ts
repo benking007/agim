@@ -3,6 +3,7 @@
 import type { MessengerAdapter, AgentAdapter } from './types.js'
 import type { ACPAgentConfig } from '../plugins/agents/acp/types.js'
 import { logger as rootLogger } from './logger.js'
+import { isGlobalImEnabled, isRemoteAgentEnabled } from './feature-flags.js'
 
 const log = rootLogger.child({ component: 'registry' })
 
@@ -69,8 +70,19 @@ class PluginRegistry {
   /**
    * Load ACP (remote) agents from config. Uses Promise.allSettled
    * for parallel loading so one slow endpoint doesn't block startup.
+   *
+   * Compliance gate: IMHUB_ENABLE_REMOTE_AGENT must be '1' or the entire
+   * call is a no-op. Logged at info level so an operator who flipped
+   * config-on-disk without the env flag can see why nothing loaded.
    */
   async loadACPAgents(acpConfigs: ACPAgentConfig[]): Promise<void> {
+    if (!isRemoteAgentEnabled()) {
+      if (acpConfigs.length > 0) {
+        log.info({ event: 'registry.acp.disabled', count: acpConfigs.length },
+          'ACP agents in config but remote-agent gate is off; skipping load')
+      }
+      return
+    }
     const enabled = acpConfigs.filter((c) => c.enabled !== false)
     if (enabled.length === 0) return
 
@@ -101,8 +113,19 @@ class PluginRegistry {
    * Discover ACP agents via `.well-known/acp` on each base URL, then
    * load every advertised agent through loadACPAgents(). Failures on
    * individual URLs are logged but don't fail the batch.
+   *
+   * Compliance gate: same IMHUB_ENABLE_REMOTE_AGENT switch — skip the
+   * discovery fetch entirely so disabled deployments don't even emit
+   * `.well-known/acp` requests on the network.
    */
   async loadDiscoveredACPAgents(baseUrls: string[]): Promise<number> {
+    if (!isRemoteAgentEnabled()) {
+      if (baseUrls.length > 0) {
+        log.info({ event: 'registry.acp.discovery.disabled', count: baseUrls.length },
+          'ACP discovery URLs configured but remote-agent gate is off; skipping discovery')
+      }
+      return 0
+    }
     if (!baseUrls.length) return 0
     const { discoverMany } = await import('../plugins/agents/acp/discovery.js')
     const results = await discoverMany(baseUrls)
@@ -116,12 +139,19 @@ class PluginRegistry {
   }
 
   async loadBuiltInPlugins(): Promise<void> {
-    // Load built-in messengers
+    // Load built-in messengers. Discord + Telegram are gated by
+    // IMHUB_ENABLE_GLOBAL_IM — even if config.json still has a
+    // `discord` / `telegram` block, the adapter is never instantiated
+    // unless the flag is on. This keeps the runtime in the same shape
+    // the UI presents (no zombie outbound connections).
     const { ilinkWeChatAdapter } = await import('../plugins/messengers/wechat/ilink-adapter.js')
     this.registerMessenger(ilinkWeChatAdapter)
 
-    const { telegramAdapter } = await import('../plugins/messengers/telegram/telegram-adapter.js')
-    this.registerMessenger(telegramAdapter)
+    const globalIm = isGlobalImEnabled()
+    if (globalIm) {
+      const { telegramAdapter } = await import('../plugins/messengers/telegram/telegram-adapter.js')
+      this.registerMessenger(telegramAdapter)
+    }
 
     const { feishuAdapter } = await import('../plugins/messengers/feishu/index.js')
     this.registerMessenger(feishuAdapter)
@@ -129,8 +159,10 @@ class PluginRegistry {
     const { dingtalkAdapter } = await import('../plugins/messengers/dingtalk/index.js')
     this.registerMessenger(dingtalkAdapter)
 
-    const { discordAdapter } = await import('../plugins/messengers/discord/index.js')
-    this.registerMessenger(discordAdapter)
+    if (globalIm) {
+      const { discordAdapter } = await import('../plugins/messengers/discord/index.js')
+      this.registerMessenger(discordAdapter)
+    }
 
     const { emailAdapter } = await import('../plugins/messengers/email/email-adapter.js')
     this.registerMessenger(emailAdapter)

@@ -773,6 +773,12 @@ export interface AppConfig {
   discord?: { botToken?: string; channelId?: string }
   acpAgents?: ACPAgentConfig[]
   agentStatus?: Record<string, boolean>
+  /** Server-side compliance feature flags. The SPA reads these to hide
+   *  the corresponding tabs / cards when the deployment is gated. */
+  features?: {
+    globalIm?: boolean
+    remoteAgent?: boolean
+  }
   /** Open-ended for forward-compat. */
   [key: string]: unknown
 }

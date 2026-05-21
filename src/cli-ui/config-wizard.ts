@@ -32,6 +32,7 @@ import { t, type Lang, type Key } from './i18n.js'
 import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
 import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEnvFile, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
+import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
 
 /** Probe whether a CLI command exists on PATH. Mirrors the `--version`
  *  spawn check the legacy `config <agent>` flow used. Resolves quickly:
@@ -57,17 +58,26 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
   while (true) {
     let picked: Section | typeof BACK
     try {
+      // ACP main-menu entry is gated by IMHUB_ENABLE_REMOTE_AGENT — see
+      // src/core/feature-flags.ts. Resolved fresh on each loop iteration
+      // so toggling the env mid-wizard surfaces the option without a
+      // restart.
+      const sectionChoices: Array<{ value: Section; name: string; separatorBefore?: boolean }> = [
+        { value: 'messengers', name: t(lang, 'config.section.messengers') },
+        { value: 'agents', name: t(lang, 'config.section.agents') },
+      ]
+      if (isRemoteAgentEnabled()) {
+        sectionChoices.push({ value: 'acp', name: t(lang, 'config.section.acp') })
+      }
+      sectionChoices.push(
+        { value: 'smtp', name: t(lang, 'config.section.smtp') },
+        { value: 'baidu', name: t(lang, 'config.section.baidu') },
+        { value: 'done', name: t(lang, 'config.section.done'), separatorBefore: true },
+      )
       picked = (await menu<Section>({
         lang,
         message: t(lang, 'menu.subtitle'),
-        choices: [
-          { value: 'messengers', name: t(lang, 'config.section.messengers') },
-          { value: 'agents', name: t(lang, 'config.section.agents') },
-          { value: 'acp', name: t(lang, 'config.section.acp') },
-          { value: 'smtp', name: t(lang, 'config.section.smtp') },
-          { value: 'baidu', name: t(lang, 'config.section.baidu') },
-          { value: 'done', name: t(lang, 'config.section.done'), separatorBefore: true },
-        ],
+        choices: sectionChoices,
       })) as Section | typeof BACK
     } catch (err) {
       if (err instanceof UserAbortError) return
@@ -118,7 +128,7 @@ interface MessengerSpec {
   hasCreds: boolean
 }
 
-const MESSENGER_SPECS: MessengerSpec[] = [
+const ALL_MESSENGER_SPECS: MessengerSpec[] = [
   { id: 'wechat-ilink', labelKey: 'messengers.label.wechat',   hasCreds: false },
   { id: 'telegram',     labelKey: 'messengers.label.telegram', hasCreds: true  },
   { id: 'feishu',       labelKey: 'messengers.label.feishu',   hasCreds: true  },
@@ -126,6 +136,15 @@ const MESSENGER_SPECS: MessengerSpec[] = [
   { id: 'discord',      labelKey: 'messengers.label.discord',  hasCreds: true  },
   { id: 'email',        labelKey: 'messengers.label.email',    hasCreds: false },
 ]
+
+// Visible subset — compliance gate via feature-flags.ts. Discord +
+// Telegram are filtered out unless IMHUB_ENABLE_GLOBAL_IM=1. Resolved
+// fresh each access so an env-file edit during the wizard takes effect
+// on the next iteration of the menu loop.
+function visibleMessengerSpecs(): MessengerSpec[] {
+  if (isGlobalImEnabled()) return ALL_MESSENGER_SPECS
+  return ALL_MESSENGER_SPECS.filter((s) => s.id !== 'discord' && s.id !== 'telegram')
+}
 
 /** Return the localized one-line status (enabled / enabled-no-creds /
  *  not configured) for a messenger. Used in the top-level list. */
@@ -154,7 +173,8 @@ async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
     console.log(t(lang, 'messengers.title'))
     console.log(t(lang, 'messengers.subtitle'))
     console.log()
-    const choices = MESSENGER_SPECS.map(spec => ({
+    const specs = visibleMessengerSpecs()
+    const choices = specs.map(spec => ({
       value: spec.id,
       name: t(lang, 'messengers.row', {
         label: t(lang, spec.labelKey),
@@ -168,7 +188,7 @@ async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
       back: 'messengers.action.back',
     })
     if (picked === BACK) return config
-    const spec = MESSENGER_SPECS.find(s => s.id === picked)!
+    const spec = specs.find(s => s.id === picked)!
     config = await messengerSubMenu(lang, config, spec)
   }
 }

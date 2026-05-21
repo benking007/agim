@@ -1191,11 +1191,19 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     const config = await loadConfig()
     const agentStatus = await getAgentStatuses()
 
+    // Compliance gates — when the env flag is off, strip the
+    // corresponding keys from the response so the settings UI never
+    // sees them and renders no tabs / cards. On-disk config is left
+    // untouched: flipping the env back on restores visibility.
+    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    const showGlobalIm = isGlobalImEnabled()
+    const showRemoteAgent = isRemoteAgentEnabled()
+
     sendJson(res, 200, {
       messengers: config.messengers,
       agents: config.agents,
       defaultAgent: config.defaultAgent,
-      telegram: config.telegram
+      telegram: showGlobalIm && config.telegram
         ? { botToken: mask(config.telegram.botToken), channelId: config.telegram.channelId }
         : undefined,
       feishu: config.feishu
@@ -1204,7 +1212,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       dingtalk: config.dingtalk
         ? { clientId: config.dingtalk.clientId, clientSecret: mask(config.dingtalk.clientSecret), channelId: config.dingtalk.channelId }
         : undefined,
-      discord: config.discord
+      discord: showGlobalIm && config.discord
         ? {
             botToken: mask(config.discord.botToken),
             channelId: config.discord.channelId,
@@ -1212,12 +1220,23 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
             allowedChannels: config.discord.allowedChannels,
           }
         : undefined,
-      acpAgents: config.acpAgents?.map(a => ({
-        ...a,
-        auth: a.auth
-          ? { ...a.auth, token: a.auth.token ? mask(a.auth.token) : undefined }
-          : undefined,
-      })),
+      acpAgents: showRemoteAgent
+        ? config.acpAgents?.map(a => ({
+            ...a,
+            auth: a.auth
+              ? { ...a.auth, token: a.auth.token ? mask(a.auth.token) : undefined }
+              : undefined,
+          }))
+        : undefined,
+      // Feature flags surfaced for the SPA so it can hide the
+      // corresponding tabs / nav entries. Field names are
+      // intentionally neutral — they don't reveal which IMs / agent
+      // types the flag controls beyond what the settings page
+      // already exposes.
+      features: {
+        globalIm: showGlobalIm,
+        remoteAgent: showRemoteAgent,
+      },
       webPort: config.webPort,
       agentStatus,
     })
@@ -1231,6 +1250,29 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     const body = await readBody(req, res)
     const incoming = JSON.parse(body) as Record<string, unknown>
     const existing = await loadConfig()
+
+    // Compliance gates — silently drop keys the operator's deployment
+    // is not allowed to surface. We don't 4xx here because the SPA may
+    // round-trip a stale snapshot that happens to include these keys;
+    // dropping them keeps existing on-disk values untouched (the
+    // round-trip becomes a no-op for that field).
+    //
+    // We also scrub `messengers[]` so a hidden slot can't be toggled
+    // via direct PUT (the SPA filters in render but a stale draft from
+    // before the env flag was disabled would otherwise re-add the
+    // entry on next save).
+    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    if (!isGlobalImEnabled()) {
+      delete incoming.telegram
+      delete incoming.discord
+      if (Array.isArray(incoming.messengers)) {
+        incoming.messengers = (incoming.messengers as unknown[])
+          .filter((m) => m !== 'telegram' && m !== 'discord')
+      }
+    }
+    if (!isRemoteAgentEnabled()) {
+      delete incoming.acpAgents
+    }
 
     const merged: Record<string, unknown> = { ...existing }
 

@@ -1,8 +1,7 @@
 // Cross-platform utilities for Windows compatibility
 
 import { spawn, type SpawnOptions, type ChildProcess } from 'node:child_process'
-import { platform, homedir } from 'node:os'
-import { join } from 'node:path'
+import { platform } from 'node:os'
 
 export const isWindows = platform() === 'win32'
 export const isMac = platform() === 'darwin'
@@ -26,35 +25,6 @@ export function crossSpawn(
     shell: isWindows ? (options.shell ?? true) : options.shell,
   }
   return spawn(command, args, spawnOptions)
-}
-
-/**
- * Get Copilot CLI binary path based on the current platform.
- * Copilot CLI is installed by VS Code extension in different locations per OS.
- */
-export function getCopilotBinPath(): string {
-  if (isWindows) {
-    // Windows: VS Code extensions are in %USERPROFILE%\.vscode\extensions
-    // The copilot CLI should be in the global storage
-    return join(
-      homedir(),
-      '.vscode',
-      'extensions',
-      'github.copilot-chat-*/copilotCli/copilot.exe'
-    )
-  } else if (isMac) {
-    // macOS
-    return join(
-      homedir(),
-      'Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli/copilot'
-    )
-  } else {
-    // Linux
-    return join(
-      homedir(),
-      '.vscode/extensions/github.copilot-chat/copilotCli/copilot'
-    )
-  }
 }
 
 /**

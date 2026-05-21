@@ -15,26 +15,25 @@ function makeAgent(name: string, aliases: string[] = []): AgentAdapter {
   }
 }
 
-// Make sure all four profiled agents are registered so PROFILES weights apply.
+// Make sure all profiled agents are registered so PROFILES weights apply.
 function registerProfiledAgents(): void {
   registry.registerAgent(makeAgent('opencode', ['oc']))
   registry.registerAgent(makeAgent('claude-code', ['cc']))
   registry.registerAgent(makeAgent('codex', ['cx']))
-  registry.registerAgent(makeAgent('copilot', ['co']))
 }
 
 describe('classifyIntent', () => {
   beforeEach(() => {
     registerProfiledAgents()
     // Reset breaker state between tests
-    for (const a of ['opencode', 'claude-code', 'codex', 'copilot']) {
+    for (const a of ['opencode', 'claude-code', 'codex']) {
       circuitBreaker.recordSuccess(a)
     }
   })
 
   it('throws when no agents are registered/available', () => {
     // Force-open every profiled agent so the available list is empty
-    for (const a of ['opencode', 'claude-code', 'codex', 'copilot']) {
+    for (const a of ['opencode', 'claude-code', 'codex']) {
       for (let i = 0; i < 3; i++) circuitBreaker.recordFailure(a)
     }
     // Also force-open any other registered agents (e.g. test-agent from earlier suites)
@@ -147,7 +146,7 @@ describe('classifyIntent', () => {
     // An operator who configures defaultAgent to an unregistered name
     // shouldn't crash routing — we silently fall back to PROFILES order.
     const r = classifyIntent('hello', undefined, undefined, 'no-such-agent')
-    expect(['opencode', 'claude-code', 'codex', 'copilot']).toContain(r.agent)
+    expect(['opencode', 'claude-code', 'codex']).toContain(r.agent)
     expect(r.triggeredBy).not.toBe('default')
   })
 

@@ -2,7 +2,7 @@
  * /settings/agents — built-in adapters + remote (ACP) agents.
  *
  * Two cards on one page:
- *   1. Built-in adapters (claude-code / codex / copilot / opencode):
+ *   1. Built-in adapters (claude-code / codex / opencode):
  *      enable/disable + default-agent picker. Mirrors v1's "Agents".
  *   2. Remote (ACP) agents: name/endpoint/auth-type table + manual
  *      add form. Mirrors v1's "Remote Agents (ACP)" card. Discover
@@ -56,7 +56,6 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
 const BUILTIN_AGENTS: Record<string, { aliases: string[]; pkg: string }> = {
   'claude-code': { aliases: ['cc', 'claude'], pkg: '@anthropic-ai/claude-code' },
   'codex':       { aliases: ['cx'],           pkg: '@openai/codex' },
-  'copilot':     { aliases: ['co'],           pkg: '@github/copilot' },
   'opencode':    { aliases: ['oc'],           pkg: 'opencode-ai' },
 }
 

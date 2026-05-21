@@ -25,7 +25,7 @@ export function isGlobalImEnabled(): boolean {
 /** True when IMHUB_ENABLE_REMOTE_AGENT=1. Controls visibility of the
  *  ACP (remote-agent-over-HTTP) feature across CLI wizard, web
  *  settings, and ACP agent registration. Local agents (claude-code,
- *  codex, opencode, copilot) are unaffected. */
+ *  codex, opencode) are unaffected. */
 export function isRemoteAgentEnabled(): boolean {
   return process.env.IMHUB_ENABLE_REMOTE_AGENT === '1'
 }

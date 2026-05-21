@@ -379,7 +379,7 @@ export interface AgentSendOpts {
 }
 
 /**
- * Adapter interface for AI coding agents (Claude Code, Codex, Copilot)
+ * Adapter interface for AI coding agents (Claude Code, Codex, OpenCode)
  *
  * sendPrompt returns an AsyncGenerator for streaming responses.
  * Each yielded string is a complete message chunk.

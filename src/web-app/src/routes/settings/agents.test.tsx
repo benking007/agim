@@ -72,7 +72,6 @@ const CONFIG = {
 const STATUS = {
   'claude-code': true,
   'codex': false, // installed but circuit-open
-  'copilot': false,
   'opencode': true,
 }
 
@@ -92,12 +91,11 @@ function mockStandardFetch(extraConfig?: Record<string, unknown>) {
 }
 
 describe('/settings/agents — built-in adapters', () => {
-  it('renders all 4 built-in agent rows with online/offline badges', async () => {
+  it('renders the 3 built-in agent rows with online/offline badges', async () => {
     mockStandardFetch()
     renderPage()
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     expect(screen.getByText('codex')).toBeInTheDocument()
-    expect(screen.getByText('copilot')).toBeInTheDocument()
     expect(screen.getByText('opencode')).toBeInTheDocument()
     // Note: claude-code appears twice (row + default picker trigger).
     expect(screen.getAllByText('claude-code').length).toBe(2)
@@ -109,7 +107,6 @@ describe('/settings/agents — built-in adapters', () => {
   it('default picker only lists enabled + online agents', async () => {
     // claude-code (enabled, online) ✓
     // codex (enabled, offline) ✗
-    // copilot (disabled, offline) ✗
     // opencode (disabled, online — disabled wins) ✗
     mockStandardFetch()
     renderPage()
@@ -127,7 +124,6 @@ describe('/settings/agents — built-in adapters', () => {
       // Order: only claude-code is in the eligible bucket
       expect(optionTexts).toContain('claude-code')
       expect(optionTexts).not.toContain('codex')
-      expect(optionTexts).not.toContain('copilot')
       expect(optionTexts).not.toContain('opencode')
     })
   })
@@ -138,7 +134,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Find the claude-code row's checkbox and uncheck it.
     const checkboxes = screen.getAllByRole('checkbox')
-    // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode']
+    // Order = AGENT_NAMES = ['claude-code','codex','opencode']
     fireEvent.click(checkboxes[0]!) // uncheck claude-code
     // Now claude-code is no longer enabled. The picker should show the
     // "no eligible" placeholder text or be disabled.
@@ -154,7 +150,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Enable opencode (currently disabled in CONFIG.agents)
     const checkboxes = screen.getAllByRole('checkbox')
-    fireEvent.click(checkboxes[3]!) // opencode (index 3 in AGENT_NAMES order)
+    fireEvent.click(checkboxes[2]!) // opencode (index 2 in AGENT_NAMES: claude-code, codex, opencode)
     await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() => {

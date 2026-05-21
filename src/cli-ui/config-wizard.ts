@@ -453,7 +453,7 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'claude-code' | 'opencode' | 'codex' | 'copilot'
+type AgentId = 'claude-code' | 'opencode' | 'codex'
 
 interface AgentSpec {
   id: AgentId
@@ -461,7 +461,7 @@ interface AgentSpec {
   cmd: string
   /** Whether this agent needs a separate `<cmd> auth login` step we
    *  should hint at. (claude-code uses claude.ai login flow inside the
-   *  CLI itself; copilot uses gh auth.) */
+   *  CLI itself.) */
   authHintKey?: Key
 }
 
@@ -469,7 +469,6 @@ const AGENT_SPECS: AgentSpec[] = [
   { id: 'claude-code', cmd: 'claude' },
   { id: 'opencode',    cmd: 'opencode', authHintKey: 'agents.auth_hint.opencode' },
   { id: 'codex',       cmd: 'codex',    authHintKey: 'agents.auth_hint.codex' },
-  { id: 'copilot',     cmd: 'copilot' },
 ]
 
 /** Detect install state once per sectionAgents() call, but always
@@ -477,16 +476,7 @@ const AGENT_SPECS: AgentSpec[] = [
 async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
   const out = new Map<AgentId, boolean>()
   await Promise.all(AGENT_SPECS.map(async spec => {
-    if (spec.id === 'copilot') {
-      // Copilot has multiple install paths; use the plugin's own check
-      // which knows about VSCode extension / gh-copilot extension / etc.
-      try {
-        const { copilotAdapter } = await import('../plugins/agents/copilot/index.js')
-        out.set(spec.id, await copilotAdapter.isAvailable())
-      } catch {
-        out.set(spec.id, false)
-      }
-    } else {
+    {
       out.set(spec.id, await cliAvailable(spec.cmd))
     }
   }))

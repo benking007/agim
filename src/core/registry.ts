@@ -174,8 +174,10 @@ class PluginRegistry {
     const { codexAdapter } = await import('../plugins/agents/codex/index.js')
     this.registerAgent(codexAdapter)
 
-    const { copilotAdapter } = await import('../plugins/agents/copilot/index.js')
-    this.registerAgent(copilotAdapter)
+    // copilot agent removed (low-usage cleanup; see R15 follow-up).
+    // If the operator still has `copilot` in config.agents the registry
+    // simply won't have a matching name and the existing "agent not
+    // available" fallback path takes over.
 
     const { opencodeAdapter } = await import('../plugins/agents/opencode/index.js')
     this.registerAgent(opencodeAdapter)

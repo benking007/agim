@@ -4,8 +4,8 @@
 // (reminder text polish, reminder-intent detection, etc.) MUST NOT bake in
 // a specific provider (DeepSeek, OpenAI, …). agim is shipped as a
 // pluggable framework — every user's LLM access goes through the agent
-// they've already registered (claude-code / codex / opencode / copilot /
-// any future ACP-discovered remote). So all helper calls funnel through
+// they've already registered (claude-code / codex / opencode / any
+// future ACP-discovered remote). So all helper calls funnel through
 // one of those adapters via AgentAdapter.sendPrompt.
 //
 // Selection rule (in order):
@@ -85,7 +85,7 @@ export async function resolveActiveAgent(
  *   2. claude-code — fresh subprocess each call; ~5–10 s spawn cost
  *   3. codex — `codex exec` cold start is ~15–30 s; way too slow for
  *      a micro-task that has a 6 s timeout budget
- *   4. copilot / any other — fallback to first registered
+ *   4. any other — fallback to first registered
  *
  * Used for inline LLM helpers that block the IM pipeline (memo-extract's
  * `what` extraction, intent detector). Picking the sticky agent would
@@ -98,7 +98,7 @@ export function pickFastHelperAgent(
   deps: { listAgents?: () => string[] } = {},
 ): string | null {
   const all = (deps.listAgents ?? (() => registry.listAgents()))()
-  const preferred = ['opencode', 'claude-code', 'codex', 'copilot']
+  const preferred = ['opencode', 'claude-code', 'codex']
   for (const name of preferred) {
     if (all.includes(name)) return name
   }

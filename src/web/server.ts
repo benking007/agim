@@ -1875,8 +1875,54 @@ async function handleServiceStatus(res: ServerResponse): Promise<void> {
 
 async function handleServiceStart(res: ServerResponse): Promise<void> {
   try {
-    const { detectService, spawnBackground } = await import('../cli-ui/service.js')
+    const { detectService, spawnBackground, reapStrayAgimProcesses } = await import('../cli-ui/service.js')
     const st = detectService()
+
+    // R14 §四 — when systemd owns the unit, ALL lifecycle commands
+    // must route through systemctl so systemd stays the single
+    // authority. Previously this handler bypassed systemd entirely
+    // (always spawnBackground), creating a second instance
+    // competing for port 3000. Now:
+    //   - systemd active → no-op, report alreadyRunning
+    //   - systemd inactive/failed/activating → systemctl start
+    //     (preceded by reap so any stray pids from a botched
+    //      previous run get cleared first; same cgroup-escape
+    //      recovery as restart).
+    if (st.mode === 'systemd') {
+      if (st.active === 'active') {
+        sendJson(res, 200, { ok: true, alreadyRunning: true, mode: 'systemd', pid: st.pid, active: st.active })
+        return
+      }
+      try {
+        const reap = await reapStrayAgimProcesses({
+          excludePids: st.pid != null ? [st.pid] : [],
+          sigtermTimeoutMs: 5_000,
+        })
+        if (reap.reaped.length > 0 || reap.survived.length > 0) {
+          webLog.warn({
+            event: 'web.service.start.reap',
+            reaped: reap.reaped,
+            survived: reap.survived,
+          }, `R14 reap before systemctl start: killed ${reap.reaped.length} stray pid(s)`)
+        }
+      } catch (err) {
+        webLog.warn({ event: 'web.service.start.reap_failed', err: String(err) })
+      }
+      try {
+        const { spawn } = await import('node:child_process')
+        const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+        // Detached + fire-and-forget so the HTTP response isn't held
+        // for the full systemd activation timeline.
+        const child = spawn('systemctl', ['start', unitName], { detached: true, stdio: 'ignore' })
+        child.unref()
+        sendJson(res, 200, { ok: true, mode: 'systemd', starting: true, previousActive: st.active })
+      } catch (err) {
+        sendJson(res, 500, { error: 'systemctl start spawn failed: ' + (err instanceof Error ? err.message : String(err)) })
+      }
+      return
+    }
+
+    // Non-systemd: existing behavior.
     if (st.mode !== 'none') {
       sendJson(res, 200, { ok: true, alreadyRunning: true, mode: st.mode, pid: st.pid })
       return
@@ -1892,7 +1938,7 @@ async function handleServiceStart(res: ServerResponse): Promise<void> {
 }
 
 async function handleServiceStop(res: ServerResponse): Promise<void> {
-  const { detectService } = await import('../cli-ui/service.js')
+  const { detectService, reapStrayAgimProcesses } = await import('../cli-ui/service.js')
   const st = detectService()
   if (st.mode === 'systemd') {
     // systemctl stop handles the kill for us — no self-exit needed.
@@ -1901,6 +1947,23 @@ async function handleServiceStop(res: ServerResponse): Promise<void> {
       // Match service.ts's detection: prefer agim.service, fall back.
       const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
       execSync(`systemctl stop ${unitName}`)
+      // R14 §四 — sweep stray pids after systemctl stop, same way
+      // restart does pre-stop. systemctl reports success when its
+      // cgroup-kill returns, even if a child escaped the control
+      // group (the dbus-run-session bug). We finish the job here so
+      // a subsequent web Start doesn't EADDRINUSE-loop. Exclude
+      // process.pid via reap's built-in self-exclusion — we don't
+      // want to kill the very process answering this HTTP request.
+      try {
+        const reap = await reapStrayAgimProcesses({ sigtermTimeoutMs: 5_000 })
+        if (reap.reaped.length > 0 || reap.survived.length > 0) {
+          webLog.warn({
+            event: 'web.service.stop.reap',
+            reaped: reap.reaped,
+            survived: reap.survived,
+          }, `R14 reap after systemctl stop: killed ${reap.reaped.length} stray pid(s)`)
+        }
+      } catch { /* best-effort */ }
       sendJson(res, 200, { ok: true, mode: 'systemd' })
     } catch (err) {
       sendJson(res, 500, { error: 'systemctl stop failed: ' + (err instanceof Error ? err.message : String(err)) })

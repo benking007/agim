@@ -52,6 +52,88 @@ export function isTimeoutDefaultAllow(): boolean {
   return (process.env.IMHUB_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
 }
 
+// R13 C1 — visibility for "user away" mode. When IMHUB_TIMEOUT_DEFAULT is
+// `allow`, every approval that times out without IM response auto-approves
+// — that's a meaningful weakening of the human-in-the-loop guarantee.
+// Operators flip it during long-running automation and forget; the warning
+// trail makes the elevated risk surface in journals + persistent audit so
+// post-incident review can correlate "this batch ran without supervision"
+// with the policy state.
+let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
+
+/** Print a prominent stdout banner + emit a structured warn log + write
+ *  an audit-event row when the timeout-default policy is `allow` at
+ *  startup. Idempotent — subsequent calls log only the structured warn,
+ *  not the banner (to keep the journal readable on restarts). Also
+ *  starts an hourly reminder timer so a long-running deployment that
+ *  forgot to revert sees the warning re-surface in `journalctl --since
+ *  '-1h'`. */
+export function announceTimeoutDefaultIfAllow(): void {
+  if (!isTimeoutDefaultAllow()) {
+    // Operator flipped back to deny — stop reminding.
+    if (_timeoutAllowHourlyTimer) {
+      clearInterval(_timeoutAllowHourlyTimer)
+      _timeoutAllowHourlyTimer = null
+    }
+    return
+  }
+  const banner = [
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '⚠️  APPROVAL TIMEOUT POLICY: allow',
+    '',
+    '   IMHUB_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
+    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
+    '   Revert with: IMHUB_TIMEOUT_DEFAULT=deny (or unset).',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '',
+  ].join('\n')
+  process.stdout.write(banner)
+  log.warn({
+    event: 'approval.bus.timeout_default_allow',
+    msg: 'IMHUB_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
+  })
+  try {
+    void (async () => {
+      const { logAuditEvent } = await import('./audit-log.js')
+      logAuditEvent({
+        eventType: 'config.put',
+        actor: 'system',
+        target: 'approval.timeout_default',
+        outcome: 'ok',
+        details: { value: 'allow', startup: true },
+      })
+    })()
+  } catch { /* best-effort */ }
+  if (_timeoutAllowHourlyTimer === null) {
+    _timeoutAllowHourlyTimer = setInterval(() => {
+      if (!isTimeoutDefaultAllow()) {
+        if (_timeoutAllowHourlyTimer) {
+          clearInterval(_timeoutAllowHourlyTimer)
+          _timeoutAllowHourlyTimer = null
+        }
+        return
+      }
+      log.warn({
+        event: 'approval.bus.timeout_default_allow.reminder',
+        msg: 'reminder: IMHUB_TIMEOUT_DEFAULT=allow still in effect',
+      })
+    }, 60 * 60 * 1000)
+    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
+        && 'unref' in _timeoutAllowHourlyTimer) {
+      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
+    }
+  }
+}
+
+/** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */
+export function stopTimeoutDefaultReminder(): void {
+  if (_timeoutAllowHourlyTimer) {
+    clearInterval(_timeoutAllowHourlyTimer)
+    _timeoutAllowHourlyTimer = null
+  }
+}
+
 /**
  * Tools whose contract is "read filesystem state, return it" — no writes,
  * no shell exec, no network. These short-circuit the approval flow with an

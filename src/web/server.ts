@@ -86,6 +86,12 @@ function isLoopbackPeer(req: IncomingMessage): boolean {
   return ip === '127.0.0.1' || ip === '::1'
 }
 
+/** R13 A5 — track once-per-process whether the deprecated `?token=`
+ *  URL fallback has been used, so we warn at most once per service
+ *  lifetime instead of spamming the journal. Cleared by tests via
+ *  re-importing the module fresh. */
+let _queryTokenWarned = false
+
 function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
   const auth = req.headers['authorization']
@@ -101,9 +107,43 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
       if (k === 'agim_token') return decodeURIComponent(rest.join('=').trim())
     }
   }
-  // 3. ?token=...  (last resort, for WS upgrade / iframe)
+  // 3. ?token=...  (deprecated — kept for WS upgrade / iframe compat)
+  //
+  // R13 A5 — query-string tokens leak to:
+  //   * browser history / bookmarks
+  //   * Referer headers when the page links to a third party
+  //   * any HTTP-proxy / WAF / CDN access log between client and agim
+  //
+  // We warn loudly the first time it's used per process lifetime
+  // (rate-limited so a misbehaving client doesn't fill the journal)
+  // + emit a one-shot audit-event row. Operators should migrate
+  // callers to Authorization: Bearer or the agim_token cookie.
   const q = url.searchParams.get('token')
-  if (q) return q
+  if (q) {
+    if (!_queryTokenWarned) {
+      _queryTokenWarned = true
+      rootLogger.warn({
+        component: 'web',
+        event: 'web.auth.query_token_used',
+        path: url.pathname,
+        msg: '?token= URL fallback used; prefer Authorization: Bearer or agim_token cookie '
+          + '(query token leaks to browser history / Referer / proxy logs)',
+      })
+      try {
+        void (async () => {
+          const { logAuditEvent } = await import('../core/audit-log.js')
+          logAuditEvent({
+            eventType: 'config.put',
+            actor: 'system',
+            target: 'web.auth.query_token',
+            outcome: 'ok',
+            details: { reason: 'query_token_used', path: url.pathname },
+          })
+        })()
+      } catch { /* best-effort */ }
+    }
+    return q
+  }
   return null
 }
 
@@ -264,6 +304,49 @@ export async function startWebServer(options: {
       event: 'web.auth_disabled_on_public_bind',
       bind: bindHost,
     }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
+  }
+  // R13 C2 — when binding to a non-loopback address, the operator
+  // almost certainly intends to put a TLS-terminating reverse proxy
+  // in front of agim. We can't reliably detect from inside whether
+  // that's been done (X-Forwarded-Proto could be forged), so we
+  // surface a one-time banner + audit row at boot. Suppress with
+  // IMHUB_WEB_TLS_ACK=1 for the operator who's already done the
+  // checklist and wants quiet logs.
+  if (isPublicBind && process.env.IMHUB_WEB_TLS_ACK !== '1') {
+    const banner = [
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      `⚠️  WEB SERVER BOUND TO ${bindHost}:${port} (non-loopback)`,
+      '',
+      '   Tokens travel as Bearer headers / cookies — if any leg between',
+      '   client and agim is HTTP, they go on the wire in cleartext.',
+      '   Confirm a TLS-terminating reverse proxy fronts this listener',
+      '   (nginx, caddy, traefik, k8s ingress, …) before exposing it to',
+      '   any network you do not control.',
+      '',
+      '   Silence this banner once your terminator is verified:',
+      '       IMHUB_WEB_TLS_ACK=1',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+    ].join('\n')
+    process.stdout.write(banner)
+    webLog.warn({
+      event: 'web.public_bind_no_tls_ack',
+      bind: bindHost,
+      port,
+    }, `non-loopback bind without IMHUB_WEB_TLS_ACK=1 — confirm reverse-proxy TLS termination`)
+    try {
+      void (async () => {
+        const { logAuditEvent } = await import('../core/audit-log.js')
+        logAuditEvent({
+          eventType: 'config.put',
+          actor: 'system',
+          target: 'web.bind',
+          outcome: 'ok',
+          details: { bind: bindHost, port, tls_ack: false },
+        })
+      })()
+    } catch { /* best-effort */ }
   }
   webLog.info({
     event: 'web.auth_mode',
@@ -923,6 +1006,19 @@ export async function startWebServer(options: {
   const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info, cb) => {
+      // R13 A4 — per-IP rate limit runs BEFORE auth so an attacker
+      // hammering verifyClient with bad tokens can't burn CPU on
+      // sha256-hashing every attempt.
+      const limit = checkWsIpRateLimit(info.req as IncomingMessage)
+      if (!limit.ok) {
+        webLog.warn({
+          event: 'ws.rate_limited',
+          ip: peerIp(info.req as IncomingMessage),
+          reason: limit.reason,
+        }, 'WS upgrade refused (per-IP rate limit)')
+        return cb(false, 429, 'rate limited')
+      }
+
       // Auth-off / loopback bypass — mirror checkAuth's two short-circuits
       // so dev / local CLI sessions still work without a token.
       if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
@@ -973,6 +1069,81 @@ export async function startWebServer(options: {
     return 100
   })()
 
+  // R13 A4 — per-IP rate limit. The per-token cap above protects
+  // memory but not connection rate; one attacker IP with a valid
+  // token can still spawn N parallel browser tabs / processes and
+  // saturate the file-descriptor pool.
+  //
+  //   IMHUB_WS_MAX_PER_IP            active connections per IP (default 20)
+  //   IMHUB_WS_MAX_NEW_PER_IP_PER_MIN  new connections per IP per minute (default 30)
+  //
+  // Loopback bypasses both — local dev / CLI tooling makes many
+  // short connections legitimately.
+  const wsMaxPerIp = (() => {
+    const raw = process.env.IMHUB_WS_MAX_PER_IP
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 20
+  })()
+  const wsMaxNewPerIpPerMin = (() => {
+    const raw = process.env.IMHUB_WS_MAX_NEW_PER_IP_PER_MIN
+    if (raw) {
+      const n = parseInt(raw, 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 30
+  })()
+  /** Per-IP active count + recent connection timestamps for sliding-window
+   *  rate limiting. We don't periodically prune unused entries — at
+   *  reasonable defaults the map size is bounded by the number of distinct
+   *  client IPs in any 60-second window, far below memory concerns. */
+  const wsPerIp = new Map<string, { active: number; recent: number[] }>()
+  function peerIp(req: IncomingMessage): string {
+    return (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  }
+  /** Returns {ok:true} when the IP may open a new WS, else {ok:false, reason}. */
+  function checkWsIpRateLimit(req: IncomingMessage): { ok: true } | { ok: false; reason: string } {
+    if (isLoopbackPeer(req)) return { ok: true }
+    const ip = peerIp(req)
+    if (!ip) return { ok: false, reason: 'empty peer ip' }  // defensive — matches isLoopbackPeer policy
+    const now = Date.now()
+    const cutoff = now - 60_000
+    const slot = wsPerIp.get(ip) ?? { active: 0, recent: [] }
+    slot.recent = slot.recent.filter((t) => t > cutoff)
+    if (slot.active >= wsMaxPerIp) {
+      return { ok: false, reason: `per-IP active cap (${slot.active}/${wsMaxPerIp})` }
+    }
+    if (slot.recent.length >= wsMaxNewPerIpPerMin) {
+      return { ok: false, reason: `per-IP new-conn cap (${slot.recent.length}/${wsMaxNewPerIpPerMin}/min)` }
+    }
+    return { ok: true }
+  }
+  function recordWsIpOpen(req: IncomingMessage): void {
+    if (isLoopbackPeer(req)) return
+    const ip = peerIp(req)
+    if (!ip) return
+    const slot = wsPerIp.get(ip) ?? { active: 0, recent: [] }
+    slot.active++
+    slot.recent.push(Date.now())
+    wsPerIp.set(ip, slot)
+  }
+  function recordWsIpClose(req: IncomingMessage): void {
+    if (isLoopbackPeer(req)) return
+    const ip = peerIp(req)
+    if (!ip) return
+    const slot = wsPerIp.get(ip)
+    if (!slot) return
+    slot.active = Math.max(0, slot.active - 1)
+    // GC empty slots so the map doesn't grow unboundedly across the
+    // lifetime of the process. A slot is "empty" iff no active conn
+    // AND no recent connection within the window.
+    if (slot.active === 0 && slot.recent.filter((t) => t > Date.now() - 60_000).length === 0) {
+      wsPerIp.delete(ip)
+    }
+  }
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     if (clients.size >= maxWsClients) {
       // 1013 = "Try Again Later" per RFC 6455. Slightly nicer than a flat
@@ -985,6 +1156,9 @@ export async function startWebServer(options: {
       ws.close(1013, 'Server too busy')
       return
     }
+    // R13 A4 — book the per-IP slot now that we know the upgrade
+    // succeeded. The matching close hook decrements below.
+    recordWsIpOpen(req)
     // R9: token verified at upgrade time by verifyClient; we read the
     // tokenId here so get-history can enforce ownership when the client
     // wants to rekey to a persisted threadId. 'anon' is the loopback /
@@ -1115,6 +1289,7 @@ export async function startWebServer(options: {
       const liveId = client.id
       webLog.info({ clientId: liveId }, 'Client disconnected')
       clients.delete(liveId)
+      recordWsIpClose(req)  // R13 A4
       // R9: drop the ownership entry only for server-generated ids that
       // were never rekeyed to a persistent client-side threadId. Rekeyed
       // ids stay registered so the operator's next reconnect with the
@@ -1126,6 +1301,7 @@ export async function startWebServer(options: {
       const liveId = client.id
       webLog.error({ clientId: liveId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
       clients.delete(liveId)
+      recordWsIpClose(req)  // R13 A4
       if (liveId === clientId) threadOwners.delete(liveId)
     })
   })

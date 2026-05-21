@@ -136,6 +136,12 @@ program
       try {
         const sockPath = await approvalBus.start()
         console.log(`✅ Approval bus listening on ${sockPath}`)
+        // R13 C1 — surface the timeout-default policy at startup so
+        // operators don't forget `allow` is in effect.
+        try {
+          const { announceTimeoutDefaultIfAllow } = await import('./core/approval-bus.js')
+          announceTimeoutDefaultIfAllow()
+        } catch { /* best-effort */ }
         // Expose the path through env so long-lived child processes
         // (notably `opencode serve`, which spawns the MCP sidecar with
         // `env: process.env`) can connect without per-spawn config.

@@ -36,20 +36,72 @@ export async function handleRestartCommand(args: string, ctx: RouteContext): Pro
   return result.message
 }
 
-/** /stop — graceful shutdown. Sends SIGTERM to self after acking the
- *  caller; no helper respawn (unlike /restart). Useful only via systemd
- *  (which won't restart on clean exit when WantedBy=multi-user.target is
- *  removed) or for "I'm done, going to sleep" workflows. For background
- *  mode, the user must `agim start` again manually. */
+/** /stop — graceful shutdown. Routes through systemctl when systemd
+ *  manages the unit so systemd's lifecycle accounting stays consistent
+ *  (matters when the unit has `Restart=always` — a bare SIGTERM-self
+ *  would cleanly exit and systemd would just restart it, defeating
+ *  the /stop). On non-systemd installs, SIGTERMs self after a 300ms
+ *  flush. */
 export async function handleStopCommand(args: string, ctx: RouteContext): Promise<string> {
   if (!isAdmin(ctx.platform, ctx.userId)) {
     return denialMessage(ctx.platform, ctx.userId)
   }
   void args
 
-  // No initiate-state-file because there's no new daemon to push a "✅
-  // 已停止" message from. The caller just sees SIGTERM in their IM stream
-  // (their last reply is what we send here).
+  // R14 §四 follow-up — systemd-aware stop. The web `/api/service/stop`
+  // handler already routes through `systemctl stop`; mirror that here
+  // so IM /stop behaves consistently. Without this, IM /stop under
+  // a systemd unit with Restart=always becomes a no-op (the unit
+  // bounces) and IM /stop under Restart=on-failure exits but doesn't
+  // free systemd's tracked state.
+  const { detectService, reapStrayAgimProcesses } = await import('../../cli-ui/service.js')
+  const { existsSync } = await import('node:fs')
+  const svc = detectService()
+  if (svc.mode === 'systemd') {
+    const unitName = existsSync('/etc/systemd/system/agim.service')
+      ? 'agim.service'
+      : (existsSync('/etc/systemd/system/im-hub.service') ? 'im-hub.service' : null)
+    if (unitName) {
+      // Spawn detached so this handler can return synchronously (the
+      // IM reply text needs to flush before the process dies). Same
+      // pattern as the web handler.
+      const { spawn } = await import('node:child_process')
+      try {
+        spawn('systemctl', ['stop', unitName], { detached: true, stdio: 'ignore' }).unref()
+      } catch (err) {
+        return `🛑 systemctl stop spawn 失败：${err instanceof Error ? err.message : String(err)}`
+      }
+      // R14 — schedule reap shortly after systemctl stop to clean up
+      // any cgroup-escaped child. We can't await in this handler
+      // (returning here gives IM the reply text), so fire off a
+      // detached follow-up.
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const reap = await reapStrayAgimProcesses({ sigtermTimeoutMs: 5_000 })
+            if (reap.reaped.length > 0 || reap.survived.length > 0) {
+              const { logger } = await import('../logger.js')
+              logger.warn({
+                component: 'service-cmd',
+                event: 'im.stop.reap',
+                reaped: reap.reaped,
+                survived: reap.survived,
+              }, `R14 reap after IM /stop: killed ${reap.reaped.length} stray pid(s)`)
+            }
+          } catch { /* best-effort */ }
+        })()
+      }, 1_000)
+      return (
+        '🛑 服务即将停止（systemd 接管）。\n' +
+        '   再次启动：`systemctl start agim`'
+      )
+    }
+  }
+
+  // Non-systemd modes — original behavior. No initiate-state-file
+  // because there's no new daemon to push a "✅ 已停止" message from;
+  // the caller just sees SIGTERM in their IM stream (their last
+  // reply is what we send here).
   setTimeout(() => {
     try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
   }, 300)

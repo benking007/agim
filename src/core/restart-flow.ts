@@ -176,6 +176,33 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
         : `🔄 重启中（systemd 接管）… 预计 5-10 秒内回来。\n   注意：${pre.warnings.join('；')}`
       await deliverRestartAck(initiator, ackMessage)
 
+      // R14 §四 follow-up — reap stray agim pids before systemctl
+      // restart. The web restart path already does this; mirror it
+      // here so IM /restart + CLI cmdRestart get the same cgroup-
+      // escape recovery. Without this an IM admin who hits /restart
+      // while the keyring.conf dbus-run-session bug is in effect
+      // can EADDRINUSE-loop just like the web path used to.
+      try {
+        const { reapStrayAgimProcesses } = await import('../cli-ui/service.js')
+        const reap = await reapStrayAgimProcesses({
+          excludePids: svcState.pid != null ? [svcState.pid] : [],
+          sigtermTimeoutMs: 5_000,
+        })
+        if (reap.reaped.length > 0 || reap.survived.length > 0) {
+          log.warn({
+            event: 'restart-flow.reap',
+            reaped: reap.reaped,
+            survived: reap.survived,
+            source: initiator.source,
+          }, `R14 reap before systemctl restart: killed ${reap.reaped.length} stray pid(s)`)
+        }
+      } catch (err) {
+        log.warn({
+          event: 'restart-flow.reap_failed',
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
+
       log.info({
         event: 'restart-flow.systemd_restart',
         unit: unitName,

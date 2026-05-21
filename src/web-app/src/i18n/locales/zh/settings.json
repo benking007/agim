@@ -285,21 +285,6 @@
       "saved": "工作区已保存"
     }
   },
-  "env": {
-    "title": "环境变量",
-    "subtitle": "编辑 `~/.agim/.env` 中的值。敏感字段默认遮罩，可切换显示查看完整值。",
-    "reveal":   "显示敏感值",
-    "search":   "按 Key 过滤",
-    "secretTag": "敏感",
-    "empty":    "未找到可编辑的 Key。",
-    "save":     "保存",
-    "savedToast": "已保存 {{count}} 项",
-    "discard":  "放弃修改",
-    "dirtyHint": "{{count}} 项未保存",
-    "unsetButton": "清除",
-    "unset": "（未设置）",
-    "noChanges": "无修改"
-  },
   "service": {
     "title": "服务",
     "subtitle": "查看运行中的 agim 进程，并启动 / 停止 / 重启它。",

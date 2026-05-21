@@ -131,7 +131,11 @@ const router = createBrowserRouter([
       { path: 'viewer',     lazy: lazy(() => import('@/routes/settings/viewer')) },
       { path: 'agents',     lazy: lazy(() => import('@/routes/settings/agents')) },
       { path: 'policy',     lazy: lazy(() => import('@/routes/settings/policy')) },
-      { path: 'env',        lazy: lazy(() => import('@/routes/settings/env')) },
+      // R13 follow-up — generic "/settings/env" raw editor removed. The
+      // domain-specific pages (email / policy / viewer / memory) still
+      // mount their own UIs against /api/env for the keys they own; the
+      // catch-all editor was a foot-gun and the user explicitly asked
+      // for it gone. /api/env GET+PUT endpoints stay (admin-gated).
       { path: 'service',    lazy: lazy(() => import('@/routes/settings/service')) },
       { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },

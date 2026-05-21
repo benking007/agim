@@ -9,7 +9,6 @@
     "policy":     "Policy",
     "workspaces": "Workspaces",
     "admins":     "Admins",
-    "env":        "Environment",
     "service":    "Service"
   },
   "agents": {
@@ -284,21 +283,6 @@
     "toast": {
       "saved": "Workspace saved"
     }
-  },
-  "env": {
-    "title": "Environment variables",
-    "subtitle": "Edit values that live in `~/.agim/.env`. Secrets are masked by default; toggle Reveal to see the full value.",
-    "reveal":   "Reveal secrets",
-    "search":   "Filter by key",
-    "secretTag": "secret",
-    "empty":    "No editable keys found.",
-    "save":     "Save",
-    "savedToast": "Saved {{count}} key(s)",
-    "discard":  "Discard changes",
-    "dirtyHint": "{{count}} unsaved",
-    "unsetButton": "Unset",
-    "unset": "(unset)",
-    "noChanges": "No changes"
   },
   "service": {
     "title": "Service",

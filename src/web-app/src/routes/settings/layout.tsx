@@ -24,7 +24,8 @@ const SUB_TABS: SubTab[] = [
   { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true },
   { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true },
   { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
-  { to: 'env',        i18nKey: 'tabs.env',        mounted: true },
+  // R13 follow-up — /settings/env catch-all editor removed; raw env-var
+  // editing belongs in `~/.agim/env` on the host, not in a web form.
   { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
 ]
 

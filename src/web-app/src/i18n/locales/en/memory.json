@@ -88,8 +88,8 @@
     "subtitle": "Embeddings power hybrid recall on memory facts. The active backend, model, and per-user coverage live here.",
     "config": {
       "title":    "Backend configuration",
-      "hint":     "Backend selection + OpenAI / local-model parameters live in env. Edit them under Settings → Environment; the `IMHUB_MEMORY_VECTOR_*` keys are listed below.",
-      "editLink": "Edit in env"
+      "hint":     "Backend selection + OpenAI / local-model parameters live in env. Edit `~/.agim/env` on the host (or set systemd `Environment=`); the `IMHUB_MEMORY_VECTOR_*` keys are listed below.",
+      "editLink": "env file"
     },
     "form": {
       "title":              "Backend configuration",

@@ -101,6 +101,11 @@ export interface DingTalkInboundMessage {
   sessionWebhookExpiredTime?: number
   createAt?: number
   isAdmin?: boolean
+  /** Batch 3 (#8) — when the inbound is a "reply to ..." quote, the
+   *  Stream SDK may populate these fields. Names follow the older
+   *  OpenAPI shapes seen in the wild; we read them defensively. */
+  originalMessageId?: string
+  originalContent?: { text?: string }
   /** Catch-all for unknown fields — we never index this in code, but
    *  preserving it lets the debug-log path dump the full payload. */
   [extra: string]: unknown

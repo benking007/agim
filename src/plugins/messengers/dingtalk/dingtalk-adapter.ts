@@ -532,11 +532,22 @@ export class DingTalkAdapter implements MessengerAdapter {
     threadId: string,
     channelId: string,
   ): Promise<void> {
+    // Batch 3 (#8) — quoted-message recovery. DingTalk Stream sometimes
+    // carries the originalContent.text when the user "reply-to"-style
+    // quotes a prior message. Defensive: many SDK versions don't ship
+    // these fields at all, so absent is fine.
+    const quoted = msg.originalContent?.text?.trim() || ''
+    const composed = quoted
+      ? `[reply to dingtalk message ${msg.originalMessageId || ''}: "${
+          quoted.length > 800 ? `${quoted.slice(0, 797)}…` : quoted
+        }"]\n\n${text}`
+      : text
+
     const out: Message = {
       id: msg.msgId,
       threadId,
       userId: msg.senderStaffId || 'unknown',
-      text,
+      text: composed,
       timestamp: msg.createAt ? new Date(msg.createAt) : new Date(),
       channelId,
     }

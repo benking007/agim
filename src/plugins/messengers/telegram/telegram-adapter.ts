@@ -82,11 +82,26 @@ export class TelegramAdapter implements MessengerAdapter {
       if (ctx.message.from.is_bot) return
       if (!this.messageHandler) return
 
+      // Batch 3 (#8) — quoted-message recovery. If the user replied to
+      // an earlier message in this chat, prepend a compact citation
+      // block so the agent can refer back to it. Limited to 800 chars
+      // to keep groups with long quote chains from blowing the prompt
+      // (a /memo or explicit follow-up can fetch the rest).
+      const replyTo = ctx.message.reply_to_message
+      const quoted = replyTo?.text || replyTo?.caption || ''
+      const quotedAuthor = replyTo?.from?.username
+        ?? replyTo?.from?.first_name
+        ?? 'someone'
+      const quotedBlock = quoted
+        ? `[reply to @${quotedAuthor}: "${quoted.length > 800 ? `${quoted.slice(0, 797)}…` : quoted}"]\n\n`
+        : ''
+
+      const text = `${quotedBlock}${ctx.message.text || ''}`
       const message: Message = {
         id: ctx.message.message_id.toString(),
         threadId: ctx.chat.id.toString(),
         userId: ctx.message.from?.id?.toString() || 'unknown',
-        text: ctx.message.text || '',
+        text,
         timestamp: new Date(ctx.message.date * 1000),
         channelId: this.config?.channelId || 'default',
       }

@@ -134,6 +134,23 @@ export function parseMessage(text: string): ParsedMessage {
     return { type: 'stopAgent' }
   }
 
+  // Batch 3 (#6 @multi-agent routing) — `@<agent> <prompt>` at the
+  // start of a message routes to that agent, same effect as
+  // `/<agent> <prompt>`. The IM platforms (Telegram / Feishu /
+  // DingTalk) strip the @-mention of the bot itself before delivery,
+  // so any remaining `@…` at the head is a user-typed routing hint.
+  // Only registered agent names / aliases match; otherwise it falls
+  // through and the agent sees the @ as ordinary text.
+  const atMatch = trimmed.match(/^@([\w-]+)(?:\s+([\s\S]*))?$/)
+  if (atMatch) {
+    const candidate = atMatch[1]
+    const rest = atMatch[2] || ''
+    const a = registry.findAgent(candidate)
+    if (a) {
+      return { type: 'agent', agent: a.name, prompt: rest }
+    }
+  }
+
   // Check for command prefix
   const match = trimmed.match(/^\/(\S+)\s*(.*)/)
   if (!match) {

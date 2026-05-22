@@ -124,6 +124,37 @@ describe('parseMessage', () => {
       expect(parseMessage('/btw')).toEqual({ type: 'btw', prompt: '' })
     })
 
+    // Batch 3 (#6) — @multi-agent routing
+    describe('@<agent> routing', () => {
+      beforeEach(() => {
+        // parseMessage's describe block doesn't pre-register the test-agent
+        // (only the routeMessage describe further down does). Register
+        // explicitly so registry.findAgent() resolves the alias.
+        registry.registerAgent(mockAgent)
+      })
+
+      it('parses @<registered-agent> as type agent', () => {
+        const r = parseMessage('@test-agent hello world')
+        expect(r).toEqual({ type: 'agent', agent: 'test-agent', prompt: 'hello world' })
+      })
+      it('@<alias> resolves to the underlying agent name', () => {
+        const r = parseMessage('@ta hello')
+        expect(r).toEqual({ type: 'agent', agent: 'test-agent', prompt: 'hello' })
+      })
+      it('@<unknown> falls through to default (agent sees the @ verbatim)', () => {
+        const r = parseMessage('@stranger hi')
+        expect(r).toEqual({ type: 'default', prompt: '@stranger hi' })
+      })
+      it('@<agent> with no prompt body is allowed (empty prompt)', () => {
+        const r = parseMessage('@test-agent')
+        expect(r).toEqual({ type: 'agent', agent: 'test-agent', prompt: '' })
+      })
+      it('@<agent> in the middle of a sentence does NOT route', () => {
+        const r = parseMessage('hey @test-agent please')
+        expect(r).toEqual({ type: 'default', prompt: 'hey @test-agent please' })
+      })
+    })
+
     it('should parse /status as a service-control intent', () => {
       // /status migrated from a hardcoded builtin to a real service-status
       // handler in commands/service.ts. Args are forwarded (currently unused).

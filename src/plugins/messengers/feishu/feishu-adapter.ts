@@ -267,6 +267,15 @@ export class FeishuAdapter implements MessengerAdapter {
       return
     }
 
+    // Batch 3 (#8) — quoted-message hint. Feishu's WebSocket payload
+    // carries parent_id but not the parent's content; fetching the
+    // body requires an OpenAPI call we can wire up later (TODO).
+    // For now we surface a lightweight cite so the agent knows a
+    // quote exists and can ask for context if needed.
+    if (message.parent_id) {
+      text = `[reply to feishu message ${message.parent_id}]\n\n${text}`
+    }
+
     log.debug({ text }, 'Message received')
 
     const msg: Message = {

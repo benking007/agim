@@ -4,6 +4,157 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.32] - 2026-05-22
+
+### R15 — final R14 follow-ups
+
+- **`findAgimProcesses` argv-strict /proc scan** — pre-R15 `pgrep -af
+  "agim start"` matched any process whose cmdline string contained the
+  substring `"agim start"` (operator's bash test scripts got SIGTERM'd
+  with exit 143 during R14 verification). New impl walks
+  `/proc/<pid>/cmdline` on Linux and validates argv shape (argv[0]
+  node-like, argv[1] agim entry, argv[2] = literal `'start'`). Shell
+  scripts can't satisfy. macOS/Windows fall back to legacy pgrep. PR #57.
+- **PID_FILE on every successful `agim start`** — previously only
+  written by `spawnBackground()` (CLI `--bg` only), so systemd-started
+  agim never wrote it and R14 §六 self-check passed silently on stale
+  data. Now write `process.pid` after the R14 self-check passes;
+  `gracefulShutdown` unlinks only when the recorded pid matches our
+  own to avoid race with a freshly-spawned successor. PR #57.
+
+## [1.2.30] - 2026-05-22
+
+### R15 — new
+
+- **CLI 向导 "Web 后台 — 监听地址 + 端口" 段** — bind (`IMHUB_WEB_BIND`
+  写到 `~/.agim/env`) + port (`webPort` 写到 `config.json`). 选
+  `0.0.0.0` 强制 yesNo 二次确认 "你前面有 TLS 反代吗"; port `< 1024`
+  拒绝。PR #56.
+- **ACP port gate 闭合** — `GET /api/config` 现透传 `acpPort` 但只在
+  `IMHUB_ENABLE_REMOTE_AGENT=1` 时; `PUT /api/config` 在 gate 关时丢
+  incoming.acpPort; Web `/settings/service` Ports 卡的 ACP 输入框
+  按 `features.remoteAgent` gate (之前一直显示). PR #56.
+
+## [1.2.29] - 2026-05-22
+
+### R14 docs
+
+- **`docs/deployment.md`** — systemd unit 模板加 R14 加固参数
+  (`TimeoutStopSec=30` / `KillMode=control-group` / `Restart=on-failure`
+  / `RestartPreventExitStatus=2` / `StartLimit*`). 明示不要
+  `dbus-run-session` wrapper. PR #55.
+- **`docs/keyring-integration.md`** (新增) — 可选 keyring 集成参考，含
+  R14 cgroup-escape 故障案例反例。**非默认部署，不进 npm 包**。PR #55.
+
+## [1.2.28] - 2026-05-22
+
+### R14 — IM systemd lifecycle + Copilot removal
+
+- **IM `/restart` reap 兜底** — `initiateRestart()` systemd 分支在
+  `systemctl restart` 之前调用 `reapStrayAgimProcesses`. PR #53.
+- **IM `/stop` 走 systemctl** — `handleStopCommand` 之前总是 SIGTERM
+  自己, systemd unit 配 `Restart=always` 时变成 no-op. 改成 systemd
+  模式下走 `systemctl stop` detached + 1s 后 reap 兜底. PR #53.
+
+### Removed
+
+- **Copilot adapter** — 删 `src/plugins/agents/copilot/` 整目录,
+  intent classifier profile, install hint, 飞书 emoji, i18n (en+zh),
+  MCP A2A enum. 已有 `copilot` in `config.agents` 走标准 "agent not
+  available" fallback. PR #54.
+
+## [1.2.27] - 2026-05-22
+
+### R14 — graceful shutdown + reap + startup self-check
+
+- **25s 优雅退出硬截止** — `gracefulShutdown` 包 setTimeout 25s,
+  到点 `process.exit(1)`. 与 systemd `TimeoutStopSec=30` 配 5s
+  buffer 防 SIGKILL. PR #51.
+- **端口先释放** — `webServer.close()` / `acpServer.close()` 提到
+  teardown 链最前; 两者 close() 加 `httpServer.closeAllConnections()`
+  强断 keep-alive, 让端口在 DB / messenger teardown 之前释放. PR #51.
+- **Reap stray agim 进程** — `reapStrayAgimProcesses` 实现 SIGTERM
+  → 5s → SIGKILL. Web restart 在 `systemctl restart` 之前先 reap.
+  PR #51.
+- **detectService is-enabled 而非 is-active** — systemd in activating
+  / failed / inactive 仍返 mode='systemd', 防止 web restart 回退到
+  spawnBackground 造成双开. PR #51.
+- **启动期自检** — PID_FILE 活 pid 且 ≠ self → exit(2); INVOCATION_ID
+  缺 + unit 文件存在 → warn + `~/.agim/start-anomaly.log`. PR #51.
+- **opencode serve 显式 stop** — 之前依赖 parent-exit, SIGKILL 下变
+  僵尸. PR #51.
+
+### Web Start/Stop systemctl
+
+- **Web `/api/service/start` 走 systemctl** — 之前写死
+  `spawnBackground` (绕开 systemd 创建第二个实例). 改成 systemd 模式
+  下 active 时返 alreadyRunning, 否则 `systemctl start` detached.
+  PR #52.
+- **Web `/api/service/stop` 跑 reap 兜底** — `systemctl stop` 之后
+  跑 reap 收掉 cgroup-escape 残留. PR #52.
+
+## [1.2.26] - 2026-05-22
+
+### Changed
+
+- **删 `/settings/env` raw 编辑器** — 直接 vim `~/.agim/env`. 各专用
+  页 (Email / Policy / Viewer / Memory) 还在用 `/api/env` 改自己那
+  一小撮 key. PR #50.
+- **`npm run build` 接入 vite** — 新 `build:spa` 脚本: vite build +
+  rsync dist → public. 防止下次 SPA 源码改了但 bundle 没重建.
+  PR #50.
+
+## [1.2.25] - 2026-05-21
+
+### R13 — security follow-ups (10 controls)
+
+- **G1 admin role on web tokens + bootstrap token redaction** —
+  `TokenRow.role: 'admin'|'user'`; 20+ mutation 端点 `requireAdmin`
+  gate; web + IM admin bootstrap token 原值不再进 stdout/pino. PR #48.
+- **G2 sensitive-paths hard-deny + outbound secret scrubber** —
+  approval-bus 在 readonly-auto-allow 之前 hard-deny `~/.agim/`,
+  `~/.ssh/`, `/etc/shadow`, `.env`, `AGENTS.md`, `CLAUDE.md`, `id_rsa`
+  等 (运维 approve 也无法); outbox 文本 payload 入 SQLite 之前过 10
+  类 secret 模式扫描. PR #48.
+- **G3 memory facts sanitize + AGENTS.md scan** — `memory_query` /
+  `memory_list` 输出对 5W1H 走 `sanitizeForInjection`;
+  `ensureAgentWorkspace` 启动期扫 AGENTS.md/CLAUDE.md, 11 英文 + 4
+  中文 prompt-injection 模式命中 → warn + audit. PR #48.
+- **G4 `IMHUB_ACP_BIND` env + non-loopback audit** — ACP 服务监听
+  地址可配; 改非回环时启动 warn + 持久 audit-event. PR #48.
+- **G5 advisories** — `IMHUB_TIMEOUT_DEFAULT=allow` 启动横幅 + 每
+  小时 reminder; 按 IP WS 限流 (`IMHUB_WS_MAX_PER_IP=20` +
+  `IMHUB_WS_MAX_NEW_PER_IP_PER_MIN=30`); `?token=` URL 回退首次使用
+  warn + audit; 非回环 Web bind 未设 `IMHUB_WEB_TLS_ACK` 启动横幅.
+  PR #48.
+
+### R12 — 6 enterprise privacy hardening items + visibility gates
+
+- **① 用户消息日志脱敏** — `sanitizeUserText()` 默认
+  `{len, prefix(6), sha256(12)}`, `IMHUB_LOG_USER_TEXT=1` 显式启用
+  原文 (120 字符 cap). PR #48.
+- **② Memory / Persona / Paste TTL** — `IMHUB_MEMORY_FACT_RETENTION_
+  DAYS=90`/`IMHUB_PERSONA_RETENTION_DAYS=180`/`IMHUB_PASTE_RETENTION_
+  DAYS=30`. facts 按 last_referenced_at (LRU 友好), 0 = 永久. PR #48.
+- **③ `agim uninstall` 三模式** — 保留 / 清凭据保留历史 / 完全销毁
+  (typed "DELETE" + shred + rm -rf). PR #48.
+- **④ 显式 0o600 / 0o700 文件权限** — session logs + A2A artifacts
+  不再依赖 umask. PR #48.
+- **⑤ `audit_events` 持久审计表** — 10 类事件 (approval / admin /
+  config / env / token / workspace) 持久 180 天, details JSON 只放
+  字段名 / 长度 / 哈希前缀. `GET /api/audit/events` 暴露. PR #48.
+- **⑥ `IMHUB_SKILLHUB_ENABLED` 出网开关** — `=0` 关 skillhub
+  对外 fetch (气隙部署). PR #48.
+- **Compliance visibility gates** — `IMHUB_ENABLE_GLOBAL_IM` 控
+  Discord+Telegram, `IMHUB_ENABLE_REMOTE_AGENT` 控 ACP. 默认全关,
+  三层都 gate (CLI 向导 / Web 设置 / 运行时). PR #48.
+
+### Build
+
+- **重建 SPA bundles** — PR #48 改了 SPA 源码但未重建 bundle, 导致
+  生产 deploy 上 telegram/discord 卡片仍可见. PR #49 重建并 ship
+  更新 `src/web/public/assets/*`.
+
 ## [1.2.22] - 2026-05-20
 
 ### Fixed

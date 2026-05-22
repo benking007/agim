@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / Copilot / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
+**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
 > **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
 > npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's
@@ -17,7 +17,8 @@
 
 ## Highlights
 
-- **5 messengers + email, 4+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Telegram, Discord, Email (SMTP); Claude Code, Codex, Copilot, OpenCode, plus any ACP endpoint
+- **5 messengers + email, 3+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Telegram, Discord, Email (SMTP); Claude Code, Codex, OpenCode, plus any ACP endpoint
+- **Compliance-first defaults (v1.2.23+)** — Discord + Telegram + remote-ACP-agent are **hidden** by default. Opt-in via `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1`. See [`docs/security-hardening.md`](docs/security-hardening.md) for the full security control catalogue (~30 env vars / sensitive-path denylist / outbound secret scrubber / audit-events table / admin role on tokens / R14 systemctl-aware lifecycle).
 - **Agent-to-Agent (A2A)** — agents call other agents inline via `mcp__imhub__call_agent`. Just say *"用 codex 帮我跑 git status"* / *"ask opencode to run the tests"* — the active agent hands off, waits, integrates the reply. Guardrails: depth limit (default 3), self-call ban, workspace whitelist, per-user budget. Observability: `/a2a stats | recent | tree <id>`. Disable with `IMHUB_A2A_ENABLED=0`.
 - **A2A shared artifacts (v1.1.3+)** — caller drops files into the callee's workspace via `inputs[]` (`fromAbsolutePath` / `fromCallerOutput` / inline `content`), and callee writes products to `~/.agim/artifacts/<jobId>/_agim-output/`. Returned `outputs[]` lets the caller read files on demand. Hard-link first, copy fallback. Size caps configurable.
 - **IM long-message viewer (v1.1.6+)** — WeChat / Feishu and friends render rich markdown poorly. When an agent's reply exceeds the size threshold (or contains a markdown table / large code block), agim stashes the full markdown in `~/.agim/viewer.db` (permanent, local-only — content never leaves your host) and sends the IM a short summary + a link `https://<your-host>/v/<uuid>`. The link is served by agim's own web console — operator exposes the web port (cloudflared / caddy / tailscale of choice). Agents can opt in explicitly by wrapping long answers in `<im-summary>…</im-summary><full-md>…</full-md>`. Enable with `IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-host`.
@@ -36,7 +37,7 @@
 - **Multi-tenant workspaces** — per-workspace agent whitelist, rate limits, command-level ACL
 - **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention (24h for auto-tracked inline jobs)
 - **Observability** — structured logging (pino + traceId), Prometheus metrics, audit log
-- **Security** — timing-safe auth, SSRF guards, credential file permissions, approval socket entropy
+- **Security** — token-based admin/user roles (R13), sensitive-path hard-deny + outbound secret scrubber (R13), prompt-injection guard on memory + AGENTS.md (R13), per-IP WS rate limit, timing-safe auth, SSRF guards, credential file permissions, approval socket entropy, persistent `audit_events` table with 180-day retention (R12 ⑤), 25s graceful shutdown + reap (R14), startup PID self-check (R14)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
@@ -91,7 +92,7 @@ units that call `agim` continue to work without any extra setup.
 | Category | Details |
 |----------|---------|
 | **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Telegram (grammy — photo / voice / audio), Discord (discord.js), Email (SMTP, push-only) |
-| **Agents** | Claude Code, Codex, Copilot, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
+| **Agents** | Claude Code, Codex, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
 | **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
 | **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文), SSE dashboard |
 | **Tool Approval** | Human-in-the-loop over IM + in-page cards; MCP sidecar for Claude |
@@ -346,9 +347,9 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
                            ▼
           ┌── Agent invocation ───────────────┐
           │ circuit breaker + spawn stream     │
-          └───┬──────┬──────┬──────┬──────┬───┘
-              ▼      ▼      ▼      ▼      ▼
-          claude  opencode codex copilot  ACP
+          └───┬──────┬──────┬──────┬───┘
+              ▼      ▼      ▼      ▼
+          claude  opencode codex  ACP
               │
               ▼ (tool approval)
         MCP sidecar → approvalBus → IM thread
@@ -370,7 +371,6 @@ For the full deep-dive see [`docs/architecture/current.md`](docs/architecture/cu
 - At least one agent CLI or ACP endpoint:
   - `npm i -g @anthropic-ai/claude-code`
   - `npm i -g @openai/codex`
-  - `npm i -g @github/copilot`
   - `npm i -g opencode-ai`
 
 ## Development

@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / Copilot / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
+**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
 
 > **品牌**：英文名 **Agim**（取自 Agent + IM，也有 agile 敏捷的感觉），中文名 **阿吉姆**。
 > npm 包名 **`agim-cli`**（短名 `agim` 被 npm 反 typo-squat 保留），装完后**命令**还是 **`agim`**，
@@ -13,7 +13,8 @@
 
 ## 亮点
 
-- **5 种 IM + 邮件，4+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、Copilot、OpenCode，以及任意 ACP 端点
+- **5 种 IM + 邮件，3+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、OpenCode，以及任意 ACP 端点
+- **合规友好默认（v1.2.23+）** — Discord、Telegram、远程 ACP Agent 默认**全部隐藏**（CLI 向导 / Web 后台 / 运行时加载三层都 gate 住）。通过 `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1` 显式启用。完整安全控制清单见 [`docs/security-hardening.md`](docs/security-hardening.md)（~30 个 env、敏感路径黑名单、出站脱敏、审计事件表、token 角色、R14 systemctl-aware 生命周期）
 - **Agent 之间互调（A2A）** — Agent 可以在自己的工具循环里直接调另一个 Agent，比如直接说「用 codex 帮我跑 git status」/「让 opencode 跑一下测试」。护栏在 agim 里强制：递归深度限制（默认 3）、禁止自调、工作区白名单、按人预算共享；可观测：`/a2a stats | recent | tree <id>`；`IMHUB_A2A_ENABLED=0` 关闭
 - **A2A 共享文件传递（v1.1.3+）** — caller 可通过 `inputs[]`（`fromAbsolutePath` / `fromCallerOutput` / 内联 `content`）把文件放进 callee 工作区；callee 把产物写到 `~/.agim/artifacts/<jobId>/_agim-output/`，返回的 `outputs[]` 让 caller 按需读。同文件系统优先 hard-link，否则复制。大小上限 env 可调
 - **IM 长内容 viewer（v1.1.6+）** — 微信 / 飞书等对富 markdown 渲染差。Agent 回复超过阈值（行数 / 字符数 / 含表格 / 大段代码）时，agim 把完整 markdown 永久存进本机 `~/.agim/viewer.db`（**永远不离开你的机器**），IM 里只发短摘要 + 链接 `https://<你的域名>/v/<uuid>`。链接背后是 agim 自己的 web console，由你自己反代（cloudflared / caddy / tailscale 任选）。Agent 可显式用 `<im-summary>…</im-summary><full-md>…</full-md>` 包装长回答获得最干净体验。开启：`IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://你的域名`
@@ -32,7 +33,7 @@
 - **多租户工作区** — 按工作区隔离 Agent 白名单、限流、命令级 ACL
 - **持久化任务与定时** — SQLite 落地，重启不丢，显式 `/job` 30 天 / 自动跟踪的 inline job 24 小时
 - **可观测** — 结构化日志（pino + traceId）、Prometheus 指标、审计日志
-- **安全** — 常量时鉴权、SSRF 防护、凭证文件权限、审批 socket 熵值
+- **安全** — Web 令牌 admin/user 双角色（R13）、敏感路径硬拒（AGENTS.md / `~/.agim/env` / `.env` 等）+ 出站 token 自动脱敏（R13）、记忆 / AGENTS.md prompt-injection 防护（R13）、按 IP WS 限流、常量时鉴权、SSRF 防护、凭证文件 0o600、审批 socket 熵值、持久 `audit_events` 表保留 180 天（R12 ⑤）、25s 优雅退出 + reap 兜底（R14）、启动期 PID 自检（R14）。详见 [`docs/security-hardening.md`](docs/security-hardening.md)
 
 完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -83,7 +84,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 | 分类 | 内容 |
 |------|------|
 | **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js）、Email（SMTP，仅推送） |
-| **Agent** | Claude Code、Codex、Copilot、OpenCode（统一 `AgentBase`）；任何 HTTP Agent 通过 ACP 接入 |
+| **Agent** | Claude Code、Codex、OpenCode（统一 `AgentBase`）；任何 HTTP Agent 通过 ACP 接入 |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **Web 控制台** | 流式对话、三态主题（浅 / 深 / 跟随系统）、中英双语、SSE 实时仪表盘 |
 | **工具人审** | IM 端 + 页面内审批卡；Claude MCP sidecar |
@@ -340,7 +341,7 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
           │ 断路器 + spawn stream              │
           └───┬──────┬──────┬──────┬──────┬───┘
               ▼      ▼      ▼      ▼      ▼
-          claude  opencode codex copilot  ACP
+          claude  opencode codex  ACP
               │
               ▼ （工具审批）
         MCP sidecar → approvalBus → IM 会话
@@ -362,7 +363,6 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 - 至少一个 Agent CLI 或 ACP 端点：
   - `npm i -g @anthropic-ai/claude-code`
   - `npm i -g @openai/codex`
-  - `npm i -g @github/copilot`
   - `npm i -g opencode-ai`
 
 ## 开发

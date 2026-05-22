@@ -111,6 +111,18 @@ export function parseMessage(text: string): ParsedMessage {
     return { type: 'default', prompt: '' }
   }
 
+  // Plan C (2026-05-22): user-facing coord-system tags. Lowercased and
+  // matched on the *entire* message (no args) so casual replies like
+  // "#wgs" / "#GCJ" / " #bd " are recognised but bare `#wgs but the
+  // marker is still off` falls through to the default agent.
+  const coordTagMatch = trimmed.match(/^#(wgs|gcj|bd)0?2?(?:84)?(?:09)?$/i)
+  if (coordTagMatch) {
+    const sys = coordTagMatch[1].toLowerCase()
+    if (sys === 'wgs') return { type: 'coord', system: 'wgs84' }
+    if (sys === 'gcj') return { type: 'coord', system: 'gcj02' }
+    if (sys === 'bd') return { type: 'coord', system: 'bd09' }
+  }
+
   // Check for command prefix
   const match = trimmed.match(/^\/(\S+)\s*(.*)/)
   if (!match) {
@@ -259,6 +271,11 @@ export async function routeMessage(
 
     case 'web': {
       return handleWebCommand(parsed.args, ctx)
+    }
+
+    case 'coord': {
+      const { handleCoordCommand } = await import('./commands/coord.js')
+      return handleCoordCommand(parsed.system, ctx)
     }
 
     case 'service': {

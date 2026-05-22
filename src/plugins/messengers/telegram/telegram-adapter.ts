@@ -24,6 +24,7 @@ import { logger as rootLogger } from '../../../core/logger.js'
 import { transcribe, detectProvider, TranscribeError } from '../../../core/transcribe.js'
 import { setLocationContext } from '../../../core/location-context.js'
 import { normalizeIncomingCoords } from '../../../core/coord-systems.js'
+import { getUserCoordPref } from '../../../core/user-coord-prefs.js'
 
 const log = rootLogger.child({ component: 'telegram' })
 
@@ -205,7 +206,14 @@ export class TelegramAdapter implements MessengerAdapter {
       const loc = botCtx.message.location
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
-      const norm = normalizeIncomingCoords('telegram-native', loc.latitude, loc.longitude)
+      const userId = botCtx.message.from?.id.toString() ?? threadId
+      // Plan C: look up the user's stored coord-system preference; if
+      // present, force normalize that way. Otherwise the default
+      // heuristic (in-China → GCJ-02 for telegram-native) kicks in,
+      // and the user can correct it with one `#wgs` / `#gcj` / `#bd` reply.
+      const pref = getUserCoordPref('telegram', userId)
+      const norm = normalizeIncomingCoords('telegram-native', loc.latitude, loc.longitude,
+        pref ? { force: pref } : undefined)
       setLocationContext(threadKey, {
         lat: norm.lat,
         lng: norm.lng,
@@ -235,7 +243,10 @@ export class TelegramAdapter implements MessengerAdapter {
       const v = botCtx.message.venue
       const threadId = botCtx.chat.id.toString()
       const threadKey = `telegram:default:${threadId}`
-      const norm = normalizeIncomingCoords('telegram-native', v.location.latitude, v.location.longitude)
+      const userId = botCtx.message.from?.id.toString() ?? threadId
+      const pref = getUserCoordPref('telegram', userId)
+      const norm = normalizeIncomingCoords('telegram-native', v.location.latitude, v.location.longitude,
+        pref ? { force: pref } : undefined)
       setLocationContext(threadKey, {
         lat: norm.lat,
         lng: norm.lng,

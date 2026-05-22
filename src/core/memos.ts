@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { wgs84ToBd09 as coordWgs84ToBd09, outOfChina as coordOutOfChina } from './coord-systems.js'
 
 const log = rootLogger.child({ component: 'memos' })
 
@@ -596,11 +597,27 @@ export function mapUrl(lat: number, lng: number, label = '', addr = ''): string 
 
 function buildBaiduUrl(lat: number, lng: number, label: string, addr: string): string {
   const url = new URL('https://api.map.baidu.com/marker')
-  url.searchParams.set('location', `${lat},${lng}`)
+  // In-China: locally pre-convert WGS-84 → BD-09 and pass coord_type=bd09ll.
+  // Why: Baidu's own coord_type=wgs84 transform is empirically off by
+  // ~100–300m in many regions, which is what shows up when the user shares
+  // a location from Apple Maps / Google Maps (both WGS-84 sources) and
+  // taps our Baidu marker link. Pre-converting via wgs84ToBd09() bypasses
+  // Baidu's transform and pins the marker exactly where it should be.
+  // Out-of-China: pass through WGS-84 as-is — GCJ/BD offsets are undefined
+  // outside the mainland China bbox; wgs84ToBd09 already no-ops there but
+  // we keep coord_type=wgs84 so Baidu doesn't apply spurious adjustments.
+  const insideChina = !coordOutOfChina(lat, lng)
+  if (insideChina) {
+    const bd = coordWgs84ToBd09(lat, lng)
+    url.searchParams.set('location', `${bd.lat},${bd.lng}`)
+    url.searchParams.set('coord_type', 'bd09ll')
+  } else {
+    url.searchParams.set('location', `${lat},${lng}`)
+    url.searchParams.set('coord_type', 'wgs84')
+  }
   if (label) url.searchParams.set('title', label)
   if (addr) url.searchParams.set('content', addr)
   url.searchParams.set('output', 'html')
-  url.searchParams.set('coord_type', 'wgs84')
   url.searchParams.set('src', 'imhub')
   return url.toString()
 }

@@ -45,10 +45,23 @@ describe('stripCoordPrefix', () => {
 })
 
 describe('mapUrl / mapUrls', () => {
-  it('mapUrl returns Baidu URI with WGS-84 coord_type', () => {
-    const u = mapUrl(39.9, 116.4)
+  it('Baidu URL pre-converts in-China coords to BD-09 (avoids Baidu wgs84 transform drift)', () => {
+    const u = decodeURIComponent(mapUrl(39.9, 116.4))
     expect(u).toContain('api.map.baidu.com/marker')
+    expect(u).toContain('coord_type=bd09ll')
+    const m = u.match(/location=(-?\d+\.\d+),(-?\d+\.\d+)/)
+    expect(m).not.toBeNull()
+    if (m) {
+      const lat = Number(m[1]); const lng = Number(m[2])
+      // WGS-84 → BD-09 in Beijing shifts ~700m–1.5km, so coords must differ.
+      expect(Math.abs(lat - 39.9)).toBeGreaterThan(0.001)
+      expect(Math.abs(lng - 116.4)).toBeGreaterThan(0.001)
+    }
+  })
+  it('Baidu URL passes through WGS-84 unchanged outside China', () => {
+    const u = decodeURIComponent(mapUrl(40.7128, -74.0060)) // NYC
     expect(u).toContain('coord_type=wgs84')
+    expect(u).toContain('location=40.7128,-74.006')
   })
   it('mapUrls returns all three providers', () => {
     const u = mapUrls(39.9, 116.4, '故宫')

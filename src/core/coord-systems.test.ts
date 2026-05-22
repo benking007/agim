@@ -98,20 +98,39 @@ describe('normalizeIncomingCoords — per-source policy', () => {
     expect(Math.abs(r.lng - HZ_WGS.lng)).toBeLessThan(1e-5)
   })
 
-  // ─── telegram-native: default pass-through; flag flips to GCJ→WGS ──
-  it('telegram-native default = pass-through (WGS in → WGS out)', () => {
+  // ─── telegram-native: Plan C (2026-05-22) default = GCJ→WGS in China,
+  //     env=0 forces pass-through. force opt always wins. ──
+  it('telegram-native default in-China = GCJ→WGS (Apple iOS Core Location case)', () => {
+    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+    const gcj = wgs84ToGcj02(HZ_WGS.lat, HZ_WGS.lng)
+    const r = normalizeIncomingCoords('telegram-native', gcj.lat, gcj.lng)
+    expect(r.applied).toBe('gcj02-to-wgs84')
+    expect(Math.abs(r.lat - HZ_WGS.lat)).toBeLessThan(1e-5)
+  })
+
+  it('telegram-native with IMHUB_TELEGRAM_COORDS_GCJ02=0 = pass-through (Android / Desktop)', () => {
+    process.env.IMHUB_TELEGRAM_COORDS_GCJ02 = '0'
     const r = normalizeIncomingCoords('telegram-native', HZ_WGS.lat, HZ_WGS.lng)
+    expect(r.applied).toBe('none')
+    expect(r.lat).toBe(HZ_WGS.lat)
+    expect(r.lng).toBe(HZ_WGS.lng)
+    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+  })
+
+  it('force=wgs84 overrides the in-China default (Plan C per-user pref)', () => {
+    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+    const r = normalizeIncomingCoords('telegram-native', HZ_WGS.lat, HZ_WGS.lng, { force: 'wgs84' })
     expect(r.applied).toBe('none')
     expect(r.lat).toBe(HZ_WGS.lat)
     expect(r.lng).toBe(HZ_WGS.lng)
   })
 
-  it('telegram-native with IMHUB_TELEGRAM_COORDS_GCJ02=1 applies GCJ→WGS', () => {
-    process.env.IMHUB_TELEGRAM_COORDS_GCJ02 = '1'
-    const gcj = wgs84ToGcj02(HZ_WGS.lat, HZ_WGS.lng)
-    const r = normalizeIncomingCoords('telegram-native', gcj.lat, gcj.lng)
-    expect(r.applied).toBe('gcj02-to-wgs84')
-    expect(Math.abs(r.lat - HZ_WGS.lat)).toBeLessThan(1e-5)
+  it('force=bd09 applies BD→WGS regardless of source heuristics', () => {
+    const bd = { lat: 30.2532, lng: 120.2147 } // arbitrary BD-09 near 杭州
+    const r = normalizeIncomingCoords('telegram-native', bd.lat, bd.lng, { force: 'bd09' })
+    expect(r.applied).toBe('bd09-to-wgs84')
+    // BD-09 → WGS-84 should shift ~1km+, definitely > 1e-3 in either axis
+    expect(Math.abs(r.lat - bd.lat) + Math.abs(r.lng - bd.lng)).toBeGreaterThan(1e-3)
   })
 
   // ─── h5-browser-geolocation: default pass-through (the bug fix) ──

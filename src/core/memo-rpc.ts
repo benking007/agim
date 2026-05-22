@@ -86,6 +86,12 @@ function summarizeMemo(m: Memo): Record<string, unknown> {
       label: m.where_label || undefined,
       mapUrl: mapUrl(m.where_lat, m.where_lng, m.where_label || m.what, ''),
       mapUrls: mapUrls(m.where_lat, m.where_lng, m.where_label || m.what, ''),
+      // Plan C (2026-05-22): tell the calling agent to surface the
+      // "marker off? reply #wgs/#gcj/#bd" hint to the user. The agent
+      // composes its own IM reply; this gives it the exact phrasing
+      // so users learn the recovery path. The bot's router auto-detects
+      // those tags (see core/router.ts:parseMessage + commands/coord.ts).
+      coordHint: '若 marker 偏移：回复 #wgs / #gcj / #bd 即可记住坐标系并自动重生成最近一条 memo 的地图链接。',
     }
   }
   if (m.how) out.how = m.how

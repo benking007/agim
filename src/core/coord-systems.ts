@@ -72,10 +72,21 @@ export interface NormalizeResult {
  * the default for any source whose users tell us their device DOES apply
  * the offset (Apple devices in China + Chinese region most often).
  */
+/** Plan C (2026-05-22): caller can force the source coord-system,
+ *  bypassing the env-flag heuristic. Used by IM adapters that have
+ *  looked up a per-user preference (see core/user-coord-prefs.ts). */
+export interface NormalizeOptions {
+  /** Pre-known source coord-system, e.g. learned from the user's
+   *  earlier `#wgs` / `#gcj` / `#bd` reply. When set, all other
+   *  heuristics are ignored. */
+  force?: 'wgs84' | 'gcj02' | 'bd09'
+}
+
 export function normalizeIncomingCoords(
   source: CoordSource,
   lat: number,
   lng: number,
+  opts?: NormalizeOptions,
 ): NormalizeResult {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return { lat, lng, applied: 'none', outOfChina: true }
@@ -84,15 +95,52 @@ export function normalizeIncomingCoords(
     return { lat, lng, applied: 'none', outOfChina: true }
   }
 
+  // ─── Plan C override path ─────────────────────────────────────────
+  // The IM adapter has looked up a stored preference for this user; we
+  // trust it and skip the heuristic table below. This is how
+  // `#wgs` / `#gcj` / `#bd` self-learn flow takes effect.
+  if (opts?.force) {
+    if (opts.force === 'bd09') {
+      const wgs = bd09ToWgs84(lat, lng)
+      log.debug({
+        event: 'coord.normalized', source, forced: 'bd09',
+        raw_lat: lat, raw_lng: lng, wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+        applied: 'bd09-to-wgs84',
+      })
+      return { lat: wgs.lat, lng: wgs.lng, applied: 'bd09-to-wgs84', outOfChina: false }
+    }
+    if (opts.force === 'gcj02') {
+      const wgs = gcj02ToWgs84(lat, lng)
+      log.debug({
+        event: 'coord.normalized', source, forced: 'gcj02',
+        raw_lat: lat, raw_lng: lng, wgs_lat: wgs.lat, wgs_lng: wgs.lng,
+        applied: 'gcj02-to-wgs84',
+      })
+      return { lat: wgs.lat, lng: wgs.lng, applied: 'gcj02-to-wgs84', outOfChina: false }
+    }
+    // force === 'wgs84' → pass-through
+    log.debug({
+      event: 'coord.normalized', source, forced: 'wgs84',
+      raw_lat: lat, raw_lng: lng, wgs_lat: lat, wgs_lng: lng, applied: 'none',
+    })
+    return { lat, lng, applied: 'none', outOfChina: false }
+  }
+
   // Per-source policy. The flag-overrideable defaults reflect the empirical
   // table at the top of this file. See env table at the bottom.
   const treatAsGcj = ((): boolean => {
     switch (source) {
       case 'telegram-native':
-        // Default WGS-84 (covers Telegram Desktop + non-Apple in-China +
-        // anyone outside China). User can flip with the env flag if their
-        // Telegram is on Apple-zh-CN where Core Location applies the offset.
-        return process.env.IMHUB_TELEGRAM_COORDS_GCJ02 === '1'
+        // Plan C (2026-05-22): in the absence of a stored per-user
+        // preference, default to GCJ-02 *if* we're inside China. This
+        // covers the most common iOS path (Core Location auto-offsets)
+        // which we found to be the majority of real-world deployments.
+        // The env flag is retained as an inverter for ops that know
+        // their crowd is predominantly Android/Desktop. Mismatched
+        // first-time users get one wrong marker → reply `#wgs` → fixed
+        // for the rest of time.
+        if (process.env.IMHUB_TELEGRAM_COORDS_GCJ02 === '0') return false
+        return true
       case 'feishu-native':
         // Feishu is mandated GCJ-02 server-side, no override expected.
         return true

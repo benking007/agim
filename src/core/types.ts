@@ -50,6 +50,7 @@ export type ParsedMessage =
   | { type: 'service'; action: 'restart' | 'stop' | 'status'; args: string }
   | { type: 'setup'; args: string }
   | { type: 'web'; args: string }
+  | { type: 'coord'; system: 'wgs84' | 'gcj02' | 'bd09' }
   | { type: 'error'; prompt: string; error: string }
 
 /**

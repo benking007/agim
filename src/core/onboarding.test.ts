@@ -36,7 +36,8 @@ describe('checkMessengerConfig', () => {
     expect(result.availableMessengers.length).toBe(0)
   })
 
-  it('includes correct availableMessengers list', () => {
+  it('includes correct availableMessengers list (default = no Telegram/Discord)', () => {
+    delete process.env.IMHUB_ENABLE_GLOBAL_IM
     const config: Config = {
       messengers: [],
       agents: [],
@@ -47,8 +48,25 @@ describe('checkMessengerConfig', () => {
 
     const ids = result.availableMessengers.map((m) => m.id)
     expect(ids).toContain('wechat-ilink')
-    expect(ids).toContain('telegram')
     expect(ids).toContain('feishu')
+    expect(ids).toContain('dingtalk')
+    expect(ids).not.toContain('telegram')
+    expect(ids).not.toContain('discord')
+  })
+
+  it('IMHUB_ENABLE_GLOBAL_IM=1 surfaces Telegram + Discord again', () => {
+    process.env.IMHUB_ENABLE_GLOBAL_IM = '1'
+    const config: Config = {
+      messengers: [],
+      agents: [],
+      defaultAgent: 'claude-code',
+    }
+
+    const result = checkMessengerConfig(config)
+    const ids = result.availableMessengers.map((m) => m.id)
+    expect(ids).toContain('telegram')
+    expect(ids).toContain('discord')
+    delete process.env.IMHUB_ENABLE_GLOBAL_IM
   })
 })
 

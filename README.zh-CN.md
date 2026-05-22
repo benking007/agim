@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / Telegram / Discord 接入 Claude Code / Codex / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
+**IM 到 AI Agent 的万能桥梁** — 将微信 / 飞书 / 钉钉 / 邮件 接入 Claude Code / Codex / OpenCode，或通过 ACP 接入任意自定义 Agent。单 Node.js 进程，无需 Docker / Redis。
 
 > **品牌**：英文名 **Agim**（取自 Agent + IM，也有 agile 敏捷的感觉），中文名 **阿吉姆**。
 > npm 包名 **`agim-cli`**（短名 `agim` 被 npm 反 typo-squat 保留），装完后**命令**还是 **`agim`**，
@@ -13,13 +13,13 @@
 
 ## 亮点
 
-- **5 种 IM + 邮件，3+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Telegram、Discord、Email（SMTP）；Claude Code、Codex、OpenCode，以及任意 ACP 端点
-- **合规友好默认（v1.2.23+）** — Discord、Telegram、远程 ACP Agent 默认**全部隐藏**（CLI 向导 / Web 后台 / 运行时加载三层都 gate 住）。通过 `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1` 显式启用。完整安全控制清单见 [`docs/security-hardening.md`](docs/security-hardening.md)（~30 个 env、敏感路径黑名单、出站脱敏、审计事件表、token 角色、R14 systemctl-aware 生命周期）
+- **3 种 IM + 邮件，3+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Email（SMTP）；Claude Code、Codex、OpenCode，以及任意 ACP 端点
+- **合规友好默认（v1.2.23+）** — 海外 IM 适配器（Discord、Telegram）以及远程 ACP Agent 入口默认**全部隐藏**（CLI 向导 / Web 后台 / 运行时加载三层都 gate 住），主页面、安装向导、Web 后台都不会暴露。国内部署保持关闭即可。需要跨境通道时再通过 `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1` 显式启用。完整安全控制清单见 [`docs/security-hardening.md`](docs/security-hardening.md)（~30 个 env、敏感路径黑名单、出站脱敏、审计事件表、token 角色、R14 systemctl-aware 生命周期）
 - **Agent 之间互调（A2A）** — Agent 可以在自己的工具循环里直接调另一个 Agent，比如直接说「用 codex 帮我跑 git status」/「让 opencode 跑一下测试」。护栏在 agim 里强制：递归深度限制（默认 3）、禁止自调、工作区白名单、按人预算共享；可观测：`/a2a stats | recent | tree <id>`；`IMHUB_A2A_ENABLED=0` 关闭
 - **A2A 共享文件传递（v1.1.3+）** — caller 可通过 `inputs[]`（`fromAbsolutePath` / `fromCallerOutput` / 内联 `content`）把文件放进 callee 工作区；callee 把产物写到 `~/.agim/artifacts/<jobId>/_agim-output/`，返回的 `outputs[]` 让 caller 按需读。同文件系统优先 hard-link，否则复制。大小上限 env 可调
 - **IM 长内容 viewer（v1.1.6+）** — 微信 / 飞书等对富 markdown 渲染差。Agent 回复超过阈值（行数 / 字符数 / 含表格 / 大段代码）时，agim 把完整 markdown 永久存进本机 `~/.agim/viewer.db`（**永远不离开你的机器**），IM 里只发短摘要 + 链接 `https://<你的域名>/v/<uuid>`。链接背后是 agim 自己的 web console，由你自己反代（cloudflared / caddy / tailscale 任选）。Agent 可显式用 `<im-summary>…</im-summary><full-md>…</full-md>` 包装长回答获得最干净体验。开启：`IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://你的域名`
 - **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
-- **崩溃中断可恢复** — 每条入站消息建 inline job；agim 重启时正在跑的会标 `interrupted`，下次启动 10 分钟窗口内通知对应会话。**v1.2.0+** 在 Telegram / 飞书等支持的渠道走原生 `🔁 重发 / ✖ 取消` 内联按钮卡片，其余渠道兜底为文字提示。群聊内只有原发起者可点按钮
+- **崩溃中断可恢复** — 每条入站消息建 inline job；agim 重启时正在跑的会标 `interrupted`，下次启动 10 分钟窗口内通知对应会话。**v1.2.0+** 在飞书等支持的渠道走原生 `🔁 重发 / ✖ 取消` 内联按钮卡片，其余渠道兜底为文字提示。群聊内只有原发起者可点按钮
 - **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理 Tab `/tasks#memory` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
 - **成本与健康仪表盘（v1.2.0+）** — `/tasks#cost` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
 - **Agent 主动推送（v1.2.0+）** — 新的 `mcp__imhub__push_message` MCP 工具让运行中的 agent 不需要外部触发就把后续消息推回原 IM 会话（长任务通知、定时类提醒）。`POST /api/notify` 同一能力也暴露给 webhook / 外部脚本。每用户限流 + 跨会话开关防刷屏
@@ -28,7 +28,7 @@
 - **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
 - **浏览器控制台** — 对话界面；任务面板含 12 个 Tab（Jobs / 后台脚本 / 子任务 / 定时 / 审批 / 健康 / 工作区 / 审计 / 投递队列 / A2A 调用 / **成本与健康 / 记忆**）；提醒、备忘、设置页含工作区 CRUD + 管理员白名单 + Safety 卡片（重启 / 停止）。完整中英双语 + 每页语言切换 + 专业名词 `(?)` 帮助弹窗（v1.1.4+）
 - **工具调用人审（HITL）** — Claude 调用工具时暂停，IM 回复 `y`/`n` 或在页面点卡片审批；全平台一致
-- **微信 / Telegram / 钉钉 富媒体** — 接收图片、文件、视频；语音消息按平台走最佳转写链路：微信 STT、钉钉服务端 ASR、OpenAI Whisper、whisper.cpp
+- **微信 / 钉钉 富媒体** — 接收图片、文件、视频；语音消息按平台走最佳转写链路：微信 STT、钉钉服务端 ASR、OpenAI Whisper、whisper.cpp
 - **智能路由** — 意图分类（中英文）、Sticky 会话、断路器、限流器
 - **多租户工作区** — 按工作区隔离 Agent 白名单、限流、命令级 ACL
 - **持久化任务与定时** — SQLite 落地，重启不丢，显式 `/job` 30 天 / 自动跟踪的 inline job 24 小时
@@ -48,8 +48,6 @@ agim                            # 交互式向导（推荐）—— 双语，方
 agim config wechat              # 扫码登录
 agim config feishu              # 飞书 App ID + Secret，无需 webhook
 agim config dingtalk            # 钉钉 ClientID + ClientSecret（Stream 模式机器人）
-agim config telegram            # @BotFather 拿 Token
-agim config discord             # Bot Token，详见 docs/discord-setup.md
 
 # （可选）通过 ACP 接入远端自定义 Agent
 agim config agent
@@ -83,7 +81,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 
 | 分类 | 内容 |
 |------|------|
-| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Telegram（grammy — 图片 / 语音 / 音频）、Discord（discord.js）、Email（SMTP，仅推送） |
+| **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Email（SMTP，仅推送） |
 | **Agent** | Claude Code、Codex、OpenCode（统一 `AgentBase`）；任何 HTTP Agent 通过 ACP 接入 |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **Web 控制台** | 流式对话、三态主题（浅 / 深 / 跟随系统）、中英双语、SSE 实时仪表盘 |
@@ -107,8 +105,6 @@ agim uninstall             # 卸载（保留 ~/.agim-workspaces/）
 agim config wechat         # 配置微信
 agim config feishu         # 配置飞书
 agim config dingtalk       # 配置钉钉（Stream 模式企业内部应用）
-agim config telegram       # 配置 Telegram
-agim config discord        # 配置 Discord
 agim config claude         # 配置 Claude Code
 agim config agent          # 接入自定义 ACP Agent
 agim agents                # 列出可用 Agent
@@ -145,7 +141,7 @@ agim messengers            # 列出可用 IM
 回复 y 批准 / n 拒绝（5 分钟内未操作将自动拒绝）
 ```
 
-在 IM 回复 `y` / `n`，或在 Web 界面点 Allow / Deny。微信、Telegram、飞书、钉钉、Discord 行为一致。`IMHUB_APPROVAL_DISABLED=1` 可关闭。
+在 IM 回复 `y` / `n`，或在 Web 界面点 Allow / Deny。微信、飞书、钉钉 行为一致。`IMHUB_APPROVAL_DISABLED=1` 可关闭。
 
 ## 提醒
 
@@ -235,10 +231,10 @@ Agent（claude-code / opencode）能看到 5 个 MCP 工具，遇到值得记的
 
 ```json
 {
-  "messengers": ["wechat-ilink", "telegram"],
+  "messengers": ["wechat-ilink", "feishu"],
   "agents": ["claude-code", "opencode"],
   "defaultAgent": "claude-code",
-  "telegram": { "botToken": "***" },
+  "feishu": { "appId": "cli_***", "appSecret": "***" },
   "acpAgents": [
     {
       "name": "my-agent",
@@ -417,7 +413,7 @@ systemd、Docker、nginx、监控、管理员管理、备份、升级详见 [`do
 ### 接下来
 
 - [ ] Slack 适配器
-- [ ] 钉钉卡片按钮版审批（Telegram + 飞书已完成）
+- [ ] 钉钉卡片按钮版审批（飞书已完成）
 - [ ] 多实例事件总线（Redis Streams / NATS）
 - [ ] 工作区成员选择 UI
 - [ ] 记忆 consolidation：boot 后 5 分钟先跑一次（当前要等满 24h）

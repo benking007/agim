@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
+**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Email to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
 > **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
 > npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's
@@ -17,13 +17,13 @@
 
 ## Highlights
 
-- **5 messengers + email, 3+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Telegram, Discord, Email (SMTP); Claude Code, Codex, OpenCode, plus any ACP endpoint
-- **Compliance-first defaults (v1.2.23+)** — Discord + Telegram + remote-ACP-agent are **hidden** by default. Opt-in via `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1`. See [`docs/security-hardening.md`](docs/security-hardening.md) for the full security control catalogue (~30 env vars / sensitive-path denylist / outbound secret scrubber / audit-events table / admin role on tokens / R14 systemctl-aware lifecycle).
+- **3 messengers + email, 3+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Email (SMTP); Claude Code, Codex, OpenCode, plus any ACP endpoint
+- **Compliance-first defaults (v1.2.23+)** — global IM adapters (Discord, Telegram) and the remote-ACP-agent surface are **hidden** by default; no installer prompt or web-admin card exposes them. Mainland-China deployments should leave them disabled. For cross-border setups, opt-in via `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1`. See [`docs/security-hardening.md`](docs/security-hardening.md) for the full security control catalogue (~30 env vars / sensitive-path denylist / outbound secret scrubber / audit-events table / admin role on tokens / R14 systemctl-aware lifecycle).
 - **Agent-to-Agent (A2A)** — agents call other agents inline via `mcp__imhub__call_agent`. Just say *"用 codex 帮我跑 git status"* / *"ask opencode to run the tests"* — the active agent hands off, waits, integrates the reply. Guardrails: depth limit (default 3), self-call ban, workspace whitelist, per-user budget. Observability: `/a2a stats | recent | tree <id>`. Disable with `IMHUB_A2A_ENABLED=0`.
 - **A2A shared artifacts (v1.1.3+)** — caller drops files into the callee's workspace via `inputs[]` (`fromAbsolutePath` / `fromCallerOutput` / inline `content`), and callee writes products to `~/.agim/artifacts/<jobId>/_agim-output/`. Returned `outputs[]` lets the caller read files on demand. Hard-link first, copy fallback. Size caps configurable.
 - **IM long-message viewer (v1.1.6+)** — WeChat / Feishu and friends render rich markdown poorly. When an agent's reply exceeds the size threshold (or contains a markdown table / large code block), agim stashes the full markdown in `~/.agim/viewer.db` (permanent, local-only — content never leaves your host) and sends the IM a short summary + a link `https://<your-host>/v/<uuid>`. The link is served by agim's own web console — operator exposes the web port (cloudflared / caddy / tailscale of choice). Agents can opt in explicitly by wrapping long answers in `<im-summary>…</im-summary><full-md>…</full-md>`. Enable with `IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-host`.
 - **Crash-safe delivery** — every outbound message (replies, reminders, approvals, restart notices) flows through a SQLite outbox; a worker drains pending rows with exponential backoff. IM glitches and brief disconnects no longer drop replies. `/outbox status | list | failed | retry <id>`.
-- **In-flight job recovery** — every inbound message becomes a tracked inline job. When agim is restarted mid-flight, the next startup notifies each affected thread within 10 min. **v1.2.0+** uses native inline-button cards (`🔁 重发 / ✖ 取消`) on Telegram / Feishu, falling back to text on adapters without buttons. Bystander-safe: only the original requester can resolve in group chats.
+- **In-flight job recovery** — every inbound message becomes a tracked inline job. When agim is restarted mid-flight, the next startup notifies each affected thread within 10 min. **v1.2.0+** uses native inline-button cards (`🔁 重发 / ✖ 取消`) on Feishu and other platforms that support inline buttons, falling back to text on adapters without buttons. Bystander-safe: only the original requester can resolve in group chats.
 - **Long-term memory (v1.2.0+)** — per-user fact store + auto-distilled "persona" summary injected into every prompt. SQLite + FTS5 default; optional vector retrieval (local BGE via `@xenova/transformers` ONNX, or any OpenAI-compatible `/v1/embeddings` endpoint) with reciprocal-rank fusion. Default OFF; enable in Settings → 自动化记忆. Web admin tab `/tasks#memory` exposes per-user persona editor + paginated facts table + JSON export. All data stays in `~/.agim/memory.db` locally.
 - **Cost & Health dashboard (v1.2.0+)** — `/tasks#cost` aggregates per-day spend / calls / errors / p95 latency from the audit log. Filter 1 / 7 / 30 / 90 days; top-N by user / agent / platform; daily trend chart with metric toggle. Claude per-run cost extracted from `--output-format json`.
 - **Agent-initiated push (v1.2.0+)** — `mcp__imhub__push_message` MCP tool lets a running agent push a follow-up message back into the IM thread without an inbound trigger (long-running jobs, schedule-aware notifications). `POST /api/notify` exposes the same primitive to webhooks / cron. Per-user rate limit + cross-thread gating.
@@ -32,7 +32,7 @@
 - **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
 - **Browser dashboard** — chat UI; Tasks panel with 12 tabs (jobs / background / subtasks / schedules / approvals / health / files / audit / outbox / a2a / **cost / memory**); reminders panel; memos panel; settings page with workspace CRUD + admin allowlist + Safety card (restart / stop). Bilingual (EN / 中文) with per-page lang switcher and contextual `(?)` help tooltips on jargon (v1.1.4+)
 - **Human-in-the-loop tool approval** — Claude tool calls pause for `y`/`n` in IM or in-page card; works across all platforms
-- **Rich media in WeChat / Telegram / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
+- **Rich media in WeChat / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
 - **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
 - **Multi-tenant workspaces** — per-workspace agent whitelist, rate limits, command-level ACL
 - **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention (24h for auto-tracked inline jobs)
@@ -53,8 +53,6 @@ agim                            # arrow-key wizard (recommended) — picks langu
 agim config wechat              # QR-code login
 agim config feishu              # App ID + Secret (no webhook needed)
 agim config dingtalk            # ClientID + ClientSecret (Stream-mode bot)
-agim config telegram            # @BotFather token
-agim config discord             # Bot token; see docs/discord-setup.md
 
 # (Optional) Connect a custom remote agent over ACP
 agim config agent
@@ -91,7 +89,7 @@ units that call `agim` continue to work without any extra setup.
 
 | Category | Details |
 |----------|---------|
-| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Telegram (grammy — photo / voice / audio), Discord (discord.js), Email (SMTP, push-only) |
+| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Email (SMTP, push-only) |
 | **Agents** | Claude Code, Codex, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
 | **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
 | **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文), SSE dashboard |
@@ -115,8 +113,6 @@ agim uninstall             # Uninstall (keeps ~/.agim-workspaces/)
 agim config wechat         # Configure WeChat
 agim config feishu         # Configure Feishu
 agim config dingtalk       # Configure DingTalk (Stream-mode internal app)
-agim config telegram       # Configure Telegram
-agim config discord        # Configure Discord
 agim config claude         # Configure Claude Code
 agim config agent          # Connect a custom ACP agent
 agim agents                # List available agents
@@ -153,7 +149,7 @@ Input: {"command":"rm -rf node_modules"}
 Reply y to approve / n to deny  (auto-deny in 5 min)
 ```
 
-Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Telegram, Feishu, DingTalk, and Discord. Disable with `IMHUB_APPROVAL_DISABLED=1`.
+Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Feishu, and DingTalk. Disable with `IMHUB_APPROVAL_DISABLED=1`.
 
 ## Reminders
 
@@ -243,10 +239,10 @@ The agent (claude-code / opencode) sees 5 MCP tools and uses them automatically 
 
 ```json
 {
-  "messengers": ["wechat-ilink", "telegram"],
+  "messengers": ["wechat-ilink", "feishu"],
   "agents": ["claude-code", "opencode"],
   "defaultAgent": "claude-code",
-  "telegram": { "botToken": "***" },
+  "feishu": { "appId": "cli_***", "appSecret": "***" },
   "acpAgents": [
     {
       "name": "my-agent",
@@ -425,7 +421,7 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 ### Next
 
 - [ ] Slack adapter
-- [ ] DingTalk button-style approval cards (Telegram + Feishu done)
+- [ ] DingTalk button-style approval cards (Feishu done)
 - [ ] Multi-instance event bus (Redis Streams / NATS)
 - [ ] Workspace member picker UI
 - [ ] Memory consolidation: scheduled boot+5min first run (currently waits a full 24h)

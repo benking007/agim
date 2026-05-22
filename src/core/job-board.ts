@@ -827,6 +827,21 @@ export function _waitQueueDepth(): number { return waitQueue.length }
 /** Test-only: directly exercise the concurrency gate without SQLite. */
 export const _testSlot = { acquire: acquireSlot, release: releaseSlot }
 
+/** Batch 2 (#2 Stop) — return the most recent 'running' (or 'pending')
+ *  job on the given thread, or null if none. Used by `/stop` to find
+ *  the in-flight run to abort. */
+export function findActiveJobByThread(threadKey: string): Job | null {
+  const d = getDb()
+  if (!d) return null
+  return d.prepare(
+    `SELECT * FROM jobs
+       WHERE thread_key = ?
+         AND status IN ('running', 'pending')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+  ).get(threadKey) as Job | null
+}
+
 export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
   const job = getJob(id, opts)
   if (!job || (job.status !== 'pending' && job.status !== 'running')) return false

@@ -123,6 +123,17 @@ export function parseMessage(text: string): ParsedMessage {
     if (sys === 'bd') return { type: 'coord', system: 'bd09' }
   }
 
+  // Batch 2 (#2 Stop) — natural-language abort phrases. Entire message
+  // must match; "停止跑那个" / "stop please" still falls through to the
+  // agent so it can decide. Borrowed from openclaw's `/stop` triggers.
+  if (/^(停止|停|中止|取消运行|esc|escape)$/i.test(trimmed)) {
+    return { type: 'stopAgent' }
+  }
+  // Standalone "stop" (English) — case-insensitive, no other text.
+  if (/^stop$/i.test(trimmed)) {
+    return { type: 'stopAgent' }
+  }
+
   // Check for command prefix
   const match = trimmed.match(/^\/(\S+)\s*(.*)/)
   if (!match) {
@@ -173,6 +184,17 @@ export function parseMessage(text: string): ParsedMessage {
   // Convenience aliases that map to /plan on|off without typing the subcommand.
   if (cmd === 'plan-on' || cmd === 'planon') return { type: 'plan', args: 'on' }
   if (cmd === 'plan-off' || cmd === 'planoff') return { type: 'plan', args: 'off' }
+
+  // Batch 2 (#2 Stop) — `/abort` always means "abort the running agent
+  // on this thread". `/stop` keeps its admin-gated service-stop meaning
+  // (see top of this switch). To stop an agent run, prefer `/abort` or
+  // plain text "stop" / "停止".
+  if (cmd === 'abort') return { type: 'stopAgent' }
+
+  // Batch 2 (#5 /btw) — bypass the per-thread queue and ship a one-shot
+  // quick-question into a side sub-thread. The main turn (if any) is
+  // left undisturbed.
+  if (cmd === 'btw') return { type: 'btw', prompt: rest }
 
   // Check if it's an agent alias (registered agents take priority over generic commands)
   const agent = registry.findAgent(cmd)
@@ -276,6 +298,16 @@ export async function routeMessage(
     case 'coord': {
       const { handleCoordCommand } = await import('./commands/coord.js')
       return handleCoordCommand(parsed.system, ctx)
+    }
+
+    case 'stopAgent': {
+      const { handleStopAgentCommand } = await import('./commands/stop-agent.js')
+      return handleStopAgentCommand(ctx)
+    }
+
+    case 'btw': {
+      const { handleBtwCommand } = await import('./commands/btw.js')
+      return handleBtwCommand(parsed.prompt, ctx)
     }
 
     case 'service': {

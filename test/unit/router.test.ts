@@ -97,6 +97,33 @@ describe('parseMessage', () => {
       expect(result).toEqual({ type: 'command', command: 'agents' })
     })
 
+    // Batch 2 (#2) — stopAgent triggers
+    it('parses /abort as stopAgent', () => {
+      expect(parseMessage('/abort')).toEqual({ type: 'stopAgent' })
+    })
+    it.each([
+      'stop', 'Stop', 'STOP',
+      '停止', '停', '中止', '取消运行',
+      'esc', 'ESC', 'escape',
+    ])('parses bare %s as stopAgent', (cmd) => {
+      expect(parseMessage(cmd)).toEqual({ type: 'stopAgent' })
+    })
+    it('does NOT match "stop the music" — partial match falls through', () => {
+      const r = parseMessage('stop the music')
+      expect(r).toEqual({ type: 'default', prompt: 'stop the music' })
+    })
+    it('/stop keeps its service-stop meaning (admin-gated)', () => {
+      expect(parseMessage('/stop')).toEqual({ type: 'service', action: 'stop', args: '' })
+    })
+
+    // Batch 2 (#5) — /btw bypass
+    it('parses /btw with prompt', () => {
+      expect(parseMessage('/btw quick question')).toEqual({ type: 'btw', prompt: 'quick question' })
+    })
+    it('parses bare /btw with empty prompt (handler will reject)', () => {
+      expect(parseMessage('/btw')).toEqual({ type: 'btw', prompt: '' })
+    })
+
     it('should parse /status as a service-control intent', () => {
       // /status migrated from a hardcoded builtin to a real service-status
       // handler in commands/service.ts. Args are forwarded (currently unused).

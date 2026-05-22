@@ -51,6 +51,13 @@ export type ParsedMessage =
   | { type: 'setup'; args: string }
   | { type: 'web'; args: string }
   | { type: 'coord'; system: 'wgs84' | 'gcj02' | 'bd09' }
+  // Batch 2 (#2) — abort the currently-running agent run on this thread.
+  // Distinct from { type: 'service', action: 'stop' } which stops the
+  // whole agim daemon. Triggered by `/stop`, `停止`, `中止`, `esc`.
+  | { type: 'stopAgent' }
+  // Batch 2 (#5) — bypass the per-thread queue and dispatch a one-shot
+  // sub-thread run for a quick parallel question. Triggered by `/btw …`.
+  | { type: 'btw'; prompt: string }
   | { type: 'error'; prompt: string; error: string }
 
 /**

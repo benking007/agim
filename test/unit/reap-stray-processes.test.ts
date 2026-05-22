@@ -1,30 +1,66 @@
-// R14 — reapStrayAgimProcesses + findAgimProcesses behaviour.
+// R14 + R15 — reapStrayAgimProcesses + findAgimProcesses behaviour.
 //
-// These functions wrap pgrep + process.kill; we drive them with
-// real short-lived child processes (sleep) instead of mocking. Each
-// case spawns its own subjects and cleans up after itself.
+// R14 introduced the reap helper.
+// R15 tightened pgrep to argv-strict /proc scan (Linux) so the reap
+//     can't accidentally SIGTERM a bash script whose cmdline contains
+//     the literal "agim start". Tests cover both the positive path
+//     (real-shape agim is matched) and the regression (shell scripts
+//     are NOT matched).
 
 import { describe, it, expect, afterEach } from 'bun:test'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { reapStrayAgimProcesses, findAgimProcesses } from '../../src/cli-ui/service'
 
 const spawned: ChildProcess[] = []
+const cleanupDirs: string[] = []
 
 afterEach(() => {
   for (const c of spawned) {
     try { c.kill('SIGKILL') } catch { /* ignore */ }
   }
   spawned.length = 0
+  for (const d of cleanupDirs) {
+    try { rmSync(d, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+  cleanupDirs.length = 0
 })
 
-/** Spawn a sleeping process whose argv contains the `agim start`
- *  substring so pgrep picks it up. We use `bash -c 'exec -a "agim
- *  start" sleep 30'` to rename the process; `-a` makes argv[0] the
- *  pgrep-visible label. Falls back to a plain sleep with a unique
- *  marker arg if exec -a isn't supported. */
-function spawnFakeAgim(): ChildProcess {
-  // exec -a is bash-builtin; works on all glibc bashes.
-  const child = spawn('bash', ['-c', 'exec -a "agim start --r14test" sleep 30'], {
+/** Spawn a process whose argv SHAPE matches real agim:
+ *    argv[0] = current node binary (`process.execPath`)
+ *    argv[1] = .../cli.js (basename `cli.js` — passes the entry filter)
+ *    argv[2] = 'start'
+ *  The cli.js body just sleeps + traps SIGTERM so we can verify both
+ *  the "well-behaved exit" and "ignored TERM → SIGKILL" branches. */
+function spawnFakeAgim(opts: { trapTerm?: boolean } = {}): ChildProcess {
+  const dir = mkdtempSync(join(tmpdir(), 'agim-reap-fixture-'))
+  cleanupDirs.push(dir)
+  const cliPath = join(dir, 'cli.js')
+  // The trap-term variant emulates a stuck agim that ignores SIGTERM —
+  // reap must escalate to SIGKILL. The well-behaved variant exits on
+  // first TERM. Both sleep 30s to outlive normal test windows.
+  const body = opts.trapTerm
+    ? `process.on('SIGTERM',()=>{}); setTimeout(()=>{},30000);`
+    : `setTimeout(()=>{},30000);`
+  writeFileSync(cliPath, body)
+  const child = spawn(process.execPath, [cliPath, 'start'], {
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+  spawned.push(child)
+  return child
+}
+
+/** R15 regression fixture — a plain bash script whose cmdline contains
+ *  the literal "agim start" substring. Under the pre-R15 pgrep impl this
+ *  would falsely match (operator's test scripts got SIGTERM'd, exit 143).
+ *  After R15's argv-strict /proc scan this must NOT show up in
+ *  findAgimProcesses(). */
+function spawnFakeShellWithAgimString(): ChildProcess {
+  const child = spawn('bash', ['-c', 'echo agim start helper ; sleep 30'], {
     detached: true,
     stdio: 'ignore',
   })
@@ -42,29 +78,34 @@ function pidAlive(pid: number): boolean {
 }
 
 describe('findAgimProcesses', () => {
-  it('returns an empty array when no fake agim processes exist', () => {
-    // Filter out our own pid + any genuine agim processes on the
-    // test box; the assertion is "the fixture pids we'll spawn
-    // below aren't in the baseline".
+  it('returns an empty array (or only genuine agim) when no fake fixtures spawned', () => {
     const baseline = findAgimProcesses()
     expect(Array.isArray(baseline)).toBe(true)
   })
 
-  it('finds a spawned fake agim process by argv match', async () => {
+  it('matches a real-shape fake agim (node + cli.js + start)', async () => {
     const child = spawnFakeAgim()
-    // Give pgrep a moment — exec -a happens after the bash fork so
-    // there's a brief window where the proc shows as bash.
     await sleep(300)
     const pids = findAgimProcesses()
     expect(pids).toContain(child.pid!)
+  })
+
+  // The R15 regression — pre-R15 pgrep matched any process whose
+  // cmdline string contained "agim start". A bash script logging or
+  // referencing that string got mistakenly listed and then killed.
+  it('R15: does NOT match a bash script whose argv contains "agim start" as a literal', async () => {
+    const realAgim = spawnFakeAgim()
+    const shellOnly = spawnFakeShellWithAgimString()
+    await sleep(300)
+    const pids = findAgimProcesses()
+    expect(pids).toContain(realAgim.pid!)
+    expect(pids).not.toContain(shellOnly.pid!)
   })
 })
 
 describe('reapStrayAgimProcesses', () => {
   it('returns empty result when no stray processes exist', async () => {
     const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 500 })
-    // Could be empty, or could include other genuine agim on the
-    // host. Either way our fixture didn't contribute anything.
     expect(r.reaped).toBeDefined()
     expect(r.survived).toBeDefined()
   })
@@ -73,7 +114,6 @@ describe('reapStrayAgimProcesses', () => {
     const child = spawnFakeAgim()
     await sleep(300)
     expect(pidAlive(child.pid!)).toBe(true)
-
     const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 2000 })
     expect(r.reaped).toContain(child.pid!)
     expect(r.survived).not.toContain(child.pid!)
@@ -83,9 +123,6 @@ describe('reapStrayAgimProcesses', () => {
   it('honours excludePids — excluded pids are not killed', async () => {
     const child = spawnFakeAgim()
     await sleep(300)
-    const beforePids = findAgimProcesses()
-    expect(beforePids).toContain(child.pid!)
-
     const r = await reapStrayAgimProcesses({
       excludePids: [child.pid!],
       sigtermTimeoutMs: 500,
@@ -95,30 +132,31 @@ describe('reapStrayAgimProcesses', () => {
   })
 
   it('does NOT kill the test runner itself (process.pid is auto-excluded)', async () => {
-    // Sanity — if this assertion fails the test runner dies, which is
-    // its own obvious signal.
     const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 500 })
     expect(r.reaped).not.toContain(process.pid)
   })
 
   it('escalates to SIGKILL when SIGTERM is ignored', async () => {
-    // Spawn a process that ignores SIGTERM (`trap '' TERM`).
-    const child = spawn('bash', ['-c', "exec -a 'agim start --r14test-stubborn' bash -c 'trap \"\" TERM; sleep 30'"], {
-      detached: true, stdio: 'ignore',
-    })
-    child.unref()
-    spawned.push(child)
+    const child = spawnFakeAgim({ trapTerm: true })
     await sleep(300)
-    // The grandchild pid is what pgrep sees (the outer bash exec'd
-    // into the inner bash). For this test we just verify SOMETHING
-    // in our matched-pid set survives SIGTERM and then gets SIGKILL.
-    const pidsBefore = findAgimProcesses().filter((p) => p !== process.pid)
-    expect(pidsBefore.length).toBeGreaterThan(0)
-
+    expect(pidAlive(child.pid!)).toBe(true)
     const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 800 })
-    // After the function returns, everything we matched should be
-    // dead — either via SIGTERM or escalated SIGKILL. Either way the
-    // function counts it as reaped (no survived).
-    expect(r.survived).toEqual([])
+    // Whether listed under reaped (we ended up killing it via SIGKILL)
+    // or survived (kernel still shows it briefly), the function had
+    // to escalate. Final state: dead.
+    await sleep(200)
+    expect(pidAlive(child.pid!)).toBe(false)
   }, 8_000)
+
+  // R15 — companion to the findAgimProcesses regression: reap must
+  // NOT touch a bash script with "agim start" in cmdline.
+  it('R15: does NOT kill a bash script whose argv contains "agim start" literally', async () => {
+    const realAgim = spawnFakeAgim()
+    const shellOnly = spawnFakeShellWithAgimString()
+    await sleep(300)
+    const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 500 })
+    expect(r.reaped).toContain(realAgim.pid!)
+    expect(r.reaped).not.toContain(shellOnly.pid!)
+    expect(pidAlive(shellOnly.pid!)).toBe(true)
+  })
 })

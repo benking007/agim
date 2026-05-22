@@ -173,6 +173,25 @@ program
       }
     } catch { /* defensive */ }
 
+    // R15 — write our pid to PID_FILE now that the self-check has
+    // passed. Pre-R15 this only happened when an `agim start --bg`
+    // spawn went through spawnBackground; systemd-started agim never
+    // wrote the file, so the next foreground `agim start` saw a stale
+    // pid (or no pid at all) and the self-check silently passed
+    // — defeating R14 §六 in the most common deployment shape.
+    // Writing here means EVERY successful `agim start` (foreground or
+    // systemd) maintains the file. gracefulShutdown unlinks it.
+    try {
+      const { PID_FILE: _pidFile } = await import('./cli-ui/service.js')
+      const { writeFileSync: _writePid, chmodSync: _chmodPid } = await import('node:fs')
+      _writePid(_pidFile, String(process.pid) + '\n', { mode: 0o600 })
+      try { _chmodPid(_pidFile, 0o600) } catch { /* non-POSIX */ }
+    } catch (err) {
+      // Failing to write the pidfile is non-fatal — self-check next
+      // time will fall back to no-file. Log and continue.
+      console.warn(`⚠️  Could not write PID file: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
 
@@ -850,6 +869,9 @@ program
         // because shuttingDown is true so nothing re-enters this fn.
         try { webServer?.close() } catch { /* ignore */ }
         try { acpServer?.close() } catch { /* ignore */ }
+        // PID_FILE cleanup intentionally NOT done here — the next
+        // start's self-check uses pidAlive(recorded), which returns
+        // false for our soon-to-be-dead pid, so stale file is harmless.
         process.exit(1)
       }, HARD_SHUTDOWN_MS)
       // Don't keep the event loop alive solely for this timer; if
@@ -950,6 +972,20 @@ program
         const { opencodeServe } = await import('./plugins/agents/opencode/serve-manager.js')
         await opencodeServe.stop()
       } catch { /* ignore — opencode wasn't configured / never spawned */ }
+
+      // R15 — pair the start-path PID_FILE write. We only unlink when
+      // the file's pid matches OUR pid; defensive against a race where
+      // a fresh agim has already overwritten it (we don't want to
+      // delete the new owner's file just because our shutdown started
+      // first).
+      try {
+        const { PID_FILE: _pidFile } = await import('./cli-ui/service.js')
+        const { existsSync: _exists, readFileSync: _read, unlinkSync: _unlink } = await import('node:fs')
+        if (_exists(_pidFile)) {
+          const recorded = parseInt(_read(_pidFile, 'utf-8').trim(), 10)
+          if (recorded === process.pid) _unlink(_pidFile)
+        }
+      } catch { /* missing / unreadable is fine */ }
 
       clearTimeout(hardKill)
       process.exit(0)

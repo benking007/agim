@@ -21,8 +21,8 @@
 // error, so the caller can decide what to ack.
 
 import { execSync, spawn } from 'node:child_process'
-import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, readdirSync } from 'node:fs'
+import { join, dirname, basename } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
 
 // Pid + log files live inside whatever AGIM_HOME resolved to. Filenames
@@ -261,8 +261,67 @@ export function readWebEndpoint(): { bind: string; port: number } | null {
  *  that may have escaped the cgroup (the failure mode that motivated
  *  R14: a dbus-run-session wrapper detaches its children from
  *  systemd's control group, leaving the old agim alive after
- *  `systemctl stop` "succeeds"). */
+ *  `systemctl stop` "succeeds").
+ *
+ *  R15 — argv-strict matching. Pre-R15 this used `pgrep -af "agim start"`
+ *  which matched any process whose cmdline contained the substring
+ *  "agim start" anywhere — meaning a `bash -c 'echo "agim start"'` test
+ *  helper got SIGTERM'd by the reap path. Now we read /proc/<pid>/cmdline
+ *  directly and require:
+ *    - argv[0] basename is a node-like interpreter (node / bun)
+ *    - argv[1] basename is an agim entry script (agim / im-hub-pro / cli.js)
+ *    - argv[2] is the literal string 'start'
+ *  This is impossible for a shell to satisfy — shells have argv[0]=bash.
+ *
+ *  Non-Linux (darwin / windows) falls back to the legacy pgrep behavior;
+ *  /proc isn't available there, and those platforms aren't the R14
+ *  motivating case (server-side cgroup escapes need systemd + Linux). */
 export function findAgimProcesses(): number[] {
+  if (process.platform === 'linux') {
+    try { return findAgimProcessesViaProc() } catch { /* fall through */ }
+  }
+  return findAgimProcessesViaPgrep()
+}
+
+/** Linux precise path — walk /proc and validate argv shape. */
+function findAgimProcessesViaProc(): number[] {
+  const pids: number[] = []
+  let entries: string[]
+  try {
+    entries = readdirSync('/proc')
+  } catch {
+    return []
+  }
+  for (const name of entries) {
+    if (!/^\d+$/.test(name)) continue
+    const pid = parseInt(name, 10)
+    let raw: string
+    try {
+      raw = readFileSync(`/proc/${pid}/cmdline`, 'utf-8')
+    } catch {
+      continue  // process exited / not readable
+    }
+    // /proc/<pid>/cmdline is null-byte separated; trailing null possible.
+    const argv = raw.split('\x00').filter((s) => s.length > 0)
+    if (argv.length < 3) continue
+    const exe = basename(argv[0])
+    const isNodeLike = exe === 'node' || exe === 'bun' || exe.startsWith('node')
+    if (!isNodeLike) continue
+    const script = basename(argv[1])
+    const isAgimEntry = script === 'agim' || script === 'im-hub-pro' || script === 'cli.js'
+    if (!isAgimEntry) continue
+    if (argv[2] !== 'start') continue
+    pids.push(pid)
+  }
+  return pids
+}
+
+/** Legacy substring match — kept for darwin / windows where /proc isn't
+ *  available. Wider net (can false-positive on shell scripts containing
+ *  the literal "agim start"), but reap's downstream excludePids +
+ *  process.pid auto-exclusion + SIGTERM-not-SIGKILL-first behavior
+ *  mitigate the damage. */
+function findAgimProcessesViaPgrep(): number[] {
   try {
     const out = execSync('pgrep -af "agim start|im-hub-pro start|dist/cli.js start"', {
       encoding: 'utf-8',

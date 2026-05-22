@@ -18,10 +18,22 @@ import { AGIM_HOME } from '../../../core/agim-paths.js'
 const log = rootLogger.child({ component: 'telegram.media' })
 
 /** Root for downloaded media. Always resolved absolute so the safety check
- *  `path.startsWith(MEDIA_ROOT)` is robust. Override via env for tests. */
-export const MEDIA_ROOT: string = resolve(
-  process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'),
-)
+ *  `path.startsWith(MEDIA_ROOT)` is robust. Override via env for tests.
+ *
+ *  Bug fix (2026-05-23): two `.test.ts` files in different platform
+ *  adapters each set `process.env.IMHUB_MEDIA_ROOT` to their own tmp dir
+ *  before dynamically importing media-download.js. Under bun's shared
+ *  test-process module cache the first import wins and the second test
+ *  reads the wrong root. Fix: read env at every call site via
+ *  `getMediaRoot()` rather than at module-eval time. `MEDIA_ROOT` is
+ *  kept as a backwards-compatible alias that reflects the value at
+ *  import time — production reads happen post-startup so the env is
+ *  stable anyway. */
+export function getMediaRoot(): string {
+  return resolve(process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'))
+}
+
+export const MEDIA_ROOT: string = getMediaRoot()
 
 /** Hard upper bound on a single download. Telegram photo max is ~10 MB and
  *  document max is 50 MB on the bot API; we cap at 20 MB so a runaway upload
@@ -76,9 +88,10 @@ export async function downloadToMediaRoot(params: DownloadParams): Promise<Downl
     throw new Error(`refusing to download from ${u.host}: only api.telegram.org allowed`)
   }
 
-  const dir = resolve(MEDIA_ROOT, params.subdir)
+  const root = getMediaRoot()
+  const dir = resolve(root, params.subdir)
   const path = resolve(dir, params.filename)
-  if (!path.startsWith(`${MEDIA_ROOT}/`)) {
+  if (!path.startsWith(`${root}/`)) {
     throw new Error(`destination escapes MEDIA_ROOT: ${path}`)
   }
 
@@ -205,7 +218,7 @@ export async function cleanupOldMedia(maxAgeMs: number = DEFAULT_TTL_MS): Promis
       }
     }
   }
-  await walk(MEDIA_ROOT)
+  await walk(getMediaRoot())
   if (deleted > 0) {
     log.info({ event: 'media.cleanup', deleted, kept, maxAgeMs }, 'media cleanup pass')
   }

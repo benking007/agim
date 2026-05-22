@@ -11,8 +11,12 @@ import { join } from 'node:path'
 const TEST_ROOT = join(tmpdir(), `imhub-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
 process.env.IMHUB_MEDIA_ROOT = TEST_ROOT
 
-// Import AFTER setting env so MEDIA_ROOT picks it up at module-eval time.
-const { MEDIA_ROOT, buildCurlArgs, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
+// Import AFTER setting env. Use getMediaRoot() (lazy) for assertions
+// because under bun's shared test-process module cache the first
+// importer's env wins for the MEDIA_ROOT constant (see media-download.ts
+// for the bug-fix note).
+const { MEDIA_ROOT: _MEDIA_ROOT, getMediaRoot, buildCurlArgs, downloadToMediaRoot, cleanupOldMedia, pickExtension } = await import('./media-download.js')
+void _MEDIA_ROOT // kept import for symmetry with wechat test; not asserted
 
 describe('media-download — pickExtension', () => {
   it('extracts ext from file_path', () => {
@@ -36,7 +40,7 @@ describe('media-download — pickExtension', () => {
 
 describe('media-download — safety guards', () => {
   it('uses the env-overridden MEDIA_ROOT', () => {
-    expect(MEDIA_ROOT).toBe(TEST_ROOT)
+    expect(getMediaRoot()).toBe(TEST_ROOT)
   })
 
   it('rejects unsafe filenames (slashes / dotdot)', async () => {

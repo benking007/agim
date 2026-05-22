@@ -19,6 +19,25 @@ export interface DingTalkConfig {
   /** Optional channel id (forwarded to MessageContext); we don't drive
    *  routing on it but a few downstream consumers tag logs by it. */
   channelId?: string
+  /** Batch 1 (#4) — DM access policy. Defaults to 'open' (current behavior).
+   *  - `open`       : any user can DM the bot (existing default)
+   *  - `pairing`    : only users seen in earlier `allowFrom`-acked messages
+   *  - `allowlist`  : only senderStaffId in `allowFrom` may DM the bot */
+  dmPolicy?: 'open' | 'pairing' | 'allowlist'
+  /** Batch 1 (#4) — Group access policy. Defaults to 'open'.
+   *  - `open`       : any group @-mention is accepted
+   *  - `allowlist`  : only sender in `groupAllowFrom` is accepted
+   *  - `disabled`   : no group chat handling at all */
+  groupPolicy?: 'open' | 'allowlist' | 'disabled'
+  /** senderStaffId allowed when dmPolicy = allowlist (or seeded for pairing). */
+  allowFrom?: string[]
+  /** senderStaffId allowed when groupPolicy = allowlist. */
+  groupAllowFrom?: string[]
+  /** Batch 1 (#7) — ack-reaction mode: render a quick "received / working / done"
+   *  emoji marker right after inbound. Defaults to 'off' (no change to today's
+   *  behavior). `emoji` uses ⏳ → 🤖 → ✅; `kaomoji` uses pure-text faces for
+   *  fonts that don't render emoji (some legacy corp clients). */
+  ackReaction?: 'off' | 'emoji' | 'kaomoji'
 }
 
 /** Inbound message payload from the Stream SDK's TOPIC_ROBOT callback.

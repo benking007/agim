@@ -1466,7 +1466,17 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
         ? { appId: config.feishu.appId, appSecret: mask(config.feishu.appSecret) }
         : undefined,
       dingtalk: config.dingtalk
-        ? { clientId: config.dingtalk.clientId, clientSecret: mask(config.dingtalk.clientSecret), channelId: config.dingtalk.channelId }
+        ? {
+            clientId: config.dingtalk.clientId,
+            clientSecret: mask(config.dingtalk.clientSecret),
+            channelId: config.dingtalk.channelId,
+            // v1.2.37 (batch 1) — surface policy + ack-reaction
+            dmPolicy: config.dingtalk.dmPolicy,
+            groupPolicy: config.dingtalk.groupPolicy,
+            allowFrom: config.dingtalk.allowFrom,
+            groupAllowFrom: config.dingtalk.groupAllowFrom,
+            ackReaction: config.dingtalk.ackReaction,
+          }
         : undefined,
       discord: showGlobalIm && config.discord
         ? {

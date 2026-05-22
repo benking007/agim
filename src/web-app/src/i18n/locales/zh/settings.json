@@ -140,6 +140,24 @@
       "clientSecret": "Client Secret",
       "channelId":    "Channel ID"
     },
+    "dingtalk": {
+      "dmPolicy":        "私聊访问策略",
+      "groupPolicy":     "群聊访问策略",
+      "allowFrom":       "私聊白名单（staffId，英文逗号分隔）",
+      "groupAllowFrom":  "群聊白名单（staffId，英文逗号分隔）",
+      "ackReaction":     "ack 反馈方式",
+      "policy": {
+        "open":      "open — 任何人都能对话",
+        "pairing":   "pairing — 第一个私聊的人锁定为唯一对端",
+        "allowlist": "allowlist — 只允许名单中的 ID",
+        "disabled":  "disabled — 机器人完全忽略群聊"
+      },
+      "ack": {
+        "off":     "off — 不发标记",
+        "emoji":   "emoji ⏳→✅",
+        "kaomoji": "kaomoji（纯文本颜文字）"
+      }
+    },
     "qr": {
       "title":      "扫码登录微信",
       "description":"打开手机微信扫一扫这个二维码，然后在微信内确认登录。",

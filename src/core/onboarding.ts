@@ -50,7 +50,18 @@ export interface Config {
   defaultAgent: string
   telegram?: { botToken: string; channelId?: string }
   feishu?: { appId: string; appSecret: string; channelId?: string }
-  dingtalk?: { clientId: string; clientSecret: string; channelId?: string }
+  dingtalk?: {
+    clientId: string
+    clientSecret: string
+    channelId?: string
+    // Batch 1 (#4) — access policy fields
+    dmPolicy?: 'open' | 'pairing' | 'allowlist'
+    groupPolicy?: 'open' | 'allowlist' | 'disabled'
+    allowFrom?: string[]
+    groupAllowFrom?: string[]
+    // Batch 1 (#7) — ack-reaction
+    ackReaction?: 'off' | 'emoji' | 'kaomoji'
+  }
   discord?: { botToken: string; channelId?: string; allowedGuilds?: string[]; allowedChannels?: string[] }
   acpAgents?: Array<{
     name: string

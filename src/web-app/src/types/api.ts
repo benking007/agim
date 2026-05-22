@@ -769,7 +769,17 @@ export interface AppConfig {
   acpPort?: number
   telegram?: { botToken?: string; channelId?: string }
   feishu?: { appId?: string; appSecret?: string; channelId?: string }
-  dingtalk?: { clientId?: string; clientSecret?: string; channelId?: string }
+  dingtalk?: {
+    clientId?: string
+    clientSecret?: string
+    channelId?: string
+    // v1.2.37+ (batch 1)
+    dmPolicy?: 'open' | 'pairing' | 'allowlist'
+    groupPolicy?: 'open' | 'allowlist' | 'disabled'
+    allowFrom?: string[]
+    groupAllowFrom?: string[]
+    ackReaction?: 'off' | 'emoji' | 'kaomoji'
+  }
   discord?: { botToken?: string; channelId?: string }
   acpAgents?: ACPAgentConfig[]
   agentStatus?: Record<string, boolean>

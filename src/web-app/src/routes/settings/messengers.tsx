@@ -51,7 +51,17 @@ interface PlatformDraft {
   enabled: boolean
   telegram?:  { botToken?: string; channelId?: string }
   feishu?:    { appId?: string; appSecret?: string; channelId?: string }
-  dingtalk?:  { clientId?: string; clientSecret?: string; channelId?: string }
+  dingtalk?:  {
+    clientId?: string
+    clientSecret?: string
+    channelId?: string
+    // v1.2.37 (batch 1)
+    dmPolicy?: 'open' | 'pairing' | 'allowlist'
+    groupPolicy?: 'open' | 'allowlist' | 'disabled'
+    allowFrom?: string[]
+    groupAllowFrom?: string[]
+    ackReaction?: 'off' | 'emoji' | 'kaomoji'
+  }
   discord?:   { botToken?: string; channelId?: string }
 }
 
@@ -272,6 +282,57 @@ export default function SettingsMessengersRoute(): JSX.Element {
               value={draft.dingtalk.dingtalk?.channelId ?? ''}
               onChange={(v) => patchSlot('dingtalk', { dingtalk: { ...draft.dingtalk.dingtalk, channelId: v } })}
             />
+            {/* v1.2.37 (batch 1) — access policy + ack-reaction */}
+            <SelectRow<'open' | 'pairing' | 'allowlist'>
+              id="dt-dm-policy" label={t('messengers.dingtalk.dmPolicy')}
+              value={draft.dingtalk.dingtalk?.dmPolicy ?? 'open'}
+              onChange={(v) => patchSlot('dingtalk', { dingtalk: { ...draft.dingtalk.dingtalk, dmPolicy: v } })}
+              options={[
+                { value: 'open',      label: t('messengers.dingtalk.policy.open') },
+                { value: 'pairing',   label: t('messengers.dingtalk.policy.pairing') },
+                { value: 'allowlist', label: t('messengers.dingtalk.policy.allowlist') },
+              ]}
+            />
+            <SelectRow<'open' | 'allowlist' | 'disabled'>
+              id="dt-group-policy" label={t('messengers.dingtalk.groupPolicy')}
+              value={draft.dingtalk.dingtalk?.groupPolicy ?? 'open'}
+              onChange={(v) => patchSlot('dingtalk', { dingtalk: { ...draft.dingtalk.dingtalk, groupPolicy: v } })}
+              options={[
+                { value: 'open',      label: t('messengers.dingtalk.policy.open') },
+                { value: 'allowlist', label: t('messengers.dingtalk.policy.allowlist') },
+                { value: 'disabled',  label: t('messengers.dingtalk.policy.disabled') },
+              ]}
+            />
+            <FieldRow
+              id="dt-allow-from" label={t('messengers.dingtalk.allowFrom')}
+              value={(draft.dingtalk.dingtalk?.allowFrom ?? []).join(',')}
+              onChange={(v) => patchSlot('dingtalk', {
+                dingtalk: {
+                  ...draft.dingtalk.dingtalk,
+                  allowFrom: v.split(',').map((s) => s.trim()).filter(Boolean),
+                },
+              })}
+            />
+            <FieldRow
+              id="dt-group-allow-from" label={t('messengers.dingtalk.groupAllowFrom')}
+              value={(draft.dingtalk.dingtalk?.groupAllowFrom ?? []).join(',')}
+              onChange={(v) => patchSlot('dingtalk', {
+                dingtalk: {
+                  ...draft.dingtalk.dingtalk,
+                  groupAllowFrom: v.split(',').map((s) => s.trim()).filter(Boolean),
+                },
+              })}
+            />
+            <SelectRow<'off' | 'emoji' | 'kaomoji'>
+              id="dt-ack" label={t('messengers.dingtalk.ackReaction')}
+              value={draft.dingtalk.dingtalk?.ackReaction ?? 'off'}
+              onChange={(v) => patchSlot('dingtalk', { dingtalk: { ...draft.dingtalk.dingtalk, ackReaction: v } })}
+              options={[
+                { value: 'off',     label: t('messengers.dingtalk.ack.off') },
+                { value: 'emoji',   label: t('messengers.dingtalk.ack.emoji') },
+                { value: 'kaomoji', label: t('messengers.dingtalk.ack.kaomoji') },
+              ]}
+            />
           </PlatformCard>
 
           {cfg.features?.globalIm ? (
@@ -368,6 +429,32 @@ function FieldRow({ id, label, value, onChange, type = 'text' }: FieldRowProps):
         autoComplete="off"
         className="font-mono text-xs"
       />
+    </div>
+  )
+}
+
+// v1.2.37 (batch 1) — dropdown sibling of FieldRow for enum settings.
+interface SelectRowProps<T extends string> {
+  id: string
+  label: string
+  value: T
+  onChange: (v: T) => void
+  options: Array<{ value: T; label: string }>
+}
+function SelectRow<T extends string>({ id, label, value, onChange, options }: SelectRowProps<T>): JSX.Element {
+  return (
+    <div className="grid grid-cols-1 gap-1 sm:grid-cols-[180px_1fr] sm:items-center sm:gap-2">
+      <Label htmlFor={id} className="text-xs text-text-dim">{label}</Label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
     </div>
   )
 }

@@ -39,6 +39,52 @@ const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 const DEDUP_TTL_MS = 10 * 60 * 1000
 const DEDUP_MAX = 2000
 
+// Batch 1 (#7) — ack-reaction glyphs. Emoji set is the common one most
+// corp DingTalk clients render correctly; kaomoji is the pure-text
+// fallback for the small set of locked-down deployments that disable
+// emoji fonts. Empty string skips that state silently.
+export const ACK_GLYPHS = {
+  emoji: { received: '⏳', working: '🤖', done: '✅', failed: '❌' },
+  kaomoji: { received: '(´・ω・`)', working: '(｡•̀ᴗ-)', done: '(•̀ᴗ•́)', failed: '(╥﹏╥)' },
+} as const
+
+/**
+ * Batch 1 (#4) — pure access-policy evaluator. Decoupled from the adapter
+ * class so unit tests can hit it without the SDK. Returns:
+ *  - allowed: should the message be dispatched to the agent?
+ *  - pairedNewSender: when defined, the caller should persist this sender
+ *    into allowFrom because the policy is `pairing` and this is the first
+ *    inbound DM.
+ */
+export function evalAccessPolicy(
+  cfg: Pick<DingTalkConfig, 'dmPolicy' | 'groupPolicy' | 'allowFrom' | 'groupAllowFrom'>,
+  msg: { isGroup: boolean; senderStaffId: string },
+): { allowed: boolean; pairedNewSender?: string } {
+  if (msg.isGroup) {
+    const policy = cfg.groupPolicy || 'open'
+    if (policy === 'disabled') return { allowed: false }
+    if (policy === 'allowlist') {
+      if (!msg.senderStaffId) return { allowed: false }
+      return { allowed: (cfg.groupAllowFrom || []).includes(msg.senderStaffId) }
+    }
+    return { allowed: true }
+  }
+  const policy = cfg.dmPolicy || 'open'
+  if (policy === 'allowlist') {
+    if (!msg.senderStaffId) return { allowed: false }
+    return { allowed: (cfg.allowFrom || []).includes(msg.senderStaffId) }
+  }
+  if (policy === 'pairing') {
+    if (!msg.senderStaffId) return { allowed: false }
+    const seen = cfg.allowFrom || []
+    if (seen.length === 0) {
+      return { allowed: true, pairedNewSender: msg.senderStaffId }
+    }
+    return { allowed: seen.includes(msg.senderStaffId) }
+  }
+  return { allowed: true }
+}
+
 export class DingTalkAdapter implements MessengerAdapter {
   readonly name = 'dingtalk'
   private client: DingTalkClient | null = null
@@ -129,8 +175,27 @@ export class DingTalkAdapter implements MessengerAdapter {
       return
     }
 
+    // Batch 1 (#4) — access policy gate. Filters BEFORE dispatch so the
+    // agent never sees an unauthorized turn. `pairing` learns the first
+    // DM sender into allowFrom for future turns (write-back).
+    if (!this.passesAccessPolicy(msg)) {
+      log.info({
+        event: 'dingtalk.policy.denied',
+        messageId: msg.msgId,
+        conversationType: msg.conversationType,
+        senderStaffId: msg.senderStaffId,
+      }, 'inbound dropped by access policy')
+      return
+    }
+
     const channelId = this.config?.channelId || 'default'
     const threadId = this.threadIdFor(msg)
+
+    // Batch 1 (#7) — best-effort ack-reaction. Fire-and-forget; if the
+    // session webhook expired or the SDK chokes, we still proceed.
+    void this.sendAckReaction(msg, 'received').catch((err) => {
+      log.debug({ err: err instanceof Error ? err.message : String(err) }, 'ack-reaction received failed')
+    })
 
     // ─── text / markdown — the happy path ────────────────────────────
     // Markdown messages from DingTalk also carry `text.content`; treat
@@ -407,6 +472,57 @@ export class DingTalkAdapter implements MessengerAdapter {
    *  passes saveDingTalkMedia's safety check and is portable. */
   private safeFilenameStem(msgId: string | undefined): string {
     return (msgId || 'unknown').replace(/[^A-Za-z0-9_-]/g, '_')
+  }
+
+  /** Batch 1 (#4) — wrapper around the pure evalAccessPolicy() helper so
+   *  the policy logic is testable without spinning up the SDK. */
+  private passesAccessPolicy(msg: DingTalkInboundMessage): boolean {
+    const cfg = this.config
+    if (!cfg) return true
+    const result = evalAccessPolicy(cfg, {
+      isGroup: msg.conversationType === '2',
+      senderStaffId: msg.senderStaffId || '',
+    })
+    if (result.pairedNewSender) {
+      // First-DM pairing: persist into the in-memory config so the next
+      // turn recognises them. Not written back to ~/.agim/config.json by
+      // design — a restart re-pairs the next DMer. Operators wanting
+      // durable pairs should switch to `allowlist` and edit allowFrom.
+      cfg.allowFrom = [result.pairedNewSender]
+      log.info({
+        event: 'dingtalk.policy.paired',
+        senderStaffId: result.pairedNewSender,
+      }, 'pairing locked in')
+    }
+    return result.allowed
+  }
+
+  /** Batch 1 (#7) — fire a quick ack into the same conversation. State is
+   *  one of 'received' / 'working' / 'done' / 'failed'; we render with
+   *  emoji or kaomoji per cfg.ackReaction. Off → no-op. Falls back to a
+   *  short markdown message because DingTalk Stream bots don't have a
+   *  native "react to a message" API the way Slack / Discord do — the
+   *  closest equivalent is a follow-up text. We deliberately use a tiny
+   *  payload so a busy group doesn't get spammed. */
+  private async sendAckReaction(
+    msg: DingTalkInboundMessage,
+    state: 'received' | 'working' | 'done' | 'failed',
+  ): Promise<void> {
+    const mode = this.config?.ackReaction || 'off'
+    if (mode === 'off') return
+    if (!this.client) return
+    const glyph = ACK_GLYPHS[mode][state]
+    if (!glyph) return
+    const threadId = this.threadIdFor(msg)
+    try {
+      await this.client.sendMessage(threadId, glyph)
+    } catch (err) {
+      log.debug({
+        event: 'dingtalk.ack.send_failed',
+        state,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   /** Shared text-dispatch path used by text / markdown msgtypes. */

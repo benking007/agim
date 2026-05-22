@@ -139,6 +139,24 @@
       "clientSecret": "Client secret",
       "channelId":    "Channel ID"
     },
+    "dingtalk": {
+      "dmPolicy":        "DM policy",
+      "groupPolicy":     "Group policy",
+      "allowFrom":       "DM allowFrom (staffIds, comma-separated)",
+      "groupAllowFrom":  "Group allowFrom (staffIds, comma-separated)",
+      "ackReaction":     "Ack-reaction",
+      "policy": {
+        "open":      "open — anyone may talk",
+        "pairing":   "pairing — first DMer pinned",
+        "allowlist": "allowlist — only listed IDs",
+        "disabled":  "disabled — bot ignores groups"
+      },
+      "ack": {
+        "off":     "off — no ack glyph",
+        "emoji":   "emoji ⏳→✅",
+        "kaomoji": "kaomoji (text-face)"
+      }
+    },
     "qr": {
       "title":      "Scan WeChat QR",
       "description":"Open WeChat on your phone, scan this code, then confirm the login prompt inside WeChat.",

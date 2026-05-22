@@ -62,6 +62,16 @@ jobs:
         # need it (it's a runtime-only dep loaded via dynamic import).
         run: npm ci --omit=optional || npm install --omit=optional
 
+      - name: Install web-app dependencies
+        if: steps.version.outputs.changed == 'true'
+        # src/web-app is a separate package (not a workspace), so the root
+        # `npm ci` above doesn't reach it. Required since v1.2.26 wired
+        # build:spa (cd src/web-app && tsc --noEmit && vite build) into the
+        # main build script — without this step tsc fails with TS2688:
+        # "Cannot find type definition file for 'vite/client'".
+        working-directory: src/web-app
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
       - name: Build
         if: steps.version.outputs.changed == 'true'
         run: npm run build

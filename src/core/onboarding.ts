@@ -66,12 +66,24 @@ export interface Config {
 // Constants
 // ============================================
 
-const AVAILABLE_MESSENGERS: MessengerInfo[] = [
+// R12 / 2026-05-22 update — Telegram and Discord are kept in the source
+// for IMHUB_ENABLE_GLOBAL_IM=1 deployments but hidden from the default
+// onboarding flow (mainland-China baseline). DingTalk is added so the
+// legacy prompt matches what the modern wizard surfaces.
+const ALL_MESSENGERS: MessengerInfo[] = [
   { id: 'wechat-ilink', displayName: 'WeChat', description: 'Scan QR to login' },
-  { id: 'telegram', displayName: 'Telegram', description: 'Bot token from @BotFather' },
   { id: 'feishu', displayName: 'Feishu/Lark', description: 'App ID and Secret' },
+  { id: 'dingtalk', displayName: 'DingTalk', description: 'ClientID + ClientSecret (Stream mode)' },
+  { id: 'telegram', displayName: 'Telegram', description: 'Bot token from @BotFather' },
   { id: 'discord', displayName: 'Discord', description: 'Bot token from Developer Portal' },
 ]
+
+function getAvailableMessengers(): MessengerInfo[] {
+  if (process.env.IMHUB_ENABLE_GLOBAL_IM === '1') return ALL_MESSENGERS
+  return ALL_MESSENGERS.filter((m) => m.id !== 'telegram' && m.id !== 'discord')
+}
+
+const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime uses getAvailableMessengers()
 
 const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
   'claude-code': { agent: 'claude-code', npmPackage: '@anthropic-ai/claude-code', command: 'claude' },
@@ -148,7 +160,7 @@ export function checkMessengerConfig(config: Config): OnboardingResult {
   if (config.messengers.length === 0) {
     return {
       needsOnboarding: true,
-      availableMessengers: AVAILABLE_MESSENGERS,
+      availableMessengers: getAvailableMessengers(),
     }
   }
 
@@ -308,23 +320,24 @@ export async function runMessengerOnboarding(config: Config): Promise<Config | n
   if (!process.stdin.isTTY) {
     console.log('No TTY; skip messenger onboarding. Run interactively:')
     console.log('   agim config wechat')
-    console.log('   agim config telegram')
     console.log('   agim config feishu')
+    console.log('   agim config dingtalk')
     return null
   }
 
   const rl = createPromptInterface()
 
   try {
+    const messengers = getAvailableMessengers()
     while (true) {
       // Show menu
       console.log('\n📱 Let\'s set up a messenger:\n')
-      AVAILABLE_MESSENGERS.forEach((m, i) => {
+      messengers.forEach((m, i) => {
         console.log(`  ${i + 1}. ${m.displayName} - ${m.description}`)
       })
       console.log(`  Q. Quit and configure manually\n`)
 
-      const choice = await prompt(rl, `Select a messenger (1-${AVAILABLE_MESSENGERS.length} or Q): `)
+      const choice = await prompt(rl, `Select a messenger (1-${messengers.length} or Q): `)
 
       // Handle quit
       if (choice.toLowerCase() === 'q' || choice === '') {
@@ -334,12 +347,12 @@ export async function runMessengerOnboarding(config: Config): Promise<Config | n
       }
 
       const index = parseInt(choice, 10) - 1
-      if (index < 0 || index >= AVAILABLE_MESSENGERS.length) {
-        console.log(`Invalid choice. Please enter 1-${AVAILABLE_MESSENGERS.length} or Q.`)
+      if (index < 0 || index >= messengers.length) {
+        console.log(`Invalid choice. Please enter 1-${messengers.length} or Q.`)
         continue
       }
 
-      const selected = AVAILABLE_MESSENGERS[index]
+      const selected = messengers[index]
 
       // Run the config flow
       const result = await configureMessenger(selected.id, config, rl)

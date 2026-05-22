@@ -59,7 +59,7 @@ const en = {
   // ─── config root ─────────────────────────────────────────────────────
   'config.title': 'Agim · config',
   'config.subtitle': 'Pick a section to edit. Each section has a Back option.',
-  'config.section.messengers': 'Messengers (WeChat / Telegram / Feishu / Discord / Email)',
+  'config.section.messengers': 'Messengers (WeChat / Feishu / DingTalk / Email)',
   'config.section.agents': 'AI agents (Claude Code / OpenCode / Codex)',
   'config.section.acp': 'Remote ACP agents',
   'config.section.web': 'Web admin — listen address + port',
@@ -349,7 +349,7 @@ const zh: Record<Key, string> = {
   // ─── config root ─────────────────────────────────────────────────
   'config.title': '阿吉姆 · 配置',
   'config.subtitle': '选要编辑的分类。每个分类内部都能 Back 回上一层。',
-  'config.section.messengers': 'IM 渠道（微信 / Telegram / 飞书 / Discord / 邮件）',
+  'config.section.messengers': 'IM 渠道（微信 / 飞书 / 钉钉 / 邮件）',
   'config.section.agents': 'AI Agent（Claude Code / OpenCode / Codex）',
   'config.section.acp': '远程 ACP agent',
   'config.section.web': 'Web 后台 — 监听地址 + 端口',

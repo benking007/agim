@@ -341,7 +341,7 @@ program
         // legitimate use case. Log a hint and keep going; web server + ACP
         // server + scheduler / reminders / memos / approval bus still start.
         console.log('ℹ️ No messengers configured — running in web-console-only mode.')
-        console.log('   Configure later with: agim config <wechat|telegram|feishu|dingtalk|discord>')
+        console.log('   Configure later with: agim config <wechat|feishu|dingtalk>')
       }
     }
 

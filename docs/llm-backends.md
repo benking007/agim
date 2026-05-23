@@ -616,6 +616,160 @@ under a server named `filesystem` is exposed as `mcp_filesystem_read_file`.
 Currently only consumed by the boot log; a web settings panel showing
 the same data lands in Stage 2 sub-PR #4.
 
+## Native agent loop (Stage 2 sub-PR #3)
+
+Glues the providers + MCP layers into a multi-iteration "think → call
+tool → look at result → think again → answer" loop. The agent loop is
+the engine the upcoming `native` AgentAdapter (sub-PR #4) will drive
+inside a real IM turn; it's also directly callable from any future
+introspection use case that needs tool use.
+
+### Tick diagram
+
+```
+                ┌──────────────────────────────────────────────────────┐
+                │ messages = [system?, user, ...history?]              │
+                │ tools    = []  (or [ToolDef, ToolDef, ...])           │
+                └────────────────────────┬─────────────────────────────┘
+                                         ▼
+             ┌───── iteration  i = 0 .. maxIterations-1 ───────┐
+             │  provider.chat(messages, {tools})                │
+             │      ↓                                            │
+             │  finishReason ∈ {'stop','length','content_filter',│
+             │                  'tool_use','error','unknown'}    │
+             │                                                  │
+             │      ├─ tool_use → for each toolCall in result:  │
+             │      │     1. approve(call) → allow|deny         │
+             │      │     2. dispatch(call) → DispatcherResult  │
+             │      │     3. append assistant turn (with tool   │
+             │      │        calls) + {role:'tool', toolCallId, │
+             │      │        content:result.text}                │
+             │      │     continue.                              │
+             │      │                                            │
+             │      └─ anything else → return final text.       │
+             └──────────────────────────────────────────────────┘
+```
+
+### Public API
+
+```ts
+import {
+  runAgentLoop,
+  alwaysAllowGate,
+  buildMcpDispatcher,
+  combineDispatchers,
+  getProvider,
+} from 'agim/llm'
+
+const provider = getProvider('native-coder')!
+const result = await runAgentLoop({
+  provider,
+  systemPrompt: 'You are agim native. Be terse.',
+  messages: [{ role: 'user', content: 'list .ts files under /workspace/src' }],
+  tools: getAllMcpTools(),
+  dispatch: buildMcpDispatcher(),
+  approve: alwaysAllowGate,    // production: pass an IM-integrated gate
+  maxIterations: 20,
+  timeoutMs: 5 * 60 * 1000,
+  audit: {
+    agent: 'llm:native-coder',
+    intent: 'native.agent.turn',
+    userId, platform, traceId,
+  },
+})
+
+console.log(result.text)
+console.log(`took ${result.iterations} iters, ${result.toolCalls.length} tool calls, cost $${result.usage.costUsd?.toFixed(4) ?? '?'}`)
+```
+
+### Finish reasons
+
+| value | meaning |
+|---|---|
+| `'stop'` | model emitted final text |
+| `'length'` | hit provider `maxTokens` limit; partial text returned |
+| `'content_filter'` | provider's safety layer blocked output |
+| `'tool_use'` | should never escape the loop — would mean the loop's bookkeeping is broken |
+| `'error'` | provider call threw; `result.error` has the message; `result.text === ''` |
+| `'max_iterations'` | loop hit `maxIterations` while model kept requesting tools |
+| `'aborted'` | `signal` fired before the loop finished |
+| `'unknown'` | provider returned a finish_reason agim doesn't map; usually equivalent to 'stop' for output purposes |
+
+### Audit & cost accounting
+
+Each provider iteration writes one `invocations` row:
+
+```
+{
+  agent:        'llm:<backend>'                  (passed in via audit.agent)
+  intent:       'native.agent.iter'              (overridable)
+  prompt_len:   sum of message content lengths
+  response_len: assistant text length
+  cost:         provider's reported per-call cost (when available)
+  duration_ms:  iteration wall-clock
+}
+```
+
+`/tasks#cost` already pivots on (agent, intent) so the iteration rows
+naturally show up under the native agent's budget. The caller can also
+write a parent "turn" row that sums these — sub-PR #4 will do that
+inside the AgentAdapter.
+
+### Tool dispatcher
+
+Stage 2 sub-PR #3 ships `buildMcpDispatcher()` which routes every
+`mcp_*` tool call to the MCP registry and surfaces unknown names as
+isError results. Sub-PR #4 adds an optional built-in dispatcher (echo
+/ time / web_search) layered ABOVE MCP via:
+
+```ts
+const dispatch = combineDispatchers(
+  builtinDispatcher,    // landed in sub-PR #4
+  buildMcpDispatcher(),
+)
+```
+
+The "first one that recognises the name wins" semantic prevents an MCP
+server from accidentally shadowing built-in functionality.
+
+### Approval gate
+
+The loop calls `approve(call, iteration)` before every dispatch:
+
+- Return `'allow'` to run the tool
+- Return `'deny'` to skip dispatch and inject a `tool result = "tool
+  call denied by user: name"` so the model can react
+- Throwing is treated as `'deny'` (fail-closed)
+
+`alwaysAllowGate` is the default. Sub-PR #4 ships an IM-integrated
+gate that sends an inline-button card (Telegram / Feishu) or text
+prompt (WeChat / DingTalk) to the originating thread and waits on the
+existing approval-router pipeline.
+
+### Failure semantics (every path is safe)
+
+| failure | behaviour |
+|---|---|
+| `dispatch` is undefined but `tools` is non-empty | **throws** — misconfig caught before the first iteration |
+| `dispatch` throws on a call | tool result `text = "tool threw: <err>"`, isError=true; loop continues |
+| `approve` throws | treated as `deny`; loop continues |
+| `provider.chat` throws | finishReason='error', text='', error set; loop exits |
+| `tools` empty / undefined + model still emits tool_calls | unusual but harmless; the loop terminates because finishReason is whatever the provider reported |
+| `signal` aborted | finishReason='aborted', text='' (or whatever was generated so far) |
+| `maxIterations` reached | finishReason='max_iterations', text='' (loop never reached a non-tool finish) |
+| `dispatcher` returns isError=true | treated as a normal tool result; the model decides whether to retry or give up |
+
+### Limits
+
+- **Sequential tool execution** within one iteration. The first
+  real-world workload that justifies concurrent execution will land
+  the change; for now serial preserves conversation-log order and
+  dodges races against MCP session state.
+- **Max 100 iterations** absolute cap (the default is 20; max is 100 if
+  someone overrides). Above that, prefer breaking the task up.
+- **5-minute default wall-clock timeout** on the whole loop. Stage 2
+  callers (IM AgentAdapter) typically pass a tighter signal anyway.
+
 ## Future stages (preview)
 
 - **Stage 2**: full agent loop, tool dispatch, MCP client, Anthropic native provider. Native chat agent becomes an `AgentAdapter` you can `/cc native` to.

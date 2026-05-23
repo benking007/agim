@@ -131,10 +131,19 @@ notification evaluator, the `/goal` + `/heartbeat` + `/memo` +
 `AgentAdapter.sendPrompt` layer or above. Native gets all of it without
 adding a single conditional.
 
-### 5d. Web admin panels (Stage 6)
+### 5d. Web admin panels (Stage 6 + P1 follow-up)
 
-The `/settings/llm`, `/settings/mcp`, and `/settings/native-agent`
-panels treat native exactly like the CLI agents:
+Cross-thread admin views land under two SPA areas:
+
+**`/tasks/*`** — runtime queue inspection:
+- `/tasks/heartbeat` — every `/heartbeat bind` across threads with
+  last-tick status + enable/disable. REST `/api/heartbeat/bindings`.
+- `/tasks/goals` — every active goal across threads with lifecycle
+  controls (pause / complete / cancel). REST `/api/goals`.
+- `/tasks/asks` — live pending `mcp__imhub__ask_user` queue with
+  per-row Cancel (5s auto-refresh). REST `/api/asks/pending`.
+
+**`/settings/*`** — configuration:
 
 - `/settings/llm` — list / add / remove LLM backends; bind to roles
   (`cheap` / `evaluator` / `native-chat`); per-backend **Ping** button

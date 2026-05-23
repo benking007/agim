@@ -29,6 +29,10 @@ const SUB_TABS: SubTab[] = [
   { to: 'schedules', i18nKey: 'subnav.schedules', mounted: true },
   { to: 'outbox',    i18nKey: 'subnav.outbox',    mounted: true },
   { to: 'a2a',       i18nKey: 'subnav.a2a',       mounted: true },
+  // P1 follow-up — per-thread background primitives.
+  { to: 'heartbeat', i18nKey: 'subnav.heartbeat', mounted: true },
+  { to: 'goals',     i18nKey: 'subnav.goals',     mounted: true },
+  { to: 'asks',      i18nKey: 'subnav.asks',      mounted: true },
 ]
 
 export default function TasksLayout(): JSX.Element {

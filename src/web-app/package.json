@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint not yet configured for web-app — landed in a follow-up PR'",
     "test": "vitest",
-    "check-i18n": "node tools/check-i18n.mjs"
+    "check-i18n": "node tools/check-i18n.mjs",
+    "check-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

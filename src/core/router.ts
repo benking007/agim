@@ -21,6 +21,8 @@ import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
+import { handleGoalCommand } from './commands/goal.js'
+import { buildGoalSnippet } from './goals.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig } from './viewer-config.js'
@@ -270,6 +272,10 @@ export async function routeMessage(
 
     case 'memo': {
       return handleMemoCommand(parsed.args, ctx)
+    }
+
+    case 'goal': {
+      return handleGoalCommand(parsed.args, ctx)
     }
 
     case 'job': {
@@ -609,7 +615,11 @@ export async function callAgentWithHistory(
     platform: ctx.platform,
     userId: ctx.userId ?? '',
   })
-  const headerBlocks = [personaSnippet, viewerHint, reminderContext].filter(Boolean)
+  // P0 #2 — inject the thread's active goal so the agent always sees
+  // it and stays on-mission across turns. buildGoalSnippet returns ''
+  // when no active goal, so the filter(Boolean) below drops it.
+  const goalSnippet = buildGoalSnippet(ctx.platform, ctx.channelId, ctx.threadId)
+  const headerBlocks = [personaSnippet, goalSnippet, viewerHint, reminderContext].filter(Boolean)
   const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
 
   const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {

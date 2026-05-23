@@ -2,15 +2,18 @@
   "pageTitle": "设置",
   "subtitle": "运维配置：环境变量与服务生命周期。",
   "tabs": {
-    "messengers": "IM 平台",
-    "email":      "邮件 (SMTP)",
-    "viewer":     "Viewer & 地图",
-    "agents":     "Agent",
-    "policy":     "策略",
-    "workspaces": "工作区",
-    "admins":     "管理员",
-    "env":        "环境变量",
-    "service":    "服务"
+    "messengers":   "IM 平台",
+    "email":        "邮件 (SMTP)",
+    "viewer":       "Viewer & 地图",
+    "agents":       "Agent",
+    "llm":          "LLM Backend",
+    "mcp":          "MCP 服务器",
+    "nativeAgent":  "Native Agent",
+    "policy":       "策略",
+    "workspaces":   "工作区",
+    "admins":       "管理员",
+    "env":          "环境变量",
+    "service":      "服务"
   },
   "agents": {
     "title": "Agent",

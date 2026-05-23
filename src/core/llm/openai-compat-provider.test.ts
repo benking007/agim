@@ -228,3 +228,154 @@ describe('OpenAICompatProvider', () => {
     ])
   })
 })
+
+
+describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
+  beforeEach(() => { globalThis.fetch = originalFetch })
+  afterEach(() => { globalThis.fetch = originalFetch })
+
+  it('serializes tools[] and tool_choice into request body', async () => {
+    let sentBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sentBody = JSON.parse(init.body as string) as Record<string, unknown>
+      return makeJsonResponse({
+        model: 'gpt-4.1',
+        choices: [{
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      })
+    }) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 't', model: 'gpt-4.1', apiKey: 'k' })
+    await p.chat([{ role: 'user', content: 'list files' }], {
+      tools: [{
+        name: 'list_files',
+        description: 'Lists files in a directory',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        },
+      }],
+      toolChoice: 'auto',
+    })
+
+    expect(Array.isArray(sentBody.tools)).toBe(true)
+    const tools = sentBody.tools as Array<{ type: string; function: { name: string; parameters: { properties: Record<string, unknown> } } }>
+    expect(tools[0].type).toBe('function')
+    expect(tools[0].function.name).toBe('list_files')
+    expect(tools[0].function.parameters.properties.path).toBeDefined()
+    expect(sentBody.tool_choice).toBe('auto')
+  })
+
+  it('parses tool_calls from response into ChatResult.toolCalls', async () => {
+    globalThis.fetch = (async () => makeJsonResponse({
+      model: 'gpt-4.1',
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{
+            id: 'call_abc',
+            type: 'function',
+            function: {
+              name: 'list_files',
+              arguments: '{"path":"/tmp"}',
+            },
+          }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+    })) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 't', model: 'gpt-4.1', apiKey: 'k' })
+    const result = await p.chat([{ role: 'user', content: 'list /tmp' }], {
+      tools: [{
+        name: 'list_files',
+        description: '',
+        parameters: { type: 'object', properties: {} },
+      }],
+    })
+
+    expect(result.finishReason).toBe('tool_use')
+    expect(result.toolCalls).toHaveLength(1)
+    expect(result.toolCalls?.[0].id).toBe('call_abc')
+    expect(result.toolCalls?.[0].name).toBe('list_files')
+    expect(result.toolCalls?.[0].arguments.path).toBe('/tmp')
+    expect(result.text).toBe('')
+  })
+
+  it('surfaces malformed JSON arguments via argumentsRaw', async () => {
+    globalThis.fetch = (async () => makeJsonResponse({
+      choices: [{
+        message: {
+          tool_calls: [{
+            id: 'call_x',
+            type: 'function',
+            function: { name: 'do_thing', arguments: '{not valid json' },
+          }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+    })) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 't', model: 'm', apiKey: 'k' })
+    const result = await p.chat([{ role: 'user', content: 'go' }], {
+      tools: [{ name: 'do_thing', description: '', parameters: {} }],
+    })
+    expect(result.toolCalls?.[0].arguments).toEqual({})
+    expect(result.toolCalls?.[0].argumentsRaw).toBe('{not valid json')
+  })
+
+  it('round-trips assistant message with toolCalls + tool result back to API', async () => {
+    let sentMessages: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { messages: Array<Record<string, unknown>> }
+      sentMessages = body.messages
+      return makeJsonResponse({
+        choices: [{ message: { content: 'all done' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 't', model: 'm', apiKey: 'k' })
+    await p.chat([
+      { role: 'user', content: 'list /tmp' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call_abc', name: 'list_files', arguments: { path: '/tmp' } }],
+      },
+      { role: 'tool', toolCallId: 'call_abc', content: 'a\nb\nc' },
+    ])
+
+    // assistant turn carries tool_calls + content=null per OpenAI spec
+    const assistant = sentMessages[1] as { role: string; content: unknown; tool_calls: Array<{ id: string; function: { name: string; arguments: string } }> }
+    expect(assistant.role).toBe('assistant')
+    expect(assistant.content).toBeNull()
+    expect(assistant.tool_calls[0].id).toBe('call_abc')
+    expect(assistant.tool_calls[0].function.name).toBe('list_files')
+    expect(JSON.parse(assistant.tool_calls[0].function.arguments)).toEqual({ path: '/tmp' })
+
+    // tool turn carries tool_call_id + content
+    const toolMsg = sentMessages[2] as { role: string; tool_call_id: string; content: string }
+    expect(toolMsg.role).toBe('tool')
+    expect(toolMsg.tool_call_id).toBe('call_abc')
+    expect(toolMsg.content).toBe('a\nb\nc')
+  })
+
+  it('forwards toolChoice={type:tool, name} as OpenAI function shape', async () => {
+    let sentBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sentBody = JSON.parse(init.body as string) as Record<string, unknown>
+      return makeJsonResponse({ choices: [{ message: { content: '' }, finish_reason: 'stop' }] })
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({ name: 't', model: 'm', apiKey: 'k' })
+    await p.chat([{ role: 'user', content: 'x' }], {
+      tools: [{ name: 'pick', description: '', parameters: {} }],
+      toolChoice: { type: 'tool', name: 'pick' },
+    })
+    expect(sentBody.tool_choice).toEqual({ type: 'function', function: { name: 'pick' } })
+  })
+})
+

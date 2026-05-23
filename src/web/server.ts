@@ -14,6 +14,7 @@ import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { isMasked, maskSecret } from './env-mask.js'
+import { handleLlmApi } from './llm-api.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -942,6 +943,16 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/notify' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
       return handleNotify(req, res)
+    }
+    // Stage 4 — native LLM backend configuration. GET is open (lists
+    // backend names + role bindings only, no secret VALUES); writes
+    // require admin. handleLlmApi returns true when it handled the
+    // request so we stop walking the route table.
+    if (url.pathname === '/api/llm' || url.pathname.startsWith('/api/llm/')) {
+      const writeMethod = req.method !== 'GET'
+      if (writeMethod && !requireAdmin(req, res)) return
+      const handled = await handleLlmApi(req, res, url)
+      if (handled) return
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return

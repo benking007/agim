@@ -1933,6 +1933,28 @@ tokenCmd
     else { console.log(`✗ token ${id} not found.`); process.exit(1) }
   })
 
+// ─── interactive setup wizards (Stage 4) ─────────────────────────────
+//
+// `agim setup llm …` walks the operator through native LLM backend
+// configuration (config.json llmBackends + llmRoles, plus secrets in
+// llm-secrets.json) without forcing a hand-edit. Wizard lives in
+// cli-ui/setup-llm.ts so the test runner can exercise it without
+// the rest of the cli.ts boot machinery.
+
+const setupCmd = program.command('setup').description('Interactive configuration wizards')
+
+setupCmd
+  .command('llm [subcommand] [name]')
+  .description('Configure native LLM backends (subcommands: list | add | remove | role | secret | help)')
+  .action(async (subcommand: string | undefined, name: string | undefined) => {
+    const { runSetupLlm } = await import('./cli-ui/setup-llm.js')
+    const argv: string[] = []
+    if (subcommand) argv.push(subcommand)
+    if (name) argv.push(name)
+    const code = await runSetupLlm(argv)
+    process.exit(code)
+  })
+
 // ─── admin allowlist management (v1.2.2+) ───────────────────────────
 //
 // Non-interactive companion to the entry menu's "邀请新管理员" option.

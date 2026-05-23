@@ -2589,6 +2589,11 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
   'IMHUB_MEMORY_VECTOR_BATCH_SIZE',
   'IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT',
+  // D+ Stage 1 follow-up (#9) — notification-evaluator gate. 'on' or
+  // unset; sources is a comma-list of 'push', 'notify', 'reminder',
+  // 'heartbeat' that overrides the default (push,heartbeat).
+  'IMHUB_NOTIFICATION_EVALUATOR',
+  'IMHUB_NOTIFICATION_EVALUATOR_SOURCES',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 

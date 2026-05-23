@@ -31,7 +31,7 @@ import { handleWebCommand } from './commands/web.js'
 import { logInvocation } from './audit-log.js'
 import { circuitBreaker } from './circuit-breaker.js'
 import { classifyIntent } from './intent.js'
-import { classifyWithLLM, getLLMJudge } from './intent-llm.js'
+import { classifyWithLLM, getLLMJudge, hasIntentFallback } from './intent-llm.js'
 import { userLimiter } from './rate-limiter.js'
 import { workspaceRegistry } from './workspace.js'
 import { getJob } from './job-board.js'
@@ -461,8 +461,14 @@ export async function routeMessage(
       // pick (no topic/keyword match) and an LLM judge is configured,
       // ask the judge. We only consider it for *non-sticky* requests so
       // active conversations stay deterministic.
+      //
+      // D+ Stage 1: "judge configured" now means either a CLI-judge env
+      // var OR a native 'cheap' LLM backend. hasIntentFallback() merges
+      // the two checks; the threshold falls back to 1.0 when only the
+      // native path is configured (no LLMJudgeConfig.threshold).
       const judge = getLLMJudge()
-      if (judge && intent === 'fallback' && ruleScore < (judge.threshold ?? 1.0) && !stickyAgent) {
+      const threshold = judge?.threshold ?? 1.0
+      if (hasIntentFallback() && intent === 'fallback' && ruleScore < threshold && !stickyAgent) {
         const candidates = workspaceRegistry.resolve(ctx.userId || 'unknown').agentWhitelist.size === 0
           ? registry.listAgents().filter((a) => !circuitBreaker.isOpen(a))
           : registry.listAgents().filter((a) =>

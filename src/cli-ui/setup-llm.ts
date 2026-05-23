@@ -97,6 +97,9 @@ export async function runSetupLlm(argv: string[]): Promise<number> {
     if (sub === 'remove' || sub === 'rm') return await removeAction(argv[1])
     if (sub === 'role' || sub === 'roles') return await roleAction()
     if (sub === 'secret') return await secretAction(argv[1])
+    if (sub === 'native-enable' || sub === 'enable-native') {
+      return await nativeEnableAction(argv[1])
+    }
     return showHelp(`unknown subcommand: ${sub}`)
   } catch (err) {
     process.stderr.write(`\n❌ wizard failed: ${err instanceof Error ? err.message : String(err)}\n`)
@@ -115,6 +118,9 @@ Subcommands:
   remove [<name>]       remove a backend (also clears the API key)
   role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)
   secret <name>         (re)set the API key for an existing backend
+  native-enable [<name>] one-walk wizard: bind native-chat role + cheap (optional)
+                        + defaultAgent: 'native' so the in-process agent is the
+                        default backend for unrouted IM traffic
 
 Notes:
   · Backends live in ~/.agim/config.json under "llmBackends".
@@ -328,6 +334,72 @@ async function secretAction(maybeName?: string): Promise<number> {
     process.stdout.write(`✅ Saved API key for "${name}".\n`)
     return 0
   } finally { rl.close() }
+}
+
+async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  if (backends.length === 0) {
+    process.stdout.write('\n(no LLM backends configured yet)\n')
+    process.stdout.write('Run `agim setup llm add` first to set one up, then re-run this.\n')
+    return 1
+  }
+  let name = (maybeBackendName ?? '').trim()
+  if (!name) {
+    const rl = readline()
+    try {
+      process.stdout.write('\nPick the backend that powers the native agent:\n')
+      backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}  (${b.provider} / ${b.model})\n`) })
+      const choice = await ask(rl, `Choice [1-${backends.length}]: `)
+      const idx = parseInt(choice, 10) - 1
+      if (!Number.isFinite(idx) || idx < 0 || idx >= backends.length) {
+        return cancel('not a valid choice')
+      }
+      name = backends[idx].name
+    } finally { rl.close() }
+  } else if (!backends.some((b) => b.name === name)) {
+    return cancel(`no backend named "${name}"`)
+  }
+
+  // Mutate config: bind role + set defaultAgent. Always validate
+  // through configSchema before writing.
+  cfg.llmRoles = cfg.llmRoles ?? {}
+  cfg.llmRoles['native-chat'] = name
+
+  const rl = readline()
+  try {
+    const bindCheap = (await ask(rl, `Also bind cheap role to "${name}"? [Y/n]: `)).trim().toLowerCase()
+    if (bindCheap === '' || bindCheap === 'y' || bindCheap === 'yes') {
+      cfg.llmRoles['cheap'] = name
+    }
+    const setDefault = (await ask(rl, `Set defaultAgent: "native" (in-process agent handles unrouted IM)? [Y/n]: `))
+      .trim().toLowerCase()
+    if (setDefault === '' || setDefault === 'y' || setDefault === 'yes') {
+      (cfg as Record<string, unknown>).defaultAgent = 'native'
+    }
+  } finally { rl.close() }
+
+  const parsed = configSchema.safeParse(cfg)
+  if (!parsed.success) {
+    return cancel(`config validation failed: ${parsed.error.issues.map((i) => i.message).join('; ')}`)
+  }
+  await writeConfig(cfg)
+
+  process.stdout.write(`\n✅ Native agent enabled.\n`)
+  process.stdout.write(`   native-chat -> ${cfg.llmRoles['native-chat']}\n`)
+  if (cfg.llmRoles['cheap']) {
+    process.stdout.write(`   cheap       -> ${cfg.llmRoles['cheap']}\n`)
+  }
+  const def = (cfg as Record<string, unknown>).defaultAgent
+  if (typeof def === 'string') {
+    process.stdout.write(`   defaultAgent: ${def}\n`)
+  }
+  const src = describeSecretSource(name)
+  if (src.source === 'none') {
+    process.stdout.write(`⚠️  No API key for "${name}". Run \`agim setup llm secret ${name}\` to add one.\n`)
+  }
+  process.stdout.write(`\nTry it: in any IM thread, send \`/na hello\` (or just chat if you set defaultAgent above).\n`)
+  return 0
 }
 
 // ─── helpers ────────────────────────────────────────────────────────

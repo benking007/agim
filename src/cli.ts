@@ -1965,13 +1965,40 @@ const setupCmd = program.command('setup').description('Interactive configuration
 
 setupCmd
   .command('llm [subcommand] [name]')
-  .description('Configure native LLM backends (subcommands: list | add | remove | role | secret | help)')
+  .description('Configure native LLM backends (list | add | remove | role | secret | native-enable | help)')
   .action(async (subcommand: string | undefined, name: string | undefined) => {
     const { runSetupLlm } = await import('./cli-ui/setup-llm.js')
     const argv: string[] = []
     if (subcommand) argv.push(subcommand)
     if (name) argv.push(name)
     const code = await runSetupLlm(argv)
+    process.exit(code)
+  })
+
+// ─── diagnostics (P2) ───────────────────────────────────
+//
+// `agim diag llm` pings every configured llmBackend; `agim diag mcp`
+// reloads + reconnects every external MCP server and prints per-server
+// connection + tool count. Both are admin-mode self-checks the operator
+// can run after editing config to verify everything's reachable.
+
+const diagCmd = program.command('diag').description('Self-checks (LLM connectivity, MCP servers)')
+
+diagCmd
+  .command('llm')
+  .description('Ping every configured llmBackend; print per-row latency + sample text')
+  .action(async () => {
+    const { runDiagLlm } = await import('./cli-ui/diag.js')
+    const code = await runDiagLlm()
+    process.exit(code)
+  })
+
+diagCmd
+  .command('mcp')
+  .description('Reload + reconnect every mcpServer; print per-server connection + tool count')
+  .action(async () => {
+    const { runDiagMcp } = await import('./cli-ui/diag.js')
+    const code = await runDiagMcp()
     process.exit(code)
   })
 

@@ -24,7 +24,8 @@ import { promises as fs } from 'node:fs'
 import { logger as rootLogger } from './logger.js'
 import { sink } from './message-sink.js'
 import { savePaste } from './viewer-local.js'
-import { buildPasteUrl } from './viewer-config.js'
+import { buildPasteUrl, resolveViewerMode } from './viewer-config.js'
+import { postPasteRemote } from './viewer-remote.js'
 import { getArtifactsDir } from './artifacts.js'
 import type { RouteContext } from './router.js'
 
@@ -334,8 +335,20 @@ async function snapshotToViewerLink(
   try {
     const buf = await fs.readFile(join(outputDir, filename))
     const lower = filename.toLowerCase()
+    const text = buf.toString('utf8')
+    // v1.2.42 — when remote-paste mode is active, upload to the
+    // configured paste server first. Fall back to local viewer on any
+    // failure so A2A snapshot links keep working even if the remote
+    // server is down.
+    if (resolveViewerMode() === 'remote') {
+      const remoteUrl = await postPasteRemote({
+        content: text,
+        source: `a2a:job-${jobId}:${filename}`,
+      })
+      if (remoteUrl) return remoteUrl
+    }
     const id = savePaste({
-      content: buf.toString('utf8'),
+      content: text,
       content_type: (lower.endsWith('.md') || lower.endsWith('.markdown')) ? 'markdown' : 'plain',
       title,
       source: `a2a:job-${jobId}:${filename}`,

@@ -9,6 +9,26 @@ import { getCurrentTunnelUrl } from './tunnel.js'
 
 export type ViewerTunnelMode = 'off' | 'quick'
 
+/**
+ * v1.2.42 (#viewer-3-mode) — three ways agim can produce a public URL
+ * for long markdown:
+ *   - 'remote' : POST to an external paste server that returns the URL
+ *                (good for users without their own domain — operator
+ *                ships agim-cli with a hosted endpoint preconfigured).
+ *   - 'local'  : keep the markdown in this host's viewer.db, serve it
+ *                from the web server, and rely on an operator-managed
+ *                reverse proxy / public DNS (publicBaseUrl).
+ *   - 'tunnel' : same as 'local' for storage; URL comes from
+ *                cloudflared quick tunnel. Cloudflared may be blocked
+ *                in mainland China (DNS) — we surface that as a setup
+ *                hint, not a hard failure.
+ *   - 'none'   : nothing usable; sink degrades to inline summary.
+ *
+ * Mode picker order (first non-empty wins):
+ *   remote-paste url → public base url → quick tunnel → none
+ */
+export type ViewerMode = 'remote' | 'local' | 'tunnel' | 'none'
+
 export interface ViewerConfig {
   /** Master switch. When false, all replies are sent inline regardless of length. */
   enabled: boolean
@@ -26,6 +46,22 @@ export interface ViewerConfig {
    *              `https://*.trycloudflare.com` and changes per agim restart.
    */
   tunnelMode: ViewerTunnelMode
+  /**
+   * v1.2.42 — Remote paste-server endpoint. When set, message-sink
+   * uploads the full markdown to this URL via HTTP POST instead of
+   * storing it in viewer.db, and uses the URL returned by the server
+   * for the IM link. Lets users without their own domain still get
+   * working viewer links (the operator runs a single hosted paste
+   * server for everyone).
+   *
+   * Wire contract (server side): receive `POST <url>`, body =
+   * markdown (text/markdown or application/json {markdown}), respond
+   * with JSON `{ url: "https://..." }` for the public link. See
+   * `services/viewer-paste/README.md` for a reference implementation.
+   */
+  remotePasteUrl: string
+  /** Optional Bearer token forwarded to the remote paste server. */
+  remotePasteToken: string
   /** Char / line / code-block thresholds for routing to web. */
   thresholds: ViewerThresholds
 }
@@ -42,16 +78,33 @@ export function getViewerConfig(): ViewerConfig {
   const publicBaseUrl = (process.env.IMHUB_VIEWER_PUBLIC_BASE_URL || '').replace(/\/$/, '')
   const tunnelModeRaw = (process.env.IMHUB_VIEWER_TUNNEL_MODE || 'off').toLowerCase()
   const tunnelMode: ViewerTunnelMode = tunnelModeRaw === 'quick' ? 'quick' : 'off'
+  const remotePasteUrl = (process.env.IMHUB_VIEWER_REMOTE_PASTE_URL || '').replace(/\/$/, '')
+  const remotePasteToken = process.env.IMHUB_VIEWER_REMOTE_PASTE_TOKEN || ''
   return {
     enabled,
     publicBaseUrl,
     tunnelMode,
+    remotePasteUrl,
+    remotePasteToken,
     thresholds: {
       chars: parsePositiveInt(process.env.IMHUB_VIEWER_CHARS, DEFAULT_THRESHOLDS.chars),
       lines: parsePositiveInt(process.env.IMHUB_VIEWER_LINES, DEFAULT_THRESHOLDS.lines),
       codeLines: parsePositiveInt(process.env.IMHUB_VIEWER_CODE_LINES, DEFAULT_THRESHOLDS.codeLines),
     },
   }
+}
+
+/**
+ * v1.2.42 — pick the active viewer mode. First non-empty source wins.
+ * Exported (and pure) so tests + the wizard show the same answer the
+ * sink uses at runtime.
+ */
+export function resolveViewerMode(cfg: ViewerConfig = getViewerConfig()): ViewerMode {
+  if (!cfg.enabled) return 'none'
+  if (cfg.remotePasteUrl) return 'remote'
+  if (cfg.publicBaseUrl) return 'local'
+  if (cfg.tunnelMode === 'quick') return 'tunnel'
+  return 'none'
 }
 
 /**

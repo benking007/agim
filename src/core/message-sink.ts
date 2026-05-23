@@ -34,8 +34,9 @@ import {
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
 import { decideRender } from './render-router.js'
-import { getViewerConfig, buildPasteUrl } from './viewer-config.js'
+import { getViewerConfig, buildPasteUrl, resolveViewerMode } from './viewer-config.js'
 import { savePaste } from './viewer-local.js'
+import { postPasteRemote } from './viewer-remote.js'
 
 const log = rootLogger.child({ component: 'message-sink' })
 
@@ -175,13 +176,17 @@ async function doSend(row: OutboxRow, overrideAdapter?: MessengerAdapter): Promi
 // ---------------------------------------------------------------------------
 
 /**
- * Run the agent text through render-router and, when routing to web, persist
- * the full markdown to viewer-local and replace the IM-facing string with
- * `<summary>\n\n📎 <url>`. Designed to be a pure transformation — on any
- * fallback path (viewer disabled, save failed, base URL missing) it returns
- * the original or a lightly-degraded string so the message still ships.
+ * Run the agent text through render-router and, when routing to web, either
+ *   - upload markdown to a remote paste server (v1.2.42 mode='remote'), OR
+ *   - persist to local viewer.db + build link off publicBaseUrl/tunnel.
+ *
+ * Designed so any failure path (viewer disabled, save failed, remote down,
+ * no base URL) cleanly degrades to inline so the user still gets a reply.
+ *
+ * NOTE: now async because the remote mode does a real HTTP POST. Local
+ * mode stays effectively sync.
  */
-function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): string {
+async function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): Promise<string> {
   const cfg = getViewerConfig()
   const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: cfg.enabled })
 
@@ -192,6 +197,17 @@ function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): st
   // truncate-link / summary-link both want a saved paste + a link.
   const fullMd = decision.fullMd ?? text
   const summary = decision.summary ?? ''
+  const mode = resolveViewerMode(cfg)
+
+  // v1.2.42 — remote mode: upload + use returned URL directly. On
+  // failure (timeout, non-2xx, missing url field) fall through to the
+  // local fallback path below so users always get *something*.
+  if (mode === 'remote') {
+    const url = await postPasteRemote({ content: fullMd, source: threadKey })
+    if (url) return summary ? `${summary}\n\n📎 ${url}` : `📎 ${url}`
+    log.warn({ event: 'sink.viewer.remote_failed', threadId: p.threadId },
+      'remote paste upload failed; falling back to local viewer')
+  }
 
   const id = savePaste({
     content: fullMd,
@@ -209,7 +225,7 @@ function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): st
   const url = buildPasteUrl(id)
   if (!url) {
     log.warn({ event: 'sink.viewer.no_base_url', threadId: p.threadId },
-      'IMHUB_VIEWER_PUBLIC_BASE_URL is not set; degrading to inline')
+      'no public URL available (set IMHUB_VIEWER_PUBLIC_BASE_URL, IMHUB_VIEWER_TUNNEL_MODE=quick, or IMHUB_VIEWER_REMOTE_PASTE_URL); degrading to inline')
     return summary || fullMd
   }
 
@@ -232,7 +248,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
   // bury the result behind a link nobody opens. Card / typing kinds are
   // also untouched (cards have their own structure; typing is fire-and-forget).
   if (p.kind === 'text' && p.source === 'agent' && payloadStr.length > 0) {
-    payloadStr = applyViewerRouting(payloadStr, p, threadKey)
+    payloadStr = await applyViewerRouting(payloadStr, p, threadKey)
   }
 
   // Typing indicators are pure UX hints — never persist them. If the worker

@@ -205,7 +205,8 @@ program
       }
       console.warn('   Agim will continue with defaults for invalid fields.\n')
     }
-    config = validation.config as unknown as Config
+    const validatedConfig = validation.config
+    config = validatedConfig as unknown as Config
 
     // Initialize workspace registry
     const rawConfig = config as Record<string, unknown>
@@ -250,6 +251,27 @@ program
 
     // Load plugins FIRST (agents won't be registered until this runs)
     await registry.loadBuiltInPlugins()
+
+    // Native LLM + MCP boot — populate the in-process registries from
+    // config.json + ~/.agim/llm-secrets.json. Without this, `native`
+    // isAvailable() is always false even when llmBackends are configured.
+    try {
+      const { loadFromConfig: loadLlmFromConfig } = await import('./core/llm/registry.js')
+      loadLlmFromConfig(validatedConfig)
+      const { loadFromConfig: loadMcpFromConfig, connectAll } = await import('./core/llm/mcp-registry.js')
+      await loadMcpFromConfig(validatedConfig as { mcpServers?: unknown })
+      const mcpSummary = await connectAll()
+      if (mcpSummary.ok.length > 0) {
+        console.log(`✅ MCP servers connected: ${mcpSummary.ok.join(', ')} (${mcpSummary.toolCount} tools)`)
+      }
+      if (Object.keys(mcpSummary.failed).length > 0) {
+        console.warn('⚠️ MCP server connect failures:', mcpSummary.failed)
+      }
+      const { describeNativeAgent } = await import('./plugins/agents/native/index.js')
+      console.log(`🤖 ${describeNativeAgent()}`)
+    } catch (err) {
+      console.warn(`⚠️ Native LLM/MCP boot failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     // Bootstrap per-agent IM workspaces. Idempotent — creates
     // ~/.agim-workspaces/<agent>/ and seeds CLAUDE.md / AGENTS.md only if

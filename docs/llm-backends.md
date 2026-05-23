@@ -874,11 +874,60 @@ When not configured:
 🤖 native agent: NOT CONFIGURED (no llmRoles.native-chat / .cheap)
 ```
 
+## Stage 4 — CLI wizard + Web REST API
+
+Stage 4 makes the LLM-backend layer reachable from both the terminal
+and the web console — no more hand-editing `~/.agim/config.json` to
+add a backend.
+
+### CLI: `agim setup llm`
+
+Interactive wizard. Subcommands:
+
+| command | what it does |
+|---|---|
+| `agim setup llm`            | print help |
+| `agim setup llm list`       | show configured backends + role bindings + per-backend secret source |
+| `agim setup llm add`        | provider preset (DeepSeek, Moonshot, GLM, OpenAI, Anthropic, Custom) → backend name → model → API key → role bindings, all in one walk |
+| `agim setup llm role`       | edit `llmRoles` — pick a backend per role (`cheap` / `evaluator` / `native-chat` / unbind) |
+| `agim setup llm remove [<name>]` | drop a backend; auto-drops dangling role bindings + clears the on-disk API key |
+| `agim setup llm secret [<name>]` | (re)set the API key for an existing backend |
+
+Cancel-safe at every prompt — Ctrl-C or an empty answer aborts before
+anything is written. Every save runs through `configSchema.safeParse`
+so a typo can't poison `config.json`.
+
+### Web: `/api/llm/*`
+
+REST endpoints behind the existing web auth model (writes are gated by
+`requireAdmin`; GET is open since it never reveals secret VALUES, only
+their source).
+
+| method | path | body | response |
+|---|---|---|---|
+| `GET` | `/api/llm` | – | `{ backends: [{name, provider, baseUrl, model, secret: {source, envKey}}], roles: {...} }` |
+| `POST` | `/api/llm/backends` | `{ name, provider, baseUrl, model, apiKey? }` | 201 `{name, secretStored}` / 400 validation / 409 duplicate |
+| `DELETE` | `/api/llm/backends/:name` | – | 200 `{removedRoles}` (also drops dangling role bindings + the secret) |
+| `PUT` | `/api/llm/roles` | `{role: backendName | null}` (null/empty unbinds) | 200 `{roles}` / 400 unknown backend |
+| `POST` | `/api/llm/secrets/:name` | `{apiKey}` | 200 `{name, source}` |
+| `DELETE` | `/api/llm/secrets/:name` | – | 200 `{name}` |
+
+Same validation rules as the CLI wizard — the schema is the single
+source of truth.
+
+### Where the data lives
+
+Both surfaces write to the same files:
+
+| file | what |
+|---|---|
+| `~/.agim/config.json` `llmBackends` | backend list |
+| `~/.agim/config.json` `llmRoles`    | role-to-backend bindings |
+| `~/.agim/llm-secrets.json`          | API keys (0600, agim-managed) |
+
+`AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` env var still overrides the
+on-disk key per the precedence in the "Lookup precedence" section.
+
 ## Future stages (preview)
 
-- **Stage 2**: full agent loop, tool dispatch, MCP client, Anthropic native provider. Native chat agent becomes an `AgentAdapter` you can `/cc native` to.
-- **Stage 3**: shared Skills engine for CLI and native agents.
-- **Stage 4**: `agim config llm` wizard + `/settings/llm-backends` web UI.
 - **Stage 5**: `/router compare` A/B evaluator + automatic CLI fallback chain.
-
-Until Stage 4 lands, all `llmBackends` editing is by hand. The schema is stable; no breaking changes between stages.

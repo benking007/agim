@@ -25,11 +25,23 @@ The hard part is **where to stash it**.
 
 Mode is picked **automatically** in this order, first non-empty wins:
 
-1. `IMHUB_VIEWER_REMOTE_PASTE_URL` is set → **remote**
+1. `IMHUB_VIEWER_REMOTE_PASTE_URL` is set → **remote** (operator-chosen)
 2. `IMHUB_VIEWER_PUBLIC_BASE_URL` is set → **local**
 3. `IMHUB_VIEWER_TUNNEL_MODE=quick` → **tunnel**
-4. otherwise → degrade to inline (IM gets the full markdown text, may
-   be ugly but never lost)
+4. fallback → **remote** routed through the community default
+   `https://viewer.iclaw.host/paste` (introduced in v1.2.43; turn off
+   with `IMHUB_VIEWER_NO_DEFAULT_REMOTE=1`)
+5. nothing usable → degrade to inline (IM gets the full markdown text,
+   may be ugly but never lost)
+
+## Privacy callout
+
+The community default in step 4 means an out-of-the-box agim install
+**uploads long agent replies over HTTPS** to `viewer.iclaw.host`. If
+your deployment can't accept that, set
+`IMHUB_VIEWER_NO_DEFAULT_REMOTE=1` (no upload, no public link — the
+IM gets inline markdown), or set `IMHUB_VIEWER_PUBLIC_BASE_URL` to
+keep storage on your own host.
 
 ## Mode `local` — your own domain
 

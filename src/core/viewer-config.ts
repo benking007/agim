@@ -72,6 +72,23 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
+/**
+ * v1.2.43 — community-hosted default paste server.
+ *
+ * Operators who don't have a domain or working tunnel still get usable
+ * viewer links out of the box by routing through this public service.
+ * Users can:
+ *   - Override by setting their own IMHUB_VIEWER_REMOTE_PASTE_URL
+ *   - Opt back into a local-only path by setting IMHUB_VIEWER_PUBLIC_BASE_URL
+ *   - Disable the default entirely with IMHUB_VIEWER_NO_DEFAULT_REMOTE=1
+ *
+ * IMPORTANT — privacy: with the default on, any markdown long enough
+ * to exit the inline path is uploaded to viewer.iclaw.host over HTTPS.
+ * agim's CLI wizard surfaces this trade-off on first run; deployment
+ * docs (`docs/viewer-modes.md`) cover it too.
+ */
+export const DEFAULT_REMOTE_PASTE_URL = 'https://viewer.iclaw.host/paste'
+
 export function getViewerConfig(): ViewerConfig {
   const enabledRaw = (process.env.IMHUB_VIEWER_ENABLED || '').toLowerCase()
   const enabled = enabledRaw === '1' || enabledRaw === 'true' || enabledRaw === 'yes'
@@ -95,16 +112,43 @@ export function getViewerConfig(): ViewerConfig {
 }
 
 /**
- * v1.2.42 — pick the active viewer mode. First non-empty source wins.
- * Exported (and pure) so tests + the wizard show the same answer the
- * sink uses at runtime.
+ * v1.2.42 / v1.2.43 — pick the active viewer mode. First non-empty
+ * configured source wins; the community default remote is the final
+ * fallback so an out-of-the-box install still produces working links.
+ *
+ * Order:
+ *   1. user-set IMHUB_VIEWER_REMOTE_PASTE_URL  → remote (operator-managed)
+ *   2. user-set IMHUB_VIEWER_PUBLIC_BASE_URL   → local (own domain)
+ *   3. IMHUB_VIEWER_TUNNEL_MODE=quick           → tunnel
+ *   4. community default viewer.iclaw.host       → remote (default-on)
+ *   5. nothing                                   → none (inline degrade)
+ *
+ * Set IMHUB_VIEWER_NO_DEFAULT_REMOTE=1 to skip step 4 (privacy opt-out).
  */
 export function resolveViewerMode(cfg: ViewerConfig = getViewerConfig()): ViewerMode {
   if (!cfg.enabled) return 'none'
   if (cfg.remotePasteUrl) return 'remote'
   if (cfg.publicBaseUrl) return 'local'
   if (cfg.tunnelMode === 'quick') return 'tunnel'
+  if (!isDefaultRemoteDisabled()) return 'remote'  // community default
   return 'none'
+}
+
+/**
+ * Resolve the effective remote paste URL the sink should POST to.
+ * Honours user-set value first, then the community default unless
+ * the operator opted out via IMHUB_VIEWER_NO_DEFAULT_REMOTE=1.
+ * Returns null when no usable URL is available.
+ */
+export function getEffectiveRemotePasteUrl(cfg: ViewerConfig = getViewerConfig()): string | null {
+  if (cfg.remotePasteUrl) return cfg.remotePasteUrl
+  if (!isDefaultRemoteDisabled()) return DEFAULT_REMOTE_PASTE_URL
+  return null
+}
+
+function isDefaultRemoteDisabled(): boolean {
+  const v = (process.env.IMHUB_VIEWER_NO_DEFAULT_REMOTE || '').toLowerCase()
+  return v === '1' || v === 'true' || v === 'yes'
 }
 
 /**

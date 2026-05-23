@@ -36,7 +36,7 @@
 // Anything else → return null; the sink degrades to inline summary.
 
 import { logger as rootLogger } from './logger.js'
-import { getViewerConfig } from './viewer-config.js'
+import { getViewerConfig, getEffectiveRemotePasteUrl } from './viewer-config.js'
 
 const log = rootLogger.child({ component: 'viewer-remote' })
 
@@ -65,7 +65,8 @@ export interface PostRemoteOpts {
  */
 export async function postPasteRemote(opts: PostRemoteOpts): Promise<string | null> {
   const cfg = getViewerConfig()
-  if (!cfg.remotePasteUrl) return null
+  const endpoint = getEffectiveRemotePasteUrl(cfg)
+  if (!endpoint) return null
 
   const bytes = Buffer.byteLength(opts.content, 'utf-8')
   if (bytes > MAX_UPLOAD_BYTES) {
@@ -81,7 +82,7 @@ export async function postPasteRemote(opts: PostRemoteOpts): Promise<string | nu
     const timer = setTimeout(() => ac.abort(), POST_TIMEOUT_MS)
     let res: Response
     try {
-      res = await fetch(cfg.remotePasteUrl, {
+      res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

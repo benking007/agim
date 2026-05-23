@@ -29,12 +29,14 @@
 //   at the reverse proxy layer and don't want a second factor).
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 
 const TOKENS_FILE = join(AGIM_HOME, 'tokens.json')
+/** One-time raw web-access token for first boot (chmod 600). */
+export const WEB_BOOTSTRAP_TOKEN_FILE = join(AGIM_HOME, 'web-bootstrap-token')
 const log = rootLogger.child({ component: 'access-token' })
 
 export type TokenRole = 'admin' | 'user'
@@ -239,6 +241,38 @@ export function consumeBootstrapTokenRaw(): { raw: string; id: string } | null {
   return v
 }
 
+
+function writeWebBootstrapTokenFile(raw: string): void {
+  mkdirSync(dirname(WEB_BOOTSTRAP_TOKEN_FILE), { recursive: true })
+  writeFileSync(WEB_BOOTSTRAP_TOKEN_FILE, raw + '\n', 'utf-8')
+  try { chmodSync(WEB_BOOTSTRAP_TOKEN_FILE, 0o600) } catch { /* ignore non-POSIX */ }
+}
+
+function readAndUnlinkWebBootstrapTokenFile(): string | null {
+  if (!existsSync(WEB_BOOTSTRAP_TOKEN_FILE)) return null
+  let raw = ''
+  try {
+    raw = readFileSync(WEB_BOOTSTRAP_TOKEN_FILE, 'utf-8').trim()
+  } catch {
+    return null
+  }
+  try { unlinkSync(WEB_BOOTSTRAP_TOKEN_FILE) } catch { /* ignore */ }
+  return raw || null
+}
+
+/** Retrieve the one-time bootstrap raw token (memory holder first, then file). */
+export function retrieveWebBootstrapTokenRaw(): { raw: string; id: string } | null {
+  const mem = consumeBootstrapTokenRaw()
+  if (mem) {
+    try { if (existsSync(WEB_BOOTSTRAP_TOKEN_FILE)) unlinkSync(WEB_BOOTSTRAP_TOKEN_FILE) } catch { /* ignore */ }
+    return mem
+  }
+  const raw = readAndUnlinkWebBootstrapTokenFile()
+  if (!raw) return null
+  const id = readFile().tokens.find((t) => t.label === 'bootstrap')?.id ?? 'bootstrap'
+  return { raw, id }
+}
+
 /**
  * First-launch helper. If no token exists and IMHUB_WEB_AUTH !== 'off',
  * create a bootstrap token. Idempotent — does nothing if any token
@@ -249,9 +283,8 @@ export function consumeBootstrapTokenRaw(): { raw: string; id: string } | null {
  * `journalctl -u agim` reader could harvest the token before the
  * operator consumes it. Instead we:
  *
- *   - print a banner that *points* at tokens.json + invites the
- *     operator to run `agim token bootstrap` (an interactive CLI that
- *     reads the cached value via consumeBootstrapTokenRaw)
+ *   - write the raw once to WEB_BOOTSTRAP_TOKEN_FILE (chmod 600)
+ *   - print a banner pointing at `agim token bootstrap` / `cat` that file
  *   - emit a structured log with the id only (no raw)
  *
  * The raw is still returned from this function (callers like the
@@ -263,6 +296,12 @@ export function bootstrapIfEmpty(): string | null {
   if (hasAnyToken()) return null
   const t = createToken('bootstrap', { role: 'admin' })
   _bootstrapRawHolder = { raw: t.raw, id: t.id }
+  try {
+    writeWebBootstrapTokenFile(t.raw)
+  } catch (err) {
+    log.warn({ event: 'access-token.bootstrap_file_failed', err: String(err) },
+      'failed to write web-bootstrap-token file')
+  }
   log.warn({
     event: 'access-token.bootstrap_generated',
     id: t.id,
@@ -273,10 +312,12 @@ export function bootstrapIfEmpty(): string | null {
     '🔑 Web auth bootstrap token generated.',
     '',
     `   id    : ${t.id}`,
-    `   file  : ${TOKENS_FILE}  (chmod 0o600)`,
+    `   hash  : ${TOKENS_FILE}  (chmod 0o600, raw not stored)`,
+    `   once  : ${WEB_BOOTSTRAP_TOKEN_FILE}  (chmod 0o600, deleted after read)`,
     '',
     '   To retrieve the raw token (one-time, on this host):',
     '       agim token bootstrap',
+    `   or:  cat ${WEB_BOOTSTRAP_TOKEN_FILE}`,
     '',
     '   Or rotate to a fresh token:',
     '       agim token create <label>',

@@ -214,61 +214,6 @@ program
     const wsCount = workspaces?.length || 1
     console.log(`Workspaces loaded: ${wsCount} workspace(s)`)
 
-    // D+ Stage 1 — load native LLM backends. Optional; when llmBackends
-    // is unset (or all backends lack secrets) the registry stays empty
-    // and every introspection caller silently falls back to its CLI
-    // agent path. (This block was accidentally dropped in #61; restored
-    // here as part of the Stage 2 #2 MCP wiring.)
-    try {
-      const { loadFromConfig: loadLlmFromConfig, describeRegistry } = await import('./core/llm/index.js')
-      loadLlmFromConfig(validation.config)
-      const snapshot = describeRegistry()
-      if (snapshot.backends.length > 0) {
-        const roleNote = Object.keys(snapshot.roles).length > 0
-          ? ` · roles: ${Object.entries(snapshot.roles).map(([r, b]) => `${r}→${b}`).join(', ')}`
-          : ''
-        console.log(`🧠 LLM backends: ${snapshot.backends.length} configured${roleNote}`)
-        if (snapshot.unconfigured.length > 0) {
-          console.log(`   (skipped, no secret: ${snapshot.unconfigured.join(', ')})`)
-        }
-      }
-    } catch (err) {
-      console.warn('LLM registry failed to load:', err instanceof Error ? err.message : String(err))
-    }
-
-    // D+ Stage 2 sub-PR #2 — connect external MCP servers. Failures
-    // per server become `unhealthy` rows but don't abort startup; one
-    // bad MCP shouldn't take down agim. The connect-all probe is
-    // synchronous so cli.ts boot log can summarise what landed.
-    try {
-      const { loadMcpFromConfig, connectAllMcp, closeAllMcp } = await import('./core/llm/index.js')
-      await loadMcpFromConfig(validation.config)
-      const r = await connectAllMcp()
-      if (r.ok.length > 0 || Object.keys(r.failed).length > 0) {
-        const okPart = r.ok.length > 0 ? r.ok.join(', ') : '(none)'
-        console.log(`🧩 MCP servers: ${r.ok.length} connected (${okPart}); ${r.toolCount} tools available`)
-        for (const [name, err] of Object.entries(r.failed)) {
-          console.warn(`   ⚠ ${name}: ${err}`)
-        }
-      }
-      // Best-effort graceful shutdown on SIGTERM/SIGINT so we don't
-      // leave orphan stdio MCP subprocesses around. We register here
-      // (after successful load) so the handler doesn't try to call
-      // a non-existent module.
-      const closeOnce = (() => {
-        let called = false
-        return async () => {
-          if (called) return
-          called = true
-          try { await closeAllMcp() } catch { /* ignore */ }
-        }
-      })()
-      process.once('SIGTERM', () => { void closeOnce() })
-      process.once('SIGINT', () => { void closeOnce() })
-    } catch (err) {
-      console.warn('MCP registry failed to load:', err instanceof Error ? err.message : String(err))
-    }
-
     // Initialize session manager
     await sessionManager.start()
 
@@ -567,26 +512,6 @@ program
           return
         }
 
-        // P0 #5 — ask-user intercept. If the agent invoked
-        // mcp__imhub__ask_user on this thread AND the user typed
-        // something that matches one of the offered choices (number
-        // / letter / label substring), resolve the pending Promise
-        // and stop. Non-matching text falls through to the normal
-        // router — the user changed topic; the ask either times out
-        // on its own or the agent will retry.
-        try {
-          const { tryHandleAskReply } = await import('./core/ask-user-router.js')
-          if (tryHandleAskReply(ctx.platform, ctx.channelId, ctx.message.threadId, ctx.message.text)) {
-            ctx.logger.info({ event: 'message.consumed_by_ask_user' })
-            return
-          }
-        } catch (err) {
-          ctx.logger.warn({
-            event: 'ask.intercept_crashed',
-            err: err instanceof Error ? err.message : String(err),
-          }, 'ask-user intercept threw — falling through to normal flow')
-        }
-
         // Reminder-intent confirmation reply ("y"/"n" to a previously-
         // proposed reminder card). Must come BEFORE the detector so a
         // user replying "y" doesn't get re-detected as another reminder.
@@ -835,32 +760,6 @@ program
       startMemoryConsolidator()
     } catch (err) {
       console.warn('Memory consolidator failed to start:', err instanceof Error ? err.message : String(err))
-    }
-
-    // P0 #1 — heartbeat scheduler (proactive wake-up). Opt-in via
-    // IMHUB_HEARTBEAT_ENABLED=on; without that the scan loop never runs
-    // but /heartbeat bind / show / run-now still work for setup. The
-    // function is internally guarded so we can call it unconditionally.
-    try {
-      const { startHeartbeatScheduler, schedulerInfo } = await import('./core/heartbeat.js')
-      startHeartbeatScheduler()
-      const info = schedulerInfo()
-      if (info.enabled) {
-        console.log(`🫀 Heartbeat scheduler running (tick every ${Math.round(info.periodMs / 1000)}s)`)
-      }
-    } catch (err) {
-      console.warn('Heartbeat scheduler failed to start:', err instanceof Error ? err.message : String(err))
-    }
-
-    // D+ Stage 2 sub-PR #4 — surface native agent state at boot so
-    // operators see at a glance whether `/cc native` will work. Reads
-    // the LLM registry + IMHUB_NATIVE_AGENT_* env vars; falls back
-    // to "NOT CONFIGURED" when no LLM role matches. Never throws.
-    try {
-      const { describeNativeAgent } = await import('./plugins/agents/native/index.js')
-      console.log(`🤖 ${describeNativeAgent()}`)
-    } catch (err) {
-      console.warn('Native agent banner failed:', err instanceof Error ? err.message : String(err))
     }
 
     // v1.1.8 — Viewer auto-tunnel. If the operator opted into the
@@ -1953,65 +1852,40 @@ tokenCmd
     else { console.log(`✗ token ${id} not found.`); process.exit(1) }
   })
 
-// ─── interactive setup wizards (Stage 4) ─────────────────────────────
-//
-// `agim setup llm …` walks the operator through native LLM backend
-// configuration (config.json llmBackends + llmRoles, plus secrets in
-// llm-secrets.json) without forcing a hand-edit. Wizard lives in
-// cli-ui/setup-llm.ts so the test runner can exercise it without
-// the rest of the cli.ts boot machinery.
-
-const setupCmd = program.command('setup').description('Interactive configuration wizards')
-
-setupCmd
-  .command('llm [subcommand] [name]')
-  .description('Configure native LLM backends (list | add | remove | role | secret | native-enable | help)')
-  .action(async (subcommand: string | undefined, name: string | undefined) => {
-    const { runSetupLlm } = await import('./cli-ui/setup-llm.js')
-    const argv: string[] = []
-    if (subcommand) argv.push(subcommand)
-    if (name) argv.push(name)
-    const code = await runSetupLlm(argv)
-    process.exit(code)
-  })
-
-setupCmd
-  .command('mcp [subcommand] [name]')
-  .description('Configure external MCP servers (list | add | remove | health | help)')
-  .action(async (subcommand: string | undefined, name: string | undefined) => {
-    const { runSetupMcp } = await import('./cli-ui/setup-mcp.js')
-    const argv: string[] = []
-    if (subcommand) argv.push(subcommand)
-    if (name) argv.push(name)
-    const code = await runSetupMcp(argv)
-    process.exit(code)
-  })
-
-// ─── diagnostics (P2) ───────────────────────────────────
-//
-// `agim diag llm` pings every configured llmBackend; `agim diag mcp`
-// reloads + reconnects every external MCP server and prints per-server
-// connection + tool count. Both are admin-mode self-checks the operator
-// can run after editing config to verify everything's reachable.
-
-const diagCmd = program.command('diag').description('Self-checks (LLM connectivity, MCP servers)')
-
-diagCmd
-  .command('llm')
-  .description('Ping every configured llmBackend; print per-row latency + sample text')
+tokenCmd
+  .command('bootstrap')
+  .description('Print the one-time web bootstrap token (first boot only; consumes ~/.agim/web-bootstrap-token)')
   .action(async () => {
-    const { runDiagLlm } = await import('./cli-ui/diag.js')
-    const code = await runDiagLlm()
-    process.exit(code)
-  })
-
-diagCmd
-  .command('mcp')
-  .description('Reload + reconnect every mcpServer; print per-server connection + tool count')
-  .action(async () => {
-    const { runDiagMcp } = await import('./cli-ui/diag.js')
-    const code = await runDiagMcp()
-    process.exit(code)
+    const {
+      retrieveWebBootstrapTokenRaw,
+      WEB_BOOTSTRAP_TOKEN_FILE,
+      hasAnyToken,
+    } = await import('./core/access-token.js')
+    const row = retrieveWebBootstrapTokenRaw()
+    if (row) {
+      console.log('')
+      console.log('✓ Web bootstrap access token (one-time retrieval):')
+      console.log(`   id    : ${row.id}`)
+      console.log(`   token : ${row.raw}`)
+      console.log('')
+      console.log('⚠️ Save it now — the bootstrap file is deleted after this command.')
+      console.log('   Paste at /login or use Authorization: Bearer <token>.')
+      console.log('')
+      return
+    }
+    console.log('')
+    if (!hasAnyToken()) {
+      console.log('✗ No bootstrap token available.')
+      console.log('   Start agim once (`agim start`) so it can generate the first token, then re-run:')
+      console.log('       agim token bootstrap')
+    } else {
+      console.log('✗ Bootstrap token already consumed or never written.')
+      console.log(`   If the file still exists on the host:  cat ${WEB_BOOTSTRAP_TOKEN_FILE}`)
+      console.log('   Otherwise create a fresh token:')
+      console.log('       agim token create <label>')
+    }
+    console.log('')
+    process.exit(1)
   })
 
 // ─── admin allowlist management (v1.2.2+) ───────────────────────────

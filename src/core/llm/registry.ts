@@ -1,0 +1,196 @@
+// LLM registry — role-based provider lookup, Stage 1.
+//
+// Callers don't know (or care) which concrete backend handles their
+// request; they ask the registry for a *role* ('cheap' for distill /
+// intent-llm, 'evaluator' for future heartbeat) and the registry hands
+// back a configured LlmProvider — or null when nothing is configured,
+// in which case the caller falls back to its CLI agent path.
+//
+// Lifecycle:
+//   - `loadFromConfig(cfg)` is called once at startup from cli.ts; it
+//     instantiates one provider per `llmBackends` entry, filters out
+//     unconfigured backends (no secret), and builds the role index.
+//   - `reload()` re-reads the config + secrets from disk (used by web
+//     "Test connection" and future hot-config reload). Tests use it to
+//     swap out fixtures without restarting bun.
+//   - `getProvider(role)` is the hot path; returns null fast.
+//
+// The registry is intentionally a module-level singleton — the same
+// pattern as `core/registry.ts` (agents). Module-level state is
+// acceptable here because every Stage-1 caller is server-side and
+// agim's process model is single-instance.
+
+import { logger as rootLogger } from '../logger.js'
+import type { ValidatedConfig } from '../config-schema.js'
+import { OpenAICompatProvider } from './openai-compat-provider.js'
+import type { LlmProvider } from './provider-base.js'
+import { resolveSecret, loadSecretsFile } from './secrets.js'
+
+const log = rootLogger.child({ component: 'llm-registry' })
+
+/** Role names recognised by Stage 1 callers. Strings rather than enum so
+ *  forward-compat roles (added in later stages) compile against an older
+ *  agim without type errors. */
+export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | string
+
+interface RegistryState {
+  providers: Map<string, LlmProvider>   // backend name → provider
+  roles: Map<string, string>            // role name → backend name
+  unconfigured: Set<string>             // backend names that lack a secret
+  duplicates: Set<string>               // backend names that collided
+}
+
+let state: RegistryState = freshState()
+
+function freshState(): RegistryState {
+  return {
+    providers: new Map(),
+    roles: new Map(),
+    unconfigured: new Set(),
+    duplicates: new Set(),
+  }
+}
+
+/**
+ * Build the registry from a validated config. Idempotent — repeated
+ * calls fully replace the previous state. Logs (info / warn) the load
+ * outcome so operators see what landed at startup.
+ */
+export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; llmRoles?: unknown }): void {
+  const next = freshState()
+  const backends = Array.isArray((cfg as { llmBackends?: unknown[] }).llmBackends)
+    ? (cfg as { llmBackends: unknown[] }).llmBackends
+    : []
+
+  // Pre-load secrets file once so each provider construction doesn't
+  // re-read it from disk.
+  const secrets = loadSecretsFile()
+
+  for (const raw of backends) {
+    const cfg = raw as BackendConfig
+    if (!cfg || typeof cfg !== 'object' || typeof cfg.name !== 'string') continue
+    if (cfg.enabled === false) {
+      log.debug({ event: 'llm-registry.skip_disabled', name: cfg.name })
+      continue
+    }
+    if (next.providers.has(cfg.name)) {
+      next.duplicates.add(cfg.name)
+      log.warn({ event: 'llm-registry.duplicate_name', name: cfg.name },
+        `Duplicate llmBackends entry "${cfg.name}"; last wins`)
+    }
+    const apiKey = resolveSecret(cfg.name, secrets)
+    const provider = buildProvider(cfg, apiKey)
+    if (!provider) continue
+    if (!provider.isConfigured()) {
+      next.unconfigured.add(cfg.name)
+      log.info({ event: 'llm-registry.unconfigured', name: cfg.name },
+        `LLM backend "${cfg.name}" has no secret; skipped (caller will fall back to CLI agent)`)
+      continue
+    }
+    next.providers.set(cfg.name, provider)
+  }
+
+  const roleMap = (cfg as { llmRoles?: Record<string, unknown> }).llmRoles
+  if (roleMap && typeof roleMap === 'object') {
+    for (const [role, backendName] of Object.entries(roleMap)) {
+      if (typeof backendName !== 'string' || !backendName) continue
+      next.roles.set(role, backendName)
+      if (!next.providers.has(backendName)) {
+        log.warn({ event: 'llm-registry.role_dangling', role, backend: backendName },
+          `llmRoles.${role} points at "${backendName}" which has no configured backend`)
+      }
+    }
+  }
+
+  state = next
+  log.info({
+    event: 'llm-registry.loaded',
+    backends: state.providers.size,
+    roles: state.roles.size,
+    unconfigured: state.unconfigured.size,
+  })
+}
+
+/**
+ * Get the provider configured for `role`, or null when no usable
+ * backend is wired. Callers should NEVER throw on null — that's how the
+ * registry tells them "fall back to your CLI path".
+ */
+export function getProvider(role: LlmRole): LlmProvider | null {
+  const backend = state.roles.get(role)
+  if (!backend) return null
+  return state.providers.get(backend) ?? null
+}
+
+/** Look up a provider directly by backend name (mostly for the web
+ *  "Test connection" button and unit tests). */
+export function getProviderByName(name: string): LlmProvider | null {
+  return state.providers.get(name) ?? null
+}
+
+/** List all configured backends — handy for the web UI roster. */
+export function listProviders(): { name: string; providerType: string; model: string }[] {
+  return Array.from(state.providers.values()).map(p => ({
+    name: p.name,
+    providerType: p.providerType,
+    model: p.model,
+  }))
+}
+
+/** Test/diagnostic: clear the registry. Used by bun tests so module
+ *  state doesn't leak across cases. */
+export function _resetRegistry(): void {
+  state = freshState()
+}
+
+/** Diagnostic snapshot for the cost dashboard's "LLM backends" tile. */
+export function describeRegistry(): {
+  backends: { name: string; providerType: string; model: string }[]
+  roles: Record<string, string>
+  unconfigured: string[]
+} {
+  return {
+    backends: listProviders(),
+    roles: Object.fromEntries(state.roles),
+    unconfigured: Array.from(state.unconfigured).sort(),
+  }
+}
+
+// ---------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------
+
+interface BackendConfig {
+  name: string
+  provider: string
+  model: string
+  baseUrl?: string
+  label?: string
+  extraHeaders?: Record<string, string>
+  temperature?: number
+  maxTokens?: number
+  retryOnTransient?: number
+  enabled?: boolean
+}
+
+function buildProvider(cfg: BackendConfig, apiKey: string | undefined): LlmProvider | null {
+  switch (cfg.provider) {
+    case 'openai-compat':
+      return new OpenAICompatProvider({
+        name: cfg.name,
+        model: cfg.model,
+        apiKey,
+        baseUrl: cfg.baseUrl,
+        providerLabel: cfg.label,
+        extraHeaders: cfg.extraHeaders,
+        defaultTemperature: cfg.temperature,
+        defaultMaxTokens: cfg.maxTokens,
+        retryOnTransient: cfg.retryOnTransient,
+      })
+    default:
+      // Stage 2 will register Anthropic / Ollama here.
+      log.warn({ event: 'llm-registry.unknown_provider', name: cfg.name, provider: cfg.provider },
+        `Unknown LLM provider "${cfg.provider}" for backend "${cfg.name}"; skipped`)
+      return null
+  }
+}

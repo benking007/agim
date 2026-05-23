@@ -1,0 +1,98 @@
+// Introspection helper — bridges the registry to the existing CLI-style
+// "give me a string back" pattern that distill / consolidate / intent
+// already use.
+//
+// Callers don't want to know about LlmMessage[] / ChatResult. They have
+// a flat prompt string and a per-call deadline; they want a Promise<{
+// text, costUsd }> back. This file does that mapping in one place so
+// every introspection caller stays a 1-line change.
+
+import { logger as rootLogger } from '../logger.js'
+import { getProvider, type LlmRole } from './registry.js'
+import { LlmProviderError, type LlmMessage, type LlmUsage } from './provider-base.js'
+
+const log = rootLogger.child({ component: 'llm-introspection' })
+
+export interface IntrospectionInput {
+  /** Role name to look up in the registry. */
+  role: LlmRole
+  /** The user prompt. Required. */
+  prompt: string
+  /** Optional system prompt prepended as a system message. */
+  system?: string
+  /** Hard deadline. Default 30s — short enough that a stuck provider
+   *  trips fallback fast, long enough that legitimate JSON extraction
+   *  on a free-tier model completes. */
+  timeoutMs?: number
+  /** Caller may pass through an AbortSignal (e.g. distill's queue is
+   *  draining); we merge it with timeoutMs. */
+  signal?: AbortSignal
+  /** Per-call temperature override (cheap callers usually want 0.2; the
+   *  provider default is already low so this is rarely needed). */
+  temperature?: number
+  /** Per-call model override; falls back to the provider's default. */
+  model?: string
+}
+
+export interface IntrospectionResult {
+  /** Plain text body. Empty string means "model returned nothing useful";
+   *  the caller decides whether that's a failure. */
+  text: string
+  /** Aggregate usage from the provider. */
+  usage: LlmUsage
+  /** Backend name that handled the request; useful for audit rows. */
+  backendName: string
+  /** Provider type label (e.g. "deepseek" / "openai-compat") for the
+   *  cost dashboard. */
+  providerType: string
+  /** Elapsed wall-clock time. */
+  durationMs: number
+}
+
+/**
+ * Try to satisfy the introspection request via the configured backend
+ * for `role`. Returns null when:
+ *   - no provider is wired for this role, OR
+ *   - the provider call failed (errors are logged + classified, never
+ *     re-thrown — the caller's fallback path takes over).
+ *
+ * The "return null on failure" contract is exactly what distill /
+ * consolidate / intent want: they then fall back to spawning their
+ * CLI agent and the user notices nothing.
+ */
+export async function tryIntrospect(input: IntrospectionInput): Promise<IntrospectionResult | null> {
+  const provider = getProvider(input.role)
+  if (!provider) return null
+
+  const messages: LlmMessage[] = [{ role: 'user', content: input.prompt }]
+  const startedAt = Date.now()
+  try {
+    const result = await provider.chat(messages, {
+      system: input.system,
+      timeoutMs: input.timeoutMs ?? 30_000,
+      signal: input.signal,
+      temperature: input.temperature,
+      model: input.model,
+    })
+    return {
+      text: result.text,
+      usage: result.usage,
+      backendName: provider.name,
+      providerType: provider.providerType,
+      durationMs: Date.now() - startedAt,
+    }
+  } catch (err) {
+    const transient = err instanceof LlmProviderError ? err.transient : false
+    const httpStatus = err instanceof LlmProviderError ? err.httpStatus : undefined
+    log.warn({
+      event: 'llm.introspect.failed',
+      role: input.role,
+      backend: provider.name,
+      providerType: provider.providerType,
+      transient,
+      httpStatus,
+      err: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}

@@ -78,11 +78,12 @@ Fields:
 
 ### 2. `llmRoles` map
 
-Roles are operational concepts agim's internal callers ask for. Stage 1 only consumes:
+Roles are operational concepts agim's internal callers ask for. Stage 1 + the #9 follow-up consume:
 
 - `cheap` — distill / consolidate / intent-llm
+- `evaluator` — notification-evaluator gate (see [Notification evaluator](#notification-evaluator-d-stage-1-follow-up-9) below)
 
-Other role keys (`evaluator`, `native-chat`, `native-coder`) are reserved for later stages and accepted by the schema for forward compatibility.
+Other role keys (`native-chat`, `native-coder`) are reserved for later stages and accepted by the schema for forward compatibility.
 
 A role pointing at a backend that doesn't exist (or has no secret) is logged at warn level on startup but doesn't crash agim — the caller silently falls back to its CLI agent path.
 
@@ -151,6 +152,110 @@ So you can:
 - Add `llmBackends` without re-deploying or restarting any other component
 - Remove `llmBackends` and revert to pre-D+ behaviour with zero risk
 - Mix: leave `cheap` configured for distill/consolidate but never enable `evaluator` / `native-chat` until you're comfortable
+
+## Notification evaluator (D+ Stage 1 follow-up #9)
+
+A configured `evaluator` role enables a small LLM gate that filters
+**agent-initiated** outbound messages before they hit your IM. User
+replies are never gated — only paths where an agent or scheduled job
+decides on its own to ping you (the `push_message` MCP tool, future
+heartbeat ticks, optionally `/api/notify`).
+
+### Why
+
+Long-running agent loops, monitoring jobs, and heartbeat ticks tend to
+generate noisy "task done, nothing new" updates. The evaluator asks a
+cheap model "is this actually worth pinging the user about?" and drops
+routine chatter. Suppressions show up as `notification.suppress` rows
+in `audit_events` so operators can sanity-check what's being filtered.
+
+### Configuration
+
+```bash
+# 1. Master switch (default off — explicit opt-in)
+export IMHUB_NOTIFICATION_EVALUATOR=on
+
+# 2. Optional: pick which sources go through the gate. Defaults to
+#    push,heartbeat. Comma-list. Valid: push,notify,reminder,heartbeat.
+export IMHUB_NOTIFICATION_EVALUATOR_SOURCES=push,heartbeat,notify
+```
+
+Add an `evaluator` role mapping in `~/.agim/config.json`:
+
+```json
+{
+  "llmBackends": [
+    {
+      "name": "evaluator-cheap",
+      "provider": "openai-compat",
+      "model": "deepseek-chat",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "label": "deepseek"
+    }
+  ],
+  "llmRoles": {
+    "cheap": "evaluator-cheap",
+    "evaluator": "evaluator-cheap"
+  }
+}
+```
+
+You can reuse the same backend as `cheap`, or point `evaluator` at a
+slightly stronger model when you want fewer false suppressions. The
+verdict prompt is tiny (~200 tokens out + ~30 tokens in) so cost is
+negligible either way.
+
+### Fail-open behaviour
+
+The evaluator NEVER drops a message because the infrastructure broke.
+Specifically:
+
+| condition | result |
+|---|---|
+| `IMHUB_NOTIFICATION_EVALUATOR` not `on` | deliver, `via=disabled` |
+| source not in gated set | deliver, `via=source-excluded` |
+| no `evaluator` backend configured (or call failed) | deliver, `via=no-backend` |
+| LLM returned unparseable text | deliver, `via=fail-open` |
+| LLM said `deliver: true` | deliver, `via=evaluator` |
+| LLM said `deliver: false` | **silently drop**, `via=evaluator` |
+
+So flipping the switch on never loses messages unless the LLM actively
+voted to suppress them. Cards (approval / recovery / choice) bypass
+the gate entirely because they carry user actions.
+
+### Auditing
+
+Every suppression writes a row to `audit_events` with:
+
+- `event_type = 'notification.suppress'`
+- `actor = '<platform>:<userId>'` (or `'system'` for non-attributable sources)
+- `target = '<platform>:<channelId>:<threadId>'`
+- `details.source` — `'push'` / `'notify'` / `'heartbeat'` / `'reminder'`
+- `details.backend` — which backend made the verdict
+- `details.reason` — first 200 chars of the LLM's verdict reason
+- `details.agent` — the calling agent's name (for push only)
+- `details.textLen`
+
+Query from `/tasks#audit` filter on event type, or programmatically:
+
+```ts
+import { queryAuditEvents } from './core/audit-log.js'
+queryAuditEvents({ types: ['notification.suppress'], days: 7 })
+```
+
+### Tuning
+
+If the gate suppresses too aggressively:
+
+1. Look at recent `notification.suppress` rows — what messages are
+   getting dropped?
+2. Lower the temperature back to 0 (already default) and re-test
+3. Switch to a stronger `evaluator` backend (e.g. gpt-4.1-mini instead
+   of a 7B local model)
+4. Disable selectively with `IMHUB_NOTIFICATION_EVALUATOR_SOURCES=heartbeat`
+   to keep heartbeat gated but pass all push messages through
+5. Last resort: `unset IMHUB_NOTIFICATION_EVALUATOR` to go back to
+   pre-D+ behaviour with zero risk
 
 ## Future stages (preview)
 

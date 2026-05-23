@@ -43,7 +43,7 @@ describe('web access-token bootstrap file', () => {
     expect(created).toBeTruthy()
 
     const first = retrieveWebBootstrapTokenRaw()
-    expect(first?.raw).toBe(created)
+    expect(first?.raw).toBe(created ?? undefined)
     expect(existsSync(WEB_BOOTSTRAP_TOKEN_FILE)).toBe(false)
 
     const second = retrieveWebBootstrapTokenRaw()

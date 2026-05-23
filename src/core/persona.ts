@@ -15,6 +15,7 @@
 
 import { getPersona, countFacts, userKey, type PersonaProfile } from './memory.js'
 import { sanitizeForInjection } from './prompt-injection-guard.js'
+import { formatAge } from './util/format-age.js'
 
 export interface PersonaSnippetOpts {
   /** Per-conversation IM platform. */
@@ -32,23 +33,26 @@ export function isMemoryEnabled(): boolean {
 }
 
 /**
- * Build the persona snippet for prepending to a prompt. Empty string means
- * "don't prepend anything" — caller should just use the original prompt.
+ * Pure render helper — given a persona profile + fact count, build the
+ * snippet text. Exported separately so unit tests can exercise the
+ * P0 #4 row-age formatting without mocking SQLite-backed memory.
+ *
+ * When profile.updated_at is non-zero, the header carries a
+ * "(summary last consolidated 3d ago)" tag so the agent can weight
+ * stale facts against fresh ones without an extra tool call.
  */
-export function buildPersonaSnippet(opts: PersonaSnippetOpts): string {
-  const on = opts.enabled ?? isMemoryEnabled()
-  if (!on) return ''
-  if (!opts.platform || !opts.userId) return ''
-  const key = userKey(opts.platform, opts.userId)
-  const profile = getPersona(key)
-  const factCount = countFacts(key)
-  // No persona row + no facts → first-time user, skip injection. The
-  // distillation worker will populate after this turn.
+export function renderPersonaSnippet(
+  profile: PersonaProfile | null,
+  factCount: number,
+): string {
   if (!profile && factCount === 0) return ''
 
   const lines: string[] = ['[long-term memory]']
   if (profile?.summary) {
-    lines.push('What I know about this user (summary):')
+    const ageLabel = profile.updated_at
+      ? ` (summary last consolidated ${formatAge(profile.updated_at)})`
+      : ''
+    lines.push(`What I know about this user (summary)${ageLabel}:`)
     lines.push(sanitizeForInjection(profile.summary.trim()))
   } else {
     lines.push(`I have ${factCount} stored fact(s) about this user but no consolidated summary yet.`)
@@ -61,6 +65,20 @@ export function buildPersonaSnippet(opts: PersonaSnippetOpts): string {
   )
   lines.push('[/long-term memory]')
   return lines.join('\n')
+}
+
+/**
+ * Build the persona snippet for prepending to a prompt. Empty string means
+ * "don't prepend anything" — caller should just use the original prompt.
+ */
+export function buildPersonaSnippet(opts: PersonaSnippetOpts): string {
+  const on = opts.enabled ?? isMemoryEnabled()
+  if (!on) return ''
+  if (!opts.platform || !opts.userId) return ''
+  const key = userKey(opts.platform, opts.userId)
+  const profile = getPersona(key)
+  const factCount = countFacts(key)
+  return renderPersonaSnippet(profile, factCount)
 }
 
 /** Convenience: same as buildPersonaSnippet but reads the row + count once

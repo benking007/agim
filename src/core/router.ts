@@ -21,6 +21,7 @@ import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
+import { handleHeartbeatCommand } from './commands/heartbeat.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig } from './viewer-config.js'
@@ -270,6 +271,10 @@ export async function routeMessage(
 
     case 'memo': {
       return handleMemoCommand(parsed.args, ctx)
+    }
+
+    case 'heartbeat': {
+      return handleHeartbeatCommand(parsed.args, ctx)
     }
 
     case 'job': {

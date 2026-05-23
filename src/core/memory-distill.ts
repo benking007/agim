@@ -29,6 +29,7 @@ import { logger as rootLogger } from './logger.js'
 import { saveFact, userKey, type FactCategory } from './memory.js'
 import { isMemoryEnabled } from './persona.js'
 import { logInvocation } from './audit-log.js'
+import { tryIntrospect } from './llm/index.js'
 
 const log = rootLogger.child({ component: 'memory-distill' })
 
@@ -145,45 +146,70 @@ export async function runDistillation(input: DistillationInput): Promise<number>
   const source = input.traceId ? `trace:${input.traceId}` : 'auto'
   const traceId = input.traceId || `distill-${Date.now()}`
 
-  // Single-shot extraction. We use a synthetic session id so the agent
-  // doesn't pollute the user's real conversation history.
+  // Single-shot extraction. Two paths:
+  //   1. Preferred (D+ Stage 1): native LLM backend configured for the
+  //      'cheap' role — direct HTTP call, no CLI spawn, completes in
+  //      ~200ms instead of seconds.
+  //   2. Fallback: the agent that just produced the reply. Keeps
+  //      behaviour identical to pre-D+ deployments and operators who
+  //      run agim without any LLM backend configured.
+  //
+  // We use a synthetic session id so the agent doesn't pollute the
+  // user's real conversation history.
   const extractionPrompt = buildExtractionPrompt(input.userMessage, input.agentReply)
   let raw = ''
   let costAccum = 0
   const startedAt = Date.now()
   let agentFailed: Error | null = null
-  try {
-    const gen = input.agent.sendPrompt(`memory-distill-${Date.now()}`, extractionPrompt, [], {
-      // platform='memory-distill' keeps distill rows separate from real IM
-      // turns in the audit view (and in Cost & Health pivots).
-      platform: 'memory-distill',
-      userId: input.userId,
-      // P1-5: account for distill cost so Cost & Health reports the true
-      // operator spend, not just user-facing turns.
-      onUsage: (delta) => {
-        if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) {
-          costAccum += delta.costUsd
-        }
-      },
-    })
-    for await (const chunk of gen) {
-      raw += chunk
-      if (raw.length > 8000) break  // safety cap; extraction output is small
+  let usedAgentName: string = input.agent.name
+
+  const nativeResult = await tryIntrospect({
+    role: 'cheap',
+    prompt: extractionPrompt,
+    timeoutMs: 30_000,
+    temperature: 0.2,
+  })
+
+  if (nativeResult) {
+    raw = nativeResult.text
+    if (typeof nativeResult.usage.costUsd === 'number') costAccum = nativeResult.usage.costUsd
+    usedAgentName = `llm:${nativeResult.backendName}`
+  } else {
+    try {
+      const gen = input.agent.sendPrompt(`memory-distill-${Date.now()}`, extractionPrompt, [], {
+        // platform='memory-distill' keeps distill rows separate from real IM
+        // turns in the audit view (and in Cost & Health pivots).
+        platform: 'memory-distill',
+        userId: input.userId,
+        // P1-5: account for distill cost so Cost & Health reports the true
+        // operator spend, not just user-facing turns.
+        onUsage: (delta) => {
+          if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) {
+            costAccum += delta.costUsd
+          }
+        },
+      })
+      for await (const chunk of gen) {
+        raw += chunk
+        if (raw.length > 8000) break  // safety cap; extraction output is small
+      }
+    } catch (err) {
+      agentFailed = err instanceof Error ? err : new Error(String(err))
+      log.warn({ event: 'memory.distill.agent_failed', err: String(err) })
     }
-  } catch (err) {
-    agentFailed = err instanceof Error ? err : new Error(String(err))
-    log.warn({ event: 'memory.distill.agent_failed', err: String(err) })
   }
 
   // Audit every distill attempt — success or failure — so operators can
   // see how often distillation runs, what it costs, and when it errors.
   // intent='memory.distill' makes it filterable in the dashboard.
+  // The agent field uses `llm:<backend>` for native calls so the cost
+  // dashboard can pivot CLI vs LLM spend.
   try {
     logInvocation({
       traceId,
       userId: input.userId,
       platform: 'memory-distill',
-      agent: input.agent.name,
+      agent: usedAgentName,
       intent: 'memory.distill',
       promptLen: extractionPrompt.length,
       responseLen: raw.length,

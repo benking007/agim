@@ -214,27 +214,6 @@ program
     const wsCount = workspaces?.length || 1
     console.log(`Workspaces loaded: ${wsCount} workspace(s)`)
 
-    // D+ Stage 1: load native LLM backends. Optional — when llmBackends
-    // is unset (or all backends lack secrets) the registry stays empty
-    // and every introspection caller silently falls back to its CLI
-    // agent path.
-    try {
-      const { loadFromConfig: loadLlmFromConfig, describeRegistry } = await import('./core/llm/index.js')
-      loadLlmFromConfig(validation.config)
-      const snapshot = describeRegistry()
-      if (snapshot.backends.length > 0) {
-        const roleNote = Object.keys(snapshot.roles).length > 0
-          ? ` · roles: ${Object.entries(snapshot.roles).map(([r, b]) => `${r}→${b}`).join(', ')}`
-          : ''
-        console.log(`🧠 LLM backends: ${snapshot.backends.length} configured${roleNote}`)
-        if (snapshot.unconfigured.length > 0) {
-          console.log(`   (skipped, no secret: ${snapshot.unconfigured.join(', ')})`)
-        }
-      }
-    } catch (err) {
-      console.warn('LLM registry failed to load:', err instanceof Error ? err.message : String(err))
-    }
-
     // Initialize session manager
     await sessionManager.start()
 
@@ -781,6 +760,21 @@ program
       startMemoryConsolidator()
     } catch (err) {
       console.warn('Memory consolidator failed to start:', err instanceof Error ? err.message : String(err))
+    }
+
+    // P0 #1 — heartbeat scheduler (proactive wake-up). Opt-in via
+    // IMHUB_HEARTBEAT_ENABLED=on; without that the scan loop never runs
+    // but /heartbeat bind / show / run-now still work for setup. The
+    // function is internally guarded so we can call it unconditionally.
+    try {
+      const { startHeartbeatScheduler, schedulerInfo } = await import('./core/heartbeat.js')
+      startHeartbeatScheduler()
+      const info = schedulerInfo()
+      if (info.enabled) {
+        console.log(`🫀 Heartbeat scheduler running (tick every ${Math.round(info.periodMs / 1000)}s)`)
+      }
+    } catch (err) {
+      console.warn('Heartbeat scheduler failed to start:', err instanceof Error ? err.message : String(err))
     }
 
     // v1.1.8 — Viewer auto-tunnel. If the operator opted into the

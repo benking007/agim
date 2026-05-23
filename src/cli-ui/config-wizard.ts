@@ -515,19 +515,32 @@ interface AgentSpec {
 }
 
 const AGENT_SPECS: AgentSpec[] = [
+  { id: 'native',      cmd: '__native__' },
   { id: 'claude-code', cmd: 'claude' },
   { id: 'opencode',    cmd: 'opencode', authHintKey: 'agents.auth_hint.opencode' },
   { id: 'codex',       cmd: 'codex',    authHintKey: 'agents.auth_hint.codex' },
 ]
+
+async function nativeLlmConfigured(): Promise<boolean> {
+  try {
+    const cfg = await loadConfig()
+    const raw = cfg as { llmBackends?: unknown[] }
+    return Array.isArray(raw.llmBackends) && raw.llmBackends.length > 0
+  } catch {
+    return false
+  }
+}
 
 /** Detect install state once per sectionAgents() call, but always
  *  re-detect after the user picks "Re-check". */
 async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
   const out = new Map<AgentId, boolean>()
   await Promise.all(AGENT_SPECS.map(async spec => {
-    {
-      out.set(spec.id, await cliAvailable(spec.cmd))
+    if (spec.id === 'native') {
+      out.set(spec.id, await nativeLlmConfigured())
+      return
     }
+    out.set(spec.id, await cliAvailable(spec.cmd))
   }))
   return out
 }

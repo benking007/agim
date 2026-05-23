@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
   Bell, Cpu, HeartPulse, Loader2, RefreshCcw, Save, X,
@@ -63,7 +64,25 @@ function isTruthy(v: string | undefined): boolean {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on'
 }
 
+function SubtitleWithLlmLink(): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  const subtitle = t('nativeAgent.subtitle')
+  const link = t('nativeAgent.llmLink')
+  const idx = subtitle.indexOf(link)
+  if (idx === -1) {
+    return <p className="text-sm text-text-dim">{subtitle}</p>
+  }
+  return (
+    <p className="text-sm text-text-dim">
+      {subtitle.slice(0, idx)}
+      <a className="underline" href={link}>{link}</a>
+      {subtitle.slice(idx + link.length)}
+    </p>
+  )
+}
+
 export default function SettingsNativeAgentRoute(): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
   const envQuery = useEnv({ reveal: false })
   const updateEnv = useUpdateEnv()
 
@@ -118,7 +137,7 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
     if (Object.keys(updates).length === 0) return
     try {
       await updateEnv.mutateAsync({ updates })
-      toast.success('Saved.')
+      toast.success(t('nativeAgent.savedToast'))
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
     }
@@ -131,25 +150,20 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <header className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold">Native Agent · Evaluator · Heartbeat</h1>
+        <h1 className="text-xl font-semibold">{t('nativeAgent.title')}</h1>
         <Button
           variant="ghost" size="sm" className="ml-auto"
           onClick={() => void envQuery.refetch()}
           disabled={envQuery.isFetching}
-          aria-label="Refresh"
+          aria-label={t('actions.refresh', { ns: 'common' })}
         >
           {envQuery.isFetching
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <RefreshCcw className="h-4 w-4" />}
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden sm:inline">{t('nativeAgent.refresh')}</span>
         </Button>
       </header>
-      <p className="text-sm text-text-dim">
-        Behavior knobs for the in-process <code>native</code> agent and the two LLM-driven
-        gates (<strong>notification evaluator</strong>, <strong>heartbeat</strong>). LLM backend
-        + role wiring lives on <a className="underline" href="/settings/llm">/settings/llm</a>;
-        this page covers what the agent + gates actually do at runtime.
-      </p>
+      <SubtitleWithLlmLink />
 
       {envQuery.isLoading ? (
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
@@ -163,13 +177,13 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
 
       {isDirty && (
         <div className="sticky bottom-2 flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-3 shadow">
-          <Badge variant="info">unsaved changes</Badge>
+          <Badge variant="info">{t('nativeAgent.unsaved')}</Badge>
           <Button
             variant="ghost" size="sm" className="ml-auto"
             onClick={onDiscard}
             disabled={updateEnv.isPending}
           >
-            <X className="h-4 w-4" /> Discard
+            <X className="h-4 w-4" /> {t('nativeAgent.discard')}
           </Button>
           <Button
             size="sm"
@@ -179,7 +193,7 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
             {updateEnv.isPending
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <Save className="h-4 w-4" />}
-            Save
+            {t('nativeAgent.save')}
           </Button>
         </div>
       )}
@@ -193,16 +207,17 @@ interface CardProps {
 }
 
 function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
   return (
     <section className="rounded-md border border-border bg-surface">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Cpu className="h-4 w-4 text-text-dim" />
-        <h2 className="text-sm font-semibold">Native Agent (in-process)</h2>
+        <h2 className="text-sm font-semibold">{t('nativeAgent.agentCard')}</h2>
       </header>
       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
         <Field
-          label="Role override"
-          hint="LLM role the native loop resolves. Default: native-chat (falls back to cheap). Match a key from /settings/llm role bindings."
+          label={t('nativeAgent.roleOverride')}
+          hint={t('nativeAgent.roleHint')}
         >
           <Input
             value={draft.role}
@@ -212,8 +227,8 @@ function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
           />
         </Field>
         <Field
-          label="Approval mode"
-          hint="How tool calls from the native loop are gated."
+          label={t('nativeAgent.approvalMode')}
+          hint={t('nativeAgent.approvalHint')}
         >
           <Select
             value={draft.mode}
@@ -221,16 +236,16 @@ function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="read-only">read-only (safe default; built-ins only)</SelectItem>
-              <SelectItem value="allow-list">allow-list (only autoAllow entries)</SelectItem>
-              <SelectItem value="allow-all">allow-all (every tool, no gate)</SelectItem>
-              <SelectItem value="deny-all">deny-all (no tools)</SelectItem>
+              <SelectItem value="read-only">{t('nativeAgent.modeReadOnly')}</SelectItem>
+              <SelectItem value="allow-list">{t('nativeAgent.modeAllowList')}</SelectItem>
+              <SelectItem value="allow-all">{t('nativeAgent.modeAllowAll')}</SelectItem>
+              <SelectItem value="deny-all">{t('nativeAgent.modeDenyAll')}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
         <Field
-          label="Auto-allow tool prefixes"
-          hint="Comma-separated. Tool names starting with any entry bypass the gate (e.g. native_,mcp_filesystem_)."
+          label={t('nativeAgent.autoAllow')}
+          hint={t('nativeAgent.autoAllowHint')}
         >
           <Input
             value={draft.autoAllow}
@@ -240,8 +255,8 @@ function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
           />
         </Field>
         <Field
-          label="Deny-list tool prefixes"
-          hint="Comma-separated. Always rejected regardless of mode (e.g. mcp_shell_)."
+          label={t('nativeAgent.denyList')}
+          hint={t('nativeAgent.denyListHint')}
         >
           <Input
             value={draft.denyList}
@@ -256,21 +271,19 @@ function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
 }
 
 function EvaluatorCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
   return (
     <section className="rounded-md border border-border bg-surface">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Bell className="h-4 w-4 text-text-dim" />
-        <h2 className="text-sm font-semibold">Notification Evaluator</h2>
+        <h2 className="text-sm font-semibold">{t('nativeAgent.evaluatorCard')}</h2>
         {draft.evalEnabled
-          ? <Badge variant="success">on</Badge>
-          : <Badge variant="outline">off</Badge>}
+          ? <Badge variant="success">{t('nativeAgent.on')}</Badge>
+          : <Badge variant="outline">{t('nativeAgent.off')}</Badge>}
       </header>
-      <p className="px-4 pt-2 text-xs text-text-dim">
-        LLM gate that filters routine / empty agent-initiated push messages. Uses the
-        <code> evaluator</code> role. Fail-open: LLM error or missing backend → message is delivered.
-      </p>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.evalDesc')}</p>
       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-        <Field label="Enable gate">
+        <Field label={t('nativeAgent.enableGate')}>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -278,12 +291,12 @@ function EvaluatorCard({ draft, setField }: CardProps): JSX.Element {
               onChange={(e) => setField('evalEnabled', e.target.checked)}
               className="h-4 w-4 accent-accent cursor-pointer"
             />
-            <span>Filter via LLM</span>
+            <span>{t('nativeAgent.filterViaLlm')}</span>
           </label>
         </Field>
         <Field
-          label="Sources to gate"
-          hint="Comma-separated subset of: push, notify, reminder, heartbeat. Empty = default push,heartbeat."
+          label={t('nativeAgent.evalSources')}
+          hint={t('nativeAgent.evalSourcesHint')}
         >
           <Input
             value={draft.evalSources}
@@ -299,21 +312,19 @@ function EvaluatorCard({ draft, setField }: CardProps): JSX.Element {
 }
 
 function HeartbeatCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
   return (
     <section className="rounded-md border border-border bg-surface">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <HeartPulse className="h-4 w-4 text-text-dim" />
-        <h2 className="text-sm font-semibold">Heartbeat Scheduler</h2>
+        <h2 className="text-sm font-semibold">{t('nativeAgent.heartbeatCard')}</h2>
         {draft.hbEnabled
-          ? <Badge variant="success">on</Badge>
-          : <Badge variant="outline">off</Badge>}
+          ? <Badge variant="success">{t('nativeAgent.on')}</Badge>
+          : <Badge variant="outline">{t('nativeAgent.off')}</Badge>}
       </header>
-      <p className="px-4 pt-2 text-xs text-text-dim">
-        Periodic proactive wake-up loop. With this off, <code>/heartbeat bind</code> still works
-        (saves the binding) but no scans run. Three-phase tick: DECIDE → EXECUTE → EVALUATE.
-      </p>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.hbDesc')}</p>
       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
-        <Field label="Enable scheduler">
+        <Field label={t('nativeAgent.enableScheduler')}>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -321,12 +332,12 @@ function HeartbeatCard({ draft, setField }: CardProps): JSX.Element {
               onChange={(e) => setField('hbEnabled', e.target.checked)}
               className="h-4 w-4 accent-accent cursor-pointer"
             />
-            <span>Start scan loop</span>
+            <span>{t('nativeAgent.startScanLoop')}</span>
           </label>
         </Field>
         <Field
-          label="Tick interval (ms)"
-          hint="How often the scan loop checks due bindings. Default 60000."
+          label={t('nativeAgent.tickInterval')}
+          hint={t('nativeAgent.tickHint')}
         >
           <Input
             type="number"
@@ -338,8 +349,8 @@ function HeartbeatCard({ draft, setField }: CardProps): JSX.Element {
           />
         </Field>
         <Field
-          label="Default binding interval (min)"
-          hint="Minutes between ticks when a binding didn't specify one. Default 15."
+          label={t('nativeAgent.defaultInterval')}
+          hint={t('nativeAgent.defaultIntervalHint')}
         >
           <Input
             type="number"

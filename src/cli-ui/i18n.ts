@@ -310,6 +310,41 @@ const en = {
   'error.prefix': '❌ Error: {message}',
   'warning.prefix': '⚠️  {message}',
   'info.prefix': 'ℹ {message}',
+
+  // ─── agim start — native LLM / MCP boot (PR81) ─────────────────────
+  'start.mcp_connected': 'MCP 服务器已连接：{servers}（{toolCount} 个工具）',
+  'start.mcp_connect_failures': 'MCP 服务器连接失败：{failures}',
+  'start.native_agent': 'native agent：{desc}',
+  'start.native_boot_failed': 'Native LLM/MCP 启动失败：{message}',
+  'start.agents_unavailable': '部分 agent 不可用：{missing}',
+  'start.agents_install_header': '安装 agent：',
+  'start.agents_install_one': '安装 {agent}：{hint}',
+  'start.agents_install_line': '  - {agent}：{hint}',
+  'start.no_agents': '未找到可用的 coding agent！',
+  'start.install_one_agent': '请至少安装一个 agent，然后重新运行 agim start。',
+  'start.agent_workspace': 'Agent 工作区：{agent} → {dir}',
+  'start.workspace_boot_failed': 'Agent 工作区初始化失败：{message}',
+  'start.workspace_fallback': 'Agent 将回退到 Agim cwd（systemd 下为 "/"）',
+  'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
+  'agents.label.native': 'Native（进程内 LLM）',
+  'agents.install_hint.native': '在 ~/.agim/config.json 配置 llmBackends + llmRoles — 见 /settings/llm 或 docs/llm-backends.md',
+  'token.cli.create_ok': '已创建新的访问 token。',
+  'token.cli.create_warn': '原始值仅显示这一次，请立即保存。',
+  'token.cli.create_usage': '在 /login 页面粘贴，或使用 Authorization: Bearer <token> 头发送。',
+  'token.cli.unlabeled': '（无标签）',
+  'token.cli.list_path': '存储位置：{file}',
+  'token.cli.list_empty': '（暂无 token — 运行 `agim token create` 创建）',
+  'token.cli.never': '（从未）',
+  'token.cli.revoke_ok': 'token {id} 已撤销。',
+  'token.cli.revoke_missing': '未找到 token {id}。',
+  'token.bootstrap.ok_title': 'Web bootstrap 访问 token（一次性读取）：',
+  'token.bootstrap.save_warn': '请立即保存 — 执行本命令后 bootstrap 文件将被删除。',
+  'token.bootstrap.usage': '在 /login 粘贴，或使用 Authorization: Bearer <token>。',
+  'token.bootstrap.none': '无可用的 bootstrap token。',
+  'token.bootstrap.start_hint': '请先启动 agim（`agim start`）以生成首个 token，然后重新运行：',
+  'token.bootstrap.consumed': 'Bootstrap token 已被消费或从未写入。',
+  'token.bootstrap.file_hint': '若主机上文件仍存在：cat {file}',
+  'token.bootstrap.create_hint': '或创建新 token：',
   'ok.prefix': '✓ {message}',
 } as const
 
@@ -610,6 +645,46 @@ const zh: Record<Key, string> = {
   'error.prefix': '❌ 错误：{message}',
   'warning.prefix': '⚠️  {message}',
   'info.prefix': 'ℹ {message}',
+
+  // ─── agim start — native LLM / MCP boot (PR81) ─────────────────────
+  'start.mcp_connected': 'MCP 服务器已连接：{servers}（{toolCount} 个工具）',
+  'start.mcp_connect_failures': 'MCP 服务器连接失败：{failures}',
+  'start.native_agent': 'native agent：{desc}',
+  'start.native_boot_failed': 'Native LLM/MCP 启动失败：{message}',
+  'start.agents_unavailable': '部分 agent 不可用：{missing}',
+  'start.agents_install_header': '安装 agent：',
+  'start.agents_install_one': '安装 {agent}：{hint}',
+  'start.agents_install_line': '  - {agent}：{hint}',
+  'start.no_agents': '未找到可用的 coding agent！',
+  'start.install_one_agent': '请至少安装一个 agent，然后重新运行 agim start。',
+  'start.agent_workspace': 'Agent 工作区：{agent} → {dir}',
+  'start.workspace_boot_failed': 'Agent 工作区初始化失败：{message}',
+  'start.workspace_fallback': 'Agent 将回退到 Agim cwd（systemd 下为 "/"）',
+  'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
+
+  // ─── agent install hints (PR81 native) ─────────────────────────────
+  'agents.label.native': 'Native（进程内 LLM）',
+  'agents.install_hint.native': '在 ~/.agim/config.json 配置 llmBackends + llmRoles — 见 /settings/llm 或 docs/llm-backends.md',
+
+  // ─── non-interactive token CLI ─────────────────────────────────────
+  'token.cli.create_ok': '已创建新的访问 token。',
+  'token.cli.create_warn': '原始值仅显示这一次，请立即保存。',
+  'token.cli.create_usage': '在 /login 页面粘贴，或使用 Authorization: Bearer <token> 头发送。',
+  'token.cli.unlabeled': '（无标签）',
+  'token.cli.list_path': '存储位置：{file}',
+  'token.cli.list_empty': '（暂无 token — 运行 `agim token create` 创建）',
+  'token.cli.never': '（从未）',
+  'token.cli.revoke_ok': 'token {id} 已撤销。',
+  'token.cli.revoke_missing': '未找到 token {id}。',
+  'token.bootstrap.ok_title': 'Web bootstrap 访问 token（一次性读取）：',
+  'token.bootstrap.save_warn': '请立即保存 — 执行本命令后 bootstrap 文件将被删除。',
+  'token.bootstrap.usage': '在 /login 粘贴，或使用 Authorization: Bearer <token>。',
+  'token.bootstrap.none': '无可用的 bootstrap token。',
+  'token.bootstrap.start_hint': '请先启动 agim（`agim start`）以生成首个 token，然后重新运行：',
+  'token.bootstrap.consumed': 'Bootstrap token 已被消费或从未写入。',
+  'token.bootstrap.file_hint': '若主机上文件仍存在：cat {file}',
+  'token.bootstrap.create_hint': '或创建新 token：',
+
   'ok.prefix': '✓ {message}',
 }
 
@@ -641,6 +716,35 @@ export function saveLang(lang: Lang): void {
   } catch (err) {
     console.warn(`⚠️ Could not save language preference: ${err instanceof Error ? err.message : String(err)}`)
   }
+}
+
+
+
+/** Localized install hints for missing agents at `agim start`. */
+export function formatAgentInstallHint(lang: Lang, missing: string[]): string {
+  if (missing.length === 0) return ''
+  const hintFor = (name: string): string => {
+    const key = `agents.install_hint.${name.replace(/-/g, '_')}` as Key
+    if (key in en) return t(lang, key)
+    const pkg = {
+      'claude-code': 'npm i -g @anthropic-ai/claude-code',
+      codex: 'npm i -g @openai/codex',
+      opencode: 'npm i -g opencode-ai',
+      antigravity: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+      native: t(lang, 'agents.install_hint.native'),
+    } as Record<string, string>
+    return pkg[name] ?? `npm i -g ${name}`
+  }
+  if (missing.length === 1) {
+    const agent = missing[0]!
+    return t(lang, 'start.agents_install_one', { agent, hint: hintFor(agent) })
+  }
+  const lines = missing.map((agent) => t(lang, 'start.agents_install_line', { agent, hint: hintFor(agent) }))
+  return `${t(lang, 'start.agents_install_header')}\n${lines.join('\n')}`
+}
+
+export function resolveCliLang(): Lang {
+  return readSavedLang() ?? 'zh'
 }
 
 export const LANG_PREF_FILE = PREF_FILE

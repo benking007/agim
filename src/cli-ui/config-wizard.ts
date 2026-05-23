@@ -502,7 +502,7 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'claude-code' | 'opencode' | 'codex'
+type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex'
 
 interface AgentSpec {
   id: AgentId

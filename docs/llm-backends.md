@@ -911,9 +911,25 @@ their source).
 | `PUT` | `/api/llm/roles` | `{role: backendName | null}` (null/empty unbinds) | 200 `{roles}` / 400 unknown backend |
 | `POST` | `/api/llm/secrets/:name` | `{apiKey}` | 200 `{name, source}` |
 | `DELETE` | `/api/llm/secrets/:name` | – | 200 `{name}` |
+| `POST` | `/api/llm/backends/:name/ping` | – | 200 `{ok, durationMs, tokensIn, tokensOut, sampleText}` on success; 200 `{ok:false, error}` on failure (never throws) |
 
 Same validation rules as the CLI wizard — the schema is the single
 source of truth.
+
+### Web SPA — `/settings/llm` panel (Stage 6)
+
+The React SPA at `/settings/llm` consumes the REST surface above. It
+shows the backend table with per-backend secret status and a **Ping**
+button that issues a tiny `chat` probe (`/api/llm/backends/:name/ping`)
+so operators can verify a backend works without leaving the page. Role
+bindings are exposed as three dropdowns (`cheap` / `evaluator` /
+`native-chat`). The Add Backend card has provider quick-picks
+(DeepSeek / Moonshot / GLM / OpenAI / Anthropic / Custom) matching the
+CLI wizard's presets.
+
+External MCP servers get their own panel at `/settings/mcp` (REST under
+`/api/mcp/*`). Native agent / evaluator / heartbeat behavior knobs live
+at `/settings/native-agent` (writes through the existing `/api/env`).
 
 ### Where the data lives
 

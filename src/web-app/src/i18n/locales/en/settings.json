@@ -2,14 +2,18 @@
   "pageTitle": "Settings",
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
   "tabs": {
-    "messengers": "Messengers",
-    "email":      "Email (SMTP)",
-    "viewer":     "Viewer & Maps",
-    "agents":     "Agents",
-    "policy":     "Policy",
-    "workspaces": "Workspaces",
-    "admins":     "Admins",
-    "service":    "Service"
+    "messengers":   "Messengers",
+    "email":        "Email (SMTP)",
+    "viewer":       "Viewer & Maps",
+    "agents":       "Agents",
+    "llm":          "LLM Backends",
+    "mcp":          "MCP Servers",
+    "nativeAgent":  "Native Agent",
+    "policy":       "Policy",
+    "workspaces":   "Workspaces",
+    "admins":       "Admins",
+    "env":          "Env Vars",
+    "service":      "Service"
   },
   "agents": {
     "title": "Agents",

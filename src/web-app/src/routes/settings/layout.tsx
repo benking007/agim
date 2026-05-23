@@ -17,16 +17,22 @@ interface SubTab {
 }
 
 const SUB_TABS: SubTab[] = [
-  { to: 'messengers', i18nKey: 'tabs.messengers', mounted: true },
-  { to: 'email',      i18nKey: 'tabs.email',      mounted: true },
-  { to: 'viewer',     i18nKey: 'tabs.viewer',     mounted: true },
-  { to: 'agents',     i18nKey: 'tabs.agents',     mounted: true },
-  { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true },
-  { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true },
-  { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
+  { to: 'messengers',   i18nKey: 'tabs.messengers',   mounted: true },
+  { to: 'email',        i18nKey: 'tabs.email',        mounted: true },
+  { to: 'viewer',       i18nKey: 'tabs.viewer',       mounted: true },
+  { to: 'agents',       i18nKey: 'tabs.agents',       mounted: true },
+  // Stage 6 — native LLM stack. Three tabs in a logical group:
+  // LLM backends (config + secrets) -> MCP external servers ->
+  // native agent / evaluator / heartbeat behavior knobs.
+  { to: 'llm',          i18nKey: 'tabs.llm',          mounted: true },
+  { to: 'mcp',          i18nKey: 'tabs.mcp',          mounted: true },
+  { to: 'native-agent', i18nKey: 'tabs.nativeAgent',  mounted: true },
+  { to: 'policy',       i18nKey: 'tabs.policy',       mounted: true },
+  { to: 'workspaces',   i18nKey: 'tabs.workspaces',   mounted: true },
+  { to: 'admins',       i18nKey: 'tabs.admins',       mounted: true },
   // R13 follow-up — /settings/env catch-all editor removed; raw env-var
   // editing belongs in `~/.agim/env` on the host, not in a web form.
-  { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
+  { to: 'service',      i18nKey: 'tabs.service',      mounted: true },
 ]
 
 export default function SettingsLayout(): JSX.Element {

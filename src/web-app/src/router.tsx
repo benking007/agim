@@ -139,6 +139,12 @@ const router = createBrowserRouter([
       { path: 'service',    lazy: lazy(() => import('@/routes/settings/service')) },
       { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
+      // Stage 6 — native-LLM-backend admin (config.json llmBackends/Roles + secrets).
+      { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
+      // Stage 6 — external MCP server admin (config.json mcpServers).
+      { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
+      // Stage 6 — native agent + evaluator + heartbeat behaviour knobs.
+      { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

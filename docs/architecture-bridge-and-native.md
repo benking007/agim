@@ -131,19 +131,35 @@ notification evaluator, the `/goal` + `/heartbeat` + `/memo` +
 `AgentAdapter.sendPrompt` layer or above. Native gets all of it without
 adding a single conditional.
 
-### 5d. Audit / cost / sessions
+### 5d. Web admin panels (Stage 6)
+
+The `/settings/llm`, `/settings/mcp`, and `/settings/native-agent`
+panels treat native exactly like the CLI agents:
+
+- `/settings/llm` — list / add / remove LLM backends; bind to roles
+  (`cheap` / `evaluator` / `native-chat`); per-backend **Ping** button
+  via `/api/llm/backends/:name/ping`.
+- `/settings/mcp` — list / add / remove external MCP servers (stdio
+  or HTTP/SSE); per-server **Health** button via
+  `/api/mcp/servers/:name/health`. Tools flow into the native agent's
+  dispatcher with `mcp_<server>_<tool>` naming.
+- `/settings/native-agent` — focused form for the 4 native-agent env
+  knobs + 2 notification-evaluator + 3 heartbeat knobs (lifted out of
+  the generic env editor).
+
+### 5e. Audit / cost / sessions
 
 Every turn lands in `invocations` with `agent='native'` (or
 `agent='claude-code'`, etc.) — the dashboard sums them the same way.
 Sticky sessions store `agent='native'` and resume correctly.
 
-### 5e. `/router compare` A/B evaluation
+### 5f. `/router compare` A/B evaluation
 
 `/router compare agent:claude-code agent:native "..."` works on day
 one. There's no special "compare CLI vs native" code — both sides go
 through the same `BackendRef.kind='agent'` branch.
 
-### 5f. Fallback chains
+### 5g. Fallback chains
 
 Stage 5's `tryIntrospectChain` can cascade through LLM roles; the
 analogous "if CLI is down, fall back to native" lives in the same

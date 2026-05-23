@@ -12,6 +12,7 @@ import { sessionManager } from '../session.js'
 import { handleRemindCommand } from './remind.js'
 import { handleMemoCommand } from './memo.js'
 import { handleHeartbeatCommand } from './heartbeat.js'
+import { handleGoalCommand } from './goal.js'
 
 type Lang = 'zh' | 'en'
 
@@ -284,6 +285,9 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
   }
   if (topic === 'heartbeat') {
     return handleHeartbeatCommand('help', ctx)
+  }
+  if (topic === 'goal' || topic === 'goals') {
+    return handleGoalCommand('help', ctx)
   }
   return null
 }

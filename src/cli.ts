@@ -1975,6 +1975,18 @@ setupCmd
     process.exit(code)
   })
 
+setupCmd
+  .command('mcp [subcommand] [name]')
+  .description('Configure external MCP servers (list | add | remove | health | help)')
+  .action(async (subcommand: string | undefined, name: string | undefined) => {
+    const { runSetupMcp } = await import('./cli-ui/setup-mcp.js')
+    const argv: string[] = []
+    if (subcommand) argv.push(subcommand)
+    if (name) argv.push(name)
+    const code = await runSetupMcp(argv)
+    process.exit(code)
+  })
+
 // ─── diagnostics (P2) ───────────────────────────────────
 //
 // `agim diag llm` pings every configured llmBackend; `agim diag mcp`

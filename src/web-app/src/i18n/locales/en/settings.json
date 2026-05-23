@@ -9,6 +9,7 @@
     "llm":          "LLM Backends",
     "mcp":          "MCP Servers",
     "nativeAgent":  "Native Agent",
+    "agimSkills":   "agim Skills",
     "policy":       "Policy",
     "workspaces":   "Workspaces",
     "admins":       "Admins",

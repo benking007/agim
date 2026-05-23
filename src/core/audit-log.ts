@@ -270,6 +270,11 @@ export type AuditEventType =
   | 'token.revoke'
   | 'workspace.add'
   | 'workspace.delete'
+  // D+ Stage 1 follow-up — notification-evaluator gate (#9 in the D+
+  // plan). Only suppressions are audited; deliveries are visible in
+  // outbox / invocations rows anyway, so logging both would just inflate
+  // audit_events without adding signal.
+  | 'notification.suppress'
 
 export interface AuditEvent {
   traceId?: string

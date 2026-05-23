@@ -32,6 +32,9 @@ import {
   type NormalizedOptions,
   type ProviderConfigBase,
   type FinishReason,
+  type ToolCallRequest,
+  type ToolChoice,
+  type ToolDef,
 } from './provider-base.js'
 
 export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'providerType'> {
@@ -94,8 +97,10 @@ export class OpenAICompatProvider extends LlmProvider {
     const text = extractText(json)
     const finishReason = mapFinishReason(json?.choices?.[0]?.finish_reason)
     const usage = extractUsage(json)
+    const toolCalls = extractToolCalls(json)
     return {
       text,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage,
       finishReason,
       modelUsed: typeof json?.model === 'string' ? json.model : opts.model,
@@ -172,11 +177,16 @@ export class OpenAICompatProvider extends LlmProvider {
   ): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: opts.model,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: messages.map(serializeMessage),
       temperature: opts.temperature,
       max_tokens: opts.maxTokens,
     }
     if (stream) body.stream = true
+    if (opts.tools && opts.tools.length > 0) {
+      body.tools = opts.tools.map(serializeToolDef)
+      const tc = serializeToolChoice(opts.toolChoice)
+      if (tc !== undefined) body.tool_choice = tc
+    }
     // providerOptions lets callers pass through e.g. {top_p: 0.9} or
     // DeepSeek's {response_format: {type:'json_object'}} without
     // requiring a release of this file every time a vendor adds a knob.
@@ -259,9 +269,19 @@ export class OpenAICompatProvider extends LlmProvider {
   }
 }
 
+interface OpenAIToolCallFn {
+  name?: string
+  arguments?: string
+}
+interface OpenAIToolCall {
+  id?: string
+  type?: string
+  function?: OpenAIToolCallFn
+}
 interface ChatCompletionChoiceMessage {
   role?: string
   content?: string | null
+  tool_calls?: OpenAIToolCall[]
 }
 
 interface ChatCompletionChoice {
@@ -318,8 +338,8 @@ function mapFinishReason(raw: string | null | undefined): FinishReason {
     case 'stop': return 'stop'
     case 'length': return 'length'
     case 'content_filter': return 'content_filter'
-    case 'tool_calls': return 'stop'  // Stage 1 treats tool-call exits as normal stop
-    case 'function_call': return 'stop'
+    case 'tool_calls': return 'tool_use'   // Stage 2 — agent loop iterates on this
+    case 'function_call': return 'tool_use'
     case null:
     case undefined:
     case '': return 'unknown'
@@ -350,4 +370,92 @@ function isAbortError(err: unknown): boolean {
   if (typeof err !== 'object') return false
   const name = (err as { name?: unknown }).name
   return name === 'AbortError'
+}
+
+// ─── Stage 2 — tool-call serialization / deserialization ─────────────
+
+function serializeMessage(m: LlmMessage): Record<string, unknown> {
+  // OpenAI's wire-format expects either:
+  //   - {role:'system'|'user', content}
+  //   - {role:'assistant', content, tool_calls?: [...]}
+  //   - {role:'tool', tool_call_id, content}
+  // We branch on role to put fields in the right shape, otherwise the
+  // API politely 400s with very unhelpful errors.
+  if (m.role === 'tool') {
+    return {
+      role: 'tool',
+      tool_call_id: m.toolCallId ?? '',
+      content: m.content,
+    }
+  }
+  if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+    return {
+      role: 'assistant',
+      // content may be empty when the assistant emitted only tool_calls.
+      // OpenAI requires the key to be present (use null over '').
+      content: m.content || null,
+      tool_calls: m.toolCalls.map((tc) => ({
+        id: tc.id,
+        type: 'function',
+        function: {
+          name: tc.name,
+          // Always send a string; the LLM expects to see what it emitted.
+          arguments: tc.argumentsRaw ?? JSON.stringify(tc.arguments),
+        },
+      })),
+    }
+  }
+  return { role: m.role, content: m.content }
+}
+
+function serializeToolDef(t: ToolDef): Record<string, unknown> {
+  return {
+    type: 'function',
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }
+}
+
+function serializeToolChoice(choice: ToolChoice | undefined): unknown {
+  if (!choice) return undefined
+  if (choice === 'auto' || choice === 'required' || choice === 'none') return choice
+  if (typeof choice === 'object' && choice.type === 'tool') {
+    return { type: 'function', function: { name: choice.name } }
+  }
+  return undefined
+}
+
+function extractToolCalls(json: ChatCompletionResponse | null): ToolCallRequest[] {
+  const calls = json?.choices?.[0]?.message?.tool_calls
+  if (!Array.isArray(calls) || calls.length === 0) return []
+  const out: ToolCallRequest[] = []
+  for (const c of calls) {
+    const id = typeof c?.id === 'string' ? c.id : ''
+    const name = typeof c?.function?.name === 'string' ? c.function.name : ''
+    const rawArgs = typeof c?.function?.arguments === 'string' ? c.function.arguments : ''
+    if (!id || !name) continue
+    let parsed: Record<string, unknown> = {}
+    let argumentsRaw: string | undefined
+    if (rawArgs) {
+      try {
+        const obj = JSON.parse(rawArgs) as unknown
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+          parsed = obj as Record<string, unknown>
+        } else {
+          argumentsRaw = rawArgs
+        }
+      } catch {
+        // Model emitted malformed JSON. Surface the raw text so tools
+        // can decide whether to error or to attempt a salvage.
+        argumentsRaw = rawArgs
+      }
+    }
+    const req: ToolCallRequest = { id, name, arguments: parsed }
+    if (argumentsRaw !== undefined) req.argumentsRaw = argumentsRaw
+    out.push(req)
+  }
+  return out
 }

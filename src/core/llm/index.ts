@@ -16,12 +16,20 @@ export {
   type LlmUsage,
   type ProviderConfigBase,
   type NormalizedOptions,
+  type ToolCallRequest,
+  type ToolChoice,
+  type ToolDef,
 } from './provider-base.js'
 
 export {
   OpenAICompatProvider,
   type OpenAICompatProviderConfig,
 } from './openai-compat-provider.js'
+
+export {
+  AnthropicProvider,
+  type AnthropicProviderConfig,
+} from './anthropic-provider.js'
 
 export {
   loadFromConfig,

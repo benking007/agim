@@ -187,7 +187,25 @@ describe('LLM registry', () => {
     expect(getProvider('cheap')).toBeNull()
   })
 
-  it('describeRegistry surfaces snapshot for the cost dashboard', () => {
+  it("loads provider='anthropic' as AnthropicProvider", () => {
+    saveSecret('claude', 'sk-ant-test')
+    loadFromConfig({
+      llmBackends: [{
+        name: 'claude',
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet-20241022',
+        label: 'anthropic',
+      }],
+      llmRoles: { cheap: 'claude' },
+    })
+    const p = getProvider('cheap')
+    expect(p).not.toBeNull()
+    expect(p?.name).toBe('claude')
+    expect(p?.providerType).toBe('anthropic')
+    expect(p?.model).toBe('claude-3-5-sonnet-20241022')
+  })
+
+    it('describeRegistry surfaces snapshot for the cost dashboard', () => {
     saveSecret('test-cheap', 'sk-cheap')
     loadFromConfig({
       llmBackends: [{

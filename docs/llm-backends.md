@@ -66,7 +66,7 @@ Fields:
 | field | required | notes |
 |---|---|---|
 | `name` | yes | Unique within the array; alphanumeric + `._-`. Used as the env-var suffix for the secret (see below). |
-| `provider` | yes | Stage 1: only `openai-compat`. |
+| `provider` | yes | `openai-compat` (OpenAI / DeepSeek / Moonshot / Qwen / Ollama / vLLM / OpenRouter / Together / Groq / SiliconFlow / Azure-compat) OR `anthropic` (Anthropic Messages API, since Stage 2 sub-PR #1). |
 | `model` | yes | The default model id sent in every request. |
 | `baseUrl` | no | Defaults to `https://api.openai.com/v1`. Strip the trailing `/chat/completions`; the provider appends it. |
 | `label` | no | Display label for logs / future cost dashboard (e.g. `deepseek` / `kimi`). Defaults to `openai-compat`. |
@@ -377,6 +377,129 @@ Per-thread bindings live in `~/.agim/heartbeat.db` (SQLite). One row per
 IM thread; UPSERT keyed on `(platform, channel_id, thread_id)`. Rebinding
 the same thread resets `last_tick_at` so the new body takes effect on
 the next tick.
+
+## Anthropic native provider (Stage 2 sub-PR #1)
+
+When `provider: 'anthropic'`, agim talks directly to the
+[Messages API](https://docs.anthropic.com/en/api/messages) instead of
+going through the OpenAI compatibility path. This matters because:
+
+- `system` is a top-level body field (Anthropic doesn't accept a system
+  message in the array)
+- assistant content is a `[{type:'text'}, {type:'tool_use'}]` block
+  array, not a flat string + tool_calls field
+- tool results live inside a `user` message as `tool_result` blocks
+  rather than a separate `role: 'tool'`
+- response `stop_reason` values are different (`end_turn`, `tool_use`,
+  `max_tokens`, `stop_sequence`, …)
+
+Agim normalises all of this so callers see the same `LlmMessage`,
+`ChatResult`, `ToolCallRequest` types regardless of backend. The
+serializer / deserializer logic lives in `anthropic-provider.ts`.
+
+### Recipe
+
+```bash
+export AGIM_LLM_SECRET_CLAUDE_BIG=sk-ant-...
+```
+
+```jsonc
+{
+  "llmBackends": [
+    {
+      "name": "claude-big",
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20241022",
+      "label": "anthropic"
+    }
+  ],
+  "llmRoles": {
+    "evaluator": "claude-big"
+  }
+}
+```
+
+### Provider config knobs
+
+| field | default | what |
+|---|---|---|
+| `baseUrl` | `https://api.anthropic.com` | Override for Bedrock / Vertex / corporate gateway |
+| `apiVersion` | `2023-06-01` | `anthropic-version` header — Anthropic pins API behaviour by this date |
+| `extraHeaders` | `{}` | Extra headers (e.g. for a gateway). `x-api-key`, `anthropic-version`, `content-type` are always set by the provider |
+| `temperature`, `maxTokens`, `retryOnTransient` | (same defaults as openai-compat) | |
+
+### Out of scope (deferred)
+
+- Streaming (the buffered path already works for all Stage-1 + Stage-2
+  callers; streaming lands when we wire the "show thinking" feature)
+- Prompt caching (`cache_control: {type:'ephemeral'}`) — easy to add
+  once we have a place to decide which blocks deserve it
+- Extended thinking blocks (`thinking: {type:'enabled'}`)
+- Direct Bedrock / Vertex transports (those need different auth flows;
+  a separate provider class later)
+
+## Tool calling (Stage 2 sub-PR #1)
+
+Both `openai-compat` and `anthropic` providers now expose tool calling
+through a unified type:
+
+```ts
+import type { ChatOptions, ToolDef, ToolCallRequest } from 'agim/llm'
+
+const tools: ToolDef[] = [{
+  name: 'list_files',
+  description: 'List files under a directory',
+  parameters: {
+    type: 'object',
+    properties: { path: { type: 'string' } },
+    required: ['path'],
+  },
+}]
+
+const result = await provider.chat(messages, { tools, toolChoice: 'auto' })
+
+if (result.finishReason === 'tool_use' && result.toolCalls) {
+  for (const call of result.toolCalls) {
+    const out = await execute(call.name, call.arguments)
+    messages.push({
+      role: 'assistant',
+      content: result.text,
+      toolCalls: result.toolCalls,
+    })
+    messages.push({
+      role: 'tool',
+      toolCallId: call.id,
+      content: out,
+    })
+  }
+  // call provider.chat(messages, ...) again to continue the loop
+}
+```
+
+Stage 2 sub-PR #1 only adds the **provider plumbing** for tool calls —
+the agent loop that orchestrates the iteration above ships in sub-PR
+#3. Stage-1 introspection callers don't pass `tools`, so they're
+unaffected.
+
+### Tool-choice support matrix
+
+| value | openai-compat | anthropic |
+|---|---|---|
+| `'auto'` (default) | `tool_choice: "auto"` | `tool_choice: {type:"auto"}` |
+| `'required'` | `tool_choice: "required"` | `tool_choice: {type:"any"}` |
+| `'none'` | `tool_choice: "none"` | (omitted; caller should pass `tools: []` instead) |
+| `{type:'tool', name}` | `tool_choice: {type:"function", function:{name}}` | `tool_choice: {type:"tool", name}` |
+
+### Malformed JSON arguments
+
+OpenAI emits `function.arguments` as a JSON-encoded string. When the
+model produces invalid JSON, agim surfaces it as
+`ToolCallRequest.argumentsRaw` and sets `arguments = {}`. Tool
+implementations should validate `arguments` themselves or check for
+the presence of `argumentsRaw` to handle malformed inputs.
+
+Anthropic doesn't have this issue — `tool_use.input` arrives already
+parsed by the API.
 
 ## Future stages (preview)
 

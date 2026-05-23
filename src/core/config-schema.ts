@@ -55,8 +55,10 @@ const llmBackendSchema = z.object({
    *  shove into the AGIM_LLM_SECRET_<NAME> env var suffix. */
   name: z.string().min(1).regex(safeNamePattern,
     'LLM backend name must be alphanumeric (with . _ - allowed)'),
-  /** Transport / dialect. Stage 1: only openai-compat. */
-  provider: z.enum(['openai-compat']),
+  /** Transport / dialect. Supported: openai-compat (OpenAI / DeepSeek /
+   *  Moonshot / Qwen / Ollama / vLLM / OpenRouter / ...), anthropic
+   *  (Anthropic Messages API). */
+  provider: z.enum(['openai-compat', 'anthropic']),
   /** Default model id. Caller may override per call via ChatOptions.model. */
   model: z.string().min(1),
   /** Full base URL up to (but not including) `/chat/completions`.

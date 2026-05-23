@@ -28,13 +28,92 @@
  * roles needed by introspection callers; tool / function roles arrive in
  * Stage 2 when we add the real agent loop.
  */
-export type LlmMessageRole = 'system' | 'user' | 'assistant'
+export type LlmMessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
-/** Single chat message as sent to the LLM provider. */
+/**
+ * Single chat message as sent to / received from the LLM provider.
+ *
+ * Roles + valid combinations of fields:
+ *
+ *   { role: 'system'    | 'user', content }
+ *     plain text turn.
+ *
+ *   { role: 'assistant', content, toolCalls? }
+ *     model output. content may be the empty string when the model
+ *     emitted only tool calls. toolCalls echoes ChatResult.toolCalls
+ *     verbatim from a prior turn — required for history so the next
+ *     tool-result message can reference call IDs.
+ *
+ *   { role: 'tool',      content, toolCallId }
+ *     reply from agent code to a previous assistant tool call. content
+ *     is the stringified tool result. toolCallId MUST match an id from
+ *     the assistant turn's toolCalls (else providers reject the batch).
+ */
 export interface LlmMessage {
   role: LlmMessageRole
   content: string
+  /** Required when role='tool'; ignored otherwise. */
+  toolCallId?: string
+  /** Required to round-trip assistant turns that contained tool calls;
+   *  ignored on user/system/tool messages. Empty/undefined for plain
+   *  assistant text turns. */
+  toolCalls?: ToolCallRequest[]
 }
+
+/**
+ * Single tool exposed to the LLM. Equivalent to OpenAI's
+ * {type:'function', function:{...}} wrapper and Anthropic's {name,
+ * description, input_schema} entry; providers do the dialect adapt.
+ *
+ * `parameters` MUST be a JSON Schema object (typically
+ * `{type:'object', properties:{...}, required:[...]}`). We don't
+ * validate the schema here — providers usually pass it through verbatim
+ * and the LLM itself enforces the contract.
+ */
+export interface ToolDef {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+/**
+ * One tool call requested by the model. The Stage-2 agent loop iterates
+ * over `ChatResult.toolCalls`, executes each one, then appends matching
+ * `{role:'tool'}` messages and re-invokes the provider. The `id` is
+ * provider-assigned (OpenAI: 'call_...', Anthropic: 'toolu_...') and
+ * MUST round-trip on the tool-result message — providers reject batches
+ * where ids don't match.
+ *
+ * `arguments` is the already-JSON-parsed input. OpenAI returns a JSON
+ * string in `function.arguments`; we parse it client-side so every
+ * caller sees a normal object. When the LLM emits malformed JSON the
+ * provider sets `argumentsRaw` and leaves `arguments` as `{}`; tool
+ * implementations should validate the shape themselves.
+ *
+ * `raw` is reserved for provider-specific metadata that must round-trip
+ * across turns (e.g. Anthropic cache_control hints, future Gemini
+ * thought signatures). The agent loop preserves it verbatim.
+ */
+export interface ToolCallRequest {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+  /** When present, JSON parsing of the arguments failed; tools should
+   *  validate or refuse. Kept as a separate field so the common case
+   *  (`arguments` is the parsed object) stays cheap. */
+  argumentsRaw?: string
+  raw?: unknown
+}
+
+/** Tool-choice hint forwarded to providers. Most providers default to
+ *  'auto'; a few callers want to force a specific tool ('required' +
+ *  name) or block all tool use ('none') for one call. Provider support
+ *  varies — unknown values fall back to 'auto'. */
+export type ToolChoice =
+  | 'auto'
+  | 'required'
+  | 'none'
+  | { type: 'tool'; name: string }
 
 /** Token + cost usage surfaced by the provider, when available. */
 export interface LlmUsage {
@@ -49,8 +128,9 @@ export interface LlmUsage {
 
 /** Reason the model stopped generating. */
 export type FinishReason =
-  | 'stop'        // normal end-of-message
-  | 'length'      // max tokens reached
+  | 'stop'         // normal end-of-message
+  | 'tool_use'     // model returned tool_calls; caller should execute + resume
+  | 'length'       // max tokens reached
   | 'content_filter'
   | 'error'
   | 'unknown'
@@ -82,12 +162,30 @@ export interface ChatOptions {
    *  ChatOptions type stable while letting power users tune
    *  OpenRouter-style headers, DeepSeek-specific thinking mode, etc. */
   providerOptions?: Record<string, unknown>
+  /** Stage 2 — tool definitions advertised to the model. When unset
+   *  (or empty) the model has no tool access for this call; this is
+   *  the introspection-caller default and matches Stage-1 behaviour. */
+  tools?: ToolDef[]
+  /** Stage 2 — tool-use hint. 'auto' (default) lets the model decide;
+   *  'required' forces some tool call; 'none' suppresses tools even
+   *  when `tools` is non-empty; `{type:'tool', name}` forces a
+   *  specific tool. Provider support varies; unknown values fall
+   *  back to 'auto'. */
+  toolChoice?: ToolChoice
 }
 
 /** Result of a chat call. */
 export interface ChatResult {
-  /** Plain text body. May be the empty string on `finishReason: 'error'`. */
+  /** Plain text body. May be the empty string on `finishReason: 'error'`
+   *  or when the model emitted only tool_calls. */
   text: string
+  /** Stage 2 — tool calls the model wants the agent loop to execute.
+   *  When present, finishReason is typically 'tool_use'. Stage-1
+   *  introspection callers can simply ignore this field — non-empty
+   *  toolCalls in a chat() call (no agent loop) just means the model
+   *  spent budget on a tool the caller never advertised, which is rare
+   *  but harmless. */
+  toolCalls?: ToolCallRequest[]
   /** Usage metrics, when the provider reports them. */
   usage: LlmUsage
   /** Why the model stopped. */
@@ -250,6 +348,8 @@ export abstract class LlmProvider {
       maxTokens: opts.maxTokens ?? this.defaultMaxTokens,
       timeoutMs: opts.timeoutMs,
       providerOptions: opts.providerOptions ?? {},
+      tools: opts.tools && opts.tools.length > 0 ? opts.tools : undefined,
+      toolChoice: opts.toolChoice,
     }
   }
 
@@ -305,6 +405,10 @@ export interface NormalizedOptions {
   maxTokens: number
   timeoutMs?: number
   providerOptions: Record<string, unknown>
+  /** Stage 2 — tool definitions to advertise. Empty array → undefined
+   *  so providers can rely on `opts.tools ? ... : ...` shorthand. */
+  tools?: ToolDef[]
+  toolChoice?: ToolChoice
 }
 
 /**

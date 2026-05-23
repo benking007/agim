@@ -512,6 +512,26 @@ program
           return
         }
 
+        // P0 #5 — ask-user intercept. If the agent invoked
+        // mcp__imhub__ask_user on this thread AND the user typed
+        // something that matches one of the offered choices (number
+        // / letter / label substring), resolve the pending Promise
+        // and stop. Non-matching text falls through to the normal
+        // router — the user changed topic; the ask either times out
+        // on its own or the agent will retry.
+        try {
+          const { tryHandleAskReply } = await import('./core/ask-user-router.js')
+          if (tryHandleAskReply(ctx.platform, ctx.channelId, ctx.message.threadId, ctx.message.text)) {
+            ctx.logger.info({ event: 'message.consumed_by_ask_user' })
+            return
+          }
+        } catch (err) {
+          ctx.logger.warn({
+            event: 'ask.intercept_crashed',
+            err: err instanceof Error ? err.message : String(err),
+          }, 'ask-user intercept threw — falling through to normal flow')
+        }
+
         // Reminder-intent confirmation reply ("y"/"n" to a previously-
         // proposed reminder card). Must come BEFORE the detector so a
         // user replying "y" doesn't get re-detected as another reminder.

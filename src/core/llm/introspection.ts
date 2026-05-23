@@ -96,3 +96,60 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
     return null
   }
 }
+
+/**
+ * Stage 5 — try a CHAIN of roles in order until one returns a non-null
+ * result. The chain is operator-configurable per call (typically
+ * ['cheap', 'native-chat', 'evaluator'] for low-stakes introspection
+ * that should escalate to a smarter / different vendor on failure).
+ *
+ * Returns the first successful IntrospectionResult, augmented with
+ * `triedRoles` so the caller can audit which roles got skipped. When
+ * every role in the chain returns null, returns null — the caller's
+ * existing CLI-fallback path takes over (same contract as
+ * tryIntrospect).
+ */
+export interface IntrospectionChainInput
+  extends Omit<IntrospectionInput, 'role'> {
+  /** Roles to try in order. Empty array returns null immediately. */
+  roles: LlmRole[]
+  /** Per-role wall-clock cap (default 30s). */
+  perRoleTimeoutMs?: number
+}
+
+export interface IntrospectionChainResult extends IntrospectionResult {
+  /** Roles attempted in order, including the one that succeeded
+   *  (always last). Lets the caller log "we fell back twice". */
+  triedRoles: LlmRole[]
+}
+
+export async function tryIntrospectChain(
+  input: IntrospectionChainInput,
+): Promise<IntrospectionChainResult | null> {
+  if (!input.roles || input.roles.length === 0) return null
+  const tried: LlmRole[] = []
+  for (const role of input.roles) {
+    tried.push(role)
+    const r = await tryIntrospect({
+      role,
+      prompt: input.prompt,
+      system: input.system,
+      timeoutMs: input.perRoleTimeoutMs ?? input.timeoutMs ?? 30_000,
+      signal: input.signal,
+      temperature: input.temperature,
+      model: input.model,
+    })
+    if (r) {
+      log.info({
+        event: 'llm.introspect.chain.success',
+        role, attempts: tried.length, totalRoles: input.roles.length,
+      })
+      return { ...r, triedRoles: tried.slice() }
+    }
+  }
+  log.info({
+    event: 'llm.introspect.chain.exhausted',
+    attempts: tried.length, roles: tried.join(','),
+  })
+  return null
+}

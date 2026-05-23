@@ -140,6 +140,18 @@ function isConfigured(): boolean {
 class NativeAgentAdapter implements AgentAdapter {
   readonly name = 'native'
   readonly aliases = ['llm', 'native-llm', 'na']
+  readonly kind = 'in-process' as const
+
+  /** One-line UI hint surfaced by `/agents`: which LLM role + backend
+   *  currently powers this adapter. Returns undefined when not
+   *  configured (caller renders 'NOT CONFIGURED' elsewhere). */
+  describe(): string | undefined {
+    const picked = pickProvider()
+    if (!picked) return undefined
+    // 'role -> vendor:backend' so a glance at /agents tells you which
+    // LLM is wired without opening config.json.
+    return `role=${picked.role} -> ${picked.provider.providerType}:${picked.provider.name}`
+  }
 
   async isAvailable(): Promise<boolean> {
     return isConfigured()

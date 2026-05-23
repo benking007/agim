@@ -181,6 +181,7 @@ const BASE_FLAGS = ['--json', '--skip-git-repo-check'] as const
 export class CodexAdapter extends AgentBase {
   readonly name = 'codex'
   readonly aliases = ['cx', 'openai', 'codexcli']
+  readonly kind = 'cli' as const
 
   /**
    * Override to bypass the codex wrapper's broken stdio handling — see

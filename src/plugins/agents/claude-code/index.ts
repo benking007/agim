@@ -89,6 +89,7 @@ interface ClaudeEvent {
 export class ClaudeCodeAdapter extends AgentBase {
   readonly name = 'claude-code'
   readonly aliases = ['cc', 'claude', 'claudecode']
+  readonly kind = 'cli' as const
 
   protected get commandName(): string { return 'claude' }
 

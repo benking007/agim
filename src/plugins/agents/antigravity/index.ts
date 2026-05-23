@@ -72,6 +72,7 @@ export class AntigravityAdapter extends AgentBase {
   // familiar Google branding label without conflicting with the Gemini CLI
   // (which agim doesn't ship today — if/when we add it, rename this alias).
   readonly aliases = ['agy', 'gemini', 'ag']
+  readonly kind = 'cli' as const
 
   /** Resolved once on first use — survives the process lifetime.
    *  null = "we haven't probed yet"; undefined = "probed and didn't find". */

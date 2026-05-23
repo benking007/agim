@@ -58,6 +58,9 @@ export interface LlmMessage {
    *  ignored on user/system/tool messages. Empty/undefined for plain
    *  assistant text turns. */
   toolCalls?: ToolCallRequest[]
+  /** DeepSeek / thinking-mode providers echo `reasoning_content` on
+   *  assistant turns; MUST round-trip on subsequent API calls. */
+  reasoningContent?: string
 }
 
 /**
@@ -186,6 +189,8 @@ export interface ChatResult {
    *  spent budget on a tool the caller never advertised, which is rare
    *  but harmless. */
   toolCalls?: ToolCallRequest[]
+  /** Provider-specific thinking trace (e.g. DeepSeek reasoning_content). */
+  reasoningContent?: string
   /** Usage metrics, when the provider reports them. */
   usage: LlmUsage
   /** Why the model stopped. */

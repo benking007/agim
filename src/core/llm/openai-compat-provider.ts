@@ -98,9 +98,11 @@ export class OpenAICompatProvider extends LlmProvider {
     const finishReason = mapFinishReason(json?.choices?.[0]?.finish_reason)
     const usage = extractUsage(json)
     const toolCalls = extractToolCalls(json)
+    const reasoningContent = extractReasoningContent(json)
     return {
       text,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      reasoningContent,
       usage,
       finishReason,
       modelUsed: typeof json?.model === 'string' ? json.model : opts.model,
@@ -282,6 +284,7 @@ interface ChatCompletionChoiceMessage {
   role?: string
   content?: string | null
   tool_calls?: OpenAIToolCall[]
+  reasoning_content?: string | null
 }
 
 interface ChatCompletionChoice {
@@ -310,6 +313,11 @@ interface ChatCompletionChunk {
   model?: string
   choices?: ChatCompletionChoice[]
   usage?: ChatCompletionUsage
+}
+
+function extractReasoningContent(json: ChatCompletionResponse | null): string | undefined {
+  const r = json?.choices?.[0]?.message?.reasoning_content
+  return typeof r === 'string' && r.length > 0 ? r : undefined
 }
 
 function extractText(json: ChatCompletionResponse | null): string {
@@ -389,7 +397,7 @@ function serializeMessage(m: LlmMessage): Record<string, unknown> {
     }
   }
   if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
-    return {
+    const out: Record<string, unknown> = {
       role: 'assistant',
       // content may be empty when the assistant emitted only tool_calls.
       // OpenAI requires the key to be present (use null over '').
@@ -399,11 +407,15 @@ function serializeMessage(m: LlmMessage): Record<string, unknown> {
         type: 'function',
         function: {
           name: tc.name,
-          // Always send a string; the LLM expects to see what it emitted.
           arguments: tc.argumentsRaw ?? JSON.stringify(tc.arguments),
         },
       })),
     }
+    if (m.reasoningContent) out.reasoning_content = m.reasoningContent
+    return out
+  }
+  if (m.role === 'assistant' && m.reasoningContent) {
+    return { role: 'assistant', content: m.content || null, reasoning_content: m.reasoningContent }
   }
   return { role: m.role, content: m.content }
 }

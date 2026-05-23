@@ -256,6 +256,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       role: 'assistant',
       content: result.text,
       toolCalls: result.toolCalls,
+      reasoningContent: result.reasoningContent,
     })
 
     // Execute each tool call (sequentially — preserves order in the

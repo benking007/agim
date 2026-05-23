@@ -227,6 +227,55 @@ describe('OpenAICompatProvider', () => {
       { role: 'user', content: 'hi' },
     ])
   })
+  it('round-trips DeepSeek reasoning_content on assistant tool-call turns', async () => {
+    let sentMessages: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { messages: Array<Record<string, unknown>> }
+      sentMessages = body.messages
+      return makeJsonResponse({
+        choices: [{ message: { content: 'done' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'k' })
+    await p.chat([
+      { role: 'user', content: 'hi' },
+      {
+        role: 'assistant',
+        content: '',
+        reasoningContent: 'thinking trace',
+        toolCalls: [{ id: 'call_1', name: 'list_files', arguments: { path: '/tmp' } }],
+      },
+      { role: 'tool', toolCallId: 'call_1', content: 'ok' },
+    ])
+
+    const assistant = sentMessages[1] as { reasoning_content?: string; tool_calls: unknown[] }
+    expect(assistant.reasoning_content).toBe('thinking trace')
+    expect(assistant.tool_calls).toHaveLength(1)
+  })
+
+  it('extracts reasoning_content from provider response', async () => {
+    globalThis.fetch = (async () => makeJsonResponse({
+      choices: [{
+        message: {
+          content: 'answer',
+          reasoning_content: 'chain-of-thought',
+          tool_calls: [{
+            id: 'call_x',
+            type: 'function',
+            function: { name: 'do_thing', arguments: '{}' },
+          }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+    })) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({ name: 't', model: 'm', apiKey: 'k' })
+    const result = await p.chat([{ role: 'user', content: 'go' }])
+    expect(result.reasoningContent).toBe('chain-of-thought')
+    expect(result.toolCalls).toHaveLength(1)
+  })
+
 })
 
 

@@ -364,6 +364,21 @@ export function listPendingAsks(): Array<{
   return out
 }
 
+/**
+ * Cancel a single pending ask by reqId. Returns true iff something
+ * was cancelled. Used by the admin panel's per-row Cancel button —
+ * the agent waiting on it gets { ok: false, reason: 'cancelled' }
+ * back exactly as if the user had let it time out, which the agent
+ * already knows how to handle.
+ */
+export function cancelPendingAsk(reqId: string, reason = 'cancelled by operator'): boolean {
+  const p = PENDING.get(reqId)
+  if (!p) return false
+  p.resolve({ ok: false, error: reason, reason: 'cancelled' })
+  log.info({ event: 'ask.cancelled_by_operator', reqId })
+  return true
+}
+
 /** Test hook: cancel everything. Useful between bun-test cases. */
 export function _resetAskBusForTests(): void {
   for (const p of Array.from(PENDING.values())) {

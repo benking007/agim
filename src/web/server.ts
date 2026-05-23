@@ -16,6 +16,7 @@ import { validateConfig } from '../core/config-schema.js'
 import { isMasked, maskSecret } from './env-mask.js'
 import { handleLlmApi } from './llm-api.js'
 import { handleMcpApi } from './mcp-api.js'
+import { handleBackgroundTasksApi } from './background-tasks-api.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -958,6 +959,16 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/mcp' || url.pathname.startsWith('/api/mcp/')) {
       if (!requireAdmin(req, res)) return
       const handled = await handleMcpApi(req, res, url)
+      if (handled) return
+    }
+    // P1 follow-up — admin overview of the three per-thread background
+    // primitives (heartbeat bindings / goals / pending asks). Cross-
+    // thread, user-typed content — require admin on every method.
+    if (url.pathname.startsWith('/api/heartbeat/')
+        || url.pathname === '/api/goals' || url.pathname.startsWith('/api/goals/')
+        || url.pathname.startsWith('/api/asks/')) {
+      if (!requireAdmin(req, res)) return
+      const handled = await handleBackgroundTasksApi(req, res, url)
       if (handled) return
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {

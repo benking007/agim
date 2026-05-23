@@ -1585,10 +1585,26 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
       }
       if (key === 'dingtalk' && typeof val === 'object' && val !== null) {
         const d = val as Record<string, unknown>
+        // v1.2.41 (batch 4 follow-up) — preserve clientSecret per-account when
+        // the SPA echoes back the masked placeholder.
+        let mergedAccounts: Record<string, Record<string, unknown>> | undefined
+        if (d.accounts && typeof d.accounts === 'object') {
+          mergedAccounts = {}
+          const existingAccts = (existing.dingtalk?.accounts || {}) as Record<string, { clientSecret?: string }>
+          for (const [accId, raw] of Object.entries(d.accounts as Record<string, Record<string, unknown>>)) {
+            const incomingSecret = typeof raw.clientSecret === 'string' ? raw.clientSecret : undefined
+            const keep = incomingSecret !== undefined && isMasked(incomingSecret)
+            mergedAccounts[accId] = {
+              ...raw,
+              clientSecret: keep ? existingAccts[accId]?.clientSecret : incomingSecret,
+            }
+          }
+        }
         merged.dingtalk = {
           ...(existing.dingtalk || {}),
           ...d,
           clientSecret: typeof d.clientSecret === 'string' && isMasked(d.clientSecret) ? existing.dingtalk?.clientSecret : d.clientSecret,
+          ...(mergedAccounts !== undefined ? { accounts: mergedAccounts } : {}),
         }
         continue
       }

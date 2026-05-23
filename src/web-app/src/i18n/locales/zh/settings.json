@@ -157,9 +157,13 @@
         "emoji":   "emoji ⏳→✅",
         "kaomoji": "kaomoji（纯文本颜文字）"
       },
-      "accountsTitle": "多账号 / 多机器人（v1.2.40+）",
+      "accountsTitle": "多账号 / 多机器人",
       "accountDisabled": "已禁用",
-      "accountsHint": "通过 ~/.agim/config.json 的 dingtalk.accounts 或 `agim config dingtalk` 管理。每个 entry 启动独立的 DWClient，dmPolicy / allowFrom / ack-reaction 全部隔离。"
+      "accountsHint": "每个 entry 启动独立的 DWClient，dmPolicy / allowFrom / ack-reaction 全部隔离。保存后请重启 agim 让新账号生效。",
+      "accountsEmpty": "还没有额外账号。点「+ 添加账号」接入另一个钉钉机器人。",
+      "addAccount": "添加账号",
+      "accountName": "显示名（可选）",
+      "accountRenameCollision": "已存在 id 为 \"{{id}}\" 的账号；请换一个 id。"
     },
     "qr": {
       "title":      "扫码登录微信",

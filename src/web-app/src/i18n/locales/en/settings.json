@@ -156,9 +156,13 @@
         "emoji":   "emoji ⏳→✅",
         "kaomoji": "kaomoji (text-face)"
       },
-      "accountsTitle": "Extra accounts (v1.2.40+)",
+      "accountsTitle": "Extra accounts",
       "accountDisabled": "disabled",
-      "accountsHint": "Manage via ~/.agim/config.json (top-level dingtalk.accounts) or `agim config dingtalk`. Each entry starts its own DWClient with isolated dmPolicy / allowFrom / ack-reaction."
+      "accountsHint": "Each entry starts its own DWClient with isolated dmPolicy / allowFrom / ack-reaction. Restart agim after Save for new accounts to take effect.",
+      "accountsEmpty": "No extra accounts yet. Click ‘+ add account’ to wire another DingTalk bot.",
+      "addAccount": "Add account",
+      "accountName": "Display name (optional)",
+      "accountRenameCollision": "An account with id \"{{id}}\" already exists; pick another id."
     },
     "qr": {
       "title":      "Scan WeChat QR",

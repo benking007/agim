@@ -61,13 +61,8 @@ interface PlatformDraft {
     allowFrom?: string[]
     groupAllowFrom?: string[]
     ackReaction?: 'off' | 'emoji' | 'kaomoji'
-    // v1.2.40 (batch 4) — multi-account; read-only in the Web admin for now
-    accounts?: Record<string, {
-      name?: string
-      clientId?: string
-      clientSecret?: string
-      enabled?: boolean
-    }>
+    // v1.2.41 (batch 4 follow-up) — full multi-account editor
+    accounts?: Record<string, DingTalkAccountDraft>
   }
   discord?:   { botToken?: string; channelId?: string }
 }
@@ -340,26 +335,13 @@ export default function SettingsMessengersRoute(): JSX.Element {
                 { value: 'kaomoji', label: t('messengers.dingtalk.ack.kaomoji') },
               ]}
             />
-            {/* v1.2.40 (batch 4) — multi-account read-only summary. CRUD
-                lives in config.json / CLI for v1.2.40; a full table-style
-                editor lands in a follow-up. */}
-            {Object.keys(draft.dingtalk.dingtalk?.accounts ?? {}).length > 0 ? (
-              <div className="text-xs text-text-dim mt-2 border-t border-input pt-2">
-                <div className="font-semibold mb-1">
-                  {t('messengers.dingtalk.accountsTitle')}
-                </div>
-                <ul className="ml-3 list-disc">
-                  {Object.entries(draft.dingtalk.dingtalk?.accounts ?? {}).map(([id, a]) => (
-                    <li key={id}>
-                      <code>{id}</code>
-                      {a.name ? ` · ${a.name}` : ''}
-                      {a.enabled === false ? ` · ${t('messengers.dingtalk.accountDisabled')}` : ''}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-1">{t('messengers.dingtalk.accountsHint')}</div>
-              </div>
-            ) : null}
+            {/* v1.2.41 (batch 4 follow-up) — multi-account CRUD editor. */}
+            <DingTalkAccountsEditor
+              accounts={draft.dingtalk.dingtalk?.accounts ?? {}}
+              onChange={(next) => patchSlot('dingtalk', {
+                dingtalk: { ...draft.dingtalk.dingtalk, accounts: next },
+              })}
+            />
           </PlatformCard>
 
           {cfg.features?.globalIm ? (
@@ -565,5 +547,181 @@ function WechatQrDialog({ open, onOpenChange, onConfirmed }: WechatQrDialogProps
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ─── v1.2.41 — DingTalk multi-account CRUD editor ───────────────────
+// Renders below the main DingTalk card. Owns the in-memory accounts
+// dict and bubbles every change up via `onChange` so the page-level
+// dirty/save logic notices and lights up the Save button.
+//
+// Each row shows: id (read-only after creation), name, clientId,
+// clientSecret (password mode, masked on echo), dmPolicy / groupPolicy /
+// ackReaction selectors, allowFrom / groupAllowFrom CSVs, enabled
+// toggle, and a delete button. "Add account" appends a fresh row with
+// a generated id the operator can rename inline.
+
+export interface DingTalkAccountDraft {
+  name?: string
+  clientId?: string
+  clientSecret?: string
+  dmPolicy?: 'open' | 'pairing' | 'allowlist'
+  groupPolicy?: 'open' | 'allowlist' | 'disabled'
+  allowFrom?: string[]
+  groupAllowFrom?: string[]
+  ackReaction?: 'off' | 'emoji' | 'kaomoji'
+  enabled?: boolean
+}
+
+interface DingTalkAccountsEditorProps {
+  accounts: Record<string, DingTalkAccountDraft>
+  onChange: (next: Record<string, DingTalkAccountDraft>) => void
+}
+
+function DingTalkAccountsEditor({ accounts, onChange }: DingTalkAccountsEditorProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  const entries = Object.entries(accounts)
+
+  const updateAccount = (id: string, patch: Partial<DingTalkAccountDraft>) => {
+    onChange({ ...accounts, [id]: { ...accounts[id], ...patch } })
+  }
+  const deleteAccount = (id: string) => {
+    const next = { ...accounts }
+    delete next[id]
+    onChange(next)
+  }
+  const renameAccount = (oldId: string, newId: string) => {
+    if (!newId || newId === oldId) return
+    if (accounts[newId]) {
+      toast.error(t('messengers.dingtalk.accountRenameCollision', { id: newId }))
+      return
+    }
+    const next: Record<string, DingTalkAccountDraft> = {}
+    for (const [k, v] of Object.entries(accounts)) {
+      next[k === oldId ? newId : k] = v
+    }
+    onChange(next)
+  }
+  const addAccount = () => {
+    // Find an unused id of shape account-N.
+    let n = entries.length + 1
+    let candidate = `account-${n}`
+    while (accounts[candidate]) { n += 1; candidate = `account-${n}` }
+    onChange({ ...accounts, [candidate]: { enabled: true } })
+  }
+
+  return (
+    <div className="mt-3 border-t border-input pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-semibold text-text-dim">
+          {t('messengers.dingtalk.accountsTitle')}
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={addAccount}>
+          + {t('messengers.dingtalk.addAccount')}
+        </Button>
+      </div>
+
+      {entries.length === 0 ? (
+        <div className="text-xs text-text-dim italic">
+          {t('messengers.dingtalk.accountsEmpty')}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map(([id, acct]) => (
+            <div key={id} className="rounded-md border border-input p-2">
+              <div className="mb-2 flex items-center gap-2">
+                <Input
+                  id={`acct-id-${id}`}
+                  defaultValue={id}
+                  onBlur={(e) => renameAccount(id, e.target.value.trim())}
+                  className="font-mono text-xs w-40"
+                  placeholder="account-id"
+                />
+                <Input
+                  id={`acct-name-${id}`}
+                  value={acct.name ?? ''}
+                  onChange={(e) => updateAccount(id, { name: e.target.value })}
+                  className="text-xs flex-1"
+                  placeholder={t('messengers.dingtalk.accountName')}
+                />
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={acct.enabled !== false}
+                    onChange={(e) => updateAccount(id, { enabled: e.target.checked })}
+                  />
+                  {t('messengers.enabled')}
+                </label>
+                <Button
+                  type="button" size="sm" variant="ghost"
+                  onClick={() => deleteAccount(id)}
+                  className="text-danger"
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <div className="space-y-1">
+                <FieldRow
+                  id={`acct-cid-${id}`} label={t('messengers.fields.clientId')}
+                  value={acct.clientId ?? ''}
+                  onChange={(v) => updateAccount(id, { clientId: v })}
+                />
+                <FieldRow
+                  id={`acct-secret-${id}`} label={t('messengers.fields.clientSecret')}
+                  value={acct.clientSecret ?? ''}
+                  type="password"
+                  onChange={(v) => updateAccount(id, { clientSecret: v })}
+                />
+                <SelectRow<'open' | 'pairing' | 'allowlist'>
+                  id={`acct-dm-${id}`} label={t('messengers.dingtalk.dmPolicy')}
+                  value={acct.dmPolicy ?? 'open'}
+                  onChange={(v) => updateAccount(id, { dmPolicy: v })}
+                  options={[
+                    { value: 'open',      label: t('messengers.dingtalk.policy.open') },
+                    { value: 'pairing',   label: t('messengers.dingtalk.policy.pairing') },
+                    { value: 'allowlist', label: t('messengers.dingtalk.policy.allowlist') },
+                  ]}
+                />
+                <SelectRow<'open' | 'allowlist' | 'disabled'>
+                  id={`acct-group-${id}`} label={t('messengers.dingtalk.groupPolicy')}
+                  value={acct.groupPolicy ?? 'open'}
+                  onChange={(v) => updateAccount(id, { groupPolicy: v })}
+                  options={[
+                    { value: 'open',      label: t('messengers.dingtalk.policy.open') },
+                    { value: 'allowlist', label: t('messengers.dingtalk.policy.allowlist') },
+                    { value: 'disabled',  label: t('messengers.dingtalk.policy.disabled') },
+                  ]}
+                />
+                <FieldRow
+                  id={`acct-allow-${id}`} label={t('messengers.dingtalk.allowFrom')}
+                  value={(acct.allowFrom ?? []).join(',')}
+                  onChange={(v) => updateAccount(id, {
+                    allowFrom: v.split(',').map((s) => s.trim()).filter(Boolean),
+                  })}
+                />
+                <FieldRow
+                  id={`acct-gallow-${id}`} label={t('messengers.dingtalk.groupAllowFrom')}
+                  value={(acct.groupAllowFrom ?? []).join(',')}
+                  onChange={(v) => updateAccount(id, {
+                    groupAllowFrom: v.split(',').map((s) => s.trim()).filter(Boolean),
+                  })}
+                />
+                <SelectRow<'off' | 'emoji' | 'kaomoji'>
+                  id={`acct-ack-${id}`} label={t('messengers.dingtalk.ackReaction')}
+                  value={acct.ackReaction ?? 'off'}
+                  onChange={(v) => updateAccount(id, { ackReaction: v })}
+                  options={[
+                    { value: 'off',     label: t('messengers.dingtalk.ack.off') },
+                    { value: 'emoji',   label: t('messengers.dingtalk.ack.emoji') },
+                    { value: 'kaomoji', label: t('messengers.dingtalk.ack.kaomoji') },
+                  ]}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-1 text-xs text-text-dim">{t('messengers.dingtalk.accountsHint')}</div>
+    </div>
   )
 }

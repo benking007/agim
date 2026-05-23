@@ -17,6 +17,7 @@ import { isMasked, maskSecret } from './env-mask.js'
 import { handleLlmApi } from './llm-api.js'
 import { handleMcpApi } from './mcp-api.js'
 import { handleBackgroundTasksApi } from './background-tasks-api.js'
+import { handleAgimSkillsApi } from './agim-skills-api.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -969,6 +970,14 @@ export async function startWebServer(options: {
         || url.pathname.startsWith('/api/asks/')) {
       if (!requireAdmin(req, res)) return
       const handled = await handleBackgroundTasksApi(req, res, url)
+      if (handled) return
+    }
+    // P1 follow-up — agim skills editor (SKILL.md CRUD). SKILL.md
+    // bodies are injected into every agent prompt; admin-gated even
+    // on GET because the dir paths reveal install layout.
+    if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
+      if (!requireAdmin(req, res)) return
+      const handled = await handleAgimSkillsApi(req, res, url)
       if (handled) return
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {

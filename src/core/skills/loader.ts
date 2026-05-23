@@ -39,7 +39,7 @@
 //     CLI agent itself (Claude Code et al). This loader is exclusively
 //     for the agim-injected skills that ALL agents see.
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logger as rootLogger } from '../logger.js'
@@ -142,6 +142,73 @@ function builtinSkillsDir(): string {
 /** Force a fresh disk scan on next call. Returned by /skill refresh. */
 export function invalidateSkillsCache(): void {
   cache = null
+}
+
+/**
+ * Write (create-or-overwrite) a workspace SKILL.md (P1 web editor).
+ *
+ *   - Lands at <workspaceSkillsDir>/<name>/SKILL.md (operator path,
+ *     not builtin) so subsequent scans pick it up and it shadows any
+ *     same-named builtin.
+ *   - name is sanitized to safe filesystem chars (no '..', no
+ *     leading dots, no slashes). Returns null on invalid name.
+ *   - Body MUST already include the YAML frontmatter; we validate
+ *     it parses + has a description before writing so the editor
+ *     can't ship a broken SKILL.md. Returns the parsed SkillMeta
+ *     on success.
+ *   - Invalidates the cache so listSkills() picks up the new file
+ *     on next call.
+ */
+export function writeSkillFile(name: string, body: string): SkillMeta | null {
+  const safe = sanitizeSkillName(name)
+  if (!safe) return null
+  const probe = parseSkill({ name: safe, dir: '<probe>', source: 'workspace', body })
+  if (!probe) return null
+  if (body.length > MAX_SKILL_BODY_CHARS) {
+    log.warn({ event: 'skills.write.too_long', name: safe, len: body.length })
+    return null
+  }
+  const dir = join(workspaceSkillsDir(), safe)
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), body, 'utf-8')
+  } catch (err) {
+    log.warn({ event: 'skills.write.failed', name: safe, err: String(err) })
+    return null
+  }
+  invalidateSkillsCache()
+  return getSkillByName(safe)
+}
+
+/**
+ * Delete a workspace skill. Builtin (bundled) skills can't be
+ * deleted — operators have to shadow them with a workspace entry
+ * (which writeSkillFile does for them). Returns true iff a file
+ * was actually unlinked.
+ */
+export function deleteSkill(name: string): boolean {
+  const safe = sanitizeSkillName(name)
+  if (!safe) return false
+  const path = join(workspaceSkillsDir(), safe, 'SKILL.md')
+  if (!existsSync(path)) return false
+  try {
+    rmSync(join(workspaceSkillsDir(), safe), { recursive: true, force: true })
+  } catch (err) {
+    log.warn({ event: 'skills.delete.failed', name: safe, err: String(err) })
+    return false
+  }
+  invalidateSkillsCache()
+  return true
+}
+
+/** Sanitize a skill name for filesystem use. */
+function sanitizeSkillName(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed.length > 64) return ''
+  if (trimmed === '.' || trimmed === '..') return ''
+  if (trimmed.startsWith('.')) return ''
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return ''
+  return trimmed
 }
 
 /** Read-only access to the loaded skill list. Triggers a scan on first

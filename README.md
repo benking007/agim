@@ -2,20 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord / Email / Web to a roster of peer agent backends. Single Node.js process, no Docker, no Redis.
-
-Every backend implements the same `AgentAdapter` interface and is treated as a peer (architecture: [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md); PR-by-PR rollout history: [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md)):
-
-| backend | kind | switch | notes |
-|---|---|---|---|
-| **Claude Code** | `[cli]` | `/cc` | full-strength engineering agent (subprocess) |
-| **Codex** | `[cli]` | `/cx` | OpenAI's codex CLI (subprocess) |
-| **OpenCode** | `[cli]` | `/oc` | open-source TUI; broadest model coverage (subprocess) |
-| **Antigravity** | `[cli]` | `/agy` | Google's Gemini-based agent (subprocess) |
-| **native** | `[in-process]` | `/na` | agim's own in-process LLM agent loop — no subprocess. Use for cheap internal work, local Ollama, or any OpenAI/Anthropic API |
-| (per-config) | `[remote]` | as configured | any ACP-compatible endpoint over HTTP |
-
-Agents inter-operate via the **A2A** (`mcp__imhub__call_agent`) primitive — Claude can hand off a cheap subtask to `native`; `native` can call Codex for heavy work; and so on, regardless of kind.
+**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Email to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
 
 > **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
 > npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's
@@ -31,6 +18,12 @@ Agents inter-operate via the **A2A** (`mcp__imhub__call_agent`) primitive — Cl
 ## Highlights
 
 - **3 messengers + email, 3+ agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Email (SMTP); Claude Code, Codex, OpenCode, plus any ACP endpoint
+- **Native LLM stack (v1.3.0+)** — built-in in-process agent loop (`native` adapter) that talks directly to any OpenAI- / Anthropic-compatible API (DeepSeek, Kimi, GLM, Qwen, Ollama, vLLM, OpenAI, Anthropic). LLM Backends + Roles + Secrets config surface, external MCP server attach, multi-iteration agent loop with policy approval gate. Use it as a cheap router for `memory-distill` / `memory-consolidate` / `intent-llm`, as a local-first chat agent (`/na`), or as a peer in A2A. See [`docs/llm-backends.md`](docs/llm-backends.md) + [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md).
+- **Per-thread sustained goals (v1.3.0+ · `/goal`)** — one active multi-turn objective per IM thread, auto-injected into every prompt so the agent stays on-mission across many user turns. Lifecycle: `set / body / progress / pause / resume / complete / cancel / list`. Cross-thread admin at `/tasks/goals`. See [`docs/goals.md`](docs/goals.md).
+- **Heartbeat scheduler (v1.3.0+ · `/heartbeat`)** — bind a thread to a periodic "anything to do right now?" tick. Each tick runs DECIDE (cheap LLM) → EXECUTE (the agent does the work) → EVALUATE (notification gate decides whether to ping the user). Cross-thread admin at `/tasks/heartbeat`.
+- **Structured agent → user choice (v1.3.0+ · `mcp__imhub__ask_user`)** — agents present an N-way multiple-choice question and reliably get a typed answer back (button + text reply, configurable timeout). Avoids the "free-form chat" ambiguity for disambiguation. Pending-queue admin at `/tasks/asks`. See [`docs/ask-user.md`](docs/ask-user.md).
+- **agim Skills engine (v1.3.0+ · `/skill`)** — drop a `SKILL.md` into `~/.agim/skills/<name>/`, every CLI agent + native sees it. 3-tier progressive disclosure (name+desc always-on, body on-demand via `mcp__imhub__read_skill`, scripts/refs via normal file-read). Web editor at `/settings/agim-skills`. See [`docs/skills.md`](docs/skills.md).
+- **`/router compare` A/B evaluator (v1.3.0+)** — run the same prompt against two backends side-by-side (any combo of CLI and native), get latency + tokens + outputs in one card so you can pick a winner before changing `defaultAgent`.
 - **Compliance-first defaults (v1.2.23+)** — global IM adapters (Discord, Telegram) and the remote-ACP-agent surface are **hidden** by default; no installer prompt or web-admin card exposes them. Mainland-China deployments should leave them disabled. For cross-border setups, opt-in via `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1`. See [`docs/security-hardening.md`](docs/security-hardening.md) for the full security control catalogue (~30 env vars / sensitive-path denylist / outbound secret scrubber / audit-events table / admin role on tokens / R14 systemctl-aware lifecycle).
 - **Agent-to-Agent (A2A)** — agents call other agents inline via `mcp__imhub__call_agent`. Just say *"用 codex 帮我跑 git status"* / *"ask opencode to run the tests"* — the active agent hands off, waits, integrates the reply. Guardrails: depth limit (default 3), self-call ban, workspace whitelist, per-user budget. Observability: `/a2a stats | recent | tree <id>`. Disable with `IMHUB_A2A_ENABLED=0`.
 - **A2A shared artifacts (v1.1.3+)** — caller drops files into the callee's workspace via `inputs[]` (`fromAbsolutePath` / `fromCallerOutput` / inline `content`), and callee writes products to `~/.agim/artifacts/<jobId>/_agim-output/`. Returned `outputs[]` lets the caller read files on demand. Hard-link first, copy fallback. Size caps configurable.
@@ -103,15 +96,18 @@ units that call `agim` continue to work without any extra setup.
 | Category | Details |
 |----------|---------|
 | **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Email (SMTP, push-only) |
-| **Agents** | Claude Code, Codex, OpenCode — all via shared `AgentBase`; any HTTP agent via ACP |
+| **Agents** | Claude Code, Codex, OpenCode, Antigravity (all CLI via shared `AgentBase`); **`native`** in-process LLM loop; any HTTP agent via ACP — all share one `AgentAdapter` interface |
+| **Native LLM** | OpenAI- + Anthropic-compatible providers, external MCP server attach, multi-iteration agent loop with policy approval gate, role bindings (`cheap` / `evaluator` / `native-chat`) |
 | **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
-| **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文), SSE dashboard |
-| **Tool Approval** | Human-in-the-loop over IM + in-page cards; MCP sidecar for Claude |
+| **Goals + Heartbeat + Ask** | `/goal` per-thread objective, `/heartbeat` periodic DECIDE/EXECUTE/EVALUATE tick, `mcp__imhub__ask_user` structured multi-choice with `/tasks/{goals,heartbeat,asks}` cross-thread admin |
+| **Skills** | `~/.agim/skills/<name>/SKILL.md` discovered by every agent (CLI + native); 3-tier progressive disclosure; web editor at `/settings/agim-skills` |
+| **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文 — every new v1.3.0 page included), SSE dashboard, settings tabs for LLM / MCP / Native Agent / Skills |
+| **Tool Approval** | Human-in-the-loop over IM + in-page cards; MCP sidecar for Claude; allow-list policy gate for native |
 | **Jobs** | Persistent SQLite job board + cron scheduler; batch ops; background task reader |
-| **Routing** | Intent classifier, circuit breaker, rate limiter, sticky sessions, LLM judge fallback |
+| **Routing** | Intent classifier, circuit breaker, rate limiter, sticky sessions, LLM judge fallback; `/router compare` A/B evaluator |
 | **Workspaces** | Multi-tenant; agent whitelist + rate limits; command-level ACL |
 | **Observability** | pino structured logs, traceId, Prometheus `/api/metrics`, SQLite audit log |
-| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent) |
+| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent) with token-gated `~/.agim/acp-token` (legacy fallback `~/.agim/web-token`) |
 
 ## CLI Commands
 
@@ -130,6 +126,21 @@ agim config claude         # Configure Claude Code
 agim config agent          # Connect a custom ACP agent
 agim agents                # List available agents
 agim messengers            # List available messengers
+
+# v1.3.0+ — native LLM stack & diagnostics
+agim setup llm             # Wizard: add/list/remove LLM backends, bind roles, set secrets
+agim setup llm native-enable  # One-shot: enable `native` agent if a backend is configured
+agim setup mcp             # Wizard: add/list/remove external MCP servers (stdio / HTTP / SSE)
+agim setup mcp health      # Probe every configured MCP server
+agim diag llm              # Ping every backend + show which role binds to what
+agim diag mcp              # Connect-and-list-tools per MCP server
+
+# v1.1.10+ — Web/ACP token management
+agim token create [name]   # Mint a new user/admin token for /api/* + /acp/*
+agim token list            # List tokens (last 4 chars only)
+agim token revoke <id>     # Revoke a token by id
+agim token bootstrap       # Print one-shot web-bootstrap token (`~/.agim/admin-bootstrap-token`)
+
 # (`im-hub-pro …` continues to work as a deprecated alias)
 ```
 
@@ -148,6 +159,11 @@ agim messengers            # List available messengers
 | `/outbox status\|list\|failed\|retry <id>` | Inspect & operate the persistent IM delivery queue (v1.1.2+) |
 | `/a2a stats\|recent\|tree <id>` | Agent-to-Agent observability — chain, latency, callee histogram (v1.1.2+) |
 | `/router status\|explain` | Inspect routing decisions |
+| `/router compare agent:<a> agent:<b> "<prompt>"` | A/B evaluator — run the same prompt against two backends, side-by-side card with latency / tokens / outputs (v1.3.0+) |
+| `/goal …` | Sustained per-thread objective — `set / body / progress / pause / resume / complete / cancel / list / show` (v1.3.0+) |
+| `/heartbeat …` | Periodic DECIDE→EXECUTE→EVALUATE tick — `bind / unbind / show / pause / resume / status` (v1.3.0+) |
+| `/skill list\|show <name>\|refresh` | Inspect agim Skills loaded from `~/.agim/skills/` (v1.3.0+) |
+| `/cc native …` / `/na …` / `/llm …` | Route to the in-process native LLM agent (v1.3.0+) |
 | `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
 | `1` / `2` | After a service restart, reply `1` to redo the interrupted message or `2` to cancel (10 min window) |
 
@@ -373,6 +389,7 @@ Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
 Single process, zero external dependencies — SQLite + session files are the entire persistence layer.
 
 For the full deep-dive see [`docs/architecture/current.md`](docs/architecture/current.md).
+For the native LLM stack and the peer-`AgentAdapter` design that lets CLI agents and the in-process loop share one router / approval bus / A2A / skills pipeline, see [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md) and the PR-by-PR landing order in [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md).
 
 ## Requirements
 
@@ -430,6 +447,8 @@ See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monit
 | **v1.2.0** | **Long-term memory** (SQLite + FTS5 + persona + 4 MCP tools + auto-distillation + Web admin tab); **vector retrieval** (local BGE / OpenAI-compatible, RRF fusion); **Cost & Health dashboard**; **agent-initiated push** (`mcp__imhub__push_message`); recovery card with native inline buttons. |
 | v1.2.1 | Vector backend auto-warm on restart; Memory + Cost tab i18n. |
 | v1.2.2 | `agim admin invite` for onboarding additional admins via IM; vector eager-warm at boot; async consolidate (jobId + polling). |
+| v1.2.27–v1.2.32 | R14/R15 lifecycle hardening — 25s graceful-shutdown hard cap, port-first teardown, reap stray agim processes, argv-strict /proc scan in `findAgimProcesses`, PID file on every successful start, CLI wizard "Web bind+port" section, ACP port gate (`IMHUB_ENABLE_REMOTE_AGENT`). |
+| **v1.3.0** | **nanobot-vs-agim comparison rollout** — `native` in-process AgentAdapter (LLM client + agent loop + MCP attach + policy approval gate, OpenAI/Anthropic-compatible); `llmBackends` + `llmRoles` + `~/.agim/llm-secrets.json` config; `/goal` per-thread sustained objective (P0 #2); `/heartbeat` 3-phase scheduler (P0 #1); `mcp__imhub__ask_user` structured choice (P0 #5); agim Skills 3-tier engine (Stage 3 + P0 #3); inline row-age annotations on memory facts (P0 #4); notification evaluator for `mcp__imhub__push_message` (P0 #9); `/router compare` A/B evaluator (Stage 5); `tryIntrospectChain` fallback helper; Web admin pages `/settings/{llm,mcp,native-agent,agim-skills}` + `/tasks/{heartbeat,goals,asks}`; CLI wizards `agim setup {llm,mcp}` + diagnostics `agim diag {llm,mcp}` + `agim setup llm native-enable` quick path; CLI + Web full i18n (en/zh) for every new surface; `acp-token` separation from `web-token`; `agim token bootstrap` printer; `gen-endpoints --check` drift guard. See [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md). |
 
 ### Next
 

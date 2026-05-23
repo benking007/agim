@@ -101,6 +101,11 @@ interface ViewerDraft {
   enabled: boolean
   publicUrl: string
   tunnelMode: 'off' | 'quick'
+  // v1.2.42 + v1.2.43 — remote-paste mode (community default lives at
+  // viewer.iclaw.host; users can override or opt out).
+  remotePasteUrl: string
+  remotePasteToken: string
+  noDefaultRemote: boolean
   chars: string
   lines: string
   codeLines: string
@@ -112,6 +117,9 @@ function viewerDraftFromEnv(env: Record<string, string>): ViewerDraft {
     enabled:    env.IMHUB_VIEWER_ENABLED === '1' || env.IMHUB_VIEWER_ENABLED?.toLowerCase() === 'true',
     publicUrl:  env.IMHUB_VIEWER_PUBLIC_BASE_URL ?? '',
     tunnelMode: env.IMHUB_VIEWER_TUNNEL_MODE === 'quick' ? 'quick' : 'off',
+    remotePasteUrl:   env.IMHUB_VIEWER_REMOTE_PASTE_URL ?? '',
+    remotePasteToken: env.IMHUB_VIEWER_REMOTE_PASTE_TOKEN ?? '',
+    noDefaultRemote: env.IMHUB_VIEWER_NO_DEFAULT_REMOTE === '1' || env.IMHUB_VIEWER_NO_DEFAULT_REMOTE?.toLowerCase() === 'true',
     chars:      env.IMHUB_VIEWER_CHARS ?? '',
     lines:      env.IMHUB_VIEWER_LINES ?? '',
     codeLines:  env.IMHUB_VIEWER_CODE_LINES ?? '',
@@ -139,7 +147,8 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
   }, [env.IMHUB_VIEWER_ENABLED, env.IMHUB_VIEWER_PUBLIC_BASE_URL,
       env.IMHUB_VIEWER_TUNNEL_MODE, env.IMHUB_VIEWER_CHARS,
       env.IMHUB_VIEWER_LINES, env.IMHUB_VIEWER_CODE_LINES,
-      env.IMHUB_VIEWER_MAX_PASTES])
+      env.IMHUB_VIEWER_MAX_PASTES, env.IMHUB_VIEWER_REMOTE_PASTE_URL,
+      env.IMHUB_VIEWER_REMOTE_PASTE_TOKEN, env.IMHUB_VIEWER_NO_DEFAULT_REMOTE])
 
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
   const isDirty = useMemo(
@@ -173,6 +182,16 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
     }
     if (draft.maxPastes !== current.maxPastes) {
       updates.IMHUB_VIEWER_MAX_PASTES = draft.maxPastes.trim() || null
+    }
+    // v1.2.44 — remote-paste fields
+    if (draft.remotePasteUrl !== current.remotePasteUrl) {
+      updates.IMHUB_VIEWER_REMOTE_PASTE_URL = draft.remotePasteUrl.trim() || null
+    }
+    if (draft.remotePasteToken !== current.remotePasteToken) {
+      updates.IMHUB_VIEWER_REMOTE_PASTE_TOKEN = draft.remotePasteToken.trim() || null
+    }
+    if (draft.noDefaultRemote !== current.noDefaultRemote) {
+      updates.IMHUB_VIEWER_NO_DEFAULT_REMOTE = draft.noDefaultRemote ? '1' : null
     }
     if (Object.keys(updates).length === 0) return
     try {
@@ -235,6 +254,45 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
               <SelectItem value="quick">{t('viewerSettings.viewer.tunnelQuick')}</SelectItem>
             </SelectContent>
           </Select>
+        </Field>
+
+        {/* v1.2.44 — remote-paste fields */}
+        <Field
+          label={t('viewerSettings.viewer.remotePasteUrl')}
+          hint={t('viewerSettings.viewer.remotePasteUrlHint')}
+        >
+          <Input
+            value={draft.remotePasteUrl}
+            onChange={(e) => setField('remotePasteUrl', e.target.value)}
+            placeholder="https://viewer.iclaw.host/paste"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('viewerSettings.viewer.remotePasteToken')}
+          hint={t('viewerSettings.viewer.remotePasteTokenHint')}
+        >
+          <Input
+            type="password"
+            value={draft.remotePasteToken}
+            onChange={(e) => setField('remotePasteToken', e.target.value)}
+            placeholder=""
+            autoComplete="off"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('viewerSettings.viewer.noDefaultRemote')}
+          hint={t('viewerSettings.viewer.noDefaultRemoteHint')}
+        >
+          <label className="inline-flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={draft.noDefaultRemote}
+              onChange={(e) => setField('noDefaultRemote', e.target.checked)}
+            />
+            <span>{t('viewerSettings.viewer.noDefaultRemoteLabel')}</span>
+          </label>
         </Field>
       </div>
 

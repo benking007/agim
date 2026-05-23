@@ -26,6 +26,7 @@ import { configSchema } from '../core/config-schema.js'
 import {
   saveSecret, removeSecret, describeSecretSource,
 } from '../core/llm/secrets.js'
+import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
 
 const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
@@ -96,6 +97,10 @@ export async function handleLlmApi(
   }
   if (setSecret && m === 'DELETE') {
     await handleRemoveSecret(res, setSecret[1]); return true
+  }
+  const pingBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9-]+)\/ping$/)
+  if (pingBackend && m === 'POST') {
+    await handlePing(res, pingBackend[1]); return true
   }
   return false
 }
@@ -256,6 +261,49 @@ async function handleSetSecret(req: IncomingMessage, res: ServerResponse, name: 
 async function handleRemoveSecret(res: ServerResponse, name: string): Promise<void> {
   removeSecret(name)
   send(res, 200, { name })
+}
+
+async function handlePing(res: ServerResponse, name: string): Promise<void> {
+  // Stage 6 — backend ping. Loads the config (so a newly-added backend
+  // is reachable even before agim restarts), looks up the provider,
+  // and issues a tiny chat probe ('ping') with a tight timeout. The
+  // response shape is operator-debug-flavored: ok / errorClass / ms /
+  // sampleText / tokens. Failures DO NOT throw — they land as ok:false
+  // with a readable error string the UI can show.
+  const cfg = await readConfig()
+  if (!(cfg.llmBackends ?? []).some((b) => b.name === name)) {
+    send(res, 404, { error: `no backend named "${name}"` })
+    return
+  }
+  loadLlmFromConfig(cfg)
+  const provider = getProviderByName(name)
+  if (!provider) {
+    send(res, 200, {
+      name, ok: false,
+      error: 'backend not in registry (likely missing API key)',
+    })
+    return
+  }
+  const startedAt = Date.now()
+  try {
+    const r = await provider.chat(
+      [{ role: 'user', content: 'ping' }],
+      { timeoutMs: 10_000, maxTokens: 16 },
+    )
+    send(res, 200, {
+      name, ok: true,
+      durationMs: Date.now() - startedAt,
+      tokensIn: r.usage.promptTokens,
+      tokensOut: r.usage.completionTokens,
+      sampleText: r.text.slice(0, 200),
+    })
+  } catch (err) {
+    send(res, 200, {
+      name, ok: false,
+      durationMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 // ─── disk helpers ───────────────────────────────────────────────────

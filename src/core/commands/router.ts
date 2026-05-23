@@ -5,6 +5,7 @@ import { classifyIntent } from '../intent.js'
 import { circuitBreaker } from '../circuit-breaker.js'
 import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
+import { handleRouterCompareCommand } from './router-compare.js'
 
 export async function handleRouterCommand(
   args: string,
@@ -76,7 +77,15 @@ export async function handleRouterCommand(
       return '✅ Cleared all circuit breakers.'
     }
 
+    case 'compare':
+    case 'cmp':
+    case 'ab':
+      // Stage 5 — A/B evaluator. Delegated to router-compare.ts so the
+      // dispatch surface stays small and the slash-command body lives
+      // next to runRouterCompare / formatCompareResult.
+      return handleRouterCompareCommand(rest, ctx)
+
     default:
-      return `用法: /router [status|policy|explain <msg>|reset [<agent>]]`
+      return `用法: /router [status|policy|explain <msg>|reset [<agent>]|compare <a> <b> <prompt>]`
   }
 }

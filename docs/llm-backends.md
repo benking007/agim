@@ -928,6 +928,82 @@ Both surfaces write to the same files:
 `AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` env var still overrides the
 on-disk key per the precedence in the "Lookup precedence" section.
 
-## Future stages (preview)
+## Stage 5 — `/router compare` A/B evaluator + fallback chains
 
-- **Stage 5**: `/router compare` A/B evaluator + automatic CLI fallback chain.
+Stage 5 ships two related primitives that make the multi-backend story
+practical: an A/B comparator for operators to pick winners empirically,
+and a multi-role fallback chain helper that internal callers use to
+cascade through cheap → smarter backends until one returns a result.
+
+### `/router compare` slash command
+
+```
+/router compare <a> <b> <prompt>
+/router compare help
+```
+
+Backend specs are `kind:name`:
+
+| kind | name |
+|---|---|
+| `agent` | a CLI / native AgentAdapter name (`claude-code`, `codex`, `opencode`, `native`, ...) |
+| `llm` | a native LLM role (`cheap`, `evaluator`, `native-chat`) |
+| `backend` | a native LLM backend name from `llmBackends` |
+
+The same prompt runs against both sides in parallel; the formatter
+returns a two-section markdown block with per-side latency + token
+counts. Failures don't throw — they render as `❌` next to the side
+that failed so you still see the other.
+
+### Optional LLM judge
+
+When `IMHUB_ROUTER_COMPARE_JUDGE_ROLE` is set, the configured role
+also gets called as an impartial judge after both sides return. It
+picks `a`/`b`/`tie` and writes a one-sentence rationale. Cost is
+reported as a separate line so per-side numbers stay honest.
+
+```bash
+IMHUB_ROUTER_COMPARE_JUDGE_ROLE=evaluator
+```
+
+The judge prompt is JSON-mode so the response is parseable. If the
+model wraps the JSON in fences or ignores the format, we fall back
+to substring-sniff ("A is better" → A) and finally `inconclusive`.
+
+### Fallback chain — `tryIntrospectChain`
+
+The same `IntrospectionInput` shape, but `role: LlmRole` becomes
+`roles: LlmRole[]`. The helper tries each in order until one returns
+a result. Used internally by callers that want to escalate (e.g.
+`['cheap', 'native-chat']` — try the cheap free-tier model first, fall
+back to a smarter paid model on transient failure or empty output).
+
+```ts
+import { tryIntrospectChain } from '@agim/core/llm/introspection'
+
+const r = await tryIntrospectChain({
+  roles: ['cheap', 'native-chat', 'evaluator'],
+  prompt: '...',
+  perRoleTimeoutMs: 10_000,
+})
+if (r) {
+  console.log(r.text)              // first non-null response
+  console.log(r.triedRoles)        // e.g. ['cheap', 'native-chat'] when cheap failed
+  console.log(r.backendName)       // which backend actually responded
+}
+```
+
+Failures audit through the same `llm.introspect.failed` event each
+role emits; the chain itself adds `llm.introspect.chain.success` /
+`chain.exhausted` so the operator can grep for fallback frequency.
+
+### When to use which
+
+- **A/B compare**: human-in-the-loop "which model gives me a better
+  answer for THIS prompt?" exploration. One-shot, results rendered
+  for inspection.
+- **Fallback chain**: in-process, no human; "try the cheap path, only
+  pay the smarter model when cheap fails." Used by internal helpers
+  (intent classifier, memo extractor, etc.) where latency and cost
+  matter and the caller has a sane CLI fallback as a final safety
+  net.

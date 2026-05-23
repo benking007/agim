@@ -27,6 +27,7 @@ import {
   type Fact,
 } from './memory.js'
 import { isMemoryEnabled } from './persona.js'
+import { tryIntrospect } from './llm/index.js'
 
 const log = rootLogger.child({ component: 'memory-consolidate' })
 
@@ -73,7 +74,7 @@ function buildConsolidationPrompt(facts: Fact[]): string {
     '- 矛盾事实保留最新的，标"(目前)"',
     '- 优先 category=profile / preference / goal，category=history 仅写最新',
     '- 用清晰的小段落或要点列出，不要散文式叙述',
-    '- 严格 ≤ ' + PERSONA_TARGET_CHARS + ' 字符',
+    `- 严格 ≤ ${PERSONA_TARGET_CHARS} 字符`,
     '- 输出**纯文本摘要，不要 markdown 围栏，不要任何解释**',
     '',
     '事实列表：',
@@ -87,28 +88,41 @@ async function consolidateOneUser(userKey: string, agentName: string): Promise<b
   const facts = listRecentFacts(userKey, MAX_FACTS_PER_USER)
   if (facts.length === 0) return false
 
-  const agent = registry.getAgent(agentName)
-  if (!agent) {
-    log.warn({ event: 'memory.consolidate.agent_missing', agentName, userKey })
-    return false
-  }
-
   const prompt = buildConsolidationPrompt(facts)
   let raw = ''
-  try {
-    const gen = agent.sendPrompt(`memory-consolidate-${Date.now()}`, prompt, [], {
-      platform: 'memory-consolidate',
-      userId: userKey,
-    })
-    const deadline = Date.now() + PROMPT_TIMEOUT_MS
-    for await (const chunk of gen) {
-      raw += chunk
-      if (Date.now() > deadline) break
-      if (raw.length > PERSONA_TARGET_CHARS * 4) break  // safety cap
+
+  // D+ Stage 1: prefer a configured native LLM backend ('cheap' role).
+  // Falls back to the user's recent CLI agent on no-backend or failure
+  // so historical behaviour is preserved when llmBackends is empty.
+  const nativeResult = await tryIntrospect({
+    role: 'cheap',
+    prompt,
+    timeoutMs: PROMPT_TIMEOUT_MS,
+    temperature: 0.2,
+  })
+  if (nativeResult) {
+    raw = nativeResult.text
+  } else {
+    const agent = registry.getAgent(agentName)
+    if (!agent) {
+      log.warn({ event: 'memory.consolidate.agent_missing', agentName, userKey })
+      return false
     }
-  } catch (err) {
-    log.warn({ event: 'memory.consolidate.agent_failed', userKey, agentName, err: String(err) })
-    return false
+    try {
+      const gen = agent.sendPrompt(`memory-consolidate-${Date.now()}`, prompt, [], {
+        platform: 'memory-consolidate',
+        userId: userKey,
+      })
+      const deadline = Date.now() + PROMPT_TIMEOUT_MS
+      for await (const chunk of gen) {
+        raw += chunk
+        if (Date.now() > deadline) break
+        if (raw.length > PERSONA_TARGET_CHARS * 4) break  // safety cap
+      }
+    } catch (err) {
+      log.warn({ event: 'memory.consolidate.agent_failed', userKey, agentName, err: String(err) })
+      return false
+    }
   }
 
   let summary = raw.trim()
@@ -118,7 +132,7 @@ async function consolidateOneUser(userKey: string, agentName: string): Promise<b
   if (fence) summary = fence[1].trim()
   if (summary.length > PERSONA_TARGET_CHARS * 2) {
     // Hard truncate at 2x target to avoid runaway summaries.
-    summary = summary.slice(0, PERSONA_TARGET_CHARS * 2) + '…'
+    summary = `${summary.slice(0, PERSONA_TARGET_CHARS * 2)}…`
   }
 
   const ok = upsertPersona(userKey, summary)

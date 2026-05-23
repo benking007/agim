@@ -11,9 +11,6 @@ import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { handleRemindCommand } from './remind.js'
 import { handleMemoCommand } from './memo.js'
-import { handleHeartbeatCommand } from './heartbeat.js'
-import { handleGoalCommand } from './goal.js'
-import { handleSkillCommand } from './skill.js'
 
 type Lang = 'zh' | 'en'
 
@@ -39,7 +36,6 @@ const HELP_ZH = [
   '/help [cmd]   查看帮助（/help en 英文）',
   '/remind …     提醒（一次性/周期/邮件）',
   '/memo …       5W1H 持久记录（自然语言交给 agent 自动拆解）',
-  '/skill …      列出 / 查看 agim skills (SKILL.md 注入到 prompt)',
   '/cron …       定时跑 agent（旧名 /schedule）',
   '/job          后台长任务管理',
   '/tasks        列出我的任务',
@@ -78,12 +74,11 @@ const HELP_EN = [
   'agim Commands',
   '',
   '/new          start a new session',
-  '/agents       list available agents',
-  '/[agent]      send message to agent',
+  '/agents       list available agents (kind tag: [cli]=bridged CLI / [in-process]=native / [remote]=ACP)',
+  '/[agent]      send message to agent (/cc claude / /cx codex / /oc opencode / /na native …)',
   '/help [cmd]   show help (/help zh for Chinese)',
   '/remind …     reminders (one-shot/recurring/email)',
   '/memo …       5W1H persistent memos (let agent parse natural language)',
-  '/skill …      list / view agim skills (SKILL.md injected into prompts)',
   '/cron …       scheduled agent runs (legacy /schedule)',
   '/job          manage background jobs',
   '/tasks        list your jobs',
@@ -286,15 +281,6 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
   if (topic === 'memo') {
     return handleMemoCommand('help', ctx)
   }
-  if (topic === 'heartbeat') {
-    return handleHeartbeatCommand('help', ctx)
-  }
-  if (topic === 'goal' || topic === 'goals') {
-    return handleGoalCommand('help', ctx)
-  }
-  if (topic === 'skill' || topic === 'skills') {
-    return handleSkillCommand('help', ctx)
-  }
   return null
 }
 
@@ -326,11 +312,26 @@ export async function handleBuiltInCommand(
     }
 
     case 'agents': {
-      const agents = registry.listAgents()
-      if (agents.length === 0) {
+      const names = registry.listAgents()
+      if (names.length === 0) {
         return '⚠️ No agents registered yet.'
       }
-      return `🤖 Available Agents\n\n${agents.map(a => `• ${a}`).join('\n')}\n\nUse /<agent> to switch.`
+      // Stage 6 (native-as-peer follow-up) — render each agent with its
+      // implementation kind tag + optional `describe()` summary so the
+      // user can see CLI vs in-process vs remote without opening docs.
+      // Native agent is just another row here — by design — matching
+      // the 'every backend is a peer AgentAdapter' architectural stance.
+      const lines = names.map((name) => {
+        const adapter = registry.findAgent(name)
+        if (!adapter) return `• ${name}`
+        const kind = adapter.kind ?? 'cli'
+        const flag = ({ cli: '[cli]', 'in-process': '[in-process]', remote: '[remote]' })[kind] ?? `[${kind}]`
+        const aliases = adapter.aliases.length > 0 ? ` (${adapter.aliases.map((a) => `/${a}`).join(', ')})` : ''
+        const summary = typeof adapter.describe === 'function' ? adapter.describe() : undefined
+        const summaryStr = summary ? ` — ${summary}` : ''
+        return `• /${name} ${flag}${aliases}${summaryStr}`
+      })
+      return `🤖 Available Agents\n\n${lines.join('\n')}\n\nUse /<agent> or its alias to switch.`
     }
 
     case 'new': {

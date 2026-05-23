@@ -38,10 +38,16 @@ describe('resolveViewerMode — picker preference order', () => {
     expect(resolveViewerMode(getViewerConfig())).toBe('none')
   })
 
-  it('"remote" wins when user sets REMOTE_PASTE_URL (overrides default and other modes)', () => {
+  it('Public base URL beats every other mode (v1.2.45 picker)', () => {
     process.env.IMHUB_VIEWER_ENABLED = '1'
     process.env.IMHUB_VIEWER_PUBLIC_BASE_URL = 'https://my.host'
     process.env.IMHUB_VIEWER_TUNNEL_MODE = 'quick'
+    process.env.IMHUB_VIEWER_REMOTE_PASTE_URL = 'https://paste.example/paste'
+    expect(resolveViewerMode(getViewerConfig())).toBe('local')
+  })
+
+  it('user-set REMOTE_PASTE_URL only takes effect when public / tunnel are empty', () => {
+    process.env.IMHUB_VIEWER_ENABLED = '1'
     process.env.IMHUB_VIEWER_REMOTE_PASTE_URL = 'https://paste.example/paste'
     expect(resolveViewerMode(getViewerConfig())).toBe('remote')
     expect(getEffectiveRemotePasteUrl()).toBe('https://paste.example/paste')

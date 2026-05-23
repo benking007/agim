@@ -112,26 +112,33 @@ export function getViewerConfig(): ViewerConfig {
 }
 
 /**
- * v1.2.42 / v1.2.43 — pick the active viewer mode. First non-empty
- * configured source wins; the community default remote is the final
- * fallback so an out-of-the-box install still produces working links.
+ * v1.2.45 — pick the active viewer mode.
+ *
+ * Operator-visible knobs (CLI + Web admin):
+ *   - Public base URL  → run agim behind your own domain (local mode)
+ *   - Tunnel mode      → cloudflared quick tunnel (tunnel mode)
+ *   - Disable default  → opt out of the community paste server fallback
+ *
+ * Hidden env override (advanced, not surfaced in UI):
+ *   - IMHUB_VIEWER_REMOTE_PASTE_URL — point to a different paste
+ *     server (e.g. your own self-hosted clone of viewer-paste). Only
+ *     kicks in when neither public base nor tunnel is configured.
  *
  * Order:
- *   1. user-set IMHUB_VIEWER_REMOTE_PASTE_URL  → remote (operator-managed)
- *   2. user-set IMHUB_VIEWER_PUBLIC_BASE_URL   → local (own domain)
- *   3. IMHUB_VIEWER_TUNNEL_MODE=quick           → tunnel
+ *   1. Public base URL                          → local
+ *   2. Tunnel mode = quick                      → tunnel
+ *   3. user-set IMHUB_VIEWER_REMOTE_PASTE_URL   → remote (custom server)
  *   4. community default viewer.iclaw.host       → remote (default-on)
  *   5. nothing                                   → none (inline degrade)
  *
- * Set IMHUB_VIEWER_NO_DEFAULT_REMOTE=1 to skip step 4 (privacy opt-out).
+ * Set IMHUB_VIEWER_NO_DEFAULT_REMOTE=1 to skip steps 3-4 entirely.
  */
 export function resolveViewerMode(cfg: ViewerConfig = getViewerConfig()): ViewerMode {
   if (!cfg.enabled) return 'none'
-  if (cfg.remotePasteUrl) return 'remote'
   if (cfg.publicBaseUrl) return 'local'
   if (cfg.tunnelMode === 'quick') return 'tunnel'
-  if (!isDefaultRemoteDisabled()) return 'remote'  // community default
-  return 'none'
+  if (isDefaultRemoteDisabled()) return 'none'
+  return 'remote'
 }
 
 /**

@@ -139,6 +139,11 @@ const router = createBrowserRouter([
       { path: 'service',    lazy: lazy(() => import('@/routes/settings/service')) },
       { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
+      // Stage 6 + P1 follow-up — native LLM stack admin panels.
+      { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
+      { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
+      { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
+      { path: 'agim-skills',  lazy: lazy(() => import('@/routes/settings/agim-skills')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

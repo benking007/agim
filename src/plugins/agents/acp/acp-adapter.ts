@@ -15,12 +15,24 @@ const log = rootLogger.child({ component: 'acp-adapter' })
 export class ACPAdapter implements AgentAdapter {
   readonly name: string
   readonly aliases: string[]
+  readonly kind = 'remote' as const
   private client: ACPClient
+  private endpoint: string
 
   constructor(config: ACPAgentConfig) {
     this.name = config.name
     this.aliases = config.aliases || []
+    this.endpoint = config.endpoint
     this.client = new ACPClient(config)
+  }
+
+  describe(): string | undefined {
+    try {
+      const u = new URL(this.endpoint)
+      return `host: ${u.host}`
+    } catch {
+      return this.endpoint || undefined
+    }
   }
 
   async isAvailable(): Promise<boolean> {

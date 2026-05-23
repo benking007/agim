@@ -6,7 +6,10 @@
     "bgjobs":    "后台脚本",
     "schedules": "定时任务",
     "outbox":    "投递队列",
-    "a2a":       "Agent 互调"
+    "a2a":       "Agent 互调",
+    "heartbeat": "心跳",
+    "goals":     "目标",
+    "asks":      "待回答"
   },
   "jobs": {
     "title": "作业",

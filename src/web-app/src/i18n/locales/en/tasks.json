@@ -6,7 +6,10 @@
     "bgjobs":    "Background",
     "schedules": "Schedules",
     "outbox":    "Outbox",
-    "a2a":       "Agent ↔ Agent"
+    "a2a":       "Agent ↔ Agent",
+    "heartbeat": "Heartbeat",
+    "goals":     "Goals",
+    "asks":      "Ask User"
   },
   "jobs": {
     "title": "Jobs",

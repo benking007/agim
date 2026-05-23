@@ -1,0 +1,517 @@
+// skills/loader — agim-owned SKILL.md loader (Stage 3 / P0 #3).
+//
+// What a "skill" is, in agim:
+//   - A directory containing exactly one `SKILL.md` file
+//   - YAML-ish frontmatter with `name`, `description`, optional `always`
+//     and `metadata.agim.requires.{bins,env}`
+//   - A markdown body the agent reads on-demand (tier 2)
+//   - Optional `scripts/` / `references/` / `assets/` subdirs the body
+//     can refer to (tier 3)
+//
+// Three-tier progressive disclosure (modelled on nanobot):
+//
+//   tier 1: name + description, injected into every system prompt as a
+//           "skills available" block. Cheap (~30-50 tokens per skill).
+//   tier 2: full SKILL.md body, fetched on-demand via the
+//           mcp__imhub__read_skill MCP tool when the agent decides the
+//           description matches the user's intent.
+//   tier 3: any file inside scripts/ / references/ / assets/ — read
+//           via the model's existing file-read tool when the body
+//           references the path.
+//
+// Discovery scope (Stage 3 cut):
+//
+//   * `~/.agim/skills/<name>/SKILL.md` — operator-owned (highest priority)
+//   * `<agim-dist>/skills/builtin/<name>/SKILL.md` — packaged with agim
+//
+// Name shadowing: workspace skills replace built-ins with the same name.
+// This matches nanobot's behaviour and gives operators a clean override
+// path without touching the install tree.
+//
+// Stage-3 limits:
+//   - YAML parsing is intentionally minimal (regex-only). Skills using
+//     fancy YAML features (nested objects beyond `metadata`, multi-line
+//     strings without quotes) will fall back to a graceful "ignore that
+//     field" instead of crashing. Real YAML lands when we hit a skill
+//     that needs it.
+//   - We do NOT discover skills inside the user's per-agent workspace
+//     (`~/.agim-workspaces/<agent>/skills/`); those are managed by the
+//     CLI agent itself (Claude Code et al). This loader is exclusively
+//     for the agim-injected skills that ALL agents see.
+
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { logger as rootLogger } from '../logger.js'
+import { AGIM_HOME } from '../agim-paths.js'
+
+const log = rootLogger.child({ component: 'skills-loader' })
+
+/** Hard cap on the SKILL.md size we'll read. Skills longer than this
+ *  almost always indicate a misconfigured doc dropped into the skills
+ *  dir; we ignore the body to keep injection cheap and audit-able. */
+export const MAX_SKILL_BODY_CHARS = 32_000
+
+/** Tier-1 description hard cap. Long descriptions inflate the system
+ *  prompt budget for every turn; truncate with "…" so the operator
+ *  immediately notices when the cap was hit. */
+export const MAX_DESCRIPTION_CHARS = 400
+
+/** Maximum skills we'll inject into a single system prompt block.
+ *  Above this, the agent is better served by a `/skill list` overview
+ *  + on-demand `read_skill` than a wall of text. */
+export const MAX_INJECTED_SKILLS = 32
+
+export interface SkillMeta {
+  name: string
+  description: string
+  /** Source: 'workspace' wins shadowing over 'builtin' with the same name. */
+  source: 'workspace' | 'builtin'
+  /** Absolute path of the skill's directory (parent of SKILL.md). */
+  dir: string
+  /** When true, the body is auto-injected after the tier-1 summary
+   *  rather than waiting for a read_skill call. Use sparingly — every
+   *  `always: true` skill burns tokens on every turn. */
+  always: boolean
+  /** Frontmatter `metadata.agim.requires.bins` declared dependencies
+   *  (CLI executables in PATH). */
+  requiresBins: string[]
+  /** Frontmatter `metadata.agim.requires.env` declared dependencies
+   *  (environment variables that must be non-empty). */
+  requiresEnv: string[]
+  /** True iff every `requires.bins` is on PATH AND every `requires.env`
+   *  is non-empty. Unavailable skills are still listed (with a marker)
+   *  so the agent can ask the operator to install the missing piece. */
+  available: boolean
+  /** Operator-facing reason when `available=false`. */
+  unavailableReason?: string
+}
+
+interface SkillDiscovered {
+  name: string
+  dir: string
+  source: 'workspace' | 'builtin'
+  /** Raw bytes of SKILL.md (already size-capped). */
+  body: string
+}
+
+/** Cached scan result. Invalidated by `reload()` or env override. */
+interface CacheEntry {
+  scannedAt: number
+  skills: SkillMeta[]
+  /** Map by lowercased name for O(1) lookup in the read_skill RPC. */
+  byName: Map<string, SkillMeta>
+}
+
+let cache: CacheEntry | null = null
+
+/** Default cache TTL — skills don't change often, but we re-scan
+ *  every 5 minutes so operators don't have to `/skill refresh` after
+ *  dropping a new SKILL.md on disk. */
+const CACHE_TTL_MS = 5 * 60 * 1000
+
+/** Resolve the workspace skills directory. Override via env for tests
+ *  / custom deployments. */
+function workspaceSkillsDir(): string {
+  const override = process.env.IMHUB_SKILLS_WORKSPACE_DIR
+  if (override) return override
+  return join(AGIM_HOME, 'skills')
+}
+
+/** Resolve the bundled-builtin skills directory. We look next to the
+ *  current module file (after build → dist/core/skills/) then walk up
+ *  to find `skills/builtin`. Falls back to the src tree during dev. */
+function builtinSkillsDir(): string {
+  const override = process.env.IMHUB_SKILLS_BUILTIN_DIR
+  if (override) return override
+  // import.meta.url works in both dev (tsx / bun) and built dist (esm).
+  const thisDir = dirname(fileURLToPath(import.meta.url))
+  // Most likely locations relative to this module:
+  //   dev:   /workspace/src/core/skills/loader.ts → /workspace/src/core/skills/builtin
+  //   built: /workspace/dist/core/skills/loader.js → /workspace/dist/core/skills/builtin
+  const localCandidate = resolve(thisDir, 'builtin')
+  if (existsSync(localCandidate)) return localCandidate
+  // Fall back to repo root (rare; happens when tests resolve from /tmp).
+  const repoCandidate = resolve(thisDir, '..', '..', '..', 'src', 'core', 'skills', 'builtin')
+  if (existsSync(repoCandidate)) return repoCandidate
+  return localCandidate  // path may not exist; that's fine — scan handles it
+}
+
+// ─── Public API ──────────────────────────────────────────────────────
+
+/** Force a fresh disk scan on next call. Returned by /skill refresh. */
+export function invalidateSkillsCache(): void {
+  cache = null
+}
+
+/**
+ * Write (create-or-overwrite) a workspace SKILL.md (P1 web editor).
+ *
+ *   - Lands at <workspaceSkillsDir>/<name>/SKILL.md (operator path,
+ *     not builtin) so subsequent scans pick it up and it shadows any
+ *     same-named builtin.
+ *   - name is sanitized to safe filesystem chars (no '..', no
+ *     leading dots, no slashes). Returns null on invalid name.
+ *   - Body MUST already include the YAML frontmatter; we validate
+ *     it parses + has a description before writing so the editor
+ *     can't ship a broken SKILL.md. Returns the parsed SkillMeta
+ *     on success.
+ *   - Invalidates the cache so listSkills() picks up the new file
+ *     on next call.
+ */
+export function writeSkillFile(name: string, body: string): SkillMeta | null {
+  const safe = sanitizeSkillName(name)
+  if (!safe) return null
+  const probe = parseSkill({ name: safe, dir: '<probe>', source: 'workspace', body })
+  if (!probe) return null
+  if (body.length > MAX_SKILL_BODY_CHARS) {
+    log.warn({ event: 'skills.write.too_long', name: safe, len: body.length })
+    return null
+  }
+  const dir = join(workspaceSkillsDir(), safe)
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), body, 'utf-8')
+  } catch (err) {
+    log.warn({ event: 'skills.write.failed', name: safe, err: String(err) })
+    return null
+  }
+  invalidateSkillsCache()
+  return getSkillByName(safe)
+}
+
+/**
+ * Delete a workspace skill. Builtin (bundled) skills can't be
+ * deleted — operators have to shadow them with a workspace entry
+ * (which writeSkillFile does for them). Returns true iff a file
+ * was actually unlinked.
+ */
+export function deleteSkill(name: string): boolean {
+  const safe = sanitizeSkillName(name)
+  if (!safe) return false
+  const path = join(workspaceSkillsDir(), safe, 'SKILL.md')
+  if (!existsSync(path)) return false
+  try {
+    rmSync(join(workspaceSkillsDir(), safe), { recursive: true, force: true })
+  } catch (err) {
+    log.warn({ event: 'skills.delete.failed', name: safe, err: String(err) })
+    return false
+  }
+  invalidateSkillsCache()
+  return true
+}
+
+/** Sanitize a skill name for filesystem use. */
+function sanitizeSkillName(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed.length > 64) return ''
+  if (trimmed === '.' || trimmed === '..') return ''
+  if (trimmed.startsWith('.')) return ''
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return ''
+  return trimmed
+}
+
+/** Read-only access to the loaded skill list. Triggers a scan on first
+ *  call or when the cache has expired. Never throws — disk errors yield
+ *  the partial list discovered up to that point. */
+export function listSkills(): SkillMeta[] {
+  return ensureCache().skills
+}
+
+/** Look up one skill by name (case-insensitive). Returns null when
+ *  unknown; caller decides whether to surface "no such skill" to the
+ *  agent or the operator. */
+export function getSkillByName(name: string): SkillMeta | null {
+  return ensureCache().byName.get(name.toLowerCase()) ?? null
+}
+
+/** Read the full SKILL.md body for a known skill. Returns null on
+ *  unknown name OR read failure. Honors the MAX_SKILL_BODY_CHARS cap;
+ *  oversize files come back truncated with a `[truncated …]` footer. */
+export function readSkillBody(name: string): string | null {
+  const skill = getSkillByName(name)
+  if (!skill) return null
+  const path = join(skill.dir, 'SKILL.md')
+  try {
+    const raw = readFileSync(path, 'utf-8')
+    if (raw.length <= MAX_SKILL_BODY_CHARS) return raw
+    return `${raw.slice(0, MAX_SKILL_BODY_CHARS)}\n\n[truncated to ${MAX_SKILL_BODY_CHARS} chars by agim skills loader]`
+  } catch (err) {
+    log.warn({ event: 'skills.body_read_failed', name, err: String(err) })
+    return null
+  }
+}
+
+/**
+ * Build the tier-1 system-prompt block. Injected once per turn by the
+ * router. Returns '' when no skills are configured (router drops empty
+ * blocks). Bounded to MAX_INJECTED_SKILLS rows; above the cap we keep
+ * the first N alphabetically and append a one-line "+ N more (call
+ * /skill list to see)" note.
+ *
+ * Format (kept close to nanobot's so models trained on its docs feel
+ * at home):
+ *
+ *   [agim skills available — read full body with mcp__imhub__read_skill(name)]
+ *   - skill-a: one-line description
+ *   - skill-b: one-line description (unavailable: missing bin `foo`)
+ *   - skill-c: one-line description
+ *   …
+ */
+export function buildSkillsSummary(): string {
+  const all = listSkills()
+  if (all.length === 0) return ''
+  const sorted = all.slice().sort((a, b) => a.name.localeCompare(b.name))
+  const lines: string[] = ['[agim skills available — read full body with mcp__imhub__read_skill(name)]']
+  const visible = sorted.slice(0, MAX_INJECTED_SKILLS)
+  for (const s of visible) {
+    const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
+    const flag = s.always ? ' [always]' : ''
+    lines.push(`- ${s.name}: ${s.description}${reason}${flag}`)
+  }
+  if (sorted.length > visible.length) {
+    lines.push(`… and ${sorted.length - visible.length} more (use /skill list to see them all)`)
+  }
+  // Inline `always: true` skills' full bodies. Cheap when few; we bound
+  // by injected count above so the agent's prompt budget can't explode.
+  const alwaysOn = visible.filter((s) => s.always && s.available)
+  for (const s of alwaysOn) {
+    const body = readSkillBody(s.name)
+    if (!body) continue
+    lines.push('')
+    lines.push(`### Always-on skill: ${s.name}`)
+    lines.push(body)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+// ─── Scanning ────────────────────────────────────────────────────────
+
+function ensureCache(): CacheEntry {
+  if (cache && Date.now() - cache.scannedAt < CACHE_TTL_MS) return cache
+  cache = doScan()
+  return cache
+}
+
+function doScan(): CacheEntry {
+  const discovered: SkillDiscovered[] = []
+  // 1. workspace FIRST so shadowing works (built-ins skipped when name collides).
+  const wsDir = workspaceSkillsDir()
+  scanDir(wsDir, 'workspace', discovered)
+  const seen = new Set(discovered.map((s) => s.name))
+  // 2. built-in; skip names already taken by workspace.
+  const builtinDir = builtinSkillsDir()
+  const builtinFound: SkillDiscovered[] = []
+  scanDir(builtinDir, 'builtin', builtinFound)
+  for (const b of builtinFound) {
+    if (seen.has(b.name)) continue
+    seen.add(b.name)
+    discovered.push(b)
+  }
+
+  const skills: SkillMeta[] = []
+  for (const d of discovered) {
+    const meta = parseSkill(d)
+    if (meta) skills.push(meta)
+  }
+  const byName = new Map<string, SkillMeta>()
+  for (const s of skills) byName.set(s.name.toLowerCase(), s)
+
+  log.info({
+    event: 'skills.scanned',
+    workspaceDir: wsDir,
+    builtinDir,
+    total: skills.length,
+    available: skills.filter((s) => s.available).length,
+  })
+  return { scannedAt: Date.now(), skills, byName }
+}
+
+function scanDir(dir: string, source: 'workspace' | 'builtin', out: SkillDiscovered[]): void {
+  if (!dir || !existsSync(dir)) return
+  let entries: string[] = []
+  try {
+    entries = readdirSync(dir)
+  } catch (err) {
+    log.debug({ event: 'skills.scan.readdir_failed', dir, err: String(err) })
+    return
+  }
+  for (const name of entries) {
+    if (name.startsWith('.')) continue
+    const skillDir = join(dir, name)
+    let st: import('node:fs').Stats
+    try { st = statSync(skillDir) } catch { continue }
+    if (!st.isDirectory()) continue
+    const md = join(skillDir, 'SKILL.md')
+    if (!existsSync(md)) continue
+    let body = ''
+    try {
+      const raw = readFileSync(md, 'utf-8')
+      body = raw.length > MAX_SKILL_BODY_CHARS
+        ? raw.slice(0, MAX_SKILL_BODY_CHARS)
+        : raw
+    } catch (err) {
+      log.warn({ event: 'skills.scan.read_failed', dir: skillDir, err: String(err) })
+      continue
+    }
+    out.push({ name, dir: skillDir, source, body })
+  }
+}
+
+/**
+ * Parse a discovered SKILL.md into a SkillMeta. Returns null when the
+ * frontmatter is missing required fields — we don't load corrupt
+ * skills, but we DO log a warning so the operator notices.
+ */
+function parseSkill(d: SkillDiscovered): SkillMeta | null {
+  const front = extractFrontmatter(d.body)
+  if (!front) {
+    log.warn({ event: 'skills.parse.no_frontmatter', name: d.name, dir: d.dir })
+    return null
+  }
+  const name = (front.name || d.name).trim()
+  if (!name) return null
+  const description = (front.description || '').trim().slice(0, MAX_DESCRIPTION_CHARS)
+  if (!description) {
+    log.warn({ event: 'skills.parse.no_description', name, dir: d.dir })
+    return null
+  }
+  const always = parseBool(front.always)
+  const requiresBins = parseRequiresList(front, 'bins')
+  const requiresEnv = parseRequiresList(front, 'env')
+  let available = true
+  let unavailableReason: string | undefined
+  const missingBins = requiresBins.filter((b) => !isBinOnPath(b))
+  if (missingBins.length > 0) {
+    available = false
+    unavailableReason = `missing bin${missingBins.length === 1 ? '' : 's'} ${missingBins.map((b) => `\`${b}\``).join(', ')}`
+  } else {
+    const missingEnv = requiresEnv.filter((e) => !process.env[e])
+    if (missingEnv.length > 0) {
+      available = false
+      unavailableReason = `missing env ${missingEnv.map((e) => `\`${e}\``).join(', ')}`
+    }
+  }
+  return {
+    name,
+    description,
+    source: d.source,
+    dir: d.dir,
+    always,
+    requiresBins,
+    requiresEnv,
+    available,
+    unavailableReason,
+  }
+}
+
+interface Frontmatter {
+  name?: string
+  description?: string
+  always?: string
+  /** Full "metadata: …" JSON-ish string when the YAML uses the
+   *  inline-JSON form `metadata: '{"agim":{"requires":...}}'`. */
+  metadataJson?: string
+  /** Direct list-of-strings under `requires.bins` (alt parse path). */
+  binsLine?: string
+  /** Direct list-of-strings under `requires.env`. */
+  envLine?: string
+}
+
+/**
+ * Extract the YAML-ish frontmatter (between `---` delimiters at the
+ * top of the file). Returns null when missing.
+ *
+ * Limited parser — handles:
+ *   key: value
+ *   key: "quoted value"
+ *   metadata: '{"agim":{"requires":{"bins":["x"],"env":["Y"]}}}'
+ *
+ * Doesn't handle multi-line strings, nested block mappings (other than
+ * the metadata JSON shortcut), or list literals beyond simple
+ * comma-separated `[a, b, c]` inside the metadata JSON. Skills that
+ * need richer YAML can wait for a real parser.
+ */
+function extractFrontmatter(body: string): Frontmatter | null {
+  if (!body.startsWith('---')) return null
+  // Find the closing delimiter; tolerate \r\n.
+  const closeIdx = body.indexOf('\n---', 3)
+  if (closeIdx === -1) return null
+  const raw = body.slice(3, closeIdx).trim()
+  const front: Frontmatter = {}
+  for (const line of raw.split('\n')) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/)
+    if (!m) continue
+    const key = m[1]
+    const value = stripQuotes(m[2].trim())
+    if (key === 'name') front.name = value
+    else if (key === 'description') front.description = value
+    else if (key === 'always') front.always = value
+    else if (key === 'metadata') front.metadataJson = value
+  }
+  return front
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    return s.slice(1, -1)
+  }
+  return s
+}
+
+function parseBool(raw: string | undefined): boolean {
+  if (!raw) return false
+  const v = raw.toLowerCase()
+  return v === 'true' || v === 'yes' || v === '1'
+}
+
+/**
+ * Pull `bins` or `env` out of the metadata JSON shortcut. Format:
+ *
+ *   metadata: '{"agim":{"requires":{"bins":["x"],"env":["Y"]}}}'
+ *
+ * Also accepts the legacy `openclaw` key (nanobot's name) for
+ * compatibility with skills written for nanobot.
+ */
+function parseRequiresList(front: Frontmatter, which: 'bins' | 'env'): string[] {
+  if (!front.metadataJson) return []
+  let obj: Record<string, unknown>
+  try {
+    obj = JSON.parse(front.metadataJson) as Record<string, unknown>
+  } catch {
+    return []
+  }
+  const nestedAgim = (obj.agim && typeof obj.agim === 'object') ? obj.agim as Record<string, unknown> : null
+  const nestedOpenclaw = (obj.openclaw && typeof obj.openclaw === 'object') ? obj.openclaw as Record<string, unknown> : null
+  const nested = nestedAgim ?? nestedOpenclaw
+  if (!nested) return []
+  const requires = (nested.requires && typeof nested.requires === 'object') ? nested.requires as Record<string, unknown> : null
+  if (!requires) return []
+  const arr = requires[which]
+  if (!Array.isArray(arr)) return []
+  return arr.filter((v): v is string => typeof v === 'string' && v.length > 0)
+}
+
+function isBinOnPath(bin: string): boolean {
+  // Cheap synchronous PATH probe. Doesn't follow symlinks; that's fine
+  // for a "is this binary likely to work?" hint.
+  if (!bin || bin.includes('/')) {
+    // If the skill declared an absolute path, just check existence.
+    return existsSync(bin)
+  }
+  const pathEnv = process.env.PATH || ''
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const exts = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase())
+    : ['']
+  for (const dir of pathEnv.split(sep)) {
+    if (!dir) continue
+    for (const ext of exts) {
+      const candidate = join(dir, ext ? `${bin}${ext}` : bin)
+      try {
+        if (existsSync(candidate)) return true
+      } catch { /* ignore */ }
+    }
+  }
+  return false
+}

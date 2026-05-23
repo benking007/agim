@@ -124,6 +124,16 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
     // or install some unrelated package).
     installCmd: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
   },
+  // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. No CLI to
+  // install; "availability" means an LLM backend with role native-chat
+  // (or cheap fallback) is configured. The hint string steers operators
+  // at the right docs page instead of suggesting an npm install.
+  'native': {
+    agent: 'native',
+    npmPackage: '',
+    command: '',
+    installCmd: 'Configure a native LLM backend in ~/.agim/config.json (llmBackends + llmRoles) — see docs/llm-backends.md',
+  },
 }
 
 // ============================================

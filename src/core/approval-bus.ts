@@ -749,6 +749,14 @@ export class ApprovalBus {
       await this.handlePush(m, socket)
       return
     }
+    if (m.type === 'ask') {
+      await this.handleAsk(m, socket)
+      return
+    }
+    if (m.type === 'skill') {
+      await this.handleSkill(m, socket)
+      return
+    }
     if (m.type === 'memory') {
       await this.handleMemory(m, socket)
       return
@@ -1098,6 +1106,86 @@ export class ApprovalBus {
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
       if (err) log.warn({ event: 'push.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * P0 #5 — agent-driven structured ask. Wire format:
+   *   { v:1, type:'ask', runId, reqId, payload:{question, choices, timeoutSec?, allowTextReply?} }
+   * Response: { v:1, type:'ask.result', reqId, ok, result?, error?, reason? }
+   *
+   * Like push, runId resolution is REQUIRED — no _im_context fallback,
+   * because the ask delivers a question to a specific IM user thread
+   * and accepting an agent-asserted thread would let any caller spoof
+   * a different user's context.
+   */
+  private async handleAsk(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'ask.bus.missing_reqId' }); return }
+    if (payload._im_context) delete payload._im_context
+    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
+    if (!ctx) {
+      this.sendAskResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} — ask_user requires a live runContext (no _im_context fallback)`,
+        reason: 'invalid',
+      })
+      return
+    }
+    const { handleAskOp } = await import('./ask-user-rpc.js')
+    const result = await handleAskOp(payload as import('./ask-user-rpc.js').AskPayload, ctx)
+    this.sendAskResult(socket, reqId, result)
+  }
+
+  private sendAskResult(
+    socket: Socket, reqId: string,
+    result: import('./ask-user-rpc.js').AskResult,
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'ask.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else {
+      wire.error = result.error
+      if (result.reason) wire.reason = result.reason
+    }
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'ask.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * Stage 3 / P0 #3 — skills loader RPC. agim-owned skills are
+   * injected as a tier-1 summary into every prompt; this RPC lets the
+   * agent pull the tier-2 body on-demand. Same _im_context-free
+   * posture as push: skills are agim-global, no per-user scoping.
+   *   { v:1, type:'skill', reqId, payload:{op, name?} }
+   *   { v:1, type:'skill.result', reqId, ok, result?, error? }
+   */
+  private async handleSkill(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'skill.bus.missing_reqId' }); return }
+    const { handleSkillsOp } = await import('./skills-rpc.js')
+    const result = await handleSkillsOp(payload as import('./skills-rpc.js').SkillsPayload)
+    this.sendSkillResult(socket, reqId, result)
+  }
+
+  private sendSkillResult(
+    socket: Socket, reqId: string,
+    result: import('./skills-rpc.js').SkillsResult,
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'skill.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'skill.bus.write_failed', reqId, err: String(err) })
     })
   }
 

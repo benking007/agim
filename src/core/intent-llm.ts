@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'
+import { getProvider, tryIntrospect } from './llm/index.js'
 
 const log = rootLogger.child({ component: 'intent-llm' })
 
@@ -86,6 +87,19 @@ export function getLLMJudge(): LLMJudgeConfig | null {
   return config
 }
 
+/**
+ * True when intent fallback can run — either via the legacy CLI judge
+ * (`IM_HUB_LLM_JUDGE_AGENT` env / configureLLMJudge) OR via a native
+ * 'cheap' LLM backend from D+ Stage 1. Router uses this to gate the
+ * fallback path; previously it could only gate on `getLLMJudge()`,
+ * which forced operators to set IM_HUB_LLM_JUDGE_AGENT even when they
+ * only had a native backend wired.
+ */
+export function hasIntentFallback(): boolean {
+  if (config !== null) return true
+  return getProvider('cheap') !== null
+}
+
 /** Probe env on first import so common deployments get auto-config. */
 function autoFromEnv(): void {
   const name = process.env.IM_HUB_LLM_JUDGE_AGENT
@@ -142,7 +156,11 @@ export async function classifyWithLLM(
   candidates: string[],
   resolveAgent: (name: string) => AgentAdapter | undefined,
 ): Promise<{ agent: string; reason: string } | null> {
-  if (!config) return null
+  // Enter as long as some fallback (legacy CLI judge OR native backend)
+  // is available. Pre-D+ behaviour required `config != null`; we now
+  // also accept a native-only setup.
+  const nativeProvider = getProvider('cheap')
+  if (!config && !nativeProvider) return null
   if (candidates.length === 0) return null
 
   const key = makeKey(text, candidates)
@@ -151,49 +169,77 @@ export async function classifyWithLLM(
     return { agent: cached.agent, reason: `${cached.reason} (cached)` }
   }
 
-  const judge = resolveAgent(config.agentName)
-  if (!judge) {
-    log.warn({ judge: config.agentName }, 'LLM judge agent not registered')
-    return null
+  const timeoutMs = config?.timeoutMs ?? RESPONSE_TIMEOUT_MS
+  const prompt = buildPrompt(text, candidates)
+  let raw = ''
+  let viaNative = false
+
+  // D+ Stage 1: prefer the 'cheap' native LLM backend. Fast (~200ms),
+  // dollar-cheap, no CLI spawn. Falls through to the configured CLI
+  // judge on no-backend OR failure so historical behaviour is intact.
+  if (nativeProvider) {
+    const nativeResult = await tryIntrospect({
+      role: 'cheap',
+      prompt,
+      timeoutMs,
+      temperature: 0,
+    })
+    if (nativeResult && nativeResult.text.trim().length > 0) {
+      raw = nativeResult.text
+      viaNative = true
+    }
   }
 
-  const timeoutMs = config.timeoutMs ?? RESPONSE_TIMEOUT_MS
-  const prompt = buildPrompt(text, candidates)
-
-  try {
-    let acc = ''
-    const generator = judge.sendPrompt(`llm-judge`, prompt, [])
-    const collect = (async () => {
-      for await (const chunk of generator) {
-        acc += chunk
-        if (acc.length > 4096) break  // guard runaway output
-      }
-    })()
-    const timeout = new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error('LLM judge timed out')), timeoutMs))
-
-    await Promise.race([collect, timeout])
-
-    // Parse: take the first line, lowercase, strip punctuation, match
-    // against candidates case-insensitively.
-    const firstLine = acc.split('\n').map((s) => s.trim()).filter(Boolean)[0] || ''
-    const cleaned = firstLine.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-    const match = candidates.find((c) => c.toLowerCase() === cleaned)
-      ?? candidates.find((c) => cleaned.includes(c.toLowerCase()))
-
-    if (!match) {
-      log.warn({ raw: firstLine, candidates }, 'LLM judge produced unrecognized output')
+  if (!viaNative) {
+    if (!config) {
+      log.warn({ event: 'intent-llm.native_failed_no_cli_fallback' },
+        'native LLM judge failed and no CLI judge configured — skipping fallback')
       return null
     }
+    const judge = resolveAgent(config.agentName)
+    if (!judge) {
+      log.warn({ judge: config.agentName }, 'LLM judge agent not registered')
+      return null
+    }
+    try {
+      let acc = ''
+      const generator = judge.sendPrompt(`llm-judge`, prompt, [])
+      const collect = (async () => {
+        for await (const chunk of generator) {
+          acc += chunk
+          if (acc.length > 4096) break  // guard runaway output
+        }
+      })()
+      const timeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('LLM judge timed out')), timeoutMs))
 
-    const decision = { agent: match, reason: `LLM judge picked ${match}` }
-    cache.set(key, { ...decision, ts: Date.now() })
-    return decision
-  } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : String(err) },
-      'LLM judge call failed')
+      await Promise.race([collect, timeout])
+      raw = acc
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) },
+        'LLM judge call failed')
+      return null
+    }
+  }
+
+  // Parse: take the first line, lowercase, strip punctuation, match
+  // against candidates case-insensitively.
+  const firstLine = raw.split('\n').map((s) => s.trim()).filter(Boolean)[0] || ''
+  const cleaned = firstLine.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  const match = candidates.find((c) => c.toLowerCase() === cleaned)
+    ?? candidates.find((c) => cleaned.includes(c.toLowerCase()))
+
+  if (!match) {
+    log.warn({ raw: firstLine, candidates, viaNative }, 'LLM judge produced unrecognized output')
     return null
   }
+
+  const decision = {
+    agent: match,
+    reason: viaNative ? `LLM judge (native) picked ${match}` : `LLM judge picked ${match}`,
+  }
+  cache.set(key, { ...decision, ts: Date.now() })
+  return decision
 }
 
 /** Test-only: clear cache so memoization doesn't leak between cases. */

@@ -2,7 +2,20 @@
 
 [中文文档](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Email to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
+**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord / Email / Web to a roster of peer agent backends. Single Node.js process, no Docker, no Redis.
+
+Every backend implements the same `AgentAdapter` interface and is treated as a peer (architecture: [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md); PR-by-PR rollout history: [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md)):
+
+| backend | kind | switch | notes |
+|---|---|---|---|
+| **Claude Code** | `[cli]` | `/cc` | full-strength engineering agent (subprocess) |
+| **Codex** | `[cli]` | `/cx` | OpenAI's codex CLI (subprocess) |
+| **OpenCode** | `[cli]` | `/oc` | open-source TUI; broadest model coverage (subprocess) |
+| **Antigravity** | `[cli]` | `/agy` | Google's Gemini-based agent (subprocess) |
+| **native** | `[in-process]` | `/na` | agim's own in-process LLM agent loop — no subprocess. Use for cheap internal work, local Ollama, or any OpenAI/Anthropic API |
+| (per-config) | `[remote]` | as configured | any ACP-compatible endpoint over HTTP |
+
+Agents inter-operate via the **A2A** (`mcp__imhub__call_agent`) primitive — Claude can hand off a cheap subtask to `native`; `native` can call Codex for heavy work; and so on, regardless of kind.
 
 > **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
 > npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's

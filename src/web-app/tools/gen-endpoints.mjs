@@ -26,6 +26,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const IN = resolve(__dirname, 'endpoints.json')
 const OUT = resolve(__dirname, '../src/lib/api/endpoints.ts')
 
+const CHECK_MODE = process.argv.includes('--check')
+
 const { endpoints } = JSON.parse(readFileSync(IN, 'utf-8'))
 
 // Map endpoint name → request/response types from types/api.ts.
@@ -184,5 +186,27 @@ for (const ep of endpoints) {
 lines.push('} as const')
 lines.push('')
 
-writeFileSync(OUT, lines.join('\n'))
+const next = lines.join('\n')
+
+if (CHECK_MODE) {
+  // Diff against current on-disk endpoints.ts. Exit non-zero on drift
+  // so pre-commit / CI can flag mismatches before they sneak in.
+  let current = ''
+  try { current = readFileSync(OUT, 'utf-8') } catch { /* fall through */ }
+  if (current === next) {
+    console.log('✓ endpoints.ts in sync with generator')
+    process.exit(0)
+  }
+  console.error('✗ endpoints.ts would change. Drift between TYPE_MAP and the')
+  console.error('  hand-curated additions in src/lib/api/endpoints.ts.')
+  console.error('  Inspect the diff before running gen-endpoints.mjs in')
+  console.error('  write mode (it would overwrite the hand-curated entries).')
+  // Print a tiny summary — full diff is too noisy. Counts of lines.
+  const a = current.split('\n')
+  const b = next.split('\n')
+  console.error(`  on-disk: ${a.length} lines, generator: ${b.length} lines`)
+  process.exit(1)
+}
+
+writeFileSync(OUT, next)
 console.log(`Wrote ${endpoints.length} endpoints to ${OUT.split('/').slice(-5).join('/')}`)

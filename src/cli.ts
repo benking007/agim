@@ -214,6 +214,27 @@ program
     const wsCount = workspaces?.length || 1
     console.log(`Workspaces loaded: ${wsCount} workspace(s)`)
 
+    // D+ Stage 1: load native LLM backends. Optional — when llmBackends
+    // is unset (or all backends lack secrets) the registry stays empty
+    // and every introspection caller silently falls back to its CLI
+    // agent path.
+    try {
+      const { loadFromConfig: loadLlmFromConfig, describeRegistry } = await import('./core/llm/index.js')
+      loadLlmFromConfig(validation.config)
+      const snapshot = describeRegistry()
+      if (snapshot.backends.length > 0) {
+        const roleNote = Object.keys(snapshot.roles).length > 0
+          ? ` · roles: ${Object.entries(snapshot.roles).map(([r, b]) => `${r}→${b}`).join(', ')}`
+          : ''
+        console.log(`🧠 LLM backends: ${snapshot.backends.length} configured${roleNote}`)
+        if (snapshot.unconfigured.length > 0) {
+          console.log(`   (skipped, no secret: ${snapshot.unconfigured.join(', ')})`)
+        }
+      }
+    } catch (err) {
+      console.warn('LLM registry failed to load:', err instanceof Error ? err.message : String(err))
+    }
+
     // Initialize session manager
     await sessionManager.start()
 

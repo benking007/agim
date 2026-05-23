@@ -9,6 +9,7 @@
     "llm":          "LLM Backend",
     "mcp":          "MCP 服务器",
     "nativeAgent":  "Native Agent",
+    "agimSkills":   "agim 技能",
     "policy":       "策略",
     "workspaces":   "工作区",
     "admins":       "管理员",

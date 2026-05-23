@@ -2594,6 +2594,12 @@ const ENV_EDITABLE_KEYS = [
   // 'heartbeat' that overrides the default (push,heartbeat).
   'IMHUB_NOTIFICATION_EVALUATOR',
   'IMHUB_NOTIFICATION_EVALUATOR_SOURCES',
+  // P0 #1 — heartbeat (proactive wake-up loop). 'on' enables the
+  // scheduler; per-binding recurrence lives in heartbeat.db. The two
+  // *_MIN knobs control scan period and per-row default.
+  'IMHUB_HEARTBEAT_ENABLED',
+  'IMHUB_HEARTBEAT_TICK_INTERVAL_MS',
+  'IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 

@@ -257,6 +257,127 @@ If the gate suppresses too aggressively:
 5. Last resort: `unset IMHUB_NOTIFICATION_EVALUATOR` to go back to
    pre-D+ behaviour with zero risk
 
+## Heartbeat (proactive wake-up loop, P0 #1)
+
+Beyond reminders (you ask for "remind me at 8am") and cron ("run /agent at
+06:00 daily"), agim now offers **heartbeats**: an LLM-supervised periodic
+loop that decides *whether anything is worth doing right now*, runs the
+work via the user's CLI agent, and only pings the IM thread when the
+result is actually actionable. Built on the LLM client + notification
+evaluator from earlier follow-ups.
+
+### Why
+
+Cron is too dumb — you'll get pinged every tick regardless of whether
+anything happened. Reminders are too one-shot — they don't carry an
+ongoing intent across days. Heartbeats fit the middle gap: "every 30
+min, check if my watchlist hit a stop-loss; if not, say nothing."
+
+### Configuration
+
+```bash
+# 1. Master switch — without this no automatic ticks fire.
+export IMHUB_HEARTBEAT_ENABLED=on
+
+# 2. (Optional) Scheduler scan period. Default 60s; each row's own
+#    interval (set per /heartbeat bind) is still honoured.
+export IMHUB_HEARTBEAT_TICK_INTERVAL_MS=60000
+
+# 3. (Optional) Default per-binding recurrence (minutes) for new
+#    /heartbeat bind calls. Default 30 (matches nanobot). Users can
+#    override per binding with /heartbeat interval N.
+export IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN=30
+```
+
+Also wire an `evaluator` role (recommended) and a `cheap` role:
+
+```json
+{
+  "llmRoles": {
+    "cheap": "evaluator-cheap",
+    "evaluator": "evaluator-cheap"
+  }
+}
+```
+
+`cheap` powers the decide phase ("is there anything to do?"); `evaluator`
+powers the gate at the end ("is the agent's output worth pinging the
+user?"). They can share one backend.
+
+### Slash commands
+
+| command | what |
+|---|---|
+| `/heartbeat`                | show binding for this thread (or help) |
+| `/heartbeat bind <body…>`   | create/replace binding; `body` is the markdown the LLM reasons against |
+| `/heartbeat show`           | last tick status, recurrence, body preview |
+| `/heartbeat interval 60`    | change recurrence (5–1440 minutes) |
+| `/heartbeat run-now`        | fire one tick now (debug; still routed through evaluator) |
+| `/heartbeat cancel` / `resume` | disable / re-enable this thread's binding |
+| `/heartbeat list`           | every binding (admin only) |
+| `/heartbeat status`         | scheduler enabled? running? scan period? |
+
+### Tick flow
+
+```
+                    ┌─── DECIDE ────────────────────┐
+                    │ cheap LLM reads body, answers │
+   every N min ───▶ │ {run, summary} JSON           │
+                    └──────┬──────────────┬─────────┘
+                           │ run=false    │ run=true
+                           ▼              ▼
+                   ┌─ EXECUTE ────────────────────────┐
+                   │ user's CLI agent runs summary;    │
+                   │ NO_UPDATE sentinel = no result    │
+                   └──────┬──────────────┬─────────────┘
+                          │ NO_UPDATE    │ free-form text
+                          ▼              ▼
+                   ┌─ EVALUATE ───────────────────────┐
+                   │ notification-evaluator gate       │
+                   │ (source='heartbeat', default-on)  │
+                   └──────┬──────────────┬─────────────┘
+                          │ suppress     │ deliver
+                          ▼              ▼
+                       audit-log     sink.deliver()
+                                     ↓
+                                   user's IM
+```
+
+All five outcomes (`skipped`, `delivered`, `suppressed`, `no-agent`,
+`failed`) are stamped onto the binding row so `/heartbeat show` always
+knows what happened last tick.
+
+### Failure modes & fail-open
+
+| condition | result | rationale |
+|---|---|---|
+| no `cheap` backend | decide phase fail-opens to `run=true`, then execute path runs | better noisy than silent |
+| decide LLM returns gibberish | same — fail-open | warn logged, manual debug via `/heartbeat run-now` |
+| no CLI agent registered for thread | `status='no-agent'` (stamped + skipped) | new deployments see this until they configure an agent |
+| agent returns `NO_UPDATE` sentinel | `status='skipped'` | no audit, no IM message |
+| evaluator says deliver:false | `status='suppressed'` | audit-logged as `notification.suppress` |
+| sink delivery throws | `status='failed'` | check outbox / messenger logs |
+
+### Tuning
+
+- **Per-thread recurrence**: shorter intervals (5–15 min) make sense for
+  trading-hour monitors; longer (60–360 min) for daily summarisers.
+- **Evaluator strictness**: if you want fewer suppressions, swap
+  `evaluator` to a smarter model (e.g. gpt-4.1-mini instead of a 7B
+  local model). Or `unset IMHUB_NOTIFICATION_EVALUATOR` to disable the
+  gate entirely while keeping heartbeats.
+- **Cost**: each tick is ~ (decide LLM call) + (execute CLI agent call)
+  + (evaluator LLM call). If the agent is the dominant cost, reduce
+  recurrence; if cheap LLMs are dominant, configure both `cheap` and
+  `evaluator` to point at a tiny model.
+
+### Storage
+
+Per-thread bindings live in `~/.agim/heartbeat.db` (SQLite). One row per
+IM thread; UPSERT keyed on `(platform, channel_id, thread_id)`. Rebinding
+the same thread resets `last_tick_at` so the new body takes effect on
+the next tick.
+
 ## Future stages (preview)
 
 - **Stage 2**: full agent loop, tool dispatch, MCP client, Anthropic native provider. Native chat agent becomes an `AgentAdapter` you can `/cc native` to.

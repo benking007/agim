@@ -38,6 +38,7 @@ export type ParsedMessage =
   | { type: 'cron'; args: string; legacy?: boolean }
   | { type: 'remind'; args: string }
   | { type: 'memo'; args: string }
+  | { type: 'heartbeat'; args: string }
   | { type: 'job'; args: string }
   | { type: 'outbox'; args: string }
   | { type: 'a2a'; args: string }

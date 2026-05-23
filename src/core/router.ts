@@ -21,6 +21,7 @@ import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
+import { handleHeartbeatCommand } from './commands/heartbeat.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig } from './viewer-config.js'
@@ -31,7 +32,7 @@ import { handleWebCommand } from './commands/web.js'
 import { logInvocation } from './audit-log.js'
 import { circuitBreaker } from './circuit-breaker.js'
 import { classifyIntent } from './intent.js'
-import { classifyWithLLM, getLLMJudge, hasIntentFallback } from './intent-llm.js'
+import { classifyWithLLM, getLLMJudge } from './intent-llm.js'
 import { userLimiter } from './rate-limiter.js'
 import { workspaceRegistry } from './workspace.js'
 import { getJob } from './job-board.js'
@@ -272,6 +273,10 @@ export async function routeMessage(
       return handleMemoCommand(parsed.args, ctx)
     }
 
+    case 'heartbeat': {
+      return handleHeartbeatCommand(parsed.args, ctx)
+    }
+
     case 'job': {
       return handleJobCommand(parsed.args, ctx)
     }
@@ -461,14 +466,8 @@ export async function routeMessage(
       // pick (no topic/keyword match) and an LLM judge is configured,
       // ask the judge. We only consider it for *non-sticky* requests so
       // active conversations stay deterministic.
-      //
-      // D+ Stage 1: "judge configured" now means either a CLI-judge env
-      // var OR a native 'cheap' LLM backend. hasIntentFallback() merges
-      // the two checks; the threshold falls back to 1.0 when only the
-      // native path is configured (no LLMJudgeConfig.threshold).
       const judge = getLLMJudge()
-      const threshold = judge?.threshold ?? 1.0
-      if (hasIntentFallback() && intent === 'fallback' && ruleScore < threshold && !stickyAgent) {
+      if (judge && intent === 'fallback' && ruleScore < (judge.threshold ?? 1.0) && !stickyAgent) {
         const candidates = workspaceRegistry.resolve(ctx.userId || 'unknown').agentWhitelist.size === 0
           ? registry.listAgents().filter((a) => !circuitBreaker.isOpen(a))
           : registry.listAgents().filter((a) =>

@@ -57,3 +57,20 @@ export {
   type IntrospectionInput,
   type IntrospectionResult,
 } from './introspection.js'
+
+export {
+  McpClient,
+  type McpServerConfig,
+  type ToolCallResult,
+} from './mcp-client.js'
+
+export {
+  loadFromConfig as loadMcpFromConfig,
+  connectAll as connectAllMcp,
+  getAllTools as getAllMcpTools,
+  getOwningServer as getMcpOwningServer,
+  callToolByName as callMcpToolByName,
+  describeRegistry as describeMcpRegistry,
+  closeAll as closeAllMcp,
+  _resetRegistry as _resetMcpRegistry,
+} from './mcp-registry.js'

@@ -77,6 +77,19 @@ type PendingPushRpc = PendingReminderRpc
 type MemoryResult = ReminderResult
 type PendingMemoryRpc = PendingReminderRpc
 
+// P0 #5 — ask_user RPC: agent asks the user a structured multi-choice
+// question and waits for the reply. Wire success is { index, label,
+// via:'button'|'text', raw }; failure carries an optional reason
+// ('timeout' | 'cancelled' | 'invalid' | 'no-messenger').
+interface AskOk { ok: true; result: { index: number; label: string; via: 'button' | 'text'; raw: string } }
+interface AskFail { ok: false; error: string; reason?: 'timeout' | 'cancelled' | 'invalid' | 'no-messenger' }
+type AskResult = AskOk | AskFail
+interface PendingAskRpc { resolve: (r: AskResult) => void }
+
+// Stage 3 / P0 #3 — skills loader RPC (read / list / refresh).
+type SkillResult = ReminderResult
+type PendingSkillRpc = PendingReminderRpc
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
@@ -86,6 +99,8 @@ class ApprovalClient {
   private pendingA2A = new Map<string, PendingA2aRpc>()
   private pendingPush = new Map<string, PendingPushRpc>()
   private pendingMemory = new Map<string, PendingMemoryRpc>()
+  private pendingAsk = new Map<string, PendingAskRpc>()
+  private pendingSkill = new Map<string, PendingSkillRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -208,12 +223,55 @@ class ApprovalClient {
       return
     }
 
+    if (m.type === 'ask.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingAsk.get(reqId)
+      if (!p) return
+      this.pendingAsk.delete(reqId)
+      if (m.ok === true && m.result && typeof m.result === 'object') {
+        const r = m.result as Record<string, unknown>
+        const idx = typeof r.index === 'number' ? r.index : NaN
+        const label = typeof r.label === 'string' ? r.label : ''
+        const via = (r.via === 'button' || r.via === 'text') ? r.via : 'text'
+        const raw = typeof r.raw === 'string' ? r.raw : ''
+        if (Number.isFinite(idx) && label) {
+          p.resolve({ ok: true, result: { index: idx, label, via, raw } })
+        } else {
+          p.resolve({ ok: false, error: 'malformed ask.result payload' })
+        }
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        const reason = typeof m.reason === 'string' ? m.reason as AskFail['reason'] : undefined
+        const failure: AskFail = { ok: false, error }
+        if (reason) failure.reason = reason
+        p.resolve(failure)
+      }
+      return
+    }
+
     if (m.type === 'memory.result') {
       const reqId = typeof m.reqId === 'string' ? m.reqId : null
       if (!reqId) return
       const p = this.pendingMemory.get(reqId)
       if (!p) return
       this.pendingMemory.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
+
+    if (m.type === 'skill.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingSkill.get(reqId)
+      if (!p) return
+      this.pendingSkill.delete(reqId)
       const ok = m.ok === true
       if (ok) {
         p.resolve({ ok: true, result: m.result })
@@ -294,6 +352,14 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingMemory.clear()
+    for (const [, p] of this.pendingAsk) {
+      p.resolve({ ok: false, error: 'approval bus disconnected', reason: 'cancelled' })
+    }
+    this.pendingAsk.clear()
+    for (const [, p] of this.pendingSkill) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingSkill.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -363,7 +429,28 @@ class ApprovalClient {
     })
   }
 
-  /** v1.5 — long-term memory ops via approval-bus. */
+  /** Stage 3 / P0 #3 — skills loader RPC. op ∈ 'read'|'list'|'refresh'. */
+  async requestSkill(op: string, payload: Record<string, unknown>): Promise<SkillResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1, type: 'skill', reqId, payload: { op, ...payload },
+    })}\n`
+    return new Promise<SkillResult>((resolve) => {
+      this.pendingSkill.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingSkill.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+    /** v1.5 — long-term memory ops via approval-bus. */
   async requestMemory(op: string, payload: Record<string, unknown>): Promise<MemoryResult> {
     await this.connectPromise
     if (this.connectErr || this.closed || !this.socket) {
@@ -403,6 +490,31 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingPush.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /** P0 #5 — agent asks the user a question, waits for the reply. */
+  async requestAsk(payload: Record<string, unknown>): Promise<AskResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1,
+      type: 'ask',
+      runId: this.runId,
+      reqId,
+      payload,
+    })}\n`
+    return new Promise<AskResult>((resolve) => {
+      this.pendingAsk.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingAsk.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -902,6 +1014,82 @@ export function buildServer(client: ApprovalClient): McpServer {
   // Default scope = caller's own thread. Cross-thread requires
   // IMHUB_PUSH_CROSS_THREAD=on. Rate limit IMHUB_PUSH_RATE_PER_MINUTE
   // (default 10/min/user).
+  // ─── P0 #5 — structured ask_user ─────────────────────────────────
+  // The agent presents a question with 2-9 choices and waits for the
+  // user to pick one (button tap on Telegram/Feishu, text reply
+  // everywhere else). Returns { index, label, via, raw }. Use this
+  // for explicit clarification ("did you mean A or B?") rather than
+  // forcing the user back into free-form chat.
+  server.registerTool(
+    'ask_user',
+    {
+      title: 'Ask the user a multi-choice question and wait for the answer',
+      description:
+        '**USE THIS TOOL when you need a structured choice from the user** — disambiguation, ' +
+        'confirm-then-proceed flows, picking one of several known options. The user sees a button ' +
+        'card on platforms that support it (Telegram / Feishu / Discord); other platforms (WeChat / ' +
+        'DingTalk) receive a numbered text prompt and the user replies with the number or label.\n\n' +
+        'Returns { ok: true, result: { index, label, via, raw } } on success; ' +
+        '{ ok: false, error, reason } on failure (reason ∈ timeout|cancelled|invalid|no-messenger). ' +
+        'Timeout defaults to 300s; the user gets a single chance to respond.\n\n' +
+        'Do NOT use for: free-form questions (just ask in chat), Y/N permission gates (those go ' +
+        'through the regular tool-use approval flow), or polling (call once + wait, do not loop).',
+      inputSchema: {
+        question: z.string().min(1).max(1000).describe('The question to show the user. 1-1000 chars.'),
+        choices: z.array(z.string().min(1).max(80)).min(2).max(9).describe(
+          '2-9 distinct option labels (each ≤80 chars). Shown to the user in order; the result\'s `index` is 1-based.',
+        ),
+        timeoutSec: z.number().int().min(5).max(1800).optional().describe(
+          'Seconds to wait before resolving with reason:timeout. Default 300, range 5-1800.',
+        ),
+        allowTextReply: z.boolean().optional().describe(
+          'When true (default), user can type the number / letter / label substring; when false, only button taps resolve.',
+        ),
+        _im_context: imContextSchema,
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      const result = await client.requestAsk(args)
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+
+  // ─── Stage 3 / P0 #3 — read_skill ────────────────────────────────
+  // The agim skills loader injects tier-1 (name + description) of each
+  // skill into every system prompt. When the agent decides a skill
+  // matches the user's intent, it calls this tool to fetch the full
+  // SKILL.md body (tier 2). Subdirectories (scripts/ references/
+  // assets/) are tier-3 and read via the agent's existing file-read
+  // tool — the skill body documents the paths.
+  server.registerTool(
+    'read_skill',
+    {
+      title: 'Read the full SKILL.md body for an agim skill',
+      description:
+        '**USE THIS TOOL when the user\'s request matches the description of a skill listed in your '
+        + 'system prompt under "[agim skills available …]".** Returns the full SKILL.md body so you can '
+        + 'follow its instructions. For a roster of every available skill, use op="list". After dropping '
+        + 'a new SKILL.md on disk the operator may ask you to op="refresh".\n\n'
+        + 'Returns { ok: true, result: { op:"read", name, body, available, unavailableReason? } } on '
+        + 'success; { ok: false, error } on failure. body length capped at ~32k chars; oversize bodies '
+        + 'come back with a truncation footer.',
+      inputSchema: {
+        op: z.enum(['read', 'list', 'refresh']).optional().default('read').describe(
+          'Operation: read one body (default), list all skills, or refresh the disk cache.',
+        ),
+        name: z.string().optional().describe(
+          'Required for op="read". Case-insensitive lookup against the skill directory names.',
+        ),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      const op = typeof args.op === 'string' ? args.op : 'read'
+      const name = typeof args.name === 'string' ? args.name : undefined
+      const result = await client.requestSkill(op, name ? { name } : {})
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+
   server.registerTool(
     'push_message',
     {

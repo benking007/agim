@@ -11,6 +11,9 @@ import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { handleRemindCommand } from './remind.js'
 import { handleMemoCommand } from './memo.js'
+import { handleHeartbeatCommand } from './heartbeat.js'
+import { handleGoalCommand } from './goal.js'
+import { handleSkillCommand } from './skill.js'
 
 type Lang = 'zh' | 'en'
 
@@ -36,6 +39,7 @@ const HELP_ZH = [
   '/help [cmd]   查看帮助（/help en 英文）',
   '/remind …     提醒（一次性/周期/邮件）',
   '/memo …       5W1H 持久记录（自然语言交给 agent 自动拆解）',
+  '/skill …      列出 / 查看 agim skills (SKILL.md 注入到 prompt)',
   '/cron …       定时跑 agent（旧名 /schedule）',
   '/job          后台长任务管理',
   '/tasks        列出我的任务',
@@ -79,6 +83,7 @@ const HELP_EN = [
   '/help [cmd]   show help (/help zh for Chinese)',
   '/remind …     reminders (one-shot/recurring/email)',
   '/memo …       5W1H persistent memos (let agent parse natural language)',
+  '/skill …      list / view agim skills (SKILL.md injected into prompts)',
   '/cron …       scheduled agent runs (legacy /schedule)',
   '/job          manage background jobs',
   '/tasks        list your jobs',
@@ -280,6 +285,15 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
   }
   if (topic === 'memo') {
     return handleMemoCommand('help', ctx)
+  }
+  if (topic === 'heartbeat') {
+    return handleHeartbeatCommand('help', ctx)
+  }
+  if (topic === 'goal' || topic === 'goals') {
+    return handleGoalCommand('help', ctx)
+  }
+  if (topic === 'skill' || topic === 'skills') {
+    return handleSkillCommand('help', ctx)
   }
   return null
 }

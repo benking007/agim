@@ -11,6 +11,25 @@
 // that we need for routing — restate the full shape here so the adapter
 // can switch on conversationType without fighting the SDK union.
 
+/** Per-account override block. Same shape as the top-level DingTalkConfig
+ *  but every field is optional — operators only override what differs
+ *  from the global defaults. Each entry gets its own DWClient instance. */
+export interface DingTalkAccountConfig {
+  /** Human-readable name (optional). Shown in CLI / Web listings. */
+  name?: string
+  /** Account-specific credentials. Required when defined. */
+  clientId?: string
+  clientSecret?: string
+  /** Per-account access-policy overrides (fall back to global if absent). */
+  dmPolicy?: 'open' | 'pairing' | 'allowlist'
+  groupPolicy?: 'open' | 'allowlist' | 'disabled'
+  allowFrom?: string[]
+  groupAllowFrom?: string[]
+  ackReaction?: 'off' | 'emoji' | 'kaomoji'
+  /** Disable this account without removing the entry. */
+  enabled?: boolean
+}
+
 export interface DingTalkConfig {
   /** AppKey from the DingTalk developer console (also serves as robotCode). */
   clientId: string
@@ -19,6 +38,12 @@ export interface DingTalkConfig {
   /** Optional channel id (forwarded to MessageContext); we don't drive
    *  routing on it but a few downstream consumers tag logs by it. */
   channelId?: string
+  /** Batch 4 (#3) — multi-account / multi-bot. When this map is present
+   *  the adapter starts one DWClient per entry, in addition to (or
+   *  instead of) the top-level single-account credentials. Existing
+   *  single-account deployments are unaffected because top-level fields
+   *  remain the canonical default account ("default" key reserved). */
+  accounts?: Record<string, DingTalkAccountConfig>
   /** Batch 1 (#4) — DM access policy. Defaults to 'open' (current behavior).
    *  - `open`       : any user can DM the bot (existing default)
    *  - `pairing`    : only users seen in earlier `allowFrom`-acked messages

@@ -1476,6 +1476,19 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
             allowFrom: config.dingtalk.allowFrom,
             groupAllowFrom: config.dingtalk.groupAllowFrom,
             ackReaction: config.dingtalk.ackReaction,
+            // v1.2.40 (batch 4) — surface accounts dict for read-only
+            // listing. clientSecret is masked per-entry; clientId left
+            // visible because operators rely on it to identify the bot.
+            accounts: config.dingtalk.accounts
+              ? Object.fromEntries(
+                  Object.entries(config.dingtalk.accounts).map(([id, a]) => [id, {
+                    name: a.name,
+                    clientId: a.clientId,
+                    clientSecret: mask(a.clientSecret),
+                    enabled: a.enabled,
+                  }]),
+                )
+              : undefined,
           }
         : undefined,
       discord: showGlobalIm && config.discord

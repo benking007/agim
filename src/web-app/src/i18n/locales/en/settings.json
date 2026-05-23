@@ -155,7 +155,10 @@
         "off":     "off — no ack glyph",
         "emoji":   "emoji ⏳→✅",
         "kaomoji": "kaomoji (text-face)"
-      }
+      },
+      "accountsTitle": "Extra accounts (v1.2.40+)",
+      "accountDisabled": "disabled",
+      "accountsHint": "Manage via ~/.agim/config.json (top-level dingtalk.accounts) or `agim config dingtalk`. Each entry starts its own DWClient with isolated dmPolicy / allowFrom / ack-reaction."
     },
     "qr": {
       "title":      "Scan WeChat QR",

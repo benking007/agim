@@ -2,7 +2,7 @@
 // evaluator + ack-reaction glyph table.
 
 import { describe, it, expect } from 'bun:test'
-import { evalAccessPolicy, ACK_GLYPHS } from './dingtalk-adapter.js'
+import { evalAccessPolicy, ACK_GLYPHS, planDingTalkAccounts } from './dingtalk-adapter.js'
 
 describe('evalAccessPolicy — DM modes', () => {
   it('open allows any sender', () => {
@@ -77,5 +77,74 @@ describe('ACK_GLYPHS table', () => {
         expect(glyph.length).toBeGreaterThan(0)
       }
     }
+  })
+})
+
+describe('planDingTalkAccounts — multi-account resolution', () => {
+  it('single-account legacy config yields exactly { default: cfg }', () => {
+    const m = planDingTalkAccounts({ clientId: 'k1', clientSecret: 's1' })
+    expect([...m.keys()]).toEqual(['default'])
+    expect(m.get('default')?.clientId).toBe('k1')
+  })
+
+  it('accounts dict with no top-level creds yields each entry as its own client', () => {
+    const m = planDingTalkAccounts({
+      clientId: '', clientSecret: '',
+      accounts: {
+        teamA: { clientId: 'kA', clientSecret: 'sA' },
+        teamB: { clientId: 'kB', clientSecret: 'sB' },
+      },
+    })
+    expect([...m.keys()].sort()).toEqual(['teamA', 'teamB'])
+    expect(m.get('teamA')?.clientId).toBe('kA')
+    expect(m.get('teamB')?.clientSecret).toBe('sB')
+  })
+
+  it('account-block overrides win over top-level defaults', () => {
+    const m = planDingTalkAccounts({
+      clientId: 'global', clientSecret: 'global',
+      dmPolicy: 'open',
+      accounts: {
+        strict: { dmPolicy: 'allowlist', allowFrom: ['ops'] },
+      },
+    })
+    expect(m.get('default')?.dmPolicy).toBe('open')
+    const strict = m.get('strict')
+    expect(strict?.dmPolicy).toBe('allowlist')
+    expect(strict?.allowFrom).toEqual(['ops'])
+    expect(strict?.clientId).toBe('global') // inherits credentials
+  })
+
+  it('explicit accounts.default replaces the implicit top-level default', () => {
+    const m = planDingTalkAccounts({
+      clientId: 'top', clientSecret: 'top',
+      accounts: {
+        default: { clientId: 'override', clientSecret: 'override' },
+      },
+    })
+    expect([...m.keys()]).toEqual(['default'])
+    expect(m.get('default')?.clientId).toBe('override')
+  })
+
+  it('enabled=false filters the account out', () => {
+    const m = planDingTalkAccounts({
+      clientId: 'top', clientSecret: 'top',
+      accounts: {
+        offline: { clientId: 'offl', clientSecret: 'offl', enabled: false },
+        live:    { clientId: 'live', clientSecret: 'live' },
+      },
+    })
+    expect([...m.keys()].sort()).toEqual(['default', 'live'])
+  })
+
+  it('account missing both top-level + account-level credentials is skipped', () => {
+    const m = planDingTalkAccounts({
+      clientId: '', clientSecret: '',
+      accounts: {
+        broken: { /* no creds anywhere */ },
+        ok:     { clientId: 'k', clientSecret: 's' },
+      },
+    })
+    expect([...m.keys()]).toEqual(['ok'])
   })
 })

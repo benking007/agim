@@ -49,6 +49,42 @@ export const ACK_GLYPHS = {
 } as const
 
 /**
+ * Batch 4 (#3) — pure account-resolution helper. Merge accounts dict +
+ * top-level credentials into the set of (accountId → DingTalkConfig)
+ * pairs the adapter should start. Disabled accounts are filtered out.
+ * Each entry's policy / ack-reaction fields fall back to the top-level
+ * values when the account-block doesn't override them.
+ *
+ * Single-account legacy configs (top-level credentials, no `accounts`)
+ * resolve to `{'default': <cfg>}` so the adapter sees the same code
+ * path regardless of multi-bot vs single-bot deployments.
+ */
+export function planDingTalkAccounts(cfg: DingTalkConfig): Map<string, DingTalkConfig> {
+  const out = new Map<string, DingTalkConfig>()
+  const hasExplicitDefault = !!cfg.accounts?.default
+  if (cfg.clientId && cfg.clientSecret && !hasExplicitDefault) {
+    out.set('default', cfg)
+  }
+  for (const [accountId, override] of Object.entries(cfg.accounts || {})) {
+    if (override.enabled === false) continue
+    const clientId = override.clientId || cfg.clientId
+    const clientSecret = override.clientSecret || cfg.clientSecret
+    if (!clientId || !clientSecret) continue
+    out.set(accountId, {
+      clientId,
+      clientSecret,
+      channelId: cfg.channelId,
+      dmPolicy: override.dmPolicy ?? cfg.dmPolicy,
+      groupPolicy: override.groupPolicy ?? cfg.groupPolicy,
+      allowFrom: override.allowFrom ?? cfg.allowFrom,
+      groupAllowFrom: override.groupAllowFrom ?? cfg.groupAllowFrom,
+      ackReaction: override.ackReaction ?? cfg.ackReaction,
+    })
+  }
+  return out
+}
+
+/**
  * Batch 1 (#4) — pure access-policy evaluator. Decoupled from the adapter
  * class so unit tests can hit it without the SDK. Returns:
  *  - allowed: should the message be dispatched to the agent?
@@ -87,7 +123,18 @@ export function evalAccessPolicy(
 
 export class DingTalkAdapter implements MessengerAdapter {
   readonly name = 'dingtalk'
-  private client: DingTalkClient | null = null
+  // Batch 4 (#3) — accountId → live client. 'default' is the implicit
+  // entry built from the top-level credentials when accounts dict is
+  // empty. When the operator defines accounts dict, we start one
+  // DWClient per entry plus the default (if top-level creds are also
+  // set). The threadOwner map below tracks which client originated each
+  // thread so outbound replies route back to the right bot.
+  private clients = new Map<string, DingTalkClient>()
+  // accountId per thread — populated on inbound, consulted on outbound.
+  private threadOwner = new Map<string, string>()
+  // Per-account effective config snapshot — used by passesAccessPolicy()
+  // so each account can have its own dmPolicy / allowFrom / etc.
+  private effectiveConfigs = new Map<string, DingTalkConfig>()
   private config: DingTalkConfig | null = null
   private messageHandler?: (ctx: MessageContext) => Promise<void>
   private seenMessages = new Map<string, number>()
@@ -100,21 +147,53 @@ export class DingTalkAdapter implements MessengerAdapter {
     } catch {
       throw new Error('DingTalk config not found. Run `agim` → Configure → DingTalk first.')
     }
-    if (!this.config?.clientId || !this.config?.clientSecret) {
-      throw new Error('DingTalk ClientID or ClientSecret missing. Re-run the configure flow.')
+    if (!this.config) {
+      throw new Error('DingTalk config not found. Re-run the configure flow.')
     }
+    const planned = this.planAccounts(this.config)
+    if (planned.size === 0) {
+      throw new Error('DingTalk ClientID or ClientSecret missing on every account. Re-run the configure flow.')
+    }
+    for (const [accountId, accountCfg] of planned) {
+      const client = new DingTalkClient(accountCfg)
+      client.onMessage(async (msg) => { await this.handleInbound(msg, accountId) })
+      try {
+        await client.start()
+        this.clients.set(accountId, client)
+        this.effectiveConfigs.set(accountId, accountCfg)
+        log.info({ event: 'dingtalk.account.started', accountId }, 'DingTalk account started')
+      } catch (err) {
+        // One bad account shouldn't kill all the others.
+        log.error({
+          event: 'dingtalk.account.start_failed',
+          accountId,
+          err: err instanceof Error ? err.message : String(err),
+        }, 'DingTalk account failed to start')
+      }
+    }
+    if (this.clients.size === 0) {
+      throw new Error('DingTalk: every account failed to start')
+    }
+    log.info({ accounts: Array.from(this.clients.keys()) },
+      `DingTalk adapter started (${this.clients.size} account(s), Stream mode, no webhook needed)`)
+  }
 
-    this.client = new DingTalkClient(this.config)
-    this.client.onMessage(async (msg) => { await this.handleInbound(msg) })
-    await this.client.start()
-    log.info('DingTalk adapter started (WebSocket Stream mode, no webhook needed)')
+  /** Internal wrapper that defers to the pure {@link planDingTalkAccounts}
+   *  helper exported from this module so unit tests can exercise account
+   *  resolution without spinning up the SDK. */
+  private planAccounts(cfg: DingTalkConfig): Map<string, DingTalkConfig> {
+    return planDingTalkAccounts(cfg)
   }
 
   async stop(): Promise<void> {
-    if (this.client) {
-      await this.client.stop()
-      this.client = null
+    for (const [accountId, client] of this.clients) {
+      try { await client.stop() } catch (err) {
+        log.warn({ accountId, err: err instanceof Error ? err.message : String(err) }, 'stop failed')
+      }
     }
+    this.clients.clear()
+    this.threadOwner.clear()
+    this.effectiveConfigs.clear()
     log.info('DingTalk adapter stopped')
   }
 
@@ -123,8 +202,20 @@ export class DingTalkAdapter implements MessengerAdapter {
   }
 
   async sendMessage(threadId: string, text: string): Promise<void> {
-    if (!this.client) throw new Error('DingTalk adapter not started')
-    await this.client.sendMessage(threadId, text)
+    const client = this.clientForThread(threadId)
+    if (!client) throw new Error('DingTalk adapter not started')
+    await client.sendMessage(threadId, text)
+  }
+
+  /** Batch 4 (#3) — pick the client that owns this thread, falling back
+   *  to 'default' if we never saw the thread before (manual notify path). */
+  private clientForThread(threadId: string): DingTalkClient | null {
+    const owner = this.threadOwner.get(threadId)
+    if (owner) {
+      const c = this.clients.get(owner)
+      if (c) return c
+    }
+    return this.clients.get('default') ?? this.clients.values().next().value ?? null
   }
 
   // No sendTyping / sendThinking — DingTalk doesn't expose a typing
@@ -165,7 +256,7 @@ export class DingTalkAdapter implements MessengerAdapter {
       : `user:${msg.senderStaffId}`
   }
 
-  private async handleInbound(msg: DingTalkInboundMessage): Promise<void> {
+  private async handleInbound(msg: DingTalkInboundMessage, accountId: string = 'default'): Promise<void> {
     if (!this.messageHandler) {
       log.debug('no message handler registered')
       return
@@ -178,9 +269,10 @@ export class DingTalkAdapter implements MessengerAdapter {
     // Batch 1 (#4) — access policy gate. Filters BEFORE dispatch so the
     // agent never sees an unauthorized turn. `pairing` learns the first
     // DM sender into allowFrom for future turns (write-back).
-    if (!this.passesAccessPolicy(msg)) {
+    if (!this.passesAccessPolicy(msg, accountId)) {
       log.info({
         event: 'dingtalk.policy.denied',
+        accountId,
         messageId: msg.msgId,
         conversationType: msg.conversationType,
         senderStaffId: msg.senderStaffId,
@@ -188,8 +280,12 @@ export class DingTalkAdapter implements MessengerAdapter {
       return
     }
 
-    const channelId = this.config?.channelId || 'default'
+    const acctCfg = this.effectiveConfigs.get(accountId) || this.config || undefined
+    const channelId = acctCfg?.channelId || 'default'
     const threadId = this.threadIdFor(msg)
+    // Batch 4 (#3) — remember which account owns this thread so future
+    // outbound sends route back to the same bot.
+    this.threadOwner.set(threadId, accountId)
 
     // Batch 1 (#7) — best-effort ack-reaction. Fire-and-forget; if the
     // session webhook expired or the SDK chokes, we still proceed.
@@ -243,8 +339,8 @@ export class DingTalkAdapter implements MessengerAdapter {
           wgs_lat: norm.lat, wgs_lng: norm.lng,
           applied: norm.applied,
         })
-        if (this.client) {
-          await this.client.sendMessage(threadId,
+        if (this.clients.size > 0) {
+          await this.clientForThread(threadId)?.sendMessage(threadId,
             `📍 已收到位置${msg.link?.title ? `「${msg.link.title}」` : ''}。告诉我要做什么（例如 /memo 食堂、记下、提醒我下次来）。`)
             .catch(err => log.warn({ err: err instanceof Error ? err.message : String(err) },
               'failed to ack dingtalk location'))
@@ -253,8 +349,8 @@ export class DingTalkAdapter implements MessengerAdapter {
       }
       // Not a recognised map URL — fall through to "tell user we can't"
       // by sending a generic hint and stop here.
-      if (this.client) {
-        await this.client.sendMessage(threadId, '👁 链接已收到，但我只能阅读文本——请把要做的事情用文字告诉我。')
+      if (this.clients.size > 0) {
+        await this.clientForThread(threadId)?.sendMessage(threadId, '👁 链接已收到，但我只能阅读文本——请把要做的事情用文字告诉我。')
           .catch(() => undefined)
       }
       return
@@ -293,8 +389,8 @@ export class DingTalkAdapter implements MessengerAdapter {
         threadId,
         content: msg.content,
       }, 'received file msgtype — currently no handler')
-      if (this.client) {
-        await this.client.sendMessage(threadId,
+      if (this.clients.size > 0) {
+        await this.clientForThread(threadId)?.sendMessage(threadId,
           '📎 文件收到了，但我暂时还不能解析文件内容——请打字告诉我或上传图片。')
           .catch(() => undefined)
       }
@@ -312,8 +408,8 @@ export class DingTalkAdapter implements MessengerAdapter {
       threadId,
       fullPayload: msg,
     }, 'unknown dingtalk msgtype — full payload logged for analysis')
-    if (this.client) {
-      await this.client.sendMessage(threadId,
+    if (this.clients.size > 0) {
+      await this.clientForThread(threadId)?.sendMessage(threadId,
         `❓ 收到一条 \`${msg.msgtype}\` 类型消息，我还不认得这种格式，已记录到日志便于调试。请打字告诉我要做什么。`)
         .catch(() => undefined)
     }
@@ -343,8 +439,8 @@ export class DingTalkAdapter implements MessengerAdapter {
     if (!downloadCode) {
       log.warn({ event: 'dingtalk.image.no_download_code', messageId: msg.msgId, content: msg.content },
         'image msg arrived without downloadCode — falling back to ack hint')
-      if (this.client) {
-        await this.client.sendMessage(threadId,
+      if (this.clients.size > 0) {
+        await this.clientForThread(threadId)?.sendMessage(threadId,
           '🖼 图片收到了但我没拿到下载凭据，没法看。请重发或打字描述。')
           .catch(() => undefined)
       }
@@ -354,8 +450,9 @@ export class DingTalkAdapter implements MessengerAdapter {
     const subPath = this.subPathFor(msg)
     let attachmentLine: string
     try {
-      if (!this.client) throw new Error('client not ready')
-      const dl = await this.client.downloadMessageFile(downloadCode)
+      const client = this.clientForThread(threadId)
+      if (!client) throw new Error('client not ready')
+      const dl = await client.downloadMessageFile(downloadCode)
       if (!dl) throw new Error('messageFiles/download returned null')
       const ext = pickDingTalkExtension(dl.contentType, undefined)
       const path = await saveDingTalkMedia(dl.buffer, subPath, `${this.safeFilenameStem(msg.msgId)}.${ext}`)
@@ -405,8 +502,9 @@ export class DingTalkAdapter implements MessengerAdapter {
     let downloadErr: string | null = null
     if (downloadCode) {
       try {
-        if (!this.client) throw new Error('client not ready')
-        const dl = await this.client.downloadMessageFile(downloadCode)
+        const c = this.clientForThread(threadId)
+        if (!c) throw new Error('client not ready')
+        const dl = await c.downloadMessageFile(downloadCode)
         if (!dl) throw new Error('messageFiles/download returned null')
         const ext = pickDingTalkExtension(dl.contentType, undefined)
         savedPath = await saveDingTalkMedia(dl.buffer, this.subPathFor(msg), `${this.safeFilenameStem(msg.msgId)}.${ext}`)
@@ -474,48 +572,46 @@ export class DingTalkAdapter implements MessengerAdapter {
     return (msgId || 'unknown').replace(/[^A-Za-z0-9_-]/g, '_')
   }
 
-  /** Batch 1 (#4) — wrapper around the pure evalAccessPolicy() helper so
-   *  the policy logic is testable without spinning up the SDK. */
-  private passesAccessPolicy(msg: DingTalkInboundMessage): boolean {
-    const cfg = this.config
+  /** Batch 1 (#4) + Batch 4 (#3) — per-account policy gate. Uses the
+   *  effective config for `accountId` so each bot can have its own
+   *  dmPolicy / allowlist. */
+  private passesAccessPolicy(msg: DingTalkInboundMessage, accountId: string = 'default'): boolean {
+    const cfg = this.effectiveConfigs.get(accountId) || this.config
     if (!cfg) return true
     const result = evalAccessPolicy(cfg, {
       isGroup: msg.conversationType === '2',
       senderStaffId: msg.senderStaffId || '',
     })
     if (result.pairedNewSender) {
-      // First-DM pairing: persist into the in-memory config so the next
-      // turn recognises them. Not written back to ~/.agim/config.json by
-      // design — a restart re-pairs the next DMer. Operators wanting
-      // durable pairs should switch to `allowlist` and edit allowFrom.
+      // Pairing learn-back: scoped to the inbound account so paired-with
+      // bot-A doesn't accidentally unlock DMs to bot-B.
       cfg.allowFrom = [result.pairedNewSender]
       log.info({
         event: 'dingtalk.policy.paired',
+        accountId,
         senderStaffId: result.pairedNewSender,
       }, 'pairing locked in')
     }
     return result.allowed
   }
 
-  /** Batch 1 (#7) — fire a quick ack into the same conversation. State is
-   *  one of 'received' / 'working' / 'done' / 'failed'; we render with
-   *  emoji or kaomoji per cfg.ackReaction. Off → no-op. Falls back to a
-   *  short markdown message because DingTalk Stream bots don't have a
-   *  native "react to a message" API the way Slack / Discord do — the
-   *  closest equivalent is a follow-up text. We deliberately use a tiny
-   *  payload so a busy group doesn't get spammed. */
+  /** Batch 1 (#7) + Batch 4 (#3) — per-account ack glyph. Reads the
+   *  ackReaction mode from the account that owns the inbound thread. */
   private async sendAckReaction(
     msg: DingTalkInboundMessage,
     state: 'received' | 'working' | 'done' | 'failed',
   ): Promise<void> {
-    const mode = this.config?.ackReaction || 'off'
+    const threadId = this.threadIdFor(msg)
+    const accountId = this.threadOwner.get(threadId) || 'default'
+    const acctCfg = this.effectiveConfigs.get(accountId) || this.config
+    const mode = acctCfg?.ackReaction || 'off'
     if (mode === 'off') return
-    if (!this.client) return
+    const client = this.clientForThread(threadId)
+    if (!client) return
     const glyph = ACK_GLYPHS[mode][state]
     if (!glyph) return
-    const threadId = this.threadIdFor(msg)
     try {
-      await this.client.sendMessage(threadId, glyph)
+      await client.sendMessage(threadId, glyph)
     } catch (err) {
       log.debug({
         event: 'dingtalk.ack.send_failed',

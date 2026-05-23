@@ -61,6 +61,13 @@ interface PlatformDraft {
     allowFrom?: string[]
     groupAllowFrom?: string[]
     ackReaction?: 'off' | 'emoji' | 'kaomoji'
+    // v1.2.40 (batch 4) — multi-account; read-only in the Web admin for now
+    accounts?: Record<string, {
+      name?: string
+      clientId?: string
+      clientSecret?: string
+      enabled?: boolean
+    }>
   }
   discord?:   { botToken?: string; channelId?: string }
 }
@@ -333,6 +340,26 @@ export default function SettingsMessengersRoute(): JSX.Element {
                 { value: 'kaomoji', label: t('messengers.dingtalk.ack.kaomoji') },
               ]}
             />
+            {/* v1.2.40 (batch 4) — multi-account read-only summary. CRUD
+                lives in config.json / CLI for v1.2.40; a full table-style
+                editor lands in a follow-up. */}
+            {Object.keys(draft.dingtalk.dingtalk?.accounts ?? {}).length > 0 ? (
+              <div className="text-xs text-text-dim mt-2 border-t border-input pt-2">
+                <div className="font-semibold mb-1">
+                  {t('messengers.dingtalk.accountsTitle')}
+                </div>
+                <ul className="ml-3 list-disc">
+                  {Object.entries(draft.dingtalk.dingtalk?.accounts ?? {}).map(([id, a]) => (
+                    <li key={id}>
+                      <code>{id}</code>
+                      {a.name ? ` · ${a.name}` : ''}
+                      {a.enabled === false ? ` · ${t('messengers.dingtalk.accountDisabled')}` : ''}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-1">{t('messengers.dingtalk.accountsHint')}</div>
+              </div>
+            ) : null}
           </PlatformCard>
 
           {cfg.features?.globalIm ? (

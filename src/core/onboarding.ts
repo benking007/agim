@@ -61,6 +61,20 @@ export interface Config {
     groupAllowFrom?: string[]
     // Batch 1 (#7) — ack-reaction
     ackReaction?: 'off' | 'emoji' | 'kaomoji'
+    // Batch 4 (#3) — multi-account / multi-bot. When present, each entry
+    // spins up its own DWClient. Top-level fields above act as defaults
+    // an account-block can selectively override.
+    accounts?: Record<string, {
+      name?: string
+      clientId?: string
+      clientSecret?: string
+      dmPolicy?: 'open' | 'pairing' | 'allowlist'
+      groupPolicy?: 'open' | 'allowlist' | 'disabled'
+      allowFrom?: string[]
+      groupAllowFrom?: string[]
+      ackReaction?: 'off' | 'emoji' | 'kaomoji'
+      enabled?: boolean
+    }>
   }
   discord?: { botToken: string; channelId?: string; allowedGuilds?: string[]; allowedChannels?: string[] }
   acpAgents?: Array<{

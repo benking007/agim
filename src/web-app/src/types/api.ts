@@ -779,6 +779,19 @@ export interface AppConfig {
     allowFrom?: string[]
     groupAllowFrom?: string[]
     ackReaction?: 'off' | 'emoji' | 'kaomoji'
+    // v1.2.40 (batch 4) — multi-account, surfaced read-only in the UI
+    // (managed via config.json / CLI for now).
+    accounts?: Record<string, {
+      name?: string
+      clientId?: string
+      clientSecret?: string
+      dmPolicy?: 'open' | 'pairing' | 'allowlist'
+      groupPolicy?: 'open' | 'allowlist' | 'disabled'
+      allowFrom?: string[]
+      groupAllowFrom?: string[]
+      ackReaction?: 'off' | 'emoji' | 'kaomoji'
+      enabled?: boolean
+    }>
   }
   discord?: { botToken?: string; channelId?: string }
   acpAgents?: ACPAgentConfig[]

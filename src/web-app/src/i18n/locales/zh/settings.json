@@ -156,7 +156,10 @@
         "off":     "off — 不发标记",
         "emoji":   "emoji ⏳→✅",
         "kaomoji": "kaomoji（纯文本颜文字）"
-      }
+      },
+      "accountsTitle": "多账号 / 多机器人（v1.2.40+）",
+      "accountDisabled": "已禁用",
+      "accountsHint": "通过 ~/.agim/config.json 的 dingtalk.accounts 或 `agim config dingtalk` 管理。每个 entry 启动独立的 DWClient，dmPolicy / allowFrom / ack-reaction 全部隔离。"
     },
     "qr": {
       "title":      "扫码登录微信",

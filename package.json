@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build:spa": "cd src/web-app && npm run build && cd ../.. && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg",
-    "build": "npm run build:spa && rm -rf dist && tsc && cp -r src/web/public dist/web/public && chmod +x dist/cli.js",
+    "build": "npm run build:spa && rm -rf dist && tsc && cp -r src/web/public dist/web/public && mkdir -p dist/core/skills && cp -r src/core/skills/builtin dist/core/skills/builtin && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",

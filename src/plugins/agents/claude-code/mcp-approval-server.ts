@@ -86,6 +86,10 @@ interface AskFail { ok: false; error: string; reason?: 'timeout' | 'cancelled' |
 type AskResult = AskOk | AskFail
 interface PendingAskRpc { resolve: (r: AskResult) => void }
 
+// Stage 3 / P0 #3 — skills loader RPC (read / list / refresh).
+type SkillResult = ReminderResult
+type PendingSkillRpc = PendingReminderRpc
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
@@ -96,6 +100,7 @@ class ApprovalClient {
   private pendingPush = new Map<string, PendingPushRpc>()
   private pendingMemory = new Map<string, PendingMemoryRpc>()
   private pendingAsk = new Map<string, PendingAskRpc>()
+  private pendingSkill = new Map<string, PendingSkillRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -261,6 +266,22 @@ class ApprovalClient {
       return
     }
 
+    if (m.type === 'skill.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingSkill.get(reqId)
+      if (!p) return
+      this.pendingSkill.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
+
     if (m.type === 'a2a.result') {
       const reqId = typeof m.reqId === 'string' ? m.reqId : null
       if (!reqId) return
@@ -335,6 +356,10 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected', reason: 'cancelled' })
     }
     this.pendingAsk.clear()
+    for (const [, p] of this.pendingSkill) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingSkill.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -404,7 +429,28 @@ class ApprovalClient {
     })
   }
 
-  /** v1.5 — long-term memory ops via approval-bus. */
+  /** Stage 3 / P0 #3 — skills loader RPC. op ∈ 'read'|'list'|'refresh'. */
+  async requestSkill(op: string, payload: Record<string, unknown>): Promise<SkillResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1, type: 'skill', reqId, payload: { op, ...payload },
+    })}\n`
+    return new Promise<SkillResult>((resolve) => {
+      this.pendingSkill.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingSkill.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+    /** v1.5 — long-term memory ops via approval-bus. */
   async requestMemory(op: string, payload: Record<string, unknown>): Promise<MemoryResult> {
     await this.connectPromise
     if (this.connectErr || this.closed || !this.socket) {
@@ -1004,6 +1050,42 @@ export function buildServer(client: ApprovalClient): McpServer {
     },
     async (args: Record<string, unknown>) => {
       const result = await client.requestAsk(args)
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+
+  // ─── Stage 3 / P0 #3 — read_skill ────────────────────────────────
+  // The agim skills loader injects tier-1 (name + description) of each
+  // skill into every system prompt. When the agent decides a skill
+  // matches the user's intent, it calls this tool to fetch the full
+  // SKILL.md body (tier 2). Subdirectories (scripts/ references/
+  // assets/) are tier-3 and read via the agent's existing file-read
+  // tool — the skill body documents the paths.
+  server.registerTool(
+    'read_skill',
+    {
+      title: 'Read the full SKILL.md body for an agim skill',
+      description:
+        '**USE THIS TOOL when the user\'s request matches the description of a skill listed in your '
+        + 'system prompt under "[agim skills available …]".** Returns the full SKILL.md body so you can '
+        + 'follow its instructions. For a roster of every available skill, use op="list". After dropping '
+        + 'a new SKILL.md on disk the operator may ask you to op="refresh".\n\n'
+        + 'Returns { ok: true, result: { op:"read", name, body, available, unavailableReason? } } on '
+        + 'success; { ok: false, error } on failure. body length capped at ~32k chars; oversize bodies '
+        + 'come back with a truncation footer.',
+      inputSchema: {
+        op: z.enum(['read', 'list', 'refresh']).optional().default('read').describe(
+          'Operation: read one body (default), list all skills, or refresh the disk cache.',
+        ),
+        name: z.string().optional().describe(
+          'Required for op="read". Case-insensitive lookup against the skill directory names.',
+        ),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      const op = typeof args.op === 'string' ? args.op : 'read'
+      const name = typeof args.name === 'string' ? args.name : undefined
+      const result = await client.requestSkill(op, name ? { name } : {})
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
     },
   )

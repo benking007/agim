@@ -24,6 +24,8 @@ import { handleMemoCommand } from './commands/memo.js'
 import { handleHeartbeatCommand } from './commands/heartbeat.js'
 import { handleGoalCommand } from './commands/goal.js'
 import { buildGoalSnippet } from './goals.js'
+import { handleSkillCommand } from './commands/skill.js'
+import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig } from './viewer-config.js'
@@ -182,6 +184,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'schedule') return { type: 'cron', args: rest, legacy: true }
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'memo' || cmd === '记' || cmd === 'note') return { type: 'memo', args: rest }
+  if (cmd === 'skill' || cmd === 'skills' || cmd === '技能') return { type: 'skill', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'outbox') return { type: 'outbox', args: rest }
   if (cmd === 'a2a') return { type: 'a2a', args: rest }
@@ -281,6 +284,10 @@ export async function routeMessage(
 
     case 'goal': {
       return handleGoalCommand(parsed.args, ctx)
+    }
+
+    case 'skill': {
+      return handleSkillCommand(parsed.args, ctx)
     }
 
     case 'job': {
@@ -624,7 +631,11 @@ export async function callAgentWithHistory(
   // it and stays on-mission across turns. buildGoalSnippet returns ''
   // when no active goal, so the filter(Boolean) below drops it.
   const goalSnippet = buildGoalSnippet(ctx.platform, ctx.channelId, ctx.threadId)
-  const headerBlocks = [personaSnippet, goalSnippet, viewerHint, reminderContext].filter(Boolean)
+  // P0 #3 (Stage 3) — inject the agim skills tier-1 summary so every
+  // agent reply sees what skills are configured. Empty when no skills
+  // installed; filter(Boolean) below drops it cleanly.
+  const skillsSnippet = buildSkillsSummary()
+  const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
   const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
 
   const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {

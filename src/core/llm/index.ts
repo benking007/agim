@@ -74,3 +74,20 @@ export {
   closeAll as closeAllMcp,
   _resetRegistry as _resetMcpRegistry,
 } from './mcp-registry.js'
+
+export {
+  runAgentLoop,
+  alwaysAllowGate,
+  type AgentLoopInput,
+  type AgentLoopResult,
+  type ApprovalGate,
+  type LoopFinishReason,
+  type ToolCallReport,
+} from './agent-loop.js'
+
+export {
+  buildMcpDispatcher,
+  combineDispatchers,
+  type DispatcherResult,
+  type ToolDispatcher,
+} from './tool-dispatcher.js'

@@ -4,7 +4,7 @@
 
 **Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Telegram / Discord / Email / Web to a roster of peer agent backends. Single Node.js process, no Docker, no Redis.
 
-Every backend implements the same `AgentAdapter` interface and is treated as a peer (see [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md)):
+Every backend implements the same `AgentAdapter` interface and is treated as a peer (architecture: [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md); PR-by-PR rollout history: [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md)):
 
 | backend | kind | switch | notes |
 |---|---|---|---|

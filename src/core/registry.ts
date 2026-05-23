@@ -185,6 +185,13 @@ class PluginRegistry {
     const { antigravityAdapter } = await import('../plugins/agents/antigravity/index.js')
     this.registerAgent(antigravityAdapter)
 
+    // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. Always
+    // registered; isAvailable() reflects whether an LLM backend with
+    // role `native-chat` (or `cheap` fallback) is configured. Operators
+    // who don't configure llmBackends never see /cc native available.
+    const { nativeAgentAdapter } = await import('../plugins/agents/native/index.js')
+    this.registerAgent(nativeAgentAdapter)
+
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')
   }

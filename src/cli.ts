@@ -832,6 +832,17 @@ program
       console.warn('Heartbeat scheduler failed to start:', err instanceof Error ? err.message : String(err))
     }
 
+    // D+ Stage 2 sub-PR #4 — surface native agent state at boot so
+    // operators see at a glance whether `/cc native` will work. Reads
+    // the LLM registry + IMHUB_NATIVE_AGENT_* env vars; falls back
+    // to "NOT CONFIGURED" when no LLM role matches. Never throws.
+    try {
+      const { describeNativeAgent } = await import('./plugins/agents/native/index.js')
+      console.log(`🤖 ${describeNativeAgent()}`)
+    } catch (err) {
+      console.warn('Native agent banner failed:', err instanceof Error ? err.message : String(err))
+    }
+
     // v1.1.8 — Viewer auto-tunnel. If the operator opted into the
     // cloudflared quick-tunnel mode AND there's no static public URL set,
     // fork cloudflared so /v/:id links the agent puts in IM are reachable

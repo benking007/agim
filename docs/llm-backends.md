@@ -770,6 +770,110 @@ existing approval-router pipeline.
 - **5-minute default wall-clock timeout** on the whole loop. Stage 2
   callers (IM AgentAdapter) typically pass a tighter signal anyway.
 
+## Native AgentAdapter (Stage 2 sub-PR #4)
+
+The native agent is **opt-in backup** for any IM user: configure a
+backend, register `native` in `config.json` `agents[]`, and `/cc native`
+in IM gets you the in-process loop with built-in tools + MCP tools.
+CLI agents (Claude Code / Codex / OpenCode) remain the main route for
+everyone who hasn't opted in.
+
+### Recipe
+
+```jsonc
+// ~/.agim/config.json
+{
+  "agents": ["claude-code", "native"],
+  "defaultAgent": "claude-code",
+  "llmBackends": [
+    { "name": "deepseek-chat", "provider": "openai-compat", "model": "deepseek-chat", "baseUrl": "https://api.deepseek.com/v1" }
+  ],
+  "llmRoles": { "native-chat": "deepseek-chat", "cheap": "deepseek-chat" }
+}
+```
+
+```bash
+export AGIM_LLM_SECRET_DEEPSEEK_CHAT=sk-...
+
+# Recommend running read-only mode while you get a feel for the agent.
+export IMHUB_NATIVE_AGENT_MODE=read-only
+
+agim start
+```
+
+In IM:
+
+```
+You: /cc native
+You: list all .ts files under src/core/llm
+native: (calls mcp_filesystem_list_files, reads, summarises)
+```
+
+### Behaviour summary
+
+- **Provider selection**: `IMHUB_NATIVE_AGENT_ROLE` (env override) → `llmRoles.native-chat` → `llmRoles.cheap`. First found wins.
+- **System prompt**: agim-supplied terse default; the loop also forwards `LlmProvider.system` semantics so callers can override per turn if needed.
+- **Tools**: `getBuiltinTools()` (always 4 tools: echo / now / sleep_ms / random_uuid) + `getAllMcpTools()` from the MCP registry, concatenated.
+- **Dispatcher**: `combineDispatchers(builtin, mcp)` — built-in wins on name collision.
+- **Approval gate**: `buildPolicyApprovalGate({mode, autoAllow, denyList})` reading `IMHUB_NATIVE_AGENT_MODE` / `IMHUB_NATIVE_AGENT_AUTOALLOW` / `IMHUB_NATIVE_AGENT_DENYLIST`.
+- **Audit**: per-iteration rows from the agent loop + one aggregated turn row written here with `agent='native'`, `intent='native.agent.turn'`.
+
+### Approval policy modes
+
+| `IMHUB_NATIVE_AGENT_MODE` | behaviour |
+|---|---|
+| `allow-list` (default) | only tools in `IMHUB_NATIVE_AGENT_AUTOALLOW` pass. Built-ins `native_echo`/`native_now`/`native_random_uuid` are auto-added so the agent has something to call out of the box. |
+| `read-only` | tools whose name (after stripping `mcp_{server}_`) starts/ends with a read-only verb (`read`, `list`, `get`, `search`, `find`, `fetch`, `show`, `view`, `inspect`, `describe`, `status`) pass; everything else is denied. **Recommended starter mode.** |
+| `allow-all` | every tool passes except those in `IMHUB_NATIVE_AGENT_DENYLIST`. Use only in CI / monitoring. |
+| `deny-all` | every tool denied unless explicitly in `IMHUB_NATIVE_AGENT_AUTOALLOW`. Strict ops. |
+
+`IMHUB_NATIVE_AGENT_DENYLIST` always wins, regardless of mode — your emergency brake.
+
+### Built-in tools (always available)
+
+| name | what |
+|---|---|
+| `native_echo` | return text argument verbatim |
+| `native_now` | ISO UTC + local time + configured offset |
+| `native_sleep_ms` | bounded sleep (max 5000ms) |
+| `native_random_uuid` | fresh v4 UUID |
+
+These exist mostly so the agent has a smoke-test path that works with
+zero MCP servers configured. For anything non-trivial, attach an MCP
+server.
+
+### Failure modes (always safe)
+
+| condition | user sees |
+|---|---|
+| no LLM backend configured | `❌ native agent: no LLM backend configured for role 'native-chat' or 'cheap'. ...` |
+| LLM provider call throws | `❌ native agent error: <detail>` |
+| max iterations reached | `⚠️ native agent hit max iterations without finishing. ...` |
+| signal aborted | `⏹ native agent aborted before completion.` |
+| LLM returned empty text | `(native agent returned an empty response)` |
+
+### NOT included in this stage (deferred follow-ups)
+
+- **IM-interactive approval cards**: the policy gate is sufficient for the initial release. Wiring inline-button approval cards (Telegram / Feishu) + text-reply fallback (WeChat / DingTalk) requires extending `approval-router.ts` to consume in-process awaiters; tracked separately.
+- **Streaming thinking to IM**: the loop already supports `LlmProvider.chatStream`, but exposing partial deltas to IM has UX implications (frequency caps, viewer routing) that deserve their own design pass.
+- **Per-thread provider preference**: today `IMHUB_NATIVE_AGENT_ROLE` applies globally. Per-workspace overrides are a small change once the cost dashboard surfaces per-backend spend in production.
+
+### Boot log
+
+When configured:
+
+```text
+🧠 LLM backends: 1 configured · roles: native-chat→deepseek-chat
+🧩 MCP servers: 1 connected (filesystem); 8 tools available
+🤖 native agent: backend=deepseek-chat (role=native-chat); policy=mode=read-only, autoAllow=3, denyList=0
+```
+
+When not configured:
+
+```text
+🤖 native agent: NOT CONFIGURED (no llmRoles.native-chat / .cheap)
+```
+
 ## Future stages (preview)
 
 - **Stage 2**: full agent loop, tool dispatch, MCP client, Anthropic native provider. Native chat agent becomes an `AgentAdapter` you can `/cc native` to.

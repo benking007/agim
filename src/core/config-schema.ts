@@ -34,6 +34,64 @@ const discordSchema = z.object({
 })
 
 /**
+ * External MCP (Model Context Protocol) server to attach (Stage 2 of
+ * the D+ plan, sub-PR #2). Discovered tools are exposed to the native
+ * agent loop via the LLM registry's MCP layer; they're independent of
+ * llmBackends (it's perfectly fine to configure mcpServers without any
+ * llmBackends, and the CLI agents can also use them through their own
+ * MCP configs).
+ *
+ * Transport selection:
+ *   - `command` present     -> stdio (spawn subprocess)
+ *   - `url` ends with /sse  -> SSE
+ *   - `url` otherwise       -> streamable HTTP (the modern transport)
+ *
+ * Tools discovered at startup are passed to the native agent loop as
+ * `ToolDef[]`; tool names get the `mcp_{server}_` prefix to dodge
+ * collisions when multiple servers expose the same tool name. See
+ * src/core/llm/mcp-client.ts.
+ */
+const mcpServerSchema = z.object({
+  /** Server identifier, unique within mcpServers[]. Used as the
+   *  tool-name prefix; must be alphanumeric (with . _ - allowed). */
+  name: z.string().min(1).regex(safeNamePattern,
+    'MCP server name must be alphanumeric (with . _ - allowed)'),
+  /** stdio: executable to spawn. Mutually exclusive with `url`. */
+  command: z.string().min(1).optional(),
+  /** stdio: positional args. Ignored when `command` is absent. */
+  args: z.array(z.string()).optional(),
+  /** stdio: extra env merged onto the child process env. */
+  env: z.record(z.string(), z.string()).optional(),
+  /** stdio: cwd for the child. Defaults to agim's cwd. */
+  cwd: z.string().optional(),
+  /** http/sse: target URL. Mutually exclusive with `command`.
+   *  URLs ending with /sse use the SSE transport; everything else uses
+   *  streamable HTTP. */
+  url: z.string().url().optional(),
+  /** http/sse: extra headers (Authorization, custom auth tokens, …). */
+  headers: z.record(z.string(), z.string()).optional(),
+  /** Per-tool-call hard timeout (ms). Default 30s. */
+  toolTimeoutMs: z.number().int().positive().optional(),
+  /** Filter the tool set the server advertises. ['*'] = all tools (the
+   *  default). Otherwise only tools whose original OR namespaced name
+   *  is in the list are registered. */
+  enabledTools: z.array(z.string()).optional(),
+  /** Soft kill-switch — set false to keep the row around without
+   *  attempting to connect at startup. */
+  enabled: z.boolean().optional(),
+}).superRefine((cfg, ctx) => {
+  // Either `command` or `url` must be set; never both.
+  const hasCmd = typeof cfg.command === 'string' && cfg.command.length > 0
+  const hasUrl = typeof cfg.url === 'string' && cfg.url.length > 0
+  if (hasCmd === hasUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'mcpServer entries must set exactly one of `command` (stdio) or `url` (http/sse)',
+    })
+  }
+})
+
+/**
  * Native LLM backend (Stage 1 of the D+ plan, 2026-05-23).
  *
  * Each entry describes one OpenAI/Anthropic-compatible API endpoint
@@ -122,6 +180,11 @@ export const configSchema = z.object({
   llmBackends: z.array(llmBackendSchema).optional(),
   /** D+ Stage 1: role → backend-name map. See llmRolesSchema. */
   llmRoles: llmRolesSchema.optional(),
+  /** D+ Stage 2 sub-PR #2: external MCP servers to attach. Their tools
+   *  are exposed to the native agent loop. Optional — when absent, only
+   *  the built-in agim MCP server's tools (mcp__imhub__*) are available
+   *  to the native agent. */
+  mcpServers: z.array(mcpServerSchema).optional(),
 }).passthrough()
 
 export type ValidatedConfig = z.infer<typeof configSchema>

@@ -214,6 +214,61 @@ program
     const wsCount = workspaces?.length || 1
     console.log(`Workspaces loaded: ${wsCount} workspace(s)`)
 
+    // D+ Stage 1 — load native LLM backends. Optional; when llmBackends
+    // is unset (or all backends lack secrets) the registry stays empty
+    // and every introspection caller silently falls back to its CLI
+    // agent path. (This block was accidentally dropped in #61; restored
+    // here as part of the Stage 2 #2 MCP wiring.)
+    try {
+      const { loadFromConfig: loadLlmFromConfig, describeRegistry } = await import('./core/llm/index.js')
+      loadLlmFromConfig(validation.config)
+      const snapshot = describeRegistry()
+      if (snapshot.backends.length > 0) {
+        const roleNote = Object.keys(snapshot.roles).length > 0
+          ? ` · roles: ${Object.entries(snapshot.roles).map(([r, b]) => `${r}→${b}`).join(', ')}`
+          : ''
+        console.log(`🧠 LLM backends: ${snapshot.backends.length} configured${roleNote}`)
+        if (snapshot.unconfigured.length > 0) {
+          console.log(`   (skipped, no secret: ${snapshot.unconfigured.join(', ')})`)
+        }
+      }
+    } catch (err) {
+      console.warn('LLM registry failed to load:', err instanceof Error ? err.message : String(err))
+    }
+
+    // D+ Stage 2 sub-PR #2 — connect external MCP servers. Failures
+    // per server become `unhealthy` rows but don't abort startup; one
+    // bad MCP shouldn't take down agim. The connect-all probe is
+    // synchronous so cli.ts boot log can summarise what landed.
+    try {
+      const { loadMcpFromConfig, connectAllMcp, closeAllMcp } = await import('./core/llm/index.js')
+      await loadMcpFromConfig(validation.config)
+      const r = await connectAllMcp()
+      if (r.ok.length > 0 || Object.keys(r.failed).length > 0) {
+        const okPart = r.ok.length > 0 ? r.ok.join(', ') : '(none)'
+        console.log(`🧩 MCP servers: ${r.ok.length} connected (${okPart}); ${r.toolCount} tools available`)
+        for (const [name, err] of Object.entries(r.failed)) {
+          console.warn(`   ⚠ ${name}: ${err}`)
+        }
+      }
+      // Best-effort graceful shutdown on SIGTERM/SIGINT so we don't
+      // leave orphan stdio MCP subprocesses around. We register here
+      // (after successful load) so the handler doesn't try to call
+      // a non-existent module.
+      const closeOnce = (() => {
+        let called = false
+        return async () => {
+          if (called) return
+          called = true
+          try { await closeAllMcp() } catch { /* ignore */ }
+        }
+      })()
+      process.once('SIGTERM', () => { void closeOnce() })
+      process.once('SIGINT', () => { void closeOnce() })
+    } catch (err) {
+      console.warn('MCP registry failed to load:', err instanceof Error ? err.message : String(err))
+    }
+
     // Initialize session manager
     await sessionManager.start()
 

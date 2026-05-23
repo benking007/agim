@@ -501,6 +501,121 @@ the presence of `argumentsRaw` to handle malformed inputs.
 Anthropic doesn't have this issue — `tool_use.input` arrives already
 parsed by the API.
 
+## External MCP servers (Stage 2 sub-PR #2)
+
+Agim can attach any number of external MCP (Model Context Protocol)
+servers; their tools become available to the native agent loop (sub-PR
+#3) alongside the built-in agim tools. The CLI agents (Claude Code /
+Codex / OpenCode) keep using their own MCP configs — this layer is
+exclusively for the native loop.
+
+### Configuration
+
+```jsonc
+{
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    {
+      "name": "github",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
+    },
+    {
+      "name": "remote-tools",
+      "url": "https://mcp.example.com",
+      "headers": { "Authorization": "Bearer ${OPS_TOKEN}" }
+    }
+  ]
+}
+```
+
+### Transport selection
+
+| field set | transport |
+|---|---|
+| `command` (+ optional `args`, `env`, `cwd`) | **stdio** — spawn subprocess; MCP framing over stdin/stdout |
+| `url` ending in `/sse` | **SSE** (legacy MCP HTTP transport) |
+| `url` otherwise | **Streamable HTTP** (modern MCP HTTP transport) |
+
+Exactly one of `command` or `url` must be set per entry; the schema
+rejects both/neither at startup with a clear error.
+
+### Per-server knobs
+
+| field | default | what |
+|---|---|---|
+| `toolTimeoutMs` | `30000` | per-tool-call hard timeout |
+| `enabledTools` | `["*"]` | comma-list of tool names (original OR namespaced) to expose. Default = all. |
+| `enabled` | `true` | soft kill-switch (keeps the entry, skips connect) |
+| `headers` | `{}` | extra HTTP headers (auth tokens, custom routing) — http/sse only |
+| `env`, `cwd`, `args` | — | child process knobs — stdio only |
+
+### Tool naming
+
+Discovered tools are prefixed `mcp_{server}_{tool}` to dodge collisions
+when two servers both expose the same name (`read_file` is everywhere).
+The original name is preserved for error messages + `enabledTools`
+filtering (the filter accepts either form).
+
+Example: `@modelcontextprotocol/server-filesystem`'s `read_file` tool
+under a server named `filesystem` is exposed as `mcp_filesystem_read_file`.
+
+### Lifecycle
+
+- **Boot**: `loadFromConfig` (synchronous) instantiates clients;
+  `connectAll` (async) opens transports in parallel. Per-server failures
+  are recorded as `unhealthy` rows; one broken MCP doesn't take down
+  agim. Boot log summarises:
+
+  ```text
+  🧩 MCP servers: 2 connected (filesystem, github); 14 tools available
+     ⚠ remote-tools: HTTP 503 from mcp.example.com
+  ```
+
+- **Tool call**: `callMcpToolByName(callName, args)` dispatches to the
+  right client. Unknown tool names return `{isError: true, text:'unknown
+  MCP tool: ...'}` rather than throwing.
+
+- **Shutdown**: `closeAll` (registered on SIGTERM/SIGINT) terminates
+  stdio subprocesses cleanly so agim restarts don't leak orphan
+  processes.
+
+### Out of scope (deferred)
+
+- MCP resources (server → client notifications). The agent loop in
+  sub-PR #3 doesn't consume them; we can wire them when a use case
+  appears.
+- MCP prompts exposed as tools (nanobot's pattern). Useful but not
+  required.
+- Schema normalisation for strict OpenAI `tools[]` (nullable union
+  rejection). Will add when a real-world server trips the issue.
+- Auto-reconnect on transport drop. The SDK handles some recovery
+  internally; if a server goes unhealthy mid-session the agent loop
+  surfaces it as a tool error and the user can re-bind via
+  `/heartbeat run-now` or by restarting their thread.
+
+### Inspection
+
+`describeMcpRegistry()` returns:
+
+```ts
+{
+  servers: [
+    { name: 'filesystem', connected: true, toolCount: 8 },
+    { name: 'remote-tools', connected: false, toolCount: 0, error: 'HTTP 503 ...' },
+  ],
+  totalTools: 8,
+}
+```
+
+Currently only consumed by the boot log; a web settings panel showing
+the same data lands in Stage 2 sub-PR #4.
+
 ## Future stages (preview)
 
 - **Stage 2**: full agent loop, tool dispatch, MCP client, Anthropic native provider. Native chat agent becomes an `AgentAdapter` you can `/cc native` to.

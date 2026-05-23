@@ -23,6 +23,7 @@
 import { logger as rootLogger } from '../logger.js'
 import type { ValidatedConfig } from '../config-schema.js'
 import { OpenAICompatProvider } from './openai-compat-provider.js'
+import { AnthropicProvider } from './anthropic-provider.js'
 import type { LlmProvider } from './provider-base.js'
 import { resolveSecret, loadSecretsFile } from './secrets.js'
 
@@ -187,8 +188,20 @@ function buildProvider(cfg: BackendConfig, apiKey: string | undefined): LlmProvi
         defaultMaxTokens: cfg.maxTokens,
         retryOnTransient: cfg.retryOnTransient,
       })
+    case 'anthropic':
+      return new AnthropicProvider({
+        name: cfg.name,
+        model: cfg.model,
+        apiKey,
+        baseUrl: cfg.baseUrl,
+        providerLabel: cfg.label,
+        extraHeaders: cfg.extraHeaders,
+        defaultTemperature: cfg.temperature,
+        defaultMaxTokens: cfg.maxTokens,
+        retryOnTransient: cfg.retryOnTransient,
+      })
     default:
-      // Stage 2 will register Anthropic / Ollama here.
+      // Future: ollama-native, bedrock, vertex.
       log.warn({ event: 'llm-registry.unknown_provider', name: cfg.name, provider: cfg.provider },
         `Unknown LLM provider "${cfg.provider}" for backend "${cfg.name}"; skipped`)
       return null

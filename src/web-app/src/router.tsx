@@ -70,6 +70,10 @@ const router = createBrowserRouter([
       { path: 'schedules', lazy: lazy(() => import('@/routes/tasks/schedules')) },
       { path: 'outbox',    lazy: lazy(() => import('@/routes/tasks/outbox')) },
       { path: 'a2a',       lazy: lazy(() => import('@/routes/tasks/a2a')) },
+      // P1 follow-up — cross-thread admin views (heartbeat / goals / asks).
+      { path: 'heartbeat', lazy: lazy(() => import('@/routes/tasks/heartbeat')) },
+      { path: 'goals',     lazy: lazy(() => import('@/routes/tasks/goals')) },
+      { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
     ],
   },
   {
@@ -139,6 +143,10 @@ const router = createBrowserRouter([
       { path: 'service',    lazy: lazy(() => import('@/routes/settings/service')) },
       { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
+      { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
+      { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
+      { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
+      { path: 'agim-skills',  lazy: lazy(() => import('@/routes/settings/agim-skills')) },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

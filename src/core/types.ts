@@ -38,6 +38,9 @@ export type ParsedMessage =
   | { type: 'cron'; args: string; legacy?: boolean }
   | { type: 'remind'; args: string }
   | { type: 'memo'; args: string }
+  | { type: 'heartbeat'; args: string }
+  | { type: 'goal'; args: string }
+  | { type: 'skill'; args: string }
   | { type: 'job'; args: string }
   | { type: 'outbox'; args: string }
   | { type: 'a2a'; args: string }
@@ -393,11 +396,38 @@ export interface AgentSendOpts {
  * Each yielded string is a complete message chunk.
  * The generator throws on error — caller catches and handles.
  */
+/**
+ * Implementation flavor of an AgentAdapter. agim treats every adapter as
+ * a peer 'agent backend' — `kind` is a hint for the operator-facing UI
+ * (e.g. `/agents`) so they can tell at a glance whether a given backend
+ * runs as an out-of-process CLI subprocess, in-process LLM loop, or
+ * something else (ACP / remote).
+ *
+ *   'cli'         — spawns an external CLI binary per turn (Claude Code,
+ *                   Codex, OpenCode, Antigravity, ...). The historical
+ *                   default; the entire 'bridge' identity of agim.
+ *   'in-process'  — runs entirely inside the agim process via the native
+ *                   LLM client + agent loop (the `native` adapter).
+ *   'remote'      — talks to an external Agent Client Protocol endpoint
+ *                   over the network (acp-* adapters).
+ *
+ * Optional — adapters that pre-date this field default to behaviour-only
+ * 'cli' rendering, which matches every existing built-in.
+ */
+export type AgentAdapterKind = 'cli' | 'in-process' | 'remote'
+
 export interface AgentAdapter {
   readonly name: string
   readonly aliases: string[]
+  /** Implementation flavor. Optional for backward compatibility; UIs
+   *  default to 'cli' when unset. */
+  readonly kind?: AgentAdapterKind
   sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], opts?: AgentSendOpts): AsyncGenerator<string>
   isAvailable(): Promise<boolean>
+  /** Optional short hint for `/agents` UI ('model: deepseek-chat',
+   *  'host: cursor.com', etc.). Returns undefined when nothing useful
+   *  to surface. Cheap synchronous call — never IO. */
+  describe?(): string | undefined
 }
 
 /**

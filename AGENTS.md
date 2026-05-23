@@ -33,7 +33,7 @@ Agim is a universal messenger-to-agent bridge (Node.js/TypeScript). Single proce
 
 2. The app checks agent CLI availability via `<command> --version`. At least one agent CLI must be on PATH or the app exits. A stub script at `/usr/local/bin/claude` satisfies this check.
 
-3. After `npm run build`, start with `node dist/cli.js start`. Web UI at `http://localhost:3000` (no built-in auth — access control is upstream). ACP endpoint at `http://localhost:9090` uses a bearer token stored in `~/.agim/acp-token` (legacy fallback: `~/.agim/web-token`).
+3. After `npm run build`, start with `node dist/cli.js start`. Web UI at `http://localhost:3000` (token-gated unless `IMHUB_WEB_AUTH=off`). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes). ACP endpoint at `http://localhost:9090` uses a bearer token stored in `~/.agim/acp-token` (legacy fallback: `~/.agim/web-token`).
 
 ### Testing notes
 

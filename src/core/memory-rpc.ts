@@ -17,6 +17,7 @@ import {
   type Fact,
 } from './memory.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from './prompt-injection-guard.js'
+import { formatAge } from './util/format-age.js'
 import type { RunContext } from './approval-bus.js'
 
 const log = rootLogger.child({ component: 'memory-rpc' })
@@ -32,7 +33,7 @@ const log = rootLogger.child({ component: 'memory-rpc' })
 function sanitizeFactForOutput(f: Fact): {
   id: number; what: string; who: string; when_text: string;
   where_label: string; why: string; category: string;
-  confidence: number; created_at: string;
+  confidence: number; created_at: string; age_human: string;
 } {
   return {
     id: f.id,
@@ -44,6 +45,11 @@ function sanitizeFactForOutput(f: Fact): {
     category: f.category,
     confidence: f.confidence,
     created_at: new Date(f.created_at * 1000).toISOString(),
+    // P0 #4 — row-age annotation. Cheap derived field so the agent
+    // doesn't have to do date math to weight freshness ('3d ago' /
+    // '6mo ago'). created_at stays as the ISO string for callers that
+    // need precision.
+    age_human: formatAge(f.created_at),
   }
 }
 

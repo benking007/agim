@@ -1,12 +1,15 @@
 {
   "pageTitle": "任务",
   "subnav": {
-    "jobs":      "作业",
-    "subtasks":  "子任务",
-    "bgjobs":    "后台脚本",
+    "jobs": "作业",
+    "subtasks": "子任务",
+    "bgjobs": "后台脚本",
     "schedules": "定时任务",
-    "outbox":    "投递队列",
-    "a2a":       "Agent 互调"
+    "outbox": "投递队列",
+    "a2a": "Agent 互调",
+    "heartbeat": "心跳",
+    "goals": "目标",
+    "asks": "待回答"
   },
   "jobs": {
     "title": "作业",
@@ -16,57 +19,57 @@
       "description": "通过 `agim --invoke` 或聊天里的 /run 命令异步启动 Agent 时会自动生成作业记录。"
     },
     "filter": {
-      "status":     "状态",
-      "statusAny":  "全部状态",
-      "agent":      "Agent",
-      "agentAny":   "全部 Agent",
-      "kind":       "类型",
-      "kindAny":    "全部类型"
+      "status": "状态",
+      "statusAny": "全部状态",
+      "agent": "Agent",
+      "agentAny": "全部 Agent",
+      "kind": "类型",
+      "kindAny": "全部类型"
     },
     "col": {
-      "id":        "ID",
-      "agent":     "Agent",
-      "prompt":    "Prompt",
-      "status":    "状态",
+      "id": "ID",
+      "agent": "Agent",
+      "prompt": "Prompt",
+      "status": "状态",
       "createdAt": "创建时间",
-      "duration":  "耗时",
-      "cost":      "成本"
+      "duration": "耗时",
+      "cost": "成本"
     },
     "status": {
-      "pending":     "等待中",
-      "running":     "运行中",
-      "completed":   "已完成",
-      "delivered":   "已送达",
-      "failed":      "失败",
-      "cancelled":   "已取消",
+      "pending": "等待中",
+      "running": "运行中",
+      "completed": "已完成",
+      "delivered": "已送达",
+      "failed": "失败",
+      "cancelled": "已取消",
       "interrupted": "已中断",
-      "replaced":    "已替换",
-      "abandoned":   "已放弃"
+      "replaced": "已替换",
+      "abandoned": "已放弃"
     },
     "kind": {
-      "job":    "作业",
+      "job": "作业",
       "inline": "即时"
     },
     "stats": {
-      "pending":   "等待中",
-      "running":   "运行中",
+      "pending": "等待中",
+      "running": "运行中",
       "completed": "已完成",
-      "failed":    "失败"
+      "failed": "失败"
     },
     "batch": {
-      "selected":         "已选 {{count}} 项",
-      "cancel":           "取消所选",
-      "rerun":            "重跑所选",
-      "confirmCancel":    "确认取消 {{count}} 个作业？",
-      "confirmCancelDesc":"运行中的作业会收到停止信号。已完成的作业不受影响。",
-      "confirmRerun":     "确认重跑 {{count}} 个作业？",
+      "selected": "已选 {{count}} 项",
+      "cancel": "取消所选",
+      "rerun": "重跑所选",
+      "confirmCancel": "确认取消 {{count}} 个作业？",
+      "confirmCancelDesc": "运行中的作业会收到停止信号。已完成的作业不受影响。",
+      "confirmRerun": "确认重跑 {{count}} 个作业？",
       "confirmRerunDesc": "将根据原 Prompt 重新创建作业。"
     },
     "live": {
-      "connected":    "● 实时",
-      "connecting":   "● 连接中",
+      "connected": "● 实时",
+      "connecting": "● 连接中",
       "reconnecting": "● 重连中",
-      "closed":       "● 离线"
+      "closed": "● 离线"
     }
   },
   "subtasks": {
@@ -77,23 +80,23 @@
       "description": "当 Agent 在聊天线程内向其他 Agent 委派工作时，子任务会出现在这里。"
     },
     "filter": {
-      "agent":    "父 Agent",
+      "agent": "父 Agent",
       "agentAny": "全部 Agent"
     },
     "col": {
-      "id":           "ID",
-      "agent":        "Agent",
-      "prompt":       "Prompt",
-      "status":       "状态",
-      "parent":       "父级",
-      "platform":     "平台",
-      "createdAt":    "创建时间"
+      "id": "ID",
+      "agent": "Agent",
+      "prompt": "Prompt",
+      "status": "状态",
+      "parent": "父级",
+      "platform": "平台",
+      "createdAt": "创建时间"
     },
     "status": {
-      "pending":   "等待中",
-      "running":   "运行中",
+      "pending": "等待中",
+      "running": "运行中",
       "completed": "已完成",
-      "failed":    "失败",
+      "failed": "失败",
       "cancelled": "已取消"
     }
   },
@@ -105,19 +108,19 @@
       "description": "当 Agent 使用其 bgjob 封装时，记录会在这里出现。Root 路径默认取 ~/.claude/bgjobs/、~/.config/opencode/bgjobs/、~/.codex/bgjobs/（可通过 IMHUB_BGJOB_ROOTS 覆盖）。"
     },
     "filter": {
-      "root":    "Root",
+      "root": "Root",
       "rootAny": "全部 Root"
     },
     "col": {
-      "name":      "名称",
-      "status":    "状态",
-      "root":      "Root",
-      "pid":       "PID",
+      "name": "名称",
+      "status": "状态",
+      "root": "Root",
+      "pid": "PID",
       "startedAt": "开始时间",
-      "endedAt":   "结束时间",
-      "exit":      "退出码"
+      "endedAt": "结束时间",
+      "exit": "退出码"
     },
-    "exitOk":   "ok",
+    "exitOk": "ok",
     "stillRunning": "—"
   },
   "schedules": {
@@ -128,20 +131,20 @@
       "description": "可在聊天中通过 `/cron set` 或 CLI `agim cron create` 创建定时任务。"
     },
     "filter": {
-      "agent":    "Agent",
+      "agent": "Agent",
       "agentAny": "全部 Agent"
     },
     "col": {
-      "id":       "ID",
-      "name":     "名称",
-      "agent":    "Agent",
-      "cron":     "Cron",
-      "prompt":   "Prompt",
-      "enabled":  "启用",
-      "nextRun":  "下次运行",
-      "lastRun":  "上次运行"
+      "id": "ID",
+      "name": "名称",
+      "agent": "Agent",
+      "cron": "Cron",
+      "prompt": "Prompt",
+      "enabled": "启用",
+      "nextRun": "下次运行",
+      "lastRun": "上次运行"
     },
-    "enabled":  "开",
+    "enabled": "开",
     "disabled": "关"
   },
   "outbox": {
@@ -152,36 +155,36 @@
       "description": "消息成功投递后会被删除。如果这里非空，说明队列正在刷出消息，或某条消息卡住了。"
     },
     "filter": {
-      "status":     "状态",
-      "statusAny":  "全部状态",
-      "thread":     "Thread 标识"
+      "status": "状态",
+      "statusAny": "全部状态",
+      "thread": "Thread 标识"
     },
     "stats": {
-      "pending":    "待发送",
-      "giving_up":  "放弃中",
-      "delivered":  "已投递（累计）",
+      "pending": "待发送",
+      "giving_up": "放弃中",
+      "delivered": "已投递（累计）",
       "lastDelivered": "最近投递"
     },
     "col": {
-      "id":          "ID",
-      "status":      "状态",
-      "platform":    "平台",
-      "preview":     "内容",
-      "thread":      "Thread",
-      "kind":        "类型",
-      "attempts":    "尝试次数",
-      "createdAt":   "创建时间",
-      "lastError":   "最后错误",
-      "jobId":       "Job"
+      "id": "ID",
+      "status": "状态",
+      "platform": "平台",
+      "preview": "内容",
+      "thread": "Thread",
+      "kind": "类型",
+      "attempts": "尝试次数",
+      "createdAt": "创建时间",
+      "lastError": "最后错误",
+      "jobId": "Job"
     },
     "status": {
-      "pending":   "待发送",
+      "pending": "待发送",
       "delivered": "已投递",
       "giving_up": "放弃中"
     },
     "action": {
-      "retry":         "重试",
-      "confirmRetry":  "重新入队这条投递？",
+      "retry": "重试",
+      "confirmRetry": "重新入队这条投递？",
       "confirmRetryDesc": "状态会切回 pending，发送器会在下一轮 tick 再次尝试投递。"
     }
   },
@@ -193,18 +196,89 @@
       "description": "当某 Agent 使用 `agim --invoke` 工具并带上父级上下文时，这里会出现 inline a2a 调用记录。"
     },
     "stats": {
-      "total":      "累计",
-      "recent24h":  "近 24 小时",
-      "maxDepth":   "最大深度"
+      "total": "累计",
+      "recent24h": "近 24 小时",
+      "maxDepth": "最大深度"
     },
     "col": {
-      "id":         "ID",
-      "agent":      "Agent",
-      "parent":     "父级",
-      "depth":      "深度",
-      "status":     "状态",
-      "prompt":     "Prompt",
-      "createdAt":  "创建时间"
+      "id": "ID",
+      "agent": "Agent",
+      "parent": "父级",
+      "depth": "深度",
+      "status": "状态",
+      "prompt": "Prompt",
+      "createdAt": "创建时间"
     }
+  },
+  "heartbeat": {
+    "title": "心跳绑定",
+    "subtitle": "跨线程查看所有 /heartbeat bind。可在此启用/停用绑定；新建绑定需在 IM 线程内执行 /heartbeat bind <body>。",
+    "refresh": "刷新",
+    "empty": "尚无心跳绑定。在任意 IM 线程执行 /heartbeat bind <body> 即可创建。",
+    "col": {
+      "thread": "线程",
+      "owner": "所有者",
+      "interval": "间隔",
+      "lastTick": "上次 tick",
+      "enabled": "启用",
+      "body": "正文"
+    },
+    "never": "从未",
+    "pause": "暂停",
+    "enable": "启用",
+    "show": "展开",
+    "hide": "收起",
+    "enabledToast": "已启用绑定",
+    "disabledToast": "已停用绑定",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前",
+    "intervalMin": "{{count}} 分钟"
+  },
+  "goals": {
+    "title": "活跃目标",
+    "subtitle": "跨线程查看所有活跃 /goal。生命周期操作（暂停/完成/取消）无需 IM 线程；新建目标仍需在线程内执行 /goal set <title>。",
+    "refresh": "刷新",
+    "empty": "暂无活跃目标。在任意 IM 线程执行 /goal set <title> 创建。",
+    "col": {
+      "id": "#",
+      "thread": "线程",
+      "title": "标题",
+      "progress": "进度",
+      "updated": "更新",
+      "actions": "操作"
+    },
+    "showBody": "展开正文",
+    "hideBody": "收起正文",
+    "pause": "暂停",
+    "complete": "完成",
+    "cancel": "取消",
+    "body": "正文",
+    "recentProgress": "最近进度（最新 {{count}} 条）",
+    "created": "创建于 {{at}}",
+    "closed": "关闭于 {{at}}",
+    "statusUpdated": "目标已{{status}}"
+  },
+  "asks": {
+    "title": "待回答 ask_user",
+    "subtitle": "所有等待回复的 mcp__imhub__ask_user 实时列表。在此取消与超时相同（ok: false, reason: 'cancelled'）。",
+    "refresh": "刷新",
+    "empty": "暂无待回答。每 5 秒自动刷新。",
+    "col": {
+      "reqId": "请求 ID",
+      "thread": "线程",
+      "question": "问题",
+      "choices": "选项数",
+      "age": "等待时长",
+      "actions": ""
+    },
+    "cancel": "取消",
+    "cancelConfirm": "取消待回答 {{id}}…？",
+    "cancelledToast": "已取消",
+    "justNow": "刚刚",
+    "seconds": "{{count}} 秒",
+    "minutes": "{{count}} 分",
+    "hours": "{{count}} 小时"
   }
 }

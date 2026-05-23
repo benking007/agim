@@ -276,3 +276,134 @@ inline-job 跟踪每条入站消息：`pending → running → completed → del
 - 首次部署：`~/.agim/admin-bootstrap-token` 单次消费，IM 发 `/setup admin <token>` 自助
 - v1.2.2：现有管理员可用 `agim admin invite` / 交互菜单生成新一次性 token 拉人入伙
 - 守卫范围：`/restart` / `/stop` IM 命令 + `POST /api/service/*` Web 端点
+
+---
+
+## 五、v1.3.0 增量 · 原生 LLM 栈 + 长目标/心跳/选择题/技能
+
+v1.3.0 在 v0.2.x 的"进程内多面体网关"上再叠了一层 **`native` AgentAdapter** 与一组横切原语。完整设计立场见 [`../architecture-bridge-and-native.md`](../architecture-bridge-and-native.md)；PR 落地顺序与端到端能力矩阵见 [`../nanobot-comparison-rollout.md`](../nanobot-comparison-rollout.md)。
+
+### 5.1 Native AgentAdapter（in-process LLM loop）
+
+```
+                                ┌──────────────────────────────┐
+                  router ──►   │ AgentRegistry                │
+                                │   • claude-code  [cli]       │
+                                │   • codex        [cli]       │
+                                │   • opencode     [cli]       │
+                                │   • antigravity  [cli]       │
+                                │   • native       [in-process]│  ◄── 新
+                                │   • <acp:*>      [remote]    │
+                                └────────────┬─────────────────┘
+                                             │ AgentAdapter.sendPrompt
+                                             ▼
+                ┌─ 'native' adapter ────────────────────────────────┐
+                │ src/plugins/agents/native/ + src/core/llm/        │
+                │                                                    │
+                │   ChatHistory + ChatOptions ─► agent-loop          │
+                │                                    │ (≤N 轮)       │
+                │            ┌───────────────────────┼──────────┐   │
+                │            ▼                       ▼          ▼   │
+                │     provider chat()         builtin-dispatcher  approval gate
+                │   openai-compat /           (skill_read /        (policy:        │
+                │   anthropic / ollama       memory_query /        allow-list/    │
+                │                              push_message …)     deny-list/    │
+                │                                                    autoAllow)   │
+                │                                    │                            │
+                │                                    ▼                            │
+                │                          mcp-client.callTool                    │
+                │                          (外挂 MCP server)                       │
+                └────────────────────────────────────────────────────────────────┘
+```
+
+关键点：
+
+- **`AgentAdapter.kind` 是 UI tag，不是分支**：router / approval-bus / A2A / audit / `/router compare` / fallback 链 **全部不写** `if (kind === ...)`。Anti-pattern 在 `architecture-bridge-and-native.md` § 7。
+- **provider** 实现在 `src/core/llm/{openai-compat-provider,anthropic-provider}.ts`，统一 `chat({ messages, tools? }) → { text, toolCalls?, usage }`。
+- **`agent-loop.ts`** 多轮：assistant 文本 / 工具调用 → dispatcher 执行 → 工具结果回灌 → 下一轮，直到模型不再 call tool 或触发 `IMHUB_NATIVE_MAX_TURNS`。DeepSeek 的 `reasoning_content` 在工具调用轮原样回灌（防 `ctx loss`）。
+- **dispatcher 两路**：builtin（`skill_read` / `memory_query` / `push_message` / `ask_user` / `call_agent` …，与 CLI sidecar 同名空间）+ MCP 外挂（`mcp_<server>_<tool>`，连接靠 `mcp-client.ts`，注册靠 `mcp-registry.ts` + `~/.agim/mcp-config.json`）。
+- **approval gate** 在每次工具调用前过 `policy-approval-gate.ts`，落 audit。模式：`allow-list` / `deny-list` / `always-allow` / `always-deny`；`autoAllow=N` 给某些工具前 N 次免审。
+- **boot wiring**：`cli.ts` 在 `loadBuiltInPlugins()` 之后调 `loadLlmFromConfig(config)` + `loadMcpFromConfig(config)` + `mcpRegistry.connectAll()`，并打印 `describeNativeAgent()`。所以 `native.isAvailable()` 在配置有 backend 时**首次启动**就为 true。
+
+### 5.2 LLM 配置三件套
+
+```
+~/.agim/config.json
+├── llmBackends: BackendDef[]      // openai-compat / anthropic provider 配置
+└── llmRoles: { [role]: backendName }
+                                   //   cheap        → 路由器 / memory-distill / intent-llm
+                                   //   evaluator    → 通知评估门 / heartbeat DECIDE
+                                   //   native-chat  → /na 用户路径
+~/.agim/llm-secrets.json (0o600)
+└── 仅按 backend.name 存 apiKey
+```
+
+`/settings/llm`（Web）和 `agim setup llm`（CLI）是对等的 CRUD 入口；`agim diag llm` 等价于点 Ping。`tryIntrospectChain(roles[], prompt)` 助手按角色顺序尝试每个 backend，第一个成功即返回——这就是 v1.3 之前 `memory-distill` / `memory-consolidate` / `intent-llm` 的 CLI fallback 的"native 优先 → CLI 兜底"演化形态。
+
+### 5.3 三大新原语（与 AgentAdapter 解耦）
+
+| 原语 | 入口 | 注入路径 | 存储 | 横切层 |
+|---|---|---|---|---|
+| `/goal` | 命令 + MCP | `router.ts` → prompt 头部 `[goal]` 块 | `~/.agim/goals.db`（每 thread 至多一个 active） | `/tasks/goals` + `/api/goals` |
+| `/heartbeat` | 命令 + scheduler | tick → 同步 `MessageContext` 走 router → DECIDE/EXECUTE/EVALUATE | `~/.agim/heartbeat.db`（thread bindings） | `/tasks/heartbeat` + `/api/heartbeat/bindings` |
+| `mcp__imhub__ask_user` | 仅 MCP | 通过 outbox 发 IM 卡 → `ask-user-router` 等回包 → 解 RPC | 内存 + audit（一次性等待，timeout 失效） | `/tasks/asks` + `/api/asks/pending` |
+
+三者都不知道**也不该知道**对端是 CLI agent 还是 native——一切走 `AgentAdapter.sendPrompt`。
+
+### 5.4 Skills 引擎（agim-owned）
+
+```
+扫描两路（5 min 缓存，/skill refresh 强制重建）：
+   ~/.agim/skills/<name>/SKILL.md          ← operator 优先
+   <agim-dist>/skills/builtin/<name>/SKILL.md  ← 内置兜底
+
+三层渐进披露：
+   tier 1 — name + description           每轮自动进 system prompt
+   tier 2 — SKILL.md body                按需 mcp__imhub__read_skill('name')
+   tier 3 — scripts/ references/ assets/  由 body 引用 → agent 普通 file-read
+```
+
+Web 编辑器在 `/settings/agim-skills`；`/skill list|show|refresh` 在 IM 也能用。CLI agent 与 native 通过 builtin-dispatcher 的 `read_skill` 工具透明访问。
+
+### 5.5 通知评估门（push / heartbeat → IM）
+
+`mcp__imhub__push_message` 与 `POST /api/notify`（包括 heartbeat EVALUATE 阶段的产物）在写出之前过 `notification-evaluator.ts`：把"建议内容 + thread 最近 N 条上下文 + 用户偏好"喂 `llmRoles.evaluator` 让 LLM 给一个 `deliver|skip|reword` 决定；命中 `skip` 直接落 audit 不打扰用户。
+
+### 5.6 `/router compare` A/B
+
+```
+/router compare agent:claude-code agent:native "...prompt..."
+
+→ 并发触发两路 AgentAdapter.sendPrompt
+→ 收集 (text, latency, usage)
+→ 拼成一个 IM 卡片回投
+```
+
+代码在 `src/core/commands/router-compare.ts`；判别完全不区分 CLI/native——这就是 § 5.1 "kind 是 UI tag" 立场的天然回报。
+
+### 5.7 关键文件索引（v1.3 增量）
+
+| 关注点 | 路径 |
+|---|---|
+| native AgentAdapter | `src/plugins/agents/native/index.ts` |
+| LLM provider 抽象 | `src/core/llm/provider-base.ts` |
+| OpenAI-compat provider | `src/core/llm/openai-compat-provider.ts` |
+| Anthropic provider | `src/core/llm/anthropic-provider.ts` |
+| 多轮 agent loop | `src/core/llm/agent-loop.ts` |
+| builtin dispatcher | `src/core/llm/builtin-dispatcher.ts` |
+| 外挂 MCP client / registry | `src/core/llm/mcp-client.ts` · `src/core/llm/mcp-registry.ts` |
+| 策略审批门 | `src/core/llm/policy-approval-gate.ts` |
+| LLM registry + roles | `src/core/llm/registry.ts` |
+| Secrets | `src/core/llm/secrets.ts` |
+| 路由 fallback 链 | `src/core/llm/introspection.ts`（`tryIntrospectChain`） |
+| `/goal` 命令 / 存储 | `src/core/commands/goal.ts` · `src/core/goals.ts` |
+| `/heartbeat` 命令 / 调度 | `src/core/commands/heartbeat.ts` · `src/core/heartbeat.ts` · `src/core/heartbeat-store.ts` |
+| `ask_user` 原语 | `src/core/ask-user-router.ts` · `src/core/ask-user-rpc.ts` |
+| Skills 加载器 | `src/core/skills/loader.ts` |
+| Skills RPC | `src/core/skills-rpc.ts` |
+| 通知评估门 | `src/core/notification-evaluator.ts` |
+| `/router compare` | `src/core/commands/router-compare.ts` · `src/core/router-compare.ts` |
+| CLI 向导 setup llm | `src/cli-ui/setup-llm.ts` |
+| CLI 向导 setup mcp | `src/cli-ui/setup-mcp.ts` |
+| CLI diag | `src/cli-ui/diag.ts` |
+| 行内年龄注释 | `src/core/util/format-age.ts` · `src/core/persona.ts` |

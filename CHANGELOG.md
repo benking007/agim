@@ -4,6 +4,187 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-23
+
+### Theme: nanobot-vs-agim comparison rollout — native LLM stack + P0–P3
+
+Single-version landing for the multi-stage work that adopted the most
+valuable structural features from `HKUDS/nanobot` **without changing
+agim's product identity**. agim stays a messenger ↔ agent bridge; the
+new `native` agent is a peer `AgentAdapter` alongside the CLI agents.
+See [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md)
+for the PR-by-PR landing order and
+[`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md)
+for the architectural stance + anti-patterns.
+
+### Added — native LLM stack (Stage 1 + 2)
+
+- **`native` AgentAdapter** — in-process LLM agent loop, no subprocess.
+  Registered alongside `claude-code` / `codex` / `opencode` /
+  `antigravity` and reachable via `/cc native` / `/na` / `/llm`.
+  `kind='in-process'` UI tag only; router / approval / A2A / audit
+  code stays kind-agnostic. PR #65 + #73.
+- **LLM provider stack** — `openai-compat-provider` (DeepSeek / Kimi /
+  Qwen / Ollama / vLLM / OpenAI), `anthropic-provider`, common
+  `provider-base` with retries + abort + token usage. PR #59 + #62.
+- **Multi-iteration agent loop** — `agent-loop.ts` runs `chat → tool
+  calls → tool results → chat …` until done; max-turns guard; per-turn
+  approval gate; reasoning_content round-trip for DeepSeek tool-call
+  turns (`ed36b39`). PR #64.
+- **External MCP server attach** — `mcp-client.ts` + `mcp-registry.ts`
+  + `mcp-config.json` connect stdio / HTTP / SSE MCP servers and
+  surface their tools as `mcp_<server>_<tool>` to the native
+  dispatcher. PR #63.
+- **Policy approval gate** — `policy-approval-gate.ts` with
+  `mode=allow-list | deny-list | always-allow | always-deny`,
+  per-tool `autoAllow` count, audit-logged decisions. PR #64.
+- **`llmBackends` + `llmRoles` + `~/.agim/llm-secrets.json`** — config
+  schema for backend definitions, role bindings (`cheap` / `evaluator`
+  / `native-chat`), and secret storage with 0o600 perms + redacted
+  list endpoints. PR #59 + #70.
+- **`tryIntrospectChain` fallback helper** — internal callers
+  (`memory-distill`, `memory-consolidate`, `intent-llm`) try roles in
+  order and fall back gracefully when a backend is unavailable. PR #71.
+- **`loadFromConfig` boot wiring** — `src/cli.ts` now calls
+  `loadLlmFromConfig` + `loadMcpFromConfig` + `connectAll` after
+  built-in plugin load so `native.isAvailable()` returns true on first
+  boot when a backend is configured. `11cc0f6`.
+
+### Added — P0 items riding on the stack
+
+- **`/heartbeat` per-thread bindings + 3-phase scheduler (P0 #1)** —
+  bind a thread to a tick interval; each tick runs DECIDE (cheap LLM)
+  → EXECUTE (the agent does the work) → EVALUATE (notification gate
+  decides whether to ping the user). `/tasks/heartbeat` cross-thread
+  admin. PR #61.
+- **`/goal` sustained-objective tracker (P0 #2)** — one active goal
+  per IM thread, auto-injected into every prompt for cross-turn
+  context. Lifecycle `set / body / progress / pause / resume /
+  complete / cancel / list`. `/tasks/goals` cross-thread admin. See
+  [`docs/goals.md`](docs/goals.md). PR #66.
+- **agim Skills engine (Stage 3 + P0 #3)** — discover `SKILL.md`
+  files in `~/.agim/skills/` + bundled `<dist>/skills/builtin/`; 3-tier
+  progressive disclosure (name+desc auto-injected; body via
+  `mcp__imhub__read_skill`; scripts/refs via normal file read);
+  `/skill list|show|refresh` + `/settings/agim-skills` web editor. See
+  [`docs/skills.md`](docs/skills.md). PR #68 + #76.
+- **Inline row-age annotations on memory facts (P0 #4)** — every fact
+  / persona row gets a `(2d ago)` style annotation in the injected
+  context so the agent has temporal context for free. `format-age.ts`
+  utility + `persona-age.test.ts`. PR #69.
+- **`mcp__imhub__ask_user` structured choice (P0 #5)** — agent presents
+  N choices (2-9) with optional timeout; user replies via button or
+  text; result returns deterministically as a typed choice index +
+  free-text. `/tasks/asks` pending-queue admin. See
+  [`docs/ask-user.md`](docs/ask-user.md). PR #67.
+- **Notification evaluator for agent-initiated push (P0 #9)** —
+  `mcp__imhub__push_message` and `POST /api/notify` go through an
+  LLM-graded "should we deliver this?" filter before hitting the IM
+  thread. Per-thread rate limit; verdict logged to audit. PR #60.
+
+### Added — config UX (Stage 4 + 6) and CLI symmetry (P2/P3)
+
+- **Web settings pages** —
+  - `/settings/llm` — list / add / remove backends, role bindings,
+    secret slots, per-backend **Ping** via
+    `/api/llm/backends/:name/ping`.
+  - `/settings/mcp` — list / add / remove external MCP servers,
+    per-server **Health** via `/api/mcp/servers/:name/health`.
+  - `/settings/native-agent` — focused form for native-agent /
+    notification-evaluator / heartbeat env knobs.
+  - `/settings/agim-skills` — SKILL.md editor.
+  PR #74 + #76.
+- **Web task views** — `/tasks/heartbeat`, `/tasks/goals`,
+  `/tasks/asks` cross-thread admin views with auto-refresh and
+  per-row actions. REST `/api/heartbeat/bindings`, `/api/goals`,
+  `/api/asks/pending`. PR #75.
+- **CLI wizards**:
+  - `agim setup llm {add,list,remove,role,secret,native-enable}` —
+    full LLM backend + role + secret management; `native-enable`
+    one-shot enables the native agent if a backend exists. PR #70 + #77.
+  - `agim setup mcp {add,list,remove,health}` — MCP server CRUD +
+    probe. Restores CLI/Web symmetry. PR #78.
+  - `agim diag {llm,mcp}` — ping every backend / connect-and-list-tools
+    per MCP server with single-screen status output. PR #77.
+- **Config wizard now offers `native`** — `agim` first-run wizard
+  detects `llmBackends` and offers `native` as a checkbox agent
+  alongside `claude-code` etc. `03a04f5`.
+- **`gen-endpoints --check` drift guard** — `tools/gen-endpoints.mjs`
+  added a `--check` mode that fails CI when generated endpoint
+  constants drift from the SPA hand-written exports. PR #79.
+
+### Added — Stage 5 router
+
+- **`/router compare agent:<a> agent:<b> "<prompt>"`** — A/B evaluator
+  runs the same prompt against two backends side-by-side (any combo of
+  CLI and native), returns a single card with latency + tokens + raw
+  outputs so operators can pick a winner before changing
+  `defaultAgent`. PR #71.
+
+### Added — i18n
+
+- **Full bilingual (en / zh) coverage** for every new v1.3.0 surface:
+  - Web SPA — `/settings/{llm,mcp,native-agent,agim-skills}` +
+    `/tasks/{heartbeat,goals,asks}` use `useTranslation` with the new
+    `settings.json` / `tasks.json` locale namespaces.
+  - CLI — `src/cli-ui/i18n.ts` adds native/MCP startup logs, agent
+    install hints (`formatAgentInstallHint(lang, missing)`),
+    `agim token create/list/revoke/bootstrap` output, config wizard
+    `native` agent label, and `resolveCliLang()` for env-derived
+    lang. `0eef14e`.
+- **`agim token bootstrap`** prints the one-shot
+  `~/.agim/admin-bootstrap-token` to the operator on the host. PR #76
+  follow-up + `6490ce5`.
+
+### Architecture
+
+- **`AgentAdapter.kind: 'cli' | 'in-process' | 'remote'`** — UI tag
+  only; router / approval bus / A2A / audit code does NOT branch on
+  it. New `describe?()` method renders the role/model line in
+  `/agents`. PR #73.
+- **`acp-token` separated from `web-token`** — the ACP bearer now
+  lives in `~/.agim/acp-token` (legacy fallback `~/.agim/web-token`),
+  giving operators an independent rotation surface for remote-agent
+  inbound traffic.
+
+### Docs
+
+- `docs/architecture-bridge-and-native.md` (new) — peer
+  `AgentAdapter` design, the six things every backend gets for free
+  (routing / A2A / approval / audit / `/router compare` / fallback
+  chains), anti-patterns.
+- `docs/nanobot-comparison-rollout.md` (new) — single-page reference
+  for the multi-stage rollout, recommended PR landing order, end-state
+  capability matrix, deferred items.
+- `docs/llm-backends.md` (new) — native LLM backend configuration,
+  provider matrix, secret handling, role bindings, troubleshooting.
+- `docs/goals.md`, `docs/ask-user.md`, `docs/skills.md` (new) — full
+  primitive references.
+
+### Fixed
+
+- **`native.isAvailable()` returns true on first boot** — `cli.ts`
+  was calling `loadBuiltInPlugins()` but never `loadLlmFromConfig`,
+  so the in-process LLM registry stayed empty and the native agent
+  reported unavailable until something else lazily loaded it.
+  `11cc0f6`.
+- **DeepSeek tool-call turn `reasoning_content` round-trip** —
+  preserve the assistant `reasoning_content` field across tool-call
+  turns so multi-iteration loops don't drop chain-of-thought when the
+  model returns it alongside a tool call. `ed36b39`.
+- **SPA registers v1.3.0 routes** — `/settings/{llm,mcp,native-agent,
+  agim-skills}` and `/tasks/{heartbeat,goals,asks}` registered in the
+  v2 SPA router. `c97b023` + `d29ee47`.
+
+### Compatibility
+
+- Native agent is **opt-in by default**; without `llmBackends` the
+  bridge behaviour is identical to v1.2.x.
+- All v1.2.x configs continue to work without edit; the new
+  `llmBackends` / `llmRoles` keys are additive.
+- `~/.agim/web-token` is still honored as a fallback for the ACP
+  bearer if `~/.agim/acp-token` does not exist.
+
 ## [1.2.32] - 2026-05-22
 
 ### R15 — final R14 follow-ups

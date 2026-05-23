@@ -14,6 +14,10 @@ import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { isMasked, maskSecret } from './env-mask.js'
+import { handleLlmApi } from './llm-api.js'
+import { handleMcpApi } from './mcp-api.js'
+import { handleBackgroundTasksApi } from './background-tasks-api.js'
+import { handleAgimSkillsApi } from './agim-skills-api.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -942,6 +946,39 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/notify' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
       return handleNotify(req, res)
+    }
+    // Stage 4 — native LLM backend admin. GET is open (no secret
+    // VALUES surfaced — only source); writes require admin.
+    if (url.pathname === '/api/llm' || url.pathname.startsWith('/api/llm/')) {
+      const writeMethod = req.method !== 'GET'
+      if (writeMethod && !requireAdmin(req, res)) return
+      const handled = await handleLlmApi(req, res, url)
+      if (handled) return
+    }
+    // Stage 6 — external MCP servers admin. Headers may contain bearer
+    // tokens; require admin even on GET.
+    if (url.pathname === '/api/mcp' || url.pathname.startsWith('/api/mcp/')) {
+      if (!requireAdmin(req, res)) return
+      const handled = await handleMcpApi(req, res, url)
+      if (handled) return
+    }
+    // P1 follow-up — admin overview of the three per-thread background
+    // primitives (heartbeat bindings / goals / pending asks). Cross-
+    // thread, user-typed content — require admin on every method.
+    if (url.pathname.startsWith('/api/heartbeat/')
+        || url.pathname === '/api/goals' || url.pathname.startsWith('/api/goals/')
+        || url.pathname.startsWith('/api/asks/')) {
+      if (!requireAdmin(req, res)) return
+      const handled = await handleBackgroundTasksApi(req, res, url)
+      if (handled) return
+    }
+    // P1 follow-up — agim skills editor (SKILL.md CRUD). SKILL.md
+    // bodies are injected into every agent prompt; admin-gated even
+    // on GET because the dir paths reveal install layout.
+    if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
+      if (!requireAdmin(req, res)) return
+      const handled = await handleAgimSkillsApi(req, res, url)
+      if (handled) return
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return

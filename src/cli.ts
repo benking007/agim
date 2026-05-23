@@ -205,7 +205,8 @@ program
       }
       console.warn('   Agim will continue with defaults for invalid fields.\n')
     }
-    config = validation.config as unknown as Config
+    const validatedConfig = validation.config
+    config = validatedConfig as unknown as Config
 
     // Initialize workspace registry
     const rawConfig = config as Record<string, unknown>
@@ -251,18 +252,47 @@ program
     // Load plugins FIRST (agents won't be registered until this runs)
     await registry.loadBuiltInPlugins()
 
+    // Native LLM + MCP boot — populate the in-process registries from
+    // config.json + ~/.agim/llm-secrets.json. Without this, `native`
+    // isAvailable() is always false even when llmBackends are configured.
+    try {
+      const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+      const bootLang = resolveCliLang()
+      const { loadFromConfig: loadLlmFromConfig } = await import('./core/llm/registry.js')
+      loadLlmFromConfig(validatedConfig)
+      const { loadFromConfig: loadMcpFromConfig, connectAll } = await import('./core/llm/mcp-registry.js')
+      await loadMcpFromConfig(validatedConfig as { mcpServers?: unknown })
+      const mcpSummary = await connectAll()
+      if (mcpSummary.ok.length > 0) {
+        console.log(`✅ ${cliT(bootLang, 'start.mcp_connected', { servers: mcpSummary.ok.join(', '), toolCount: mcpSummary.toolCount })}`)
+      }
+      if (Object.keys(mcpSummary.failed).length > 0) {
+        console.warn(`⚠️ ${cliT(bootLang, 'start.mcp_connect_failures', { failures: JSON.stringify(mcpSummary.failed) })}`)
+      }
+      const { describeNativeAgent } = await import('./plugins/agents/native/index.js')
+      console.log(`🤖 ${cliT(bootLang, 'start.native_agent', { desc: describeNativeAgent() })}`)
+    } catch (err) {
+      const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+      const bootLang = resolveCliLang()
+      console.warn(`⚠️ ${cliT(bootLang, 'start.native_boot_failed', { message: err instanceof Error ? err.message : String(err) })}`)
+    }
+
     // Bootstrap per-agent IM workspaces. Idempotent — creates
     // ~/.agim-workspaces/<agent>/ and seeds CLAUDE.md / AGENTS.md only if
     // they don't exist yet. See docs/architecture/agent-cwd-and-memory.md.
     try {
       const bootstrapped = await bootstrapAgentWorkspaces()
+      const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+      const bootLang = resolveCliLang()
       for (const { agent, dir } of bootstrapped) {
-        console.log(`📁 Agent workspace: ${agent} → ${dir}`)
+        console.log(`📁 ${cliT(bootLang, 'start.agent_workspace', { agent, dir })}`)
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.warn(`⚠️ Agent workspace bootstrap failed: ${msg}`)
-      console.warn('   Agents will fall back to Agim cwd ("/" under systemd)')
+      const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+      const bootLang = resolveCliLang()
+      console.warn(`⚠️ ${cliT(bootLang, 'start.workspace_boot_failed', { message: msg })}`)
+      console.warn(`   ${cliT(bootLang, 'start.workspace_fallback')}`)
     }
 
     // Register the imhub MCP server in opencode's global config so opencode
@@ -348,13 +378,21 @@ program
     // Check agents (async, AFTER plugins loaded)
     const agentResult = await checkAgentAvailability()
     if (agentResult.allMissing) {
-      console.log('\n⚠️ No coding agents found!')
-      console.log(formatAgentInstallHint(agentResult.missing))
-      console.log('\nInstall at least one agent, then run agim start again.')
+      {
+        const { resolveCliLang, t: cliT, formatAgentInstallHint: fmtHint } = await import('./cli-ui/i18n.js')
+        const bootLang = resolveCliLang()
+        console.log(`\n⚠️ ${cliT(bootLang, 'start.no_agents')}`)
+        console.log(fmtHint(bootLang, agentResult.missing))
+        console.log(`\n${cliT(bootLang, 'start.install_one_agent')}`)
+      }
       process.exit(1)
     } else if (agentResult.missing.length > 0) {
-      console.log('⚠️ Some agents not available:', agentResult.missing.join(', '))
-      console.log(`   ${formatAgentInstallHint(agentResult.missing)}`)
+      {
+        const { resolveCliLang, t: cliT, formatAgentInstallHint: fmtHint } = await import('./cli-ui/i18n.js')
+        const bootLang = resolveCliLang()
+        console.log(`⚠️ ${cliT(bootLang, 'start.agents_unavailable', { missing: agentResult.missing.join(', ') })}`)
+        console.log(`   ${fmtHint(bootLang, agentResult.missing)}`)
+      }
       console.log('')
     }
 
@@ -1811,15 +1849,17 @@ tokenCmd
   .description('Create a new web access token (raw value printed once)')
   .action(async (label?: string) => {
     const { createToken } = await import('./core/access-token.js')
-    const t = createToken(label || '')
+    const row = createToken(label || '')
+    const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+    const lang = resolveCliLang()
     console.log('')
-    console.log('✓ New access token created.')
-    console.log(`   id    : ${t.id}`)
-    console.log(`   label : ${label || '(unlabeled)'}`)
-    console.log(`   token : ${t.raw}`)
+    console.log(`✓ ${cliT(lang, 'token.cli.create_ok')}`)
+    console.log(`   id    : ${row.id}`)
+    console.log(`   label : ${label || cliT(lang, 'token.cli.unlabeled')}`)
+    console.log(`   token : ${row.raw}`)
     console.log('')
-    console.log('⚠️ This is the only time the raw value is shown. Save it now.')
-    console.log('   Paste it at the /login page or send it as an "Authorization: Bearer <token>" header.')
+    console.log(`⚠️ ${cliT(lang, 'token.cli.create_warn')}`)
+    console.log(`   ${cliT(lang, 'token.cli.create_usage')}`)
   })
 
 tokenCmd
@@ -1828,16 +1868,18 @@ tokenCmd
   .action(async () => {
     const { listTokens, TOKENS_FILE_PATH } = await import('./core/access-token.js')
     const rows = listTokens()
-    console.log(`Stored at: ${TOKENS_FILE_PATH}`)
+    const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+    const lang = resolveCliLang()
+    console.log(cliT(lang, 'token.cli.list_path', { file: TOKENS_FILE_PATH }))
     if (rows.length === 0) {
-      console.log('(no tokens — run `agim token create` to create one)')
+      console.log(cliT(lang, 'token.cli.list_empty'))
       return
     }
     for (const r of rows) {
       const created = new Date(r.created_at * 1000).toISOString().replace('T', ' ').slice(0, 19)
       const lastUsed = r.last_used_at
         ? new Date(r.last_used_at * 1000).toISOString().replace('T', ' ').slice(0, 19)
-        : '(never)'
+        : cliT(lang, 'token.cli.never')
       console.log(`  ${r.id}  label=${r.label}  created=${created}  last_used=${lastUsed}`)
     }
   })
@@ -1848,8 +1890,48 @@ tokenCmd
   .action(async (id: string) => {
     const { revokeToken } = await import('./core/access-token.js')
     const ok = revokeToken(id)
-    if (ok) console.log(`✓ token ${id} revoked.`)
-    else { console.log(`✗ token ${id} not found.`); process.exit(1) }
+    const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+    const lang = resolveCliLang()
+    if (ok) console.log(`✓ ${cliT(lang, 'token.cli.revoke_ok', { id })}`)
+    else { console.log(`✗ ${cliT(lang, 'token.cli.revoke_missing', { id })}`); process.exit(1) }
+  })
+
+tokenCmd
+  .command('bootstrap')
+  .description('Print the one-time web bootstrap token (first boot only; consumes ~/.agim/web-bootstrap-token)')
+  .action(async () => {
+    const {
+      retrieveWebBootstrapTokenRaw,
+      WEB_BOOTSTRAP_TOKEN_FILE,
+      hasAnyToken,
+    } = await import('./core/access-token.js')
+    const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
+    const lang = resolveCliLang()
+    const row = retrieveWebBootstrapTokenRaw()
+    if (row) {
+      console.log('')
+      console.log(`✓ ${cliT(lang, 'token.bootstrap.ok_title')}`)
+      console.log(`   id    : ${row.id}`)
+      console.log(`   token : ${row.raw}`)
+      console.log('')
+      console.log(`⚠️ ${cliT(lang, 'token.bootstrap.save_warn')}`)
+      console.log(`   ${cliT(lang, 'token.bootstrap.usage')}`)
+      console.log('')
+      return
+    }
+    console.log('')
+    if (!hasAnyToken()) {
+      console.log(`✗ ${cliT(lang, 'token.bootstrap.none')}`)
+      console.log(`   ${cliT(lang, 'token.bootstrap.start_hint')}`)
+      console.log('       agim token bootstrap')
+    } else {
+      console.log(`✗ ${cliT(lang, 'token.bootstrap.consumed')}`)
+      console.log(`   ${cliT(lang, 'token.bootstrap.file_hint', { file: WEB_BOOTSTRAP_TOKEN_FILE })}`)
+      console.log(`   ${cliT(lang, 'token.bootstrap.create_hint')}`)
+      console.log('       agim token create <label>')
+    }
+    console.log('')
+    process.exit(1)
   })
 
 // ─── admin allowlist management (v1.2.2+) ───────────────────────────

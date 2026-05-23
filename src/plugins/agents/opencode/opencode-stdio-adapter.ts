@@ -56,6 +56,7 @@ interface OpenCodeEvent {
 export class OpenCodeAdapter extends AgentBase {
   readonly name = 'opencode'
   readonly aliases = ['oc', 'opencodeai']
+  readonly kind = 'cli' as const
 
   protected buildArgs(prompt: string, opts: AgentSendOpts): string[] {
     const args = ['run', '--format', 'json']

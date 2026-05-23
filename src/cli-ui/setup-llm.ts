@@ -1,0 +1,475 @@
+// setup-llm — interactive wizard for adding / editing native LLM
+// backends (Stage 4 of the nanobot vs agim comparison plan).
+//
+// Why this exists: editing `~/.agim/config.json` by hand to set up
+// `llmBackends` + `llmRoles` + secrets is a multi-file dance:
+//
+//   1. add an entry to `config.json` `llmBackends` with the right
+//      provider / model / baseUrl shape
+//   2. decide which roles (cheap / evaluator / native-chat / custom)
+//      should target the new backend and update `llmRoles`
+//   3. save the API key to `~/.agim/llm-secrets.json` with 0600
+//      permissions (or set the equivalent env var)
+//
+// This wizard walks the operator through all three in one go and
+// validates the result by ROUNDTRIPPING through configSchema before
+// writing. Cancel-safe at every prompt — Ctrl-C / empty answer aborts
+// without touching disk.
+//
+// Invoked as `agim setup llm` (or `agim setup llm add`, `agim setup
+// llm role`, etc. — subcommands documented in cli.ts).
+
+import { readFile, writeFile, mkdir, chmod, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { createInterface } from 'node:readline'
+import { AGIM_HOME } from '../core/agim-paths.js'
+import { configSchema } from '../core/config-schema.js'
+import { saveSecret, removeSecret, listConfiguredBackends, describeSecretSource } from '../core/llm/secrets.js'
+
+const CONFIG_FILE = join(AGIM_HOME, 'config.json')
+
+/** All roles we currently inject into. New roles can be invented
+ *  ad-hoc (the schema allows any string), but the wizard surfaces the
+ *  blessed three by default. */
+const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
+
+/** Curated provider quick-picks. Operators can still type
+ *  "openai-compat" or "anthropic" manually for anything else. */
+const PROVIDER_PRESETS: Array<{
+  label: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  modelHint: string
+  apiKeyDoc: string
+}> = [
+  { label: 'DeepSeek (cheap+fast, recommended for cheap role)',
+    provider: 'openai-compat', baseUrl: 'https://api.deepseek.com/v1',
+    modelHint: 'deepseek-chat',
+    apiKeyDoc: 'platform.deepseek.com → API Keys' },
+  { label: 'Moonshot Kimi',
+    provider: 'openai-compat', baseUrl: 'https://api.moonshot.cn/v1',
+    modelHint: 'moonshot-v1-8k',
+    apiKeyDoc: 'platform.moonshot.cn → API Keys' },
+  { label: 'Zhipu GLM',
+    provider: 'openai-compat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    modelHint: 'glm-4-air',
+    apiKeyDoc: 'open.bigmodel.cn' },
+  { label: 'OpenAI',
+    provider: 'openai-compat', baseUrl: 'https://api.openai.com/v1',
+    modelHint: 'gpt-4o-mini',
+    apiKeyDoc: 'platform.openai.com → API keys' },
+  { label: 'Anthropic (native)',
+    provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1',
+    modelHint: 'claude-3-5-sonnet-20241022',
+    apiKeyDoc: 'console.anthropic.com → API Keys' },
+  { label: 'Custom / other openai-compatible',
+    provider: 'openai-compat', baseUrl: '',
+    modelHint: '',
+    apiKeyDoc: '' },
+]
+
+interface RawLlmBackend {
+  name: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  model: string
+  apiKeyEnv?: string
+  costPer1kIn?: number
+  costPer1kOut?: number
+  maxRetries?: number
+  timeoutMs?: number
+}
+
+interface RawConfig {
+  llmBackends?: RawLlmBackend[]
+  llmRoles?: Record<string, string>
+  [k: string]: unknown
+}
+
+/** Top-level entry point. Subcommand-dispatching shell — keeps the
+ *  wizard branches small + testable in isolation. */
+export async function runSetupLlm(argv: string[]): Promise<number> {
+  const sub = (argv[0] || '').toLowerCase()
+  try {
+    if (sub === '' || sub === 'help' || sub === '-h' || sub === '--help') return showHelp()
+    if (sub === 'list' || sub === 'ls') return await listAction()
+    if (sub === 'add')                  return await addAction()
+    if (sub === 'remove' || sub === 'rm') return await removeAction(argv[1])
+    if (sub === 'role' || sub === 'roles') return await roleAction()
+    if (sub === 'secret') return await secretAction(argv[1])
+    if (sub === 'native-enable' || sub === 'enable-native') {
+      return await nativeEnableAction(argv[1])
+    }
+    return showHelp(`unknown subcommand: ${sub}`)
+  } catch (err) {
+    process.stderr.write(`\n❌ wizard failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 1
+  }
+}
+
+function showHelp(error?: string): number {
+  if (error) process.stderr.write(`${error}\n\n`)
+  process.stdout.write(`
+agim setup llm — manage native LLM backends interactively.
+
+Subcommands:
+  list                  show configured backends and role bindings
+  add                   add a new backend (provider preset → name → model → API key → role binding)
+  remove [<name>]       remove a backend (also clears the API key)
+  role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)
+  secret <name>         (re)set the API key for an existing backend
+  native-enable [<name>] one-walk wizard: bind native-chat role + cheap (optional)
+                        + defaultAgent: 'native' so the in-process agent is the
+                        default backend for unrouted IM traffic
+
+Notes:
+  · Backends live in ~/.agim/config.json under "llmBackends".
+  · Role bindings live in the same file under "llmRoles".
+  · API keys live in ~/.agim/llm-secrets.json (0600). The env var
+    AGIM_LLM_SECRET_<UPPER_NAME> overrides what's on disk.
+`)
+  return error ? 1 : 0
+}
+
+// ─── subcommands ────────────────────────────────────────────────────
+
+async function listAction(): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  const roles = cfg.llmRoles ?? {}
+  if (backends.length === 0) {
+    process.stdout.write('(no LLM backends configured — run `agim setup llm add`)\n')
+  } else {
+    process.stdout.write('\nConfigured backends:\n')
+    for (const b of backends) {
+      const src = describeSecretSource(b.name)
+      const keyStr = src.source === 'none' ? 'key: ⚠️  missing' : `key: ✅ ${src.source}`
+      process.stdout.write(`  · ${b.name} → ${b.provider} ${b.model} @ ${b.baseUrl}  [${keyStr}]\n`)
+    }
+  }
+  process.stdout.write('\nRole bindings:\n')
+  for (const role of KNOWN_ROLES) {
+    const bound = roles[role]
+    process.stdout.write(`  · ${role.padEnd(12)} → ${bound ? bound : '(unset)'}\n`)
+  }
+  for (const [role, name] of Object.entries(roles)) {
+    if ((KNOWN_ROLES as readonly string[]).includes(role)) continue
+    process.stdout.write(`  · ${role.padEnd(12)} → ${name} (custom)\n`)
+  }
+  return 0
+}
+
+async function addAction(): Promise<number> {
+  const rl = readline()
+  try {
+    process.stdout.write('\n── agim setup llm add ──\n')
+    process.stdout.write('Pick a provider:\n')
+    PROVIDER_PRESETS.forEach((p, i) => { process.stdout.write(`  ${i + 1}. ${p.label}\n`) })
+    const choice = await ask(rl, `Choice [1-${PROVIDER_PRESETS.length}]: `)
+    const idx = parseInt(choice, 10) - 1
+    if (!Number.isFinite(idx) || idx < 0 || idx >= PROVIDER_PRESETS.length) {
+      return cancel('not a valid choice')
+    }
+    const preset = PROVIDER_PRESETS[idx]
+
+    const provider: 'openai-compat' | 'anthropic' = preset.provider
+    let baseUrl = preset.baseUrl
+    if (!baseUrl) {
+      baseUrl = (await ask(rl, 'Base URL (e.g. https://api.example.com/v1): ')).trim()
+      if (!baseUrl) return cancel('empty base URL')
+    }
+
+    const defaultName = suggestBackendName(provider, preset)
+    const name = (await ask(rl, `Backend name [${defaultName}]: `)).trim() || defaultName
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(name)) {
+      return cancel('name must match [A-Za-z0-9][A-Za-z0-9-]*')
+    }
+
+    const modelDefault = preset.modelHint
+    const model = (await ask(rl, `Model${modelDefault ? ` [${modelDefault}]` : ''}: `)).trim() || modelDefault
+    if (!model) return cancel('empty model')
+
+    if (preset.apiKeyDoc) {
+      process.stdout.write(`(API key: get one at ${preset.apiKeyDoc})\n`)
+    }
+    const apiKey = (await ask(rl, 'Paste API key (empty to skip): ', { silent: true })).trim()
+
+    const cfg = await readConfig()
+    const backends = cfg.llmBackends ?? []
+    if (backends.some((b) => b.name === name)) {
+      return cancel(`backend "${name}" already exists — use \`agim setup llm remove ${name}\` first`)
+    }
+    backends.push({ name, provider, baseUrl, model })
+    cfg.llmBackends = backends
+
+    // Validate via Zod so a typo in the wizard input shape is caught
+    // BEFORE we write to disk and BEFORE we stash the secret.
+    const result = configSchema.safeParse(cfg)
+    if (!result.success) {
+      return cancel(`config validation failed: ${result.error.issues.map((i) => i.message).join('; ')}`)
+    }
+
+    await writeConfig(cfg)
+    if (apiKey) saveSecret(name, apiKey)
+
+    process.stdout.write(`\n✅ Saved backend "${name}" (${provider} / ${model}).\n`)
+    if (!apiKey) {
+      process.stdout.write(`⚠️  No API key stored. Set env var AGIM_LLM_SECRET_${envSuffix(name)} ` +
+        `or rerun \`agim setup llm secret ${name}\` to add one.\n`)
+    }
+
+    process.stdout.write('\nBind to which role(s)? (comma-separated, empty to skip)\n')
+    process.stdout.write(`  Known roles: ${KNOWN_ROLES.join(', ')}\n`)
+    const roleAns = (await ask(rl, 'Roles: ')).trim()
+    if (roleAns) {
+      const roles = roleAns.split(/[,\s]+/).map((r) => r.trim()).filter(Boolean)
+      cfg.llmRoles = cfg.llmRoles ?? {}
+      for (const r of roles) cfg.llmRoles[r] = name
+      await writeConfig(cfg)
+      process.stdout.write(`✅ Bound roles: ${roles.join(', ')} → ${name}\n`)
+    }
+    return 0
+  } finally {
+    rl.close()
+  }
+}
+
+async function removeAction(maybeName?: string): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  if (backends.length === 0) {
+    process.stdout.write('(no backends to remove)\n')
+    return 0
+  }
+  let name = (maybeName ?? '').trim()
+  if (!name) {
+    const rl = readline()
+    try {
+      process.stdout.write('\nWhich backend?\n')
+      backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}\n`) })
+      const choice = await ask(rl, `Choice [1-${backends.length}]: `)
+      const idx = parseInt(choice, 10) - 1
+      if (!Number.isFinite(idx) || idx < 0 || idx >= backends.length) return cancel('not a valid choice')
+      name = backends[idx].name
+    } finally { rl.close() }
+  }
+  const next = backends.filter((b) => b.name !== name)
+  if (next.length === backends.length) {
+    return cancel(`no backend named "${name}"`)
+  }
+  cfg.llmBackends = next
+  // Drop any role binding still pointing at it.
+  const roles = cfg.llmRoles ?? {}
+  const cleanedRoles: Record<string, string> = {}
+  let droppedRoles = 0
+  for (const [r, b] of Object.entries(roles)) {
+    if (b === name) { droppedRoles++; continue }
+    cleanedRoles[r] = b
+  }
+  cfg.llmRoles = cleanedRoles
+  await writeConfig(cfg)
+  removeSecret(name)
+  process.stdout.write(`✅ Removed backend "${name}" (cleared ${droppedRoles} role binding(s) and the on-disk API key).\n`)
+  return 0
+}
+
+async function roleAction(): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  if (backends.length === 0) {
+    return cancel('add a backend first: `agim setup llm add`')
+  }
+  const rl = readline()
+  try {
+    process.stdout.write('\nAvailable backends:\n')
+    backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}\n`) })
+    process.stdout.write('  0. (unbind)\n\n')
+
+    cfg.llmRoles = cfg.llmRoles ?? {}
+    for (const role of KNOWN_ROLES) {
+      const current = cfg.llmRoles[role] ?? '(unset)'
+      const ans = (await ask(rl, `${role} [current: ${current}] → backend # (Enter = keep): `)).trim()
+      if (!ans) continue
+      const n = parseInt(ans, 10)
+      if (n === 0) {
+        delete cfg.llmRoles[role]
+        continue
+      }
+      const idx = n - 1
+      if (!Number.isFinite(idx) || idx < 0 || idx >= backends.length) {
+        process.stdout.write(`  ⚠ skipped "${role}" (invalid choice)\n`)
+        continue
+      }
+      cfg.llmRoles[role] = backends[idx].name
+    }
+    await writeConfig(cfg)
+    process.stdout.write('\n✅ Role bindings updated.\n')
+    return 0
+  } finally { rl.close() }
+}
+
+async function secretAction(maybeName?: string): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  if (backends.length === 0) return cancel('no backends configured')
+  let name = (maybeName ?? '').trim()
+  if (!name) {
+    const rl = readline()
+    try {
+      process.stdout.write('\nWhich backend?\n')
+      backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}\n`) })
+      const choice = await ask(rl, `Choice [1-${backends.length}]: `)
+      const idx = parseInt(choice, 10) - 1
+      if (!Number.isFinite(idx) || idx < 0 || idx >= backends.length) return cancel('not a valid choice')
+      name = backends[idx].name
+    } finally { rl.close() }
+  } else if (!backends.some((b) => b.name === name)) {
+    return cancel(`no backend named "${name}"`)
+  }
+  const rl = readline()
+  try {
+    const key = (await ask(rl, `Paste API key for "${name}" (empty to abort): `, { silent: true })).trim()
+    if (!key) return cancel('empty key')
+    saveSecret(name, key)
+    process.stdout.write(`✅ Saved API key for "${name}".\n`)
+    return 0
+  } finally { rl.close() }
+}
+
+async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
+  const cfg = await readConfig()
+  const backends = cfg.llmBackends ?? []
+  if (backends.length === 0) {
+    process.stdout.write('\n(no LLM backends configured yet)\n')
+    process.stdout.write('Run `agim setup llm add` first to set one up, then re-run this.\n')
+    return 1
+  }
+  let name = (maybeBackendName ?? '').trim()
+  if (!name) {
+    const rl = readline()
+    try {
+      process.stdout.write('\nPick the backend that powers the native agent:\n')
+      backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}  (${b.provider} / ${b.model})\n`) })
+      const choice = await ask(rl, `Choice [1-${backends.length}]: `)
+      const idx = parseInt(choice, 10) - 1
+      if (!Number.isFinite(idx) || idx < 0 || idx >= backends.length) {
+        return cancel('not a valid choice')
+      }
+      name = backends[idx].name
+    } finally { rl.close() }
+  } else if (!backends.some((b) => b.name === name)) {
+    return cancel(`no backend named "${name}"`)
+  }
+
+  // Mutate config: bind role + set defaultAgent. Always validate
+  // through configSchema before writing.
+  cfg.llmRoles = cfg.llmRoles ?? {}
+  cfg.llmRoles['native-chat'] = name
+
+  const rl = readline()
+  try {
+    const bindCheap = (await ask(rl, `Also bind cheap role to "${name}"? [Y/n]: `)).trim().toLowerCase()
+    if (bindCheap === '' || bindCheap === 'y' || bindCheap === 'yes') {
+      cfg.llmRoles['cheap'] = name
+    }
+    const setDefault = (await ask(rl, `Set defaultAgent: "native" (in-process agent handles unrouted IM)? [Y/n]: `))
+      .trim().toLowerCase()
+    if (setDefault === '' || setDefault === 'y' || setDefault === 'yes') {
+      (cfg as Record<string, unknown>).defaultAgent = 'native'
+    }
+  } finally { rl.close() }
+
+  const parsed = configSchema.safeParse(cfg)
+  if (!parsed.success) {
+    return cancel(`config validation failed: ${parsed.error.issues.map((i) => i.message).join('; ')}`)
+  }
+  await writeConfig(cfg)
+
+  process.stdout.write(`\n✅ Native agent enabled.\n`)
+  process.stdout.write(`   native-chat -> ${cfg.llmRoles['native-chat']}\n`)
+  if (cfg.llmRoles['cheap']) {
+    process.stdout.write(`   cheap       -> ${cfg.llmRoles['cheap']}\n`)
+  }
+  const def = (cfg as Record<string, unknown>).defaultAgent
+  if (typeof def === 'string') {
+    process.stdout.write(`   defaultAgent: ${def}\n`)
+  }
+  const src = describeSecretSource(name)
+  if (src.source === 'none') {
+    process.stdout.write(`⚠️  No API key for "${name}". Run \`agim setup llm secret ${name}\` to add one.\n`)
+  }
+  process.stdout.write(`\nTry it: in any IM thread, send \`/na hello\` (or just chat if you set defaultAgent above).\n`)
+  return 0
+}
+
+// ─── helpers ────────────────────────────────────────────────────────
+
+async function readConfig(): Promise<RawConfig> {
+  try {
+    const raw = await readFile(CONFIG_FILE, 'utf-8')
+    const parsed = JSON.parse(raw) as RawConfig
+    return parsed
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { messengers: [], agents: [], defaultAgent: 'claude-code' }
+    }
+    throw err
+  }
+}
+
+async function writeConfig(cfg: RawConfig): Promise<void> {
+  await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
+  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
+  // Best-effort chmod; on Windows it's a no-op.
+  try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore */ }
+  // Surface the path so testers see exactly what got written.
+  try {
+    const s = await stat(CONFIG_FILE)
+    process.stdout.write(`   (wrote ${CONFIG_FILE} — ${s.size} bytes)\n`)
+  } catch { /* ignore */ }
+}
+
+function suggestBackendName(provider: string, preset: { label: string }): string {
+  // "DeepSeek (cheap+fast, recommended for cheap role)" → "deepseek"
+  const head = preset.label.split(/[\s(]/)[0]?.toLowerCase() ?? provider
+  return head.replace(/[^a-z0-9-]/g, '')
+}
+
+function envSuffix(name: string): string {
+  return name.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()
+}
+
+function readline(): ReturnType<typeof createInterface> {
+  return createInterface({ input: process.stdin, output: process.stdout })
+}
+
+interface AskOpts { silent?: boolean }
+
+function ask(rl: ReturnType<typeof createInterface>, prompt: string, opts: AskOpts = {}): Promise<string> {
+  // We don't implement silent input here — the cli context expects a
+  // TTY and we'd need raw mode to mask. The function exists so we can
+  // upgrade to masked input later without changing call sites.
+  void opts
+  return new Promise<string>((resolve) => rl.question(prompt, resolve))
+}
+
+function cancel(reason: string): number {
+  process.stdout.write(`\n✖ aborted: ${reason}\n`)
+  return 1
+}
+
+// ─── test hooks ─────────────────────────────────────────────────────
+
+/** Exported only for unit tests; lets us verify the suggestBackendName
+ *  derivation without spinning up readline. */
+export const _internal = {
+  suggestBackendName,
+  envSuffix,
+  KNOWN_ROLES,
+  PROVIDER_PRESETS,
+}
+
+/** Re-export of the public secrets helpers so tests can confirm
+ *  saveSecret was wired correctly without importing the secrets
+ *  module twice. */
+export const _wired = { listConfiguredBackends }

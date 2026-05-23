@@ -1,12 +1,15 @@
 {
   "pageTitle": "Tasks",
   "subnav": {
-    "jobs":      "Jobs",
-    "subtasks":  "Subtasks",
-    "bgjobs":    "Background",
+    "jobs": "Jobs",
+    "subtasks": "Subtasks",
+    "bgjobs": "Background",
     "schedules": "Schedules",
-    "outbox":    "Outbox",
-    "a2a":       "Agent ↔ Agent"
+    "outbox": "Outbox",
+    "a2a": "Agent ↔ Agent",
+    "heartbeat": "Heartbeat",
+    "goals": "Goals",
+    "asks": "Ask User"
   },
   "jobs": {
     "title": "Jobs",
@@ -16,57 +19,57 @@
       "description": "Jobs are created when an agent runs in async mode — via `agim --invoke` or an inline /run command from chat."
     },
     "filter": {
-      "status":     "Status",
-      "statusAny":  "Any status",
-      "agent":      "Agent",
-      "agentAny":   "Any agent",
-      "kind":       "Kind",
-      "kindAny":    "Any kind"
+      "status": "Status",
+      "statusAny": "Any status",
+      "agent": "Agent",
+      "agentAny": "Any agent",
+      "kind": "Kind",
+      "kindAny": "Any kind"
     },
     "col": {
-      "id":        "ID",
-      "agent":     "Agent",
-      "prompt":    "Prompt",
-      "status":    "Status",
+      "id": "ID",
+      "agent": "Agent",
+      "prompt": "Prompt",
+      "status": "Status",
       "createdAt": "Created",
-      "duration":  "Duration",
-      "cost":      "Cost"
+      "duration": "Duration",
+      "cost": "Cost"
     },
     "status": {
-      "pending":     "Pending",
-      "running":     "Running",
-      "completed":   "Completed",
-      "delivered":   "Delivered",
-      "failed":      "Failed",
-      "cancelled":   "Cancelled",
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "delivered": "Delivered",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
       "interrupted": "Interrupted",
-      "replaced":    "Replaced",
-      "abandoned":   "Abandoned"
+      "replaced": "Replaced",
+      "abandoned": "Abandoned"
     },
     "kind": {
-      "job":    "Job",
+      "job": "Job",
       "inline": "Inline"
     },
     "stats": {
-      "pending":   "Pending",
-      "running":   "Running",
+      "pending": "Pending",
+      "running": "Running",
       "completed": "Completed",
-      "failed":    "Failed"
+      "failed": "Failed"
     },
     "batch": {
-      "selected":         "{{count}} selected",
-      "cancel":           "Cancel selected",
-      "rerun":            "Re-run selected",
-      "confirmCancel":    "Cancel {{count}} job(s)?",
-      "confirmCancelDesc":"Running jobs will be sent a stop signal. Already-completed jobs are unaffected.",
-      "confirmRerun":     "Re-run {{count}} job(s)?",
+      "selected": "{{count}} selected",
+      "cancel": "Cancel selected",
+      "rerun": "Re-run selected",
+      "confirmCancel": "Cancel {{count}} job(s)?",
+      "confirmCancelDesc": "Running jobs will be sent a stop signal. Already-completed jobs are unaffected.",
+      "confirmRerun": "Re-run {{count}} job(s)?",
       "confirmRerunDesc": "New jobs will be created from the original prompts."
     },
     "live": {
-      "connected":    "● Live",
-      "connecting":   "● Connecting",
+      "connected": "● Live",
+      "connecting": "● Connecting",
       "reconnecting": "● Reconnecting",
-      "closed":       "● Offline"
+      "closed": "● Offline"
     }
   },
   "subtasks": {
@@ -77,23 +80,23 @@
       "description": "Subtasks appear when an agent dispatches work to another agent inside a chat thread."
     },
     "filter": {
-      "agent":    "Parent agent",
+      "agent": "Parent agent",
       "agentAny": "Any agent"
     },
     "col": {
-      "id":           "ID",
-      "agent":        "Agent",
-      "prompt":       "Prompt",
-      "status":       "Status",
-      "parent":       "Parent",
-      "platform":     "Platform",
-      "createdAt":    "Created"
+      "id": "ID",
+      "agent": "Agent",
+      "prompt": "Prompt",
+      "status": "Status",
+      "parent": "Parent",
+      "platform": "Platform",
+      "createdAt": "Created"
     },
     "status": {
-      "pending":   "Pending",
-      "running":   "Running",
+      "pending": "Pending",
+      "running": "Running",
       "completed": "Completed",
-      "failed":    "Failed",
+      "failed": "Failed",
       "cancelled": "Cancelled"
     }
   },
@@ -105,19 +108,19 @@
       "description": "Background jobs show up here once an agent has used its bgjob wrapper. Roots come from ~/.claude/bgjobs/, ~/.config/opencode/bgjobs/, ~/.codex/bgjobs/ (override via IMHUB_BGJOB_ROOTS)."
     },
     "filter": {
-      "root":    "Root",
+      "root": "Root",
       "rootAny": "All roots"
     },
     "col": {
-      "name":      "Name",
-      "status":    "Status",
-      "root":      "Root",
-      "pid":       "PID",
+      "name": "Name",
+      "status": "Status",
+      "root": "Root",
+      "pid": "PID",
       "startedAt": "Started",
-      "endedAt":   "Ended",
-      "exit":      "Exit"
+      "endedAt": "Ended",
+      "exit": "Exit"
     },
-    "exitOk":   "ok",
+    "exitOk": "ok",
     "stillRunning": "—"
   },
   "schedules": {
@@ -128,20 +131,20 @@
       "description": "Create a schedule from the agent's chat via `/cron set` or by running `agim cron create` in the CLI."
     },
     "filter": {
-      "agent":    "Agent",
+      "agent": "Agent",
       "agentAny": "Any agent"
     },
     "col": {
-      "id":       "ID",
-      "name":     "Name",
-      "agent":    "Agent",
-      "cron":     "Cron",
-      "prompt":   "Prompt",
-      "enabled":  "Enabled",
-      "nextRun":  "Next run",
-      "lastRun":  "Last run"
+      "id": "ID",
+      "name": "Name",
+      "agent": "Agent",
+      "cron": "Cron",
+      "prompt": "Prompt",
+      "enabled": "Enabled",
+      "nextRun": "Next run",
+      "lastRun": "Last run"
     },
-    "enabled":  "On",
+    "enabled": "On",
     "disabled": "Off"
   },
   "outbox": {
@@ -152,36 +155,36 @@
       "description": "Messages move through the queue and are deleted on successful delivery. A non-empty outbox here means the queue is actively flushing or a delivery is stuck."
     },
     "filter": {
-      "status":     "Status",
-      "statusAny":  "Any status",
-      "thread":     "Thread key"
+      "status": "Status",
+      "statusAny": "Any status",
+      "thread": "Thread key"
     },
     "stats": {
-      "pending":    "Pending",
-      "giving_up":  "Giving up",
-      "delivered":  "Delivered (lifetime)",
+      "pending": "Pending",
+      "giving_up": "Giving up",
+      "delivered": "Delivered (lifetime)",
       "lastDelivered": "Last delivery"
     },
     "col": {
-      "id":          "ID",
-      "status":      "Status",
-      "platform":    "Platform",
-      "preview":     "Preview",
-      "thread":      "Thread",
-      "kind":        "Kind",
-      "attempts":    "Attempts",
-      "createdAt":   "Created",
-      "lastError":   "Last error",
-      "jobId":       "Job"
+      "id": "ID",
+      "status": "Status",
+      "platform": "Platform",
+      "preview": "Preview",
+      "thread": "Thread",
+      "kind": "Kind",
+      "attempts": "Attempts",
+      "createdAt": "Created",
+      "lastError": "Last error",
+      "jobId": "Job"
     },
     "status": {
-      "pending":   "Pending",
+      "pending": "Pending",
       "delivered": "Delivered",
       "giving_up": "Giving up"
     },
     "action": {
-      "retry":         "Retry",
-      "confirmRetry":  "Re-queue this delivery?",
+      "retry": "Retry",
+      "confirmRetry": "Re-queue this delivery?",
       "confirmRetryDesc": "The row's status flips back to pending and the sender will attempt delivery again on the next tick."
     }
   },
@@ -193,18 +196,89 @@
       "description": "Inline a2a calls appear here once an agent uses the `agim --invoke` tool with a parent context."
     },
     "stats": {
-      "total":      "Total",
-      "recent24h":  "Last 24h",
-      "maxDepth":   "Max depth"
+      "total": "Total",
+      "recent24h": "Last 24h",
+      "maxDepth": "Max depth"
     },
     "col": {
-      "id":         "ID",
-      "agent":      "Agent",
-      "parent":     "Parent",
-      "depth":      "Depth",
-      "status":     "Status",
-      "prompt":     "Prompt",
-      "createdAt":  "Created"
+      "id": "ID",
+      "agent": "Agent",
+      "parent": "Parent",
+      "depth": "Depth",
+      "status": "Status",
+      "prompt": "Prompt",
+      "createdAt": "Created"
     }
+  },
+  "heartbeat": {
+    "title": "Heartbeat bindings",
+    "subtitle": "Cross-thread view of every /heartbeat bind. Enable/disable a binding from here; create new ones from inside the IM thread itself (/heartbeat bind <body>).",
+    "refresh": "Refresh",
+    "empty": "No heartbeat bindings yet. Run /heartbeat bind <body> in any IM thread to create one.",
+    "col": {
+      "thread": "Thread",
+      "owner": "Owner",
+      "interval": "Interval",
+      "lastTick": "Last tick",
+      "enabled": "Enabled",
+      "body": "Body"
+    },
+    "never": "never",
+    "pause": "Pause",
+    "enable": "Enable",
+    "show": "Show",
+    "hide": "Hide",
+    "enabledToast": "enabled binding",
+    "disabledToast": "disabled binding",
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago",
+    "intervalMin": "{{count}}m"
+  },
+  "goals": {
+    "title": "Active goals",
+    "subtitle": "Cross-thread view of every active /goal. Lifecycle controls (pause / complete / cancel) operate without the IM thread; creating a new goal still requires the thread context — /goal set <title>.",
+    "refresh": "Refresh",
+    "empty": "No active goals. Create one inside any IM thread with /goal set <title>.",
+    "col": {
+      "id": "#",
+      "thread": "Thread",
+      "title": "Title",
+      "progress": "Progress",
+      "updated": "Updated",
+      "actions": "Actions"
+    },
+    "showBody": "Show body",
+    "hideBody": "Hide body",
+    "pause": "Pause",
+    "complete": "Complete",
+    "cancel": "Cancel",
+    "body": "Body",
+    "recentProgress": "Recent progress (latest {{count}})",
+    "created": "created {{at}}",
+    "closed": "closed {{at}}",
+    "statusUpdated": "Goal {{status}}"
+  },
+  "asks": {
+    "title": "Pending ask_user",
+    "subtitle": "Live list of every mcp__imhub__ask_user waiting on a reply. Cancelling here gives the agent the same response shape as a natural timeout (ok: false, reason: 'cancelled').",
+    "refresh": "Refresh",
+    "empty": "No pending asks. Auto-refreshes every 5s.",
+    "col": {
+      "reqId": "Req ID",
+      "thread": "Thread",
+      "question": "Question",
+      "choices": "Choices",
+      "age": "Age",
+      "actions": ""
+    },
+    "cancel": "Cancel",
+    "cancelConfirm": "Cancel pending ask {{id}}…?",
+    "cancelledToast": "Cancelled",
+    "justNow": "just now",
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
   }
 }

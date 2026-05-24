@@ -7,10 +7,14 @@ const tmpHome = join('/tmp', `agim-web-bootstrap-test-${process.pid}`)
 describe('web access-token bootstrap file', () => {
   let prevHome: string | undefined
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prevHome = process.env.AGIM_HOME
     process.env.AGIM_HOME = tmpHome
     mkdirSync(tmpHome, { recursive: true })
+    // Drain the process-wide bootstrap holder so test pollution from
+    // another file's bootstrapIfEmpty() does not leak into our assertions.
+    const { __resetBootstrapHolderForTesting } = await import('../../src/core/access-token.js')
+    __resetBootstrapHolderForTesting()
   })
 
   afterEach(() => {
@@ -22,21 +26,21 @@ describe('web access-token bootstrap file', () => {
   it('bootstrapIfEmpty writes web-bootstrap-token file', async () => {
     const {
       bootstrapIfEmpty,
-      WEB_BOOTSTRAP_TOKEN_FILE,
+      getWebBootstrapTokenFile,
       hasAnyToken,
     } = await import('../../src/core/access-token.js')
 
     const raw = bootstrapIfEmpty()
     expect(raw).toBeTruthy()
     expect(hasAnyToken()).toBe(true)
-    expect(existsSync(WEB_BOOTSTRAP_TOKEN_FILE)).toBe(true)
+    expect(existsSync(getWebBootstrapTokenFile())).toBe(true)
   })
 
   it('retrieveWebBootstrapTokenRaw reads file once then deletes it', async () => {
     const {
       bootstrapIfEmpty,
       retrieveWebBootstrapTokenRaw,
-      WEB_BOOTSTRAP_TOKEN_FILE,
+      getWebBootstrapTokenFile,
     } = await import('../../src/core/access-token.js')
 
     const created = bootstrapIfEmpty()
@@ -44,7 +48,7 @@ describe('web access-token bootstrap file', () => {
 
     const first = retrieveWebBootstrapTokenRaw()
     expect(first?.raw).toBe(created ?? undefined)
-    expect(existsSync(WEB_BOOTSTRAP_TOKEN_FILE)).toBe(false)
+    expect(existsSync(getWebBootstrapTokenFile())).toBe(false)
 
     const second = retrieveWebBootstrapTokenRaw()
     expect(second).toBeNull()
@@ -53,15 +57,16 @@ describe('web access-token bootstrap file', () => {
   it('retrieveWebBootstrapTokenRaw reads a pre-existing bootstrap file', async () => {
     const {
       retrieveWebBootstrapTokenRaw,
-      WEB_BOOTSTRAP_TOKEN_FILE,
+      getWebBootstrapTokenFile,
       createToken,
     } = await import('../../src/core/access-token.js')
 
     const t = createToken('bootstrap')
-    writeFileSync(WEB_BOOTSTRAP_TOKEN_FILE, t.raw + '\n')
+    const path = getWebBootstrapTokenFile()
+    writeFileSync(path, t.raw + '\n')
 
     const row = retrieveWebBootstrapTokenRaw()
     expect(row?.raw).toBe(t.raw)
-    expect(existsSync(WEB_BOOTSTRAP_TOKEN_FILE)).toBe(false)
+    expect(existsSync(path)).toBe(false)
   })
 })

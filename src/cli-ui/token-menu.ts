@@ -10,7 +10,7 @@ import {
   createToken,
   listTokens,
   revokeToken,
-  TOKENS_FILE_PATH,
+  getTokensFilePath,
 } from '../core/access-token.js'
 
 function fmtDate(unix: number | null): string {
@@ -23,7 +23,7 @@ export async function runTokenMenu(lang: Lang): Promise<void> {
     console.log('')
     console.log(t(lang, 'token.title'))
     console.log(t(lang, 'token.subtitle'))
-    console.log(`  ${TOKENS_FILE_PATH}`)
+    console.log(`  ${getTokensFilePath()}`)
     console.log('')
     let pick: 'create' | 'list' | 'revoke' | 'back' | typeof BACK
     try {

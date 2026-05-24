@@ -34,9 +34,14 @@ import { dirname, join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 
-const TOKENS_FILE = join(AGIM_HOME, 'tokens.json')
-/** One-time raw web-access token for first boot (chmod 600). */
-export const WEB_BOOTSTRAP_TOKEN_FILE = join(AGIM_HOME, 'web-bootstrap-token')
+// Resolve paths at call time, not at module load. agim-paths.ts caches
+// AGIM_HOME at first evaluation; tests that swap $AGIM_HOME after that
+// would otherwise have writes silently land in the wrong directory.
+function currentAgimHome(): string {
+  return process.env.AGIM_HOME || process.env.IMHUB_HOME || AGIM_HOME
+}
+function tokensFile(): string { return join(currentAgimHome(), 'tokens.json') }
+function webBootstrapTokenFile(): string { return join(currentAgimHome(), 'web-bootstrap-token') }
 const log = rootLogger.child({ component: 'access-token' })
 
 export type TokenRole = 'admin' | 'user'
@@ -62,9 +67,10 @@ interface TokenFile {
 }
 
 function readFile(): TokenFile {
-  if (!existsSync(TOKENS_FILE)) return { tokens: [] }
+  const path = tokensFile()
+  if (!existsSync(path)) return { tokens: [] }
   try {
-    return JSON.parse(readFileSync(TOKENS_FILE, 'utf-8')) as TokenFile
+    return JSON.parse(readFileSync(path, 'utf-8')) as TokenFile
   } catch (err) {
     log.warn({ event: 'access-token.read_failed', err: String(err) },
       'tokens.json corrupt; starting with empty list')
@@ -73,9 +79,10 @@ function readFile(): TokenFile {
 }
 
 function writeFile(data: TokenFile): void {
-  mkdirSync(dirname(TOKENS_FILE), { recursive: true })
-  writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2), 'utf-8')
-  try { chmodSync(TOKENS_FILE, 0o600) } catch { /* ignore non-POSIX */ }
+  const path = tokensFile()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8')
+  try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
 }
 
 function sha256Hex(s: string): string {
@@ -243,20 +250,22 @@ export function consumeBootstrapTokenRaw(): { raw: string; id: string } | null {
 
 
 function writeWebBootstrapTokenFile(raw: string): void {
-  mkdirSync(dirname(WEB_BOOTSTRAP_TOKEN_FILE), { recursive: true })
-  writeFileSync(WEB_BOOTSTRAP_TOKEN_FILE, raw + '\n', 'utf-8')
-  try { chmodSync(WEB_BOOTSTRAP_TOKEN_FILE, 0o600) } catch { /* ignore non-POSIX */ }
+  const path = webBootstrapTokenFile()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, raw + '\n', 'utf-8')
+  try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
 }
 
 function readAndUnlinkWebBootstrapTokenFile(): string | null {
-  if (!existsSync(WEB_BOOTSTRAP_TOKEN_FILE)) return null
+  const path = webBootstrapTokenFile()
+  if (!existsSync(path)) return null
   let raw = ''
   try {
-    raw = readFileSync(WEB_BOOTSTRAP_TOKEN_FILE, 'utf-8').trim()
+    raw = readFileSync(path, 'utf-8').trim()
   } catch {
     return null
   }
-  try { unlinkSync(WEB_BOOTSTRAP_TOKEN_FILE) } catch { /* ignore */ }
+  try { unlinkSync(path) } catch { /* ignore */ }
   return raw || null
 }
 
@@ -264,7 +273,10 @@ function readAndUnlinkWebBootstrapTokenFile(): string | null {
 export function retrieveWebBootstrapTokenRaw(): { raw: string; id: string } | null {
   const mem = consumeBootstrapTokenRaw()
   if (mem) {
-    try { if (existsSync(WEB_BOOTSTRAP_TOKEN_FILE)) unlinkSync(WEB_BOOTSTRAP_TOKEN_FILE) } catch { /* ignore */ }
+    try {
+      const path = webBootstrapTokenFile()
+      if (existsSync(path)) unlinkSync(path)
+    } catch { /* ignore */ }
     return mem
   }
   const raw = readAndUnlinkWebBootstrapTokenFile()
@@ -312,12 +324,12 @@ export function bootstrapIfEmpty(): string | null {
     '🔑 Web auth bootstrap token generated.',
     '',
     `   id    : ${t.id}`,
-    `   hash  : ${TOKENS_FILE}  (chmod 0o600, raw not stored)`,
-    `   once  : ${WEB_BOOTSTRAP_TOKEN_FILE}  (chmod 0o600, deleted after read)`,
+    `   hash  : ${tokensFile()}  (chmod 0o600, raw not stored)`,
+    `   once  : ${webBootstrapTokenFile()}  (chmod 0o600, deleted after read)`,
     '',
     '   To retrieve the raw token (one-time, on this host):',
     '       agim token bootstrap',
-    `   or:  cat ${WEB_BOOTSTRAP_TOKEN_FILE}`,
+    `   or:  cat ${webBootstrapTokenFile()}`,
     '',
     '   Or rotate to a fresh token:',
     '       agim token create <label>',
@@ -335,5 +347,15 @@ export function isAuthEnabled(): boolean {
   return (process.env.IMHUB_WEB_AUTH || '').toLowerCase() !== 'off'
 }
 
-/** Path to the tokens file (for diagnostics / external tools). */
-export const TOKENS_FILE_PATH = TOKENS_FILE
+/** Path to the tokens file (for diagnostics / external tools). Re-resolves
+ *  AGIM_HOME on each call so tests / runtime env overrides apply. */
+export function getTokensFilePath(): string { return tokensFile() }
+/** Path to the one-time web bootstrap token file. Re-resolves AGIM_HOME
+ *  on each call. */
+export function getWebBootstrapTokenFile(): string { return webBootstrapTokenFile() }
+
+/** Test helper: reset the in-memory bootstrap-token holder so a fresh
+ *  test starts with a clean slate. NOT for production use. */
+export function __resetBootstrapHolderForTesting(): void {
+  _bootstrapRawHolder = null
+}

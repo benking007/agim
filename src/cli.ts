@@ -1866,11 +1866,11 @@ tokenCmd
   .command('list')
   .description('List existing tokens (no secrets shown)')
   .action(async () => {
-    const { listTokens, TOKENS_FILE_PATH } = await import('./core/access-token.js')
+    const { listTokens, getTokensFilePath } = await import('./core/access-token.js')
     const rows = listTokens()
     const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
     const lang = resolveCliLang()
-    console.log(cliT(lang, 'token.cli.list_path', { file: TOKENS_FILE_PATH }))
+    console.log(cliT(lang, 'token.cli.list_path', { file: getTokensFilePath() }))
     if (rows.length === 0) {
       console.log(cliT(lang, 'token.cli.list_empty'))
       return
@@ -1902,7 +1902,7 @@ tokenCmd
   .action(async () => {
     const {
       retrieveWebBootstrapTokenRaw,
-      WEB_BOOTSTRAP_TOKEN_FILE,
+      getWebBootstrapTokenFile,
       hasAnyToken,
     } = await import('./core/access-token.js')
     const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
@@ -1926,7 +1926,7 @@ tokenCmd
       console.log('       agim token bootstrap')
     } else {
       console.log(`✗ ${cliT(lang, 'token.bootstrap.consumed')}`)
-      console.log(`   ${cliT(lang, 'token.bootstrap.file_hint', { file: WEB_BOOTSTRAP_TOKEN_FILE })}`)
+      console.log(`   ${cliT(lang, 'token.bootstrap.file_hint', { file: getWebBootstrapTokenFile() })}`)
       console.log(`   ${cliT(lang, 'token.bootstrap.create_hint')}`)
       console.log('       agim token create <label>')
     }

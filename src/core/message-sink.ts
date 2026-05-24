@@ -347,6 +347,73 @@ function resolveTickMs(): number {
   return 1000
 }
 
+// ─── Cross-channel operator alert (B-2) ──────────────────────────────
+//
+// When a thread's outbox is dead, the user on that thread can't see
+// "your bot is offline". The operator wants to know via a side channel.
+// This is intentionally a tiny shim: env vars name a backup
+// (platform, threadId) and we push a one-line warn. Throttled per
+// (failed-platform, failed-threadId) so a single dead channel
+// doesn't fan out hundreds of alerts.
+//
+// Env:
+//   IMHUB_OPERATOR_ALERT_PLATFORM   target platform (e.g. 'telegram')
+//   IMHUB_OPERATOR_ALERT_THREAD_ID  target threadId on that platform
+//   IMHUB_OPERATOR_ALERT_CHANNEL_ID (optional; default '')
+//   IMHUB_OPERATOR_ALERT_COOLDOWN_MS  (default 600_000 = 10 min)
+
+const alertCooldown = new Map<string, number>()  // key = `${platform}:${threadId}`
+
+async function maybeAlertOperator(input: {
+  platform: string
+  channelId: string
+  threadId: string
+  attempts: number
+  err: string
+  gaveUp: boolean
+  outboxId: number
+}): Promise<void> {
+  const altPlatform = (process.env.IMHUB_OPERATOR_ALERT_PLATFORM || '').trim()
+  const altThreadId = (process.env.IMHUB_OPERATOR_ALERT_THREAD_ID || '').trim()
+  if (!altPlatform || !altThreadId) return
+  // Never self-loop: don't push the alert into the same dead channel.
+  if (altPlatform === input.platform && altThreadId === input.threadId) return
+
+  const key = `${input.platform}:${input.threadId}`
+  const cooldownMs = (() => {
+    const raw = parseInt(process.env.IMHUB_OPERATOR_ALERT_COOLDOWN_MS || '600000', 10)
+    return Number.isFinite(raw) && raw > 0 ? raw : 600_000
+  })()
+  const now = Date.now()
+  const last = alertCooldown.get(key) ?? 0
+  if (now - last < cooldownMs) return
+  alertCooldown.set(key, now)
+
+  const adapter = resolveMessenger(altPlatform)
+  if (!adapter) {
+    log.warn({ event: 'sink.operator_alert.adapter_missing', altPlatform })
+    return
+  }
+  const verdict = input.gaveUp ? '已放弃投递' : `第 ${input.attempts} 次失败`
+  const body = [
+    '⚠️ outbox 告警',
+    `通道：${input.platform}:${input.threadId}`,
+    `状态：${verdict}（outbox #${input.outboxId}）`,
+    `错误：${input.err.slice(0, 200)}`,
+    '— 通道可能离线，建议在该 IM 端发"重启服务"或检查登录',
+  ].join('\n')
+  try {
+    await adapter.sendMessage(altThreadId, body)
+    log.info({ event: 'sink.operator_alert.sent', altPlatform, deadPlatform: input.platform, deadThreadId: input.threadId })
+  } catch (err) {
+    log.warn({
+      event: 'sink.operator_alert.failed',
+      altPlatform, deadPlatform: input.platform,
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 /** Max rows pulled per tick. Worker is single-threaded so this caps how
  *  long one tick can take before it self-yields. */
 function resolveBatchSize(): number {
@@ -395,6 +462,24 @@ async function workerTick(): Promise<void> {
         // worker will retry soon and we don't want to flicker the status.
         if (gaveUp && row.job_id && row.job_id > 0) {
           markJobFailed(row.job_id, `outbox gave up: ${errMsg}`)
+        }
+        // Cross-channel operator alert. When a thread is dead and the
+        // user can't see why their messages aren't coming back, push a
+        // 1-line heads-up to the operator's configured alt channel.
+        // Throttled per (platform, threadId) so a backed-up channel
+        // doesn't spam the alert chat. Configured via env:
+        //   IMHUB_OPERATOR_ALERT_PLATFORM=telegram
+        //   IMHUB_OPERATOR_ALERT_THREAD_ID=12345
+        if (attempts >= 3 || gaveUp) {
+          void maybeAlertOperator({
+            platform: row.platform,
+            channelId: row.channel_id,
+            threadId: row.thread_id,
+            attempts,
+            err: errMsg,
+            gaveUp,
+            outboxId: row.id,
+          })
         }
       }
     }

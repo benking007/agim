@@ -4,6 +4,120 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.48] - 2026-05-24
+
+### Theme: native+ — production-ready in-process LLM agent
+
+Wraps up the post-v1.3.0 / v1.2.47 follow-ups into one drop. Native is
+now the first-class peer of `claude-code` / `opencode` / `codex` for
+end-to-end IM ↔ multi-agent work: it knows its identity, sees every
+skill the box has, talks to vision models, recovers from provider
+hiccups, summarises stale chat, and never silently dies on a long
+multi-hop research turn.
+
+### Added
+
+- **Operator role definition** — `<native cwd>/AGENTS.md` is now read
+  on every turn and prepended to the system prompt as
+  `[operator role definition]`. Edit the seed at
+  `~/.agim-workspaces/native/AGENTS.md` to change persona / tone /
+  house rules; no restart required. Env override
+  `IMHUB_NATIVE_AGENT_ROLE_FILE=...` for non-default locations.
+  Prompt-injection guard runs over the content + audit-logs hits.
+- **Skills multi-root scan** — `IMHUB_SKILLS_MODE=auto` (default)
+  merges `~/.agim/skills/` (write target) with `~/.claude/skills/`,
+  `~/.config/opencode/skills/`, and `~/.codex/skills/` so a fresh
+  install sees every skill the user already has from CLI agents.
+  Workspace skills shadow same-named entries from inherited roots.
+  Modes: `auto | agim-only | custom` + `IMHUB_SKILLS_ROOTS=...`
+  / `IMHUB_SKILLS_EXTRA_ROOTS=...`.
+- **Auto-compact long histories** — when a native turn's accumulated
+  history crosses `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS` (default
+  60_000), a cheap LLM call summarises the older slice and the loop
+  keeps only the last `IMHUB_NATIVE_COMPACT_KEEP_TURNS` (default 6)
+  user/assistant pairs verbatim. Tool round-trips kept intact (the
+  fix that landed in CR — never start the tail on `role:'tool'`).
+- **Provider fallback chain** — native walks the configured role
+  chain (e.g. `native-chat` → `cheap` → `evaluator`) on transient
+  provider errors (5xx / timeout / ECONNRESET) so a flaky OpenAI
+  endpoint doesn't kill the whole turn. Logged as
+  `native.fallback.next`.
+- **Multimodal pass-through (OpenAI-compat)** — messenger image
+  attachments (`[图片附件:...]` markers) are encoded as `image_url`
+  content blocks when the provider's `vision: true` (or its model
+  name matches a known vision family). Anthropic provider remains
+  text-only for now. Hard cap 20MB per image. Path-safety:
+  attachments must resolve under `IMHUB_MEDIA_ROOT`.
+- **Tool-call heartbeat** — tool dispatches that take longer than
+  `IMHUB_NATIVE_HEARTBEAT_MS` (default 6000) push a "🔧 调用工具 X
+  中…" so users know the bot is still working.
+- **Turn-level heartbeat** — every
+  `IMHUB_NATIVE_TURN_HEARTBEAT_MS` (default 180_000 = 3 min) since
+  turn start, push "⏳ 还在处理（已 Nm）…". Survives long
+  multi-hop research turns where individual tool calls finish but the
+  outer LLM is reasoning.
+- **Cross-channel operator alert** — when outbox delivery fails ≥3
+  times on any thread, push a "⚠️ outbox 告警" to
+  `IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`
+  (throttled per dead-thread, 10-min cooldown). Self-loop protection.
+- **agim built-in MCP tools default-allowed** — the 9
+  `mcp__imhub__*` tools (read_skill / list_skills / save_memo /
+  search_memos / update_memo / delete_memo / push_message /
+  ask_user / call_agent) are now in native's default allow-list,
+  matching what claude-code already saw via the MCP sidecar. Override
+  via `IMHUB_NATIVE_AGENT_DENYLIST=...`.
+- **Per-agent native workspace** — `resolveAgentCwd('native', opts)`
+  pins IM turns to `~/.agim-workspaces/native/` (was `/` under
+  systemd). AGENTS.md seeded with role-definition cues.
+- **Web admin: skills merged into Settings → 技能** — top-level
+  `/skills` nav entry retired. New layout has 2 subtabs (Installed +
+  skillhub 热门). Old URLs redirect.
+
+### Fixed
+
+- **access-token paths now lazy** (v1.2.47 carry-over) — `tokensFile()`
+  / `webBootstrapTokenFile()` re-read `process.env.AGIM_HOME` per
+  call so tests that swap home directories actually redirect writes.
+  Exports added: `getTokensFilePath()`, `getWebBootstrapTokenFile()`,
+  `__resetBootstrapHolderForTesting()`.
+- **agent-loop default 5-min timeout no longer cuts native turns**
+  — native now passes `timeoutMs: 28 * 60 * 1000` to `runAgentLoop`,
+  matching the IM 30-min hard ceiling. Multi-hop `call_agent` chains
+  used to abort mid-flight on the 6th minute. Override via
+  `IMHUB_NATIVE_AGENT_TIMEOUT_MS`.
+- **wechat-ilink dead-session auto-recovery** — `sendMessage` returning
+  `-2` (`INVALID_PARAMS`) now invalidates the cached + persisted
+  context-token for that user, so the next inbound message refreshes
+  it and the outbox retry succeeds. Was getting stuck in retry
+  forever previously.
+- **render-router stray envelope tags** — captured `<im-summary>` /
+  `<full-md>` content no longer leaks closing tags into the IM
+  bubble (regression when LLM emitted multiple `<im-summary>`
+  blocks back-to-back).
+- **Auto-compact tool-orphan bug** (caught by CR) — the slice index
+  picker now strictly aligns to `role:'user'` so the recent tail
+  never starts on a `role:'tool'` whose matching `assistant.toolCalls`
+  was just compacted away (would otherwise hit HTTP 400 on
+  OpenAI / DeepSeek).
+- **parsePromptMedia path-safety hardened** — `path.resolve` +
+  separator-aware prefix check now rejects sibling-directory leaks
+  (e.g. `/root/.agim/media-evil/...`) and `..` traversal.
+- **ESM `require` → static `import`** — `parsePromptMedia` and
+  `mediaToDataUrl` use top-of-file `import` (was crashing at
+  runtime with `require is not defined`).
+
+### Migration
+
+- Operators who customised `~/.agim-workspaces/native/AGENTS.md` keep
+  their file unchanged (`ensureAgentWorkspace` never overwrites).
+- Default skill mode is `auto` — agim now reads `~/.claude/skills/`
+  etc. Set `IMHUB_SKILLS_MODE=agim-only` to opt out of inheritance.
+- The 9 `mcp__imhub__*` tools are auto-allowed under native's
+  default policy. Set `IMHUB_NATIVE_AGENT_DENYLIST=mcp__imhub__call_agent,...`
+  to block individual ones.
+- Auto-compact will make one cheap-role LLM call per compaction.
+  Disable with `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS=0`.
+
 ## [1.3.0] - 2026-05-23
 
 ### Theme: nanobot-vs-agim comparison rollout — native LLM stack + P0–P3

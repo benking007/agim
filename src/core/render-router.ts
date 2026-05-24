@@ -42,6 +42,15 @@ const SUMMARY_RE = /<im-summary>([\s\S]*?)<\/im-summary>\s*<full-md>([\s\S]*?)<\
 const TABLE_RE = /(^|\n)\s*\|[^\n]+\|[^\n]*\n\s*\|?\s*[-:]+\s*\|/  // header + separator row
 const FENCE_RE = /```[a-zA-Z0-9_+\-]*\n([\s\S]*?)\n```/g
 
+/** Strip any stray envelope tag fragments — happens when the LLM
+ *  emits multiple `<im-summary>` blocks back-to-back; non-greedy
+ *  capture then absorbs a closing tag into the summary. Defense in
+ *  depth so the IM bubble never shows `</im-summary>` literally. */
+const STRAY_ENVELOPE_TAG_RE = /<\/?(?:im-summary|full-md)>/g
+function stripStrayEnvelopeTags(s: string): string {
+  return s.replace(STRAY_ENVELOPE_TAG_RE, '').trim()
+}
+
 export interface DecideOpts {
   thresholds?: ViewerThresholds
   /** Whether viewer is configured & enabled. If false we always inline. */
@@ -55,8 +64,11 @@ export function decideRender(text: string, opts: DecideOpts): RenderDecision {
   // 1. Agent-provided summary envelope wins.
   const m = SUMMARY_RE.exec(t)
   if (m) {
-    const summary = m[1].trim()
-    const fullMd = m[2].trim()
+    // Strip any stray envelope tags the LLM may have nested inside its
+    // own capture (most often a second `<im-summary>...</im-summary>`
+    // block that got absorbed because our `[\s\S]*?` is non-greedy).
+    const summary = stripStrayEnvelopeTags(m[1])
+    const fullMd = stripStrayEnvelopeTags(m[2])
     if (fullMd.length > 0 && opts.viewerEnabled) {
       return { mode: 'summary-link', summary, fullMd }
     }
@@ -66,16 +78,23 @@ export function decideRender(text: string, opts: DecideOpts): RenderDecision {
 
   const th = opts.thresholds ?? DEFAULT_THRESHOLDS
 
+  // Defensive: the LLM may have produced a half-envelope (only an
+  // opening tag, or only `<im-summary>` without `<full-md>`) which the
+  // strict SUMMARY_RE above couldn't match. Strip any stray envelope
+  // tag fragments before deciding inline vs truncate-link so the user
+  // never sees `</im-summary>` literally in the IM bubble.
+  const cleaned = stripStrayEnvelopeTags(t)
+
   // 2. Threshold check.
-  if (!opts.viewerEnabled || !exceedsThreshold(t, th)) {
-    return { mode: 'inline', inlineText: degradeMarkdown(t) }
+  if (!opts.viewerEnabled || !exceedsThreshold(cleaned, th)) {
+    return { mode: 'inline', inlineText: degradeMarkdown(cleaned) }
   }
 
   // 3. Long & viewer enabled — truncate.
   return {
     mode: 'truncate-link',
-    summary: firstNonEmpty(t, 200),
-    fullMd: t,
+    summary: firstNonEmpty(cleaned, 200),
+    fullMd: cleaned,
   }
 }
 

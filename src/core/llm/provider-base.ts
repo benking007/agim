@@ -61,6 +61,20 @@ export interface LlmMessage {
   /** DeepSeek / thinking-mode providers echo `reasoning_content` on
    *  assistant turns; MUST round-trip on subsequent API calls. */
   reasoningContent?: string
+  /** Optional multimodal attachments (typically images). Providers with
+   *  `supportsVision() === true` encode these as image_url / image
+   *  content blocks; others ignore the field and only see `content`. The
+   *  text path is preserved verbatim so non-vision providers still know
+   *  an attachment was referenced. */
+  media?: Array<{
+    /** Absolute path to the file on disk. agim only attaches files
+     *  inside the per-user media dir (`~/.agim/media/...`); providers
+     *  read + inline-base64 the bytes. */
+    path: string
+    /** Optional MIME hint (e.g. 'image/jpeg'). Provider may sniff from
+     *  the extension if absent. */
+    mime?: string
+  }>
 }
 
 /**
@@ -268,6 +282,15 @@ export abstract class LlmProvider {
    *  out at load time so `getProvider()` callers don't have to check. */
   isConfigured(): boolean {
     return Boolean(this.apiKey)
+  }
+
+  /** True when this provider can interpret LlmMessage.media (typically
+   *  image attachments). Default false — only the openai-compat
+   *  provider currently overrides this (operators opt-in via the
+   *  provider's `vision: true` config or a model-name heuristic).
+   *  Anthropic / others fall back to text-only. */
+  supportsVision(): boolean {
+    return false
   }
 
   /**

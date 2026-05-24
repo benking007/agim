@@ -96,19 +96,21 @@ const router = createBrowserRouter([
       { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
       { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
       { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
-      // Skills moved out to its own top-level /skills tab in 2026-05.
-      // Keep a redirect so any bookmark to /memory/skills lands on the
-      // new home without a 404.
-      { path: 'skills',  element: <Navigate to="/skills/installed" replace /> },
+      // Skills moved into Settings → 技能 (2026-05 second pass). Old
+      // /memory/skills + /skills bookmarks redirect to the new combined
+      // Settings home (installed + skillhub 热门).
+      { path: 'skills',  element: <Navigate to="/settings/agim-skills/installed" replace /> },
     ],
   },
   {
+    // Backward-compat: /skills, /skills/installed, /skills/hot all land
+    // on the new merged Settings → 技能 home. Keep these forever; they're
+    // tiny and protect prior bookmarks / IM-pinned links.
     path: '/skills',
-    lazy: authedLazy(() => import('@/routes/skills/layout')),
     children: [
-      { index: true,        element: <Navigate to="installed" replace /> },
-      { path: 'installed',  lazy: lazy(() => import('@/routes/skills/installed')) },
-      { path: 'hot',        lazy: lazy(() => import('@/routes/skills/hot')) },
+      { index: true,        element: <Navigate to="/settings/agim-skills/installed" replace /> },
+      { path: 'installed',  element: <Navigate to="/settings/agim-skills/installed" replace /> },
+      { path: 'hot',        element: <Navigate to="/settings/agim-skills/hot" replace /> },
     ],
   },
   {
@@ -146,7 +148,15 @@ const router = createBrowserRouter([
       { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
       { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
       { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
-      { path: 'agim-skills',  lazy: lazy(() => import('@/routes/settings/agim-skills')) },
+      {
+        path: 'agim-skills',
+        lazy: lazy(() => import('@/routes/settings/agim-skills/layout')),
+        children: [
+          { index: true,        element: <Navigate to="installed" replace /> },
+          { path: 'installed',  lazy: lazy(() => import('@/routes/settings/agim-skills/installed')) },
+          { path: 'hot',        lazy: lazy(() => import('@/routes/settings/agim-skills/hot')) },
+        ],
+      },
     ],
   },
   { path: '*', element: <NotFoundRoute /> },

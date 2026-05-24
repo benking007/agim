@@ -22,6 +22,10 @@ const builtinRoot = mkdtempSync(join(tmpdir(), 'agim-skills-builtin-'))
 
 process.env.IMHUB_SKILLS_WORKSPACE_DIR = wsRoot
 process.env.IMHUB_SKILLS_BUILTIN_DIR = builtinRoot
+// Pin discovery to the temp workspace only — the multi-root 'auto'
+// default would otherwise inherit ~/.claude/skills + opencode/codex
+// dirs on the dev box and break the per-test fixture counts.
+process.env.IMHUB_SKILLS_MODE = 'agim-only'
 
 afterAll(() => {
   try { rmSync(wsRoot, { recursive: true, force: true }) } catch {}
@@ -370,6 +374,91 @@ body
   it('rejects unknown op', async () => {
     const r = await handleSkillsOp({ op: 'demolish' })
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('skills loader — multi-root discovery', () => {
+  it('custom mode honors IMHUB_SKILLS_ROOTS (workspace always prepended)', async () => {
+    const extraRoot = mkdtempSync(join(tmpdir(), 'agim-skills-extra-'))
+    try {
+      writeSkill(extraRoot, 'from-extra', `---
+name: from-extra
+description: lives in the extra root
+---
+body
+`)
+      writeSkill(wsRoot, 'from-ws', `---
+name: from-ws
+description: lives in the workspace
+---
+body
+`)
+      const prevMode = process.env.IMHUB_SKILLS_MODE
+      const prevRoots = process.env.IMHUB_SKILLS_ROOTS
+      process.env.IMHUB_SKILLS_MODE = 'custom'
+      process.env.IMHUB_SKILLS_ROOTS = extraRoot
+      invalidateSkillsCache()
+      try {
+        const names = listSkills().map((s) => s.name).sort()
+        expect(names).toEqual(['from-extra', 'from-ws'])
+      } finally {
+        process.env.IMHUB_SKILLS_MODE = prevMode
+        process.env.IMHUB_SKILLS_ROOTS = prevRoots
+        invalidateSkillsCache()
+      }
+    } finally {
+      try { rmSync(extraRoot, { recursive: true, force: true }) } catch {}
+    }
+  })
+
+  it('workspace shadows same-named entry in inherited root', async () => {
+    const extraRoot = mkdtempSync(join(tmpdir(), 'agim-skills-extra-'))
+    try {
+      writeSkill(extraRoot, 'shared', `---
+name: shared
+description: extra-root version
+---
+body
+`)
+      writeSkill(wsRoot, 'shared', `---
+name: shared
+description: workspace wins
+---
+body
+`)
+      const prevMode = process.env.IMHUB_SKILLS_MODE
+      const prevRoots = process.env.IMHUB_SKILLS_ROOTS
+      process.env.IMHUB_SKILLS_MODE = 'custom'
+      process.env.IMHUB_SKILLS_ROOTS = extraRoot
+      invalidateSkillsCache()
+      try {
+        const skills = listSkills()
+        expect(skills).toHaveLength(1)
+        expect(skills[0].description).toBe('workspace wins')
+        expect(skills[0].dir.startsWith(wsRoot)).toBe(true)
+      } finally {
+        process.env.IMHUB_SKILLS_MODE = prevMode
+        process.env.IMHUB_SKILLS_ROOTS = prevRoots
+        invalidateSkillsCache()
+      }
+    } finally {
+      try { rmSync(extraRoot, { recursive: true, force: true }) } catch {}
+    }
+  })
+
+  it('describeSkillsConfig() reports the active mode + roots', async () => {
+    const { describeSkillsConfig } = await import('./loader.js')
+    const prev = process.env.IMHUB_SKILLS_MODE
+    process.env.IMHUB_SKILLS_MODE = 'agim-only'
+    try {
+      const cfg = describeSkillsConfig()
+      expect(cfg.mode).toBe('agim-only')
+      expect(cfg.writeRoot).toBe(wsRoot)
+      expect(cfg.readRoots).toEqual([wsRoot])
+      expect(cfg.builtinRoot).toBe(builtinRoot)
+    } finally {
+      process.env.IMHUB_SKILLS_MODE = prev
+    }
   })
 })
 

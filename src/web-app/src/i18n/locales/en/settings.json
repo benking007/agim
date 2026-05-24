@@ -538,6 +538,10 @@
   },
   "agimSkills": {
     "title": "agim Skills",
+    "tab": {
+      "installed": "Installed",
+      "hot": "skillhub Hot"
+    },
     "reload": "Reload from disk",
     "subtitle": "SKILL.md files loaded by src/core/skills/loader.ts. Tier-1 summary (name + description) is auto-injected into every agent system prompt; full body is read on-demand via mcp__imhub__read_skill. Workspace skills shadow bundled builtin skills by name.",
     "reloadedToast": "Reloaded — {{count}} skill(s) on disk",

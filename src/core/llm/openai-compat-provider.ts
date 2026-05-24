@@ -13,10 +13,11 @@
 //   - Usage extraction (prompt_tokens / completion_tokens / total_tokens)
 //
 // Out of scope for Stage 1 (lands in Stage 2):
-//   - tool_calls / function calling
 //   - structured outputs (json_schema)
-//   - vision / image_url content parts
 //   - response_format
+//
+// (Stage 2 added tool_calls + vision / image_url content parts; the
+// remaining items are still pending.)
 //
 // Why no SDK: every OpenAI-compatible vendor diverges in subtle ways and
 // the official `openai` SDK adds a 5MB+ dep tree for what is ultimately
@@ -36,6 +37,7 @@ import {
   type ToolChoice,
   type ToolDef,
 } from './provider-base.js'
+import { statSync as fsStatSync, readFileSync as fsReadFileSync } from 'node:fs'
 
 export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'providerType'> {
   /** Full base URL up to (but not including) `/chat/completions`. Each
@@ -61,6 +63,13 @@ export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'pr
    *  individual deployments may want "deepseek" / "kimi" / "qwen" so the
    *  cost dashboard groups correctly. */
   providerLabel?: string
+  /** Operator opt-in: this provider's configured model understands the
+   *  OpenAI vision content shape ({type:'image_url'} blocks). When true,
+   *  `LlmMessage.media` is encoded into the request; otherwise media is
+   *  silently ignored and only the text path travels.
+   *  Default heuristic: true if the model id contains 'vision', 'gpt-4o',
+   *  'gpt-4.1', 'qwen-vl', or 'glm-4v'. Override explicitly when needed. */
+  vision?: boolean
 }
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
@@ -76,6 +85,7 @@ export class OpenAICompatProvider extends LlmProvider {
   private readonly baseUrl: string
   private readonly extraHeaders: Record<string, string>
   private readonly retryOnTransient: number
+  private readonly vision: boolean
 
   constructor(cfg: OpenAICompatProviderConfig) {
     super({
@@ -85,6 +95,17 @@ export class OpenAICompatProvider extends LlmProvider {
     this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
     this.extraHeaders = cfg.extraHeaders || {}
     this.retryOnTransient = Math.max(0, cfg.retryOnTransient ?? DEFAULT_RETRY)
+    if (typeof cfg.vision === 'boolean') {
+      this.vision = cfg.vision
+    } else {
+      // Heuristic: well-known vision-capable model families.
+      const m = (cfg.model || '').toLowerCase()
+      this.vision = /vision|gpt-4o|gpt-4\.1|qwen-vl|glm-4v|llava/.test(m)
+    }
+  }
+
+  override supportsVision(): boolean {
+    return this.vision
   }
 
   protected async _callApi(
@@ -179,7 +200,7 @@ export class OpenAICompatProvider extends LlmProvider {
   ): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: opts.model,
-      messages: messages.map(serializeMessage),
+      messages: messages.map((m) => serializeMessage(m, { vision: this.vision })),
       temperature: opts.temperature,
       max_tokens: opts.maxTokens,
     }
@@ -382,7 +403,7 @@ function isAbortError(err: unknown): boolean {
 
 // ─── Stage 2 — tool-call serialization / deserialization ─────────────
 
-function serializeMessage(m: LlmMessage): Record<string, unknown> {
+function serializeMessage(m: LlmMessage, opts: { vision: boolean }): Record<string, unknown> {
   // OpenAI's wire-format expects either:
   //   - {role:'system'|'user', content}
   //   - {role:'assistant', content, tool_calls?: [...]}
@@ -417,7 +438,45 @@ function serializeMessage(m: LlmMessage): Record<string, unknown> {
   if (m.role === 'assistant' && m.reasoningContent) {
     return { role: 'assistant', content: m.content || null, reasoning_content: m.reasoningContent }
   }
+  // User / system path. Encode media as image_url content blocks when
+  // the provider declared vision support; otherwise drop the media
+  // (the text path already mentions the attachment by path so the
+  // model can still acknowledge it textually).
+  if (opts.vision && m.media && m.media.length > 0 && m.role === 'user') {
+    const blocks: Array<Record<string, unknown>> = []
+    if (m.content) blocks.push({ type: 'text', text: m.content })
+    for (const item of m.media) {
+      const dataUrl = mediaToDataUrl(item.path, item.mime)
+      if (dataUrl) blocks.push({ type: 'image_url', image_url: { url: dataUrl } })
+    }
+    if (blocks.length > 0) return { role: 'user', content: blocks }
+  }
   return { role: m.role, content: m.content }
+}
+
+/** Read a local file and inline-base64 it as a data URL. Returns null
+ *  on read failure so the caller can fall back to text-only. Capped at
+ *  20MB — most IM attachments are well under, and oversize files would
+ *  blow past most providers' request-size limits anyway. */
+function mediaToDataUrl(path: string, mimeHint?: string): string | null {
+  try {
+    const stat = fsStatSync(path)
+    if (stat.size > 20 * 1024 * 1024) return null
+    const buf = fsReadFileSync(path)
+    const mime = mimeHint || sniffMime(path)
+    return `data:${mime};base64,${buf.toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
+function sniffMime(path: string): string {
+  const lower = path.toLowerCase()
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  return 'application/octet-stream'
 }
 
 function serializeToolDef(t: ToolDef): Record<string, unknown> {

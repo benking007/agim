@@ -25,6 +25,7 @@ import {
   loadAllContextTokens,
   cleanupExpiredTokens as cleanupExpiredTokensInStore,
   closeContextStore,
+  deleteContextToken,
 } from './context-store.js'
 
 const log = rootLogger.child({ component: 'wechat-ilink' })
@@ -129,9 +130,32 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
         if (response.ret === ILINK_ERRORS.SESSION_EXPIRED) {
           throw new Error('WeChat session expired. Please re-login.')
         }
+        // INVALID_PARAMS (-2) on send almost always means our cached
+        // context-token for this user has been invalidated upstream (e.g.
+        // the user opened a different chat / wechat rotated the token).
+        // Drop it so the next inbound message from this user refreshes
+        // the cache + the outbox retry will succeed once they reply.
+        // Without this hook, outbox loops forever on the stale token
+        // and the user never sees any reply (observed 2026-05-24).
+        if (response.ret === ILINK_ERRORS.INVALID_PARAMS) {
+          this.invalidateContextToken(userId, 'wechat.send.invalid_params')
+        }
         throw new Error(`Failed to send message: ${response.errmsg || response.ret}`)
       }
     }
+  }
+
+  /** Drop the cached + persisted context-token for a user. Called when
+   *  wechat rejects a send with INVALID_PARAMS so the next inbound
+   *  message rebuilds the cache from the fresh polling token. */
+  private invalidateContextToken(userId: string, reason: string): void {
+    this.contextTokens.delete(userId)
+    try { deleteContextToken(userId) } catch { /* best-effort */ }
+    log.warn({
+      event: 'wechat.context.invalidated',
+      userId,
+      reason,
+    }, 'invalidated context token for user — will refresh on next inbound message')
   }
 
   // ============================================

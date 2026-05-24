@@ -538,6 +538,10 @@
   },
   "agimSkills": {
     "title": "agim Skills",
+    "tab": {
+      "installed": "已安装",
+      "hot": "skillhub 热门"
+    },
     "reload": "从磁盘重新加载",
     "subtitle": "由 src/core/skills/loader.ts 加载的 SKILL.md 文件。Tier-1 摘要（name + description）自动注入每个 agent 系统提示；完整正文通过 mcp__imhub__read_skill 按需读取。工作区 skill 按名称覆盖内置 skill。",
     "reloadedToast": "已重新加载 — 磁盘上 {{count}} 个 skill",

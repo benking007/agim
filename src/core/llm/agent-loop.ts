@@ -126,6 +126,17 @@ export interface AgentLoopInput {
     platform?: string
     traceId?: string
   }
+
+  /** Lifecycle hooks for caller-side observability (heartbeats, progress
+   *  push, custom logging). All hooks are best-effort: thrown errors are
+   *  swallowed so a faulty observer cannot break the loop. */
+  hooks?: {
+    /** Fires right before a tool's dispatcher is invoked (after the
+     *  approval gate has allowed the call). */
+    onToolStart?: (call: ToolCallRequest) => void
+    /** Fires right after the dispatcher returns or throws. */
+    onToolEnd?: (call: ToolCallRequest, summary: { isError: boolean; durationMs: number }) => void
+  }
 }
 
 export interface ToolCallReport {
@@ -302,6 +313,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         continue
       }
 
+      try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
       const dt0 = Date.now()
       let dispatched: DispatcherResult
       try {
@@ -315,6 +327,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         })
       }
       const durationMs = Date.now() - dt0
+      try { input.hooks?.onToolEnd?.(call, { isError: !!dispatched.isError, durationMs }) } catch { /* observer must not break loop */ }
 
       history.push({
         role: 'tool',

@@ -110,12 +110,96 @@ let cache: CacheEntry | null = null
  *  dropping a new SKILL.md on disk. */
 const CACHE_TTL_MS = 5 * 60 * 1000
 
-/** Resolve the workspace skills directory. Override via env for tests
- *  / custom deployments. */
+/** Resolve the agim-owned workspace skills directory. This is the
+ *  WRITE target: writeSkillFile / deleteSkill / the web editor all
+ *  land files here regardless of what extra read-only roots are
+ *  configured. Override via env for tests / custom deployments. */
 function workspaceSkillsDir(): string {
   const override = process.env.IMHUB_SKILLS_WORKSPACE_DIR
   if (override) return override
   return join(AGIM_HOME, 'skills')
+}
+
+export type SkillsMode = 'auto' | 'agim-only' | 'custom'
+
+/** Resolve operator's skill discovery mode. See loadSkillsRoots(). */
+function currentSkillsMode(): SkillsMode {
+  const raw = (process.env.IMHUB_SKILLS_MODE || 'auto').trim().toLowerCase()
+  if (raw === 'agim-only' || raw === 'agim_only') return 'agim-only'
+  if (raw === 'custom') return 'custom'
+  return 'auto'
+}
+
+/** Helper: convert ~ to $HOME and resolve to absolute. */
+function expandHome(p: string): string {
+  if (!p) return p
+  if (p === '~') return process.env.HOME || p
+  if (p.startsWith('~/')) return join(process.env.HOME || '~', p.slice(2))
+  return p
+}
+
+/** Parse a `:` or `,` separated list of paths from env, expanding ~. */
+function parseRootsList(raw: string | undefined): string[] {
+  if (!raw) return []
+  return raw
+    .split(/[:,]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(expandHome)
+}
+
+/**
+ * Resolve the ordered list of skill discovery roots (highest priority
+ * first). The agim-owned `workspaceSkillsDir()` is ALWAYS at index 0
+ * — it's the write target and must shadow same-named entries in
+ * inherited roots so operator-installed skills can override defaults.
+ *
+ * Modes:
+ *   - `auto`     (default): workspace + ~/.claude/skills + ~/.config/opencode/skills
+ *                + ~/.codex/skills. Reflects the typical "I installed all three
+ *                CLI agents and they share via symlink" layout — agim sees
+ *                100+ shared skills out of the box without extra config.
+ *                Honors IMHUB_SKILLS_EXTRA_ROOTS for adding more.
+ *   - `agim-only`: only the workspace dir. For deployments that want
+ *                isolation from per-user CLI agent directories.
+ *   - `custom`:   workspace + IMHUB_SKILLS_ROOTS (explicit operator list).
+ *
+ * The builtin dir is NOT included here — it's tier-0 (bundled with agim)
+ * and scanned separately as a last resort in doScan().
+ */
+export function resolveSkillsRoots(): string[] {
+  const ws = workspaceSkillsDir()
+  const mode = currentSkillsMode()
+  const extra = parseRootsList(process.env.IMHUB_SKILLS_EXTRA_ROOTS)
+  if (mode === 'agim-only') return [ws]
+  if (mode === 'custom') {
+    const explicit = parseRootsList(process.env.IMHUB_SKILLS_ROOTS)
+    return Array.from(new Set([ws, ...explicit, ...extra]))
+  }
+  // auto: workspace + common CLI agent skill dirs (read-only inherit).
+  const home = process.env.HOME || '/root'
+  const autoExtras = [
+    join(home, '.claude', 'skills'),
+    join(home, '.config', 'opencode', 'skills'),
+    join(home, '.codex', 'skills'),
+  ]
+  return Array.from(new Set([ws, ...autoExtras, ...extra]))
+}
+
+/** Public describe-only API for the web admin / diagnostics. Returns
+ *  a snapshot of the active mode + the roots that will be scanned. */
+export function describeSkillsConfig(): {
+  mode: SkillsMode
+  writeRoot: string
+  readRoots: string[]
+  builtinRoot: string
+} {
+  return {
+    mode: currentSkillsMode(),
+    writeRoot: workspaceSkillsDir(),
+    readRoots: resolveSkillsRoots(),
+    builtinRoot: builtinSkillsDir(),
+  }
 }
 
 /** Resolve the bundled-builtin skills directory. We look next to the
@@ -295,11 +379,21 @@ function ensureCache(): CacheEntry {
 
 function doScan(): CacheEntry {
   const discovered: SkillDiscovered[] = []
-  // 1. workspace FIRST so shadowing works (built-ins skipped when name collides).
-  const wsDir = workspaceSkillsDir()
-  scanDir(wsDir, 'workspace', discovered)
-  const seen = new Set(discovered.map((s) => s.name))
-  // 2. built-in; skip names already taken by workspace.
+  // 1. Walk the configured roots in priority order. The first root is
+  //    always the agim-owned workspace dir, so any operator-installed
+  //    skill shadows same-named entries from inherited CLI agent dirs.
+  const roots = resolveSkillsRoots()
+  const seen = new Set<string>()
+  for (const root of roots) {
+    const found: SkillDiscovered[] = []
+    scanDir(root, 'workspace', found)
+    for (const f of found) {
+      if (seen.has(f.name)) continue
+      seen.add(f.name)
+      discovered.push(f)
+    }
+  }
+  // 2. built-in tier 0; skip names already taken by any root above.
   const builtinDir = builtinSkillsDir()
   const builtinFound: SkillDiscovered[] = []
   scanDir(builtinDir, 'builtin', builtinFound)
@@ -319,7 +413,8 @@ function doScan(): CacheEntry {
 
   log.info({
     event: 'skills.scanned',
-    workspaceDir: wsDir,
+    mode: currentSkillsMode(),
+    roots,
     builtinDir,
     total: skills.length,
     available: skills.filter((s) => s.available).length,

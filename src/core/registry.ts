@@ -185,6 +185,12 @@ class PluginRegistry {
     const { antigravityAdapter } = await import('../plugins/agents/antigravity/index.js')
     this.registerAgent(antigravityAdapter)
 
+    // Cursor (`cursor-agent`) — fifth CLI agent. isAvailable() probes the
+    // bin; on boxes without cursor installed the agent shows as unavailable
+    // and `/cs` returns the install hint.
+    const { cursorAdapter } = await import('../plugins/agents/cursor/index.js')
+    this.registerAgent(cursorAdapter)
+
     // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. Always
     // registered; isAvailable() reflects whether an LLM backend with
     // role `native-chat` (or `cheap` fallback) is configured. Operators

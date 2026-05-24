@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.49] - 2026-05-24
+
+### Added — Cursor CLI agent
+
+- **`cursor` adapter** — fifth CLI agent (alongside claude-code, codex,
+  opencode, antigravity). Wraps `cursor-agent --print --output-format
+  stream-json` with `--trust --force --approve-mcps` for headless IM
+  use. Captures `session_id` from the `system.init` event so multi-turn
+  IM conversations resume into the same cursor chat. Token usage from
+  `result.usage` (input / output / cache-read / cache-write) flows
+  through `opts.onUsage` into the audit log.
+- **Slash aliases**: `/cs` and `/cur` route to cursor (alongside the
+  full `/cc cursor <prompt>` form).
+- **Plan mode**: `/cs plan` or `--plan` flag yields cursor's plan mode
+  (read-only / clarifying questions). `--mode ask` similarly.
+- **MCP imhub bridge** — `~/.cursor/mcp.json` gets an `imhub` entry on
+  first cursor turn, pointing at the same approval-bus sidecar
+  claude-code uses. All `mcp__imhub__*` tool calls inside a cursor run
+  hop through agim's existing approval-bus + audit pipeline — no
+  bypass of agim policy.
+- **Auth inheritance** — defaults to the machine's existing cursor
+  login (`~/.cursor/cli-config.json`). Operators can override with
+  `CURSOR_API_KEY` env or `--api-key`.
+- **Default model inheritance** — the model in
+  `~/.cursor/cli-config.json` is honoured; per-call override via
+  `opts.model` (e.g. `/cs model sonnet-4-thinking <prompt>`).
+- **Per-agent workspace** — IM turns pin to
+  `~/.agim-workspaces/cursor/` (was systemd `/`). AGENTS.md seeded
+  with cursor-specific cues.
+- **CLI wizard + setup** — `agim config cursor` checks the bin +
+  hints install / login. Top-level agent picker includes cursor.
+- **Web admin** — `/settings/agents` lists cursor with aliases + install
+  hint.
+
+### Migration
+
+- Existing cursor installs (with `cursor-agent login` already done) are
+  picked up automatically. Set `IMHUB_CURSOR_BIN=/path/to/cursor-agent`
+  to override binary resolution.
+- `~/.cursor/mcp.json` is read-modify-written on first cursor turn;
+  pre-existing `mcpServers` entries are preserved.
+- The bin probe order is `IMHUB_CURSOR_BIN` env → PATH lookup →
+  `~/.local/bin/cursor-agent` → `/usr/local/bin/cursor-agent` →
+  `/opt/cursor/bin/cursor-agent`.
+
 ## [1.2.48] - 2026-05-24
 
 ### Theme: native+ — production-ready in-process LLM agent

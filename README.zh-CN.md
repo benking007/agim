@@ -13,7 +13,7 @@
 
 ## 亮点
 
-- **3 种 IM + 邮件，3+ 种 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Email（SMTP）；Claude Code、Codex、OpenCode、Antigravity，以及任意 ACP 端点
+- **3 种 IM + 邮件，5 种 CLI Agent + native** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Email（SMTP）；Claude Code、Codex、OpenCode、Antigravity、**Cursor（v1.2.49+ · `/cs`）**，以及内置 native 与任意 ACP 端点
 - **原生 LLM 栈（v1.3.0+，v1.2.48 强化）** — 内置 in-process agent loop（`native` adapter），直连任何 OpenAI / Anthropic 兼容 API（DeepSeek / Kimi / GLM / Qwen / Ollama / vLLM / OpenAI / Anthropic）。v1.2.48 让 native 真正进入生产可用：**角色定义** 通过 `~/.agim-workspaces/native/AGENTS.md`（热加载，无需重启）；**多模态**（图片附件 → openai-compat `image_url`）；**自动压缩**长对话（>60k 字符 → 由 cheap role 摘要）；**Provider 失败链路降级**（5xx/超时自动切下一个 role）；**轮级心跳**每 3 分钟一次"⏳ 还在处理"避免多步研究看似卡死；**agent-loop 超时拉到 28 分钟**（旧 5 分钟会切断 multi-hop `call_agent`）。可用作 `memory-distill` / `memory-consolidate` / `intent-llm` 的便宜路由，可作为本地优先的聊天 agent（`/na`），也可作 A2A 的 peer。详见 [`docs/llm-backends.md`](docs/llm-backends.md) 与 [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md)
 - **Skills 多目录扫描（v1.2.48+）** — `IMHUB_SKILLS_MODE=auto`（默认）把 `~/.agim/skills/`（写入目标）与 `~/.claude/skills/`、`~/.config/opencode/skills/`、`~/.codex/skills/` 合并；新装即可看到所有已有 CLI agent 的技能。同名时 workspace 覆盖。Settings → 技能 改成两个子 tab（已安装编辑器 + skillhub 热门）；顶部导航条的 `/skills` 已合并进 Settings
 - **跨通道出口告警（v1.2.48+）** — 某条会话 outbox 失败 ≥3 次时（如 wechat session 过期），agim 自动失效 stale 的 context-token，并向你预设的备用通道（`IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`）推一条"⚠️ outbox 告警"，让你比用户更早发现

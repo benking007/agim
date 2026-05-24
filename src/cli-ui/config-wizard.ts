@@ -502,7 +502,7 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex'
+type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex' | 'cursor'
 
 interface AgentSpec {
   id: AgentId
@@ -517,8 +517,9 @@ interface AgentSpec {
 const AGENT_SPECS: AgentSpec[] = [
   { id: 'native',      cmd: '__native__' },
   { id: 'claude-code', cmd: 'claude' },
-  { id: 'opencode',    cmd: 'opencode', authHintKey: 'agents.auth_hint.opencode' },
-  { id: 'codex',       cmd: 'codex',    authHintKey: 'agents.auth_hint.codex' },
+  { id: 'opencode',    cmd: 'opencode',     authHintKey: 'agents.auth_hint.opencode' },
+  { id: 'codex',       cmd: 'codex',        authHintKey: 'agents.auth_hint.codex' },
+  { id: 'cursor',      cmd: 'cursor-agent', authHintKey: 'agents.auth_hint.cursor' },
 ]
 
 async function nativeLlmConfigured(): Promise<boolean> {

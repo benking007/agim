@@ -1626,6 +1626,27 @@ program
         break
       }
 
+      case 'cursor': {
+        console.log('🤖 Configuring Cursor agent...')
+        const cursorAvailable = await new Promise<boolean>((resolve) => {
+          const proc = crossSpawn('cursor-agent', ['--version'], { stdio: 'ignore' })
+          proc.on('error', () => resolve(false))
+          proc.on('close', (code) => resolve(code === 0))
+        })
+        if (cursorAvailable) {
+          console.log('✅ Cursor CLI found!')
+          console.log('\nTo authenticate, run: cursor-agent login (OAuth) or set CURSOR_API_KEY')
+        } else {
+          console.log('❌ Cursor CLI not found.')
+          console.log('Install with: curl https://cursor.com/install -fsS | bash')
+        }
+        if (!config.agents.includes('cursor')) {
+          config.agents.push('cursor')
+        }
+        config.defaultAgent = 'cursor'
+        break
+      }
+
       case 'opencode': {
         console.log('🤖 Configuring OpenCode agent...')
         // Check if opencode CLI is available

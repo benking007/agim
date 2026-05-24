@@ -54,9 +54,10 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
  *  backend doesn't expose this metadata yet; the table changes
  *  rarely enough that copying it here is fine. */
 const BUILTIN_AGENTS: Record<string, { aliases: string[]; pkg: string }> = {
-  'claude-code': { aliases: ['cc', 'claude'], pkg: '@anthropic-ai/claude-code' },
-  'codex':       { aliases: ['cx'],           pkg: '@openai/codex' },
-  'opencode':    { aliases: ['oc'],           pkg: 'opencode-ai' },
+  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code' },
+  'codex':       { aliases: ['cx'],              pkg: '@openai/codex' },
+  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai' },
+  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)' },
 }
 
 const AGENT_NAMES = Object.keys(BUILTIN_AGENTS)

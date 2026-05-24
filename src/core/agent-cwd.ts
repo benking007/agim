@@ -315,5 +315,35 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
     dir: await ensureAgentWorkspace('native', { filename: 'AGENTS.md', content: nativeSeed }),
   })
 
+  const cursorSeed = `# Cursor — IM 入口工作区
+
+> 这是 agim 通过 IM 唤起 Cursor CLI (\`/cs\`) 时的专用工作目录。
+> 与你直接在终端跑 \`cursor-agent\` 时使用的全局配置 (\`~/.cursor/cli-config.json\`) 隔离。
+>
+> 文件位置：${defaultAgentCwd('cursor')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）唤起的 Cursor。
+回复发到 IM 聊天里，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity 工作区互不干扰
+- cursor 自己的 chat 历史落在 \`~/.cursor/chats/\`，由 agim 通过 \`--resume <session_id>\` 续接，无需手工管理
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- agim 用 \`--trust --force --approve-mcps\` 启动 cursor，所有 cursor 侧 tool 默认自动放行；agim 自己的 \`mcp__imhub__*\` 仍走 approval-bus
+`
+
+  result.push({
+    agent: 'cursor',
+    dir: await ensureAgentWorkspace('cursor', { filename: 'AGENTS.md', content: cursorSeed }),
+  })
+
   return result
 }

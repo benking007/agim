@@ -66,15 +66,63 @@ import {
   type ApprovalMode,
   type PolicyApprovalGateConfig,
 } from '../../../core/llm/policy-approval-gate.js'
+import {
+  buildImhubDispatcher,
+  getImhubTools,
+} from '../../../core/llm/imhub-dispatcher.js'
+import { listSkills } from '../../../core/skills/loader.js'
+import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
 
-const DEFAULT_SYSTEM_PROMPT = [
-  'You are agim native, an in-process LLM agent talking to a user over an IM platform.',
-  'You can call tools (built-in + MCP servers configured by the operator). Prefer tool use over guessing.',
-  'When you call a tool, the result is appended as a tool message; reason about it before the next step.',
-  'Be terse. Avoid filler. When uncertain, ask one focused clarifying question rather than guessing.',
-].join('\n')
+/**
+ * v1.2.47 — system prompt is rebuilt per IM turn so the model sees:
+ *   - which LLM backend + role it's actually running on
+ *   - the agim process working directory (no per-thread cwd today)
+ *   - the live skill roster (names + one-line descriptions), with the
+ *     hint to call mcp__imhub__read_skill for full bodies
+ *   - external MCP servers currently connected
+ *
+ * Before v1.2.47 the prompt was a 4-line generic string; users
+ * complained that asking "what model are you" / "what skills do you
+ * have" got non-answers ("I don't know; ask the operator"). The
+ * builder closes that information gap without leaking secrets — every
+ * field surfaced here is operator-configured and non-sensitive.
+ */
+function buildSystemPrompt(provider: LlmProvider, role: string): string {
+  const skills = listSkills()
+  const skillsBlock = skills.length
+    ? skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n')
+    : '  (no skill cards loaded; see docs/skills.md to add one)'
+  const mcpReg = describeMcpRegistry()
+  const externalMcp = mcpReg.servers.length
+    ? mcpReg.servers
+        .map((s) => `  - ${s.name} (${s.connected ? `${s.toolCount} tools` : `disconnected${s.error ? ': ' + s.error : ''}`})`)
+        .join('\n')
+    : '  (none configured)'
+  return [
+    `You are agim native — agim's in-process LLM agent talking to a user over an IM platform.`,
+    ``,
+    `Runtime:`,
+    `  Backend:           ${provider.providerType}:${provider.name}`,
+    `  Role:              ${role}`,
+    `  Working directory: ${process.cwd()} (shared by all threads; native has no per-thread cwd)`,
+    ``,
+    `Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):`,
+    `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent`,
+    `  - External MCP servers configured by the operator:`,
+    externalMcp,
+    ``,
+    `Available skill cards (call mcp__imhub__read_skill('<name>') for the full body):`,
+    skillsBlock,
+    ``,
+    `Guidance:`,
+    `  - Be terse; avoid filler. Prefer tool use over guessing.`,
+    `  - When uncertain, call mcp__imhub__ask_user(question, choices[]) instead of free-form back-and-forth.`,
+    `  - When the user references something they told the bot before, search memos via mcp__imhub__search_memos.`,
+    `  - When a heavy task fits another agent better (e.g. code editing → claude-code), use mcp__imhub__call_agent.`,
+  ].join('\n')
+}
 
 /** Role priority for picking which LLM backend powers the native chat
  *  turn. First found wins. Operators can override the role via
@@ -185,16 +233,35 @@ class NativeAgentAdapter implements AgentAdapter {
     messages.push({ role: 'user', content: prompt })
 
     // Compose dispatcher: built-in first (so a stray MCP server with
-    // a colliding tool name doesn't shadow `native_now` etc.), then MCP.
+    // a colliding tool name doesn't shadow `native_now` etc.), then
+    // imhub built-ins (skills / memo / push / ask_user / call_agent),
+    // then external MCP. v1.2.47 added the imhub layer so native sees
+    // exactly the same mcp__imhub__* surface claude-code does via the
+    // MCP sidecar.
+    const imhubCtx = {
+      platform: opts.platform || 'native-agent',
+      channelId: opts.channelId || 'default',
+      threadId: opts.threadId || sessionId,
+      userId: opts.userId || 'unknown',
+      callerAgent: 'native',
+      callerDepth: opts.callDepth ?? 0,
+    }
     const dispatch = combineDispatchers(
       buildBuiltinDispatcher(),
+      buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
 
-    // Compose tool list the same way (built-in first; MCP last; if a
-    // collision exists at the LLM-facing level we let it be — providers
-    // generally rely on the LATER definition winning).
-    const tools: ToolDef[] = [...getBuiltinTools(), ...getAllMcpTools()]
+    // Compose tool list the same way (built-in → imhub → external MCP).
+    // Provider tool roster wins on duplicate names via "later
+    // definition wins" semantics inside the provider, but our naming
+    // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
+    // so collisions are not expected in practice.
+    const tools: ToolDef[] = [
+      ...getBuiltinTools(),
+      ...getImhubTools(),
+      ...getAllMcpTools(),
+    ]
 
     const policy = resolvePolicy()
     const approve = buildPolicyApprovalGate(policy)
@@ -214,7 +281,7 @@ class NativeAgentAdapter implements AgentAdapter {
     const traceId = `native-${sessionId}-${Date.now()}`
     const result = await runAgentLoop({
       provider,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      systemPrompt: buildSystemPrompt(provider, role),
       messages,
       tools,
       dispatch,

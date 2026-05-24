@@ -90,7 +90,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 | 分类 | 内容 |
 |------|------|
 | **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Email（SMTP，仅推送） |
-| **Agent** | Claude Code、Codex、OpenCode、Antigravity（统一 `AgentBase`）；**`native`** in-process LLM loop；任何 HTTP Agent 通过 ACP 接入——所有后端走同一份 `AgentAdapter` 接口 |
+| **Agent** | Claude Code、Codex、OpenCode、Antigravity、Cursor（统一 `AgentBase`）；**`native`** in-process LLM loop；任何 HTTP Agent 通过 ACP 接入——所有后端走同一份 `AgentAdapter` 接口 |
 | **原生 LLM** | OpenAI / Anthropic 兼容 provider，外挂 MCP 服务器，多轮 agent loop + 策略式审批门，角色绑定（`cheap` / `evaluator` / `native-chat`） |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **长目标 + 心跳 + 提问** | `/goal` 会话级目标、`/heartbeat` 周期 DECIDE/EXECUTE/EVALUATE 节拍、`mcp__imhub__ask_user` 结构化选择题，跨会话视图在 `/tasks/{goals,heartbeat,asks}` |
@@ -158,6 +158,8 @@ agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/admi
 | `/heartbeat …` | 周期 DECIDE→EXECUTE→EVALUATE 节拍——`bind / unbind / show / pause / resume / status`（v1.3.0+） |
 | `/skill list\|show <name>\|refresh` | 查看从 `~/.agim/skills/` 加载的 agim Skills（v1.3.0+） |
 | `/cc native …` / `/na …` / `/llm …` | 切换到 in-process 原生 LLM agent（v1.3.0+） |
+| `/cs …` / `/cur …` / `/cc cursor …` | 切换到 Cursor CLI agent（v1.2.49+）；`/cs plan` 单条进入 plan 模式 |
+| `/agy …` / `/cc antigravity …` | 切换到 Google Antigravity (agy) CLI agent |
 | `y` / `n` / `批准` / `拒绝` | 同意 / 拒绝（工具调用 或 提醒确认卡片） |
 | `1` / `2` | 服务重启后看到「上次消息中断」提示时，回 `1` 重发 / `2` 取消（10 分钟内有效） |
 

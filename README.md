@@ -98,7 +98,7 @@ units that call `agim` continue to work without any extra setup.
 | Category | Details |
 |----------|---------|
 | **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Email (SMTP, push-only) |
-| **Agents** | Claude Code, Codex, OpenCode, Antigravity (all CLI via shared `AgentBase`); **`native`** in-process LLM loop; any HTTP agent via ACP — all share one `AgentAdapter` interface |
+| **Agents** | Claude Code, Codex, OpenCode, Antigravity, Cursor (all CLI via shared `AgentBase`); **`native`** in-process LLM loop; any HTTP agent via ACP — all share one `AgentAdapter` interface |
 | **Native LLM** | OpenAI- + Anthropic-compatible providers, external MCP server attach, multi-iteration agent loop with policy approval gate, role bindings (`cheap` / `evaluator` / `native-chat`) |
 | **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
 | **Goals + Heartbeat + Ask** | `/goal` per-thread objective, `/heartbeat` periodic DECIDE/EXECUTE/EVALUATE tick, `mcp__imhub__ask_user` structured multi-choice with `/tasks/{goals,heartbeat,asks}` cross-thread admin |
@@ -166,6 +166,8 @@ agim token bootstrap       # Print one-shot web-bootstrap token (`~/.agim/admin-
 | `/heartbeat …` | Periodic DECIDE→EXECUTE→EVALUATE tick — `bind / unbind / show / pause / resume / status` (v1.3.0+) |
 | `/skill list\|show <name>\|refresh` | Inspect agim Skills loaded from `~/.agim/skills/` (v1.3.0+) |
 | `/cc native …` / `/na …` / `/llm …` | Route to the in-process native LLM agent (v1.3.0+) |
+| `/cs …` / `/cur …` / `/cc cursor …` | Route to Cursor CLI agent (v1.2.49+); `/cs plan` enters plan mode for one turn |
+| `/agy …` / `/cc antigravity …` | Route to Google Antigravity (agy) CLI agent |
 | `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
 | `1` / `2` | After a service restart, reply `1` to redo the interrupted message or `2` to cancel (10 min window) |
 

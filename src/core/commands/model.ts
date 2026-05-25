@@ -10,8 +10,37 @@
 // `listModels()` + `resolveDefault()` and register in MODEL_DRIVERS.
 
 import { spawn } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
+
+/** Resolve cursor-agent the same way the adapter does so systemd's
+ *  stripped PATH doesn't break `/models` while the adapter still works. */
+let cachedCursorBin: string | null | undefined = null
+function resolveCursorBin(): string {
+  const override = process.env.IMHUB_CURSOR_BIN
+  if (override) return override
+  if (cachedCursorBin !== null) return cachedCursorBin ?? 'cursor-agent'
+  const candidates = [
+    join(homedir(), '.local', 'bin', 'cursor-agent'),
+    '/usr/local/bin/cursor-agent',
+    '/opt/cursor/bin/cursor-agent',
+  ]
+  for (const p of candidates) {
+    try {
+      const s = statSync(p)
+      if (s.isFile() && (s.mode & 0o111) !== 0) {
+        cachedCursorBin = p
+        return p
+      }
+    } catch { /* not here */ }
+    if (!existsSync(p)) continue
+  }
+  cachedCursorBin = undefined
+  return 'cursor-agent'
+}
 
 const MODEL_LIST_TTL_MS = 5 * 60 * 1000  // 5 minutes — picks up newly-added models
 
@@ -98,7 +127,12 @@ const cursorDriver: ModelDriver = {
     //   <id> - <display name>
     //   ...
     // (sometimes piped through ANSI colors — strip on parse).
-    const bin = process.env.IMHUB_CURSOR_BIN || 'cursor-agent'
+    //
+    // Bin resolution mirrors cursor adapter's: env override → PATH →
+    // ~/.local/bin → /usr/local/bin → /opt. systemd-launched agim has
+    // a stripped PATH that often misses ~/.local/bin, so the bare name
+    // fails ENOENT even when the binary is sitting there.
+    const bin = resolveCursorBin()
     const proc = spawn(bin, ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     proc.stdout?.on('data', d => out += d.toString())
@@ -107,7 +141,7 @@ const cursorDriver: ModelDriver = {
       // ANSI CSI strip. Build via RegExp constructor so the literal
       // ESC byte (0x1b) never lands in source (biome
       // noControlCharactersInRegex).
-      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\[[0-9;]*m`, 'g')
+      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, 'g')
       for (const lineRaw of out.split('\n')) {
         const line = lineRaw.replace(ansi, '').trim()
         if (!line) continue

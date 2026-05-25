@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.52] - 2026-05-25
+
+### Fixed
+
+- `/models` under cursor returned "未能获取 cursor 的模型列表" on
+  systemd-launched agim because the spawned `cursor-agent` couldn't be
+  found on the stripped PATH. ModelDriver's listModels now uses the
+  same bin-resolution as the cursor adapter (env `IMHUB_CURSOR_BIN`
+  → PATH → `~/.local/bin/cursor-agent` → `/usr/local/bin/...` →
+  `/opt/cursor/bin/...`), cached for the process lifetime.
+- Tightened ANSI strip regex from `\[[0-9;]*m` (where the leading `\[`
+  was silently dropped to `[`, accidentally treating `[` as a class
+  member) to `\\[[0-9;]*m` so it matches a literal `[` followed by the
+  digit/`;` class.
+
 ## [1.2.51] - 2026-05-25
 
 ### Fixed

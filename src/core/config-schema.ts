@@ -151,13 +151,33 @@ const llmBackendSchema = z.object({
  */
 const llmRolesSchema = z.record(z.string(), z.string())
 
+/** Loose storage shape — strict credential checks run in superRefine only
+ *  when the platform is listed in `messengers[]`. */
+const telegramLooseSchema = z.object({
+  botToken: z.string().optional(),
+  channelId: z.string().optional(),
+}).passthrough().optional()
+
+const feishuLooseSchema = z.object({
+  appId: z.string().optional(),
+  appSecret: z.string().optional(),
+  channelId: z.string().optional(),
+}).passthrough().optional()
+
+const discordLooseSchema = z.object({
+  botToken: z.string().optional(),
+  channelId: z.string().optional(),
+  allowedGuilds: z.array(z.string()).optional(),
+  allowedChannels: z.array(z.string()).optional(),
+}).passthrough().optional()
+
 export const configSchema = z.object({
   messengers: z.array(z.string()).default([]),
   agents: z.array(z.string()).default([]),
   defaultAgent: z.string().default('claude-code'),
-  telegram: telegramSchema.optional(),
-  feishu: feishuSchema.optional(),
-  discord: discordSchema.optional(),
+  telegram: telegramLooseSchema,
+  feishu: feishuLooseSchema,
+  discord: discordLooseSchema,
   acpAgents: z.array(acpAgentSchema).optional(),
   /** Base URLs to probe for `.well-known/acp` at startup. */
   acpDiscoveryUrls: z.array(z.string().url()).optional(),
@@ -185,7 +205,34 @@ export const configSchema = z.object({
    *  the built-in agim MCP server's tools (mcp__imhub__*) are available
    *  to the native agent. */
   mcpServers: z.array(mcpServerSchema).optional(),
-}).passthrough()
+}).passthrough().superRefine((cfg, ctx) => {
+  const enabled = new Set(cfg.messengers ?? [])
+
+  if (enabled.has('telegram')) {
+    const r = telegramSchema.safeParse(cfg.telegram ?? {})
+    if (!r.success) {
+      for (const issue of r.error.issues) {
+        ctx.addIssue({ ...issue, path: ['telegram', ...issue.path] })
+      }
+    }
+  }
+  if (enabled.has('feishu')) {
+    const r = feishuSchema.safeParse(cfg.feishu ?? {})
+    if (!r.success) {
+      for (const issue of r.error.issues) {
+        ctx.addIssue({ ...issue, path: ['feishu', ...issue.path] })
+      }
+    }
+  }
+  if (enabled.has('discord')) {
+    const r = discordSchema.safeParse(cfg.discord ?? {})
+    if (!r.success) {
+      for (const issue of r.error.issues) {
+        ctx.addIssue({ ...issue, path: ['discord', ...issue.path] })
+      }
+    }
+  }
+})
 
 export type ValidatedConfig = z.infer<typeof configSchema>
 

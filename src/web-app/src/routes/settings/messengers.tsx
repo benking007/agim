@@ -83,12 +83,8 @@ function buildDraft(cfg: AppConfig | undefined): Draft {
 function buildPatch(draft: Draft, cfg: AppConfig): Partial<AppConfig> {
   const messengers: string[] = []
   for (const k of Object.keys(draft) as Slot[]) if (draft[k].enabled) messengers.push(k)
-  return {
+  const patch: Partial<AppConfig> = {
     messengers,
-    telegram: draft.telegram.telegram,
-    feishu:   draft.feishu.feishu,
-    dingtalk: draft.dingtalk.dingtalk,
-    discord:  draft.discord.discord,
     // Preserve unknown extra fields the AppConfig type permits.
     ...Object.fromEntries(
       Object.entries(cfg).filter(([k]) => ![
@@ -96,6 +92,23 @@ function buildPatch(draft: Draft, cfg: AppConfig): Partial<AppConfig> {
       ].includes(k)),
     ),
   }
+  // Only include platform blocks that are enabled. Omitting disabled
+  // platforms avoids PUT /api/config merging `{}` and failing zod
+  // (telegram.botToken / feishu.appSecret / discord.botToken require
+  // min(1) when the key is present).
+  if (draft.telegram.enabled && draft.telegram.telegram) {
+    patch.telegram = draft.telegram.telegram
+  }
+  if (draft.feishu.enabled && draft.feishu.feishu) {
+    patch.feishu = draft.feishu.feishu
+  }
+  if (draft.dingtalk.enabled && draft.dingtalk.dingtalk) {
+    patch.dingtalk = draft.dingtalk.dingtalk
+  }
+  if (draft.discord.enabled && draft.discord.discord) {
+    patch.discord = draft.discord.discord
+  }
+  return patch
 }
 
 export default function SettingsMessengersRoute(): JSX.Element {

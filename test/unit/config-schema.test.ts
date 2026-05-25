@@ -24,16 +24,42 @@ describe('validateConfig', () => {
     }
   })
 
-  it('rejects telegram config without botToken', () => {
-    const result = validateConfig({ telegram: { channelId: 'xyz' } })
+  it('rejects telegram config without botToken when telegram is enabled', () => {
+    const result = validateConfig({
+      messengers: ['telegram'],
+      telegram: { channelId: 'xyz' },
+    })
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errors.some((e) => e.includes('telegram.botToken'))).toBe(true)
     }
   })
 
-  it('rejects feishu config without secret', () => {
-    const result = validateConfig({ feishu: { appId: 'app' } })
+  it('allows partial telegram block when telegram is not enabled', () => {
+    const result = validateConfig({
+      messengers: ['dingtalk'],
+      telegram: { channelId: 'xyz' },
+      dingtalk: { clientId: 'id', clientSecret: 'secret' },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('allows dingtalk-only save with empty sibling messenger objects', () => {
+    const result = validateConfig({
+      messengers: ['dingtalk'],
+      telegram: {},
+      feishu: {},
+      discord: {},
+      dingtalk: { clientId: 'ding-id', clientSecret: 'ding-secret' },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects feishu config without secret when feishu is enabled', () => {
+    const result = validateConfig({
+      messengers: ['feishu'],
+      feishu: { appId: 'app' },
+    })
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errors.some((e) => e.includes('feishu.appSecret'))).toBe(true)

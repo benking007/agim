@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.62] - 2026-05-25
+
+### Added
+
+- **`native_exec(command, timeout_ms?, cwd?)`** — shell execution
+  tool in `src/core/llm/exec-dispatcher.ts`. Default timeout 60s
+  (hard cap 600s via `IMHUB_EXEC_TIMEOUT_MS`), per-stream output
+  capped at 32KB (override via `IMHUB_EXEC_MAX_OUTPUT`). Returns
+  JSON `{ exit_code, signal, timed_out, stdout, stderr,
+  stdout_truncated, stderr_truncated }`. SIGTERM at timeout with a
+  3s grace before SIGKILL.
+- **Optional bubblewrap sandbox** when `IMHUB_EXEC_SANDBOX=bwrap`
+  (Linux + `/usr/bin/bwrap` required). Read-only binds the host's
+  `/usr`, `/lib`, `/lib64`, `/etc/ssl`, `/etc/resolv.conf`; rw-binds
+  the agent's cwd; tmpfs `/tmp`; isolated proc/dev. Net stays on by
+  default; set `IMHUB_EXEC_SANDBOX_NET=off` to add `--unshare-net`
+  for fully offline execution.
+- `native_exec` is **NOT** in the default autoAllow — each invocation
+  routes through the v1.2.60 IM approval card. Same-fingerprint
+  follow-ups are auto-allowed via the existing card UI.
+
 ## [1.2.61] - 2026-05-25
 
 ### Added

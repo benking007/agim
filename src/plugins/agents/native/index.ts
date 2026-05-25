@@ -78,6 +78,10 @@ import {
   buildWebDispatcher,
   getWebTools,
 } from '../../../core/llm/web-dispatcher.js'
+import {
+  buildExecDispatcher,
+  getExecTools,
+} from '../../../core/llm/exec-dispatcher.js'
 import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -145,6 +149,7 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent`,
     `  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0`,
     `  - native web tools: native_web_fetch (r.jina.ai reader by default), native_web_search (duckduckgo → metaso fallback). Private IPs blocked.`,
+    `  - native_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated; bwrap sandbox when IMHUB_EXEC_SANDBOX=bwrap.`,
     `  - External MCP servers configured by the operator:`,
     externalMcp,
     ``,
@@ -567,11 +572,12 @@ class NativeAgentAdapter implements AgentAdapter {
       buildBuiltinDispatcher(),
       buildFsDispatcher({ cwd }),
       buildWebDispatcher(),
+      buildExecDispatcher({ cwd }),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
 
-    // Compose tool list the same way (built-in → fs → web → imhub → external MCP).
+    // Compose tool list the same way (built-in → fs → web → exec → imhub → external MCP).
     // Provider tool roster wins on duplicate names via "later
     // definition wins" semantics inside the provider, but our naming
     // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
@@ -580,6 +586,7 @@ class NativeAgentAdapter implements AgentAdapter {
       ...getBuiltinTools(),
       ...getFsTools(),
       ...getWebTools(),
+      ...getExecTools(),
       ...getImhubTools(),
       ...getAllMcpTools(),
     ]

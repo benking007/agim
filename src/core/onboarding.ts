@@ -4,7 +4,7 @@
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
-import { registry } from './registry.js'
+import { registry, isPlatformBlacklisted } from './registry.js'
 import { AGIM_HOME } from './agim-paths.js'
 
 const CONFIG_DIR = AGIM_HOME
@@ -104,8 +104,15 @@ const ALL_MESSENGERS: MessengerInfo[] = [
 ]
 
 function getAvailableMessengers(): MessengerInfo[] {
-  if (process.env.IMHUB_ENABLE_GLOBAL_IM === '1') return ALL_MESSENGERS
-  return ALL_MESSENGERS.filter((m) => m.id !== 'telegram' && m.id !== 'discord')
+  const globalSet = process.env.IMHUB_ENABLE_GLOBAL_IM === '1'
+  // v1.2.69 — IMHUB_PLATFORM_BLACKLIST hides platforms from the
+  // wizard / web admin entirely. Default is empty (no-op). Layered on
+  // top of the GLOBAL_IM filter so an operator can still ban any
+  // platform regardless of the global-IM mode.
+  const base = globalSet
+    ? ALL_MESSENGERS
+    : ALL_MESSENGERS.filter((m) => m.id !== 'telegram' && m.id !== 'discord')
+  return base.filter((m) => !isPlatformBlacklisted(m.id))
 }
 
 const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime uses getAvailableMessengers()

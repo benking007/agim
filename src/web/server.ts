@@ -1498,18 +1498,33 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
     const showGlobalIm = isGlobalImEnabled()
     const showRemoteAgent = isRemoteAgentEnabled()
+    // v1.2.69 — IM platform blacklist. When an operator sets
+    // IMHUB_PLATFORM_BLACKLIST=telegram,discord (etc.), those platforms
+    // are hidden from the admin SPA entirely — credentials still live
+    // on disk but the UI shows nothing for that platform AND the
+    // registry refuses to register the adapter at boot. Default empty.
+    const { isPlatformBlacklisted: blocked } = await import('../core/registry.js')
+
+    // v1.2.69 — strip blacklisted entries from the `messengers`
+    // dictionary so the SPA's per-platform toggle row also vanishes
+    // (rendered from this object's keys).
+    const visibleMessengers = config.messengers
+      ? Object.fromEntries(
+          Object.entries(config.messengers).filter(([k]) => !blocked(k)),
+        )
+      : config.messengers
 
     sendJson(res, 200, {
-      messengers: config.messengers,
+      messengers: visibleMessengers,
       agents: config.agents,
       defaultAgent: config.defaultAgent,
-      telegram: showGlobalIm && config.telegram
+      telegram: showGlobalIm && config.telegram && !blocked('telegram')
         ? { botToken: mask(config.telegram.botToken), channelId: config.telegram.channelId }
         : undefined,
-      feishu: config.feishu
+      feishu: config.feishu && !blocked('feishu')
         ? { appId: config.feishu.appId, appSecret: mask(config.feishu.appSecret) }
         : undefined,
-      dingtalk: config.dingtalk
+      dingtalk: config.dingtalk && !blocked('dingtalk')
         ? {
             clientId: config.dingtalk.clientId,
             clientSecret: mask(config.dingtalk.clientSecret),
@@ -1535,7 +1550,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
               : undefined,
           }
         : undefined,
-      discord: showGlobalIm && config.discord
+      discord: showGlobalIm && config.discord && !blocked('discord')
         ? {
             botToken: mask(config.discord.botToken),
             channelId: config.discord.channelId,
@@ -2652,6 +2667,10 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_EXEC_MAX_OUTPUT',
   // Native call_agent per-turn cap.
   'IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  // v1.2.69 — IM platform blacklist (CSV of platform ids). Default
+  // empty (no blocks); listed platforms vanish from web + CLI + are
+  // refused at registry.registerMessenger.
+  'IMHUB_PLATFORM_BLACKLIST',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 
@@ -2693,6 +2712,9 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
     const { isAllowlistConfigured: isAdminConfigured } = await import('../core/admin-allowlist.js')
     const adminAllowlistConfigured = isAdminConfigured()
 
+    const { getPlatformBlacklist } = await import('../core/registry.js')
+    const platformBlacklist = getPlatformBlacklist()
+
     sendJson(res, 200, {
       diagnostics: {
         runningAsRoot,
@@ -2700,6 +2722,7 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
         bwrapAvailable,
         senderAllowlistConfigured,
         adminAllowlistConfigured,
+        platformBlacklist,
         // Live env values so the UI can show what's effectively in force
         // (process.env, which is what runtime sees) without round-tripping
         // through the env file.

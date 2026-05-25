@@ -16,6 +16,22 @@ class PluginRegistry {
   private agentAliases = new Map<string, string>()
 
   registerMessenger(adapter: MessengerAdapter): void {
+    // v1.2.69 — platform blacklist gate. Operators set
+    // IMHUB_PLATFORM_BLACKLIST=telegram,discord to hard-refuse
+    // registration of specific IM platforms at boot. Matches the
+    // adapter's `name`; also matches a few common aliases
+    // ('wechat' ⇔ 'wechat-ilink') so operators don't have to know
+    // the registry-canonical id. The check runs even if the
+    // operator's env file or config still has credentials —
+    // explicit blacklist wins.
+    if (isPlatformBlacklisted(adapter.name)) {
+      log.warn({
+        event: 'messenger.blacklisted',
+        messenger: adapter.name,
+        hint: 'Remove from IMHUB_PLATFORM_BLACKLIST to enable.',
+      }, `Messenger "${adapter.name}" blocked by IMHUB_PLATFORM_BLACKLIST — registration refused`)
+      return
+    }
     if (this.messengers.has(adapter.name)) {
       log.warn({ messenger: adapter.name }, `Messenger "${adapter.name}" already registered, overwriting`)
     }
@@ -205,3 +221,45 @@ class PluginRegistry {
 
 // Singleton registry
 export const registry = new PluginRegistry()
+
+// v1.2.69 — IM platform blacklist. Single source of truth for "is
+// this platform allowed to register / appear in the wizard / appear
+// in the web admin". Default empty (no blocks).
+//
+// Common id aliases: 'wechat' matches 'wechat-ilink' (the registry-
+// canonical name). Other adapters use their own canonical id verbatim
+// (telegram / feishu / dingtalk / discord / email / web). Both sides
+// of an alias map to the same effective block.
+const PLATFORM_ALIAS_MAP: Record<string, string[]> = {
+  'wechat': ['wechat-ilink'],
+  'wechat-ilink': ['wechat'],
+}
+
+/** Parse IMHUB_PLATFORM_BLACKLIST → normalized Set with alias
+ *  expansion. Lowercase + trim each entry. Empty list (or unset env)
+ *  returns an empty Set. */
+export function parsePlatformBlacklist(raw: string | undefined): Set<string> {
+  const out = new Set<string>()
+  if (!raw) return out
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim().toLowerCase()
+    if (!trimmed) continue
+    out.add(trimmed)
+    for (const alias of PLATFORM_ALIAS_MAP[trimmed] ?? []) out.add(alias)
+  }
+  return out
+}
+
+/** True iff `platform` is on the IMHUB_PLATFORM_BLACKLIST env list.
+ *  Re-parses env on every call so a hot env-file update (PUT /api/env)
+ *  takes effect on the next adapter init without restart. */
+export function isPlatformBlacklisted(platform: string): boolean {
+  const list = parsePlatformBlacklist(process.env.IMHUB_PLATFORM_BLACKLIST)
+  if (list.size === 0) return false
+  return list.has(platform.toLowerCase())
+}
+
+/** Return the current blacklist as an array for diagnostics / UI. */
+export function getPlatformBlacklist(): string[] {
+  return Array.from(parsePlatformBlacklist(process.env.IMHUB_PLATFORM_BLACKLIST))
+}

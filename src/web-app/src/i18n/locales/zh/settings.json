@@ -428,6 +428,14 @@
       "envKey": "IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN",
       "valueLabel": "默认 2"
     },
+    "platformBlacklist": {
+      "title": "IM 平台黑名单",
+      "description": "逗号分隔的 IM 平台 id，列入后：CLI 向导不显示、web 后台不出现、注册时被直接拒绝。即使凭证仍在 env 文件里，进程也不会拉起这个适配器。默认空（不拦截）。常见 id：wechat-ilink / telegram / feishu / dingtalk / discord / email。",
+      "envKey": "IMHUB_PLATFORM_BLACKLIST",
+      "placeholder": "telegram,discord",
+      "currentLabel": "当前生效"
+    },
+    "diagnosticsPlatformBlacklist": "IM 平台黑名单",
     "savingToast": "已保存。",
     "resetTitle": "清空 (使用默认值)"
   },

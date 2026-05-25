@@ -428,6 +428,14 @@
       "envKey": "IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN",
       "valueLabel": "default 2"
     },
+    "platformBlacklist": {
+      "title": "IM platform blacklist",
+      "description": "Comma-separated platform ids. Listed platforms are hidden from the CLI wizard, from this admin page, and registry.registerMessenger refuses to register them at boot — even if their credentials still live in the env file the adapter won't come up. Default empty (no blocks). Common ids: wechat-ilink / telegram / feishu / dingtalk / discord / email.",
+      "envKey": "IMHUB_PLATFORM_BLACKLIST",
+      "placeholder": "telegram,discord",
+      "currentLabel": "Currently in force"
+    },
+    "diagnosticsPlatformBlacklist": "Platform blacklist",
     "savingToast": "Saved.",
     "resetTitle": "Reset to default"
   },

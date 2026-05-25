@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.69] - 2026-05-26
+
+### Added
+
+- **`IMHUB_PLATFORM_BLACKLIST` env** — comma-separated list of IM
+  platform ids that the bot will REFUSE to enable. Default empty
+  (no blocks; backward compatible). Three-layer enforcement:
+  1. **Registry** (`core/registry.ts`): `registry.registerMessenger`
+     refuses adapters whose `name` matches the list (or its
+     `wechat ⇔ wechat-ilink` aliases). Refusal logs
+     `event=messenger.blacklisted` and skips the registration even
+     when credentials are present in `~/.agim/env`.
+  2. **CLI wizard** (`core/onboarding.ts`): blacklisted platforms
+     vanish from `getAvailableMessengers()` so the wizard never
+     prompts for them. Layered on top of the existing
+     `IMHUB_ENABLE_GLOBAL_IM` filter.
+  3. **Web admin** (`/api/messengers` GET): per-platform credential
+     blocks (`telegram` / `discord` / `feishu` / `dingtalk` /
+     `wechat`) are omitted from the response when their id (or
+     alias) is on the list. The `messengers` dictionary is also
+     filtered. The SPA sees nothing → renders nothing.
+- **New helpers exported from `core/registry.ts`**:
+  `parsePlatformBlacklist(raw)`, `isPlatformBlacklisted(name)`,
+  `getPlatformBlacklist()`. Each re-reads `process.env` so a hot
+  env-file update (via PUT /api/env) takes effect on the next
+  call without a service restart for the *filter* logic. Adapter
+  un-registration still requires restart (registry init runs
+  once).
+
+### Changed
+
+- `/settings/security` page gains:
+  - "IM platform blacklist" diagnostic row (green when empty,
+    warning when populated; shows the active list).
+  - New section at the bottom: input field for the blacklist CSV
+    + live preview of "currently in force" entries.
+- `ENV_EDITABLE_KEYS` in `web/server.ts` extended with
+  `IMHUB_PLATFORM_BLACKLIST`.
+- `/api/security/diagnostics` returns `platformBlacklist: string[]`.
+
+### Internal
+
+- 11 unit tests in `test/unit/platform-blacklist.test.ts` cover
+  parser, alias expansion, hot env-update, case-insensitivity, and
+  list snapshotting.
+
 ## [1.2.68] - 2026-05-26
 
 ### Fixed

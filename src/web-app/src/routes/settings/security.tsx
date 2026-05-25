@@ -40,6 +40,7 @@ interface Diagnostics {
   bwrapAvailable: boolean
   senderAllowlistConfigured: boolean
   adminAllowlistConfigured: boolean
+  platformBlacklist: string[]
   liveEnv: Record<string, string | null>
 }
 
@@ -147,6 +148,14 @@ export default function SettingsSecurityRoute(): JSX.Element {
               text={diagnostics.adminAllowlistConfigured
                 ? t('security.diagnostics.adminAllowlistOn')
                 : t('security.diagnostics.adminAllowlistOff')
+              }
+            />
+            <DiagRow
+              label={t('security.diagnosticsPlatformBlacklist')}
+              ok={diagnostics.platformBlacklist.length === 0}
+              text={diagnostics.platformBlacklist.length === 0
+                ? '—'
+                : diagnostics.platformBlacklist.join(', ')
               }
             />
           </ul>
@@ -333,6 +342,27 @@ export default function SettingsSecurityRoute(): JSX.Element {
             void setValue('IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN', v === '' ? null : v)
           }}
         />
+      </ControlCard>
+
+      {/* IM platform blacklist */}
+      <ControlCard
+        title={t('security.platformBlacklist.title')}
+        description={t('security.platformBlacklist.description')}
+        envKey="IMHUB_PLATFORM_BLACKLIST"
+      >
+        <Input
+          defaultValue={env.IMHUB_PLATFORM_BLACKLIST ?? ''}
+          placeholder={t('security.platformBlacklist.placeholder')}
+          onBlur={(e) => {
+            const v = e.target.value.trim()
+            void setValue('IMHUB_PLATFORM_BLACKLIST', v === '' ? null : v)
+          }}
+        />
+        {diagnostics?.platformBlacklist && diagnostics.platformBlacklist.length > 0 && (
+          <p className="mt-2 text-[10px] text-muted">
+            {t('security.platformBlacklist.currentLabel')}: {diagnostics.platformBlacklist.join(', ')}
+          </p>
+        )}
       </ControlCard>
     </div>
   )

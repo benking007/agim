@@ -761,6 +761,10 @@ export class ApprovalBus {
       await this.handleMemory(m, socket)
       return
     }
+    if (m.type === 'goal') {
+      await this.handleGoal(m, socket)
+      return
+    }
     log.warn({ event: 'approval.bus.unknown_type', type: m.type })
   }
 
@@ -1237,6 +1241,54 @@ export class ApprovalBus {
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
       if (err) log.warn({ event: 'memory.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /** v1.2.63 — long_task / complete_goal RPC handler. Mirrors handleMemo's
+   *  shape exactly; goals.ts state lives per-thread so we tie identity to
+   *  the live RunContext (no _im_context fallback — same reasoning as
+   *  memory ops). */
+  private async handleGoal(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const op = typeof m.op === 'string' ? m.op : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'goal.bus.missing_reqId' }); return }
+    if (!op || (op !== 'long_task' && op !== 'complete_goal')) {
+      this.sendGoalResult(socket, reqId, { ok: false, error: 'invalid goal message (op must be long_task|complete_goal)' })
+      return
+    }
+    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
+    if (!ctx) {
+      this.sendGoalResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} — goal ops require a live runContext`,
+      })
+      return
+    }
+    const { handleGoalOp } = await import('./goal-rpc.js')
+    const result = await handleGoalOp(op, payload, {
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      userId: ctx.userId,
+      callerAgent: ctx.callerAgent,
+    })
+    this.sendGoalResult(socket, reqId, result)
+  }
+
+  private sendGoalResult(
+    socket: Socket, reqId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string },
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'goal.result', reqId, ok: result.ok }
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'goal.bus.write_failed', reqId, err: String(err) })
     })
   }
 

@@ -146,7 +146,7 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `  Working directory: ${cwd}`,
     ``,
     `Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):`,
-    `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent`,
+    `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal`,
     `  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0`,
     `  - native web tools: native_web_fetch (r.jina.ai reader by default), native_web_search (duckduckgo → metaso fallback). Private IPs blocked.`,
     `  - native_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated; bwrap sandbox when IMHUB_EXEC_SANDBOX=bwrap.`,
@@ -292,6 +292,11 @@ function resolvePolicy(): PolicyApprovalGateConfig {
     'mcp__imhub__update_memo', 'mcp__imhub__delete_memo',
     'mcp__imhub__push_message', 'mcp__imhub__ask_user',
     'mcp__imhub__call_agent',
+    // v1.2.63 — long-goal management tools. State changes are scoped
+    // to the per-thread goal row, which is also the only thing the
+    // /goal slash command lets the user mutate directly. No external
+    // side effects, so safe-by-default.
+    'mcp__imhub__long_task', 'mcp__imhub__complete_goal',
   ]
   const effectiveAllow = mode === 'allow-list'
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))

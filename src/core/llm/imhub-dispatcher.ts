@@ -224,6 +224,46 @@ export function getImhubTools(): ToolDef[] {
         required: ['agent', 'prompt'],
       },
     },
+    {
+      name: 'mcp__imhub__long_task',
+      description:
+        'Register a sustained multi-turn objective for this thread. Use when the user describes ' +
+        'work that should stay visible across many turns ("ship v1.3 this week", "track X for the ' +
+        'next 3 days"). The goal is injected into your future system prompts as an `[Active goal]` ' +
+        'block. Auto-pauses any prior active goal on the thread. NOT for one-shot questions — ' +
+        'use this only when persistence across turns is the point.',
+      parameters: {
+        type: 'object',
+        properties: {
+          goal: {
+            type: 'string',
+            description:
+              'One-line objective. Write it idempotent + bounded + self-contained: "Ship agim v1.3 ' +
+              'with the fs/web/exec tool batch landed and CHANGELOG updated", not "improve agim".',
+          },
+          summary: {
+            type: 'string',
+            description: 'Optional short acceptance criteria / scope notes (≤ 4000 chars).',
+          },
+        },
+        required: ['goal'],
+      },
+    },
+    {
+      name: 'mcp__imhub__complete_goal',
+      description:
+        'Mark the thread\'s currently-active goal as done (or cancelled). Use when the work is ' +
+        'finished, when the user cancels, or when the user replaces the goal with a different ' +
+        'objective. Without `status` defaults to "completed". `recap` is appended as a final ' +
+        'progress note so the historical log makes sense.',
+      parameters: {
+        type: 'object',
+        properties: {
+          recap: { type: 'string', description: 'One-line honest summary of how the goal ended.' },
+          status: { type: 'string', enum: ['completed', 'cancelled'] },
+        },
+      },
+    },
   ]
 }
 
@@ -360,6 +400,21 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           // sidecar so the model can reference produced artifacts if
           // it asks for them — keeps the main payload terse.
           return ok(typeof result.result === 'string' ? result.result : safeJson(result))
+        }
+        case 'long_task':
+        case 'complete_goal': {
+          // v1.2.63 — thin wrapper over goals.ts. RPC layer enforces
+          // ctx integrity + writes audit logs.
+          const { handleGoalOp } = await import('../goal-rpc.js')
+          const r = await handleGoalOp(op, args, {
+            platform: ctx.platform,
+            channelId: ctx.channelId,
+            threadId: ctx.threadId,
+            userId: ctx.userId,
+            callerAgent: ctx.callerAgent,
+          })
+          if (!r.ok) return err(`${op} failed: ${r.error}`)
+          return ok(safeJson(r.result))
         }
         default:
           return unknown(call.name)

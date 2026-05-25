@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.63] - 2026-05-26
+
+### Added
+
+- **`mcp__imhub__long_task` / `mcp__imhub__complete_goal` MCP tools** —
+  wraps `goals.ts` so every agim agent can self-register a sustained
+  multi-turn objective (previously only the `/goal set` slash command
+  let the user do this manually).
+  - **`long_task(goal, summary?)`** — registers a new active goal,
+    auto-pausing any prior one on the same thread. The goal is then
+    injected into the agent's `[Active goal]` prompt block on every
+    future turn until completed.
+  - **`complete_goal(recap?, status?)`** — marks the active goal as
+    `completed` (default) or `cancelled`. `recap` becomes the final
+    progress note.
+- **All agents** see these tools — registered in both
+  `imhub-dispatcher.ts` (native side) and
+  `mcp-approval-server.ts` (claude-code / cursor / antigravity MCP
+  sidecar) with the new `goal` wire envelope handled by
+  `approval-bus.ts:handleGoal`. RunContext-resolved identity (no
+  `_im_context` fallback, same security stance as `memory_*`).
+- Both tools in native's default autoAllow — state changes are
+  scoped to one row in `goals.db` per thread, no external side effects.
+
+### Internal
+
+- New `src/core/goal-rpc.ts` — thin RPC layer over goals.ts with
+  audit logging (`event=goal-rpc.long_task/complete_goal`).
+- New `src/core/goal-rpc.test.ts` — 9 tests covering shape
+  (db-independent) + db-backed paths (skip gracefully when
+  better-sqlite3 isn't loadable under bun-test).
+
 ## [1.2.62] - 2026-05-25
 
 ### Added

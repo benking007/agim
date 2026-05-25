@@ -351,7 +351,17 @@ export function buildSkillsSummary(): string {
   for (const s of visible) {
     const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
     const flag = s.always ? ' [always]' : ''
-    lines.push(`- ${s.name}: ${s.description}${reason}${flag}`)
+    // v1.2.65 — defensive fallback for SKILL.md files whose description
+    // didn't parse (empty, just a YAML literal-block marker like ">-",
+    // or whitespace-only). Without this the agent sees lines like
+    // `- foo: >-` which look like an instruction tag and confuse the
+    // model. Operator should fix the SKILL.md upstream, but a graceful
+    // hint here keeps the catalog usable in the meantime.
+    const descClean = (s.description || '').trim()
+    const description = descClean && descClean !== '>-' && descClean !== '|'
+      ? descClean
+      : '(no description in SKILL.md — read body via mcp__imhub__read_skill)'
+    lines.push(`- ${s.name}: ${description}${reason}${flag}`)
   }
   if (sorted.length > visible.length) {
     lines.push(`… and ${sorted.length - visible.length} more (use /skill list to see them all)`)
@@ -534,11 +544,37 @@ function extractFrontmatter(body: string): Frontmatter | null {
   if (closeIdx === -1) return null
   const raw = body.slice(3, closeIdx).trim()
   const front: Frontmatter = {}
-  for (const line of raw.split('\n')) {
+  const lines = raw.split('\n')
+  // v1.2.65 — support YAML literal block scalars (`>`, `>-`, `|`, `|-`)
+  // so SKILL.md files with multi-line `description: >- \n  line1 \n  line2`
+  // don't end up with description = literal "&gt;-". We collect the
+  // indented continuation lines and join them per the operator (`>` =
+  // folded with spaces; `|` = preserve newlines).
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/)
     if (!m) continue
     const key = m[1]
-    const value = stripQuotes(m[2].trim())
+    const valueRaw = m[2].trim()
+    let value: string
+    if (valueRaw === '>' || valueRaw === '>-' || valueRaw === '|' || valueRaw === '|-') {
+      // Collect continuation: subsequent lines with leading whitespace.
+      const foldStyle = valueRaw[0] === '>'
+      const parts: string[] = []
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1]
+        // Stop at next top-level key (no leading whitespace + key:value)
+        // or a blank line followed by a top-level key.
+        if (/^[A-Za-z_][A-Za-z0-9_]*\s*:/.test(next)) break
+        // Strip up to 2 spaces of indentation; preserve everything else.
+        parts.push(next.replace(/^\s{1,4}/, ''))
+        i++
+      }
+      const joined = foldStyle ? parts.join(' ').replace(/\s+/g, ' ').trim() : parts.join('\n').trim()
+      value = stripQuotes(joined)
+    } else {
+      value = stripQuotes(valueRaw)
+    }
     if (key === 'name') front.name = value
     else if (key === 'description') front.description = value
     else if (key === 'always') front.always = value

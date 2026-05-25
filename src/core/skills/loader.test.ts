@@ -475,3 +475,78 @@ body
     expect(getSkillByName('not-here')).toBeNull()
   })
 })
+
+// v1.2.65 — YAML folded / literal block scalar handling in description.
+describe('frontmatter description with YAML block scalar', () => {
+  it('folds `description: >-` continuation lines into a single line', () => {
+    writeSkill(wsRoot, 'folded-desc', `---
+name: folded-desc
+description: >-
+  Use this skill when the user asks about
+  multi-line descriptions that fold into one.
+---
+body
+`)
+    invalidateSkillsCache()
+    const s = getSkillByName('folded-desc')
+    expect(s).not.toBeNull()
+    expect(s!.description).toBe('Use this skill when the user asks about multi-line descriptions that fold into one.')
+  })
+
+  it('preserves newlines for `description: |-`', () => {
+    writeSkill(wsRoot, 'literal-desc', `---
+name: literal-desc
+description: |-
+  line one
+  line two
+---
+body
+`)
+    invalidateSkillsCache()
+    const s = getSkillByName('literal-desc')
+    expect(s).not.toBeNull()
+    expect(s!.description).toBe('line one\nline two')
+  })
+
+  it('stops folding at the next top-level key', () => {
+    writeSkill(wsRoot, 'fold-stops', `---
+name: fold-stops
+description: >-
+  one
+  two
+always: false
+metadata: '{"agim":{}}'
+---
+body
+`)
+    invalidateSkillsCache()
+    const s = getSkillByName('fold-stops')
+    expect(s).not.toBeNull()
+    expect(s!.description).toBe('one two')
+    expect(s!.always).toBe(false)
+  })
+
+  it('buildSkillsSummary produces a real description (NOT ">-") for fin-data-style frontmatter', () => {
+    // Reproduces the bug observed in production: fin-data-* skills
+    // showed up in the system prompt as `- fin-data-bond-otc: >-`
+    // because their SKILL.md used a folded scalar that the old
+    // line-by-line parser stored as literal ">-". With v1.2.65's
+    // fold support, the description now contains the continuation
+    // text instead.
+    writeSkill(wsRoot, 'fin-data-style', `---
+name: fin-data-style
+description: >-
+  Query the local A-share database for daily quotes and indicators.
+  Use this when the user asks about Chinese stock prices, PE, PB,
+  market cap, or sector rotation.
+---
+body content
+`)
+    invalidateSkillsCache()
+    const summary = buildSkillsSummary()
+    expect(summary).toContain('fin-data-style')
+    expect(summary).toContain('Chinese stock prices')
+    // And critically: NOT a raw `>-` literal in the description slot.
+    expect(summary).not.toMatch(/- fin-data-style:\s*>-/)
+  })
+})

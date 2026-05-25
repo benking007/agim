@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.65] - 2026-05-26
+
+### Changed
+
+- **`long-goal` skill body** — replaced the stale "Future tools
+  (deferred to v1.2.58)" section with the real `mcp__imhub__long_task`
+  / `complete_goal` usage instructions. Now matches v1.2.63 reality.
+- **`agim-self` skill body** — added the 12 tools shipped in
+  v1.2.58–v1.2.63 that were missing: `long_task` / `complete_goal`
+  under MCP, plus a new "Native built-in tools" section listing
+  `native_read_file` / `write_file` / `list_dir` / `glob` / `grep` /
+  `web_fetch` / `web_search` / `exec`. Also documents the
+  v1.2.59 `call_agent` per-turn cap and the v1.2.60 IM approval card
+  policy.
+
+### Added
+
+- **`image-generation` skill** — placeholder body until a built-in
+  `native_image_gen` tool ships. Routes requests to existing
+  capabilities (web_search for reference images, sendmail for
+  third-party services) and refuses to fabricate output. Forward-
+  compatible tool spec included for whoever wires the real
+  generator.
+- **`agim-skill-discovery` skill** — teaches the agent how to answer
+  "what skills do I have / install X / search for Y" by referring to
+  the system-prompt list, calling `mcp__imhub__read_skill` for
+  details, and pointing the operator at skillhub.cn + web admin's
+  Skills page. Documents the multi-root install layout +
+  restart-to-pick-up semantics.
+
+### Fixed
+
+- **YAML folded scalar in SKILL.md frontmatter** — `description: >-`
+  followed by indented continuation lines used to be stored as the
+  literal `">-"` because the line-by-line parser ignored
+  continuations. Multiple fin-data-* skills shipped this way and
+  showed up as `- fin-data-bond-otc: >-` in the agent's system
+  prompt. The parser now folds `>` / `>-` (space-joined) and `|` /
+  `|-` (newline-preserved) continuation blocks correctly, stopping
+  at the next top-level key. Added 3 unit tests for the parser plus
+  a regression test against the production output shape.
+- **`buildSkillsSummary` fallback** — if a skill somehow still ends
+  up with empty description after parsing, the summary line now
+  substitutes `(no description in SKILL.md — read body via
+  mcp__imhub__read_skill)` instead of leaving the slot blank.
+
 ## [1.2.64] - 2026-05-26
 
 ### Fixed

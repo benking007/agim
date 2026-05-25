@@ -64,6 +64,46 @@ Per turn:
 - Don't fake progress notes. If nothing changed, say so.
 - Don't treat the goal block as overriding the user's current ask — current ask wins; the goal is context.
 
-## Future tools (deferred to v1.2.58)
+## MCP tools (shipped v1.2.63)
 
-Nanobot's `long_task` / `complete_goal` MCP tools (which let the agent **itself** open/close goals, not just suggest a slash command) are planned. Until they ship, the flow above is the supported path.
+You can register / close goals YOURSELF — don't just suggest the user type `/goal set`. Use these tools:
+
+### `mcp__imhub__long_task(goal, summary?)`
+
+Register a new active goal. Auto-pauses any prior active goal on this thread.
+
+```
+mcp__imhub__long_task({
+  goal: "Ship agim v1.3 with native fs/web/exec tools landed + CHANGELOG updated",
+  summary: "Acceptance: tools land in dist; v1.3.0 published on npm; CHANGELOG has v1.3.0 entry."
+})
+```
+
+Returns `{ goalId, title, status: 'active', previous_active_goal_paused: {...}|null, hint }`. Tell the user something terse: "✅ 已登记目标 #N。我会在之后每轮看到它，到完成或取消时再调 complete_goal。"
+
+### `mcp__imhub__complete_goal(recap?, status?)`
+
+Close the active goal honestly.
+
+```
+mcp__imhub__complete_goal({
+  recap: "shipped v1.3.0 with all 5 tools + CHANGELOG done",
+  status: "completed"          // default; pass "cancelled" if user cancelled / scope changed
+})
+```
+
+Returns `{ goalId, title, status, recap_recorded }`. Tell the user one line: "✅ 目标 #N 已 completed。"
+
+## When to call which
+
+| Situation | Tool |
+|---|---|
+| User describes a sustained multi-turn objective | `long_task` (don't ask first; just do it + tell them) |
+| Work is done | `complete_goal` (`status` omitted = "completed") |
+| User cancels mid-stream | `complete_goal` (`status: "cancelled"`, recap states why) |
+| User replaces goal with a different one | `complete_goal` previous → `long_task` new (in that order; don't stack) |
+| Pure progress note, goal continues | append via `mcp__imhub__save_memo` with `tags: ["goal:<id>"]` (no goal RPC needed) |
+
+## Compatibility with the `/goal` slash command
+
+`/goal set <title>` (user-typed) and `long_task` (agent-called) write the same row in `goals.db`. Auto-pause semantics are identical. Either side can call `complete_goal` / `/goal complete`. There's exactly one active goal per thread.

@@ -145,7 +145,7 @@ agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/admi
 | 任意文本 | 路由到 Agent（Sticky 会话 + 意图分类） |
 | `/<agent> <内容>` | 切换 Agent — `/cc`、`/oc`、`/cx`、`/co` |
 | `/new` | 开新会话（清空历史） |
-| `/model [provider/model]` | 查看或切换模型 |
+| `/model [id]` / `/models [filter]` | 查看 / 列出 / 切换当前 agent 的模型。支持 opencode（`provider/model` 格式）与 cursor（扁平名，如 `gpt-5.2`、`sonnet-4-thinking`）。v1.2.50+ |
 | `/think on\|off` | 切换深度思考模式 |
 | `/remind …` | 提醒子系统 — 详见 [提醒](#提醒) |
 | `/memo …` | 5W1H 持久记忆库 — 详见 [备忘](#备忘)（别名 `/记`、`/note`）|

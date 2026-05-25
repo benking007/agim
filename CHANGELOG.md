@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.50] - 2026-05-25
+
+### Added
+
+- **`/model` + `/models` now work for cursor too** — the command was
+  opencode-only; v1.2.50 refactors it into a per-agent `ModelDriver`
+  dispatch. When the active session is on cursor, `/models` runs
+  `cursor-agent models` and renders the flat list (auto / composer-2 /
+  gpt-5.x / sonnet-4 / claude-opus-4-6 / …). `/model <id>` or
+  `/model #N` switches the per-session model and the next cursor turn
+  spawns with `--model <id>`. Default model is read from
+  `~/.cursor/cli-config.json` `model.modelId`. opencode driver is
+  unchanged.
+
+### Notes
+
+- Adding a third agent now means filling in a `ModelDriver` (`listModels`
+  + `resolveDefault`) and registering it in `MODEL_DRIVERS`. No new flag
+  on AgentAdapter / Session.
+- /models output is cached per-driver for 5 min; `/models refresh`
+  clears all driver caches.
+
 ## [1.2.49] - 2026-05-24
 
 ### Added — Cursor CLI agent

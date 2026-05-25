@@ -153,7 +153,7 @@ agim token bootstrap       # Print one-shot web-bootstrap token (`~/.agim/admin-
 | any text | Route to agent (sticky session, intent-classified) |
 | `/<agent> <prompt>` | Switch agent — `/cc`, `/oc`, `/cx`, `/co` |
 | `/new` | New conversation (clear context) |
-| `/model [provider/model]` | View or switch model |
+| `/model [id]` / `/models [filter]` | View / list / switch the active agent's model. Works for opencode (`provider/model`) and cursor (flat names like `gpt-5.2`, `sonnet-4-thinking`). v1.2.50+ |
 | `/think on\|off` | Toggle extended thinking |
 | `/remind …` | Reminders — see [Reminders](#reminders) below |
 | `/memo …` | 5W1H persistent memory — see [Memos](#memos) below (aliases `/记`, `/note`) |

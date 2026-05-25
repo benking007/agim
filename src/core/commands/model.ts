@@ -1,20 +1,21 @@
 // /model [name|#N] + /models [filter|refresh] — model switching & listing
 //
-// Currently only the opencode adapter ships variants/models that the
-// router can switch between, so this command is opencode-scoped. When
-// the active agent isn't opencode we surface a friendly "not supported"
-// message instead of querying the wrong CLI.
+// Originally opencode-only. v1.2.50 generalised the dispatch into a
+// per-agent `ModelDriver`, so the command works for any CLI that
+// (a) lists models via its own CLI subcommand, (b) honours a per-call
+// `--model <id>` flag, and (c) lets agim persist the picked model on
+// the session row for the next turn.
+//
+// Drivers shipped today: opencode, cursor. To add a third, fill in
+// `listModels()` + `resolveDefault()` and register in MODEL_DRIVERS.
 
 import { spawn } from 'node:child_process'
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
 
-const SUPPORTED_AGENT = 'opencode'
 const MODEL_LIST_TTL_MS = 5 * 60 * 1000  // 5 minutes — picks up newly-added models
 
 function sessionKey(ctx: RouteContext): string {
-  // Mirrors SessionManager's key shape so the cached numbered list lives
-  // alongside the actual session state (no userId mismatch in groups).
   return `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
 }
 
@@ -23,73 +24,217 @@ function parseModelArgs(args: string): { sub: string; rest: string } {
   return { sub: p[0] || '', rest: p.slice(1).join(' ') }
 }
 
+interface ListCache<T> { value: T; ts: number }
+
+interface ModelDriver {
+  /** Human-readable name surfaced in error / hint messages. */
+  label: string
+  /** Whether model ids in this driver use `provider/model` namespacing
+   *  (opencode) or are flat (cursor). Affects the "short name" hint
+   *  on /model switch. */
+  namespaced: boolean
+  /** List all available models. Cached per-agent for MODEL_LIST_TTL_MS. */
+  listModels(): Promise<string[]>
+  /** Resolve the agent's current default model (read from its own
+   *  config file, or fall back to the first listModels entry). */
+  resolveDefault(): Promise<string>
+  /** Short example for the "format hint" message ("e.g. provider/model"). */
+  switchHint: string
+}
+
+// ─── opencode driver (legacy default) ────────────────────────────────
+
+const opencodeDriver: ModelDriver = {
+  label: 'opencode',
+  namespaced: true,
+  switchHint: '例: /model deepseek/deepseek-v4-pro',
+
+  listModels: () => new Promise((resolve) => {
+    const proc = spawn('opencode', ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    proc.stdout?.on('data', d => out += d.toString())
+    proc.on('close', () => {
+      const lines = out.trim().split('\n').filter(Boolean)
+      resolve(lines)
+    })
+    proc.on('error', () => resolve([]))
+  }),
+
+  async resolveDefault(): Promise<string> {
+    try {
+      const { readFile } = await import('node:fs/promises')
+      const { homedir } = await import('node:os')
+      const { join } = await import('node:path')
+      const configPath = join(homedir(), '.config', 'opencode', 'opencode.json')
+      const raw = await readFile(configPath, 'utf-8')
+      const config = JSON.parse(raw) as Record<string, unknown>
+      const provider = config.provider as Record<string, { models?: Record<string, unknown> }> | undefined
+      if (provider) {
+        for (const [, p] of Object.entries(provider)) {
+          if (p.models && typeof p.models === 'object') {
+            const keys = Object.keys(p.models)
+            if (keys.length > 0) return keys[0]
+          }
+        }
+      }
+    } catch { /* fall through */ }
+    const models = await opencodeDriver.listModels()
+    return models[0] || 'unknown'
+  },
+}
+
+// ─── cursor driver ───────────────────────────────────────────────────
+
+const cursorDriver: ModelDriver = {
+  label: 'cursor',
+  namespaced: false,
+  switchHint: '例: /model gpt-5.2 / sonnet-4-thinking / claude-opus-4-6',
+
+  listModels: () => new Promise((resolve) => {
+    // cursor-agent emits:
+    //   Available models
+    //
+    //   <id> - <display name>
+    //   <id> - <display name>
+    //   ...
+    // (sometimes piped through ANSI colors — strip on parse).
+    const bin = process.env.IMHUB_CURSOR_BIN || 'cursor-agent'
+    const proc = spawn(bin, ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    proc.stdout?.on('data', d => out += d.toString())
+    proc.on('close', () => {
+      const ids: string[] = []
+      // eslint-disable-next-line no-control-regex
+      const ansi = /\[[0-9;]*m/g
+      for (const lineRaw of out.split('\n')) {
+        const line = lineRaw.replace(ansi, '').trim()
+        if (!line) continue
+        if (line.toLowerCase().startsWith('available models')) continue
+        const m = line.match(/^([A-Za-z0-9._-]+)\s+-\s+/)
+        if (m) ids.push(m[1])
+      }
+      resolve(ids)
+    })
+    proc.on('error', () => resolve([]))
+  }),
+
+  async resolveDefault(): Promise<string> {
+    // ~/.cursor/cli-config.json carries model.modelId.
+    try {
+      const { readFile } = await import('node:fs/promises')
+      const { homedir } = await import('node:os')
+      const { join } = await import('node:path')
+      const configPath = join(homedir(), '.cursor', 'cli-config.json')
+      const raw = await readFile(configPath, 'utf-8')
+      const config = JSON.parse(raw) as Record<string, unknown>
+      const model = config.model as { modelId?: string } | undefined
+      if (model?.modelId) return model.modelId
+    } catch { /* fall through */ }
+    const models = await cursorDriver.listModels()
+    return models[0] || 'auto'
+  },
+}
+
+const MODEL_DRIVERS: Record<string, ModelDriver> = {
+  opencode: opencodeDriver,
+  cursor: cursorDriver,
+}
+
+const SUPPORTED_AGENTS = Object.keys(MODEL_DRIVERS)
+
 /** Per-session cache: last /models ordered result, indexed from 1 */
 const sessionModelIndex = new Map<string, string[]>()
+
+/** Per-agent list cache. Keyed by driver label. */
+const modelListCache = new Map<string, ListCache<string[]>>()
+/** Per-agent default-model cache. Keyed by driver label. */
+const defaultModelCache = new Map<string, ListCache<string>>()
+
+function invalidateModelCache(): void {
+  modelListCache.clear()
+  defaultModelCache.clear()
+}
+
+async function getModelList(driver: ModelDriver): Promise<string[]> {
+  const cached = modelListCache.get(driver.label)
+  if (cached && Date.now() - cached.ts < MODEL_LIST_TTL_MS) return cached.value
+  const value = await driver.listModels()
+  modelListCache.set(driver.label, { value, ts: Date.now() })
+  return value
+}
+
+async function resolveDefaultModel(driver: ModelDriver): Promise<string> {
+  const cached = defaultModelCache.get(driver.label)
+  if (cached && Date.now() - cached.ts < MODEL_LIST_TTL_MS) return cached.value
+  const value = await driver.resolveDefault()
+  defaultModelCache.set(driver.label, { value, ts: Date.now() })
+  return value
+}
 
 export async function handleModelCommand(args: string, ctx: RouteContext): Promise<string> {
   const { sub, rest } = parseModelArgs(args)
 
-  // /model refresh — force re-query the underlying CLI (M-5)
   if (sub === 'refresh') {
     invalidateModelCache()
     return '✅ 模型缓存已清空。下次 /models 将重新查询。'
   }
 
-  // Determine which agent the active session is using; fall back to default
   const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
   const activeAgent = session?.agent || ctx.defaultAgent
-  if (activeAgent !== SUPPORTED_AGENT) {
-    return `ℹ️ \`/model\` 仅在 \`${SUPPORTED_AGENT}\` 下可用，当前 agent: \`${activeAgent}\`。\n\n切换到 opencode：/oc 或 /opencode`
+  const driver = MODEL_DRIVERS[activeAgent]
+  if (!driver) {
+    const switchHint = SUPPORTED_AGENTS.map((a) => `/${a === 'opencode' ? 'oc' : a === 'cursor' ? 'cs' : a}`).join(' / ')
+    return `ℹ️ \`/model\` 在 \`${activeAgent}\` 下不可用。当前支持：${SUPPORTED_AGENTS.join(' / ')}\n\n切换：${switchHint}`
   }
 
-  // /models or /models <filter> — list all models
   if (sub === 'list') {
-    return handleModelList(rest, ctx)
+    return handleModelList(driver, rest, ctx)
   }
 
-  // /model (no args) — show current model
   if (args.trim() === '') {
-    return handleModelCurrent(ctx)
+    return handleModelCurrent(driver, ctx)
   }
 
-  // /model <name|#N> — switch model (by full name, short name, or index)
-  return handleModelSwitch(args.trim(), ctx)
+  return handleModelSwitch(driver, args.trim(), ctx)
 }
 
-/** /models — list available models with optional filter, numbered */
-async function handleModelList(filter: string, ctx: RouteContext): Promise<string> {
-  const models = await getModelList()
-  const defaultModel = await resolveDefaultModel()
+async function handleModelList(driver: ModelDriver, filter: string, ctx: RouteContext): Promise<string> {
+  const models = await getModelList(driver)
+  const defaultModel = await resolveDefaultModel(driver)
   const lowered = filter.toLowerCase()
   const filtered = lowered ? models.filter(m => m.toLowerCase().includes(lowered)) : models
 
   if (filtered.length === 0) {
     if (filter) return `🔍 没有匹配 "${filter}" 的模型。`
-    return `⚠️ 未能获取模型列表。请确认 opencode 已安装且配置了模型。`
+    return `⚠️ 未能获取 ${driver.label} 的模型列表。请确认 CLI 已安装并已登录。`
   }
 
   const session = await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, ctx.defaultAgent)
   const current = session?.model || defaultModel
 
-  // Build a flat indexed list for /model #N lookup
   let idx = 1
   const flat: { num: number; full: string }[] = []
   const groups = new Map<string, { num: number; short: string; full: string }[]>()
   for (const m of filtered) {
-    const parts = m.split('/')
-    const prov = parts.length >= 2 ? parts.slice(0, -1).join('/') : m
-    const short = m.split('/').pop()!
-    if (!groups.has(prov)) groups.set(prov, [])
-    groups.get(prov)?.push({ num: idx, short, full: m })
+    if (driver.namespaced) {
+      const parts = m.split('/')
+      const prov = parts.length >= 2 ? parts.slice(0, -1).join('/') : m
+      const short = parts.pop() as string
+      if (!groups.has(prov)) groups.set(prov, [])
+      groups.get(prov)?.push({ num: idx, short, full: m })
+    } else {
+      // Flat list — bucket under the driver label so the rendered card
+      // still has a header line.
+      if (!groups.has(driver.label)) groups.set(driver.label, [])
+      groups.get(driver.label)?.push({ num: idx, short: m, full: m })
+    }
     flat.push({ num: idx, full: m })
     idx++
   }
 
-  // Cache indexed list keyed identically to SessionManager.
   sessionModelIndex.set(sessionKey(ctx), flat.map(f => f.full))
 
-  let msg = `📋 模型列表 (${filtered.length})\n\n`
-
+  let msg = `📋 ${driver.label} 模型列表 (${filtered.length})\n\n`
   for (const [prov, list] of groups) {
     msg += `**${prov}**\n`
     for (const { num, short, full } of list) {
@@ -97,21 +242,19 @@ async function handleModelList(filter: string, ctx: RouteContext): Promise<strin
       msg += `  ${String(num).padStart(3, ' ')}. \`${short}\`${tag}\n`
     }
   }
-  msg += `\n当前: \`${current}\` ⭐\n/model <全名> 或 /model #序号 切换\n/models refresh 强制刷新缓存`
+  msg += `\n当前: \`${current}\` ⭐\n/model <名称> 或 /model #序号 切换\n/models refresh 强制刷新缓存`
   return msg
 }
 
-/** /model — show currently selected model */
-async function handleModelCurrent(ctx: RouteContext): Promise<string> {
+async function handleModelCurrent(driver: ModelDriver, ctx: RouteContext): Promise<string> {
   const session = await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, ctx.defaultAgent)
-  const defaultModel = await resolveDefaultModel()
+  const defaultModel = await resolveDefaultModel(driver)
   const current = session?.model || defaultModel
-  return `🧠 当前模型: \`${current}\`\n\n使用 /model <全名> 或 /model #序号 切换\n使用 /models 查看所有模型`
+  return `🧠 当前 ${driver.label} 模型: \`${current}\`\n\n使用 /model <名称> 或 /model #序号 切换\n使用 /models 查看所有模型`
 }
 
-/** /model <name|#N> — switch to a different model */
-async function handleModelSwitch(input: string, ctx: RouteContext): Promise<string> {
-  // Check if input is an index reference #N or just N
+async function handleModelSwitch(driver: ModelDriver, input: string, ctx: RouteContext): Promise<string> {
+  // /model #N (or /model N) — index lookup
   const indexMatch = input.match(/^#?(\d+)$/)
   if (indexMatch) {
     const num = parseInt(indexMatch[1], 10)
@@ -125,86 +268,24 @@ async function handleModelSwitch(input: string, ctx: RouteContext): Promise<stri
     const model = cached[num - 1]
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, ctx.defaultAgent)
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { model })
-    return `✅ 模型已切换: \`${model}\``
+    return `✅ ${driver.label} 模型已切换: \`${model}\``
   }
 
-  // Check if input is a short name (no /) but looks like a model name
-  if (!input.includes('/')) {
-    return `⚠️ 模型格式: provider/model\n例: /model deepseek/deepseek-v4-pro\n或: /model #5 (序号切换)\n\n先 /models 查看`
+  // Namespaced drivers require `provider/model`; flat drivers accept bare names.
+  if (driver.namespaced && !input.includes('/')) {
+    return `⚠️ 模型格式: provider/model\n${driver.switchHint}\n或: /model #N (序号切换)\n\n先 /models 查看`
   }
 
-  const models = await getModelList()
-  const exactMatch = models.find(m => m === input || m.endsWith(`/${input}`))
+  const models = await getModelList(driver)
+  const exactMatch = models.find(m => m === input || (driver.namespaced && m.endsWith(`/${input}`)))
   if (!exactMatch && models.length > 0) {
-    return `⚠️ 模型 "${input}" 不在列表中。\n\n先 /models 查看可用模型。`
+    return `⚠️ 模型 "${input}" 不在 ${driver.label} 列表中。\n\n先 /models 查看可用模型。`
   }
 
   const resolved = exactMatch || input
   await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, ctx.defaultAgent)
   await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { model: resolved })
-  return `✅ 模型已切换: \`${resolved}\``
-}
-
-interface ListCache<T> { value: T; ts: number }
-let modelListCache: ListCache<string[]> | null = null
-let defaultModelCache: ListCache<string> | null = null
-
-function invalidateModelCache(): void {
-  modelListCache = null
-  defaultModelCache = null
-}
-
-function getModelList(): Promise<string[]> {
-  return new Promise((resolve) => {
-    if (modelListCache && Date.now() - modelListCache.ts < MODEL_LIST_TTL_MS) {
-      return resolve(modelListCache.value)
-    }
-    const proc = spawn('opencode', ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
-    let out = ''
-    proc.stdout?.on('data', d => out += d.toString())
-    proc.on('close', () => {
-      const lines = out.trim().split('\n').filter(Boolean)
-      modelListCache = { value: lines, ts: Date.now() }
-      resolve(lines)
-    })
-    proc.on('error', () => resolve([]))
-  })
-}
-
-/** Resolve opencode's actual default model name */
-async function resolveDefaultModel(): Promise<string> {
-  if (defaultModelCache && Date.now() - defaultModelCache.ts < MODEL_LIST_TTL_MS) {
-    return defaultModelCache.value
-  }
-
-  // Read opencode.json to find the first configured model as the default
-  try {
-    const { readFile } = await import('node:fs/promises')
-    const { homedir } = await import('node:os')
-    const { join } = await import('node:path')
-    const configPath = join(homedir(), '.config', 'opencode', 'opencode.json')
-    const raw = await readFile(configPath, 'utf-8')
-    const config = JSON.parse(raw) as Record<string, unknown>
-    const provider = config.provider as Record<string, { models?: Record<string, unknown> }> | undefined
-    if (provider) {
-      for (const [, p] of Object.entries(provider)) {
-        if (p.models && typeof p.models === 'object') {
-          const keys = Object.keys(p.models)
-          if (keys.length > 0) {
-            defaultModelCache = { value: keys[0], ts: Date.now() }
-            return keys[0]
-          }
-        }
-      }
-    }
-  } catch { /* fall through */ }
-
-  const models = await getModelList()
-  if (models.length > 0) {
-    defaultModelCache = { value: models[0], ts: Date.now() }
-    return models[0]
-  }
-  return 'unknown'
+  return `✅ ${driver.label} 模型已切换: \`${resolved}\``
 }
 
 /** Test-only diagnostic: clear caches between cases. */

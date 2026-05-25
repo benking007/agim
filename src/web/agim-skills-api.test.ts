@@ -10,6 +10,10 @@ const WS_OWN = mkdtempSync(join(tmpdir(), 'agim-skills-ws-'))
 const BUILTIN_OWN = mkdtempSync(join(tmpdir(), 'agim-skills-builtin-'))
 process.env.IMHUB_SKILLS_WORKSPACE_DIR = WS_OWN
 process.env.IMHUB_SKILLS_BUILTIN_DIR = BUILTIN_OWN
+// v1.2.48 multi-root scan (auto mode) inherits ~/.claude/skills etc. which
+// breaks the per-test 'fresh install → count=0' fixture on dev boxes with
+// CLI agents installed. Pin to agim-only so we only see WS_OWN + BUILTIN_OWN.
+process.env.IMHUB_SKILLS_MODE = 'agim-only'
 
 const { handleAgimSkillsApi } = await import('./agim-skills-api.js')
 const { invalidateSkillsCache } = await import('../core/skills/loader.js')

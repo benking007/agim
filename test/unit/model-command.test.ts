@@ -18,13 +18,16 @@ function makeCtx(suffix: string, agent = 'opencode'): RouteContext {
 }
 
 describe('/model', () => {
-  it('refuses on non-opencode agent with friendly message', async () => {
+  it('refuses on unsupported agent with friendly hint enumerating supported drivers', async () => {
     const ctx = makeCtx('model-cc', 'claude-code')
     // Pre-create a session pinned to claude-code so handleModelCommand sees it
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'claude-code')
     const out = await handleModelCommand('', ctx)
-    expect(out).toContain('仅在')
+    // v1.2.50: wording was "仅在 opencode 下可用"; now enumerates all
+    // registered ModelDrivers so the user knows /cs is also an option.
+    expect(out).toContain('不可用')
     expect(out).toContain('opencode')
+    expect(out).toContain('cursor')
   })
 
   it('rejects /model #N before /models has run', async () => {

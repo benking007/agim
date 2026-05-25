@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.57] - 2026-05-25
+
+### Added
+
+- **9 new builtin skills** inspired by nanobot's skill catalog, dropped
+  into `src/core/skills/builtin/`. All are pure-markdown SKILL.md
+  packages — they teach the agent procedural knowledge and trigger
+  phrases without adding code. Available to every agim agent that
+  reads `agim skills available` (native injects into prompt; CLI
+  agents load via `mcp__imhub__read_skill`):
+  - `weather` — wttr.in + Open-Meteo, no API key
+  - `summarize` — URL / article / YouTube / PDF summarisation flow
+  - `github` — `gh` CLI patterns (PR, issue, CI runs, gh api)
+  - `my` — agent self-introspection (what model, what cwd, what tools)
+  - `skill-creator` — meta-skill for writing new SKILL.md packages
+  - `tmux` — interactive-TTY guidance with isolated-socket convention
+  - `long-goal` — sustained multi-turn objectives via `/goal set`,
+    progress logging, and acceptance-criteria rules (adapted from
+    nanobot but mapped onto agim's existing goals.ts)
+  - `agim-reminders` — replaces nanobot's `cron`; teaches the
+    `mcp__imhub__create_reminder` family with concrete examples
+  - `agim-memory` — replaces nanobot's `memory`; teaches the
+    `memory_*` + `*_memo` tools and the 5W1H taxonomy
+
+### Deferred
+
+- `long_task` / `complete_goal` MCP tools (nanobot-style auto-register)
+  intentionally deferred to v1.2.58 — the `long-goal` skill currently
+  routes through the existing `/goal set` slash command. Will revisit
+  after observing how often agents reach for self-registered goals
+  in real IM use.
+
 ## [1.2.56] - 2026-05-25
 
 ### Fixed

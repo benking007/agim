@@ -70,6 +70,10 @@ import {
   buildImhubDispatcher,
   getImhubTools,
 } from '../../../core/llm/imhub-dispatcher.js'
+import {
+  buildFsDispatcher,
+  getFsTools,
+} from '../../../core/llm/fs-dispatcher.js'
 import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -133,6 +137,7 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     ``,
     `Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):`,
     `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent`,
+    `  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0`,
     `  - External MCP servers configured by the operator:`,
     externalMcp,
     ``,
@@ -247,6 +252,12 @@ function resolvePolicy(): PolicyApprovalGateConfig {
   // remove individual entries via IMHUB_NATIVE_AGENT_DENYLIST.
   const defaultBuiltins = [
     'native_echo', 'native_now', 'native_random_uuid',
+    // fs read-only tools (v1.2.58). write_file deliberately omitted —
+    // it mutates the workspace, even though sensitive-paths + workspace
+    // restriction prevent escape; an IM card per write keeps operator
+    // awareness intact. Operators who trust native can add it via
+    // IMHUB_NATIVE_AGENT_AUTOALLOW=native_write_file.
+    'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
     'mcp__imhub__read_skill', 'mcp__imhub__list_skills',
     'mcp__imhub__save_memo', 'mcp__imhub__search_memos',
     'mcp__imhub__update_memo', 'mcp__imhub__delete_memo',
@@ -486,19 +497,25 @@ class NativeAgentAdapter implements AgentAdapter {
       callerAgent: 'native',
       callerDepth: opts.callDepth ?? 0,
     }
+    // Resolve cwd here so fs-dispatcher can constrain reads/writes to
+    // the per-thread workspace subtree. Was previously resolved AFTER
+    // dispatch composition; moved up so fs tools see the right root.
+    const cwd = resolveAgentCwd('native', opts) || defaultAgentCwd('native')
     const dispatch = combineDispatchers(
       buildBuiltinDispatcher(),
+      buildFsDispatcher({ cwd }),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
 
-    // Compose tool list the same way (built-in → imhub → external MCP).
+    // Compose tool list the same way (built-in → fs → imhub → external MCP).
     // Provider tool roster wins on duplicate names via "later
     // definition wins" semantics inside the provider, but our naming
     // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
     // so collisions are not expected in practice.
     const tools: ToolDef[] = [
       ...getBuiltinTools(),
+      ...getFsTools(),
       ...getImhubTools(),
       ...getAllMcpTools(),
     ]
@@ -518,13 +535,11 @@ class NativeAgentAdapter implements AgentAdapter {
       threadId: opts.threadId,
     })
 
-    // Resolve native's working directory the same way claude-code does:
-    // IM calls (threadId + platform set) pin to ~/.agim-workspaces/native/
-    // so the agent has a stable, isolated home for any future filesystem
-    // tools and AGENTS.md guidance. Out-of-IM calls (web, scheduler) fall
-    // back to defaultAgentCwd so the prompt always reports a real path
-    // rather than systemd's '/'.
-    const cwd = resolveAgentCwd('native', opts) || defaultAgentCwd('native')
+    // Note: cwd is resolved above (before dispatch composition) so fs
+    // tools can constrain reads/writes to the per-thread workspace.
+    // Was previously resolved here — that was fine before native had
+    // fs tools, but fs-dispatcher now needs the value at dispatch
+    // build time.
 
     const traceId = `native-${sessionId}-${Date.now()}`
     // Wall-clock cap for the agent loop. agim's IM-layer enforces a 30-

@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.58] - 2026-05-25
+
+### Added
+
+- **5 native filesystem tools** (`fs-dispatcher.ts`) — closes the biggest
+  gap vs nanobot / Claude / Codex. Before v1.2.58 the native agent had
+  to A2A-delegate every "read this file" / "list this dir" / "grep
+  for X" to a CLI sub-agent, which paid the full claude-code spawn
+  cost and risked the 30-min hard timeout:
+  - `native_read_file(path, max_bytes?)` — UTF-8 read, truncates over 256KB
+  - `native_write_file(path, content, mode?)` — overwrite or append, 1MB cap
+  - `native_list_dir(path, max_entries?)` — entry name + type + size
+  - `native_glob(pattern, root?, max_results?)` — uses ripgrep when
+    available; falls back to fs walk with a minimatch-style matcher
+  - `native_grep(pattern, path?, glob?, output_mode?, max_matches?,
+    case_insensitive?)` — ripgrep wrapper (rg required for now)
+- **Workspace restriction** — default-on via `IMHUB_NATIVE_FS_RESTRICT`
+  (`'0'` disables). When on, every fs tool's path must resolve under
+  the per-thread native cwd subtree (typically
+  `~/.agim-workspaces/native/<thread>/`). Sensitive-path denylist
+  (`sensitive-paths.ts`) applies even when restriction is off.
+- **Per-tool wall-clock** — every fs tool races against
+  `IMHUB_NATIVE_FS_TIMEOUT_MS` (default 60_000). Prevents a slow
+  remote-mounted file from hanging the whole agent loop.
+- **Default auto-allow** for the 4 read-only fs tools
+  (`native_read_file` / `native_list_dir` / `native_glob` /
+  `native_grep`) so native doesn't pop an IM card for every file
+  inspection. `native_write_file` stays approval-gated by default —
+  operators who trust native can add it via
+  `IMHUB_NATIVE_AGENT_AUTOALLOW`.
+
+### Deferred
+
+- `native_exec` (one-shot shell), `web_fetch`, `web_search` (duckduckgo
+  → metaso fallback), `long_task` / `complete_goal` MCP tools, and the
+  bwrap sandbox path are scheduled for v1.2.59 — kept separate so the
+  higher-risk pieces can be reviewed without dragging the fs additions.
+
 ## [1.2.57] - 2026-05-25
 
 ### Added

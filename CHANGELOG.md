@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.64] - 2026-05-26
+
+### Fixed
+
+- **Native picked `native_web_fetch` for keyword queries** that should
+  have routed to `native_web_search` (observed: "查找下今天最新的科技
+  新闻" fired `web_fetch` against a fabricated URL instead of `web_search`).
+  The two tool descriptions were too symmetrical for deepseek to
+  disambiguate; both mentioned "fetch" and "search" interchangeably.
+  - Rewrote both descriptions in `web-dispatcher.ts` with explicit
+    trigger phrases (`读这个链接 …` / `fetch URL` → fetch; `查找 …` /
+    `搜一下 …` / `find …` → search) and a cross-reference: web_search
+    description now states "DO NOT use native_web_fetch when the user
+    only gave keywords without a URL".
+  - Added a Web HARD RULE block in native's system prompt: URL given
+    → fetch; keywords only → search FIRST; common pattern is
+    search → pick result → fetch.
+
 ## [1.2.63] - 2026-05-26
 
 ### Added

@@ -39,10 +39,16 @@ export function getWebTools(): ToolDef[] {
     {
       name: 'native_web_fetch',
       description:
-        'Fetch a URL and return its body as text. Default uses the Jina Reader (r.jina.ai) to ' +
-        'extract readable text from HTML; pass format="raw" to get the response body verbatim ' +
-        '(useful for JSON APIs). 200KB max, 30s timeout. Private IP ranges are blocked unless ' +
-        'IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.',
+        'Fetch the contents of a SPECIFIC, KNOWN URL the user already supplied (or that you pulled ' +
+        'from search results). DO NOT use this to "find" / "look up" / "search" / "discover" — ' +
+        'use native_web_search for that. ' +
+        '\n\n' +
+        '**Trigger phrases**: "读这个页面/链接 …" · "fetch …" · "open this URL …" · "看一下 https://…" · ' +
+        'when you have a result from native_web_search and want the full body. ' +
+        '\n\n' +
+        'Default `format="reader"` runs the URL through r.jina.ai for HTML→text extraction; ' +
+        '`format="raw"` returns the response body verbatim (use for JSON APIs). 200KB max, ' +
+        '30s timeout. Private IP ranges blocked unless IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.',
       parameters: {
         type: 'object',
         properties: {
@@ -60,9 +66,21 @@ export function getWebTools(): ToolDef[] {
     {
       name: 'native_web_search',
       description:
-        'Web search. Backend chain: DuckDuckGo HTML (no key) → Metaso fallback on failure (needs ' +
-        'METASO_API_KEY). Returns up to 8 results by default with title + url + snippet. ' +
-        'Use this for "search the web for …" / "what does X say about …" / "find the docs for …".',
+        'Web search by KEYWORDS — use this when the user wants to FIND / LOOK UP / DISCOVER ' +
+        'something and you do NOT already have a specific URL. Returns up to 8 results with ' +
+        'title + url + snippet; if any result is interesting, follow up with native_web_fetch ' +
+        'on the chosen URL. ' +
+        '\n\n' +
+        '**Trigger phrases (Chinese)**: "查找 …" · "搜一下 …" · "找最新 …" · "搜索 …" · ' +
+        '"今天/最近的 X 是什么" · "X 的相关资料 / 教程 / 新闻". ' +
+        '\n\n' +
+        '**Trigger phrases (English)**: "search for …" · "find …" · "look up …" · ' +
+        '"what\'s the latest on …" · "any news about …". ' +
+        '\n\n' +
+        'DO NOT use native_web_fetch when the user only gave keywords without a URL — ' +
+        'always start with native_web_search, then optionally native_web_fetch on a result. ' +
+        '\n\n' +
+        'Backend chain: DuckDuckGo HTML (no key) → Metaso fallback (needs METASO_API_KEY).',
       parameters: {
         type: 'object',
         properties: {

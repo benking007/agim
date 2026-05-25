@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.56] - 2026-05-25
+
+### Fixed
+
+- **Crash loop during graceful shutdown** — when systemd sent SIGTERM
+  while a long-running A2A → opencode call was in flight, the
+  `opencodeServe.stop()` step inside `gracefulShutdown` aborted the
+  in-flight undici fetch. The resulting `TypeError: terminated`
+  surfaced asynchronously *after* a2a's own try/catch and escaped as
+  an `unhandledRejection`. Under Node 22+'s
+  `--unhandled-rejections=throw` default this crashed the process
+  with `exit 1` — systemd then auto-restarted via `Restart=always`
+  10s later. Symptom for IM users: repeated 10-15s "service
+  interruption" each time a restart coincided with a slow A2A.
+  We now install process-level `unhandledRejection` and
+  `uncaughtException` handlers in `cli.ts` that log + swallow so
+  shutdown can finish on its own terms.
+- **admin-allowlist unit tests** — the file-fallback added in
+  v1.2.55 read the operator's real `~/.agim/env` on the dev/CI
+  host, breaking 7 tests that expected an empty allowlist after
+  `setEnv(undefined)`. Added a test opt-out: setting
+  `IMHUB_ENV_FILE_PATH=''` disables the file read entirely (the
+  two admin test files now do this at module load).
+
 ## [1.2.55] - 2026-05-25
 
 ### Fixed

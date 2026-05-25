@@ -1,4 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+
+// Disable the env-file fallback BEFORE importing admin-allowlist — otherwise
+// readFileAdminUsers() picks up the operator's real ~/.agim/env on the dev
+// box and pollutes tests that expect an empty allowlist.
+process.env.IMHUB_ENV_FILE_PATH = ''
+
 import { isAdmin, isAllowlistConfigured, denialMessage, _resetCache } from '../../src/core/admin-allowlist.js'
 
 const originalEnv = process.env.IMHUB_ADMIN_USERS

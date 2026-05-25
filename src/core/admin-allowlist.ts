@@ -44,14 +44,20 @@ let cachedFileRaw: string | null = null
 function readFileAdminUsers(): string {
   if (cachedFileRaw !== null) return cachedFileRaw
   cachedFileRaw = ''
+  // Test opt-out: IMHUB_ENV_FILE_PATH='' disables file fallback entirely
+  // so unit tests aren't polluted by the operator's real allowlist. A
+  // non-empty value overrides the default path.
+  const overridePath = process.env.IMHUB_ENV_FILE_PATH
+  if (overridePath === '') return cachedFileRaw
   try {
     // Lazy import so unit tests that don't touch admin code don't pay
     // the disk lookup. ENV_FILE is the same path systemd reads.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('node:fs') as typeof import('node:fs')
     const { ENV_FILE } = require('../cli-ui/env-file.js') as { ENV_FILE: string }
-    if (!fs.existsSync(ENV_FILE)) return cachedFileRaw
-    const raw = fs.readFileSync(ENV_FILE, 'utf-8')
+    const filePath = overridePath && overridePath.length > 0 ? overridePath : ENV_FILE
+    if (!fs.existsSync(filePath)) return cachedFileRaw
+    const raw = fs.readFileSync(filePath, 'utf-8')
     // Take the LAST IMHUB_ADMIN_USERS= line (matches systemd's
     // last-wins semantics + agim's own readEnvFile object overwrite).
     const lines = raw.split('\n')

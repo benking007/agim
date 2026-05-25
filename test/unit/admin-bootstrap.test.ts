@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
+
+// Disable env-file fallback so admin-allowlist doesn't pick up the operator's
+// real ~/.agim/env on the dev box (would pollute these tests).
+process.env.IMHUB_ENV_FILE_PATH = ''
+
 import {
   ensureBootstrapTokenIfNeeded,
   consumeBootstrapToken,

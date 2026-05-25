@@ -23,7 +23,7 @@ import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
 import { crossSpawn } from './utils/cross-platform.js'
 import type { MessageContext } from './core/types.js'
-import { generateTraceId, createLogger, sanitizeUserText } from './core/logger.js'
+import { generateTraceId, createLogger, sanitizeUserText, logger as rootLogger } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
 import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
@@ -102,6 +102,31 @@ program
       return
     }
     console.log('🚀 Starting Agim (阿吉姆)…')
+
+    // Process-level rejection guard. Without it, a stray Promise reject
+    // (typically an in-flight undici fetch torn down during graceful
+    // shutdown — e.g. a long-running A2A → opencode call whose socket
+    // gets closed when serve-manager.stop() kills opencode-serve)
+    // crashes the entire Node process under Node 22+'s
+    // `--unhandled-rejections=throw` default. agim was looping on
+    // exit-code=1 + Restart=always 10s, which presents as recurring
+    // "服务中断" to IM users. Catching the rejection here demotes it
+    // to a warning so the rest of gracefulShutdown can finish cleanly.
+    // We intentionally do not call process.exit — let the natural
+    // shutdown path complete.
+    process.on('unhandledRejection', (reason) => {
+      const err = reason instanceof Error
+        ? { name: reason.name, message: reason.message, stack: reason.stack }
+        : { message: String(reason) }
+      rootLogger.warn({ event: 'process.unhandled_rejection', err },
+        'unhandledRejection swallowed (would have crashed Node)')
+    })
+    process.on('uncaughtException', (err) => {
+      rootLogger.error({
+        event: 'process.uncaught_exception',
+        err: { name: err.name, message: err.message, stack: err.stack },
+      }, 'uncaughtException swallowed (would have crashed Node)')
+    })
 
     // R14 — pre-flight self-check. Two failure modes the operator
     // hit before this guard existed:

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.54] - 2026-05-25
+
+### Fixed
+
+- Web settings → Viewer: saving **「禁用社区默认」** (`IMHUB_VIEWER_NO_DEFAULT_REMOTE`)
+  failed with「请求里的 key 均不可编辑」because the env whitelist omitted that
+  key. It is now editable via `PUT /api/env`.
+- Long-message viewer master switch (`IMHUB_VIEWER_ENABLED=0`) now hard-blocks
+  all viewer routing (truncate/link + remote paste + A2A artifact snapshots).
+  Previously only `decideRender` gated on enabled; A2A snapshots could still
+  upload when remote mode resolved.
+- Viewer settings UI: **「禁用社区默认」** is disabled when viewer is off; unchecking
+  **启用** clears the opt-out draft so operators don't save a stale flag.
+
 ## [1.2.52] - 2026-05-25
 
 ### Fixed

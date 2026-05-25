@@ -57,6 +57,7 @@ const VIEWER_OFF_ENV = {
   env: {
     IMHUB_VIEWER_ENABLED: '0',
     IMHUB_VIEWER_TUNNEL_MODE: 'off',
+    IMHUB_VIEWER_NO_DEFAULT_REMOTE: '0',
   },
   secretKeys: ['IMHUB_BAIDU_MAP_AK'],
 }
@@ -207,6 +208,53 @@ describe('/settings/viewer', () => {
     await waitFor(() => {
       // i18n template: "AK length is {{length}} — usually a Baidu AK is 32 characters"
       expect(screen.getByText(/AK length is 8|长度为 8/i)).toBeInTheDocument()
+    })
+  })
+
+  it('toggling "disable community default" sends PUT with IMHUB_VIEWER_NO_DEFAULT_REMOTE', async () => {
+    const enabledEnv = {
+      env: {
+        IMHUB_VIEWER_ENABLED: '1',
+        IMHUB_VIEWER_TUNNEL_MODE: 'off',
+      },
+      secretKeys: ['IMHUB_BAIDU_MAP_AK'],
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = String(input)
+      if (isEnvGet(u, init?.method)) return jsonResponse(enabledEnv)
+      if (isEnvPut(u, init?.method)) return jsonResponse({
+        env: { ...enabledEnv.env, IMHUB_VIEWER_NO_DEFAULT_REMOTE: '1' },
+        secretKeys: enabledEnv.secretKeys,
+      })
+      if (u === '/api/viewer/tunnel') return jsonResponse(TUNNEL_RUNNING)
+      return jsonResponse({})
+    })
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText(/long-message links|长消息短链/i)).toBeInTheDocument()
+    })
+    const checkboxes = await waitFor(() => {
+      const boxes = screen.getAllByRole('checkbox')
+      // [0]=enable viewer, [1]=disable community default
+      if (boxes.length < 2) throw new Error('expected enable + noDefaultRemote checkboxes')
+      return boxes
+    })
+    fireEvent.click(checkboxes[1]!)
+    const saveBtn = await waitFor(() => {
+      const btn = screen.getByRole('button', { name: /^save$|^保存$/i })
+      if (btn.hasAttribute('disabled')) throw new Error('save not enabled yet')
+      return btn
+    })
+    fireEvent.click(saveBtn)
+    await waitFor(() => {
+      const putCall = fetchSpy.mock.calls.find(
+        (c) => isEnvPut(String(c[0]), (c[1] as RequestInit | undefined)?.method),
+      )
+      expect(putCall).toBeDefined()
+      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+        updates: Record<string, string | null>
+      }
+      expect(body.updates.IMHUB_VIEWER_NO_DEFAULT_REMOTE).toBe('1')
     })
   })
 

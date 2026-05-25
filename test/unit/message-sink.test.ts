@@ -186,6 +186,48 @@ describe('deliver text routing via fuzzy match', () => {
   })
 })
 
+describe('deliver viewer routing (agent source)', () => {
+  const VIEWER_KEYS = [
+    'IMHUB_VIEWER_ENABLED',
+    'IMHUB_VIEWER_PUBLIC_BASE_URL',
+    'IMHUB_VIEWER_TUNNEL_MODE',
+    'IMHUB_VIEWER_NO_DEFAULT_REMOTE',
+    'IMHUB_VIEWER_REMOTE_PASTE_URL',
+  ] as const
+
+  beforeEach(() => {
+    for (const k of VIEWER_KEYS) delete process.env[k]
+  })
+
+  it('does not truncate or link when IMHUB_VIEWER_ENABLED is off', async () => {
+    process.env.IMHUB_VIEWER_ENABLED = '0'
+    const a = makeAdapter('viewoff')
+    register(a)
+    const long = 'x'.repeat(600)
+    await sinkMod.deliver({
+      platform: 'viewoff', channelId: 'c', threadId: 't',
+      payload: long, kind: 'text', priority: 'high', source: 'agent',
+    })
+    expect(a.log[0]?.payload).toBe(long)
+    expect(String(a.log[0]?.payload)).not.toMatch(/viewer\.iclaw|📎/)
+  })
+
+  it('does not use default remote when enabled but NO_DEFAULT_REMOTE=1 and no URL', async () => {
+    process.env.IMHUB_VIEWER_ENABLED = '1'
+    process.env.IMHUB_VIEWER_NO_DEFAULT_REMOTE = '1'
+    const a = makeAdapter('viewnodef')
+    register(a)
+    const long = 'y'.repeat(600)
+    await sinkMod.deliver({
+      platform: 'viewnodef', channelId: 'c', threadId: 't',
+      payload: long, kind: 'text', priority: 'high', source: 'agent',
+    })
+    const sent = String(a.log[0]?.payload)
+    expect(sent).not.toMatch(/viewer\.iclaw\.host/)
+    expect(sent).not.toMatch(/📎\s+https?:\/\//)
+  })
+})
+
 describe('deliver card kind', () => {
   it('uses sendCard when adapter implements it', async () => {
     const a = makeAdapter('cardp', { withCard: true })

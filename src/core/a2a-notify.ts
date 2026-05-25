@@ -24,7 +24,7 @@ import { promises as fs } from 'node:fs'
 import { logger as rootLogger } from './logger.js'
 import { sink } from './message-sink.js'
 import { savePaste } from './viewer-local.js'
-import { buildPasteUrl, resolveViewerMode } from './viewer-config.js'
+import { buildPasteUrl, getViewerConfig, resolveViewerMode } from './viewer-config.js'
 import { postPasteRemote } from './viewer-remote.js'
 import { getArtifactsDir } from './artifacts.js'
 import type { RouteContext } from './router.js'
@@ -331,6 +331,7 @@ async function snapshotToViewerLink(
   filename: string,
   title: string,
 ): Promise<string | null> {
+  if (!getViewerConfig().enabled) return null
   const outputDir = getArtifactsDir(jobId).outputDir
   try {
     const buf = await fs.readFile(join(outputDir, filename))

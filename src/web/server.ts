@@ -2610,6 +2610,8 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_VIEWER_CODE_LINES',
   'IMHUB_VIEWER_MAX_PASTES',
   'IMHUB_VIEWER_TUNNEL_MODE',
+  // v1.2.43 — opt out of community default paste server (viewer.iclaw.host).
+  'IMHUB_VIEWER_NO_DEFAULT_REMOTE',
   // v1.1.10 — A2A notification settings (see src/core/a2a-notify.ts).
   'IMHUB_A2A_TIMEOUT_DEFAULT_MS',
   'IMHUB_A2A_MAX_TIMEOUT_MS',

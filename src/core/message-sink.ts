@@ -188,7 +188,9 @@ async function doSend(row: OutboxRow, overrideAdapter?: MessengerAdapter): Promi
  */
 async function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): Promise<string> {
   const cfg = getViewerConfig()
-  const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: cfg.enabled })
+  // Master switch off → never truncate, never upload to remote paste.
+  if (!cfg.enabled) return text
+  const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: true })
 
   if (decision.mode === 'inline') {
     return decision.inlineText ?? text

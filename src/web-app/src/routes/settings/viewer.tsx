@@ -214,7 +214,15 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
           <input
             type="checkbox"
             checked={draft.enabled}
-            onChange={(e) => setField('enabled', e.target.checked)}
+            onChange={(e) => {
+              const on = e.target.checked
+              setDraft((d) => ({
+                ...d,
+                enabled: on,
+                // Opt-out only applies when viewer is on; clear when disabling.
+                noDefaultRemote: on ? d.noDefaultRemote : false,
+              }))
+            }}
             className="h-4 w-4 accent-accent cursor-pointer"
           />
           <span className="font-medium">{t('viewerSettings.viewer.enableLabel')}</span>
@@ -254,11 +262,16 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
           label={t('viewerSettings.viewer.noDefaultRemote')}
           hint={t('viewerSettings.viewer.noDefaultRemoteHint')}
         >
-          <label className="inline-flex items-center gap-2 text-xs">
+          <label className={cn(
+            'inline-flex items-center gap-2 text-xs',
+            !draft.enabled && 'opacity-50 cursor-not-allowed',
+          )}>
             <input
               type="checkbox"
               checked={draft.noDefaultRemote}
+              disabled={!draft.enabled}
               onChange={(e) => setField('noDefaultRemote', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer disabled:cursor-not-allowed"
             />
             <span>{t('viewerSettings.viewer.noDefaultRemoteLabel')}</span>
           </label>

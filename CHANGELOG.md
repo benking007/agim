@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.60] - 2026-05-25
+
+### Changed
+
+- **Native non-allowlist tools now ask the user via IM card** instead of
+  silent deny. Previously, in the default `allow-list` policy mode any
+  tool not in `autoAllow` was silently denied — the model received a
+  bare `deny` and often fabricated an explanation ("denied by user")
+  that misled the user about who actually said no. `native_write_file`
+  in particular was effectively unusable (it's intentionally not in
+  autoAllow because writes mutate the workspace).
+  - `policy-approval-gate.ts` gains an optional `askUser` callback.
+    When the policy would otherwise return `deny` (and the mode is NOT
+    `deny-all`), it now routes through `askUser` to fetch a live
+    decision. Denylist entries and `deny-all` mode bypass `askUser` —
+    those remain non-negotiable kill switches.
+  - `native/index.ts` wires `askUser` to `approvalBus.registerSyntheticPending`,
+    which uses the same IM card pipeline that claude-code's MCP sidecar
+    uses for `Bash`/`Edit`/`Write` approvals. The user sees a card with
+    the tool name + inputs, can allow / deny / "allow all for this
+    fingerprint", and the gate resolves accordingly. If the bus has no
+    notifier (CI / smoke-test path), native silently falls back to the
+    legacy silent-deny so tests don't hang.
+- **autoAllow lookup happens BEFORE mode resolution**, so adding a tool
+  to `IMHUB_NATIVE_AGENT_AUTOALLOW` always shortcuts the user-prompt
+  path regardless of mode.
+
 ## [1.2.59] - 2026-05-25
 
 ### Fixed

@@ -42,6 +42,21 @@ export interface PolicyApprovalGateConfig {
   /** Tools that are always denied regardless of mode (even in
    *  'allow-all'). Use this as the operator's emergency brake. */
   denyList?: string[]
+  /**
+   * v1.2.60 — optional human-in-the-loop callback. When the policy would
+   * otherwise return 'deny' (mode='allow-list' and tool not in autoAllow;
+   * or mode='read-only' and tool isn't read-shaped), call this callback
+   * to ask the user via IM. The callback should send an IM approval card
+   * and await the user's reply, then resolve to 'allow' or 'deny'.
+   *
+   * If `askUser` is NOT provided, the gate falls back to the legacy
+   * silent-deny behavior (preserves the v1.2.59 / earlier contract for
+   * tests + callers that haven't wired the bus yet).
+   *
+   * Tools on `denyList` are NEVER routed through askUser — the denylist
+   * is an operator-controlled emergency brake.
+   */
+  askUser?: (call: ToolCallRequest) => Promise<'allow' | 'deny'>
 }
 
 /**
@@ -77,22 +92,45 @@ export function buildPolicyApprovalGate(cfg: PolicyApprovalGateConfig = {}): App
   const mode: ApprovalMode = cfg.mode ?? 'allow-list'
   const autoAllow = new Set(cfg.autoAllow ?? [])
   const denyList = new Set(cfg.denyList ?? [])
+  const askUser = cfg.askUser
   return async (call: ToolCallRequest): Promise<'allow' | 'deny'> => {
+    // denylist is non-negotiable — never escalate to user.
     if (denyList.has(call.name)) return 'deny'
+    // autoAllow short-circuit — never bother the user.
     if (autoAllow.has(call.name)) return 'allow'
+    // Compute the "would-be" decision from the mode rule.
+    let modeDecision: 'allow' | 'deny'
     switch (mode) {
       case 'allow-all':
-        return 'allow'
+        modeDecision = 'allow'
+        break
       case 'deny-all':
-        return 'deny'
+        modeDecision = 'deny'
+        break
       case 'read-only':
-        return looksReadOnly(call.name) ? 'allow' : 'deny'
+        modeDecision = looksReadOnly(call.name) ? 'allow' : 'deny'
+        break
       case 'allow-list':
-        // Outside the allow-list → deny. This is the default mode.
-        return 'deny'
+        // Outside the allow-list → would-be deny.
+        modeDecision = 'deny'
+        break
       default:
-        return 'deny'
+        modeDecision = 'deny'
     }
+    // v1.2.60 — escalate "would-be deny" to user via askUser callback
+    // (if wired). 'deny-all' is intentional + does NOT escalate. Allow
+    // decisions go through unchanged.
+    if (modeDecision === 'deny' && askUser && mode !== 'deny-all') {
+      try {
+        return await askUser(call)
+      } catch {
+        // If the IM card pipeline throws (no notifier, socket closed,
+        // ctx missing), fall back to the legacy silent-deny so the
+        // agent loop still makes progress.
+        return 'deny'
+      }
+    }
+    return modeDecision
   }
 }
 

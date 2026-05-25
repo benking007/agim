@@ -78,6 +78,8 @@ import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { handlePushOp } from '../../../core/push-rpc.js'
+import { approvalBus } from '../../../core/approval-bus.js'
+import { randomUUID as _nativeRandomUUID } from 'node:crypto'
 import type { ToolCallRequest } from '../../../core/llm/provider-base.js'
 import { maybeCompactHistory } from '../../../core/llm/auto-compact.js'
 import { existsSync as fsExistsSync, statSync as fsStatSync, readFileSync as fsReadFileSync } from 'node:fs'
@@ -282,6 +284,44 @@ function resolvePolicy(): PolicyApprovalGateConfig {
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
     : autoAllow
   return { mode, autoAllow: effectiveAllow, denyList }
+}
+
+/**
+ * v1.2.60 — bridge native's policy gate to the approval-bus so tools
+ * that the gate would otherwise silently deny instead surface an IM
+ * approval card. Mirrors how claude-code's MCP sidecar uses
+ * registerSyntheticPending. Resolves to 'allow' / 'deny' from the
+ * user's button tap / text reply / auto-allow rule. Throws (caught by
+ * the gate) when the bus can't reach the user — caller falls back to
+ * silent-deny in that case.
+ */
+function buildNativeAskUser(opts: {
+  runId: string
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}): (call: ToolCallRequest) => Promise<'allow' | 'deny'> {
+  const baseCtx = {
+    platform: opts.platform,
+    channelId: opts.channelId,
+    threadId: opts.threadId,
+    userId: opts.userId,
+    callerAgent: 'native',
+  }
+  return async (call: ToolCallRequest): Promise<'allow' | 'deny'> => {
+    const reqId = _nativeRandomUUID()
+    return await new Promise<'allow' | 'deny'>((resolve, reject) => {
+      void approvalBus.registerSyntheticPending({
+        runId: opts.runId,
+        reqId,
+        toolName: call.name,
+        input: call.arguments,
+        ctx: baseCtx,
+        dispatch: (decision) => resolve(decision.behavior),
+      }).catch((err) => reject(err))
+    })
+  }
 }
 
 function splitEnvList(raw: string | undefined): string[] {
@@ -535,7 +575,21 @@ class NativeAgentAdapter implements AgentAdapter {
     ]
 
     const policy = resolvePolicy()
-    const approve = buildPolicyApprovalGate(policy)
+    // v1.2.60 — when the policy would silently deny a tool call,
+    // escalate to the user via an IM approval card instead. Only
+    // wires when we have an actual IM thread (platform + threadId);
+    // CI / smoke-test runs without IM stay silent-deny so they don't
+    // hang awaiting a notifier that doesn't exist.
+    const askUser: PolicyApprovalGateConfig['askUser'] = (opts.platform && opts.threadId && approvalBus.hasNotifier())
+      ? buildNativeAskUser({
+          runId: sessionId,
+          platform: opts.platform,
+          channelId: opts.channelId ?? 'default',
+          threadId: opts.threadId,
+          userId: opts.userId ?? 'unknown',
+        })
+      : undefined
+    const approve = buildPolicyApprovalGate({ ...policy, askUser })
 
     const startedAt = Date.now()
     log.info({

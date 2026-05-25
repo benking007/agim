@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.61] - 2026-05-25
+
+### Added
+
+- **2 native web tools** in `src/core/llm/web-dispatcher.ts`:
+  - `native_web_fetch(url, format?)` — GET via undici. Default
+    `format="reader"` runs the URL through `r.jina.ai/` for clean
+    text extraction; `format="raw"` returns the body verbatim
+    (useful for JSON APIs). 200KB cap, 30s timeout.
+  - `native_web_search(query, n?)` — backend chain: DuckDuckGo HTML
+    SERP (no key, scraped) → Metaso fallback (needs
+    `METASO_API_KEY`). Returns up to 8 results with title + url +
+    snippet by default.
+- **SSRF defense** in `checkUrlSafety`: refuses non-http(s)
+  protocols, RFC1918 (10/8, 172.16-31/12, 192.168/16), loopback
+  (127/8, ::1, localhost), link-local (169.254/16, fe80::/10), and
+  IPv6 ULA (fc00::/7). Operators who genuinely need private targets
+  set `IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1`.
+- Both tools added to native's default autoAllow — they're read-only
+  and the SSRF block stays in force regardless.
+
 ## [1.2.60] - 2026-05-25
 
 ### Changed

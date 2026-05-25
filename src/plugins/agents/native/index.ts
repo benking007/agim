@@ -74,6 +74,10 @@ import {
   buildFsDispatcher,
   getFsTools,
 } from '../../../core/llm/fs-dispatcher.js'
+import {
+  buildWebDispatcher,
+  getWebTools,
+} from '../../../core/llm/web-dispatcher.js'
 import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -140,6 +144,7 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):`,
     `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent`,
     `  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0`,
+    `  - native web tools: native_web_fetch (r.jina.ai reader by default), native_web_search (duckduckgo → metaso fallback). Private IPs blocked.`,
     `  - External MCP servers configured by the operator:`,
     externalMcp,
     ``,
@@ -274,6 +279,9 @@ function resolvePolicy(): PolicyApprovalGateConfig {
     // awareness intact. Operators who trust native can add it via
     // IMHUB_NATIVE_AGENT_AUTOALLOW=native_write_file.
     'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
+    // web tools (v1.2.61) — read-only, safe-by-default. SSRF rules
+    // still apply to private IPs unless IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.
+    'native_web_fetch', 'native_web_search',
     'mcp__imhub__read_skill', 'mcp__imhub__list_skills',
     'mcp__imhub__save_memo', 'mcp__imhub__search_memos',
     'mcp__imhub__update_memo', 'mcp__imhub__delete_memo',
@@ -558,11 +566,12 @@ class NativeAgentAdapter implements AgentAdapter {
     const dispatch = combineDispatchers(
       buildBuiltinDispatcher(),
       buildFsDispatcher({ cwd }),
+      buildWebDispatcher(),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
 
-    // Compose tool list the same way (built-in → fs → imhub → external MCP).
+    // Compose tool list the same way (built-in → fs → web → imhub → external MCP).
     // Provider tool roster wins on duplicate names via "later
     // definition wins" semantics inside the provider, but our naming
     // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
@@ -570,6 +579,7 @@ class NativeAgentAdapter implements AgentAdapter {
     const tools: ToolDef[] = [
       ...getBuiltinTools(),
       ...getFsTools(),
+      ...getWebTools(),
       ...getImhubTools(),
       ...getAllMcpTools(),
     ]

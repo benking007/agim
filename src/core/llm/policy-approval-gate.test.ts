@@ -91,7 +91,7 @@ describe('policy-approval-gate', () => {
   // v1.2.60 — askUser escalation
   describe('askUser escalation (v1.2.60)', () => {
     it('routes would-be deny through askUser and returns its decision', async () => {
-      let asked: string | null = null
+      let asked: string | null = null as string | null
       const gate = buildPolicyApprovalGate({
         mode: 'allow-list',
         autoAllow: ['native_read_file'],

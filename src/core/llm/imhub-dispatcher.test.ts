@@ -78,4 +78,45 @@ describe('buildImhubDispatcher', () => {
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/question/i)
   })
+
+  // v1.2.59 A — per-turn call_agent cap. Validates that after the cap the
+  // dispatcher refuses further delegation with a self-correcting message.
+  it('call_agent cap refuses delegation after IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN', async () => {
+    const ORIG = process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN
+    process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = '1'
+    try {
+      // We mock by forcing missing args — call_agent's arg-validate runs
+      // BEFORE the cap check on the first call, so the first call fails
+      // with "requires both `agent` and `prompt`" not the cap. We pass
+      // valid args; callAgentByName will probably error because there's
+      // no real agent registered in the test env, but the cap check
+      // happens before the actual A2A call, so on the SECOND call (with
+      // valid args) the dispatcher should refuse with the cap message.
+      const d = buildImhubDispatcher(CTX)
+      // First call: counter goes to 1 (>= cap=1 only AFTER this call).
+      // But the cap check is `>=` BEFORE incrementing, so first call
+      // passes the cap check (0 >= 1 is false), increments counter to 1,
+      // then attempts A2A which will fail because no agent is registered.
+      const r1 = await d(
+        { id: '5a', name: 'mcp__imhub__call_agent', arguments: { agent: 'no-such-agent', prompt: 'x' } },
+        NOOP_SIGNAL,
+      )
+      // r1 should fail because the agent doesn't exist — but it consumed
+      // 1 cap slot. Verify it errored AT THE A2A LAYER, not the cap layer.
+      expect(r1.isError).toBe(true)
+      expect(r1.text).not.toMatch(/cap exceeded|already delegated/)
+
+      // Second call: cap should now refuse (count=1 >= cap=1).
+      const r2 = await d(
+        { id: '5b', name: 'mcp__imhub__call_agent', arguments: { agent: 'no-such-agent', prompt: 'y' } },
+        NOOP_SIGNAL,
+      )
+      expect(r2.isError).toBe(true)
+      expect(r2.source).toBe('imhub')
+      expect(r2.text).toMatch(/already delegated|refused/i)
+    } finally {
+      if (ORIG === undefined) delete process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN
+      else process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = ORIG
+    }
+  })
 })

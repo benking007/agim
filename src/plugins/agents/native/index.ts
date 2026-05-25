@@ -148,7 +148,21 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `  - Be terse; avoid filler. Prefer tool use over guessing.`,
     `  - When uncertain, call mcp__imhub__ask_user(question, choices[]) instead of free-form back-and-forth.`,
     `  - When the user references something they told the bot before, search memos via mcp__imhub__search_memos.`,
-    `  - When a heavy task fits another agent better (e.g. code editing → claude-code), use mcp__imhub__call_agent.`,
+    ``,
+    `Tool selection priority (HARD RULE — v1.2.59):`,
+    `  - For "read this file / list this dir / search this content / fetch this URL", you MUST FIRST try`,
+    `    your own native tools: native_read_file, native_list_dir, native_glob, native_grep,`,
+    `    native_web_fetch (if available). Do NOT delegate these to call_agent.`,
+    `  - call_agent is reserved for tasks that genuinely need a CLI agent's specialised capabilities`,
+    `    (writing/editing source code in a real repo → claude-code; long-running plans → codex; etc).`,
+    `  - You have a per-turn call_agent cap (default 2). Burning it on file reads will leave you`,
+    `    unable to delegate later when you actually need to.`,
+    ``,
+    `Short-input rule:`,
+    `  - If the user's message is ONLY a slash command alias for an agent name (e.g. "/native", "/llm",`,
+    `    "/na", "/cc", "/oc") and you are already that agent, respond with ONE short line confirming`,
+    `    your identity (e.g. "我是 native，正在听。"). Do NOT call any tool. The slash router handles`,
+    `    actual agent switching; if it didn't switch, the user is already on this agent.`,
   )
   return lines.join('\n')
 }

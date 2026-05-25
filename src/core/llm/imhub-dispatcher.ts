@@ -236,6 +236,19 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
     channelId: ctx.channelId,
   }
 
+  // v1.2.59 A — per-turn call_agent cap. Closure state is scoped to ONE
+  // dispatcher instance, which native rebuilds per turn — so the counter
+  // resets on every new user message. Default 2; override with
+  // IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN. Set 0 to disable the cap
+  // (legacy unlimited behavior).
+  const callAgentMaxPerTurn = (() => {
+    const raw = process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN
+    if (!raw) return 2
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2
+  })()
+  let callAgentCount = 0
+
   return async (call, signal): Promise<DispatcherResult> => {
     if (!call.name.startsWith('mcp__imhub__')) return unknown(call.name)
     const op = call.name.slice('mcp__imhub__'.length)
@@ -292,6 +305,38 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
           if (!agentName || !prompt) return err('call_agent requires both `agent` (string) and `prompt` (string).')
+          // v1.2.59 A — enforce per-turn cap. Without this, a model that
+          // keeps delegating ("ask claude-code again, that wasn't enough")
+          // can chain dozens of A2A calls per single user turn — observed
+          // 8 chained calls in one wechat turn before the user had to
+          // /abort. The cap is also visible in the deny message so the
+          // model self-corrects on its next iteration.
+          if (callAgentMaxPerTurn > 0 && callAgentCount >= callAgentMaxPerTurn) {
+            log.warn({
+              event: 'native.call_agent.cap_exceeded',
+              callerAgent: ctx.callerAgent,
+              calleeAgent: agentName,
+              count: callAgentCount,
+              cap: callAgentMaxPerTurn,
+              threadId: ctx.threadId,
+            }, `call_agent cap exceeded (${callAgentCount}/${callAgentMaxPerTurn}) — refusing further delegation`)
+            return err(
+              `call_agent refused: you have already delegated ${callAgentCount} time(s) this turn ` +
+              `(cap=${callAgentMaxPerTurn}). Use your own tools (native_read_file, native_grep, ` +
+              `native_list_dir, mcp__imhub__* …) to finish the task. If you genuinely need a CLI ` +
+              `agent for the rest, tell the user to /cc, /oc, or /cs to switch — don't keep ` +
+              `chaining call_agent.`,
+            )
+          }
+          callAgentCount += 1
+          log.info({
+            event: 'native.call_agent.delegated',
+            callerAgent: ctx.callerAgent,
+            calleeAgent: agentName,
+            attempt: callAgentCount,
+            cap: callAgentMaxPerTurn,
+            threadId: ctx.threadId,
+          }, `delegating to ${agentName} (attempt ${callAgentCount}/${callAgentMaxPerTurn || '∞'})`)
           // Construct a minimal RouteContext from the run context so A2A
           // can audit / route. Lifted to a partial cast because most of
           // RouteContext's optional fields (intent, agentSessionId, …)

@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.59] - 2026-05-25
+
+### Fixed
+
+- **Native runaway delegation loop** — under deepseek-v4 the native agent
+  would chain `mcp__imhub__call_agent('claude-code', …)` repeatedly
+  inside a single turn (observed: 8 chained delegations across 11
+  minutes on one wechat thread before the user had to `/abort`). The
+  model picked call_agent over its own native fs tools even after
+  v1.2.58 added them. Three changes close it:
+  - **Per-turn cap** in `imhub-dispatcher.ts`: refuses further
+    `call_agent` after 2 delegations per turn (override with
+    `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN`, set 0 to disable). Refusal
+    message tells the model exactly which native tools to try instead,
+    so it self-corrects on the next iteration.
+  - **System-prompt HARD RULE** in `native/index.ts`: for read-file /
+    list-dir / search-content / fetch-URL the model MUST first try
+    `native_read_file` / `native_list_dir` / `native_grep` /
+    `native_glob` / `native_web_fetch`, and only call_agent for tasks
+    that genuinely need a CLI agent's specialised capabilities.
+  - **Delegation logging**:
+    `event=native.call_agent.delegated attempt=N cap=M` per delegation
+    and `event=native.call_agent.cap_exceeded` when refused, so the
+    operator can spot delegation storms in journalctl quickly.
+- **`/native` (and other agent-name slash commands) treated as plain
+  prompt when already on that agent** — caused native to call_agent
+  for trivial identity messages. Added a system-prompt short-input
+  rule: if the user message is only an agent slash alias and the
+  current agent matches, reply with ONE short identity line and call
+  NO tools.
+
+### Deferred
+
+- `native_exec` (one-shot shell), `native_web_fetch`, `native_web_search`
+  (duckduckgo → metaso fallback), `mcp__imhub__long_task` /
+  `complete_goal`, and the bwrap sandbox path all move to v1.2.60.
+  Scope split: v1.2.59 is a focused hotfix for the user-visible
+  delegation loop; v1.2.60 returns to the bigger tool batch.
+
 ## [1.2.58] - 2026-05-25
 
 ### Added

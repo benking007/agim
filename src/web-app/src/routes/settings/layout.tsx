@@ -30,6 +30,7 @@ const SUB_TABS: SubTab[] = [
   // P1 follow-up — agim SKILL.md editor.
   { to: 'agim-skills',  i18nKey: 'tabs.agimSkills',   mounted: true },
   { to: 'policy',       i18nKey: 'tabs.policy',       mounted: true },
+  { to: 'security',     i18nKey: 'tabs.security',     mounted: true },
   { to: 'workspaces',   i18nKey: 'tabs.workspaces',   mounted: true },
   { to: 'admins',       i18nKey: 'tabs.admins',       mounted: true },
   // R13 follow-up — /settings/env catch-all editor removed; raw env-var

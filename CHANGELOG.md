@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.67] - 2026-05-26
+
+### Added
+
+- **New `/settings/security` page** in the web admin — central console
+  for the v1.2.66 hardening controls so operators don't have to edit
+  env vars by hand. Six sections:
+  1. **Runtime diagnostics** (read-only badges): running-as-root,
+     env-file permissions (0600 / lax), bubblewrap availability,
+     sender allowlist configured, admin allowlist configured.
+  2. **Sender allowlist** — `IMHUB_ALLOWED_USERS` editor.
+  3. **Native exec tool** — sandbox backend (none / bwrap, disabled
+     when bwrap missing), sandbox-net, timeout, max output.
+  4. **Native web tools** — allow-all-private toggle, SSRF CIDR
+     whitelist, timeout.
+  5. **Native filesystem tools** — restrict-to-workspace, timeout.
+  6. **Native call_agent cap** — per-turn delegation limit.
+
+- **`GET /api/security/diagnostics`** — admin-gated endpoint backing
+  the new page. Returns the boot-time observations + live `process.env`
+  snapshot for the most commonly-watched keys.
+
+### Changed
+
+- `ENV_EDITABLE_KEYS` in `web/server.ts` extended with the 11 new
+  v1.2.58–v1.2.66 security knobs (`IMHUB_ALLOWED_USERS`,
+  `IMHUB_NATIVE_FS_RESTRICT`, `IMHUB_NATIVE_FS_TIMEOUT_MS`,
+  `IMHUB_NATIVE_WEB_ALLOW_PRIVATE`, `IMHUB_NATIVE_WEB_SSRF_WHITELIST`,
+  `IMHUB_NATIVE_WEB_TIMEOUT_MS`, `IMHUB_EXEC_SANDBOX`,
+  `IMHUB_EXEC_SANDBOX_NET`, `IMHUB_EXEC_TIMEOUT_MS`,
+  `IMHUB_EXEC_MAX_OUTPUT`, `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN`).
+  All editable + persistable via the existing `/api/env` PUT path.
+- Settings sidebar: new "Security" tab between "Policy" and
+  "Workspaces". i18n keys `tabs.security` + `security.*` added to
+  both `en` and `zh` locales.
+
 ## [1.2.66] - 2026-05-26
 
 ### Security

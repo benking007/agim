@@ -11,6 +11,7 @@
     "nativeAgent": "Native Agent",
     "agimSkills": "agim Skills",
     "policy": "Policy",
+    "security": "Security",
     "workspaces": "Workspaces",
     "admins": "Admins",
     "env": "Env Vars",
@@ -365,6 +366,70 @@
         "saved": "Ports saved — restart agim to bind the new ports"
       }
     }
+  },
+  "security": {
+    "title": "Security",
+    "subtitle": "Tool sandbox, SSRF block, sender allowlist, runtime audit. Changes persist to the env file immediately. Most native tools read process.env per call (hot-reload); exec sandbox + sender allowlist need a service restart to apply.",
+    "diagnostics": {
+      "title": "Runtime diagnostics",
+      "runningAsRoot": "Running as root",
+      "runningAsRootHelp": "Tool calls run with root privileges. Recommend creating a dedicated user + setting User= in the systemd unit.",
+      "envFilePerms": "Env file permissions",
+      "envFilePermsLax": "Too permissive (group/world readable)",
+      "envFilePermsOk": "0600 (owner-only)",
+      "bwrapAvailable": "bubblewrap installed",
+      "bwrapMissing": "Not installed (apt install bubblewrap)",
+      "senderAllowlist": "Sender allowlist",
+      "senderAllowlistOff": "Not configured (open access)",
+      "senderAllowlistOn": "Configured",
+      "adminAllowlist": "Admin allowlist",
+      "adminAllowlistOff": "Not configured (populated after first /setup)",
+      "adminAllowlistOn": "Configured"
+    },
+    "sender": {
+      "title": "Sender allowlist (who can talk to the bot)",
+      "description": "Comma-separated platform:userId pairs, e.g. telegram:8754479311,wechat-ilink:wxid_abc. Set to * to mark 'everyone explicitly allowed'. Empty = open access (preserves backward compatibility; startup logs OPEN_IM_ACCESS).",
+      "envKey": "IMHUB_ALLOWED_USERS",
+      "placeholder": "platform:userId,platform:userId"
+    },
+    "exec": {
+      "title": "Native exec tool",
+      "description": "Sandbox + timeout controls for native_exec. Each invocation also goes through an IM approval card (unless previously auto-allowed by fingerprint).",
+      "sandbox": "Sandbox backend",
+      "sandboxNone": "None (plain spawn)",
+      "sandboxBwrap": "bubblewrap (Linux only)",
+      "sandboxBwrapMissing": "bubblewrap not installed",
+      "sandboxNet": "Sandbox network",
+      "sandboxNetOn": "Allowed (default)",
+      "sandboxNetOff": "Blocked (--unshare-net)",
+      "timeoutMs": "Command timeout (ms, default 60000)",
+      "maxOutput": "Per-stream output cap (bytes, default 32768)"
+    },
+    "web": {
+      "title": "Native web tools",
+      "description": "SSRF defense and timeouts. CIDR whitelist lets you allow Tailscale / 100.64.0.0/10 / VPN ranges back in.",
+      "allowPrivate": "Allow all private ranges (not recommended)",
+      "allowPrivateHelp": "= 1 disables all private-IP checks. Only for trusted internal deployments.",
+      "ssrfWhitelist": "SSRF CIDR whitelist",
+      "ssrfWhitelistPlaceholder": "100.64.0.0/10,10.20.0.0/16",
+      "timeoutMs": "fetch / search timeout (ms, default 30000)"
+    },
+    "fs": {
+      "title": "Native filesystem tools",
+      "description": "fs tools default to the native agent's per-thread workspace subtree.",
+      "restrict": "Restrict to workspace",
+      "restrictOn": "ON (recommended)",
+      "restrictOff": "OFF (allow any path; sensitive-paths denylist still applies)",
+      "timeoutMs": "fs tool timeout (ms, default 60000)"
+    },
+    "delegation": {
+      "title": "Native call_agent cap",
+      "description": "Max mcp__imhub__call_agent invocations per turn. Prevents native from spinning on infinite delegations. 0 = unlimited.",
+      "envKey": "IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN",
+      "valueLabel": "default 2"
+    },
+    "savingToast": "Saved.",
+    "resetTitle": "Reset to default"
   },
   "admins": {
     "title": "Admin allowlist",

@@ -733,6 +733,13 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handlePutEnv(req, res)
     }
+    // v1.2.67 — Security diagnostics. Surfaces boot-time observations the
+    // Security UI page renders as read-only badges (uid, env file perms,
+    // bwrap availability, IMHUB_ALLOWED_USERS configured? …).
+    if (url.pathname === '/api/security/diagnostics' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleSecurityDiagnostics(req, res)
+    }
     if (url.pathname === '/api/messengers/email/test' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
       return handleEmailTest(req, res)
@@ -2628,11 +2635,86 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
   'IMHUB_MEMORY_VECTOR_BATCH_SIZE',
   'IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT',
+  // v1.2.67 — Security page surfaces these (added in v1.2.58–v1.2.66).
+  // Sender allowlist — who can talk to the bot at all.
+  'IMHUB_ALLOWED_USERS',
+  // Native fs tools — workspace restriction + per-tool timeout.
+  'IMHUB_NATIVE_FS_RESTRICT',
+  'IMHUB_NATIVE_FS_TIMEOUT_MS',
+  // Native web tools — SSRF guards.
+  'IMHUB_NATIVE_WEB_ALLOW_PRIVATE',
+  'IMHUB_NATIVE_WEB_SSRF_WHITELIST',
+  'IMHUB_NATIVE_WEB_TIMEOUT_MS',
+  // Native exec tool — bwrap sandbox + sub-knobs.
+  'IMHUB_EXEC_SANDBOX',
+  'IMHUB_EXEC_SANDBOX_NET',
+  'IMHUB_EXEC_TIMEOUT_MS',
+  'IMHUB_EXEC_MAX_OUTPUT',
+  // Native call_agent per-turn cap.
+  'IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN',
 ] as const
 const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file
 // alongside isMasked).
+
+/** v1.2.67 — Security diagnostics endpoint. Returns the boot-time
+ *  safety observations the Security UI page renders as badges. None
+ *  of the values are secret; the endpoint is admin-gated only to
+ *  prevent reconnaissance via an open UI. */
+async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { ENV_FILE } = await import('../cli-ui/env-file.js')
+    const { statSync, existsSync } = await import('node:fs')
+
+    const getUid = (process as unknown as { getuid?: () => number }).getuid
+    const runningAsRoot = typeof getUid === 'function' ? getUid() === 0 : null
+
+    let envFile: { exists: boolean; mode: string | null; tooPermissive: boolean } = {
+      exists: false, mode: null, tooPermissive: false,
+    }
+    try {
+      if (existsSync(ENV_FILE)) {
+        const st = statSync(ENV_FILE)
+        const mode = st.mode & 0o777
+        envFile = {
+          exists: true,
+          mode: mode.toString(8).padStart(3, '0'),
+          tooPermissive: (mode & 0o077) !== 0,
+        }
+      }
+    } catch { /* leave defaults */ }
+
+    const bwrapAvailable = existsSync('/usr/bin/bwrap')
+
+    const { isSenderAllowlistConfigured } = await import('../core/sender-allowlist.js')
+    const senderAllowlistConfigured = isSenderAllowlistConfigured()
+
+    const { isAllowlistConfigured: isAdminConfigured } = await import('../core/admin-allowlist.js')
+    const adminAllowlistConfigured = isAdminConfigured()
+
+    sendJson(res, 200, {
+      diagnostics: {
+        runningAsRoot,
+        envFile,
+        bwrapAvailable,
+        senderAllowlistConfigured,
+        adminAllowlistConfigured,
+        // Live env values so the UI can show what's effectively in force
+        // (process.env, which is what runtime sees) without round-tripping
+        // through the env file.
+        liveEnv: {
+          IMHUB_EXEC_SANDBOX: process.env.IMHUB_EXEC_SANDBOX ?? null,
+          IMHUB_NATIVE_FS_RESTRICT: process.env.IMHUB_NATIVE_FS_RESTRICT ?? null,
+          IMHUB_TIMEOUT_DEFAULT: process.env.IMHUB_TIMEOUT_DEFAULT ?? null,
+          IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS ?? null,
+        },
+      },
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
 
 async function handleGetEnv(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {

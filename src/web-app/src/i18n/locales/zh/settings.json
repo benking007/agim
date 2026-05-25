@@ -11,6 +11,7 @@
     "nativeAgent": "Native Agent",
     "agimSkills": "agim Skills",
     "policy": "策略",
+    "security": "安全",
     "workspaces": "工作区",
     "admins": "管理员",
     "env": "环境变量",
@@ -365,6 +366,70 @@
         "saved": "端口已保存 — 重启 agim 以绑定新端口"
       }
     }
+  },
+  "security": {
+    "title": "安全",
+    "subtitle": "工具沙盒、SSRF 拦截、发送方门禁、运行时审计。改动立即写入 env 文件；多数 native 工具读 process.env，下次工具调用即生效；exec 沙盒和发送方门禁需要「重启服务」生效。",
+    "diagnostics": {
+      "title": "运行时诊断",
+      "runningAsRoot": "以 root 运行",
+      "runningAsRootHelp": "tool 调用会拿到 root 权限。建议在 systemd unit 设 User=agim 后重启。",
+      "envFilePerms": "env 文件权限",
+      "envFilePermsLax": "过宽（group/world 可读）",
+      "envFilePermsOk": "0600（仅 owner 可读写）",
+      "bwrapAvailable": "bubblewrap 已装",
+      "bwrapMissing": "未装（apt install bubblewrap）",
+      "senderAllowlist": "发送方门禁",
+      "senderAllowlistOff": "未配置（开放访问）",
+      "senderAllowlistOn": "已配置",
+      "adminAllowlist": "管理员清单",
+      "adminAllowlistOff": "未配置（首次 setup 后填充）",
+      "adminAllowlistOn": "已配置"
+    },
+    "sender": {
+      "title": "发送方门禁 (谁能跟 bot 说话)",
+      "description": "允许列表，逗号分隔 platform:userId 对，例如 telegram:8754479311,wechat-ilink:wxid_abc。设为 * 显式表示「所有人都允许」。空值 = 开放访问（保持向后兼容；启动日志 OPEN_IM_ACCESS）。",
+      "envKey": "IMHUB_ALLOWED_USERS",
+      "placeholder": "platform:userId,platform:userId"
+    },
+    "exec": {
+      "title": "Native exec 工具",
+      "description": "对 native_exec 的沙盒与超时控制。每次 exec 调用还会经 IM 审批卡（除非已 autoallow 同 fingerprint）。",
+      "sandbox": "沙盒后端",
+      "sandboxNone": "无（直接 spawn）",
+      "sandboxBwrap": "bubblewrap（Linux only）",
+      "sandboxBwrapMissing": "bubblewrap 未装",
+      "sandboxNet": "沙盒内网络",
+      "sandboxNetOn": "允许（默认）",
+      "sandboxNetOff": "禁用（--unshare-net）",
+      "timeoutMs": "命令超时（毫秒，默认 60000）",
+      "maxOutput": "单流输出上限（字节，默认 32768）"
+    },
+    "web": {
+      "title": "Native web 工具",
+      "description": "SSRF 防护与超时。CIDR 白名单可放行 Tailscale/100.64.0.0/10 这类私网。",
+      "allowPrivate": "允许所有私网（不推荐）",
+      "allowPrivateHelp": "= 1 时跳过所有私网检查。仅用于受信任的内网部署。",
+      "ssrfWhitelist": "SSRF CIDR 白名单",
+      "ssrfWhitelistPlaceholder": "100.64.0.0/10,10.20.0.0/16",
+      "timeoutMs": "fetch / search 超时（毫秒，默认 30000）"
+    },
+    "fs": {
+      "title": "Native filesystem 工具",
+      "description": "fs 工具默认限制在 native 当前线程的 workspace 子树内。",
+      "restrict": "限制到 workspace",
+      "restrictOn": "ON（推荐）",
+      "restrictOff": "OFF（允许任意路径；sensitive-paths 黑名单仍生效）",
+      "timeoutMs": "fs 工具超时（毫秒，默认 60000）"
+    },
+    "delegation": {
+      "title": "Native call_agent 上限",
+      "description": "一次对话内 mcp__imhub__call_agent 允许的最多次数。防止 native 死循环委托给 CLI agent。0 = 无限。",
+      "envKey": "IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN",
+      "valueLabel": "默认 2"
+    },
+    "savingToast": "已保存。",
+    "resetTitle": "清空 (使用默认值)"
   },
   "admins": {
     "title": "管理员名单",

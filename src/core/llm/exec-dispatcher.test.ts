@@ -124,4 +124,77 @@ describe('exec-dispatcher', () => {
       expect(parsed.stdout_truncated).toBe(true)
     }, 10000)
   })
+
+  // v1.2.66 — danger pattern denylist.
+  describe('danger pattern denylist (v1.2.66)', () => {
+    const cases: Array<[string, string, string]> = [
+      ['rm -rf root',            'rm -rf /',                                       'rm -rf against root'],
+      ['rm -rf ~',               'rm -rf ~',                                       'rm -rf against root / home'],
+      ['rm -rf /*',              'rm -rf /*',                                      'rm -rf against root'],
+      ['mkfs.ext4',              'mkfs.ext4 /dev/sda1',                            'filesystem format'],
+      ['wipefs',                 'wipefs --all /dev/sdb',                          'filesystem format'],
+      ['dd to raw disk',         'dd if=/dev/zero of=/dev/sda bs=1M',              'dd to raw block device'],
+      ['dd to nvme partition',   'dd if=/tmp/x of=/dev/nvme0n1p1',                 'dd to raw block device'],
+      ['fork bomb',              ':(){:|:&};:',                                    'fork bomb'],
+      ['chmod -R 777 /',         'chmod -R 777 /',                                 'chmod/chown on /'],
+      ['shutdown',               'shutdown -h now',                                'shutdown'],
+      ['reboot',                 'reboot',                                         'reboot'],
+      ['echo to /proc panic',    'echo c > /proc/sys/kernel/sysrq',                'kernel panic/sysrq'],
+      ['write to /etc/passwd',   'echo evil >> /etc/passwd',                       '/etc/passwd|shadow'],
+      ['setuid bit',             'chmod 4755 /tmp/bin',                            'setuid'],
+      ['setuid u+s',             'chmod u+s /usr/bin/wat',                         'setuid'],
+    ]
+
+    for (const [label, cmd, _hint] of cases) {
+      it(`blocks: ${label}`, async () => {
+        const d = buildExecDispatcher({ cwd })
+        const r = await d({ id: 't', name: 'native_exec', arguments: { command: cmd } }, NEVER_ABORT)
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/dangerous-pattern/i)
+      })
+    }
+
+    it('allows normal commands that look superficially scary', async () => {
+      const d = buildExecDispatcher({ cwd })
+      // rm -rf with a relative path is fine
+      const ok = ['rm -rf ./build', 'rm -rf subdir', 'chmod 755 ./bin/agim']
+      for (const cmd of ok) {
+        const r = await d({ id: 't', name: 'native_exec', arguments: { command: cmd } }, NEVER_ABORT)
+        // Either succeeded or failed at the exec layer (not the pre-flight)
+        expect(r.text).not.toMatch(/dangerous-pattern/i)
+      }
+    })
+  })
+
+  describe('internal URL in command (v1.2.66)', () => {
+    it('refuses curl to RFC1918', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const r = await d(
+        { id: 't', name: 'native_exec', arguments: { command: 'curl -sSL http://192.168.1.1/admin' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/private|internal address/i)
+    })
+
+    it('refuses wget to AWS metadata endpoint', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const r = await d(
+        { id: 't', name: 'native_exec', arguments: { command: 'wget http://169.254.169.254/latest/meta-data/' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/link-local|IMDS|private/i)
+    })
+
+    it('allows curl to public URLs', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const r = await d(
+        { id: 't', name: 'native_exec', arguments: { command: 'echo https://example.com' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(false)
+      expect(r.text).not.toMatch(/private|internal/i)
+    })
+  })
 })

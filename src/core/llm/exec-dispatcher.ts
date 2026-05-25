@@ -32,9 +32,12 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname } from 'node:path'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { checkUrlSafety } from './web-dispatcher.js'
 
 const log = rootLogger.child({ component: 'exec-dispatcher' })
 
@@ -93,6 +96,37 @@ export function buildExecDispatcher(ctx: ExecContext): ToolDispatcher {
 async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: AbortSignal): Promise<DispatcherResult> {
   const command = typeof args.command === 'string' ? args.command : ''
   if (!command.trim()) return { text: 'command required', isError: true, source: 'exec' }
+
+  // v1.2.66 — pre-flight: dangerous shell pattern denylist. These are
+  // hard-blocked regardless of approval card / autoAllow — destructive
+  // and unrecoverable. Operators with a legitimate need run them
+  // directly on the host, not via the agent.
+  const danger = checkDangerousCommand(command)
+  if (danger) {
+    log.warn({ event: 'exec.refused.dangerous_pattern', reason: danger, commandPreview: command.slice(0, 120) })
+    return {
+      text: `native_exec refused: command matches a dangerous-pattern denylist (${danger}). If you legitimately need to run this, do it directly on the host — not via the agent. To override, the operator must edit src/core/llm/exec-dispatcher.ts:DANGEROUS_PATTERNS.`,
+      isError: true,
+      source: 'exec',
+    }
+  }
+
+  // v1.2.66 — defense-in-depth: scan the command for embedded internal
+  // URLs (e.g. `curl http://169.254.169.254/...`, `wget http://10.0.0.1/`).
+  // Without this, a model that's been instructed "don't fetch internal
+  // hosts" can bypass the web-tool SSRF block by piping through exec.
+  // Honours IMHUB_NATIVE_WEB_SSRF_WHITELIST (shared with web tools).
+  const internalUrlReason = scanCommandForInternalUrl(command)
+  if (internalUrlReason) {
+    log.warn({ event: 'exec.refused.internal_url', reason: internalUrlReason, commandPreview: command.slice(0, 120) })
+    return {
+      text: `native_exec refused: command contains a URL targeting a private/internal address (${internalUrlReason}). ` +
+        `If this is intentional, set IMHUB_NATIVE_WEB_SSRF_WHITELIST or IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.`,
+      isError: true,
+      source: 'exec',
+    }
+  }
+
   const timeoutMs = clampTimeout(args.timeout_ms)
   const cwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
 
@@ -116,9 +150,68 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   return await runChild(bin, argv, { cwd, timeoutMs, signal })
 }
 
+// v1.2.66 — danger pattern matching. Patterns intentionally err on the
+// false-positive side: refusing a legitimate `rm -rf ./build` is a
+// minor annoyance, but missing a `rm -rf /` is unrecoverable. Each
+// pattern returns a human-readable reason so the model + user can
+// understand the block.
+interface DangerPattern { regex: RegExp; reason: string }
+const DANGEROUS_PATTERNS: DangerPattern[] = [
+  // rm -rf with paths that touch root / home root / ~. Allow narrow
+  // forms like `rm -rf ./build` and `rm -rf subdir/`.
+  { regex: /(?:^|[;&|`(])\s*rm\s+(?:-[a-zA-Z]*[rfRF][a-zA-Z]*\s+)+(?:\/(?:\s|$|\*)|~\/?(?:\s|$)|\.\.\/+|\/\*)/, reason: 'rm -rf against root / home / .. — destructive' },
+  // Filesystem formatting / partition tools.
+  { regex: /\b(mkfs(?:\.\w+)?|mke2fs|mkdosfs|mkntfs|wipefs|fdisk|parted|sfdisk|cfdisk|gdisk)\b/, reason: 'filesystem format / partition tool' },
+  // Raw block-device writes.
+  { regex: /\bdd\s+[^|;]*\bof=\/dev\/(sd[a-z][0-9]*|nvme[0-9]+n[0-9]+(p[0-9]+)?|mmcblk[0-9]+|vd[a-z][0-9]*|hd[a-z][0-9]*|loop[0-9]+)/, reason: 'dd to raw block device' },
+  // Classic fork bomb (and minor variants).
+  { regex: /:\s*\(\s*\)\s*\{[^}]*\|\s*:\s*&?\s*\}\s*;\s*:/, reason: 'fork bomb' },
+  // Recursive chmod 777 / chown - root.
+  { regex: /\b(chmod|chown)\s+-R\s+[^\s]*\s+\/(?:\s|$)/, reason: 'recursive chmod/chown on /' },
+  // Permanent kernel writes.
+  { regex: /\becho\s+.*>\s*\/proc\/sys\/kernel\/(panic|sysrq)/, reason: 'writing to /proc/sys/kernel/panic|sysrq' },
+  // shutdown / reboot / halt commands.
+  { regex: /\b(shutdown|reboot|halt|poweroff)\b(?!\s+--?(help|version))/, reason: 'shutdown / reboot / halt' },
+  // Disable swap on /. (Rare; precaution.)
+  { regex: /\bswapoff\s+-a\b/, reason: 'swapoff -a' },
+  // Make a setuid root binary.
+  { regex: /\bchmod\s+(?:[ug]\+s|4[0-7]{3})\b/, reason: 'setuid / setgid bit change' },
+  // > /etc/passwd or > /etc/shadow.
+  { regex: />\s*\/etc\/(passwd|shadow|sudoers)\b/, reason: 'writing to /etc/passwd|shadow|sudoers' },
+]
+
+function checkDangerousCommand(cmd: string): string | null {
+  for (const p of DANGEROUS_PATTERNS) {
+    if (p.regex.test(cmd)) return p.reason
+  }
+  return null
+}
+
+function scanCommandForInternalUrl(cmd: string): string | null {
+  // Pull plausible URL tokens out of the command and feed each through
+  // the web-dispatcher's checkUrlSafety. Stops at first private hit.
+  const urlRe = /https?:\/\/[^\s"'`;|<>]+/gi
+  for (const match of cmd.matchAll(urlRe)) {
+    const url = match[0]
+    const safe = checkUrlSafety(url)
+    if (!safe.ok) return `${url} — ${safe.reason ?? 'private'}`
+  }
+  return null
+}
+
 function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { bin: string; argv: string[] } {
+  // v1.2.66 — tmpfs-mask the agim state dir + the cwd's parent before
+  // binding cwd back. Without this, even though sensitive-paths.ts
+  // blocks tool-arg paths to ~/.agim/, an exec'd shell command can
+  // still `cat ~/.agim/env` because the FS is exposed transparently.
+  // Mirrors nanobot's `--tmpfs <ws.parent>` pattern, adapted for
+  // agim's path layout (`~/.agim` is a sibling of
+  // `~/.agim-workspaces`, not a parent).
+  const home = homedir()
+  const cwdParent = dirname(cwd)
   const argv: string[] = [
     '--die-with-parent',
+    '--new-session',
     '--ro-bind', '/usr', '/usr',
     '--ro-bind-try', '/lib', '/lib',
     '--ro-bind-try', '/lib64', '/lib64',
@@ -130,11 +223,23 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
     '--proc', '/proc',
     '--dev', '/dev',
     '--tmpfs', '/tmp',
+    // Mask the agim per-user state dir (~/.agim/) — primary target.
+    // ~/.im-hub legacy path covered for older installs.
+    '--tmpfs', `${home}/.agim`,
+    '--tmpfs', `${home}/.im-hub`,
+    // Mask the parent of the workspace cwd so the agent can't list
+    // sibling threads' workspaces. cwdParent is typically
+    // ~/.agim-workspaces/native/, and other threads live there.
+    '--tmpfs', cwdParent,
+    // Re-mount the actual cwd over the masked parent so the agent
+    // still has its workspace. `--dir` recreates the path inside the
+    // sandbox; `--bind` brings the host content back.
+    '--dir', cwd,
     '--bind', cwd, cwd,
     '--chdir', cwd,
   ]
   if (netOff) argv.push('--unshare-net')
-  argv.push('/bin/sh', '-c', command)
+  argv.push('--', '/bin/sh', '-c', command)
   return { bin: '/usr/bin/bwrap', argv }
 }
 

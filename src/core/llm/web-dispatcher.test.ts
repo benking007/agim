@@ -76,6 +76,50 @@ describe('web-dispatcher', () => {
       expect(checkUrlSafety('http://localhost/').ok).toBe(true)
       expect(checkUrlSafety('http://192.168.1.1/').ok).toBe(true)
     })
+
+    // v1.2.66 — CGN (RFC 6598) blocked by default.
+    it('blocks 100.64.0.0/10 carrier-grade NAT by default', () => {
+      expect(checkUrlSafety('http://100.64.0.1/').ok).toBe(false)
+      expect(checkUrlSafety('http://100.127.255.254/').ok).toBe(false)
+      // 100.63.x and 100.128.x are OUTSIDE the /10, should pass
+      expect(checkUrlSafety('http://100.63.0.1/').ok).toBe(true)
+      expect(checkUrlSafety('http://100.128.0.1/').ok).toBe(true)
+    })
+
+    it('CIDR whitelist (IMHUB_NATIVE_WEB_SSRF_WHITELIST) allows otherwise-blocked ranges', () => {
+      const ORIG = process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST
+      try {
+        process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST = '100.64.0.0/10,10.20.0.0/16'
+        expect(checkUrlSafety('http://100.64.0.1/').ok).toBe(true)   // CGN whitelisted
+        expect(checkUrlSafety('http://10.20.5.5/').ok).toBe(true)     // RFC1918 + whitelist
+        expect(checkUrlSafety('http://10.21.0.0/').ok).toBe(false)    // outside whitelist
+        expect(checkUrlSafety('http://192.168.1.1/').ok).toBe(false)  // different RFC1918
+      } finally {
+        if (ORIG === undefined) delete process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST
+        else process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST = ORIG
+      }
+    })
+  })
+
+  describe('parseSsrfWhitelist (v1.2.66)', () => {
+    it('parses comma-separated CIDR list', async () => {
+      const { parseSsrfWhitelist } = await import('./web-dispatcher.js')
+      const r = parseSsrfWhitelist('10.0.0.0/8, 192.168.0.0/16,100.64.0.0/10')
+      expect(r.length).toBe(3)
+    })
+
+    it('drops invalid entries silently', async () => {
+      const { parseSsrfWhitelist } = await import('./web-dispatcher.js')
+      const r = parseSsrfWhitelist('not-a-cidr,10.0.0.0/33,10.0.0.0/8')
+      expect(r.length).toBe(1)
+    })
+
+    it('empty / undefined returns []', async () => {
+      const { parseSsrfWhitelist } = await import('./web-dispatcher.js')
+      expect(parseSsrfWhitelist(undefined).length).toBe(0)
+      expect(parseSsrfWhitelist('').length).toBe(0)
+      expect(parseSsrfWhitelist('   ').length).toBe(0)
+    })
   })
 
   describe('parseDdgHtml', () => {

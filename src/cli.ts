@@ -381,6 +381,49 @@ program
       logStartupResolution()
     } catch { /* best-effort */ }
 
+    // v1.2.66 — sender allowlist startup log. Emits OPEN_IM_ACCESS
+    // warning when no list is configured (default-open mode).
+    try {
+      const { logStartupResolution: logSenderResolution } = await import('./core/sender-allowlist.js')
+      logSenderResolution()
+    } catch { /* best-effort */ }
+
+    // v1.2.66 — root-user warning. Running agim as root means a
+    // compromised tool call has root privileges. Most operators run
+    // under systemd which defaults to running as root unless User=
+    // is set in the unit file.
+    try {
+      const getUid = (process as unknown as { getuid?: () => number }).getuid
+      if (typeof getUid === 'function' && getUid() === 0) {
+        rootLogger.warn({
+          event: 'startup.running_as_root',
+          hint: 'consider creating a dedicated user + User=agim in the systemd unit',
+        }, '⚠ Running as root (uid 0). Tool calls run with root privileges. Consider a dedicated user.')
+      }
+    } catch { /* getuid not available on Windows */ }
+
+    // v1.2.66 — env file permission audit. ~/.agim/env holds API keys
+    // + DB passwords + IMHUB_ADMIN_USERS. Wizard writes 0600 but if
+    // the operator manually edited / scp'd it, the mode may have
+    // drifted. WARN (not refuse-to-start) so a recovering operator
+    // can still bring the service up.
+    try {
+      const { statSync } = await import('node:fs')
+      const { ENV_FILE } = await import('./cli-ui/env-file.js')
+      const st = statSync(ENV_FILE)
+      // group-readable / world-readable bits set → warn
+      const mode = st.mode & 0o777
+      if (mode & 0o077) {
+        rootLogger.warn({
+          event: 'startup.env_file_perm_lax',
+          file: ENV_FILE,
+          mode: mode.toString(8),
+          recommendedMode: '600',
+          hint: `chmod 600 ${ENV_FILE}`,
+        }, `⚠ env file mode ${mode.toString(8)} is too permissive (group/world bits set). Recommend chmod 600.`)
+      }
+    } catch { /* file missing → wizard hasn't run; not our problem */ }
+
     // ============================================
     // ONBOARDING CHECKS (before default fill!)
     // ============================================
@@ -515,6 +558,41 @@ program
           userId: ctx.message.userId,
           ...sanitizeUserText(ctx.message.text),
         })
+
+        // v1.2.66 — sender allowlist gate. When configured (env
+        // IMHUB_ALLOWED_USERS set), unknown senders get a short refusal
+        // and the message is dropped before reaching any agent or
+        // tool. When unconfigured, this passes through unchanged
+        // (default-open; boot log warns OPEN_IM_ACCESS).
+        try {
+          const { isSenderAllowlistConfigured, isSenderAllowed, senderDenialMessage } =
+            await import('./core/sender-allowlist.js')
+          if (isSenderAllowlistConfigured()
+              && !isSenderAllowed(ctx.platform, ctx.message.userId)) {
+            ctx.logger.warn({
+              event: 'sender.allowlist.denied',
+              platform: ctx.platform,
+              userId: ctx.message.userId,
+            }, 'message dropped — sender not on IMHUB_ALLOWED_USERS')
+            try {
+              await sink.deliver({
+                platform: ctx.platform,
+                channelId: ctx.channelId,
+                threadId: ctx.message.threadId,
+                payload: senderDenialMessage(ctx.platform, ctx.message.userId),
+                kind: 'text',
+                priority: 'high',
+                source: 'system',
+              })
+            } catch { /* best-effort */ }
+            return
+          }
+        } catch (err) {
+          ctx.logger.warn({
+            event: 'sender.allowlist.error',
+            err: err instanceof Error ? err.message : String(err),
+          }, 'sender allowlist check failed; continuing open (fail-open)')
+        }
 
         // Phase 3 — interrupted-job recovery reply. If the user has a
         // pending "retry / cancel" prompt outstanding on this thread AND

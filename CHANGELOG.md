@@ -4,6 +4,83 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.66] - 2026-05-26
+
+### Security
+
+Nanobot-inspired defense-in-depth pass. 9 hardening items across
+`exec`, `web`, `bwrap`, and boot:
+
+#### Tool-level
+
+- **Dangerous shell pattern denylist** (`exec-dispatcher.ts`) — hard-
+  blocks `rm -rf /` (and home / `..` variants), `mkfs.*`, `wipefs`,
+  `fdisk`/`parted`/`gdisk`, `dd of=/dev/sd*|nvme*|mmcblk*|vd*`, fork
+  bombs, recursive `chmod -R 777 /`, writes to `/proc/sys/kernel/
+  (panic|sysrq)`, `shutdown` / `reboot` / `halt` / `poweroff`,
+  setuid/setgid bit toggles, writes to `/etc/passwd|shadow|sudoers`.
+  Refusal carries the matched pattern reason so the model self-
+  corrects. NOT overridable via env — operator must edit
+  `DANGEROUS_PATTERNS` in source.
+- **Command-embedded SSRF scan** — `native_exec` now regex-extracts
+  every `http(s)://…` token in the command string and refuses if any
+  resolves through `checkUrlSafety` as private/internal. Honours
+  the shared `IMHUB_NATIVE_WEB_SSRF_WHITELIST`. Closes the
+  curl/wget-to-IMDS bypass.
+- **SSRF redirect re-check** (`web-dispatcher.ts`) — `native_web_fetch`
+  no longer uses `redirect: 'follow'`. Now does `redirect: 'manual'`
+  and loops ≤ 5 hops, calling `checkUrlSafety` on every `Location`
+  header. Cuts the "redirect to 169.254.169.254" exfil path.
+  Result JSON now includes `redirected_via: [url1, url2, …]` when
+  hops > 0.
+- **100.64.0.0/10 carrier-grade NAT** added to default block list
+  (matches nanobot). Cloud providers + some ISPs use this for
+  internal hosts.
+- **CIDR whitelist** — new `IMHUB_NATIVE_WEB_SSRF_WHITELIST=<csv>`
+  env (e.g. `100.64.0.0/10,10.20.0.0/16`) opens specific ranges for
+  legitimate Tailscale / VPN / internal-API use cases without
+  binary-flipping `IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1`. IPv4 only;
+  invalid entries dropped.
+
+#### Sandbox
+
+- **bwrap tmpfs-mask** — when `IMHUB_EXEC_SANDBOX=bwrap`, the sandbox
+  now `--tmpfs $HOME/.agim` + `$HOME/.im-hub` + the cwd's parent
+  directory, then bind-mounts the actual workspace back over the
+  masked parent. Even if the agent bypasses `sensitive-paths.ts` at
+  the tool-arg layer, an exec'd shell will see an empty
+  `~/.agim/` and an empty `~/.agim-workspaces/native/` outside its
+  own thread. Also `--new-session` for tty detach.
+
+#### Boot-time
+
+- **Sender allowlist** (new `core/sender-allowlist.ts`) — controls
+  WHO can talk to the bot (distinct from admin allowlist for
+  `/restart`).
+  - `IMHUB_ALLOWED_USERS=platform:userId,…` — same syntax as
+    `IMHUB_ADMIN_USERS`. Set to `*` to explicitly mark "everyone
+    allowed" + suppress the boot warning.
+  - **Default is OPEN** when unset (no breaking change to existing
+    deployments). cli.ts emits a one-shot
+    `sender.allowlist.OPEN_IM_ACCESS` warning at boot so the
+    operator notices.
+  - Gate runs in cli.ts message-intake hook BEFORE any agent /
+    tool dispatch; denied senders get a polite refusal via
+    `message-sink`.
+- **Root-user warning** — if `process.getuid()===0` at boot, log
+  `startup.running_as_root` WARN. Most systemd setups run as root;
+  warns operator to consider a dedicated user.
+- **Env file 0600 audit** — at boot, stat `~/.agim/env`; if group
+  or world bits are set, warn `startup.env_file_perm_lax` with a
+  `chmod 600` hint. Does not refuse to start (recovery scenarios).
+
+### Internal
+
+- New `core/sender-allowlist.ts` (~110 LOC) + 13 unit tests.
+- `parseSsrfWhitelist` exported from `web-dispatcher.ts` for unit
+  testing.
+- web-dispatcher tests grow 20 → 25; exec-dispatcher 9 → 28.
+
 ## [1.2.65] - 2026-05-26
 
 ### Changed

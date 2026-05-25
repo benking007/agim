@@ -129,33 +129,29 @@ async function runWebFetch(args: Record<string, unknown>, signal: AbortSignal): 
   const safe = checkUrlSafety(url)
   if (!safe.ok) return { text: `web_fetch refused: ${safe.reason}`, isError: true, source: 'web' }
 
-  const target = format === 'reader'
+  const initialTarget = format === 'reader'
     ? `${JINA_READER_BASE}${url}`
     : url
   try {
-    const res = await fetch(target, {
-      method: 'GET',
-      redirect: 'follow',
-      signal,
-      headers: {
-        'User-Agent': 'agim-native/1.2.61 (+https://github.com/benking007/agim)',
-        'Accept': format === 'reader' ? 'text/plain' : '*/*',
-      },
-    })
+    const res = await fetchWithSafeRedirects(initialTarget, signal, format)
     if (!res.ok) {
+      return { text: res.error, isError: true, source: 'web' }
+    }
+    if (!res.response.ok) {
       return {
-        text: JSON.stringify({ url, format, status: res.status, statusText: res.statusText, body: '' }, null, 2),
+        text: JSON.stringify({ url: res.finalUrl, format, status: res.response.status, statusText: res.response.statusText, body: '' }, null, 2),
         isError: true,
         source: 'web',
       }
     }
-    const body = await readCapped(res, DEFAULT_FETCH_MAX_BYTES)
+    const body = await readCapped(res.response, DEFAULT_FETCH_MAX_BYTES)
     return {
       text: JSON.stringify({
-        url,
+        url: res.finalUrl,
         format,
-        status: res.status,
-        contentType: res.headers.get('content-type') ?? null,
+        status: res.response.status,
+        contentType: res.response.headers.get('content-type') ?? null,
+        redirected_via: res.redirectChain.length > 0 ? res.redirectChain : undefined,
         bytes: body.text.length,
         truncated: body.truncated,
         body: body.text,
@@ -166,6 +162,60 @@ async function runWebFetch(args: Record<string, unknown>, signal: AbortSignal): 
   } catch (err) {
     return { text: `web_fetch failed: ${errMsg(err)}`, isError: true, source: 'web' }
   }
+}
+
+/**
+ * v1.2.66 — SSRF-safe fetch with manual redirect handling.
+ *
+ * Default `fetch({redirect:'follow'})` follows 3xx Location transparently,
+ * including to private IPs. That defeats the initial checkUrlSafety()
+ * since the final fetch target wasn't validated. Mirror nanobot's
+ * `validate_resolved_url`: redirect:'manual', loop ≤ 5 times, validate
+ * each Location with checkUrlSafety before following.
+ */
+const MAX_REDIRECTS = 5
+async function fetchWithSafeRedirects(
+  initialUrl: string,
+  signal: AbortSignal,
+  format: 'reader' | 'raw',
+): Promise<{ ok: true; response: Response; finalUrl: string; redirectChain: string[] } | { ok: false; error: string }> {
+  let currentUrl = initialUrl
+  const chain: string[] = []
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetch(currentUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      signal,
+      headers: {
+        'User-Agent': 'agim-native/1.2.66 (+https://github.com/benking007/agim)',
+        'Accept': format === 'reader' ? 'text/plain' : '*/*',
+      },
+    })
+    // 3xx with Location → validate + follow.
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location')
+      if (!location) {
+        return { ok: true, response: res, finalUrl: currentUrl, redirectChain: chain }
+      }
+      let nextUrl: string
+      try {
+        nextUrl = new URL(location, currentUrl).toString()
+      } catch {
+        return { ok: false, error: `web_fetch refused: invalid redirect Location "${location}"` }
+      }
+      const safe = checkUrlSafety(nextUrl)
+      if (!safe.ok) {
+        return { ok: false, error: `web_fetch refused: redirect target rejected — ${safe.reason}` }
+      }
+      // discard the redirect body (we don't need it)
+      try { await res.body?.cancel() } catch { /* ignore */ }
+      chain.push(currentUrl)
+      currentUrl = nextUrl
+      continue
+    }
+    return { ok: true, response: res, finalUrl: currentUrl, redirectChain: chain }
+  }
+  return { ok: false, error: `web_fetch refused: too many redirects (>${MAX_REDIRECTS})` }
 }
 
 // ─── web_search ──────────────────────────────────────────────────────
@@ -323,19 +373,39 @@ export function checkUrlSafety(raw: string): SafetyResult {
     return { ok: false, reason: `protocol "${u.protocol}" not allowed (only http/https)` }
   }
   if (process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE === '1') return { ok: true }
+
+  // v1.2.66 — CIDR whitelist. Operator-set ranges escape the
+  // private-IP block. Use case: Tailscale (100.64.0.0/10), internal
+  // VPN subnets, OpenAI-compat services on internal docker networks.
+  // Format: `IMHUB_NATIVE_WEB_SSRF_WHITELIST=10.20.0.0/16,100.64.0.0/10`.
+  // Parsed once per call (cheap; called per fetch); cache could be
+  // added but the list is small and changes are rare.
+  const whitelist = parseSsrfWhitelist(process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST)
+
   const host = u.hostname.toLowerCase()
   if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) {
-    return { ok: false, reason: 'localhost is private (set IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 to allow)' }
+    return { ok: false, reason: 'localhost is private (set IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 or whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST)' }
   }
   // IPv4 numeric check
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
   if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    const octets = [Number(v4[1]), Number(v4[2]), Number(v4[3]), Number(v4[4])]
+    if (whitelist.length > 0 && octets.every((o) => Number.isFinite(o) && o >= 0 && o <= 255)
+        && ipInAnyCidr4(octets, whitelist)) {
+      return { ok: true }
+    }
+    const [a, b] = [octets[0], octets[1]]
     if (a === 10) return { ok: false, reason: 'RFC1918 10.0.0.0/8 private' }
     if (a === 172 && b >= 16 && b <= 31) return { ok: false, reason: 'RFC1918 172.16.0.0/12 private' }
     if (a === 192 && b === 168) return { ok: false, reason: 'RFC1918 192.168.0.0/16 private' }
     if (a === 127) return { ok: false, reason: '127.0.0.0/8 loopback' }
-    if (a === 169 && b === 254) return { ok: false, reason: '169.254.0.0/16 link-local' }
+    if (a === 169 && b === 254) return { ok: false, reason: '169.254.0.0/16 link-local (covers AWS/Azure IMDS 169.254.169.254)' }
+    // v1.2.66 — Carrier-grade NAT (RFC 6598). Cloud providers + some
+    // ISPs use this for internal-only hosts. Not "private" in the
+    // RFC1918 sense but routinely used as such; nanobot blocks it.
+    if (a === 100 && b >= 64 && b <= 127) {
+      return { ok: false, reason: '100.64.0.0/10 carrier-grade NAT (whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST=100.64.0.0/10 if intentional, e.g. Tailscale)' }
+    }
     if (a === 0) return { ok: false, reason: '0.0.0.0/8 invalid' }
   }
   // IPv6 — Node's URL.hostname keeps the brackets ("[fe80::1]"). Strip
@@ -352,6 +422,38 @@ export function checkUrlSafety(raw: string): SafetyResult {
     }
   }
   return { ok: true }
+}
+
+// v1.2.66 — CIDR whitelist parsing + IPv4-only matcher.
+// Supports IPv4 CIDR only; IPv6 CIDR whitelist is rare enough to skip
+// for now. Invalid entries are silently dropped.
+interface Cidr4 { network: number; mask: number }
+
+export function parseSsrfWhitelist(raw: string | undefined): Cidr4[] {
+  if (!raw) return []
+  const out: Cidr4[] = []
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(trimmed)
+    if (!m) continue
+    const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]
+    if (octets.some((o) => o < 0 || o > 255)) continue
+    const prefix = Number(m[5])
+    if (prefix < 0 || prefix > 32) continue
+    const networkInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0
+    out.push({ network: (networkInt & mask) >>> 0, mask })
+  }
+  return out
+}
+
+function ipInAnyCidr4(octets: number[], cidrs: Cidr4[]): boolean {
+  const ip = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0
+  for (const c of cidrs) {
+    if (((ip & c.mask) >>> 0) === c.network) return true
+  }
+  return false
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────

@@ -179,12 +179,12 @@ export default function SettingsSecurityRoute(): JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2">
           <LabeledField label={t('security.exec.sandbox')}>
             <Select
-              value={(env.IMHUB_EXEC_SANDBOX ?? '').toLowerCase()}
-              onValueChange={(v) => void setValue('IMHUB_EXEC_SANDBOX', v === '' ? null : v)}
+              value={(env.IMHUB_EXEC_SANDBOX ?? '').toLowerCase() === 'bwrap' ? 'bwrap' : '__none__'}
+              onValueChange={(v) => void setValue('IMHUB_EXEC_SANDBOX', v === '__none__' ? null : v)}
             >
-              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">{t('security.exec.sandboxNone')}</SelectItem>
+                <SelectItem value="__none__">{t('security.exec.sandboxNone')}</SelectItem>
                 <SelectItem
                   value="bwrap"
                   disabled={!diagnostics?.bwrapAvailable}

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.68] - 2026-05-26
+
+### Fixed
+
+- **`/settings/security` page crashed on load** with
+  `A <Select.Item /> must have a value prop that is not an empty
+  string`. Radix UI's Select component refuses empty-string values
+  on its items because it reserves them internally for "clear
+  selection / show placeholder". The exec-sandbox dropdown's
+  "None (plain spawn)" option used `value=""` for null → page
+  threw before any UI rendered. Switched to a `__none__` sentinel
+  that maps to `null` when persisted to env.
+
 ## [1.2.67] - 2026-05-26
 
 ### Added

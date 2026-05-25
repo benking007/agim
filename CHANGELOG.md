@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.55] - 2026-05-25
+
+### Fixed
+
+- **Admin allowlist file-fallback** — when an operator added themselves
+  via `/setup admin <token>` from IM, the in-memory + env-file write
+  succeeded, but on the next service restart the new admin sometimes
+  vanished from the web/IM admin list. Root cause: systemd's
+  `EnvironmentFile=` parser is stricter than agim's `readEnvFile` (it
+  silently drops lines containing certain characters), so the
+  `IMHUB_ADMIN_USERS=…,…` line could land in `~/.agim/env` correctly
+  but be partially or fully ignored when systemd handed env to the new
+  process. `admin-allowlist.getEntries()` now ALSO reads
+  `~/.agim/env` directly with agim's own parser and merges entries
+  systemd's parse missed; in-process duplicates dedupe by `(platform,
+  userId)`. Operator visible only via the new startup log.
+
+### Added
+
+- **Startup diagnostic log** — `admin.allowlist.loaded` event written
+  once per boot with counts:
+  `{ fromProcessEnv, fromEnvFile, merged, fileFallbackActive }`.
+  Grep `journalctl -u agim | grep admin.allowlist.loaded` post-restart
+  to see if the fallback recovered anything.
+
 ## [1.2.54] - 2026-05-25
 
 ### Fixed

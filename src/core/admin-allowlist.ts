@@ -31,6 +31,46 @@ let cachedRaw = ''
  *  file so a restart picks them up. */
 const runtimeEntries: Entry[] = []
 
+/** Read IMHUB_ADMIN_USERS directly from ~/.agim/env, bypassing systemd's
+ *  EnvironmentFile parser. systemd's parser is strict about quoting +
+ *  silently drops lines it can't make sense of, so when an operator adds
+ *  an admin via /setup admin the env-file write may succeed but the
+ *  next service restart loads a partial value (observed 2026-05-25:
+ *  env file has wechat,telegram but process.env only sees wechat).
+ *  This file-direct fallback runs once per process and merges any
+ *  entries the systemd-passed value missed. Returns '' when the file
+ *  is missing, unreadable, or has no ADMIN_USERS line. */
+let cachedFileRaw: string | null = null
+function readFileAdminUsers(): string {
+  if (cachedFileRaw !== null) return cachedFileRaw
+  cachedFileRaw = ''
+  try {
+    // Lazy import so unit tests that don't touch admin code don't pay
+    // the disk lookup. ENV_FILE is the same path systemd reads.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs')
+    const { ENV_FILE } = require('../cli-ui/env-file.js') as { ENV_FILE: string }
+    if (!fs.existsSync(ENV_FILE)) return cachedFileRaw
+    const raw = fs.readFileSync(ENV_FILE, 'utf-8')
+    // Take the LAST IMHUB_ADMIN_USERS= line (matches systemd's
+    // last-wins semantics + agim's own readEnvFile object overwrite).
+    const lines = raw.split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim()
+      if (line.startsWith('IMHUB_ADMIN_USERS=')) {
+        cachedFileRaw = line.slice('IMHUB_ADMIN_USERS='.length).trim()
+        // Strip surrounding quotes if present (systemd-style).
+        if ((cachedFileRaw.startsWith('"') && cachedFileRaw.endsWith('"'))
+            || (cachedFileRaw.startsWith("'") && cachedFileRaw.endsWith("'"))) {
+          cachedFileRaw = cachedFileRaw.slice(1, -1)
+        }
+        break
+      }
+    }
+  } catch { /* best-effort */ }
+  return cachedFileRaw
+}
+
 function parseEnv(raw: string): Entry[] {
   const out: Entry[] = []
   for (const pair of raw.split(',')) {
@@ -51,12 +91,28 @@ function parseEnv(raw: string): Entry[] {
 }
 
 function getEntries(): Entry[] {
-  const raw = process.env.IMHUB_ADMIN_USERS ?? ''
-  if (raw !== cachedRaw) {
-    cachedRaw = raw
-    cachedEntries = parseEnv(raw)
+  // Two sources of truth, both consulted: process.env (systemd's parse
+  // of EnvironmentFile + any Environment= override) and the env file
+  // read directly via Node fs (sidesteps systemd parser quirks). We
+  // dedupe by (platform, userId) so a value present in both doesn't
+  // double-count. Runtime entries from promoteAdmin() are layered on
+  // top so an in-session add is visible even if the file write race'd.
+  const envRaw = process.env.IMHUB_ADMIN_USERS ?? ''
+  const fileRaw = readFileAdminUsers()
+  // Cache invalidation: re-parse when the env value (process or file)
+  // changes. File contents don't change without a restart of this
+  // process so cachedFileRaw is one-shot; only process.env can shift
+  // (admin-allowlist itself mutates process.env? — no, it doesn't.
+  // updateEnvFile DOES touch process.env elsewhere, so be defensive).
+  const composite = `${envRaw}${fileRaw}`
+  if (composite !== cachedRaw) {
+    cachedRaw = composite
+    const dedup = new Map<string, Entry>()
+    for (const e of [...parseEnv(envRaw), ...parseEnv(fileRaw)]) {
+      dedup.set(`${e.platform}:${e.userId}`, e)
+    }
+    cachedEntries = [...dedup.values()]
   }
-  // Combine env entries with anything `promoteAdmin` added at runtime.
   return [...(cachedEntries ?? []), ...runtimeEntries]
 }
 
@@ -151,9 +207,34 @@ export function denialMessage(platform: string, userId: string | undefined): str
   )
 }
 
+/** One-shot startup log: how many admins agim resolved from env vs file
+ *  vs runtime. Call from cli boot once messengers / web are up so the
+ *  line lands in journal with a recognisable event tag. Idempotent. */
+let loggedOnce = false
+export function logStartupResolution(): void {
+  if (loggedOnce) return
+  loggedOnce = true
+  const envRaw = process.env.IMHUB_ADMIN_USERS ?? ''
+  const fileRaw = readFileAdminUsers()
+  const envCount = parseEnv(envRaw).length
+  const fileCount = parseEnv(fileRaw).length
+  const finalCount = getEntries().length
+  log.info({
+    event: 'admin.allowlist.loaded',
+    fromProcessEnv: envCount,
+    fromEnvFile: fileCount,
+    merged: finalCount,
+    fileFallbackActive: fileCount > envCount,
+  }, fileCount > envCount
+    ? `admin allowlist: process.env had ${envCount}, env file had ${fileCount} — file-fallback recovered ${fileCount - envCount} entries lost by systemd's EnvironmentFile parser`
+    : `admin allowlist: ${finalCount} entries loaded`)
+}
+
 /** Test-only — reset all state so tests can fully isolate. */
 export function _resetCache(): void {
   cachedEntries = null
   cachedRaw = ''
+  cachedFileRaw = null
+  loggedOnce = false
   runtimeEntries.length = 0
 }

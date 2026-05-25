@@ -346,6 +346,15 @@ program
     } catch (err) {
       console.warn(`⚠️ admin bootstrap setup failed: ${err instanceof Error ? err.message : String(err)}`)
     }
+    // Startup diagnostic: log how the admin allowlist resolved (process.env
+    // vs env-file fallback). Helps debug the "admin disappeared after
+    // restart" class of issue where systemd's EnvironmentFile parser
+    // silently drops part of IMHUB_ADMIN_USERS while the file itself
+    // looks fine. Pure log; non-fatal.
+    try {
+      const { logStartupResolution } = await import('./core/admin-allowlist.js')
+      logStartupResolution()
+    } catch { /* best-effort */ }
 
     // ============================================
     // ONBOARDING CHECKS (before default fill!)

@@ -104,7 +104,7 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
   const mcpReg = describeMcpRegistry()
   const externalMcp = mcpReg.servers.length
     ? mcpReg.servers
-        .map((s) => `  - ${s.name} (${s.connected ? `${s.toolCount} tools` : `disconnected${s.error ? ': ' + s.error : ''}`})`)
+        .map((s) => `  - ${s.name} (${s.connected ? `${s.toolCount} tools` : `disconnected${s.error ? `: ${s.error}` : ''}`})`)
         .join('\n')
     : '  (none configured)'
 
@@ -297,8 +297,9 @@ export function parsePromptMedia(prompt: string): Array<{ path: string; mime?: s
   // trailing slashes / dotted segments in the env override.
   const mediaRoot = pathResolve(mediaRootRaw)
   const mediaPrefix = mediaRoot.endsWith(pathSep) ? mediaRoot : mediaRoot + pathSep
-  let m: RegExpExecArray | null
-  while ((m = re.exec(prompt)) !== null) {
+  for (;;) {
+    const m = re.exec(prompt)
+    if (m === null) break
     const rawPath = (m[1] || '').trim()
     if (!rawPath) continue
     // Path-safety: must be absolute AND resolve to a real file UNDER

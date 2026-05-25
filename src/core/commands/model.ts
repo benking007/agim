@@ -104,8 +104,10 @@ const cursorDriver: ModelDriver = {
     proc.stdout?.on('data', d => out += d.toString())
     proc.on('close', () => {
       const ids: string[] = []
-      // eslint-disable-next-line no-control-regex
-      const ansi = /\[[0-9;]*m/g
+      // ANSI CSI strip. Build via RegExp constructor so the literal
+      // ESC byte (0x1b) never lands in source (biome
+      // noControlCharactersInRegex).
+      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\[[0-9;]*m`, 'g')
       for (const lineRaw of out.split('\n')) {
         const line = lineRaw.replace(ansi, '').trim()
         if (!line) continue

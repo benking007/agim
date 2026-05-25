@@ -14,7 +14,7 @@ class CursorAdapterTestable extends CursorAdapter {
   }
   exposeInspectEvent(event: unknown, opts: Record<string, unknown>): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this as any).inspectEvent(event, opts)
+    (this as any).inspectEvent(event, opts)
   }
   exposeBuildArgs(prompt: string, opts: Record<string, unknown>): string[] {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

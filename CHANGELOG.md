@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.51] - 2026-05-25
+
+### Fixed
+
+- v1.2.50's npm publish workflow gated on `Run tests` failing in CI
+  because (a) the legacy `test/unit/model-command.test.ts` asserted
+  the old single-agent gating wording and (b) the
+  `src/web/agim-skills-api.test.ts` "fresh install count=0" fixture
+  was tripping on v1.2.48's multi-root skills scan inheriting
+  `~/.claude/skills` etc. on the CI box. Both tests updated to match
+  current behaviour.
+- Lint errors that had accumulated across v1.2.48-50 are now zero:
+  three `useTemplate` rewrites in `memo-rpc.ts` + `web/server.ts`,
+  one ANSI regex now built via `new RegExp` to dodge biome's
+  `noControlCharactersInRegex`, one assign-in-while-expression in
+  `parsePromptMedia` rewritten to a `for (;;)` loop, one void-return
+  in the cursor adapter test stub.
+- All `/model` + cursor adapter functionality from v1.2.50 is in this
+  release — v1.2.50 itself never landed on npm.
+
 ## [1.2.50] - 2026-05-25
 
 ### Added

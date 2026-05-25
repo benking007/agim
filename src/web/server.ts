@@ -1999,7 +1999,7 @@ async function handleServiceStart(res: ServerResponse): Promise<void> {
         child.unref()
         sendJson(res, 200, { ok: true, mode: 'systemd', starting: true, previousActive: st.active })
       } catch (err) {
-        sendJson(res, 500, { error: 'systemctl start spawn failed: ' + (err instanceof Error ? err.message : String(err)) })
+        sendJson(res, 500, { error: `systemctl start spawn failed: ${err instanceof Error ? err.message : String(err)}` })
       }
       return
     }
@@ -2048,7 +2048,7 @@ async function handleServiceStop(res: ServerResponse): Promise<void> {
       } catch { /* best-effort */ }
       sendJson(res, 200, { ok: true, mode: 'systemd' })
     } catch (err) {
-      sendJson(res, 500, { error: 'systemctl stop failed: ' + (err instanceof Error ? err.message : String(err)) })
+      sendJson(res, 500, { error: `systemctl stop failed: ${err instanceof Error ? err.message : String(err)}` })
     }
     return
   }
@@ -2114,7 +2114,7 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
       child.unref()
       sendJson(res, 200, { ok: true, mode: 'systemd', restarting: true })
     } catch (err) {
-      sendJson(res, 500, { error: 'systemctl restart spawn failed: ' + (err instanceof Error ? err.message : String(err)) })
+      sendJson(res, 500, { error: `systemctl restart spawn failed: ${err instanceof Error ? err.message : String(err)}` })
     }
     return
   }

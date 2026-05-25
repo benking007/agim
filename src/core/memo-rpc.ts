@@ -128,7 +128,7 @@ async function handleSave(payload: Record<string, unknown>, ctx: RunContext): Pr
     }
     const geo = await geocodeAddress(address)
     if (!geo.ok) {
-      return { ok: false, error: `geocode failed: ${geo.reason}${geo.message ? ' (' + geo.message + ')' : ''}` }
+      return { ok: false, error: `geocode failed: ${geo.reason}${geo.message ? ` (${geo.message})` : ''}` }
     }
     whereLat = geo.lat
     whereLng = geo.lng
@@ -273,7 +273,7 @@ async function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): 
       }
       const geo = await geocodeAddress(payload.address.trim())
       if (!geo.ok) {
-        return { ok: false, error: `geocode failed: ${geo.reason}${geo.message ? ' (' + geo.message + ')' : ''}` }
+        return { ok: false, error: `geocode failed: ${geo.reason}${geo.message ? ` (${geo.message})` : ''}` }
       }
       u.whereLat = geo.lat
       u.whereLng = geo.lng

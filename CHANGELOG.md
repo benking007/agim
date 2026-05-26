@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.71] - 2026-05-26
+
+### Fixed
+
+- **IMHUB_PLATFORM_BLACKLIST: SPA PlatformCards now hidden.**
+  v1.2.69 added 3-layer blacklist enforcement (registry refusal at
+  boot, CLI wizard filter, web GET `/api/config` field stripping)
+  but left the SPA `messengers.tsx` page hardcoding 5 `PlatformCard`
+  components that ignored the blacklist. Operators who set
+  `IMHUB_PLATFORM_BLACKLIST=feishu,discord` still saw the Feishu /
+  Discord cards in /settings/messengers (with the fields blank,
+  since the backend correctly returned `null` for those slots).
+- **Backend** (`web/server.ts:1574`): `/api/config` now returns
+  `features.blacklistedPlatforms: string[]` — the alias-expanded
+  set from `getPlatformBlacklist()`.
+- **SPA type** (`web-app/src/types/api.ts`): extended `features`
+  with the new `blacklistedPlatforms?: string[]` field.
+- **SPA** (`web-app/src/routes/settings/messengers.tsx`):
+  introduced `isBlocked(slot)` helper backed by
+  `cfg.features.blacklistedPlatforms`. All 5 platform cards
+  (wechat-ilink / telegram / feishu / dingtalk / discord) are now
+  gated — when blacklisted, the card disappears entirely (not just
+  emptied). WeChat alias (`wechat` ⇔ `wechat-ilink`) is already
+  expanded server-side, so the SPA only checks the literal slot id.
+
 ## [1.2.70] - 2026-05-26
 
 ### Security

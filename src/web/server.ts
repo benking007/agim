@@ -1574,6 +1574,11 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       features: {
         globalIm: showGlobalIm,
         remoteAgent: showRemoteAgent,
+        // v1.2.71 — surface the live blacklist set so the SPA can hide
+        // PlatformCards for blacklisted platforms. Without this the
+        // backend filter on `messengers` / `telegram` / `feishu` etc.
+        // only emptied the data but the hardcoded cards still rendered.
+        blacklistedPlatforms: (await import('../core/registry.js')).getPlatformBlacklist(),
       },
       webPort: config.webPort,
       // R15 — acpPort travels only when remote-agent feature is on.

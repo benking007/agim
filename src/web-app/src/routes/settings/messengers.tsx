@@ -136,6 +136,13 @@ export default function SettingsMessengersRoute(): JSX.Element {
   // WeChat QR modal state
   const [qrOpen, setQrOpen] = useState(false)
 
+  // v1.2.71 — IMHUB_PLATFORM_BLACKLIST gate. Backend sends the
+  // alias-expanded set in features.blacklistedPlatforms; we hide the
+  // matching PlatformCard so blacklisted IMs disappear from the page
+  // entirely (not just have empty data).
+  const blockedPlatforms = new Set(cfg?.features?.blacklistedPlatforms ?? [])
+  const isBlocked = (slot: Slot): boolean => blockedPlatforms.has(slot)
+
   function patchSlot(slot: Slot, partial: Partial<PlatformDraft>): void {
     setDraft((prev) => ({ ...prev, [slot]: { ...prev[slot], ...partial } }))
   }
@@ -209,25 +216,27 @@ export default function SettingsMessengersRoute(): JSX.Element {
         <div className="h-96 rounded-md bg-surface-2 animate-pulse" />
       ) : !cfg ? null : (
         <div className="flex flex-col gap-3">
-          <PlatformCard
-            slot="wechat-ilink"
-            label={t('messengers.platform.wechat')}
-            hint={t('messengers.hint.wechat')}
-            enabled={draft['wechat-ilink'].enabled}
-            onToggle={(v) => patchSlot('wechat-ilink', { enabled: v })}
-          >
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setQrOpen(true)}
+          {!isBlocked('wechat-ilink') ? (
+            <PlatformCard
+              slot="wechat-ilink"
+              label={t('messengers.platform.wechat')}
+              hint={t('messengers.hint.wechat')}
+              enabled={draft['wechat-ilink'].enabled}
+              onToggle={(v) => patchSlot('wechat-ilink', { enabled: v })}
             >
-              <QrCode className="h-4 w-4" />
-              {t('messengers.scanQr')}
-            </Button>
-          </PlatformCard>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setQrOpen(true)}
+              >
+                <QrCode className="h-4 w-4" />
+                {t('messengers.scanQr')}
+              </Button>
+            </PlatformCard>
+          ) : null}
 
-          {cfg.features?.globalIm ? (
+          {cfg.features?.globalIm && !isBlocked('telegram') ? (
             <PlatformCard
               slot="telegram"
               label={t('messengers.platform.telegram')}
@@ -249,6 +258,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
             </PlatformCard>
           ) : null}
 
+          {!isBlocked('feishu') ? (
           <PlatformCard
             slot="feishu"
             label={t('messengers.platform.feishu')}
@@ -273,7 +283,9 @@ export default function SettingsMessengersRoute(): JSX.Element {
               onChange={(v) => patchSlot('feishu', { feishu: { ...draft.feishu.feishu, channelId: v } })}
             />
           </PlatformCard>
+          ) : null}
 
+          {!isBlocked('dingtalk') ? (
           <PlatformCard
             slot="dingtalk"
             label={t('messengers.platform.dingtalk')}
@@ -356,8 +368,9 @@ export default function SettingsMessengersRoute(): JSX.Element {
               })}
             />
           </PlatformCard>
+          ) : null}
 
-          {cfg.features?.globalIm ? (
+          {cfg.features?.globalIm && !isBlocked('discord') ? (
             <PlatformCard
               slot="discord"
               label={t('messengers.platform.discord')}

@@ -801,6 +801,11 @@ export interface AppConfig {
   features?: {
     globalIm?: boolean
     remoteAgent?: boolean
+    /** v1.2.71 — runtime IMHUB_PLATFORM_BLACKLIST set, alias-expanded
+     *  (e.g. ['wechat', 'wechat-ilink', 'telegram']). SPA hides the
+     *  corresponding PlatformCard / nav entries. Empty array when the
+     *  env is unset. */
+    blacklistedPlatforms?: string[]
   }
   /** Open-ended for forward-compat. */
   [key: string]: unknown

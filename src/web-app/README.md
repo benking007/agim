@@ -3,8 +3,9 @@
 完整重写的 React SPA，规划与现状盘点见
 [`/root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md`](../../root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md)（外部仅做参考，不进 release）。
 
-旧 `src/web/public/*.html` 在 M4 阶段彻底删除；过渡期通过 `IMHUB_WEB_V2=0`
-环境变量可以回退到旧 UI（见 PR-5 计划）。
+旧 `src/web/public/*.html`（settings / tasks / reminders / memos）已在
+v1.2.72 彻底删除，`IMHUB_WEB_V2` 环境变量也已移除 — 没有 v1 回退路径，
+所有 web 后台请求统一走 SPA shell（`index.html` + `/assets/*.js`）。
 
 ## 开发流程
 

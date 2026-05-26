@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.72] - 2026-05-26
+
+### Removed
+
+- **Legacy v1 web admin: gone for good.** The `IMHUB_WEB_V2` env gate
+  is removed; v2 SPA is the only web admin path now. Multiple
+  operators kept hitting "white screen / wrong page" because the
+  default env (`unset`) was being misread on some installs, and the
+  back-out hatch added more confusion than it solved.
+- **Deleted files** (~7100 lines total):
+  - `src/web/public/settings.html` (2488 lines)
+  - `src/web/public/tasks.html` (3724 lines)
+  - `src/web/public/reminders.html` (332 lines)
+  - `src/web/public/memos.html` (352 lines)
+  - `src/web/public/_app.js` (248 lines — shared v1 theme / i18n /
+    auth-aware fetch; replaced by the v2 SPA's bundle)
+- **Removed routes** in `web/server.ts`:
+  - The `process.env.IMHUB_WEB_V2 !== '0'` env gate is gone — SPA
+    fallback is now unconditional for GET requests.
+  - The legacy `/settings` / `/tasks` / `/reminders` / `/memos`
+    direct-HTML routing block deleted.
+  - The `/_app.js` static handler deleted.
+  - `/_app.js` removed from `PUBLIC_EXACT_PATHS` allowlist.
+- **No back-out hatch.** Operators who were on v1 (last shipped
+  default-ON 1.2.20 → flipped default-v2 1.2.21, knob preserved until
+  1.2.71) flipped over automatically when they upgraded. Anyone who
+  still set `IMHUB_WEB_V2=0` in `~/.agim/env` can safely delete the
+  line — the value is ignored.
+
+### Notes
+
+- `IMHUB_ENABLE_GLOBAL_IM` / `IMHUB_ENABLE_REMOTE_AGENT` /
+  `IMHUB_PLATFORM_BLACKLIST` etc. are unaffected — those gate IM
+  platform visibility inside the SPA, not the SPA itself.
+- `/loc` / `/loc.html` SSR pages and `/login.html` stay (they're not
+  part of the SPA).
+
 ## [1.2.71] - 2026-05-26
 
 ### Fixed

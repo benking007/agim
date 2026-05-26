@@ -61,7 +61,6 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   '/login', '/login.html',
   '/api/auth/login',
   '/api/health',
-  '/_app.js',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use
@@ -367,28 +366,27 @@ export async function startWebServer(options: {
     // Loopback peers + the public paths below bypass.
     if (!checkAuth(req, res, url)) return
 
-    // v2 SPA fallback — default ON since 1.2.21 (the v2 SPA shell is now
-    // the only `index.html` we ship; the v1 monolithic HTML was retired
-    // during M1 / R10). This branch serves the SPA chunks under
-    // `/assets/*.js`, the favicon / manifest, and falls back to
-    // index.html for any client-side route. Without this branch a fresh
-    // install hits a white screen — `<script src="/assets/…js">` 404s
-    // because no other handler claims that path.
+    // v1.2.72 — v2 SPA is the only web admin. The legacy v1 monolithic
+    // HTML pages (settings.html / tasks.html / reminders.html /
+    // memos.html / _app.js) have been removed; the `IMHUB_WEB_V2` env
+    // gate is gone — there is no v1 fallback anymore. Operators who
+    // were on the legacy layout flipped over automatically when they
+    // upgraded past 1.2.21 (default switch); the env knob remained as
+    // a back-out hatch through 1.2.71 and is retired here.
     //
-    // Operators on a deeply-customised v1 layout can opt out with
-    // `IMHUB_WEB_V2=0`; that drops back into the v1 handler block below,
-    // which still serves the legacy `tasks.html` / `reminders.html` /
-    // `memos.html` / `settings.html` directly. The default-off shape
-    // shipped through 1.2.20.
-    if (process.env.IMHUB_WEB_V2 !== '0' && req.method === 'GET') {
+    // This branch serves the SPA chunks under `/assets/*.js`, the
+    // favicon / manifest, and falls back to `index.html` for any
+    // client-side route. Without it a fresh install hits a white
+    // screen because `<script src="/assets/…js">` 404s — no other
+    // handler claims that path.
+    if (req.method === 'GET') {
       const p = url.pathname
       const isApi = p.startsWith('/api/')
       const isWs = p.startsWith('/ws')
       const isSse = p === '/events'
       const isVendor = p.startsWith('/vendor/')
-      const isLegacyShared = p === '/_app.js' || p === '/_shell.css'
       const isPublicSsr = p === '/loc' || p === '/loc.html' || p.startsWith('/l/') || p.startsWith('/v/')
-      if (!isApi && !isWs && !isSse && !isVendor && !isLegacyShared && !isPublicSsr) {
+      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr) {
         // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
         // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
         // Otherwise fall back to /index.html so the router handles it.
@@ -411,25 +409,6 @@ export async function startWebServer(options: {
       // Falls through to API / WS / SSR-page handlers below.
     }
 
-    // Static pages — direct serve, no auth gate. This is the v1
-    // routing path; v2 takes precedence when IMHUB_WEB_V2=1 (above).
-    if (
-      url.pathname === '/' || url.pathname === '/index.html' ||
-      url.pathname === '/settings' || url.pathname === '/settings.html' ||
-      url.pathname === '/tasks' || url.pathname === '/tasks.html' ||
-      url.pathname === '/reminders' || url.pathname === '/reminders.html' ||
-      url.pathname === '/memos' || url.pathname === '/memos.html'
-    ) {
-      const fileMap: Record<string, string> = {
-        '/': 'index.html', '/index.html': 'index.html',
-        '/settings': 'settings.html', '/settings.html': 'settings.html',
-        '/tasks': 'tasks.html', '/tasks.html': 'tasks.html',
-        '/reminders': 'reminders.html', '/reminders.html': 'reminders.html',
-        '/memos': 'memos.html', '/memos.html': 'memos.html',
-      }
-      return servePageHtml(res, join(PUBLIC_DIR, fileMap[url.pathname]!))
-    }
-
     // M4: /api/health is intentionally public (k8s liveness probe friendly)
     // — declare it BEFORE the /api/* token gate so callers don't need to
     // know the web token. Returns only operational status, not config.
@@ -447,14 +426,6 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/login' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
-    }
-
-    // Shared web-console utilities (theme manager + i18n + error boundary
-    // + auth-aware fetch). Loaded synchronously by every static page in
-    // <head> so the theme can apply before first paint. No secrets — safe
-    // to serve un-authenticated.
-    if (url.pathname === '/_app.js' && req.method === 'GET') {
-      return serveStatic(res, join(PUBLIC_DIR, '_app.js'), 'application/javascript; charset=utf-8')
     }
 
     // v1.2.3 — vendored third-party assets (Chart.js etc). Whitelist by
@@ -1792,8 +1763,8 @@ function validateWorkspacePayload(raw: unknown, expectedId?: string): { ok: true
 
 /**
  * Persist the workspaces array back to ~/.agim/config.json so changes
- * survive a restart. We do not touch other config fields — settings.html
- * has its own /api/config PUT for that. Best-effort: a write failure is
+ * survive a restart. We do not touch other config fields — the SPA
+ * settings page has its own /api/config PUT for that. Best-effort: a write failure is
  * logged but the in-memory registry has already been updated, so the
  * change is live until the next process boot.
  */

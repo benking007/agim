@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.81] - 2026-05-26
+
+### Fixed
+
+- **Release CI publishes again** (second attempt). v1.2.80's bun-install
+  pivot tripped on `ConnectionRefused` / `FailedToOpenSocket` when bun
+  tried to fetch tarballs — likely interaction between setup-node's
+  `always-auth=true` npmrc and bun's connection pool. Fallback: stay
+  with npm but **upgrade to `npm@latest` first** (npm 11 patched the
+  arborist "Exit handler never called!" stall that broke 1.2.76-78)
+  and use `npm install --no-package-lock --legacy-peer-deps --no-audit
+  --no-fund` so the tree resolution doesn't re-hit the same path. End
+  users still get the canonical npm path; this only changes CI.
+
 ## [1.2.80] - 2026-05-26
 
 ### Fixed

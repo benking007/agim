@@ -55,22 +55,27 @@ jobs:
 
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        # v1.2.79 — switched to `bun install` because npm 10 hangs on
-        # our dep tree with "Exit handler never called!". The trigger
-        # used to be just @xenova/transformers (ONNX postinstall); the
-        # TUI deps added in v1.2.76 (ink/react/ink-text-input + their
-        # transitive chalk/wrap-ansi/cli-truncate chain) pushed it over
-        # the same npm-arborist threshold, so 1.2.76–78 all silently
-        # failed to publish — the install step exited 1 after ~70s
-        # before tests/build/publish could run.
-        #
-        # `bun install` handles the same package.json cleanly (bun is
-        # already on PATH from setup-bun above). We skip optional deps
-        # the same way the npm path used to — `@xenova/transformers`
-        # is a runtime-only dynamic import not needed in the publish
-        # artifact. End users still get it on `npm i -g agim-cli` by
-        # default (npm at install time, not CI).
-        run: bun install --frozen-lockfile --no-optional || bun install --no-optional
+        # v1.2.81 — back to npm, but on the LATEST major where the
+        # arborist "Exit handler never called!" bug is fixed
+        # (https://github.com/npm/cli/issues/4023 chain). Path history:
+        #   * v1.2.75 and earlier: `npm ci --omit=optional` — fine on
+        #     the smaller dep tree.
+        #   * v1.2.76-78: same command, but TUI deps pushed the tree
+        #     over the arborist threshold → npm 10 hangs ~70s, exits 1,
+        #     publish never runs.
+        #   * v1.2.79-80: tried `bun install`. bun migrates the
+        #     lockfile but then hits ConnectionRefused / FailedToOpenSocket
+        #     when fetching tarballs — likely interaction with setup-node's
+        #     `always-auth=true` npmrc + bun's socket pool.
+        # Fix: upgrade npm first, then plain `npm install` with the
+        # full set of soft-mode flags (`--no-audit --no-fund
+        # --legacy-peer-deps --no-package-lock`). `--no-package-lock`
+        # short-circuits the arborist tree-comparison path that was
+        # the actual stall point in npm 10.
+        run: |
+          npm install -g npm@latest
+          npm --version
+          npm install --omit=optional --no-audit --no-fund --legacy-peer-deps --no-package-lock
 
       - name: Install web-app dependencies
         if: steps.version.outputs.changed == 'true'
@@ -79,9 +84,9 @@ jobs:
         # build:spa (cd src/web-app && tsc --noEmit && vite build)
         # into the main build script — without this step tsc fails
         # with TS2688: "Cannot find type definition file for 'vite/client'".
-        # Same npm-hang reasoning as the root step → use bun.
+        # Mirror the root-install workarounds (npm latest + soft flags).
         working-directory: src/web-app
-        run: bun install --frozen-lockfile || bun install
+        run: npm install --no-audit --no-fund --legacy-peer-deps --no-package-lock
 
       - name: Build
         if: steps.version.outputs.changed == 'true'

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.79] - 2026-05-26
+
+### Fixed
+
+- **Release CI publishes again.** v1.2.76 / 1.2.77 / 1.2.78 never
+  reached npm. Root cause: when `ink` / `react` / `@types/react`
+  were added in v1.2.76, the local `npm install` updated
+  `package-lock.json`'s dep tree but left its `version` field at
+  `1.2.75`. CI's `npm ci` step then refused to proceed (lock /
+  package.json mismatch on the `version` key), and the
+  `|| npm install --omit=optional` fallback path also stumbled —
+  either way, publish never ran.
+- Re-synced `package-lock.json` to match `package.json` (`1.2.79`)
+  and bumped one more notch to retrigger the
+  `paths: ['package.json']` push hook on `release.yml`. No code
+  changes beyond version metadata in this release; the actual TUI
+  features land in this build are everything from 1.2.76 + 1.2.77 +
+  1.2.78 (Ink chat UI, slash popup, `!cmd` / `@file` / `/editor` /
+  `/compact` / `/redo` / `/undo` / `/export`, Ctrl-P palette,
+  completion bell, markdown rendering with keyword highlight, session
+  persistence + `--resume` / `--list-sessions`, flicker fix).
+
 ## [1.2.78] - 2026-05-26
 
 ### Fixed / Added (TUI feedback batch)

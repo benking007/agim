@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.85] - 2026-05-26
+
+### Fixed
+
+- **`~/.agim/env` edits not visible to the daemon on non-systemd
+  installs** (macOS / brew / nvm / pm2). Symptom: operator edits
+  the env file, restarts the service, but the running process
+  doesn't see the new values — the daemon hot-reload path also
+  reads from `process.env`, so neither restart nor in-place edits
+  worked.
+- Root cause: on Linux systemd, the unit file injects
+  `EnvironmentFile=-/root/.agim/env` BEFORE spawning the process,
+  so values are in `process.env` from the start. macOS / nvm /
+  pm2 / brew have no such hook, and `agim start` itself never
+  read the env file at boot — only individual subcommands like
+  `agim web` did (for their own specific keys).
+- Fix: `cli.ts:start` now loads `~/.agim/env` at the very top of
+  the start action (before the `--bg` branch) and merges every key
+  into `process.env` IF the key isn't already set. systemd /
+  shell exports still win — this just covers the case where the
+  env file is the only source of truth.
+
 ## [1.2.84] - 2026-05-26
 
 ### Fixed

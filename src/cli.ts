@@ -93,6 +93,24 @@ program
   .description('Start the Agim server (foreground by default; --bg for detached daemon)')
   .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.agim/)')
   .action(async (opts: { bg?: boolean; background?: boolean }) => {
+    // v1.2.85 — load ~/.agim/env into process.env BEFORE any branch
+    // takes us elsewhere. systemd handles this via the unit's
+    // `EnvironmentFile=-/root/.agim/env`, but macOS / brew / nvm /
+    // pm2 installs have no such hook and rely on this explicit
+    // load. Without it, operator edits to ~/.agim/env never reach
+    // the running daemon, even after "restart" — they kept changing
+    // settings, restarting, and seeing no effect. File values
+    // fill blanks only; anything already set by the shell or
+    // systemd takes precedence so we don't accidentally undo a
+    // unit-file `Environment=` override.
+    try {
+      const { readEnvFile } = await import('./cli-ui/env-file.js')
+      const f = readEnvFile()
+      for (const [k, v] of Object.entries(f)) {
+        if (process.env[k] === undefined) process.env[k] = v
+      }
+    } catch { /* best-effort — daemon still starts with whatever it has */ }
+
     // `--bg` (or its alias `--background`): hand off to the bg-spawner.
     // It re-execs us with `start` (no flag) inside a detached child so
     // the actual foreground start logic below runs in that child.

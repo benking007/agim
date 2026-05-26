@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.74] - 2026-05-26
+
+### Fixed
+
+- **`/settings/messengers` crash**: `Unexpected Application Error:
+  object is not iterable (cannot read property Symbol(Symbol.iterator))`.
+  v1.2.69's blacklist filter converted `config.messengers` (a
+  `string[]`) into an index-keyed object via
+  `Object.fromEntries(Object.entries(arr).filter(...))`, producing
+  `{ '0': 'telegram', '1': 'feishu' }`. The SPA then did
+  `new Set(cfg.messengers ?? [])` and crashed because plain objects
+  aren't iterable. Fixed by using `.filter()` on the array directly,
+  which preserves the `string[]` shape the SPA + downstream config
+  loader expect.
+- Affected: any install on 1.2.69 – 1.2.73 that opened
+  `/settings/messengers` (the page would white-screen with the
+  iterable error in the React error boundary).
+
 ## [1.2.73] - 2026-05-26
 
 ### Fixed

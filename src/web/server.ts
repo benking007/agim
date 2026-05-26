@@ -1476,13 +1476,19 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     // registry refuses to register the adapter at boot. Default empty.
     const { isPlatformBlacklisted: blocked } = await import('../core/registry.js')
 
-    // v1.2.69 — strip blacklisted entries from the `messengers`
-    // dictionary so the SPA's per-platform toggle row also vanishes
-    // (rendered from this object's keys).
+    // v1.2.69 — strip blacklisted entries from the `messengers` array
+    // so the SPA's per-platform toggle row also vanishes (rendered
+    // from this array's values).
+    //
+    // v1.2.74 hotfix — the v1.2.69 implementation used
+    // `Object.fromEntries(Object.entries(arr))`, which converts an
+    // array into an index-keyed object `{ '0': 'telegram', '1': … }`.
+    // The SPA then did `new Set(cfg.messengers ?? [])` and crashed
+    // ("object is not iterable"). `config.messengers` is `string[]`
+    // (see core/config-schema.ts:175), so a plain array filter is
+    // the right shape.
     const visibleMessengers = config.messengers
-      ? Object.fromEntries(
-          Object.entries(config.messengers).filter(([k]) => !blocked(k)),
-        )
+      ? config.messengers.filter((name) => !blocked(name))
       : config.messengers
 
     sendJson(res, 200, {

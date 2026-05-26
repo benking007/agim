@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.86] - 2026-05-27
+
+### Added
+
+- **Long-task: active goal exempts the wall-clock timeout.** Inspired
+  by nanobot's "an objective in flight is not a turn", agent-loop +
+  A2A now consult `hasActiveGoal(platform, channelId, threadId)` and
+  multiply the base timeout by `IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER`
+  (default `3`, hard-capped at 6 h). The native 30-minute SIGTERM no
+  longer kills a "research-an-entire-day" objective mid-flight; once
+  the goal is `complete_goal`'d, the next turn's timeout falls back
+  to the normal base. Opt-out: `IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER=1`.
+- **Event-bus emission for goal state changes.** New `GoalEvent` type
+  in `event-bus.ts` (`phase: created | status | progress`). `goal-rpc`
+  publishes on `long_task` (created + auto-paused prior), on
+  `complete_goal` (status), and the existing `/tasks/goals` web view
+  can now refresh via the SSE `/events` channel without polling.
+
+### Changed
+
+- **`complete_goal` now requires a `recap` string ≥ 10 characters**
+  (matches nanobot's mandatory close-the-loop principle). Both
+  completions and cancellations need a short reason — silent goal
+  state-flips are the worst kind of audit gap. The result payload
+  now reports `recap_length` instead of the boolean `recap_recorded`.
+
 ## [1.2.85] - 2026-05-26
 
 ### Fixed

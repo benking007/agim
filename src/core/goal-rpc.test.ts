@@ -38,7 +38,7 @@ async function dbAvailable(): Promise<boolean> {
   const r = await handleGoalOp('long_task', { goal: 'probe' }, CTX)
   if (r.ok) {
     // clean up the probe row
-    await handleGoalOp('complete_goal', { status: 'cancelled' }, CTX)
+    await handleGoalOp('complete_goal', { status: 'cancelled', recap: 'test cleanup' }, CTX)
     return true
   }
   return false
@@ -48,7 +48,7 @@ describe('goal-rpc', () => {
   beforeEach(async () => {
     // Clean: complete any active goal between tests so each starts fresh
     const a = _activeGoalSnapshot(CTX)
-    if (a) await handleGoalOp('complete_goal', { status: 'cancelled' }, CTX)
+    if (a) await handleGoalOp('complete_goal', { status: 'cancelled', recap: 'test cleanup' }, CTX)
   })
 
   // ── Shape tests (db-independent) ─────────────────────────────────
@@ -117,14 +117,14 @@ describe('goal-rpc', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.result.status).toBe('completed')
-    expect(r.result.recap_recorded).toBe(true)
+    expect(r.result.recap_length).toBe('shipped successfully'.length)
     expect(_activeGoalSnapshot(CTX)).toBeNull()
   })
 
   it('complete_goal with status=cancelled marks as cancelled', async () => {
     if (!(await dbAvailable())) return
     await handleGoalOp('long_task', { goal: 'Maybe cancel' }, CTX)
-    const r = await handleGoalOp('complete_goal', { status: 'cancelled' }, CTX)
+    const r = await handleGoalOp('complete_goal', { status: 'cancelled', recap: 'test cleanup' }, CTX)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.result.status).toBe('cancelled')
@@ -132,9 +132,25 @@ describe('goal-rpc', () => {
 
   it('complete_goal refuses when no active goal', async () => {
     if (!(await dbAvailable())) return
-    const r = await handleGoalOp('complete_goal', {}, CTX)
+    const r = await handleGoalOp('complete_goal', { recap: 'attempting to complete nothing' }, CTX)
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.error).toMatch(/no active goal/)
+  })
+
+  // v1.2.86 — recap is now required (≥10 chars). Structural error
+  // (no-active-goal) takes precedence over recap validation, so we
+  // register an active goal first to exercise the recap check.
+  it('complete_goal refuses when recap is missing or too short', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Needs a proper recap' }, CTX)
+
+    const missing = await handleGoalOp('complete_goal', {}, CTX)
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.error).toMatch(/recap/)
+
+    const tooShort = await handleGoalOp('complete_goal', { recap: 'short' }, CTX)
+    expect(tooShort.ok).toBe(false)
+    if (!tooShort.ok) expect(tooShort.error).toMatch(/10 characters/)
   })
 })

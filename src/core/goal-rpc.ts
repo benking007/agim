@@ -22,7 +22,28 @@ import {
   appendProgress,
   type GoalRow,
 } from './goals.js'
+import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
+
+function emitGoalEvent(
+  phase: 'created' | 'status' | 'progress',
+  row: { id: number; platform: string; channelId: string; threadId: string; status?: string; title?: string },
+  summary?: string,
+): void {
+  try {
+    eventBus.publish({
+      type: 'goal',
+      phase,
+      goalId: row.id,
+      platform: row.platform,
+      channelId: row.channelId,
+      threadId: row.threadId,
+      status: row.status as 'active' | 'paused' | 'completed' | 'cancelled' | undefined,
+      summary: (summary ?? row.title ?? '').slice(0, 120),
+      ts: new Date().toISOString(),
+    })
+  } catch { /* best-effort */ }
+}
 
 const log = rootLogger.child({ component: 'goal-rpc' })
 
@@ -84,6 +105,18 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
   }
 
   appendProgress(row.id, 'agent', `objective registered by ${ctx.callerAgent ?? 'agent'}`)
+  // v1.2.86 — emit so /tasks/goals web view + any SSE consumer
+  // updates without polling.
+  emitGoalEvent('created', {
+    id: row.id, platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.threadId,
+    status: row.status, title: row.title,
+  })
+  if (prior) {
+    emitGoalEvent('status', {
+      id: prior.id, platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.threadId,
+      status: 'paused', title: prior.title,
+    }, 'auto-paused by new goal')
+  }
   log.info({
     event: 'goal-rpc.long_task',
     callerAgent: ctx.callerAgent ?? 'unknown',
@@ -112,15 +145,38 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
   // Only `completed` / `cancelled` make sense from the agent's side.
   const status: 'completed' | 'cancelled' = requestedStatus === 'cancelled' ? 'cancelled' : 'completed'
 
+  // Structural error first — no goal to complete is the action-
+  // blocking failure regardless of recap.
   const active = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
   if (!active) {
     return { ok: false, error: 'no active goal on this thread to complete' }
   }
-  if (recap) appendProgress(active.id, 'agent', `[${status}] ${recap}`)
+  // v1.2.86 — recap is now required (≥ 10 chars). Without it the
+  // goal's "what was actually done" gets lost. Match nanobot's
+  // design: complete_goal is the only chance to close the loop, so
+  // make it mandatory. Cancellations also need a short reason
+  // ("user changed mind", "obsoleted by goal #42") — silent
+  // cancellations are the worst kind of state to leave behind.
+  if (recap.length < 10) {
+    return {
+      ok: false,
+      error: 'complete_goal requires a `recap` string ≥ 10 characters. ' +
+        'Write what was actually accomplished (or, if status=cancelled, ' +
+        'why). Examples: "found 3 candidates, picked X, deployed to staging" ' +
+        '/ "user changed direction to Y, abandoning original plan".',
+    }
+  }
+  appendProgress(active.id, 'agent', `[${status}] ${recap}`)
   const ok = updateStatus(active.id, status)
   if (!ok) {
     return { ok: false, error: `failed to mark goal #${active.id} ${status}` }
   }
+  // v1.2.86 — emit so the web view can flip the row from active to
+  // completed/cancelled immediately.
+  emitGoalEvent('status', {
+    id: active.id, platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.threadId,
+    status, title: active.title,
+  }, recap.slice(0, 120))
   log.info({
     event: 'goal-rpc.complete_goal',
     callerAgent: ctx.callerAgent ?? 'unknown',
@@ -136,7 +192,7 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
       goalId: active.id,
       title: active.title,
       status,
-      recap_recorded: !!recap,
+      recap_length: recap.length,
     },
   }
 }

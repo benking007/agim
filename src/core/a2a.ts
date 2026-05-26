@@ -34,6 +34,7 @@ import {
   markJobFailed,
 } from './job-board.js'
 import { logInvocation } from './audit-log.js'
+import { applyGoalTimeoutBoost } from './goals.js'
 import {
   buildEnvelope,
   copyInputs,
@@ -76,13 +77,18 @@ export function getA2AMaxDepth(): number {
   return A2A_MAX_DEPTH_DEFAULT
 }
 
-export function getA2ATimeoutMs(): number {
+export function getA2ATimeoutMs(ctx?: { platform?: string; channelId?: string; threadId?: string }): number {
   const raw = process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS
+  let base = A2A_TIMEOUT_MS_DEFAULT
   if (raw) {
     const n = parseInt(raw, 10)
-    if (Number.isFinite(n) && n > 0) return Math.min(n, getA2AMaxTimeoutMs())
+    if (Number.isFinite(n) && n > 0) base = Math.min(n, getA2AMaxTimeoutMs())
   }
-  return A2A_TIMEOUT_MS_DEFAULT
+  // v1.2.86 — goal-aware timeout boost. When the addressed thread has
+  // an active long-task goal, multiply the default by
+  // IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER (3× default, 6 h hard cap).
+  if (ctx) base = applyGoalTimeoutBoost(base, ctx)
+  return base
 }
 
 export function getA2AMaxTimeoutMs(): number {
@@ -226,7 +232,17 @@ export async function callAgentByName(
 
   // v1.1.10: clamp caller-supplied timeoutMs to the configured max so an
   // agent can't ask for an obscenely long timeout that blocks A2A.
-  const timeoutMs = Math.min(opts.timeoutMs ?? getA2ATimeoutMs(), getA2AMaxTimeoutMs())
+  // v1.2.86: pass the route context so getA2ATimeoutMs can apply the
+  // active-goal multiplier when present (no boost when caller already
+  // supplied an explicit timeoutMs — they made an informed choice).
+  const timeoutMs = Math.min(
+    opts.timeoutMs ?? getA2ATimeoutMs({
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+    }),
+    getA2AMaxTimeoutMs(),
+  )
   const started = Date.now()
   log.info({
     event: 'a2a.invoke_start',

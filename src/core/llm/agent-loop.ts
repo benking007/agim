@@ -127,6 +127,17 @@ export interface AgentLoopInput {
     traceId?: string
   }
 
+  /** v1.2.86 — when set, the loop checks goals.db for an active goal on
+   *  this thread and extends the wall timeout (default 3×, cap 6 h).
+   *  Supplied by AgentAdapter / cli.ts when invoking the native agent
+   *  from a real IM run; tests typically leave it undefined and get the
+   *  un-boosted timeout. */
+  goalCtx?: {
+    platform: string
+    channelId: string
+    threadId: string
+  }
+
   /** Lifecycle hooks for caller-side observability (heartbeats, progress
    *  push, custom logging). All hooks are best-effort: thrown errors are
    *  swallowed so a faulty observer cannot break the loop. */
@@ -183,7 +194,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     throw new Error('agent-loop: dispatch is required when tools is non-empty')
   }
   const maxIter = clampInt(input.maxIterations ?? DEFAULT_MAX_ITERATIONS, 1, 100)
-  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  // v1.2.86 — when this thread has an active long-task goal, multiply
+  // the wall timeout (default 3×, capped at 6 h). Goals signal "I
+  // expect this turn to be a research/coding marathon" — without this
+  // boost, 5 min was the silent kill point.
+  const baseTimeout = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const { applyGoalTimeoutBoost } = await import('../goals.js')
+  const timeoutMs = applyGoalTimeoutBoost(baseTimeout, input.goalCtx)
   const approve = input.approve ?? alwaysAllowGate
   const dispatch = input.dispatch
   const signal = mergeSignal(input.signal, timeoutMs)

@@ -300,6 +300,52 @@ export function getActiveGoal(platform: string, channelId: string, threadId: str
   }
 }
 
+/** Cheap boolean form of getActiveGoal — same query but returns only a
+ *  flag. Used by the wall-timeout extension path (v1.2.86) where the
+ *  caller just needs to know "should we be generous about timeouts on
+ *  this thread". Safe to call from hot paths; same fail-soft semantics
+ *  as getActiveGoal (db unavailable → false). */
+export function hasActiveGoal(platform: string, channelId: string, threadId: string): boolean {
+  const d = getDb()
+  if (!d) return false
+  try {
+    const row = d.prepare(`
+      SELECT 1 FROM goals
+      WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
+      LIMIT 1
+    `).get(platform, channelId, threadId)
+    return !!row
+  } catch (err) {
+    rootLogger.warn({ event: 'goals.has_active_failed', err: String(err) })
+    return false
+  }
+}
+
+/** v1.2.86 — when an active goal exists on the addressed thread, the
+ *  caller may legitimately need much longer to finish (research/coding
+ *  marathons). Multiply the base timeout by IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
+ *  (default 3×). Returns `base` unchanged when no thread context, no
+ *  active goal, or db unavailable.
+ *
+ *  Hard cap: 6 h. Even with goals, a runaway loop should not pin a
+ *  worker indefinitely.
+ */
+export function applyGoalTimeoutBoost(
+  base: number,
+  ctx?: { platform?: string; channelId?: string; threadId?: string },
+): number {
+  if (!ctx || !ctx.platform || !ctx.channelId || !ctx.threadId) return base
+  if (!hasActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)) return base
+  const raw = process.env.IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
+  let mult = 3
+  if (raw) {
+    const n = parseFloat(raw)
+    if (Number.isFinite(n) && n > 0) mult = n
+  }
+  const HARD_CAP_MS = 6 * 60 * 60 * 1000
+  return Math.min(Math.floor(base * mult), HARD_CAP_MS)
+}
+
 /** All goals (any status) for a thread, newest first. Used by /goal list. */
 export function listGoalsForThread(platform: string, channelId: string, threadId: string, limit = 20): GoalRow[] {
   const d = getDb()

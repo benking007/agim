@@ -1,25 +1,35 @@
-// agim TUI (v1.2.76 + opencode-inspired pass) — Ink chat UI.
+// agim TUI v1.2.77 — opencode-parity iteration.
 //
-// Iteration 2 changes (per user feedback after seeing opencode's TUI):
-//   * Slash-command popup with arrow-key navigation + descriptions
-//   * Bottom status bar (agent / cwd / hint)
-//   * Per-message "agent · elapsed" footer on assistant replies
-//   * Tightened header (drops the hint row — now lives in the status bar)
+// Added in this iteration (vs v1.2.76):
+//   * !cmd  — inline bash escape; runs in cwd, output as system message
+//   * @file — fuzzy file picker popup (cwd-relative; replaces @<token>
+//             with the resolved path)
+//   * /editor — open $EDITOR (vi fallback) for multi-line composition
+//   * /compact — ask the current agent to summarise history, then
+//                replace history with the summary
+//   * /redo /undo — replay last prompt / drop last turn
+//   * /export — dump conversation to ./agim-tui-<timestamp>.md
+//   * ctrl+p  — global command palette (slash + actions, fuzzy)
+//   * completion bell — write \x07 on assistant reply finish (off via
+//                       IMHUB_TUI_NO_BELL=1)
+//   * markdown rendering for assistant replies (paragraphs, headings,
+//                       lists, code blocks with naive keyword colour,
+//                       inline code, bold/italic, blockquotes)
 //
-// Still deferred:
-//   * Multi-session list (left sidebar)
-//   * Right context panel (token/cost — needs adapter hooks)
-//   * Multi-line input (Shift+Enter newline) — ink-text-input still
-//     single-line; will switch to a custom buffer later
-//   * Markdown rendering (kept plain to avoid CJK width issues)
-//   * Approval-card integration (no approval-bus in TUI yet)
+// Still deferred: multi-line raw editor in-place, image attach, multi-
+// session list, remote-daemon client mode.
 
-import React, { useEffect, useState, useRef, useMemo } from 'react'
-import { Box, Text, useApp, useInput, useStdout } from 'ink'
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink'
 import TextInput from 'ink-text-input'
+import { spawnSync, exec as cpExec } from 'node:child_process'
+import { writeFileSync, mkdtempSync, readFileSync, unlinkSync, readdirSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
+import { tmpdir } from 'node:os'
 
 import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
+import { Markdown } from './markdown.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -27,26 +37,58 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   pending?: boolean
-  /** ms elapsed from prompt to last chunk — assistant-only */
   elapsedMs?: number
-  /** agent name at the time of this turn — assistant-only */
   agentName?: string
 }
 
 interface SlashCommand {
-  name: string             // e.g. '/agents'
+  name: string
   description: string
-  takesArg?: boolean       // if true, popup leaves a space after insertion
+  takesArg?: boolean
 }
 
 const SLASH_COMMANDS: SlashCommand[] = [
-  { name: '/agents', description: '列出已注册的所有 agent' },
-  { name: '/agent',  description: '切换 agent — 例：/agent codex', takesArg: true },
-  { name: '/clear',  description: '清空当前对话历史' },
-  { name: '/help',   description: '显示帮助信息' },
-  { name: '/exit',   description: '退出 TUI' },
-  { name: '/quit',   description: '退出 TUI（同 /exit）' },
+  { name: '/agents',  description: '列出已注册的 agent' },
+  { name: '/agent',   description: '切换 agent — 例：/agent codex', takesArg: true },
+  { name: '/editor',  description: '调外部 $EDITOR 写长 prompt（vi 兜底）' },
+  { name: '/compact', description: '请 agent 摘要历史并把摘要作为新起点' },
+  { name: '/redo',    description: '重新发送上一条用户消息' },
+  { name: '/undo',    description: '撤回最近一轮（用户 + 回复）' },
+  { name: '/export',  description: '把对话导出到 ./agim-tui-<时间>.md' },
+  { name: '/clear',   description: '清空当前对话历史' },
+  { name: '/help',    description: '显示帮助信息' },
+  { name: '/exit',    description: '退出 TUI（同 /quit）' },
+  { name: '/quit',    description: '退出 TUI' },
 ]
+
+interface FileEntry { rel: string; isDir: boolean }
+
+// Lightweight scan of cwd — first ~2000 entries, ignore typical heavy
+// dirs. Sync because we run it on demand from a keystroke; OK for
+// reasonable repo sizes. Hidden files / node_modules / .git skipped.
+function scanFiles(root: string, max = 2000): FileEntry[] {
+  const out: FileEntry[] = []
+  const stack: string[] = ['.']
+  const SKIP = new Set(['node_modules', '.git', 'dist', '.next', '.cache', 'target', 'venv', '__pycache__'])
+  while (stack.length > 0 && out.length < max) {
+    const cur = stack.pop()!
+    const abs = join(root, cur)
+    let entries: import('node:fs').Dirent[] = []
+    try { entries = readdirSync(abs, { withFileTypes: true }) } catch { continue }
+    for (const e of entries) {
+      if (e.name.startsWith('.') || SKIP.has(e.name)) continue
+      const rel = cur === '.' ? e.name : join(cur, e.name)
+      if (e.isDirectory()) {
+        out.push({ rel: rel + sep, isDir: true })
+        stack.push(rel)
+      } else if (e.isFile()) {
+        out.push({ rel, isDir: false })
+      }
+      if (out.length >= max) break
+    }
+  }
+  return out
+}
 
 interface AppProps {
   initialAgent?: string
@@ -55,6 +97,7 @@ interface AppProps {
 export function TuiApp({ initialAgent }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
+  const { setRawMode } = useStdin()
 
   const [agent, setAgent] = useState<string | undefined>(initialAgent)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -62,7 +105,10 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [popupIndex, setPopupIndex] = useState(0)
+  const [palette, setPalette] = useState<{ open: boolean; query: string; index: number }>({ open: false, query: '', index: 0 })
   const abortRef = useRef<AbortController | null>(null)
+  const filesCacheRef = useRef<FileEntry[] | null>(null)
+
   const cwd = useMemo(() => {
     const home = process.env.HOME
     const c = process.cwd()
@@ -72,38 +118,106 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
   const cols = stdout?.columns ?? 80
   const chatWidth = Math.min(cols - 4, 120)
 
-  // Filter slash commands by current input. Popup is open while input
-  // starts with '/' and contains no space (= still typing the verb).
-  const popupOpen = input.startsWith('/') && !input.includes(' ')
-  const filteredCommands = useMemo(() => {
-    if (!popupOpen) return [] as SlashCommand[]
+  // ── Slash-command popup state ─────────────────────────────────────
+  const slashPopupOpen = input.startsWith('/') && !input.includes(' ')
+  const filteredSlash = useMemo(() => {
+    if (!slashPopupOpen) return [] as SlashCommand[]
     const q = input.toLowerCase()
     return SLASH_COMMANDS.filter((c) => c.name.startsWith(q))
-  }, [input, popupOpen])
+  }, [input, slashPopupOpen])
 
-  // Reset popup selection when filter changes; clamp into range.
-  useEffect(() => {
-    if (popupIndex >= filteredCommands.length) setPopupIndex(0)
-  }, [filteredCommands, popupIndex])
+  // ── @file picker state (inline trigger) ───────────────────────────
+  // We look for the LAST `@token` (token = no whitespace) in the
+  // current input. If it exists and is being actively typed, show the
+  // file picker filtered by the token's tail.
+  const fileTokenMatch = useMemo(() => {
+    const m = /(^|\s)@([^\s@]*)$/.exec(input)
+    return m ? { start: m.index + m[1].length, query: m[2] } : null
+  }, [input])
+  const filePopupOpen = !slashPopupOpen && fileTokenMatch !== null
+  const filteredFiles = useMemo(() => {
+    if (!filePopupOpen || !fileTokenMatch) return [] as FileEntry[]
+    if (!filesCacheRef.current) filesCacheRef.current = scanFiles(process.cwd())
+    const q = fileTokenMatch.query.toLowerCase()
+    if (!q) return filesCacheRef.current.slice(0, 15)
+    return filesCacheRef.current
+      .filter((f) => f.rel.toLowerCase().includes(q))
+      .slice(0, 15)
+  }, [filePopupOpen, fileTokenMatch])
 
-  useInput((_inputCh, key) => {
-    if (popupOpen && filteredCommands.length > 0) {
+  useEffect(() => { setPopupIndex(0) }, [filteredSlash.length, filteredFiles.length])
+
+  // ── Command palette (ctrl+p) ──────────────────────────────────────
+  const filteredPalette = useMemo(() => {
+    if (!palette.open) return [] as SlashCommand[]
+    const q = palette.query.toLowerCase().trim()
+    if (!q) return SLASH_COMMANDS
+    return SLASH_COMMANDS.filter((c) =>
+      c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q),
+    )
+  }, [palette])
+
+  useInput((inputCh, key) => {
+    // Ctrl-P opens / closes the command palette regardless of mode.
+    if (key.ctrl && inputCh === 'p') {
+      setPalette((p) => ({ open: !p.open, query: '', index: 0 }))
+      return
+    }
+
+    if (palette.open) {
+      if (key.escape) {
+        setPalette({ open: false, query: '', index: 0 })
+        return
+      }
       if (key.upArrow) {
-        setPopupIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length)
+        setPalette((p) => ({ ...p, index: (p.index - 1 + filteredPalette.length) % Math.max(filteredPalette.length, 1) }))
         return
       }
       if (key.downArrow) {
-        setPopupIndex((i) => (i + 1) % filteredCommands.length)
+        setPalette((p) => ({ ...p, index: (p.index + 1) % Math.max(filteredPalette.length, 1) }))
         return
       }
+      if (key.return) {
+        const pick = filteredPalette[palette.index]
+        if (pick) {
+          setPalette({ open: false, query: '', index: 0 })
+          setInput(pick.name + (pick.takesArg ? ' ' : ''))
+        }
+        return
+      }
+      if (key.backspace || key.delete) {
+        setPalette((p) => ({ ...p, query: p.query.slice(0, -1), index: 0 }))
+        return
+      }
+      // Printable char: append to query.
+      if (inputCh && !key.ctrl && !key.meta) {
+        setPalette((p) => ({ ...p, query: p.query + inputCh, index: 0 }))
+        return
+      }
+    }
+
+    if (slashPopupOpen && filteredSlash.length > 0) {
+      if (key.upArrow) { setPopupIndex((i) => (i - 1 + filteredSlash.length) % filteredSlash.length); return }
+      if (key.downArrow) { setPopupIndex((i) => (i + 1) % filteredSlash.length); return }
       if (key.tab) {
-        // Tab: accept the highlighted suggestion into the input, but
-        // don't submit. Lets user keep typing args.
-        const pick = filteredCommands[popupIndex]
+        const pick = filteredSlash[popupIndex]
         if (pick) setInput(pick.name + (pick.takesArg ? ' ' : ''))
         return
       }
     }
+    if (filePopupOpen && filteredFiles.length > 0 && fileTokenMatch) {
+      if (key.upArrow) { setPopupIndex((i) => (i - 1 + filteredFiles.length) % filteredFiles.length); return }
+      if (key.downArrow) { setPopupIndex((i) => (i + 1) % filteredFiles.length); return }
+      if (key.tab) {
+        const pick = filteredFiles[popupIndex]
+        if (pick) {
+          const before = input.slice(0, fileTokenMatch.start)
+          setInput(`${before}@${pick.rel}${pick.isDir ? '' : ' '}`)
+        }
+        return
+      }
+    }
+
     if (key.escape && busy && abortRef.current) {
       abortRef.current.abort()
       setBusy(false)
@@ -123,78 +237,139 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
     if (list.length > 0) setAgent(list[0])
   }, [agent])
 
-  async function onSubmit(line: string): Promise<void> {
-    const text = line.trim()
-    if (!text || busy) return
+  // ── helpers ───────────────────────────────────────────────────────
 
-    // Popup case: if input is a bare slash prefix (no space, no full
-    // word that matches a real command), submitting Enter should pick
-    // the highlighted suggestion instead of running it raw.
-    if (popupOpen && filteredCommands.length > 0) {
-      const exact = filteredCommands.find((c) => c.name === text)
-      if (!exact) {
-        const pick = filteredCommands[popupIndex]
-        if (pick) {
-          setInput(pick.name + (pick.takesArg ? ' ' : ''))
-          return
-        }
-      }
-    }
+  const pushSystem = useCallback((content: string): void => {
+    setMessages((m) => [...m, { role: 'system', content }])
+  }, [])
 
-    setInput('')
+  async function runBash(cmd: string): Promise<void> {
+    setMessages((m) => [...m, { role: 'user', content: '!' + cmd }])
+    const startMs = Date.now()
+    pushSystem(`▶ shell: ${cmd}`)
+    await new Promise<void>((resolve) => {
+      cpExec(cmd, { cwd: process.cwd(), timeout: 60_000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+        const ms = Date.now() - startMs
+        let body = ''
+        if (stdout) body += stdout
+        if (stderr) body += (body ? '\n' : '') + '[stderr]\n' + stderr
+        if (!body && err) body = `[error] ${err.message}`
+        if (!body) body = '(空输出)'
+        pushSystem(`\`\`\`\n${body.trim()}\n\`\`\`\n— ${(ms / 1000).toFixed(2)}s · 退出 ${err ? (err.code ?? 1) : 0}`)
+        resolve()
+      })
+    })
+  }
 
-    if (text === '/exit' || text === '/quit') {
-      exit()
+  function openEditor(): void {
+    const editor = process.env.EDITOR || 'vi'
+    let dir: string
+    try { dir = mkdtempSync(join(tmpdir(), 'agim-tui-')) } catch (err) {
+      setError('无法创建临时文件: ' + (err instanceof Error ? err.message : String(err)))
       return
     }
-    if (text === '/clear') {
-      setMessages([])
+    const file = join(dir, 'PROMPT.md')
+    writeFileSync(file, input || '# 在这里写你的 prompt，保存退出后发送\n# 以 # 开头的行会被忽略\n')
+    // Pause Ink's raw-mode while the editor takes the terminal.
+    setRawMode?.(false)
+    const r = spawnSync(editor, [file], { stdio: 'inherit' })
+    setRawMode?.(true)
+    if (r.status !== 0 && r.status !== null) {
+      setError(`编辑器退出码 ${r.status}`)
+      try { unlinkSync(file) } catch { /* ignore */ }
       return
     }
-    if (text === '/help') {
-      setMessages((m) => [...m, {
-        role: 'system',
-        content: SLASH_COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n')
-          + '\n\n键位：Enter 发送 · Esc 取消生成 · ↑↓ 选 slash · Tab 补全 · Ctrl-C 退出',
-      }])
+    let body = ''
+    try { body = readFileSync(file, 'utf-8') } catch (err) {
+      setError('读不到编辑后的内容: ' + (err instanceof Error ? err.message : String(err)))
+      return
+    } finally {
+      try { unlinkSync(file) } catch { /* ignore */ }
+    }
+    // Strip lines starting with # as "comments" (vi-friendly convention).
+    const text = body.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim()
+    if (!text) {
+      pushSystem('(编辑器内容为空，取消发送)')
       return
     }
-    if (text === '/agents') {
-      const list = registry.listAgents()
-      setMessages((m) => [...m, {
-        role: 'system',
-        content: list.length === 0
-          ? '(没有注册任何 agent — 检查 registry 是否加载)'
-          : `可用 agents: ${list.join(', ')}\n当前：${agent ?? '<none>'}`,
-      }])
-      return
-    }
-    if (text.startsWith('/agent ')) {
-      const next = text.slice('/agent '.length).trim()
-      const found = registry.findAgent(next)
-      if (!found) {
-        setError(`未找到 agent "${next}"。可用：${registry.listAgents().join(', ') || '<empty>'}`)
-        return
-      }
-      setAgent(found.name)
-      setError(null)
-      setMessages((m) => [...m, { role: 'system', content: `已切换到 agent: ${found.name}` }])
-      return
-    }
-    if (text.startsWith('/')) {
-      setMessages((m) => [...m, { role: 'system', content: `未知命令: ${text}（输入 /help 查看可用命令）` }])
-      return
-    }
+    void doSendPrompt(text)
+  }
 
-    if (!agent) {
-      setError('未选择 agent — 用 /agent <name> 指定，或退出后 agim tui --agent <name>')
-      return
+  async function exportTranscript(): Promise<void> {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const file = join(process.cwd(), `agim-tui-${ts}.md`)
+    const body = messages.map((m) => {
+      const who = m.role === 'user' ? '## 👤 你' : m.role === 'assistant' ? `## 🤖 ${m.agentName || agent || 'agent'}` : '## ⓘ 系统'
+      const meta = m.elapsedMs !== undefined ? `\n_${(m.elapsedMs / 1000).toFixed(1)}s_` : ''
+      return `${who}\n\n${m.content}${meta}`
+    }).join('\n\n---\n\n')
+    try {
+      writeFileSync(file, `# agim TUI transcript — ${ts}\n\nagent: \`${agent ?? 'none'}\` · cwd: \`${cwd}\`\n\n---\n\n${body}\n`)
+      pushSystem(`已导出到 \`${file}\``)
+    } catch (err) {
+      setError('导出失败: ' + (err instanceof Error ? err.message : String(err)))
     }
+  }
+
+  async function doCompact(): Promise<void> {
+    if (!agent) { setError('未选择 agent'); return }
     const adapter = registry.findAgent(agent)
-    if (!adapter) {
-      setError(`agent "${agent}" 不在 registry 里`)
+    if (!adapter) { setError(`agent ${agent} 不在 registry`); return }
+    if (messages.filter((m) => m.role !== 'system').length === 0) {
+      pushSystem('(还没有对话内容可以折叠)')
       return
     }
+    setBusy(true)
+    const ac = new AbortController()
+    abortRef.current = ac
+    try {
+      const transcript = messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => `[${m.role === 'user' ? '用户' : 'agent'}]: ${m.content}`)
+        .join('\n\n')
+      const prompt = `请把以下对话历史浓缩为 3-5 个要点，保留关键决定 / 数据 / 未解决问题，用中文，仅输出摘要本身不要寒暄：\n\n${transcript}`
+      let summary = ''
+      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}-compact`, prompt, [], { signal: ac.signal })) {
+        summary += chunk
+      }
+      setMessages([{ role: 'system', content: '【对话已折叠，以下是摘要】\n\n' + summary.trim() }])
+    } catch (err) {
+      setError('折叠失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setBusy(false)
+      abortRef.current = null
+    }
+  }
+
+  function doUndo(): void {
+    // Drop the last user + assistant pair (keep system messages
+    // intact). If the last message is the user-only entry of a still-
+    // pending turn, just drop that.
+    setMessages((m) => {
+      const arr = [...m]
+      // Walk from the end, drop until we cut at least one user message.
+      while (arr.length > 0) {
+        const last = arr.pop()!
+        if (last.role === 'user') break
+      }
+      return arr
+    })
+  }
+
+  function doRedo(): void {
+    // Find the last user message and resend it as a fresh prompt.
+    let lastUser: string | undefined
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUser = messages[i].content; break }
+    }
+    if (!lastUser) { pushSystem('(没有可重发的消息)'); return }
+    void doSendPrompt(lastUser)
+  }
+
+  async function doSendPrompt(text: string): Promise<void> {
+    if (!agent) { setError('未选择 agent'); return }
+    const adapter = registry.findAgent(agent)
+    if (!adapter) { setError(`agent ${agent} 不在 registry`); return }
 
     setError(null)
     setBusy(true)
@@ -207,10 +382,9 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
 
     const ac = new AbortController()
     abortRef.current = ac
-    const sessionId = `tui-${process.pid}`
     try {
       let chunks = ''
-      for await (const chunk of adapter.sendPrompt(sessionId, text, [], { signal: ac.signal })) {
+      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, [], { signal: ac.signal })) {
         chunks += chunk
         setMessages((m) => {
           const last = m[m.length - 1]
@@ -224,6 +398,11 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
         if (!last || last.role !== 'assistant' || !last.pending) return m
         return [...m.slice(0, -1), { ...last, pending: false, elapsedMs: elapsed }]
       })
+      // Completion bell — visible (well, audible) cue for sshing-into-
+      // box-and-waiting users. Suppressible via env.
+      if (process.env.IMHUB_TUI_NO_BELL !== '1') {
+        try { process.stdout.write('\x07') } catch { /* ignore */ }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn({ event: 'tui.sendPrompt.error', err: msg })
@@ -242,9 +421,82 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
     }
   }
 
+  async function onSubmit(line: string): Promise<void> {
+    const text = line.trim()
+    if (!text || busy) return
+
+    // Popup auto-accept on Enter when user clearly wants the suggestion.
+    if (slashPopupOpen && filteredSlash.length > 0) {
+      const exact = filteredSlash.find((c) => c.name === text)
+      if (!exact) {
+        const pick = filteredSlash[popupIndex]
+        if (pick) { setInput(pick.name + (pick.takesArg ? ' ' : '')); return }
+      }
+    }
+    if (filePopupOpen && filteredFiles.length > 0 && fileTokenMatch) {
+      const pick = filteredFiles[popupIndex]
+      if (pick) {
+        const before = input.slice(0, fileTokenMatch.start)
+        setInput(`${before}@${pick.rel}${pick.isDir ? '' : ' '}`)
+        return
+      }
+    }
+
+    setInput('')
+
+    // ── Inline bash ────────────────────────────────────────────────
+    if (text.startsWith('!')) {
+      const cmd = text.slice(1).trim()
+      if (!cmd) { pushSystem('(用法: !<shell 命令>)'); return }
+      await runBash(cmd)
+      return
+    }
+
+    // ── Slash commands ─────────────────────────────────────────────
+    if (text === '/exit' || text === '/quit') { exit(); return }
+    if (text === '/clear')   { setMessages([]); return }
+    if (text === '/redo')    { doRedo(); return }
+    if (text === '/undo')    { doUndo(); return }
+    if (text === '/editor')  { openEditor(); return }
+    if (text === '/compact') { void doCompact(); return }
+    if (text === '/export')  { void exportTranscript(); return }
+    if (text === '/help') {
+      pushSystem(
+        SLASH_COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n')
+        + '\n\n键位：Enter 发送 · Esc 取消 · ↑↓ 选项 · Tab 补全 · Ctrl-P 命令面板 · Ctrl-C 退出'
+        + '\n特殊：!<cmd> 行内 bash · @<file> 文件引用',
+      )
+      return
+    }
+    if (text === '/agents') {
+      const list = registry.listAgents()
+      pushSystem(list.length === 0 ? '(没有注册 agent)' : `可用：${list.join(', ')}\n当前：${agent ?? '<none>'}`)
+      return
+    }
+    if (text.startsWith('/agent ')) {
+      const next = text.slice('/agent '.length).trim()
+      const found = registry.findAgent(next)
+      if (!found) { setError(`未找到 agent "${next}"`); return }
+      setAgent(found.name)
+      pushSystem(`已切换到 agent: ${found.name}`)
+      return
+    }
+    if (text.startsWith('/')) {
+      pushSystem(`未知命令: ${text}（输入 /help）`)
+      return
+    }
+
+    // Regular prompt path — including @file refs left as raw text;
+    // the agent receives the literal `@path/to/file` and can choose to
+    // read it via its own tools.
+    await doSendPrompt(text)
+  }
+
+  // ── render ────────────────────────────────────────────────────────
+
   return (
     <Box flexDirection="column" width="100%">
-      {/* Header — compact, single row */}
+      {/* Header */}
       <Box paddingX={1}>
         <Text>
           <Text bold color="cyan">agim TUI</Text>
@@ -256,7 +508,7 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
       {/* Chat history */}
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         {messages.length === 0 && (
-          <Text dimColor>(空) 输入消息开始对话。按 / 唤出 slash 命令面板。</Text>
+          <Text dimColor>(空) 输入消息开始对话 · / 唤出命令 · ! 行内 shell · @ 引用文件 · Ctrl-P 命令面板</Text>
         )}
         {messages.map((m, i) => (
           <Box key={i} flexDirection="column" marginBottom={1} width={chatWidth}>
@@ -264,9 +516,11 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
               {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
               {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
               {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
-              {m.pending && <Text dimColor>· 正在生成…（Esc 取消）</Text>}
+              {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
             </Text>
-            <Text>{m.content || (m.pending ? '…' : '')}</Text>
+            {m.role === 'assistant' && !m.pending
+              ? <Markdown source={m.content} />
+              : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
             {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
               <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
             )}
@@ -280,16 +534,44 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
         </Box>
       )}
 
-      {/* Slash-command popup — sits ABOVE the input box, visible only
-          when the user is typing a slash command prefix. */}
-      {popupOpen && filteredCommands.length > 0 && (
-        <Box flexDirection="column" borderStyle="single" borderColor="cyan" marginTop={0} paddingX={1}>
-          {filteredCommands.map((c, i) => (
+      {/* Command palette (modal) */}
+      {palette.open && (
+        <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
+          <Text>
+            <Text bold>命令面板</Text>
+            <Text dimColor>  · 输入过滤 · ↑↓ 选 · Enter 选中 · Esc 关闭</Text>
+          </Text>
+          <Text color="cyan">› {palette.query}<Text inverse> </Text></Text>
+          {filteredPalette.slice(0, 12).map((c, i) => (
             <Box key={c.name}>
-              <Text
-                color={i === popupIndex ? 'cyan' : undefined}
-                inverse={i === popupIndex}
-              >
+              <Text color={i === palette.index ? 'cyan' : undefined} inverse={i === palette.index}>
+                {c.name.padEnd(10)}
+              </Text>
+              <Text dimColor>  {c.description}</Text>
+            </Box>
+          ))}
+          {filteredPalette.length === 0 && <Text dimColor>(没有匹配的命令)</Text>}
+        </Box>
+      )}
+
+      {/* @file popup */}
+      {!palette.open && filePopupOpen && filteredFiles.length > 0 && (
+        <Box flexDirection="column" borderStyle="single" borderColor="green" paddingX={1}>
+          <Text dimColor>文件引用（{filteredFiles.length} 个匹配；Tab 补全）</Text>
+          {filteredFiles.slice(0, 10).map((f, i) => (
+            <Text key={f.rel} color={i === popupIndex ? 'green' : undefined} inverse={i === popupIndex}>
+              {f.isDir ? '📁 ' : '📄 '}{f.rel}
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {/* slash popup */}
+      {!palette.open && slashPopupOpen && filteredSlash.length > 0 && (
+        <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
+          {filteredSlash.map((c, i) => (
+            <Box key={c.name}>
+              <Text color={i === popupIndex ? 'cyan' : undefined} inverse={i === popupIndex}>
                 {c.name.padEnd(10)}
               </Text>
               <Text dimColor>  {c.description}</Text>
@@ -299,25 +581,25 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
         </Box>
       )}
 
-      {/* Input row */}
-      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={popupOpen ? 0 : 1}>
+      {/* Input */}
+      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || palette.open) ? 0 : 1}>
         <Text color={busy ? 'yellow' : 'green'}>{busy ? '⠿' : '›'} </Text>
         <TextInput
           value={input}
           onChange={setInput}
           onSubmit={onSubmit}
-          placeholder={busy ? '生成中…（Esc 取消）' : '输入消息 · / 唤出命令'}
+          placeholder={busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · Ctrl-P 面板'}
         />
       </Box>
 
-      {/* Bottom status bar — orientation for first-time users */}
+      {/* Bottom status bar */}
       <Box paddingX={1}>
         <Text dimColor>
           <Text>{cwd}</Text>
           <Text>{'  ·  '}</Text>
           <Text>{messages.filter((m) => m.role !== 'system').length} 条消息</Text>
           <Text>{'  ·  '}</Text>
-          <Text>Enter 发送 · Esc 取消 · / 命令 · Ctrl-C 退出</Text>
+          <Text>/help 帮助 · Ctrl-P 面板 · Ctrl-C 退出</Text>
         </Text>
       </Box>
     </Box>

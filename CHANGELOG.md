@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.77] - 2026-05-26
+
+### Added (TUI opencode-parity iteration)
+
+- **`!cmd` inline bash**. Messages starting with `!` get run in a child
+  shell (cwd inherited, 60s timeout, 1 MB output cap); stdout / stderr
+  / exit code are rendered as a system message with timing.
+- **`@file` fuzzy file picker**. Typing `@` in the input opens a popup
+  filtered against the cwd (skips `node_modules` / `.git` / `dist` /
+  `.next` / `target` / `venv` / `__pycache__`); Tab / Enter inserts
+  the cwd-relative path. The agent receives the literal token; tools
+  like Read can pick it up.
+- **`/editor`** opens `$EDITOR` (or `vi`) on a temp file pre-seeded
+  with the current input draft. Save + quit submits the body as a
+  user prompt; lines starting with `#` are stripped (vi convention).
+  This is our multi-line input substitute.
+- **`/compact`** asks the current agent to summarise the conversation
+  into 3-5 bullet points, then replaces history with that summary as
+  a system message. Use for long sessions where token budget runs hot.
+- **`/redo`** re-sends the last user message.
+- **`/undo`** drops the most recent user-and-reply pair.
+- **`/export`** writes the transcript to `./agim-tui-<timestamp>.md`
+  with role headers + elapsed-time annotations.
+- **Ctrl-P command palette**. Modal fuzzy search over every slash
+  command; works regardless of input state. Up / Down + Enter to
+  pick, Esc to dismiss.
+- **Completion bell**. After each agent reply ends successfully, write
+  `\x07` to stdout. Disable with `IMHUB_TUI_NO_BELL=1`.
+- **Markdown rendering** for assistant replies. New `Markdown` Ink
+  component walks `marked`'s lexer tokens to emit native Ink boxes:
+  headings (depth-coloured), paragraphs, bold / italic / strikethrough,
+  inline code (cyan), bordered code blocks with language label and a
+  dependency-free keyword colouriser (js / ts / py / sh / go), bullet
+  + ordered lists, blockquotes (dim `│` prefix), `<hr>`, links
+  (underlined text + dim URL). Tables fall back to raw text to avoid
+  CJK width landmines. Streaming partial content stays plain-text;
+  the markdown pass kicks in once the reply is complete (so
+  half-formed fences don't flicker the layout).
+
+### Still deferred
+
+- Multi-line input in the chat box itself (`/editor` fills this for
+  now)
+- Image attachments
+- Multi-session list (`/new` / `/sessions`)
+- Remote-daemon client mode (TUI still in-process only)
+- Per-message token / cost stats (needs adapter hooks)
+
 ## [1.2.76] - 2026-05-26
 
 ### Added

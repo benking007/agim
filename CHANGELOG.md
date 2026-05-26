@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.84] - 2026-05-26
+
+### Fixed
+
+- **TUI: multi-turn context lost between prompts.** `doSendPrompt` was
+  calling `adapter.sendPrompt(sessionId, text, [], opts)` — i.e.
+  passing an empty history array every turn. So when the user said
+  "查询下金价" and then "分析下涨跌", the second turn arrived at the
+  agent with no recollection of the first, and the agent had to ask
+  which thing to analyse.
+- **Fix**: build a `ChatMessage[]` from the in-component `messages`
+  state (filtering out system messages and any in-flight pending
+  assistant turn) and pass it as the `history` argument. The agent
+  now sees the prior turns and can resolve references like "上面那
+  个" / "继续分析".
+
 ## [1.2.83] - 2026-05-26
 
 ### Fixed

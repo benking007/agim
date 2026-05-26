@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os'
 
 import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
+import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
 import { generateSessionId, saveSession, type StoredMessage } from './sessions.js'
 
@@ -440,6 +441,20 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     setError(null)
     setBusy(true)
     const startMs = Date.now()
+    // v1.2.84 — pass conversation history so multi-turn context works.
+    // Strip system messages (slash output, errors, /agents listings —
+    // not agent-relevant) and any in-flight pending assistant turn.
+    // `messages` is the value BEFORE the user-prompt append below;
+    // React closure captures the pre-update state, which is the
+    // history we want to send.
+    const history: AgentChatMessage[] = messages
+      .filter((m) => m.role !== 'system' && !m.pending && m.content.trim().length > 0)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: new Date(),
+      }))
+
     setMessages((m) => [
       ...m,
       { role: 'user', content: text },
@@ -450,7 +465,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     abortRef.current = ac
     try {
       let chunks = ''
-      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, [], { signal: ac.signal })) {
+      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, history, { signal: ac.signal })) {
         chunks += chunk
         setMessages((m) => {
           const last = m[m.length - 1]

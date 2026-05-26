@@ -4,27 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.2.79] - 2026-05-26
+## [1.2.80] - 2026-05-26
 
 ### Fixed
 
-- **Release CI publishes again.** v1.2.76 / 1.2.77 / 1.2.78 never
-  reached npm. Root cause: when `ink` / `react` / `@types/react`
-  were added in v1.2.76, the local `npm install` updated
-  `package-lock.json`'s dep tree but left its `version` field at
-  `1.2.75`. CI's `npm ci` step then refused to proceed (lock /
-  package.json mismatch on the `version` key), and the
-  `|| npm install --omit=optional` fallback path also stumbled —
-  either way, publish never ran.
-- Re-synced `package-lock.json` to match `package.json` (`1.2.79`)
-  and bumped one more notch to retrigger the
-  `paths: ['package.json']` push hook on `release.yml`. No code
-  changes beyond version metadata in this release; the actual TUI
-  features land in this build are everything from 1.2.76 + 1.2.77 +
-  1.2.78 (Ink chat UI, slash popup, `!cmd` / `@file` / `/editor` /
-  `/compact` / `/redo` / `/undo` / `/export`, Ctrl-P palette,
-  completion bell, markdown rendering with keyword highlight, session
-  persistence + `--resume` / `--list-sessions`, flicker fix).
+- **Release CI publishes again** (real root cause). v1.2.76 / 1.2.77 /
+  1.2.78 / 1.2.79 all never reached npm. The actual error in the
+  GitHub Actions log is **`npm error Exit handler never called!`**
+  during both `npm ci --omit=optional` AND the fallback `npm install
+  --omit=optional`. This is a known npm 10.x arborist bug that
+  previously only surfaced via the `@xenova/transformers` ONNX
+  postinstall — the TUI deps added in v1.2.76 (ink / react /
+  ink-text-input + their transitive chalk / wrap-ansi / cli-truncate
+  chain) pushed the dep tree over the same threshold and triggered
+  the same hang. Lock-sync (the v1.2.79 hypothesis) was a red
+  herring — the lockfile was already in sync.
+- **Fix**: `release.yml` install steps switched from `npm ci` to
+  `bun install --frozen-lockfile`. bun is already on PATH from the
+  earlier `oven-sh/setup-bun@v2` step and handles the same
+  `package.json` cleanly (we've used bun for the `npm test` step for
+  months). `--no-optional` preserves the existing skip of
+  `@xenova/transformers` — agim-cli doesn't need it at publish time.
+- **End-user `npm install -g agim-cli` is unaffected** — only the
+  CI publish path uses bun now; consumers still get the canonical
+  npm install path from npm.
+
+## [1.2.79] - 2026-05-26 — UNRELEASED (CI publish failed, see 1.2.80)
+
+### Attempted
+
+- Bumped + re-synced `package-lock.json` thinking the publish failure
+  was a lock/package mismatch. Wrong diagnosis: the actual issue was
+  npm's `Exit handler never called!` arborist hang. Folded into the
+  v1.2.80 fix.
 
 ## [1.2.78] - 2026-05-26
 

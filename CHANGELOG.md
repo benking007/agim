@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.82] - 2026-05-26
+
+### Fixed
+
+- **Release CI: build step now skips test type-check.** v1.2.81's
+  npm-latest install path worked (the arborist hang is gone), but
+  the build then died in `web-app: tsc --noEmit` with TS2305
+  "Module '@testing-library/react' has no exported member 'fireEvent'
+  / 'screen' / 'waitFor' / 'within'". Root cause: CI's
+  `--no-package-lock` install resolved testing-library to a patch
+  version whose `.d.ts` is missing those named re-exports. The
+  fix doesn't try to pin testing-library (we don't want to chase
+  CI-only patch drift); instead we exclude `*.test.tsx` from
+  `src/web-app/tsconfig.json`, so the production build doesn't
+  type-check tests. Tests are still type-checked by their own
+  vitest run (`npm run test`) which uses Vite/vitest's resolver
+  and isn't on the publish path.
+
 ## [1.2.81] - 2026-05-26
 
 ### Fixed

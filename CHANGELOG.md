@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.75] - 2026-05-26
+
+### Fixed
+
+- **Vector backend form: "本地模型 id 不能为空" on fresh save.** The
+  form left the local-model / batch-size / hybrid-weight inputs empty
+  when the operator had never set those env vars; switching backend
+  from `off` to `本地（BGE）` then clicking 保存并测试 immediately
+  failed validation. Operators had to manually copy
+  `Xenova/bge-base-zh-v1.5` from the placeholder.
+- **Fix** (`web-app/src/routes/memory/vector-backend-form.tsx`): new
+  `selectBackend()` handler auto-prefills sensible defaults whenever
+  the backend selector flips off→local or off→openai and the
+  corresponding fields are still empty:
+  - local: `Xenova/bge-base-zh-v1.5`
+  - openai: `https://api.openai.com/v1` + `text-embedding-3-small`
+  - shared: batch=32, weight=0.5
+- The operator can still edit any of these afterwards. Existing
+  saved values are never overwritten.
+
 ## [1.2.74] - 2026-05-26
 
 ### Fixed

@@ -114,6 +114,29 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
     setForm((prev) => ({ ...prev, [k]: v }))
   }
 
+  // v1.2.75 — when the operator switches backend off→local / off→openai
+  // and the per-backend fields are still empty, auto-prefill defaults so
+  // they don't have to look up the BGE model id by hand. They can still
+  // edit afterwards. Also fills shared numeric knobs (batch / weight)
+  // since those have well-known sensible defaults too.
+  function selectBackend(next: BackendName): void {
+    setForm((prev) => {
+      const out = { ...prev, backend: next }
+      if (next === 'local' && !out.localModel.trim()) {
+        out.localModel = DEFAULTS.localModel
+      }
+      if (next === 'openai') {
+        if (!out.openaiBaseUrl.trim()) out.openaiBaseUrl = DEFAULTS.openaiBaseUrl
+        if (!out.openaiModel.trim())   out.openaiModel   = DEFAULTS.openaiModel
+      }
+      if (next !== 'off') {
+        if (!out.batchSize.trim())    out.batchSize    = DEFAULTS.batchSize
+        if (!out.hybridWeight.trim()) out.hybridWeight = DEFAULTS.hybridWeight
+      }
+      return out
+    })
+  }
+
   function validate(): string | null {
     if (form.backend === 'openai') {
       if (!form.openaiBaseUrl.trim()) return t('vector.form.errors.baseUrlRequired')
@@ -235,7 +258,7 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {/* Backend selector — full row on mobile, half on desktop */}
           <Field label={t('vector.form.backend')} help={t('vector.form.backendHelp')}>
-            <Select value={form.backend} onValueChange={(v) => set('backend', v as BackendName)}>
+            <Select value={form.backend} onValueChange={(v) => selectBackend(v as BackendName)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

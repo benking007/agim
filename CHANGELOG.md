@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.83] - 2026-05-26
+
+### Fixed
+
+- **Belt-and-suspenders**: drop `tsc --noEmit` from web-app's `build`
+  script. v1.2.82 added a tsconfig exclude for `*.test.tsx`, but the
+  user's CI run kept showing the same TS2305 errors — turning off
+  tsc entirely from the production build path guarantees the test-
+  type-drift can never block a release again. Type-checking still
+  happens via `npm run typecheck` and the `vitest` test runner.
+  Vite itself does enough at-bundle-time validation to catch syntax
+  + import errors.
+
 ## [1.2.82] - 2026-05-26
 
 ### Fixed

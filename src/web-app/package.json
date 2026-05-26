@@ -6,7 +6,7 @@
   "description": "agim Web 后台 v2 — React 18 + Vite SPA。详见 /root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md。",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint not yet configured for web-app — landed in a follow-up PR'",

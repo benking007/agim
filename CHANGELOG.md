@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.78] - 2026-05-26
+
+### Fixed / Added (TUI feedback batch)
+
+- **Session persistence + resume**. Every TUI session writes to
+  `<AGIM_HOME>/tui-sessions/<id>.json` after each agent turn and on
+  graceful exit. On exit the terminal prints the resume hint:
+  ```
+  会话 ID：tui-20260526-090530-a1b2c3
+  恢复命令：agim tui --resume tui-20260526-090530-a1b2c3
+  查看所有会话：agim tui --list-sessions
+  ```
+  New CLI flags:
+  - `agim tui --resume <id>` — load a specific session
+  - `agim tui --resume last` (or bare `--resume`) — load the most
+    recent session
+  - `agim tui --list-sessions` — print saved sessions, latest first
+  System-only / empty sessions are NOT saved (avoid clutter when the
+  user launches and exits without chatting).
+- **Newline + cursor cleanup on exit**. Without the trailing `\n`,
+  the next shell prompt collided with the last rendered frame.
+- **Markdown code-block colour fixed**. The keyword highlighter
+  looked up `KEYWORDS[lang.toLowerCase()]` directly, so fences spelled
+  `` ```typescript `` / `` ```python `` / `` ```bash `` never matched
+  (the table is keyed by short aliases: `ts` / `py` / `sh`). Added
+  `LANG_ALIASES` to normalise the common spellings:
+  `javascript/jsx/node → js`, `typescript/tsx → ts`,
+  `python/python3 → py`, `shell/bash/zsh → sh`, `golang → go`.
+- **Input-keystroke flicker reduced.** Extracted the chat history
+  into a `React.memo`-wrapped `ChatHistory` component. Typing in the
+  input box changes `input` state on the parent but no longer
+  triggers a full reconciliation of every message Box — Ink's diff
+  pass skips the subtree when `messages` identity is unchanged.
+
 ## [1.2.77] - 2026-05-26
 
 ### Added (TUI opencode-parity iteration)

@@ -30,10 +30,11 @@ import { tmpdir } from 'node:os'
 import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
 import { Markdown } from './markdown.js'
+import { generateSessionId, saveSession, type StoredMessage } from './sessions.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
-interface ChatMessage {
+export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   pending?: boolean
@@ -92,15 +93,60 @@ function scanFiles(root: string, max = 2000): FileEntry[] {
 
 interface AppProps {
   initialAgent?: string
+  /** Resume from disk; overrides initial empty state. */
+  resumed?: { id: string; agent?: string; messages: ChatMessage[] }
+  /** Stable session id — generated upstream and printed on exit so
+   *  user can `agim tui --resume <id>` next time. */
+  sessionId: string
 }
 
-export function TuiApp({ initialAgent }: AppProps): JSX.Element {
+// Memoized chat history — input keystrokes change `input` state on
+// the parent but NOT `messages`. Memo cuts the per-keystroke React
+// reconciliation cost in half by short-circuiting this subtree when
+// messages identity hasn't changed, which removes the visible flicker
+// on long histories.
+interface ChatHistoryProps {
+  messages: ChatMessage[]
+  agent: string | undefined
+  chatWidth: number
+}
+const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth }: ChatHistoryProps): JSX.Element {
+  if (messages.length === 0) {
+    return (
+      <Box paddingX={1} marginTop={1}>
+        <Text dimColor>(空) 输入消息开始对话 · / 唤出命令 · ! 行内 shell · @ 引用文件 · Ctrl-P 命令面板</Text>
+      </Box>
+    )
+  }
+  return (
+    <Box flexDirection="column" paddingX={1} marginTop={1}>
+      {messages.map((m, i) => (
+        <Box key={i} flexDirection="column" marginBottom={1} width={chatWidth}>
+          <Text>
+            {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
+            {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
+            {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
+            {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
+          </Text>
+          {m.role === 'assistant' && !m.pending
+            ? <Markdown source={m.content} />
+            : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
+          {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
+            <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
+          )}
+        </Box>
+      ))}
+    </Box>
+  )
+})
+
+export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const { setRawMode } = useStdin()
 
-  const [agent, setAgent] = useState<string | undefined>(initialAgent)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [agent, setAgent] = useState<string | undefined>(resumed?.agent ?? initialAgent)
+  const [messages, setMessages] = useState<ChatMessage[]>(resumed?.messages ?? [])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -236,6 +282,26 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
     const list = registry.listAgents()
     if (list.length > 0) setAgent(list[0])
   }, [agent])
+
+  // v1.2.78 — persist session after each agent turn finishes, so a
+  // SIGKILL still preserves the last full exchange.
+  const createdAtRef = useRef<string>(new Date().toISOString())
+  const persistSnapshot = useCallback((snap: ChatMessage[], curAgent: string | undefined): void => {
+    const stored: StoredMessage[] = snap.map((m) => ({
+      role: m.role,
+      content: m.content,
+      elapsedMs: m.elapsedMs,
+      agentName: m.agentName,
+    }))
+    saveSession({
+      id: sessionId,
+      agent: curAgent,
+      cwd: process.cwd(),
+      createdAt: createdAtRef.current,
+      updatedAt: new Date().toISOString(),
+      messages: stored,
+    })
+  }, [sessionId])
 
   // ── helpers ───────────────────────────────────────────────────────
 
@@ -403,6 +469,10 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
       if (process.env.IMHUB_TUI_NO_BELL !== '1') {
         try { process.stdout.write('\x07') } catch { /* ignore */ }
       }
+      // Persist after each agent turn so a SIGKILL still preserves
+      // the last full exchange. We read the latest state via the
+      // setMessages updater pattern to avoid a stale closure.
+      setMessages((m) => { persistSnapshot(m, agent); return m })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn({ event: 'tui.sendPrompt.error', err: msg })
@@ -505,28 +575,9 @@ export function TuiApp({ initialAgent }: AppProps): JSX.Element {
         </Text>
       </Box>
 
-      {/* Chat history */}
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
-        {messages.length === 0 && (
-          <Text dimColor>(空) 输入消息开始对话 · / 唤出命令 · ! 行内 shell · @ 引用文件 · Ctrl-P 命令面板</Text>
-        )}
-        {messages.map((m, i) => (
-          <Box key={i} flexDirection="column" marginBottom={1} width={chatWidth}>
-            <Text>
-              {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
-              {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
-              {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
-              {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
-            </Text>
-            {m.role === 'assistant' && !m.pending
-              ? <Markdown source={m.content} />
-              : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
-            {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
-              <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
-            )}
-          </Box>
-        ))}
-      </Box>
+      {/* Chat history — memoized so input keystrokes don't re-render
+          every message box (v1.2.78 flicker fix). */}
+      <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
 
       {error && (
         <Box paddingX={1}>

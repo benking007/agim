@@ -1879,11 +1879,15 @@ program
 
 program
   .command('tui')
-  .description('Open the terminal chat UI (Ink-based). MVP: pick an agent, chat in-process.')
+  .description('Open the terminal chat UI (Ink-based). Pick an agent + chat in-process.')
   .option('-a, --agent <name>', 'Pre-select an agent by name (e.g. claude-code, codex, native)')
-  .action(async (opts: { agent?: string }) => {
+  .option('-r, --resume [id]', 'Resume a saved session by id; "last" or empty picks the most recent')
+  .option('--list-sessions', 'Print saved TUI sessions (latest first) and exit')
+  .action(async (opts: { agent?: string; resume?: string | true; listSessions?: boolean }) => {
     const { runTui } = await import('./cli-ui/tui/index.js')
-    await runTui({ agent: opts.agent })
+    // commander gives `--resume` (no arg) as `true`; normalise to empty string
+    const resume = opts.resume === true ? '' : opts.resume
+    await runTui({ agent: opts.agent, resume, listSessions: opts.listSessions })
   })
 
 program

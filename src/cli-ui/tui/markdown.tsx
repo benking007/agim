@@ -38,8 +38,21 @@ interface HighlightedSpan {
   kind?: 'keyword' | 'string' | 'comment' | 'number'
 }
 
+// marked emits `language-foo` from fences; common spellings to canonical
+// keys above. Without this, ```typescript ``` blocks didn't colour
+// because the lookup was for `typescript` not `ts`.
+const LANG_ALIASES: Record<string, string> = {
+  javascript: 'js', jsx: 'js', node: 'js',
+  typescript: 'ts', tsx: 'ts',
+  python: 'py', python3: 'py',
+  shell: 'sh', bash: 'sh', zsh: 'sh',
+  golang: 'go',
+}
+
 function highlightCode(code: string, lang?: string): HighlightedSpan[] {
-  const kw = lang ? KEYWORDS[lang.toLowerCase()] : undefined
+  const lc = lang?.toLowerCase()
+  const canon = lc ? (LANG_ALIASES[lc] ?? lc) : undefined
+  const kw = canon ? KEYWORDS[canon] : undefined
   if (!kw) return [{ text: code }]
   const spans: HighlightedSpan[] = []
   let last = 0

@@ -1878,6 +1878,15 @@ program
   })
 
 program
+  .command('tui')
+  .description('Open the terminal chat UI (Ink-based). MVP: pick an agent, chat in-process.')
+  .option('-a, --agent <name>', 'Pre-select an agent by name (e.g. claude-code, codex, native)')
+  .action(async (opts: { agent?: string }) => {
+    const { runTui } = await import('./cli-ui/tui/index.js')
+    await runTui({ agent: opts.agent })
+  })
+
+program
   .command('agents')
   .description('List available agents')
   .action(async () => {

@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.76] - 2026-05-26
+
+### Added
+
+- **`agim tui` — terminal chat UI (first usable iteration).** Ink-based
+  React renderer that drives any registered agent in-process. Use case:
+  ssh into a box, run `agim tui`, chat with claude-code / codex /
+  native / opencode / cursor without needing web admin or daemon.
+- **Features in this iteration**:
+  - `agim tui [--agent <name>]` subcommand
+  - Streaming agent replies (live chunk rendering)
+  - Slash-command popup: type `/`, get a filterable command menu with
+    ↑↓ navigation, Tab completion, Enter to select
+  - Commands: `/agents` `/agent <name>` `/clear` `/help` `/exit`
+    `/quit` (more to come — per-message tools, /compact, /diff, /fork
+    follow opencode's playbook)
+  - Per-message footer on assistant replies: `■ agent · 4.9s` (model
+    + elapsed time)
+  - Bottom status bar: cwd, message count, key hints
+  - `Esc` aborts an in-flight reply via `AbortController`
+  - `Ctrl-C` exits cleanly
+- **Architecture**: TUI is **in-process**, not a client of a running
+  `agim start` daemon. Loads `registry.loadBuiltInPlugins()` + reads
+  config.json for ACP agents, then talks directly to adapter
+  `sendPrompt()` generators. No HTTP, no SSE — works on boxes where
+  the daemon isn't running. Remote-daemon-client mode is on the
+  roadmap.
+- **Quality cuts** (deliberate for first iteration):
+  - Single-line input (no `Shift+Enter` newline yet) — will switch
+    to custom multiline buffer
+  - Plain-text rendering (no markdown / table formatting) — avoids
+    terminal CJK width landmines
+  - Single thread (no session list, no fork)
+  - No approval-bus integration (TUI can't currently approve
+    tool-use cards; non-issue for read-only agent runs)
+
+### Internal
+
+- New deps: `ink ^5`, `ink-text-input ^6`, `react ^18` in `dependencies`;
+  `@types/react ^18` in `devDependencies`. Lazy-imported by the `tui`
+  subcommand only — other CLI paths pay zero startup cost.
+- `tsconfig.json`: `"jsx": "react-jsx"` for tsx files.
+- Root logger is set to `silent` for the TUI session (and restored
+  on exit) so pino-pretty doesn't write to fd 1 and scramble Ink's
+  diff renderer. `IMHUB_TUI_VERBOSE=1` keeps logs flowing (helpful
+  when stuck — pair with `2>tui.log`).
+
 ## [1.2.75] - 2026-05-26
 
 ### Fixed

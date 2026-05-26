@@ -71,6 +71,91 @@ describe('web-dispatcher', () => {
       expect(checkUrlSafety('http://[fd00::1]/').ok).toBe(false)
     })
 
+    // v1.2.70 — CR-4: IPv6 ULA in compressed forms that the regex
+    // missed. The new bit-mask check honours fc00::/7 regardless of
+    // canonicalisation. (Note: `fc::1` expands to `00fc:..:1`, which
+    // has high 7 bits `0000000` — NOT a ULA. Real ULAs start with
+    // fc** or fd**.)
+    it('IPv6 ULA in compressed form blocked (CR-4)', () => {
+      expect(checkUrlSafety('http://[fc00::]/').ok).toBe(false)
+      expect(checkUrlSafety('http://[fdff::dead]/').ok).toBe(false)
+      expect(checkUrlSafety('http://[fcab:1234::5]/').ok).toBe(false)
+      expect(checkUrlSafety('http://[fd12:3456:789a::1]/').ok).toBe(false)
+    })
+
+    it('IPv6 loopback :: and ::1 blocked', () => {
+      expect(checkUrlSafety('http://[::1]/').ok).toBe(false)
+      expect(checkUrlSafety('http://[::]/').ok).toBe(false)
+    })
+
+    it('IPv6 mapped-v4 form catches RFC1918 (e.g. ::ffff:10.0.0.1)', () => {
+      expect(checkUrlSafety('http://[::ffff:127.0.0.1]/').ok).toBe(false)
+      expect(checkUrlSafety('http://[::ffff:192.168.1.1]/').ok).toBe(false)
+    })
+
+    it('IPv6 public addresses still pass', () => {
+      expect(checkUrlSafety('http://[2606:4700:4700::1111]/').ok).toBe(true)
+      expect(checkUrlSafety('http://[2001:db8::1]/').ok).toBe(true)
+      // fc::1 is NOT ULA — first group 0x00fc, high 7 bits are all
+      // zeros, so it's actually a valid global address.
+      expect(checkUrlSafety('http://[fc::1]/').ok).toBe(true)
+    })
+
+    // v1.2.70 — CR-3: decimal-int / hex / octal / short-form IPv4 forms.
+    // Node's URL parser already canonicalises these to dotted-quad
+    // BEFORE we see hostname, so the safety check sees "127.0.0.1"
+    // directly. This means the regex never had the bypass we feared —
+    // but defense in depth (tryParseIPv4Variants) covers cases where
+    // hostnames arrive from a parser that DOESN'T canonicalise.
+    it('decimal-integer IPv4 forms blocked (CR-3, canonicalised by URL)', () => {
+      expect(checkUrlSafety('http://2130706433/').ok).toBe(false)  // 127.0.0.1
+      expect(checkUrlSafety('http://3232235521/').ok).toBe(false)  // 192.168.0.1
+      expect(checkUrlSafety('http://167772161/').ok).toBe(false)   // 10.0.0.1
+    })
+
+    it('hex-integer IPv4 forms blocked (CR-3)', () => {
+      expect(checkUrlSafety('http://0x7f000001/').ok).toBe(false)   // 127.0.0.1
+      expect(checkUrlSafety('http://0xc0a80101/').ok).toBe(false)   // 192.168.1.1
+      expect(checkUrlSafety('http://0xa9fea9fe/').ok).toBe(false)   // 169.254.169.254 (IMDS)
+    })
+
+    it('octal-prefixed IPv4 octets blocked (CR-3)', () => {
+      // 0177.0.0.1 → 127.0.0.1 (URL canonicalises)
+      expect(checkUrlSafety('http://0177.0.0.1/').ok).toBe(false)
+      // 010.0.0.1 → 8.0.0.1 (octal 10 = decimal 8) → public, allowed
+      expect(checkUrlSafety('http://010.0.0.1/').ok).toBe(true)
+    })
+
+    it('short-form IPv4 (RFC3986 §3.2.2) blocked (CR-3)', () => {
+      expect(checkUrlSafety('http://127.1/').ok).toBe(false)            // 127.0.0.1
+      expect(checkUrlSafety('http://192.168.1/').ok).toBe(false)        // 192.168.0.1
+      expect(checkUrlSafety('http://10.1/').ok).toBe(false)             // 10.0.0.1
+    })
+
+    it('overflow IPv4 octets fail URL parse → blocked (CR-3)', () => {
+      // 999.999.999.999 / 256.0.0.1 — Node's URL parser rejects them
+      // outright. We propagate as "invalid URL" → ok:false. No way for
+      // a malformed-but-meaningful-looking hostname to slip past.
+      expect(checkUrlSafety('http://999.999.999.999/').ok).toBe(false)
+      expect(checkUrlSafety('http://256.0.0.1/').ok).toBe(false)
+    })
+
+    // Unit test the raw IPv4 parser too, since it has paths URL doesn't
+    // exercise (it's exported for defense-in-depth in other consumers).
+    it('tryParseIPv4Variants handles all forms', async () => {
+      const { tryParseIPv4Variants } = await import('./web-dispatcher.js')
+      expect(tryParseIPv4Variants('127.0.0.1')).toEqual([127, 0, 0, 1])
+      expect(tryParseIPv4Variants('2130706433')).toEqual([127, 0, 0, 1])
+      expect(tryParseIPv4Variants('0x7f000001')).toEqual([127, 0, 0, 1])
+      expect(tryParseIPv4Variants('0177.0.0.1')).toEqual([127, 0, 0, 1])
+      expect(tryParseIPv4Variants('127.1')).toEqual([127, 0, 0, 1])
+      expect(tryParseIPv4Variants('192.168.1')).toEqual([192, 168, 0, 1])
+      // Overflow / out-of-range → null
+      expect(tryParseIPv4Variants('999.999.999.999')).toBeNull()
+      expect(tryParseIPv4Variants('256.0.0.1')).toBeNull()
+      expect(tryParseIPv4Variants('not-an-ip')).toBeNull()
+    })
+
     it('IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 lifts the block', () => {
       process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE = '1'
       expect(checkUrlSafety('http://localhost/').ok).toBe(true)

@@ -197,7 +197,7 @@ interface ResolvedPath {
   reason?: string
 }
 
-function resolveAndCheck(input: unknown, ctx: FsContext): ResolvedPath {
+async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<ResolvedPath> {
   if (typeof input !== 'string' || input.length === 0) {
     return { abs: '', ok: false, reason: 'path must be a non-empty string' }
   }
@@ -219,13 +219,62 @@ function resolveAndCheck(input: unknown, ctx: FsContext): ResolvedPath {
       }
     }
   }
+  // v1.2.70 — CR-1: realpath guard against symlink escape. Lexical
+  // checks alone don't see symlinks that point outside the workspace
+  // or at sensitive paths (e.g. a symlink "evil" → "/etc/passwd"
+  // dropped inside the agent cwd). Re-run sensitive + workspace
+  // checks against the resolved real path. Non-existent paths have
+  // no symlink to follow yet, so realpath ENOENT falls back to
+  // resolving the parent (which catches the "directory itself is a
+  // symlink" case) or leaves abs as-is.
+  const real = await realpathSoft(abs)
+  if (real !== abs) {
+    const sensReal = isSensitivePath(real, { cwd: ctx.cwd })
+    if (sensReal.sensitive) {
+      return { abs: real, ok: false, reason: `sensitive path (via symlink): ${sensReal.reason}` }
+    }
+    if (workspaceRestricted()) {
+      const relReal = relative(ctx.cwd, real)
+      if (relReal.startsWith('..') || (relReal.length > 0 && isAbsolute(relReal))) {
+        return {
+          abs: real,
+          ok: false,
+          reason:
+            `symlink target "${real}" is outside workspace "${ctx.cwd}". ` +
+            'Set IMHUB_NATIVE_FS_RESTRICT=0 to allow broader access.',
+        }
+      }
+    }
+  }
   return { abs, ok: true }
+}
+
+/** Resolve symlinks in `abs`. If the path itself doesn't exist
+ *  (ENOENT — typical for write_file targeting a new file), resolve
+ *  the parent and rejoin with the basename. If the parent also
+ *  doesn't exist, return `abs` verbatim — there's no symlink to
+ *  follow yet, so lexical checks already cover us. */
+async function realpathSoft(abs: string): Promise<string> {
+  try {
+    return await fs.realpath(abs)
+  } catch {
+    const lastSep = abs.lastIndexOf(sep)
+    if (lastSep <= 0) return abs
+    const parent = abs.slice(0, lastSep)
+    const name = abs.slice(lastSep + 1)
+    try {
+      const realParent = await fs.realpath(parent)
+      return resolvePath(realParent, name)
+    } catch {
+      return abs
+    }
+  }
 }
 
 // ─── tools ───────────────────────────────────────────────────────────
 
 async function runReadFile(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {
-  const p = resolveAndCheck(args.path, ctx)
+  const p = await resolveAndCheck(args.path, ctx)
   if (!p.ok) return { text: p.reason ?? 'invalid path', isError: true, source: 'fs' }
   const maxBytes = clampNumber(args.max_bytes, DEFAULT_READ_MAX_BYTES, 1, 8 * 1024 * 1024)
   try {
@@ -253,7 +302,7 @@ async function runReadFile(args: Record<string, unknown>, ctx: FsContext): Promi
 }
 
 async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {
-  const p = resolveAndCheck(args.path, ctx)
+  const p = await resolveAndCheck(args.path, ctx)
   if (!p.ok) return { text: p.reason ?? 'invalid path', isError: true, source: 'fs' }
   const content = typeof args.content === 'string' ? args.content : ''
   if (Buffer.byteLength(content, 'utf-8') > DEFAULT_WRITE_MAX_BYTES) {
@@ -281,7 +330,7 @@ async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Prom
 }
 
 async function runListDir(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {
-  const p = resolveAndCheck(args.path, ctx)
+  const p = await resolveAndCheck(args.path, ctx)
   if (!p.ok) return { text: p.reason ?? 'invalid path', isError: true, source: 'fs' }
   const maxEntries = clampNumber(args.max_entries, DEFAULT_LIST_MAX_ENTRIES, 1, 5000)
   try {
@@ -313,7 +362,7 @@ async function runGlob(args: Record<string, unknown>, ctx: FsContext, signal: Ab
   const pattern = typeof args.pattern === 'string' ? args.pattern : ''
   if (!pattern) return { text: 'pattern required', isError: true, source: 'fs' }
   const rootInput = typeof args.root === 'string' ? args.root : '.'
-  const p = resolveAndCheck(rootInput, ctx)
+  const p = await resolveAndCheck(rootInput, ctx)
   if (!p.ok) return { text: p.reason ?? 'invalid root', isError: true, source: 'fs' }
   const maxResults = clampNumber(args.max_results, DEFAULT_GLOB_MAX_RESULTS, 1, 5000)
   // Use ripgrep --files if available — it's faster + respects .gitignore.
@@ -335,7 +384,7 @@ async function runGrep(args: Record<string, unknown>, ctx: FsContext, signal: Ab
   const pattern = typeof args.pattern === 'string' ? args.pattern : ''
   if (!pattern) return { text: 'pattern required', isError: true, source: 'fs' }
   const inputPath = typeof args.path === 'string' ? args.path : '.'
-  const p = resolveAndCheck(inputPath, ctx)
+  const p = await resolveAndCheck(inputPath, ctx)
   if (!p.ok) return { text: p.reason ?? 'invalid path', isError: true, source: 'fs' }
   const glob = typeof args.glob === 'string' ? args.glob : undefined
   const mode = args.output_mode === 'files' || args.output_mode === 'count' ? args.output_mode : 'content'

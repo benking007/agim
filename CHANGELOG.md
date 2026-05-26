@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.70] - 2026-05-26
+
+### Security
+
+- **CR-1 / CR-3 / CR-4 — fixes from the v1.2.55–v1.2.69 code review.**
+  Closes three holes flagged as 🔴 critical in
+  `CODE_REVIEW_v1.2.55-v1.2.69.md`.
+
+- **CR-1: fs-dispatcher symlink escape guard.**
+  `core/llm/fs-dispatcher.ts:resolveAndCheck` is now async and runs an
+  extra `realpathSoft(abs)` after the lexical sensitive-path +
+  workspace-relative check. The resolved real path is re-validated
+  against `isSensitivePath` and the workspace boundary. A symlink
+  inside the agent cwd that points at `/etc/passwd` (or any path
+  outside the workspace) is rejected with reason
+  `"sensitive path (via symlink): …"` / `"symlink target … is outside
+  workspace"`. Non-existent targets (typical for `native_write_file`
+  to a new path) fall back to resolving the parent dir, catching the
+  "create file inside a symlinked directory" case.
+
+- **CR-3: SSRF parser accepts integer / hex / octal IPv4 forms.**
+  `core/llm/web-dispatcher.ts:checkUrlSafety` no longer relies on a
+  dotted-quad regex. New `tryParseIPv4Variants(host)` expands every
+  RFC3986 form Node's URL parser accepts: dotted quad, 1-/2-/3-part
+  short form (e.g. `127.1` → `127.0.0.1`), decimal int
+  (`2130706433`), hex int (`0x7f000001`), octal-prefixed octets
+  (`0177.0.0.1`). Each octet's range is validated, closing the
+  `999.999.999.999` overflow path. In practice Node's URL parser
+  already canonicalises most of these to dotted quad, but
+  defense-in-depth covers any consumer that hands us a raw hostname.
+
+- **CR-4: IPv6 ULA / link-local check now uses bit-masks, not regex.**
+  New `checkIpv6Safety(addr)` + `expandIpv6(addr)` canonicalise the
+  address to 8 × 16-bit groups via `net.isIPv6()`, then apply prefix
+  masks: `fe80::/10` (link-local), `fc00::/7` (ULA, covers `fc**` and
+  `fd**`), `::1` (loopback), `::ffff:V4` (mapped — recursively
+  checked against IPv4 safety), `::` (unspecified). Compressed forms
+  like `[fcab:1234::5]` or `[fd00::dead]` that the old regex missed
+  are now correctly blocked.
+
+### Tests
+
+- **+11 red-team cases** across the two dispatchers covering the
+  fixes above:
+  - `web-dispatcher.test.ts`: IPv6 ULA compressed forms, IPv6
+    loopback, mapped-v4 RFC1918, decimal/hex/octal/short-form IPv4,
+    overflow-octet rejection, public IPv6 still allowed, unit test
+    for `tryParseIPv4Variants` itself.
+  - `fs-dispatcher.test.ts`: symlink whose target is `/etc/passwd`,
+    symlink to an outside-workspace path, symlinked directory used
+    as write parent, symlink that DOES resolve inside the workspace
+    (positive case).
+  - Total dispatcher tests: 53/53 green.
+
+### Notes
+
+- CR-5 (exec-dispatcher dangerous-pattern regex bypass) and CR-6
+  (`IMHUB_NATIVE_EXEC_SANDBOX` defaults off) deferred to the next
+  batch alongside CR-2 (DNS-aware SSRF resolver).
+
 ## [1.2.69] - 2026-05-26
 
 ### Added

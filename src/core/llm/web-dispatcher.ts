@@ -16,6 +16,7 @@
 //
 // Both tools are read-only and safe to default-allow in native's policy.
 
+import net from 'node:net'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
@@ -374,54 +375,198 @@ export function checkUrlSafety(raw: string): SafetyResult {
   }
   if (process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE === '1') return { ok: true }
 
-  // v1.2.66 — CIDR whitelist. Operator-set ranges escape the
-  // private-IP block. Use case: Tailscale (100.64.0.0/10), internal
-  // VPN subnets, OpenAI-compat services on internal docker networks.
-  // Format: `IMHUB_NATIVE_WEB_SSRF_WHITELIST=10.20.0.0/16,100.64.0.0/10`.
-  // Parsed once per call (cheap; called per fetch); cache could be
-  // added but the list is small and changes are rare.
+  // CIDR whitelist (v1.2.66). Tailscale 100.64.0.0/10 etc.
   const whitelist = parseSsrfWhitelist(process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST)
 
   const host = u.hostname.toLowerCase()
   if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) {
     return { ok: false, reason: 'localhost is private (set IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 or whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST)' }
   }
-  // IPv4 numeric check
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
-  if (v4) {
-    const octets = [Number(v4[1]), Number(v4[2]), Number(v4[3]), Number(v4[4])]
-    if (whitelist.length > 0 && octets.every((o) => Number.isFinite(o) && o >= 0 && o <= 255)
-        && ipInAnyCidr4(octets, whitelist)) {
-      return { ok: true }
-    }
-    const [a, b] = [octets[0], octets[1]]
-    if (a === 10) return { ok: false, reason: 'RFC1918 10.0.0.0/8 private' }
-    if (a === 172 && b >= 16 && b <= 31) return { ok: false, reason: 'RFC1918 172.16.0.0/12 private' }
-    if (a === 192 && b === 168) return { ok: false, reason: 'RFC1918 192.168.0.0/16 private' }
-    if (a === 127) return { ok: false, reason: '127.0.0.0/8 loopback' }
-    if (a === 169 && b === 254) return { ok: false, reason: '169.254.0.0/16 link-local (covers AWS/Azure IMDS 169.254.169.254)' }
-    // v1.2.66 — Carrier-grade NAT (RFC 6598). Cloud providers + some
-    // ISPs use this for internal-only hosts. Not "private" in the
-    // RFC1918 sense but routinely used as such; nanobot blocks it.
-    if (a === 100 && b >= 64 && b <= 127) {
-      return { ok: false, reason: '100.64.0.0/10 carrier-grade NAT (whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST=100.64.0.0/10 if intentional, e.g. Tailscale)' }
-    }
-    if (a === 0) return { ok: false, reason: '0.0.0.0/8 invalid' }
+
+  // v1.2.70 — normalize hostname to an IP if possible BEFORE pattern
+  // matching. Closes CR-3 (999.999.999.999 / decimal int / hex int
+  // bypass) and CR-4 (IPv6 compressed-form ULA regex hole).
+  //
+  // Three parse paths:
+  //   - bracketed IPv6 host ("[fe80::1]") → strip + net.isIPv6
+  //   - dotted-quad / decimal-int / hex-int / octal-int → tryParseIPv4Variants
+  //   - hostname → leave for v4/v6 check; non-IP names pass (treated
+  //     as DNS targets; CR-2 DNS rebind is a separate fix slot)
+  const v6Host = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+  if (net.isIPv6(v6Host)) {
+    return checkIpv6Safety(v6Host)
   }
-  // IPv6 — Node's URL.hostname keeps the brackets ("[fe80::1]"). Strip
-  // for prefix matching. Block link-local (fe80::/10) and ULA
-  // (fc00::/7 — covers fc**/fd**). Also block ::1 loopback.
-  const v6 = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-  if (v6 === '::1') return { ok: false, reason: 'IPv6 loopback ::1' }
-  if (v6.startsWith('fe80:') || v6.startsWith('fe80::')) {
+  // IPv4 variants — including decimal int, hex int, octal, and any
+  // dotted-quad form Node's URL parser accepted but the regex missed.
+  const v4 = tryParseIPv4Variants(host)
+  if (v4) {
+    if (whitelist.length > 0 && ipInAnyCidr4(v4, whitelist)) return { ok: true }
+    return checkIpv4Safety(v4)
+  }
+
+  // Not an IP literal — DNS hostname. Pass without resolution at this
+  // layer; CR-2 (DNS-aware SSRF via custom http.Agent.lookup) is a
+  // separate hardening track.
+  return { ok: true }
+}
+
+/**
+ * v1.2.70 — IPv4 parser that accepts every form Node's URL parser
+ * also accepts:
+ *   - dotted quad      "127.0.0.1"
+ *   - 3-part           "127.1" (rare but valid per RFC 3986)
+ *   - decimal integer  "2130706433"
+ *   - hex integer      "0x7f000001" / "0x7f.0.0.1"
+ *   - octal            "0177.0.0.1"
+ * Returns the 4-octet form or null if the input isn't a valid IPv4
+ * representation. Validates each octet's range, closing CR-3
+ * (999.999.999.999 overflow) — any out-of-range part → null.
+ */
+export function tryParseIPv4Variants(host: string): [number, number, number, number] | null {
+  // 1. canonical dotted quad with strict 0-255 range
+  const dq = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (dq) {
+    const o = [Number(dq[1]), Number(dq[2]), Number(dq[3]), Number(dq[4])]
+    if (o.every((x) => x >= 0 && x <= 255)) return [o[0], o[1], o[2], o[3]]
+    return null
+  }
+  // 2. one-to-four parts, each in decimal/hex/octal.
+  const parts = host.split('.')
+  if (parts.length < 1 || parts.length > 4) return null
+  const numeric: number[] = []
+  for (const p of parts) {
+    const n = parseIntegerVariant(p)
+    if (n === null) return null
+    numeric.push(n)
+  }
+  // RFC 3986 §3.2.2 (Old-style URL parsers): expand the last part
+  // across the remaining bytes. E.g. "127.1" → 127.0.0.1.
+  if (numeric.length === 1) {
+    const v = numeric[0]
+    if (v < 0 || v > 0xffffffff) return null
+    return [(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]
+  }
+  if (numeric.length === 2) {
+    const a = numeric[0], rest = numeric[1]
+    if (a < 0 || a > 255 || rest < 0 || rest > 0xffffff) return null
+    return [a, (rest >>> 16) & 0xff, (rest >>> 8) & 0xff, rest & 0xff]
+  }
+  if (numeric.length === 3) {
+    const [a, b, rest] = numeric
+    if (a > 255 || b > 255 || rest < 0 || rest > 0xffff) return null
+    return [a, b, (rest >>> 8) & 0xff, rest & 0xff]
+  }
+  // 4 parts → all must fit 0-255
+  if (numeric.every((x) => x >= 0 && x <= 255)) {
+    return [numeric[0], numeric[1], numeric[2], numeric[3]]
+  }
+  return null
+}
+
+/** Parse a single integer-form octet. Hex prefix 0x, octal prefix 0
+ *  (only when followed by 0-7, else decimal). Returns null on invalid. */
+function parseIntegerVariant(s: string): number | null {
+  if (s.length === 0) return null
+  if (/^0x[0-9a-f]+$/i.test(s)) return Number.parseInt(s, 16)
+  // octal: leading 0 followed by 1+ digits, ALL digits must be 0-7
+  if (/^0[0-7]+$/.test(s)) return Number.parseInt(s, 8)
+  if (/^[0-9]+$/.test(s)) return Number.parseInt(s, 10)
+  return null
+}
+
+function checkIpv4Safety(octets: [number, number, number, number]): SafetyResult {
+  const [a, b] = octets
+  if (a === 10) return { ok: false, reason: 'RFC1918 10.0.0.0/8 private' }
+  if (a === 172 && b >= 16 && b <= 31) return { ok: false, reason: 'RFC1918 172.16.0.0/12 private' }
+  if (a === 192 && b === 168) return { ok: false, reason: 'RFC1918 192.168.0.0/16 private' }
+  if (a === 127) return { ok: false, reason: '127.0.0.0/8 loopback' }
+  if (a === 169 && b === 254) {
+    return { ok: false, reason: '169.254.0.0/16 link-local (covers AWS/Azure IMDS 169.254.169.254)' }
+  }
+  if (a === 100 && b >= 64 && b <= 127) {
+    return {
+      ok: false,
+      reason: '100.64.0.0/10 carrier-grade NAT (whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST=100.64.0.0/10 if intentional, e.g. Tailscale)',
+    }
+  }
+  if (a === 0) return { ok: false, reason: '0.0.0.0/8 invalid' }
+  return { ok: true }
+}
+
+/**
+ * v1.2.70 — proper IPv6 safety check via numeric prefix parsing.
+ * Replaces the ad-hoc regex that missed compressed forms
+ * ("[fc::1]", "[fd00::]"). Uses the 16-bit groups returned by a
+ * canonical expansion so the prefix bits actually drive the
+ * decision.
+ */
+function checkIpv6Safety(addr: string): SafetyResult {
+  const groups = expandIpv6(addr)
+  if (!groups) return { ok: false, reason: `invalid IPv6 address: ${addr}` }
+  // ::1 loopback
+  if (groups.every((g, i) => (i < 7 ? g === 0 : g === 1))) {
+    return { ok: false, reason: 'IPv6 loopback ::1' }
+  }
+  // fe80::/10 — first 10 bits are 1111 1110 10
+  if ((groups[0] & 0xffc0) === 0xfe80) {
     return { ok: false, reason: 'IPv6 link-local fe80::/10' }
   }
-  if (v6.startsWith('fc') || v6.startsWith('fd')) {
-    if (/^f[cd][0-9a-f]{2}:/i.test(v6)) {
-      return { ok: false, reason: 'IPv6 ULA fc00::/7' }
-    }
+  // fc00::/7 — first 7 bits are 1111 110 (matches fc** and fd**)
+  if ((groups[0] & 0xfe00) === 0xfc00) {
+    return { ok: false, reason: 'IPv6 ULA fc00::/7' }
+  }
+  // ::ffff:V4 — IPv4-mapped. Extract embedded v4 and re-check.
+  if (groups[0] === 0 && groups[1] === 0 && groups[2] === 0
+      && groups[3] === 0 && groups[4] === 0 && groups[5] === 0xffff) {
+    const a = (groups[6] >>> 8) & 0xff
+    const b = groups[6] & 0xff
+    const c = (groups[7] >>> 8) & 0xff
+    const d = groups[7] & 0xff
+    return checkIpv4Safety([a, b, c, d])
+  }
+  // Unspecified ::
+  if (groups.every((g) => g === 0)) {
+    return { ok: false, reason: 'IPv6 unspecified ::' }
   }
   return { ok: true }
+}
+
+/** Expand `addr` (already validated by net.isIPv6) into 8 × 16-bit
+ *  groups. Returns null only if the form somehow can't be normalized
+ *  (shouldn't happen post-net.isIPv6).
+ */
+export function expandIpv6(addr: string): number[] | null {
+  const lower = addr.toLowerCase()
+  // Embedded IPv4 form like "::ffff:127.0.0.1"
+  let working = lower
+  const v4Tail = /([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$/.exec(lower)
+  if (v4Tail) {
+    const v4 = tryParseIPv4Variants(v4Tail[1])
+    if (!v4) return null
+    const hex1 = ((v4[0] << 8) | v4[1]).toString(16)
+    const hex2 = ((v4[2] << 8) | v4[3]).toString(16)
+    working = lower.slice(0, v4Tail.index) + hex1 + ':' + hex2
+  }
+  const [head, tail] = working.split('::')
+  const headGroups = head ? head.split(':') : []
+  const tailGroups = tail !== undefined ? (tail ? tail.split(':') : []) : null
+  let groups: string[]
+  if (tailGroups === null) {
+    // No "::" present — must have exactly 8 groups
+    if (headGroups.length !== 8) return null
+    groups = headGroups
+  } else {
+    const missing = 8 - headGroups.length - tailGroups.length
+    if (missing < 0) return null
+    groups = [...headGroups, ...Array<string>(missing).fill('0'), ...tailGroups]
+  }
+  const out: number[] = []
+  for (const g of groups) {
+    if (g === '' || g.length > 4 || !/^[0-9a-f]+$/.test(g)) return null
+    out.push(Number.parseInt(g, 16))
+  }
+  if (out.length !== 8) return null
+  return out
 }
 
 // v1.2.66 — CIDR whitelist parsing + IPv4-only matcher.

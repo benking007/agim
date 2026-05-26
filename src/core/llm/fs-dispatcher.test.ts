@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildFsDispatcher, getFsTools, isFsToolName } from './fs-dispatcher.js'
@@ -180,6 +180,66 @@ describe('fs-dispatcher', () => {
       const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'does-not-exist' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       delete process.env.IMHUB_NATIVE_FS_TIMEOUT_MS
+    })
+  })
+
+  // v1.2.70 — CR-1: symlink escape via lexical path checks. Before
+  // the realpath guard, an attacker could drop a symlink inside the
+  // workspace pointing at /etc/passwd and read it back. realpath()
+  // collapses the symlink chain so the safety check sees the real
+  // destination.
+  describe('symlink escape guard (CR-1)', () => {
+    it('refuses to read a symlink whose target is sensitive', async () => {
+      const link = join(workspace, 'evil-passwd')
+      try { await rm(link, { force: true }) } catch { /* ignore */ }
+      await symlink('/etc/passwd', link)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-passwd' } }, NEVER_ABORT)
+      expect(r.isError).toBe(true)
+      // Either sensitive-path block or workspace-escape block — both
+      // legitimate failures. The OLD lexical check returned ok and
+      // happily read /etc/passwd.
+      expect(r.text).toMatch(/sensitive|outside workspace/i)
+    })
+
+    it('refuses to read a symlink whose target is outside workspace', async () => {
+      const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-outside-'))
+      await writeFile(join(otherDir, 'secret.txt'), 'top-secret')
+      const link = join(workspace, 'escape')
+      try { await rm(link, { force: true }) } catch { /* ignore */ }
+      await symlink(join(otherDir, 'secret.txt'), link)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'escape' } }, NEVER_ABORT)
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/outside workspace|symlink/i)
+      try { await rm(otherDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    })
+
+    it('refuses to write through a symlinked directory pointing outside', async () => {
+      const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-symdir-'))
+      const linkDir = join(workspace, 'evil-dir')
+      try { await rm(linkDir, { force: true }) } catch { /* ignore */ }
+      await symlink(otherDir, linkDir)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d(
+        { id: 't', name: 'native_write_file', arguments: { path: 'evil-dir/x.txt', content: 'no' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/outside workspace|symlink/i)
+      try { await rm(otherDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    })
+
+    it('allows symlinks that resolve INSIDE the workspace', async () => {
+      const target = join(workspace, 'real-target.txt')
+      await writeFile(target, 'allowed')
+      const link = join(workspace, 'inside-link')
+      try { await rm(link, { force: true }) } catch { /* ignore */ }
+      await symlink(target, link)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'inside-link' } }, NEVER_ABORT)
+      expect(r.isError).toBe(false)
+      expect(r.text).toBe('allowed')
     })
   })
 

@@ -1396,12 +1396,22 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await stopTyping()
         await dismiss()
         markJobCompleted(inlineJobId, result)
-        // v1.1.10: string branch is the slash-command path (e.g. /job list,
-        // /a2a tree, /outbox status, /restart, /audit). These are
-        // operational replies and must stay inline regardless of length —
-        // truncating a /job list table behind a viewer link defeats the
-        // command. Only the streaming-generator branch below is true
-        // freeform agent output and gets source: 'agent'.
+        // v1.2.73 — `result: string` is no longer exclusively "slash
+        // command output". Cases that fall into this branch:
+        //   1. slash command (e.g. /job list, /a2a tree, /restart, /audit)
+        //      → willInvokeAgent === false → source 'system' (inline)
+        //   2. agent error short-circuit (handleAgentCommand returns
+        //      "❌ Agent X not available", "❌ Task #N gone" before ever
+        //      reaching the adapter) → willInvokeAgent === true →
+        //      source 'agent' (so viewer routing can still kick in if
+        //      the error happens to be long; usually short → inline)
+        //   3. an adapter that returns its FULL reply as a single string
+        //      (observed with Codex when it surfaces a markdown-table
+        //      response through the agent-call path) → willInvokeAgent
+        //      === true → source 'agent' → message-sink can viewer-route
+        //      long content. Before this fix the body got force-inlined
+        //      as 'system', so markdown tables came through verbatim
+        //      and rendered poorly in IM.
         //
         // Empty-string return signals "I already delivered the reply
         // myself" — used by /restart which pushes its in-flight ack via
@@ -1412,7 +1422,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
             platform, channelId: ctx.channelId, threadId: message.threadId,
             payload: await maybePrefix(result), kind: 'text',
             jobId: inlineJobId > 0 ? inlineJobId : undefined,
-            source: 'system',
+            source: willInvokeAgent ? 'agent' : 'system',
           })
           if (sinkRes.outboxId > 0) linkJobOutbox(inlineJobId, sinkRes.outboxId)
         }

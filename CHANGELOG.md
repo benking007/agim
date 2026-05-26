@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.73] - 2026-05-26
+
+### Fixed
+
+- **Codex (and other string-returning agent paths) bypass viewer
+  routing.** `cli.ts` had a hardcoded `source: 'system'` in the
+  "string result" branch under the comment "this branch is only
+  slash commands". That assumption was wrong: when an adapter
+  surfaces its full reply as a single string instead of streaming
+  it (Codex hit this for markdown-table responses), the body was
+  force-inlined and rendered poorly in IM clients with weak
+  markdown support. Also affected adapter-error short-circuits
+  ("❌ Agent X unavailable") which should be eligible for viewer
+  routing too (in case the error is long).
+- **Fix** (`cli.ts:1416`):
+  `source: 'system'` → `source: willInvokeAgent ? 'agent' : 'system'`.
+  Slash commands keep `'system'` (`willInvokeAgent === false`),
+  agent responses get `'agent'` so message-sink can viewer-route
+  long content per `message-sink.ts:252`.
+
 ## [1.2.72] - 2026-05-26
 
 ### Removed

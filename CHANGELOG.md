@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.91] - 2026-05-27
+
+### Changed
+
+- **Native: empty-turn output replaced with a structured recap.**
+  When a native turn ends with empty assistant text, agim used to
+  surface a static `(native agent returned an empty response)`
+  banner. The IM user couldn't tell whether the agent had actually
+  done work, why it stopped, or how to continue — and most empty
+  turns are not failures, they're tool chains where the model
+  skipped the closing summary. The recap now lists every tool call
+  that ran (grouped + ✓ / ✗ / ⚠️ marks), shows a 160-char preview
+  of the last tool's output, gives a plain-language guess at why
+  the model stopped (tool succeeded but no summary / tool failed /
+  zero tools called), and ends with three continuation options:
+  reply "继续" to push forward, name a specific next step, or
+  switch agent via /cc / /oc / /cs. The diagnostic
+  `native.turn.empty_response` log also now carries
+  lastToolError + lastToolPreview for faster forensics.
+
 ## [1.2.90] - 2026-05-27
 
 ### Fixed

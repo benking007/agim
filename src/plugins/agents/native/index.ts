@@ -226,6 +226,92 @@ function resolveRole(): string[] {
   return DEFAULT_ROLE_FALLBACK.slice()
 }
 
+/**
+ * v1.2.91 — when a native turn ends with empty assistant text, render
+ * a structured recap instead of the opaque "(empty response)" banner.
+ *
+ * Why: the most common cause of an empty turn is the model finishing a
+ * tool chain (search / fetch / read / ask_user) but skipping the
+ * closing summary. The IM user sees what looks like a frozen agent
+ * mid-task. The recap surfaces:
+ *   1. what tool calls actually ran (with ✓/✗)
+ *   2. a short preview of the last tool's output (the de-facto "what
+ *      we just learnt")
+ *   3. a plain-language guess at why the model stopped
+ *   4. three concrete continuation options the user can pick from
+ *
+ * Kept intentionally simple — no second LLM call. Pure formatting of
+ * the AgentLoopResult fields we already have.
+ */
+function composeEmptyTurnRecap(result: {
+  toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string; durationMs: number }>
+  iterations: number
+  finishReason: string
+}): string {
+  const tools = result.toolCalls
+  if (tools.length === 0) {
+    // No tools called AND no text emitted — the model literally said
+    // nothing. Usually a misjudged "nothing to do" or a provider
+    // quirk on a single short prompt.
+    return [
+      '🧐 这一轮没说话也没动工具。',
+      '可能是模型把请求误判成了"无事可做"，或者提供方返回了空响应。',
+      '',
+      '怎么继续：',
+      '  · 直接告诉我具体要做什么（多给点上下文）',
+      '  · 或把上一条请求换种说法再发',
+      '  · 或 /cc / /oc / /cs 切到别的智能体接手',
+    ].join('\n')
+  }
+
+  // Group identical tool names so a chain like 6× read_file collapses
+  // into "read_file ×6" rather than 6 list items.
+  const counts = new Map<string, { count: number; errors: number }>()
+  for (const t of tools) {
+    const e = counts.get(t.name)
+    if (e) {
+      e.count += 1
+      if (t.isError) e.errors += 1
+    } else {
+      counts.set(t.name, { count: 1, errors: t.isError ? 1 : 0 })
+    }
+  }
+
+  const lines: string[] = ['🧐 这一轮没写出收尾文字就结束了，但中间有做事。已执行的工具调用：']
+  for (const [name, { count, errors }] of counts) {
+    const mark = errors === 0 ? '✓' : errors === count ? '✗' : '⚠️'
+    const tail = count > 1 ? ` ×${count}` : ''
+    const errTail = errors > 0 && errors < count ? `（其中 ${errors} 次失败）` : ''
+    lines.push(`  ${mark} ${name}${tail}${errTail}`)
+  }
+
+  const last = tools[tools.length - 1]
+  if (last) {
+    const preview = (last.preview ?? '').trim().slice(0, 160).replace(/\s+/g, ' ')
+    lines.push('')
+    lines.push(`最后一步：${last.name}${last.isError ? '（失败）' : ''}`)
+    if (preview) lines.push(`  └ 结果摘要：${preview}${(last.preview?.length ?? 0) > 160 ? '…' : ''}`)
+  }
+
+  // Quick why-did-it-stop hint based on what we have.
+  lines.push('')
+  if (last && !last.isError) {
+    lines.push('猜测：模型在工具结果上停手了，没写最终结论。常见原因是它把工具的返回当成了"完整答案"。')
+  } else if (last && last.isError) {
+    lines.push('猜测：最后一步工具失败了，模型没生成补救/解释文字就停了。')
+  } else {
+    lines.push(`猜测：模型在第 ${result.iterations} 轮结束时主动停止（finishReason=${result.finishReason}）。`)
+  }
+
+  lines.push('')
+  lines.push('要继续吗？')
+  lines.push('  · 回「继续」让我接着推进')
+  lines.push('  · 或直接告诉我下一步具体做什么')
+  lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+
+  return lines.join('\n')
+}
+
 function pickProvider(): { provider: LlmProvider; role: string } | null {
   for (const role of resolveRole()) {
     const p = getProvider(role)
@@ -757,19 +843,10 @@ class NativeAgentAdapter implements AgentAdapter {
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
     } else if (!body) {
-      // v1.2.89 — log enough state to root-cause the recurring
-      // "empty response" banner. Three known triggers we want to
-      // tell apart:
-      //   - model returned content="" with finishReason='stop' after
-      //     a successful tool chain (model bug; pre-emptive nothing
-      //     to say in last iteration).
-      //   - tool chain ended with finishReason='tool_use' but no
-      //     subsequent iteration (agent-loop accumulator bug — would
-      //     show iterations > 0 and last tool call name).
-      //   - the loop exited early on first iteration with empty
-      //     text and no tool calls (provider quirk).
-      const lastTool = result.toolCalls.length > 0
-        ? result.toolCalls[result.toolCalls.length - 1]?.name
+      // v1.2.89 — diagnostic log: tell the three known triggers
+      // apart in the audit trail.
+      const lastCall = result.toolCalls.length > 0
+        ? result.toolCalls[result.toolCalls.length - 1]
         : null
       log.warn({
         event: 'native.turn.empty_response',
@@ -779,11 +856,22 @@ class NativeAgentAdapter implements AgentAdapter {
         finishReason: result.finishReason,
         iterations: result.iterations,
         toolCallCount: result.toolCalls.length,
-        lastToolName: lastTool,
+        lastToolName: lastCall?.name ?? null,
+        lastToolError: lastCall?.isError ?? null,
+        lastToolPreview: lastCall?.preview?.slice(0, 200) ?? null,
         elapsedMs: Date.now() - startedAt,
       }, `native turn ended with empty text (finishReason=${result.finishReason}, ` +
         `iterations=${result.iterations}, tools=${result.toolCalls.length})`)
-      body = '(native agent returned an empty response)'
+      // v1.2.91 — render a structured recap instead of the opaque
+      // "(native agent returned an empty response)" banner. Most
+      // empty-text turns aren't actual failures: the model
+      // completed a tool chain (search, fetch, ask_user, …) and
+      // simply omitted the closing summary. To the IM user this
+      // looked like the agent froze mid-task. The recap surfaces
+      // what got done, why we think it stopped, and concrete
+      // next-step options so the conversation can continue
+      // instead of dying on the spot.
+      body = composeEmptyTurnRecap(result)
     }
     yield body
   }

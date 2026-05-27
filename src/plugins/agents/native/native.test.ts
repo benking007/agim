@@ -178,11 +178,17 @@ describe('nativeAgentAdapter — sendPrompt', () => {
     expect(chunks[0]).toMatch(/native agent error/i)
   })
 
-  it('reports empty response as a friendly placeholder', async () => {
+  it('renders a structured recap when the model returns empty text', async () => {
+    // v1.2.91 — replaced the legacy "(empty response)" banner with a
+    // recap that lists what got done + suggests continuation paths.
+    // When zero tool calls preceded the empty turn we expect the
+    // "没说话也没动工具" branch.
     configureBackend()
     globalThis.fetch = (async () => makeChatResponse('')) as unknown as typeof fetch
     const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'x'))
-    expect(chunks[0]).toMatch(/empty response/i)
+    expect(chunks[0]).toMatch(/没说话/)
+    // Should suggest at least one continuation option.
+    expect(chunks[0]).toMatch(/继续|切到别的智能体/)
   })
 
   it('propagates costUsd to opts.onUsage', async () => {

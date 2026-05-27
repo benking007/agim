@@ -57,7 +57,7 @@ import type {
   ToolDef,
 } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
-import { runGoalCritic } from './goal-critic.js'
+import { runGoalCritic, resolveCriticMode } from './goal-critic.js'
 
 const log = rootLogger.child({ component: 'agent-loop' })
 
@@ -437,17 +437,27 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }
       }
 
-      // v1.2.98 — goal-critic check (semantic stuck-loop / off-track).
-      // Fires when:
-      //   · caller supplied a criticAnchor (prompt or active goal)
-      //   · we've executed at least MIN_TOOL_CALLS tool calls this turn
-      //   · we haven't already fired the critic MAX_CRITIC_CALLS times
-      //   · we're on a "trigger" mark (every CRITIC_EVERY_N tool calls)
-      // The critic itself decides whether to break (onTrack=false) or
-      // let the loop continue. It returns onTrack=true on errors so a
-      // provider hiccup never accidentally kills a working turn.
+      // v1.2.98 / v1.2.99 — goal-critic check (semantic off-track).
+      // Fires when ALL of:
+      //   · caller supplied a criticAnchor
+      //   · critic mode is 'always' OR ('goal-only' AND anchor has a
+      //     long-task goal title). Per-turn prompts alone won't
+      //     trigger in goal-only mode — this is the v1.2.99 fix for
+      //     CR finding A2 (default ON in v1.2.98 surprised the cost
+      //     budget). Set IMHUB_NATIVE_CRITIC=always to re-enable for
+      //     every multi-step turn.
+      //   · ≥ CRITIC_MIN_TOOL_CALLS tool calls this turn
+      //   · haven't already fired CRITIC_MAX_CALLS times
+      //   · on a trigger mark (every CRITIC_EVERY_N tool calls)
+      // The critic itself decides whether to break. It returns
+      // onTrack=true on errors so provider hiccups never accidentally
+      // kill a working turn.
+      const criticMode = resolveCriticMode()
+      const criticGateOpen = criticMode === 'always'
+        || (criticMode === 'goal-only' && !!input.criticAnchor?.goalTitle?.trim())
       if (
         input.criticAnchor
+        && criticGateOpen
         && toolCalls.length >= CRITIC_MIN_TOOL_CALLS
         && criticCallsFired < CRITIC_MAX_CALLS
         && (toolCalls.length - CRITIC_MIN_TOOL_CALLS) % CRITIC_EVERY_N === 0

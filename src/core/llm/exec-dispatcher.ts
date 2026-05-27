@@ -230,34 +230,50 @@ function checkDangerousCommand(cmd: string): string | null {
 }
 
 /**
- * v1.2.93 — detect "this command is invoking the agim long-task bgjob
- * wrapper". When it is, the caller will skip bwrap so the wrapper's
- * setsid-detached worker actually survives past exec return.
+ * v1.2.93 / v1.2.99 — detect "this command is invoking the agim
+ * long-task bgjob wrapper". When it is, the caller skips bwrap so the
+ * wrapper's setsid-detached worker actually survives past exec return.
  *
- * Matched paths (absolute only — refusing to recognise bare `bgjob`
- * keeps an attacker-controlled PATH shim from getting carve-out
- * privileges):
+ * Security model (tightened in v1.2.99 after CR finding A1):
+ *   - We bypass bwrap for the **entire** shell command line. So a
+ *     command like `bgjob status x && cat /etc/shadow > /tmp/leak`
+ *     would let `cat` run on the host FS, totally outside sandbox.
+ *   - To prevent that, this matcher now **only** returns true when
+ *     the trimmed command IS a single bgjob invocation: it must start
+ *     with one of the absolute wrapper paths, AND contain NO shell
+ *     metacharacters that could chain extra commands (`;` `&` `|`
+ *     `(` `)` `<` `>` `` ` `` `$`). Anything else falls through to
+ *     sandbox.
+ *   - Bare `bgjob` (PATH lookup) is still refused: an attacker-
+ *     controlled shim of the same name in PATH must not inherit the
+ *     bypass.
+ *
+ * Matched paths (absolute only):
  *   - /root/.claude/scripts/bgjob       (Claude Code wrapper)
  *   - /root/.config/opencode/scripts/bgjob  (opencode wrapper; same script)
- *
- * The regex anchors at command start OR after `;`, `&&`, `||`, `|`,
- * `(` so the rule survives common pipeline / sequence forms. Comments
- * (`# foo`) before the path also pass through unchanged because we
- * only care that an early non-comment token IS the bgjob path.
  */
 const BGJOB_PATHS = [
   '/root/.claude/scripts/bgjob',
   '/root/.config/opencode/scripts/bgjob',
 ]
+
+/** Shell metacharacters that could chain additional commands. We
+ *  reject the whole bypass if any are present in the command, even
+ *  when the bgjob wrapper itself sits at the start. */
+const SHELL_CHAIN_META = /[;&|()<>`$]/
+
 export function isBgjobInvocation(cmd: string): boolean {
-  // Strip leading whitespace + a single optional `sudo` or `env VAR=...`
-  // preamble so common pre-fixes don't mask the wrapper path.
   const trimmed = cmd.trim()
+  // v1.2.99 — refuse if the command contains anything that could
+  // tack on extra payload. Includes subshell `( ... )`, backticks,
+  // `$( ... )` substitution, redirection, and obvious chaining.
+  if (SHELL_CHAIN_META.test(trimmed)) return false
   for (const path of BGJOB_PATHS) {
-    // Path must appear as a standalone token: preceded by start /
-    // whitespace / shell separator, followed by space / EOL / nothing.
+    // Path must be at the START of the (trimmed) command, followed
+    // by whitespace or EOL. No leading args / env-var assignments /
+    // sudo are allowed before the bgjob path.
     const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const re = new RegExp(`(?:^|[;&|()\\s])${escaped}(?:\\s|$)`)
+    const re = new RegExp(`^${escaped}(?:\\s|$)`)
     if (re.test(trimmed)) return true
   }
   return false

@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.99] - 2026-05-27
+
+### Security
+
+- **bgjob sandbox carve-out no longer leaks via shell chaining**
+  (CR finding A1). v1.2.93's `isBgjobInvocation` matched the
+  wrapper path anywhere in the command, so a payload that started
+  with the legitimate `bgjob status …` followed by `&&` and a
+  read of a sensitive system file ran the second command
+  unsandboxed because the whole line went through the bypass
+  branch. The matcher now requires the trimmed command to
+  start with one of the absolute wrapper paths AND to contain NO
+  shell-chain metacharacters (`;` `&` `|` `(` `)` `<` `>` `` ` ``
+  `$`). Anything else falls through to bwrap as normal. Five new
+  red-team unit tests pin the refusal: chained, subshell-wrapped,
+  pipe-suffixed, backtick-substituted, redirection-suffixed.
+
+### Fixed
+
+- **goal critic default mode aligned with the documented cost
+  story** (CR finding A2). v1.2.98 docs said the critic was off
+  by default for daily-driver turns; the code actually defaulted
+  on whenever the per-turn prompt was non-empty (which is
+  always). `IMHUB_NATIVE_CRITIC` is now a three-valued knob:
+    - `off` (or `0` / `false`) — hard kill switch, never fire.
+    - `always` (or `on` / `1` / `true`) — fire whenever an
+      anchor exists; previous v1.2.98 default behaviour.
+    - anything else (incl. unset, the new default) — fire ONLY
+      when an active long-task goal is registered on the thread.
+      Per-turn prompts alone won't trigger.
+  This matches the cost story documented in the v1.2.98
+  changelog: day-to-day single-turn chats pay nothing; the
+  critic is reserved for the long-horizon work signalled by
+  `/long_task`.
+
 ## [1.2.98] - 2026-05-27
 
 ### Added

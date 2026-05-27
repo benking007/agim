@@ -91,9 +91,25 @@ const DEFAULT_SYSTEM_PROMPT =
   '\n  { "onTrack": boolean, "reason": "一句中文，≤ 60 字", "redirect": "如果偏离，建议什么新方向，≤ 60 字；不偏离填空字符串" }' +
   '\n\n不要解释、不要寒暄、不要 markdown 围栏。直接给 JSON。'
 
+/** v1.2.99 (CR finding A2): three-valued knob.
+ *  - `off` / `0` / `false`  → hard kill, never fire critic
+ *  - `always` / `on` / `1` / `true` → fire whenever any anchor exists
+ *    (prompt OR active goal)
+ *  - anything else (incl. unset) → fire ONLY when an active long-task
+ *    goal exists. Per-turn prompts alone don't trigger.
+ *
+ *  This matches the cost story documented in CHANGELOG: day-to-day
+ *  single-turn chats pay nothing; the critic is reserved for the
+ *  long-horizon work signalled by an explicit /long_task goal. */
+export type CriticMode = 'off' | 'always' | 'goal-only'
+export function resolveCriticMode(): CriticMode {
+  const raw = (process.env.IMHUB_NATIVE_CRITIC || '').toLowerCase().trim()
+  if (raw === 'off' || raw === '0' || raw === 'false') return 'off'
+  if (raw === 'always' || raw === 'on' || raw === '1' || raw === 'true') return 'always'
+  return 'goal-only'
+}
 function resolveCriticEnabled(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_CRITIC || '').toLowerCase()
-  return raw !== 'off' && raw !== '0' && raw !== 'false'
+  return resolveCriticMode() !== 'off'
 }
 
 function resolveCriticRole(): string {

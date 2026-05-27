@@ -183,6 +183,14 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `    your identity (e.g. "我是 native，正在听。"). Do NOT call any tool. The slash router handles`,
     `    actual agent switching; if it didn't switch, the user is already on this agent.`,
     ``,
+    `Closure rule (v1.2.94 — HARD RULE):`,
+    `  - When you finish a tool chain (read_file / web_fetch / native_exec / search_memos / etc.) you`,
+    `    MUST write a short Chinese summary BEFORE stopping. The tool output by itself is not a`,
+    `    user-facing answer — the user can't see the raw JSON / shell stdout. Always close with at`,
+    `    least one sentence stating the finding / conclusion.`,
+    `  - Do NOT end a turn with empty assistant text when you've just called tools. If you genuinely`,
+    `    have nothing to add, say so explicitly ("已查完，未发现 X").`,
+    ``,
     `Long-task SOP (v1.2.93 — for any work you estimate will run > 10 minutes):`,
     `  - You CANNOT keep a long synchronous turn alive: the IM bridge times out around 30 min, and`,
     `    most useful work past the 10-min mark loses intermediate state if it crashes mid-flight.`,
@@ -842,6 +850,94 @@ class NativeAgentAdapter implements AgentAdapter {
       // so the chain has at least one entry. Defensive belt-and-suspenders.
       yield '❌ native agent: provider chain ended without any attempt'
       return
+    }
+
+    // v1.2.94 — auto-summary retry. When the loop ended naturally
+    // (`stop`) with empty assistant text BUT we had a real tool chain,
+    // the model usually did the work and just forgot to write the
+    // closing sentence the user actually wants to read. Re-prompt the
+    // SAME provider once with no tools and a compact transcript of
+    // what just happened. Cost is bounded (one extra small call,
+    // 60s deadline, tools=[] so it can't keep chaining). On failure
+    // or empty output we fall through to v1.2.91 recap as before.
+    if (
+      !result.text
+      && result.finishReason === 'stop'
+      && result.toolCalls.length > 0
+      && usedProvider
+    ) {
+      try {
+        // Build a compact transcript: tool name + 300-char preview per
+        // call. Capped at the most recent 20 calls so even a runaway
+        // chain doesn't blow the prompt budget.
+        const recent = result.toolCalls.slice(-20)
+        const transcript = recent
+          .map((t, i) => {
+            const status = t.isError ? '✗ FAILED' : '✓'
+            const preview = (t.preview ?? '').trim().slice(0, 300).replace(/\s+/g, ' ')
+            return `${i + 1}. [${status}] ${t.name}\n   ${preview}${(t.preview?.length ?? 0) > 300 ? '…' : ''}`
+          })
+          .join('\n')
+        const summaryMessages: LlmMessage[] = [
+          {
+            role: 'system',
+            content:
+              '你是 agim native 智能体。刚才你为用户调用了一系列工具拿到了结果，但忘记给收尾文字。' +
+              '现在请用中文给用户一个清晰、完整、可读的最终回答——整合工具结果、不要再调任何工具、不要要求用户再做什么。',
+          },
+          { role: 'user', content: prompt },
+          {
+            role: 'user',
+            content:
+              `[刚才执行的工具调用，共 ${result.toolCalls.length} 次，` +
+              `下面是最近 ${recent.length} 次的摘要]\n${transcript}\n\n` +
+              `[请基于上面的工具结果，给用户最终的中文答案]`,
+          },
+        ]
+        log.info({
+          event: 'native.turn.auto_summary.start',
+          sessionId,
+          backend: usedProvider.name,
+          toolCallCount: result.toolCalls.length,
+        }, `attempting auto-summary retry for empty-text turn (${result.toolCalls.length} tools)`)
+        const retry = await usedProvider.chat(summaryMessages, {
+          model: opts.model,
+          timeoutMs: 60_000,
+          signal: opts.signal,
+        })
+        if (retry.text && retry.text.trim().length > 0) {
+          log.info({
+            event: 'native.turn.auto_summary.ok',
+            sessionId,
+            backend: usedProvider.name,
+            textLen: retry.text.length,
+            costUsd: retry.usage?.costUsd ?? null,
+          }, `auto-summary produced ${retry.text.length} chars`)
+          // Replace the text. Preserve everything else (toolCalls,
+          // iterations, finishReason) for downstream audit accuracy.
+          result = { ...result, text: retry.text }
+          // Add the retry's cost to the turn's usage so /tasks#cost
+          // sums correctly. retry.usage may be undefined for some
+          // providers; only patch the field when present.
+          if (retry.usage?.costUsd != null) {
+            const base = typeof result.usage.costUsd === 'number' ? result.usage.costUsd : 0
+            result = { ...result, usage: { ...result.usage, costUsd: base + retry.usage.costUsd } }
+          }
+        } else {
+          log.warn({
+            event: 'native.turn.auto_summary.empty',
+            sessionId,
+            backend: usedProvider.name,
+          }, 'auto-summary retry also returned empty text — falling through to recap')
+        }
+      } catch (err) {
+        log.warn({
+          event: 'native.turn.auto_summary.failed',
+          sessionId,
+          backend: usedProvider.name,
+          err: err instanceof Error ? err.message : String(err),
+        }, 'auto-summary retry threw — falling through to recap')
+      }
     }
 
     // Per-turn parent audit row that aggregates the iteration rows

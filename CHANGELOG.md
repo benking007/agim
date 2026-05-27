@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.94] - 2026-05-27
+
+### Added
+
+- **Auto-summary retry when a tool chain ends without text.** Real
+  operator report: native did ~15 native_exec calls + multiple
+  reads, but stopped without writing the closing summary the user
+  wanted to read. v1.2.91's recap correctly diagnosed the cause
+  ("model treated the tool result AS the answer") but didn't
+  actually give the user the answer.
+
+  When a turn ends with `finishReason='stop'`, empty assistant
+  text, AND at least one prior tool call, agim now invokes the
+  SAME provider once more with no tools enabled, feeding a
+  compact transcript of the most recent 20 tool calls (name +
+  300-char preview each) plus an explicit instruction to write
+  the Chinese summary. On success, the retry's text replaces the
+  empty body and its cost rolls into the turn's usage; on
+  failure or empty retry, the v1.2.91 recap path still kicks in
+  as before.
+
+  Bounded cost: one extra call, 60s timeout, transcript capped at
+  20 calls × 300 chars ≈ 6 kB prompt. Diagnostic events:
+  `native.turn.auto_summary.start / ok / empty / failed`.
+
+### Changed
+
+- **System prompt: new Closure hard rule.** Explicitly tells the
+  model that ending a tool chain with empty assistant text is
+  NOT acceptable — must write at least one Chinese sentence
+  stating the finding before stopping. Prevents recurrence at
+  the root for compliant models; the auto-summary retry above
+  catches the rest.
+
 ## [1.2.93] - 2026-05-27
 
 ### Added

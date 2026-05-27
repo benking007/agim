@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.101] - 2026-05-28
+
+### Security
+
+- **`native_exec` no longer bypasses the sensitive-path denylist.**
+  Field observation: an agent ran
+  `cat .../fin_data/.env 2>/dev/null; echo "==="; env | grep -i DB_`
+  through `native_exec`, and the auto-allow countdown was about to
+  fire because `checkSensitiveToolUse`'s command-string scan was
+  scoped to `toolName === 'Bash'`. Anything routed through
+  `native_exec` (the native agent's shell tool) silently skipped
+  every regex — `.env`, `~/.ssh/id_rsa`, `env`/`printenv` dumps,
+  `/etc/shadow`, `tokens.json`, `AGENTS.md`/`CLAUDE.md`. Fix: the
+  branch now matches `Bash || native_exec`, so the existing
+  patterns hard-deny across both tools before the auto-allow
+  short-circuit can fire. Added: `credentials.json` /
+  `credentials.yaml` / `credentials.yml` to both the
+  basename denylist and the bash-style command scan (covers GCP /
+  Firebase / AWS-CLI credential exports). 6 new tests cover the
+  native_exec branch (incl. the original chained-command sample
+  that triggered this report) and the credentials.* additions.
+
 ## [1.2.100] - 2026-05-27
 
 ### Fixed

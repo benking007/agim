@@ -108,6 +108,12 @@ const SENSITIVE_BASENAMES: string[] = [
   'id_ed25519',
   'id_ecdsa',
   'id_dsa',
+  // Cloud / service-account credential files commonly named
+  // `credentials.json` / `credentials.yaml` in GCP, AWS CLI exports,
+  // Firebase, etc.
+  'credentials.json',
+  'credentials.yaml',
+  'credentials.yml',
 ]
 
 /** Sensitive command substrings for Bash. Cheap substring matching
@@ -130,6 +136,8 @@ const SENSITIVE_BASH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /\/proc\/self\/environ\b/, reason: 'attempts to read process environ' },
   // Common reflection commands that leak env: `env`, `printenv`, `set`
   { re: /(?:^|[;&|]|\s)(?:env|printenv|set)\s*(?:$|[;&|>])/, reason: 'attempts to dump environment variables' },
+  // Cloud / service-account credential files surface up via shell too.
+  { re: /(?:^|\s|\/)credentials\.(?:json|ya?ml)\b/i, reason: 'attempts to access credentials.*' },
 ]
 
 /** True iff `absPath` falls under a sensitive prefix or has a
@@ -185,14 +193,19 @@ export function checkSensitiveToolUse(
     }
   }
 
-  // Bash — scan the command string. Multiple sub-commands across &&,
-  // ;, |, $(...) are all caught because we scan the whole string.
-  if (toolName === 'Bash') {
+  // Shell-style command scans. native_exec uses the SAME command-string
+  // shape as Bash, so it gets the same denylist — otherwise an agent
+  // can dodge `Bash`'s sensitive-string guard simply by routing through
+  // native_exec (the case observed in v1.2.100 field testing where
+  // `cat .../fin_data/.env; env | grep DB_` ran past auto-allow).
+  // Multiple sub-commands across &&, ;, |, $(...) are all caught
+  // because we scan the whole string.
+  if (toolName === 'Bash' || toolName === 'native_exec') {
     const cmd = (input as Record<string, unknown>).command
     if (typeof cmd === 'string') {
       for (const { re, reason } of SENSITIVE_BASH_PATTERNS) {
         if (re.test(cmd)) {
-          return { deny: true, reason: `tool=Bash blocked: ${reason}` }
+          return { deny: true, reason: `tool=${toolName} blocked: ${reason}` }
         }
       }
     }

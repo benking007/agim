@@ -378,6 +378,57 @@ export class DingTalkAdapter implements MessengerAdapter {
       return
     }
 
+    // ─── richText — flatten text segments and dispatch as plain text ─
+    // DingTalk delivers "rich text" forwards / mixed-content messages
+    // as `msgtype: 'richText'` with a `richText.msgList` array of
+    // typed segments — { type: 'text', text } | { type: 'at', userIds }
+    // | { type: 'picture', pictureDownloadCode } and friends. The
+    // user's actual prose lives in the text segments; for a first
+    // pass we concatenate those and treat the result like a normal
+    // text turn. Picture segments are acknowledged in the dispatched
+    // text so the user knows we didn't fully parse them; sending the
+    // images as standalone msgtype=picture is still the supported
+    // multimodal path.
+    if (msg.msgtype === 'richText') {
+      const rt = (msg as unknown as { richText?: { msgList?: Array<Record<string, unknown>> } }).richText
+      const list = Array.isArray(rt?.msgList) ? rt!.msgList! : []
+      const textParts: string[] = []
+      let pictureCount = 0
+      for (const seg of list) {
+        if (!seg || typeof seg !== 'object') continue
+        const segType = typeof seg.type === 'string' ? seg.type : ''
+        if (segType === 'text' && typeof seg.text === 'string') {
+          const t = seg.text.trim()
+          if (t) textParts.push(t)
+        } else if (segType === 'picture') {
+          pictureCount += 1
+        }
+        // 'at' / unknown segments are intentionally ignored — they
+        // carry no payload the agent can act on.
+      }
+      let text = textParts.join('\n').trim()
+      if (pictureCount > 0) {
+        text = text
+          ? `${text}\n\n（这条消息还附带 ${pictureCount} 张图片；如需我查看图片，请单独发送。）`
+          : `（收到 ${pictureCount} 张图片的复合消息，请单独发送图片以便我查看，或打字告诉我要做什么。）`
+      }
+      if (!text) {
+        log.info({ event: 'dingtalk.inbound.richtext_empty', messageId: msg.msgId },
+          'richText with no usable segments — ignored')
+        return
+      }
+      log.info({
+        event: 'dingtalk.inbound.richtext',
+        messageId: msg.msgId,
+        threadId,
+        segments: list.length,
+        pictureCount,
+        textLen: text.length,
+      })
+      await this.dispatchText(msg, text, threadId, channelId)
+      return
+    }
+
     // ─── file — out of scope for now; ack only ───────────────────────
     // Files can be PDFs / Word / spreadsheets etc. — multimodal agent
     // handling is a separate effort. Acknowledge so user knows we saw it.

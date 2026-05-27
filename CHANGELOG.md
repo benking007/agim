@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.89] - 2026-05-27
+
+### Fixed
+
+- **DingTalk: `richText` messages got the "I don't recognize this
+  format" fallback.** Real-world DingTalk inbound for forwarded /
+  mixed-content turns uses `msgtype: 'richText'` with
+  `richText.msgList` carrying a typed segment list. The adapter
+  now flattens text segments, dispatches them as a normal text
+  turn, and notes picture-count in the dispatched text so the
+  user knows to re-send images standalone for multimodal
+  parsing.
+- **`mcp__imhub__ask_user` typed replies were silently dropped.**
+  `ask-user-router.tryHandleAskReply` was defined and documented
+  to be called from `cli.ts` onMessage, but no caller existed —
+  the function was dead code. Result: when an agent invoked
+  `ask_user`, the user saw the choice card / prompt but their
+  typed reply went straight to the agent as a fresh message, the
+  pending Promise never resolved, and the call eventually timed
+  out. Now intercepted before the approval-reply path (ask
+  outranks approval because it's blocking the agent's progress).
+  Button-callback wiring stays a follow-up — onButtonCallback is
+  a single-slot binding that approval-router already owns; mixing
+  in ask requires a chained dispatcher (separate change).
+
+### Added
+
+- **Diagnostic log when native agent ends a turn with empty text.**
+  No behavior change to the existing
+  `(native agent returned an empty response)` banner, but agim
+  now logs `native.turn.empty_response` with
+  `finishReason / iterations / toolCallCount / lastToolName` so
+  the three known triggers (model emits stop+content="", loop
+  exits without summarising tool result, first-iteration empty
+  text) can be told apart in the audit log on next recurrence.
+
 ## [1.2.88] - 2026-05-27
 
 ### Fixed

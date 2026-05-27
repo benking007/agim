@@ -757,6 +757,32 @@ class NativeAgentAdapter implements AgentAdapter {
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
     } else if (!body) {
+      // v1.2.89 — log enough state to root-cause the recurring
+      // "empty response" banner. Three known triggers we want to
+      // tell apart:
+      //   - model returned content="" with finishReason='stop' after
+      //     a successful tool chain (model bug; pre-emptive nothing
+      //     to say in last iteration).
+      //   - tool chain ended with finishReason='tool_use' but no
+      //     subsequent iteration (agent-loop accumulator bug — would
+      //     show iterations > 0 and last tool call name).
+      //   - the loop exited early on first iteration with empty
+      //     text and no tool calls (provider quirk).
+      const lastTool = result.toolCalls.length > 0
+        ? result.toolCalls[result.toolCalls.length - 1]?.name
+        : null
+      log.warn({
+        event: 'native.turn.empty_response',
+        sessionId,
+        backend: usedProvider.name,
+        role: usedRole,
+        finishReason: result.finishReason,
+        iterations: result.iterations,
+        toolCallCount: result.toolCalls.length,
+        lastToolName: lastTool,
+        elapsedMs: Date.now() - startedAt,
+      }, `native turn ended with empty text (finishReason=${result.finishReason}, ` +
+        `iterations=${result.iterations}, tools=${result.toolCalls.length})`)
       body = '(native agent returned an empty response)'
     }
     yield body

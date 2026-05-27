@@ -670,6 +670,30 @@ program
           }, 'recovery intercept threw — falling through to normal flow')
         }
 
+        // v1.2.89 — ask_user text-reply intercept. handleAskOp registers
+        // a pending entry keyed by (platform, channelId, threadId); when
+        // the user replies with one of the choice tokens (1 / a / 通过 / …),
+        // we resolve the pending Promise the calling agent is awaiting.
+        // BEFORE this commit, tryHandleAskReply was defined but never
+        // called from anywhere — so an agent's mcp__imhub__ask_user call
+        // would surface the choice card but the user's typed reply went
+        // straight to the agent as a fresh prompt, leaving the ask
+        // dangling until the configured timeout. Runs BEFORE the approval
+        // intercept since asks are blocking the calling agent's progress
+        // — if both exist on the same thread (rare) the ask wins.
+        try {
+          const { tryHandleAskReply } = await import('./core/ask-user-router.js')
+          if (tryHandleAskReply(ctx.platform, ctx.channelId, ctx.message.threadId, ctx.message.text)) {
+            ctx.logger.info({ event: 'message.consumed_by_ask_user' })
+            return
+          }
+        } catch (err) {
+          ctx.logger.warn({
+            event: 'ask.intercept_crashed',
+            err: err instanceof Error ? err.message : String(err),
+          }, 'ask-user intercept threw — falling through to normal flow')
+        }
+
         // Approval interception comes BEFORE the agent router. If a pending
         // approval exists for this thread and the message is a y/n-style
         // reply, we resolve the approval and stop. Anything else routes

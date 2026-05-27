@@ -29,7 +29,10 @@ import type { ApprovalCardOutcome } from '@/types/ws'
 
 export interface MessageBubbleProps {
   msg: ChatMessage
-  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => void
+  /** Returns whether the WS click was actually transmitted. The
+   *  approval card uses this to revert its optimistic "submitting"
+   *  state when the socket is disconnected. */
+  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
 }
 
 export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Element {
@@ -65,13 +68,39 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
 
 interface ApprovalViewProps {
   approval: NonNullable<ChatMessage['approval']>
-  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => void
+  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
 }
 
 function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
   const { t } = useTranslation()
   const { messageId, prompt, text, outcome } = approval
   const isAuto = prompt?.mode === 'auto-allow'
+
+  // v1.2.88 — optimistic "submitting" state. Without this, a click
+  // produced ZERO visible feedback until the server pushed
+  // `approval-card-edit` back (typically tens to hundreds of ms,
+  // sometimes longer when the agent is busy). The user perceived
+  // this as "the button didn't work" and would click again. Now we
+  // disable both buttons and surface a "已发送" hint the instant a
+  // click fires. If `onApprove` reports the WS send failed, we
+  // revert so the user can retry once reconnected.
+  const [pendingChoice, setPendingChoice] = useState<ApprovalChoice | null>(null)
+
+  // Reset the optimistic state when the server's outcome lands — the
+  // outer branch will take over rendering anyway, but this keeps the
+  // component state hygienic if the card stays mounted.
+  useEffect(() => {
+    if (outcome) setPendingChoice(null)
+  }, [outcome])
+
+  function handleClick(choice: ApprovalChoice): void {
+    if (pendingChoice || !prompt || !onApprove) return
+    setPendingChoice(choice)
+    const ok = onApprove(messageId, prompt.reqId, choice)
+    // `void` return from the legacy v1 wiring counts as success — only
+    // explicit `false` (from the use-chat hook) means the WS dropped it.
+    if (ok === false) setPendingChoice(null)
+  }
 
   return (
     <div
@@ -120,38 +149,50 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
       {outcome ? (
         <OutcomeBadge outcome={outcome} />
       ) : prompt ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {/* In auto-allow mode the bus will auto-allow; only Deny is
-              meaningful. Hide the Allow/Auto-allow buttons to avoid
-              redundant clicks. */}
-          {!isAuto && (
-            <>
-              <Button
-                size="sm"
-                onClick={() => onApprove?.(messageId, prompt.reqId, 'y')}
-              >
-                {t('chat.approvalAllow', { defaultValue: 'Allow' })}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onApprove?.(messageId, prompt.reqId, 'a')}
-                title={t('chat.approvalAutoTip', {
-                  defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
-                })}
-              >
-                {t('chat.approvalAuto', { defaultValue: 'Auto for similar' })}
-              </Button>
-            </>
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {/* In auto-allow mode the bus will auto-allow; only Deny is
+                meaningful. Hide the Allow/Auto-allow buttons to avoid
+                redundant clicks. */}
+            {!isAuto && (
+              <>
+                <Button
+                  size="sm"
+                  disabled={pendingChoice !== null}
+                  onClick={() => handleClick('y')}
+                >
+                  {t('chat.approvalAllow', { defaultValue: 'Allow' })}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={pendingChoice !== null}
+                  onClick={() => handleClick('a')}
+                  title={t('chat.approvalAutoTip', {
+                    defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
+                  })}
+                >
+                  {t('chat.approvalAuto', { defaultValue: 'Auto for similar' })}
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={pendingChoice !== null}
+              onClick={() => handleClick('n')}
+            >
+              {t('chat.approvalDeny', { defaultValue: 'Deny' })}
+            </Button>
+          </div>
+          {pendingChoice !== null && (
+            <p className="mt-2 text-xs text-text-dim">
+              {t('chat.approvalSubmitting', {
+                defaultValue: '已发送，等待结果…',
+              })}
+            </p>
           )}
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => onApprove?.(messageId, prompt.reqId, 'n')}
-          >
-            {t('chat.approvalDeny', { defaultValue: 'Deny' })}
-          </Button>
-        </div>
+        </>
       ) : null}
     </div>
   )

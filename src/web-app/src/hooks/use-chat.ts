@@ -201,8 +201,11 @@ export interface UseChat {
   switchAgent: (name: string) => void
   /** Approval card button click. The hook composes the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router expects;
-   *  callers only pass the messageId + reqId + the user's choice. */
-  approvalClick: (messageId: string, reqId: string, choice: ApprovalChoice) => void
+   *  callers only pass the messageId + reqId + the user's choice.
+   *  Returns whether the WS send actually went out — false means the
+   *  socket was reconnecting and the click should be re-tried. The
+   *  hook also dispatches an ERROR for the chat surface to render. */
+  approvalClick: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean
   /** Drop all messages + tell the server to fork a new session
    *  (resetConversation: new id, drops CLI session pins + auto-allow
    *  rules + plan-mode). The server replies with empty history. */
@@ -409,15 +412,27 @@ export function useChat(): UseChat {
     wsRef.current.send({ type: 'switch-agent', agent: name })
   }
 
-  function approvalClick(messageId: string, reqId: string, choice: ApprovalChoice): void {
+  function approvalClick(messageId: string, reqId: string, choice: ApprovalChoice): boolean {
     // approval-router parses `apv:<reqId>:<y|n|a>`. v1 composed this
     // client-side too; we route through unchanged because the router
     // is the canonical sink and ignores any other prefix.
-    wsRef.current.send({
+    //
+    // v1.2.88 — previously ignored ws.send()'s return value, which
+    // meant a click during WS reconnect was silently dropped: the
+    // user saw zero feedback and the approval card sat there
+    // pending forever. Match the chat-send path (line 402): treat a
+    // failed send as an explicit error so the user knows to wait
+    // for reconnect and retry. The boolean return lets the calling
+    // component clear its optimistic "submitting…" state.
+    const ok = wsRef.current.send({
       type: 'approval-action',
       data: `apv:${reqId}:${choice}`,
       messageId,
     })
+    if (!ok) {
+      dispatch({ kind: 'ERROR', message: 'Not connected. Reconnecting — try clicking again in a moment.' })
+    }
+    return ok
   }
 
   function newConversation(): void {

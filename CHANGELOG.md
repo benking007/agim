@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.88] - 2026-05-27
+
+### Fixed
+
+- **Web chat: clicking an approval card button looked like it did
+  nothing.** Two bugs stacked. (1) `approvalClick` in use-chat
+  ignored `ws.send()`'s return value, so a click during a WS
+  reconnect was silently dropped — no error, no progress.
+  (2) The in-chat approval card had zero immediate feedback: no
+  button-disable, no spinner, no hint. The user had to wait for
+  the server's `approval-card-edit` push to see anything change,
+  which could be hundreds of ms (or much longer if the agent was
+  busy). They'd click again, or assume the button was broken.
+- Fix: (a) `approvalClick` now returns the send result and
+  dispatches an explicit "Not connected. Reconnecting…" error
+  when the socket dropped the click. (b) `ApprovalView` carries
+  an optimistic `pendingChoice` state — the instant a button
+  fires, all three buttons disable and a "已发送，等待结果…"
+  hint appears. Reverted automatically if `approvalClick`
+  reports the WS send failed, and cleared when the server's
+  outcome lands.
+
 ## [1.2.87] - 2026-05-27
 
 ### Fixed

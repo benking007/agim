@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.98] - 2026-05-27
+
+### Added
+
+- **Reminder MCP tools surfaced to `native`.** Previously only
+  claude-code's MCP sidecar exposed `create_reminder` /
+  `list_reminders` / `cancel_reminder` / `snooze_reminder`;
+  `native` was silent on "明天 9 点提醒我" requests. Wired
+  directly into `core/reminders.ts` (no bus indirection) since
+  native is in-process. Same descriptions / schemas as the
+  claude-code surface so policy gates and audit greps keep
+  working.
+
+- **Goal-critic — semantic off-track detection.** Borrowed from
+  ReAct → Reflection literature. v1.2.95's stuck-loop detector
+  catches the mechanical case (same tool + same outcome 3×);
+  this catches the semantic case (different calls but still not
+  serving the user's goal — e.g. SQL retries with cosmetic
+  tweaks, chasing the wrong tree). New module
+  `core/llm/goal-critic.ts` runs one cheap LLM call after every
+  5 tool calls (max 2 per turn), feeds it the user prompt +
+  active long-task goal + last 10 tool calls, asks for JSON
+  `{ onTrack, reason, redirect? }`. On `onTrack=false`, the
+  loop breaks with new `LoopFinishReason='off_track'` and
+  native renders a redirect recap citing the critic's reason
+  + suggested new direction.
+
+  Cost gate: disabled if `IMHUB_NATIVE_CRITIC=off`, if no
+  `cheap` role provider is configured, or if neither prompt nor
+  active goal is available as an anchor. Trigger only after 5+
+  tool calls so day-to-day short turns pay nothing. Diagnostic
+  events: `agent-loop.goal_critic_verdict /
+  off_track_detected`, `native.turn.off_track`.
+
+### Changed
+
+- `LoopFinishReason` union extended with `'off_track'`. Native
+  body composition gains a dedicated branch + new
+  `composeOffTrackRecap` helper.
+
 ## [1.2.97] - 2026-05-27
 
 ### Added

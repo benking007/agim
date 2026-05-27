@@ -408,6 +408,65 @@ function composeUnfinishedTurnRecap(
   return lines.join('\n')
 }
 
+/**
+ * v1.2.98 — render the off-track recap from the goal-critic's verdict.
+ * Different shape from `composeUnfinishedTurnRecap` because the critic
+ * gave us a verbatim Chinese reason + optional redirect; we don't have
+ * to invent fail-mode hints. Layout:
+ *
+ *   🧭 目标偏离检测：模型偏离了原目标。
+ *   原因：<critic.reason>
+ *   建议方向：<critic.redirect>  (only if non-empty)
+ *
+ *   已执行的工具调用：
+ *     ✓ tool_a ×2
+ *     ✗ tool_b ×3 (失败)
+ *
+ *   要继续吗？
+ *     · 回「继续」按原方向接着推
+ *     · 回「换」按上面的建议方向走
+ *     · 或自己说一个新方向 / 切到别的 agent
+ */
+function composeOffTrackRecap(
+  result: { toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string }>; iterations: number },
+  reason: string,
+  redirect: string,
+): string {
+  const lines: string[] = []
+  lines.push('🧭 目标偏离检测：模型在原目标上不再有进展。')
+  if (reason) lines.push(`原因：${reason}`)
+  if (redirect) lines.push(`建议方向：${redirect}`)
+  lines.push('')
+
+  if (result.toolCalls.length > 0) {
+    lines.push(`已执行的工具调用（共 ${result.toolCalls.length} 次）：`)
+    const counts = new Map<string, { count: number; errors: number }>()
+    for (const t of result.toolCalls) {
+      const e = counts.get(t.name)
+      if (e) { e.count += 1; if (t.isError) e.errors += 1 }
+      else counts.set(t.name, { count: 1, errors: t.isError ? 1 : 0 })
+    }
+    for (const [name, { count, errors }] of counts) {
+      const mark = errors === 0 ? '✓' : errors === count ? '✗' : '⚠️'
+      const tail = count > 1 ? ` ×${count}` : ''
+      const errTail = errors > 0 && errors < count ? `（其中 ${errors} 次失败）` : ''
+      lines.push(`  ${mark} ${name}${tail}${errTail}`)
+    }
+    lines.push('')
+  }
+
+  lines.push('要继续吗？')
+  if (redirect) {
+    lines.push('  · 回「继续」按原方向接着推（已经被判定走不通）')
+    lines.push('  · 回「换」按上面的建议方向走（推荐）')
+  } else {
+    lines.push('  · 回「继续」按原方向接着推')
+  }
+  lines.push('  · 或自己告诉我一个新方向')
+  lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+  return lines.join('\n')
+}
+
 /** Read IMHUB_NATIVE_AGENT_MAX_ITER, clamp to [1, 100], default 20.
  *  v1.2.92 — previously this env var was named in the user-facing
  *  banner ("raise IMHUB_NATIVE_AGENT_MAX_ITER") but NOTHING in code
@@ -888,6 +947,28 @@ class NativeAgentAdapter implements AgentAdapter {
         // banner has been advising operators to set it since v1.2.48
         // but the reader didn't exist; default stayed at 20).
         maxIterations: resolveMaxIterations(),
+        // v1.2.98 — goal-critic anchor. agent-loop runs the critic
+        // periodically; if it judges the recent tool chain off-track
+        // we get finishReason='off_track' and render a redirect recap.
+        // Pulls the active long-task goal lazily; failures are silent
+        // (critic just won't have the goal anchor, will fall back to
+        // the prompt). The critic itself is disabled when
+        // IMHUB_NATIVE_CRITIC=off or no `cheap` role is configured.
+        criticAnchor: await (async () => {
+          let goalTitle: string | undefined
+          let goalBody: string | undefined
+          if (opts.platform && opts.threadId) {
+            try {
+              const { getActiveGoal } = await import('../../../core/goals.js')
+              const g = getActiveGoal(opts.platform, opts.channelId ?? '', opts.threadId)
+              if (g) {
+                goalTitle = g.title
+                goalBody = g.body ?? undefined
+              }
+            } catch { /* best-effort */ }
+          }
+          return { prompt, goalTitle, goalBody }
+        })(),
         timeoutMs: nativeTimeoutMs,
         signal: opts.signal,
         audit: {
@@ -1072,6 +1153,27 @@ class NativeAgentAdapter implements AgentAdapter {
         elapsedMs: Date.now() - startedAt,
       }, `native turn hit max iterations cap (${result.iterations}/${resolveMaxIterations()}, tools=${result.toolCalls.length})`)
       body = composeUnfinishedTurnRecap(result, 'max_iter', resolveMaxIterations())
+    } else if (result.finishReason === 'off_track') {
+      // v1.2.98 — goal-critic flagged the recent tool chain as
+      // semantically off-target. result.error carries
+      // "<reason> || redirect: <suggestion>" (or just <reason> when
+      // the critic had no redirect to offer). We split it back and
+      // surface a recap that names the suspected drift + suggestion.
+      const blob = String(result.error ?? '')
+      const [reason, ...rest] = blob.split('|| redirect: ')
+      const redirect = rest.join('|| redirect: ').trim()
+      log.warn({
+        event: 'native.turn.off_track',
+        sessionId,
+        backend: usedProvider.name,
+        role: usedRole,
+        iterations: result.iterations,
+        toolCallCount: result.toolCalls.length,
+        reason: reason.trim(),
+        redirect: redirect || null,
+        elapsedMs: Date.now() - startedAt,
+      }, `goal-critic flagged turn as off-track: ${reason.trim()}`)
+      body = composeOffTrackRecap(result, reason.trim(), redirect)
     } else if (result.finishReason === 'stuck_loop') {
       // v1.2.95 — agent-loop's stuck-loop detector cut us off after
       // three consecutive identical (name + isError + preview) tool

@@ -42,6 +42,15 @@ import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
+import {
+  createReminder,
+  listReminders,
+  cancelReminder,
+  snoozeReminder,
+  parseDuration,
+  ReminderError,
+  type CreateReminderInput,
+} from '../reminders.js'
 import type { RouteContext } from '../router.js'
 
 const log = rootLogger.child({ component: 'imhub-dispatcher' })
@@ -264,6 +273,72 @@ export function getImhubTools(): ToolDef[] {
         },
       },
     },
+    {
+      name: 'mcp__imhub__create_reminder',
+      description:
+        'Create a one-shot or recurring reminder for the current user. CALL THIS PROACTIVELY ' +
+        'whenever the user mentions a future commitment, event, task, or anything they might ' +
+        'want to be reminded about — including casual mentions like "明天中午要开会", ' +
+        '"下周三去医院复查", or explicit asks like "提醒我30分钟后喝水". The reminder fires at ' +
+        'fireAt and is delivered to this same IM thread. After creating, briefly acknowledge to ' +
+        'the user (e.g. "✅ 已为你设了提醒，明天12点 团队聚餐"). For recurring use "every:5m", ' +
+        '"daily:08:00", or "weekly:1,3,5:09:00".',
+      parameters: {
+        type: 'object',
+        properties: {
+          fireAt: {
+            type: 'string',
+            description: 'First fire time as ISO 8601 local time, e.g. "2026-05-10T12:00:00". Asia/Shanghai assumed if no offset.',
+          },
+          text: {
+            type: 'string',
+            description: 'What to remind the user about, ≤ 60 chars. Just the activity, not the time.',
+          },
+          recurrence: {
+            type: 'string',
+            description: 'Optional. "every:5m" | "daily:HH:MM" | "weekly:1,3,5:HH:MM"',
+          },
+          promptMode: {
+            type: 'string',
+            enum: ['literal', 'llm'],
+            description: 'Default "llm" (LLM polishes the reminder text at fire time). Pass "literal" for verbatim delivery.',
+          },
+        },
+        required: ['fireAt', 'text'],
+      },
+    },
+    {
+      name: 'mcp__imhub__list_reminders',
+      description:
+        'List the current user\'s pending reminders. Use when the user asks "我有什么提醒" / ' +
+        '"接下来要做什么" or before suggesting cancel/snooze.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'mcp__imhub__cancel_reminder',
+      description:
+        'Cancel a pending reminder by id. Find ids via list_reminders. For recurring reminders ' +
+        'this terminates the entire loop.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'number', description: 'Reminder id from list_reminders' } },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'mcp__imhub__snooze_reminder',
+      description:
+        'Push a reminder back by a duration ("5m", "30m", "2h", "1d"). Creates a new reminder ' +
+        'with the same text and cancels the original.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Reminder id to snooze' },
+          duration: { type: 'string', description: 'Duration like "5m" / "30m" / "2h" / "1d"' },
+        },
+        required: ['id', 'duration'],
+      },
+    },
   ]
 }
 
@@ -415,6 +490,68 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
           return ok(safeJson(r.result))
+        }
+        case 'create_reminder': {
+          // v1.2.98 — wire reminder tools into native (was previously
+          // only reachable via claude-code's MCP sidecar). Direct call
+          // into core/reminders.ts; ctx fields come from the per-turn
+          // RunContext on this dispatcher instance, so the reminder is
+          // always bound to the right user + thread.
+          const fireAtStr = typeof args.fireAt === 'string' ? args.fireAt : ''
+          const text = typeof args.text === 'string' ? args.text.trim() : ''
+          if (!fireAtStr || !text) return err('create_reminder requires fireAt + text')
+          const fireAt = new Date(fireAtStr)
+          if (Number.isNaN(fireAt.getTime())) return err(`create_reminder: unparseable fireAt "${fireAtStr}"`)
+          const input: CreateReminderInput = {
+            fireAt,
+            text,
+            platform: ctx.platform,
+            channelId: ctx.channelId,
+            threadId: ctx.threadId,
+            userId: ctx.userId,
+            source: 'mcp',
+            recurrence: typeof args.recurrence === 'string' && args.recurrence ? args.recurrence : undefined,
+            promptMode: args.promptMode === 'literal' ? 'literal' : 'llm',
+          }
+          try {
+            const id = createReminder(input)
+            return ok(safeJson({ id, fireAt: fireAt.toISOString(), text, recurrence: input.recurrence ?? null }))
+          } catch (err2) {
+            if (err2 instanceof ReminderError) return err(`create_reminder refused: ${err2.message}`)
+            return err(`create_reminder crashed: ${err2 instanceof Error ? err2.message : String(err2)}`)
+          }
+        }
+        case 'list_reminders': {
+          const rows = listReminders({ creatorId: ctx.userId, status: 'pending', limit: 50 })
+          return ok(safeJson({
+            count: rows.length,
+            rows: rows.map((r) => ({
+              id: r.id,
+              fireAt: new Date(r.fire_at).toISOString(),
+              text: r.text,
+              recurrence: r.recurrence ?? null,
+            })),
+          }))
+        }
+        case 'cancel_reminder': {
+          const id = typeof args.id === 'number' ? args.id : Number(args.id)
+          if (!Number.isFinite(id) || id <= 0) return err('cancel_reminder requires positive integer id')
+          const ok2 = cancelReminder(id, { creatorId: ctx.userId })
+          return ok(safeJson({ id, cancelled: ok2 }))
+        }
+        case 'snooze_reminder': {
+          const id = typeof args.id === 'number' ? args.id : Number(args.id)
+          const duration = typeof args.duration === 'string' ? args.duration : ''
+          if (!Number.isFinite(id) || id <= 0) return err('snooze_reminder requires positive integer id')
+          const deltaMs = parseDuration(duration)
+          if (!deltaMs) return err(`snooze_reminder: bad duration "${duration}" (use 5m / 30m / 2h / 1d)`)
+          try {
+            const newId = snoozeReminder(id, deltaMs, { creatorId: ctx.userId })
+            return ok(safeJson({ original_id: id, new_id: newId, snoozed_by_ms: deltaMs }))
+          } catch (err2) {
+            if (err2 instanceof ReminderError) return err(`snooze_reminder refused: ${err2.message}`)
+            return err(`snooze_reminder crashed: ${err2 instanceof Error ? err2.message : String(err2)}`)
+          }
         }
         default:
           return unknown(call.name)

@@ -57,11 +57,20 @@ import type {
   ToolDef,
 } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { runGoalCritic } from './goal-critic.js'
 
 const log = rootLogger.child({ component: 'agent-loop' })
 
 const DEFAULT_MAX_ITERATIONS = 20
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000  // 5 min — generous; signal usually fires first
+
+// v1.2.98 — goal-critic firing schedule. Thresholds chosen empirically:
+// fewer than 5 tool calls = not enough trail to judge; more often than
+// every 5 tool calls = critic itself becomes too noisy. Per-turn cap
+// of 2 keeps a runaway critic from compounding cost on a hot turn.
+const CRITIC_MIN_TOOL_CALLS = 5
+const CRITIC_EVERY_N = 5
+const CRITIC_MAX_CALLS = 2
 
 /**
  * Per-tool-call gate. Return 'allow' to dispatch, 'deny' to inject a
@@ -92,7 +101,11 @@ export const alwaysAllowGate: ApprovalGate = async () => 'allow'
  *    this break a stuck model would burn the full
  *    IMHUB_NATIVE_AGENT_MAX_ITER budget; stopping early saves cost AND
  *    gives the user a much more actionable recap. */
-export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop'
+/**  - `off_track` (v1.2.98): goal-critic flagged the recent tool chain
+ *    as semantically off-target for the user's prompt / active goal.
+ *    Different from stuck_loop (mechanical repeat) — this catches the
+ *    "different calls but still pointless" failure mode. */
+export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop' | 'off_track'
 
 export interface AgentLoopInput {
   provider: LlmProvider
@@ -144,6 +157,19 @@ export interface AgentLoopInput {
     platform: string
     channelId: string
     threadId: string
+  }
+
+  /** v1.2.98 — anchors handed to the goal-critic when it fires.
+   *  `prompt` is the user's current-turn input string; `goalTitle` +
+   *  `goalBody` come from goals.getActiveGoal for this thread (caller
+   *  fetches once; loop just relays). Either may be empty — critic
+   *  refuses to judge if both are. Leaving criticAnchor unset (or
+   *  setting IMHUB_NATIVE_CRITIC=off) disables the critic for this
+   *  invocation. */
+  criticAnchor?: {
+    prompt?: string
+    goalTitle?: string
+    goalBody?: string
   }
 
   /** Lifecycle hooks for caller-side observability (heartbeats, progress
@@ -217,6 +243,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const history: LlmMessage[] = input.messages.slice()
   const toolCalls: ToolCallReport[] = []
   const usageAcc: LlmUsage = {}
+  // v1.2.98 — goal-critic per-turn fire counter (capped at CRITIC_MAX_CALLS).
+  let criticCallsFired = 0
 
   let iter = 0
   for (; iter < maxIter; iter++) {
@@ -405,6 +433,63 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
             toolCalls,
             usage: usageAcc,
             finishReason: 'stuck_loop',
+          }
+        }
+      }
+
+      // v1.2.98 — goal-critic check (semantic stuck-loop / off-track).
+      // Fires when:
+      //   · caller supplied a criticAnchor (prompt or active goal)
+      //   · we've executed at least MIN_TOOL_CALLS tool calls this turn
+      //   · we haven't already fired the critic MAX_CRITIC_CALLS times
+      //   · we're on a "trigger" mark (every CRITIC_EVERY_N tool calls)
+      // The critic itself decides whether to break (onTrack=false) or
+      // let the loop continue. It returns onTrack=true on errors so a
+      // provider hiccup never accidentally kills a working turn.
+      if (
+        input.criticAnchor
+        && toolCalls.length >= CRITIC_MIN_TOOL_CALLS
+        && criticCallsFired < CRITIC_MAX_CALLS
+        && (toolCalls.length - CRITIC_MIN_TOOL_CALLS) % CRITIC_EVERY_N === 0
+      ) {
+        criticCallsFired += 1
+        const recent = toolCalls.slice(-10)
+        const verdict = await runGoalCritic({
+          prompt: input.criticAnchor.prompt,
+          goalTitle: input.criticAnchor.goalTitle,
+          goalBody: input.criticAnchor.goalBody,
+          recentToolCalls: recent,
+        }, { signal: signal.signal })
+        log.info({
+          event: 'agent-loop.goal_critic_verdict',
+          iter,
+          totalToolCalls: toolCalls.length,
+          onTrack: verdict.onTrack,
+          reason: verdict.reason,
+          modelUsed: verdict.modelUsed,
+        })
+        if (!verdict.onTrack) {
+          log.warn({
+            event: 'agent-loop.off_track_detected',
+            iter,
+            reason: verdict.reason,
+            redirect: verdict.redirect,
+          }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
+          signal.cleanup()
+          return {
+            text: '',
+            iterations: iter + 1,
+            toolCalls,
+            usage: usageAcc,
+            finishReason: 'off_track',
+            // Smuggle the critic's reason + redirect into `error` so
+            // the native adapter can surface it verbatim in the recap
+            // without re-importing goal-critic. Yes, abusing `error`
+            // for non-error info is mildly ugly; alternative is adding
+            // a new field to AgentLoopResult — overkill for one knob.
+            error: verdict.redirect
+              ? `${verdict.reason} || redirect: ${verdict.redirect}`
+              : verdict.reason,
           }
         }
       }

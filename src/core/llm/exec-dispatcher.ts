@@ -131,8 +131,19 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   const cwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
 
   const sandboxMode = (process.env.IMHUB_EXEC_SANDBOX || '').toLowerCase()
-  const useSandbox = sandboxMode === 'bwrap' && existsSync('/usr/bin/bwrap')
+  const sandboxConfigured = sandboxMode === 'bwrap' && existsSync('/usr/bin/bwrap')
   const sandboxNetOff = (process.env.IMHUB_EXEC_SANDBOX_NET || '').toLowerCase() === 'off'
+
+  // v1.2.93 — sandbox carve-out for the bgjob long-task wrapper. bgjob
+  // detaches its worker via setsid (Python `start_new_session=True`);
+  // bwrap's pid/cgroup namespace tears down the whole tree the moment
+  // exec returns, so `bgjob start` looks like it succeeded but the
+  // worker dies a second later. We bypass the sandbox only when the
+  // command is unambiguously invoking one of the known bgjob wrapper
+  // paths. Plain `bgjob` (PATH lookup) is NOT carved out because we
+  // can't distinguish an attacker-controlled shim of the same name.
+  const isBgjob = sandboxConfigured && isBgjobInvocation(command)
+  const useSandbox = sandboxConfigured && !isBgjob
 
   const { bin, argv } = useSandbox
     ? buildBwrapInvocation(command, cwd, sandboxNetOff)
@@ -142,7 +153,7 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
     event: 'exec.spawn',
     bin,
     cwd,
-    sandbox: useSandbox ? `bwrap${sandboxNetOff ? '+no-net' : ''}` : 'none',
+    sandbox: useSandbox ? `bwrap${sandboxNetOff ? '+no-net' : ''}` : (isBgjob ? 'bypassed-for-bgjob' : 'none'),
     timeoutMs,
     commandPreview: command.slice(0, 120),
   })
@@ -185,6 +196,40 @@ function checkDangerousCommand(cmd: string): string | null {
     if (p.regex.test(cmd)) return p.reason
   }
   return null
+}
+
+/**
+ * v1.2.93 — detect "this command is invoking the agim long-task bgjob
+ * wrapper". When it is, the caller will skip bwrap so the wrapper's
+ * setsid-detached worker actually survives past exec return.
+ *
+ * Matched paths (absolute only — refusing to recognise bare `bgjob`
+ * keeps an attacker-controlled PATH shim from getting carve-out
+ * privileges):
+ *   - /root/.claude/scripts/bgjob       (Claude Code wrapper)
+ *   - /root/.config/opencode/scripts/bgjob  (opencode wrapper; same script)
+ *
+ * The regex anchors at command start OR after `;`, `&&`, `||`, `|`,
+ * `(` so the rule survives common pipeline / sequence forms. Comments
+ * (`# foo`) before the path also pass through unchanged because we
+ * only care that an early non-comment token IS the bgjob path.
+ */
+const BGJOB_PATHS = [
+  '/root/.claude/scripts/bgjob',
+  '/root/.config/opencode/scripts/bgjob',
+]
+export function isBgjobInvocation(cmd: string): boolean {
+  // Strip leading whitespace + a single optional `sudo` or `env VAR=...`
+  // preamble so common pre-fixes don't mask the wrapper path.
+  const trimmed = cmd.trim()
+  for (const path of BGJOB_PATHS) {
+    // Path must appear as a standalone token: preceded by start /
+    // whitespace / shell separator, followed by space / EOL / nothing.
+    const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(?:^|[;&|()\\s])${escaped}(?:\\s|$)`)
+    if (re.test(trimmed)) return true
+  }
+  return false
 }
 
 function scanCommandForInternalUrl(cmd: string): string | null {

@@ -182,6 +182,21 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `    "/na", "/cc", "/oc") and you are already that agent, respond with ONE short line confirming`,
     `    your identity (e.g. "我是 native，正在听。"). Do NOT call any tool. The slash router handles`,
     `    actual agent switching; if it didn't switch, the user is already on this agent.`,
+    ``,
+    `Long-task SOP (v1.2.93 — for any work you estimate will run > 10 minutes):`,
+    `  - You CANNOT keep a long synchronous turn alive: the IM bridge times out around 30 min, and`,
+    `    most useful work past the 10-min mark loses intermediate state if it crashes mid-flight.`,
+    `  - Instead, use native_exec to invoke the agim bgjob wrapper, which spawns a detached worker`,
+    `    that survives independent of this conversation:`,
+    `      native_exec("/root/.claude/scripts/bgjob start <slug> -- /usr/bin/python3 /path/to/script.py [args]")`,
+    `    Substitute python3 for the runtime you actually need. The wrapper returns a job_id; relay it`,
+    `    to the user verbatim and tell them how to check back: \`bgjob status <id>\` / \`bgjob tail <id> -f\`.`,
+    `  - When the user follows up asking about the job, native_exec calls like \`bgjob status <id>\` or`,
+    `    \`bgjob tail <id> -n 100\` give you the current state + recent log lines.`,
+    `  - The bwrap sandbox (when configured) is bypassed for this specific wrapper path so the`,
+    `    setsid-detached worker actually survives. Any OTHER native_exec command remains sandboxed.`,
+    `  - DO NOT use \`nohup ... &\` or backgrounded shell pipelines for long work — those die with the`,
+    `    parent shell. bgjob is the only correct path on this platform.`,
   )
   return lines.join('\n')
 }

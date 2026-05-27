@@ -6,6 +6,7 @@ import {
   getExecTools,
   isExecToolName,
   buildExecDispatcher,
+  isBgjobInvocation,
 } from './exec-dispatcher.js'
 
 const NEVER_ABORT = new AbortController().signal
@@ -195,6 +196,34 @@ describe('exec-dispatcher', () => {
       )
       expect(r.isError).toBe(false)
       expect(r.text).not.toMatch(/private|internal/i)
+    })
+  })
+
+  // v1.2.93 — bgjob carve-out detector. bwrap would otherwise tear down
+  // bgjob's setsid-detached workers; the dispatcher bypasses sandbox
+  // when isBgjobInvocation returns true. We pin the matcher's
+  // recognised shapes + safety constraints here.
+  describe('isBgjobInvocation (v1.2.93)', () => {
+    it('matches the Claude Code wrapper path standalone', () => {
+      expect(isBgjobInvocation('/root/.claude/scripts/bgjob start foo -- /usr/bin/sleep 60')).toBe(true)
+    })
+    it('matches the opencode wrapper path standalone', () => {
+      expect(isBgjobInvocation('/root/.config/opencode/scripts/bgjob list --running')).toBe(true)
+    })
+    it('matches after sequence operators', () => {
+      expect(isBgjobInvocation('cd /tmp && /root/.claude/scripts/bgjob status abc')).toBe(true)
+      expect(isBgjobInvocation('(/root/.claude/scripts/bgjob tail abc)')).toBe(true)
+    })
+    it('does NOT match a bare `bgjob` PATH lookup (attacker-controlled shim risk)', () => {
+      expect(isBgjobInvocation('bgjob start foo -- ls')).toBe(false)
+    })
+    it('does NOT match unrelated paths that contain "bgjob" as a substring', () => {
+      expect(isBgjobInvocation('echo /home/user/bgjobs/x.txt')).toBe(false)
+      expect(isBgjobInvocation('cat /root/.claude/scripts/bgjob.backup')).toBe(false)
+    })
+    it('does NOT match an empty / whitespace command', () => {
+      expect(isBgjobInvocation('')).toBe(false)
+      expect(isBgjobInvocation('   ')).toBe(false)
     })
   })
 })

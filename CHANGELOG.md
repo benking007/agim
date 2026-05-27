@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.93] - 2026-05-27
+
+### Added
+
+- **Native agent can now drive `bgjob` for long tasks.** Two stacked
+  changes make this work without code-level MCP tools:
+  - **Long-task SOP injected into the system prompt.** Native now
+    knows that work it estimates will run > 10 min must go through
+    `native_exec("/root/.claude/scripts/bgjob start <slug> -- …")`
+    instead of trying to keep a synchronous turn alive past the
+    IM bridge's 30-min ceiling. The prompt also covers
+    `bgjob status / tail` for follow-ups and explicitly forbids
+    `nohup … &` (those die with the parent shell).
+  - **bwrap sandbox carve-out for the bgjob wrapper.** When
+    `IMHUB_EXEC_SANDBOX=bwrap`, bwrap's pid / cgroup namespace
+    used to tear down bgjob's `setsid`-detached worker the
+    moment `bgjob start` returned — so the model saw success
+    while the worker died a second later. `isBgjobInvocation`
+    now detects an absolute path to one of the two known
+    wrapper locations (`/root/.claude/scripts/bgjob` and
+    `/root/.config/opencode/scripts/bgjob`) and skips bwrap
+    only for that command. Bare `bgjob` (PATH lookup) is NOT
+    carved out — refusing to recognise it keeps an attacker-
+    controlled shim from inheriting the bypass.
+
+  6 new vitest cases pin the matcher's recognised + rejected
+  shapes; 34/34 exec-dispatcher tests pass.
+
 ## [1.2.92] - 2026-05-27
 
 ### Fixed

@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.96] - 2026-05-27
+
+### Added
+
+- **MCP server auto-reconnect on tool-call failure.** Borrowed
+  from Nanobot v0.2.0 ("smoother plug-in reconnects"). Before, if
+  an MCP server (fin-data, tushare, …) dropped its transport
+  mid-session, every subsequent tool call returned a generic "not
+  connected" error until agim was restarted. Now
+  `callToolByName` detects the drop two ways — (a) the client is
+  flagged `!isConnected()` before the call, or (b) `callTool`
+  itself throws — and runs `close() → connect() → retry once`.
+  Per-server cooldown (default 5 s, configurable via
+  `IMHUB_MCP_RECONNECT_COOLDOWN_MS`) prevents hammering a
+  persistently-broken server. Diagnostic events:
+  `mcp-registry.reconnect_throttled / reconnected /
+  reconnect_failed / tool_call_threw`.
+
+- **Native: proactive memo persistence nudge.** Borrowed from
+  Hermes Agent's "agent-curated memory" idea. System prompt now
+  carries a Proactive memory rule telling native to scan a
+  substantive turn for facts worth outliving the chat (personal
+  preferences, holdings / portfolio codes, recurring people /
+  places, stable identifiers, explicit "记一下" instructions) and
+  call `mcp__imhub__save_memo` itself without waiting for the
+  user to ask. Also tells it what NOT to save (one-off
+  questions, transient debug state) and to use small atomic
+  memos rather than one large one. Cost is just prompt bytes;
+  net effect is the user's persona builds up across normal use
+  instead of only when memo is explicitly invoked.
+
 ## [1.2.95] - 2026-05-27
 
 ### Added

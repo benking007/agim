@@ -29,6 +29,11 @@ interface RegistryState {
   clients: Map<string, McpClient>
   unhealthy: Map<string, string>   // server-name -> error message
   toolsByCallName: Map<string, { server: string; tool: ToolDef }>
+  /** v1.2.96 — per-server last-reconnect-attempt timestamp (ms epoch).
+   *  Used to throttle reconnect attempts when a server is persistently
+   *  broken — otherwise a flurry of tool calls would each trigger a
+   *  reconnect handshake. */
+  lastReconnectAt: Map<string, number>
 }
 
 function freshState(): RegistryState {
@@ -36,6 +41,43 @@ function freshState(): RegistryState {
     clients: new Map(),
     unhealthy: new Map(),
     toolsByCallName: new Map(),
+    lastReconnectAt: new Map(),
+  }
+}
+
+/** v1.2.96 — minimum interval between reconnect attempts for the same
+ *  server. 5 s is short enough to feel snappy when an MCP server just
+ *  blipped, long enough that a permanently-broken server doesn't get
+ *  hammered tool-call-by-tool-call. Configurable via env for ops who
+ *  want to tune; default is fine for most. */
+const RECONNECT_COOLDOWN_MS = (() => {
+  const raw = process.env.IMHUB_MCP_RECONNECT_COOLDOWN_MS
+  if (!raw) return 5_000
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 5_000
+})()
+
+async function tryReconnect(server: string, client: McpClient): Promise<boolean> {
+  const now = Date.now()
+  const last = state.lastReconnectAt.get(server) ?? 0
+  if (now - last < RECONNECT_COOLDOWN_MS) {
+    log.debug({ event: 'mcp-registry.reconnect_throttled', server, msSinceLast: now - last })
+    return false
+  }
+  state.lastReconnectAt.set(server, now)
+  try {
+    // close() is idempotent + no-op when not connected; connect() is
+    // guarded by `if (this.client) return`, so we close first to force
+    // a fresh handshake.
+    await client.close()
+    await client.connect()
+    log.info({ event: 'mcp-registry.reconnected', server })
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.warn({ event: 'mcp-registry.reconnect_failed', server, err: msg })
+    state.unhealthy.set(server, msg)
+    return false
   }
 }
 
@@ -129,13 +171,48 @@ export async function callToolByName(
     return { text: `unknown MCP tool: ${callName}`, isError: true }
   }
   const client = state.clients.get(entry.server)
-  if (!client?.isConnected()) {
+  if (!client) {
     return {
-      text: `MCP server "${entry.server}" not connected (was it shut down or never connected at startup?)`,
+      text: `MCP server "${entry.server}" not registered`,
       isError: true,
     }
   }
-  return client.callTool(callName, args, opts)
+  // v1.2.96 — auto-reconnect on transport drop. Two trigger paths:
+  //   (a) we noticed the client wasn't connected before the call →
+  //       try to reconnect first (subject to the cooldown).
+  //   (b) callTool threw → assume the transport just died and try
+  //       once. If reconnect succeeded, retry the call once.
+  // Cooldown prevents a flurry of failed calls from each hammering
+  // the same broken server with handshakes.
+  if (!client.isConnected()) {
+    const ok = await tryReconnect(entry.server, client)
+    if (!ok) {
+      return {
+        text: `MCP server "${entry.server}" disconnected and reconnect failed. ` +
+          `Operator can restart the server; agim will pick it up on the next tool call.`,
+        isError: true,
+      }
+    }
+  }
+  try {
+    return await client.callTool(callName, args, opts)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.warn({
+      event: 'mcp-registry.tool_call_threw',
+      server: entry.server, callName, err: msg,
+    }, `MCP tool ${callName} threw; attempting reconnect + retry once`)
+    const reconnected = await tryReconnect(entry.server, client)
+    if (!reconnected) {
+      return { text: `MCP tool failed and reconnect refused: ${msg}`, isError: true }
+    }
+    try {
+      return await client.callTool(callName, args, opts)
+    } catch (err2) {
+      const msg2 = err2 instanceof Error ? err2.message : String(err2)
+      return { text: `MCP tool failed even after reconnect: ${msg2}`, isError: true }
+    }
+  }
 }
 
 /**

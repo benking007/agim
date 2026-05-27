@@ -331,7 +331,14 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
     '--chdir', cwd,
   ]
   if (netOff) argv.push('--unshare-net')
-  argv.push('--', '/bin/sh', '-c', command)
+  // v1.2.100 — use /usr/bin/sh instead of /bin/sh. On modern Debian /
+  // Ubuntu (usrmerge: /bin is a symlink to usr/bin), bwrap's
+  // `--ro-bind-try /bin /bin` does NOT follow the symlink, so the
+  // sandbox ends up with /bin as an empty directory and `/bin/sh`
+  // returns ENOENT — every native_exec command fails. /usr is bound
+  // unconditionally on line 307 so /usr/bin/sh is always present.
+  // On non-usrmerge systems both paths resolve to the same binary.
+  argv.push('--', '/usr/bin/sh', '-c', command)
   return { bin: '/usr/bin/bwrap', argv }
 }
 

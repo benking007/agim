@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.100] - 2026-05-27
+
+### Fixed
+
+- **bwrap sandbox: `/bin/sh` ENOENT, every `native_exec` failed.**
+  Field report: with `IMHUB_EXEC_SANDBOX=bwrap`, every command
+  the model tried to run came back as `ENOENT`. Root cause:
+  `buildBwrapInvocation` used `/bin/sh` as the shell, but on
+  usrmerge systems (modern Debian / Ubuntu / Fedora — most
+  agim deployments) `/bin` is a symlink to `usr/bin`, and
+  bwrap's `--ro-bind-try /bin /bin` does NOT follow symlinks.
+  Result: inside the sandbox `/bin` was an empty directory and
+  `/bin/sh` didn't exist. Bug has been present since v1.2.62
+  but went undetected because v1.2.93's bgjob carve-out
+  bypassed the sandbox entirely (and v1.2.99's tightening
+  exposed it by routing chained commands back through bwrap).
+  Fix: use `/usr/bin/sh` instead — `/usr` is bound
+  unconditionally, so the path is always present, and on
+  non-usrmerge systems both paths resolve to the same binary.
+
 ## [1.2.99] - 2026-05-27
 
 ### Security

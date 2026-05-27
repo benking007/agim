@@ -380,25 +380,50 @@ export class DingTalkAdapter implements MessengerAdapter {
 
     // ─── richText — flatten text segments and dispatch as plain text ─
     // DingTalk delivers "rich text" forwards / mixed-content messages
-    // as `msgtype: 'richText'` with a `richText.msgList` array of
-    // typed segments — { type: 'text', text } | { type: 'at', userIds }
-    // | { type: 'picture', pictureDownloadCode } and friends. The
-    // user's actual prose lives in the text segments; for a first
-    // pass we concatenate those and treat the result like a normal
-    // text turn. Picture segments are acknowledged in the dispatched
-    // text so the user knows we didn't fully parse them; sending the
-    // images as standalone msgtype=picture is still the supported
-    // multimodal path.
-    if (msg.msgtype === 'richText') {
-      const rt = (msg as unknown as { richText?: { msgList?: Array<Record<string, unknown>> } }).richText
-      const list = Array.isArray(rt?.msgList) ? rt!.msgList! : []
+    // with `msgtype: 'richText'`. The msgList array carrying the
+    // segments has been observed in three different positions across
+    // SDK versions and chat contexts (1:1 vs group, internal vs
+    // OpenAPI relay):
+    //   * msg.richText.msgList         (top-level — community docs)
+    //   * msg.content.richText.msgList (some 1:1 channels)
+    //   * msg.content.msgList          (some action-card relays)
+    // We probe all three. We also normalise the msgtype check
+    // case-insensitively because the wire has been seen as both
+    // 'richText' and 'richtext'. Always log the structure we found
+    // so future shape drift is visible without a stack trace.
+    if (typeof msg.msgtype === 'string' && msg.msgtype.toLowerCase() === 'richtext') {
+      const m = msg as unknown as {
+        richText?: { msgList?: unknown }
+        content?: { richText?: { msgList?: unknown }; msgList?: unknown }
+      }
+      let list: Array<Record<string, unknown>> = []
+      let source = 'none'
+      const candidates: Array<[string, unknown]> = [
+        ['msg.richText.msgList', m.richText?.msgList],
+        ['msg.content.richText.msgList', m.content?.richText?.msgList],
+        ['msg.content.msgList', m.content?.msgList],
+      ]
+      for (const [where, c] of candidates) {
+        if (Array.isArray(c) && c.length > 0) {
+          list = c as Array<Record<string, unknown>>
+          source = where
+          break
+        }
+      }
       const textParts: string[] = []
       let pictureCount = 0
       for (const seg of list) {
         if (!seg || typeof seg !== 'object') continue
         const segType = typeof seg.type === 'string' ? seg.type : ''
-        if (segType === 'text' && typeof seg.text === 'string') {
-          const t = seg.text.trim()
+        // Tolerate both `text` and `content` for the text-segment
+        // body — different SDK versions disagree on the field name.
+        const segText = typeof seg.text === 'string'
+          ? seg.text
+          : typeof seg.content === 'string'
+            ? seg.content
+            : ''
+        if (segType === 'text' || (!segType && segText)) {
+          const t = segText.trim()
           if (t) textParts.push(t)
         } else if (segType === 'picture') {
           pictureCount += 1
@@ -406,6 +431,20 @@ export class DingTalkAdapter implements MessengerAdapter {
         // 'at' / unknown segments are intentionally ignored — they
         // carry no payload the agent can act on.
       }
+      log.info({
+        event: 'dingtalk.inbound.richtext',
+        messageId: msg.msgId,
+        threadId,
+        msgtype: msg.msgtype,
+        msgListSource: source,
+        msgListLen: list.length,
+        textPartCount: textParts.length,
+        pictureCount,
+        // Dump the payload's top-level shape so we can adjust if
+        // none of the candidates matched.
+        topLevelKeys: Object.keys(msg).slice(0, 20),
+      }, `richText inbound (msgList from ${source}, ${textParts.length} text seg, ${pictureCount} picture seg)`)
+
       let text = textParts.join('\n').trim()
       if (pictureCount > 0) {
         text = text
@@ -413,18 +452,26 @@ export class DingTalkAdapter implements MessengerAdapter {
           : `（收到 ${pictureCount} 张图片的复合消息，请单独发送图片以便我查看，或打字告诉我要做什么。）`
       }
       if (!text) {
-        log.info({ event: 'dingtalk.inbound.richtext_empty', messageId: msg.msgId },
-          'richText with no usable segments — ignored')
+        // Last-ditch fallback — if we couldn't pull any text segments,
+        // dump the full payload at warn level so the operator sees
+        // exactly what arrived. Then ack to the user so they know the
+        // bot at least received the message (vs the v1.2.88 silent
+        // "I don't recognize this format" fallback that returned them
+        // a static banner). Without this ack the user sees nothing
+        // even though the inbound was logged.
+        log.warn({
+          event: 'dingtalk.inbound.richtext_no_text',
+          messageId: msg.msgId,
+          threadId,
+          fullPayload: msg,
+        }, 'richText with no extractable text — full payload logged for shape analysis')
+        if (this.clients.size > 0) {
+          await this.clientForThread(threadId)?.sendMessage(threadId,
+            '📝 收到一条复合消息，但里面没找到可用的文字。请打字告诉我要做什么，或直接转发文字 / 图片 / 文件。')
+            .catch(() => undefined)
+        }
         return
       }
-      log.info({
-        event: 'dingtalk.inbound.richtext',
-        messageId: msg.msgId,
-        threadId,
-        segments: list.length,
-        pictureCount,
-        textLen: text.length,
-      })
       await this.dispatchText(msg, text, threadId, channelId)
       return
     }

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.90] - 2026-05-27
+
+### Fixed
+
+- **DingTalk richText handler still ignored messages.** v1.2.89
+  assumed the segment list always lives at `msg.richText.msgList`,
+  but the wire shape varies by SDK version and chat context — it
+  has been observed at `msg.content.richText.msgList` and
+  `msg.content.msgList` as well. The msgtype string casing also
+  drifts (`richText` vs `richtext`). The handler now:
+  - probes all three candidate positions and uses the first non-
+    empty array
+  - lowercases the msgtype check
+  - tolerates both `seg.text` and `seg.content` as the text body
+  - always emits `dingtalk.inbound.richtext` at info level with
+    the source path + top-level key dump for future shape drift
+  - when zero text segments resolve, logs the full payload at
+    warn level AND sends the user an ack-text so they're not
+    left staring at silence
+
 ## [1.2.89] - 2026-05-27
 
 ### Fixed

@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.102] - 2026-05-28
+
+### Added
+
+- **`/long_task` and `/complete_goal` slash commands.** Field observation
+  (the goal-critic recap card already hints at them, and users tried them
+  after off-track verdicts): both names existed only as MCP tools
+  (`mcp__imhub__long_task` / `mcp__imhub__complete_goal`), so a human
+  typing `/long_task ship v1.2` in chat got back "Unknown command".
+  Added parser branches in `router.ts`:
+  - `/long_task <title>` → equivalent to `/goal set <title>`
+  - `/complete_goal` → equivalent to `/goal complete`
+  - underscored / no-separator / hyphenated forms all accepted
+    (`/longtask`, `/long-task`, `/completegoal`, `/complete-goal`)
+
+  As a side-effect, also wired `/goal` and `/heartbeat` parser branches —
+  both had handler cases but no `parseMessage` emitter, so they were
+  unreachable from chat (the MCP / RPC paths still worked).
+  Master HELP (zh + en) and `/goal help` updated to surface the new
+  aliases. 6 new parser tests in `router.test.ts`.
+
 ## [1.2.101] - 2026-05-28
 
 ### Security

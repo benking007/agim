@@ -184,6 +184,21 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'schedule') return { type: 'cron', args: rest, legacy: true }
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'memo' || cmd === '记' || cmd === 'note') return { type: 'memo', args: rest }
+  if (cmd === 'heartbeat') return { type: 'heartbeat', args: rest }
+  if (cmd === 'goal') return { type: 'goal', args: rest }
+  // v1.2.102 — slash aliases for the long_task / complete_goal MCP tools.
+  // Field observation: agents (and humans!) tried `/long_task <title>` after
+  // the goal-critic recap suggested switching tactics, but got back
+  // "Unknown command" because parseMessage had no branch for these — only
+  // the MCP tool surface existed. `/long_task X` is equivalent to
+  // `/goal set X` (active-goal create); `/complete_goal` is `/goal complete`.
+  // Underscored + no-separator forms accepted because IMs vary in keyboard.
+  if (cmd === 'long_task' || cmd === 'longtask' || cmd === 'long-task') {
+    return { type: 'goal', args: rest ? `set ${rest}` : '' }
+  }
+  if (cmd === 'complete_goal' || cmd === 'completegoal' || cmd === 'complete-goal') {
+    return { type: 'goal', args: 'complete' }
+  }
   if (cmd === 'skill' || cmd === 'skills' || cmd === '技能') return { type: 'skill', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'outbox') return { type: 'outbox', args: rest }

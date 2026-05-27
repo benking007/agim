@@ -116,6 +116,32 @@ describe('parseMessage', () => {
       expect(parseMessage('/stop')).toEqual({ type: 'service', action: 'stop', args: '' })
     })
 
+    // v1.2.102 — /goal + /long_task + /complete_goal parsing
+    describe('/goal + /long_task + /complete_goal aliases', () => {
+      it('parses /goal as type: goal', () => {
+        expect(parseMessage('/goal')).toEqual({ type: 'goal', args: '' })
+        expect(parseMessage('/goal set foo')).toEqual({ type: 'goal', args: 'set foo' })
+        expect(parseMessage('/goal list')).toEqual({ type: 'goal', args: 'list' })
+      })
+      it('parses /long_task as goal-set shortcut', () => {
+        expect(parseMessage('/long_task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
+        expect(parseMessage('/longtask ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
+        expect(parseMessage('/long-task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
+      })
+      it('parses bare /long_task as help (empty args reach goal handler)', () => {
+        expect(parseMessage('/long_task')).toEqual({ type: 'goal', args: '' })
+      })
+      it('parses /complete_goal as goal-complete shortcut', () => {
+        expect(parseMessage('/complete_goal')).toEqual({ type: 'goal', args: 'complete' })
+        expect(parseMessage('/completegoal')).toEqual({ type: 'goal', args: 'complete' })
+        expect(parseMessage('/complete-goal')).toEqual({ type: 'goal', args: 'complete' })
+      })
+      it('parses /heartbeat as type: heartbeat (regression — was undefined)', () => {
+        expect(parseMessage('/heartbeat')).toEqual({ type: 'heartbeat', args: '' })
+        expect(parseMessage('/heartbeat status')).toEqual({ type: 'heartbeat', args: 'status' })
+      })
+    })
+
     // Batch 2 (#5) — /btw bypass
     it('parses /btw with prompt', () => {
       expect(parseMessage('/btw quick question')).toEqual({ type: 'btw', prompt: 'quick question' })

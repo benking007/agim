@@ -99,11 +99,50 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   process.stdout.write('\x1b[2J\x1b[H')
 
   try {
+    // Mirror the `agim start` boot path so the `native` agent (and any
+    // tool wiring that depends on the LLM / MCP registries) actually
+    // has a backend at hand. Without this block, `tui` users hitting
+    // `native` got "no LLM backend configured for role native-chat
+    // or cheap" because both registries were left at their empty
+    // module-level singleton state. See cli.ts:96-321 for the same
+    // sequence in the daemon path.
+
+    // v1.2.85 parity — load ~/.agim/env so API keys / IMHUB_* tunables
+    // edited there reach this process. systemd handles it via the
+    // unit's EnvironmentFile=; standalone `agim tui` does not.
+    try {
+      const { readEnvFile } = await import('../env-file.js')
+      const f = readEnvFile()
+      for (const [k, v] of Object.entries(f)) {
+        if (process.env[k] === undefined) process.env[k] = v
+      }
+    } catch { /* best-effort */ }
+
     await registry.loadBuiltInPlugins()
     const cfg = await loadConfig()
     if (cfg.acpAgents && cfg.acpAgents.length > 0) {
       await registry.loadACPAgents(cfg.acpAgents)
     }
+
+    // LLM registry — without this, native agent's pickProvider() returns
+    // null and every turn yields the "no LLM backend configured" error.
+    try {
+      const { loadFromConfig: loadLlmFromConfig } = await import('../../core/llm/registry.js')
+      loadLlmFromConfig(cfg)
+    } catch (err) {
+      log.warn({ event: 'tui.llm_registry.load_failed', err: err instanceof Error ? err.message : String(err) },
+        'LLM registry load failed — native agent will be unavailable')
+    }
+
+    // MCP registry — best-effort; native uses these for tool calls.
+    // Failures here are silent and non-fatal (the daemon path warns,
+    // but in TUI we don't want stderr noise spilling into the Ink
+    // frame buffer).
+    try {
+      const { loadFromConfig: loadMcpFromConfig, connectAll } = await import('../../core/llm/mcp-registry.js')
+      await loadMcpFromConfig(cfg as { mcpServers?: unknown })
+      await connectAll()
+    } catch { /* best-effort */ }
   } catch (err) {
     log.warn({ event: 'tui.registry.load_failed', err: err instanceof Error ? err.message : String(err) },
       'registry / config load failed — proceeding best-effort')

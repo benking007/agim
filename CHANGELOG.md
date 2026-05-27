@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.87] - 2026-05-27
+
+### Fixed
+
+- **TUI: `native` agent unusable — "no LLM backend configured for
+  role native-chat or cheap".** `runTui()` only called
+  `registry.loadBuiltInPlugins()` and `loadConfig()`; it never
+  invoked the LLM registry's `loadFromConfig()`, so every native
+  turn went through `pickProvider()` against an empty role table
+  and bailed out. Same root cause prevented MCP tools (used by
+  native for web_fetch / read_file / etc.) from being available
+  inside TUI.
+- Fix: mirror the `agim start` boot path in `cli-ui/tui/index.ts`.
+  TUI now (best-effort, in order) loads `~/.agim/env` into
+  process.env, then `loadFromConfig` for both the LLM registry and
+  the MCP registry, plus `connectAll()`. All wrapped in try/catch
+  so a failure in any one of them never crashes the TUI render.
+
 ## [1.2.86] - 2026-05-27
 
 ### Added

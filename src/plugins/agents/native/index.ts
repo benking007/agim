@@ -227,32 +227,41 @@ function resolveRole(): string[] {
 }
 
 /**
- * v1.2.91 — when a native turn ends with empty assistant text, render
- * a structured recap instead of the opaque "(empty response)" banner.
+ * v1.2.91 / v1.2.92 — render a structured recap when a native turn
+ * ends without a normal "stop + text" completion. Two failure modes
+ * share the same skeleton:
  *
- * Why: the most common cause of an empty turn is the model finishing a
- * tool chain (search / fetch / read / ask_user) but skipping the
- * closing summary. The IM user sees what looks like a frozen agent
- * mid-task. The recap surfaces:
- *   1. what tool calls actually ran (with ✓/✗)
- *   2. a short preview of the last tool's output (the de-facto "what
- *      we just learnt")
- *   3. a plain-language guess at why the model stopped
- *   4. three concrete continuation options the user can pick from
+ *   - `empty`     : finishReason='stop' but text=''. Common cause:
+ *                    model finished a tool chain (search / fetch /
+ *                    read / ask_user) and skipped the closing summary.
+ *   - `max_iter`  : the loop hit IMHUB_NATIVE_AGENT_MAX_ITER without
+ *                    the model deciding to stop. The model wanted to
+ *                    keep going. We were the ones who pulled the plug.
  *
- * Kept intentionally simple — no second LLM call. Pure formatting of
- * the AgentLoopResult fields we already have.
+ * Both surface:
+ *   1. what tool calls actually ran (✓ / ✗ / ⚠️, deduped by name)
+ *   2. a 160-char preview of the last tool's output
+ *   3. a plain-language guess at why we're here
+ *   4. concrete continuation options
+ *
+ * Pure formatting of AgentLoopResult fields; no second LLM call.
  */
-function composeEmptyTurnRecap(result: {
-  toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string; durationMs: number }>
-  iterations: number
-  finishReason: string
-}): string {
+function composeUnfinishedTurnRecap(
+  result: {
+    toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string; durationMs: number }>
+    iterations: number
+    finishReason: string
+  },
+  kind: 'empty' | 'max_iter',
+  maxIter: number,
+): string {
   const tools = result.toolCalls
   if (tools.length === 0) {
     // No tools called AND no text emitted — the model literally said
     // nothing. Usually a misjudged "nothing to do" or a provider
-    // quirk on a single short prompt.
+    // quirk on a single short prompt. (max_iter with 0 tools is
+    // unusual but possible if the model returned empty assistant
+    // text every iteration; treat the same way.)
     return [
       '🧐 这一轮没说话也没动工具。',
       '可能是模型把请求误判成了"无事可做"，或者提供方返回了空响应。',
@@ -277,7 +286,10 @@ function composeEmptyTurnRecap(result: {
     }
   }
 
-  const lines: string[] = ['🧐 这一轮没写出收尾文字就结束了，但中间有做事。已执行的工具调用：']
+  const intro = kind === 'max_iter'
+    ? `⚠️ 这一轮干到第 ${result.iterations} 步还没收尾，被安全上限切掉了。已执行的工具调用：`
+    : '🧐 这一轮没写出收尾文字就结束了，但中间有做事。已执行的工具调用：'
+  const lines: string[] = [intro]
   for (const [name, { count, errors }] of counts) {
     const mark = errors === 0 ? '✓' : errors === count ? '✗' : '⚠️'
     const tail = count > 1 ? ` ×${count}` : ''
@@ -295,7 +307,9 @@ function composeEmptyTurnRecap(result: {
 
   // Quick why-did-it-stop hint based on what we have.
   lines.push('')
-  if (last && !last.isError) {
+  if (kind === 'max_iter') {
+    lines.push(`猜测：模型还想继续，但跑到第 ${result.iterations} 步触发了安全上限（IMHUB_NATIVE_AGENT_MAX_ITER=${maxIter}）。任务规模偏大或卡在某一步反复重试。`)
+  } else if (last && !last.isError) {
     lines.push('猜测：模型在工具结果上停手了，没写最终结论。常见原因是它把工具的返回当成了"完整答案"。')
   } else if (last && last.isError) {
     lines.push('猜测：最后一步工具失败了，模型没生成补救/解释文字就停了。')
@@ -304,12 +318,31 @@ function composeEmptyTurnRecap(result: {
   }
 
   lines.push('')
-  lines.push('要继续吗？')
-  lines.push('  · 回「继续」让我接着推进')
-  lines.push('  · 或直接告诉我下一步具体做什么')
-  lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+  if (kind === 'max_iter') {
+    lines.push('怎么继续：')
+    lines.push('  · 回「继续」让我接着把剩下的事做完')
+    lines.push('  · 或把任务拆小一些（先做 A，再做 B）')
+    lines.push(`  · 或调高上限：在 .agim/env 加一行 IMHUB_NATIVE_AGENT_MAX_ITER=${Math.min(maxIter * 2, 100)} 后重启服务`)
+  } else {
+    lines.push('要继续吗？')
+    lines.push('  · 回「继续」让我接着推进')
+    lines.push('  · 或直接告诉我下一步具体做什么')
+    lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+  }
 
   return lines.join('\n')
+}
+
+/** Read IMHUB_NATIVE_AGENT_MAX_ITER, clamp to [1, 100], default 20.
+ *  v1.2.92 — previously this env var was named in the user-facing
+ *  banner ("raise IMHUB_NATIVE_AGENT_MAX_ITER") but NOTHING in code
+ *  read it. Now actually wired into runAgentLoop. */
+function resolveMaxIterations(): number {
+  const raw = process.env.IMHUB_NATIVE_AGENT_MAX_ITER
+  if (!raw?.trim()) return 20
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return 20
+  return Math.min(Math.max(n, 1), 100)
 }
 
 function pickProvider(): { provider: LlmProvider; role: string } | null {
@@ -761,6 +794,10 @@ class NativeAgentAdapter implements AgentAdapter {
         dispatch,
         approve,
         callOptions: { model: opts.model },
+        // v1.2.92 — actually honour IMHUB_NATIVE_AGENT_MAX_ITER (the
+        // banner has been advising operators to set it since v1.2.48
+        // but the reader didn't exist; default stayed at 20).
+        maxIterations: resolveMaxIterations(),
         timeoutMs: nativeTimeoutMs,
         signal: opts.signal,
         audit: {
@@ -839,7 +876,24 @@ class NativeAgentAdapter implements AgentAdapter {
     if (result.finishReason === 'error') {
       body = `❌ native agent error: ${result.error ?? '(no detail)'}`
     } else if (result.finishReason === 'max_iterations') {
-      body = '⚠️ native agent hit max iterations without finishing. Try a more focused prompt or raise IMHUB_NATIVE_AGENT_MAX_ITER.'
+      // v1.2.92 — replaced the static "raise IMHUB_NATIVE_AGENT_MAX_ITER"
+      // banner with a structured recap that lists the tool work
+      // already done, names the most-recent step, and offers three
+      // continuation paths (continue / split task / raise cap).
+      log.warn({
+        event: 'native.turn.max_iterations',
+        sessionId,
+        backend: usedProvider.name,
+        role: usedRole,
+        iterations: result.iterations,
+        maxIter: resolveMaxIterations(),
+        toolCallCount: result.toolCalls.length,
+        lastToolName: result.toolCalls.length > 0
+          ? result.toolCalls[result.toolCalls.length - 1]?.name ?? null
+          : null,
+        elapsedMs: Date.now() - startedAt,
+      }, `native turn hit max iterations cap (${result.iterations}/${resolveMaxIterations()}, tools=${result.toolCalls.length})`)
+      body = composeUnfinishedTurnRecap(result, 'max_iter', resolveMaxIterations())
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
     } else if (!body) {
@@ -871,7 +925,7 @@ class NativeAgentAdapter implements AgentAdapter {
       // what got done, why we think it stopped, and concrete
       // next-step options so the conversation can continue
       // instead of dying on the spot.
-      body = composeEmptyTurnRecap(result)
+      body = composeUnfinishedTurnRecap(result, 'empty', resolveMaxIterations())
     }
     yield body
   }

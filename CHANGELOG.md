@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.92] - 2026-05-27
+
+### Fixed
+
+- **`IMHUB_NATIVE_AGENT_MAX_ITER` was dead documentation.** The
+  max-iterations banner had been telling operators to "raise
+  IMHUB_NATIVE_AGENT_MAX_ITER" since v1.2.48, but no code path
+  ever read the env var — the agent loop quietly used the
+  hard-coded default of 20 regardless. `resolveMaxIterations()`
+  now reads the env (clamped to [1, 100]) and passes it to
+  `runAgentLoop`, so the operator-facing knob finally works.
+
+### Changed
+
+- **Native: max-iterations now also goes through the v1.2.91
+  structured recap.** Same skeleton as the empty-text path: list
+  every tool that ran (✓ / ✗ / ⚠️, deduped by name), preview the
+  last step's output, name the cause ("model wanted to keep going
+  but hit the safety cap at iteration N"), and offer three
+  continuation paths — reply 继续 to push forward, split the task
+  into smaller pieces, or raise `IMHUB_NATIVE_AGENT_MAX_ITER` to
+  2× current (capped at 100). Diagnostic
+  `native.turn.max_iterations` log added so the audit trail
+  records iterations / cap / last tool name.
+
 ## [1.2.91] - 2026-05-27
 
 ### Changed

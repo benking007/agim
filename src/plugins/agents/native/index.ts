@@ -221,6 +221,30 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `    setsid-detached worker actually survives. Any OTHER native_exec command remains sandboxed.`,
     `  - DO NOT use \`nohup ... &\` or backgrounded shell pipelines for long work — those die with the`,
     `    parent shell. bgjob is the only correct path on this platform.`,
+    ``,
+    `Python-RPC bridge (v1.2.97 — when a task means MANY similar tool calls):`,
+    `  - When you would otherwise call mcp__imhub__* dozens of times in this chat turn (saving 30`,
+    `    facts, fetching 50 stocks, scoring 100 candidates), DO NOT do it inline — that wastes the`,
+    `    iteration budget and is likely to trip the stuck-loop detector. Write ONE Python script,`,
+    `    run it in bgjob, and let it loop locally while calling back to agim's tool surface via the`,
+    `    local RPC bridge agim sets up automatically for every native_exec child.`,
+    `  - The Python sidecar lives at \`<npm install dir>/bin/agim_rpc.py\` (typically`,
+    `    /usr/local/lib/node_modules/agim-cli/bin/agim_rpc.py — find it with`,
+    `    \`node -e "console.log(require.resolve('agim-cli'))"\`). Import it and instantiate the client:`,
+    `      from agim_rpc import client`,
+    `      rpc = client()                                 # reads env, validates token, no args needed`,
+    `      memos = rpc.search_memos(query="茅台", k=10)`,
+    `      for m in memos.get("rows", []):`,
+    `          ...`,
+    `      rpc.push_message(text="后台跑完了，结果是 X")`,
+    `  - Available tools through the bridge (whitelist): search_memos, save_memo, read_skill,`,
+    `    list_skills, push_message. Everything else (native_exec, fs writes, call_agent, long_task,`,
+    `    ask_user) is NOT exposed — the worker already has a shell + filesystem.`,
+    `  - The token is automatically injected via env (IMHUB_RPC_SOCKET + IMHUB_RPC_TOKEN), bound`,
+    `    to THIS IM thread, valid for 24 h. The worker can only drive this thread; it cannot`,
+    `    push_message into someone else's chat.`,
+    `  - End the worker with rpc.push_message(text="…done…") so the user sees the result come back`,
+    `    asynchronously. Don't expect the user to poll \`bgjob tail\` themselves.`,
   )
   return lines.join('\n')
 }
@@ -754,7 +778,22 @@ class NativeAgentAdapter implements AgentAdapter {
       buildBuiltinDispatcher(),
       buildFsDispatcher({ cwd }),
       buildWebDispatcher(),
-      buildExecDispatcher({ cwd }),
+      buildExecDispatcher({
+        cwd,
+        // v1.2.97 — when this thread has a usable RunContext, hand it
+        // to exec-dispatcher so every spawned child inherits a fresh
+        // RPC token bound to the thread. Enables the Python-RPC bridge
+        // (bgjob worker → agim parent → memo/skill/push). Tokens are
+        // per-spawn, expire in 24h, and only authorise THIS thread.
+        rpcCtx: opts.platform && opts.threadId
+          ? {
+            platform: opts.platform,
+            channelId: opts.channelId ?? '',
+            threadId: opts.threadId,
+            userId: opts.userId ?? '',
+          }
+          : undefined,
+      }),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )

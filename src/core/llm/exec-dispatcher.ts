@@ -76,6 +76,16 @@ export function getExecTools(): ToolDef[] {
 
 export interface ExecContext {
   cwd: string
+  /** v1.2.97 — when present, every spawned child gets IMHUB_RPC_SOCKET
+   *  and IMHUB_RPC_TOKEN env vars so a bgjob-launched Python (or any
+   *  language) script can call back into agim's tool surface via the
+   *  local RPC server. The token is bound to this exact RunContext so
+   *  a worker can only drive its own IM thread. Caller (native/index.ts)
+   *  mints a token at turn start; exec-dispatcher injects it on every
+   *  spawn under the same turn. Optional — leaving it unset just means
+   *  the bgjob child can't call back (the existing v1.2.93 SOP still
+   *  works, just without the RPC convenience). */
+  rpcCtx?: { platform: string; channelId: string; threadId: string; userId: string }
 }
 
 export function buildExecDispatcher(ctx: ExecContext): ToolDispatcher {
@@ -149,16 +159,37 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
     ? buildBwrapInvocation(command, cwd, sandboxNetOff)
     : { bin: '/bin/sh', argv: ['-c', command] }
 
+  // v1.2.97 — mint a per-spawn RPC token + injection env. Bound to
+  // the current IM thread so the child can ONLY drive that thread's
+  // memo / push / skill surface, never anyone else's. Best-effort:
+  // if minting fails (RPC server didn't start, no rpcCtx) the spawn
+  // still runs — Python sidecar inside the child will just refuse
+  // to construct a client (raises RuntimeError on missing env).
+  let extraEnv: NodeJS.ProcessEnv | undefined
+  if (ctx.rpcCtx) {
+    try {
+      const { mintRpcToken, resolveSocketPath } = await import('./agim-rpc-server.js')
+      const { token } = mintRpcToken(ctx.rpcCtx, 'native_exec')
+      extraEnv = { IMHUB_RPC_SOCKET: resolveSocketPath(), IMHUB_RPC_TOKEN: token }
+    } catch (err) {
+      log.debug({
+        event: 'exec.rpc_mint_failed',
+        err: err instanceof Error ? err.message : String(err),
+      }, 'failed to mint RPC token; child will boot without IMHUB_RPC_*')
+    }
+  }
+
   log.info({
     event: 'exec.spawn',
     bin,
     cwd,
     sandbox: useSandbox ? `bwrap${sandboxNetOff ? '+no-net' : ''}` : (isBgjob ? 'bypassed-for-bgjob' : 'none'),
+    rpcTokenInjected: !!extraEnv,
     timeoutMs,
     commandPreview: command.slice(0, 120),
   })
 
-  return await runChild(bin, argv, { cwd, timeoutMs, signal })
+  return await runChild(bin, argv, { cwd, timeoutMs, signal, extraEnv })
 }
 
 // v1.2.66 — danger pattern matching. Patterns intentionally err on the
@@ -288,7 +319,7 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
   return { bin: '/usr/bin/bwrap', argv }
 }
 
-interface RunOpts { cwd: string; timeoutMs: number; signal: AbortSignal }
+interface RunOpts { cwd: string; timeoutMs: number; signal: AbortSignal; extraEnv?: NodeJS.ProcessEnv }
 
 function runChild(bin: string, argv: string[], opts: RunOpts): Promise<DispatcherResult> {
   return new Promise<DispatcherResult>((resolve) => {
@@ -299,7 +330,8 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
     let stderrTruncated = false
     let timedOut = false
 
-    const child = spawn(bin, argv, { cwd: opts.cwd, env: process.env, signal: opts.signal })
+    const env = opts.extraEnv ? { ...process.env, ...opts.extraEnv } : process.env
+    const child = spawn(bin, argv, { cwd: opts.cwd, env, signal: opts.signal })
     const timer = setTimeout(() => {
       timedOut = true
       try { child.kill('SIGTERM') } catch { /* ignore */ }

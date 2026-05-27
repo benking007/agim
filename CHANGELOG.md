@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.97] - 2026-05-27
+
+### Added
+
+- **Python-RPC bridge for bgjob workers.** Borrowed from Hermes
+  Agent's "Python script via RPC" pattern. When native faces a
+  task with many similar tool calls (save 30 facts, fetch 50
+  stocks, score 100 candidates), running them inline burns the
+  iteration budget AND is now likely to trip v1.2.95's
+  stuck-loop detector. The new pattern: native writes ONE Python
+  script, bgjob runs it as a detached worker, the worker loops
+  locally and calls back into agim's tool surface via a Unix
+  socket. One LLM round-trip instead of fifty.
+
+  Pieces:
+  - `core/llm/agim-rpc-server.ts` — Unix-socket HTTP server on
+    `AGIM_HOME/rpc.sock` (mode 0600, never bound to a TCP port).
+    Per-process token registry. Tool whitelist hard-coded to
+    five read/write-safe imhub MCP tools: `search_memos`,
+    `save_memo`, `read_skill`, `list_skills`, `push_message`.
+    Operators can extend via `IMHUB_RPC_ALLOWED_TOOLS`.
+    Token TTL 24 h, configurable via `IMHUB_RPC_TOKEN_TTL_MS`.
+  - `bin/agim_rpc.py` — stdlib-only Python sidecar shipped in
+    the npm package. `from agim_rpc import client; rpc =
+    client()` reads env + validates, then `rpc.search_memos(...)`
+    / `rpc.push_message(...)` are typed wrappers.
+  - `exec-dispatcher`: every spawn under a known `rpcCtx` gets
+    `IMHUB_RPC_SOCKET` + `IMHUB_RPC_TOKEN` injected as env (not
+    argv — keeps the token out of `ps`). Token is bound to the
+    spawning thread; the worker can only drive its OWN IM
+    thread's tool surface, never anyone else's.
+  - System prompt section "Python-RPC bridge" tells native when
+    and how to use the pattern with a copy-paste-ready snippet.
+
+  Security: token is opaque random 32-byte hex, never leaves
+  the parent agim process except via env to the spawned child.
+  No TCP listener, no HTTP port, socket file 0600. Whitelist
+  excludes `native_exec` / fs writes / `call_agent` /
+  `long_task` — the bgjob worker already has a full shell so
+  there's nothing to gain by routing those through RPC.
+
+  6 unit tests cover token semantics + env-driven socket path.
+  Real socket round-trip is covered by manual smoke once a
+  bgjob script invokes the sidecar in a live install.
+
+### Changed
+
+- `ExecContext` interface gains optional `rpcCtx` field carrying
+  the current RunContext. Existing callers that pass only `cwd`
+  keep working — the env injection is gated on `rpcCtx` being
+  present.
+
 ## [1.2.96] - 2026-05-27
 
 ### Added

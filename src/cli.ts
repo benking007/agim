@@ -320,6 +320,20 @@ program
       console.warn(`⚠️ ${cliT(bootLang, 'start.native_boot_failed', { message: err instanceof Error ? err.message : String(err) })}`)
     }
 
+    // v1.2.97 — start the local RPC bridge so bgjob-spawned Python (or
+    // any-language) scripts can call back into agim's tool surface via
+    // a Unix socket. Best-effort: a failure logs at warn but doesn't
+    // abort startup. Sub-scripts that try to use the bridge with no
+    // server up will refuse to construct an RPC client at import time.
+    try {
+      const { startRpcServer } = await import('./core/llm/agim-rpc-server.js')
+      const s = await startRpcServer()
+      if (s) console.log('✅ Local RPC bridge ready (bgjob → agim memo/skill/push)')
+    } catch (err) {
+      console.warn('⚠️  agim RPC bridge failed to start:',
+        err instanceof Error ? err.message : String(err))
+    }
+
     // Bootstrap per-agent IM workspaces. Idempotent — creates
     // ~/.agim-workspaces/<agent>/ and seeds CLAUDE.md / AGENTS.md only if
     // they don't exist yet. See docs/architecture/agent-cwd-and-memory.md.

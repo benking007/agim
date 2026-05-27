@@ -275,7 +275,7 @@ function composeUnfinishedTurnRecap(
     iterations: number
     finishReason: string
   },
-  kind: 'empty' | 'max_iter',
+  kind: 'empty' | 'max_iter' | 'stuck_loop',
   maxIter: number,
 ): string {
   const tools = result.toolCalls
@@ -309,9 +309,11 @@ function composeUnfinishedTurnRecap(
     }
   }
 
-  const intro = kind === 'max_iter'
-    ? `⚠️ 这一轮干到第 ${result.iterations} 步还没收尾，被安全上限切掉了。已执行的工具调用：`
-    : '🧐 这一轮没写出收尾文字就结束了，但中间有做事。已执行的工具调用：'
+  const intro = kind === 'stuck_loop'
+    ? `🛑 检测到死循环：模型在第 ${result.iterations} 步连续 3 次调用同一个工具拿到完全一样的结果，已提前停下。已执行的工具调用：`
+    : kind === 'max_iter'
+      ? `⚠️ 这一轮干到第 ${result.iterations} 步还没收尾，被安全上限切掉了。已执行的工具调用：`
+      : '🧐 这一轮没写出收尾文字就结束了，但中间有做事。已执行的工具调用：'
   const lines: string[] = [intro]
   for (const [name, { count, errors }] of counts) {
     const mark = errors === 0 ? '✓' : errors === count ? '✗' : '⚠️'
@@ -330,7 +332,12 @@ function composeUnfinishedTurnRecap(
 
   // Quick why-did-it-stop hint based on what we have.
   lines.push('')
-  if (kind === 'max_iter') {
+  if (kind === 'stuck_loop' && last) {
+    lines.push(
+      `判定：${last.name} 工具连续 3 次返回了完全一样的内容（${last.isError ? '同一个错误' : '同一份输出'}），` +
+      `继续重试不会带来新结果。请换个写法 / 换个参数 / 换个工具，或者把任务拆小。`,
+    )
+  } else if (kind === 'max_iter') {
     lines.push(`猜测：模型还想继续，但跑到第 ${result.iterations} 步触发了安全上限（IMHUB_NATIVE_AGENT_MAX_ITER=${maxIter}）。任务规模偏大或卡在某一步反复重试。`)
   } else if (last && !last.isError) {
     lines.push('猜测：模型在工具结果上停手了，没写最终结论。常见原因是它把工具的返回当成了"完整答案"。')
@@ -341,7 +348,12 @@ function composeUnfinishedTurnRecap(
   }
 
   lines.push('')
-  if (kind === 'max_iter') {
+  if (kind === 'stuck_loop') {
+    lines.push('怎么继续：')
+    lines.push('  · 告诉我换什么写法 / 换什么参数（最有用）')
+    lines.push('  · 或把任务拆小一些（先解决卡住的那一步）')
+    lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+  } else if (kind === 'max_iter') {
     lines.push('怎么继续：')
     lines.push('  · 回「继续」让我接着把剩下的事做完')
     lines.push('  · 或把任务拆小一些（先做 A，再做 B）')
@@ -1005,6 +1017,24 @@ class NativeAgentAdapter implements AgentAdapter {
         elapsedMs: Date.now() - startedAt,
       }, `native turn hit max iterations cap (${result.iterations}/${resolveMaxIterations()}, tools=${result.toolCalls.length})`)
       body = composeUnfinishedTurnRecap(result, 'max_iter', resolveMaxIterations())
+    } else if (result.finishReason === 'stuck_loop') {
+      // v1.2.95 — agent-loop's stuck-loop detector cut us off after
+      // three consecutive identical (name + isError + preview) tool
+      // calls. Saves the rest of the iteration budget and tells the
+      // user exactly where the model got stuck.
+      log.warn({
+        event: 'native.turn.stuck_loop',
+        sessionId,
+        backend: usedProvider.name,
+        role: usedRole,
+        iterations: result.iterations,
+        toolCallCount: result.toolCalls.length,
+        lastToolName: result.toolCalls.length > 0
+          ? result.toolCalls[result.toolCalls.length - 1]?.name ?? null
+          : null,
+        elapsedMs: Date.now() - startedAt,
+      }, `native turn stopped early — stuck loop after ${result.iterations} iter (tools=${result.toolCalls.length})`)
+      body = composeUnfinishedTurnRecap(result, 'stuck_loop', resolveMaxIterations())
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
     } else if (!body) {

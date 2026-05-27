@@ -322,7 +322,9 @@ describe('runAgentLoop — approval gate', () => {
 describe('runAgentLoop — limits & abort', () => {
   it('hits maxIterations when model keeps requesting tools', async () => {
     // Scripts: provider always returns a tool call; loop should abort
-    // at maxIterations=3.
+    // at maxIterations=3. The dispatcher returns DIFFERENT text each
+    // call so the v1.2.95 stuck-loop detector doesn't fire — this
+    // test specifically targets the iteration cap path.
     const scripts: ChatResult[] = []
     for (let i = 0; i < 10; i++) {
       scripts.push({
@@ -333,18 +335,74 @@ describe('runAgentLoop — limits & abort', () => {
         modelUsed: 'fake-1',
       })
     }
+    let n = 0
     const p = new FakeProvider(scripts)
     const r = await runAgentLoop({
       provider: p,
       messages: [{ role: 'user', content: 'loop' }],
       tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
-      dispatch: async () => ({ text: 'ran', isError: false, source: 'mcp:x' }),
+      dispatch: async () => ({ text: `ran-${n++}`, isError: false, source: 'mcp:x' }),
       maxIterations: 3,
     })
     expect(r.iterations).toBe(3)
     expect(r.toolCalls).toHaveLength(3)
     expect(r.finishReason).toBe('max_iterations')
     expect(r.text).toBe('')  // never reached a non-tool finish
+  })
+
+  it('detects stuck-loop and stops early (v1.2.95)', async () => {
+    // Model keeps asking for the SAME tool. Dispatcher returns the
+    // SAME isError + content. After 3 consecutive identical calls
+    // the loop should bail with finishReason='stuck_loop' even when
+    // maxIterations would allow many more iterations.
+    const scripts: ChatResult[] = []
+    for (let i = 0; i < 20; i++) {
+      scripts.push({
+        text: '',
+        toolCalls: [toolCall(`c${i}`, 'mcp_x_run', { q: 'same' })],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      })
+    }
+    const p = new FakeProvider(scripts)
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'stuck' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      dispatch: async () => ({ text: 'always-the-same-error', isError: true, source: 'mcp:x' }),
+      maxIterations: 20,
+    })
+    expect(r.finishReason).toBe('stuck_loop')
+    expect(r.toolCalls).toHaveLength(3)
+    expect(r.text).toBe('')
+  })
+
+  it('does NOT trigger stuck-loop when outputs differ each call', async () => {
+    // 4 consecutive calls to the same tool, but each returns a
+    // different preview → no false-positive.
+    const scripts: ChatResult[] = []
+    for (let i = 0; i < 5; i++) {
+      scripts.push({
+        text: '',
+        toolCalls: [toolCall(`c${i}`, 'mcp_x_run', { q: `q${i}` })],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      })
+    }
+    let n = 0
+    const p = new FakeProvider(scripts)
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'explore' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      dispatch: async () => ({ text: `result-${n++}`, isError: false, source: 'mcp:x' }),
+      maxIterations: 5,
+    })
+    // Falls off the loop normally — no stuck_loop here.
+    expect(r.finishReason).toBe('max_iterations')
+    expect(r.toolCalls).toHaveLength(5)
   })
 
   it('respects outer AbortSignal before first iteration', async () => {

@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.95] - 2026-05-27
+
+### Added
+
+- **Stuck-loop detector — agent-loop stops early when the model
+  re-tries the same failing call.** Operator report: a 20-iter
+  max-iter turn had 16 native_exec calls, with the last several
+  returning the same `success:false` SQL error. The model was
+  burning iterations re-running a failing query without changing
+  strategy. Detector trigger: three consecutive tool reports
+  share name + isError + preview (200-char). On hit the loop
+  emits `finishReason='stuck_loop'`, the new
+  `agent-loop.stuck_loop_detected` warn-level log, and bails
+  immediately. Saves the rest of the iteration budget.
+- **Native recap recognises stuck_loop.** New kind in
+  `composeUnfinishedTurnRecap`: surfaces "🛑 检测到死循环：模型
+  在第 N 步连续 3 次调用同一个工具拿到完全一样的结果"; cites the
+  tool name + same-error vs same-output; suggests "换写法 / 拆任务
+  / 切别的 agent" instead of the generic "回继续" (which would just
+  re-trigger the loop).
+
+### Changed
+
+- **`LoopFinishReason` union extended with `'stuck_loop'`.**
+  Downstream type-narrowing keeps working because the new variant
+  is additive; the only consumer (native/index.ts body
+  composition) gets an explicit branch.
+
 ## [1.2.94] - 2026-05-27
 
 ### Added

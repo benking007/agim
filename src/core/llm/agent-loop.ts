@@ -83,8 +83,16 @@ export type ApprovalGate = (
 export const alwaysAllowGate: ApprovalGate = async () => 'allow'
 
 /** Auxiliary finish reasons the agent loop adds on top of the provider's
- *  finishReason vocabulary. */
-export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted'
+ *  finishReason vocabulary.
+ *
+ *  - `stuck_loop` (v1.2.95): the loop terminated early because the model
+ *    called the SAME tool with the SAME outcome (error+preview hash)
+ *    three iterations in a row — usually means it's stuck re-trying a
+ *    failing SQL / fetch / command without changing strategy. Without
+ *    this break a stuck model would burn the full
+ *    IMHUB_NATIVE_AGENT_MAX_ITER budget; stopping early saves cost AND
+ *    gives the user a much more actionable recap. */
+export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop'
 
 export interface AgentLoopInput {
   provider: LlmProvider
@@ -359,6 +367,47 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         durationMs,
         preview: dispatched.text.slice(0, 200),
       })
+
+      // v1.2.95 — stuck-loop detector. If the last three tool reports
+      // share name + error-flag + preview content, the model is calling
+      // the SAME tool with the SAME outcome — almost always a sign it's
+      // re-running a failing SQL / fetch / command without changing
+      // strategy. Break out early so we don't waste the full
+      // maxIterations budget on a stuck model, and so the caller can
+      // surface a much more focused "you're stuck on X" recap.
+      //
+      // Three consecutive matches is the smallest threshold that
+      // unambiguously says "loop" without being triggered by a
+      // legitimate "two reads on the same file" sequence. The preview
+      // is already truncated to 200 chars at push time, so this
+      // comparison is bounded.
+      if (toolCalls.length >= 3) {
+        const a = toolCalls[toolCalls.length - 1]!
+        const b = toolCalls[toolCalls.length - 2]!
+        const c = toolCalls[toolCalls.length - 3]!
+        if (
+          a.name === b.name && b.name === c.name
+          && a.isError === b.isError && b.isError === c.isError
+          && a.preview === b.preview && b.preview === c.preview
+        ) {
+          log.warn({
+            event: 'agent-loop.stuck_loop_detected',
+            tool: a.name,
+            isError: a.isError,
+            iter,
+            totalToolCalls: toolCalls.length,
+            previewSnippet: (a.preview ?? '').slice(0, 80),
+          }, `stuck loop: 3× ${a.name} with identical outcome — early stop at iter ${iter}`)
+          signal.cleanup()
+          return {
+            text: '',
+            iterations: iter + 1,
+            toolCalls,
+            usage: usageAcc,
+            finishReason: 'stuck_loop',
+          }
+        }
+      }
     }
     // Loop tail → next iteration calls provider with appended history.
   }

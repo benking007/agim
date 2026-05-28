@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.104] - 2026-05-28
+
+### Fixed
+
+- **DingTalk richText finally parses — the segment array lives at
+  `content.richText` directly, not under `.msgList`.** v1.2.90 probed
+  three `.msgList`-suffixed locations and still fell through to the
+  "收到一条复合消息，但里面没找到可用的文字" fallback on real messages.
+  A captured production payload (Stream SDK, 1:1 chat) revealed the
+  actual shape: `msg.content.richText` is the segment array DIRECTLY,
+  with segments like `{ text: "…" }` carrying no `type` field. Fix:
+  probe the array-direct shapes (`msg.content.richText[]`,
+  `msg.richText[]`) FIRST, keeping the legacy `.msgList`-nested probes
+  as fallbacks. The flattening logic was extracted into a pure,
+  exported `flattenDingtalkRichText()` so the multi-shape probe is
+  unit-testable; 8 new tests cover the real payload + every legacy
+  shape + picture-segment counting.
+
 ## [1.2.103] - 2026-05-28
 
 ### Fixed

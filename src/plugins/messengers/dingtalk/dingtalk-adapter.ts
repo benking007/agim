@@ -34,6 +34,87 @@ const log = rootLogger.child({ component: 'dingtalk' })
 
 const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
+/** Result of flattening a DingTalk richText payload. */
+export interface RichTextFlatten {
+  /** Joined + trimmed text from all text segments. */
+  text: string
+  textPartCount: number
+  pictureCount: number
+  /** Which candidate location the segment array came from (audit). */
+  source: string
+  listLen: number
+}
+
+/**
+ * Flatten a DingTalk `msgtype:'richText'` payload into plain text.
+ *
+ * The segment array has shipped in several shapes across SDK versions
+ * and chat contexts. v1.2.104 confirmed from a real Stream-SDK 1:1
+ * payload that the live shape is `msg.content.richText` AS AN ARRAY
+ * DIRECTLY (segments like `{ text: "…" }`, no `type` field), NOT nested
+ * under `.msgList`. We probe array-direct shapes first, then the older
+ * `.msgList`-nested shapes as fallbacks.
+ *
+ * Pure + exported so the multi-shape probe is unit-testable without
+ * standing up the whole adapter.
+ */
+export function flattenDingtalkRichText(msg: Record<string, unknown>): RichTextFlatten {
+  const m = msg as {
+    richText?: unknown
+    content?: { richText?: unknown; msgList?: unknown }
+  }
+  const asMsgList = (v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? (v as { msgList?: unknown }).msgList
+      : undefined
+  let list: Array<Record<string, unknown>> = []
+  let source = 'none'
+  const candidates: Array<[string, unknown]> = [
+    // Array-direct shapes (current production reality).
+    ['msg.content.richText[]', m.content?.richText],
+    ['msg.richText[]', m.richText],
+    // Legacy `.msgList`-nested shapes (kept as fallbacks).
+    ['msg.richText.msgList', asMsgList(m.richText)],
+    ['msg.content.richText.msgList', asMsgList(m.content?.richText)],
+    ['msg.content.msgList', m.content?.msgList],
+  ]
+  for (const [where, c] of candidates) {
+    if (Array.isArray(c) && c.length > 0) {
+      list = c as Array<Record<string, unknown>>
+      source = where
+      break
+    }
+  }
+  const textParts: string[] = []
+  let pictureCount = 0
+  for (const seg of list) {
+    if (!seg || typeof seg !== 'object') continue
+    const segType = typeof seg.type === 'string' ? seg.type : ''
+    // Tolerate both `text` and `content` for the text-segment body —
+    // different SDK versions disagree on the field name.
+    const segText = typeof seg.text === 'string'
+      ? seg.text
+      : typeof seg.content === 'string'
+        ? seg.content
+        : ''
+    if (segType === 'text' || (!segType && segText)) {
+      const t = segText.trim()
+      if (t) textParts.push(t)
+    } else if (segType === 'picture') {
+      pictureCount += 1
+    }
+    // 'at' / unknown segments are intentionally ignored — they carry no
+    // payload the agent can act on.
+  }
+  return {
+    text: textParts.join('\n').trim(),
+    textPartCount: textParts.length,
+    pictureCount,
+    source,
+    listLen: list.length,
+  }
+}
+
 // Match Feishu's dedup window — DingTalk's gateway also re-delivers if
 // the ack races the next reconnect.
 const DEDUP_TTL_MS = 10 * 60 * 1000
@@ -380,72 +461,37 @@ export class DingTalkAdapter implements MessengerAdapter {
 
     // ─── richText — flatten text segments and dispatch as plain text ─
     // DingTalk delivers "rich text" forwards / mixed-content messages
-    // with `msgtype: 'richText'`. The msgList array carrying the
-    // segments has been observed in three different positions across
-    // SDK versions and chat contexts (1:1 vs group, internal vs
-    // OpenAPI relay):
-    //   * msg.richText.msgList         (top-level — community docs)
-    //   * msg.content.richText.msgList (some 1:1 channels)
+    // with `msgtype: 'richText'`. The segment array has been observed in
+    // several positions across SDK versions and chat contexts:
+    //   * msg.content.richText  (ARRAY directly — confirmed v1.2.104 from
+    //                            a real Stream-SDK 1:1 payload; this is
+    //                            the shape that actually ships today)
+    //   * msg.richText          (ARRAY directly — defensive)
+    //   * msg.richText.msgList         (community docs — legacy)
+    //   * msg.content.richText.msgList (some 1:1 channels — legacy)
     //   * msg.content.msgList          (some action-card relays)
-    // We probe all three. We also normalise the msgtype check
-    // case-insensitively because the wire has been seen as both
-    // 'richText' and 'richtext'. Always log the structure we found
+    // The array-direct forms are probed FIRST. We also normalise the
+    // msgtype check case-insensitively because the wire has been seen as
+    // both 'richText' and 'richtext'. Always log the structure we found
     // so future shape drift is visible without a stack trace.
     if (typeof msg.msgtype === 'string' && msg.msgtype.toLowerCase() === 'richtext') {
-      const m = msg as unknown as {
-        richText?: { msgList?: unknown }
-        content?: { richText?: { msgList?: unknown }; msgList?: unknown }
-      }
-      let list: Array<Record<string, unknown>> = []
-      let source = 'none'
-      const candidates: Array<[string, unknown]> = [
-        ['msg.richText.msgList', m.richText?.msgList],
-        ['msg.content.richText.msgList', m.content?.richText?.msgList],
-        ['msg.content.msgList', m.content?.msgList],
-      ]
-      for (const [where, c] of candidates) {
-        if (Array.isArray(c) && c.length > 0) {
-          list = c as Array<Record<string, unknown>>
-          source = where
-          break
-        }
-      }
-      const textParts: string[] = []
-      let pictureCount = 0
-      for (const seg of list) {
-        if (!seg || typeof seg !== 'object') continue
-        const segType = typeof seg.type === 'string' ? seg.type : ''
-        // Tolerate both `text` and `content` for the text-segment
-        // body — different SDK versions disagree on the field name.
-        const segText = typeof seg.text === 'string'
-          ? seg.text
-          : typeof seg.content === 'string'
-            ? seg.content
-            : ''
-        if (segType === 'text' || (!segType && segText)) {
-          const t = segText.trim()
-          if (t) textParts.push(t)
-        } else if (segType === 'picture') {
-          pictureCount += 1
-        }
-        // 'at' / unknown segments are intentionally ignored — they
-        // carry no payload the agent can act on.
-      }
+      const flat = flattenDingtalkRichText(msg as unknown as Record<string, unknown>)
+      const pictureCount = flat.pictureCount
       log.info({
         event: 'dingtalk.inbound.richtext',
         messageId: msg.msgId,
         threadId,
         msgtype: msg.msgtype,
-        msgListSource: source,
-        msgListLen: list.length,
-        textPartCount: textParts.length,
+        msgListSource: flat.source,
+        msgListLen: flat.listLen,
+        textPartCount: flat.textPartCount,
         pictureCount,
         // Dump the payload's top-level shape so we can adjust if
         // none of the candidates matched.
         topLevelKeys: Object.keys(msg).slice(0, 20),
-      }, `richText inbound (msgList from ${source}, ${textParts.length} text seg, ${pictureCount} picture seg)`)
+      }, `richText inbound (msgList from ${flat.source}, ${flat.textPartCount} text seg, ${pictureCount} picture seg)`)
 
-      let text = textParts.join('\n').trim()
+      let text = flat.text
       if (pictureCount > 0) {
         text = text
           ? `${text}\n\n（这条消息还附带 ${pictureCount} 张图片；如需我查看图片，请单独发送。）`

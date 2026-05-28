@@ -407,3 +407,77 @@ Web 编辑器在 `/settings/agim-skills`；`/skill list|show|refresh` 在 IM 也
 | CLI 向导 setup mcp | `src/cli-ui/setup-mcp.ts` |
 | CLI diag | `src/cli-ui/diag.ts` |
 | 行内年龄注释 | `src/core/util/format-age.ts` · `src/core/persona.ts` |
+
+---
+
+## 六、v1.2.86–v1.2.104 增量 · native 可靠性栈 + 安全收口 + 运行时热配置
+
+这一轮全部围绕一个判断展开：**当 `native` 成为日常默认 agent（而不仅是 `/router compare` 的对照项）时，它必须自己当好"检察者"** —— 既能察觉自己在原地打转 / 偏题 / 空转，又不能在工具层把敏感数据漏给 IM。下面六块是这一立场的落地。
+
+### 6.1 native turn 可靠性栈（四层早停 / 复盘）
+
+`agent-loop.ts` 的多轮循环外面包了四层独立的"健康检查"，从机械到语义递进，命中即带特定 `finishReason` 早停，由 `native/index.ts` 渲染结构化复盘卡，而不是把垃圾继续推给用户：
+
+| 层 | 触发 | 机制 | finishReason |
+|---|---|---|---|
+| 空响应自动补刀 | turn 结束 `text==''` 且 `finishReason=stop` 且 tools>0 | 用**同一 provider、禁用工具**再问一刀，逼它把"刚才干了啥"讲出来 | （补刀成功则正常返回） |
+| max-iter 复盘 | 撞到 `IMHUB_NATIVE_AGENT_MAX_ITER` | 不再静默截断，渲染"干到第 N 步还没收尾 + 已执行工具列表 + 建议下一步" | `max_iterations` |
+| 死循环检测 | 同名 + 同 isError + 同 preview 连续 3 次 | 机械指纹比对，免 LLM 成本，立即早停 | `stuck_loop` |
+| goal-critic 偏题检测 | 工具调用 ≥5 次后周期性（每轮 ≤2 次） | 单次廉价 LLM 调用，喂"原始 prompt + 活动 goal + 最近工具轨迹"判 onTrack | `off_track` |
+
+- **goal-critic** 默认 **goal-only**（仅当 thread 有活动 `/long_task` 目标时才烧钱）；env `IMHUB_NATIVE_CRITIC=off|always|goal-only`；用 `llmRoles.cheap`（或 `IMHUB_NATIVE_CRITIC_ROLE`）。代码 `src/core/llm/goal-critic.ts`。
+- 复盘卡都给"继续 / 换方向 / 自己指方向 / `/cc` `/oc` `/cs` 切别的 agent"四选项，把决策权交回用户。
+
+### 6.2 native 工具套件扩展
+
+native 不再只有 builtin RPC 工具，补齐了一套"能真正干活"的本地工具，全部过 `policy-approval-gate` + 审计：
+
+| 工具 | 实现 | 说明 |
+|---|---|---|
+| `native_exec` | `src/core/llm/exec-dispatcher.ts` | shell 执行；`IMHUB_EXEC_SANDBOX=bwrap` 时走 bubblewrap 隔离（Linux，opt-in）；危险模式黑名单 + 内网 URL 拦截 |
+| `native_web_fetch` / `native_web_search` | `src/core/llm/*` | 抓取 + 搜索（ddg → metaso 兜底） |
+| `native_fs` / `native_grep` / `native_glob` | fs-dispatcher | 工作区受限文件操作；`sensitive-paths` 黑名单依旧生效 |
+| bgjob 长任务桥接 | exec-dispatcher `isBgjobInvocation()` | 识别 `bgjob` wrapper 调用，长任务（>10min）detach 到后台；v1.2.99 收紧：命令含 shell-chain 元字符则不豁免沙箱 |
+| Python-RPC sidecar | `src/core/llm/agim-rpc-server.ts` + `bin/agim_rpc.py` | native 起的 Python 子脚本通过 Unix socket + per-process token 回调 agim（白名单：search_memos / save_memo / read_skill / list_skills / push_message） |
+| reminder 四件套 | `imhub-dispatcher.ts` | create / list / cancel / snooze_reminder 直接给 native（不必绕 CLI sidecar） |
+
+### 6.3 敏感路径硬黑名单（B1 / B5，含 native_exec）
+
+`src/core/sensitive-paths.ts` 在审批总线的"只读自动放行"**之前**做硬拒绝——即便管理员想点同意也不放行，因为输出可能直接落进公开 IM：
+
+- `checkSensitiveToolUse(toolName, input)`：路径类工具（Read/Edit/Write/Glob/Grep/LS）查路径前缀 + 基名黑名单；shell 类工具（**Bash 与 v1.2.101 起的 `native_exec`**）扫命令串。覆盖：env 文件 / `~/.ssh/` / `/etc/shadow` / agim token store / `AGENTS.md`·`CLAUDE.md` / `env`·`printenv` dump / `credentials.{json,yaml,yml}`。
+- `scrubOutboundText(text)`：出站前再扫一遍，把 token 形状的子串替换成 `[REDACTED-<kind>]`（agim/OpenAI/GitHub/Slack/AWS/Telegram/Discord/PEM/JWT）。
+- **v1.2.101 关键修复**：`native_exec` 之前没走这个扫描（只有 `Bash` 走），等于 native 路由的 `cat .env; env|grep DB_` 能绕过 auto-allow。现在两者共用同一黑名单。
+
+### 6.4 live-config 单例 · 默认 agent 热生效 + 启用列表过滤（v1.2.103）
+
+`src/core/live-config.ts` 解决两个"改了不生效"的坑：
+
+- 之前 `config.defaultAgent` 在 `startWebServer` / `startACPServer` / IM `onMessage` routeCtx 里都是**启动快照**，Web 改默认 agent 要重启才生效。
+- 之前 `registry.loadBuiltInPlugins()` 无条件注册所有内置 agent，`config.agents[]`（SPA 的启用开关）**从没被消费**——关掉某 agent 是装饰性的。
+
+修法：cli.ts 启动时 `setLiveConfig(config)`，PUT `/api/config` 保存后再 `setLiveConfig()` 热刷新。`registry.findAgent` / `listAgents` 经 `isAgentEnabled()` 过滤（空 `agents:[]` = 全开，向后兼容）；Web/ACP/IM 默认 agent 读 `getDefaultAgent()`。改完下一条消息即生效，无需重启。
+
+### 6.5 MCP server 失败自动重连（v1.2.96）
+
+`mcp-registry.ts` 的 `callToolByName` 两路检测连接掉线（显式 closed + 调用抛错），5s 冷却内 `tryReconnect` 一次再重试，避免外挂 MCP server 短暂抖动就让整轮工具调用失败。
+
+### 6.6 DingTalk richText 多形态解析（v1.2.89/90/104）
+
+钉钉富文本的段数组在不同 SDK 版本 / 会话类型下挂在不同位置。`flattenDingtalkRichText()`（`dingtalk-adapter.ts`，纯函数可测）按优先级探测：**`msg.content.richText[]`（数组本体，v1.2.104 实测的真实形态）** → `msg.richText[]` → 三个旧的 `.msgList` 嵌套形态。掏不出文字时 dump `fullPayload` 到 warn 日志 + 给用户兜底 ack。
+
+### 6.7 关键文件索引（v1.2.86–104 增量）
+
+| 关注点 | 路径 |
+|---|---|
+| native 多轮循环 + 早停 | `src/core/llm/agent-loop.ts` |
+| goal-critic 偏题检测 | `src/core/llm/goal-critic.ts` |
+| native 复盘卡渲染 | `src/plugins/agents/native/index.ts`（`composeUnfinishedTurnRecap` / `composeOffTrackRecap`） |
+| native_exec + bwrap | `src/core/llm/exec-dispatcher.ts` |
+| Python-RPC bridge | `src/core/llm/agim-rpc-server.ts` · `bin/agim_rpc.py` |
+| reminder 四件套（native） | `src/core/llm/imhub-dispatcher.ts` |
+| 敏感路径 / 出站脱敏 | `src/core/sensitive-paths.ts` |
+| live-config 单例 | `src/core/live-config.ts` |
+| MCP 自动重连 | `src/core/llm/mcp-registry.ts` |
+| 钉钉 richText 扁平化 | `src/plugins/messengers/dingtalk/dingtalk-adapter.ts`（`flattenDingtalkRichText`） |
+| `/long_task` `/complete_goal` slash | `src/core/router.ts`（→ `goal.ts`） |

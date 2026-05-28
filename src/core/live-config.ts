@@ -55,9 +55,19 @@ export function getDefaultAgent(fallback = 'claude-code'): string {
  *  or no-config-loaded → "allow all" for back-compat with installs that
  *  never configured the list explicitly. */
 export function isAgentEnabled(name: string): boolean {
+  // The in-process `native` agent is always available: it needs no
+  // install, is registered unconditionally, and historically was never
+  // required to appear in config.agents. Filtering it (v1.2.103
+  // regression) broke `/na` and default routing for installs whose
+  // enabled list predates native. Never filter it.
+  if (name === 'native') return true
   if (!current) return true
   const list = current.agents
   if (!list || list.length === 0) return true
+  // The configured default agent must always be reachable — otherwise an
+  // enabled list that doesn't explicitly include the default would make
+  // unrouted messages fail. Exempt it from the filter.
+  if (name === (current.defaultAgent || '')) return true
   return list.includes(name)
 }
 

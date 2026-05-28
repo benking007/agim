@@ -52,11 +52,28 @@ describe('live-config singleton', () => {
   })
 
   it('isAgentEnabled() — non-empty list filters', () => {
-    setLiveConfig(cfg({ agents: ['codex', 'opencode'] }))
+    // defaultAgent set to a listed agent so the default-exemption doesn't
+    // mask the filter behaviour under test.
+    setLiveConfig(cfg({ agents: ['codex', 'opencode'], defaultAgent: 'codex' }))
     expect(isAgentEnabled('codex')).toBe(true)
     expect(isAgentEnabled('opencode')).toBe(true)
     expect(isAgentEnabled('claude-code')).toBe(false)
     expect(isAgentEnabled('cursor')).toBe(false)
+  })
+
+  it('isAgentEnabled() — native is always allowed (v1.2.105: never filtered)', () => {
+    // Enabled list excludes native; native must still be reachable so /na
+    // and native-default routing keep working.
+    setLiveConfig(cfg({ agents: ['codex'], defaultAgent: 'codex' }))
+    expect(isAgentEnabled('native')).toBe(true)
+    expect(isAgentEnabled('claude-code')).toBe(false)
+  })
+
+  it('isAgentEnabled() — the default agent is always allowed even if not listed', () => {
+    setLiveConfig(cfg({ agents: ['codex'], defaultAgent: 'claude-code' }))
+    expect(isAgentEnabled('claude-code')).toBe(true) // default, exempt
+    expect(isAgentEnabled('codex')).toBe(true) // listed
+    expect(isAgentEnabled('opencode')).toBe(false) // neither
   })
 
   it('isAgentEnabled() — unset config is "allow all" (very early boot)', () => {

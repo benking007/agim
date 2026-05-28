@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.105] - 2026-05-28
+
+### Fixed
+
+- **v1.2.103 regression: enabled-list filter could hide `native` and the
+  default agent, breaking `/na` and unrouted-message routing.**
+  v1.2.103 made `config.agents[]` authoritative in
+  `registry.findAgent` / `listAgents` via `isAgentEnabled()`. But the
+  in-process `native` agent is registered unconditionally and was never
+  required to appear in `config.agents`, so installs whose enabled list
+  predates native (e.g. `['claude-code','codex']`) suddenly got
+  "Unknown command: na" and, when native was the default, broken
+  default routing. Fix: `isAgentEnabled()` now always returns true for
+  `native` and for the current `defaultAgent`, regardless of the
+  enabled list. The list still filters the other built-in CLI agents as
+  designed. 2 new tests.
+
 ## [1.2.104] - 2026-05-28
 
 ### Fixed

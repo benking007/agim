@@ -15,6 +15,7 @@ import { AGIM_HOME } from './agim-paths.js'
 import { parseMessage, routeMessage, type RouteContext } from './router.js'
 import { generateTraceId, createLogger, logger as rootLogger } from './logger.js'
 import { registry } from './registry.js'
+import { getDefaultAgent } from './live-config.js'
 import { createJob, getJob, runJob } from './job-board.js'
 import { safeEqual } from '../utils/safe-equal.js'
 
@@ -182,7 +183,7 @@ export async function startACPServer(options: {
           threadId: upstreamSessionId ? `acp:session:${upstreamSessionId}` : `acp:${taskId}`,
           channelId: 'acp',
           platform: 'acp',
-          defaultAgent: options.defaultAgent,
+          defaultAgent: getDefaultAgent(options.defaultAgent),
           traceId,
           logger,
           userId: 'acp-caller',

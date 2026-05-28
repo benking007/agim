@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { registry } from './core/registry.js'
+import { getDefaultAgent } from './core/live-config.js'
 import { sessionManager } from './core/session.js'
 import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
@@ -250,6 +251,14 @@ program
     }
     const validatedConfig = validation.config
     config = validatedConfig as unknown as Config
+
+    // v1.2.103 — publish the in-memory config to the live-config singleton
+    // so registry filters + routeCtx + Web/ACP defaultAgent all see the same
+    // values. PUT /api/config will republish on save, removing the need for
+    // a service restart after toggling enabled agents / default agent in
+    // the SPA.
+    const { setLiveConfig } = await import('./core/live-config.js')
+    setLiveConfig(config)
 
     // Initialize workspace registry
     const rawConfig = config as Record<string, unknown>
@@ -801,7 +810,7 @@ program
               channelId: ctx.channelId,
               threadId: ctx.message.threadId,
               platform: ctx.platform,
-              defaultAgent: config.defaultAgent,
+              defaultAgent: getDefaultAgent(config.defaultAgent),
               traceId,
               logger: ctx.logger,
               userId: ctx.message.userId,
@@ -1237,12 +1246,17 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     }
   }
 
-  // Build route context with trace
+  // Build route context with trace.
+  // v1.2.103 — read defaultAgent through getDefaultAgent() so the SPA's
+  // "default agent" picker takes effect on the very next message instead
+  // of waiting for a service restart. The `defaultAgent` parameter is
+  // kept as the fallback (tests inject a fixed value; live-config
+  // unset → param wins).
   const routeCtx: RouteContext = {
     threadId: message.threadId,
     channelId: ctx.channelId,
     platform,
-    defaultAgent,
+    defaultAgent: getDefaultAgent(defaultAgent),
     traceId,
     logger,
     userId: message.userId,

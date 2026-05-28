@@ -10,6 +10,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
+import { getDefaultAgent } from '../core/live-config.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
@@ -913,7 +914,7 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/api/jobs/batch-run' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
-      return handleBatchJob(req, res, 'run', options.defaultAgent)
+      return handleBatchJob(req, res, 'run', getDefaultAgent(options.defaultAgent))
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
     // pushed real-time so the dashboard stops polling. Open access; same
@@ -960,7 +961,7 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/api/invoke' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
-      return handleInvoke(req, res, options.defaultAgent)
+      return handleInvoke(req, res, getDefaultAgent(options.defaultAgent))
     }
 
     // WeChat QR login — drives the "扫码登录" button in the web settings
@@ -1195,7 +1196,7 @@ export async function startWebServer(options: {
     // same-tokenId tabs (which is fine), but the stronger id closes the
     // pre-rekey race window.
     const clientId = `web-${randomBytes(12).toString('base64url')}`
-    const client: ClientConnection = { ws, id: clientId, agent: options.defaultAgent }
+    const client: ClientConnection = { ws, id: clientId, agent: getDefaultAgent(options.defaultAgent) }
     clients.set(clientId, client)
     // First-claim ownership: this connection's tokenId owns this
     // brand-new threadId until disconnect.
@@ -1207,12 +1208,12 @@ export async function startWebServer(options: {
     sendToClient(ws, {
       type: 'init',
       agents: registry.listAgents(),
-      defaultAgent: options.defaultAgent,
+      defaultAgent: getDefaultAgent(options.defaultAgent),
       clientId,
     })
 
     // Load existing session history if available
-    sendSessionHistory(ws, clientId, options.defaultAgent)
+    sendSessionHistory(ws, clientId, getDefaultAgent(options.defaultAgent))
 
     const enqueueInbound = createSerialQueue()
 
@@ -1276,7 +1277,7 @@ export async function startWebServer(options: {
           // by the WS-assigned id, and the web messenger's outbound
           // approval-card lookup misses the live client.
           await handleClientMessage(
-            client, msg, options.defaultAgent,
+            client, msg, getDefaultAgent(options.defaultAgent),
             (oldId, newId) => {
               // Only reassign if we actually owned `oldId` — defensive
               // against the (impossible-but-cheap-to-guard) case of two
@@ -1686,6 +1687,15 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     }
 
     await saveConfig(result.config as unknown as Config)
+    // v1.2.103 — propagate the new config to the live-config singleton.
+    // Without this, the SPA's "enabled agents" / "default agent" toggles
+    // were persisted to disk but the running process kept its boot-time
+    // snapshot until a service restart. registry filters + routeCtx now
+    // pick up the change on the very next request.
+    try {
+      const { setLiveConfig } = await import('../core/live-config.js')
+      setLiveConfig(result.config as unknown as Config)
+    } catch { /* best-effort — old configs without live-config still work */ }
     // R12 ⑤ — persistent audit. `details.keys` is the list of top-level
     // config keys touched (e.g. ['feishu', 'discord']) — never the raw
     // values, which would leak tokens / app secrets through the audit

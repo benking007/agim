@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.103] - 2026-05-28
+
+### Fixed
+
+- **SPA agent settings now take effect without a service restart, and
+  the enabled-agent toggle actually filters routing.** Two related bugs
+  reported from production:
+  1. *Default agent change ignored until restart.* `config.defaultAgent`
+     was captured as a boot-time snapshot in three places
+     (`startWebServer`, `startACPServer`, the IM `onMessage` routeCtx).
+     PUT `/api/config` persisted the new value to disk but never
+     refreshed those snapshots, so flipping the default in the SPA did
+     nothing until the daemon was restarted.
+  2. *Enabled-agent list never consulted.* `registry.loadBuiltInPlugins()`
+     unconditionally registered all built-in agents (claude-code, codex,
+     opencode, antigravity, cursor, native), and `findAgent` /
+     `listAgents` never looked at `config.agents[]`. Disabling an agent
+     in the SPA was purely cosmetic — it stayed routable and counted
+     toward intent classification.
+
+  Fix: new `live-config` singleton (`src/core/live-config.ts`). cli.ts
+  publishes the validated config at boot; PUT `/api/config` republishes
+  on every save. `registry.findAgent` / `listAgents` now filter through
+  `isAgentEnabled()`, and the Web/ACP/IM default-agent reads go through
+  `getDefaultAgent()`. Empty `agents: []` (legacy installs) is treated as
+  "all enabled" for back-compat; only a non-empty list filters. Added
+  `listAllAgents()` for the SPA status probe that must show every
+  installed agent regardless of enable state. 11 new unit tests.
+
 ## [1.2.102] - 2026-05-28
 
 ### Added

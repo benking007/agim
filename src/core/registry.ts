@@ -4,6 +4,7 @@ import type { MessengerAdapter, AgentAdapter } from './types.js'
 import type { ACPAgentConfig } from '../plugins/agents/acp/types.js'
 import { logger as rootLogger } from './logger.js'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from './feature-flags.js'
+import { isAgentEnabled } from './live-config.js'
 
 const log = rootLogger.child({ component: 'registry' })
 
@@ -64,12 +65,20 @@ class PluginRegistry {
   findAgent(nameOrAlias: string): AgentAdapter | undefined {
     // Try exact name first
     const agent = this.agents.get(nameOrAlias)
-    if (agent) return agent
+    if (agent) {
+      // v1.2.103 — honour the SPA's enabled-agents toggle. An agent that
+      // was registered at boot but later switched off via PUT /api/config
+      // should stop being routable on the very next request. Empty / unset
+      // enabled-list is back-compat "allow all".
+      return isAgentEnabled(agent.name) ? agent : undefined
+    }
 
     // Try alias
     const realName = this.agentAliases.get(nameOrAlias)
     if (realName) {
-      return this.agents.get(realName)
+      const resolved = this.agents.get(realName)
+      if (resolved && !isAgentEnabled(resolved.name)) return undefined
+      return resolved
     }
 
     return undefined
@@ -80,6 +89,18 @@ class PluginRegistry {
   }
 
   listAgents(): string[] {
+    // v1.2.103 — same enabled-list filter as findAgent. Callers include
+    // the intent classifier, ACP advertisement, /agents handler, and the
+    // helper-agent selector — all should reflect the operator's current
+    // enable/disable choices without a service restart.
+    return Array.from(this.agents.keys()).filter((n) => isAgentEnabled(n))
+  }
+
+  /** Visible-for-test escape hatch: list every registered agent regardless
+   *  of the enabled-list filter. Used by the SPA's "agent status" probe
+   *  that needs to render rows for ALL installed agents (the SPA itself
+   *  decides which are enabled visually). */
+  listAllAgents(): string[] {
     return Array.from(this.agents.keys())
   }
 

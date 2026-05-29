@@ -7,11 +7,62 @@
 // Format: simple `KEY=value` per line. No interpolation, no quoting required.
 // Lines starting with # are preserved as comments. Empty lines preserved.
 
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync, existsSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, sep } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
 
 export const ENV_FILE = join(AGIM_HOME, 'env')
+
+/**
+ * Defense-in-depth against the v1.0.14 class of incident: a `bun test` run
+ * on a box that doubles as the agim host silently clobbering the operator's
+ * real ~/.agim/env — observed as `IMHUB_ADMIN_USERS=telegram:123` (the
+ * admin-bootstrap test fixture) overwriting the real admin list and locking
+ * the operator out of every admin command.
+ *
+ * The test preload (test/setup.ts, wired via bunfig.toml) sandboxes
+ * AGIM_HOME to a tmpdir so these writes land harmlessly. But that preload is
+ * a single point of failure: if it doesn't run (a stray `bun test <file>`
+ * from the wrong cwd, a `--preload` override, a future/other runner), the
+ * sandbox evaporates and writes hit the live file again.
+ *
+ * bun / vitest / jest all set NODE_ENV=test intrinsically (verified: bun
+ * 1.3 sets it even without the preload). So we gate on that signal —
+ * independent of the preload — and refuse any env-file mutation whose target
+ * is outside the OS tmpdir while under test. A botched test run now throws
+ * loudly instead of silently wiping the operator's config. Production never
+ * sets NODE_ENV=test, so this is a no-op there.
+ *
+ * Exported for the regression test in test/unit/env-file-guard.test.ts.
+ */
+export function assertEnvWriteAllowed(target: string = ENV_FILE): void {
+  const underTest =
+    process.env.NODE_ENV === 'test' ||
+    !!process.env.VITEST ||
+    !!process.env.JEST_WORKER_ID
+  if (!underTest) return
+
+  // Resolve through symlinks so /tmp vs /private/tmp (macOS) and similar
+  // don't produce false negatives. The file itself may not exist yet, so
+  // resolve its parent dir; fall back to the raw path if resolution fails
+  // (a missing dir resolves to itself → correctly fails the tmpdir check).
+  let base: string
+  try { base = realpathSync(tmpdir()) } catch { base = tmpdir() }
+  let dir = dirname(target)
+  try { dir = realpathSync(dir) } catch { /* keep raw — non-existent dir */ }
+
+  if (dir === base || dir.startsWith(base + sep)) return
+
+  throw new Error(
+    `refusing to write env file at ${target} while NODE_ENV=test: the path ` +
+    `is outside the OS tmpdir (${base}), which means the test sandbox ` +
+    `(test/setup.ts preload) is NOT active. This guard stops a stray test ` +
+    `run from clobbering the operator's real ~/.agim/env — the v1.0.14 ` +
+    `admin-lockout incident. Run tests via 'bun test' from the repo root, ` +
+    `or pin AGIM_HOME to a tmpdir before writing.`,
+  )
+}
 
 /** Read existing env as a plain Record. Unknown lines (blank / comment)
  *  are dropped from the returned map but PRESERVED on write via merge. */
@@ -126,6 +177,7 @@ export function hasProcessEnvOverride(key: string): boolean {
  *  any keys whose value in `updates` is explicitly null/undefined. Writes
  *  the file with chmod 600. */
 export function updateEnvFile(updates: Record<string, string | null | undefined>): void {
+  assertEnvWriteAllowed()
   const current = readEnvFile()
   for (const [k, v] of Object.entries(updates)) {
     if (v === null || v === undefined) delete current[k]
@@ -140,6 +192,7 @@ export function updateEnvFile(updates: Record<string, string | null | undefined>
 /** Wipe a single key. No-op if missing. */
 export function unsetEnvKey(key: string): void {
   if (!existsSync(ENV_FILE)) return
+  assertEnvWriteAllowed()
   const current = readEnvFile()
   if (!(key in current)) return
   delete current[key]
@@ -150,5 +203,6 @@ export function unsetEnvKey(key: string): void {
 
 /** Remove the env file entirely. Used by `uninstall`. */
 export function removeEnvFile(): void {
+  assertEnvWriteAllowed()
   try { unlinkSync(ENV_FILE) } catch { /* already gone */ }
 }

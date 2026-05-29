@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.106] - 2026-05-28
+
+### Fixed
+
+- **Admin list silently reset to the test fixture `telegram:123` after a
+  deploy — the v1.0.14 lockout class of bug, recurring.** On a box that
+  doubles as the agim host, a `bun test` run that doesn't pick up the
+  `bunfig.toml` preload (stray `bun test <file>`, wrong cwd, a different
+  runner) leaves `AGIM_HOME` pointed at the real `~/.agim`, so
+  `admin-bootstrap.test.ts`'s `promoteAdmin('telegram','123')` →
+  `updateEnvFile()` overwrites the operator's real `IMHUB_ADMIN_USERS`,
+  locking them out of every admin command. The preload sandbox was the
+  only guard and is a single point of failure. Fix: a second,
+  preload-independent guard — `assertEnvWriteAllowed()` in
+  `cli-ui/env-file.ts` refuses `updateEnvFile` / `unsetEnvKey` /
+  `removeEnvFile` whenever `NODE_ENV=test` (set intrinsically by
+  bun/vitest/jest) and the target path is outside the OS tmpdir. A
+  botched test run now throws loudly instead of silently clobbering the
+  live config; production (no `NODE_ENV=test`) is unaffected. 3 new
+  regression tests.
+
 ## [1.2.105] - 2026-05-28
 
 ### Fixed

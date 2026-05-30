@@ -191,8 +191,8 @@ export function updateEnvFile(updates: Record<string, string | null | undefined>
 
 /** Wipe a single key. No-op if missing. */
 export function unsetEnvKey(key: string): void {
-  if (!existsSync(ENV_FILE)) return
   assertEnvWriteAllowed()
+  if (!existsSync(ENV_FILE)) return
   const current = readEnvFile()
   if (!(key in current)) return
   delete current[key]

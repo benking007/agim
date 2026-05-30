@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { assertEnvWriteAllowed } from '../../src/cli-ui/env-file.js'
 
 describe('assertEnvWriteAllowed — env-file sandbox guard', () => {
@@ -21,7 +21,11 @@ describe('assertEnvWriteAllowed — env-file sandbox guard', () => {
 
   it('allows writing inside the OS tmpdir while under test', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agim-guard-ok-'))
-    expect(() => assertEnvWriteAllowed(join(dir, 'env'))).not.toThrow()
+    try {
+      expect(() => assertEnvWriteAllowed(join(dir, 'env'))).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('REFUSES writing to the operator real ~/.agim/env while under test', () => {

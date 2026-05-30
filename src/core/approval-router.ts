@@ -584,14 +584,24 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
 
   if (!info) {
     await cb.ack('请求已过期或已被处理')
-    // Race: if onBusResolution already handled this (auto-allow grace
-    // expired, ran cleanup, edited the card to its terminal state — e.g.
-    // 'allowed' or 'expired'), activeCards has already been pruned for
-    // this reqId. Re-editing now would overwrite the correct terminal
-    // state with 'expired' (e.g. an "allowed" card flips to "expired"
-    // because the user clicked ✅ a few hundred ms after grace fired).
-    // Skip the edit in that case — the card already shows the truth.
-    if (activeCards.has(parsed.reqId) && installed) {
+    // v1.2.113 — ALWAYS fire editApprovalCard for the click's own card,
+    // not just when activeCards has the reqId. Two real-world paths hit
+    // this branch with activeCards empty:
+    //   (a) bus auto-resolved (timeout / grace expired) → onBusResolution
+    //       ran editApprovalCard AND cleared activeCards. If the WS was
+    //       disconnected at that moment the edit was silently dropped
+    //       (`if (!ws.OPEN) return`, no retry) — user's card stays in
+    //       its pending state until they click, and previously a click
+    //       in this state did NOTHING because the `activeCards.has`
+    //       gate was false. The fix: fire `editApprovalCard` here so
+    //       the user gets visible feedback ('已过期').
+    //   (b) agim restarted while a browser tab had an open approval
+    //       card. The new process's pendingById is empty, activeCards
+    //       is empty — same dead-end as (a).
+    // Trade-off: in the rare race where auto-allow grace fired ms ago
+    // and the user clicks "approve" right after, we'll briefly flip
+    // an "allowed" card to "expired". Visible flip ≪ stuck forever.
+    if (installed) {
       const m = installed.resolveMessenger(platform)
       if (m?.editApprovalCard) {
         await m.editApprovalCard(cb.threadId, cb.messageId, {
@@ -601,8 +611,8 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
           log.warn({ event: 'approval.router.expire_edit_failed', err: String(err) })
         })
       }
-      activeCards.delete(parsed.reqId)
     }
+    activeCards.delete(parsed.reqId)
     return
   }
 

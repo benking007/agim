@@ -24,7 +24,7 @@ import {
   tryHandleApprovalReply,
   bindButtonHandlerForPlatform,
 } from './approval-router.js'
-import type { MessengerAdapter, ButtonCallback } from './types.js'
+import type { MessengerAdapter, ButtonCallback, ApprovalCardOutcome } from './types.js'
 
 const RUN_CTX: RunContext = { threadId: 'thread-A', platform: 'feishu', userId: 'u1', channelId: 'c1' }
 /** Composite key matching RUN_CTX. After P0 #4 the bus stores by composite
@@ -470,5 +470,118 @@ describe('bindButtonHandlerForPlatform — late-registered messenger', () => {
     ])
     install({ resolveMessenger: (p) => messengers.get(p) })
     expect(() => bindButtonHandlerForPlatform('no-buttons')).not.toThrow()
+  })
+})
+
+// v1.2.113 — Regression: clicking a card whose pending is gone (bus
+// auto-resolved + WS dropped the edit, OR agim restarted) used to do
+// NOTHING — the !info branch had an `activeCards.has(reqId)` guard
+// that was false in both cases. User's card stayed at "已发送，等待
+// 结果..." forever; a second click also did nothing. The fix: always
+// fire editApprovalCard in the !info branch using cb.threadId +
+// cb.messageId from the live click event (both trustworthy — the
+// platform passed them).
+describe('handleButtonCallback — orphan click (v1.2.113 regression)', () => {
+  beforeEach(async () => {
+    await approvalBus.start(uniqueSocketPath())
+  })
+  afterEach(async () => {
+    uninstall()
+    await approvalBus.stop()
+  })
+
+  it('fires editApprovalCard with decision=expired when reqId is not in bus or activeCards', async () => {
+    let buttonHandler: ((cb: ButtonCallback) => Promise<void>) | undefined
+    const edits: Array<{ threadId: string; messageId: string; outcome: ApprovalCardOutcome }> = []
+    let acked: string | undefined
+    const fakeWeb: MessengerAdapter = {
+      name: 'web',
+      start: async () => {},
+      stop: async () => {},
+      onMessage: () => {},
+      sendMessage: async () => {},
+      onButtonCallback: (h) => { buttonHandler = h },
+      editApprovalCard: async (threadId, messageId, outcome) => {
+        edits.push({ threadId, messageId, outcome })
+      },
+    }
+    install({ resolveMessenger: (p) => p === 'web' ? fakeWeb : undefined })
+    expect(buttonHandler).toBeDefined()
+
+    // No registerRun, no sidecar approval. The bus has nothing for
+    // this reqId — resolvePendingByReqId returns null → !info branch.
+    await buttonHandler!({
+      data: 'apv:orphan-req-xyz:y',
+      threadId: 'thread-X',
+      userId: 'u1',
+      userDisplay: 'tester',
+      messageId: 'msg-42',
+      ack: async (t) => { acked = t },
+    })
+
+    expect(acked).toContain('过期')
+    expect(edits.length).toBe(1)
+    expect(edits[0].threadId).toBe('thread-X')
+    expect(edits[0].messageId).toBe('msg-42')
+    expect(edits[0].outcome.decision).toBe('expired')
+  })
+
+  it('the same orphan click before v1.2.113 produced 0 edits — confirm the new path always fires when installed', async () => {
+    // Distinct from the test above: here the card lives in activeCards
+    // (i.e. notifier did register it). The bus then auto-resolved and
+    // ALSO cleared activeCards via onBusResolution. A subsequent click
+    // still has to surface the expired state — this checks the path
+    // doesn't regress to gating on activeCards.has.
+    let buttonHandler: ((cb: ButtonCallback) => Promise<void>) | undefined
+    const edits: Array<{ messageId: string; decision: ApprovalCardOutcome['decision'] }> = []
+    const fakeWeb: MessengerAdapter = {
+      name: 'web',
+      start: async () => {},
+      stop: async () => {},
+      onMessage: () => {},
+      sendMessage: async () => {},
+      onButtonCallback: (h) => { buttonHandler = h },
+      editApprovalCard: async (_t, messageId, outcome) => {
+        edits.push({ messageId, decision: outcome.decision })
+      },
+    }
+    install({ resolveMessenger: (p) => p === 'web' ? fakeWeb : undefined })
+
+    // Click twice — neither activeCards nor pendingById knows the reqId
+    await buttonHandler!({
+      data: 'apv:dead-req-1:y',
+      threadId: 't', userId: 'u', messageId: 'm-1',
+      ack: async () => {},
+    })
+    await buttonHandler!({
+      data: 'apv:dead-req-1:n',
+      threadId: 't', userId: 'u', messageId: 'm-1',
+      ack: async () => {},
+    })
+    // Both clicks should produce edits — second click is the user's
+    // "I'm tired of waiting" tap and needs to acknowledge too.
+    expect(edits.length).toBe(2)
+    expect(edits[0].decision).toBe('expired')
+    expect(edits[1].decision).toBe('expired')
+  })
+
+  it('no-op (no throw) when messenger lacks editApprovalCard', async () => {
+    let buttonHandler: ((cb: ButtonCallback) => Promise<void>) | undefined
+    const fakeWeb: MessengerAdapter = {
+      name: 'web',
+      start: async () => {},
+      stop: async () => {},
+      onMessage: () => {},
+      sendMessage: async () => {},
+      onButtonCallback: (h) => { buttonHandler = h },
+      // editApprovalCard intentionally omitted
+    }
+    install({ resolveMessenger: (p) => p === 'web' ? fakeWeb : undefined })
+
+    await expect(buttonHandler!({
+      data: 'apv:no-edit-cap:y',
+      threadId: 't', userId: 'u', messageId: 'm',
+      ack: async () => {},
+    })).resolves.toBeUndefined()
   })
 })

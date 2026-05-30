@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.113] - 2026-05-30
+
+### Fixed (web approval — orphan-click stuck card)
+
+- **Web 后台审批卡片"已发送，等待结果..."卡死。** 复现：用户点击"自动放行"
+  或"批准"按钮，UI 不更新，停在 pending 状态——但底层放行实际已经走了。根因在
+  `approval-router.handleButtonCallback` 的 `!info`（已过期）分支：原代码用
+  `activeCards.has(reqId)` 网关包住 `editApprovalCard`，两个真实路径会被它吞掉：
+  - (a) bus 自动 resolve（超时 / grace 到期）→ `onBusResolution` 已经触发了
+    一次 editApprovalCard 并清空 activeCards，但如果那一刻 WS 断了，前端
+    `approval-card-edit` 事件被悄悄丢弃（server 端 `if (!ws.OPEN) return` 无重
+    投）。卡片就僵在 pending；用户后续重连再点也无效——因为 activeCards 早空了。
+  - (b) agim 进程重启：新进程 pendingById / activeCards 都是空集，浏览器旧 tab
+    上的卡片同样无路救活。
+- 修法：`!info` 分支**总是**触发 editApprovalCard（用 cb.threadId + cb.messageId
+  ——这两个值是 platform 当下传过来的，可信）。Trade-off：极少数 race 下
+  （auto-allow grace 刚 fire 几 ms 后用户点"批准"），会把 "allowed" 卡片闪一下
+  改成 "expired"——但"可见的闪动" ≪ "永远卡住"，可接受。
+- 回归测试 `src/core/approval-router.test.ts` 新增 3 个 case：orphan click 触发
+  editApprovalCard / 连点两次都触发 / messenger 无 editApprovalCard 时安全 no-op。
+
 ## [1.2.112] - 2026-05-29
 
 ### Added (native agent stability, batch P0c — gap ③ closed; full 7/7 done)

@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.111] - 2026-05-29
+
+### Added (native agent observability, batch P2 — gap ⑦ closed)
+
+- **每个工具调用单独落 audit 行 + traceId 跨 A2A 贯通。** 之前 agent-loop 只在
+  iteration 层落一行 (`intent='native.agent.iter'`)，单工具调用只在内存里；事后
+  无法在 audit 表按 traceId 拼出"一个 turn 里跑了哪些工具/sub-agent / 在哪一步
+  失败"。同时 imhub-dispatcher 调 A2A 时自造 `native-a2a-${Date.now()}`，把 turn
+  的 traceId 链断了。本版：
+  - agent-loop 在 slot 提交时调用新的 `writeToolCallAudit(audit, report)`，每个
+    tool call 一行 `intent='tool.<name>'`，traceId = 父 traceId，agent = 父
+    agent，error = `errorType`（schema-validation / dispatcher 失败的稳定指纹），
+    `success = !isError`。deny / schema-validation 失败 / 真正派发都会落行。
+  - `ToolDispatcher` 类型新增可选第三参 `ctx?: ToolDispatcherContext { traceId? }`。
+    agent-loop 调 dispatch 时把 `input.audit?.traceId` 透传；`combineDispatchers`
+    转发；imhub-dispatcher A2A 路径读 ctx.traceId 构造 `${parent}/a2a-${call.id}`
+    作为子 trace（无父则回退老格式，向后兼容）。其他 dispatcher 因为参数可选
+    完全不感知，0 改动。
+  - `queryInvocations` 新增 `traceId` / `tracePrefix` 过滤参数，按 trace 反查
+    一个 turn 的全部 audit 行（含 A2A 子 trace）。
+
+### Tests
+
+4 个集成测试通过 event-bus 验证（better-sqlite3 在 bun 测试运行时不可用，转用
+内存 event 流）：每个工具一条 audit 事件、错误标 success=false、ctx.traceId 正确
+透传给 dispatcher、缺 audit 不崩。整套 P0+P1+P2 测试 73/73 全绿；typecheck 干净。
+
 ## [1.2.110] - 2026-05-29
 
 ### Added (native agent stability, batch P1 — gap ④ closed)

@@ -35,14 +35,29 @@ export interface DispatcherResult {
   source?: string
 }
 
+/** v1.2.111 — per-call context the agent loop hands to the dispatcher.
+ *  Lets dispatchers that fan out further (notably imhub-dispatcher's
+ *  call_agent / A2A path) chain the parent trace id instead of minting
+ *  a fresh root, so an entire turn's tool chain is traceable end-to-end
+ *  via a single trace id prefix. Optional — dispatchers that don't fan
+ *  out can ignore. */
+export interface ToolDispatcherContext {
+  /** Trace id from the calling agent loop's `input.audit?.traceId`.
+   *  Undefined when the caller didn't supply one (e.g. test fixtures). */
+  traceId?: string
+}
+
 /**
  * Async function the agent loop invokes once per tool call. Signal is
  * the loop's overall AbortSignal — dispatchers should honor it to
- * abort in-flight tool work on /stop or timeout.
+ * abort in-flight tool work on /stop or timeout. `ctx` was added in
+ * v1.2.111 and is optional for backward compatibility; pre-v1.2.111
+ * dispatchers ignore the third argument and continue to work.
  */
 export type ToolDispatcher = (
   call: ToolCallRequest,
   signal: AbortSignal,
+  ctx?: ToolDispatcherContext,
 ) => Promise<DispatcherResult>
 
 /**
@@ -81,10 +96,10 @@ export function buildMcpDispatcher(): ToolDispatcher {
  * domain-level tool errors) is considered handled.
  */
 export function combineDispatchers(...dispatchers: ToolDispatcher[]): ToolDispatcher {
-  return async (call, signal) => {
+  return async (call, signal, ctx) => {
     let lastUnknown: DispatcherResult | null = null
     for (const d of dispatchers) {
-      const r = await d(call, signal)
+      const r = await d(call, signal, ctx)
       if (r.source === 'unknown') {
         lastUnknown = r
         continue

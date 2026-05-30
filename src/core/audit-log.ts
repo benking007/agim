@@ -171,6 +171,11 @@ export interface QueryOpts {
   userId?: string
   intent?: string
   days?: number
+  /** v1.2.111 — filter to one trace's rows. Supports exact match by
+   *  default; pass `tracePrefix` instead for child-trace inclusion
+   *  (e.g. parent + every `parent/a2a-*` descendant from A2A fan-outs). */
+  traceId?: string
+  tracePrefix?: string
 }
 
 export interface InvocationRow {
@@ -199,6 +204,8 @@ export function queryInvocations(opts: QueryOpts = {}): InvocationRow[] {
   if (opts.platform) { conditions.push('platform = ?'); params.push(opts.platform) }
   if (opts.userId) { conditions.push('user_id = ?'); params.push(opts.userId) }
   if (opts.intent) { conditions.push('intent = ?'); params.push(opts.intent) }
+  if (opts.traceId) { conditions.push('trace_id = ?'); params.push(opts.traceId) }
+  if (opts.tracePrefix) { conditions.push('trace_id LIKE ?'); params.push(opts.tracePrefix + '%') }
   if (opts.days && Number.isFinite(opts.days) && opts.days > 0) {
     conditions.push("ts >= datetime('now', ?)")
     params.push(`-${Math.floor(opts.days)} days`)

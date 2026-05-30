@@ -523,12 +523,16 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // (parallel batch path). Captures idx by closure so the writer
       // hits the correct slot regardless of completion order.
       const dispatchCall = dispatch
+      // v1.2.111 — thread the parent trace id to dispatchers (notably
+      // imhub-dispatcher's A2A path) so the whole turn shares one
+      // trace prefix instead of each fan-out minting a fresh root.
+      const dispatchCtx = { traceId: input.audit?.traceId }
       const runDispatch = async (): Promise<void> => {
         try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
         const t0 = Date.now()
         let dispatched: DispatcherResult
         try {
-          dispatched = await dispatchCall(call, signal.signal)
+          dispatched = await dispatchCall(call, signal.signal, dispatchCtx)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           dispatched = { text: `tool threw: ${msg}`, isError: true, source: 'error' }
@@ -576,11 +580,17 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     // Commit slots in original call order so tool_call_id ↔ tool_result
     // alignment is preserved regardless of dispatch completion order.
     // Slots may be null if the loop aborted mid-iteration — skip those.
+    // v1.2.111 — write one audit row per tool call (including denies +
+    // schema-validation failures + dispatcher errors) so post-hoc trace
+    // analysis can reconstruct the full chain inside a turn.
     for (let idx = 0; idx < result.toolCalls.length; idx++) {
       const h = historySlots[idx]
       const r = reportSlots[idx]
       if (h) history.push(h)
-      if (r) toolCalls.push(r)
+      if (r) {
+        toolCalls.push(r)
+        writeToolCallAudit(input.audit, r)
+      }
     }
 
     // v1.2.108 — stuck-loop detector (now post-batch). Keyed on
@@ -770,6 +780,37 @@ function writeIterAudit(
       cost: typeof cost === 'number' ? cost : 0,
       success,
       error,
+    })
+  } catch { /* audit best-effort */ }
+}
+
+/** v1.2.111 — one row per tool call (deny / schema-validation /
+ *  dispatched) so post-hoc trace analysis can reconstruct the full
+ *  chain inside a turn. Intent is `tool.<name>` so queries can group
+ *  per tool; agent is the original `audit.agent` so a tool call still
+ *  shows under the parent agent in cost / topN aggregates. promptLen
+ *  carries argsKey length (a rough "how much did the model send")
+ *  bound, responseLen carries result preview length. error carries the
+ *  validator/dispatcher's errorType so a failure mode aggregates
+ *  cleanly in the audit dashboard. */
+function writeToolCallAudit(
+  audit: AgentLoopInput['audit'] | undefined,
+  report: ToolCallReport,
+): void {
+  if (!audit) return
+  try {
+    logInvocation({
+      traceId: audit.traceId ?? `agent-loop-${Date.now()}`,
+      userId: audit.userId ?? '',
+      platform: audit.platform ?? 'native-agent',
+      agent: audit.agent,
+      intent: `tool.${report.name}`,
+      promptLen: report.argsKey?.length ?? 0,
+      responseLen: report.preview?.length ?? 0,
+      durationMs: report.durationMs,
+      cost: 0, // tools themselves don't bill; LLM cost is on the iter row
+      success: !report.isError,
+      error: report.errorType || undefined,
     })
   } catch { /* audit best-effort */ }
 }

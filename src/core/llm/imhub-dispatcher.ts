@@ -364,7 +364,7 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
   })()
   let callAgentCount = 0
 
-  return async (call, signal): Promise<DispatcherResult> => {
+  return async (call, signal, toolCtx): Promise<DispatcherResult> => {
     if (!call.name.startsWith('mcp__imhub__')) return unknown(call.name)
     const op = call.name.slice('mcp__imhub__'.length)
     const args = (call.arguments && typeof call.arguments === 'object' ? call.arguments : {}) as Record<string, unknown>
@@ -456,13 +456,22 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           // can audit / route. Lifted to a partial cast because most of
           // RouteContext's optional fields (intent, agentSessionId, …)
           // are only used by full-router dispatch — not A2A.
+          // v1.2.111 — chain the parent trace id from the agent loop
+          // rather than minting a fresh root, so a full turn (every
+          // tool call + every A2A fan-out) is traceable end-to-end via
+          // a single prefix in the audit log. Falls back to the legacy
+          // mint when the caller didn't supply one (e.g. tests).
+          const parentTrace = toolCtx?.traceId
+          const a2aTrace = parentTrace
+            ? `${parentTrace}/a2a-${call.id}`
+            : `native-a2a-${Date.now()}`
           const routeCtx: RouteContext = {
             channelId: ctx.channelId,
             threadId: ctx.threadId,
             platform: ctx.platform,
             userId: ctx.userId,
             defaultAgent: ctx.callerAgent,
-            traceId: `native-a2a-${Date.now()}`,
+            traceId: a2aTrace,
             logger: (ctx.logger ?? rootLogger).child({ component: 'a2a-from-native', threadId: ctx.threadId }),
           }
           const result = await callAgentByName(agentName, prompt, routeCtx, {

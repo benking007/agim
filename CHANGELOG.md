@@ -4,6 +4,57 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.114] - 2026-05-30
+
+### Fixed (web approval — serial-queue deadlock — REAL root cause)
+
+- **真凶定位**：v1.2.113 修的是"卡片过期再点"路径，但用户反馈仍卡。日志诊断
+  发现真正的死锁是 **`web/server.ts:1218` 的 `enqueueInbound = createSerialQueue()`
+  把所有入站 WS 消息串行化**：
+  - 用户在 web 后台发了一条聊天 → 触发 native agent 跑 30 min（DeepSeek 长链
+    + 多次 tool call）
+  - 期间 native agent 调 `native_exec` → bus 创建 approval card 推给前端
+  - 前端用户点"批准" → WS 发 `approval-action` 到服务端
+  - 服务端的 `ws.on('message')` 把这条 click 排进 **同一个** `enqueueInbound`
+    队列，可前面那条 chat 还在跑 `handleClientMessage`（未 await 完）
+  - **死锁**：agent 等批准 → 批准排队等 chat 跑完 → chat 跑到 30 min 硬超时被杀
+    → 队列才解锁 → click 终于送到 → 但 agent 已死
+  - 日志证据（17:22:54.652 同一毫秒批量进入）：
+    ```
+    exec.refused.internal_url (SSRF guard 触发 abort)
+    native.turn.done finishReason=aborted elapsedMs=1821836 (30.36 min)
+    agent.invoke.end durationMs=1821864
+    approval.web.click_received apv:f75085f7...:a
+    approval.web.click_resolved
+    approval.web.click_received apv:be5f9787...:y
+    approval.web.click_resolved
+    ```
+  - 用户视觉看到的："已发送，等待结果…"卡死 15 分钟，因为前端 `pendingChoice`
+    被 set 后 `approval-card-edit` 永远不来。
+
+- **修法（v1.2.114）**：`web/server.ts:1220` 的 `ws.on('message')` 先**就地 parse**
+  一次 msg.type：
+  - `type === 'approval-action'` → 直接调用新提取的 `handleApprovalAction(msg)`，
+    **完全绕开 `enqueueInbound`**。click 是 agent 的 **unblocking input**，跟
+    chat input 没有 FIFO 顺序需求。
+  - 其它（`message` / `switch-agent` / `get-history` 等）→ 仍走 `enqueueInbound`，
+    保持每客户端的 chat FIFO。
+
+- **附带改动**：
+  - `core/approval-router.ts` 的 v1.2.113 `!info` 分支补一行
+    `approval.router.orphan_click_expired` info 日志，下次类似 bug 一秒可见。
+  - `test/unit/web-serial-queue.test.ts` 加 2 个新 case：
+    `approval-action runs while a slow chat handler is still in the queue` +
+    `chat-type messages still serialise vs each other`。再加上原有 1 个，
+    共 3/3 全绿。
+
+### Affected paths
+
+- `src/web/server.ts:1218-1310`：抽出 `handleApprovalAction` 函数 + 改写
+  `ws.on('message')` 调度
+- `src/core/approval-router.ts:604-617`：新增 orphan_click_expired 日志
+- `test/unit/web-serial-queue.test.ts`：3 个 case 全过
+
 ## [1.2.113] - 2026-05-30
 
 ### Fixed (web approval — orphan-click stuck card)

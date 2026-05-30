@@ -604,6 +604,10 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
     if (installed) {
       const m = installed.resolveMessenger(platform)
       if (m?.editApprovalCard) {
+        log.info({
+          event: 'approval.router.orphan_click_expired',
+          platform, reqId: parsed.reqId, messageId: cb.messageId,
+        }, 'orphan click — bus had no pending; firing edit→expired so UI unsticks')
         await m.editApprovalCard(cb.threadId, cb.messageId, {
           decision: 'expired',
           atDate: new Date(),

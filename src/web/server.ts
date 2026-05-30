@@ -1217,67 +1217,96 @@ export async function startWebServer(options: {
 
     const enqueueInbound = createSerialQueue()
 
+    // v1.2.114 — approval-action clicks MUST bypass the serial queue.
+    //
+    // Pre-fix: every inbound WS frame went through `enqueueInbound`, which
+    // serialised everything against `handleClientMessage`. A chat message
+    // kicked off an agent run that could run for the full 30-min hard
+    // timeout; any approval-card click during that window was QUEUED
+    // behind the still-running chat handler. Result: deadlock — agent
+    // waits for approval, approval waits for agent. The clicks finally
+    // drained the queue at minute 30 when the agent aborted, but by then
+    // the run was dead and the user's card UI had been stuck at
+    // "已发送，等待结果…" the whole time.
+    //
+    // Fix: parse the frame inline first; if it's an `approval-action`,
+    // dispatch directly to the click handler (no queue). Approval clicks
+    // are the agent's UNBLOCKING input — they have no ordering dependency
+    // on chat input. All other types (chat, switch-agent, get-history,
+    // …) still go through enqueueInbound to preserve their per-client
+    // FIFO ordering.
+    async function handleApprovalAction(msg: { data?: unknown; messageId?: unknown }): Promise<void> {
+      const actionData: string = String(msg.data || '')
+      const messageId: string = String(msg.messageId || '')
+      // Use `client.id` (mutable; updated on session rekey) — not the
+      // original `clientId` const — so the threadId we hand to the bus
+      // matches the threadId the bus stamped on the pending approval
+      // request. Without this, a session that was rekeyed via
+      // `get-history` reports the stale id and the bus can't find the
+      // open req to resolve.
+      const liveId = client.id
+      webLog.info({
+        event: 'approval.web.click_received',
+        clientId: liveId, data: actionData, messageId,
+        handlerBound: !!webButtonHandler,
+      })
+      if (!actionData || !messageId) {
+        sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
+        return
+      }
+      if (!webButtonHandler) {
+        const why = 'approval handler not bound (router not installed?). Restart agim to rebind.'
+        webLog.warn({ event: 'approval.web.no_handler', clientId: liveId, data: actionData, messageId }, why)
+        sendToClient(ws, { type: 'error', message: why })
+        return
+      }
+      try {
+        // Web client doesn't have a platform-native toast, so ack is a
+        // no-op resolving to the in-page status the page itself chose
+        // to render after click.
+        await webButtonHandler({
+          data: actionData, threadId: liveId, userId: `web:${liveId}`,
+          userDisplay: 'Web', messageId, ack: async () => {},
+        })
+        webLog.info({ event: 'approval.web.click_resolved', clientId: liveId, data: actionData })
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        webLog.error({ event: 'approval.web.click_failed', clientId: liveId, data: actionData, err: errMsg })
+        sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
+      }
+    }
+
     ws.on('message', (data: Buffer) => {
+      // Parse once, here, so we can route approval-action around the
+      // serial queue. Bad JSON falls through to the error branch below
+      // (we still need to surface a parse error to the client).
+      let msg: unknown
+      try {
+        msg = JSON.parse(data.toString())
+      } catch (err) {
+        webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
+        sendToClient(ws, { type: 'error', message: 'Invalid message format' })
+        return
+      }
+      if (msg && typeof msg === 'object' && (msg as { type?: unknown }).type === 'approval-action') {
+        // Fast path — bypass enqueueInbound. Errors are surfaced to the
+        // client inside handleApprovalAction.
+        void handleApprovalAction(msg as { data?: unknown; messageId?: unknown })
+        return
+      }
       enqueueInbound(async () => {
         try {
-          const msg = JSON.parse(data.toString())
-          // Approval-button click intercept. The user tapped an in-page
-          // approval card button; route it through the web messenger's
-          // button handler (registered by approval-router on install) the
-          // same way a Telegram inline-keyboard tap is routed. We don't
-          // call handleClientMessage for these — they're not chat input.
-          if (msg && msg.type === 'approval-action') {
-            const actionData: string = String(msg.data || '')
-            const messageId: string = String(msg.messageId || '')
-            // Use `client.id` (mutable; updated on session rekey) — not
-            // the original `clientId` const — so the threadId we hand
-            // to the bus matches the threadId the bus stamped on the
-            // pending approval request. Without this, a session that
-            // was rekeyed via `get-history` reports the stale id and
-            // the bus can't find the open req to resolve.
-            const liveId = client.id
-            webLog.info({
-              event: 'approval.web.click_received',
-              clientId: liveId, data: actionData, messageId,
-              handlerBound: !!webButtonHandler,
-            })
-            if (!actionData || !messageId) {
-              sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
-              return
-            }
-            if (!webButtonHandler) {
-              // Without the handler, a click would silently no-op forever — the
-              // failure mode that PR-A's fix patches. Tell the user and the
-              // operator (via log) instead of dropping the click.
-              const why = 'approval handler not bound (router not installed?). Restart agim to rebind.'
-              webLog.warn({ event: 'approval.web.no_handler', clientId: liveId, data: actionData, messageId }, why)
-              sendToClient(ws, { type: 'error', message: why })
-              return
-            }
-            try {
-              // Most messengers' ButtonCallback#ack updates a platform-native
-              // toast / loading spinner. The web client doesn't have one, so
-              // ack is a no-op resolving to the in-page status the page itself
-              // chose to render after click.
-              await webButtonHandler({
-                data: actionData, threadId: liveId, userId: `web:${liveId}`,
-                userDisplay: 'Web', messageId, ack: async () => {},
-              })
-              webLog.info({ event: 'approval.web.click_resolved', clientId: liveId, data: actionData })
-            } catch (err) {
-              const errMsg = err instanceof Error ? err.message : String(err)
-              webLog.error({ event: 'approval.web.click_failed', clientId: liveId, data: actionData, err: errMsg })
-              sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
-            }
-            return
-          }
           // Pass an onRekey callback so handleClientMessage can keep
           // the `clients` map in sync when a browser refresh resumes
           // with its persisted threadId. Otherwise the map stays keyed
           // by the WS-assigned id, and the web messenger's outbound
           // approval-card lookup misses the live client.
+          // handleClientMessage validates the message shape itself; we
+          // pass the parsed value through as the typed shape it expects
+          // (cast is safe because validation runs on the receiver side).
           await handleClientMessage(
-            client, msg, getDefaultAgent(options.defaultAgent),
+            client, msg as Parameters<typeof handleClientMessage>[1],
+            getDefaultAgent(options.defaultAgent),
             (oldId, newId) => {
               // Only reassign if we actually owned `oldId` — defensive
               // against the (impossible-but-cheap-to-guard) case of two
@@ -1297,7 +1326,7 @@ export async function startWebServer(options: {
             threadOwners,
           )
         } catch (err) {
-          webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error parsing client message')
+          webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error in client message handler')
           sendToClient(ws, { type: 'error', message: 'Invalid message format' })
         }
       })

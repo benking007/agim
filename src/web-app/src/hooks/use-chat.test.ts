@@ -151,41 +151,53 @@ describe('chatReducer', () => {
     expect(s1).toMatchObject({ agents: ['claude', 'codex'], agent: 'codex' })
   })
 
-  it('APPROVAL_CARD appends a system message with the structured prompt', () => {
+  // v1.2.115 — approvals moved out of the chat stream into a dock
+  // (`pendingApprovals` slice). Reducer tests follow the new shape.
+
+  it('APPROVAL_CARD pushes onto pendingApprovals; chat stream untouched', () => {
     const after = reduce(
       initialChatState,
       { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: mkPrompt({ inputJson: 'rm -rf /' }) },
     )
-    expect(after.messages).toHaveLength(1)
-    const m = after.messages[0]!
-    expect(m.role).toBe('system')
-    expect(m.approval).toMatchObject({
+    expect(after.messages).toEqual([])
+    expect(after.pendingApprovals).toHaveLength(1)
+    expect(after.pendingApprovals[0]).toMatchObject({
       messageId: 'msg-7',
       prompt: { reqId: 'req-1', toolName: 'Bash', inputJson: 'rm -rf /' },
     })
-    expect(m.approval?.outcome).toBeUndefined()
+    expect(after.pendingApprovals[0]?.outcome).toBeUndefined()
   })
 
-  it('APPROVAL_TEXT appends a text-only system approval (legacy path)', () => {
+  it('APPROVAL_CARD is deduped by messageId', () => {
+    const after = reduce(initialChatState,
+      { kind: 'APPROVAL_CARD', messageId: 'dup', prompt: mkPrompt() },
+      { kind: 'APPROVAL_CARD', messageId: 'dup', prompt: mkPrompt() },
+    )
+    expect(after.pendingApprovals).toHaveLength(1)
+  })
+
+  it('APPROVAL_TEXT is now a side-effect (toast) only; reducer is a no-op', () => {
+    // v1.2.115 — approval-text receipts no longer land in chat or dock;
+    // the hook's WS dispatcher surfaces them as a sonner toast. The
+    // reducer must NOT pollute state.
     const after = reduce(initialChatState,
       { kind: 'APPROVAL_TEXT', messageId: 'msg-8', text: 'something happened' },
     )
-    expect(after.messages[0]?.approval).toMatchObject({
-      messageId: 'msg-8',
-      text: 'something happened',
-    })
-    expect(after.messages[0]?.approval?.prompt).toBeUndefined()
+    expect(after.messages).toEqual([])
+    expect(after.pendingApprovals).toEqual([])
   })
 
-  it('APPROVAL_EDIT updates the outcome on the matching approval card', () => {
+  it('APPROVAL_EDIT updates the outcome on the matching dock entry', () => {
     const card = reduce(initialChatState,
       { kind: 'APPROVAL_CARD', messageId: 'msg-7', prompt: mkPrompt() },
       { kind: 'APPROVAL_EDIT', messageId: 'msg-7', outcome: { decision: 'allowed-pinned', byUserDisplay: '@alice' } },
     )
-    expect(card.messages[0]?.approval?.outcome).toMatchObject({
+    expect(card.pendingApprovals[0]?.outcome).toMatchObject({
       decision: 'allowed-pinned',
       byUserDisplay: '@alice',
     })
+    // resolvedAt timestamp is recorded for the timed-dismiss logic.
+    expect(typeof card.pendingApprovals[0]?.resolvedAt).toBe('number')
   })
 
   it('APPROVAL_EDIT for an unknown messageId is a no-op', () => {
@@ -194,6 +206,17 @@ describe('chatReducer', () => {
     )
     const after = reduce(before, { kind: 'APPROVAL_EDIT', messageId: 'never', outcome: { decision: 'denied' } })
     expect(after).toBe(before)
+  })
+
+  it('APPROVAL_DISMISS removes the matching dock entry', () => {
+    const seeded = reduce(initialChatState,
+      { kind: 'APPROVAL_CARD', messageId: 'a', prompt: mkPrompt() },
+      { kind: 'APPROVAL_CARD', messageId: 'b', prompt: mkPrompt() },
+    )
+    expect(seeded.pendingApprovals).toHaveLength(2)
+    const after = reduce(seeded, { kind: 'APPROVAL_DISMISS', messageId: 'a' })
+    expect(after.pendingApprovals).toHaveLength(1)
+    expect(after.pendingApprovals[0]?.messageId).toBe('b')
   })
 
   it('RESET_CONVERSATION clears messages + reply id + error; keeps agents + agent', () => {
@@ -205,6 +228,7 @@ describe('chatReducer', () => {
     )
     const after = reduce(seeded, { kind: 'RESET_CONVERSATION' })
     expect(after.messages).toEqual([])
+    expect(after.pendingApprovals).toEqual([])
     expect(after.currentReplyId).toBeNull()
     expect(after.error).toBeNull()
     // Preserved

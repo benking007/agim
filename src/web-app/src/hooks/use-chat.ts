@@ -16,8 +16,15 @@
  */
 
 import { useEffect, useReducer, useRef } from 'react'
+import { toast } from 'sonner'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming } from '@/types/ws'
+
+/** v1.2.115 — how long the resolved card lingers in the dock before
+ *  auto-dismiss. Long enough to read the ✅/❌ flip, short enough to
+ *  not feel sluggish; matches sonner's default toast duration so the
+ *  toast and the card fade out around the same time. */
+const APPROVAL_DISMISS_AFTER_MS = 1200
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
@@ -47,8 +54,31 @@ export interface ChatMessage {
   }
 }
 
+/**
+ * v1.2.115 — approval cards moved out of the chat message stream into a
+ * floating dock above the input. PendingApproval is the dock's row
+ * shape: messageId + prompt + optional outcome (set when the server's
+ * approval-card-edit lands; triggers a toast and a brief auto-dismiss).
+ */
+export interface PendingApproval {
+  messageId: string
+  prompt: ApprovalCardPrompt
+  /** Set when the bus resolves. Holding the outcome briefly (vs
+   *  immediate removal) gives the user a visible state flip
+   *  (✅/❌/⏱) before the row fades. */
+  outcome?: ApprovalCardOutcome
+  /** Bookkeeping for the timed dismiss. Optional — managed in the
+   *  reducer's APPROVAL_EDIT branch via setTimeout. */
+  resolvedAt?: number
+}
+
 export interface ChatState {
   messages: ChatMessage[]
+  /** Active approval cards rendered in the dock (NOT in `messages`).
+   *  v1.2.115 — previously approvals lived inline as system messages,
+   *  but resolved cards lingered in history clutter. Dock approach:
+   *  show only while pending → toast on resolve → dismiss. */
+  pendingApprovals: PendingApproval[]
   agents: string[]
   agent: string                  // currently selected
   status: WsStatus
@@ -60,6 +90,7 @@ export interface ChatState {
 
 const initialState: ChatState = {
   messages: [],
+  pendingApprovals: [],
   agents: [],
   agent: '',
   status: 'connecting',
@@ -80,6 +111,7 @@ type Action =
   | { kind: 'APPROVAL_CARD'; messageId: string; prompt: ApprovalCardPrompt }
   | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
   | { kind: 'APPROVAL_EDIT'; messageId: string; outcome: ApprovalCardOutcome }
+  | { kind: 'APPROVAL_DISMISS'; messageId: string }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
 
@@ -128,58 +160,67 @@ function reducer(s: ChatState, a: Action): ChatState {
     case 'ERROR':
       return { ...s, error: a.message, currentReplyId: null }
     case 'APPROVAL_CARD':
+      // v1.2.115 — dock-only. Don't pollute the chat stream; the dock
+      // renders these. Dedupe by messageId in case server replays.
+      if (s.pendingApprovals.some((p) => p.messageId === a.messageId)) return s
       return {
         ...s,
-        messages: [
-          ...s.messages,
-          {
-            id: `approval-${a.messageId}`,
-            role: 'system',
-            content: '',
-            timestamp: Date.now(),
-            approval: { messageId: a.messageId, prompt: a.prompt },
-          },
+        pendingApprovals: [
+          ...s.pendingApprovals,
+          { messageId: a.messageId, prompt: a.prompt },
         ],
       }
     case 'APPROVAL_TEXT':
+      // v1.2.115 — legacy text-fallback (no buttons, used by adapters
+      // without sendApprovalCard, or for receipt strings like "已批准
+      // 并启用自动放行"). The hook surfaces these via the toast layer
+      // (handled in the WS-message dispatcher below); the reducer
+      // intentionally doesn't store them. Receipts are transient
+      // notifications, not chat content.
+      return s
+    case 'APPROVAL_EDIT': {
+      // Mark resolved on the dock entry; the dock effect auto-dismisses
+      // after a short delay so the user sees the ✅/❌/⏱ transition.
+      const idx = s.pendingApprovals.findIndex((p) => p.messageId === a.messageId)
+      if (idx < 0) return s
+      const next = [...s.pendingApprovals]
+      const cur = next[idx]
+      if (cur) {
+        next[idx] = { ...cur, outcome: a.outcome, resolvedAt: Date.now() }
+      }
+      return { ...s, pendingApprovals: next }
+    }
+    case 'APPROVAL_DISMISS':
       return {
         ...s,
-        messages: [
-          ...s.messages,
-          {
-            id: `approval-${a.messageId}`,
-            role: 'system',
-            content: '',
-            timestamp: Date.now(),
-            approval: { messageId: a.messageId, text: a.text },
-          },
-        ],
+        pendingApprovals: s.pendingApprovals.filter((p) => p.messageId !== a.messageId),
       }
-    case 'APPROVAL_EDIT': {
-      const idx = s.messages.findIndex(
-        (m) => m.approval?.messageId === a.messageId,
-      )
-      if (idx < 0) return s
-      const next = [...s.messages]
-      const cur = next[idx]
-      if (cur?.approval) {
-        next[idx] = { ...cur, approval: { ...cur.approval, outcome: a.outcome } }
-      }
-      return { ...s, messages: next }
-    }
     case 'RESET_CONVERSATION':
       // Clear all chat state but keep WS status + agent list + current
-      // agent. The server is the source of truth for messages; it
-      // replies with an empty `history` after the reset, which we
-      // optimistically pre-render.
+      // agent. Pending dock entries also clear — server's empty
+      // history reply takes over rendering.
       return {
         ...s,
         messages: [],
+        pendingApprovals: [],
         currentReplyId: null,
         error: null,
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
+  }
+}
+
+/** Surface a one-line resolution outcome via sonner. Keep these short:
+ *  the dock row itself already shows the colored badge; the toast is
+ *  the lingering confirmation when the row fades. */
+function toastForOutcome(o: ApprovalCardOutcome): void {
+  switch (o.decision) {
+    case 'allowed': toast.success('已批准'); return
+    case 'allowed-pinned': toast.success('已批准 · 后续同类自动放行'); return
+    case 'denied': toast.error('已拒绝'); return
+    case 'denied-revoked': toast.error('已拒绝 · 撤销自动放行规则'); return
+    case 'expired': toast.warning('已过期'); return
   }
 }
 
@@ -346,16 +387,22 @@ export function useChat(): UseChat {
           messageId: msg.messageId,
           outcome: msg.outcome,
         })
+        // v1.2.115 — toast on resolve so the dismissal isn't silent.
+        // The dock row itself flips to a ✅/❌ badge for ~1.2s before
+        // fading out (driven by APPROVAL_DISMISS_AFTER_MS below); the
+        // toast carries the outcome label so it stays visible after
+        // the row vanishes.
+        toastForOutcome(msg.outcome)
+        window.setTimeout(() => {
+          dispatch({ kind: 'APPROVAL_DISMISS', messageId: msg.messageId })
+        }, APPROVAL_DISMISS_AFTER_MS)
         return
       case 'approval-text':
         // approval-text is the legacy fallback path used by adapters
         // that can't render cards (or for "receipt" lines after a
-        // card resolves). No reqId / toolName — just a string body.
-        dispatch({
-          kind: 'APPROVAL_TEXT',
-          messageId: `text-${Date.now()}`,
-          text: msg.text,
-        })
+        // card resolves). v1.2.115: surface as a toast — no longer
+        // injected into the chat stream — and ignore the dispatch.
+        toast.info(msg.text)
         return
       case 'metrics':
         // Dashboards (PR-N) consume these; the chat surface ignores.

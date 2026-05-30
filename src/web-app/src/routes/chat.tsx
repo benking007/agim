@@ -21,6 +21,7 @@ import { useChat } from '@/hooks/use-chat'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
+import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { Topbar } from '@/components/shell/topbar'
 import { cn } from '@/lib/utils'
@@ -159,15 +160,28 @@ export default function ChatRoute(): JSX.Element {
               </p>
             </div>
           )}
-          {state.messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              msg={m}
-              onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
-            />
-          ))}
+          {state.messages
+            // v1.2.115 — approval cards now render in the dock, not
+            // inline. Filter out any approval-typed messages that may
+            // exist in restored history from older builds (server-side
+            // session may still hold them as system rows).
+            .filter((m) => !m.approval)
+            .map((m) => (
+              <MessageBubble
+                key={m.id}
+                msg={m}
+                onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+              />
+            ))}
         </div>
       </div>
+
+      {/* v1.2.115 — floating approval dock pinned above the input.
+          Renders only when there are pending cards. */}
+      <ApprovalDock
+        approvals={state.pendingApprovals}
+        onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+      />
 
       {/* Input — height matches the h-8 topbar widgets (agent picker /
           lang select / theme button) so the whole chat surface has one

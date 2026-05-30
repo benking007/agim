@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.115] - 2026-05-30
+
+### Changed (web — approval cards moved to floating dock)
+
+- **chat 流不再被审批卡污染**。之前每张审批卡（不论 pending 还是已 resolve）都作为
+  `role:system` 消息塞进 chat 流，已批准的`✅ 已批准·WEB`徽标久留在历史里，agent 长
+  对话过几轮就一屏的橙色卡片，正文反而被挤下去。
+- 现在所有 `approval-card` 进入 `pendingApprovals` 独立 state slice，由新的
+  `<ApprovalDock />` 组件在**输入框正上方悬浮渲染**：
+  - 多张审批纵向堆叠，最大高度 240px 内滚不挤压消息列表
+  - 点击批准/拒绝/自动放行 → 卡片立即切到 `✅/❌/⏱` 终态徽标 + sonner toast
+    弹一条"已批准 / 已拒绝 / 已批准·后续同类自动放行 / 已过期" → 1.2s 后卡片淡出消失
+  - auto-allow grace 模式的卡片仍在 dock 显示，附倒计时秒数 + 仅 Deny 按钮
+  - `approval-text`（含 receipt 文本，如 "✅ 已批准并启用自动放行 / 规则:..."）改走
+    `toast.info`，不再注入 chat 流
+- 服务端 WS 协议 **零改动**——所有改动局限在前端 `web-app`，老的 native/telegram/feishu
+  路径完全不受影响。
+- 兼容旧 history：chat.tsx 的 message render 加 `.filter((m) => !m.approval)`，旧服务端
+  session 里残留的 `role:system + approval` 消息直接被前端 hide，不会出现"既在 dock 又
+  在历史"双重渲染。
+
+### Affected paths
+
+- `src/web-app/src/hooks/use-chat.ts`：新增 `pendingApprovals` slice + `APPROVAL_DISMISS`
+  action + `toastForOutcome()` helper + WS 分发器内 `approval-card-edit` 后 1.2s
+  自动 dismiss
+- `src/web-app/src/components/chat/approval-dock.tsx`（新文件 ~190 行）：dock + 倒计时 +
+  outcome badge
+- `src/web-app/src/routes/chat.tsx`：filter approval messages，mount `<ApprovalDock />`
+- `src/web-app/src/hooks/use-chat.test.ts`：6 个 reducer case 更新到新 slice 契约
+  （APPROVAL_CARD push 到 pendingApprovals / APPROVAL_TEXT 是 no-op / APPROVAL_DISMISS
+  移除条目 / dedup 等）。全 199/199 vitest pass。
+
 ## [1.2.114] - 2026-05-30
 
 ### Fixed (web approval — serial-queue deadlock — REAL root cause)

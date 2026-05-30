@@ -565,6 +565,32 @@ function resolvePolicy(): PolicyApprovalGateConfig {
 }
 
 /**
+ * v1.2.109 — names of native tools that are safe to dispatch in parallel
+ * within a single iteration. Strict opt-in: only tools with no side
+ * effects, no shared mutable state, and order-independent semantics.
+ * MCP tools beyond explicit read-only ones are NOT listed because they
+ * share session state with the agent loop's mcp-client and have caused
+ * races in the past (see comment near agent-loop's old serial-only
+ * note). Pure/read-only entries:
+ *   - native_{echo,now,random_uuid}: pure
+ *   - native_{read_file,list_dir,glob,grep}: read-only fs
+ *   - native_{web_fetch,web_search}: read-only network (SSRF-checked)
+ *   - mcp__imhub__{read_skill,list_skills,search_memos}: read-only
+ *   - mcp__imhub__memory_{list,query}: read-only memory
+ * Everything else (native_exec, native_write_file, save/update/delete
+ * memo, push_message, ask_user, call_agent, long_task, complete_goal,
+ * other MCP) remains serial.
+ */
+const NATIVE_PARALLEL_SAFE_TOOLS: ReadonlySet<string> = new Set([
+  'native_echo', 'native_now', 'native_random_uuid',
+  'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
+  'native_web_fetch', 'native_web_search',
+  'mcp__imhub__read_skill', 'mcp__imhub__list_skills',
+  'mcp__imhub__search_memos',
+  'mcp__imhub__memory_list', 'mcp__imhub__memory_query',
+])
+
+/**
  * v1.2.60 — bridge native's policy gate to the approval-bus so tools
  * that the gate would otherwise silently deny instead surface an IM
  * approval card. Mirrors how claude-code's MCP sidecar uses
@@ -979,6 +1005,11 @@ class NativeAgentAdapter implements AgentAdapter {
           traceId,
         },
         hooks: heartbeats.hooks,
+        // v1.2.109 — declare read-only / pure tools parallel-safe so
+        // multi-call iterations (e.g. "read these 3 files") run
+        // concurrently. Conservative allowlist; see the constant for
+        // what's in / out and why.
+        parallelSafeTools: NATIVE_PARALLEL_SAFE_TOOLS,
       })
       if (result.finishReason !== 'error') break
       const errStr = String(result.error || '')

@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.109] - 2026-05-29
+
+### Changed (native agent stability, batch P0b — gap ② closed)
+
+- **agent-loop 支持工具调用并行（只读类按 caller 声明的白名单）。** 此前
+  `for (const call of result.toolCalls) { await dispatch(...) }` 强制把模型一次返回
+  的多个工具调用串行起来——5 个独立 `native_read_file` 也要排队跑，长 turn 时延被
+  线性放大。现在 `AgentLoopInput.parallelSafeTools?: ReadonlySet<string>` 让 caller
+  声明哪些工具名是 parallel-safe（无副作用、不共享可变状态、顺序无关）；同一迭代
+  内声明安全的调用走 `Promise.allSettled` 并发，非声明的工具仍串行并在自身派发前
+  把累计 pending 全部 drain（serial barrier，让串行调用看到一个 settled world）。
+- **history 与 toolCalls 的发射严格按原始 call 顺序**——采用 slot 数组在派发完成
+  后一次性按 index 提交，避免完成顺序与 tool_call_id 对齐失序（部分 OpenAI 兼容
+  provider 对此敏感）。
+- **stuck-loop 和 goal-critic 检查相应移到批次发射之后**：仍正确触发（last-3
+  比对 + critic 新增 `lastCriticAtToolCalls` 节流，按"至少每 N 次工具调用一次"
+  的语义保持，不会因为一次 iteration 多个调用而误增触发频率）。
+- **native 内置声明的 parallel-safe 集合**（`NATIVE_PARALLEL_SAFE_TOOLS`）：
+  `native_echo` / `native_now` / `native_random_uuid` / `native_read_file` /
+  `native_list_dir` / `native_glob` / `native_grep` / `native_web_fetch` /
+  `native_web_search` / `mcp__imhub__{read_skill,list_skills,search_memos,
+  memory_list,memory_query}`。`native_exec` / `native_write_file` / 任何写类
+  memo / `push_message` / `ask_user` / `call_agent` / `long_task` /
+  `complete_goal` / 其他 MCP 均不在内（保持串行 + barrier）。
+
+### Tests
+
+4 个集成测试覆盖：并发耗时≈max（非 sum）、缺省 parallelSafeTools 完全串行（backwards-
+compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial barrier 在 mixed 序列
+正确 drain。整套 P0a+P0b 测试 45/45 全绿；typecheck 干净。
+
 ## [1.2.108] - 2026-05-29
 
 ### Changed (native agent stability, batch P0a — 3 of 7 gaps closed)

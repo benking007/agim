@@ -221,6 +221,18 @@ export interface AgentLoopInput {
     goalBody?: string
   }
 
+  /** v1.2.109 — names of tools the caller declares parallel-safe (no
+   *  shared state, no side effects, order-independent). When the model
+   *  returns multiple tool_calls in one iteration, declared-safe calls
+   *  run concurrently via Promise.allSettled; everything else (and any
+   *  tool not in this set) keeps the legacy serial behaviour, with a
+   *  barrier drain before each serial dispatch so serial calls observe
+   *  a settled world. Emission order to history + toolCalls is always
+   *  the original call order (tool_call_id ↔ tool_result alignment).
+   *  Leave undefined → loop is fully serial (no behaviour change vs
+   *  v1.2.108). */
+  parallelSafeTools?: ReadonlySet<string>
+
   /** Lifecycle hooks for caller-side observability (heartbeats, progress
    *  push, custom logging). All hooks are best-effort: thrown errors are
    *  swallowed so a faulty observer cannot break the loop. */
@@ -305,6 +317,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const usageAcc: LlmUsage = {}
   // v1.2.98 — goal-critic per-turn fire counter (capped at CRITIC_MAX_CALLS).
   let criticCallsFired = 0
+  // v1.2.109 — throttle for the post-batch critic check. With parallel
+  // batching, toolCalls.length now jumps in chunks instead of advancing
+  // by 1 per per-call modulo check. Track the last fire to keep at-most-
+  // every-CRITIC_EVERY_N cadence regardless of batch size.
+  let lastCriticAtToolCalls = 0
 
   let iter = 0
   for (; iter < maxIter; iter++) {
@@ -383,15 +400,28 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       reasoningContent: result.reasoningContent,
     })
 
-    // Execute each tool call (sequentially — preserves order in the
-    // conversation log and dodges races against the dispatcher's
-    // internal state e.g. MCP session). Concurrent execution lands
-    // when we have a real-world workload that justifies it.
-    for (const call of result.toolCalls) {
-      if (signal.signal.aborted) break
+    // v1.2.109 — execute tool calls with optional parallel batching.
+    // Tools whose names appear in input.parallelSafeTools dispatch via
+    // accumulating promises (Promise.allSettled); everything else (and
+    // any tool not declared safe) keeps the legacy serial path with a
+    // barrier drain before each serial dispatch so serial calls observe
+    // a settled world (MCP session state, file system, etc.).
+    // Emission order to history / toolCalls is always the original call
+    // order via slot arrays — some providers reject responses whose
+    // role:'tool' messages aren't laid out next to their assistant
+    // tool_calls in the expected order.
+    const parallelSafe = input.parallelSafeTools
+    const historySlots: Array<LlmMessage | null> = new Array(result.toolCalls.length).fill(null)
+    const reportSlots: Array<ToolCallReport | null> = new Array(result.toolCalls.length).fill(null)
+    const pendingTasks: Promise<void>[] = []
 
-      // Stable arg key precomputed once per call so all three push sites
-      // (deny / no-dispatcher / dispatched) share the same identity.
+    for (let idx = 0; idx < result.toolCalls.length; idx++) {
+      if (signal.signal.aborted) break
+      const call = result.toolCalls[idx]!
+
+      // Stable arg key precomputed once per call so all three slot
+      // writers (deny / no-dispatcher / dispatched) share the same
+      // identity for the stuck-loop detector.
       const argsKey = stableStringify(call.arguments)
       const reportBase = {
         name: call.name,
@@ -401,18 +431,21 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         errorType: '',
       }
 
+      // Approval is ALWAYS serial — it may block on user input, and we
+      // don't want to ask for N approvals simultaneously (the IM UI
+      // would get spammed).
       const decision = await safeApprove(approve, call, iter)
       if (decision === 'deny') {
         const denyText = `tool call denied by user: ${call.name}`
-        history.push({ role: 'tool', toolCallId: call.id, content: denyText })
-        toolCalls.push({
+        historySlots[idx] = { role: 'tool', toolCallId: call.id, content: denyText }
+        reportSlots[idx] = {
           ...reportBase,
           decision: 'deny',
           isError: true,
           durationMs: 0,
           preview: denyText,
           errorType: extractErrorType(true, denyText),
-        })
+        }
         continue
       }
 
@@ -421,144 +454,161 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         // theoretically a caller could pass tools+approve without a
         // dispatcher. Don't crash; tell the model the tool failed.
         const denyText = `tool call refused: no dispatcher registered`
-        history.push({ role: 'tool', toolCallId: call.id, content: denyText })
-        toolCalls.push({
+        historySlots[idx] = { role: 'tool', toolCallId: call.id, content: denyText }
+        reportSlots[idx] = {
           ...reportBase,
           decision: 'allow',
           isError: true,
           durationMs: 0,
           preview: denyText,
           errorType: extractErrorType(true, denyText),
-        })
+        }
         continue
       }
 
-      try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
-      const dt0 = Date.now()
-      let dispatched: DispatcherResult
-      try {
-        dispatched = await dispatch(call, signal.signal)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        dispatched = { text: `tool threw: ${msg}`, isError: true, source: 'error' }
-        log.warn({
-          event: 'agent-loop.dispatch_threw',
-          tool: call.name, err: msg,
-        })
+      // Capture dispatch into an async closure so it can be awaited
+      // either immediately (serial path) or later via Promise.allSettled
+      // (parallel batch path). Captures idx by closure so the writer
+      // hits the correct slot regardless of completion order.
+      const dispatchCall = dispatch
+      const runDispatch = async (): Promise<void> => {
+        try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
+        const t0 = Date.now()
+        let dispatched: DispatcherResult
+        try {
+          dispatched = await dispatchCall(call, signal.signal)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          dispatched = { text: `tool threw: ${msg}`, isError: true, source: 'error' }
+          log.warn({
+            event: 'agent-loop.dispatch_threw',
+            tool: call.name, err: msg,
+          })
+        }
+        const durationMs = Date.now() - t0
+        try { input.hooks?.onToolEnd?.(call, { isError: !!dispatched.isError, durationMs }) } catch { /* observer must not break loop */ }
+        historySlots[idx] = {
+          role: 'tool',
+          toolCallId: call.id,
+          content: dispatched.text,
+        }
+        reportSlots[idx] = {
+          name: call.name,
+          decision: 'allow',
+          isError: dispatched.isError,
+          source: dispatched.source ?? 'unknown',
+          durationMs,
+          preview: dispatched.text.slice(0, 200),
+          argsKey,
+          errorType: extractErrorType(dispatched.isError, dispatched.text),
+        }
       }
-      const durationMs = Date.now() - dt0
-      try { input.hooks?.onToolEnd?.(call, { isError: !!dispatched.isError, durationMs }) } catch { /* observer must not break loop */ }
 
-      history.push({
-        role: 'tool',
-        toolCallId: call.id,
-        content: dispatched.text,
-      })
-      toolCalls.push({
-        name: call.name,
-        decision: 'allow',
-        isError: dispatched.isError,
-        source: dispatched.source ?? 'unknown',
-        durationMs,
-        preview: dispatched.text.slice(0, 200),
-        argsKey,
-        errorType: extractErrorType(dispatched.isError, dispatched.text),
-      })
+      const isParallel = !!parallelSafe?.has(call.name)
+      if (isParallel) {
+        pendingTasks.push(runDispatch())
+      } else {
+        // Serial barrier: drain accumulated parallel work first.
+        if (pendingTasks.length > 0) {
+          await Promise.allSettled(pendingTasks.splice(0))
+        }
+        await runDispatch()
+      }
+    }
 
-      // v1.2.108 — stuck-loop detector, upgraded from v1.2.95.
-      // Triggers when the last 3 reports share (name, argsKey, errorType).
-      // argsKey is stable JSON of the call's arguments (sorted keys),
-      // errorType is a short fingerprint of the result on error. Why
-      // upgrade from the v1.2.95 (name + isError + preview[0..200])
-      // approach: the old preview-based check let the model slip past
-      // with trivial output variation (timestamps, byte counters, etc.).
-      // The new identity is the actual call shape, which is what we
-      // really want to detect — model trying the same thing 3 times.
-      if (isStuckLoop(toolCalls)) {
-        const a = toolCalls[toolCalls.length - 1]!
+    // End-of-iteration drain for any tail parallel tasks.
+    if (pendingTasks.length > 0) {
+      await Promise.allSettled(pendingTasks.splice(0))
+    }
+
+    // Commit slots in original call order so tool_call_id ↔ tool_result
+    // alignment is preserved regardless of dispatch completion order.
+    // Slots may be null if the loop aborted mid-iteration — skip those.
+    for (let idx = 0; idx < result.toolCalls.length; idx++) {
+      const h = historySlots[idx]
+      const r = reportSlots[idx]
+      if (h) history.push(h)
+      if (r) toolCalls.push(r)
+    }
+
+    // v1.2.108 — stuck-loop detector (now post-batch). Keyed on
+    // (name, argsKey, errorType) of the last 3 entries; with parallel
+    // batching this still fires correctly when 3 identical calls land
+    // in a row (whether in one batch or across batches).
+    if (isStuckLoop(toolCalls)) {
+      const a = toolCalls[toolCalls.length - 1]!
+      log.warn({
+        event: 'agent-loop.stuck_loop_detected',
+        tool: a.name,
+        isError: a.isError,
+        argsKeySnippet: a.argsKey.slice(0, 200),
+        errorType: a.errorType,
+        iter,
+        totalToolCalls: toolCalls.length,
+      }, `stuck loop: 3× ${a.name} with identical args + outcome — early stop at iter ${iter}`)
+      signal.cleanup()
+      return {
+        text: '',
+        iterations: iter + 1,
+        toolCalls,
+        usage: usageAcc,
+        finishReason: 'stuck_loop',
+      }
+    }
+
+    // v1.2.98 / v1.2.99 / v1.2.109 — goal-critic check (semantic
+    // off-track), now post-batch with a since-last-fire throttle so
+    // cadence stays at-most-every-CRITIC_EVERY_N tool calls regardless
+    // of how many calls landed in this iteration's batch.
+    const criticMode = resolveCriticMode()
+    const criticGateOpen = criticMode === 'always'
+      || (criticMode === 'goal-only' && !!input.criticAnchor?.goalTitle?.trim())
+    if (
+      input.criticAnchor
+      && criticGateOpen
+      && toolCalls.length >= CRITIC_MIN_TOOL_CALLS
+      && criticCallsFired < CRITIC_MAX_CALLS
+      && toolCalls.length - lastCriticAtToolCalls >= CRITIC_EVERY_N
+    ) {
+      criticCallsFired += 1
+      lastCriticAtToolCalls = toolCalls.length
+      const recent = toolCalls.slice(-10)
+      const verdict = await runGoalCritic({
+        prompt: input.criticAnchor.prompt,
+        goalTitle: input.criticAnchor.goalTitle,
+        goalBody: input.criticAnchor.goalBody,
+        recentToolCalls: recent,
+      }, { signal: signal.signal })
+      log.info({
+        event: 'agent-loop.goal_critic_verdict',
+        iter,
+        totalToolCalls: toolCalls.length,
+        onTrack: verdict.onTrack,
+        reason: verdict.reason,
+        modelUsed: verdict.modelUsed,
+      })
+      if (!verdict.onTrack) {
         log.warn({
-          event: 'agent-loop.stuck_loop_detected',
-          tool: a.name,
-          isError: a.isError,
-          argsKeySnippet: a.argsKey.slice(0, 200),
-          errorType: a.errorType,
+          event: 'agent-loop.off_track_detected',
           iter,
-          totalToolCalls: toolCalls.length,
-        }, `stuck loop: 3× ${a.name} with identical args + outcome — early stop at iter ${iter}`)
+          reason: verdict.reason,
+          redirect: verdict.redirect,
+        }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
         signal.cleanup()
         return {
           text: '',
           iterations: iter + 1,
           toolCalls,
           usage: usageAcc,
-          finishReason: 'stuck_loop',
-        }
-      }
-
-      // v1.2.98 / v1.2.99 — goal-critic check (semantic off-track).
-      // Fires when ALL of:
-      //   · caller supplied a criticAnchor
-      //   · critic mode is 'always' OR ('goal-only' AND anchor has a
-      //     long-task goal title). Per-turn prompts alone won't
-      //     trigger in goal-only mode — this is the v1.2.99 fix for
-      //     CR finding A2 (default ON in v1.2.98 surprised the cost
-      //     budget). Set IMHUB_NATIVE_CRITIC=always to re-enable for
-      //     every multi-step turn.
-      //   · ≥ CRITIC_MIN_TOOL_CALLS tool calls this turn
-      //   · haven't already fired CRITIC_MAX_CALLS times
-      //   · on a trigger mark (every CRITIC_EVERY_N tool calls)
-      // The critic itself decides whether to break. It returns
-      // onTrack=true on errors so provider hiccups never accidentally
-      // kill a working turn.
-      const criticMode = resolveCriticMode()
-      const criticGateOpen = criticMode === 'always'
-        || (criticMode === 'goal-only' && !!input.criticAnchor?.goalTitle?.trim())
-      if (
-        input.criticAnchor
-        && criticGateOpen
-        && toolCalls.length >= CRITIC_MIN_TOOL_CALLS
-        && criticCallsFired < CRITIC_MAX_CALLS
-        && (toolCalls.length - CRITIC_MIN_TOOL_CALLS) % CRITIC_EVERY_N === 0
-      ) {
-        criticCallsFired += 1
-        const recent = toolCalls.slice(-10)
-        const verdict = await runGoalCritic({
-          prompt: input.criticAnchor.prompt,
-          goalTitle: input.criticAnchor.goalTitle,
-          goalBody: input.criticAnchor.goalBody,
-          recentToolCalls: recent,
-        }, { signal: signal.signal })
-        log.info({
-          event: 'agent-loop.goal_critic_verdict',
-          iter,
-          totalToolCalls: toolCalls.length,
-          onTrack: verdict.onTrack,
-          reason: verdict.reason,
-          modelUsed: verdict.modelUsed,
-        })
-        if (!verdict.onTrack) {
-          log.warn({
-            event: 'agent-loop.off_track_detected',
-            iter,
-            reason: verdict.reason,
-            redirect: verdict.redirect,
-          }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
-          signal.cleanup()
-          return {
-            text: '',
-            iterations: iter + 1,
-            toolCalls,
-            usage: usageAcc,
-            finishReason: 'off_track',
-            // Smuggle the critic's reason + redirect into `error` so
-            // the native adapter can surface it verbatim in the recap
-            // without re-importing goal-critic. Yes, abusing `error`
-            // for non-error info is mildly ugly; alternative is adding
-            // a new field to AgentLoopResult — overkill for one knob.
-            error: verdict.redirect
-              ? `${verdict.reason} || redirect: ${verdict.redirect}`
-              : verdict.reason,
-          }
+          finishReason: 'off_track',
+          // Smuggle the critic's reason + redirect into `error` so
+          // the native adapter can surface it verbatim in the recap
+          // without re-importing goal-critic. Yes, abusing `error`
+          // for non-error info is mildly ugly; alternative is adding
+          // a new field to AgentLoopResult — overkill for one knob.
+          error: verdict.redirect
+            ? `${verdict.reason} || redirect: ${verdict.redirect}`
+            : verdict.reason,
         }
       }
     }

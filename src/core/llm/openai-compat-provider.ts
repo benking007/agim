@@ -73,7 +73,60 @@ export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'pr
 }
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
-const DEFAULT_RETRY = 1
+const DEFAULT_RETRY = 3
+const BASE_BACKOFF_MS = 250
+const MAX_BACKOFF_MS = 30_000
+
+/** Parse an HTTP `Retry-After` header per RFC 9110: either delta-seconds
+ *  (e.g. "30") or an HTTP-date. Returns ms-from-now, clamped to ≥0.
+ *  Returns null on null / empty / unparsable. Exported for unit tests. */
+export function parseRetryAfter(header: string | null | undefined): number | null {
+  if (!header) return null
+  const s = String(header).trim()
+  if (!s) return null
+  // delta-seconds form
+  if (/^\d+(?:\.\d+)?$/.test(s)) {
+    const n = Number(s)
+    if (Number.isFinite(n) && n >= 0) return Math.floor(n * 1000)
+    return null
+  }
+  // HTTP-date form (RFC 1123 etc.). Gate by length first: every RFC 7231
+  // HTTP-date variant (IMF-fixdate / obs-RFC850 / ANSI C asctime) is ≥24
+  // chars; without this gate Node's `Date.parse` loosely accepts e.g.
+  // "-5" as "5 BC" and `Math.max(0, …)` would swallow it as 0.
+  if (s.length < 20) return null
+  const t = Date.parse(s)
+  if (Number.isNaN(t)) return null
+  return Math.max(0, t - Date.now())
+}
+
+/** Compute backoff for retry `attempt` (1-based). Honors any `Retry-After`
+ *  the server sent — we wait at least that long (server knows when it's
+ *  next available). Exponential 250ms × 2^(attempt-1) with full jitter
+ *  on top to spread thundering herd. Capped at 30s — anything longer and
+ *  the worker is better off surrendering to the caller's fallback path.
+ *  `nowJitter` is injectable for deterministic tests. */
+export function computeBackoffMs(
+  attempt: number,
+  retryAfterMs: number | null,
+  opts: { base?: number; cap?: number; jitter?: () => number } = {},
+): number {
+  const base = opts.base ?? BASE_BACKOFF_MS
+  const cap = opts.cap ?? MAX_BACKOFF_MS
+  const jitter = opts.jitter ?? (() => 0.8 + Math.random() * 0.4)
+  const exp = Math.min(cap, base * Math.pow(2, Math.max(0, attempt - 1)))
+  const withJitter = Math.floor(exp * jitter())
+  const floor = Math.max(0, retryAfterMs ?? 0)
+  return Math.min(cap, Math.max(floor, withJitter))
+}
+
+function resolveDefaultRetry(): number {
+  const raw = process.env.IMHUB_LLM_RETRY_MAX
+  if (!raw) return DEFAULT_RETRY
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_RETRY
+  return Math.min(10, Math.floor(n))
+}
 
 /**
  * Concrete provider for any OpenAI-compatible `/v1/chat/completions`
@@ -94,7 +147,7 @@ export class OpenAICompatProvider extends LlmProvider {
     })
     this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
     this.extraHeaders = cfg.extraHeaders || {}
-    this.retryOnTransient = Math.max(0, cfg.retryOnTransient ?? DEFAULT_RETRY)
+    this.retryOnTransient = Math.max(0, Math.min(10, cfg.retryOnTransient ?? resolveDefaultRetry()))
     if (typeof cfg.vision === 'boolean') {
       this.vision = cfg.vision
     } else {
@@ -235,11 +288,19 @@ export class OpenAICompatProvider extends LlmProvider {
   }
 
   /**
-   * fetch + minimal retry. We backoff with a tiny fixed delay rather
-   * than honoring Retry-After because Stage 1 callers (distill /
-   * intent) have very short deadlines — long backoffs would force a
-   * fallback to CLI anyway, which is the whole point of "transient
-   * retry, then surrender".
+   * fetch + transient retry with Retry-After + exponential backoff + jitter.
+   * Earlier versions used a tiny fixed delay and ignored `Retry-After`,
+   * which made DeepSeek / Moonshot 429s flap straight to the fallback
+   * provider (cold start + model-semantics swap) instead of waiting the
+   * few seconds the upstream actually asked for. We now honor the header
+   * as a hard floor; exponential backoff with jitter rides on top to
+   * avoid thundering-herd against the upstream's recovery window.
+   *
+   * Defaults: 3 retries (= 4 attempts), 250ms base, doubling per attempt,
+   * capped at 30s. Override via `IMHUB_LLM_RETRY_MAX` env (clamped [0,10])
+   * or the `retryOnTransient` ctor option. The cap exists because beyond
+   * ~30s the worker is better off surrendering so the agent loop can pick
+   * a fallback provider.
    */
   private async _fetchWithRetry(url: string, body: unknown, signal: AbortSignal): Promise<Response> {
     let lastErr: unknown
@@ -271,17 +332,16 @@ export class OpenAICompatProvider extends LlmProvider {
             `HTTP ${resp.status} from ${this.providerType}: ${bodyText || '(no body)'}`,
             { httpStatus: resp.status, transient })
         }
-        // Transient and budget remaining — sleep and let the while loop
-        // tick to the next attempt. The retry budget is the only thing
-        // standing between us and an infinite loop.
-        await sleep(250 * attempts, signal)
+        const retryAfterMs = parseRetryAfter(resp.headers.get('retry-after'))
+        await sleep(computeBackoffMs(attempts, retryAfterMs), signal)
       } catch (err) {
         // AbortError propagates immediately — callers wired timeouts on
         // purpose and want to bail.
         if (isAbortError(err)) throw err
         lastErr = err
         if (attempts < maxAttempts) {
-          await sleep(250 * attempts, signal)
+          // Transport errors have no Retry-After to consult.
+          await sleep(computeBackoffMs(attempts, null), signal)
         }
       }
     }

@@ -4,7 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.2.107] - 2026-05-29
+## [1.2.108] - 2026-05-29
+
+### Changed (native agent stability, batch P0a — 3 of 7 gaps closed)
+
+- **provider 重试现在尊重 `Retry-After` 头 + 指数退避 + jitter（默认 3 次）。**
+  之前是固定 250ms × attempt 线性 backoff、retry=1、不读 `Retry-After`，导致
+  DeepSeek / Moonshot 等 OpenAI-compat 提供方返回 429 时把服务器要求的几秒等待
+  完全无视，250ms 后再撞墙、跳到 fallback provider，吃 cold-start + 模型语义切换。
+  现在默认 4 次尝试（base 250ms、cap 30s、jitter ±20%），`Retry-After` 作为硬下限
+  （秒/HTTP-date 两种 RFC 7231 格式都支持）。`IMHUB_LLM_RETRY_MAX` 覆盖默认（clamp
+  [0,10]）。导出 `parseRetryAfter` / `computeBackoffMs` 两个纯函数 + 13 个回归测试。
+- **stuck-loop 早停升级为 `(name, argsKey, errorType)` 三元组。** v1.2.95 用的是
+  `(name, isError, preview[0..200])`：模型只要让结果文本带个时间戳/换行/计数器就
+  绕过、绕到 max-iter 才停。新版用 `stableStringify(arguments)`（递归排序键，确定性
+  哈希）+ `extractErrorType`（错误首行 ≤80 字符指纹）。同样的工具同样的参数同样的
+  失败 3 次 → 停。导出 `stableStringify` / `extractErrorType` / `isStuckLoop` +
+  16 个回归测试（含明确的"结果抖动不再隐藏死循环"对照）。
+- **MCP tools 缓存加 TTL（默认 5 min）+ 重连改指数退避（base 5s, cap 60s,
+  成功重置）。** v1.2.96 的 cachedTools 永不刷新——上游 MCP server 加新工具/改
+  schema 必须重启 agim 才看得见；重连冷却也是固定 5s，永远 broken 的 server 被
+  5s 一次永久敲。现在：`McpClient.cachedTools` 带 `fetchedAt`，
+  `IMHUB_MCP_TOOLS_TTL_MS` 控制 TTL（0=不缓存），新增 `refresh()` 主动清缓存；
+  `mcp-registry.tryReconnect` 按 `state.reconnectFailures` 指数翻倍冷却，成功
+  立即 reset 为 0。导出 `computeReconnectCooldownMs` + 8 个回归测试。
+
+### Tests
+
+37 new unit tests across 3 files；41 个 P0a 相关测试全绿；typecheck 干净。
+
 
 ### CI
 

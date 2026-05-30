@@ -73,6 +73,55 @@ const CRITIC_EVERY_N = 5
 const CRITIC_MAX_CALLS = 2
 
 /**
+ * Deterministic JSON.stringify with sorted object keys at every level.
+ * Used by the stuck-loop detector to derive a stable identity key for
+ * tool-call arguments: identical calls hash to identical strings
+ * regardless of key insertion order. Tolerates circular references and
+ * non-JSON-able values by collapsing them to a placeholder.
+ */
+export function stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
+  if (value === null) return 'null'
+  if (typeof value === 'undefined') return 'null'
+  if (typeof value === 'function') return '"[fn]"'
+  if (typeof value !== 'object') return JSON.stringify(value)
+  if (seen.has(value as object)) return '"[circular]"'
+  seen.add(value as object)
+  if (Array.isArray(value)) {
+    return '[' + value.map((v) => stableStringify(v, seen)).join(',') + ']'
+  }
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k], seen)).join(',') + '}'
+}
+
+/**
+ * Stable error-type fingerprint of a dispatcher's result text. Returns
+ * the first non-empty line trimmed and truncated to 80 chars when
+ * isError; empty string otherwise. Used by the stuck-loop detector so
+ * "fs_read failed with ENOENT three times" → stuck, but "fs_read
+ * returned different bytes three times" → not stuck.
+ */
+export function extractErrorType(isError: boolean, text: string): string {
+  if (!isError) return ''
+  const firstNonEmpty = text.split('\n').find((line) => line.trim().length > 0) ?? ''
+  return firstNonEmpty.trim().slice(0, 80)
+}
+
+/** True iff the last 3 entries are the same tool called with identical
+ *  args resulting in the identical outcome — the stuck-loop signal. */
+export function isStuckLoop(
+  reports: Array<Pick<ToolCallReport, 'name' | 'argsKey' | 'errorType'>>,
+): boolean {
+  if (reports.length < 3) return false
+  const a = reports[reports.length - 1]!
+  const b = reports[reports.length - 2]!
+  const c = reports[reports.length - 3]!
+  return a.name === b.name && b.name === c.name
+    && a.argsKey === b.argsKey && b.argsKey === c.argsKey
+    && a.errorType === b.errorType && b.errorType === c.errorType
+}
+
+/**
  * Per-tool-call gate. Return 'allow' to dispatch, 'deny' to inject a
  * "user denied" tool result (so the model can react) without running
  * the tool. Sub-PR #4 ships an IM-integrated implementation; tests
@@ -197,6 +246,17 @@ export interface ToolCallReport {
    *  `/heartbeat run-now` style introspection; longer payloads aren't
    *  retained to keep memory + log size bounded. */
   preview: string
+  /** v1.2.108 — stable JSON of the tool call's arguments (sorted keys),
+   *  used by the stuck-loop detector. Identical calls hash to identical
+   *  strings; model varying timestamps/UUIDs in the result no longer
+   *  hides a stuck loop where the model keeps re-calling with the same
+   *  args. See `stableStringify`. */
+  argsKey: string
+  /** v1.2.108 — short fingerprint of the error (first non-empty line of
+   *  the result, ≤80 chars) when isError; empty string otherwise. Lets
+   *  the stuck-loop detector distinguish "same failure repeated" from
+   *  "same args returning different bytes". See `extractErrorType`. */
+  errorType: string
 }
 
 export interface AgentLoopResult {
@@ -330,10 +390,15 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     for (const call of result.toolCalls) {
       if (signal.signal.aborted) break
 
+      // Stable arg key precomputed once per call so all three push sites
+      // (deny / no-dispatcher / dispatched) share the same identity.
+      const argsKey = stableStringify(call.arguments)
       const reportBase = {
         name: call.name,
         source: 'unknown',
         preview: '',
+        argsKey,
+        errorType: '',
       }
 
       const decision = await safeApprove(approve, call, iter)
@@ -346,6 +411,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           isError: true,
           durationMs: 0,
           preview: denyText,
+          errorType: extractErrorType(true, denyText),
         })
         continue
       }
@@ -362,6 +428,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           isError: true,
           durationMs: 0,
           preview: denyText,
+          errorType: extractErrorType(true, denyText),
         })
         continue
       }
@@ -394,46 +461,37 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         source: dispatched.source ?? 'unknown',
         durationMs,
         preview: dispatched.text.slice(0, 200),
+        argsKey,
+        errorType: extractErrorType(dispatched.isError, dispatched.text),
       })
 
-      // v1.2.95 — stuck-loop detector. If the last three tool reports
-      // share name + error-flag + preview content, the model is calling
-      // the SAME tool with the SAME outcome — almost always a sign it's
-      // re-running a failing SQL / fetch / command without changing
-      // strategy. Break out early so we don't waste the full
-      // maxIterations budget on a stuck model, and so the caller can
-      // surface a much more focused "you're stuck on X" recap.
-      //
-      // Three consecutive matches is the smallest threshold that
-      // unambiguously says "loop" without being triggered by a
-      // legitimate "two reads on the same file" sequence. The preview
-      // is already truncated to 200 chars at push time, so this
-      // comparison is bounded.
-      if (toolCalls.length >= 3) {
+      // v1.2.108 — stuck-loop detector, upgraded from v1.2.95.
+      // Triggers when the last 3 reports share (name, argsKey, errorType).
+      // argsKey is stable JSON of the call's arguments (sorted keys),
+      // errorType is a short fingerprint of the result on error. Why
+      // upgrade from the v1.2.95 (name + isError + preview[0..200])
+      // approach: the old preview-based check let the model slip past
+      // with trivial output variation (timestamps, byte counters, etc.).
+      // The new identity is the actual call shape, which is what we
+      // really want to detect — model trying the same thing 3 times.
+      if (isStuckLoop(toolCalls)) {
         const a = toolCalls[toolCalls.length - 1]!
-        const b = toolCalls[toolCalls.length - 2]!
-        const c = toolCalls[toolCalls.length - 3]!
-        if (
-          a.name === b.name && b.name === c.name
-          && a.isError === b.isError && b.isError === c.isError
-          && a.preview === b.preview && b.preview === c.preview
-        ) {
-          log.warn({
-            event: 'agent-loop.stuck_loop_detected',
-            tool: a.name,
-            isError: a.isError,
-            iter,
-            totalToolCalls: toolCalls.length,
-            previewSnippet: (a.preview ?? '').slice(0, 80),
-          }, `stuck loop: 3× ${a.name} with identical outcome — early stop at iter ${iter}`)
-          signal.cleanup()
-          return {
-            text: '',
-            iterations: iter + 1,
-            toolCalls,
-            usage: usageAcc,
-            finishReason: 'stuck_loop',
-          }
+        log.warn({
+          event: 'agent-loop.stuck_loop_detected',
+          tool: a.name,
+          isError: a.isError,
+          argsKeySnippet: a.argsKey.slice(0, 200),
+          errorType: a.errorType,
+          iter,
+          totalToolCalls: toolCalls.length,
+        }, `stuck loop: 3× ${a.name} with identical args + outcome — early stop at iter ${iter}`)
+        signal.cleanup()
+        return {
+          text: '',
+          iterations: iter + 1,
+          toolCalls,
+          usage: usageAcc,
+          finishReason: 'stuck_loop',
         }
       }
 

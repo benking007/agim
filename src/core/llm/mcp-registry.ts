@@ -34,6 +34,10 @@ interface RegistryState {
    *  broken — otherwise a flurry of tool calls would each trigger a
    *  reconnect handshake. */
   lastReconnectAt: Map<string, number>
+  /** v1.2.108 — consecutive reconnect failures per server. Resets to 0
+   *  on a successful reconnect. Drives exponential backoff so a
+   *  permanently-broken server isn't hammered every 5 s forever. */
+  reconnectFailures: Map<string, number>
 }
 
 function freshState(): RegistryState {
@@ -42,26 +46,50 @@ function freshState(): RegistryState {
     unhealthy: new Map(),
     toolsByCallName: new Map(),
     lastReconnectAt: new Map(),
+    reconnectFailures: new Map(),
   }
 }
 
-/** v1.2.96 — minimum interval between reconnect attempts for the same
- *  server. 5 s is short enough to feel snappy when an MCP server just
- *  blipped, long enough that a permanently-broken server doesn't get
- *  hammered tool-call-by-tool-call. Configurable via env for ops who
- *  want to tune; default is fine for most. */
-const RECONNECT_COOLDOWN_MS = (() => {
-  const raw = process.env.IMHUB_MCP_RECONNECT_COOLDOWN_MS
+/** v1.2.96 / v1.2.108 — base/cap for the reconnect cooldown. Base is
+ *  also what `IMHUB_MCP_RECONNECT_COOLDOWN_MS` used to mean (kept as an
+ *  alias for the env name nobody read the docs on). Cap is the max wait
+ *  between attempts after the server has failed repeatedly — beyond ~60s
+ *  we'd rather let the operator notice than keep silently retrying. */
+const RECONNECT_BASE_MS = (() => {
+  const raw = process.env.IMHUB_MCP_RECONNECT_BASE_MS ?? process.env.IMHUB_MCP_RECONNECT_COOLDOWN_MS
   if (!raw) return 5_000
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : 5_000
 })()
+const RECONNECT_MAX_MS = (() => {
+  const raw = process.env.IMHUB_MCP_RECONNECT_MAX_MS
+  if (!raw) return 60_000
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 60_000
+})()
+
+/** Exponential backoff for the Nth consecutive reconnect failure. First
+ *  attempt (failures=0) waits `base`; each subsequent failure doubles
+ *  until `cap`. Exported for unit tests. */
+export function computeReconnectCooldownMs(
+  failures: number,
+  base = RECONNECT_BASE_MS,
+  cap = RECONNECT_MAX_MS,
+): number {
+  if (failures <= 0) return base
+  return Math.min(cap, base * Math.pow(2, failures))
+}
 
 async function tryReconnect(server: string, client: McpClient): Promise<boolean> {
   const now = Date.now()
   const last = state.lastReconnectAt.get(server) ?? 0
-  if (now - last < RECONNECT_COOLDOWN_MS) {
-    log.debug({ event: 'mcp-registry.reconnect_throttled', server, msSinceLast: now - last })
+  const failures = state.reconnectFailures.get(server) ?? 0
+  const cooldown = computeReconnectCooldownMs(failures)
+  if (now - last < cooldown) {
+    log.debug({
+      event: 'mcp-registry.reconnect_throttled',
+      server, msSinceLast: now - last, cooldown, failures,
+    })
     return false
   }
   state.lastReconnectAt.set(server, now)
@@ -71,11 +99,16 @@ async function tryReconnect(server: string, client: McpClient): Promise<boolean>
     // a fresh handshake.
     await client.close()
     await client.connect()
+    state.reconnectFailures.delete(server)  // reset on success
     log.info({ event: 'mcp-registry.reconnected', server })
     return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    log.warn({ event: 'mcp-registry.reconnect_failed', server, err: msg })
+    state.reconnectFailures.set(server, failures + 1)
+    log.warn({
+      event: 'mcp-registry.reconnect_failed',
+      server, err: msg, failures: failures + 1, nextCooldownMs: computeReconnectCooldownMs(failures + 1),
+    })
     state.unhealthy.set(server, msg)
     return false
   }

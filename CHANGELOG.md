@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.116] - 2026-05-30
+
+### Added (web chat — markdown rendering for assistant messages)
+
+- **Web 聊天 assistant 消息现在按 markdown 渲染**（GFM：表格、删除线、任务列表）。
+  之前用户问数据分析类问题，agent 返回的 `## 标题 / | 表格 |  / **加粗**`
+  全部以裸符号显示，体验差。
+- 渲染走 `react-markdown` + `remark-gfm`：
+  - heading 缩级（h1→h2/h2→h3）避免在 chat 气泡里过于突兀
+  - table 自动横向滚动，应对宽数据列
+  - inline code `…` 与 fenced code 块用 mono 字体 + bg-surface-2
+  - 链接全部 `target="_blank" rel="noreferrer"`
+  - **零 raw HTML**——不挂 rehype-raw，assistant 输出的 `<script>` / `<img onerror=>`
+    一律降级为文本（XSS 防御）
+- user 输入仍走 `whitespace-pre-wrap`：用户敲的 `**foo**` 就显示 `**foo**`，
+  不会被偷偷转换。
+- 流式渲染：未闭合的 markdown 符号（如 `**bold` 没收尾）按字面文本显示，
+  不报错；下一个 chunk 把 `**` 闭合后自动转 strong。
+
+### Affected paths
+
+- `src/web-app/package.json`：新增 `react-markdown@^10` + `remark-gfm@^4` 依赖
+- `src/web-app/src/components/chat/markdown-view.tsx`（新文件 ~90 行）：
+  对每个 tag 给一个 className map（heading 缩级、表格 overflow、code 高亮、
+  list 紧致间距）
+- `src/web-app/src/components/chat/markdown-view.test.tsx`（新文件，7 个 case）：
+  覆盖 heading / table / list / code / link / XSS / 流式半成品
+- `src/web-app/src/components/chat/message-bubble.tsx`：assistant 分支
+  改走 `<MarkdownView />`，user 分支保持 plain
+
+### Test status
+
+- 199 → 206 vitest pass（新增 7 个 markdown case）
+- typecheck clean
+
 ## [1.2.115] - 2026-05-30
 
 ### Changed (web — approval cards moved to floating dock)

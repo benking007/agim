@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { MarkdownView } from '@/components/chat/markdown-view'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ApprovalChoice } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
@@ -54,11 +55,19 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
         {!isUser && msg.agent && (
           <div className="mb-1 text-xs font-medium text-text-muted">{msg.agent}</div>
         )}
-        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-          {msg.content || (msg.role === 'assistant' && (
-            <span className="inline-block animate-pulse text-text-dim">…</span>
-          ))}
-        </div>
+        {/* v1.2.116 — render assistant responses as markdown (GFM:
+            tables, code, headings, lists). User input stays plain so
+            their typed `**foo**` survives verbatim. Empty assistant
+            content during streaming startup shows the … placeholder. */}
+        {!isUser && msg.content ? (
+          <MarkdownView content={msg.content} className="break-words" />
+        ) : (
+          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+            {msg.content || (msg.role === 'assistant' && (
+              <span className="inline-block animate-pulse text-text-dim">…</span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

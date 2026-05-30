@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.110] - 2026-05-29
+
+### Added (native agent stability, batch P1 — gap ④ closed)
+
+- **agent-loop 在派发前对工具参数做 JSON-Schema 校验，失败注入结构化错误回灌模型。**
+  此前 `provider-base.ts:88-94` 注释明确"We don't validate the schema here"，模型
+  乱传参数只能由各 dispatcher 自己防御，出错时一句模糊的 "tool threw: …" 让模型
+  再试一次也猜不出哪里错。现在 agent-loop 在 approval 通过后、dispatch 前调用
+  `validateAgainstSchema(call.arguments, schema)`：
+  - 失败 → 不派发；用 `formatValidationErrors` 生成多行错误（含 `tool name` /
+    每个出错字段的 dot-path / 具体原因 / "Tool was NOT dispatched. Please retry
+    with corrected arguments." 提示）作为 `role:'tool'` 反馈给模型；
+  - `source: 'schema-validation'`、`isError: true`，errorType 用同一首行——
+    自然喂给 v1.2.108 的 stuck-loop 检测（同样的错参 3 次 → 早停）。
+- **轻量验证器**：手写 80 行，不引 ajv。覆盖 `type`（含 `integer` ≠ `number`）/
+  `required`/`enum`/`additionalProperties:false`/对象一层嵌套/数组 `items`。复杂
+  schema（$ref/oneOf/format/数值约束）静默通过——失败开 footgun 比假阳性危险。
+  对 agim 现有 tool 的扁平 object schema 足够。
+- **Env 关阀**：`IMHUB_TOOL_SCHEMA_VALIDATE=off` 关闭校验，回退到 v1.2.109 行为，
+  万一某 vendor schema 触发误报有快速逃生路径。
+
+### Tests
+
+24 个新测试覆盖 happy path、类型/必填/枚举/嵌套/数组/`additionalProperties:false`、
+错参不派发、错误回灌内容正确、stuck-loop 联动、env 关阀回退、合法参数正常派发。
+整套 P0+P1 测试 69/69 全绿；typecheck 干净。
+
 ## [1.2.109] - 2026-05-29
 
 ### Changed (native agent stability, batch P0b — gap ② closed)

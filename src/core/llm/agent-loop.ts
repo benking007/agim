@@ -58,6 +58,7 @@ import type {
 } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { runGoalCritic, resolveCriticMode } from './goal-critic.js'
+import { validateAgainstSchema, formatValidationErrors } from './schema-validate.js'
 
 const log = rootLogger.child({ component: 'agent-loop' })
 
@@ -71,6 +72,16 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000  // 5 min — generous; signal usually 
 const CRITIC_MIN_TOOL_CALLS = 5
 const CRITIC_EVERY_N = 5
 const CRITIC_MAX_CALLS = 2
+
+/** v1.2.110 — gate the tool-args schema validator. Default ON; ops can
+ *  flip OFF via env if a vendor schema confuses the lightweight
+ *  validator (e.g. uses $ref / oneOf which we don't implement). The
+ *  escape hatch keeps a footgun small. */
+function resolveSchemaValidate(): boolean {
+  const raw = (process.env.IMHUB_TOOL_SCHEMA_VALIDATE ?? '').toLowerCase().trim()
+  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
+  return true
+}
 
 /**
  * Deterministic JSON.stringify with sorted object keys at every level.
@@ -311,6 +322,15 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const dispatch = input.dispatch
   const signal = mergeSignal(input.signal, timeoutMs)
 
+  // v1.2.110 — build a name → schema map once so the per-iteration
+  // tool-args validator (just before dispatch) can look up the declared
+  // shape in O(1). When the validator is disabled or a tool isn't in
+  // the map (caller didn't declare it; defensive), validation is a no-op.
+  const schemaValidateOn = resolveSchemaValidate()
+  const schemaByName = new Map<string, unknown>(
+    (tools ?? []).map((t) => [t.name, t.parameters]),
+  )
+
   // Local copy so we don't mutate the caller's array.
   const history: LlmMessage[] = input.messages.slice()
   const toolCalls: ToolCallReport[] = []
@@ -464,6 +484,38 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           errorType: extractErrorType(true, denyText),
         }
         continue
+      }
+
+      // v1.2.110 — pre-dispatch JSON-Schema validation. Catches "model
+      // sent the wrong shape" (missing required field, string-where-int,
+      // bad enum, etc.) and feeds the model a structured "fix and retry"
+      // message INSTEAD of dispatching with garbage args. Without this,
+      // the dispatcher had to defensively parse / coerce, and any
+      // failure surfaced as an opaque "tool threw: …" the model rarely
+      // self-corrected. Disabled when IMHUB_TOOL_SCHEMA_VALIDATE=off.
+      const toolSchema = schemaByName.get(call.name)
+      if (schemaValidateOn && toolSchema) {
+        const verrs = validateAgainstSchema(call.arguments, toolSchema)
+        if (verrs.length > 0) {
+          const msg = formatValidationErrors(call.name, verrs)
+          historySlots[idx] = { role: 'tool', toolCallId: call.id, content: msg }
+          reportSlots[idx] = {
+            ...reportBase,
+            decision: 'allow',
+            isError: true,
+            durationMs: 0,
+            source: 'schema-validation',
+            preview: msg.slice(0, 200),
+            errorType: extractErrorType(true, msg),
+          }
+          log.debug({
+            event: 'agent-loop.schema_validation_failed',
+            tool: call.name,
+            errors: verrs.length,
+            firstError: verrs[0],
+          })
+          continue
+        }
       }
 
       // Capture dispatch into an async closure so it can be awaited

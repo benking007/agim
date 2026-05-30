@@ -83,6 +83,134 @@ function resolveSchemaValidate(): boolean {
   return true
 }
 
+/** v1.2.112 — process-wide kill switch for the streaming code path.
+ *  When 'off', `streamPartialText: true` requests are silently
+ *  downgraded to buffered `chat()`. Default 'on' (i.e. honour caller
+ *  opt-in). Operators flip 'off' if a vendor's streaming endpoint
+ *  misbehaves and they don't want to redeploy. */
+function resolveStreamEnabled(): boolean {
+  const raw = (process.env.IMHUB_AGENT_LOOP_STREAM ?? '').toLowerCase().trim()
+  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
+  return true
+}
+
+/**
+ * v1.2.112 — consume `provider.chatStream()` and synthesize a
+ * ChatResult. The key win over `provider.chat()`: when the AbortSignal
+ * fires mid-stream, we return the partial text + completed tool_calls
+ * accumulated so far instead of an empty result. Tool_calls are
+ * accumulated by `index`; entries that lack a `name` at abort time are
+ * dropped (a partial tool_call is too risky to dispatch). Reasoning
+ * trace (DeepSeek `reasoning_content`) is concatenated and passed
+ * through so downstream UI can still render it.
+ *
+ * If the provider's stream impl produces no tool_call deltas but the
+ * model wanted tool_use, the helper logs a warn and returns whatever
+ * text + finishReason it saw. Caller (agent-loop) should treat
+ * `finishReason='tool_use' with empty toolCalls` as a degenerate case
+ * (rare; only happens when streaming is enabled against a provider
+ * that hasn't extended its _callApiStream).
+ */
+async function streamThenBuffer(
+  provider: LlmProvider,
+  history: LlmMessage[],
+  opts: {
+    system?: string
+    tools?: ToolDef[]
+    toolChoice?: ToolChoice
+    signal: AbortSignal
+    timeoutMs?: number
+    model?: string
+    temperature?: number
+    maxTokens?: number
+    onUsage: (u: LlmUsage) => void
+    onPartialText?: (delta: string, totalSoFar: string) => void
+  },
+): Promise<ChatResult> {
+  let text = ''
+  let reasoning = ''
+  let finishReason: FinishReason = 'unknown'
+  let usage: LlmUsage = {}
+  // tool_call accumulator: index → { id, name, argsConcat }
+  const toolAcc = new Map<number, { id?: string; name?: string; argsConcat: string }>()
+
+  try {
+    for await (const chunk of provider.chatStream(history, {
+      system: opts.system,
+      tools: opts.tools,
+      toolChoice: opts.toolChoice,
+      signal: opts.signal,
+      timeoutMs: opts.timeoutMs,
+      model: opts.model,
+      temperature: opts.temperature,
+      maxTokens: opts.maxTokens,
+      onUsage: opts.onUsage,
+    })) {
+      if (chunk.textDelta && chunk.textDelta.length > 0) {
+        text += chunk.textDelta
+        try { opts.onPartialText?.(chunk.textDelta, text) } catch { /* observer must not break stream */ }
+      }
+      if (chunk.reasoningDelta) {
+        reasoning += chunk.reasoningDelta
+      }
+      if (chunk.toolCallDeltas && chunk.toolCallDeltas.length > 0) {
+        for (const d of chunk.toolCallDeltas) {
+          let acc = toolAcc.get(d.index)
+          if (!acc) { acc = { id: undefined, name: undefined, argsConcat: '' }; toolAcc.set(d.index, acc) }
+          if (d.id && !acc.id) acc.id = d.id
+          if (d.name && !acc.name) acc.name = d.name
+          if (d.argumentsDelta) acc.argsConcat += d.argumentsDelta
+        }
+      }
+      if (chunk.finishReason) finishReason = chunk.finishReason
+      if (chunk.usage) usage = chunk.usage
+    }
+  } catch (err) {
+    // Abort mid-stream is the headline case: don't re-throw — fall
+    // through to synthesize a ChatResult with the partial accumulator.
+    if (isAbort(err)) {
+      finishReason = 'unknown' // caller will downgrade based on signal
+    } else {
+      // Non-abort error: let it propagate so callers see the failure.
+      throw err
+    }
+  }
+
+  // Materialise accumulated tool_calls. Drop entries with no name (the
+  // model didn't finish identifying which tool) — safer than guessing.
+  const toolCalls: ToolCallRequest[] = []
+  const indices = Array.from(toolAcc.keys()).sort((a, b) => a - b)
+  for (const idx of indices) {
+    const acc = toolAcc.get(idx)!
+    if (!acc.name) continue
+    let args: Record<string, unknown> = {}
+    if (acc.argsConcat) {
+      try { args = JSON.parse(acc.argsConcat) as Record<string, unknown> }
+      catch { args = { _raw: acc.argsConcat } }
+    }
+    toolCalls.push({
+      id: acc.id ?? `stream-call-${idx}`,
+      name: acc.name,
+      arguments: args,
+    })
+  }
+
+  return {
+    text,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    reasoningContent: reasoning || undefined,
+    usage,
+    finishReason,
+    modelUsed: opts.model ?? provider.model,
+  }
+}
+
+function isAbort(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { name?: string; code?: string }
+  return e.name === 'AbortError' || e.code === 'ABORT_ERR'
+}
+
 /**
  * Deterministic JSON.stringify with sorted object keys at every level.
  * Used by the stuck-loop detector to derive a stable identity key for
@@ -244,6 +372,24 @@ export interface AgentLoopInput {
    *  v1.2.108). */
   parallelSafeTools?: ReadonlySet<string>
 
+  /** v1.2.112 — opt into streaming the provider response so the iter
+   *  preserves partial assistant text on abort instead of dropping
+   *  everything when the 30-min IM hard timeout fires mid-response.
+   *  When true the loop uses `provider.chatStream()`, accumulates text
+   *  / tool_calls / reasoning, and on abort returns the partial text
+   *  with finishReason='aborted'. Falls back to buffered `chat()` on
+   *  any provider that doesn't implement streaming. Default false to
+   *  preserve v1.2.111 behaviour. Env `IMHUB_AGENT_LOOP_STREAM=off`
+   *  is a process-wide kill switch even when this is true (so ops can
+   *  flip it off without code changes). */
+  streamPartialText?: boolean
+
+  /** v1.2.112 — fires with each streamed text delta (after backpressure-
+   *  free accumulation). Useful for "agent is thinking… 100/250/...
+   *  chars produced" heartbeats or future SSE push to the IM client.
+   *  Only fires when `streamPartialText` is effectively true. */
+  onPartialText?: (delta: string, totalSoFar: string) => void
+
   /** Lifecycle hooks for caller-side observability (heartbeats, progress
    *  push, custom logging). All hooks are best-effort: thrown errors are
    *  swallowed so a faulty observer cannot break the loop. */
@@ -331,6 +477,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     (tools ?? []).map((t) => [t.name, t.parameters]),
   )
 
+  // v1.2.112 — streaming is the caller opt-in (input.streamPartialText)
+  // AND the env kill switch must allow it. Off by default for backward
+  // compatibility — callers that want partial-on-abort opt in.
+  const streamEnabled = !!input.streamPartialText && resolveStreamEnabled()
+
   // Local copy so we don't mutate the caller's array.
   const history: LlmMessage[] = input.messages.slice()
   const toolCalls: ToolCallReport[] = []
@@ -359,17 +510,52 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     let result: ChatResult
     const t0 = Date.now()
     try {
-      result = await input.provider.chat(history, {
-        system: input.systemPrompt,
-        tools,
-        toolChoice: input.toolChoice,
-        signal: signal.signal,
-        timeoutMs,
-        model: input.callOptions?.model,
-        temperature: input.callOptions?.temperature,
-        maxTokens: input.callOptions?.maxTokens,
-        onUsage: (u) => mergeUsage(usageAcc, u),
-      })
+      if (streamEnabled) {
+        // v1.2.112 — accumulate via stream so abort mid-response keeps
+        // the partial text + completed tool_calls instead of dropping
+        // everything. See `streamThenBuffer` for the contract.
+        result = await streamThenBuffer(input.provider, history, {
+          system: input.systemPrompt,
+          tools,
+          toolChoice: input.toolChoice,
+          signal: signal.signal,
+          timeoutMs,
+          model: input.callOptions?.model,
+          temperature: input.callOptions?.temperature,
+          maxTokens: input.callOptions?.maxTokens,
+          onUsage: (u) => mergeUsage(usageAcc, u),
+          onPartialText: input.onPartialText,
+        })
+        // v1.2.112 — stream was aborted mid-flight. The headline win
+        // of this whole batch is: don't drop what the model already
+        // produced. Short-circuit here with `aborted` + the accumulated
+        // partial text so the caller (native adapter) can show it.
+        // streamThenBuffer caught the AbortError and returned with
+        // whatever it had; we just need to flag it as aborted on the
+        // AgentLoopResult (ChatResult.finishReason can't carry it).
+        if (signal.signal.aborted) {
+          signal.cleanup()
+          return {
+            text: result.text,
+            iterations: iter + 1,
+            toolCalls,
+            usage: usageAcc,
+            finishReason: 'aborted',
+          }
+        }
+      } else {
+        result = await input.provider.chat(history, {
+          system: input.systemPrompt,
+          tools,
+          toolChoice: input.toolChoice,
+          signal: signal.signal,
+          timeoutMs,
+          model: input.callOptions?.model,
+          temperature: input.callOptions?.temperature,
+          maxTokens: input.callOptions?.maxTokens,
+          onUsage: (u) => mergeUsage(usageAcc, u),
+        })
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn({

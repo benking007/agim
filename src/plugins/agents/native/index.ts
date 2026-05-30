@@ -479,6 +479,18 @@ function resolveMaxIterations(): number {
   return Math.min(Math.max(n, 1), 100)
 }
 
+/** v1.2.112 — opt the native agent into the agent-loop's streaming
+ *  code path. Default ON: the headline benefit is preserving partial
+ *  assistant text when IM's 30-min hard timeout fires mid-response.
+ *  Ops can flip via `IMHUB_NATIVE_STREAM_PARTIAL=off` if a vendor's
+ *  streaming endpoint misbehaves. Note the agent-loop also honours
+ *  process-wide `IMHUB_AGENT_LOOP_STREAM=off` as a global kill switch. */
+function resolveNativeStreamPartial(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_STREAM_PARTIAL ?? '').toLowerCase().trim()
+  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
+  return true
+}
+
 function pickProvider(): { provider: LlmProvider; role: string } | null {
   for (const role of resolveRole()) {
     const p = getProvider(role)
@@ -1010,6 +1022,13 @@ class NativeAgentAdapter implements AgentAdapter {
         // concurrently. Conservative allowlist; see the constant for
         // what's in / out and why.
         parallelSafeTools: NATIVE_PARALLEL_SAFE_TOOLS,
+        // v1.2.112 — stream provider responses so partial assistant
+        // text survives the IM 30-min hard timeout. Env-gated kill
+        // switch (`IMHUB_NATIVE_STREAM_PARTIAL=off` + global
+        // `IMHUB_AGENT_LOOP_STREAM=off`) for safety. No onPartialText
+        // wired yet — that lands when we push streaming to the IM
+        // client. The accumulation itself already saves the partial.
+        streamPartialText: resolveNativeStreamPartial(),
       })
       if (result.finishReason !== 'error') break
       const errStr = String(result.error || '')

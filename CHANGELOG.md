@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.112] - 2026-05-29
+
+### Added (native agent stability, batch P0c — gap ③ closed; full 7/7 done)
+
+- **agent-loop 接入流式 + abort 时保留 partial assistant text。** 这是
+  native 体感最显眼的差距：之前 IM 30 分钟硬超时 fire 时，模型已产出的 reasoning /
+  text / 未完工的 tool_calls 一律丢弃，用户看到的是"卡 28 分钟然后空回复"。本版：
+  - `ChatStreamChunk` 扩展两个可选字段：`toolCallDeltas?: ToolCallStreamDelta[]`
+    和 `reasoningDelta?: string`。OpenAI streaming 协议下，一个 tool_call 会被切
+    成多个 chunk（首 chunk 带 id + name，后续 chunk 追加 `function.arguments`
+    片段，按 `index` 累积），新字段把这些增量原样透传给消费者。
+  - `OpenAICompatProvider._callApiStream` 解析并 emit 上述增量（之前只 emit
+    text）。reasoning_content 同步支持，DeepSeek 风格的 thinking trace 流式可用。
+  - `agent-loop` 新增 `streamThenBuffer(provider, ...)` helper：消费
+    `chatStream`，按 index 累积 tool_call (drop 无 name 的半完成项)，累计 text
+    + reasoning，并构造一个 ChatResult。**关键路径**：内部 catch AbortError，
+    返回带 partial 的 ChatResult；agent-loop 看到 `signal.aborted` 后立即
+    短路 return AgentLoopResult `{text: partial, finishReason: 'aborted'}`。
+  - `AgentLoopInput` 新增两字段：`streamPartialText?: boolean`（caller 显式
+    opt-in；默认 false 保持 v1.2.111 行为不变）+ `onPartialText?: (delta,
+    totalSoFar) => void`（流式回调，将来可挂 IM 端 SSE 推送）。
+  - **native 默认开启**：`IMHUB_NATIVE_STREAM_PARTIAL`（默认 'on'；'off' 关闭）+
+    全局 `IMHUB_AGENT_LOOP_STREAM`（默认 'on'；'off' 强制 buffer）双重 kill
+    switch，万一某 vendor 流式不稳可立即降级。
+
+### Tests
+
+5 个集成测试通过 stub `LlmProvider`（overriding `chatStream` + `chat`）覆盖：
+默认走 buffered chat（向后兼容）、streamPartialText 切流式并按 chunk 触发
+onPartialText、abort mid-stream 保留 partial 且 finishReason='aborted'、
+tool_call 多 chunk 增量正确累积为完整 call（id+name+解析 args）、reasoning
+增量累积。整套 P0+P1+P2+P0c 测试 78/78 全绿；typecheck 干净。
+
+### Roadmap
+
+至此架构盘点里识别的 7 项 native 稳定性差距全部落地：
+v1.2.108（① + ⑤ + ⑥）→ v1.2.109（②）→ v1.2.110（④）→ v1.2.111（⑦）→
+v1.2.112（③）。下一步是真实使用观察 + 长尾红测试修复。
+
 ## [1.2.111] - 2026-05-29
 
 ### Added (native agent observability, batch P2 — gap ⑦ closed)

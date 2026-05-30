@@ -215,9 +215,30 @@ export interface ChatResult {
   modelUsed: string
 }
 
-/** Lightweight stream chunk. Stage 1 streams only text deltas. */
+/** v1.2.112 — partial tool_call landed in a single SSE chunk. The
+ *  OpenAI streaming protocol splits a tool_call across many chunks:
+ *  first chunk carries id + name, subsequent chunks add `argumentsDelta`
+ *  fragments that the consumer concatenates by `index`. Other fields
+ *  arrive only on the first chunk for a given index. Consumer
+ *  accumulates by index; abort mid-stream may leave some entries with
+ *  partial / no name (skip those — too risky to dispatch). */
+export interface ToolCallStreamDelta {
+  index: number
+  id?: string
+  name?: string
+  argumentsDelta?: string
+}
+
+/** Stream chunk. `textDelta` may be the empty string when the chunk
+ *  only carries non-text fields (tool_call delta / reasoning delta /
+ *  terminal finishReason). */
 export interface ChatStreamChunk {
   textDelta: string
+  /** v1.2.112 — partial tool_call(s) from a streamed turn. */
+  toolCallDeltas?: ToolCallStreamDelta[]
+  /** v1.2.112 — provider thinking-trace delta (e.g. DeepSeek
+   *  reasoning_content). Optional; concatenate by order seen. */
+  reasoningDelta?: string
   /** Only populated on the final chunk. Earlier chunks have null. */
   finishReason?: FinishReason | null
   /** Only populated on the final chunk, when the provider reports it. */

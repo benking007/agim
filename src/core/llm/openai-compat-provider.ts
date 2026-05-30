@@ -222,13 +222,44 @@ export class OpenAICompatProvider extends LlmProvider {
             let parsed: ChatCompletionChunk | null = null
             try { parsed = JSON.parse(payload) as ChatCompletionChunk } catch { /* ignore */ }
             if (!parsed) continue
-            const delta = parsed.choices?.[0]?.delta?.content
+            const choice = parsed.choices?.[0]
+            const delta = choice?.delta?.content
             if (parsed.usage) lastUsage = extractUsage(parsed)
-            if (parsed.choices?.[0]?.finish_reason) {
-              lastFinish = mapFinishReason(parsed.choices[0].finish_reason)
+            if (choice?.finish_reason) {
+              lastFinish = mapFinishReason(choice.finish_reason)
             }
-            if (typeof delta === 'string' && delta.length > 0) {
-              yield { textDelta: delta }
+            // v1.2.112 — emit tool_call + reasoning deltas. OpenAI
+            // streams tool_calls split across chunks: first chunk for
+            // an `index` carries id+name, subsequent chunks add
+            // `function.arguments` fragments. Pass through as-is and
+            // let the consumer accumulate by index.
+            const deltaObj = choice?.delta as {
+              content?: string
+              tool_calls?: Array<{
+                index?: number
+                id?: string
+                function?: { name?: string; arguments?: string }
+              }>
+              reasoning_content?: string
+            } | undefined
+            const toolCallDeltas = (deltaObj?.tool_calls ?? [])
+              .filter((tc) => tc && typeof tc.index === 'number')
+              .map((tc) => ({
+                index: tc.index as number,
+                id: tc.id,
+                name: tc.function?.name,
+                argumentsDelta: tc.function?.arguments,
+              }))
+            const reasoningDelta = typeof deltaObj?.reasoning_content === 'string' && deltaObj.reasoning_content.length > 0
+              ? deltaObj.reasoning_content
+              : undefined
+            const textDeltaStr = typeof delta === 'string' ? delta : ''
+            if (textDeltaStr || toolCallDeltas.length > 0 || reasoningDelta) {
+              yield {
+                textDelta: textDeltaStr,
+                toolCallDeltas: toolCallDeltas.length > 0 ? toolCallDeltas : undefined,
+                reasoningDelta,
+              }
             }
           }
         }

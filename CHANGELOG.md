@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.117] - 2026-05-30
+
+### Added (agent-loop — auto-continue on `finish_reason="length"`)
+
+- **LLM 输出被 max_tokens 截断时自动续写**。背景：用户问数据分析 → DeepSeek 返
+  `finish_reason: 'length'` → 回答停在"**总体"未闭合 markdown，user 体感像 bug
+  其实是 LLM 自己被砍。调研了 7 个 agent（nanobot HKUDS / obot-platform / opencode /
+  claude-code / codex / OpenHands / Continue.dev），采用 HKUDS/nanobot 的方案：
+  - **检测 `finishReason === 'length'`**：保留 partial 文本入 history，drop 该轮的
+    任何 partial tool_calls（避免 obot 文档化的"$0.91 烧在 6 次连续 length retry
+    执行截断 JSON 上"灾难），注入合成 user 消息：`Your previous response was cut
+    off … Continue from exactly where you left off — do not repeat any content`
+  - **per-turn 计数器 cap=3**：与 HKUDS/nanobot 一致；env `IMHUB_NATIVE_LENGTH_
+    RECOVERY_MAX` 可调（0 = 完全关闭走老逻辑，最大 10）
+  - **partial text 累积返回**：新增 `lengthRecoveryPrefix` 串，所有终止路径
+    （aborted / error / stuck_loop / off_track / max_iterations / 早 terminate）
+    都把它跟当前 result.text 拼起来 → caller 拿到完整答案，不是只剩最后一段续写
+  - **不动全局 max_tokens**：避免每次调用都付高 token 成本；只在被截断时多花一次
+    续写的 tokens
+- 6 个 bun test case 全绿：
+  - 单次 length → 自动续 + 拼接
+  - 连续 3 次 length 在 cap 内全部续完
+  - 第 4 次（cap=3 之外）→ surface `finishReason='length'` 但拼出完整 prefix
+  - cap=0 完全禁用走 v1.2.116 老路径
+  - length + partial tool_calls → drop tool_calls + 不 dispatch（关键安全防线）
+  - 正常 stop finish → 不受任何影响
+
+### Affected paths
+
+- `src/core/llm/agent-loop.ts`：
+  - 新 `resolveLengthRecoveryMax()` + `LENGTH_RECOVERY_MESSAGE` 常量
+  - loop 入口加 `lengthRecoveryCount` + `lengthRecoveryPrefix` 局部状态
+  - early-terminate 前插 length 拦截分支（push partial + drop tool_calls + recovery prompt + continue）
+  - 6 个终止 return 全部改用 `lengthRecoveryPrefix + result.text` / `lengthRecoveryPrefix`
+- `test/unit/agent-loop-length-recovery.test.ts`（新文件 ~150 行 / 6 case）
+
+### Test status
+
+- 24/24 agent-loop bun tests pass（含新增 6 个）
+- 199 web-app vitest pass（无变动）
+- typecheck clean
+
 ## [1.2.116] - 2026-05-30
 
 ### Added (web chat — markdown rendering for assistant messages)

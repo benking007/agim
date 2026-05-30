@@ -94,6 +94,30 @@ function resolveStreamEnabled(): boolean {
   return true
 }
 
+/** v1.2.117 — max times the loop will auto-continue on
+ *  `finish_reason === 'length'` within a single user turn. Capped at 3
+ *  to mirror HKUDS/nanobot's runner.py and prevent obot's documented
+ *  "$0.91 burned on 6 consecutive length retries" disaster. Set 0 to
+ *  disable auto-continue entirely (loop will just return partial text
+ *  with finishReason='length' as it did pre-1.2.117). */
+const DEFAULT_LENGTH_RECOVERY_MAX = 3
+function resolveLengthRecoveryMax(): number {
+  const raw = (process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX ?? '').trim()
+  if (!raw) return DEFAULT_LENGTH_RECOVERY_MAX
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_LENGTH_RECOVERY_MAX
+  return Math.min(n, 10)
+}
+
+/** v1.2.117 — synthetic user message we inject after a `length` truncation.
+ *  Kept short (cache-friendly) and explicit ("don't repeat") so the model
+ *  picks up exactly where it stopped rather than re-summarising. */
+const LENGTH_RECOVERY_MESSAGE =
+  'Your previous response was cut off due to the output length limit. ' +
+  'Continue from exactly where you left off — do not repeat any content ' +
+  'and do not start over. If you were inside a markdown list, table, or ' +
+  'code block, continue inside it; if you were mid-sentence, complete it.'
+
 /**
  * v1.2.112 — consume `provider.chatStream()` and synthesize a
  * ChatResult. The key win over `provider.chat()`: when the AbortSignal
@@ -493,13 +517,24 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   // by 1 per per-call modulo check. Track the last fire to keep at-most-
   // every-CRITIC_EVERY_N cadence regardless of batch size.
   let lastCriticAtToolCalls = 0
+  // v1.2.117 — length-recovery counter + accumulated prefix.
+  // Each `finishReason === 'length'` we observe pushes the partial
+  // assistant text onto `lengthRecoveryPrefix` so the final return
+  // value is the WHOLE message (partial1 + partial2 + … + final).
+  // Without this the caller would only see the last continuation
+  // chunk, not the long-form answer they were actually waiting on.
+  let lengthRecoveryCount = 0
+  const lengthRecoveryMax = resolveLengthRecoveryMax()
+  let lengthRecoveryPrefix = ''
 
   let iter = 0
   for (; iter < maxIter; iter++) {
     if (signal.signal.aborted) {
       signal.cleanup()
       return {
-        text: '',
+        // v1.2.117 — if we accumulated partial text via length-recovery
+        // before being aborted, surface it; otherwise empty as before.
+        text: lengthRecoveryPrefix,
         iterations: iter,
         toolCalls,
         usage: usageAcc,
@@ -536,7 +571,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         if (signal.signal.aborted) {
           signal.cleanup()
           return {
-            text: result.text,
+            // v1.2.117 — concatenate accumulated partials with the
+            // current iteration's partial text.
+            text: lengthRecoveryPrefix + result.text,
             iterations: iter + 1,
             toolCalls,
             usage: usageAcc,
@@ -566,7 +603,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       signal.cleanup()
       writeIterAudit(input.audit, t0, 0, 0, false, msg)
       return {
-        text: '',
+        // v1.2.117 — preserve accumulated partials even on provider error.
+        text: lengthRecoveryPrefix,
         iterations: iter + 1,
         toolCalls,
         usage: usageAcc,
@@ -585,11 +623,64 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       result.usage.costUsd,
     )
 
+    // v1.2.117 — auto-continue on length truncation.
+    // OpenAI-style `finish_reason: 'length'` means the model hit
+    // max_tokens mid-response. Pre-fix the loop just returned the
+    // partial text and the user saw an unfinished markdown / sentence
+    // / table. Strategy (mirrors HKUDS/nanobot/agent/runner.py):
+    //   (1) Push the partial assistant turn into history AS-IS — the
+    //       model already paid the tokens, don't discard.
+    //   (2) Drop any partial tool_calls on this turn: a half-emitted
+    //       JSON args object is dangerous to dispatch (obot doc'd
+    //       $0.91 burned on dispatching a truncated tool call). The
+    //       continuation prompt asks the model to redo any tool call
+    //       cleanly if it still needs one.
+    //   (3) Append a synthetic user-role message instructing the
+    //       model to continue from where it stopped without repeating.
+    //   (4) Increment the per-turn counter; bail if we've hit the cap
+    //       to prevent runaway retries.
+    if (
+      result.finishReason === 'length'
+      && lengthRecoveryCount < lengthRecoveryMax
+    ) {
+      lengthRecoveryCount += 1
+      log.info({
+        event: 'agent-loop.length_recovery',
+        attempt: lengthRecoveryCount,
+        cap: lengthRecoveryMax,
+        partialTextLen: result.text.length,
+        droppedToolCalls: result.toolCalls?.length ?? 0,
+        backend: input.provider.name,
+        iter,
+      }, 'LLM output cut off (max_tokens); auto-continuing without repeat')
+      // (1) Preserve partial assistant content in history (so the next
+      // chat() call sees what was said), AND accumulate it into the
+      // prefix used to assemble the final return text. Otherwise the
+      // caller would only get the last continuation chunk.
+      lengthRecoveryPrefix += result.text
+      history.push({
+        role: 'assistant',
+        content: result.text,
+        reasoningContent: result.reasoningContent,
+      })
+      // (2) Drop tool_calls even if present — re-executing a half-
+      // emitted JSON args object is the obot-platform $0.91 disaster
+      // ([HKUDS/nanobot#2318]). The continuation prompt lets the
+      // model re-issue the call cleanly if it still needs to.
+      // (3) Recovery prompt.
+      history.push({ role: 'user', content: LENGTH_RECOVERY_MESSAGE })
+      // Don't bump `iter` past maxIter prematurely — the for-loop will
+      // increment normally. Just keep going.
+      continue
+    }
+
     // No tools, or model decided not to call any → terminate.
     if (result.finishReason !== 'tool_use' || !result.toolCalls || result.toolCalls.length === 0) {
       signal.cleanup()
       return {
-        text: result.text,
+        // v1.2.117 — prefix accumulated partials so a chain of length
+        // truncations returns the concatenated full message.
+        text: lengthRecoveryPrefix + result.text,
         iterations: iter + 1,
         toolCalls,
         usage: usageAcc,
@@ -796,7 +887,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       }, `stuck loop: 3× ${a.name} with identical args + outcome — early stop at iter ${iter}`)
       signal.cleanup()
       return {
-        text: '',
+        // v1.2.117 — preserve accumulated partials.
+        text: lengthRecoveryPrefix,
         iterations: iter + 1,
         toolCalls,
         usage: usageAcc,
@@ -844,7 +936,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
         signal.cleanup()
         return {
-          text: '',
+          // v1.2.117 — preserve accumulated partials.
+          text: lengthRecoveryPrefix,
           iterations: iter + 1,
           toolCalls,
           usage: usageAcc,
@@ -866,7 +959,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   // Fell off the loop without a non-tool_use finish → max iterations.
   signal.cleanup()
   return {
-    text: '',
+    // v1.2.117 — preserve accumulated partials.
+    text: lengthRecoveryPrefix,
     iterations: iter,
     toolCalls,
     usage: usageAcc,

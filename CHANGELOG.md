@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.120] - 2026-05-31
+
+### Changed (PlanMode 取消重启依赖——可运行时切换)
+
+用户反馈："Plan模式下，退出Plan 需要重启Agim，感觉太严格了，不合适"。修正：
+
+- 新增 `src/core/plan-mode-state.ts`：sqlite 表 `native_plan_mode(thread_key PK,
+  enabled, updated_at)`，per-thread 持久化覆盖；DB 默认 `~/.agim/plan-mode.db`，
+  env `IMHUB_PLAN_MODE_DB` 可指定路径
+- 三态优先级 `effectivePlanModeOn(threadKey)`：
+  1. per-thread = **true** → on（即使 env=off）
+  2. per-thread = **false** → off（即使 env=on——一个线程可单独 opt-out）
+  3. per-thread = null（未设置）→ 回退到 env `IMHUB_NATIVE_PLAN_MODE`
+- `/plan on|off` 现在**同时**写 sessionManager.planMode（claude-code / codex /
+  opencode 用）和 plan-mode-state.db（native 用），native 加入 PLAN_CAPABLE_AGENTS
+  集合，提示文案里移除"native 不读 planMode"的警告
+- `resolvePolicy(threadKey?)` / `buildSystemPrompt(..., threadKey?)` /
+  `isPlanModeOn(threadKey?)` 三个 native 函数加 threadKey 参数；sendPrompt
+  内用 `threadKey(platform, channelId, threadId)` 算出来传下去
+- 现在切换 PlanMode **不需要重启**——`/plan off` 下一个 turn 就生效
+
+### Affected paths
+
+- `src/core/plan-mode-state.ts`（新 ~130 行）
+- `src/core/commands/plan.ts`：加 native 到 PLAN_CAPABLE_AGENTS、on/off 分支
+  调 `setPlanModeForThread` / `clearPlanModeForThread`
+- `src/plugins/agents/native/index.ts`：`resolvePolicy` / `buildSystemPrompt` /
+  `isPlanModeOn` 改签名；sendPrompt 计算并传入 planThreadKey
+- `test/unit/plan-mode-state.test.ts`（新，4 个 case：env 解析 / no-threadKey
+  env-only / 落空回退到 env）。SQLite CRUD + per-thread precedence 在生产
+  (node) 跑，bun 测试因为 better-sqlite3 兼容降级为 no-op，所以这一层在
+  production 验证不在 bun 单测里 assert
+
+### Test status
+
+- 137/137 bun pass（新增 4 个 plan-mode-state；其余 9 个 plan.test.ts +
+  14 个 plan-mode.test.ts + 之前批次的 110+ 个都依旧绿）
+- typecheck clean
+
+### What's next
+
+剩下 v1.2.121+：
+- in-process call_agent self-spawn（fan-out 关键）
+- Brave/Serper/Exa search adapter
+- 语义 stuck-loop / TCP 重试 / TodoWrite / LLM 摘要 compact
+
 ## [1.2.119] - 2026-05-31
 
 ### Added (native agent stability + 安全栏 — 主流对账批 2/4)

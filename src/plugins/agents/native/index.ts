@@ -86,7 +86,8 @@ import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { handlePushOp } from '../../../core/push-rpc.js'
-import { approvalBus } from '../../../core/approval-bus.js'
+import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
+import { effectivePlanModeOn } from '../../../core/plan-mode-state.js'
 import { randomUUID as _nativeRandomUUID } from 'node:crypto'
 import type { ToolCallRequest } from '../../../core/llm/provider-base.js'
 import { maybeCompactHistory } from '../../../core/llm/auto-compact.js'
@@ -110,7 +111,12 @@ const log = rootLogger.child({ component: 'native-agent' })
  * builder closes that information gap without leaking secrets — every
  * field surfaced here is operator-configured and non-sensitive.
  */
-export function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): string {
+export function buildSystemPrompt(
+  provider: LlmProvider,
+  role: string,
+  cwd: string,
+  threadKey?: string,
+): string {
   const skills = listSkills()
   const skillsBlock = skills.length
     ? skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n')
@@ -152,7 +158,7 @@ export function buildSystemPrompt(provider: LlmProvider, role: string, cwd: stri
   // can't write/exec. Without this banner, the deny verdict from
   // the policy gate gives a bare "tool call denied" message and the
   // model wastes iterations trying alternative write paths.
-  if (isPlanModeOn()) {
+  if (isPlanModeOn(threadKey)) {
     lines.push(
       `⚠ Plan mode is ACTIVE (IMHUB_NATIVE_PLAN_MODE=1)`,
       `  - You MUST produce a read-only plan; native_write_file and native_exec are HARD-BLOCKED.`,
@@ -556,7 +562,7 @@ function pickProviderChain(): Array<{ provider: LlmProvider; role: string }> {
  *  `list_*` / `get_*` / etc.) and the four built-ins
  *  (`native_echo`/`now`/`random_uuid` — `sleep_ms` excluded).
  */
-export function resolvePolicy(): PolicyApprovalGateConfig {
+export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const mode = (process.env.IMHUB_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
   const autoAllow = splitEnvList(process.env.IMHUB_NATIVE_AGENT_AUTOALLOW)
   const denyList = splitEnvList(process.env.IMHUB_NATIVE_AGENT_DENYLIST)
@@ -592,18 +598,20 @@ export function resolvePolicy(): PolicyApprovalGateConfig {
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
     : autoAllow
   // v1.2.119 — PlanMode hard-denies write + exec tools.
+  // v1.2.120 — PlanMode now ALSO honours per-thread overrides written
+  //            by the /plan slash command. Pass `threadKey` to apply
+  //            the override; omit it (CLI boot context, tests) for
+  //            the env-only path.
   //
-  // Toggled via env `IMHUB_NATIVE_PLAN_MODE=1`. Mirrors opencode's
-  // plan-mode behaviour: agent must produce a read-only plan; trying
-  // to call native_write_file / native_exec is denied with a clear
-  // structured message instructing the model to summarise the plan
-  // instead. Operator clears the env (or unsets it) to re-enable
-  // writes for the next turn.
+  // Mirrors opencode's plan-mode behaviour: agent must produce a
+  // read-only plan; trying to call native_write_file / native_exec is
+  // denied with a clear structured message instructing the model to
+  // summarise the plan instead.
   //
   // We extend the user-supplied denyList rather than replacing the
   // policy mode — read-only tools (Read/Grep/Glob/web_fetch/web_search/
   // MCP read tools) continue to pass through autoAllow as before.
-  const effectiveDeny = isPlanModeOn()
+  const effectiveDeny = isPlanModeOn(threadKey)
     ? Array.from(new Set([...denyList, ...PLAN_MODE_DENY_TOOLS]))
     : denyList
   return { mode, autoAllow: effectiveAllow, denyList: effectiveDeny }
@@ -618,9 +626,13 @@ const PLAN_MODE_DENY_TOOLS = [
   'native_exec',
 ] as const
 
-export function isPlanModeOn(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
-  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
+/** Plan mode resolution (v1.2.120):
+ *  - `threadKey` given (and matches a /plan-toggled row) → use that row
+ *  - `threadKey` given but no row → fall through to env
+ *  - `threadKey` omitted → env-only (back-compat for CLI boot, tests)
+ */
+export function isPlanModeOn(threadKey?: string): boolean {
+  return effectivePlanModeOn(threadKey)
 }
 
 /**
@@ -956,7 +968,13 @@ class NativeAgentAdapter implements AgentAdapter {
       ...getAllMcpTools(),
     ]
 
-    const policy = resolvePolicy()
+    // v1.2.120 — compute the per-thread composite key once and thread
+    // it through PlanMode resolution. When the call has no IM context
+    // (CLI / smoke), threadKey stays undefined → env-only behaviour.
+    const planThreadKey = (opts.platform && opts.threadId)
+      ? makeThreadKey(opts.platform, opts.channelId ?? '', opts.threadId)
+      : undefined
+    const policy = resolvePolicy(planThreadKey)
     // v1.2.60 — when the policy would silently deny a tool call,
     // escalate to the user via an IM approval card instead. Only
     // wires when we have an actual IM thread (platform + threadId);
@@ -1022,7 +1040,7 @@ class NativeAgentAdapter implements AgentAdapter {
       usedRole = candidate.role
       result = await runAgentLoop({
         provider: candidate.provider,
-        systemPrompt: buildSystemPrompt(candidate.provider, candidate.role, cwd),
+        systemPrompt: buildSystemPrompt(candidate.provider, candidate.role, cwd, planThreadKey),
         messages: effectiveMessages,
         tools,
         dispatch,

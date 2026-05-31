@@ -51,17 +51,64 @@ describe('maybeCompactHistory', () => {
     const r = await maybeCompactHistory(messages, {
       triggerChars: 5_000,
       keepTurns: 3,
+      keepFirst: 0,   // legacy shape (no head) — asserted explicitly
       summarizer: stubProvider('FRESH SUMMARY HERE'),
     })
     expect(r.compacted).toBe(true)
     expect(r.collapsedCount).toBeGreaterThan(0)
-    // First message should be the synthetic summary entry.
+    // With keepFirst=0, first message is the synthetic summary entry.
     expect(r.messages[0].role).toBe('user')
     expect(r.messages[0].content).toContain('earlier conversation summary')
     expect(r.messages[0].content).toContain('FRESH SUMMARY HERE')
     // The 3 most recent user/assistant pairs must remain verbatim.
     const tail = r.messages.slice(-6)
     expect(tail.filter((m) => m.role === 'user')).toHaveLength(3)
+  })
+
+  // v1.2.125 — head + summary + tail (OpenHands Condenser shape).
+  it('keeps the original user goal at index 0 when keepFirst=1 (default)', async () => {
+    const messages: LlmMessage[] = []
+    messages.push({ role: 'user', content: '[ORIGINAL GOAL] please analyse Q3 earnings' })
+    messages.push({ role: 'assistant', content: '[first reply]' })
+    // 10 noisy middle turns
+    for (let i = 0; i < 10; i++) {
+      messages.push(bigMsg('user', i + 1, 1000))
+      messages.push(bigMsg('assistant', i + 1, 200))
+    }
+    const r = await maybeCompactHistory(messages, {
+      triggerChars: 5_000,
+      keepTurns: 3,
+      // keepFirst defaults to 1
+      summarizer: stubProvider('MIDDLE SUMMARY'),
+    })
+    expect(r.compacted).toBe(true)
+    // Head preserved: original goal stays at index 0
+    expect(r.messages[0].content).toContain('[ORIGINAL GOAL]')
+    expect(r.messages[1].content).toContain('[first reply]')
+    // Synthetic summary follows the head
+    expect(r.messages[2].content).toContain('earlier conversation summary')
+    expect(r.messages[2].content).toContain('MIDDLE SUMMARY')
+    // Tail = last keepTurns user/assistant pairs (6 messages)
+    expect(r.messages.slice(-6).filter((m) => m.role === 'user')).toHaveLength(3)
+  })
+
+  it('skips when head+tail already covers everything (no middle to summarise)', async () => {
+    const messages: LlmMessage[] = []
+    // 4 small turns — well under trigger anyway, but force the trigger
+    // to be tiny to exercise the head+tail coverage branch.
+    for (let i = 0; i < 4; i++) {
+      messages.push(bigMsg('user', i, 2000))
+      messages.push(bigMsg('assistant', i, 100))
+    }
+    const r = await maybeCompactHistory(messages, {
+      triggerChars: 1_000,
+      keepTurns: 3,        // tail covers last 3 user msgs
+      keepFirst: 1,        // head covers first user msg
+      // 4 user msgs total: head covers #0, tail covers #1/#2/#3 → all covered
+      summarizer: stubProvider('SHOULD-NOT-RUN'),
+    })
+    expect(r.compacted).toBe(false)
+    expect(r.messages).toBe(messages)
   })
 
   it('falls back to no-op when summarizer throws', async () => {
@@ -107,6 +154,7 @@ describe('maybeCompactHistory', () => {
     const r = await maybeCompactHistory(messages, {
       triggerChars: 5_000,
       keepTurns: 3,
+      keepFirst: 0,    // legacy shape: synthetic summary at index 0
       summarizer: stubProvider('SUMMARY'),
     })
     expect(r.compacted).toBe(true)

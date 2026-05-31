@@ -9,18 +9,23 @@
 // agent's earlier conclusions, not the live problem — so a 1-2 paragraph
 // summary preserves continuity at a fraction of the tokens.
 //
-// Strategy (intentionally simple):
+// Strategy (v1.2.125 — `head + summary + tail`, OpenHands Condenser
+// model):
 //   1. Cheap char-count proxy for tokens (chars ≈ 4 tokens for mixed
 //      EN/CN). When total < TRIGGER chars, do nothing.
-//   2. Always keep the original system prompt (caller handles), the
-//      last KEEP_TURNS user/assistant pairs verbatim, plus any tool
-//      messages that immediately precede them (so tool round-trips
-//      stay valid for the provider).
-//   3. Send the older slice to a cheap/evaluator role with a fixed
-//      "summarize the prior conversation" instruction. Inject the
-//      summary as a synthetic user message at index 0:
+//   2. **Head**: preserve the first `keepFirst` user messages
+//      verbatim, including each one's assistant response (+ any tool
+//      messages between them). The original user goal therefore
+//      survives every compaction. Default keepFirst=1.
+//   3. **Tail**: preserve the last `keepTurns` user/assistant pairs
+//      verbatim (also walks back to a `role:'user'` boundary so tool
+//      round-trips stay valid). Default keepTurns=6.
+//   4. **Middle**: send the slice between head and tail to a
+//      cheap/evaluator role with a fixed "summarize the prior
+//      conversation" instruction. Inject the summary as a synthetic
+//      user message between head and tail:
 //         "[earlier conversation summary]\n<summary>\n[/earlier]"
-//   4. On any failure, log + return the original array. Better a
+//   5. On any failure, log + return the original array. Better a
 //      slower turn than a broken one.
 
 import type { LlmProvider, LlmMessage } from './provider-base.js'
@@ -37,6 +42,13 @@ export interface CompactOptions {
    *  Default 6 (= 12 messages, plus any tool messages between them).
    *  Set via env IMHUB_NATIVE_COMPACT_KEEP_TURNS. */
   keepTurns?: number
+  /** v1.2.125 — number of INITIAL user messages preserved verbatim
+   *  (head). Each preserved user message also carries its assistant
+   *  response + any tool round-trip. Default 1 (the original goal is
+   *  never summarized). 0 disables head preservation (legacy
+   *  pre-v1.2.125 behaviour: only tail + summary). Set via env
+   *  IMHUB_NATIVE_COMPACT_KEEP_FIRST. */
+  keepFirst?: number
   /** Provider to ask for the summary. If omitted, tries evaluator →
    *  cheap → native-chat in that order; the first registered wins. */
   summarizer?: LlmProvider
@@ -90,6 +102,40 @@ function resolveSummarizer(): LlmProvider | null {
  * `keepTurns` user turns, then return the index of that user message.
  * If we couldn't find any user message, return 0 (no compaction).
  */
+/**
+ * v1.2.125 — pick the END index (exclusive) of the head slice such
+ * that `messages[0..end)` is a clean, self-contained prefix that
+ * always includes the first `keepFirstUsers` user messages plus their
+ * complete assistant responses (text or tool round-trip).
+ *
+ * Why end on "just before the next user message": an assistant turn
+ * may emit `tool_calls`; the matching `role:'tool'` messages MUST be
+ * in the same slice as the assistant message or OpenAI / DeepSeek
+ * reject the request (orphan tool result). Walking forward to the
+ * next user message guarantees the assistant + tools are bundled.
+ *
+ * Returns 0 when keepFirstUsers ≤ 0 or no user message exists.
+ */
+export function pickHeadEndIndex(messages: LlmMessage[], keepFirstUsers: number): number {
+  if (keepFirstUsers <= 0) return 0
+  let usersSeen = 0
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'user') {
+      usersSeen += 1
+      if (usersSeen >= keepFirstUsers) {
+        // Found the target user message; include any following non-user
+        // turns (assistant + tools) until the next user OR end-of-array.
+        let j = i + 1
+        while (j < messages.length && messages[j].role !== 'user') {
+          j += 1
+        }
+        return j
+      }
+    }
+  }
+  return 0
+}
+
 function pickKeepSliceIndex(messages: LlmMessage[], keepTurns: number): number {
   let pairs = 0
   let lastUserIdx = -1
@@ -114,6 +160,7 @@ export async function maybeCompactHistory(
 ): Promise<CompactResult> {
   const triggerChars = opts.triggerChars ?? envInt('IMHUB_NATIVE_COMPACT_TRIGGER_CHARS', 60_000)
   const keepTurns = opts.keepTurns ?? envInt('IMHUB_NATIVE_COMPACT_KEEP_TURNS', 6)
+  const keepFirst = opts.keepFirst ?? envInt('IMHUB_NATIVE_COMPACT_KEEP_FIRST', 1)
   const summaryCharCap = opts.summaryCharCap ?? envInt('IMHUB_NATIVE_COMPACT_SUMMARY_CHARS', 1_500)
 
   const originalChars = totalChars(messages)
@@ -126,7 +173,16 @@ export async function maybeCompactHistory(
     // Nothing to summarise — the recent slice covers everything.
     return { messages, compacted: false, collapsedCount: 0, summaryChars: 0, originalChars }
   }
-  const older = messages.slice(0, sliceIdx)
+  // v1.2.125 — split older into head + middle. The middle is what gets
+  // summarised; the head is preserved verbatim alongside the summary.
+  const headEnd = pickHeadEndIndex(messages, keepFirst)
+  // If the head already overlaps the recent slice, there's no "middle"
+  // to compact — fall through to no-op.
+  if (headEnd >= sliceIdx) {
+    return { messages, compacted: false, collapsedCount: 0, summaryChars: 0, originalChars }
+  }
+  const head = messages.slice(0, headEnd)
+  const older = messages.slice(headEnd, sliceIdx)
   const recent = messages.slice(sliceIdx)
 
   const summarizer = opts.summarizer ?? resolveSummarizer()
@@ -168,12 +224,16 @@ export async function maybeCompactHistory(
       event: 'auto-compact.applied',
       backend: summarizer.name,
       originalChars,
+      headCount: head.length,
       collapsedCount: older.length,
       keptCount: recent.length,
       summaryChars: synthetic.content.length,
     })
+    // v1.2.125 — order: head (verbatim) + summary + tail (verbatim).
+    // Head may be empty when keepFirst=0; recent always non-empty by
+    // the sliceIdx > 0 check above.
     return {
-      messages: [synthetic, ...recent],
+      messages: [...head, synthetic, ...recent],
       compacted: true,
       collapsedCount: older.length,
       summaryChars: synthetic.content.length,

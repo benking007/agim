@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.125] - 2026-06-01
+
+### Changed (auto-compact 升级为 head + summary + tail — OpenHands Condenser 模式)
+
+主流对账路线图最后一项收尾。背景：
+
+- agim 早就有 LLM-summary auto-compact（v1.2.31 / v1.2.86 演进至今），结构是
+  `[synthetic summary] + tail`
+- 但 OpenHands Condenser / Claude Code 的 best practice 是 `head + summary + tail`
+  ——首条 user 消息（原始目标）verbatim 保留，模型在长 turn 末段不会"忘了
+  用户最初要做什么"
+
+#### v1.2.125 修法
+- 新选项 `keepFirst`（env `IMHUB_NATIVE_COMPACT_KEEP_FIRST`，默认 **1**）：
+  保留前 N 个 user 消息**连同**它们的 assistant 回复 + tool 链 verbatim
+- 新 helper `pickHeadEndIndex(messages, N)`：往前走到第 N 个 user，再吃完它之后
+  所有非-user 消息（assistant + tool），保证 head 是个完整的回合，不会留 orphan
+  `role:'tool'`
+- 中段（head 与 tail 之间）才送给 summarizer 做摘要
+- 返回顺序：`[...head, syntheticSummary, ...tail]`
+- 当 head + tail 已经覆盖整个历史（短对话场景）→ 不触发摘要
+
+#### 边界
+- `keepFirst=0` → 回退到旧行为（pre-v1.2.125 兼容）
+- `keepFirst` 比 user 总数还多 → headEnd >= sliceIdx → skip，不报错
+- 老测试的两个 case 加 `keepFirst: 0` 显式声明旧形状（不改语义只显式化）
+
+### Affected paths
+
+- `src/core/llm/auto-compact.ts`：新 `pickHeadEndIndex` + 主函数加 head 提取 +
+  返回 head + summary + tail；types 加 `keepFirst?` 字段；JSDoc 改成 Condenser 模型
+- `src/core/llm/auto-compact.test.ts`：旧 2 case 显式声明 `keepFirst: 0`；
+  新增 2 case 验证 head 保留 + head/tail 覆盖时跳过
+
+### Test status
+
+- 191/191 bun pass（新增 2 head + 1 重构 + 既有 4 不动） / typecheck clean
+
+### 路线图收尾
+
+至此 v1.2.118 → v1.2.125 八个版本全部交付，对账 7 个主流 agent 的 12 项 ROI
+排序优化全部落地：
+
+| Rank | Item | Version | Effort |
+|------|------|---------|--------|
+| 1 | Tavily + provider chain | 1.2.118 | S |
+| 2 | per-tool-result byte cap | 1.2.118 | S |
+| 3 | in-process call_agent self-spawn | 1.2.121 | M |
+| 4 | per-tool timeout | 1.2.118 | S |
+| 5 | LLM-summary compact head/summary/tail | 1.2.125 | L |
+| 6 | TCP-drop graceful degradation | 1.2.123 | M |
+| 7 | PlanMode hard-deny writes | 1.2.119 + 1.2.120 | S+S |
+| 8 | semantic stuck-loop | 1.2.122 | M |
+| 9 | call_agent max_depth=1 + parent-id | 1.2.119 | S |
+| 10 | TodoWrite-style plan tracker | 1.2.124 | M |
+| 11 | Brave / Serper / Exa search adapters | 1.2.121 | S |
+| 12 | blank-response intra-loop retry | 1.2.119 | S |
+
 ## [1.2.124] - 2026-06-01
 
 ### Added (native_todo_write — Claude-Code TodoWrite 风格的 plan 跟踪)

@@ -82,6 +82,10 @@ import {
   buildExecDispatcher,
   getExecTools,
 } from '../../../core/llm/exec-dispatcher.js'
+import {
+  buildTodoDispatcher,
+  getTodoTools,
+} from '../../../core/llm/todo-dispatcher.js'
 import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -206,6 +210,19 @@ export function buildSystemPrompt(
     `    "/na", "/cc", "/oc") and you are already that agent, respond with ONE short line confirming`,
     `    your identity (e.g. "我是 native，正在听。"). Do NOT call any tool. The slash router handles`,
     `    actual agent switching; if it didn't switch, the user is already on this agent.`,
+    ``,
+    `Plan tracking (v1.2.124 — native_todo_write):`,
+    `  - When the user gives you a task with ≥ 3 distinct steps, FIRST call native_todo_write({items}) to`,
+    `    write out your plan, then update statuses as you complete each step.`,
+    `    Status values: pending | in_progress | completed. Keep exactly one item in_progress at a time.`,
+    `  - The tool result is a rendered markdown checklist; the user sees your progress.`,
+    `  - Don't call native_todo_write for trivial one-step tasks — overhead.`,
+    `  - Example sequence:`,
+    `    1) native_todo_write([{c:"Fetch market data",s:"in_progress"}, {c:"Analyse",s:"pending"}, {c:"Reply",s:"pending"}])`,
+    `    2) … do fetch via native_web_fetch …`,
+    `    3) native_todo_write([{c:"Fetch market data",s:"completed"}, {c:"Analyse",s:"in_progress"}, {c:"Reply",s:"pending"}])`,
+    `    4) … analysis …`,
+    `    5) write final answer to user`,
     ``,
     `Closure rule (v1.2.94 — HARD RULE):`,
     `  - When you finish a tool chain (read_file / web_fetch / native_exec / search_memos / etc.) you`,
@@ -593,6 +610,10 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
     // /goal slash command lets the user mutate directly. No external
     // side effects, so safe-by-default.
     'mcp__imhub__long_task', 'mcp__imhub__complete_goal',
+    // v1.2.124 — TodoWrite-style plan tracker. In-process, in-memory,
+    // per-thread; zero side effects beyond the model's own state. Safe
+    // to default-allow; never asks the user.
+    'native_todo_write',
   ]
   const effectiveAllow = mode === 'allow-list'
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
@@ -918,6 +939,13 @@ class NativeAgentAdapter implements AgentAdapter {
     // then external MCP. v1.2.47 added the imhub layer so native sees
     // exactly the same mcp__imhub__* surface claude-code does via the
     // MCP sidecar.
+    // v1.2.120 — compute the per-thread composite key once and thread
+    // it through PlanMode + todo-state resolution. When the call has
+    // no IM context (CLI / smoke), threadKey stays undefined → env-only
+    // / synthetic-key fallback behaviour.
+    const planThreadKey = (opts.platform && opts.threadId)
+      ? makeThreadKey(opts.platform, opts.channelId ?? '', opts.threadId)
+      : undefined
     const imhubCtx = {
       platform: opts.platform || 'native-agent',
       channelId: opts.channelId || 'default',
@@ -950,11 +978,16 @@ class NativeAgentAdapter implements AgentAdapter {
           }
           : undefined,
       }),
+      // v1.2.124 — TodoWrite-style per-thread plan tracker. Sits
+      // before imhub so a stray tool name collision (none today) would
+      // be caught early. Uses the same composite thread key the PlanMode
+      // resolver does so users can find their list in audit.
+      buildTodoDispatcher(planThreadKey ?? `native:${sessionId}`),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
 
-    // Compose tool list the same way (built-in → fs → web → exec → imhub → external MCP).
+    // Compose tool list the same way (built-in → fs → web → exec → todo → imhub → external MCP).
     // Provider tool roster wins on duplicate names via "later
     // definition wins" semantics inside the provider, but our naming
     // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
@@ -964,16 +997,11 @@ class NativeAgentAdapter implements AgentAdapter {
       ...getFsTools(),
       ...getWebTools(),
       ...getExecTools(),
+      ...getTodoTools(),
       ...getImhubTools(),
       ...getAllMcpTools(),
     ]
 
-    // v1.2.120 — compute the per-thread composite key once and thread
-    // it through PlanMode resolution. When the call has no IM context
-    // (CLI / smoke), threadKey stays undefined → env-only behaviour.
-    const planThreadKey = (opts.platform && opts.threadId)
-      ? makeThreadKey(opts.platform, opts.channelId ?? '', opts.threadId)
-      : undefined
     const policy = resolvePolicy(planThreadKey)
     // v1.2.60 — when the policy would silently deny a tool call,
     // escalate to the user via an IM approval card instead. Only

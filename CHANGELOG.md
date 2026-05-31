@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.124] - 2026-06-01
+
+### Added (native_todo_write — Claude-Code TodoWrite 风格的 plan 跟踪)
+
+native agent 现在有一把 in-process 的 plan-tracker 工具：
+
+#### 工具：`native_todo_write(items)`
+- `items: [{content: string, status: 'pending'|'in_progress'|'completed'}]`
+- 整张表替换式（不增量），所以"开始第 2 项"= 重写一次同样的 items 但 status 不同
+- 返回 tool result = markdown checklist（`1. ▶ Fetch data\n2. ☐ Analyse\n…`）
+  - `☐` pending / `▶` in_progress / `☑` completed
+- 模型每次写完都看到自己的当前状态；用户也看到（tool result 会出现在 IM 流里）
+
+#### Per-thread 隔离 + 默认 autoAllow
+- 存储：in-memory `Map<threadKey, TodoItem[]>`，per-thread，restart 丢
+- `clearTodoForThread(key)` 可用于 `/new` 命令清空（暂未挂入，留作 v1.2.125 扩展）
+- 加入 `defaultBuiltins` → 默认 autoAllow，不打扰用户审批
+
+#### System prompt 引导
+- 新加 `Plan tracking (v1.2.124)` 段落，告诉模型：
+  - ≥ 3 步任务 FIRST 调一次 native_todo_write
+  - 完成一步就再调一次更新 status
+  - 恰好一项 in_progress（避免漏掉 / 同时干多件事）
+  - 给出 5 步序列示例（write → fetch → update → analyse → reply）
+
+#### 验证 / 安全
+- content 必填 + 非空 + ≤ 500 char
+- status 枚举严格匹配
+- timeoutMs=5s（per-tool budget，比默认 60s 小一档；这是 in-mem 操作不需要那么多）
+
+### Affected paths
+
+- `src/core/llm/todo-dispatcher.ts`（新 ~165 行）
+- `src/plugins/agents/native/index.ts`：import + 加入 dispatcher chain
+  （在 imhub 之前）；defaultBuiltins 加 `native_todo_write`；buildSystemPrompt
+  加 Plan tracking 段落；planThreadKey 计算上移到 imhubCtx 之前
+- `test/unit/todo-dispatcher.test.ts`（新 / 12 case）：write / 渲染 / per-thread
+  隔离 / 验证 / unknown 工具回退
+
+### Test status
+
+- 184/184 bun pass（新增 12 todo） / typecheck clean
+
+### What's next
+
+剩 1 项（最大头）：
+- v1.2.125 — LLM-summary auto-compact 替代字节裁切，保留推理连续性
+  （OpenHands Condenser 模式：head + LLM-summary + tail）
+
 ## [1.2.123] - 2026-05-31
 
 ### Added (mid-stream TCP drop → 走 length-recovery 救活 partial text)

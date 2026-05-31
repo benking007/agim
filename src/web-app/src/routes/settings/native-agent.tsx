@@ -15,7 +15,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bell, Cpu, Gauge, HeartPulse, Loader2, RefreshCcw, Save, X,
+  Bell, Cpu, FileStack, Gauge, HeartPulse, Loader2, Network,
+  RefreshCcw, Save, ShieldAlert, Waves, X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +48,24 @@ interface Draft {
   toolTimeoutMs: string
   blankRetryMax: string
   lengthRecoveryMax: string
+  // v1.2.127 — A2A 子 Agent 派生
+  a2aMaxDepth: string
+  a2aTimeoutMs: string
+  callAgentInProcess: boolean
+  callAgentMaxPerTurn: string
+  // v1.2.127 — 早停 + 复盘
+  semanticStuckLoop: boolean
+  criticEnabled: boolean
+  criticRole: string
+  planModeDefault: boolean
+  // v1.2.127 — Auto-compact 4 旋钮（OpenHands Condenser）
+  compactTriggerChars: string
+  compactKeepTurns: string
+  compactKeepFirst: string
+  compactSummaryChars: string
+  // v1.2.127 — 流式 + 迭代
+  streamPartial: boolean
+  maxIter: string
 }
 
 function draftFromEnv(env: Record<string, string>): Draft {
@@ -64,7 +83,32 @@ function draftFromEnv(env: Record<string, string>): Draft {
     toolTimeoutMs:     env.IMHUB_NATIVE_TOOL_TIMEOUT_MS ?? '',
     blankRetryMax:     env.IMHUB_NATIVE_BLANK_RETRY_MAX ?? '',
     lengthRecoveryMax: env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX ?? '',
+    a2aMaxDepth:        env.IMHUB_A2A_MAX_DEPTH ?? '',
+    a2aTimeoutMs:       env.IMHUB_A2A_TIMEOUT_DEFAULT_MS ?? '',
+    // Default ON: only 'off' / '0' / 'no' / 'false' disable.
+    callAgentInProcess: !isFalsy(env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS),
+    callAgentMaxPerTurn: env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN ?? '',
+    semanticStuckLoop:  !isFalsy(env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP),
+    criticEnabled:      isTruthy(env.IMHUB_NATIVE_CRITIC),
+    criticRole:         env.IMHUB_NATIVE_CRITIC_ROLE ?? '',
+    planModeDefault:    isTruthy(env.IMHUB_NATIVE_PLAN_MODE),
+    compactTriggerChars: env.IMHUB_NATIVE_COMPACT_TRIGGER_CHARS ?? '',
+    compactKeepTurns:    env.IMHUB_NATIVE_COMPACT_KEEP_TURNS ?? '',
+    compactKeepFirst:    env.IMHUB_NATIVE_COMPACT_KEEP_FIRST ?? '',
+    compactSummaryChars: env.IMHUB_NATIVE_COMPACT_SUMMARY_CHARS ?? '',
+    streamPartial:      !isFalsy(env.IMHUB_NATIVE_STREAM_PARTIAL),
+    maxIter:            env.IMHUB_NATIVE_AGENT_MAX_ITER ?? '',
   }
+}
+
+/** Mirror of the native-side parser: 'off' / '0' / 'no' / 'false'
+ *  (case-insensitive) disables a feature whose default is ON. Empty
+ *  string means "not set" — caller decides whether that's ON or OFF
+ *  depending on the variable's default. */
+function isFalsy(v: string | undefined): boolean {
+  if (!v) return false
+  const s = v.toLowerCase().trim()
+  return s === 'off' || s === 'false' || s === '0' || s === 'no'
 }
 
 function isTruthy(v: string | undefined): boolean {
@@ -155,6 +199,53 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
     if (draft.lengthRecoveryMax !== current.lengthRecoveryMax) {
       updates.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = draft.lengthRecoveryMax.trim() || null
     }
+    // v1.2.127 — A2A
+    if (draft.a2aMaxDepth !== current.a2aMaxDepth) {
+      updates.IMHUB_A2A_MAX_DEPTH = draft.a2aMaxDepth.trim() || null
+    }
+    if (draft.a2aTimeoutMs !== current.a2aTimeoutMs) {
+      updates.IMHUB_A2A_TIMEOUT_DEFAULT_MS = draft.a2aTimeoutMs.trim() || null
+    }
+    if (draft.callAgentInProcess !== current.callAgentInProcess) {
+      // Default ON: write only when operator turned OFF; ON = delete the env.
+      updates.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS = draft.callAgentInProcess ? null : 'off'
+    }
+    if (draft.callAgentMaxPerTurn !== current.callAgentMaxPerTurn) {
+      updates.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = draft.callAgentMaxPerTurn.trim() || null
+    }
+    // v1.2.127 — 早停 + 复盘
+    if (draft.semanticStuckLoop !== current.semanticStuckLoop) {
+      updates.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP = draft.semanticStuckLoop ? null : 'off'
+    }
+    if (draft.criticEnabled !== current.criticEnabled) {
+      updates.IMHUB_NATIVE_CRITIC = draft.criticEnabled ? 'on' : null
+    }
+    if (draft.criticRole !== current.criticRole) {
+      updates.IMHUB_NATIVE_CRITIC_ROLE = draft.criticRole.trim() || null
+    }
+    if (draft.planModeDefault !== current.planModeDefault) {
+      updates.IMHUB_NATIVE_PLAN_MODE = draft.planModeDefault ? '1' : null
+    }
+    // v1.2.127 — Auto-compact
+    if (draft.compactTriggerChars !== current.compactTriggerChars) {
+      updates.IMHUB_NATIVE_COMPACT_TRIGGER_CHARS = draft.compactTriggerChars.trim() || null
+    }
+    if (draft.compactKeepTurns !== current.compactKeepTurns) {
+      updates.IMHUB_NATIVE_COMPACT_KEEP_TURNS = draft.compactKeepTurns.trim() || null
+    }
+    if (draft.compactKeepFirst !== current.compactKeepFirst) {
+      updates.IMHUB_NATIVE_COMPACT_KEEP_FIRST = draft.compactKeepFirst.trim() || null
+    }
+    if (draft.compactSummaryChars !== current.compactSummaryChars) {
+      updates.IMHUB_NATIVE_COMPACT_SUMMARY_CHARS = draft.compactSummaryChars.trim() || null
+    }
+    // v1.2.127 — 流式 + 迭代
+    if (draft.streamPartial !== current.streamPartial) {
+      updates.IMHUB_NATIVE_STREAM_PARTIAL = draft.streamPartial ? null : 'off'
+    }
+    if (draft.maxIter !== current.maxIter) {
+      updates.IMHUB_NATIVE_AGENT_MAX_ITER = draft.maxIter.trim() || null
+    }
     if (Object.keys(updates).length === 0) return
     try {
       await updateEnv.mutateAsync({ updates })
@@ -192,6 +283,10 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
         <>
           <NativeAgentCard draft={draft} setField={setField} />
           <RuntimeCapsCard draft={draft} setField={setField} />
+          <A2ACard draft={draft} setField={setField} />
+          <CriticCard draft={draft} setField={setField} />
+          <CompactCard draft={draft} setField={setField} />
+          <StreamCard draft={draft} setField={setField} />
           <EvaluatorCard draft={draft} setField={setField} />
           <HeartbeatCard draft={draft} setField={setField} />
         </>
@@ -443,6 +538,244 @@ function RuntimeCapsCard({ draft, setField }: CardProps): JSX.Element {
             value={draft.lengthRecoveryMax}
             onChange={(e) => setField('lengthRecoveryMax', e.target.value)}
             placeholder="1"
+            className="font-mono text-xs"
+          />
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function A2ACard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Network className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.a2aCard')}</h2>
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.a2aDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.a2aMaxDepth')}
+          hint={t('nativeAgent.a2aMaxDepthHint')}
+        >
+          <Input
+            type="number"
+            value={draft.a2aMaxDepth}
+            onChange={(e) => setField('a2aMaxDepth', e.target.value)}
+            placeholder="1"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.a2aTimeoutMs')}
+          hint={t('nativeAgent.a2aTimeoutMsHint')}
+        >
+          <Input
+            type="number"
+            value={draft.a2aTimeoutMs}
+            onChange={(e) => setField('a2aTimeoutMs', e.target.value)}
+            placeholder="1800000"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.callAgentInProcess')}
+          hint={t('nativeAgent.callAgentInProcessHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.callAgentInProcess}
+              onChange={(e) => setField('callAgentInProcess', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.callAgentInProcess ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.callAgentMaxPerTurn')}
+          hint={t('nativeAgent.callAgentMaxPerTurnHint')}
+        >
+          <Input
+            type="number"
+            value={draft.callAgentMaxPerTurn}
+            onChange={(e) => setField('callAgentMaxPerTurn', e.target.value)}
+            placeholder="2"
+            className="font-mono text-xs"
+          />
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function CriticCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <ShieldAlert className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.criticCard')}</h2>
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.criticDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.semanticStuckLoop')}
+          hint={t('nativeAgent.semanticStuckLoopHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.semanticStuckLoop}
+              onChange={(e) => setField('semanticStuckLoop', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.semanticStuckLoop ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.criticEnabled')}
+          hint={t('nativeAgent.criticEnabledHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.criticEnabled}
+              onChange={(e) => setField('criticEnabled', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.criticEnabled ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.criticRole')}
+          hint={t('nativeAgent.criticRoleHint')}
+        >
+          <Input
+            value={draft.criticRole}
+            onChange={(e) => setField('criticRole', e.target.value)}
+            placeholder="(use main backend)"
+            className="font-mono text-xs"
+            disabled={!draft.criticEnabled}
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.planModeDefault')}
+          hint={t('nativeAgent.planModeDefaultHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.planModeDefault}
+              onChange={(e) => setField('planModeDefault', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.planModeDefault ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function CompactCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <FileStack className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.compactCard')}</h2>
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.compactDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.compactTriggerChars')}
+          hint={t('nativeAgent.compactTriggerCharsHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactTriggerChars}
+            onChange={(e) => setField('compactTriggerChars', e.target.value)}
+            placeholder="60000"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.compactKeepTurns')}
+          hint={t('nativeAgent.compactKeepTurnsHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactKeepTurns}
+            onChange={(e) => setField('compactKeepTurns', e.target.value)}
+            placeholder="6"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.compactKeepFirst')}
+          hint={t('nativeAgent.compactKeepFirstHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactKeepFirst}
+            onChange={(e) => setField('compactKeepFirst', e.target.value)}
+            placeholder="1"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.compactSummaryChars')}
+          hint={t('nativeAgent.compactSummaryCharsHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactSummaryChars}
+            onChange={(e) => setField('compactSummaryChars', e.target.value)}
+            placeholder="1500"
+            className="font-mono text-xs"
+          />
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function StreamCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Waves className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.streamCard')}</h2>
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.streamDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.streamPartial')}
+          hint={t('nativeAgent.streamPartialHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.streamPartial}
+              onChange={(e) => setField('streamPartial', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.streamPartial ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.maxIter')}
+          hint={t('nativeAgent.maxIterHint')}
+        >
+          <Input
+            type="number"
+            value={draft.maxIter}
+            onChange={(e) => setField('maxIter', e.target.value)}
+            placeholder="20"
             className="font-mono text-xs"
           />
         </Field>

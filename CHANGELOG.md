@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.127] - 2026-06-01
+
+### Added (Native Agent 调参面板 — v1.2.118-125 旋钮全部 UI 化)
+
+v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2.118-125
+剩余的 native agent 内部旋钮也全部接通。`/settings/native-agent` 页新增 4 张卡
+（A2A / 早停-复盘 / Auto-compact / 流式-迭代），覆盖 14 个环境变量。
+
+#### 新增 4 张卡
+
+**A. A2A 子 Agent 派生**
+- `IMHUB_A2A_MAX_DEPTH` — 子 Agent 递归深度（默认 1，v1.2.119）
+- `IMHUB_A2A_TIMEOUT_DEFAULT_MS` — 默认超时（默认 30 分钟）
+- `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS` — native→native 同进程 spawn 开关（默认开，v1.2.121）
+- `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN` — 单轮 call_agent 调用上限（默认 2）
+
+**B. 早停 + 复盘**
+- `IMHUB_NATIVE_SEMANTIC_STUCK_LOOP` — 语义死循环检测开关（默认开，v1.2.122）
+- `IMHUB_NATIVE_CRITIC` — Goal Critic 复盘开关（默认关）
+- `IMHUB_NATIVE_CRITIC_ROLE` — Critic LLM role override（可选）
+- `IMHUB_NATIVE_PLAN_MODE` — PlanMode 默认状态（不影响 /plan per-thread）
+
+**C. Auto-compact**（v1.2.125 完成的 4 滑块）
+- `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS` — 触发阈值（默认 60000）
+- `IMHUB_NATIVE_COMPACT_KEEP_TURNS` — tail 保留 user/assistant 对数（默认 6）
+- `IMHUB_NATIVE_COMPACT_KEEP_FIRST` — head 保留前 N 条 user 消息（默认 1）
+- `IMHUB_NATIVE_COMPACT_SUMMARY_CHARS` — 摘要字符上限（默认 1500）
+
+**D. 流式 + 迭代**
+- `IMHUB_NATIVE_STREAM_PARTIAL` — 流式增量回写（默认开，v1.2.112/123）
+- `IMHUB_NATIVE_AGENT_MAX_ITER` — 工具循环上限（默认 20，clamp [1,100]）
+
+#### 默认值对齐
+所有 boolean 类型的默认开关都按 source 行为镜像（v1.2.119/121/122 的 enable-by-default
+半显式语义在 UI 上是"默认勾选 = on, 取消勾选 = off"，存盘时只在 OFF 状态写入
+`off`，ON 状态删除 env 让 source 走默认）。
+
+#### 后端
+- `ENV_EDITABLE_KEYS` 扩展 14 项（A2A/Critic/Compact/Stream 共 14 个 env key）
+- 不动 resolver — 每个 env 都是 lazy read，热生效已经保证（resolveSemanticStuckLoopOn /
+  resolveNativeStreamPartial / resolveMaxIterations / getA2AMaxDepth / 等都是
+  `process.env.X` 直读，编辑后下一次调用立即生效）
+- 不涉及 secret，新键全是数字/bool/小段文本
+
+#### 测试
+- 新增 `test/unit/admin-env-allowed-keys.test.ts` — 解析 server.ts 源码，验证
+  v1.2.126 + v1.2.127 共 24 个新键都在 `ENV_EDITABLE_KEYS` 白名单里，同时
+  反例验证 OS 级敏感键（PATH/HOME/LD_PRELOAD 等）被拒
+- 这个测试是 TS 类型系统无法捕获的最后一道防线 —— SPA 写入未列入白名单的键
+  会被 PUT /api/env 静默拒绝，没有任何编译期信号
+
+#### 安全
+- 全部走 `requireAdmin()` + `ENV_EDITABLE_KEYS` 白名单
+- 不动 SSRF / FS / bwrap 沙箱键（这些已经在 `/settings/security` 与 `/settings/policy`）
+- 不动 `IMHUB_NATIVE_AGENT_ROLE_FILE`（绝对路径敏感，留 env file 配置）
+
+### 文件
+- 新增 `test/unit/admin-env-allowed-keys.test.ts` (~95 lines)
+- 修改 `src/web-app/src/routes/settings/native-agent.tsx` (+233 lines — Draft 扩展 + 4 cards)
+- 修改 `src/web/server.ts` (+25 lines — ENV_EDITABLE_KEYS 扩展)
+- 修改 `src/web-app/src/i18n/locales/{en,zh}/settings.json` (~38 keys per locale)
+
 ## [1.2.126] - 2026-06-01
 
 ### Added (Web 后台搜索 + 运行参数面板)

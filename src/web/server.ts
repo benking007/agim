@@ -2723,6 +2723,31 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_NATIVE_TOOL_TIMEOUT_MS',
   'IMHUB_NATIVE_BLANK_RETRY_MAX',
   'IMHUB_NATIVE_LENGTH_RECOVERY_MAX',
+  // v1.2.127 — A2A sub-agent spawn (depth / timeout / in-process /
+  // per-turn cap). All hot-read; flipping in-process to 'off' makes
+  // the next call_agent('native', …) reboot via the subprocess CLI
+  // adapter instead of the v1.2.121 fast path.
+  'IMHUB_A2A_MAX_DEPTH',
+  'IMHUB_A2A_TIMEOUT_DEFAULT_MS',
+  'IMHUB_NATIVE_CALL_AGENT_IN_PROCESS',
+  'IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  // v1.2.127 — early-stop + critic. Semantic stuck-loop default ON
+  // catches the v1.2.122 case (3 different tools, same salient arg).
+  // Critic default OFF — opt-in goal-divergence detector.
+  'IMHUB_NATIVE_SEMANTIC_STUCK_LOOP',
+  'IMHUB_NATIVE_CRITIC',
+  'IMHUB_NATIVE_CRITIC_ROLE',
+  'IMHUB_NATIVE_PLAN_MODE',
+  // v1.2.127 — auto-compact 4 sliders (OpenHands Condenser pattern).
+  // KEEP_FIRST defaults to 1 since v1.2.125 (original user goal at idx 0).
+  'IMHUB_NATIVE_COMPACT_TRIGGER_CHARS',
+  'IMHUB_NATIVE_COMPACT_KEEP_TURNS',
+  'IMHUB_NATIVE_COMPACT_KEEP_FIRST',
+  'IMHUB_NATIVE_COMPACT_SUMMARY_CHARS',
+  // v1.2.127 — streaming + iteration cap. STREAM_PARTIAL default ON
+  // preserves partial assistant text on IM's 30-min hard timeout.
+  'IMHUB_NATIVE_STREAM_PARTIAL',
+  'IMHUB_NATIVE_AGENT_MAX_ITER',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'IMHUB_SMTP_PASS',

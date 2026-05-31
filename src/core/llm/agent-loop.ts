@@ -254,8 +254,25 @@ async function streamThenBuffer(
     // through to synthesize a ChatResult with the partial accumulator.
     if (isAbort(err)) {
       finishReason = 'unknown' // caller will downgrade based on signal
+    } else if (text.length > 0 || toolAcc.size > 0) {
+      // v1.2.123 — non-abort throw with PARTIAL content (mid-stream
+      // ECONNRESET, socket hang up, fetch failed, vendor closed the
+      // SSE prematurely…). Don't drop the work — surface as
+      // `length`-truncated so the agent-loop's existing length
+      // recovery path (v1.2.117) continues the message from where the
+      // connection dropped. If we had zero partial content, that's a
+      // hard fail; fall through to the throw branch below.
+      log.warn({
+        event: 'agent-loop.stream_interrupted',
+        err: err instanceof Error ? err.message : String(err),
+        partialTextLen: text.length,
+        partialToolCalls: toolAcc.size,
+      }, 'streaming chat dropped mid-response; surfacing as length for recovery')
+      finishReason = 'length'
     } else {
-      // Non-abort error: let it propagate so callers see the failure.
+      // Zero partial content — no content to salvage, let the error
+      // propagate so the caller's outer try/catch records an `error`
+      // turn (and the IM user sees a real failure).
       throw err
     }
   }

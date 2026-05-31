@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.123] - 2026-05-31
+
+### Added (mid-stream TCP drop → 走 length-recovery 救活 partial text)
+
+之前 `streamThenBuffer` 对 abort error 优雅降级保留 partial，但对其它 mid-stream
+throw（`ECONNRESET` / `socket hang up` / SSE 提前关闭）直接 re-throw → agent-loop
+记 `finishReason='error'`，那一整轮工作就丢了。
+
+#### 修法
+- `streamThenBuffer` catch 分支判断：
+  - `AbortError` → 维持 v1.2.112 行为，`finishReason='unknown'`
+  - **非-abort throw + 有 partial text 或 partial tool_calls** → 不抛，
+    设 `finishReason='length'` 让 v1.2.117 length-recovery 续写；
+    打 `agent-loop.stream_interrupted` warn 日志带 partialTextLen / err.message
+  - **非-abort throw + 零 partial** → 维持 re-throw（无 content 可保，让外层
+    标 error）
+
+效果：网络抖一下，agent 还能从 partial 那个点续写下去，IM 用户体感无感知。
+
+### Affected paths
+
+- `src/core/llm/agent-loop.ts`：`streamThenBuffer` catch 分支扩到 3 路（abort /
+  有 partial / 无 partial）
+- `test/unit/agent-loop-stream-interrupted.test.ts`（新 ~140 行 / 3 case）：
+  - mid-stream throw + partial → finishReason='length' + 自动续写完成
+  - mid-stream throw + 零 partial → re-throws / loop 拿到 `finishReason='error'`
+  - AbortError 仍走 abort 路径（不被误判为 length）
+
+### Test status
+
+- 172/172 bun pass（新增 3 个 stream-interrupted）
+- typecheck clean
+
+### What's next
+
+剩 2 项：
+- v1.2.124 — TodoWrite-style native_todo（对话内 plan 跟踪 + 自动绿勾）
+- v1.2.125 — LLM-summary auto-compact（替代字节裁切，保留推理连续性）
+
 ## [1.2.122] - 2026-05-31
 
 ### Added (语义层 stuck-loop — 跨工具同意图早停)

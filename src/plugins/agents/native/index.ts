@@ -110,7 +110,7 @@ const log = rootLogger.child({ component: 'native-agent' })
  * builder closes that information gap without leaking secrets — every
  * field surfaced here is operator-configured and non-sensitive.
  */
-function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): string {
+export function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): string {
   const skills = listSkills()
   const skillsBlock = skills.length
     ? skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n')
@@ -145,6 +145,24 @@ function buildSystemPrompt(provider: LlmProvider, role: string, cwd: string): st
     `  Role:              ${role}`,
     `  Working directory: ${cwd}`,
     ``,
+  )
+
+  // v1.2.119 — PlanMode banner. When the env knob is on, prepend a
+  // high-priority instruction block so the model knows up-front it
+  // can't write/exec. Without this banner, the deny verdict from
+  // the policy gate gives a bare "tool call denied" message and the
+  // model wastes iterations trying alternative write paths.
+  if (isPlanModeOn()) {
+    lines.push(
+      `⚠ Plan mode is ACTIVE (IMHUB_NATIVE_PLAN_MODE=1)`,
+      `  - You MUST produce a read-only plan; native_write_file and native_exec are HARD-BLOCKED.`,
+      `  - Use read tools freely: native_read_file / native_list_dir / native_glob / native_grep / native_web_fetch / native_web_search.`,
+      `  - Output: present a concrete written plan with steps, files to change, commands to run, and risks. End the turn after writing the plan — do NOT attempt the changes.`,
+      `  - The operator clears IMHUB_NATIVE_PLAN_MODE when they're ready to let you act.`,
+      ``,
+    )
+  }
+  lines.push(
     `Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):`,
     `  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal`,
     `  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0`,
@@ -538,7 +556,7 @@ function pickProviderChain(): Array<{ provider: LlmProvider; role: string }> {
  *  `list_*` / `get_*` / etc.) and the four built-ins
  *  (`native_echo`/`now`/`random_uuid` — `sleep_ms` excluded).
  */
-function resolvePolicy(): PolicyApprovalGateConfig {
+export function resolvePolicy(): PolicyApprovalGateConfig {
   const mode = (process.env.IMHUB_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
   const autoAllow = splitEnvList(process.env.IMHUB_NATIVE_AGENT_AUTOALLOW)
   const denyList = splitEnvList(process.env.IMHUB_NATIVE_AGENT_DENYLIST)
@@ -573,7 +591,36 @@ function resolvePolicy(): PolicyApprovalGateConfig {
   const effectiveAllow = mode === 'allow-list'
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
     : autoAllow
-  return { mode, autoAllow: effectiveAllow, denyList }
+  // v1.2.119 — PlanMode hard-denies write + exec tools.
+  //
+  // Toggled via env `IMHUB_NATIVE_PLAN_MODE=1`. Mirrors opencode's
+  // plan-mode behaviour: agent must produce a read-only plan; trying
+  // to call native_write_file / native_exec is denied with a clear
+  // structured message instructing the model to summarise the plan
+  // instead. Operator clears the env (or unsets it) to re-enable
+  // writes for the next turn.
+  //
+  // We extend the user-supplied denyList rather than replacing the
+  // policy mode — read-only tools (Read/Grep/Glob/web_fetch/web_search/
+  // MCP read tools) continue to pass through autoAllow as before.
+  const effectiveDeny = isPlanModeOn()
+    ? Array.from(new Set([...denyList, ...PLAN_MODE_DENY_TOOLS]))
+    : denyList
+  return { mode, autoAllow: effectiveAllow, denyList: effectiveDeny }
+}
+
+/** v1.2.119 — tools blocked when PlanMode is on. The list is intentionally
+ *  narrow: writes to the workspace + arbitrary shell exec. Read-only
+ *  fs/grep/glob/web/MCP tools stay enabled so the agent can still
+ *  research and draft a plan. */
+const PLAN_MODE_DENY_TOOLS = [
+  'native_write_file',
+  'native_exec',
+] as const
+
+export function isPlanModeOn(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
+  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
 }
 
 /**

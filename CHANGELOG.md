@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.119] - 2026-05-31
+
+### Added (native agent stability + 安全栏 — 主流对账批 2/4)
+
+承接 v1.2.118 的对账路线，本版三个 S-effort：
+
+#### Item 4 — call_agent max_depth 默认 3 → 1
+- `src/core/a2a.ts:A2A_MAX_DEPTH_DEFAULT` 从 3 改为 1，对齐 OpenAI Codex CLI 的
+  `agents.max_depth=1` 默认。理由：链式委派（A 调 B 调 C …）几乎都是 LLM 失策，
+  外层应该用自己的工具收尾，而不是再委派。**Breaking-ish**：依赖 max_depth=3 的
+  环境 `export IMHUB_A2A_MAX_DEPTH=3` 恢复。
+- 配套：`callerDepth` 传播链路（imhub-dispatcher → callAgentByName → 检查 ceil）
+  本来就在，所以这一项**主要是默认值收紧**，逻辑没大动
+
+#### Item 5 — PlanMode（`IMHUB_NATIVE_PLAN_MODE=1`）
+- 对齐 opencode plan-mode UX：env-toggled hard-deny `native_write_file` +
+  `native_exec`。读工具（Read/Grep/Glob/web_fetch/web_search）保持可用，agent
+  只能产出**只读规划**
+- 实现：`resolvePolicy()` 在 PlanMode on 时把上述写工具追加到 denyList（与用户的
+  `IMHUB_NATIVE_AGENT_DENYLIST` 合并去重）
+- 加上系统 prompt 顶部的 `⚠ Plan mode is ACTIVE` 横幅，明确告诉模型现在不能落地，
+  让它产出 plan 后停手而不是反复试探被 deny
+
+#### Item 6 — intra-loop blank-response 重试（cap=2）
+- 补充 v1.2.94 的**post-loop** auto-summary（仅在有 tool calls 时 fire）。
+  本版新增**intra-loop**：当 LLM 返 `finishReason=stop` + 空 text + 无 tool calls
+  时，注入合成 user 消息"`Your last response was empty… continue or write the
+  final answer`"，最多重试 2 次
+- 与 length-recovery 互不冲突：`finishReason=length` 优先走截断续写，因为它有
+  partial text；blank-retry 处理的是真正"啥也没说"的失态
+- `IMHUB_NATIVE_BLANK_RETRY_MAX` 控制，默认 2，最大 5，0=禁用
+
+### Affected paths
+
+- `src/core/llm/agent-loop.ts`：`resolveBlankRetryMax()` + `BLANK_RESPONSE_NUDGE`
+  常量 + per-turn `blankRetryCount` + 在 length-recovery 检查后插 blank-retry 分支
+- `src/core/a2a.ts`：`A2A_MAX_DEPTH_DEFAULT` 3→1（带详细注释）
+- `src/plugins/agents/native/index.ts`：`isPlanModeOn` / `PLAN_MODE_DENY_TOOLS` /
+  `resolvePolicy` 加 PlanMode 合并；`buildSystemPrompt` 加 PlanMode 横幅；export
+  这三个供测试
+- `src/plugins/agents/native/native.test.ts`：在 clearAll 中显式
+  `IMHUB_NATIVE_BLANK_RETRY_MAX=0` 让 legacy adapter 测试不受 blank-retry 影响
+- `test/unit/agent-loop-blank-retry.test.ts`（新，5 case）：one-shot recover /
+  cap=2 / cap=0 disable / tool_calls 不触发 / length 优先
+- `src/plugins/agents/native/plan-mode.test.ts`（新，14 case）：env 解析各形态 +
+  resolvePolicy 合并行为
+- `test/unit/a2a.test.ts`：更新 `getA2AMaxDepth` 默认期望从 3 → 1
+
+### Test status
+
+- 124/124 pass（新增 19 个：5 blank-retry + 14 PlanMode）
+- typecheck clean
+- 2 pre-existing failures in `src/plugins/agents/native/native.test.ts` 与本版无关
+
+### What's next
+
+- v1.2.120 — Item 7-8：in-process call_agent self-spawn（fan-out 关键）+
+  Brave/Serper/Exa search adapter
+- v1.2.121+ — Item 9-12：语义 stuck-loop / TCP 重试 / TodoWrite / LLM 摘要 compact
+
 ## [1.2.118] - 2026-05-31
 
 ### Added (native agent stability + 搜索可配置 — 主流对账批 1/4)

@@ -23,11 +23,18 @@ const ENV_KEYS = [
   'IMHUB_NATIVE_AGENT_MODE',
   'IMHUB_NATIVE_AGENT_AUTOALLOW',
   'IMHUB_NATIVE_AGENT_DENYLIST',
+  // v1.2.119 — keep blank-retry out of these legacy adapter tests
+  // so assertions on the recorded messages array stay stable. The
+  // blank-retry path is exercised in agent-loop-blank-retry.test.ts.
+  'IMHUB_NATIVE_BLANK_RETRY_MAX',
   envKeyForBackend('native-mock'),
 ]
 
 function clearAll(): void {
   for (const k of ENV_KEYS) delete process.env[k]
+  // v1.2.119 — disable intra-loop blank-retry for this suite (see
+  // ENV_KEYS comment above).
+  process.env.IMHUB_NATIVE_BLANK_RETRY_MAX = '0'
   if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
   _resetRegistry()
   globalThis.fetch = ORIGINAL_FETCH

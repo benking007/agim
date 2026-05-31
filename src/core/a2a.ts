@@ -54,7 +54,19 @@ import {
 
 const log = rootLogger.child({ component: 'a2a' })
 
-export const A2A_MAX_DEPTH_DEFAULT = 3
+// v1.2.119 — lowered from 3 to 1 to align with OpenAI Codex CLI's
+// `agents.max_depth=1` default. Rationale: chained delegation (agent A
+// calls B which calls C…) is almost always an LLM mis-strategy — the
+// outer agent is letting the model retry by re-delegating instead of
+// fixing the actual call. Capping at 1 forces the LLM to use its own
+// tools to recover.
+//
+// Override with IMHUB_A2A_MAX_DEPTH=N. Set N=3 to restore the old
+// behaviour; set N=0 to disable A2A entirely. The legacy chained-
+// delegation pattern still works via repeated top-level user turns —
+// the user can issue multiple /cc-style commands rather than letting
+// the LLM auto-chain.
+export const A2A_MAX_DEPTH_DEFAULT = 1
 // v1.1.10: bumped from 10 min to 30 min after the HSTECH debate run revealed
 // codex routinely takes 15-25 min when the prompt asks for ~4 API pulls + a
 // report. 10 min cut codex off mid-write and produced orphan output files.

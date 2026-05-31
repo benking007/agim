@@ -74,10 +74,10 @@ describe('A2A env helpers', () => {
     expect(a2a.isA2AEnabled()).toBe(true)
   })
 
-  it('getA2AMaxDepth defaults to A2A_MAX_DEPTH_DEFAULT (3); env override applies', () => {
+  it('getA2AMaxDepth defaults to A2A_MAX_DEPTH_DEFAULT (1 since v1.2.119); env override applies', () => {
     delete process.env.IMHUB_A2A_MAX_DEPTH
     expect(a2a.getA2AMaxDepth()).toBe(a2a.A2A_MAX_DEPTH_DEFAULT)
-    expect(a2a.getA2AMaxDepth()).toBe(3)
+    expect(a2a.getA2AMaxDepth()).toBe(1)
     process.env.IMHUB_A2A_MAX_DEPTH = '7'
     expect(a2a.getA2AMaxDepth()).toBe(7)
     process.env.IMHUB_A2A_MAX_DEPTH = '0'

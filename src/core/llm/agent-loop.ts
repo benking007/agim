@@ -146,6 +146,29 @@ function resolveToolTimeoutMs(perToolMs: number | undefined): number {
   return n
 }
 
+/** v1.2.119 — intra-loop blank-response retry cap. Complements v1.2.94's
+ *  POST-loop auto-summary (which only fires when tools ran). This handles
+ *  the case where the provider returns `finishReason: 'stop'` with
+ *  empty text AND no tool_calls *inside* the loop — usually a transient
+ *  brain-fart that resolves with a single nudge. Default 2 (nanobot's
+ *  `_MAX_EMPTY_RETRIES`). 0 disables. */
+const DEFAULT_BLANK_RETRY_MAX = 2
+function resolveBlankRetryMax(): number {
+  const raw = (process.env.IMHUB_NATIVE_BLANK_RETRY_MAX ?? '').trim()
+  if (!raw) return DEFAULT_BLANK_RETRY_MAX
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_BLANK_RETRY_MAX
+  return Math.min(n, 5)
+}
+
+/** Synthetic user nudge for the blank-response branch. Short + explicit
+ *  so the model gets that it produced nothing the user can see. */
+const BLANK_RESPONSE_NUDGE =
+  'Your last response was empty (no text and no tool call). ' +
+  'Please continue: either call a tool to make progress, or produce ' +
+  'a complete answer to the user. If you have already completed the ' +
+  'task, write the closing summary now.'
+
 /** v1.2.117 — synthetic user message we inject after a `length` truncation.
  *  Kept short (cache-friendly) and explicit ("don't repeat") so the model
  *  picks up exactly where it stopped rather than re-summarising. */
@@ -563,6 +586,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   let lengthRecoveryCount = 0
   const lengthRecoveryMax = resolveLengthRecoveryMax()
   let lengthRecoveryPrefix = ''
+  // v1.2.119 — intra-loop blank-response retry counter. Independent
+  // from length-recovery (which fires when text *is* present but cut);
+  // this fires when text + tool_calls are BOTH empty mid-loop.
+  let blankRetryCount = 0
+  const blankRetryMax = resolveBlankRetryMax()
 
   let iter = 0
   for (; iter < maxIter; iter++) {
@@ -708,6 +736,38 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       history.push({ role: 'user', content: LENGTH_RECOVERY_MESSAGE })
       // Don't bump `iter` past maxIter prematurely — the for-loop will
       // increment normally. Just keep going.
+      continue
+    }
+
+    // v1.2.119 — blank-response retry.
+    //
+    // Trigger: model returned `finishReason: 'stop'` with empty text
+    // AND no tool_calls — i.e. the iteration produced nothing the
+    // caller can use. This is a transient model glitch (especially
+    // common on the first iteration with some Chinese-tuned LLMs and
+    // after long context conditioning); a single nudge usually
+    // recovers. We retry up to blankRetryMax times before falling
+    // through to early-terminate (where the v1.2.91 recap kicks in).
+    //
+    // We do NOT trigger this when there ARE tool calls but text is
+    // empty — that's a separate case handled by the v1.2.94 POST-loop
+    // auto-summary retry at the native-adapter layer.
+    if (
+      blankRetryCount < blankRetryMax
+      && (result.finishReason === 'stop' || result.finishReason === 'unknown')
+      && !result.text
+      && (!result.toolCalls || result.toolCalls.length === 0)
+    ) {
+      blankRetryCount += 1
+      log.info({
+        event: 'agent-loop.blank_retry',
+        attempt: blankRetryCount,
+        cap: blankRetryMax,
+        backend: input.provider.name,
+        iter,
+      }, 'provider returned empty text + no tool_calls; nudging once more')
+      history.push({ role: 'assistant', content: '' })
+      history.push({ role: 'user', content: BLANK_RESPONSE_NUDGE })
       continue
     }
 

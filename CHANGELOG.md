@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.122] - 2026-05-31
+
+### Added (语义层 stuck-loop — 跨工具同意图早停)
+
+补 v1.2.95 stuck-loop 的盲点：
+
+之前 `isStuckLoop` 只在**同一个 tool name** 调用 3 次完全相同时 fire。
+但实战常见的失败模式是**换工具不换意图**——比如：
+```
+1. native_web_search(query="aapl Q3 earnings call transcript") → "0 results"
+2. mcp__tavily(query="aapl Q3 earnings call transcript")        → "0 results"
+3. native_exec(command="curl https://x.example/aapl Q3 earnings call transcript") → 404
+```
+模型在 reshuffle tool roulette 但根本没改 query。`isStuckLoop` 因为
+tool name 不同所以不 fire，agent 会一直耗到 max_iter。
+
+#### 新增 `isSemanticStuckLoop`
+- 提取每个 call 的 argsKey（已有的 stable JSON）里**所有 ≥8 char 的字符串 token**
+- 候选池 = 三个 call salient strings 的并集
+- 任何候选字符串若**同时出现在 3 个 argsKey 里**（substring 包含，不要求 token 严格相等）→ 触发
+- ≥8 char 上限过滤掉短 enum-like 值（`"json"`, `"stop"`, `"auto"`），避免误触
+- ≥2 个不同 tool name 才触发，避免与 strict `isStuckLoop` 重叠
+- 触发后走 `finishReason='stuck_loop'` 早停（与现有 stuck_loop 路径一致）
+- 新 log event `agent-loop.semantic_stuck_loop_detected` 便于排查
+- `IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off` 是 kill switch
+
+### Affected paths
+
+- `src/core/llm/agent-loop.ts`：新增 `isSemanticStuckLoop` /
+  `extractSalientStrings` / `resolveSemanticStuckLoopOn`；loop 在
+  `isStuckLoop` 之后加入 semantic check 分支
+- `test/unit/agent-loop-semantic-stuck.test.ts`（新 ~200 行 / 10 case）：
+  - extractSalientStrings 三个 case（≥8 char / <8 char / escapes）
+  - isSemanticStuckLoop 五个 case（fires / same-name 不触发 / 不同 salient /
+    <3 entries / last-3-only）
+  - integration 两个 case（loop 早停 + env=off 跑完）
+
+### Test status
+
+- 169/169 bun pass（新增 10 个 semantic-stuck）
+- typecheck clean
+
+### What's next
+
+剩 3 项 (v1.2.123+)：
+- TCP-drop retry on streaming chat（mid-stream ECONNRESET 优雅降级为 partial-text）
+- TodoWrite-style native_todo 工具（对话内 plan 跟踪 + 自动绿勾）
+- LLM-summary auto-compact（替代字节裁切）
+
 ## [1.2.121] - 2026-05-31
 
 ### Added (主流对账批 3/4：fan-out 子 agent + 搜索全家桶)

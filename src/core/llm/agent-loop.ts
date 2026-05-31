@@ -345,6 +345,88 @@ export function isStuckLoop(
 }
 
 /**
+ * v1.2.122 — semantic stuck-loop: 3× DIFFERENT tool names but the same
+ * salient argument value (query / URL / path / command substring).
+ *
+ * Catches the failure mode `isStuckLoop` misses by design:
+ *   1. native_web_search(query="aapl Q3 earnings call transcript")
+ *      → "0 results from duckduckgo"
+ *   2. mcp__tavily(query="aapl Q3 earnings call transcript")
+ *      → "0 results"
+ *   3. native_exec(command="curl … aapl Q3 earnings call transcript …")
+ *      → "404"
+ *
+ * Same intent, three different tool surfaces, all failing. The strict
+ * `isStuckLoop` doesn't fire because tool NAMES differ. Without this
+ * check the model keeps reshuffling tool roulette until max_iter.
+ *
+ * Heuristic: extract every string ≥ 8 chars from each call's argsKey
+ * (a stable JSON of the call.arguments). If the SAME string appears in
+ * all three recent calls AND all three tool names differ → return true.
+ *
+ * The ≥ 8 char floor filters out short enum-like values ("json",
+ * "stop", "auto") that would false-positive across unrelated calls.
+ */
+export function isSemanticStuckLoop(
+  reports: Array<Pick<ToolCallReport, 'name' | 'argsKey'>>,
+): boolean {
+  if (reports.length < 3) return false
+  const a = reports[reports.length - 1]!
+  const b = reports[reports.length - 2]!
+  const c = reports[reports.length - 3]!
+  // Need at least 2 distinct tool names; if all three are identical
+  // `isStuckLoop` already covers it.
+  const names = new Set([a.name, b.name, c.name])
+  if (names.size < 2) return false
+  // Build a candidate pool from all three calls; a candidate triggers
+  // if its string appears as a substring of all three raw argsKeys.
+  // Using each call's argsKey directly (not just the candidate's own
+  // set) lets the matcher catch the case where the model embeds the
+  // shared query inside a larger string in one of the calls — e.g.
+  // {"query":"foo"} in two calls and {"command":"curl ...foo..."} in
+  // the third.
+  const sa = extractSalientStrings(a.argsKey)
+  const sb = extractSalientStrings(b.argsKey)
+  const sc = extractSalientStrings(c.argsKey)
+  const candidates = new Set<string>()
+  for (const s of [sa, sb, sc]) for (const v of s) candidates.add(v)
+  for (const v of candidates) {
+    if (a.argsKey.includes(v) && b.argsKey.includes(v) && c.argsKey.includes(v)) {
+      return true
+    }
+  }
+  return false
+}
+
+const SALIENT_MIN_LEN = 8
+/** Pull every string ≥ SALIENT_MIN_LEN out of a stable-JSON arg blob.
+ *  Doesn't try to be clever about which JSON path the string came
+ *  from — three calls passing the same long string anywhere in their
+ *  args is already strong evidence of repeated intent. */
+export function extractSalientStrings(argsKey: string): Set<string> {
+  // Match any double-quoted JSON string token whose body is ≥ 8 chars
+  // (post-unescape simple approximation: the matched run between
+  // quotes, without escape processing). Good enough for the heuristic
+  // — we only need a stable identity, not the exact decoded value.
+  const out = new Set<string>()
+  // Non-greedy capture, skip embedded escaped quotes via [^"\\]|\\.
+  const re = /"((?:[^"\\]|\\.){8,}?)"/g
+  for (let m = re.exec(argsKey); m !== null; m = re.exec(argsKey)) {
+    out.add(m[1]!)
+  }
+  return out
+}
+
+/** v1.2.122 — kill switch for the semantic stuck-loop check. Default ON;
+ *  flip 'off' if false positives become a real problem (none observed
+ *  in dogfood). */
+function resolveSemanticStuckLoopOn(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP ?? '').toLowerCase().trim()
+  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
+  return true
+}
+
+/**
  * Per-tool-call gate. Return 'allow' to dispatch, 'deny' to inject a
  * "user denied" tool result (so the model can react) without running
  * the tool. Sub-PR #4 ships an IM-integrated implementation; tests
@@ -1007,6 +1089,28 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       signal.cleanup()
       return {
         // v1.2.117 — preserve accumulated partials.
+        text: lengthRecoveryPrefix,
+        iterations: iter + 1,
+        toolCalls,
+        usage: usageAcc,
+        finishReason: 'stuck_loop',
+      }
+    }
+
+    // v1.2.122 — semantic stuck-loop: same intent reshuffling across
+    // different tool surfaces. Catches the failure mode where the model
+    // tries Tavily → DDG → Brave (or read_file → cat → less) with the
+    // same query/path. Disabled via IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off.
+    if (resolveSemanticStuckLoopOn() && isSemanticStuckLoop(toolCalls)) {
+      const last3 = toolCalls.slice(-3)
+      log.warn({
+        event: 'agent-loop.semantic_stuck_loop_detected',
+        tools: last3.map((t) => t.name),
+        iter,
+        totalToolCalls: toolCalls.length,
+      }, `semantic stuck loop: 3 different tools repeated the same salient value — early stop at iter ${iter}`)
+      signal.cleanup()
+      return {
         text: lengthRecoveryPrefix,
         iterations: iter + 1,
         toolCalls,

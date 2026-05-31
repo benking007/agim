@@ -55,6 +55,15 @@ import type { RouteContext } from '../router.js'
 
 const log = rootLogger.child({ component: 'imhub-dispatcher' })
 
+/** v1.2.121 — kill switch for in-process native self-spawn. When set to
+ *  'off' (or '0' / 'no'), call_agent('native', …) falls back to the
+ *  subprocess CLI boot path. Default is ON (in-process) because
+ *  fan-out latency is the main reason this feature exists. */
+function isInProcessSpawnDisabled(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS ?? '').toLowerCase().trim()
+  return raw === 'off' || raw === '0' || raw === 'no' || raw === 'false'
+}
+
 /** Per-turn caller identity. Matches the subset of `RunContext` the
  *  agim RPC handlers consume + the optional `agent` for A2A self-call
  *  detection. */
@@ -452,6 +461,72 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
             cap: callAgentMaxPerTurn,
             threadId: ctx.threadId,
           }, `delegating to ${agentName} (attempt ${callAgentCount}/${callAgentMaxPerTurn || '∞'})`)
+
+          // v1.2.121 — in-process self-spawn fast path.
+          //
+          // When the target is `native` (i.e. caller wants to fan-out
+          // research using more native turns), skip the subprocess
+          // boot and run another native agent loop in the SAME JS
+          // heap. Saves the ~5s claude-code-style boot per fan-out;
+          // matches the pattern Claude Code uses for in-process Task
+          // agents.
+          //
+          // Disabled via IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off
+          // (falls back to subprocess via callAgentByName).
+          // Depth + A2A_ENABLED checks still apply.
+          if (agentName === 'native' && !isInProcessSpawnDisabled()) {
+            const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
+            if (!isA2AEnabled()) {
+              return err('call_agent refused: A2A disabled (IMHUB_A2A_ENABLED=0)')
+            }
+            const callerDepth = ctx.callerDepth ?? 0
+            const nextDepth = callerDepth + 1
+            const maxDepth = getA2AMaxDepth()
+            if (nextDepth > maxDepth) {
+              log.warn({
+                event: 'native.call_agent.in_process_depth_exceeded',
+                callerDepth, nextDepth, maxDepth, threadId: ctx.threadId,
+              }, `in-process self-spawn refused: depth ${nextDepth} > max ${maxDepth}`)
+              return err(`call_agent refused: depth ${nextDepth} > max ${maxDepth}`)
+            }
+            log.info({
+              event: 'native.call_agent.in_process_spawn',
+              callerDepth, nextDepth, threadId: ctx.threadId, subTurnCallId: call.id,
+            }, `in-process native self-spawn (depth ${nextDepth}); skipping subprocess boot`)
+            try {
+              // Dynamic import to avoid the circular dep — native
+              // index.ts depends on this dispatcher module.
+              const native = await import('../../plugins/agents/native/index.js')
+              // Fresh sub-session id so the child doesn't pollute
+              // the parent's session history but shares the thread
+              // context (platform/channelId/threadId/userId) so
+              // tools resolve the same workspace, MCP fleet, etc.
+              const subSessionId = `${ctx.threadId}-spawn-${call.id}`
+              const parts: string[] = []
+              for await (const chunk of native.nativeAgentAdapter.sendPrompt(
+                subSessionId,
+                prompt,
+                [],
+                {
+                  platform: ctx.platform,
+                  channelId: ctx.channelId,
+                  threadId: ctx.threadId,
+                  userId: ctx.userId,
+                  callDepth: nextDepth,
+                  signal,
+                },
+              )) {
+                parts.push(chunk)
+              }
+              return ok(parts.join(''))
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e)
+              log.warn({ event: 'native.call_agent.in_process_failed', err: msg },
+                'in-process self-spawn threw; surfacing error to caller')
+              return err(`call_agent (in-process native) failed: ${msg}`)
+            }
+          }
+
           // Construct a minimal RouteContext from the run context so A2A
           // can audit / route. Lifted to a partial cast because most of
           // RouteContext's optional fields (intent, agentSessionId, …)

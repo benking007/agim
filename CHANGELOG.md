@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.121] - 2026-05-31
+
+### Added (主流对账批 3/4：fan-out 子 agent + 搜索全家桶)
+
+#### Item 7 — in-process call_agent native 自旋（fan-out 关键）
+之前 `call_agent('native', ...)` 走 subprocess CLI 启动（~5s 冷启），完全没法做 fan-out。
+本版加入 in-process fast path：
+- 当 target=='native' → 跳过 subprocess，直接在同 JS 堆里 `nativeAgentAdapter.sendPrompt()`
+- 共享 cwd / MCP fleet / 同一 LLM 后端，但开**全新 session id** 避免污染父对话
+- 仍按 `IMHUB_A2A_MAX_DEPTH`（默认 1）做深度检查 + 走 callerDepth+1 入子层
+- `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off` 是 kill switch（强制走 subprocess 老路）
+- 子层若再 call_agent 会被 depth 拦下，避免无限递归
+- 完整 trace 链：parent traceId → `a2a-{call.id}` → child native loop 内每个 tool
+
+#### Item 8 — Brave / Serper / Exa search providers
+扩展 v1.2.118 的 SearchProvider chain。新增 3 个 provider：
+- **Brave** (`BRAVE_API_KEY`)：实际 web index，2000 req/月免费档
+- **Serper** (`SERPER_API_KEY`)：Google SERP 中继，cheap
+- **Exa** (`EXA_API_KEY`)：语义/向量搜索，适合"找类似页"
+- 新默认链：`tavily,brave,serper,exa,duckduckgo,metaso`
+- 缺 key 仍然静默跳过，env override `IMHUB_WEB_SEARCH_PROVIDERS` 不变
+
+### Affected paths
+
+- `src/core/llm/web-dispatcher.ts`：新增 `searchBrave/parseBraveResults` /
+  `searchSerper/parseSerperResults` / `searchExa/parseExaResults` + 注册到
+  `PROVIDERS`；默认 chain 更新；工具描述更新
+- `src/core/llm/imhub-dispatcher.ts`：`isInProcessSpawnDisabled` helper +
+  call_agent 分支检测 `agentName === 'native'` → in-process fast path
+- `test/unit/web-search-providers.test.ts`：新增 3 个 parse 测试 + 1 个默认
+  chain 顺序测试 + 1 个三 provider 同时启用测试
+- `src/core/llm/imhub-dispatcher.test.ts`：新增 4 个 case（depth 拒绝 / A2A
+  disabled / 非 native 不走 in-process / kill switch 强制 subprocess）
+
+### Test status
+
+- 159/159 bun pass（新增 9：5 search + 4 self-spawn）
+- typecheck clean
+
+### What's next
+
+剩余 v1.2.122+（高级特性，全是 M-L effort）：
+- semantic stuck-loop（goal-critic 判断"同一意图"再 stop）
+- TCP-drop retry on streaming chat（mid-stream ECONNRESET）
+- TodoWrite-style native tool（对话内 plan 跟踪）
+- LLM-summary auto-compact（替代字节裁切）
+
 ## [1.2.120] - 2026-05-31
 
 ### Changed (PlanMode 取消重启依赖——可运行时切换)

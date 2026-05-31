@@ -11,36 +11,59 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   resolveSearchProviderChain,
   parseTavilyResults,
+  parseBraveResults,
+  parseSerperResults,
+  parseExaResults,
 } from '../../src/core/llm/web-dispatcher.js'
 
-describe('web-search provider chain (v1.2.118)', () => {
-  const savedOrder = process.env.IMHUB_WEB_SEARCH_PROVIDERS
-  const savedTavily = process.env.TAVILY_API_KEY
-  const savedMetaso = process.env.METASO_API_KEY
+describe('web-search provider chain (v1.2.118 + v1.2.121)', () => {
+  const KEYS = [
+    'IMHUB_WEB_SEARCH_PROVIDERS',
+    'TAVILY_API_KEY', 'BRAVE_API_KEY', 'SERPER_API_KEY', 'EXA_API_KEY', 'METASO_API_KEY',
+  ]
+  const saved: Record<string, string | undefined> = {}
   beforeEach(() => {
-    delete process.env.IMHUB_WEB_SEARCH_PROVIDERS
-    delete process.env.TAVILY_API_KEY
-    delete process.env.METASO_API_KEY
+    for (const k of KEYS) {
+      saved[k] = process.env[k]
+      delete process.env[k]
+    }
   })
   afterEach(() => {
-    if (savedOrder === undefined) delete process.env.IMHUB_WEB_SEARCH_PROVIDERS
-    else process.env.IMHUB_WEB_SEARCH_PROVIDERS = savedOrder
-    if (savedTavily === undefined) delete process.env.TAVILY_API_KEY
-    else process.env.TAVILY_API_KEY = savedTavily
-    if (savedMetaso === undefined) delete process.env.METASO_API_KEY
-    else process.env.METASO_API_KEY = savedMetaso
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
   })
 
-  it('default order is tavily → duckduckgo → metaso (skipping unavailable)', () => {
-    // No keys set ⇒ only duckduckgo passes available().
+  it('default order (no keys) leaves only duckduckgo passing available()', () => {
     const chain = resolveSearchProviderChain()
     expect(chain.map((p) => p.name)).toEqual(['duckduckgo'])
+  })
+
+  it('v1.2.121 default order is tavily,brave,serper,exa,duckduckgo,metaso', () => {
+    process.env.TAVILY_API_KEY = 'fake'
+    process.env.BRAVE_API_KEY = 'fake'
+    process.env.SERPER_API_KEY = 'fake'
+    process.env.EXA_API_KEY = 'fake'
+    process.env.METASO_API_KEY = 'fake'
+    const chain = resolveSearchProviderChain()
+    expect(chain.map((p) => p.name)).toEqual([
+      'tavily', 'brave', 'serper', 'exa', 'duckduckgo', 'metaso',
+    ])
   })
 
   it('enables tavily when TAVILY_API_KEY is set', () => {
     process.env.TAVILY_API_KEY = 'tvly-fake'
     const chain = resolveSearchProviderChain()
     expect(chain.map((p) => p.name)).toEqual(['tavily', 'duckduckgo'])
+  })
+
+  it('enables brave / serper / exa when their keys are set', () => {
+    process.env.BRAVE_API_KEY = 'fake'
+    process.env.SERPER_API_KEY = 'fake'
+    process.env.EXA_API_KEY = 'fake'
+    const chain = resolveSearchProviderChain()
+    expect(chain.map((p) => p.name)).toEqual(['brave', 'serper', 'exa', 'duckduckgo'])
   })
 
   it('enables metaso when METASO_API_KEY is set', () => {
@@ -125,5 +148,97 @@ describe('parseTavilyResults (v1.2.118)', () => {
     expect(parseTavilyResults(null, 10)).toEqual([])
     expect(parseTavilyResults({}, 10)).toEqual([])
     expect(parseTavilyResults({ results: 'not-array' }, 10)).toEqual([])
+  })
+})
+
+describe('parseBraveResults (v1.2.121)', () => {
+  it('extracts hits from Brave {web: {results: [...]}}', () => {
+    const hits = parseBraveResults({
+      web: {
+        results: [
+          { title: 'A', url: 'https://a', description: 'snip a' },
+          { title: 'B', url: 'https://b', description: 'snip b' },
+        ],
+      },
+    }, 10)
+    expect(hits).toEqual([
+      { title: 'A', url: 'https://a', snippet: 'snip a' },
+      { title: 'B', url: 'https://b', snippet: 'snip b' },
+    ])
+  })
+
+  it('returns [] when web.results is missing or malformed', () => {
+    expect(parseBraveResults({}, 10)).toEqual([])
+    expect(parseBraveResults({ web: { results: 'bad' } }, 10)).toEqual([])
+    expect(parseBraveResults(null, 10)).toEqual([])
+  })
+
+  it('respects max', () => {
+    const hits = parseBraveResults({
+      web: { results: [
+        { title: 'a', url: 'https://1' },
+        { title: 'b', url: 'https://2' },
+        { title: 'c', url: 'https://3' },
+      ] },
+    }, 2)
+    expect(hits.length).toBe(2)
+  })
+})
+
+describe('parseSerperResults (v1.2.121)', () => {
+  it('extracts hits from Serper {organic: [...]} using `link` field', () => {
+    const hits = parseSerperResults({
+      organic: [
+        { title: 'A', link: 'https://a', snippet: 'snip a' },
+        { title: 'B', link: 'https://b', snippet: 'snip b' },
+      ],
+    }, 10)
+    expect(hits).toEqual([
+      { title: 'A', url: 'https://a', snippet: 'snip a' },
+      { title: 'B', url: 'https://b', snippet: 'snip b' },
+    ])
+  })
+
+  it('skips items missing title or link', () => {
+    const hits = parseSerperResults({
+      organic: [
+        { title: 'good', link: 'https://x' },
+        { title: '', link: 'https://blank' },
+        { link: 'https://no-title' },
+      ],
+    }, 10)
+    expect(hits).toEqual([{ title: 'good', url: 'https://x', snippet: '' }])
+  })
+
+  it('returns [] for malformed', () => {
+    expect(parseSerperResults({}, 10)).toEqual([])
+    expect(parseSerperResults(null, 10)).toEqual([])
+  })
+})
+
+describe('parseExaResults (v1.2.121)', () => {
+  it('extracts hits from Exa {results: [{title, url, text}]}', () => {
+    const hits = parseExaResults({
+      results: [
+        { title: 'A', url: 'https://a', text: 'semantic body a' },
+        { title: 'B', url: 'https://b', text: 'semantic body b' },
+      ],
+    }, 10)
+    expect(hits).toEqual([
+      { title: 'A', url: 'https://a', snippet: 'semantic body a' },
+      { title: 'B', url: 'https://b', snippet: 'semantic body b' },
+    ])
+  })
+
+  it('falls back to summary when text is missing', () => {
+    const hits = parseExaResults({
+      results: [{ title: 'C', url: 'https://c', summary: 'short' }],
+    }, 10)
+    expect(hits[0]?.snippet).toBe('short')
+  })
+
+  it('returns [] for malformed', () => {
+    expect(parseExaResults({}, 10)).toEqual([])
+    expect(parseExaResults(null, 10)).toEqual([])
   })
 })

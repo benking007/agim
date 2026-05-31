@@ -119,4 +119,94 @@ describe('buildImhubDispatcher', () => {
       else process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = ORIG
     }
   })
+
+  // v1.2.121 — in-process native self-spawn fast path.
+  describe('call_agent in-process native self-spawn (v1.2.121)', () => {
+    const SAVED = {
+      depth: process.env.IMHUB_A2A_MAX_DEPTH,
+      inProc: process.env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS,
+      a2aEnabled: process.env.IMHUB_A2A_ENABLED,
+      capPerTurn: process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN,
+    }
+    function restoreEnv(): void {
+      for (const [k, v] of [
+        ['IMHUB_A2A_MAX_DEPTH', SAVED.depth],
+        ['IMHUB_NATIVE_CALL_AGENT_IN_PROCESS', SAVED.inProc],
+        ['IMHUB_A2A_ENABLED', SAVED.a2aEnabled],
+        ['IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN', SAVED.capPerTurn],
+      ] as const) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+
+    it('depth exceed: in-process branch rejects when nextDepth > maxDepth', async () => {
+      process.env.IMHUB_A2A_MAX_DEPTH = '1'
+      process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      // Already-deep caller (depth=1) → nextDepth=2 > max=1 → reject.
+      const d = buildImhubDispatcher({ ...CTX, callerDepth: 1 })
+      try {
+        const r = await d(
+          { id: 'spawn-1', name: 'mcp__imhub__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        // The in-process branch rejects with explicit depth message,
+        // not the cap-exceeded path.
+        expect(r.text).toMatch(/depth 2 > max 1/)
+      } finally { restoreEnv() }
+    })
+
+    it('A2A disabled: in-process branch refuses', async () => {
+      process.env.IMHUB_A2A_ENABLED = '0'
+      process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildImhubDispatcher(CTX)
+      try {
+        const r = await d(
+          { id: 'spawn-2', name: 'mcp__imhub__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/A2A disabled/i)
+      } finally { restoreEnv() }
+    })
+
+    it('non-native target skips the in-process branch (falls through to subprocess A2A)', async () => {
+      // We can't easily mount a real agent here, but we can verify the
+      // failure path: callAgentByName for an unknown agent returns an
+      // A2A-layer error string, distinct from the in-process branch's
+      // "depth N > max" or "A2A disabled" messages.
+      process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildImhubDispatcher(CTX)
+      try {
+        const r = await d(
+          { id: 'spawn-3', name: 'mcp__imhub__call_agent', arguments: { agent: 'no-such-agent', prompt: 'hi' } },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        // Must NOT match the in-process branch's reject messages.
+        expect(r.text).not.toMatch(/in-process native/i)
+        expect(r.text).not.toMatch(/depth \d+ > max/)
+      } finally { restoreEnv() }
+    })
+
+    it('kill switch: IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off forces subprocess path', async () => {
+      process.env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS = 'off'
+      process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildImhubDispatcher(CTX)
+      try {
+        const r = await d(
+          { id: 'spawn-4', name: 'mcp__imhub__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
+          NOOP_SIGNAL,
+        )
+        // With in-process disabled, we hit callAgentByName for 'native'
+        // which goes through the subprocess A2A path. If no native is
+        // registered in this test env, we expect a non-in-process
+        // error message (i.e. text NOT matching the in-process spawn
+        // log signature).
+        expect(r.isError).toBe(true)
+        expect(r.text).not.toMatch(/in-process/i)
+      } finally { restoreEnv() }
+    })
+  })
 })

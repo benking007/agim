@@ -32,8 +32,13 @@ const DEFAULT_SEARCH_RESULTS = 8
 const DDG_SEARCH_URL = 'https://duckduckgo.com/html/?q='
 const METASO_API_BASE = 'https://metaso.cn/api/v1'  // adapt if path differs
 const TAVILY_API_URL = 'https://api.tavily.com/search'
+const BRAVE_API_URL = 'https://api.search.brave.com/res/v1/web/search'
+const SERPER_API_URL = 'https://google.serper.dev/search'
+const EXA_API_URL = 'https://api.exa.ai/search'
 const JINA_READER_BASE = 'https://r.jina.ai/'
-const DEFAULT_PROVIDER_ORDER = 'tavily,duckduckgo,metaso'
+// v1.2.121 — chain now spans 6 providers. Order: agent-tuned (Tavily/Exa)
+// → fast-and-cheap (Brave/Serper) → free fallbacks (DDG/Metaso).
+const DEFAULT_PROVIDER_ORDER = 'tavily,brave,serper,exa,duckduckgo,metaso'
 
 const WEB_TOOL_NAMES = ['native_web_fetch', 'native_web_search'] as const
 export function isWebToolName(name: string): boolean {
@@ -87,8 +92,10 @@ export function getWebTools(): ToolDef[] {
         'always start with native_web_search, then optionally native_web_fetch on a result. ' +
         '\n\n' +
         'Backend chain configurable via IMHUB_WEB_SEARCH_PROVIDERS '
-        + '(default "tavily,duckduckgo,metaso"). Tavily needs TAVILY_API_KEY; '
-        + 'Metaso needs METASO_API_KEY; DuckDuckGo needs none. Providers '
+        + '(default "tavily,brave,serper,exa,duckduckgo,metaso"). Key env vars: '
+        + 'TAVILY_API_KEY (agent-tuned, recommended), BRAVE_API_KEY (cheap, free 2K/mo), '
+        + 'SERPER_API_KEY (Google SERP relay), EXA_API_KEY (semantic), '
+        + 'METASO_API_KEY (中文 AI 搜索). DuckDuckGo needs none. Providers '
         + 'whose key is missing are skipped silently — set the env vars '
         + 'you want and the chain picks the first that returns ≥1 hit.',
       parameters: {
@@ -259,6 +266,28 @@ const PROVIDERS: Record<string, SearchProvider> = {
     available: () => !!process.env.TAVILY_API_KEY,
     search: searchTavily,
   },
+  // v1.2.121 — Brave Search: cheapest "real" web index (free 2K/mo);
+  // privacy-positioned. Returns Google-quality results without scrape.
+  brave: {
+    name: 'brave',
+    available: () => !!process.env.BRAVE_API_KEY,
+    search: searchBrave,
+  },
+  // v1.2.121 — Serper: Google SERP via 3rd-party API. Fast + cheap;
+  // most useful when you need "what would Google show" results.
+  serper: {
+    name: 'serper',
+    available: () => !!process.env.SERPER_API_KEY,
+    search: searchSerper,
+  },
+  // v1.2.121 — Exa: semantic (vector) search over a curated index.
+  // Good for "find similar pages to <description>" agent queries
+  // where keyword search would miss intent.
+  exa: {
+    name: 'exa',
+    available: () => !!process.env.EXA_API_KEY,
+    search: searchExa,
+  },
   duckduckgo: {
     name: 'duckduckgo',
     available: () => true,                     // no key required
@@ -366,6 +395,144 @@ async function searchTavily(query: string, n: number, signal: AbortSignal): Prom
   }
   const data = await res.json() as unknown
   return parseTavilyResults(data, n)
+}
+
+/**
+ * v1.2.121 — Brave Search (https://search.brave.com/help/api).
+ * Headers carry the X-Subscription-Token API key; query is a `q` query
+ * param. Response shape: `{web: {results: [{title, url, description}]}}`.
+ * 60req/min on the free tier — we don't pace because the agent loop is
+ * iter-bounded and a turn rarely calls search more than 5×.
+ */
+async function searchBrave(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]> {
+  const key = process.env.BRAVE_API_KEY
+  if (!key) throw new Error('BRAVE_API_KEY not set')
+  const url = `${BRAVE_API_URL}?q=${encodeURIComponent(query)}&count=${n}`
+  const res = await fetch(url, {
+    method: 'GET',
+    signal,
+    headers: {
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip',
+      'X-Subscription-Token': key,
+      'User-Agent': 'agim-native',
+    },
+  })
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '')
+    throw new Error(`brave http ${res.status}: ${errBody.slice(0, 200)}`)
+  }
+  const data = await res.json() as unknown
+  return parseBraveResults(data, n)
+}
+
+export function parseBraveResults(data: unknown, max: number): SearchHit[] {
+  if (!data || typeof data !== 'object') return []
+  const d = data as { web?: { results?: unknown } }
+  const results = d.web?.results
+  if (!Array.isArray(results)) return []
+  const out: SearchHit[] = []
+  for (const item of results) {
+    if (out.length >= max) break
+    if (!item || typeof item !== 'object') continue
+    const it = item as Record<string, unknown>
+    const title = typeof it.title === 'string' ? it.title : ''
+    const url = typeof it.url === 'string' ? it.url : ''
+    const snippet = typeof it.description === 'string' ? it.description : ''
+    if (title && url) out.push({ title, url, snippet })
+  }
+  return out
+}
+
+/**
+ * v1.2.121 — Serper (https://serper.dev). POST with API key in header,
+ * returns Google's organic results shape `{organic: [{title, link,
+ * snippet}]}`. Cheaper than direct Google API; same surface.
+ */
+async function searchSerper(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]> {
+  const key = process.env.SERPER_API_KEY
+  if (!key) throw new Error('SERPER_API_KEY not set')
+  const res = await fetch(SERPER_API_URL, {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-KEY': key,
+      'User-Agent': 'agim-native',
+    },
+    body: JSON.stringify({ q: query, num: n }),
+  })
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '')
+    throw new Error(`serper http ${res.status}: ${errBody.slice(0, 200)}`)
+  }
+  const data = await res.json() as unknown
+  return parseSerperResults(data, n)
+}
+
+export function parseSerperResults(data: unknown, max: number): SearchHit[] {
+  if (!data || typeof data !== 'object') return []
+  const d = data as { organic?: unknown }
+  if (!Array.isArray(d.organic)) return []
+  const out: SearchHit[] = []
+  for (const item of d.organic) {
+    if (out.length >= max) break
+    if (!item || typeof item !== 'object') continue
+    const it = item as Record<string, unknown>
+    const title = typeof it.title === 'string' ? it.title : ''
+    // Note: Serper uses `link`, not `url`.
+    const url = typeof it.link === 'string' ? it.link : ''
+    const snippet = typeof it.snippet === 'string' ? it.snippet : ''
+    if (title && url) out.push({ title, url, snippet })
+  }
+  return out
+}
+
+/**
+ * v1.2.121 — Exa (https://exa.ai). Semantic / neural search over a
+ * curated index. Returns `{results: [{title, url, text, score}]}`. We
+ * request `numResults` and skip `contents` (too verbose for SearchHit
+ * shape; agent can web_fetch the URL it cares about).
+ */
+async function searchExa(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]> {
+  const key = process.env.EXA_API_KEY
+  if (!key) throw new Error('EXA_API_KEY not set')
+  const res = await fetch(EXA_API_URL, {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'User-Agent': 'agim-native',
+    },
+    body: JSON.stringify({ query, numResults: n, useAutoprompt: true }),
+  })
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '')
+    throw new Error(`exa http ${res.status}: ${errBody.slice(0, 200)}`)
+  }
+  const data = await res.json() as unknown
+  return parseExaResults(data, n)
+}
+
+export function parseExaResults(data: unknown, max: number): SearchHit[] {
+  if (!data || typeof data !== 'object') return []
+  const d = data as { results?: unknown }
+  if (!Array.isArray(d.results)) return []
+  const out: SearchHit[] = []
+  for (const item of d.results) {
+    if (out.length >= max) break
+    if (!item || typeof item !== 'object') continue
+    const it = item as Record<string, unknown>
+    const title = typeof it.title === 'string' ? it.title : ''
+    const url = typeof it.url === 'string' ? it.url : ''
+    // Exa returns `text` (snippet) when requested; usually present but
+    // not guaranteed if useAutoprompt rephrased and content was sparse.
+    const snippet = typeof it.text === 'string' ? it.text
+      : typeof it.summary === 'string' ? it.summary : ''
+    if (title && url) out.push({ title, url, snippet })
+  }
+  return out
 }
 
 /** Parse Tavily's `{results: [{title, url, content, score}]}` shape.

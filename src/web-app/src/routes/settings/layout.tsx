@@ -27,6 +27,8 @@ const SUB_TABS: SubTab[] = [
   { to: 'llm',          i18nKey: 'tabs.llm',          mounted: true },
   { to: 'mcp',          i18nKey: 'tabs.mcp',          mounted: true },
   { to: 'native-agent', i18nKey: 'tabs.nativeAgent',  mounted: true },
+  // v1.2.126 — web_search provider chain + per-provider keys.
+  { to: 'search',       i18nKey: 'tabs.search',       mounted: true },
   // P1 follow-up — agim SKILL.md editor.
   { to: 'agim-skills',  i18nKey: 'tabs.agimSkills',   mounted: true },
   { to: 'policy',       i18nKey: 'tabs.policy',       mounted: true },

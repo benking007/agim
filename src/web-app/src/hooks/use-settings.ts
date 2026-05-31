@@ -27,6 +27,9 @@ import type {
   AppConfig,
   EnvResponse,
   RemoveAdminBody,
+  SearchProvidersResponse,
+  SearchTestBody,
+  SearchTestResponse,
   ServiceActionResponse,
   ServiceStatus,
   UpdateEnvBody,
@@ -203,6 +206,26 @@ export function useDiscoverAcp() {
 export function useTestEmail() {
   return useMutation<EmailTestResponse, Error, void>({
     mutationFn: () => api.testEmail(),
+  })
+}
+
+/** v1.2.126 — registered web_search providers + their current
+ *  availability + the resolved chain. Used by /settings/search to
+ *  paint per-provider rows and the chain preview at the top. Polls
+ *  once on mount; manual refetch after Save. */
+export function useSearchProviders() {
+  return useQuery<SearchProvidersResponse>({
+    queryKey: ['settings', 'search', 'providers'],
+    queryFn: () => api.getSearchProviders(),
+  })
+}
+
+/** Ping one provider. Always resolves (no throw on provider error —
+ *  the response carries `{ ok, error }`); throws only on transport
+ *  error. The page renders the result inline beside the row. */
+export function useTestSearchProvider() {
+  return useMutation<SearchTestResponse, Error, SearchTestBody>({
+    mutationFn: (body) => api.testSearchProvider(body),
   })
 }
 

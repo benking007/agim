@@ -45,6 +45,9 @@ import type {
   TopNMetric,
   ResolveApprovalBody,
   ResolveApprovalResponse,
+  SearchProvidersResponse,
+  SearchTestBody,
+  SearchTestResponse,
   CancelReminderResponse,
   ConsolidateMemoryResponse,
   ConsolidateStatusResponse,
@@ -133,6 +136,16 @@ export const api = {
    *  fill the form, Save (PUT /api/env), then click Test. */
   testEmail: () =>
     client.post<EmailTestResponse>('/api/messengers/email/test'),
+
+  /** GET /api/search/providers — list of registered web_search backends
+   *  with envKey, current availability, and the resolved chain. */
+  getSearchProviders: () =>
+    client.get<SearchProvidersResponse>('/api/search/providers'),
+
+  /** POST /api/search/test — ping a single named provider with a small
+   *  query and report latency / hit count / error. */
+  testSearchProvider: (body: SearchTestBody) =>
+    client.post<SearchTestResponse>('/api/search/test', { body }),
 
   /** GET /api/agents/status — agent name → online boolean map */
   getAgentsStatus: () =>

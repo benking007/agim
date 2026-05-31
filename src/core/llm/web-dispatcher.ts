@@ -327,6 +327,45 @@ export function resolveSearchProviderChain(): SearchProvider[] {
   return chain
 }
 
+/**
+ * v1.2.126 — descriptor used by the SPA search settings page. Lists
+ * every registered provider (whether in the env chain or not), with
+ * its key-requirement flag and current availability so the operator
+ * can see "Tavily ✓ configured / Brave ⚠ missing key" at a glance.
+ */
+export interface SearchProviderInfo {
+  name: string
+  envKey: string | null
+  available: boolean
+}
+
+const PROVIDER_ENV_KEYS: Record<string, string | null> = {
+  tavily:     'TAVILY_API_KEY',
+  brave:      'BRAVE_API_KEY',
+  serper:     'SERPER_API_KEY',
+  exa:        'EXA_API_KEY',
+  duckduckgo: null,
+  metaso:     'METASO_API_KEY',
+}
+
+/** All known providers + each provider's env requirement & current
+ *  availability. Order matches DEFAULT_PROVIDER_ORDER so the SPA can
+ *  render a stable list when no env chain is configured. */
+export function listAllSearchProviders(): SearchProviderInfo[] {
+  return Object.keys(PROVIDERS).map((name) => ({
+    name,
+    envKey: PROVIDER_ENV_KEYS[name] ?? null,
+    available: PROVIDERS[name].available(),
+  }))
+}
+
+/** Look up a single provider by name. Returns null if unknown — the
+ *  caller (e.g. /api/search/test) is expected to surface that as a
+ *  400 with the supported names. */
+export function getSearchProviderByName(name: string): SearchProvider | null {
+  return PROVIDERS[name] ?? null
+}
+
 async function runWebSearch(args: Record<string, unknown>, signal: AbortSignal): Promise<DispatcherResult> {
   const query = typeof args.query === 'string' ? args.query.trim() : ''
   if (!query) return { text: 'query required', isError: true, source: 'web' }

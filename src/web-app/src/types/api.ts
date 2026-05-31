@@ -866,6 +866,43 @@ export interface EmailTestResponse {
 }
 
 /* ============================================================
+ * v1.2.126 — web_search provider settings
+ * ============================================================ */
+
+/** One row of the search provider table the SPA renders. */
+export interface SearchProviderInfo {
+  /** Stable id used in IMHUB_WEB_SEARCH_PROVIDERS, e.g. `tavily`. */
+  name: string
+  /** Env key holding this provider's API key, or null if none required. */
+  envKey: string | null
+  /** True iff key is present (or none required) — sets the status badge. */
+  available: boolean
+}
+
+export interface SearchProvidersResponse {
+  /** All registered providers (ordered as registered, not by chain). */
+  providers: SearchProviderInfo[]
+  /** Provider names that the dispatcher will try in order on next call. */
+  chain: string[]
+}
+
+export interface SearchTestBody {
+  provider: string
+  query: string
+}
+
+export interface SearchTestResponse {
+  ok: boolean
+  provider: string
+  /** Wall-clock from request start to response (or to error). */
+  latencyMs: number
+  /** Number of hits returned (0 on error). */
+  hits: number
+  /** Short error string when ok=false. Absent on success. */
+  error?: string
+}
+
+/* ============================================================
  * Viewer + cloudflared tunnel
  * ============================================================ */
 

@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.126] - 2026-06-01
+
+### Added (Web 后台搜索 + 运行参数面板)
+
+主流对账后续：v1.2.118-125 引入了一批 native agent 配置项（搜索 provider 链、
+工具结果上限、超时、空响应重试、长度续写），这些之前都只能改环境变量+重启。
+本版给 web admin 接上配置 UI。
+
+#### 新增 `/settings/search` 页面
+- 列出 6 个已注册 web_search provider：tavily / brave / serper / exa / duckduckgo / metaso
+- 每行包含：
+  - **启用复选框** + **上移/下移按钮** → 编辑 `IMHUB_WEB_SEARCH_PROVIDERS` CSV 链
+  - **API key 输入框**（密文输入；已配置时占位符为"已保存（隐藏）"，可清空）
+  - **状态徽章**：configured / missing key / no key needed
+  - **测试按钮**：一次性发"agim ping"探针，返回 `{ ok, latencyMs, hits }`
+- 顶部"当前生效链路"预览：实时显示 dispatcher 下次会按什么顺序回退
+
+#### `/settings/native-agent` 页面新增 Runtime caps 卡片
+覆盖 v1.2.118-119 的 4 个运行上限：
+- `IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS` — 单次工具返回字符上限
+- `IMHUB_NATIVE_TOOL_TIMEOUT_MS` — 单次工具超时
+- `IMHUB_NATIVE_BLANK_RETRY_MAX` — 空响应重试次数
+- `IMHUB_NATIVE_LENGTH_RECOVERY_MAX` — finishReason=length 续写次数
+
+留空则用默认值；编辑后 Save，下一次调用立即生效。
+
+#### 后端
+- `web-dispatcher.ts` 新增 `listAllSearchProviders()` 与 `getSearchProviderByName()`
+  — 让 web 层枚举所有 provider 而不只看 chain
+- `server.ts` 新增两个端点：
+  - `GET /api/search/providers` — 列出 6 个 provider + 当前 chain
+  - `POST /api/search/test` — 单次探针，10 秒硬超时
+- `ENV_EDITABLE_KEYS` 扩展：新增 5 个 `*_API_KEY` + 4 个 `IMHUB_NATIVE_*` 上限键
+- `SECRET_KEYS` 扩展：5 个 search API key 全部加入掩码白名单
+
+#### 热生效保证
+所有 env 变更都通过 `PUT /api/env` 写入 `~/.agim/env` 并同步 `process.env`：
+- 搜索 provider 链：`resolveSearchProviderChain()` 每次调用现读 env
+- 运行上限：`resolveToolResultMaxChars()` / `resolveToolTimeoutMs()` /
+  `resolveBlankRetryMax()` / `resolveLengthRecoveryMax()` 都是 lazy read
+- 改完无需重启 agim 服务
+
+#### 安全
+- 所有端点 `requireAdmin()` 把关
+- API key 在 GET 响应里只显示尾部 4 位（沿用 v1.2.34 `maskSecret`）
+- PUT 拒绝回放被掩码的值（防止 UI 把"sk-***1234"再写回去）
+- ENV_EDITABLE_KEYS 白名单只允许编辑列入的键，杜绝任意 process.env 篡改
+
+### 文件
+- 新增 `src/web-app/src/routes/settings/search.tsx` (407 lines)
+- 新增 `test/unit/web-search-introspect.test.ts` (5 test cases)
+- 修改 `src/core/llm/web-dispatcher.ts`（39 lines added — 2 新 helper）
+- 修改 `src/web/server.ts`（125 lines added — ENV_EDITABLE_KEYS + 2 handlers）
+- 修改 `src/web-app/src/routes/settings/native-agent.tsx`（+RuntimeCapsCard 87 lines）
+- 修改 `src/web-app/src/{router.tsx,routes/settings/layout.tsx}`（路由 + 侧边栏）
+- 修改 `src/web-app/src/{types/api.ts,hooks/use-settings.ts,lib/api/endpoints.ts}`
+- 修改两套 i18n（en/zh settings.json — 新增 search.* 与 nativeAgent.runtime*）
+
 ## [1.2.125] - 2026-06-01
 
 ### Changed (auto-compact 升级为 head + summary + tail — OpenHands Condenser 模式)

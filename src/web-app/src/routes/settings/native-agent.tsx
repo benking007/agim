@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bell, Cpu, HeartPulse, Loader2, RefreshCcw, Save, X,
+  Bell, Cpu, Gauge, HeartPulse, Loader2, RefreshCcw, Save, X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +42,11 @@ interface Draft {
   hbEnabled: boolean
   hbTickMs: string
   hbDefaultMin: string
+  // v1.2.126 — runtime caps (each one optional / empty = use default)
+  toolResultCap: string
+  toolTimeoutMs: string
+  blankRetryMax: string
+  lengthRecoveryMax: string
 }
 
 function draftFromEnv(env: Record<string, string>): Draft {
@@ -55,6 +60,10 @@ function draftFromEnv(env: Record<string, string>): Draft {
     hbEnabled:   isTruthy(env.IMHUB_HEARTBEAT_ENABLED),
     hbTickMs:    env.IMHUB_HEARTBEAT_TICK_INTERVAL_MS ?? '',
     hbDefaultMin: env.IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN ?? '',
+    toolResultCap:     env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS ?? '',
+    toolTimeoutMs:     env.IMHUB_NATIVE_TOOL_TIMEOUT_MS ?? '',
+    blankRetryMax:     env.IMHUB_NATIVE_BLANK_RETRY_MAX ?? '',
+    lengthRecoveryMax: env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX ?? '',
   }
 }
 
@@ -134,6 +143,18 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
     if (draft.hbDefaultMin !== current.hbDefaultMin) {
       updates.IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN = draft.hbDefaultMin.trim() || null
     }
+    if (draft.toolResultCap !== current.toolResultCap) {
+      updates.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = draft.toolResultCap.trim() || null
+    }
+    if (draft.toolTimeoutMs !== current.toolTimeoutMs) {
+      updates.IMHUB_NATIVE_TOOL_TIMEOUT_MS = draft.toolTimeoutMs.trim() || null
+    }
+    if (draft.blankRetryMax !== current.blankRetryMax) {
+      updates.IMHUB_NATIVE_BLANK_RETRY_MAX = draft.blankRetryMax.trim() || null
+    }
+    if (draft.lengthRecoveryMax !== current.lengthRecoveryMax) {
+      updates.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = draft.lengthRecoveryMax.trim() || null
+    }
     if (Object.keys(updates).length === 0) return
     try {
       await updateEnv.mutateAsync({ updates })
@@ -170,6 +191,7 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
       ) : (
         <>
           <NativeAgentCard draft={draft} setField={setField} />
+          <RuntimeCapsCard draft={draft} setField={setField} />
           <EvaluatorCard draft={draft} setField={setField} />
           <HeartbeatCard draft={draft} setField={setField} />
         </>
@@ -359,6 +381,69 @@ function HeartbeatCard({ draft, setField }: CardProps): JSX.Element {
             placeholder="15"
             className="font-mono text-xs"
             disabled={!draft.hbEnabled}
+          />
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function RuntimeCapsCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Gauge className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.runtimeCard')}</h2>
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.runtimeDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.toolResultCap')}
+          hint={t('nativeAgent.toolResultCapHint')}
+        >
+          <Input
+            type="number"
+            value={draft.toolResultCap}
+            onChange={(e) => setField('toolResultCap', e.target.value)}
+            placeholder="64000"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.toolTimeoutMs')}
+          hint={t('nativeAgent.toolTimeoutHint')}
+        >
+          <Input
+            type="number"
+            value={draft.toolTimeoutMs}
+            onChange={(e) => setField('toolTimeoutMs', e.target.value)}
+            placeholder="60000"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.blankRetryMax')}
+          hint={t('nativeAgent.blankRetryHint')}
+        >
+          <Input
+            type="number"
+            value={draft.blankRetryMax}
+            onChange={(e) => setField('blankRetryMax', e.target.value)}
+            placeholder="1"
+            className="font-mono text-xs"
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.lengthRecoveryMax')}
+          hint={t('nativeAgent.lengthRecoveryHint')}
+        >
+          <Input
+            type="number"
+            value={draft.lengthRecoveryMax}
+            onChange={(e) => setField('lengthRecoveryMax', e.target.value)}
+            placeholder="1"
+            className="font-mono text-xs"
           />
         </Field>
       </div>

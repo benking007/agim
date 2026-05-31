@@ -149,6 +149,8 @@ const router = createBrowserRouter([
       { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
       { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
       { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
+      // v1.2.126 — web_search provider chain + per-provider API keys.
+      { path: 'search',       lazy: lazy(() => import('@/routes/settings/search')) },
       {
         path: 'agim-skills',
         lazy: lazy(() => import('@/routes/settings/agim-skills/layout')),

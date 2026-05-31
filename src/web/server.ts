@@ -716,6 +716,18 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleEmailTest(req, res)
     }
+    // v1.2.126 — web_search provider introspection + ping. GET lists
+    // every registered provider (name + envKey + current available),
+    // POST sends a one-shot test query through a single named
+    // provider and reports latency / hit count / error.
+    if (url.pathname === '/api/search/providers' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleSearchProviders(req, res)
+    }
+    if (url.pathname === '/api/search/test' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
+      return handleSearchTest(req, res)
+    }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
     }
@@ -2692,8 +2704,38 @@ const ENV_EDITABLE_KEYS = [
   // empty (no blocks); listed platforms vanish from web + CLI + are
   // refused at registry.registerMessenger.
   'IMHUB_PLATFORM_BLACKLIST',
+  // v1.2.126 — web_search provider chain (CSV) + each provider's API
+  // key. `IMHUB_WEB_SEARCH_PROVIDERS` orders the fallback chain (e.g.
+  // 'tavily,brave,duckduckgo'); a missing/empty value falls back to
+  // DEFAULT_PROVIDER_ORDER in web-dispatcher. The 5 *_API_KEY values
+  // gate per-provider availability (duckduckgo needs no key).
+  'IMHUB_WEB_SEARCH_PROVIDERS',
+  'TAVILY_API_KEY',
+  'BRAVE_API_KEY',
+  'SERPER_API_KEY',
+  'EXA_API_KEY',
+  'METASO_API_KEY',
+  // v1.2.126 — native runtime caps (per-tool result chars / per-tool
+  // timeout / blank-response retry / length-recovery retry). Hot-
+  // reload: each subsystem re-reads process.env on every call, so
+  // editing these takes effect without a restart.
+  'IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS',
+  'IMHUB_NATIVE_TOOL_TIMEOUT_MS',
+  'IMHUB_NATIVE_BLANK_RETRY_MAX',
+  'IMHUB_NATIVE_LENGTH_RECOVERY_MAX',
 ] as const
-const SECRET_KEYS = new Set<string>(['IMHUB_SMTP_PASS', 'IMHUB_BAIDU_MAP_AK', 'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY'])
+const SECRET_KEYS = new Set<string>([
+  'IMHUB_SMTP_PASS',
+  'IMHUB_BAIDU_MAP_AK',
+  'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
+  // v1.2.126 — web search keys are bearer tokens / API keys, so
+  // they're masked on GET and refused if echoed back on PUT.
+  'TAVILY_API_KEY',
+  'BRAVE_API_KEY',
+  'SERPER_API_KEY',
+  'EXA_API_KEY',
+  'METASO_API_KEY',
+])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file
 // alongside isMasked).
@@ -2880,6 +2922,87 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
       detail: msg,
       extra: { ok: false },
     })
+  }
+}
+
+// ─── v1.2.126 web_search provider config helpers ────────────────────────
+
+/** GET /api/search/providers — list every registered web_search
+ *  backend with its env-key requirement, current availability, and
+ *  the resolved chain (the order the dispatcher will try at next
+ *  call). The SPA renders this as the search-settings table. */
+async function handleSearchProviders(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const { listAllSearchProviders, resolveSearchProviderChain } =
+      await import('../core/llm/web-dispatcher.js')
+    const providers = listAllSearchProviders()
+    const chain = resolveSearchProviderChain().map((p) => p.name)
+    sendJson(res, 200, { providers, chain })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** POST /api/search/test — `{ provider, query }`. Sends a one-shot
+ *  query through a single provider and returns `{ ok, latencyMs, hits, error? }`.
+ *  Does NOT walk the fallback chain — operators want to know "is THIS
+ *  provider's key working", not "did anything turn up". */
+async function handleSearchTest(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { provider?: string; query?: string }
+    const provider = (parsed.provider || '').trim()
+    const query = (parsed.query || '').trim()
+    if (!provider) {
+      sendError(res, 400, 'SEARCH_TEST_PROVIDER_REQUIRED', { message: 'provider required' })
+      return
+    }
+    if (!query) {
+      sendError(res, 400, 'SEARCH_TEST_QUERY_REQUIRED', { message: 'query required' })
+      return
+    }
+    const { getSearchProviderByName } = await import('../core/llm/web-dispatcher.js')
+    const p = getSearchProviderByName(provider)
+    if (!p) {
+      sendError(res, 400, 'SEARCH_TEST_UNKNOWN_PROVIDER', {
+        message: `unknown provider "${provider}"`,
+      })
+      return
+    }
+    if (!p.available()) {
+      sendJson(res, 200, {
+        ok: false, provider, latencyMs: 0, hits: 0,
+        error: 'provider is not available (missing key?)',
+      })
+      return
+    }
+    const controller = new AbortController()
+    // Operators expect "test" to either succeed quickly or fail with a
+    // clear timeout. 10 s is long enough for most search providers but
+    // short enough that a hung backend doesn't hold the request open.
+    const tm = setTimeout(() => controller.abort(), 10_000)
+    const t0 = Date.now()
+    try {
+      const hits = await p.search(query, 3, controller.signal)
+      sendJson(res, 200, {
+        ok: true, provider, latencyMs: Date.now() - t0, hits: hits.length,
+      })
+    } catch (err) {
+      sendJson(res, 200, {
+        ok: false, provider, latencyMs: Date.now() - t0, hits: 0,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      clearTimeout(tm)
+    }
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
 }
 

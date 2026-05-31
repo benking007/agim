@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.118] - 2026-05-31
+
+### Added (native agent stability + 搜索可配置 — 主流对账批 1/4)
+
+经过对账 7 个主流 agent（HKUDS/nanobot / Claude Code / OpenAI Codex / OpenHands /
+sst/opencode / Cursor / Continue.dev），按 ROI 排序产出 12 项改进路线。本版交付前
+3 项 S-effort：
+
+#### Item 1 — 搜索 provider 可配置（解决"只支持 2 种"）
+- `src/core/llm/web-dispatcher.ts` 重构为**插件式 provider chain**：
+  - 新增 `SearchProvider` 接口（`name` / `available()` / `search()`）
+  - 内置 3 个 provider：**Tavily**（新增；行业默认 agent 搜索，`TAVILY_API_KEY`） /
+    DuckDuckGo（无 key） / Metaso（`METASO_API_KEY`）
+  - 通过 `IMHUB_WEB_SEARCH_PROVIDERS` 环境变量定义有序链
+    （默认 `tavily,duckduckgo,metaso`），首个返回 ≥1 结果的胜出
+  - 缺 key 的 provider **静默跳过**（不刷日志）；未知 provider 名 warn 一次后跳过
+  - 添加 Tavily provider 后只需 `export TAVILY_API_KEY=tvly-...` 即可启用
+
+#### Item 2 — per-tool-result 字节上限
+- `src/core/llm/agent-loop.ts` 在 dispatch 包装层加 `truncateToolResult()`：
+  - 默认 32 KB 上限（`IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS`），0 = 禁用
+  - 超限文本带明确截断标记返回模型：`…[native_grep output truncated: 5000000 of 5032768 chars omitted]`
+  - 防止一条 grep / curl 把 context 喂爆，比 auto-compact 触发更早更安全
+
+#### Item 3 — per-tool 钟摆超时
+- `ToolDef` 新增 `timeoutMs?: number` 字段；新 `dispatchWithTimeout()` helper：
+  - 默认 60 秒（`IMHUB_NATIVE_TOOL_TIMEOUT_MS`），0 = 关闭该工具的超时（如 `long_task`）
+  - 超时后**返回结构化 timeout 工具结果**（不是抛异常），模型看到 tool-level 失败
+  - 同步 abort 子调用的 signal，防 wedge
+
+### Affected paths
+
+- `src/core/llm/web-dispatcher.ts`：~150 行新代码（provider 接口 + Tavily adapter +
+  chain resolver），existing DDG/Metaso 函数适配新接口（无行为变化）
+- `src/core/llm/agent-loop.ts`：新增 `resolveToolResultMaxChars` / `truncateToolResult` /
+  `resolveToolTimeoutMs` / `dispatchWithTimeout` helper；`runDispatch` 路径串接
+- `src/core/llm/provider-base.ts`：`ToolDef` 加 `timeoutMs?` 字段
+- `test/unit/agent-loop-tool-budget.test.ts`（新文件，6 case：truncation / 不截断 /
+  cap=0 / 超时返结构化 / timeoutMs=0 opt-out / fast tool 正常完成）
+- `test/unit/web-search-providers.test.ts`（新文件，12 case：默认顺序 / 各 key 启用 /
+  自定义 reorder / 未知名跳过 / 空字符串走默认 / 全未知 → 空链 / Tavily 解析容错）
+
+### Test status
+
+- 42/42 agent-loop + search bun tests pass（新增 18 个）
+- typecheck clean
+
+### What's next
+
+剩余路线图：
+- v1.2.119 — Item 4-6（call_agent max_depth / PlanMode / blank-response retry）
+- v1.2.120 — Item 7-8（in-process call_agent self-spawn / Brave-Serper-Exa adapter）
+- v1.2.121+ — Item 9-12（语义 stuck-loop / TCP 重试 / TodoWrite / LLM 摘要 compact）
+
 ## [1.2.117] - 2026-05-30
 
 ### Added (agent-loop — auto-continue on `finish_reason="length"`)

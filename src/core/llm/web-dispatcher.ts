@@ -1,8 +1,8 @@
-// web-dispatcher — read-only web tools for the native agent (v1.2.61).
+// web-dispatcher — read-only web tools for the native agent.
 //
 // Two tools shipped:
 //   - native_web_fetch(url, format?)   GET + optional Jina Reader text extract
-//   - native_web_search(query, n?)     duckduckgo HTML scrape, metaso fallback
+//   - native_web_search(query, n?)     configurable provider chain
 //
 // Both have:
 //   * 30s default per-call timeout (override via IMHUB_NATIVE_WEB_TIMEOUT_MS)
@@ -10,11 +10,14 @@
 //     IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1
 //   * Body / result size cap to keep the model context manageable
 //
-// Backend selection for web_search:
-//   1. duckduckgo  — primary, no API key, scrapes the HTML SERP
-//   2. metaso      — fallback when ddg returns 0/error, uses METASO_API_KEY
+// v1.2.118 — web_search now drives an ORDERED PROVIDER CHAIN via
+// `IMHUB_WEB_SEARCH_PROVIDERS` (default 'tavily,duckduckgo,metaso').
+// Each entry implements the SearchProvider interface below; providers
+// whose API key is missing are silently skipped, so adding TAVILY_API_KEY
+// to the env is enough to flip Tavily on. The first provider returning
+// ≥1 result wins.
 //
-// Both tools are read-only and safe to default-allow in native's policy.
+// All tools are read-only and safe to default-allow in native's policy.
 
 import net from 'node:net'
 import { logger as rootLogger } from '../logger.js'
@@ -28,7 +31,9 @@ const DEFAULT_FETCH_MAX_BYTES = 200 * 1024  // 200 KB after extract
 const DEFAULT_SEARCH_RESULTS = 8
 const DDG_SEARCH_URL = 'https://duckduckgo.com/html/?q='
 const METASO_API_BASE = 'https://metaso.cn/api/v1'  // adapt if path differs
+const TAVILY_API_URL = 'https://api.tavily.com/search'
 const JINA_READER_BASE = 'https://r.jina.ai/'
+const DEFAULT_PROVIDER_ORDER = 'tavily,duckduckgo,metaso'
 
 const WEB_TOOL_NAMES = ['native_web_fetch', 'native_web_search'] as const
 export function isWebToolName(name: string): boolean {
@@ -81,7 +86,11 @@ export function getWebTools(): ToolDef[] {
         'DO NOT use native_web_fetch when the user only gave keywords without a URL — ' +
         'always start with native_web_search, then optionally native_web_fetch on a result. ' +
         '\n\n' +
-        'Backend chain: DuckDuckGo HTML (no key) → Metaso fallback (needs METASO_API_KEY).',
+        'Backend chain configurable via IMHUB_WEB_SEARCH_PROVIDERS '
+        + '(default "tavily,duckduckgo,metaso"). Tavily needs TAVILY_API_KEY; '
+        + 'Metaso needs METASO_API_KEY; DuckDuckGo needs none. Providers '
+        + 'whose key is missing are skipped silently — set the env vars '
+        + 'you want and the chain picks the first that returns ≥1 hit.',
       parameters: {
         type: 'object',
         properties: {
@@ -227,30 +236,156 @@ interface SearchHit {
   snippet: string
 }
 
+/**
+ * v1.2.118 — pluggable search-provider interface. Each provider:
+ *   - `name` is the env-config token (e.g. 'tavily')
+ *   - `available()` short-circuits the chain when required keys are
+ *     missing (so a fresh agim install without TAVILY_API_KEY skips
+ *     Tavily without logging an error every search)
+ *   - `search()` returns ≥0 SearchHit; an empty array means "no hits"
+ *     and triggers fallback to the next provider, while a throw means
+ *     "transient error" and is also followed by fallback (logged at
+ *     warn). Either way, the chain continues until exhaustion.
+ */
+interface SearchProvider {
+  name: string
+  available(): boolean
+  search(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]>
+}
+
+const PROVIDERS: Record<string, SearchProvider> = {
+  tavily: {
+    name: 'tavily',
+    available: () => !!process.env.TAVILY_API_KEY,
+    search: searchTavily,
+  },
+  duckduckgo: {
+    name: 'duckduckgo',
+    available: () => true,                     // no key required
+    search: searchDuckDuckGo,
+  },
+  metaso: {
+    name: 'metaso',
+    available: () => !!process.env.METASO_API_KEY,
+    search: searchMetaso,
+  },
+}
+
+/**
+ * Read `IMHUB_WEB_SEARCH_PROVIDERS` (CSV) and return the active chain.
+ * Unknown names are dropped with a one-shot warn (so a typo doesn't
+ * silently disable the entire chain). Providers whose `available()`
+ * returns false are also dropped — these are NOT logged because the
+ * common case is "key not set, skip", not a misconfig.
+ */
+export function resolveSearchProviderChain(): SearchProvider[] {
+  // Empty string is treated as "unset" — natural for env files where
+  // clearing a value yields '' rather than removing the line. Use the
+  // default order in that case.
+  const envOrder = process.env.IMHUB_WEB_SEARCH_PROVIDERS
+  const order = envOrder && envOrder.trim().length > 0 ? envOrder : DEFAULT_PROVIDER_ORDER
+  const raw = order.split(',').map((s) => s.trim()).filter(Boolean)
+  const chain: SearchProvider[] = []
+  for (const name of raw) {
+    const p = PROVIDERS[name]
+    if (!p) {
+      log.warn({ event: 'web.search.unknown_provider', name }, `unknown web-search provider "${name}" — skipped`)
+      continue
+    }
+    if (!p.available()) continue
+    chain.push(p)
+  }
+  return chain
+}
+
 async function runWebSearch(args: Record<string, unknown>, signal: AbortSignal): Promise<DispatcherResult> {
   const query = typeof args.query === 'string' ? args.query.trim() : ''
   if (!query) return { text: 'query required', isError: true, source: 'web' }
   const n = clampNumber(args.n, DEFAULT_SEARCH_RESULTS, 1, 20)
-  // 1) DuckDuckGo first.
-  try {
-    const ddg = await searchDuckDuckGo(query, n, signal)
-    if (ddg.length > 0) {
-      return ok({ query, backend: 'duckduckgo', count: ddg.length, results: ddg })
-    }
-    log.info({ event: 'web.search.ddg_empty', query }, 'duckduckgo returned 0 results, falling back to metaso')
-  } catch (err) {
-    log.warn({ event: 'web.search.ddg_failed', err: errMsg(err) })
+  const chain = resolveSearchProviderChain()
+  if (chain.length === 0) {
+    return err(
+      'web_search: no providers configured. Set IMHUB_WEB_SEARCH_PROVIDERS=tavily,duckduckgo,metaso ' +
+      'and at least one of TAVILY_API_KEY / METASO_API_KEY (duckduckgo needs no key).',
+    )
   }
-  // 2) Metaso fallback.
-  try {
-    const meta = await searchMetaso(query, n, signal)
-    if (meta.length > 0) {
-      return ok({ query, backend: 'metaso', count: meta.length, results: meta })
+  const tried: { name: string; reason: string }[] = []
+  for (const provider of chain) {
+    try {
+      const hits = await provider.search(query, n, signal)
+      if (hits.length > 0) {
+        return ok({ query, backend: provider.name, count: hits.length, results: hits })
+      }
+      tried.push({ name: provider.name, reason: 'empty' })
+      log.info({ event: 'web.search.empty', provider: provider.name, query },
+        `provider "${provider.name}" returned 0 results — falling through to next`)
+    } catch (e) {
+      const msg = errMsg(e)
+      tried.push({ name: provider.name, reason: msg })
+      log.warn({ event: 'web.search.failed', provider: provider.name, err: msg })
     }
-    return err('web_search: both duckduckgo and metaso returned no results')
-  } catch (err2) {
-    return err(`web_search: ddg failed and metaso fallback failed: ${errMsg(err2)}`)
   }
+  return err(
+    `web_search: all ${chain.length} provider(s) returned no usable results — `
+    + tried.map((t) => `${t.name}: ${t.reason}`).join('; '),
+  )
+}
+
+/**
+ * v1.2.118 — Tavily AI search. Industry-default agent search (small fast
+ * index, snippet-rich, no scraping fragility). Returns up to N hits;
+ * `score` is dropped to match the SearchHit shape — Tavily already
+ * sorts by relevance. Throws on missing key (so the provider gate is
+ * `available()`-driven; reaching this throw means env mutated between
+ * available check and call, which is fine to surface).
+ */
+async function searchTavily(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]> {
+  const key = process.env.TAVILY_API_KEY
+  if (!key) throw new Error('TAVILY_API_KEY not set')
+  const body = {
+    api_key: key,
+    query,
+    max_results: n,
+    // 'basic' is faster + cheaper; 'advanced' adds answer synthesis we
+    // don't need (the agent does its own synthesis from snippets).
+    search_depth: 'basic' as const,
+    include_answer: false,
+    include_raw_content: false,
+    include_images: false,
+  }
+  const res = await fetch(TAVILY_API_URL, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'agim-native' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    // Tavily returns useful error bodies; surface them.
+    const errBody = await res.text().catch(() => '')
+    throw new Error(`tavily http ${res.status}: ${errBody.slice(0, 200)}`)
+  }
+  const data = await res.json() as unknown
+  return parseTavilyResults(data, n)
+}
+
+/** Parse Tavily's `{results: [{title, url, content, score}]}` shape.
+ *  Tolerant of missing fields: a hit needs title + url to be usable. */
+export function parseTavilyResults(data: unknown, max: number): SearchHit[] {
+  if (!data || typeof data !== 'object') return []
+  const d = data as { results?: unknown }
+  if (!Array.isArray(d.results)) return []
+  const out: SearchHit[] = []
+  for (const item of d.results) {
+    if (out.length >= max) break
+    if (!item || typeof item !== 'object') continue
+    const it = item as Record<string, unknown>
+    const title = typeof it.title === 'string' ? it.title : ''
+    const url = typeof it.url === 'string' ? it.url : ''
+    const snippet = typeof it.content === 'string' ? it.content
+      : typeof it.snippet === 'string' ? it.snippet : ''
+    if (title && url) out.push({ title, url, snippet })
+  }
+  return out
 }
 
 async function searchDuckDuckGo(query: string, n: number, signal: AbortSignal): Promise<SearchHit[]> {

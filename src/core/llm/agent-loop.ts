@@ -109,6 +109,43 @@ function resolveLengthRecoveryMax(): number {
   return Math.min(n, 10)
 }
 
+/** v1.2.118 — cap each tool's result text length. A single 5 MB grep /
+ *  curl can poison context for the rest of the turn (and silently
+ *  reach the model's input limit before auto-compact kicks in). Default
+ *  32768 chars (~8 KB tokens). Env override or 0 to disable. */
+const DEFAULT_TOOL_RESULT_MAX_CHARS = 32_768
+function resolveToolResultMaxChars(): number {
+  const raw = (process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS ?? '').trim()
+  if (!raw) return DEFAULT_TOOL_RESULT_MAX_CHARS
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_RESULT_MAX_CHARS
+  return n
+}
+
+/** Truncate tool-result text with a clear marker so the model knows
+ *  bytes were dropped. Single-pass over text; cap === 0 disables. */
+function truncateToolResult(text: string, cap: number, toolName: string): { text: string; truncated: boolean } {
+  if (cap === 0 || text.length <= cap) return { text, truncated: false }
+  const dropped = text.length - cap
+  const marker = `\n\n…[${toolName} output truncated: ${dropped} of ${text.length} chars omitted; set IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS to raise the cap]`
+  return { text: text.slice(0, cap) + marker, truncated: true }
+}
+
+/** v1.2.118 — per-tool wall timeout. Independent from the loop's overall
+ *  timeoutMs (which covers the whole turn) and from web-dispatcher's
+ *  own internal timeout (which covers only HTTP calls). This catches a
+ *  runaway tool that doesn't respect its own signal — e.g. a wedged
+ *  `native_exec` subprocess on a corner case. Default 60s; 0 disables. */
+const DEFAULT_TOOL_TIMEOUT_MS = 60_000
+function resolveToolTimeoutMs(perToolMs: number | undefined): number {
+  if (typeof perToolMs === 'number' && perToolMs >= 0) return perToolMs
+  const raw = (process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS ?? '').trim()
+  if (!raw) return DEFAULT_TOOL_TIMEOUT_MS
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_TIMEOUT_MS
+  return n
+}
+
 /** v1.2.117 — synthetic user message we inject after a `length` truncation.
  *  Kept short (cache-friendly) and explicit ("don't repeat") so the model
  *  picks up exactly where it stopped rather than re-summarising. */
@@ -804,12 +841,23 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // imhub-dispatcher's A2A path) so the whole turn shares one
       // trace prefix instead of each fan-out minting a fresh root.
       const dispatchCtx = { traceId: input.audit?.traceId }
+      // v1.2.118 — per-tool wall timeout. We resolve it once per call
+      // and merge a per-call AbortController with the loop's outer
+      // signal so cancelling either trips the underlying dispatcher.
+      const toolDef = tools?.find((t) => t.name === call.name)
+      const perToolTimeoutMs = resolveToolTimeoutMs(toolDef?.timeoutMs)
+      const toolResultMaxChars = resolveToolResultMaxChars()
       const runDispatch = async (): Promise<void> => {
         try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
         const t0 = Date.now()
         let dispatched: DispatcherResult
         try {
-          dispatched = await dispatchCall(call, signal.signal, dispatchCtx)
+          dispatched = await dispatchWithTimeout(
+            (sig) => dispatchCall(call, sig, dispatchCtx),
+            signal.signal,
+            perToolTimeoutMs,
+            call.name,
+          )
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           dispatched = { text: `tool threw: ${msg}`, isError: true, source: 'error' }
@@ -819,11 +867,22 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           })
         }
         const durationMs = Date.now() - t0
+        // v1.2.118 — apply per-tool-result byte cap so one chatty tool
+        // can't poison the rest of the turn's context window.
+        const truncated = truncateToolResult(dispatched.text, toolResultMaxChars, call.name)
+        if (truncated.truncated) {
+          log.info({
+            event: 'agent-loop.tool_result_truncated',
+            tool: call.name,
+            originalLen: dispatched.text.length,
+            capped: toolResultMaxChars,
+          })
+        }
         try { input.hooks?.onToolEnd?.(call, { isError: !!dispatched.isError, durationMs }) } catch { /* observer must not break loop */ }
         historySlots[idx] = {
           role: 'tool',
           toolCallId: call.id,
-          content: dispatched.text,
+          content: truncated.text,
         }
         reportSlots[idx] = {
           name: call.name,
@@ -831,9 +890,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           isError: dispatched.isError,
           source: dispatched.source ?? 'unknown',
           durationMs,
-          preview: dispatched.text.slice(0, 200),
+          preview: truncated.text.slice(0, 200),
           argsKey,
-          errorType: extractErrorType(dispatched.isError, dispatched.text),
+          errorType: extractErrorType(dispatched.isError, truncated.text),
         }
       }
 
@@ -969,6 +1028,54 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────
+
+/**
+ * v1.2.118 — race a dispatcher against a per-tool wall timeout. The
+ * outer abort signal (loop timeout / user cancel) is forwarded to the
+ * dispatcher so it can clean up; on timeout we abort the dispatcher's
+ * signal AND return a structured "timed out" tool-result so the model
+ * sees a tool-level failure (not a thrown rejection).
+ *
+ * `timeoutMs === 0` disables the per-tool cap for this call — used for
+ * long_task etc. that are explicitly slow.
+ */
+async function dispatchWithTimeout(
+  invoke: (signal: AbortSignal) => Promise<DispatcherResult>,
+  outerSignal: AbortSignal,
+  timeoutMs: number,
+  toolName: string,
+): Promise<DispatcherResult> {
+  if (timeoutMs === 0) return invoke(outerSignal)
+  const ctrl = new AbortController()
+  const onOuterAbort = (): void => ctrl.abort(outerSignal.reason ?? new Error('outer abort'))
+  if (outerSignal.aborted) onOuterAbort()
+  else outerSignal.addEventListener('abort', onOuterAbort, { once: true })
+  let timer: NodeJS.Timeout | undefined
+  let timedOut = false
+  const timeout = new Promise<DispatcherResult>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      try { ctrl.abort(new Error(`tool ${toolName} timed out after ${timeoutMs}ms`)) } catch { /* ignore */ }
+      resolve({
+        text: `tool ${toolName} timed out after ${timeoutMs}ms (set IMHUB_NATIVE_TOOL_TIMEOUT_MS or the tool's timeoutMs to raise the cap)`,
+        isError: true,
+        source: 'timeout',
+      })
+    }, timeoutMs)
+    if (typeof timer === 'object' && timer && 'unref' in timer) {
+      (timer as { unref: () => void }).unref()
+    }
+  })
+  try {
+    return await Promise.race([invoke(ctrl.signal), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+    outerSignal.removeEventListener('abort', onOuterAbort)
+    if (timedOut) {
+      log.warn({ event: 'agent-loop.tool_timeout', tool: toolName, timeoutMs })
+    }
+  }
+}
 
 function mergeUsage(acc: LlmUsage, add: LlmUsage): void {
   if (typeof add.promptTokens === 'number') {

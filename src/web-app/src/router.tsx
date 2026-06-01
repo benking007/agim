@@ -151,6 +151,8 @@ const router = createBrowserRouter([
       { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
       // v1.2.126 — web_search provider chain + per-provider API keys.
       { path: 'search',       lazy: lazy(() => import('@/routes/settings/search')) },
+      // v1.2.129 — admin generates mobile QR for /m/chat.
+      { path: 'mobile',       lazy: lazy(() => import('@/routes/settings/mobile')) },
       {
         path: 'agim-skills',
         lazy: lazy(() => import('@/routes/settings/agim-skills/layout')),
@@ -161,6 +163,13 @@ const router = createBrowserRouter([
         ],
       },
     ],
+  },
+  // v1.2.129 — mobile chat. Renders OUTSIDE the admin shell (no
+  // sidebar / no settings layout). Auth still required (cookie set by
+  // /m/login auto-submit, which the QR points at).
+  {
+    path: '/m/chat',
+    lazy: authedLazy(() => import('@/routes/m/chat')),
   },
   { path: '*', element: <NotFoundRoute /> },
 ])

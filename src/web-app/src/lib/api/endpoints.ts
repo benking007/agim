@@ -45,6 +45,8 @@ import type {
   TopNMetric,
   ResolveApprovalBody,
   ResolveApprovalResponse,
+  MobileQRBody,
+  MobileQRResponse,
   SearchProvidersResponse,
   SearchTestBody,
   SearchTestResponse,
@@ -146,6 +148,11 @@ export const api = {
    *  query and report latency / hit count / error. */
   testSearchProvider: (body: SearchTestBody) =>
     client.post<SearchTestResponse>('/api/search/test', { body }),
+
+  /** POST /api/mobile/qr — admin generates a fresh role=user token +
+   *  QR PNG (data URL) pointing the scanner at /m/login. v1.2.129. */
+  generateMobileQR: (body?: MobileQRBody) =>
+    client.post<MobileQRResponse>('/api/mobile/qr', { body: body ?? {} }),
 
   /** GET /api/agents/status — agent name → online boolean map */
   getAgentsStatus: () =>

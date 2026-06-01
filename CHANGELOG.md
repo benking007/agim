@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.129] - 2026-06-01
+
+### Added (手机版 Chat + 扫码上线)
+
+桌面 admin 已经能在 `/chat` 跑完整聊天流程（v1.2.115 起的 approval dock /
+streaming / 多 agent 切换）。本版给手机也开一个等价入口，并通过二维码扫码完成
+一次性登录。
+
+#### 新增手机版路由 `/m/chat`
+- React 路由，挂在 admin shell 之外（不渲染侧边栏与设置布局）
+- 复用 `useChat()` hook + `MessageBubble` + `ApprovalDock`，**功能与桌面 /chat 完全对齐**：
+  发送 / 流式接收 / 切 agent / 新会话 / approval 点击 / 状态指示 / 错误 toast / 自动滚动
+- 顶栏：返回 `‹` + 标题 + 状态徽章（agent · status）+ `⋯` 菜单（切 agent / 新会话 / 退出）
+- 主区：消息列表 + 浮动「↓」（离底 >200px 才显示）
+- 底栏：textarea（1-6 行自适应）+ 圆形发送按钮，`pb-safe` 适配刘海 / 底栏
+
+#### 新增手机扫码登录 `/m/login` 静态页
+- 公开路径（`PUBLIC_EXACT_PATHS` 加入 `/m/login` + `/m/login.html`）
+- 从 `?t=<raw>` 读取一次性 token → POST `/api/auth/login` 落 cookie → 跳 `?next=/m/chat`
+- 中英文文案 + 安全区适配 + spinner / 失败提示 / "回到登录页"按钮
+
+#### 新增 admin 端 `/settings/mobile` 卡片
+- 侧边栏新 tab「Mobile / 手机端」
+- "生成二维码"按钮 → POST `/api/mobile/qr` → 渲染 280×280 PNG 二维码
+- 支持手动覆盖访问域名（cloudflared / 反代场景）
+- 展示完整 URL（默认密文显示，可切显隐 + 复制）+ token id + 标签
+- 提示卡引导到 `/settings/security/tokens` 吊销
+
+#### 后端
+- `src/web/server.ts` 新增 `handleMobileQR()`（admin-gated）+ 路由注册
+- Token 通过 `createToken({ role: 'user', actor: 'mobile-qr' })` 生成，**永远不是 admin**
+- 标签格式 `mobile-via-qr-YYYYMMDD-HHMM`（按时间排序 / 按前缀过滤）
+- QR URL 形如 `<scheme>://<host>/m/login?t=<raw>&next=%2Fm%2Fchat`
+- 自动从 admin 请求的 Host + x-forwarded-proto 反推 base URL（cloudflared 友好）
+- `Cache-Control: no-store` 阻断 CDN / 浏览器历史泄漏
+
+#### 安全模型
+- 扫码登录的 token 是 `role: 'user'`，被截获也只能聊天，**不能改 env / 看 audit / 改 admin allowlist**
+- Token 持久化（access-token.ts 没有自动过期字段），靠 admin 在 `/settings/security/tokens` 手动吊销
+- `/m/login` 是公开页面，但 token 落 cookie 之前的 URL 是一次性凭证 — admin 需当作密码保护
+
+### 文件
+- 新增 `src/web/public/m/login.html` (~125 lines — 静态自动登录页)
+- 新增 `src/web-app/src/routes/m/chat.tsx` (~250 lines — 手机版 Chat)
+- 新增 `src/web-app/src/routes/settings/mobile.tsx` (~160 lines — admin 二维码卡片)
+- 新增 `test/unit/mobile-qr-token.test.ts` (5 test cases — role=user / label prefix / legacy admin 默认)
+- 修改 `src/web/server.ts` — `handleMobileQR` + 路由 + `/m/login` 静态分发 + SPA fallback 排除
+- 修改 `src/web-app/src/router.tsx` — 注册 `/m/chat` + `/settings/mobile`
+- 修改 `src/web-app/src/routes/settings/layout.tsx` — 加 mobile tab
+- 修改 `src/web-app/src/lib/api/endpoints.ts` + `types/api.ts`（新 endpoint + types）
+- 修改两套 i18n（en/zh — mobile.* 30 个 key + tabs.mobile）
+
 ## [1.2.128] - 2026-06-01
 
 ### Fixed (metaso 测试始终 0 条结果 — webpages 字段未识别)

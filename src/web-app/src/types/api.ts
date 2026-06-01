@@ -903,6 +903,33 @@ export interface SearchTestResponse {
 }
 
 /* ============================================================
+ * v1.2.129 — mobile QR sign-in
+ * ============================================================ */
+
+/** Optional overrides — leave both blank to use the admin request's
+ *  Host header (cloudflared tunnel friendly). */
+export interface MobileQRBody {
+  /** "host:port" (no scheme). Server auto-detects scheme from x-fwd-proto. */
+  host?: string
+  /** Full base URL ("https://…/") overrides host. */
+  baseUrl?: string
+}
+
+export interface MobileQRResponse {
+  ok: boolean
+  /** Token id (tk_xxxxxxxx) — surface in revoke instructions. */
+  tokenId: string
+  /** Human-readable token label written into the token store. */
+  label: string
+  /** Full URL embedded in the QR (also useful for copy-paste flows). */
+  loginUrl: string
+  /** PNG data: URL produced by the `qrcode` lib. ~3–5 KB. */
+  qrDataUrl: string
+  /** SPA path to take the admin to for revoke ("/settings/security/tokens"). */
+  revokeHint: string
+}
+
+/* ============================================================
  * Viewer + cloudflared tunnel
  * ============================================================ */
 

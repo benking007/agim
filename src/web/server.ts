@@ -67,6 +67,11 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   // "submit my coordinates" endpoint. It's authenticated by the single-use
   // location token in the request body, NOT by the web access token.
   '/api/loc',
+  // v1.2.129 — mobile QR landing. The static page reads `?t=<raw>` and
+  // POSTs to /api/auth/login to set the cookie, then redirects to
+  // /m/chat. Public on purpose: the raw token IS the auth credential
+  // for that single redirect (same model as /login + ?token= fallback).
+  '/m/login', '/m/login.html',
   '/favicon.ico', '/favicon.svg',
 ])
 const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/']
@@ -387,7 +392,10 @@ export async function startWebServer(options: {
       const isSse = p === '/events'
       const isVendor = p.startsWith('/vendor/')
       const isPublicSsr = p === '/loc' || p === '/loc.html' || p.startsWith('/l/') || p.startsWith('/v/')
-      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr) {
+      // v1.2.129 — /m/login is a static HTML handed back below; don't let
+      // the SPA fallback swallow it (the SPA can't auto-submit the token).
+      const isMobileLogin = p === '/m/login' || p === '/m/login.html'
+      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr && !isMobileLogin) {
         // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
         // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
         // Otherwise fall back to /index.html so the router handles it.
@@ -427,6 +435,12 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/login' && req.method === 'GET') {
       return serveStatic(res, join(PUBLIC_DIR, 'login.html'), 'text/html; charset=utf-8')
+    }
+    // v1.2.129 — mobile QR landing. Static page reads ?t=<raw>, POSTs
+    // to /api/auth/login, then redirects to ?next=/m/chat. Public so the
+    // scanner doesn't bounce through /login first.
+    if ((url.pathname === '/m/login' || url.pathname === '/m/login.html') && req.method === 'GET') {
+      return serveStatic(res, join(PUBLIC_DIR, 'm', 'login.html'), 'text/html; charset=utf-8')
     }
 
     // v1.2.3 — vendored third-party assets (Chart.js etc). Whitelist by
@@ -727,6 +741,15 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/search/test' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
       return handleSearchTest(req, res)
+    }
+    // v1.2.129 — mobile QR. Admin generates a fresh role=user token with
+    // a date-stamped label and gets back a QR data URL + the raw login
+    // URL. The token persists until the admin revokes it via the regular
+    // /settings/security/tokens UI — there's no auto-expiry in this
+    // version (operator-managed lifecycle).
+    if (url.pathname === '/api/mobile/qr' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
+      return handleMobileQR(req, res)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
@@ -3026,6 +3049,80 @@ async function handleSearchTest(
     } finally {
       clearTimeout(tm)
     }
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** POST /api/mobile/qr — admin generates a role=user token + QR data URL
+ *  pointing the scanner at /m/login?t=<raw>&next=/m/chat. The token is
+ *  long-lived (until the admin revokes it on /settings/security/tokens);
+ *  rationale: a 30-min TTL would invalidate the QR before the operator
+ *  can show it to anyone, and access-token.ts has no per-token TTL field.
+ *
+ *  Body: `{ host?: string, baseUrl?: string }` — optional override for
+ *  the URL embedded in the QR. Defaults to `<scheme>://<req.host>` so
+ *  the QR works on whatever hostname the admin reached the panel on
+ *  (loopback / LAN IP / cloudflared tunnel / reverse proxy). */
+async function handleMobileQR(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = (() => {
+      try { return JSON.parse(body || '{}') as { host?: string; baseUrl?: string } }
+      catch { return {} as { host?: string; baseUrl?: string } }
+    })()
+    // Pick the base URL the QR scanner will hit. Priority:
+    //   1) caller-supplied baseUrl (admin can paste a public domain)
+    //   2) caller-supplied host (just the host:port, scheme auto-picked)
+    //   3) the Host header of THIS admin request (works for cloudflared
+    //      tunnels that the admin opened the panel through)
+    const isHttps = (req.socket as { encrypted?: boolean }).encrypted === true
+      || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https'
+    const scheme = isHttps ? 'https' : 'http'
+    let base = (parsed.baseUrl || '').trim().replace(/\/+$/, '')
+    if (!base) {
+      const host = (parsed.host || req.headers.host || 'localhost').toString()
+      base = `${scheme}://${host}`
+    }
+    // Token label: human-readable + sortable + revoke-friendly.
+    const now = new Date()
+    const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}-${String(now.getUTCHours()).padStart(2, '0')}${String(now.getUTCMinutes()).padStart(2, '0')}`
+    if (!_tokenModule) {
+      sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' })
+      return
+    }
+    const { createToken } = _tokenModule
+    const created = createToken(`mobile-via-qr-${stamp}`, {
+      role: 'user',
+      actor: 'mobile-qr',
+    })
+    // URL the scanner hits. /m/login is public; it pulls t out of the
+    // URL, POSTs to /api/auth/login, drops the cookie, redirects.
+    // encodeURIComponent so a raw token with weird chars wouldn't break
+    // the URL — current raw tokens are URL-safe but be defensive.
+    const loginUrl = `${base}/m/login?t=${encodeURIComponent(created.raw)}&next=%2Fm%2Fchat`
+    const QRCode = (await import('qrcode')).default
+    // M error correction is enough for an opaque token; bigger margin
+    // helps phone scanners through screen glare.
+    const qrDataUrl = await QRCode.toDataURL(loginUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 280,
+    })
+    // Audit: caller is already logged in admin (requireAdmin); we just
+    // emit the create event from createToken. Surface the URL+QR.
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    res.end(JSON.stringify({
+      ok: true,
+      tokenId: created.id,
+      label: `mobile-via-qr-${stamp}`,
+      loginUrl,
+      qrDataUrl,
+      revokeHint: '/settings/security/tokens',
+    }))
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

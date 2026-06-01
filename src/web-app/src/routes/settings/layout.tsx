@@ -29,6 +29,8 @@ const SUB_TABS: SubTab[] = [
   { to: 'native-agent', i18nKey: 'tabs.nativeAgent',  mounted: true },
   // v1.2.126 — web_search provider chain + per-provider keys.
   { to: 'search',       i18nKey: 'tabs.search',       mounted: true },
+  // v1.2.129 — mobile QR generator (open /m/chat from a phone).
+  { to: 'mobile',       i18nKey: 'tabs.mobile',       mounted: true },
   // P1 follow-up — agim SKILL.md editor.
   { to: 'agim-skills',  i18nKey: 'tabs.agimSkills',   mounted: true },
   { to: 'policy',       i18nKey: 'tabs.policy',       mounted: true },

@@ -677,12 +677,20 @@ async function searchMetaso(query: string, n: number, signal: AbortSignal): Prom
 
 /** Best-effort metaso response normaliser. Field names from metaso vary
  *  with API version; we look at common shapes. Adjust here if metaso
- *  changes their schema. */
+ *  changes their schema.
+ *
+ *  As of 2026-06-01 the public POST /api/v1/search returns
+ *  `{ webpages: [{ title, link, snippet, score, position, date }], total }`.
+ *  Older endpoints used `data.list[]` / `results[]` / `items[]` — kept
+ *  for compatibility so a transparent rollback in metaso doesn't break
+ *  us. v1.2.128 hotfix: previously we missed `webpages` and parsed 0
+ *  hits on every call, which surfaced as "测试 ✓ 0 hits" in the admin
+ *  UI's per-provider test button (#agim-issue 2026-06-01). */
 export function parseMetasoResults(data: unknown, max: number): SearchHit[] {
   if (!data || typeof data !== 'object') return []
   const d = data as Record<string, unknown>
-  // common keys: `data.list[]`, `results[]`, `items[]`
   const candidates: unknown[] =
+    (Array.isArray(d.webpages) && (d.webpages as unknown[])) ||
     (Array.isArray((d.data as Record<string, unknown>)?.list) && (d.data as Record<string, unknown>).list as unknown[]) ||
     (Array.isArray(d.results) && (d.results as unknown[])) ||
     (Array.isArray(d.items) && (d.items as unknown[])) ||

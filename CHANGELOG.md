@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.128] - 2026-06-01
+
+### Fixed (metaso 测试始终 0 条结果 — webpages 字段未识别)
+
+v1.2.127 后台 UI 上线后，搜索 provider 页"测试"按钮在 metaso 这一项稳定返回
+`ok / 0 hits`，但 metaso 服务本身正常（curl 同一 endpoint + token 能拿到结果）。
+
+#### 根因
+本机用真实 token 探针 `POST https://metaso.cn/api/v1/search` 拿到的响应是：
+```json
+{ "credits": 3, "searchParameters": {...}, "webpages": [...], "total": 55 }
+```
+而 `parseMetasoResults()` 只看 `data.list[]` / `results[]` / `items[]` 三种字段，
+**完全没识别 `webpages`** → 永远 0 条命中。
+
+这个 parser 在 v1.2.61 引入时是参考 v1.0 的 metaso API 文档写的；之后 metaso
+升到当前的 webpages 形状但没人发现，因为：
+- search 链上 metaso 排最后（兜底），平时被 tavily/brave 拦住，从未真正被调用
+- v1.2.127 之前没有"单 provider 测试"按钮，所以 0 条问题没暴露
+
+#### 修复
+- `parseMetasoResults` 候选字段加上 `webpages`，放在最前面（默认形状）
+- 保留 `data.list` / `results` / `items` fallback，兼容老 API rollback
+- 注释里写清楚 2026-06-01 抓到的真实 schema
+
+#### 测试
+`test/unit/web-search-providers.test.ts` 新增 4 个 metaso case：
+- 真实 2026 payload（webpages + 完整字段）→ 期望 3 条
+- 老格式 data.list / results → 期望走 fallback 仍然解析
+- max 上限 + 缺 snippet 容忍
+- 畸形输入 → []
+
+### 文件
+- 修改 `src/core/llm/web-dispatcher.ts`（parseMetasoResults 一处 + 注释）
+- 修改 `test/unit/web-search-providers.test.ts`（新增 metaso describe 块 4 case）
+
 ## [1.2.127] - 2026-06-01
 
 ### Added (Native Agent 调参面板 — v1.2.118-125 旋钮全部 UI 化)

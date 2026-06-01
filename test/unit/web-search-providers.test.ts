@@ -14,6 +14,7 @@ import {
   parseBraveResults,
   parseSerperResults,
   parseExaResults,
+  parseMetasoResults,
 } from '../../src/core/llm/web-dispatcher.js'
 
 describe('web-search provider chain (v1.2.118 + v1.2.121)', () => {
@@ -240,5 +241,63 @@ describe('parseExaResults (v1.2.121)', () => {
   it('returns [] for malformed', () => {
     expect(parseExaResults({}, 10)).toEqual([])
     expect(parseExaResults(null, 10)).toEqual([])
+  })
+})
+
+// v1.2.128 — regression test against the actual metaso payload shape
+// observed on 2026-06-01. Before this fix parseMetasoResults returned
+// [] on every real-world call because it only looked for `data.list` /
+// `results` / `items`, never `webpages`. The admin UI's "测试" button
+// surfaced this as "ok / 0 hits".
+describe('parseMetasoResults (v1.2.128 hotfix)', () => {
+  it('reads webpages[] — the actual 2026 metaso API shape', () => {
+    // Verbatim subset of metaso.cn /api/v1/search response.
+    const payload = {
+      credits: 3,
+      searchParameters: { q: 'agim ping', size: 3 },
+      webpages: [
+        { title: 'Agim Q', link: 'https://x/1', snippet: 'snip 1',
+          score: 'medium', position: 1, date: '2023-12-28' },
+        { title: 'Agim H', link: 'https://x/2', snippet: 'snip 2',
+          score: 'medium', position: 2 },
+        { title: 'IMDb',  link: 'https://x/3', snippet: 'snip 3',
+          score: 'medium', position: 3 },
+      ],
+      total: 55,
+    }
+    const hits = parseMetasoResults(payload, 10)
+    expect(hits).toHaveLength(3)
+    expect(hits[0]).toEqual({
+      title: 'Agim Q', url: 'https://x/1', snippet: 'snip 1',
+    })
+    expect(hits[2].url).toBe('https://x/3')
+  })
+
+  it('still honours the legacy `data.list[]` / `results[]` shapes', () => {
+    expect(parseMetasoResults({
+      data: { list: [{ title: 'L', link: 'https://l', snippet: 's' }] },
+    }, 10)).toEqual([{ title: 'L', url: 'https://l', snippet: 's' }])
+    expect(parseMetasoResults({
+      results: [{ name: 'R', url: 'https://r', summary: 'sum' }],
+    }, 10)).toEqual([{ title: 'R', url: 'https://r', snippet: 'sum' }])
+  })
+
+  it('caps to max and tolerates missing snippet', () => {
+    const hits = parseMetasoResults({
+      webpages: [
+        { title: 'A', link: 'https://a' },
+        { title: 'B', link: 'https://b', snippet: 'b' },
+        { title: 'C', link: 'https://c' },
+      ],
+    }, 2)
+    expect(hits).toHaveLength(2)
+    expect(hits[0].snippet).toBe('')
+  })
+
+  it('returns [] for malformed', () => {
+    expect(parseMetasoResults({}, 10)).toEqual([])
+    expect(parseMetasoResults(null, 10)).toEqual([])
+    // webpages must be an array — a string is not.
+    expect(parseMetasoResults({ webpages: 'oops' }, 10)).toEqual([])
   })
 })

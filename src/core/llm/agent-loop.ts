@@ -865,7 +865,15 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         backend: input.provider.name,
         iter,
       }, 'provider returned empty text + no tool_calls; nudging once more')
-      history.push({ role: 'assistant', content: '' })
+      // v1.2.130 — DON'T persist the empty assistant turn. OpenAI Chat
+      // Completions and strict openai-compat providers (DeepSeek
+      // included) reject any assistant message whose `content` is empty
+      // AND has no `tool_calls`. Pushing the placeholder was a v1.2.119
+      // oversight: it made the very next API call 400 with "Invalid
+      // assistant message: content or tool_calls must be set" whenever
+      // the retry actually fired. Two consecutive user messages (the
+      // original prompt + the nudge) is fine for openai-compat — the
+      // spec does not require strict alternation.
       history.push({ role: 'user', content: BLANK_RESPONSE_NUDGE })
       continue
     }

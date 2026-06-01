@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.130] - 2026-06-01
+
+### Fixed (blank-retry 推空 assistant → openai-compat 400)
+
+#### 现象
+用户在已经聊过几轮的 native 会话里发新消息，模型直接返回：
+```
+HTTP 400 from openai-compat: {"error":{"message":"Invalid assistant
+message: content or tool_calls must be set","type":"invalid_request_error",
+…}}
+```
+
+#### 根因
+`src/core/llm/agent-loop.ts:868`（v1.2.119 引入的 blank-retry）在模型一次
+返回空 text + 无 tool_calls 时，会往 history 推两条消息再重试：
+```ts
+history.push({ role: 'assistant', content: '' })   // ← 元凶
+history.push({ role: 'user', content: BLANK_RESPONSE_NUDGE })
+```
+
+OpenAI Chat Completions 规范要求 assistant 消息**必须**有 `content` 或
+`tool_calls` 至少一个非空 —— 空字符串不算。DeepSeek / OpenAI 严格 endpoint
+直接拒。Anthropic 之前包容（content:'' 当占位接受），所以 v1.2.119 dev
+路径没暴露。
+
+#### 修法
+直接删掉空 assistant 那行。两条相邻 user 消息对 openai-compat 完全合法
+（spec 不要求角色严格交替），且语义上"模型没说话 → 用户再推一刀"反而
+更清晰。
+
+#### 测试
+- 修复 `test/unit/agent-loop-blank-retry.test.ts` 已有的 case："second call
+  must have seen: original user, empty assistant, nudge user" 改为期望
+  "original user + nudge user"（length=2，不是 3）
+- 新增一个回归 case，扫描 retry 后传给 provider 的所有 messages，断言
+  **没有任何 assistant 同时 content 空 + tool_calls 空** —— 这正是 400 的触发条件
+
+### 文件
+- 修改 `src/core/llm/agent-loop.ts`（删 1 行 + 加 9 行注释解释）
+- 修改 `test/unit/agent-loop-blank-retry.test.ts`（修旧 case + 加 1 个新 case）
+
 ## [1.2.129] - 2026-06-01
 
 ### Added (手机版 Chat + 扫码上线)

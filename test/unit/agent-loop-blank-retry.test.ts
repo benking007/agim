@@ -65,13 +65,15 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
     expect(provider.chatCalls).toBe(2)
     expect(r.finishReason).toBe('stop')
     expect(r.text).toBe('recovered answer')
-    // Second call must have seen: original user, empty assistant, nudge user.
+    // v1.2.130 — second call must NOT include the empty assistant
+    // turn (openai-compat rejects content:'' + no tool_calls). The
+    // history is just the original user + the nudge user.
     const seen = provider.lastMessages!
-    expect(seen.length).toBe(3)
-    expect(seen[1]?.role).toBe('assistant')
-    expect(seen[1]?.content).toBe('')
-    expect(seen[2]?.role).toBe('user')
-    expect(seen[2]?.content).toMatch(/Your last response was empty/i)
+    expect(seen.length).toBe(2)
+    expect(seen[0]?.role).toBe('user')
+    expect(seen[0]?.content).toBe('go')
+    expect(seen[1]?.role).toBe('user')
+    expect(seen[1]?.content).toMatch(/Your last response was empty/i)
   })
 
   it('blank past the cap → returns final blank result + reports', async () => {
@@ -147,5 +149,41 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
     const seen = provider.lastMessages!
     expect(seen[2]?.content).toMatch(/cut off due to the output length limit/i)
     expect(r.text).toBe('continuation')
+  })
+
+  // v1.2.130 regression — the v1.2.119 implementation pushed an empty
+  // assistant placeholder ({ role: 'assistant', content: '' }) before
+  // the user nudge. OpenAI Chat Completions (and DeepSeek) reject any
+  // assistant message whose content is empty AND has no tool_calls
+  // with HTTP 400 ("Invalid assistant message: content or tool_calls
+  // must be set"). The retry path must NEVER emit such a turn.
+  it('retry does NOT push an empty assistant placeholder (v1.2.130)', async () => {
+    const provider = new ScriptedProvider([
+      // First call: blank + no tool_calls → triggers retry.
+      { text: '', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
+      // Retry call: model finally responds.
+      { text: 'OK then', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
+    ])
+    const r = await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+    })
+    expect(r.text).toBe('OK then')
+    // Inspect the messages the retry call saw.
+    const seen = provider.lastMessages!
+    // No assistant turn should have empty content + no tool_calls —
+    // that's the exact shape openai-compat 400s on.
+    for (const m of seen) {
+      if (m.role !== 'assistant') continue
+      const empty = !m.content || m.content.length === 0
+      const noTools = !m.toolCalls || m.toolCalls.length === 0
+      expect(empty && noTools).toBe(false)
+    }
+    // Belt-and-suspenders: the original prompt + the nudge are both
+    // present as consecutive user messages — which is fine per spec.
+    const users = seen.filter((m) => m.role === 'user').map((m) => m.content)
+    expect(users.length).toBeGreaterThanOrEqual(2)
+    expect(users[0]).toBe('go')
+    expect(users[users.length - 1]).toMatch(/empty|nudge|没有/i)
   })
 })

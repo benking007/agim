@@ -620,7 +620,33 @@ export async function callAgentWithHistory(
   // Plan mode kill-switch: ops can flip IMHUB_DISABLE_PLAN_MODE=1 to ignore
   // every session's planMode flag without redeploying. Matches the same env
   // var that short-circuits the /plan command itself.
-  const effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
+  let effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
+
+  // v1.2.135 — heuristic auto-enter. When the operator has opted into
+  // IMHUB_PLAN_INTENT_AUTO and plan mode is currently OFF, a prompt
+  // containing a "先想想 / plan only / 等一下别动手" keyword temporarily
+  // flips planMode ON for this turn ONLY. The session row stays at
+  // off, so the next message goes back to normal unless the user
+  // explicitly /plan on or the model itself calls
+  // native_exit_plan_mode (v1.2.131). The override never auto-exits.
+  if (!effectivePlanMode && process.env.IMHUB_DISABLE_PLAN_MODE !== '1') {
+    try {
+      const { shouldAutoEnterPlanMode } = await import('./plan-intent.js')
+      const matched = shouldAutoEnterPlanMode(prompt)
+      if (matched) {
+        effectivePlanMode = true
+        ctx.logger.info({
+          event: 'plan-intent.auto-enter',
+          agent: agent.name,
+          matchedPhrase: matched,
+        }, '[plan-intent] auto-entered plan mode for this turn')
+      }
+    } catch (err) {
+      // Best-effort — never break the call path because the heuristic
+      // module failed to load.
+      ctx.logger.debug({ err: String(err) }, '[plan-intent] detector load failed')
+    }
+  }
 
   // Inject pending-reminder context so the agent has live visibility into
   // the user's queue. Only sent OVER THE WIRE — we keep the user's stored

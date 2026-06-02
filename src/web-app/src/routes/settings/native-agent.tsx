@@ -58,6 +58,9 @@ interface Draft {
   criticEnabled: boolean
   criticRole: string
   planModeDefault: boolean
+  // v1.2.135 — heuristic auto-enter on plan-intent keywords
+  planIntentAuto: boolean
+  planIntentPhrases: string
   // v1.2.127 — Auto-compact 4 旋钮（OpenHands Condenser）
   compactTriggerChars: string
   compactKeepTurns: string
@@ -92,6 +95,8 @@ function draftFromEnv(env: Record<string, string>): Draft {
     criticEnabled:      isTruthy(env.IMHUB_NATIVE_CRITIC),
     criticRole:         env.IMHUB_NATIVE_CRITIC_ROLE ?? '',
     planModeDefault:    isTruthy(env.IMHUB_NATIVE_PLAN_MODE),
+    planIntentAuto:     isTruthy(env.IMHUB_PLAN_INTENT_AUTO),
+    planIntentPhrases:  env.IMHUB_PLAN_INTENT_PHRASES ?? '',
     compactTriggerChars: env.IMHUB_NATIVE_COMPACT_TRIGGER_CHARS ?? '',
     compactKeepTurns:    env.IMHUB_NATIVE_COMPACT_KEEP_TURNS ?? '',
     compactKeepFirst:    env.IMHUB_NATIVE_COMPACT_KEEP_FIRST ?? '',
@@ -225,6 +230,12 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
     }
     if (draft.planModeDefault !== current.planModeDefault) {
       updates.IMHUB_NATIVE_PLAN_MODE = draft.planModeDefault ? '1' : null
+    }
+    if (draft.planIntentAuto !== current.planIntentAuto) {
+      updates.IMHUB_PLAN_INTENT_AUTO = draft.planIntentAuto ? 'on' : null
+    }
+    if (draft.planIntentPhrases !== current.planIntentPhrases) {
+      updates.IMHUB_PLAN_INTENT_PHRASES = draft.planIntentPhrases.trim() || null
     }
     // v1.2.127 — Auto-compact
     if (draft.compactTriggerChars !== current.compactTriggerChars) {
@@ -674,6 +685,32 @@ function CriticCard({ draft, setField }: CardProps): JSX.Element {
             />
             <span>{draft.planModeDefault ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
           </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.planIntentAuto')}
+          hint={t('nativeAgent.planIntentAutoHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.planIntentAuto}
+              onChange={(e) => setField('planIntentAuto', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.planIntentAuto ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <Field
+          label={t('nativeAgent.planIntentPhrases')}
+          hint={t('nativeAgent.planIntentPhrasesHint')}
+        >
+          <Input
+            value={draft.planIntentPhrases}
+            onChange={(e) => setField('planIntentPhrases', e.target.value)}
+            placeholder="先想想,plan only,don't act yet"
+            className="font-mono text-xs"
+            disabled={!draft.planIntentAuto}
+          />
         </Field>
       </div>
     </section>

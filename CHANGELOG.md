@@ -4,6 +4,76 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.135] - 2026-06-02
+
+### Added (P3: 启发式 plan 意图自动入场)
+
+最后一项路线图。用户常常写「先想想 / plan only / 不要直接做」但忘了
+`/plan on`，模型当成普通指令就动手了。这版加上关键词检测：含相应短语
+的 prompt 会**临时**进入 plan 模式 —— 仅本轮，从不自动退出。
+
+#### 新模块 `src/core/plan-intent.ts`
+- `detectPlanIntent(text)` —— 子串匹配 + 大小写不敏感 + 中英文 26 个内置短语
+- 中文："先想想 / 先规划 / 先讨论 / 不要直接做 / 只规划 / 先别动手" 等
+- 英文："plan only / don't act yet / let's plan / research first / dry run only" 等
+- `IMHUB_PLAN_INTENT_PHRASES` env 可整体覆盖（逗号分隔），不是合并；
+  让操作员能收紧或放宽匹配范围而不改代码
+- `shouldAutoEnterPlanMode(prompt)` —— 综合判断：master switch on + 命中
+  → 返回命中的短语；否则 null
+
+#### 路由层接入
+`router.ts:callAgentWithHistory` 在确定 `effectivePlanMode` 后立刻做一次
+启发式检查：
+```
+if (planMode OFF + IMHUB_PLAN_INTENT_AUTO=on + intent matched) {
+  effectivePlanMode = true
+  log({ event: 'plan-intent.auto-enter', matchedPhrase })
+}
+```
+**仅影响本轮 opts.planMode**，不动 session.planMode/plan-mode-state.db。
+下一条消息不带这些关键词时自动回到 normal —— 这就是"临时"的语义。
+
+#### 关键设计决策
+- **默认 OFF**：opt-in，env `IMHUB_PLAN_INTENT_AUTO=on` 才启用
+- **绝不自动退出**：一旦进了 plan mode，要么用户 `/plan off`，要么模型
+  调 `native_exit_plan_mode`（v1.2.131 的握手）
+- **错检 vs 漏检**：错检（用户想动手→被卡到 plan）代价远高于漏检（不
+  自动 + 用户手动 /plan on），所以关键词列表特意精简，避免泛化匹配
+- **没用 LLM**：跨进程 round-trip 一次只为分类一句话太贵；纯字串匹配
+  够用
+
+#### 后台 UI
+`/settings/native-agent` 早停+复盘卡内新增两项：
+- `Plan-intent auto-enter` bool toggle → `IMHUB_PLAN_INTENT_AUTO`
+- `Plan-intent phrase list (optional override)` text → `IMHUB_PLAN_INTENT_PHRASES`
+  （开关关闭时输入框 disabled）
+
+env 白名单 (`ENV_EDITABLE_KEYS`) 同步扩展两个键。
+
+### 测试（10 unit case）
+- CN 关键词命中
+- EN 关键词命中（含大小写不敏感）
+- 普通 prompt 不误报（包括 "plan" 当名词的场景如 "show me the database plan schema"）
+- env phrase 列表替换（不合并）
+- master switch off 时 shouldAutoEnterPlanMode 永远返回 null
+- master switch on 但无意图时返回 null
+
+### 文件
+- 新增 `src/core/plan-intent.ts`（~100 行）
+- 新增 `test/unit/plan-intent.test.ts`（10 cases）
+- 修改 `src/core/router.ts`：callAgentWithHistory 加 16 行接入逻辑
+- 修改 `src/web/server.ts`：ENV_EDITABLE_KEYS 加 2 个键
+- 修改 `src/web-app/src/routes/settings/native-agent.tsx`：CriticCard 加 2 个字段
+- 修改两套 i18n（en/zh — planIntentAuto / planIntentPhrases + 提示文案）
+
+### 路线图收尾
+v1.2.131-135 完成"Claude Code 风格 Plan Mode" 全栈升级：
+- **P0**（v1.2.131）：`native_exit_plan_mode` 工具 + ApprovalDock 握手 + plan_history 审计
+- **P1**：核对发现已完成 → 删（v1.2.133 改作 P2）
+- **P2**（v1.2.133）：`/tasks/plans` 审计 UI
+- **P2.5**（v1.2.134）：`/plan` 状态文案按 agent 翻译机制
+- **P3**（v1.2.135）：启发式自动入场 — **本版**
+
 ## [1.2.134] - 2026-06-02
 
 ### Changed (/plan 状态文案：按 active agent 翻译生效机制)

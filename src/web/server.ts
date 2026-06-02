@@ -2770,6 +2770,9 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_NATIVE_CRITIC',
   'IMHUB_NATIVE_CRITIC_ROLE',
   'IMHUB_NATIVE_PLAN_MODE',
+  // v1.2.135 — auto-enter heuristic + custom phrase list.
+  'IMHUB_PLAN_INTENT_AUTO',
+  'IMHUB_PLAN_INTENT_PHRASES',
   // v1.2.127 — auto-compact 4 sliders (OpenHands Condenser pattern).
   // KEEP_FIRST defaults to 1 since v1.2.125 (original user goal at idx 0).
   'IMHUB_NATIVE_COMPACT_TRIGGER_CHARS',

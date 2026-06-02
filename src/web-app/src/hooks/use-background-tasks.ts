@@ -145,3 +145,42 @@ export function useAskCancel() {
     onSuccess: () => qc.invalidateQueries({ queryKey: askKeys.all }),
   })
 }
+
+// ─── Plan history (v1.2.133) ────────────────────────────────────
+
+export type PlanOutcome = 'approved' | 'rejected' | 'edited' | 'expired'
+
+export interface PlanHistoryRow {
+  id: number
+  threadKey: string
+  planMd: string
+  outcome: PlanOutcome
+  detail: string | null
+  resolvedAt: string
+  pendingMs: number | null
+}
+
+export interface PlansListResponse {
+  plans: PlanHistoryRow[]
+  total: number
+}
+
+const planKeys = {
+  all:  ['plans'] as const,
+  list: (threadKey?: string, limit?: number) =>
+    ['plans', 'list', threadKey ?? null, limit ?? null] as const,
+}
+
+/** GET /api/plans — admin list of native_exit_plan_mode handshakes
+ *  with outcome + pending duration + the plan markdown. Filters on
+ *  thread_key (optional) and limit (clamped 1..500 server-side). */
+export function usePlansList(opts: { threadKey?: string; limit?: number } = {}) {
+  const params = new URLSearchParams()
+  if (opts.threadKey) params.set('thread_key', opts.threadKey)
+  if (opts.limit != null) params.set('limit', String(opts.limit))
+  const qs = params.toString()
+  return useQuery<PlansListResponse>({
+    queryKey: planKeys.list(opts.threadKey, opts.limit),
+    queryFn: () => client.get<PlansListResponse>(`/api/plans${qs ? `?${qs}` : ''}`),
+  })
+}

@@ -751,6 +751,15 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleMobileQR(req, res)
     }
+    // v1.2.133 — plan-history admin list. Shows every
+    // native_exit_plan_mode handshake (v1.2.131) with outcome +
+    // pending_ms + the plan markdown the model proposed. Admin-only:
+    // the markdown can contain anything the model wrote, including
+    // file paths the operator hasn't shared with regular users.
+    if (url.pathname === '/api/plans' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handlePlansList(req, res, url)
+    }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
       return handleListWorkspaces(req, res, url)
     }
@@ -3123,6 +3132,28 @@ async function handleMobileQR(req: IncomingMessage, res: ServerResponse): Promis
       qrDataUrl,
       revokeHint: '/settings/security/tokens',
     }))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** GET /api/plans?thread_key=&limit= — list plan_history rows.
+ *  v1.2.133. Surfaces the audit table populated by
+ *  native_exit_plan_mode (v1.2.131). `thread_key` filters to a single
+ *  conversation; absent → global list. `limit` clamps to [1, 500] at
+ *  the helper level. */
+async function handlePlansList(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<void> {
+  try {
+    const { listPlanHistory } = await import('../core/plan-history.js')
+    const threadKey = url.searchParams.get('thread_key') || undefined
+    const limitRaw = url.searchParams.get('limit')
+    const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10) || 50, 500)) : 50
+    const rows = listPlanHistory({ threadKey, limit })
+    sendJson(res, 200, { plans: rows, total: rows.length })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

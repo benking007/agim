@@ -9,7 +9,8 @@
     "a2a": "Agent ↔ Agent",
     "heartbeat": "Heartbeat",
     "goals": "Goals",
-    "asks": "Ask User"
+    "asks": "Ask User",
+    "plans": "Plans"
   },
   "jobs": {
     "title": "Jobs",

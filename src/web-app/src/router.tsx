@@ -74,6 +74,8 @@ const router = createBrowserRouter([
       { path: 'heartbeat', lazy: lazy(() => import('@/routes/tasks/heartbeat')) },
       { path: 'goals',     lazy: lazy(() => import('@/routes/tasks/goals')) },
       { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
+      // v1.2.133 — plan-history audit (native_exit_plan_mode handshakes).
+      { path: 'plans',     lazy: lazy(() => import('@/routes/tasks/plans')) },
     ],
   },
   {

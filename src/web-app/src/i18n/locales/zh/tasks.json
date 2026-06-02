@@ -9,7 +9,8 @@
     "a2a": "Agent 互调",
     "heartbeat": "心跳",
     "goals": "目标",
-    "asks": "待回答"
+    "asks": "待回答",
+    "plans": "Plan 审计"
   },
   "jobs": {
     "title": "作业",

@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.133] - 2026-06-02
+
+### Added (Plan-history admin UI — 原 P2 提前来做)
+
+v1.2.131 落地了 `native_exit_plan_mode` 工具 + `plan_history` sqlite 审计
+表，但 admin 一直没有 UI 看。本版补齐：新增 `/tasks/plans` 页面。
+
+#### 为什么这版不是 P1（CLI adapter /plan 打通）
+盘点代码后发现 4 个 CLI adapter 的 plan-mode 转译**早就完成**了，是历史
+版本零散迭代里做的：
+- claude-code: `--permission-mode plan`（已有）
+- codex: `-s read-only` 沙盒（已有，带 OS 层只读限制的注脚）
+- cursor: `--plan` 旗标（已有，v1.2.49 加的）
+- opencode (stdio + http): `--agent plan` / built-in plan agent（已有）
+
+数据流也通的：`/plan on` → session.planMode + plan-mode-state.db →
+router 注入 `opts.planMode` → adapter `buildArgs` 生效。所以原定 P1 是
+个伪命题。
+
+把 v1.2.133 改作 P2 ——给 plan_history 审计表加 admin UI，价值更实质。
+
+#### 新增 `/tasks/plans` 路由
+- 侧栏 tab "Plans / Plan 审计"，挂在 /tasks 二级菜单
+- 表格列：outcome 徽章（approved/rejected/edited/expired，配色 + 图标）/
+  thread_key / resolved_at / pending_ms（人类可读：ms/s/min） / detail（截断 + 全文 hover）
+- 点击行展开 collapsible，渲染 plan 的 markdown 全文为 monospace `<pre>`
+  （max-h-96 + 滚动）
+- 支持按 thread_key 精确过滤（顶部输入框 + Apply / Clear 按钮）
+
+#### 新增 `GET /api/plans?thread_key=&limit=` 端点
+- 接口 admin-gated（plan 内容可能含敏感路径）
+- limit 在 server 侧 clamp 到 [1, 500]
+- 直接 wrap v1.2.131 的 `listPlanHistory()` —— 零业务逻辑，纯透传 + auth
+- thread_key 不传 → 全局列表（默认 50 条最新）
+
+#### 前端
+- `usePlansList(opts)` hook 加到 `use-background-tasks.ts`（按 threadKey + limit
+  缓存）
+- 类型 `PlanHistoryRow / PlansListResponse / PlanOutcome` 导出
+- 路由注册在 `/tasks` 二级菜单尾部（asks 之后）
+
+#### 安全
+- requireAdmin gate（同 /tasks/asks / /tasks/goals 等）
+- 不上 SSE / 不轮询 —— 主动 refresh 按钮 + filter Apply 触发拉取，避免没人
+  看的时候浪费 db 查询
+
+### 文件
+- 修改 `src/web/server.ts`：新增路由注册 + `handlePlansList` (~25 行)
+- 修改 `src/web-app/src/hooks/use-background-tasks.ts`：+`usePlansList` + 类型 (~40 行)
+- 新增 `src/web-app/src/routes/tasks/plans.tsx` (~175 行)
+- 修改 `src/web-app/src/{router.tsx, routes/tasks/layout.tsx}`：注册 + 加 tab
+- 修改 `src/web-app/src/i18n/locales/{en,zh}/tasks.json`：subnav.plans 一项
+  （细节文案走 i18n defaultValue，下版本再抽出来）
+
 ## [1.2.132] - 2026-06-02
 
 ### Fixed (length-recovery 推空 assistant → openai-compat 400)

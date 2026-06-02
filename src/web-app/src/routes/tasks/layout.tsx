@@ -33,6 +33,8 @@ const SUB_TABS: SubTab[] = [
   { to: 'heartbeat', i18nKey: 'subnav.heartbeat', mounted: true },
   { to: 'goals',     i18nKey: 'subnav.goals',     mounted: true },
   { to: 'asks',      i18nKey: 'subnav.asks',      mounted: true },
+  // v1.2.133 — native_exit_plan_mode audit log.
+  { to: 'plans',     i18nKey: 'subnav.plans',     mounted: true },
 ]
 
 export default function TasksLayout(): JSX.Element {

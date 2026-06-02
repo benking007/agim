@@ -821,12 +821,23 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // chat() call sees what was said), AND accumulate it into the
       // prefix used to assemble the final return text. Otherwise the
       // caller would only get the last continuation chunk.
+      //
+      // v1.2.132 — skip the push entirely when partial is empty.
+      // Otherwise we'd ship `{ role: 'assistant', content: '' }` with
+      // no tool_calls, which OpenAI Chat Completions (and DeepSeek)
+      // reject with the same HTTP 400 "Invalid assistant message"
+      // that v1.2.130 caught for the blank-retry path. This happens
+      // most often on a TCP drop BEFORE the first token landed
+      // (v1.2.123 graceful-degradation path classifies that as
+      // `finishReason: 'length'` with partialTextLen=0).
       lengthRecoveryPrefix += result.text
-      history.push({
-        role: 'assistant',
-        content: result.text,
-        reasoningContent: result.reasoningContent,
-      })
+      if (result.text) {
+        history.push({
+          role: 'assistant',
+          content: result.text,
+          reasoningContent: result.reasoningContent,
+        })
+      }
       // (2) Drop tool_calls even if present — re-executing a half-
       // emitted JSON args object is the obot-platform $0.91 disaster
       // ([HKUDS/nanobot#2318]). The continuation prompt lets the

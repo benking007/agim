@@ -145,9 +145,14 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
       provider,
       messages: [{ role: 'user', content: 'go' }],
     })
-    // Length-recovery message — distinct from blank nudge.
+    // v1.2.132 — empty partial is no longer persisted as an assistant
+    // turn (would otherwise 400 the next openai-compat call). The
+    // continuation call sees just [original_user, recovery_user].
     const seen = provider.lastMessages!
-    expect(seen[2]?.content).toMatch(/cut off due to the output length limit/i)
+    expect(seen).toHaveLength(2)
+    expect(seen[0]?.role).toBe('user')
+    expect(seen[1]?.role).toBe('user')
+    expect(seen[1]?.content).toMatch(/cut off due to the output length limit/i)
     expect(r.text).toBe('continuation')
   })
 

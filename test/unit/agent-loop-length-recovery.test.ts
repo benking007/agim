@@ -178,4 +178,39 @@ describe('runAgentLoop — length-recovery (v1.2.117)', () => {
     expect(r.finishReason).toBe('stop')
     expect(r.text).toBe('short answer')
   })
+
+  // v1.2.132 regression — TCP drop before the first token of a stream
+  // surfaces as `finishReason='length'` with `text=''` (the v1.2.123
+  // graceful-degradation classifier). The recovery path used to push
+  // `{ role: 'assistant', content: '' }` + the recovery user message,
+  // which OpenAI-compat (DeepSeek) rejects with HTTP 400 "Invalid
+  // assistant message: content or tool_calls must be set" on the very
+  // next call. Pin: when partial is empty, skip the assistant push —
+  // only the recovery user message goes in.
+  it('empty partial (TCP drop pre-token) does NOT push empty assistant', async () => {
+    const provider = new ScriptedProvider([
+      // Truncation BEFORE first token landed → text empty.
+      { text: '', finishReason: 'length', usage: {}, modelUsed: 'stub-m' },
+      { text: 'continuation', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
+    ])
+    const r = await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+    })
+    expect(r.text).toBe('continuation')
+    // History the continuation call saw — scan for the bad shape.
+    const seen = provider.lastMessages!
+    for (const m of seen) {
+      if (m.role !== 'assistant') continue
+      const empty = !m.content || m.content.length === 0
+      const noTools = !m.toolCalls || m.toolCalls.length === 0
+      expect(empty && noTools).toBe(false)
+    }
+    // The original user + the recovery user message both land; no
+    // intervening empty assistant.
+    const users = seen.filter((m) => m.role === 'user').map((m) => m.content)
+    expect(users.length).toBe(2)
+    expect(users[0]).toBe('go')
+    expect(users[1]).toMatch(/cut off due to the output length limit/i)
+  })
 })

@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.132] - 2026-06-02
+
+### Fixed (length-recovery 推空 assistant → openai-compat 400)
+
+#### 现象
+v1.2.130 已经修了 blank-retry 路径的空 assistant push 问题。但用户报新一轮
+出现完全相同的 HTTP 400：
+```
+"Invalid assistant message: content or tool_calls must be set"
+```
+
+#### 根因
+v1.2.117 的 length-recovery 路径还有同一类问题。`agent-loop.ts:825-829` 在
+`finishReason='length'` 且 `lengthRecoveryCount < max` 时，会把当前 partial
+text 作为 assistant 推进 history，并显式 **drop tool_calls**（line 830 注释
+说明这是 obot-platform $0.91 事故的防御）。
+
+但 v1.2.123 加的 graceful-degradation 把 TCP 在首个 token 落地前断开的情况
+也标记为 `finishReason='length'`，此时 partial text 是空字符串 → 推出去的
+就是 `{ role: 'assistant', content: '', toolCalls: undefined }` → OpenAI /
+DeepSeek 在 retry call 里直接 400。
+
+#### 修法
+在 push 前判一句：partial 非空才入 history。empty 跳过——本来也没东西可恢复，
+模型从 user prompt 直接重头跑一遍，配合 v1.2.117 的 LENGTH_RECOVERY_MESSAGE
+nudge 即可。
+
+```ts
+if (result.text) {
+  history.push({ role: 'assistant', content: result.text, ... })
+}
+history.push({ role: 'user', content: LENGTH_RECOVERY_MESSAGE })
+```
+
+#### 防御覆盖范围
+现在所有 agent-loop 内部能往 history 推 assistant 的路径都被覆盖：
+- 正常完成 + tool_calls 非空 → push（v1.2.131 起 toolCalls 保证非空，否则
+  loop 在 line 874 提前 return 不 push）
+- blank-retry（v1.2.119 引入）→ v1.2.130 不再 push 空 assistant
+- length-recovery（v1.2.117 引入）→ **v1.2.132 不再 push 空 assistant**
+
+#### 测试
+- `test/unit/agent-loop-length-recovery.test.ts` 新增 1 个 case，专项验证
+  "empty partial → no empty assistant push"
+- 修复 `test/unit/agent-loop-blank-retry.test.ts` 的 "length-truncated text
+  takes priority" 旧 case（它原本断言 `seen[2]` 是 recovery 消息，新行为下
+  消息在 `seen[1]`），同步加上 `seen.length === 2` + 双 user 角色 + 顺序断言
+- 13/13 测试绿
+
+### 计划调整
+原 v1.2.132 计划是 P1 (cross-adapter /plan 打通)，这个 hotfix 优先级更高，
+P1 推到 v1.2.133。
+
 ## [1.2.131] - 2026-06-01
 
 ### Added (Claude-Code 风格的 Plan Mode 退出握手 — P0)

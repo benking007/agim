@@ -86,6 +86,11 @@ import {
   buildTodoDispatcher,
   getTodoTools,
 } from '../../../core/llm/todo-dispatcher.js'
+import {
+  buildPlanExitDispatcher,
+  getPlanExitTools,
+  PLAN_EXIT_TOOL_NAME,
+} from '../../../core/llm/plan-exit-dispatcher.js'
 import { listSkills } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -164,11 +169,13 @@ export function buildSystemPrompt(
   // model wastes iterations trying alternative write paths.
   if (isPlanModeOn(threadKey)) {
     lines.push(
-      `⚠ Plan mode is ACTIVE (IMHUB_NATIVE_PLAN_MODE=1)`,
+      `⚠ Plan mode is ACTIVE`,
       `  - You MUST produce a read-only plan; native_write_file and native_exec are HARD-BLOCKED.`,
       `  - Use read tools freely: native_read_file / native_list_dir / native_glob / native_grep / native_web_fetch / native_web_search.`,
-      `  - Output: present a concrete written plan with steps, files to change, commands to run, and risks. End the turn after writing the plan — do NOT attempt the changes.`,
-      `  - The operator clears IMHUB_NATIVE_PLAN_MODE when they're ready to let you act.`,
+      `  - Exit handshake (v1.2.131): when the plan is ready, call`,
+      `      native_exit_plan_mode({ plan: '<markdown of the steps>' })`,
+      `    The user will see an Approve/Reject card. On approve you regain full write access and proceed immediately. On reject you stay in Plan Mode with the user's feedback in the tool result — revise and call again.`,
+      `  - DO NOT just describe the plan in prose and stop — the user expects the exit handshake. Skip it only if the user explicitly asks for "no exit" / "just brainstorm".`,
       ``,
     )
   }
@@ -614,6 +621,13 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
     // per-thread; zero side effects beyond the model's own state. Safe
     // to default-allow; never asks the user.
     'native_todo_write',
+    // v1.2.131 — Plan-mode exit handshake. The tool's OWN dispatcher
+    // raises the user-facing approval card (with the plan markdown
+    // payload); auto-allowing here just keeps the policy gate from
+    // double-prompting. Without this entry an operator using allow-list
+    // mode would see two cards back-to-back ("native_exit_plan_mode
+    // ok?" then "approve plan?").
+    'native_exit_plan_mode',
   ]
   const effectiveAllow = mode === 'allow-list'
     ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
@@ -983,6 +997,17 @@ class NativeAgentAdapter implements AgentAdapter {
       // be caught early. Uses the same composite thread key the PlanMode
       // resolver does so users can find their list in audit.
       buildTodoDispatcher(planThreadKey ?? `native:${sessionId}`),
+      // v1.2.131 — ExitPlanMode handshake. Always wired; the dispatcher
+      // itself refuses calls when the thread is NOT in plan mode, so
+      // the model can't accidentally exit something it didn't enter.
+      buildPlanExitDispatcher({
+        threadKey: planThreadKey ?? `native:${sessionId}`,
+        runId: sessionId,
+        platform: opts.platform,
+        channelId: opts.channelId,
+        threadId: opts.threadId,
+        userId: opts.userId,
+      }),
       buildImhubDispatcher(imhubCtx),
       buildMcpDispatcher(),
     )
@@ -1001,6 +1026,14 @@ class NativeAgentAdapter implements AgentAdapter {
       ...getImhubTools(),
       ...getAllMcpTools(),
     ]
+    // v1.2.131 — when this thread is in Plan Mode, advertise the
+    // dedicated exit tool so the model knows the handshake exists. We
+    // don't always advertise it: a model in normal mode shouldn't be
+    // tempted to call it (the dispatcher would refuse anyway, but
+    // keeping the roster honest is cleaner).
+    if (planThreadKey && effectivePlanModeOn(planThreadKey)) {
+      tools.push(...getPlanExitTools())
+    }
 
     const policy = resolvePolicy(planThreadKey)
     // v1.2.60 — when the policy would silently deny a tool call,

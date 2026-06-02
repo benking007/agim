@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.131] - 2026-06-01
+
+### Added (Claude-Code 风格的 Plan Mode 退出握手 — P0)
+
+之前 native 的 PlanMode 是单向开关：用户 `/plan on` 进，模型只能输出 plan 文本，
+然后用户手动 `/plan off` 才能让模型动手。Claude Code 的对应体验更自然：模型
+"自己说我想好了 → 用户审批 → 一键放行 + 立即继续"。本版补齐这个握手。
+
+#### 新工具 `native_exit_plan_mode`
+- 仅当所在线程的 PlanMode 已开启时才出现在工具集合中（其他场景模型看不到）
+- 模型调用时传 `{ plan: '<markdown>' }`（≤ 4000 字）
+- agim 通过 `approvalBus.registerSyntheticPending` 把 plan 推给 IM 端，渲染为审批卡
+- **用户点 Approve** → 立即 `setPlanModeForThread(false)`，写 plan_history 审计行，
+  返回 "Plan approved — proceed" 给模型，模型下一轮就有完整写权限
+- **用户点 Deny + 给原因** → 写 plan_history(outcome=rejected, detail=reason)，
+  返回 "Plan REJECTED. Revise based on: <reason>" 给模型，PlanMode 保持开启
+- 拒绝场景下模型会自动迭代再次调用 `native_exit_plan_mode`
+
+#### 新增 plan_history 审计表
+- `~/.agim/plan-history.db`（路径可由 `IMHUB_PLAN_HISTORY_DB` 覆盖）
+- 每次握手写一条不可变记录：thread_key / plan_md / outcome (approved|rejected|edited|expired)
+  / detail / pending_ms / resolved_at
+- 为后续 v1.2.133 的 `/tasks/plans` admin 列表查询打底（本版不做 UI）
+
+#### system prompt 改造
+plan mode banner 之前结尾写"操作员清掉 IMHUB_NATIVE_PLAN_MODE 你才能动手"。
+现在改为：
+
+> Exit handshake (v1.2.131): when the plan is ready, call
+>   `native_exit_plan_mode({ plan: '<markdown of the steps>' })`
+> The user will see an Approve/Reject card. On approve you regain full
+> write access and proceed immediately. On reject you stay in Plan Mode
+> with the user's feedback in the tool result — revise and call again.
+
+#### 安全 / 边界
+- 工具自带审批闸口；同时 native 默认 auto-allow 列表加入 `native_exit_plan_mode`，
+  避免双弹卡（policy gate 一张 + 内部 plan 卡一张）
+- CLI / 无 notifier 环境调用 → 直接返回错误结果 + 写 rejected 审计行，不挂起
+- 4000 字符上限防止 plan 把 approval-bus 卡撑爆
+- bun 运行下 better-sqlite3 不可用，helper 走 fail-soft 路径：插入返回 null、
+  读取返回 []，行为可观察但不会抛错（与已有 plan-mode-state / todo-dispatcher 一致）
+
+### 文件
+- 新增 `src/core/plan-history.ts`（~125 行 — sqlite 表 + insert + list）
+- 新增 `src/core/llm/plan-exit-dispatcher.ts`（~210 行 — 工具定义 + 握手逻辑）
+- 新增 `test/unit/plan-history.test.ts`（5 case — 输入校验 + fail-soft）
+- 新增 `test/unit/plan-exit-dispatcher.test.ts`（8 case — 工具定义 + 6 个 gate）
+- 修改 `src/plugins/agents/native/index.ts`：import + 接入 combineDispatchers +
+  按 PlanMode 状态条件性 advertise 工具 + 默认 auto-allow + system prompt
+  banner 换文案
+
+### v1.2.132 预告（P1）
+`/plan` 命令打通 claude-code / codex / cursor / opencode 4 个 CLI adapter，
+让"切 Plan Mode"在不同 agent 下都做对的事。下一版本。
+
 ## [1.2.130] - 2026-06-01
 
 ### Fixed (blank-retry 推空 assistant → openai-compat 400)

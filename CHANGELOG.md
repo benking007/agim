@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.134] - 2026-06-02
+
+### Changed (/plan 状态文案：按 active agent 翻译生效机制)
+
+之前 `/plan` 无参数时把所有 agent 的实现细节一起列出来，与用户当前哪个
+agent 没绑关系。改成：
+
+1. **重点行**：当前 agent 的具体生效机制（高亮 + 旗标名）
+2. 其他 agent 的对照仅作参考
+
+示例（active agent = claude-code 时）：
+```
+📐 Plan 模式: `off`（当前 agent: `claude-code`）
+
+**生效方式（claude-code）**: `--permission-mode plan`（只读权限模式）
+
+切换：
+  /plan on   开启 plan 模式
+  /plan off  关闭，恢复正常执行
+
+其他 agent 的对应机制：
+  · codex:    -s read-only 沙盒（OS 层只读，非 approval 闸门）
+  · cursor:   --plan 旗标（cursor-agent 自带的 plan 模式）
+  · opencode: --agent plan（切到 opencode 内置 plan agent）
+  · native:   policy denyList 拒绝 native_write_file / native_exec + native_exit_plan_mode 握手出 plan 模式
+```
+
+### Fixed (cursor 误报"未对接 plan 模式")
+
+`PLAN_CAPABLE_AGENTS` 集合漏了 `cursor`，但 cursor adapter 自 v1.2.49 就
+通过 `--plan` 旗标支持 plan mode。结果是用户在 cursor 下 /plan on 时被警
+告"cursor 暂未对接"——纯文案 bug。补全 set。
+
+### 不做的（事实核对）
+- 跨 adapter `buildArgs` 综合回归测试 —— 现有 4 个 adapter 的 `adapter.test.ts`
+  里都已经有 `planMode: true` 的 buildArgs 测试，再写一份综合版会重复。
+
+### 文件
+- 修改 `src/core/commands/plan.ts`（~30 行新逻辑 + 1 行 capable set 修复）
+- 9/9 现有 plan 测试绿
+
 ## [1.2.133] - 2026-06-02
 
 ### Added (Plan-history admin UI — 原 P2 提前来做)

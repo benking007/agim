@@ -659,7 +659,7 @@
     "streamPartial": "流式增量回写",
     "streamPartialHint": "IMHUB_NATIVE_STREAM_PARTIAL。默认开；关闭走旧的非流式路径。",
     "maxIter": "迭代上限",
-    "maxIterHint": "IMHUB_NATIVE_AGENT_MAX_ITER。范围 [1,100]。默认 20。"
+    "maxIterHint": "IMHUB_NATIVE_AGENT_MAX_ITER。范围 [1,100]。默认 50（v1.2.136 起，原为 20）。"
   },
   "search": {
     "title": "Web 搜索 Provider",

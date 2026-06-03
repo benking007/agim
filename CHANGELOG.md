@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.136] - 2026-06-02
+
+### Changed (max_iter 默认 20 → 50；移除过宽 plan-intent 短语)
+
+两项实战反馈一起打：
+
+#### 1. `IMHUB_NATIVE_AGENT_MAX_ITER` 默认 20 → 50
+真实使用观察：CR / 多步重构等任务常需 28-35 次迭代，20 把它们切掉。
+50 给充足缓冲；30 分钟 IM 硬超时仍是更早的天花板（按 20-30s / iter
+算，撞天花板大约 60-80 次），v1.2.122 语义死循环检测也会在 50 之前
+抓 runaway。`clamp [1, 100]` 不变 —— 真要更高就在 `/settings/native-
+agent` 调到 100。
+
+#### 2. 移除 `先看看` 关键词
+v1.2.135 P3 的默认 phrase 列表里有「先看看」，但 CR 指出这条过宽 ——
+「先看看这个文件」明显是要读文件，不是 plan-only 意图。如果开启了
+`IMHUB_PLAN_INTENT_AUTO`，会把常规读操作误判进 plan 模式。从默认
+列表删除；操作员真需要可通过 `IMHUB_PLAN_INTENT_PHRASES` 自行加
+回（v1.2.135 的覆盖机制）。
+
+### 文件
+- 修改 `src/plugins/agents/native/index.ts`（默认值 20 → 50 + docstring 解释）
+- 修改 `src/core/plan-intent.ts`（删 1 个短语 + 注释解释为何）
+- 修改 i18n + native-agent.tsx placeholder（"20" → "50"）
+- 10/10 plan-intent.test.ts 仍绿（不需调测试 —— 测的是其他短语命中）
+
 ## [1.2.135] - 2026-06-02
 
 ### Added (P3: 启发式 plan 意图自动入场)

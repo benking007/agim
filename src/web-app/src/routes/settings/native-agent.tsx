@@ -812,7 +812,7 @@ function StreamCard({ draft, setField }: CardProps): JSX.Element {
             type="number"
             value={draft.maxIter}
             onChange={(e) => setField('maxIter', e.target.value)}
-            placeholder="20"
+            placeholder="50"
             className="font-mono text-xs"
           />
         </Field>

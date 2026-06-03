@@ -45,7 +45,9 @@ const PLAN_INTENT_PHRASES_DEFAULT = [
   '先想一下',
   '先规划',
   '先讨论',
-  '先看看',
+  // v1.2.136 — removed '先看看' per CR feedback. Too broad — "先看看这
+  // 个文件" reads as "go open this file" not "plan only", which would
+  // wrongly route the operator into plan mode for ordinary reads.
   '先聊聊',
   '不要直接做',
   '不要直接动手',

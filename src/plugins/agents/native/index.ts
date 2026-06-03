@@ -515,15 +515,20 @@ function composeOffTrackRecap(
   return lines.join('\n')
 }
 
-/** Read IMHUB_NATIVE_AGENT_MAX_ITER, clamp to [1, 100], default 20.
+/** Read IMHUB_NATIVE_AGENT_MAX_ITER, clamp to [1, 100], default 50.
+ *  v1.2.136: bumped from 20 → 50 after observing real-world CR / multi-step
+ *  refactor tasks routinely needed 28-35 iters and 20 was cutting them off.
+ *  50 covers most cases with margin; the 30-min IM hard timeout is the
+ *  earlier ceiling for genuinely long runs, and v1.2.122 semantic stuck-
+ *  loop detection catches runaway model behaviour well before 50.
  *  v1.2.92 — previously this env var was named in the user-facing
  *  banner ("raise IMHUB_NATIVE_AGENT_MAX_ITER") but NOTHING in code
  *  read it. Now actually wired into runAgentLoop. */
 function resolveMaxIterations(): number {
   const raw = process.env.IMHUB_NATIVE_AGENT_MAX_ITER
-  if (!raw?.trim()) return 20
+  if (!raw?.trim()) return 50
   const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n <= 0) return 20
+  if (!Number.isFinite(n) || n <= 0) return 50
   return Math.min(Math.max(n, 1), 100)
 }
 

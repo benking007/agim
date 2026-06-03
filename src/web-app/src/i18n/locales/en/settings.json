@@ -659,7 +659,7 @@
     "streamPartial": "Stream partial",
     "streamPartialHint": "IMHUB_NATIVE_STREAM_PARTIAL. Default on; off uses legacy non-stream path.",
     "maxIter": "Max iterations",
-    "maxIterHint": "IMHUB_NATIVE_AGENT_MAX_ITER. Clamped to [1,100]. Default 20."
+    "maxIterHint": "IMHUB_NATIVE_AGENT_MAX_ITER. Clamped to [1,100]. Default 50 (v1.2.136; bumped from 20)."
   },
   "search": {
     "title": "Web search providers",

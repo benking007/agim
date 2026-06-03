@@ -4,6 +4,78 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.139] - 2026-06-03
+
+### Fixed (子代理派生：P0 安全 + P1 上下文 + 文案/重试)
+
+对 native agent 派生子代理（call_agent）链路做了一轮审计，发现并修了 4 类问题：
+
+**P0 — Plan Mode 不传递到子代理**（安全）
+
+父线程 `/plan on` 后，模型仍能用 call_agent 把"写代码"任务交给
+claude-code / opencode / 子 native——子代理拉起来时**没拿到 planMode
+标志**，是按完全写权限跑的。等于用户开了 plan-mode 防护、模型一句
+delegate 就绕过了。
+
+修复：
+
+- `CallAgentOpts` 加 `planMode?: boolean` 字段
+- `a2a.ts` 把 opts.planMode 透传到 `target.sendPrompt({...planMode})`
+  ——所有 adapter 都已经认识 AgentSendOpts.planMode（claude-code 翻
+  `--permission-mode plan`，opencode 走 `--agent plan`，native 进
+  policy gate 拦写工具）
+- `ImhubDispatcherCtx` 加 `callerPlanMode?: boolean`
+- native/index.ts 通过 `effectivePlanModeOn(planThreadKey)` 求值后
+  注入 imhubCtx
+- 派发 call_agent 时（in-process self-spawn 和正式 A2A 两条路）都
+  把这个标志透传出去
+
+**P1a — 子代理返回值整段塞回父上下文**（context bloat）
+
+call_agent 返回的文本默认整段进父对话历史，链 2-3 个就把 native 的
+context 撑爆了。新增 `IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS`
+（默认 8000）：
+
+- 超过阈值 → 70/30 截首尾 + 中间放截断标记
+- 全文写入 viewer-paste（沿用 `savePaste` 通道，配置了 publicBaseUrl
+  / 隧道 / 远端 paste 就给个可点开的链接），模型还能引用
+- savePaste 不可用（bun test runner 没 better-sqlite3）→ 跳过 paste
+  hint，截断本身仍然生效
+- 设为 0 完全禁用
+
+**P1b — 子代理瞬态错误不重试**
+
+claude-code 子代理调起来时偶发 5xx / socket reset，整次 call_agent
+就直接失败、父代理只能告诉用户重来。和 v1.2.138 的 first-token retry
+对齐：
+
+- in-process self-spawn 和正式 A2A 两路都加了"一发瞬态错就重试一次"
+- 瞬态判定：`\b(5\d\d|408)\b | timeout | ECONN | ETIMEDOUT | fetch failed | socket hang up | network | ENETUNREACH`
+- 4xx / 鉴权 / 工作区 ACL / depth exceeded 等永久性错误不触发重试
+
+**其他 — cap_exceeded 文案 + 正向 prompt 框架**
+
+- per-turn cap 触发时，refusal 文本现在带"你这一轮已经叫过 哪些
+  agent、它们各自的成败"列表（promptHead 60 字预览）。空 count
+  改成 history 数组，模型自我纠正更快
+- 系统 prompt 多 1 段 "When to USE call_agent" 正向引导（前提仍是
+  HARD RULE — 文件读 / 列目录 / 抓页禁止 delegate），帮模型理清"什
+  么时候应该 delegate"
+
+### 文件
+
+- `src/core/a2a.ts` — `CallAgentOpts.planMode` + 透传到 sendPrompt
+- `src/core/llm/imhub-dispatcher.ts` — `callerPlanMode` + output cap +
+  retry + history-aware cap_exceeded
+- `src/plugins/agents/native/index.ts` — imhubCtx 注入 callerPlanMode +
+  system prompt 加 "when to delegate" 段落
+
+### 不在范围
+
+- P1a 中"call_agent 并行 fan-out"先放——approval-bus 共享状态、子
+  代理审批卡片并发可能造成 UI 困惑，等单独立项做并设计正交。当下
+  call_agent 仍走串行。
+
 ## [1.2.138] - 2026-06-03
 
 ### Added (transient stream 错误首-token 重试)

@@ -205,6 +205,16 @@ export function buildSystemPrompt(
     `  - You have a per-turn call_agent cap (default 2). Burning it on file reads will leave you`,
     `    unable to delegate later when you actually need to.`,
     ``,
+    `When to USE call_agent (v1.2.139 positive framing — pair with the HARD RULE above):`,
+    `  - The task needs sustained source-code editing in a real repo → call_agent('claude-code', …)`,
+    `    or call_agent('codex', …). Don't try to mimic them with native_write_file when the work is`,
+    `    multi-file refactors or feature builds.`,
+    `  - You need a second pair of eyes / cross-checking on your own conclusion → call_agent('codex',`,
+    `    'audit my findings: …'). Useful before committing or reporting.`,
+    `  - The task is large enough that parallel research helps (e.g. survey 3 independent areas of`,
+    `    a codebase) → fan-out via call_agent('native', …) so each sub-agent's context is fresh.`,
+    `  - Tip: write the sub-agent prompt as a self-contained brief — they don't see this conversation.`,
+    ``,
     `Web tool routing (HARD RULE — v1.2.64):`,
     `  - If the user provided a SPECIFIC URL (http://… or https://…) → native_web_fetch.`,
     `  - If the user wants to FIND / DISCOVER something by keywords ("查找最新 X" / "search for Y" /`,
@@ -972,6 +982,14 @@ class NativeAgentAdapter implements AgentAdapter {
       userId: opts.userId || 'unknown',
       callerAgent: 'native',
       callerDepth: opts.callDepth ?? 0,
+      // v1.2.139 — propagate parent's plan-mode to the imhub dispatcher
+      // so any call_agent invocation it makes hands the flag to the
+      // sub-agent (claude-code / opencode / codex / native). Without
+      // this, a parent in `/plan on` could delegate a write task and
+      // the child would happily run with full write access. Falls back
+      // to opts.planMode for A2A-initiated runs (sub-agent itself is
+      // already in plan mode).
+      callerPlanMode: effectivePlanModeOn(planThreadKey) || (opts.planMode === true),
     }
     // Resolve cwd here so fs-dispatcher can constrain reads/writes to
     // the per-thread workspace subtree. Was previously resolved AFTER

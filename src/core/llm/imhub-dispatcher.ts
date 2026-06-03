@@ -51,6 +51,8 @@ import {
   ReminderError,
   type CreateReminderInput,
 } from '../reminders.js'
+import { savePaste } from '../viewer-local.js'
+import { buildPasteUrl } from '../viewer-config.js'
 import type { RouteContext } from '../router.js'
 
 const log = rootLogger.child({ component: 'imhub-dispatcher' })
@@ -78,6 +80,86 @@ export interface ImhubDispatcherCtx {
   logger?: typeof rootLogger
   /** Optional A2A depth — defaults to 0 for native-originated calls. */
   callerDepth?: number
+  /** v1.2.139 — caller's PlanMode flag at dispatch time. When true the
+   *  parent thread has `/plan on`, so any sub-agent we spawn MUST also
+   *  run read-only. Resolved by native/index.ts via
+   *  effectivePlanModeOn(planThreadKey) before building the dispatcher. */
+  callerPlanMode?: boolean
+}
+
+/** v1.2.139 — env-driven output cap. When a sub-agent's reply exceeds
+ *  this, the dispatcher returns a short head + tail and stashes the full
+ *  text into viewer-paste (when configured) so the model can still cite
+ *  it. Default 8 KB: enough for typical CR reports / research summaries,
+ *  small enough that 2-3 stacked sub-agents don't blow the parent's
+ *  context budget. Set 0 to disable truncation. */
+export function resolveSubAgentOutputCap(): number {
+  const raw = process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS
+  if (raw === undefined) return 8000
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 8000
+  return n
+}
+
+/** v1.2.139 — one-shot transient retry. Mirrors the streamWithFirstTokenRetry
+ *  pattern: if the underlying provider/CLI tripped a 5xx / socket reset / quick
+ *  timeout, retry exactly once. Permanent errors (4xx, schema fail, model
+ *  refusals) keep the original behaviour (no retry). */
+export function isTransientSubAgentError(msg: string): boolean {
+  if (!msg) return false
+  return /\b(5\d\d|408)\b|timeout|ECONN|ETIMEDOUT|fetch failed|socket hang up|network|ENETUNREACH/i.test(msg)
+}
+
+/** Track a single sub-agent invocation for richer cap_exceeded prompts. */
+interface SubAgentCall {
+  agent: string
+  promptHead: string
+  ok: boolean
+}
+
+/** v1.2.139 — apply the byte cap to a sub-agent reply, optionally
+ *  spilling the full text into viewer-paste so the model can reference
+ *  the spill URL. Returns the (possibly truncated) text the dispatcher
+ *  should hand to the agent loop. */
+export function applyOutputCap(
+  raw: string,
+  agentName: string,
+  jobId: number | null,
+): string {
+  const cap = resolveSubAgentOutputCap()
+  if (cap === 0 || raw.length <= cap) return raw
+  // Split roughly 70/30 head vs tail — the conclusion of a sub-agent
+  // reply is usually as important as the lede.
+  const headBudget = Math.floor(cap * 0.7)
+  const tailBudget = Math.max(cap - headBudget - 200, 0)  // 200 reserved for marker
+  const head = raw.slice(0, headBudget)
+  const tail = tailBudget > 0 ? raw.slice(raw.length - tailBudget) : ''
+  let pasteHint = ''
+  try {
+    // savePaste fail-softs when better-sqlite3 is unavailable (bun
+    // test runner / fresh install) — it returns null and we just
+    // skip the URL hint.
+    const id = savePaste({
+      content: raw,
+      content_type: 'markdown',
+      title: `call_agent(${agentName}) full reply`,
+      source: 'a2a',
+      job_id: jobId ?? undefined,
+    })
+    if (id) {
+      const url = buildPasteUrl(id)
+      if (url) pasteHint = `\n\n[full reply spilled to ${url}]`
+    }
+  } catch {
+    // best-effort; the truncation itself is still the safety net
+  }
+  return [
+    head,
+    `\n\n[…truncated ${raw.length - headBudget - tailBudget} of ${raw.length} chars; ` +
+    `cap=IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS=${cap}…]\n\n`,
+    tail,
+    pasteHint,
+  ].join('')
 }
 
 function safeJson(v: unknown): string {
@@ -371,7 +453,11 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
     const n = Number(raw)
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2
   })()
-  let callAgentCount = 0
+  // v1.2.139 — track call history (not just count) so the cap_exceeded
+  // refusal can name which agents the model already invoked and whether
+  // they succeeded — model self-corrects faster when it can see "you
+  // already asked claude-code, it returned OK; don't ask it again".
+  const callAgentHistory: SubAgentCall[] = []
 
   return async (call, signal, toolCtx): Promise<DispatcherResult> => {
     if (!call.name.startsWith('mcp__imhub__')) return unknown(call.name)
@@ -435,32 +521,43 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           // 8 chained calls in one wechat turn before the user had to
           // /abort. The cap is also visible in the deny message so the
           // model self-corrects on its next iteration.
-          if (callAgentMaxPerTurn > 0 && callAgentCount >= callAgentMaxPerTurn) {
+          if (callAgentMaxPerTurn > 0 && callAgentHistory.length >= callAgentMaxPerTurn) {
+            // v1.2.139 — include the history so the model can see what it
+            // has already tried (and whether those calls succeeded). A
+            // model that sees "you already called claude-code and got an
+            // OK 4k-char reply" stops re-delegating much faster than one
+            // that just sees a bare count.
+            const summary = callAgentHistory
+              .map((h, i) => `  ${i + 1}. ${h.agent} ${h.ok ? '✓' : '✗'}: "${h.promptHead}…"`)
+              .join('\n')
             log.warn({
               event: 'native.call_agent.cap_exceeded',
               callerAgent: ctx.callerAgent,
               calleeAgent: agentName,
-              count: callAgentCount,
+              count: callAgentHistory.length,
               cap: callAgentMaxPerTurn,
+              history: callAgentHistory,
               threadId: ctx.threadId,
-            }, `call_agent cap exceeded (${callAgentCount}/${callAgentMaxPerTurn}) — refusing further delegation`)
+            }, `call_agent cap exceeded (${callAgentHistory.length}/${callAgentMaxPerTurn}) — refusing further delegation`)
             return err(
-              `call_agent refused: you have already delegated ${callAgentCount} time(s) this turn ` +
-              `(cap=${callAgentMaxPerTurn}). Use your own tools (native_read_file, native_grep, ` +
-              `native_list_dir, mcp__imhub__* …) to finish the task. If you genuinely need a CLI ` +
-              `agent for the rest, tell the user to /cc, /oc, or /cs to switch — don't keep ` +
-              `chaining call_agent.`,
+              `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn ` +
+              `(cap=${callAgentMaxPerTurn}). Prior delegations:\n${summary}\n\n` +
+              `Use your own tools (native_read_file, native_grep, native_list_dir, mcp__imhub__* …) to ` +
+              `finish the task with the information you already gathered. If you genuinely need a CLI ` +
+              `agent for the rest, tell the user to /cc, /oc, or /cs to switch — don't keep chaining call_agent.`,
             )
           }
-          callAgentCount += 1
+          const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')
           log.info({
             event: 'native.call_agent.delegated',
             callerAgent: ctx.callerAgent,
             calleeAgent: agentName,
-            attempt: callAgentCount,
+            attempt: callAgentHistory.length + 1,
             cap: callAgentMaxPerTurn,
+            callerPlanMode: ctx.callerPlanMode ?? false,
             threadId: ctx.threadId,
-          }, `delegating to ${agentName} (attempt ${callAgentCount}/${callAgentMaxPerTurn || '∞'})`)
+          }, `delegating to ${agentName} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
+              `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
           // v1.2.121 — in-process self-spawn fast path.
           //
@@ -477,6 +574,7 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           if (agentName === 'native' && !isInProcessSpawnDisabled()) {
             const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
             if (!isA2AEnabled()) {
+              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
               return err('call_agent refused: A2A disabled (IMHUB_A2A_ENABLED=0)')
             }
             const callerDepth = ctx.callerDepth ?? 0
@@ -487,20 +585,17 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
                 event: 'native.call_agent.in_process_depth_exceeded',
                 callerDepth, nextDepth, maxDepth, threadId: ctx.threadId,
               }, `in-process self-spawn refused: depth ${nextDepth} > max ${maxDepth}`)
+              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
               return err(`call_agent refused: depth ${nextDepth} > max ${maxDepth}`)
             }
             log.info({
               event: 'native.call_agent.in_process_spawn',
               callerDepth, nextDepth, threadId: ctx.threadId, subTurnCallId: call.id,
+              callerPlanMode: ctx.callerPlanMode ?? false,
             }, `in-process native self-spawn (depth ${nextDepth}); skipping subprocess boot`)
-            try {
-              // Dynamic import to avoid the circular dep — native
-              // index.ts depends on this dispatcher module.
+            // v1.2.139 — one-shot transient retry on the in-process path.
+            const runOnce = async (): Promise<string> => {
               const native = await import('../../plugins/agents/native/index.js')
-              // Fresh sub-session id so the child doesn't pollute
-              // the parent's session history but shares the thread
-              // context (platform/channelId/threadId/userId) so
-              // tools resolve the same workspace, MCP fleet, etc.
               const subSessionId = `${ctx.threadId}-spawn-${call.id}`
               const parts: string[] = []
               for await (const chunk of native.nativeAgentAdapter.sendPrompt(
@@ -513,16 +608,37 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
                   threadId: ctx.threadId,
                   userId: ctx.userId,
                   callDepth: nextDepth,
+                  // v1.2.139 — propagate parent's plan-mode to the child.
+                  // Without this a parent in /plan on could delegate write
+                  // work to the in-process child and bypass user intent.
+                  ...(ctx.callerPlanMode ? { planMode: true } : {}),
                   signal,
                 },
               )) {
                 parts.push(chunk)
               }
-              return ok(parts.join(''))
+              return parts.join('')
+            }
+            try {
+              let raw: string
+              try {
+                raw = await runOnce()
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e)
+                if (!isTransientSubAgentError(msg)) throw e
+                log.warn({
+                  event: 'native.call_agent.in_process_retry',
+                  err: msg, threadId: ctx.threadId,
+                }, 'in-process self-spawn transient-failed; retrying once')
+                raw = await runOnce()
+              }
+              callAgentHistory.push({ agent: agentName, promptHead, ok: true })
+              return ok(applyOutputCap(raw, agentName, null))
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               log.warn({ event: 'native.call_agent.in_process_failed', err: msg },
                 'in-process self-spawn threw; surfacing error to caller')
+              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
               return err(`call_agent (in-process native) failed: ${msg}`)
             }
           }
@@ -549,16 +665,42 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
             traceId: a2aTrace,
             logger: (ctx.logger ?? rootLogger).child({ component: 'a2a-from-native', threadId: ctx.threadId }),
           }
-          const result = await callAgentByName(agentName, prompt, routeCtx, {
+          const baseOpts = {
             callerDepth: ctx.callerDepth ?? 0,
             callerAgent: ctx.callerAgent,
-          })
-          if (!result.ok) return err(`call_agent failed: ${result.error}`)
+            // v1.2.139 — propagate parent's plan-mode to the sub-agent.
+            ...(ctx.callerPlanMode ? { planMode: true } : {}),
+          }
+          // v1.2.139 — one-shot transient retry. callAgentByName already
+          // wraps its own audit + notify lifecycle; we just retry the
+          // whole call when the first attempt looks like a 5xx / socket
+          // reset / quick timeout. Permanent failures (workspace ACL,
+          // depth exceeded, model refusal) skip the retry.
+          let result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
+          if (!result.ok && isTransientSubAgentError(result.error || '')) {
+            log.warn({
+              event: 'native.call_agent.retry',
+              calleeAgent: agentName,
+              err: result.error,
+              threadId: ctx.threadId,
+            }, `call_agent transient-failed; retrying once`)
+            result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
+          }
+          if (!result.ok) {
+            callAgentHistory.push({ agent: agentName, promptHead, ok: false })
+            return err(`call_agent failed: ${result.error}`)
+          }
+          callAgentHistory.push({ agent: agentName, promptHead, ok: true })
           // CallAgentResult exposes the callee's final text as `result`.
           // Outputs, jobId, durationMs etc. are returned as a JSON
           // sidecar so the model can reference produced artifacts if
           // it asks for them — keeps the main payload terse.
-          return ok(typeof result.result === 'string' ? result.result : safeJson(result))
+          // v1.2.139 — apply output cap so a chatty sub-agent doesn't
+          // blow the parent's context budget. The full text is spilled
+          // into viewer-paste (when configured) so the model can still
+          // cite the link.
+          const raw = typeof result.result === 'string' ? result.result : safeJson(result)
+          return ok(applyOutputCap(raw, agentName, result.jobId ?? null))
         }
         case 'long_task':
         case 'complete_goal': {

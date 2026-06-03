@@ -136,6 +136,12 @@ export interface CallAgentOpts {
    *  hard failure — the callee is still allowed to do what it deems
    *  best. */
   expectOutputs?: string[]
+  /** v1.2.139 — when the caller is currently in Plan Mode, propagate
+   *  the flag to the callee so the sub-agent also runs read-only. Without
+   *  this, a parent that hit /plan on would happily delegate write tasks
+   *  to e.g. claude-code, which would launch with full write access and
+   *  bypass the user's intent. */
+  planMode?: boolean
 }
 
 export type CallAgentResult =
@@ -298,6 +304,11 @@ export async function callAgentByName(
       // parent_id = jobId (our callee row).
       parentJobId: jobId,
       callDepth: nextDepth,
+      // v1.2.139 — propagate parent's plan-mode state so the callee runs
+      // read-only too. Without this, a parent under /plan on could delegate
+      // a write task to claude-code and the child would launch with full
+      // write access, bypassing the user's intent.
+      ...(opts.planMode ? { planMode: true } : {}),
       signal: abortController.signal,
     })
     result = await accumulateWithTimeout(gen, timeoutMs)

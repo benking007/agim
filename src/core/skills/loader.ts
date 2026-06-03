@@ -346,7 +346,32 @@ export function buildSkillsSummary(): string {
   const all = listSkills()
   if (all.length === 0) return ''
   const sorted = all.slice().sort((a, b) => a.name.localeCompare(b.name))
-  const lines: string[] = ['[agim skills available — read full body with mcp__imhub__read_skill(name)]']
+  const lines: string[] = [
+    // v1.2.137 — routing rule, prepended to the skill list. Applies to
+    // ALL agents (native / claude-code / codex / cursor / opencode) because
+    // the router wraps this block into every turn's prompt. The rule is
+    // intentionally generic — it references the skill list itself, never
+    // any specific skill name, so users with zero skills installed see
+    // an empty block (early return above) and aren't burdened with the
+    // rule text. The "MUST" framing + explicit fallback whitelist is
+    // tuned to be hard enough that models don't drift back to web_fetch
+    // out of habit when a relevant skill exists.
+    '[agim tool routing — skills first]',
+    'Before calling any generic tool (web_fetch / web_search / native_exec /',
+    'shell-style commands), you MUST scan the skill list below. If any entry\'s',
+    'description matches the user\'s intent — even loosely — you MUST call',
+    'mcp__imhub__read_skill(\'<name>\') first to load that skill\'s body. Skill',
+    'bodies contain dedicated tools, endpoints, or queries that produce',
+    'higher-quality, structured results than free-text web pages for the',
+    'same intent. Falling back to the generic tool is only valid when:',
+    '  (a) no skill description plausibly matches, OR',
+    '  (b) you already read a relevant skill and its body explicitly says',
+    '      "this skill is not suitable for X" or lacks the needed coverage.',
+    'This is a routing discipline, not a hint. Skipping it counts as a',
+    'tool-routing error in this conversation.',
+    '',
+    '[agim skills available — read full body with mcp__imhub__read_skill(name)]',
+  ]
   const visible = sorted.slice(0, MAX_INJECTED_SKILLS)
   for (const s of visible) {
     const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`

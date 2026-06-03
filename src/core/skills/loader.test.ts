@@ -259,6 +259,40 @@ body
     const out = buildSkillsSummary()
     expect(out).toContain('and 3 more')
   })
+
+  // v1.2.137 — skills-first routing discipline. The block now prefixes
+  // the list with a MUST rule telling every agent to scan skills before
+  // generic tools (web_fetch / web_search / native_exec). One injection
+  // point, applies to native + all CLI adapters because router.ts wraps
+  // this string into every turn's prompt.
+  describe('v1.2.137 routing rule', () => {
+    it('prepends the skills-first MUST rule when at least one skill exists', () => {
+      writeSkill(wsRoot, 'sample', `---
+name: sample
+description: any skill
+---
+body
+`)
+      const out = buildSkillsSummary()
+      // The rule's signature phrases — assertions are intentionally
+      // narrow so prose-level tweaks don't fail the test, but the
+      // critical behavioural directives do.
+      expect(out).toContain('[agim tool routing — skills first]')
+      expect(out).toContain('MUST scan the skill list')
+      expect(out).toContain('mcp__imhub__read_skill')
+      // Rule must come before the listing header so models process it
+      // first when reading top-down.
+      const ruleIdx = out.indexOf('[agim tool routing — skills first]')
+      const listIdx = out.indexOf('[agim skills available')
+      expect(ruleIdx).toBeGreaterThanOrEqual(0)
+      expect(listIdx).toBeGreaterThan(ruleIdx)
+    })
+
+    it('does NOT inject the rule when no skills are configured', () => {
+      // Default: empty workspace, no skills.
+      expect(buildSkillsSummary()).toBe('')
+    })
+  })
 })
 
 describe('readSkillBody', () => {

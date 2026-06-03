@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.137] - 2026-06-03
+
+### Added (skills-first 路由纪律 — 通用 prompt 注入)
+
+#### 背景
+现场观察：agim 装了 113 个 skill，但模型经常绕过 skill 直接调
+`native_web_fetch` 去公网抓数据。原因是 system prompt 里 skill 块只是
+"信息展示"（"Available skill cards: ..."），不是"行为约束"。模型读到的是
+可选项 → 倾向选熟悉的 web_fetch 路径。
+
+#### 设计原则
+1. **通用而非领域定向**：规则不写死 fin-data / 白猪 / 任何具体 skill，引用
+   "skill 列表本身"，按用户实际装的 skill 自动适用
+2. **单点注入**：在 `buildSkillsSummary()` 改 1 处，**5 个 agent**（native /
+   claude-code / codex / cursor / opencode）全部受益——因为 router 每轮把这个
+   block 拼进所有 agent 的 prompt
+3. **零 skill 用户不受影响**：原有 `if (all.length === 0) return ''` 跳过整
+   段，规则也跟着消失
+4. **硬约束措辞**：用 "MUST" + 显式 fallback 白名单（"(a) 没有匹配 OR (b)
+   已经 read_skill 但确认 skill 不适用"），不留松散解释空间
+
+#### 注入内容（追加在 `[agim skills available]` 之前）
+```
+[agim tool routing — skills first]
+Before calling any generic tool (web_fetch / web_search / native_exec /
+shell-style commands), you MUST scan the skill list below. If any entry's
+description matches the user's intent — even loosely — you MUST call
+mcp__imhub__read_skill('<name>') first to load that skill's body. Skill
+bodies contain dedicated tools, endpoints, or queries that produce
+higher-quality, structured results than free-text web pages for the
+same intent. Falling back to the generic tool is only valid when:
+  (a) no skill description plausibly matches, OR
+  (b) you already read a relevant skill and its body explicitly says
+      "this skill is not suitable for X" or lacks the needed coverage.
+This is a routing discipline, not a hint. Skipping it counts as a
+tool-routing error in this conversation.
+```
+
+#### 为何不做更激进的方案
+**方案 X**（在 web-dispatcher 里运行时关键词拦截）被否决——容易误杀
+（用户可能就是想拿公网当下行情对比内网数据），调试复杂，且把规则在
+prompt 和 dispatcher 里写两次。Prompt 约束是软约束，硬约束应留给安全
+（write / exec）类不可逆操作。
+
+#### 测试
+- `src/core/skills/loader.test.ts` 新增 2 case：规则在 skill 列表之前出现
+  + 零 skill 时整段不注入
+- 35/35 已有测试仍绿
+
+### 文件
+- 修改 `src/core/skills/loader.ts:buildSkillsSummary`（+16 行规则文案 + 注释）
+- 修改 `src/core/skills/loader.test.ts`（+ 1 个 describe 块 / 2 case）
+
 ## [1.2.136] - 2026-06-02
 
 ### Changed (max_iter 默认 20 → 50；移除过宽 plan-intent 短语)

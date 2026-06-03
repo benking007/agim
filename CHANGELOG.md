@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.138] - 2026-06-03
+
+### Added (transient stream 错误首-token 重试)
+
+实战反馈：用户问"帮我复盘下今天港股的情况"，native 直接报
+`native agent error: terminated`。诊断：DeepSeek 上行连接打通了但**首
+个 token 落地前 TCP 被对端关了**（vendor 网络抖动），undici 抛
+"terminated" → streamThenBuffer 因 partial=0 没东西可救 → 直接外抛。
+v1.2.123 的 graceful-degradation 只处理"有 partial 文本"的场景，零字
+节就掉是这一类盲区。
+
+#### 实现
+在 `agent-loop.ts` streamThenBuffer 调用点加重试逻辑：
+- **触发**：抛错 + isAbort(err)=false + isTransientStreamError(err)=true
+- **退避**：固定 1s（IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS 可调，cap 10s）
+- **次数**：默认 1 次（IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX 可调，cap 3）
+- **退出**：成功立刻退；超 cap 抛最后一次的错
+
+#### 模式识别
+`isTransientStreamError()` 同时扫 `err.message` + `err.cause.message`
+（undici 习惯把真错包在 cause 里），匹配以下正则：
+- `\bterminated\b/i` — undici fetch
+- `\bECONNRESET\b/i` — TCP 重置
+- `\bECONNREFUSED\b/i` — 代理拒绝
+- `\bsocket hang up\b/i` — node http
+- `\bfetch failed\b/i` — undici 包装
+- `\bnetwork (?:error|disconnected)\b/i` — 浏览器 / 代理
+- `\bstream (?:closed|aborted) prematurely\b/i` — SSE 早断
+
+故意精简 + 最具体的优先。
+
+#### 与 v1.2.123 的关系
+- v1.2.123（partial > 0）→ 走 length-recovery 接着写：**没动**
+- v1.2.138（partial = 0 + transient）→ 重试一次：**本版新加**
+- 其他错误（auth / quota / 4xx 实质错）→ 立刻外抛：**没变**
+
+#### Web admin
+`ENV_EDITABLE_KEYS` 加两个键，操作员可通过 `/api/env` 改而无需重启。
+
+### 测试
+- 新增 `test/unit/agent-loop-first-token-retry.test.ts`（6 case）：
+  - "terminated" 命中 → 重试一次 → 第二次成功
+  - 非 transient 错误（auth-style）→ 不重试，外抛
+  - retry_max=0 → 完全禁用
+  - retry_max=2 + 3 次都抛 → streamCalls=3 后放行错误
+  - retry_max=2 + 第 3 次成功 → 返回 OK
+  - ECONNRESET / fetch failed / socket hang up 都识别
+- 更新 `agent-loop-stream-interrupted.test.ts`：在 beforeEach 强制
+  `retry_max=0`，保留旧契约；新行为走专项测试
+- 22/22 stream 相关测试全绿
+
+### 文件
+- 修改 `src/core/llm/agent-loop.ts`（+~70 行 retry 逻辑 + helpers）
+- 修改 `src/web/server.ts`（ENV_EDITABLE_KEYS 加 2 键）
+- 新增 `test/unit/agent-loop-first-token-retry.test.ts`（6 case）
+- 修改 `test/unit/agent-loop-stream-interrupted.test.ts`（保留旧契约）
+
 ## [1.2.137] - 2026-06-03
 
 ### Added (skills-first 路由纪律 — 通用 prompt 注入)

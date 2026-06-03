@@ -8,7 +8,7 @@
 //   (d) After (a) fires, length-recovery picks up: next chat() turn
 //       gets the partial assistant + a "continue" nudge.
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   LlmProvider,
   type ChatOptions,
@@ -77,6 +77,24 @@ class InterruptingStubProvider extends LlmProvider {
 }
 
 describe('runAgentLoop — mid-stream interrupt (v1.2.123)', () => {
+  // v1.2.138 introduced first-token retry (default 1 retry on transient
+  // errors like ECONNRESET). These tests were written against the
+  // baseline behaviour where transient errors propagate immediately.
+  // Pinning retry-max=0 keeps the contracts they originally tested;
+  // the retry path gets its own coverage in agent-loop-first-token-retry.test.ts.
+  const savedRetryMax = process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX
+  const savedRetryDelay = process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS
+  beforeEach(() => {
+    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX = '0'
+    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS = '0'
+  })
+  afterEach(() => {
+    if (savedRetryMax === undefined) delete process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX
+    else process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX = savedRetryMax
+    if (savedRetryDelay === undefined) delete process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS
+    else process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS = savedRetryDelay
+  })
+
   it('TCP drop with partial text → surfaced as length, then length-recovery continues', async () => {
     // Stream emits 3 text chunks then throws ECONNRESET. Length-recovery
     // then asks the model to continue; next iter's `chat()` finishes

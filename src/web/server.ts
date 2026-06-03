@@ -2783,6 +2783,10 @@ const ENV_EDITABLE_KEYS = [
   // preserves partial assistant text on IM's 30-min hard timeout.
   'IMHUB_NATIVE_STREAM_PARTIAL',
   'IMHUB_NATIVE_AGENT_MAX_ITER',
+  // v1.2.138 — first-token retry on transient stream errors (terminated /
+  // ECONNRESET / fetch failed / socket hang up). Default retries once.
+  'IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX',
+  'IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'IMHUB_SMTP_PASS',

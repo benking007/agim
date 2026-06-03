@@ -312,6 +312,100 @@ function isAbort(err: unknown): boolean {
   return e.name === 'AbortError' || e.code === 'ABORT_ERR'
 }
 
+/** v1.2.138 — wrapper around streamThenBuffer that auto-retries on
+ *  transient first-token errors. Existing caller invariants are
+ *  preserved: success returns the ChatResult, abort propagates as-is,
+ *  non-transient errors propagate as-is, exhausted retries throw the
+ *  last error. Only retries when streamThenBuffer's outer error path
+ *  fires AND the error matches a known transient pattern. The
+ *  v1.2.123 "partial>0 → length recovery" path inside
+ *  streamThenBuffer remains untouched — it returns a normal
+ *  ChatResult that we forward without retry. */
+async function streamWithFirstTokenRetry(
+  provider: LlmProvider,
+  history: LlmMessage[],
+  opts: {
+    system?: string
+    tools?: ToolDef[]
+    toolChoice?: ToolChoice
+    signal: AbortSignal
+    timeoutMs?: number
+    model?: string
+    temperature?: number
+    maxTokens?: number
+    onUsage: (u: LlmUsage) => void
+    onPartialText?: (delta: string, totalSoFar: string) => void
+  },
+): Promise<ChatResult> {
+  const retryMax = resolveFirstTokenRetryMax()
+  const retryDelayMs = resolveFirstTokenRetryDelayMs()
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retryMax; attempt++) {
+    try {
+      return await streamThenBuffer(provider, history, opts)
+    } catch (err) {
+      lastErr = err
+      if (attempt >= retryMax) break
+      if (isAbort(err)) break               // user cancellation — never retry
+      if (!isTransientStreamError(err)) break // not our pattern — fail fast
+      log.warn({
+        event: 'agent-loop.first_token_retry',
+        attempt: attempt + 1,
+        cap: retryMax,
+        backend: provider.name,
+        err: err instanceof Error ? err.message : String(err),
+        delayMs: retryDelayMs,
+      }, 'transient stream error before first token; retrying')
+      if (retryDelayMs > 0) await new Promise<void>((r) => setTimeout(r, retryDelayMs))
+    }
+  }
+  throw lastErr
+}
+
+/** v1.2.138 — transient network failures we'll retry-once on the
+ *  first-token path. These are the patterns we've seen in the wild
+ *  from Node undici / openai-compat providers when a stream TCP drops
+ *  BEFORE the first token lands (so partial text is zero). For
+ *  observable consistency: keep this list tight + ordered most-
+ *  specific-first. */
+const TRANSIENT_STREAM_ERROR_PATTERNS = [
+  /\bterminated\b/i,          // undici fetch — "TypeError: terminated"
+  /\bECONNRESET\b/i,          // TCP reset mid-handshake
+  /\bECONNREFUSED\b/i,        // proxy / upstream not accepting
+  /\bsocket hang up\b/i,      // node http
+  /\bfetch failed\b/i,        // undici wrapper around the above
+  /\bnetwork (?:error|disconnected)\b/i, // browsers / proxies
+  /\bstream (?:closed|aborted) prematurely\b/i, // SSE drops
+] as const
+
+function isTransientStreamError(err: unknown): boolean {
+  if (!err) return false
+  const msg = err instanceof Error ? err.message : String(err)
+  // Also peek at `cause` — undici wraps the real error in `cause` so
+  // the outer message can be just "terminated" or "fetch failed".
+  const causeMsg = (err as { cause?: unknown }).cause instanceof Error
+    ? (err as { cause: Error }).cause.message
+    : ''
+  const combined = `${msg}\n${causeMsg}`
+  return TRANSIENT_STREAM_ERROR_PATTERNS.some((p) => p.test(combined))
+}
+
+function resolveFirstTokenRetryMax(): number {
+  const raw = (process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX ?? '').trim()
+  if (!raw) return 1
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 1
+  return Math.min(n, 3)  // hard cap — operators don't usually want >3 retries
+}
+
+function resolveFirstTokenRetryDelayMs(): number {
+  const raw = (process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS ?? '').trim()
+  if (!raw) return 1000
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return 1000
+  return Math.min(n, 10000)  // cap at 10s — beyond that IM 30-min budget hurts
+}
+
 /**
  * Deterministic JSON.stringify with sorted object keys at every level.
  * Used by the stuck-loop detector to derive a stable identity key for
@@ -713,7 +807,16 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         // v1.2.112 — accumulate via stream so abort mid-response keeps
         // the partial text + completed tool_calls instead of dropping
         // everything. See `streamThenBuffer` for the contract.
-        result = await streamThenBuffer(input.provider, history, {
+        //
+        // v1.2.138 — retry once (configurable) when streamThenBuffer
+        // throws a transient network error BEFORE any token landed.
+        // Undici "terminated" / ECONNRESET / "fetch failed" on first-
+        // byte are the common patterns; a single 1s-backed retry
+        // recovers most of them without burning meaningful budget.
+        // streamThenBuffer already salvages the >0 partial case as
+        // `finishReason='length'` — the retry only applies when
+        // partial was zero (no salvage possible).
+        result = await streamWithFirstTokenRetry(input.provider, history, {
           system: input.systemPrompt,
           tools,
           toolChoice: input.toolChoice,

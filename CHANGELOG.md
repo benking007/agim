@@ -4,6 +4,88 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.142] - 2026-06-04
+
+### Changed (unhappy turn → 阶段性报告，不再吐工具计数)
+
+用户反馈：当一轮 native turn 没正常收尾（最大步数、卡循环、空文本、
+偏离目标）时，agim 会回一段「✓ tool ×N / ✗ tool ×M / 最后一步……要
+继续吗：a) 继续 b) 拆任务 c) 调大上限」的**技术诊断模板**。这套对开发
+调试有用，对用户没用——失败几次跑了什么工具完全不是用户关心的，
+他要的是"**做到啥了、卡在哪、下一步咋办**"。
+
+特别是失败率高的场景（例：v1.2.139 后用户碰到 29 次工具调用 14 次失
+败的 turn），技术模板把"半残但有用"的中间结果完全埋没。
+
+#### 改了什么
+
+新加 `tryStageReport()`：用户委托做了 X，按"成功的中间结果 / 失败的卡点
+ / 下一步建议"三节给一份**阶段性报告**，硬约束 prompt 禁止列工具名、禁
+止把失败粉饰成完成、禁止再调工具。
+
+所有 unhappy turn 分支（empty / max_iter / stuck_loop / off_track）都
+先跑一次 `tryStageReport`，成功就用它的文字。**老的技术 recap
+（composeUnfinishedTurnRecap / composeOffTrackRecap）降级为最后兜底**
+——只在 stage report 自己也失败/返回空时才用。
+
+#### Prompt 设计
+
+- **系统消息**：明确说"用户委托你做了某项任务，你做了一些工作但没
+  正常收尾。请按三节给阶段性报告——已经做到/没做到/下一步建议。"
+- **失败描述要求人话**：不能写 "`native_web_fetch` ×8 failed"，要写
+  "新浪财经页面抓不到（疑似反爬）"。系统消息里 ban 掉 `native_xxx`
+  和 `mcp__imhub__xxx` 字面字符串。
+- **下一步软约束**：1-3 个具体可执行建议（"继续 / 换数据源 / 缩小范
+  围 / 终止"），让模型自然挑词，不强制 a/b/c 选项格式。
+- **off_track 模式**：critic 给的 reason / redirect 注入到 prompt 的
+  「偏离原因」段，让 stage report 在解释卡点时能借力。
+
+#### 工程细节
+
+- `tryStageReport` 输入：`{ prompt, result, provider, kind,
+  offTrackReason?, model?, signal?, sessionId }`，返回
+  `{ text, costUsd } | null`
+- 单次 LLM 调用，60s 硬超时，**不带 tools**（不会再调任何工具）
+- 把 `result.toolCalls.slice(-20)` 分成 success / failed 两组分别喂
+  ——成功的截 300 字预览，失败的截 200 字（错误一般短）
+- 返回的 `costUsd` 累加到 turn 总 cost，audit row 跟着算对
+- env `IMHUB_NATIVE_STAGE_REPORT=off` 全局禁用，回退到老的纯技术
+  recap，调试用
+
+#### 兼容性
+
+- 老的 `composeUnfinishedTurnRecap` / `composeOffTrackRecap` 保留——
+  stage report 失败时仍走老路，所以失败模式不会变更差
+- 0 次 tool 调用的空轮直接走老 recap 的「没说话也没动工具」分支
+  （没素材给 stage report）
+- audit row 的 `responseLen` 现在用 body.length 而不是 result.text.length
+  ——因为 body 可能是 stage report 文字，跟 result.text 不同了
+
+#### 测试
+
+`test/unit/native-stage-report.test.ts` 8 case 全绿：
+- provider 成功返回 → text + costUsd 都正确
+- 不带 tools 调用 provider（确保 retry 不会再触发工具）
+- 成功 / 失败 preview 正确分到两个 context 块
+- 系统 prompt 包含 ban tool-name 字样
+- off_track reason 注入到 user prompt
+- provider 返回空 → null（caller 走老 recap）
+- provider 抛错 → null（不外抛）
+- `IMHUB_NATIVE_STAGE_REPORT=off` → 不调 provider，直接 null
+
+### 文件
+
+- `src/plugins/agents/native/index.ts` — 删除 v1.2.94 empty-only 块；
+  新增 `tryStageReport` + `isStageReportDisabled`；重构 body
+  assembly 4 个 unhappy 分支统一走 stage report-first 链路；audit
+  row 下移到 body 后，cost 加上 stageReportCost
+- `test/unit/native-stage-report.test.ts` — 8 case 新增
+
+### 文档
+
+- v1.2.94 的 auto-summary 整段被替换，文档术语 "auto summary" 改为
+  "stage report"（保持向下兼容的 log event 命名只换前缀）
+
 ## [1.2.141] - 2026-06-04
 
 ### Fixed (LLM secret 解析：识别 vendor 标准 env)

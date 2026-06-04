@@ -525,6 +525,154 @@ function composeOffTrackRecap(
   return lines.join('\n')
 }
 
+/**
+ * v1.2.142 — Stage-report retry. Replaces v1.2.94's empty-only auto-
+ * summary with a single helper used by all four "unhappy ending"
+ * branches (empty / max_iter / stuck_loop / off_track).
+ *
+ * The retry asks the same provider, with no tools, for a *user-facing
+ * stage report* given the work already done — not a "final answer". The
+ * prompt explicitly tolerates partial / failed work; failed tool
+ * results get described in plain language ("couldn't fetch the news
+ * page — anti-bot"), never as `tool_name ×N`.
+ *
+ * Returns the produced text + cost delta on success; null when the
+ * provider returned nothing or threw. Caller falls back to the
+ * technical `composeUnfinishedTurnRecap` recap on null.
+ *
+ * One LLM call, 60s deadline, tools=[] so it can't keep chaining.
+ * Env IMHUB_NATIVE_STAGE_REPORT=off disables the retry entirely
+ * (caller goes straight to the technical recap) — useful for debug.
+ */
+export async function tryStageReport(
+  opts: {
+    prompt: string
+    result: {
+      toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string }>
+      iterations: number
+    }
+    provider: LlmProvider
+    kind: 'empty' | 'max_iter' | 'stuck_loop' | 'off_track'
+    /** off_track reason; ignored for other kinds. */
+    offTrackReason?: string
+    model?: string
+    signal?: AbortSignal
+    sessionId: string
+  },
+): Promise<{ text: string; costUsd: number | null } | null> {
+  if (isStageReportDisabled()) return null
+  const recent = opts.result.toolCalls.slice(-20)
+  const success = recent.filter((t) => !t.isError)
+  const failed = recent.filter((t) => t.isError)
+  const fmtPreview = (p: string | undefined, cap: number): string =>
+    (p ?? '').trim().slice(0, cap).replace(/\s+/g, ' ')
+
+  const successBlock = success.length === 0
+    ? '(无成功的中间结果)'
+    : success
+      .map((t, i) => `${i + 1}. ${fmtPreview(t.preview, 300)}${(t.preview?.length ?? 0) > 300 ? '…' : ''}`)
+      .join('\n')
+  const failedBlock = failed.length === 0
+    ? '(无失败)'
+    : failed
+      .map((t, i) => `${i + 1}. ${fmtPreview(t.preview, 200)}${(t.preview?.length ?? 0) > 200 ? '…' : ''}`)
+      .join('\n')
+
+  const kindHint = ({
+    empty: '工具调用做完了但没写收尾文字。',
+    max_iter: `执行步数达到上限（${opts.result.iterations} 步）被切断。`,
+    stuck_loop: '检测到同一工具连续重复执行（卡循环），提前停止。',
+    off_track: '目标偏离检测：当前推进方向被判定为离原任务太远。',
+  } as const)[opts.kind]
+  const reasonHint = opts.kind === 'off_track' && opts.offTrackReason
+    ? `\n[偏离原因] ${opts.offTrackReason}`
+    : ''
+
+  const messages: LlmMessage[] = [
+    {
+      role: 'system',
+      content:
+        '你是 agim native 智能体。用户委托你做一项任务，你做了一些工作，但当前轮次未能正常收尾。\n' +
+        '\n' +
+        '请用中文给用户一份**阶段性报告**，目的是让用户拿到尽可能多的可用结果 + 知道接下来怎么做：\n' +
+        '\n' +
+        '【已经拿到 / 做到】基于成功的中间结果，给出具体数据、事实或结论。直接写内容，不要写"我调用了 X 工具"。如果没有任何可用结果，写"暂无"。\n' +
+        '【没拿到 / 卡在哪】基于失败的中间结果，用普通中文描述卡点：例如"新浪财经页面抓不到（疑似反爬）"、"某 shell 命令未找到"、"目标 URL 超时"。**不要出现工具名（native_xxx / mcp__imhub__xxx）**。没有失败就跳过本节。\n' +
+        '【下一步建议】给用户 1-3 个具体可执行的下一步，可包括"继续"、"换数据源"、"缩小范围"、"终止"等。\n' +
+        '\n' +
+        '硬约束：\n' +
+        '- 不要再调任何工具。\n' +
+        '- 不要列工具调用清单 / 工具计数。\n' +
+        '- 不要把失败粉饰成完成。\n' +
+        '- 失败的内容里不要让用户做诊断（除非真的需要他抉择）。\n',
+    },
+    { role: 'user', content: opts.prompt },
+    {
+      role: 'user',
+      content:
+        `[本轮中止原因] ${kindHint}${reasonHint}\n\n` +
+        `[成功的中间结果（最近 ${success.length}/${opts.result.toolCalls.length} 次，截 300 字预览）]\n${successBlock}\n\n` +
+        `[失败的中间结果（最近 ${failed.length} 次，截 200 字错误预览）]\n${failedBlock}\n\n` +
+        `[请基于上面的真实中间结果，按系统消息里的三节结构给阶段性报告。]`,
+    },
+  ]
+
+  try {
+    log.info({
+      event: 'native.turn.stage_report.start',
+      sessionId: opts.sessionId,
+      backend: opts.provider.name,
+      kind: opts.kind,
+      total: opts.result.toolCalls.length,
+      successCount: success.length,
+      failedCount: failed.length,
+    }, `stage report → ${opts.kind} (succ=${success.length} fail=${failed.length} total=${opts.result.toolCalls.length})`)
+    const retry = await opts.provider.chat(messages, {
+      model: opts.model,
+      timeoutMs: 60_000,
+      signal: opts.signal,
+    })
+    if (!retry.text || !retry.text.trim()) {
+      log.warn({
+        event: 'native.turn.stage_report.empty',
+        sessionId: opts.sessionId,
+        backend: opts.provider.name,
+        kind: opts.kind,
+      }, 'stage report returned empty text — falling through to recap')
+      return null
+    }
+    log.info({
+      event: 'native.turn.stage_report.ok',
+      sessionId: opts.sessionId,
+      backend: opts.provider.name,
+      kind: opts.kind,
+      textLen: retry.text.length,
+      costUsd: retry.usage?.costUsd ?? null,
+    }, `stage report produced ${retry.text.length} chars`)
+    return {
+      text: retry.text,
+      costUsd: typeof retry.usage?.costUsd === 'number' ? retry.usage.costUsd : null,
+    }
+  } catch (err) {
+    log.warn({
+      event: 'native.turn.stage_report.failed',
+      sessionId: opts.sessionId,
+      backend: opts.provider.name,
+      kind: opts.kind,
+      err: err instanceof Error ? err.message : String(err),
+    }, 'stage report threw — falling through to recap')
+    return null
+  }
+}
+
+/** v1.2.142 — Operator kill switch for the stage-report retry. Defaults
+ *  ON. Set `IMHUB_NATIVE_STAGE_REPORT=off` (or `0` / `no` / `false`) to
+ *  skip the retry and go straight to the technical recap — debug only. */
+function isStageReportDisabled(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_STAGE_REPORT ?? '').toLowerCase().trim()
+  return raw === 'off' || raw === '0' || raw === 'no' || raw === 'false'
+}
+
 /** Read IMHUB_NATIVE_AGENT_MAX_ITER, clamp to [1, 100], default 50.
  *  v1.2.136: bumped from 20 → 50 after observing real-world CR / multi-step
  *  refactor tasks routinely needed 28-35 iters and 20 was cutting them off.
@@ -1199,159 +1347,93 @@ class NativeAgentAdapter implements AgentAdapter {
       return
     }
 
-    // v1.2.94 — auto-summary retry. When the loop ended naturally
-    // (`stop`) with empty assistant text BUT we had a real tool chain,
-    // the model usually did the work and just forgot to write the
-    // closing sentence the user actually wants to read. Re-prompt the
-    // SAME provider once with no tools and a compact transcript of
-    // what just happened. Cost is bounded (one extra small call,
-    // 60s deadline, tools=[] so it can't keep chaining). On failure
-    // or empty output we fall through to v1.2.91 recap as before.
-    if (
-      !result.text
-      && result.finishReason === 'stop'
-      && result.toolCalls.length > 0
-      && usedProvider
-    ) {
-      try {
-        // Build a compact transcript: tool name + 300-char preview per
-        // call. Capped at the most recent 20 calls so even a runaway
-        // chain doesn't blow the prompt budget.
-        const recent = result.toolCalls.slice(-20)
-        const transcript = recent
-          .map((t, i) => {
-            const status = t.isError ? '✗ FAILED' : '✓'
-            const preview = (t.preview ?? '').trim().slice(0, 300).replace(/\s+/g, ' ')
-            return `${i + 1}. [${status}] ${t.name}\n   ${preview}${(t.preview?.length ?? 0) > 300 ? '…' : ''}`
-          })
-          .join('\n')
-        const summaryMessages: LlmMessage[] = [
-          {
-            role: 'system',
-            content:
-              '你是 agim native 智能体。刚才你为用户调用了一系列工具拿到了结果，但忘记给收尾文字。' +
-              '现在请用中文给用户一个清晰、完整、可读的最终回答——整合工具结果、不要再调任何工具、不要要求用户再做什么。',
-          },
-          { role: 'user', content: prompt },
-          {
-            role: 'user',
-            content:
-              `[刚才执行的工具调用，共 ${result.toolCalls.length} 次，` +
-              `下面是最近 ${recent.length} 次的摘要]\n${transcript}\n\n` +
-              `[请基于上面的工具结果，给用户最终的中文答案]`,
-          },
-        ]
-        log.info({
-          event: 'native.turn.auto_summary.start',
-          sessionId,
-          backend: usedProvider.name,
-          toolCallCount: result.toolCalls.length,
-        }, `attempting auto-summary retry for empty-text turn (${result.toolCalls.length} tools)`)
-        const retry = await usedProvider.chat(summaryMessages, {
-          model: opts.model,
-          timeoutMs: 60_000,
-          signal: opts.signal,
-        })
-        if (retry.text && retry.text.trim().length > 0) {
-          log.info({
-            event: 'native.turn.auto_summary.ok',
-            sessionId,
-            backend: usedProvider.name,
-            textLen: retry.text.length,
-            costUsd: retry.usage?.costUsd ?? null,
-          }, `auto-summary produced ${retry.text.length} chars`)
-          // Replace the text. Preserve everything else (toolCalls,
-          // iterations, finishReason) for downstream audit accuracy.
-          result = { ...result, text: retry.text }
-          // Add the retry's cost to the turn's usage so /tasks#cost
-          // sums correctly. retry.usage may be undefined for some
-          // providers; only patch the field when present.
-          if (retry.usage?.costUsd != null) {
-            const base = typeof result.usage.costUsd === 'number' ? result.usage.costUsd : 0
-            result = { ...result, usage: { ...result.usage, costUsd: base + retry.usage.costUsd } }
-          }
-        } else {
-          log.warn({
-            event: 'native.turn.auto_summary.empty',
-            sessionId,
-            backend: usedProvider.name,
-          }, 'auto-summary retry also returned empty text — falling through to recap')
-        }
-      } catch (err) {
-        log.warn({
-          event: 'native.turn.auto_summary.failed',
-          sessionId,
-          backend: usedProvider.name,
-          err: err instanceof Error ? err.message : String(err),
-        }, 'auto-summary retry threw — falling through to recap')
-      }
-    }
+    // v1.2.142 — Stage report. Replaces v1.2.94 auto-summary.
+    //
+    // Any unhappy turn ending (empty / max_iter / stuck_loop / off_track)
+    // first tries to produce a *user-facing stage report* with the
+    // current provider — based on what got done, what failed, and what
+    // to do next. The technical "✓ tool ×N / ✗ tool ×M" recap from
+    // v1.2.91 is kept ONLY as a last-resort fallback when the stage
+    // report itself fails or comes back empty.
+    //
+    // Why the change: the operator-facing message previously dumped
+    // tool-name counts, which is debugger fodder, not a deliverable.
+    // Even a half-failed turn has a real *intermediate result* the
+    // user can act on — the model just needs to be asked the right
+    // question. See `tryStageReport` for the prompt.
+    //
+    // The empty/stop branch's logic now lives inside `tryStageReport`
+    // — empty `result.text` is one of four kinds it covers, not a
+    // special case.
 
     // Per-turn parent audit row that aggregates the iteration rows
     // already written by runAgentLoop. Lets /tasks#cost sum cost per
     // turn rather than per iteration.
-    try {
-      logInvocation({
-        traceId,
-        userId: opts.userId ?? '',
-        platform: opts.platform || 'native-agent',
-        agent: this.name,
-        intent: 'native.agent.turn',
-        promptLen: prompt.length,
-        responseLen: result.text.length,
-        durationMs: Date.now() - startedAt,
-        cost: typeof result.usage.costUsd === 'number' ? result.usage.costUsd : 0,
-        success: result.finishReason !== 'error' && result.finishReason !== 'aborted',
-        error: result.error,
-      })
-    } catch { /* audit best-effort */ }
+    //
+    // NOTE — moved BELOW the body-assembly block in v1.2.142 so the
+    // stage-report retry cost is counted in this row. (Was above when
+    // auto-summary mutated `result.usage` in place; the new flow
+    // returns a separate `extraCost` from tryStageReport instead, so
+    // we wait until after body assembly to log.)
 
-    // Surface usage to cli's per-session accumulator the same way CLI
-    // adapters do (via opts.onUsage). agim's cost dashboard reads from
-    // the audit table either way, but the in-memory session usage panel
-    // wants it pushed here too.
-    if (opts.onUsage && typeof result.usage.costUsd === 'number') {
-      try { opts.onUsage({ costUsd: result.usage.costUsd }) } catch { /* best-effort */ }
+    // ─── body assembly ───────────────────────────────────────────────
+    //
+    // Compose the user-facing reply. v1.2.142 reshuffles the order:
+    // each unhappy branch FIRST tries `tryStageReport` (a natural-
+    // language stage report based on what got done + what failed +
+    // what to do next). Technical `composeUnfinishedTurnRecap` is
+    // demoted to last-resort fallback when the stage report itself
+    // fails / returns empty.
+
+    let body = result.text
+    /** Extra cost from the stage-report retry (when it runs). Added to
+     *  the audit row + opts.onUsage below so /tasks#cost stays
+     *  accurate. */
+    let stageReportCost = 0
+    const maxIter = resolveMaxIterations()
+
+    /** Local helper — log the unhappy branch + try stage report.
+     *  Returns the stage-report text on success; null when caller
+     *  should fall back to its technical recap. */
+    const stageOrFallback = async (
+      kind: 'empty' | 'max_iter' | 'stuck_loop' | 'off_track',
+      offTrackReason?: string,
+    ): Promise<string | null> => {
+      const stage = await tryStageReport({
+        prompt,
+        result,
+        provider: usedProvider,
+        kind,
+        offTrackReason,
+        model: opts.model,
+        signal: opts.signal,
+        sessionId,
+      })
+      if (stage) {
+        stageReportCost += stage.costUsd ?? 0
+        return stage.text
+      }
+      return null
     }
 
-    log.info({
-      event: 'native.turn.done',
-      sessionId,
-      backend: usedProvider.name,
-      role: usedRole,
-      fellBack: usedProvider.name !== provider.name,
-      finishReason: result.finishReason,
-      iterations: result.iterations,
-      toolCalls: result.toolCalls.length,
-      elapsedMs: Date.now() - startedAt,
-    })
-
-    // Compose the user-facing reply. Failure modes surface as ASCII
-    // banners so the IM user sees something concrete rather than
-    // silence (and so logs in /tasks#cost have a non-empty
-    // response_len to filter on).
-    let body = result.text
     if (result.finishReason === 'error') {
       body = `❌ native agent error: ${result.error ?? '(no detail)'}`
     } else if (result.finishReason === 'max_iterations') {
-      // v1.2.92 — replaced the static "raise IMHUB_NATIVE_AGENT_MAX_ITER"
-      // banner with a structured recap that lists the tool work
-      // already done, names the most-recent step, and offers three
-      // continuation paths (continue / split task / raise cap).
       log.warn({
         event: 'native.turn.max_iterations',
         sessionId,
         backend: usedProvider.name,
         role: usedRole,
         iterations: result.iterations,
-        maxIter: resolveMaxIterations(),
+        maxIter,
         toolCallCount: result.toolCalls.length,
         lastToolName: result.toolCalls.length > 0
           ? result.toolCalls[result.toolCalls.length - 1]?.name ?? null
           : null,
         elapsedMs: Date.now() - startedAt,
-      }, `native turn hit max iterations cap (${result.iterations}/${resolveMaxIterations()}, tools=${result.toolCalls.length})`)
-      body = composeUnfinishedTurnRecap(result, 'max_iter', resolveMaxIterations())
+      }, `native turn hit max iterations cap (${result.iterations}/${maxIter}, tools=${result.toolCalls.length})`)
+      body = (await stageOrFallback('max_iter'))
+        ?? composeUnfinishedTurnRecap(result, 'max_iter', maxIter)
     } else if (result.finishReason === 'off_track') {
       // v1.2.98 — goal-critic flagged the recent tool chain as
       // semantically off-target. result.error carries
@@ -1372,12 +1454,10 @@ class NativeAgentAdapter implements AgentAdapter {
         redirect: redirect || null,
         elapsedMs: Date.now() - startedAt,
       }, `goal-critic flagged turn as off-track: ${reason.trim()}`)
-      body = composeOffTrackRecap(result, reason.trim(), redirect)
+      const offTrackReason = reason.trim() + (redirect ? `；建议方向：${redirect}` : '')
+      body = (await stageOrFallback('off_track', offTrackReason))
+        ?? composeOffTrackRecap(result, reason.trim(), redirect)
     } else if (result.finishReason === 'stuck_loop') {
-      // v1.2.95 — agent-loop's stuck-loop detector cut us off after
-      // three consecutive identical (name + isError + preview) tool
-      // calls. Saves the rest of the iteration budget and tells the
-      // user exactly where the model got stuck.
       log.warn({
         event: 'native.turn.stuck_loop',
         sessionId,
@@ -1390,12 +1470,15 @@ class NativeAgentAdapter implements AgentAdapter {
           : null,
         elapsedMs: Date.now() - startedAt,
       }, `native turn stopped early — stuck loop after ${result.iterations} iter (tools=${result.toolCalls.length})`)
-      body = composeUnfinishedTurnRecap(result, 'stuck_loop', resolveMaxIterations())
+      body = (await stageOrFallback('stuck_loop'))
+        ?? composeUnfinishedTurnRecap(result, 'stuck_loop', maxIter)
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
     } else if (!body) {
-      // v1.2.89 — diagnostic log: tell the three known triggers
-      // apart in the audit trail.
+      // Normal `stop` finish but the model didn't write anything. Most
+      // often the model completed a tool chain and forgot to close
+      // (or the chain failed badly enough that it gave up). Stage
+      // report turns either case into a useful user-facing summary.
       const lastCall = result.toolCalls.length > 0
         ? result.toolCalls[result.toolCalls.length - 1]
         : null
@@ -1413,17 +1496,58 @@ class NativeAgentAdapter implements AgentAdapter {
         elapsedMs: Date.now() - startedAt,
       }, `native turn ended with empty text (finishReason=${result.finishReason}, ` +
         `iterations=${result.iterations}, tools=${result.toolCalls.length})`)
-      // v1.2.91 — render a structured recap instead of the opaque
-      // "(native agent returned an empty response)" banner. Most
-      // empty-text turns aren't actual failures: the model
-      // completed a tool chain (search, fetch, ask_user, …) and
-      // simply omitted the closing summary. To the IM user this
-      // looked like the agent froze mid-task. The recap surfaces
-      // what got done, why we think it stopped, and concrete
-      // next-step options so the conversation can continue
-      // instead of dying on the spot.
-      body = composeUnfinishedTurnRecap(result, 'empty', resolveMaxIterations())
+      // Stage report only runs when there ARE tool calls to summarise;
+      // an empty turn with zero tools means the model literally said
+      // nothing — recap's "no tools called" branch handles that case.
+      if (result.toolCalls.length > 0) {
+        body = (await stageOrFallback('empty'))
+          ?? composeUnfinishedTurnRecap(result, 'empty', maxIter)
+      } else {
+        body = composeUnfinishedTurnRecap(result, 'empty', maxIter)
+      }
     }
+
+    // ─── audit + usage (v1.2.142 moved below body assembly) ──────────
+    // Per-turn parent audit row that aggregates the iteration rows
+    // already written by runAgentLoop. `stageReportCost` covers any
+    // extra LLM call we made while composing the user-facing message.
+    const turnCostUsd = (typeof result.usage.costUsd === 'number' ? result.usage.costUsd : 0)
+      + stageReportCost
+    try {
+      logInvocation({
+        traceId,
+        userId: opts.userId ?? '',
+        platform: opts.platform || 'native-agent',
+        agent: this.name,
+        intent: 'native.agent.turn',
+        promptLen: prompt.length,
+        responseLen: body.length,
+        durationMs: Date.now() - startedAt,
+        cost: turnCostUsd,
+        success: result.finishReason !== 'error' && result.finishReason !== 'aborted',
+        error: result.error,
+      })
+    } catch { /* audit best-effort */ }
+
+    // Surface usage to cli's per-session accumulator the same way CLI
+    // adapters do (via opts.onUsage).
+    if (opts.onUsage && turnCostUsd > 0) {
+      try { opts.onUsage({ costUsd: turnCostUsd }) } catch { /* best-effort */ }
+    }
+
+    log.info({
+      event: 'native.turn.done',
+      sessionId,
+      backend: usedProvider.name,
+      role: usedRole,
+      fellBack: usedProvider.name !== provider.name,
+      finishReason: result.finishReason,
+      iterations: result.iterations,
+      toolCalls: result.toolCalls.length,
+      stageReportCostUsd: stageReportCost > 0 ? stageReportCost : null,
+      elapsedMs: Date.now() - startedAt,
+    })
+
     yield body
   }
 }

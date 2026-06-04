@@ -93,7 +93,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
 
   it('error fed back as role:tool so the model sees what to fix', async () => {
     delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
-    let secondTurnMessages: LlmMessage[] | null = null
+    let secondTurnMessages: LlmMessage[] = []
     class CapturingStub extends QueuedStubProvider {
       override async chat(messages: LlmMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
         if (this['queue'].length === 1) secondTurnMessages = messages.slice()
@@ -112,8 +112,8 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
     })
     // The second turn (where finishReason='stop' lands) should see the
     // role:'tool' message we synthesized with the validation error.
-    expect(secondTurnMessages).not.toBeNull()
-    const toolMsg = (secondTurnMessages ?? []).find(
+    expect(secondTurnMessages.length).toBeGreaterThan(0)
+    const toolMsg = secondTurnMessages.find(
       (m) => m.role === 'tool' && (m.toolCallId === '1'),
     )
     expect(toolMsg).toBeDefined()

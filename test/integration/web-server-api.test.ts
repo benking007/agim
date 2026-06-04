@@ -11,6 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { startWebServer } from '../../src/web/server'
 import { registry } from '../../src/core/registry'
 import { recordInvocation, reset as resetMetrics } from '../../src/core/metrics'
+import { createToken } from '../../src/core/access-token'
 import type { AgentAdapter, MessengerAdapter } from '../../src/core/types'
 
 const captured: Array<{ threadId: string; text: string }> = []
@@ -247,6 +248,40 @@ describe('Web REST API', () => {
       expect(res.status).toBe(200)
       const body = await res.json() as { schedules: unknown[] }
       expect(Array.isArray(body.schedules)).toBe(true)
+    })
+  })
+
+  describe('role=user token restrictions', () => {
+    it('forbids global control-plane APIs on proxied loopback requests', async () => {
+      const token = createToken('integration-user-token', { role: 'user' })
+      const headers = {
+        authorization: `Bearer ${token.raw}`,
+        'x-forwarded-for': '203.0.113.10',
+      }
+      const paths = [
+        '/api/jobs',
+        '/api/reminders',
+        '/api/memos',
+        '/api/memory/users',
+        '/api/approvals',
+        '/api/env?reveal=1',
+      ]
+
+      for (const path of paths) {
+        const res = await fetch(url(path), { headers })
+        expect(res.status).toBe(403)
+      }
+    })
+
+    it('allows admin tokens on proxied loopback requests', async () => {
+      const token = createToken('integration-admin-token', { role: 'admin' })
+      const res = await fetch(url('/api/jobs'), {
+        headers: {
+          authorization: `Bearer ${token.raw}`,
+          'x-forwarded-for': '203.0.113.10',
+        },
+      })
+      expect(res.status).toBe(200)
     })
   })
 

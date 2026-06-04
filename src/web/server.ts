@@ -95,6 +95,29 @@ function isLoopbackPeer(req: IncomingMessage): boolean {
   return ip === '127.0.0.1' || ip === '::1'
 }
 
+function isEnvOff(name: string): boolean {
+  const v = (process.env[name] || '').trim().toLowerCase()
+  return v === 'off' || v === '0' || v === 'false' || v === 'no'
+}
+
+function hasForwardedPeerHeaders(req: IncomingMessage): boolean {
+  return req.headers.forwarded !== undefined
+    || req.headers['x-forwarded-for'] !== undefined
+    || req.headers['x-forwarded-host'] !== undefined
+    || req.headers['x-real-ip'] !== undefined
+    || req.headers['cf-connecting-ip'] !== undefined
+}
+
+function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
+  if (!isLoopbackPeer(req)) return false
+  if (isEnvOff('IMHUB_TRUST_LOOPBACK')) return false
+  // A reverse proxy on the same host makes remote users appear as
+  // 127.0.0.1. Treat forwarded requests as network traffic and require
+  // the normal token path instead of granting the local bootstrap bypass.
+  if (hasForwardedPeerHeaders(req)) return false
+  return true
+}
+
 /** R13 A5 — track once-per-process whether the deprecated `?token=`
  *  URL fallback has been used, so we warn at most once per service
  *  lifetime instead of spamming the journal. Cleared by tests via
@@ -160,8 +183,8 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
 function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   // 1. Disabled by env → pass through.
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
-  // 2. Loopback → pass through (local CLI / browser-on-same-host).
-  if (isLoopbackPeer(req)) return true
+  // 2. Trusted loopback → pass through (local CLI / browser-on-same-host).
+  if (isTrustedLoopbackPeer(req)) return true
   // 3. Public-by-design path → pass through.
   if (isPublicPath(url.pathname, req.method || 'GET')) return true
 
@@ -219,7 +242,7 @@ function verifyTokenSync(raw: string): string | null {
  *      by checkAuth — this branch exists for defensive logging). */
 function getRequestActor(req: IncomingMessage): string {
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
-  if (isLoopbackPeer(req)) return 'web:loopback'
+  if (isTrustedLoopbackPeer(req)) return 'web:loopback'
   let url: URL
   try { url = new URL(req.url || '', 'http://localhost') } catch { return 'web:unknown' }
   const tok = extractToken(req, url)
@@ -236,16 +259,17 @@ function getRequestActor(req: IncomingMessage): string {
  *
  *  Trust order:
  *    1. IMHUB_WEB_AUTH=off  → admin (operator explicitly disabled auth)
- *    2. Loopback peer       → admin (operator on the host)
+ *    2. Trusted loopback    → admin (operator on the host)
  *    3. Bearer token        → token.role === 'admin'
  *    4. Otherwise           → not admin
  *
  *  Note: when no token has been created yet (pre-bootstrap), the
- *  loopback-peer branch still grants admin so the CLI bootstrap flow
- *  works. */
+ *  trusted-loopback branch still grants admin so the CLI bootstrap flow
+ *  works. Disable it with IMHUB_TRUST_LOOPBACK=off. Reverse-proxied
+ *  requests with Forwarded / X-Forwarded-* peer headers never qualify. */
 function isRequestAdmin(req: IncomingMessage): boolean {
   if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
-  if (isLoopbackPeer(req)) return true
+  if (isTrustedLoopbackPeer(req)) return true
   let url: URL
   try { url = new URL(req.url || '', 'http://localhost') } catch { return false }
   const tok = extractToken(req, url)
@@ -266,6 +290,14 @@ function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
   res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify({ error: 'forbidden', message: 'admin role required' }))
   return false
+}
+
+export const __webAuthForTesting = {
+  isTrustedLoopbackPeer,
+  isRequestAdmin,
+  setTokenModule(mod: typeof import('../core/access-token.js') | null): void {
+    _tokenModule = mod
+  },
 }
 
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
@@ -361,6 +393,7 @@ export async function startWebServer(options: {
     event: 'web.auth_mode',
     bind: bindHost,
     enabled: isAuthEnabled(),
+    trustLoopback: !isEnvOff('IMHUB_TRUST_LOOPBACK'),
   }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'}`)
 
   // HTTP request handler — static files + REST API
@@ -645,21 +678,26 @@ export async function startWebServer(options: {
 
     // Jobs
     if (url.pathname === '/api/jobs' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListJobs(req, res, url)
     }
     const jobIdMatch = url.pathname.match(/^\/api\/jobs\/(\d+)$/)
     if (jobIdMatch && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleGetJob(req, res, parseInt(jobIdMatch[1], 10))
     }
     const jobCancelMatch = url.pathname.match(/^\/api\/jobs\/(\d+)\/cancel$/)
     if (jobCancelMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleCancelJob(req, res, parseInt(jobCancelMatch[1], 10))
     }
     const jobRunMatch = url.pathname.match(/^\/api\/jobs\/(\d+)\/run$/)
     if (jobRunMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleRunJob(req, res, parseInt(jobRunMatch[1], 10))
     }
     if (url.pathname === '/api/jobs' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleCreateJob(req, res)
     }
 
@@ -683,18 +721,20 @@ export async function startWebServer(options: {
     }
 
     // Reminders — list / cancel / snooze. Web-only path (the IM-side path
-    // is /remind slash command). Auth via the same web session cookie as
-    // every other /api/* endpoint above; no per-user filtering yet, so
-    // single-operator deployments only.
+    // is /remind slash command). This exposes global reminders, so it is
+    // admin-only until a per-user mobile scope exists.
     if (url.pathname === '/api/reminders' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListReminders(req, res, url)
     }
     const reminderCancelMatch = url.pathname.match(/^\/api\/reminders\/(\d+)\/cancel$/)
     if (reminderCancelMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleCancelReminderApi(req, res, Number.parseInt(reminderCancelMatch[1], 10))
     }
     const reminderSnoozeMatch = url.pathname.match(/^\/api\/reminders\/(\d+)\/snooze$/)
     if (reminderSnoozeMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleSnoozeReminderApi(req, res, Number.parseInt(reminderSnoozeMatch[1], 10))
     }
 
@@ -702,17 +742,21 @@ export async function startWebServer(options: {
     // function the MCP tool exposes; query/who/what/has_location/limit
     // come through as URL params.
     if (url.pathname === '/api/memos' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListMemos(req, res, url)
     }
     const memoIdMatch = url.pathname.match(/^\/api\/memos\/(\d+)$/)
     if (memoIdMatch && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleDeleteMemo(req, res, Number.parseInt(memoIdMatch[1], 10))
     }
 
     // /api/env — read/write SMTP + Baidu AK + IMHUB_WEB_BIND. Values
     // sensitive enough that GET returns them masked (only the last 4 chars
-    // visible) unless an explicit ?reveal=1 is passed (still auth-gated).
+    // visible) unless an explicit ?reveal=1 is passed. Keep the settings
+    // surface admin-only: even masked values disclose configured providers.
     if (url.pathname === '/api/env' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleGetEnv(req, res, url)
     }
     if (url.pathname === '/api/env' && req.method === 'PUT') {
@@ -862,9 +906,11 @@ export async function startWebServer(options: {
     // v1.5 — Memory admin: enumerate users, list / delete facts, view /
     // edit / delete persona, export. Backs the Memory tab in /tasks.
     if (url.pathname === '/api/memory/users' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryUsers(req, res)
     }
     if (url.pathname === '/api/memory/facts' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryFacts(req, res, url)
     }
     if (url.pathname === '/api/memory/facts' && req.method === 'DELETE') {
@@ -873,9 +919,11 @@ export async function startWebServer(options: {
     }
     const memFactIdMatch = url.pathname.match(/^\/api\/memory\/facts\/(\d+)$/)
     if (memFactIdMatch && req.method === 'DELETE') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryDeleteOne(req, res, url, parseInt(memFactIdMatch[1], 10))
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryPersona(req, res, url)
     }
     if (url.pathname === '/api/memory/persona' && req.method === 'PUT') {
@@ -887,6 +935,7 @@ export async function startWebServer(options: {
       return handleMemoryPersonaDelete(req, res, url)
     }
     if (url.pathname === '/api/memory/export' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryExport(req, res, url)
     }
     // v1.6 — vector backend control + index ops.
@@ -916,6 +965,7 @@ export async function startWebServer(options: {
       return handleMemoryConsolidate(req, res)
     }
     if (url.pathname === '/api/memory/consolidate/status' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMemoryConsolidateStatus(req, res)
     }
     // v1.2.3 — Skills browser. Lists locally-installed claude/opencode
@@ -932,10 +982,12 @@ export async function startWebServer(options: {
     }
     // PR-B: HITL approvals — global pending list + per-reqId resolve.
     if (url.pathname === '/api/approvals' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListApprovals(req, res)
     }
     const approvalResolveMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/resolve$/)
     if (approvalResolveMatch && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
       return handleResolveApproval(req, res, approvalResolveMatch[1])
     }
     // PR-D: Agent workspace file browser. Read-only inspection of
@@ -943,6 +995,7 @@ export async function startWebServer(options: {
     // text files. PUT path supports inline editing (annotate CLAUDE.md,
     // AGENTS.md, etc.) — same traversal/size guards as GET.
     if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleWorkspaceFiles(req, res, url)
     }
     if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
@@ -961,9 +1014,11 @@ export async function startWebServer(options: {
       return handleBatchJob(req, res, 'run', getDefaultAgent(options.defaultAgent))
     }
     // PR-C: SSE event stream — audit / approval / job / metrics events
-    // pushed real-time so the dashboard stops polling. Open access; same
-    // trust model as the REST API.
+    // pushed real-time so the dashboard stops polling. Global control-plane
+    // telemetry is admin-only; user/mobile-scoped streams should use a
+    // separate endpoint when added.
     if (url.pathname === '/events' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleEventsSSE(req, res)
     }
     if (url.pathname === '/api/notify' && req.method === 'POST') {
@@ -1085,10 +1140,10 @@ export async function startWebServer(options: {
         return cb(false, 429, 'rate limited')
       }
 
-      // Auth-off / loopback bypass — mirror checkAuth's two short-circuits
+      // Auth-off / trusted-loopback bypass — mirror checkAuth's two short-circuits
       // so dev / local CLI sessions still work without a token.
       if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
-      if (isLoopbackPeer(info.req as IncomingMessage)) return cb(true)
+      if (isTrustedLoopbackPeer(info.req as IncomingMessage)) return cb(true)
 
       // Origin check: cookie SameSite=Lax handles most of the CSWSH
       // surface, but defence-in-depth — reject when Origin's host
@@ -1143,8 +1198,9 @@ export async function startWebServer(options: {
   //   IMHUB_WS_MAX_PER_IP            active connections per IP (default 20)
   //   IMHUB_WS_MAX_NEW_PER_IP_PER_MIN  new connections per IP per minute (default 30)
   //
-  // Loopback bypasses both — local dev / CLI tooling makes many
-  // short connections legitimately.
+  // Trusted loopback bypasses both — local dev / CLI tooling makes many
+  // short connections legitimately. Reverse-proxied loopback traffic is
+  // still counted as network traffic.
   const wsMaxPerIp = (() => {
     const raw = process.env.IMHUB_WS_MAX_PER_IP
     if (raw) {
@@ -1171,7 +1227,7 @@ export async function startWebServer(options: {
   }
   /** Returns {ok:true} when the IP may open a new WS, else {ok:false, reason}. */
   function checkWsIpRateLimit(req: IncomingMessage): { ok: true } | { ok: false; reason: string } {
-    if (isLoopbackPeer(req)) return { ok: true }
+    if (isTrustedLoopbackPeer(req)) return { ok: true }
     const ip = peerIp(req)
     if (!ip) return { ok: false, reason: 'empty peer ip' }  // defensive — matches isLoopbackPeer policy
     const now = Date.now()
@@ -1187,7 +1243,7 @@ export async function startWebServer(options: {
     return { ok: true }
   }
   function recordWsIpOpen(req: IncomingMessage): void {
-    if (isLoopbackPeer(req)) return
+    if (isTrustedLoopbackPeer(req)) return
     const ip = peerIp(req)
     if (!ip) return
     const slot = wsPerIp.get(ip) ?? { active: 0, recent: [] }
@@ -1196,7 +1252,7 @@ export async function startWebServer(options: {
     wsPerIp.set(ip, slot)
   }
   function recordWsIpClose(req: IncomingMessage): void {
-    if (isLoopbackPeer(req)) return
+    if (isTrustedLoopbackPeer(req)) return
     const ip = peerIp(req)
     if (!ip) return
     const slot = wsPerIp.get(ip)
@@ -4604,6 +4660,11 @@ function readBody(req: IncomingMessage, res?: ServerResponse): Promise<string> {
         aborted = true
         if (res && !res.headersSent) {
           sendJson(res, 413, { error: 'Request body too large' })
+          res.once('finish', () => {
+            if (!req.destroyed) req.destroy()
+          })
+        } else if (!req.destroyed) {
+          req.destroy()
         }
         const err = new Error('Request body too large') as Error & { statusCode?: number; handled?: boolean }
         err.statusCode = 413

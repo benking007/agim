@@ -18,8 +18,10 @@
 //   the pino logger so the operator finds it in `journalctl -u agim`.
 //
 // Auth exemptions (the web layer enforces; this module just verifies):
-//   - Loopback peers (127.0.0.1 / ::1) bypass auth entirely. Local CLI / curl
-//     / browser-on-the-same-host need no token.
+//   - Trusted loopback peers (127.0.0.1 / ::1) bypass auth entirely for local
+//     CLI / curl / browser-on-the-same-host use. The web layer disables that
+//     shortcut when IMHUB_TRUST_LOOPBACK=off or proxy-forwarded peer headers
+//     are present.
 //   - /v/:id viewer pages and their direct JSON endpoint are public (the
 //     uuidv4 URL is the credential; matches /loc + /l/ pattern).
 //   - /api/health is public (liveness probe).

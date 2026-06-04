@@ -20,7 +20,6 @@ import {
   LlmProvider,
   type ChatOptions,
   type ChatResult,
-  type ChatStreamChunk,
   type LlmMessage,
   type NormalizedOptions,
 } from '../../src/core/llm/provider-base.js'
@@ -42,9 +41,6 @@ class ScriptedProvider extends LlmProvider {
     if (!next) throw new Error('script exhausted')
     if (opts.onUsage && next.usage) { try { opts.onUsage(next.usage) } catch { /* */ } }
     return next
-  }
-  override async *chatStream(_m: LlmMessage[], _opts: ChatOptions = {}): AsyncIterable<ChatStreamChunk> {
-    throw new Error('streaming not used in this test')
   }
   protected async _callApi(
     _m: LlmMessage[], _o: NormalizedOptions, _s: AbortSignal,

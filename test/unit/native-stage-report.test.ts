@@ -27,11 +27,13 @@ import {
 } from '../../src/core/llm/provider-base.js'
 import { tryStageReport } from '../../src/plugins/agents/native/index.js'
 
+type StubResponse = Omit<ChatResult, 'modelUsed'> & { modelUsed?: string }
+
 class StubProvider extends LlmProvider {
   capturedMessages: LlmMessage[] = []
   capturedOpts: ChatOptions | undefined
   callCount = 0
-  constructor(private readonly response: ChatResult | Error) {
+  constructor(private readonly response: StubResponse | Error) {
     super({ name: 'stub-stage', model: 'stub-m', providerType: 'stub' })
   }
   override async chat(messages: LlmMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
@@ -39,12 +41,18 @@ class StubProvider extends LlmProvider {
     this.capturedMessages = messages
     this.capturedOpts = opts
     if (this.response instanceof Error) throw this.response
-    return this.response
+    return { modelUsed: 'stub-m', ...this.response }
   }
   protected async _callApi(
     _m: LlmMessage[], _o: NormalizedOptions, _s: AbortSignal,
-  ): Promise<{ text: string; toolCalls: ToolCallRequest[]; finishReason: ChatResult['finishReason']; usage: ChatResult['usage'] }> {
-    return { text: '', toolCalls: [], finishReason: 'stop', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+  ): Promise<ChatResult> {
+    return {
+      text: '',
+      toolCalls: [] satisfies ToolCallRequest[],
+      finishReason: 'stop',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      modelUsed: 'stub-m',
+    }
   }
 }
 

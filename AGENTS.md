@@ -37,9 +37,9 @@ Agim is a universal messenger-to-agent bridge (Node.js/TypeScript). Single proce
 
 ### Testing notes
 
-- Tests use **bun** as the test runner (`bun test`). Ensure `~/.bun/bin` is on PATH.
-- `npm run typecheck` runs two passes: src (via `tsconfig.json`) and test (via `tsconfig.test.json`). The test pass currently has pre-existing TS errors in `test/unit/agent-base.test.ts` (accessing protected members) — these do not affect runtime.
-- Biome lint exits 0 with warnings only (no errors in the current codebase).
+- Tests use **bun** as the test runner (`npm test` → `bun test`). Bun is pinned as a devDependency, so `npm install` provides `node_modules/.bin/bun` even when `~/.bun/bin` is not on PATH.
+- `npm run typecheck` runs two passes: src (via `tsconfig.json`) and test (via `tsconfig.test.json`). Both passes are expected to exit 0.
+- `npm run lint` is expected to exit 0. Biome may still print warnings / infos; those are not blocking unless promoted to errors by config.
 
 ### Native addon
 

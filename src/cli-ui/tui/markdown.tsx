@@ -17,7 +17,7 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { marked } from 'marked'
 
-type Token = ReturnType<typeof marked.lexer>[number] & { tokens?: Token[]; items?: Token[]; text?: string; lang?: string; depth?: number; href?: string; title?: string; ordered?: boolean }
+type Token = ReturnType<typeof marked.lexer>[number] & { tokens?: Token[]; items?: Token[]; text?: string; raw?: string; lang?: string; depth?: number; href?: string; title?: string; ordered?: boolean }
 
 const HEADING_COLORS = ['cyan', 'green', 'yellow', 'magenta', 'blue', 'red'] as const
 
@@ -75,6 +75,11 @@ function spanColor(kind: HighlightedSpan['kind']): string | undefined {
   if (kind === 'comment') return 'gray'
   if (kind === 'number')  return 'yellow'
   return undefined
+}
+
+function tokenKey(tok: Token, prefix: string): string {
+  const raw = tok.raw ?? tok.text ?? ''
+  return `${prefix}-${tok.type}-${raw.length}-${raw.slice(0, 64)}`
 }
 
 function renderInline(tokens: Token[] | undefined, keyPrefix: string): React.ReactNode[] {
@@ -137,13 +142,16 @@ function renderBlock(tok: Token, key: string): React.ReactNode {
     case 'code': {
       const lang = (tok as Token & { lang?: string }).lang || ''
       const spans = highlightCode(tok.text ?? '', lang)
+      let offset = 0
       return (
         <Box key={key} flexDirection="column" marginBottom={1} borderStyle="round" borderColor="gray" paddingX={1}>
           {lang && <Text dimColor>{lang}</Text>}
           <Text>
-            {spans.map((s, i) => (
-              <Text key={i} color={spanColor(s.kind)}>{s.text}</Text>
-            ))}
+            {spans.map((s) => {
+              const start = offset
+              offset += s.text.length
+              return <Text key={`${s.kind ?? 'plain'}-${start}-${s.text.length}`} color={spanColor(s.kind)}>{s.text}</Text>
+            })}
           </Text>
         </Box>
       )
@@ -152,7 +160,7 @@ function renderBlock(tok: Token, key: string): React.ReactNode {
       return (
         <Box key={key} marginBottom={1} flexDirection="column">
           {(tok.tokens ?? []).map((inner, i) => (
-            <Box key={i}>
+            <Box key={tokenKey(inner as Token, key)}>
               <Text dimColor>│ </Text>
               <Text dimColor>{renderInline((inner as Token).tokens, `${key}-${i}`)}</Text>
             </Box>
@@ -169,7 +177,7 @@ function renderBlock(tok: Token, key: string): React.ReactNode {
             // list_item tokens have nested tokens; flatten to inline text.
             const itemTokens = (item as Token).tokens ?? []
             return (
-              <Box key={i}>
+              <Box key={tokenKey(item, key)}>
                 <Text dimColor>{marker}</Text>
                 <Text>{renderInline(itemTokens, `${key}-${i}`)}</Text>
               </Box>

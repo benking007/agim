@@ -4,6 +4,91 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.144] - 2026-06-05
+
+### Security (CR 修复：反代鉴权绕过 + role=user 权限收窄)
+
+由 codex 完成的深度 CR 在 viewer-paste 报告中定位了两个 P0 安全问题，
+本版本接管收尾、跑齐验证、build、release。
+
+#### P0-1 — 反代场景下 loopback 绕过鉴权 + 自动 admin
+
+**根因**：`checkAuth()` / `isRequestAdmin()` 之前只看 `isLoopbackPeer(req)`
+（remoteAddress 是否 127.0.0.1 / ::1）。反代到本机的请求 socket 来源全部
+是 loopback，于是**外部任何人通过反代访问都直接绕过 token、自动 admin**。
+
+**修复**：新增 `isTrustedLoopbackPeer()` 三层检查：
+1. `isLoopbackPeer(req)`（原有）
+2. `IMHUB_TRUST_LOOPBACK !== off`（新增 env kill switch）
+3. **`!hasForwardedPeerHeaders(req)`** — 任一 `Forwarded` / `X-Forwarded-*`
+   / `X-Real-IP` / `CF-Connecting-IP` header 出现 → 视为反代后流量，
+   走正常 token 路径
+
+实测验证（反代场景）：
+```
+curl -H "X-Forwarded-For: 1.2.3.4" 127.0.0.1:3000/api/config
+→ 401 unauthorized（原先 200）
+```
+
+#### P0-2 — role=user token 越权（mobile QR 入口）
+
+**根因**：v1.2.129 加的 mobile-QR 流程发的 `role=user` token 当时认为
+"低权限只能聊天"，但**大量后台 `/api/*` endpoints 在路由层只检查 token
+有效**、未检查 role。所以扫码登录的"user"实际能：
+- 创建 / 取消 / 运行 jobs（`/api/jobs*`）
+- 列出 / 取消 / snooze reminders（`/api/reminders*`）
+- 查 / 删 memos（`/api/memos*`）
+- 读 env（masked，但仍泄露 provider 列表）
+- 枚举 memory users、导出 memory（`/api/memory/*`）
+- 看 / 改 workspace 文件（`/api/workspace-files*`）
+- 看 SSE event stream（`/events`）
+- 处理 approvals（`/api/approvals*`）
+- 看 consolidate status
+
+**修复**：给上述全部 endpoints 加 `requireAdmin(req, res)` 守门。`role=user`
+token 只能用预期的几个用户面 endpoint（chat / memory consolidate trigger）。
+admin 操作回到 admin token 专属。
+
+#### P2 — uncaughtException 不再静默吞掉
+
+**根因**：cli.ts 的 `uncaughtException` handler 之前只 log 不退，导致
+进程留在不一致状态（SQLite half-flushed、approval 卡死等）。
+
+**修复**：`uncaughtException` → 触发 `gracefulShutdown('uncaughtException', 1)`
+走 25s hard-deadline 通路，关闭所有 adapter、flush DB、`process.exit(1)`。
+systemd `Restart=always` 会自动拉起来。
+
+#### 诊断改进
+
+- `web.auth_mode` boot log 新增 `trustLoopback: bool` 字段，operator 一眼
+  看到当前模式
+- `__webAuthForTesting` export — 把 `isTrustedLoopbackPeer` + `isRequestAdmin`
+  + `setTokenModule` 露给 unit test 用，新增 5 case 覆盖反代 / kill switch /
+  user token 越权防御
+
+### Code quality
+
+- npm run typecheck：双 tsc 全绿（之前 plan-mode.test.ts / agent-loop-schema
+  / native-stage-report 都有 ts 错）
+- npm run lint：0 errors（warnings/infos 留作 backlog；之前 9 errors）
+- 关键测试套件 40/40 绿（web-auth-guards × 5、a2a × 8、call-agent v1.2.139
+  × 9、llm-secrets-vendor × 10、native-stage-report × 8）
+
+### 没在范围
+
+- P2-2（readBody 413 后 req.destroy）— 留到下一版
+- lint warnings（290）/ infos（77）— 历史包袱不在本轮 scope
+
+### 文件
+
+- `src/web/server.ts` — `hasForwardedPeerHeaders` / `isTrustedLoopbackPeer` /
+  `__webAuthForTesting` 导出 + ~12 个 endpoint 加 `requireAdmin`
+- `src/cli.ts` — `uncaughtException` 走 fatal-shutdown
+- `src/core/access-token.ts` — 文档注释更新
+- `package.json` — devDep 加 `bun: ^1.3.14`（让 npm test 能跑）
+- `test/unit/web-auth-guards.test.ts` — 5 case 新增
+- `AGENTS.md` — 文档同步
+
 ## [1.2.143] - 2026-06-04
 
 ### Fixed (codex 0.137 适配 + binary cache 自愈)

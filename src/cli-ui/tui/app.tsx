@@ -36,11 +36,24 @@ import { generateSessionId, saveSession, type StoredMessage } from './sessions.j
 const log = rootLogger.child({ component: 'tui' })
 
 export interface ChatMessage {
+  id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
   pending?: boolean
   elapsedMs?: number
   agentName?: string
+}
+
+let messageSeq = 0
+function nextMessageId(): string {
+  messageSeq += 1
+  return `tui-msg-${Date.now().toString(36)}-${messageSeq.toString(36)}`
+}
+function withMessageId(message: ChatMessage): ChatMessage {
+  return message.id ? message : { ...message, id: nextMessageId() }
+}
+function withMessageIds(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(withMessageId)
 }
 
 interface SlashCommand {
@@ -121,8 +134,8 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
   }
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
-      {messages.map((m, i) => (
-        <Box key={i} flexDirection="column" marginBottom={1} width={chatWidth}>
+      {messages.map((m) => (
+        <Box key={m.id} flexDirection="column" marginBottom={1} width={chatWidth}>
           <Text>
             {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
             {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
@@ -147,7 +160,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
   const { setRawMode } = useStdin()
 
   const [agent, setAgent] = useState<string | undefined>(resumed?.agent ?? initialAgent)
-  const [messages, setMessages] = useState<ChatMessage[]>(resumed?.messages ?? [])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => withMessageIds(resumed?.messages ?? []))
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -192,7 +205,10 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       .slice(0, 15)
   }, [filePopupOpen, fileTokenMatch])
 
-  useEffect(() => { setPopupIndex(0) }, [filteredSlash.length, filteredFiles.length])
+  const popupResetKey = `${filteredSlash.length}:${filteredFiles.length}`
+  useEffect(() => {
+    if (popupResetKey) setPopupIndex(0)
+  }, [popupResetKey])
 
   // ── Command palette (ctrl+p) ──────────────────────────────────────
   const filteredPalette = useMemo(() => {
@@ -307,11 +323,11 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
   // ── helpers ───────────────────────────────────────────────────────
 
   const pushSystem = useCallback((content: string): void => {
-    setMessages((m) => [...m, { role: 'system', content }])
+    setMessages((m) => [...m, withMessageId({ role: 'system', content })])
   }, [])
 
   async function runBash(cmd: string): Promise<void> {
-    setMessages((m) => [...m, { role: 'user', content: '!' + cmd }])
+    setMessages((m) => [...m, withMessageId({ role: 'user', content: '!' + cmd })])
     const startMs = Date.now()
     pushSystem(`▶ shell: ${cmd}`)
     await new Promise<void>((resolve) => {
@@ -399,7 +415,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       for await (const chunk of adapter.sendPrompt(`tui-${process.pid}-compact`, prompt, [], { signal: ac.signal })) {
         summary += chunk
       }
-      setMessages([{ role: 'system', content: '【对话已折叠，以下是摘要】\n\n' + summary.trim() }])
+      setMessages([withMessageId({ role: 'system', content: '【对话已折叠，以下是摘要】\n\n' + summary.trim() })])
     } catch (err) {
       setError('折叠失败: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
@@ -457,8 +473,8 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
 
     setMessages((m) => [
       ...m,
-      { role: 'user', content: text },
-      { role: 'assistant', content: '', pending: true, agentName: agent },
+      withMessageId({ role: 'user', content: text }),
+      withMessageId({ role: 'assistant', content: '', pending: true, agentName: agent }),
     ])
 
     const ac = new AbortController()

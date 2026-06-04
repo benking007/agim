@@ -133,6 +133,16 @@ program
     // to a warning so the rest of gracefulShutdown can finish cleanly.
     // We intentionally do not call process.exit — let the natural
     // shutdown path complete.
+    let requestFatalShutdown: (() => void) | null = null
+    let fatalExitScheduled = false
+    const scheduleFatalExit = (): void => {
+      if (fatalExitScheduled) return
+      fatalExitScheduled = true
+      process.exitCode = 1
+      const tm = setTimeout(() => process.exit(1), 250)
+      if (typeof tm.unref === 'function') tm.unref()
+    }
+
     process.on('unhandledRejection', (reason) => {
       const err = reason instanceof Error
         ? { name: reason.name, message: reason.message, stack: reason.stack }
@@ -144,7 +154,12 @@ program
       rootLogger.error({
         event: 'process.uncaught_exception',
         err: { name: err.name, message: err.message, stack: err.stack },
-      }, 'uncaughtException swallowed (would have crashed Node)')
+      }, 'uncaughtException; shutting down with exit code 1')
+      if (requestFatalShutdown) {
+        requestFatalShutdown()
+      } else {
+        scheduleFatalExit()
+      }
     })
 
     // R14 — pre-flight self-check. Two failure modes the operator
@@ -1065,6 +1080,7 @@ program
     // to recover from a half-flushed state. The handler is idempotent against
     // duplicate signals.
     let shuttingDown = false
+    let shutdownExitCode = 0
     // R14 — hard deadline. If anything in the teardown chain hangs (DB
     // checkpoint, stuck child wait, sidecar TCP keepalive), we still
     // force-exit within 25s so a follow-up `systemctl restart` finds
@@ -1072,7 +1088,8 @@ program
     // 5s buffer so the process exits on our terms (exit code 1)
     // before systemd escalates to SIGKILL.
     const HARD_SHUTDOWN_MS = 25_000
-    const gracefulShutdown = async (signal: string): Promise<void> => {
+    const gracefulShutdown = async (signal: string, exitCode = 0): Promise<void> => {
+      shutdownExitCode = Math.max(shutdownExitCode, exitCode)
       if (shuttingDown) return
       shuttingDown = true
       console.log(`\n👋 Received ${signal}, shutting down...`)
@@ -1203,8 +1220,9 @@ program
       } catch { /* missing / unreadable is fine */ }
 
       clearTimeout(hardKill)
-      process.exit(0)
+      process.exit(shutdownExitCode)
     }
+    requestFatalShutdown = () => { void gracefulShutdown('uncaughtException', 1) }
     process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })
     process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM') })
 

@@ -59,8 +59,9 @@ describe('PlanMode (v1.2.119)', () => {
         expect(p.denyList).toContain('native_exec')
         expect(p.denyList).toContain('my_custom_tool')
         // No duplicates
-        const seen = new Set(p.denyList ?? [])
-        expect(seen.size).toBe(p.denyList?.length)
+        const denyList = p.denyList ?? []
+        const seen = new Set(denyList)
+        expect(seen.size).toBe(denyList.length)
       } finally {
         delete process.env.IMHUB_NATIVE_AGENT_DENYLIST
       }

@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.143] - 2026-06-04
+
+### Fixed (codex 0.137 适配 + binary cache 自愈)
+
+用户反馈：后台 `/settings/agents` 里 codex 显示"未就绪"，IM 里 `/cx` 也连
+不上，但 codex CLI 自己 `codex exec` 跑得起来。
+
+#### 双重根因
+
+1. **codex 0.137 改了 vendor 子目录布局**：从
+   `<codex-pkg>/vendor/<triple>/codex/codex`
+   →
+   `<codex-pkg>/vendor/<triple>/bin/codex`
+   `resolveCodexBinary` 的 candidate 列表硬编码了旧布局，新版本探测全
+   miss。
+
+2. **binary cache 一锁到底**：agim 进程级 `cachedBinary` 在启动时 probe
+   一次后就锁死。如果 codex 在 agim 启动**之后**升级（vendor 旧目录被
+   删），缓存里持有的路径就成了 ENOENT；spawn 永远报错。`isAvailable()`
+   返回 false，UI 永远显示"未就绪"，除非重启 agim 服务。
+
+实测用户机器：agim 启动 22:05:05，codex 0.137 binary 落盘 22:11:36
+——典型的"启动时 OK，升级后烂掉"场景。
+
+#### 修复
+
+**1. `resolveCodexBinary` candidate 列表加新布局**（前置，优先匹配）：
+```
+vendor/<triple>/bin/codex      ← codex >= 0.137（新增）
+vendor/<triple>/codex/codex    ← codex <= 0.136（兼容）
+```
+
+**2. `CodexAdapter.isAvailable()` 加 cache 自愈**：spawn ENOENT 时清空
+   `cachedBinary` + `probed`，重探一次再判定。这样 codex 升级不需要重
+   启 agim——下次 `--version` 探测自然走最新布局。
+
+**3. 导出 `resetCodexBinaryCache()`**：供测试用，也供未来 health
+   monitor 主动调。
+
+#### 影响
+
+- 升级 codex 后**不再需要重启 agim**（首次 `isAvailable()` 调用会自愈）
+- codex 0.137+ 操作员可以直接装新版，agim 自动识别新布局
+- 自托管 codex CLI（罕见）走 wrapper fallback，行为不变
+
+#### 测试
+
+`src/plugins/agents/codex/adapter.test.ts` 41 case 全绿（含原有
+build-mcp-cli-args / adapter 行为测试）。未单独加 binary resolution
+mock 测试——文件系统 mock 在 bun runtime 下复杂度高于价值，且
+adapter.test.ts 已覆盖 commandName 通路。
+
+### 文件
+
+- `src/plugins/agents/codex/index.ts` — candidate 列表加新布局 +
+  `resetCodexBinaryCache` 导出 + `isAvailable` override 自愈
+
 ## [1.2.142] - 2026-06-04
 
 ### Changed (unhappy turn → 阶段性报告，不再吐工具计数)

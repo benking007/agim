@@ -51,6 +51,7 @@ import { execSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { crossSpawn } from '../../../utils/cross-platform.js'
 import { AgentBase, type SpawnPlan } from '../../../core/agent-base.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { approvalBus } from '../../../core/approval-bus.js'
@@ -79,6 +80,16 @@ const log = rootLogger.child({ component: 'agent.codex' })
 let cachedBinary: string | null = null
 let probed = false
 
+/** v1.2.143 — invalidate the binary cache so the next call re-probes
+ *  from scratch. Used when a previously cached path turns up missing
+ *  (ENOENT on spawn) — e.g. operator upgraded codex while agim was
+ *  running and the old vendor dir got deleted. Exported for tests and
+ *  for the ENOENT-recovery path inside `isAvailable`. */
+export function resetCodexBinaryCache(): void {
+  cachedBinary = null
+  probed = false
+}
+
 function resolveCodexBinary(): string {
   if (probed) return cachedBinary ?? 'codex'
   probed = true
@@ -101,7 +112,15 @@ function resolveCodexBinary(): string {
     const platformPkg = pickPlatformPackage(process.platform, process.arch)
     if (!platformPkg) return 'codex'
 
+    // v1.2.143 — codex 0.137 changed the vendor sub-layout from
+    // `vendor/<triple>/codex/codex` to `vendor/<triple>/bin/codex`.
+    // Probe the new path first; keep the old path as a fallback so
+    // operators still on codex ≤ 0.136 don't regress.
     const candidates = [
+      // codex >= 0.137 new layout
+      join(codexPkgRoot, 'node_modules', platformPkg, 'vendor', triple, 'bin', 'codex'),
+      join(codexPkgRoot, 'vendor', triple, 'bin', 'codex'),
+      // codex <= 0.136 legacy layout
       join(codexPkgRoot, 'node_modules', platformPkg, 'vendor', triple, 'codex', 'codex'),
       join(codexPkgRoot, 'vendor', triple, 'codex', 'codex'),
     ]
@@ -193,6 +212,38 @@ export class CodexAdapter extends AgentBase {
    */
   protected get commandName(): string {
     return resolveCodexBinary()
+  }
+
+  /**
+   * v1.2.143 — override the default `--version` probe so that a stale
+   * cached path (e.g. operator upgraded codex while agim was running
+   * and the old vendor dir got deleted) self-heals: ENOENT triggers a
+   * cache reset + one re-probe before reporting unavailable.
+   *
+   * Why: AgentBase's default isAvailable spawns commandName which goes
+   * through `resolveCodexBinary` → cachedBinary. If cachedBinary points
+   * at a deleted file, spawn errors with ENOENT every call until
+   * restart. The settings/agents UI shows "未就绪" indefinitely even
+   * though the operator's actual codex install is fine.
+   */
+  override async isAvailable(): Promise<boolean> {
+    const tryOnce = (): Promise<{ ok: boolean; code?: string }> => new Promise((resolve) => {
+      const proc = crossSpawn(this.commandName, ['--version'], { stdio: 'ignore' })
+      proc.on('close', (code: number | null) => resolve({ ok: code === 0 }))
+      proc.on('error', (err: NodeJS.ErrnoException) => resolve({
+        ok: false,
+        code: err.code,
+      }))
+    })
+    const first = await tryOnce()
+    if (first.ok) return true
+    if (first.code === 'ENOENT') {
+      log.warn({ binary: this.commandName }, 'codex: cached binary missing (ENOENT); resetting cache and re-probing')
+      resetCodexBinaryCache()
+      const second = await tryOnce()
+      return second.ok
+    }
+    return false
   }
 
   /**

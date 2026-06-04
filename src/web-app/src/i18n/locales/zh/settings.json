@@ -21,8 +21,11 @@
   },
   "agents": {
     "title": "Agent",
-    "subtitle": "内置 Agent 适配器。启用宿主机已安装 CLI 的；并选择一个作为默认 Agent（用于路由无法判定的消息）。",
+    "subtitle": "内置 Agent 适配器。启用宿主机已安装 CLI 的；并选择一个作为默认 Agent（用于路由无法判定的消息）。`native` 是内置 in-process 智能体，无需安装。",
     "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
+    "nativeInstallHint": "未配置 LLM 后端。前往 设置 → Native Agent 选项卡，配置 OpenAI / DeepSeek / Anthropic 等任一即可使用。",
+    "inProcessBadge": "内置",
+    "inProcessHint": "in-process — 跑在 agim 进程内，无需安装外部 CLI",
     "aliasesLabel": "别名",
     "online": "在线",
     "offline": "未就绪",

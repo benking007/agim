@@ -21,8 +21,11 @@
   },
   "agents": {
     "title": "Agents",
-    "subtitle": "Built-in agent adapters. Enable the ones whose CLI is installed on this host; pick which one handles unrouted messages by default.",
+    "subtitle": "Built-in agent adapters. Enable the ones whose CLI is installed on this host; pick which one handles unrouted messages by default. `native` is an in-process agent and needs no install.",
     "installHint": "Not installed. `npm install -g {{pkg}}` on the host.",
+    "nativeInstallHint": "No LLM backend configured. Set one (OpenAI / DeepSeek / Anthropic / …) on the Settings → Native Agent tab and you're done.",
+    "inProcessBadge": "built-in",
+    "inProcessHint": "in-process — runs inside agim, no external CLI to install",
     "aliasesLabel": "Aliases",
     "online": "online",
     "offline": "offline",

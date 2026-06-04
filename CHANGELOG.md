@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.140] - 2026-06-04
+
+### Fixed (admin SPA: native agent 加入 /settings/agents 清单)
+
+用户反馈：后台 Agent 管理页（`/settings/agents`）不显示 native 智能体，
+只能通过 IM 内的 `/na` slash 用，操作不便。
+
+诊断：
+- 后端 native 早就在 registry 里**无条件注册**，`isAgentEnabled('native')`
+  也**永远返回 true**（v1.2.103 兜底）；
+- 但 SPA 的 `BUILTIN_AGENTS` 是写死的 4 个 CLI agent
+  （claude-code / codex / opencode / cursor），native 没纳入；
+- 后果：管理员看不到 native，无法当默认 Agent，也没办法在 UI 上看它的健康状态。
+
+修复（纯 UI，零后端语义变化）：
+- `BUILTIN_AGENTS` 加 native 条目，标 `kind: 'in-process'`，别名
+  `na / llm / native-llm`；
+- 默认 Agent 下拉的 eligibility 检查对 in-process 类豁免
+  「必须在 enabled 列表中」的硬约束——和运行时 `isAgentEnabled` 一致；
+- AgentRow 新加 `kind` prop：
+  - 在线/未就绪徽标旁多一个「内置」徽标，hover 提示 in-process 含义；
+  - 「未就绪」时不再显示 `npm install -g`（不适用），改成
+    「未配置 LLM 后端。前往 设置 → Native Agent 选项卡，配置 OpenAI /
+    DeepSeek / Anthropic 等任一即可」；
+- 子标题文案补一句「`native` 是内置 in-process 智能体，无需安装」；
+- `live-config.ts` 注释加 v1.2.140 段落，解释「toggle 是用户偏好不是路由
+  kill-switch」——native 即使 toggle 未勾也走得通，避免下次有人删那行
+  hardcoded 兜底而忘了对存量配置做迁移。
+
+i18n：zh / en 各加 3 个新 key（`nativeInstallHint` / `inProcessBadge` /
+`inProcessHint`），并微调 `subtitle`。
+
+### 文件
+- `src/web-app/src/routes/settings/agents.tsx` — BUILTIN_AGENTS 加 native +
+  AgentRow 加 kind 分支 + eligibleDefaults 豁免 in-process
+- `src/web-app/src/i18n/locales/zh/settings.json` — 3 新 key + subtitle
+- `src/web-app/src/i18n/locales/en/settings.json` — 同上
+- `src/core/live-config.ts` — 注释补 v1.2.140 段落
+
+### 不在范围
+- 不动 `isAgentEnabled('native') === true` 兜底——拆它需要给存量配置加迁移，
+  风险/收益不划算
+- 没改后端 `/api/config` schema：native 仍然不强制写进 `config.agents`
+
 ## [1.2.139] - 2026-06-03
 
 ### Fixed (子代理派生：P0 安全 + P1 上下文 + 文案/重试)

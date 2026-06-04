@@ -60,6 +60,14 @@ export function isAgentEnabled(name: string): boolean {
   // required to appear in config.agents. Filtering it (v1.2.103
   // regression) broke `/na` and default routing for installs whose
   // enabled list predates native. Never filter it.
+  //
+  // v1.2.140 — the admin SPA now shows native in /settings/agents with
+  // a working toggle. That toggle is a "user preference / default-picker
+  // eligibility" signal, NOT a routing kill-switch: native stays
+  // reachable via `/na` even with the box unchecked. If a future change
+  // wants to honour the toggle as a hard disable, drop this short-
+  // circuit AND ship a migration that adds 'native' to existing configs
+  // missing the entry.
   if (name === 'native') return true
   if (!current) return true
   const list = current.agents

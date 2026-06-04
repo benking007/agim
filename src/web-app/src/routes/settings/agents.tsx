@@ -52,12 +52,24 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
 
 /** Mirror of v1 settings.html:BUILTIN_AGENTS. Hardcoded because
  *  backend doesn't expose this metadata yet; the table changes
- *  rarely enough that copying it here is fine. */
-const BUILTIN_AGENTS: Record<string, { aliases: string[]; pkg: string }> = {
-  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code' },
-  'codex':       { aliases: ['cx'],              pkg: '@openai/codex' },
-  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai' },
-  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)' },
+ *  rarely enough that copying it here is fine.
+ *
+ *  `kind` distinguishes spawn flavor:
+ *    - 'cli'        → external CLI subprocess, needs `npm install -g <pkg>`
+ *    - 'in-process' → runs inside agim, no install needed; `pkg` carries
+ *                     a one-liner hint instead of an install command. The
+ *                     runtime always exposes it via `isAgentEnabled`
+ *                     regardless of config.agents, so default-picker
+ *                     eligibility ignores the enabled-list constraint. */
+const BUILTIN_AGENTS: Record<string, { aliases: string[]; pkg: string; kind: 'cli' | 'in-process' }> = {
+  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli' },
+  'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli' },
+  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai',               kind: 'cli' },
+  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)', kind: 'cli' },
+  // v1.2.140 — surface the in-process `native` agent in the admin list.
+  // Previously the agent was registered + always-enabled at runtime but
+  // hidden from this page, so operators could only reach it via the CLI.
+  'native':      { aliases: ['na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process' },
 }
 
 const AGENT_NAMES = Object.keys(BUILTIN_AGENTS)
@@ -99,9 +111,19 @@ export default function SettingsAgentsRoute(): JSX.Element {
   }, [cfg, enabled, defaultAgent, acpAgents])
 
   /** Eligible defaults = installed + enabled. Picker disables when
-   *  empty (no agent is both). */
+   *  empty (no agent is both).
+   *
+   *  v1.2.140 — in-process agents (e.g. `native`) are exempt from the
+   *  enabled-list check. Runtime `isAgentEnabled('native')` always
+   *  returns true regardless of config.agents (see live-config.ts), so
+   *  the picker should mirror that and not require the user to flip the
+   *  toggle on first. */
   const eligibleDefaults = useMemo(
-    () => AGENT_NAMES.filter((a) => enabled.includes(a) && status[a]),
+    () => AGENT_NAMES.filter((a) => {
+      const info = BUILTIN_AGENTS[a]!
+      const enabledOrInProcess = info.kind === 'in-process' ? true : enabled.includes(a)
+      return enabledOrInProcess && status[a]
+    }),
     [enabled, status],
   )
 
@@ -185,6 +207,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
                   name={name}
                   aliases={info.aliases}
                   pkg={info.pkg}
+                  kind={info.kind}
                   installed={installed}
                   enabled={isEnabled}
                   onToggle={(on) => toggleAgent(name, on)}
@@ -264,15 +287,21 @@ interface AgentRowProps {
   name: string
   aliases: string[]
   pkg: string
+  /** v1.2.140 — 'in-process' agents show a different "not installed"
+   *  hint (point at LLM-backend config rather than `npm install -g`)
+   *  and surface a small "内置" badge so operators understand they
+   *  don't need to install anything. */
+  kind: 'cli' | 'in-process'
   installed: boolean
   enabled: boolean
   onToggle: (on: boolean) => void
 }
 
 function AgentRow({
-  name, aliases, pkg, installed, enabled, onToggle,
+  name, aliases, pkg, kind, installed, enabled, onToggle,
 }: AgentRowProps): JSX.Element {
   const { t } = useTranslation('settings')
+  const inProcess = kind === 'in-process'
   return (
     <div className="flex items-start gap-3 px-3 py-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-dim">
@@ -288,6 +317,11 @@ function AgentRow({
             )} />
             {installed ? t('agents.online') : t('agents.offline')}
           </Badge>
+          {inProcess && (
+            <Badge variant="outline" className="text-[10px]" title={t('agents.inProcessHint')}>
+              {t('agents.inProcessBadge')}
+            </Badge>
+          )}
         </div>
         <p className="mt-0.5 text-xs text-text-dim">
           <span className="text-text-muted">{t('agents.aliasesLabel')}: </span>
@@ -295,7 +329,9 @@ function AgentRow({
         </p>
         {!installed && (
           <p className="mt-1 text-xs text-warning">
-            {t('agents.installHint', { pkg })}
+            {inProcess
+              ? t('agents.nativeInstallHint')
+              : t('agents.installHint', { pkg })}
           </p>
         )}
       </div>

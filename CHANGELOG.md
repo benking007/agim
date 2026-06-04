@@ -4,6 +4,84 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.141] - 2026-06-04
+
+### Fixed (LLM secret 解析：识别 vendor 标准 env)
+
+用户反馈：环境变量里明明配了 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、
+`MOONSHOT_API_KEY` 等 vendor 官方 SDK 都认的标准命名，agim 却报 backend
+"未配置"——只有把同一个 key 再复制一份到 `AGIM_LLM_SECRET_<NAME>` 或写
+入 `~/.agim/llm-secrets.json` 才行。
+
+**根因**：`resolveSecret(name)` 只看 agim 私有命名空间，从不读 vendor 标
+准 env。一个装了 12 个 vendor API key 的环境，agim 一个都不识别——只
+要 backend 没单独配过，就一律"未就绪"。
+
+**修复**：`resolveSecret` 增加第 3 个 fallback。查找顺序：
+1. `AGIM_LLM_SECRET_<NAME>`（原有，私有命名空间优先级最高）
+2. `~/.agim/llm-secrets.json[name]`（原有，文件次之）
+3. **v1.2.141 新增**：按 backend 的 `baseUrl` 子串 + `provider` 命中内
+   置 vendor 表，依次 probe 对应 vendor env。命中即用。
+4. undefined（与之前一致）
+
+vendor 表（v1.2.141 出厂内置 17 条规则，覆盖以下）：
+- `deepseek.com` → `DEEPSEEK_API_KEY`
+- `api.openai.com` → `OPENAI_API_KEY`
+- `moonshot.cn` → `MOONSHOT_API_KEY` → `KIMI_API_KEY`
+- `dashscope` / `aliyuncs` → `DASHSCOPE_API_KEY` → `QWEN_API_KEY`
+- `siliconflow` → `SILICONFLOW_API_KEY`
+- `openrouter.ai` → `OPENROUTER_API_KEY`
+- `stepfun.com` → `STEPFUN_API_KEY`
+- `bigmodel.cn` / `zhipuai` → `ZHIPUAI_API_KEY` → `GLM_API_KEY`
+- `minimaxi` → `MINIMAX_API_KEY`
+- `baichuan-ai` → `BAICHUAN_API_KEY`
+- `mistral.ai` → `MISTRAL_API_KEY`
+- `groq.com` → `GROQ_API_KEY`
+- `together.xyz` → `TOGETHER_API_KEY`
+- `fireworks.ai` → `FIREWORKS_API_KEY`
+- `provider === 'anthropic'` → `ANTHROPIC_API_KEY`（不需要 baseUrl）
+
+**自托管网关**（不命中任何子串）走原 `AGIM_LLM_SECRET_<NAME>` 路径，零行
+为变化——避免把别人的 key 错误地路由进自建 gateway。
+
+### 诊断改进
+
+- `describeSecretSource(name, hint)` 加 `source: 'vendor'` 这一档，
+  当 vendor env 命中时返回 `vendorEnvName: 'DEEPSEEK_API_KEY'`
+- 没命中任何源时返回 `vendorCandidates: [...]`，告诉操作员"你可以
+  通过设置这些 vendor env 中任意一个让 agim 自动识别"
+- Web admin `/api/llm` 把 `vendorEnvName` / `vendorCandidates` 透
+  出，便于 UI 显示 secret 来源
+
+### 测试
+
+`test/unit/llm-secrets-vendor.test.ts`（10 case 全绿）：
+- 私有 env 仍优先于 vendor env
+- 私有 file 优先于 vendor env
+- DeepSeek / OpenAI / Anthropic / Moonshot 各匹配 baseUrl
+- alias env 兜底（MOONSHOT 没设 → 尝试 KIMI）
+- 自托管 gateway（无匹配规则）→ undefined
+- 不传 hint → 走 legacy 路径（向后兼容）
+- describeSecretSource 报告 source='vendor' + vendorEnvName
+- vendorCandidates 在 source='none' 时列出
+
+### 文件
+
+- `src/core/llm/secrets.ts` — VendorRule 表 + `resolveVendorEnv` +
+  `vendorEnvCandidates` + 拓展 `resolveSecret` / `describeSecretSource`
+- `src/core/llm/registry.ts` — `loadFromConfig` 调 `resolveSecret` 时
+  传入 backend hint（provider + baseUrl）
+- `src/web/llm-api.ts` — `/api/llm` GET 返回新字段
+- `test/unit/llm-secrets-vendor.test.ts` — 新增 10 case
+
+### 兼容性
+
+零破坏：
+- vendor 路径只在前两个私有源都为空时启用
+- 老 install 没设 vendor env → 行为完全等于 v1.2.140
+- 老 install 同时有私有 + vendor → 还是私有赢
+- 设有 vendor env 但 backend 是自建 gateway → 不命中规则，不会误用
+
 ## [1.2.140] - 2026-06-04
 
 ### Fixed (admin SPA: native agent 加入 /settings/agents 清单)

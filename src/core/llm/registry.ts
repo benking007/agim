@@ -79,7 +79,15 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
       log.warn({ event: 'llm-registry.duplicate_name', name: cfg.name },
         `Duplicate llmBackends entry "${cfg.name}"; last wins`)
     }
-    const apiKey = resolveSecret(cfg.name, secrets)
+    // v1.2.141 — pass backend hint so resolveSecret can fall back to
+    // vendor-standard envs (DEEPSEEK_API_KEY / OPENAI_API_KEY / …) when
+    // neither AGIM_LLM_SECRET_<NAME> nor llm-secrets.json carries the
+    // key. Hint is best-effort — keys missing from cfg leave the hint
+    // empty and the vendor fallback simply yields null.
+    const apiKey = resolveSecret(cfg.name, secrets, {
+      provider: cfg.provider,
+      baseUrl: cfg.baseUrl,
+    })
     const provider = buildProvider(cfg, apiKey)
     if (!provider) continue
     if (!provider.isConfigured()) {

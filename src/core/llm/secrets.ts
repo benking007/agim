@@ -19,7 +19,14 @@
 //      touching the on-disk file. Hyphens in the backend name are
 //      converted to underscores for the env var name.
 //   2. ~/.agim/llm-secrets.json `keys.<backend-name>`.
-//   3. undefined (provider will report isConfigured()=false).
+//   3. v1.2.141 — vendor-standard env (DEEPSEEK_API_KEY / OPENAI_API_KEY /
+//      ANTHROPIC_API_KEY / …) when the caller passes a `backendHint` with
+//      provider + baseUrl. Matched by baseUrl substring against a small
+//      built-in table so a user who already exported the vendor's
+//      standard env (which DeepSeek/OpenAI/Moonshot/etc SDKs all read by
+//      default) gets agim working out of the box — no separate copy of
+//      the same secret under `AGIM_LLM_SECRET_*`.
+//   4. undefined (provider will report isConfigured()=false).
 
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -48,6 +55,98 @@ function emptyFile(): SecretsFile {
 export function envKeyForBackend(name: string): string {
   const safe = name.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()
   return `AGIM_LLM_SECRET_${safe}`
+}
+
+/** Vendor hint passed by the registry so we can fall back to standard
+ *  vendor envs (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, …). Optional —
+ *  callers from CLI tests etc. can omit it and only see the two
+ *  legacy lookup paths. */
+export interface BackendHint {
+  provider?: string
+  baseUrl?: string
+}
+
+interface VendorRule {
+  /** Matched against baseUrl.toLowerCase(); empty string means "no
+   *  baseUrl needed" (used by the anthropic provider which has a fixed
+   *  default endpoint). */
+  match: string
+  /** Optional extra constraint on `BackendHint.provider`. */
+  provider?: string
+  /** Env names to probe in order. First non-empty wins. */
+  envNames: string[]
+}
+
+/** Built-in mapping of vendor → standard env names. baseUrl substring
+ *  match is intentionally loose — `deepseek.com`, `api.deepseek.com`,
+ *  `https://api.deepseek.com/v1` all hit the same rule. Order matters
+ *  only when two rules overlap (none do today).
+ *
+ *  v1.2.141 — kept short and conservative on purpose. Adding a vendor
+ *  is one line; over-matching is a footgun (you'd leak the wrong env
+ *  into the wrong backend). Self-hosted gateways are deliberately NOT
+ *  here — those operators should use `AGIM_LLM_SECRET_<NAME>`. */
+const VENDOR_RULES: VendorRule[] = [
+  { match: 'deepseek.com',                envNames: ['DEEPSEEK_API_KEY'] },
+  { match: 'api.openai.com',              envNames: ['OPENAI_API_KEY'] },
+  { match: 'moonshot.cn',                 envNames: ['MOONSHOT_API_KEY', 'KIMI_API_KEY'] },
+  { match: 'dashscope',                   envNames: ['DASHSCOPE_API_KEY', 'QWEN_API_KEY'] },
+  { match: 'aliyuncs',                    envNames: ['DASHSCOPE_API_KEY', 'QWEN_API_KEY'] },
+  { match: 'siliconflow',                 envNames: ['SILICONFLOW_API_KEY'] },
+  { match: 'openrouter.ai',               envNames: ['OPENROUTER_API_KEY'] },
+  { match: 'stepfun.com',                 envNames: ['STEPFUN_API_KEY'] },
+  { match: 'bigmodel.cn',                 envNames: ['ZHIPUAI_API_KEY', 'GLM_API_KEY'] },
+  { match: 'zhipuai',                     envNames: ['ZHIPUAI_API_KEY'] },
+  { match: 'minimaxi',                    envNames: ['MINIMAX_API_KEY'] },
+  { match: 'baichuan-ai',                 envNames: ['BAICHUAN_API_KEY'] },
+  { match: 'mistral.ai',                  envNames: ['MISTRAL_API_KEY'] },
+  { match: 'groq.com',                    envNames: ['GROQ_API_KEY'] },
+  { match: 'together.xyz',                envNames: ['TOGETHER_API_KEY'] },
+  { match: 'fireworks.ai',                envNames: ['FIREWORKS_API_KEY'] },
+  // Anthropic — baseUrl might be empty (provider uses its own default),
+  // so we additionally key on provider name.
+  { match: 'anthropic.com', provider: 'anthropic', envNames: ['ANTHROPIC_API_KEY'] },
+  { match: '',              provider: 'anthropic', envNames: ['ANTHROPIC_API_KEY'] },
+]
+
+/**
+ * Resolve via the vendor table. Returns the matched env name + value, or
+ * null when no rule applies / matched rule's envs are all empty. The
+ * env-name is surfaced so `describeSecretSource` can report which vendor
+ * env was used (useful for the "Test connection" diagnostic).
+ */
+function resolveVendorEnv(hint: BackendHint | undefined): { envName: string; value: string } | null {
+  if (!hint) return null
+  const baseUrl = (hint.baseUrl ?? '').toLowerCase()
+  const provider = (hint.provider ?? '').toLowerCase()
+  for (const rule of VENDOR_RULES) {
+    if (rule.provider && rule.provider !== provider) continue
+    if (rule.match && !baseUrl.includes(rule.match)) continue
+    if (!rule.match && !rule.provider) continue
+    for (const envName of rule.envNames) {
+      const v = process.env[envName]
+      if (v && v.length > 0) return { envName, value: v }
+    }
+  }
+  return null
+}
+
+/** Diagnostic — returns the list of vendor env names that would be
+ *  probed for a given backend hint. Used by `describeSecretSource` to
+ *  show the operator which envs are checked when both private slots
+ *  are empty. */
+export function vendorEnvCandidates(hint: BackendHint | undefined): string[] {
+  if (!hint) return []
+  const baseUrl = (hint.baseUrl ?? '').toLowerCase()
+  const provider = (hint.provider ?? '').toLowerCase()
+  const seen = new Set<string>()
+  for (const rule of VENDOR_RULES) {
+    if (rule.provider && rule.provider !== provider) continue
+    if (rule.match && !baseUrl.includes(rule.match)) continue
+    if (!rule.match && !rule.provider) continue
+    for (const n of rule.envNames) seen.add(n)
+  }
+  return Array.from(seen)
 }
 
 /**
@@ -81,15 +180,30 @@ export function loadSecretsFile(): SecretsFile {
  * Resolve a single secret for a backend, applying env-var precedence.
  * Returns undefined when nothing is configured — providers downstream
  * use this to flip `isConfigured()` off.
+ *
+ * v1.2.141 — `backendHint` enables vendor-env fallback. Callers that
+ * have backend config in hand (registry.ts) should pass it so users
+ * who exported `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / etc. via vendor
+ * convention don't also need to copy the value into our private
+ * `AGIM_LLM_SECRET_*` namespace.
  */
-export function resolveSecret(backendName: string, fileSecrets?: SecretsFile): string | undefined {
+export function resolveSecret(
+  backendName: string,
+  fileSecrets?: SecretsFile,
+  backendHint?: BackendHint,
+): string | undefined {
   if (!backendName) return undefined
   const envKey = envKeyForBackend(backendName)
   const envVal = process.env[envKey]
   if (envVal && envVal.length > 0) return envVal
   const file = fileSecrets ?? loadSecretsFile()
   const v = file.keys[backendName]
-  return typeof v === 'string' && v.length > 0 ? v : undefined
+  if (typeof v === 'string' && v.length > 0) return v
+  // v1.2.141 — vendor env fallback. Only consulted when both private
+  // slots came up empty so existing installs see no behavior change.
+  const vendor = resolveVendorEnv(backendHint)
+  if (vendor) return vendor.value
+  return undefined
 }
 
 /**
@@ -142,10 +256,20 @@ function _writeFile(file: SecretsFile): void {
  * UI doesn't have to guess. The string is operator-facing; keep it
  * succinct and actionable.
  */
-export function describeSecretSource(backendName: string): {
-  source: 'env' | 'file' | 'none'
+export function describeSecretSource(
+  backendName: string,
+  backendHint?: BackendHint,
+): {
+  source: 'env' | 'file' | 'vendor' | 'none'
   envKey: string
   filePath: string
+  /** v1.2.141 — when source==='vendor', this is the vendor env var
+   *  name that actually held the secret (e.g. 'DEEPSEEK_API_KEY'). */
+  vendorEnvName?: string
+  /** v1.2.141 — when source==='none' but a backendHint was supplied,
+   *  the candidate vendor envs we tried (helps operators figure out
+   *  which standard env to set). */
+  vendorCandidates?: string[]
   perms?: string
 } {
   const envKey = envKeyForBackend(backendName)
@@ -159,5 +283,15 @@ export function describeSecretSource(backendName: string): {
     } catch { /* ignore */ }
     return { source: 'file', envKey, filePath: LLM_SECRETS_PATH, perms }
   }
-  return { source: 'none', envKey, filePath: LLM_SECRETS_PATH }
+  const vendor = resolveVendorEnv(backendHint)
+  if (vendor) {
+    return {
+      source: 'vendor', envKey, filePath: LLM_SECRETS_PATH,
+      vendorEnvName: vendor.envName,
+    }
+  }
+  return {
+    source: 'none', envKey, filePath: LLM_SECRETS_PATH,
+    vendorCandidates: vendorEnvCandidates(backendHint),
+  }
 }

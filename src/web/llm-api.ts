@@ -110,13 +110,23 @@ export async function handleLlmApi(
 async function handleList(res: ServerResponse): Promise<void> {
   const cfg = await readConfig()
   const backends = (cfg.llmBackends ?? []).map((b) => {
-    const src = describeSecretSource(b.name)
+    // v1.2.141 — pass backend hint so describeSecretSource can report
+    // vendor-env fallback (source='vendor') and surface candidate envs
+    // when nothing is configured ('vendorCandidates').
+    const src = describeSecretSource(b.name, { provider: b.provider, baseUrl: b.baseUrl })
     return {
       name: b.name,
       provider: b.provider,
       baseUrl: b.baseUrl,
       model: b.model,
-      secret: { source: src.source, envKey: src.envKey },
+      secret: {
+        source: src.source,
+        envKey: src.envKey,
+        ...(src.vendorEnvName ? { vendorEnvName: src.vendorEnvName } : {}),
+        ...(src.vendorCandidates && src.vendorCandidates.length > 0
+          ? { vendorCandidates: src.vendorCandidates }
+          : {}),
+      },
     }
   })
   send(res, 200, {

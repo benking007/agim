@@ -16,6 +16,8 @@ import { createJob, runJob } from './job-board.js'
 import { registry } from './registry.js'
 import { AgentBase } from './agent-base.js'
 import { createSqliteHelper } from './sqlite-helper.js'
+import { lookup } from 'node:dns/promises'
+import { isPrivateAddr } from '../plugins/agents/acp/url-guard.js'
 
 const SCHED_DB = join(AGIM_HOME, 'schedules.db')
 const TICK_INTERVAL_MS = 30 * 1000
@@ -73,6 +75,35 @@ export function validateWebhookUrl(raw: string): { ok: true; url: URL } | { ok: 
     return { ok: false, reason: `private/loopback IPv6 ${host} not allowed` }
   }
   return { ok: true, url: u }
+}
+
+/**
+ * At-fetch-time SSRF guard: DNS-resolve a webhook host and reject targets
+ * that land in private / loopback / link-local space. This is the piece the
+ * lexical validateWebhookUrl can't do — it only sees the (WHATWG-normalized)
+ * host string, so a hostname that RESOLVES into a private range (DNS
+ * rebinding, split-horizon DNS, or an attacker domain whose A-record points
+ * at 169.254.169.254 / 10.x / 127.x) passes it. (Numeric IP literals like
+ * `2130706433` are already normalised to dotted-quad by `new URL`, so the
+ * lexical check catches those; the residual gap is hostnames.) Honours the
+ * same IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 escape hatch. Fail-closed: a DNS
+ * failure is treated as not-allowed.
+ */
+export async function assertWebhookHostPublic(host: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (process.env.IMHUB_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true }
+  let address: string
+  let family: 4 | 6
+  try {
+    const r = await lookup(host)
+    address = r.address
+    family = (r.family === 6 ? 6 : 4) as 4 | 6
+  } catch (err) {
+    return { ok: false, reason: `DNS lookup failed for ${host}: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (isPrivateAddr(address, family)) {
+    return { ok: false, reason: `resolved address ${address} (${host}) is private/loopback/link-local` }
+  }
+  return { ok: true }
 }
 
 export interface Schedule {
@@ -289,6 +320,19 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     if (!v.ok) {
       logger.warn({ scheduleId: s.id, reason: v.reason, event: 'schedule.notify.rejected' },
         'Schedule notify webhook rejected by URL validator')
+      return
+    }
+    // At-fetch-time SSRF guard. validateWebhookUrl is lexical: it only sees
+    // the host string, so a HOSTNAME that resolves to private space (DNS
+    // rebinding, split-horizon, or an attacker domain whose A-record points
+    // at 169.254.169.254 / 10.x / 127.x) passes it. Resolve the host via DNS
+    // here — right before the fetch — and reject private/loopback/link-local
+    // targets. This is the "at-fetch-time guard" the validateWebhookUrl
+    // comment flagged as tracked separately.
+    const dnsCheck = await assertWebhookHostPublic(v.url.hostname)
+    if (!dnsCheck.ok) {
+      logger.warn({ scheduleId: s.id, reason: dnsCheck.reason, host: v.url.hostname, event: 'schedule.notify.rejected_dns' },
+        'Schedule notify webhook rejected by DNS-resolved address check')
       return
     }
     try {

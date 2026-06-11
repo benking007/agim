@@ -5,7 +5,12 @@
 // assert on the AsyncGenerator output + describeNativeAgent banner.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { nativeAgentAdapter, describeNativeAgent } from './index.js'
+import { nativeAgentAdapter, describeNativeAgent, buildSystemPrompt, readOperatorRole } from './index.js'
+import { invalidateSkillsCache, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { LlmProvider } from '../../../core/llm/index.js'
 import {
   loadFromConfig,
   _resetRegistry,
@@ -210,6 +215,73 @@ describe('nativeAgentAdapter — sendPrompt', () => {
       onUsage: (delta) => { seenCost = delta.costUsd },
     }))
     expect(seenCost).toBeCloseTo(0.0042, 6)
+  })
+})
+
+// A minimal provider stub — buildSystemPrompt only reads providerType + name.
+const stubProvider = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
+
+describe('buildSystemPrompt — skills listing is bounded (T3)', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agim-skills-cap-'))
+    process.env.IMHUB_SKILLS_MODE = 'agim-only'
+    process.env.IMHUB_SKILLS_WORKSPACE_DIR = dir
+    process.env.IMHUB_SKILLS_BUILTIN_DIR = join(dir, '__no_builtins__')
+    invalidateSkillsCache()
+  })
+  afterEach(() => {
+    delete process.env.IMHUB_SKILLS_MODE
+    delete process.env.IMHUB_SKILLS_WORKSPACE_DIR
+    delete process.env.IMHUB_SKILLS_BUILTIN_DIR
+    invalidateSkillsCache()
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('caps the system-prompt skills block at MAX_INJECTED_SKILLS and shows "+N more"', () => {
+    const total = MAX_INJECTED_SKILLS + 5
+    for (let i = 0; i < total; i++) {
+      const name = `skill-${String(i).padStart(3, '0')}`
+      mkdirSync(join(dir, name), { recursive: true })
+      writeFileSync(
+        join(dir, name, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: does thing ${i}\n---\nbody\n`,
+      )
+    }
+    invalidateSkillsCache()
+    const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
+    const shownLines = prompt.split('\n').filter((l) => /^\s+- skill-\d+:/.test(l))
+    expect(shownLines.length).toBe(MAX_INJECTED_SKILLS)
+    expect(prompt).toContain(`… and ${total - MAX_INJECTED_SKILLS} more`)
+    // The overflow skills must NOT be listed inline.
+    expect(prompt).not.toContain('skill-034:')
+  })
+})
+
+describe('readOperatorRole — memoized + mtime/size invalidation (T1)', () => {
+  let dir = ''
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'agim-role-cache-')) })
+  afterEach(() => { try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ } })
+
+  it('returns "" when AGENTS.md is absent', () => {
+    expect(readOperatorRole(dir)).toBe('')
+  })
+
+  it('reads, then serves the same content on repeat (cache hit)', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'You are the ops bot. Be terse.')
+    const first = readOperatorRole(dir)
+    expect(first).toContain('ops bot')
+    expect(readOperatorRole(dir)).toBe(first)
+  })
+
+  it('invalidates when the file changes (different size + mtime)', async () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'role one')
+    expect(readOperatorRole(dir)).toContain('role one')
+    await new Promise((r) => setTimeout(r, 10))
+    writeFileSync(join(dir, 'AGENTS.md'), 'a completely different and longer role definition v2')
+    const updated = readOperatorRole(dir)
+    expect(updated).toContain('longer role definition v2')
+    expect(updated).not.toContain('role one')
   })
 })
 

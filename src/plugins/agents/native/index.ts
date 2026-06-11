@@ -91,7 +91,7 @@ import {
   getPlanExitTools,
   PLAN_EXIT_TOOL_NAME,
 } from '../../../core/llm/plan-exit-dispatcher.js'
-import { listSkills } from '../../../core/skills/loader.js'
+import { listSkills, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { handlePushOp } from '../../../core/push-rpc.js'
@@ -126,9 +126,26 @@ export function buildSystemPrompt(
   cwd: string,
   threadKey?: string,
 ): string {
-  const skills = listSkills()
-  const skillsBlock = skills.length
-    ? skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n')
+  // T3 (context-as-budget): bound the tier-1 skills listing. listSkills()
+  // already caps each description at MAX_DESCRIPTION_CHARS; here we also cap
+  // the COUNT to MAX_INJECTED_SKILLS (the same ceiling buildSkillsSummary
+  // uses) so a large catalog can't blow the per-turn system-prompt budget.
+  // Sorted for stable ordering; overflow collapses into a "+N more" hint
+  // that points the model at the on-demand read_skill / /skill list path.
+  // (Previously this re-rolled an UNCAPPED `name: desc` line per skill.)
+  const allSkills = listSkills().slice().sort((a, b) => a.name.localeCompare(b.name))
+  const visibleSkills = allSkills.slice(0, MAX_INJECTED_SKILLS)
+  const skillsBlock = visibleSkills.length
+    ? visibleSkills
+        .map((s) => {
+          const desc = (s.description || '').trim() || '(no description; read body via mcp__imhub__read_skill)'
+          const mark = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
+          return `  - ${s.name}: ${desc}${mark}`
+        })
+        .join('\n')
+      + (allSkills.length > visibleSkills.length
+          ? `\n  … and ${allSkills.length - visibleSkills.length} more (use /skill list; read any with mcp__imhub__read_skill)`
+          : '')
     : '  (no skill cards loaded; see docs/skills.md to add one)'
   const mcpReg = describeMcpRegistry()
   const externalMcp = mcpReg.servers.length
@@ -315,14 +332,44 @@ export function buildSystemPrompt(
  *  operator likely wrote them deliberately) but log a warn + audit
  *  hit so post-incident forensics can correlate. Honours
  *  IMHUB_NATIVE_AGENT_ROLE_FILE for a non-default location. */
+/** Memoized operator-role cache (T1 — context-as-budget).
+ *  readOperatorRole used to read AGENTS.md from disk AND run the
+ *  prompt-injection scan + 8000-char sanitise on EVERY turn (and once per
+ *  candidate provider in the fallback chain). We now cache the sanitised
+ *  result keyed by absolute path, invalidating only when the file's own
+ *  mtime or size changes — i.e. the cache is "invalidated at the mutation
+ *  site" (the file itself) rather than on a timer. The per-turn cost drops
+ *  to a single stat().
+ *
+ *  Limitation: an edit that changes neither mtime nor byte length (same ms,
+ *  same size, different bytes) is not detected. That's effectively
+ *  impossible for a human-edited AGENTS.md and is the standard make/rsync
+ *  freshness heuristic; we accept it to avoid re-reading on every turn. */
+interface OperatorRoleCacheEntry { mtimeMs: number; size: number; content: string }
+const _operatorRoleCache = new Map<string, OperatorRoleCacheEntry>()
+
 export function readOperatorRole(cwd: string): string {
   const override = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
   const path = override && override.length > 0 ? override : pathJoin(cwd, 'AGENTS.md')
-  if (!fsExistsSync(path)) return ''
+  let st: import('node:fs').Stats
+  try {
+    st = fsStatSync(path)
+  } catch {
+    // Missing / unreadable → no role block; drop any stale cache entry.
+    _operatorRoleCache.delete(path)
+    return ''
+  }
+  const cached = _operatorRoleCache.get(path)
+  if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+    return cached.content
+  }
   let raw = ''
-  try { raw = fsReadFileSync(path, 'utf-8') } catch { return '' }
+  try { raw = fsReadFileSync(path, 'utf-8') } catch { _operatorRoleCache.delete(path); return '' }
   const trimmed = raw.trim()
-  if (!trimmed) return ''
+  if (!trimmed) {
+    _operatorRoleCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, content: '' })
+    return ''
+  }
   try {
     const scan = scanForInjectionAttempts(trimmed)
     if (scan.suspicious) {
@@ -333,7 +380,9 @@ export function readOperatorRole(cwd: string): string {
       }, `${path} contains prompt-injection-style language; injecting anyway — operator review recommended`)
     }
   } catch { /* scan is best-effort */ }
-  return sanitizeForInjection(trimmed, 8000)
+  const content = sanitizeForInjection(trimmed, 8000)
+  _operatorRoleCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, content })
+  return content
 }
 
 /** Role priority for picking which LLM backend powers the native chat

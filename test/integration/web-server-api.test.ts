@@ -283,6 +283,32 @@ describe('Web REST API', () => {
       })
       expect(res.status).toBe(200)
     })
+
+    it('forbids DELETE /api/viewer/:id for role=user (mutation requires admin)', async () => {
+      const token = createToken('integration-user-viewer-del', { role: 'user' })
+      const res = await fetch(url('/api/viewer/0123456789abcdef'), {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${token.raw}`,
+          'x-forwarded-for': '203.0.113.10',
+        },
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('lets admin past the DELETE /api/viewer/:id guard (404 for unknown id, not 403)', async () => {
+      const token = createToken('integration-admin-viewer-del', { role: 'admin' })
+      const res = await fetch(url('/api/viewer/0123456789abcdef'), {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${token.raw}`,
+          'x-forwarded-for': '203.0.113.10',
+        },
+      })
+      // Guard passed → handler runs; unknown id (or sqlite-degraded bun) → 404.
+      expect(res.status).not.toBe(403)
+      expect([200, 404]).toContain(res.status)
+    })
   })
 
   describe('Static tasks page', () => {

@@ -887,6 +887,11 @@ export async function startWebServer(options: {
       return handleViewerGet(req, res, viewerIdMatch[1])
     }
     if (viewerIdMatch && req.method === 'DELETE') {
+      // Deleting a viewer paste is a mutation; per the security model all
+      // mutation endpoints require admin. Previously this route had no guard,
+      // so any authenticated token (incl. role=user, e.g. a mobile-QR token)
+      // could delete any paste by its id (ids leak via IM `/v/<uuid>` links).
+      if (!requireAdmin(req, res)) return
       return handleViewerDelete(req, res, viewerIdMatch[1])
     }
     // PR-B: agent health snapshot (circuit breaker + rate-limiter remaining

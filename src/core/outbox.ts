@@ -55,6 +55,7 @@ export interface OutboxRow {
   delivered_at: string | null
   next_attempt_at: string | null
   created_at: string
+  dedup_key: string | null
 }
 
 export interface EnqueueOpts {
@@ -67,6 +68,11 @@ export interface EnqueueOpts {
   kind: OutboxKind
   priority?: OutboxPriority
   jobId?: number | null
+  /** Optional idempotency key. When set, a second enqueue with the same key
+   *  is a no-op and returns the existing row id, so a retried/replayed caller
+   *  (e.g. a reminder resurrected from the 'firing' state after a crash) can't
+   *  enqueue a duplicate message. */
+  dedupKey?: string | null
 }
 
 /** Backoff schedule in seconds. attempts=N failed → wait BACKOFF[N-1] seconds
@@ -109,7 +115,8 @@ const helper = createSqliteHelper({
       last_error      TEXT,
       delivered_at    TEXT,
       next_attempt_at TEXT,
-      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      dedup_key       TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_outbox_pending
       ON outbox(status, priority, next_attempt_at, created_at)
@@ -118,8 +125,25 @@ const helper = createSqliteHelper({
       ON outbox(status, delivered_at);
     CREATE INDEX IF NOT EXISTS idx_outbox_thread
       ON outbox(thread_key, status);
+    -- Idempotency: at most one live row per dedup_key. Partial so the common
+    -- case (no key) is unconstrained. Lets callers (e.g. reminder firing)
+    -- enqueue with a stable per-occurrence key so a crash-induced re-fire
+    -- can't double-send the same message.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedup
+      ON outbox(dedup_key) WHERE dedup_key IS NOT NULL;
   `,
   init: (d) => {
+    // Migration: add dedup_key to pre-existing DBs (CREATE TABLE IF NOT EXISTS
+    // won't add columns). Guarded so a duplicate-column race is a no-op.
+    const cols = d.pragma('table_info(outbox)') as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'dedup_key')) {
+      try { d.exec('ALTER TABLE outbox ADD COLUMN dedup_key TEXT') } catch { /* already added by a concurrent boot */ }
+    }
+    try {
+      d.exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedup ON outbox(dedup_key) WHERE dedup_key IS NOT NULL",
+      )
+    } catch { /* index already present */ }
     // Cold-start cleanup: prune retained rows and seed periodic sweep.
     pruneOldOutbox(d)
     if (RETENTION_SWEEP_INTERVAL_MS > 0 && retentionSweepTimer === null) {
@@ -202,12 +226,16 @@ export function enqueue(opts: EnqueueOpts): number {
     }
   }
 
+  const dedupKey = opts.dedupKey ?? null
   try {
+    // INSERT OR IGNORE so a duplicate dedup_key collides on the partial unique
+    // index and is silently skipped rather than throwing. dedup_key=NULL never
+    // collides (NULLs are excluded from the partial index).
     const row = d.prepare(
-      `INSERT INTO outbox
+      `INSERT OR IGNORE INTO outbox
          (job_id, thread_key, platform, channel_id, thread_id,
-          payload, kind, priority, status, next_attempt_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
+          payload, kind, priority, status, next_attempt_at, dedup_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'), ?)`,
     ).run(
       opts.jobId ?? null,
       opts.threadKey,
@@ -217,7 +245,20 @@ export function enqueue(opts: EnqueueOpts): number {
       payload,
       opts.kind,
       opts.priority ?? 'normal',
+      dedupKey,
     )
+    if (row.changes === 0 && dedupKey !== null) {
+      // Duplicate dedup_key — a row already exists for this logical message.
+      // Return its id so the caller treats the enqueue as a (idempotent) success.
+      const existing = d.prepare('SELECT id FROM outbox WHERE dedup_key = ?').get(dedupKey) as { id: number } | undefined
+      if (existing) {
+        rootLogger.debug(
+          { component: 'outbox', event: 'outbox.dedup_hit', dedupKey, id: existing.id },
+          'enqueue deduplicated — existing row reused',
+        )
+        return existing.id
+      }
+    }
     return Number(row.lastInsertRowid)
   } catch (err) {
     rootLogger.warn(

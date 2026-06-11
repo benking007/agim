@@ -170,6 +170,31 @@ skipIfNoDb('outbox CRUD', () => {
     expect(outbox.pickPending(10).map((r) => r.id)).toContain(id)
   })
 
+  it('dedupKey makes enqueue idempotent (no duplicate row)', () => {
+    const key = 'reminder:7:2026-06-11T06:38:40.000Z'
+    const first = outbox.enqueue({
+      threadKey: 'dk', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'remind me', kind: 'text', dedupKey: key,
+    })
+    expect(first).toBeGreaterThan(0)
+    // A resurrected caller re-enqueues the same logical message — must be a
+    // no-op that returns the existing id, leaving a single row.
+    const second = outbox.enqueue({
+      threadKey: 'dk', platform: 'p', channelId: 't', threadId: 't',
+      payload: 'remind me (replay)', kind: 'text', dedupKey: key,
+    })
+    expect(second).toBe(first)
+    expect(outbox.pickPending(50).filter((r) => r.dedup_key === key).length).toBe(1)
+  })
+
+  it('null dedupKey never collides', () => {
+    const a = outbox.enqueue({ threadKey: 'n', platform: 'p', channelId: 'c', threadId: 't', payload: 'a', kind: 'text' })
+    const b = outbox.enqueue({ threadKey: 'n', platform: 'p', channelId: 'c', threadId: 't', payload: 'b', kind: 'text' })
+    expect(a).toBeGreaterThan(0)
+    expect(b).toBeGreaterThan(0)
+    expect(a).not.toBe(b)
+  })
+
   it('priority=high is picked before priority=normal', () => {
     const lo = outbox.enqueue({
       threadKey: 'a', platform: 'p', channelId: 'c', threadId: 't',

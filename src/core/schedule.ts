@@ -242,9 +242,44 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
   const d = getDb()
   if (!d) return
 
+  // Compute the next occurrence up front. A bad/edited cron disables the
+  // schedule rather than letting it re-fire forever.
+  let nextIso: string | null = null
+  try {
+    const next = nextOccurrence(parseCron(s.cron), new Date())
+    nextIso = next ? next.toISOString() : null
+  } catch {
+    d.prepare('UPDATE schedules SET enabled = 0 WHERE id = ?').run(s.id)
+    return
+  }
+
+  // Atomically CLAIM this run by advancing next_run with a compare-and-swap
+  // on the value we observed (s.next_run). This single statement:
+  //   - prevents duplicate job creation when two ticks overlap (only one CAS
+  //     wins; the loser sees changes===0 and bails),
+  //   - guarantees next_run is advanced BEFORE the job is created, closing the
+  //     old "createJob succeeded but next_run never bumped → re-fire forever"
+  //     window (we now prefer skipping a run over duplicating one).
+  const nowIso = new Date().toISOString()
+  const claim = nextIso
+    ? d.prepare(
+        'UPDATE schedules SET last_run = ?, next_run = ? WHERE id = ? AND next_run = ? AND enabled = 1',
+      ).run(nowIso, nextIso, s.id, s.next_run)
+    // No further occurrence — disable as the terminal state for this run.
+    : d.prepare(
+        'UPDATE schedules SET last_run = ?, enabled = 0 WHERE id = ? AND next_run = ? AND enabled = 1',
+      ).run(nowIso, s.id, s.next_run)
+  if (claim.changes !== 1) {
+    logger.debug({ scheduleId: s.id }, 'schedule run already claimed by another tick; skipping')
+    return
+  }
+
   const agent = registry.findAgent(s.agent)
   if (!agent) {
-    logger.warn({ scheduleId: s.id, agent: s.agent }, 'Schedule agent not registered, skipping')
+    // next_run was already advanced by the claim above, so a schedule pointing
+    // at an unregistered agent no longer busy-loops every tick — it retries at
+    // the next occurrence (the agent may register later).
+    logger.warn({ scheduleId: s.id, agent: s.agent }, 'Schedule agent not registered, skipping this run')
     return
   }
 
@@ -253,21 +288,6 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     workspaceId: s.workspace_id,
   })
   logger.info({ scheduleId: s.id, jobId, name: s.name }, 'Schedule fired')
-
-  // Compute next_run BEFORE running so even a long-running job doesn't
-  // block the next tick.
-  try {
-    const nextSpec = parseCron(s.cron)
-    const next = nextOccurrence(nextSpec, new Date())
-    if (next) {
-      d.prepare('UPDATE schedules SET last_run = ?, next_run = ? WHERE id = ?')
-        .run(new Date().toISOString(), next.toISOString(), s.id)
-    }
-  } catch {
-    // Bad cron at this point would only happen if it was edited externally.
-    // Disable rather than re-fire forever.
-    d.prepare('UPDATE schedules SET enabled = 0 WHERE id = ?').run(s.id)
-  }
 
   // Run via Job Board so the result is persisted + bounded concurrency.
   void runJob(jobId, async function* (job, _jobLogger, signal) {
@@ -349,7 +369,12 @@ export async function tick(now: Date = new Date()): Promise<number> {
 /** Start the periodic ticker. Idempotent. */
 export function startScheduler(): void {
   if (tickTimer) return
-  tickTimer = setInterval(() => { void tick() }, TICK_INTERVAL_MS)
+  tickTimer = setInterval(() => {
+    void tick().catch((err) => {
+      log.error({ event: 'schedule.tick.unhandled', err: err instanceof Error ? err.message : String(err) },
+        'scheduler tick threw unhandled')
+    })
+  }, TICK_INTERVAL_MS)
   if (typeof tickTimer === 'object' && tickTimer && 'unref' in tickTimer) {
     (tickTimer as { unref: () => void }).unref()
   }

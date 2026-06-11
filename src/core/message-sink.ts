@@ -63,6 +63,12 @@ export interface SinkPayload {
   /** Optional explicit thread key. Default is
    *  `${platform}:${channelId}:${threadId}` (matches session.ts). */
   threadKey?: string
+  /** Optional idempotency key forwarded to outbox.enqueue. When set, a
+   *  repeated deliver with the same key is a no-op (no duplicate row). Used by
+   *  reminder firing so a reminder resurrected from 'firing' after a crash
+   *  can't enqueue the same message twice. Only meaningful for the queued
+   *  (non-high-priority) path. */
+  dedupKey?: string
   /** Optional already-resolved adapter. When provided, sink uses it
    *  directly for the sync attempt instead of consulting the global
    *  registry. Required by callers that maintain their own resolution
@@ -279,7 +285,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
       payload: payloadStr, kind: p.kind, priority,
       status: 'pending', attempts: 0,
       last_attempt_at: null, last_error: null, delivered_at: null,
-      next_attempt_at: null, created_at: new Date().toISOString(),
+      next_attempt_at: null, created_at: new Date().toISOString(), dedup_key: null,
     }
     try {
       await doSend(synthetic, p.adapter)
@@ -308,6 +314,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
   const id = enqueue({
     threadKey, platform: p.platform, channelId: p.channelId, threadId: p.threadId,
     payload: payloadStr, kind: p.kind, priority, jobId: p.jobId ?? null,
+    dedupKey: p.dedupKey ?? null,
   })
   if (id < 0) {
     // Outbox itself is broken (sqlite disabled, e.g. on bun without the
@@ -323,7 +330,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
         payload: payloadStr, kind: p.kind, priority,
         status: 'pending', attempts: 0,
         last_attempt_at: null, last_error: null, delivered_at: null,
-        next_attempt_at: null, created_at: new Date().toISOString(),
+        next_attempt_at: null, created_at: new Date().toISOString(), dedup_key: null,
       }, p.adapter)
       return { outboxId: -1, immediate: true }
     } catch (err) {

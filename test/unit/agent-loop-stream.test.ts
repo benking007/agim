@@ -169,6 +169,43 @@ describe('runAgentLoop — streaming + partial preservation (v1.2.112)', () => {
     expect(r.text).toBe('done')
   })
 
+  it('complete toolCalls delivered in one chunk (pseudo-stream) are dispatched', async () => {
+    // Mirrors a pseudo-streaming provider (e.g. Anthropic's buffered
+    // _callApiStream): the chunk carries fully-formed `toolCalls` instead
+    // of incremental `toolCallDeltas`. The loop must still dispatch them.
+    // Regression for the bug where Anthropic native turns dropped every
+    // tool call because the delta accumulator stayed empty.
+    const provider = new StreamingStubProvider([
+      [
+        {
+          textDelta: 'calling',
+          toolCalls: [{ id: 'toolu_1', name: 'native_read_file', arguments: { path: '/etc/hostname' } }],
+          finishReason: 'tool_use',
+        },
+      ],
+      // Second iteration after the tool result lands.
+      [
+        { textDelta: 'done', finishReason: 'stop' },
+      ],
+    ])
+    let dispatchArgs: Record<string, unknown> | undefined
+    const dispatch = async (call: { name: string; arguments: Record<string, unknown> }): Promise<DispatcherResult> => {
+      dispatchArgs = call.arguments
+      return { text: 'localhost\n', isError: false, source: 'stub' }
+    }
+    const r = await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      dispatch,
+      streamPartialText: true,
+    })
+    expect(dispatchArgs).toEqual({ path: '/etc/hostname' })
+    expect(r.toolCalls.length).toBe(1)
+    expect(r.toolCalls[0]!.name).toBe('native_read_file')
+    expect(r.text).toBe('done')
+  })
+
   it('reasoning_content deltas concatenate into ChatResult.reasoningContent', async () => {
     const provider = new StreamingStubProvider([[
       { textDelta: '', reasoningDelta: 'thinking 1 ' },

@@ -98,6 +98,52 @@ describe('AnthropicProvider — basics', () => {
     expect(sentHeaders['X-Custom']).toBe('yes')
   })
 
+  it('normalises a trailing /v1 in baseUrl so the path is not doubled', async () => {
+    // The wizard preset historically shipped `https://api.anthropic.com/v1`,
+    // which used to produce `/v1/v1/messages` → 404. Tolerate it.
+    for (const base of [
+      'https://api.anthropic.com/v1',
+      'https://api.anthropic.com/v1/',
+      'https://gw.example.com/anthropic/v1',
+    ]) {
+      let sentUrl = ''
+      globalThis.fetch = (async (url: string) => {
+        sentUrl = url
+        return makeJsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' })
+      }) as unknown as typeof fetch
+      const p = new AnthropicProvider({ name: 'c', model: 'm', apiKey: 'k', baseUrl: base })
+      await p.chat([{ role: 'user', content: 'x' }])
+      const expected = base.replace(/\/+$/, '').replace(/\/v1$/, '') + '/v1/messages'
+      expect(sentUrl).toBe(expected)
+      expect(sentUrl).not.toContain('/v1/v1/')
+    }
+  })
+
+  it('pseudo-stream (chatStream) carries complete toolCalls so the agent loop can dispatch them', async () => {
+    // Regression: a tool_use turn must surface toolCalls through chatStream,
+    // not just text — otherwise the native agent (streaming on by default)
+    // silently drops every Anthropic tool call.
+    globalThis.fetch = (async () => makeJsonResponse({
+      content: [
+        { type: 'text', text: 'using a tool' },
+        { type: 'tool_use', id: 'toolu_99', name: 'do_thing', input: { x: 'hi' } },
+      ],
+      stop_reason: 'tool_use',
+    })) as unknown as typeof fetch
+    const p = new AnthropicProvider({ name: 'c', model: 'm', apiKey: 'k' })
+    const chunks = []
+    for await (const c of p.chatStream([{ role: 'user', content: 'go' }], {
+      tools: [{ name: 'do_thing', description: '', parameters: {} }],
+    })) {
+      chunks.push(c)
+    }
+    const withCalls = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0)
+    expect(withCalls).toBeDefined()
+    expect(withCalls?.toolCalls?.[0].name).toBe('do_thing')
+    expect(withCalls?.toolCalls?.[0].arguments).toEqual({ x: 'hi' })
+    expect(withCalls?.finishReason).toBe('tool_use')
+  })
+
   it('retries once on 429 then succeeds', async () => {
     let calls = 0
     globalThis.fetch = (async () => {

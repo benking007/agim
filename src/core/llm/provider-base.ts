@@ -243,6 +243,15 @@ export interface ChatStreamChunk {
   textDelta: string
   /** v1.2.112 — partial tool_call(s) from a streamed turn. */
   toolCallDeltas?: ToolCallStreamDelta[]
+  /** Complete, already-materialised tool_call(s) delivered in a single
+   *  chunk. Used by providers that don't stream incremental tool_call
+   *  deltas (e.g. a buffered/pseudo-streaming `_callApiStream` that wraps
+   *  one `_callApi` response). The stream consumer must accept these as
+   *  fully-formed (no `index`-based concatenation). When set, they take
+   *  precedence over anything accumulated from `toolCallDeltas`. Without
+   *  this, a pseudo-streaming provider silently drops every tool call
+   *  because the delta accumulator stays empty. */
+  toolCalls?: ToolCallRequest[]
   /** v1.2.112 — provider thinking-trace delta (e.g. DeepSeek
    *  reasoning_content). Optional; concatenate by order seen. */
   reasoningDelta?: string

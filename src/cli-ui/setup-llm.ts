@@ -59,7 +59,9 @@ const PROVIDER_PRESETS: Array<{
     modelHint: 'gpt-4o-mini',
     apiKeyDoc: 'platform.openai.com → API keys' },
   { label: 'Anthropic (native)',
-    provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1',
+    // NB: no trailing /v1 — the Anthropic provider appends `/v1/messages`
+    // itself, so a `…/v1` base URL would 404 with `/v1/v1/messages`.
+    provider: 'anthropic', baseUrl: 'https://api.anthropic.com',
     modelHint: 'claude-3-5-sonnet-20241022',
     apiKeyDoc: 'console.anthropic.com → API Keys' },
   { label: 'Custom / other openai-compatible',

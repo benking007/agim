@@ -86,7 +86,15 @@ export class AnthropicProvider extends LlmProvider {
       ...cfg,
       providerType: cfg.providerLabel || 'anthropic',
     })
-    this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
+    // Normalise the base URL. We always append `/v1/messages` below, so a
+    // trailing `/v1` (or `/v1/`) would produce `/v1/v1/messages` → 404. Our
+    // own setup wizard preset historically shipped `…/v1`, and operators
+    // copy the same string from Anthropic's docs, so tolerate it here rather
+    // than only fixing the preset. Strip trailing slashes first, then a
+    // single trailing `/v1` segment.
+    this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL)
+      .replace(/\/+$/, '')
+      .replace(/\/v1$/, '')
     this.apiVersion = cfg.apiVersion || DEFAULT_API_VERSION
     this.extraHeaders = cfg.extraHeaders || {}
     this.retryOnTransient = Math.max(0, cfg.retryOnTransient ?? DEFAULT_RETRY)
@@ -112,9 +120,14 @@ export class AnthropicProvider extends LlmProvider {
     }
   }
 
-  // Streaming not implemented in this PR; LlmProvider's base
-  // _callApiStream falls back to buffered + single chunk yield, which
-  // is correct for callers that don't need incremental delivery.
+  // Pseudo-streaming: Anthropic SSE isn't wired yet, so we buffer one
+  // `_callApi` response and emit it as a single chunk. CRITICAL: the chunk
+  // MUST carry `toolCalls` (complete, not deltas). The agent-loop stream
+  // consumer accumulates tool calls from `toolCallDeltas`; if we only
+  // yielded text + finishReason, a `tool_use` turn would arrive with an
+  // empty tool-call set and the loop would terminate without ever
+  // dispatching the tool — i.e. an Anthropic native backend could not use
+  // tools at all whenever streaming was enabled (the native default).
   protected override async *_callApiStream(
     messages: LlmMessage[],
     opts: NormalizedOptions,
@@ -123,6 +136,7 @@ export class AnthropicProvider extends LlmProvider {
     const result = await this._callApi(messages, opts, signal)
     yield {
       textDelta: result.text,
+      toolCalls: result.toolCalls,
       finishReason: result.finishReason,
       usage: result.usage,
     }

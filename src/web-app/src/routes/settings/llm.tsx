@@ -51,7 +51,8 @@ const PRESETS: ProviderPreset[] = [
   { provider: 'openai-compat',
     baseUrl: 'https://api.openai.com/v1', modelHint: 'gpt-4o-mini' },
   { provider: 'anthropic',
-    baseUrl: 'https://api.anthropic.com/v1', modelHint: 'claude-3-5-sonnet-20241022' },
+    // No trailing /v1: the Anthropic provider appends `/v1/messages` itself.
+    baseUrl: 'https://api.anthropic.com', modelHint: 'claude-3-5-sonnet-20241022' },
   { provider: 'openai-compat',
     baseUrl: '', modelHint: '' },
 ]

@@ -4,7 +4,7 @@
 // ranges unless the operator explicitly opts in via env.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { validateWebhookUrl } from '../../src/core/schedule'
+import { validateWebhookUrl, assertWebhookHostPublic } from '../../src/core/schedule'
 
 const ENV_FLAG = 'IMHUB_ALLOW_PRIVATE_WEBHOOKS'
 const ORIGINAL = process.env[ENV_FLAG]
@@ -100,6 +100,40 @@ describe('validateWebhookUrl', () => {
       process.env[ENV_FLAG] = '1'
       const r = validateWebhookUrl('file:///etc/passwd')
       expect(r.ok).toBe(false)
+    })
+  })
+
+  // CR H2 — the lexical validateWebhookUrl only sees the (WHATWG-normalized)
+  // host string, so a HOSTNAME that resolves to private space — DNS rebinding,
+  // split-horizon, or an attacker domain whose A-record points at
+  // 169.254.169.254 / 10.x / 127.x — passes it. assertWebhookHostPublic
+  // resolves the host at fetch time and rejects whatever it lands on. That's
+  // the "at-fetch-time guard tracked separately" the code comment referenced.
+  describe('assertWebhookHostPublic (at-fetch-time DNS guard)', () => {
+    it('a non-IP hostname passes the lexical check (only the DNS guard can judge it)', () => {
+      // The lexical check can't know what evil.example resolves to.
+      expect(validateWebhookUrl('http://evil.example/hook').ok).toBe(true)
+    })
+
+    it('rejects a literal loopback IP', async () => {
+      expect((await assertWebhookHostPublic('127.0.0.1')).ok).toBe(false)
+    })
+
+    it('rejects a private RFC1918 literal', async () => {
+      expect((await assertWebhookHostPublic('10.1.2.3')).ok).toBe(false)
+    })
+
+    it('rejects the cloud-metadata link-local address', async () => {
+      expect((await assertWebhookHostPublic('169.254.169.254')).ok).toBe(false)
+    })
+
+    it('allows a public literal IP', async () => {
+      expect((await assertWebhookHostPublic('8.8.8.8')).ok).toBe(true)
+    })
+
+    it('IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 bypasses the DNS guard', async () => {
+      process.env[ENV_FLAG] = '1'
+      expect((await assertWebhookHostPublic('127.0.0.1')).ok).toBe(true)
     })
   })
 })

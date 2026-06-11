@@ -387,6 +387,12 @@ export interface AgentSendOpts {
    *  don't leave orphan codex / claude / opencode processes writing into
    *  `_agim-output/` long after agim has given up on the result. */
   signal?: AbortSignal
+  /** The inbound turn's trace id (ADR-0002). Adapters that mint their own
+   *  audit rows (notably the in-process native agent) should use this so the
+   *  audit / invocations rows correlate back to the originating IM message
+   *  in SIEM joins, rather than minting a disconnected id. CLI adapters that
+   *  don't self-audit can ignore it. */
+  traceId?: string
 }
 
 /**

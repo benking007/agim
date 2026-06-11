@@ -1241,7 +1241,12 @@ class NativeAgentAdapter implements AgentAdapter {
     // fs tools, but fs-dispatcher now needs the value at dispatch
     // build time.
 
-    const traceId = `native-${sessionId}-${Date.now()}`
+    // ADR-0002 — prefer the inbound turn's trace id (plumbed via opts.traceId
+    // from the router) so the native iteration / turn audit rows correlate
+    // back to the originating IM message in SIEM joins. Fall back to a
+    // self-minted id only for entry points that don't carry one (e.g. an A2A
+    // in-process spawn or a direct CLI/smoke invocation).
+    const traceId = opts.traceId || `native-${sessionId}-${Date.now()}`
     // Wall-clock cap for the agent loop. agim's IM-layer enforces a 30-
     // minute hard ceiling per turn (DEFAULT_TIMEOUT_MS in agent-base.ts);
     // we set the inner loop a hair below so the loop's own abort fires

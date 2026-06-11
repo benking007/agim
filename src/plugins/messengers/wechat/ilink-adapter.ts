@@ -413,12 +413,24 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
           this.pollState.getUpdatesBuf = response.get_updates_buf
           if (response.msgs) {
             for (const msg of response.msgs) {
+              // Preserve the reply context token even for non-dispatchable
+              // messages (handleIncomingMessage also sets it, but only after
+              // its bot/item-list early returns).
               if (msg.from_user_id && msg.context_token) {
                 this.setContextToken(msg.from_user_id, msg.context_token)
               }
+              // Actually DISPATCH the recovered messages. getUpdates('')
+              // consumed the server-side cursor, so any messages it returns
+              // are lost forever if we don't process them here. Mirror the
+              // main poll loop: fire-and-forget + per-message dedup inside
+              // handleIncomingMessage (so a later real re-delivery of the
+              // same id is still deduped).
+              this.handleIncomingMessage(msg).catch((err) =>
+                log.error({ err: err instanceof Error ? err.message : String(err) },
+                  'Recovered-message handler error'))
             }
           }
-          log.info({ attempt }, 'Session recovered after SESSION_EXPIRED')
+          log.info({ attempt, recovered: response.msgs?.length ?? 0 }, 'Session recovered after SESSION_EXPIRED')
           return true
         }
         log.warn({ attempt, ret: response.ret }, 'Session refresh attempt returned error')

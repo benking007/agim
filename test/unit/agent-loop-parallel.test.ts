@@ -151,6 +151,39 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
     expect(r.toolCalls[2]!.argsKey).toContain('mid')
   }, 5000)
 
+  it('parallelSafeClassifier classifies per-call (takes precedence) and is fail-closed on throw', async () => {
+    // Same tool NAME, different inputs → the classifier decides per call:
+    // 'read' is concurrent-safe, 'boom' makes the classifier throw → that
+    // call must run serially (fail-closed) without crashing the turn.
+    const calls = [
+      tc('1', 'poly', { mode: 'read' }),
+      tc('2', 'poly', { mode: 'read' }),
+      tc('3', 'poly', { mode: 'boom' }),
+    ]
+    const provider = new QueuedStubProvider([turn(calls), done()])
+    const dispatch = async (): Promise<DispatcherResult> => {
+      await sleep(30)
+      return { text: 'ok', isError: false, source: 'stub' }
+    }
+    const r = await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'poly', description: '', parameters: { type: 'object', properties: {} } }],
+      dispatch,
+      // The static set would classify 'poly' as unsafe everywhere; the
+      // classifier takes precedence and decides per-call.
+      parallelSafeTools: new Set(),
+      parallelSafeClassifier: (call) => {
+        const mode = (call.arguments as { mode?: string }).mode
+        if (mode === 'boom') throw new Error('classifier blew up')
+        return mode === 'read'
+      },
+    })
+    // All three dispatched, the throwing classifier did NOT crash the turn.
+    expect(r.toolCalls.length).toBe(3)
+    expect(r.finishReason).toBe('stop')
+  }, 5000)
+
   it('serial barrier: a non-parallel-safe call drains pending parallel before dispatching', async () => {
     // Sequence: 2 parallel-safe + 1 serial + 2 parallel-safe.
     // We expect the SERIAL call to start AFTER both leading parallels

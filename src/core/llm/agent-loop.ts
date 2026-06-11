@@ -649,6 +649,15 @@ export interface AgentLoopInput {
    *  v1.2.108). */
   parallelSafeTools?: ReadonlySet<string>
 
+  /** T2 — per-call concurrency classifier. Takes precedence over
+   *  `parallelSafeTools` when provided. Returns true ONLY for genuinely
+   *  read-only / pure / order-independent calls; the loop falls back to
+   *  serial for everything else. Fail-closed: a classifier that throws is
+   *  treated as "not safe" (serial), never escalated to a crash. Lets a
+   *  source classify the SAME tool name differently per input (e.g. a glob
+   *  that triggers a write) — the static set can't. */
+  parallelSafeClassifier?: (call: ToolCallRequest) => boolean
+
   /** v1.2.112 — opt into streaming the provider response so the iter
    *  preserves partial assistant text on abort instead of dropping
    *  everything when the 30-min IM hard timeout fires mid-response.
@@ -1177,7 +1186,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }
       }
 
-      const isParallel = !!parallelSafe?.has(call.name)
+      const isParallel = input.parallelSafeClassifier
+        ? classifyParallelSafe(input.parallelSafeClassifier, call)
+        : !!parallelSafe?.has(call.name)
       if (isParallel) {
         pendingTasks.push(runDispatch())
       } else {
@@ -1426,6 +1437,25 @@ function mergeSignal(userSignal: AbortSignal | undefined, timeoutMs: number | un
       if (timer) clearTimeout(timer)
       if (userSignal) userSignal.removeEventListener('abort', onAbort)
     },
+  }
+}
+
+/** T2 — run the caller's per-call concurrency classifier, fail-closed.
+ *  A classifier that throws (or any non-true return) means "serial" so a
+ *  buggy predicate degrades throughput rather than crashing the turn. */
+function classifyParallelSafe(
+  classifier: (call: ToolCallRequest) => boolean,
+  call: ToolCallRequest,
+): boolean {
+  try {
+    return classifier(call) === true
+  } catch (err) {
+    log.warn({
+      event: 'agent-loop.parallel_classifier_threw',
+      tool: call.name,
+      err: err instanceof Error ? err.message : String(err),
+    })
+    return false
   }
 }
 

@@ -5,7 +5,7 @@
 // assert on the AsyncGenerator output + describeNativeAgent banner.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { nativeAgentAdapter, describeNativeAgent, buildSystemPrompt, readOperatorRole } from './index.js'
+import { nativeAgentAdapter, describeNativeAgent, buildSystemPrompt, readOperatorRole, isWorkspaceTrusted } from './index.js'
 import { invalidateSkillsCache, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -321,6 +321,55 @@ describe('readOperatorRole — project + local hierarchy (T4, local wins)', () =
     expect(role).toContain('PINNED role only')
     expect(role).not.toContain('PROJECT should be ignored')
     expect(role).not.toContain('LOCAL should be ignored')
+  })
+})
+
+describe('readOperatorRole — workspace trust gate (T6)', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agim-role-trust-'))
+    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+    delete process.env.IMHUB_NATIVE_TRUST_WORKSPACE
+  })
+  afterEach(() => {
+    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+    delete process.env.IMHUB_NATIVE_TRUST_WORKSPACE
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('default is trusted → workspace role files are injected', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'WORKSPACE ROLE')
+    expect(isWorkspaceTrusted()).toBe(true)
+    expect(readOperatorRole(dir)).toContain('WORKSPACE ROLE')
+  })
+
+  it('untrusted workspace skips ALL discovered role files', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'SHOULD NOT LEAK')
+    writeFileSync(join(dir, 'AGENTS.local.md'), 'ALSO NOT')
+    process.env.IMHUB_NATIVE_TRUST_WORKSPACE = 'off'
+    expect(isWorkspaceTrusted()).toBe(false)
+    expect(readOperatorRole(dir)).toBe('')
+  })
+
+  it('an explicit pinned role file is honoured even when the workspace is untrusted', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'discovered should be skipped')
+    const pinned = join(dir, 'pinned.md')
+    writeFileSync(pinned, 'OPERATOR PINNED ROLE')
+    process.env.IMHUB_NATIVE_TRUST_WORKSPACE = '0'
+    process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = pinned
+    const role = readOperatorRole(dir)
+    expect(role).toContain('OPERATOR PINNED ROLE')
+    expect(role).not.toContain('discovered should be skipped')
+  })
+})
+
+describe('buildSystemPrompt — verification-subagent SOP (T5)', () => {
+  const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
+  it('includes the verification-subagent + synthesize-dont-delegate guidance', () => {
+    const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
+    expect(prompt).toContain('Verification subagent')
+    expect(prompt).toMatch(/Synthesize, don't delegate understanding/)
+    expect(prompt).toMatch(/self-contained brief/i)
   })
 })
 

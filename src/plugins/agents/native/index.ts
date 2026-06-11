@@ -232,6 +232,21 @@ export function buildSystemPrompt(
     `    a codebase) → fan-out via call_agent('native', …) so each sub-agent's context is fresh.`,
     `  - Tip: write the sub-agent prompt as a self-contained brief — they don't see this conversation.`,
     ``,
+    `Verification subagent (T5 — harness pattern, the most reliably useful multi-agent move):`,
+    `  - After you produce a SUBSTANTIVE result (a multi-step conclusion, a refactor, a data`,
+    `    analysis, anything you're about to report or commit), spin up a FRESH subagent whose sole`,
+    `    job is to verify it independently:`,
+    `      call_agent('codex', 'Verify the result below against <source / acceptance criteria>.`,
+    `                 Report ONLY discrepancies or risks; if it checks out, say so. <paste result>')`,
+    `    Use 'codex' for code/logic review, 'native' for a fresh-eyes fact/consistency check.`,
+    `  - Give the verifier a SELF-CONTAINED brief: restate the claim AND how to check it, and paste`,
+    `    the artifact. It does NOT see this conversation — "verify my findings" with nothing attached`,
+    `    is useless.`,
+    `  - Synthesize, don't delegate understanding: digest what you learned into a PRECISE spec before`,
+    `    delegating implementation or verification. "Based on your findings, fix it" is an anti-pattern`,
+    `    — you (the coordinator) must state exactly what to do, not hand off the thinking.`,
+    `  - Don't over-verify: skip the verifier for trivial / low-stakes turns (it costs a call_agent hop).`,
+    ``,
     `Web tool routing (HARD RULE — v1.2.64):`,
     `  - If the user provided a SPECIFIC URL (http://… or https://…) → native_web_fetch.`,
     `  - If the user wants to FIND / DISCOVER something by keywords ("查找最新 X" / "search for Y" /`,
@@ -397,7 +412,13 @@ function readRoleFile(path: string): string {
 export function readOperatorRole(cwd: string): string {
   const override = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
   if (override && override.length > 0) {
+    // An explicit pin is operator-chosen → trusted regardless of the gate.
     return readRoleFile(override)
+  }
+  // T6 — workspace trust gate. Discovered workspace files are skipped wholesale
+  // when the workspace is marked untrusted (see isWorkspaceTrusted).
+  if (!isWorkspaceTrusted()) {
+    return ''
   }
   const parts: string[] = []
   for (const p of [pathJoin(cwd, 'AGENTS.md'), pathJoin(cwd, 'AGENTS.local.md')]) {
@@ -405,6 +426,28 @@ export function readOperatorRole(cwd: string): string {
     if (c) parts.push(c)
   }
   return parts.join('\n\n')
+}
+
+/**
+ * T6 — workspace trust gate (distilled from the agentic-harness Lifecycle
+ * pattern's "trust is all-or-nothing; an untrusted workspace disables the
+ * whole extension surface, not just suspicious parts").
+ *
+ * agim treats `<cwd>/AGENTS.md` + `AGENTS.local.md` as an operator-authored
+ * role definition injected into the system prompt — a privileged surface. In
+ * multi-tenant / A2A setups the native cwd can point at a directory whose
+ * contents are NOT fully operator-controlled, where an attacker-planted
+ * AGENTS.md is a prompt-injection vector. Setting
+ * `IMHUB_NATIVE_TRUST_WORKSPACE=off` (or 0/false/no) makes readOperatorRole
+ * skip ALL workspace-discovered role files at once. Default is trusted
+ * (on) for backward compatibility — operators opt into the stricter posture.
+ *
+ * An explicit `IMHUB_NATIVE_AGENT_ROLE_FILE` bypasses the gate: the operator
+ * pinned that exact file deliberately, so it stays trusted.
+ */
+export function isWorkspaceTrusted(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_TRUST_WORKSPACE ?? '').toLowerCase().trim()
+  return !(raw === 'off' || raw === '0' || raw === 'false' || raw === 'no')
 }
 
 /** Role priority for picking which LLM backend powers the native chat

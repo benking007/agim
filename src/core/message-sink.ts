@@ -29,7 +29,7 @@ import type { MessengerAdapter } from './types.js'
 import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
 import {
-  enqueue, pickPending, markDelivered, markFailed,
+  enqueue, pickPending, claimForSend, requeueStuckSending, markDelivered, markFailed,
   type OutboxKind, type OutboxPriority, type OutboxRow,
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
@@ -438,6 +438,11 @@ async function workerTick(): Promise<void> {
     const batch = pickPending(resolveBatchSize())
     for (const row of batch) {
       if (workerStopRequested) break
+      // Atomically lease the row (pending → sending) before sending. If the
+      // claim is lost (a concurrent drain already took it) skip it. This +
+      // the requeue-on-startup recovery prevents the every-tick duplicate
+      // re-send that a silent markDelivered failure used to cause.
+      if (!claimForSend(row.id)) continue
       try {
         await doSend(row)
         markDelivered(row.id)
@@ -493,6 +498,14 @@ async function workerTick(): Promise<void> {
 export function startWorker(): void {
   if (workerTimer !== null) return
   workerStopRequested = false
+  // Recover rows orphaned in the 'sending' lease by a prior crash before we
+  // begin draining, so they re-enter the pending queue exactly once.
+  try {
+    requeueStuckSending()
+  } catch (err) {
+    log.warn({ event: 'sink.requeue_stuck_failed', err: err instanceof Error ? err.message : String(err) },
+      'requeueStuckSending at worker start failed (non-fatal)')
+  }
   const ms = resolveTickMs()
   workerTimer = setInterval(() => {
     void workerTick().catch((err) => {

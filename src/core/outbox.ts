@@ -29,7 +29,12 @@ import { scrubOutboundText } from './sensitive-paths.js'
 
 const OUTBOX_DB = join(AGIM_HOME, 'outbox.db')
 
-export type OutboxStatus = 'pending' | 'delivered' | 'giving_up'
+// 'sending' is a transient lease: the worker atomically claims a 'pending'
+// row into 'sending' before calling the messenger, so a re-entrant tick (or
+// a markDelivered DB-write failure) can never re-pick and re-send the same
+// row. Rows orphaned in 'sending' by a crash are requeued at startup via
+// requeueStuckSending().
+export type OutboxStatus = 'pending' | 'sending' | 'delivered' | 'giving_up'
 export type OutboxKind = 'text' | 'card' | 'typing'
 export type OutboxPriority = 'high' | 'normal'
 
@@ -248,7 +253,73 @@ export function pickPending(limit: number = 10): OutboxRow[] {
   }
 }
 
-/** Mark a row delivered. */
+/** Atomically claim a 'pending' row for delivery, transitioning it to the
+ *  transient 'sending' lease. Returns true iff THIS caller won the claim
+ *  (changes === 1). The worker must only call doSend() after a winning
+ *  claim, so a re-entrant tick can never double-send the same row.
+ *
+ *  Note: attempts is intentionally NOT incremented here — markDelivered /
+ *  markFailed own the attempts accounting, so direct (non-worker) callers
+ *  and the existing tests keep their semantics. */
+export function claimForSend(id: number): boolean {
+  const d = getDb()
+  if (!d) return false
+  try {
+    const info = d.prepare(
+      `UPDATE outbox
+          SET status = 'sending',
+              last_attempt_at = datetime('now')
+        WHERE id = ? AND status = 'pending'`,
+    ).run(id)
+    return info.changes === 1
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'outbox', event: 'outbox.claim_failed', id, err: err instanceof Error ? err.message : String(err) },
+      'claimForSend failed',
+    )
+    return false
+  }
+}
+
+/** Requeue rows orphaned in the transient 'sending' lease by a crash (the
+ *  process died between claimForSend and markDelivered/markFailed). Called
+ *  once at worker startup. Returns the number of rows requeued.
+ *
+ *  This preserves at-least-once delivery: a row that was actually sent but
+ *  crashed before the delivered-ack is re-sent once on restart (a duplicate
+ *  is the safe failure mode here vs. a silently dropped message). The win
+ *  over the previous design is that, absent a crash, a failed delivered-ack
+ *  leaves the row parked in 'sending' (not 'pending'), so the worker no
+ *  longer re-sends it every tick. */
+export function requeueStuckSending(): number {
+  const d = getDb()
+  if (!d) return 0
+  try {
+    const info = d.prepare(
+      `UPDATE outbox
+          SET status = 'pending',
+              next_attempt_at = datetime('now')
+        WHERE status = 'sending'`,
+    ).run()
+    if (info.changes > 0) {
+      rootLogger.warn(
+        { component: 'outbox', event: 'outbox.requeue_stuck_sending', requeued: info.changes },
+        `requeued ${info.changes} outbox row(s) stuck in 'sending' after a prior crash`,
+      )
+    }
+    return info.changes
+  } catch (err) {
+    rootLogger.warn(
+      { component: 'outbox', event: 'outbox.requeue_failed', err: err instanceof Error ? err.message : String(err) },
+      'requeueStuckSending failed',
+    )
+    return 0
+  }
+}
+
+/** Mark a row delivered. Accepts a row that is either still 'pending' (the
+ *  high-priority sync path enqueues then delivers directly) or held in the
+ *  'sending' lease (the worker path, post claimForSend). */
 export function markDelivered(id: number): void {
   const d = getDb()
   if (!d) return
@@ -261,7 +332,7 @@ export function markDelivered(id: number): void {
               attempts = attempts + 1,
               last_error = NULL,
               next_attempt_at = NULL
-        WHERE id = ? AND status = 'pending'`,
+        WHERE id = ? AND status IN ('pending', 'sending')`,
     ).run(id)
   } catch (err) {
     rootLogger.warn(
@@ -294,12 +365,16 @@ export function markFailed(id: number, error: string): { gaveUp: boolean; attemp
         ).run(nextAttempts, error.slice(0, 1024), id)
         return { gaveUp: true, attempts: nextAttempts }
       }
-      // Pending → reschedule. BACKOFF_SECONDS is 0-indexed by failure count
-      // so the first failure (nextAttempts=1) waits BACKOFF_SECONDS[0]=1s.
+      // Reschedule. BACKOFF_SECONDS is 0-indexed by failure count so the
+      // first failure (nextAttempts=1) waits BACKOFF_SECONDS[0]=1s. status is
+      // reset to 'pending' explicitly so a row failing out of the 'sending'
+      // lease (worker path) re-enters the pending queue; it's a no-op for the
+      // direct-call path where the row was already 'pending'.
       const waitSec = BACKOFF_SECONDS[nextAttempts - 1]
       d.prepare(
         `UPDATE outbox
-            SET attempts = ?,
+            SET status = 'pending',
+                attempts = ?,
                 last_attempt_at = datetime('now'),
                 last_error = ?,
                 next_attempt_at = datetime('now', '+' || ? || ' seconds')
@@ -360,7 +435,7 @@ export function listOutbox(opts: { status?: OutboxStatus; limit?: number; thread
 /** Aggregate counts for /outbox status. */
 export function getOutboxStats(): Record<OutboxStatus, number> {
   const d = getDb()
-  const empty: Record<OutboxStatus, number> = { pending: 0, delivered: 0, giving_up: 0 }
+  const empty: Record<OutboxStatus, number> = { pending: 0, sending: 0, delivered: 0, giving_up: 0 }
   if (!d) return empty
   try {
     const rows = d.prepare('SELECT status, COUNT(*) as n FROM outbox GROUP BY status').all() as Array<{ status: OutboxStatus; n: number }>

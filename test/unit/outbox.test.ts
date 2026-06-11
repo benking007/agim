@@ -129,6 +129,47 @@ skipIfNoDb('outbox CRUD', () => {
     expect(outbox.retryGivingUp(id)).toBe(false)
   })
 
+  it('claimForSend leases a pending row exactly once (idempotency guard)', () => {
+    const id = outbox.enqueue({
+      threadKey: 'cl', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'once', kind: 'text',
+    })
+    // First claim wins; the row leaves the pending queue.
+    expect(outbox.claimForSend(id)).toBe(true)
+    expect(outbox.getOutbox(id)!.status).toBe('sending')
+    expect(outbox.pickPending(10)).toEqual([])
+    // A second claim (re-entrant tick) must lose — prevents double-send.
+    expect(outbox.claimForSend(id)).toBe(false)
+  })
+
+  it('markDelivered finalizes a claimed (sending) row', () => {
+    const id = outbox.enqueue({
+      threadKey: 'cl2', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'x', kind: 'text',
+    })
+    expect(outbox.claimForSend(id)).toBe(true)
+    outbox.markDelivered(id)
+    const row = outbox.getOutbox(id)!
+    expect(row.status).toBe('delivered')
+    expect(row.delivered_at).not.toBeNull()
+  })
+
+  it('a delivered-ack failure parks the row in sending (no re-pick), then requeue recovers it', () => {
+    const id = outbox.enqueue({
+      threadKey: 'cl3', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'y', kind: 'text',
+    })
+    // Simulate: claim won, message sent, but the delivered-ack write was lost
+    // (markDelivered never ran). The row must stay parked in 'sending' and
+    // NOT be re-picked by the worker — otherwise it re-sends every tick.
+    expect(outbox.claimForSend(id)).toBe(true)
+    expect(outbox.pickPending(10)).toEqual([])
+    // On the next process start, the orphaned lease is requeued exactly once.
+    expect(outbox.requeueStuckSending()).toBe(1)
+    expect(outbox.getOutbox(id)!.status).toBe('pending')
+    expect(outbox.pickPending(10).map((r) => r.id)).toContain(id)
+  })
+
   it('priority=high is picked before priority=normal', () => {
     const lo = outbox.enqueue({
       threadKey: 'a', platform: 'p', channelId: 'c', threadId: 't',

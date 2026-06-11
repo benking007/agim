@@ -86,19 +86,21 @@ export class DingTalkClient {
         return
       }
       if (msg.robotCode) this.lastSeenRobotCode = msg.robotCode
-      if (this.messageHandler) {
-        try {
-          await this.messageHandler(msg)
-        } catch (err) {
-          log.error({ err: err instanceof Error ? err.message : String(err) },
-            'message handler threw')
-        }
-      }
-      // ack so the gateway doesn't redeliver. We're swallowing the
-      // response payload here intentionally — DingTalk gives 60s before
-      // it retries; our agent flow may exceed that and that's fine,
-      // the user gets the eventual reply via OpenAPI.
+      // Ack FIRST, then dispatch fire-and-forget. Previously we awaited the
+      // full agent run before acking, which (a) blocked this WS callback from
+      // processing the next inbound message for the whole turn, and (b) for a
+      // run exceeding the gateway's ~60s retry window triggered a redelivery
+      // that app-level dedup then had to absorb — and if the handler HUNG, the
+      // message was never acked and the redelivery was dropped by dedup, so
+      // the user got nothing. Acking up front (the message IS received) +
+      // background dispatch fixes both. Same-tick duplicate is impossible:
+      // gateway redelivery is seconds later, by which point dedup is populated.
       this.dw.socketCallBackResponse(res.headers.messageId, { status: 'SUCCESS' })
+      if (this.messageHandler) {
+        void this.messageHandler(msg).catch((err) =>
+          log.error({ err: err instanceof Error ? err.message : String(err) },
+            'message handler threw'))
+      }
     })
 
     await this.dw.connect()

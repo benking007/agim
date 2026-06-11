@@ -293,13 +293,18 @@ export class FeishuAdapter implements MessengerAdapter {
       channelId: this.config?.channelId || 'default',
     }
 
-    try {
-      await this.messageHandler(ctx)
-    } catch (err) {
+    // Fire-and-forget the agent run. Awaiting it here would block the Feishu
+    // SDK's WebSocket event loop for the entire turn (often many seconds, up
+    // to the 30-min cap), stalling EVERY other thread's inbound events behind
+    // one slow conversation. Dedup (isDuplicate) already ran synchronously
+    // above, so a concurrent re-delivery of the same message_id is still
+    // dropped. Errors are caught here so a failed run can't surface as an
+    // unhandled rejection.
+    void this.messageHandler(ctx).catch((err) => {
       const errMsg = err instanceof Error ? err.message : String(err)
       const stack = err instanceof Error ? err.stack : undefined
       log.error({ err: errMsg, stack }, 'Error in message handler')
-    }
+    })
   }
 }
 

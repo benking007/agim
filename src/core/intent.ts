@@ -104,7 +104,9 @@ export function classifyIntent(
   logger?: Logger,
   defaultAgent?: string,
 ): IntentResult {
-  const available = registry.listAgents().filter(a => !circuitBreaker.isOpen(a))
+  // peek() is side-effect-free: classification must never consume the
+  // half-open probe (otherwise the breaker can get stuck open forever).
+  const available = registry.listAgents().filter(a => !circuitBreaker.peek(a))
   if (available.length === 0) {
     throw new Error('No agents available')
   }

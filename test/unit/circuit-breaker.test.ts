@@ -112,4 +112,60 @@ describe('CircuitBreaker', () => {
     expect(br.isOpen('a')).toBe(true)
     expect(br.isOpen('b')).toBe(false)
   })
+
+  // --- peek() / acquireProbe(): side-effect-free routing checks (bug #1) ---
+
+  it('peek() never consumes the half-open probe', async () => {
+    const br = new Breaker(2, 20)
+    br.recordFailure('a')
+    br.recordFailure('a')
+    expect(br.peek('a')).toBe(true) // open, cooldown active → blocked
+    await new Promise((r) => setTimeout(r, 30))
+    // Cooldown elapsed: peek reports eligible (false) WITHOUT flipping phase.
+    expect(br.peek('a')).toBe(false)
+    expect(br.peek('a')).toBe(false) // still eligible — no probe was consumed
+    expect(br.getStatus('a').phase).toBe('open')
+  })
+
+  it('peek() does not leave the breaker stuck half-open (regression for #1)', async () => {
+    // Reproduces the classifier-filter bug: a read-only check over a
+    // cooled-down agent must not strand the breaker in half-open.
+    const br = new Breaker(2, 20)
+    br.recordFailure('a')
+    br.recordFailure('a')
+    await new Promise((r) => setTimeout(r, 30))
+    // Simulate intent classifier filtering all agents with peek().
+    void br.peek('a')
+    void br.peek('a')
+    // A subsequent real call commits and claims the probe.
+    br.acquireProbe('a')
+    expect(br.getStatus('a').phase).toBe('half-open')
+    br.recordSuccess('a')
+    expect(br.peek('a')).toBe(false)
+    expect(br.getStatus('a').phase).toBe('closed')
+  })
+
+  it('acquireProbe() flips open→half-open only after cooldown', async () => {
+    const br = new Breaker(2, 30)
+    br.recordFailure('a')
+    br.recordFailure('a')
+    // Cooldown still active: acquireProbe is a no-op.
+    br.acquireProbe('a')
+    expect(br.getStatus('a').phase).toBe('open')
+    await new Promise((r) => setTimeout(r, 40))
+    br.acquireProbe('a')
+    expect(br.getStatus('a').phase).toBe('half-open')
+  })
+
+  it('acquireProbe() is a no-op when closed or already half-open', async () => {
+    const br = new Breaker(2, 20)
+    br.acquireProbe('a') // closed → no-op
+    expect(br.getStatus('a').phase).toBe('closed')
+    br.recordFailure('a')
+    br.recordFailure('a')
+    await new Promise((r) => setTimeout(r, 30))
+    br.acquireProbe('a') // → half-open
+    br.acquireProbe('a') // idempotent
+    expect(br.getStatus('a').phase).toBe('half-open')
+  })
 })

@@ -66,6 +66,15 @@ class CircuitBreaker {
    * Check if an agent is currently blocked (breaker open AND cooldown still
    * active). After cooldown elapses we transition to half-open and *return
    * false for the first caller only* — that caller becomes the probe.
+   *
+   * NOTE: this method has a SIDE EFFECT (it claims the half-open probe).
+   * It must therefore only be called at most once per actual invocation,
+   * right when the caller commits to running the agent. Read-only callers
+   * (routing filters, pre-call gates that may bail out) must use the pure
+   * {@link peek} instead, otherwise the probe is silently consumed and the
+   * breaker can get stuck in `half-open` forever (no paired record*).
+   * Production routing uses {@link peek} + {@link acquireProbe}; `isOpen`
+   * is retained for its documented probe-granting semantics.
    */
   isOpen(agent: string): boolean {
     const s = this.states.get(agent)
@@ -83,6 +92,40 @@ class CircuitBreaker {
       return false
     }
     return true
+  }
+
+  /**
+   * Pure, side-effect-free view of whether an agent is currently blocked.
+   * Unlike {@link isOpen} it NEVER grants the half-open probe, so it is safe
+   * to call from `filter()` predicates and from pre-call gates that may
+   * early-return before the agent is actually invoked.
+   *
+   * An `open` breaker whose cooldown has elapsed is reported as NOT blocked
+   * (`false`) — it is eligible for the next call, which will claim the probe
+   * via {@link acquireProbe}.
+   */
+  peek(agent: string): boolean {
+    const s = this.states.get(agent)
+    if (!s || s.phase === 'closed') return false
+    if (s.phase === 'half-open') return true
+    // phase === 'open' — blocked only while the cooldown is still active.
+    if (s.openedAt !== null && Date.now() - s.openedAt > s.cooldownMs) return false
+    return true
+  }
+
+  /**
+   * Claim the single half-open probe slot. Call this exactly once, at the
+   * moment the caller commits to actually invoking the agent (i.e. paired
+   * with a guaranteed downstream recordSuccess/recordFailure). Transitions
+   * `open → half-open` once the cooldown has elapsed; no-op when the breaker
+   * is `closed` or already `half-open`.
+   */
+  acquireProbe(agent: string): void {
+    const s = this.states.get(agent)
+    if (!s || s.phase !== 'open') return
+    if (s.openedAt !== null && Date.now() - s.openedAt > s.cooldownMs) {
+      s.phase = 'half-open'
+    }
   }
 
   /** Get status for display / debug. */

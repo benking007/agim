@@ -33,9 +33,41 @@
 // file and rebuilds.
 
 import { homedir } from 'node:os'
-import { resolve, isAbsolute, normalize, basename } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { resolve, isAbsolute, normalize, basename, dirname, join } from 'node:path'
 
 const HOME = homedir()
+
+/** `/proc/<pid|self|thread-self>/{root,cwd}/…` are symlinks into the real
+ *  filesystem (root = the process's `/`), so they let an agent reach e.g.
+ *  `~/.agim/tokens.json` via a path that doesn't start with the protected
+ *  HOME prefix. Deny the indirection outright — there is no legitimate reason
+ *  for an agent tool to address files through it. */
+const PROC_INDIRECTION_RE = /^\/proc\/(?:self|thread-self|\d+)\/(?:root|cwd)(?:\/|$)/
+
+/** Best-effort symlink resolution so the denylist can't be dodged by pointing
+ *  a benign-looking path at a protected file. realpath the path; if it doesn't
+ *  exist yet (e.g. a Write target), realpath its deepest existing ancestor and
+ *  re-append the remainder so a symlinked parent dir is still resolved.
+ *  Returns the input unchanged when nothing resolves. */
+function resolveReal(abs: string): string {
+  try {
+    return realpathSync(abs)
+  } catch {
+    let dir = abs
+    const tail: string[] = []
+    for (let i = 0; i < 64; i += 1) {
+      const parent = dirname(dir)
+      if (parent === dir) break
+      tail.unshift(basename(dir))
+      dir = parent
+      try {
+        return normalize(join(realpathSync(dir), ...tail))
+      } catch { /* ancestor still missing — keep walking up */ }
+    }
+    return abs
+  }
+}
 
 /** Resolve a path argument to an absolute canonical form for matching.
  *  Handles `~/...` expansion + relative-to-cwd. Falls back to the
@@ -143,15 +175,26 @@ const SENSITIVE_BASH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
 /** True iff `absPath` falls under a sensitive prefix or has a
  *  sensitive basename. */
 export function isSensitivePath(p: string, opts?: { cwd?: string }): { sensitive: boolean; reason?: string } {
-  const abs = canonical(p, opts?.cwd)
-  for (const prefix of SENSITIVE_ABS_PREFIXES) {
-    if (abs === prefix.replace(/\/$/, '') || abs.startsWith(prefix)) {
-      return { sensitive: true, reason: `path is under protected prefix ${prefix}` }
-    }
+  const lit = canonical(p, opts?.cwd)
+  // Block /proc/<pid>/{root,cwd} indirection regardless of whether the target
+  // currently exists — it maps straight onto the real filesystem.
+  if (PROC_INDIRECTION_RE.test(lit)) {
+    return { sensitive: true, reason: 'path uses /proc/<pid>/{root,cwd} indirection into the real filesystem' }
   }
-  const base = basename(abs)
-  if (SENSITIVE_BASENAMES.includes(base)) {
-    return { sensitive: true, reason: `file basename "${base}" is protected` }
+  // Match against BOTH the literal path and its symlink-resolved form so a
+  // symlink pointing at a protected file (or a /proc/self/root/... path that
+  // resolves into HOME) is caught even though its literal string looks benign.
+  const real = resolveReal(lit)
+  const candidates = real === lit ? [lit] : [lit, real]
+  for (const abs of candidates) {
+    for (const prefix of SENSITIVE_ABS_PREFIXES) {
+      if (abs === prefix.replace(/\/$/, '') || abs.startsWith(prefix)) {
+        return { sensitive: true, reason: `path is under protected prefix ${prefix}` }
+      }
+    }
+    if (SENSITIVE_BASENAMES.includes(basename(abs))) {
+      return { sensitive: true, reason: `file basename "${basename(abs)}" is protected` }
+    }
   }
   return { sensitive: false }
 }

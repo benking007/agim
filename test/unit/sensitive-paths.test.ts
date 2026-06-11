@@ -9,8 +9,9 @@
 //     name of the matched category for audit.
 
 import { describe, it, expect } from 'bun:test'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import {
   isSensitivePath,
   checkSensitiveToolUse,
@@ -45,6 +46,33 @@ describe('isSensitivePath', () => {
 
   it('rejects /proc/self/environ', () => {
     expect(isSensitivePath('/proc/self/environ').sensitive).toBe(true)
+  })
+
+  it('rejects /proc/<pid>/{root,cwd} indirection into the real filesystem', () => {
+    // /proc/self/root is a symlink to "/", so this reaches ~/.agim despite the
+    // literal string not starting with the protected HOME prefix.
+    expect(isSensitivePath(`/proc/self/root${join(HOME, '.agim', 'tokens.json')}`).sensitive).toBe(true)
+    expect(isSensitivePath('/proc/self/root/etc/shadow').sensitive).toBe(true)
+    expect(isSensitivePath('/proc/1234/root/etc/shadow').sensitive).toBe(true)
+    expect(isSensitivePath('/proc/self/cwd/secret').sensitive).toBe(true)
+    expect(isSensitivePath('/proc/thread-self/root/anything').sensitive).toBe(true)
+    // The bare symlink itself.
+    expect(isSensitivePath('/proc/self/root').sensitive).toBe(true)
+  })
+
+  it('resolves symlinks so a benign-looking path pointing at a key is caught', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agim-symlink-test-'))
+    try {
+      mkdirSync(join(dir, 'keys'))
+      writeFileSync(join(dir, 'keys', 'id_rsa'), 'PRIVATE')
+      const link = join(dir, 'innocent.txt')
+      symlinkSync(join(dir, 'keys', 'id_rsa'), link)
+      // Literal basename is "innocent.txt" — only realpath resolution reveals
+      // it targets a protected id_rsa key.
+      expect(isSensitivePath(link).sensitive).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('rejects .env files in arbitrary directories (basename match)', () => {

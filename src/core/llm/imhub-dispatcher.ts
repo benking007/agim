@@ -594,6 +594,12 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
               callerPlanMode: ctx.callerPlanMode ?? false,
             }, `in-process native self-spawn (depth ${nextDepth}); skipping subprocess boot`)
             // v1.2.139 — one-shot transient retry on the in-process path.
+            // ADR-0002 — chain the parent turn's trace into the in-process
+            // sub-turn so its native audit rows correlate end-to-end (mirrors
+            // the `${parentTrace}/a2a-${id}` chaining the subprocess path uses
+            // below). Falls back to undefined → the sub-turn self-mints.
+            const inProcParentTrace = toolCtx?.traceId
+            const inProcA2aTrace = inProcParentTrace ? `${inProcParentTrace}/a2a-${call.id}` : undefined
             const runOnce = async (): Promise<string> => {
               const native = await import('../../plugins/agents/native/index.js')
               const subSessionId = `${ctx.threadId}-spawn-${call.id}`
@@ -608,6 +614,7 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
                   threadId: ctx.threadId,
                   userId: ctx.userId,
                   callDepth: nextDepth,
+                  ...(inProcA2aTrace ? { traceId: inProcA2aTrace } : {}),
                   // v1.2.139 — propagate parent's plan-mode to the child.
                   // Without this a parent in /plan on could delegate write
                   // work to the in-process child and bypass user intent.

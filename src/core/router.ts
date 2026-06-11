@@ -695,6 +695,9 @@ export async function callAgentWithHistory(
     // adapter can stamp RunContext (consumed by bus.handleA2A).
     parentJobId: ctx.parentJobId,
     callDepth: ctx.callDepth,
+    // ADR-0002: forward the inbound turn's trace id so an adapter that mints
+    // its own audit rows (native) correlates them back to this message.
+    traceId: ctx.traceId,
   })
 
   return (async function* (): AsyncGenerator<string> {

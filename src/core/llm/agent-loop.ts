@@ -217,6 +217,10 @@ async function streamThenBuffer(
   let usage: LlmUsage = {}
   // tool_call accumulator: index → { id, name, argsConcat }
   const toolAcc = new Map<number, { id?: string; name?: string; argsConcat: string }>()
+  // Complete tool calls delivered whole in a chunk (pseudo-streaming
+  // providers, e.g. Anthropic's buffered `_callApiStream`). These win over
+  // the delta accumulator since they're already fully formed.
+  let completeToolCalls: ToolCallRequest[] | undefined
 
   try {
     for await (const chunk of provider.chatStream(history, {
@@ -246,6 +250,12 @@ async function streamThenBuffer(
           if (d.argumentsDelta) acc.argsConcat += d.argumentsDelta
         }
       }
+      // Complete tool calls delivered in one chunk (pseudo-streaming
+      // providers). Accumulate across chunks in case a provider splits
+      // them; last non-empty wins for a given turn.
+      if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+        completeToolCalls = [...(completeToolCalls ?? []), ...chunk.toolCalls]
+      }
       if (chunk.finishReason) finishReason = chunk.finishReason
       if (chunk.usage) usage = chunk.usage
     }
@@ -274,6 +284,19 @@ async function streamThenBuffer(
       // propagate so the caller's outer try/catch records an `error`
       // turn (and the IM user sees a real failure).
       throw err
+    }
+  }
+
+  // Prefer complete tool calls delivered whole (pseudo-streaming providers)
+  // over the delta accumulator; the latter stays empty for those providers.
+  if (completeToolCalls && completeToolCalls.length > 0) {
+    return {
+      text,
+      toolCalls: completeToolCalls,
+      reasoningContent: reasoning || undefined,
+      usage,
+      finishReason,
+      modelUsed: opts.model ?? provider.model,
     }
   }
 

@@ -44,6 +44,8 @@ agim **默认状态**就是合规友好的：
 | `IMHUB_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `IMHUB_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
 | (已有) `IMHUB_TIMEOUT_DEFAULT` | `deny` | 审批超时策略；设 `allow` 时启动 + 每小时 reminder | R13 G5 C1 |
+| `IMHUB_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `IMHUB_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
+| `IMHUB_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
 
 > **重要**：`IMHUB_ENABLE_GLOBAL_IM` 和 `IMHUB_ENABLE_REMOTE_AGENT` 的设计目的是合规分发 —— 它们**不会出现**在任何 README / 安装指南 / 配置向导提示里。要么通过 SSH 编辑 `~/.agim/env`，要么 systemd `Environment=`，要么进程启动前 export。运维之外的人**不可能**通过 Web UI 反向启用。
 
@@ -114,11 +116,13 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 - `setTokenRole(id, role)` 升降级
 - API：`isAdminTokenId(tokenId): boolean`
 
+> **v1.2.145（CR H1）**：`DELETE /api/viewer/:id` 之前**漏了** `requireAdmin`，且 `handleViewerDelete` 忽略请求上下文直接删除 —— 任意已认证 token（含 `role=user` 的移动 QR token）可凭 paste id（经 IM `/v/<uuid>` 链接外泄）删除任意 paste。现已补 `requireAdmin`，与全部 mutation 端点一致。
+
 ### 3.2 Loopback / auth-off 绕过
 
 `isRequestAdmin(req)` 信任顺序：
 1. `IMHUB_WEB_AUTH=off` → admin（操作员显式关闭鉴权）
-2. Loopback peer（127.0.0.1 / ::1）→ admin（操作员在本机）
+2. Loopback peer（127.0.0.1 / ::1）→ admin（操作员在本机）；**带 `X-Forwarded-*` / `Forwarded` / `X-Real-IP` / `CF-Connecting-IP` 的请求不再视为可信 loopback**（反代场景防伪造，`isTrustedLoopbackPeer`）
 3. Bearer token `role === 'admin'` → admin
 4. 否则 → 403
 
@@ -159,7 +163,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 | 8 | `*.trycloudflare.com` | `IMHUB_VIEWER_TUNNEL_MODE=quick` | 默认关 | TLS |
 | 9 | OpenAI 兼容服务 | `OPENAI_API_KEY` + 语音/向量功能 | 不设；或 base_url 指向内网 Ollama / LM Studio | TLS |
 | 10 | ACP 远程 Agent | `acpAgents[]` + R12 ACP gate 开 | `IMHUB_ENABLE_REMOTE_AGENT` 不设 | **R13 SSRF**：私网/回环拒绝 + `redirect: 'manual'` |
-| 11 | 定时任务 Webhook | 用户传 `notify_url` | 不传 | **R13 SSRF**：私网拒绝 |
+| 11 | 定时任务 Webhook | 用户传 `notify_url` | 不传 | **R13 SSRF**：私网拒绝（词法）+ **v1.2.145：fetch 前 DNS 解析守卫**（`assertWebhookHostPublic`，堵主机名解析进内网 / DNS-rebinding）；`redirect: 'manual'` |
 | 12 | `api.skillhub.cn` | Web 打开 `/skills` 页 | `IMHUB_SKILLHUB_ENABLED=0` | R12 ⑥ |
 
 ### 4.2 完全切断公网
@@ -219,6 +223,8 @@ export IMHUB_SKILLHUB_ENABLED=0
 - `id_rsa`、`id_ed25519`、`id_ecdsa`、`id_dsa`
 
 **Bash 命令子串扫描**：`cat ~/.agim/env` / `tail /etc/shadow` / `env | grep PASS` / `cat /proc/self/environ` 等也直接拒。
+
+> **v1.2.145（CR）路径规范化加固**：之前 `canonical()` 只做 `normalize(resolve())`，可被两类绕过：(a) `/proc/<pid|self|thread-self>/{root,cwd}/...`（`root` 是指向进程 `/` 的符号链接，能映射到任意真实路径，绕开 HOME 前缀匹配）；(b) workspace 内指向受保护文件的 **symlink**（其字面 basename 看着无害）。现在 `canonical()` 做 best-effort `realpath`（不存在的写目标回退到最深存在祖先），对**字面路径与解析后路径双重匹配** denylist，并**直拒** `/proc/<pid>/{root,cwd}` 间接寻址。`tokens.json` 等也对齐了 Read 工具路径（不只 Bash 串）。
 
 ### 5.2 Memory facts 注入防护（R13 G3 B3）
 
@@ -378,6 +384,10 @@ ExecStart=/usr/local/bin/agim start
 | **手起 agim + systemd 同时管理** | 双开 / 端口冲突 | R14 §六 + R15 PID_FILE 全路径写入：第二个 exit(2) |
 | **运维测试脚本被误杀** | pgrep 子串匹配过宽 | R15 argv-strict /proc 扫描 |
 | **agent 不小心把 token 贴 IM** | agent "傻乎乎"输出敏感字段 | R13 G2 B5：outbox 输出 scanner 10 类 token 自动 `[REDACTED]` |
+| **agent 读 `/proc/self/root/<HOME>/.agim/tokens.json`** | 用 `/proc` 间接寻址 / symlink 绕过路径黑名单 | v1.2.145：`canonical()` 做 `realpath` + 双重匹配 + 直拒 `/proc/<pid>/{root,cwd}` |
+| **`role=user` token 删他人 viewer paste** | viewer DELETE 端点漏 admin 守卫 | v1.2.145（CR H1）：`DELETE /api/viewer/:id` 加 `requireAdmin` |
+| **`notify_url` 指向解析进内网的主机名** | 词法校验只看 host 串，DNS-rebinding / 内网域名绕过 | v1.2.145：fetch 前 `assertWebhookHostPublic` DNS 解析 + 私网拒绝 |
+| **多租户工作区 `AGENTS.md` 投毒 native** | 不可信 cwd 的角色文件被注入 system prompt | v1.2.145（T6）：`IMHUB_NATIVE_TRUST_WORKSPACE=off` 一次性跳过工作区角色文件 |
 
 ---
 
@@ -403,3 +413,4 @@ ExecStart=/usr/local/bin/agim start
 | v1.2.29 | systemd unit / keyring 文档 | #55 |
 | v1.2.30 | CLI Web bind/port 段 + ACP port gate 闭合（R15 第一发） | #56 |
 | v1.2.32 | R15 argv-strict reap + PID_FILE 全路径写入（R15 第二发） | #57 |
+| v1.2.145 | 一轮 CR 安全修复：viewer DELETE 加 admin（H1）/ `notify_url` fetch-time DNS SSRF 守卫（H2）/ `/proc`+symlink 路径绕过封堵 / 微信会话恢复不丢消息（H3）/ Feishu·DingTalk 入站非阻塞（M3）/ native 审计 traceId 关联（M5）；native harness：工作区信任门（T6） | #83,#90,#91,#92,#93,#94,#89 |

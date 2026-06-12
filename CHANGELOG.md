@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.145] - 2026-06-12
+
+一轮严格代码 CR 修复 + 参照 [agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill) 的 native agent "harness 工程"升级。完整导览见 [`docs/architecture/current.md`](docs/architecture/current.md) §七；安全项见 [`docs/security-hardening.md`](docs/security-hardening.md)。
+
+### Security (CR 修复)
+
+- **viewer 越权删除（H1, #90）**：`DELETE /api/viewer/:id` 之前漏了 `requireAdmin` 且 handler 忽略请求上下文，任意已认证 token（含 `role=user` 移动 QR token）可凭 paste id（经 IM `/v/<uuid>` 链接外泄）删除任意 paste。已补 `requireAdmin`。
+- **notify_url SSRF（H2, #92）**：定时任务 webhook 之前只做词法校验（只看 host 串）。新增 `assertWebhookHostPublic()`，在 fetch 前 DNS 解析 + 拒私网/回环/link-local，堵住"主机名解析进内网 / DNS-rebinding"。新 env `IMHUB_ALLOW_PRIVATE_WEBHOOKS=1` 放行内网调试。
+- **sensitive-paths 绕过（#83）**：denylist 可被 `/proc/<pid>/{root,cwd}/...`（root 是指向进程 `/` 的 symlink）与工作区 symlink 绕过。`canonical()` 现做 best-effort `realpath`，对字面 + 解析后路径双重匹配，并直拒 `/proc` 间接寻址。
+- **工作区信任门（T6, #89）**：新 env `IMHUB_NATIVE_TRUST_WORKSPACE=off` → native 一次性跳过工作区发现的 `AGENTS.md`/`AGENTS.local.md` 注入（多租户 / A2A 防 prompt 投毒）。显式 `IMHUB_NATIVE_AGENT_ROLE_FILE` 不受门控。
+
+### Fixed (运行时可靠性，CR + #83)
+
+- **熔断器探针泄漏**：`isOpen()` 的副作用（领走 half-open 探针）被路由 filter / 前置门调用却无人配对，导致 agent 永久卡"熔断中"。拆出无副作用的 `peek()`（filter/门用）+ `acquireProbe()`（仅真正调用前），保留 `isOpen()` 语义。
+- **outbox 重复投递**：无 claim/lease + `markDelivered` 失败仅 warn → worker 每秒重投已送达消息。新增 `sending` 租约（`claimForSend()` 原子认领）、`requeueStuckSending()` 启动回收、`enqueue` 支持 `dedupKey`（部分唯一索引 + INSERT OR IGNORE）。
+- **提醒 / 调度非原子**：reminder 投递带稳定 `dedupKey` 防崩溃重投；schedule 改 **CAS 先推进 `next_run` 再建 job**（杜绝重复建 job / 缺 agent 时 30s 空转）。
+- **微信会话恢复丢消息（H3, #91）**：`SESSION_EXPIRED` 恢复消费了服务端 cursor 却只存 context token、不派发，整批消息永久丢失。现走 `handleIncomingMessage`（带去重）。
+- **distill 追加无去重（#87）**：同一事实每轮重插膨胀 persona/检索。写入时 `findFactIdByWhat()` 命中则 `touchFact()`（bump `last_referenced_at`）而非插行。
+- **Anthropic 作 native 后端不可用（#84）**：伪流式 `_callApiStream` 之前只透传文本，流式下 Anthropic 工具调用全丢（native 默认开流式）；现透传完整 `toolCalls`（新增 `ChatStreamChunk.toolCalls`）。并修正 baseURL preset 双 `/v1` → 404。
+
+### Changed (IM 适配器 + native harness 升级)
+
+- **IM 入站非阻塞（M3, #93）**：Feishu / DingTalk 之前在 SDK 回调内 `await` 整轮 agent，阻塞接收循环（一个慢会话拖死其他线程入站）。改 fire-and-forget；钉钉 **先 ack 再派发**（避免超 60s 重投 + handler 挂起时消息被 dedup 丢弃）。
+- **native 上下文预算（T1/T3, #85）**：`readOperatorRole` 按 mtime/size memoize（每轮省一次磁盘读 + 注入扫描）；system-prompt skills 列表封顶 `MAX_INJECTED_SKILLS`（之前未封顶且与 router 注入重复）。
+- **native 单一工具注册表（T2, #86）**：`tools[]` / `combineDispatchers` / 静态 `parallelSafeTools` 三份并行清单合一为 `tool-registry.ts` 的 `assembleNativeTools()`；并发判定改 **逐调用** classifier（`agent-loop` 新增 `parallelSafeClassifier`，fail-closed）；外部 MCP 分区按名排序保证 prompt-cache 稳定。
+- **native 指令分层（T4, #88, local-wins）**：操作员角色从单 `AGENTS.md` → `<cwd>/AGENTS.md`（project）+ `<cwd>/AGENTS.local.md`（local，最后拼接=胜出）。`IMHUB_NATIVE_AGENT_ROLE_FILE` 仍可 pin 单文件。
+- **验证子代理 SOP（T5, #89）**：native system prompt 增加"产出实质结果后用全新子代理独立校验 + 自包含 brief + 先综合再委派"指导（纯 prompt，无运行时分支）。
+- **native 审计 traceId 关联（M5, #94）**：native 之前自造 `native-<sid>-<ts>` traceId，审计行无法关联入站消息。`AgentSendOpts.traceId` 由 router 透传、native 优先采用；进程内 A2A 子调用链接 `${parent}/a2a-${id}`（ADR-0002 修复）。
+
+### Docs
+
+- `AGENTS.md`：补 Cursor Cloud 依赖安装 caveat（#82）。
+- 新增 `docs/architecture/current.md` §七、`docs/security-hardening.md` drift 修正、`docs/architecture-bridge-and-native.md` §10（含已知偏差清单）、`docs/adr/0002` traceId 更新（#95）。
+
+### Known deviations (尚未收口)
+
+- A2A `call_agent('native')` 进程内快路径绕过 `callAgentByName`，不写 inline job / `intent:'a2a'` 审计行（本轮仅补 trace 链接）。
+- `isAgentEnabled('native')` 恒 true，无视 `config.agents` 禁用开关。
+- ACP 侧 SSRF 仅覆盖 Web test/discover API（该面默认被 `IMHUB_ENABLE_REMOTE_AGENT` 关闭）。
+
 ## [1.2.144] - 2026-06-05
 
 ### Security (CR 修复：反代鉴权绕过 + role=user 权限收窄)

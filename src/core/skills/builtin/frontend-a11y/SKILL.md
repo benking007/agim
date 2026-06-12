@@ -1,7 +1,7 @@
 ---
 name: frontend-a11y
-description: [ECC] >
-  Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes,
+description: >
+  [ECC] Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes,
   form labeling, keyboard navigation, focus management, and screen reader support.
   Use when building any interactive UI component or form.
 origin: community

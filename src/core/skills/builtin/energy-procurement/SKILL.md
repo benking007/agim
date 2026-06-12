@@ -1,7 +1,7 @@
 ---
 name: energy-procurement
-description: [ECC] >
-  Codified expertise for electricity and gas procurement, tariff optimization,
+description: >
+  [ECC] Codified expertise for electricity and gas procurement, tariff optimization,
   demand charge management, renewable PPA evaluation, and multi-facility energy
   cost management. Informed by energy procurement managers with 15+ years
   experience at large commercial and industrial consumers. Includes market

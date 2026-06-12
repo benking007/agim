@@ -1,7 +1,7 @@
 ---
 name: logistics-exception-management
-description: [ECC] >
-  Codified expertise for handling freight exceptions, shipment delays,
+description: >
+  [ECC] Codified expertise for handling freight exceptions, shipment delays,
   damages, losses, and carrier disputes. Informed by logistics professionals
   with 15+ years operational experience. Includes escalation protocols,
   carrier-specific behaviors, claims procedures, and judgment frameworks.

@@ -1,7 +1,7 @@
 ---
 name: inventory-demand-planning
-description: [ECC] >
-  Codified expertise for demand forecasting, safety stock optimization,
+description: >
+  [ECC] Codified expertise for demand forecasting, safety stock optimization,
   replenishment planning, and promotional lift estimation at multi-location
   retailers. Informed by demand planners with 15+ years experience managing
   hundreds of SKUs. Includes forecasting method selection, ABC/XYZ analysis,

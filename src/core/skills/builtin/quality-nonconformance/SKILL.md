@@ -1,7 +1,7 @@
 ---
 name: quality-nonconformance
-description: [ECC] >
-  Codified expertise for quality control, non-conformance investigation, root
+description: >
+  [ECC] Codified expertise for quality control, non-conformance investigation, root
   cause analysis, corrective action, and supplier quality management in
   regulated manufacturing. Informed by quality engineers with 15+ years
   experience across FDA, IATF 16949, and AS9100 environments. Includes NCR

@@ -1,7 +1,7 @@
 ---
 name: token-budget-advisor
-description: [ECC] >-
-  Offers the user an informed choice about how much response depth to
+description: >-
+  [ECC] Offers the user an informed choice about how much response depth to
   consume before answering. Use this skill when the user explicitly
   wants to control response length, depth, or token budget.
   TRIGGER when: "token budget", "token count", "token usage", "token limit",

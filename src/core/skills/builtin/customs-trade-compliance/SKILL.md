@@ -1,7 +1,7 @@
 ---
 name: customs-trade-compliance
-description: [ECC] >
-  Codified expertise for customs documentation, tariff classification, duty
+description: >
+  [ECC] Codified expertise for customs documentation, tariff classification, duty
   optimization, restricted party screening, and regulatory compliance across
   multiple jurisdictions. Informed by trade compliance specialists with 15+
   years experience. Includes HS classification logic, Incoterms application,

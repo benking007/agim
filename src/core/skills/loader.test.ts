@@ -588,6 +588,72 @@ body
     delete process.env.IMHUB_INCLUDE_ECC_SKILLS
   })
 
+  it('rankSkillBucket and bucket-aware sort prioritize agim-* / non-ECC builtin / ECC top picks (v1.2.149)', async () => {
+    const { rankSkillBucket } = await import('./loader.js')
+
+    // Six fixtures spanning all four buckets:
+    writeSkill(wsRoot, 'fin-data-style-pinning', `---
+name: fin-data-style-pinning
+description: User business skill; should land in bucket 3 (low priority).
+---
+body
+`)
+    writeSkill(builtinRoot, 'agim-self-stub', `---
+name: agim-self-stub
+description: Framework skill; should land in bucket 0 (highest priority).
+---
+body
+`)
+    writeSkill(builtinRoot, 'github-stub', `---
+name: github-stub
+description: Non-ECC builtin; should land in bucket 1.
+---
+body
+`)
+    writeSkill(builtinRoot, 'agent-eval', `---
+name: agent-eval
+description: ECC top-pick; should land in bucket 2.
+origin: ECC
+---
+body
+`)
+    writeSkill(builtinRoot, 'kotlin-coroutines-flows', `---
+name: kotlin-coroutines-flows
+description: ECC non-pick; should land in bucket 3 (alphabetically late among non-picks).
+origin: ECC
+---
+body
+`)
+
+    invalidateSkillsCache()
+    const all = listSkills()
+    const byName = (n: string) => all.find((s) => s.name === n)!
+
+    // Direct rankSkillBucket assertions
+    expect(rankSkillBucket(byName('agim-self-stub'))).toBe(0)
+    expect(rankSkillBucket(byName('github-stub'))).toBe(1)
+    expect(rankSkillBucket(byName('agent-eval'))).toBe(2)
+    expect(rankSkillBucket(byName('kotlin-coroutines-flows'))).toBe(3)
+    expect(rankSkillBucket(byName('fin-data-style-pinning'))).toBe(3)
+
+    // Summary block order: agim-* and github-stub MUST appear before
+    // agent-eval, which MUST appear before kotlin-* / fin-data-*.
+    const summary = buildSkillsSummary()
+    const idxAgim = summary.indexOf('- agim-self-stub:')
+    const idxGithub = summary.indexOf('- github-stub:')
+    const idxEccPick = summary.indexOf('- agent-eval:')
+    const idxEccRemainder = summary.indexOf('- kotlin-coroutines-flows:')
+    const idxWorkspace = summary.indexOf('- fin-data-style-pinning:')
+    expect(idxAgim).toBeGreaterThan(0)
+    expect(idxGithub).toBeGreaterThan(idxAgim)
+    expect(idxEccPick).toBeGreaterThan(idxGithub)
+    // The remainder may fall outside the visible cap on a real install,
+    // but with only 6 fixtures they all fit; they must rank below the
+    // pick in the listing.
+    if (idxEccRemainder > -1) expect(idxEccRemainder).toBeGreaterThan(idxEccPick)
+    if (idxWorkspace > -1) expect(idxWorkspace).toBeGreaterThan(idxEccPick)
+  })
+
   it('buildSkillsSummary produces a real description (NOT ">-") for fin-data-style frontmatter', () => {
     // Reproduces the bug observed in production: fin-data-* skills
     // showed up in the system prompt as `- fin-data-bond-otc: >-`

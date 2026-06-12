@@ -85,6 +85,10 @@ export interface SkillMeta {
   available: boolean
   /** Operator-facing reason when `available=false`. */
   unavailableReason?: string
+  /** Frontmatter `origin:` value, when present. ECC pack skills declare
+   *  `origin: ECC`; operators can use this to bucket / filter their own
+   *  packs. Optional — most operator-authored skills omit it. */
+  origin?: string
 }
 
 interface SkillDiscovered {
@@ -342,10 +346,90 @@ export function readSkillBody(name: string): string | null {
  *   - skill-c: one-line description
  *   …
  */
+/**
+ * v1.2.149 — recommended ECC skills for the system-prompt injection
+ * cap (priority bucket 2 below).
+ *
+ * Rationale: agim is a generic IM ↔ Agent bridge; the framework should
+ * not assume the operator's business domain. So operator-authored
+ * skills (workspace source) and the bundled ECC pack are NOT injected
+ * by default — they're reachable via `mcp__imhub__read_skill('name')`
+ * when their description matches. But ECC ships 200+ skills covering
+ * agent harness engineering and general-purpose dev methodology that
+ * benefit every agim install; this list pins ~20 of those into the
+ * default-32 injection so the agent has the harness vocabulary front
+ * of mind without burying it under alphabet order.
+ *
+ * Selection: 11 agent-harness skills + 9 cross-language methodology
+ * skills. Excludes framework / language / industry specialties (django,
+ * kotlin, healthcare, …) and ECC-internal tooling.
+ *
+ * Add / remove freely — this is a curated list, not a registry.
+ */
+const ECC_TOP_PICKS: ReadonlySet<string> = new Set([
+  // Agent harness engineering (11)
+  'agentic-engineering', 'agent-eval', 'agent-introspection-debugging',
+  'agent-harness-construction', 'autonomous-agent-harness', 'autonomous-loops',
+  'continuous-learning-v2', 'verification-loop', 'prompt-optimizer',
+  'cost-aware-llm-pipeline', 'context-budget',
+  // Cross-language methodology + content (9)
+  'blueprint', 'coding-standards', 'architecture-decision-records',
+  'code-tour', 'tdd-workflow', 'security-review', 'benchmark',
+  'article-writing', 'content-engine',
+])
+
+/**
+ * v1.2.149 — Rank a skill into one of four buckets for system-prompt
+ * injection. Lower rank wins (fills the visible 32 first). Within a
+ * bucket, alphabetical order. Buckets:
+ *
+ *   0 — agim framework skills (name starts with `agim-`). Always relevant
+ *       to anyone running agim; should never miss the cap.
+ *   1 — non-ECC builtin skills (the small in-tree agim pack: github,
+ *       image-generation, long-goal, my, skill-creator, summarize, tmux,
+ *       weather). Curated by us specifically for the framework.
+ *   2 — ECC recommended (the curated list above). Pinned harness / dev
+ *       methodology essentials from the ECC pack.
+ *   3 — Everything else: ECC remainder (210+) and operator workspace
+ *       skills (the operator's business domain — fin-data, ash, etc.).
+ *       Reachable via read_skill on description match; not strapped to
+ *       the front of the prompt.
+ *
+ * Workspace skills land in 3 rather than 1 because operator-authored
+ * content varies wildly per install — pinning them all means a finance
+ * operator's 60 fin-data skills push out an unrelated operator's 60
+ * homelab skills. Both belong in the on-demand pool, not the cap.
+ */
+export function rankSkillBucket(s: SkillMeta): number {
+  if (s.source === 'workspace') return 3
+  // builtin from here on
+  if (s.name.startsWith('agim-')) return 0
+  // Detect bundled ECC pack. ECC's own SKILL.md files use multiple
+  // `origin:` values (`ECC`, `community`, `ECC direct-port adaptation`,
+  // …) so frontmatter alone isn't reliable. The packaging script stamps
+  // a `[ECC]` prefix on every imported description; that's the load-
+  // bearing marker. We also honour any non-empty `origin` that begins
+  // with `ECC` for forward compat (e.g. operator-authored skills tagged
+  // `origin: ECC fork`). Order matters: prefix check comes first because
+  // it's the actually-reliable signal.
+  if (s.description.startsWith('[ECC] ') || /^ECC\b/i.test(s.origin ?? '')) {
+    return ECC_TOP_PICKS.has(s.name) ? 2 : 3
+  }
+  // non-ECC builtin (agim's own small in-tree pack)
+  return 1
+}
+
 export function buildSkillsSummary(): string {
   const all = listSkills()
   if (all.length === 0) return ''
-  const sorted = all.slice().sort((a, b) => a.name.localeCompare(b.name))
+  // v1.2.149 — bucket-aware sort: priority bucket first, then alphabet
+  // inside each bucket. See rankSkillBucket above for bucket definitions.
+  const sorted = all.slice().sort((a, b) => {
+    const ra = rankSkillBucket(a)
+    const rb = rankSkillBucket(b)
+    if (ra !== rb) return ra - rb
+    return a.name.localeCompare(b.name)
+  })
   const lines: string[] = [
     // v1.2.137 — routing rule, prepended to the skill list. Applies to
     // ALL agents (native / claude-code / codex / cursor / opencode) because
@@ -512,7 +596,17 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
   }
   const name = (front.name || d.name).trim()
   if (!name) return null
-  const description = (front.description || '').trim().slice(0, MAX_DESCRIPTION_CHARS)
+  let description = (front.description || '').trim().slice(0, MAX_DESCRIPTION_CHARS)
+  // v1.2.148 — defensive: when the YAML block-scalar marker leaks
+  // through (`>-` / `>` / `|` / `|-` left as the literal value because
+  // the continuation was malformed, the marker was prefixed by something
+  // else, or the operator left the body empty), we'd otherwise ship a
+  // garbage description into the system prompt. Substitute a fallback +
+  // warn so the operator notices.
+  if (/^(?:>-?|\|-?)$/.test(description)) {
+    log.warn({ event: 'skills.parse.literal_block_scalar', name, dir: d.dir, raw: description })
+    description = '(SKILL.md description used an unsupported YAML form — read body via mcp__imhub__read_skill)'
+  }
   if (!description) {
     log.warn({ event: 'skills.parse.no_description', name, dir: d.dir })
     return null
@@ -543,6 +637,7 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
     requiresEnv,
     available,
     unavailableReason,
+    origin: front.origin ? String(front.origin).trim() : undefined,
   }
 }
 

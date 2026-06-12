@@ -4,6 +4,106 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.149] - 2026-06-12
+
+### Fixed (ECC pack — folded-description parser bug)
+
+v1.2.148 的 bulk-import 脚本对 YAML 折叠语法（`description: >-\n  text...`）
+处理错误：把 `[ECC]` 前缀注入到 `>-` 那行而不是续行，导致 11 个 SKILL.md
+的 description 被解析成字面 `[ECC] >-` / `[ECC] >`：
+
+- 影响 skill：blueprint / customs-trade-compliance / energy-procurement /
+  frontend-a11y / inventory-demand-planning / logistics-exception-management /
+  production-scheduling / prompt-optimizer / quality-nonconformance /
+  returns-reverse-logistics / token-budget-advisor
+- 修复：从 ECC 源重新拷贝 + 智能注入（识别 YAML 块标量 marker，把 `[ECC] `
+  加到展开后的第一段文本，而非 marker 行）
+- 加固：`src/core/skills/loader.ts` `parseSkill` 加防御性 fallback——
+  description 解析后若是字面 `>-` / `|` / `>` / `|-`，自动用 fallback 文案
+  + `log.warn` 留审计（防未来同类静默失败）
+
+### Added (priority-bucket sort for system-prompt injection)
+
+`agim` 是 IM ↔ Agent 通用桥接框架，不应假设运营者的业务。但 builtin/ 加完
+229 ECC pack 后，**system prompt 前 32 个 skill 全是字母排序前段的 ECC 通用
+开发工具**，agim 自带框架 skill（`agim-*`）有 4 个能露脸，而非 ECC builtin
+（`github` / `image-generation` / `tmux` / `weather` 等）和精选 ECC 都被挤
+到字母序后段。
+
+#### 新策略（按设计意图）
+
+`src/core/skills/loader.ts` 新增 `rankSkillBucket(s)` 函数 + `ECC_TOP_PICKS`
+常量。`buildSkillsSummary` 改为"先按桶排序、桶内字母序"：
+
+| Bucket | 内容 |
+|---|---|
+| 0 | `agim-*` 框架 skill（4 个）|
+| 1 | 非 ECC builtin（8 个：github / image-generation / long-goal / my / skill-creator / summarize / tmux / weather）|
+| 2 | ECC 精选（20 个）— agent harness 工程 11 + 跨语言方法论 + 内容创作 9 |
+| 3 | 工作区运营者 skill（业务域）+ ECC 余下 210 |
+
+4 + 8 + 20 = 32 正好填满；bucket 3 全部靠 description match + 显式
+`mcp__imhub__read_skill('name')` 触发，不强占系统提示门面。
+
+#### ECC 精选清单（20 个）
+
+- **agent harness 工程（11）**：agentic-engineering / agent-eval /
+  agent-introspection-debugging / agent-harness-construction /
+  autonomous-agent-harness / autonomous-loops / continuous-learning-v2 /
+  verification-loop / prompt-optimizer / cost-aware-llm-pipeline /
+  context-budget
+- **跨语言方法论 + 内容（9）**：blueprint / coding-standards /
+  architecture-decision-records / code-tour / tdd-workflow /
+  security-review / benchmark / article-writing / content-engine
+
+#### 实测前 32 名（agim 默认）
+
+```
+ 1. agim-memory          2. agim-reminders      3. agim-self
+ 4. agim-skill-discovery 5. github              6. image-generation
+ 7. long-goal            8. my                  9. skill-creator
+10. summarize           11. tmux               12. weather
+13. agent-eval          14. agent-harness-construction
+15. agent-introspection-debugging              16. agentic-engineering
+17. architecture-decision-records              18. article-writing
+19. autonomous-agent-harness                   20. autonomous-loops
+21. benchmark           22. blueprint          23. code-tour
+24. coding-standards    25. content-engine     26. context-budget
+27. continuous-learning-v2                     28. cost-aware-llm-pipeline
+29. prompt-optimizer    30. security-review    31. tdd-workflow
+32. verification-loop
+```
+
+#### ECC 识别
+
+ECC pack 的 SKILL.md 各家 `origin:` 值不统一（`ECC` / `community` / `ECC
+direct-port adaptation` …），不能靠 frontmatter 严格等于 `ECC` 来判定。本
+轮以 description 的 `[ECC] ` 前缀作为可靠 marker（packaging 阶段统一打入），
+辅以 `origin:` 起始 `ECC` 的宽松匹配（前向兼容）。
+
+### Added (operator-decision re-import)
+
+- `content-engine` — 此前归入"ECC operator 工作流"剔除清单（v1.2.148），
+  本轮按设计决策复进 builtin/，跟 `article-writing` 一起作为内容创作类
+  ECC 精选。`ECC_NOTICE.md` 排除清单从 33 → 32，注明操作员决策。
+
+### Tests
+
+`src/core/skills/loader.test.ts` 新增 1 case 覆盖 `rankSkillBucket` 四桶分
+类 + `buildSkillsSummary` 输出顺序（agim-* < github/* < agent-eval (ECC 精
+选) < kotlin-* (ECC 余下) / fin-data-* (工作区)）。typecheck 双 pass 全绿；
+loader 套件 37/37 通过；build 7.5s。
+
+### 文件
+
+- `src/core/skills/loader.ts` — `SkillMeta.origin` 字段、`parseSkill` 抽
+  origin 并字面 block-scalar fallback、`ECC_TOP_PICKS` + `rankSkillBucket`
+  导出、`buildSkillsSummary` bucket-aware sort
+- `src/core/skills/loader.test.ts` — `rankSkillBucket` + sort 测试
+- `src/core/skills/builtin/<11 skill>/SKILL.md` — 折叠描述修复
+- `src/core/skills/builtin/content-engine/` — 复进 230 entry
+- `src/core/skills/builtin/ECC_NOTICE.md` — 233/32 + 复进说明
+
 ## [1.2.148] - 2026-06-12
 
 ### Added (built-in ECC skill pack — 229 skills)

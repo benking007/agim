@@ -1,7 +1,7 @@
 ---
 name: returns-reverse-logistics
-description: [ECC] >
-  Codified expertise for returns authorization, receipt and inspection,
+description: >
+  [ECC] Codified expertise for returns authorization, receipt and inspection,
   disposition decisions, refund processing, fraud detection, and warranty
   claims management. Informed by returns operations managers with 15+ years
   experience. Includes grading frameworks, disposition economics, fraud

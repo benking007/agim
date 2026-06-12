@@ -221,3 +221,51 @@ The bridge identity stays. The peer set grows.
 > Every existing feature (routing, A2A, approval, skills, goal,
 > heartbeat, ask_user, /router compare) works on every peer
 > automatically.
+
+## 10. v1.2.145 — native harness upgrade + honest deviations
+
+A round of "harness engineering" (distilled from
+[agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill))
+hardened the native adapter **without** breaking the peer model. None of
+these added a `kind`-based branch in router / approval / audit.
+
+### 10.1 What changed in native
+
+| Area | Change | Where |
+|---|---|---|
+| Provider | Anthropic usable as a native backend: pseudo-stream now carries complete `toolCalls` (streaming previously dropped every Anthropic tool call); baseURL strips a trailing `/v1` (the wizard preset's `…/v1` 404'd) | `anthropic-provider.ts`, `provider-base.ts` (`ChatStreamChunk.toolCalls`), `agent-loop.ts` |
+| Context budget | `readOperatorRole` memoized by mtime/size; system-prompt skills list capped at `MAX_INJECTED_SKILLS` | `native/index.ts` |
+| Tool registry | one `assembleNativeTools()` produces defs + dispatch + a **per-call** concurrency classifier (was 3 hand-kept lists); external MCP partition name-sorted for prompt-cache stability | `native/tool-registry.ts`, `agent-loop.ts` (`parallelSafeClassifier`) |
+| Instruction layering | operator role = `<cwd>/AGENTS.md` (project) + `<cwd>/AGENTS.local.md` (local, **wins**); `IMHUB_NATIVE_AGENT_ROLE_FILE` still pins one file | `native/index.ts` |
+| Verification subagent | prompt SOP: produce a result → spin a **fresh** subagent to verify it with a self-contained brief; synthesize-before-delegate. Prompt-only — uses the existing `call_agent`, no new code path | `native/index.ts` |
+| Trust gate | `IMHUB_NATIVE_TRUST_WORKSPACE=off` makes native skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | `native/index.ts` (`isWorkspaceTrusted`) |
+| Audit traceId | native now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted `native-<sid>-<ts>` id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, `native/index.ts` |
+
+### 10.2 Honest deviations from the peer model (not yet closed)
+
+These predate this round and were confirmed by the CR. They use a
+hardcoded **`agentName === 'native'`** check (not `adapter.kind`), but
+they still break peer symmetry — flagged here so the next contributor
+doesn't mistake them for the intended design:
+
+- **A2A in-process fast path** (`imhub-dispatcher.ts`,
+  `call_agent('native')`): runs `nativeAgentAdapter.sendPrompt` directly,
+  bypassing `callAgentByName`. It therefore does **not** create an inline
+  job or write an `intent:'a2a'` audit row, so `/a2a stats|recent|tree`
+  and A2A cost don't see these in-process fan-outs. This round only chained
+  the trace id (`${parent}/a2a-${id}`); the job/audit parity is still TODO.
+  Toggle off with `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off` (falls back to the
+  standard subprocess path).
+- **`isAgentEnabled('native')` returns true unconditionally**
+  (`live-config.ts`): the SPA `config.agents` disable toggle is ignored for
+  native. Either document the toggle's "preference-only" semantics or honour
+  it like any other backend.
+- **ACP SSRF** (`assertSafeAcpUrl`) only guards the Web test/discover APIs;
+  config-persist, the discovery second-hop `endpoint`, and the runtime
+  `ACPClient` are unguarded. The whole ACP surface is gated off by default
+  behind `IMHUB_ENABLE_REMOTE_AGENT`.
+
+The fix direction for the first two: push any in-process optimisation **down
+into `callAgentByName` / the `AgentAdapter` layer** so the coordination
+(job-board + audit + notify) stays uniform — never special-case by name in
+the dispatcher. See § 7 anti-patterns.

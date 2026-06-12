@@ -481,3 +481,75 @@ native 不再只有 builtin RPC 工具，补齐了一套"能真正干活"的本�
 | MCP 自动重连 | `src/core/llm/mcp-registry.ts` |
 | 钉钉 richText 扁平化 | `src/plugins/messengers/dingtalk/dingtalk-adapter.ts`（`flattenDingtalkRichText`） |
 | `/long_task` `/complete_goal` slash | `src/core/router.ts`（→ `goal.ts`） |
+
+---
+
+## 七、v1.2.145 增量 · 一轮 CR 修复 + native harness 升级（2026-06）
+
+这一轮分两条线：(A) 一次严格代码 CR 暴露的运行时 / 安全缺陷修复；(B) 参照 [agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill) 对 native agent 做的"harness 工程"升级（上下文预算化 / 工具注册表 / 记忆卫生 / 指令分层 / 验证子代理 / 信任门）。下面给后续 agent 一份"读代码前先看这里"的导览。
+
+### 7.1 运行时可靠性修复（CR 线）
+
+| 修复 | 现象 | 关键改动 | 文件 |
+|---|---|---|---|
+| **熔断器探针泄漏** | `isOpen()` 有副作用（领走 half-open 探针），却被路由 filter / 前置门调用，探针无人配对 → agent 永久卡"熔断中" | 拆出无副作用的 `peek()`（filter/门用）+ `acquireProbe()`（仅真正调用前），保留 `isOpen()` 语义 | `circuit-breaker.ts` · `intent.ts` · `router.ts` |
+| **outbox 重复投递** | 无 claim/lease + `markDelivered` 失败仅 warn → worker 每秒重投已送达消息 | 新增 `sending` 租约：`claimForSend()` 原子认领 → 仅认领成功才发；`requeueStuckSending()` 启动回收；`enqueue` 支持 `dedupKey`（部分唯一索引 + INSERT OR IGNORE） | `outbox.ts` · `message-sink.ts` |
+| **提醒/调度非原子** | 投递后崩溃→重复触发；schedule `next_run` 后置更新→重复建 job / 缺 agent 时 30s 空转 | reminder 投递带稳定 `dedupKey`；schedule 改 **CAS 先推进 `next_run` 再建 job**（`WHERE next_run = ?`） | `reminders.ts` · `schedule.ts` |
+| **distill 追加无去重** | 同一事实每轮重插，膨胀 persona/检索 | 写入时 `findFactIdByWhat()` 命中则 `touchFact()`（bump `last_referenced_at`）而非插行 | `memory.ts` · `memory-distill.ts` |
+
+### 7.2 安全修复（CR 线，详见 [`security-hardening.md`](../security-hardening.md)）
+
+| 修复 | 摘要 | 文件 |
+|---|---|---|
+| **viewer 越权删除** | `DELETE /api/viewer/:id` 之前无守卫；现加 `requireAdmin`（所有 mutation 端点一致） | `web/server.ts` |
+| **notify_url SSRF** | 词法校验只看 host 串；新增 `assertWebhookHostPublic()` 在 fetch 前 DNS 解析 + 拒私网/回环/link-local（堵 DNS-rebinding / 主机名解析进内网） | `schedule.ts` |
+| **sensitive-paths 绕过** | denylist 可被 `/proc/<pid>/{root,cwd}` 与 symlink 绕过；`canonical()` 现做 `realpath`，并对字面 + 解析后路径双重匹配 + 直拒 `/proc` 间接寻址 | `sensitive-paths.ts` |
+| **IM 入站阻塞** | Feishu/DingTalk 在 SDK 回调内 `await` 整轮 agent，阻塞接收循环；改 fire-and-forget（钉钉先 ack 再派发） | `feishu-adapter.ts` · `dingtalk-client.ts` |
+| **微信会话恢复丢消息** | `SESSION_EXPIRED` 恢复消费 cursor 却只存 token 不派发 → 整批丢失；现走 `handleIncomingMessage` | `wechat/ilink-adapter.ts` |
+
+### 7.3 native harness 升级（升级线）
+
+"把 context 当预算而非垃圾场" + "工具注册表" + "记忆三层" + "验证子代理" + "信任 all-or-nothing"五个 harness 原则的落地：
+
+| 升级 | 做了什么 | 文件 |
+|---|---|---|
+| **Anthropic 可作 native 后端** | 伪流式 `_callApiStream` 现透传完整 `toolCalls`（之前流式下 Anthropic 工具调用全丢）；baseURL 规范化去尾部 `/v1`（preset 双 `/v1` → 404 修复） | `anthropic-provider.ts` · `agent-loop.ts`（`ChatStreamChunk.toolCalls`） |
+| **上下文预算（T1/T3）** | `readOperatorRole` 按 mtime/size memoize（每轮省一次磁盘读+注入扫描）；system-prompt skills 列表封顶 `MAX_INJECTED_SKILLS`（之前未封顶且与 router 注入重复） | `native/index.ts` |
+| **单一工具注册表（T2）** | `tools[]` / `combineDispatchers` / 静态 `parallelSafeTools` 三份并行清单合一 → `tool-registry.ts` 的 `assembleNativeTools()`；并发判定改 **逐调用** classifier（`agent-loop` 新增 `parallelSafeClassifier`，fail-closed）；外部 MCP 分区按名排序（prompt-cache 稳定） | `native/tool-registry.ts` · `agent-loop.ts` |
+| **指令分层（T4, local-wins）** | `readOperatorRole` 从单 `AGENTS.md` → `<cwd>/AGENTS.md`（project）+ `<cwd>/AGENTS.local.md`（local，**最后拼接=胜出**）；`IMHUB_NATIVE_AGENT_ROLE_FILE` 仍可 pin 单文件 | `native/index.ts` |
+| **验证子代理 SOP（T5）** | system prompt 增加"产出实质结果后用全新子代理独立校验 + 自包含 brief + 先综合再委派"指导（纯 prompt，无运行时分支） | `native/index.ts` |
+| **工作区信任门（T6）** | `IMHUB_NATIVE_TRUST_WORKSPACE=off` → `readOperatorRole` 一次性跳过所有工作区发现的 role 文件（多租户/A2A 防注入）；显式 pin 文件不受门控 | `native/index.ts`（`isWorkspaceTrusted()`） |
+| **native 审计 traceId（ADR-0002 修复）** | native 之前自造 `native-<sid>-<ts>` traceId → 审计行无法关联入站消息；`AgentSendOpts.traceId` 由 router 透传，native 优先用之；进程内 A2A 子调用链接 `${parent}/a2a-${id}` | `types.ts` · `router.ts` · `native/index.ts` · `imhub-dispatcher.ts` |
+
+### 7.4 本轮新增 / 相关 env
+
+| env | 默认 | 作用 |
+|---|---|---|
+| `IMHUB_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native 跳过工作区 `AGENTS.md`/`AGENTS.local.md` 注入 |
+| `IMHUB_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行词法校验 + fetch-time DNS 守卫的私网 webhook |
+| `IMHUB_NATIVE_AGENT_ROLE_FILE` | 未设 | pin 单一 role 文件，绕过 project+local 层级发现 |
+| `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS` | on | `off` → `call_agent('native')` 回退 subprocess 路径（见下方已知偏差） |
+
+### 7.5 已知偏差（后续 agent 注意，尚未收口）
+
+- **A2A native 进程内快路径**（`imhub-dispatcher.ts` `call_agent('native')`）绕过 `callAgentByName`，**不建 inline job、不写 `intent:'a2a'` 审计行** → `/a2a stats|tree` 看不到这些进程内 fan-out（本轮只补了 trace 链接，未补审计/作业对齐）。
+- **`isAgentEnabled('native')` 恒 true**（`live-config.ts`）：无视 `config.agents` 禁用开关，破坏 peer 对称性。
+- **ACP 侧 SSRF** 仅覆盖 Web test/discover API；config 持久化 / discovery 二跳 / 运行时 client 仍缺校验（该面默认被 `IMHUB_ENABLE_REMOTE_AGENT` 关闭）。
+
+详细立场见 [`architecture-bridge-and-native.md`](../architecture-bridge-and-native.md) § 10。
+
+### 7.6 关键文件索引（本轮）
+
+| 关注点 | 路径 |
+|---|---|
+| 熔断器 peek/acquireProbe | `src/core/circuit-breaker.ts` |
+| outbox 租约 + dedupKey | `src/core/outbox.ts` · `src/core/message-sink.ts` |
+| schedule CAS + webhook DNS 守卫 | `src/core/schedule.ts` |
+| distill 写入去重 | `src/core/memory.ts`（`findFactIdByWhat`/`touchFact`）· `src/core/memory-distill.ts` |
+| sensitive-paths realpath + /proc | `src/core/sensitive-paths.ts` |
+| native 工具注册表 | `src/plugins/agents/native/tool-registry.ts` |
+| 逐调用并发 classifier | `src/core/llm/agent-loop.ts`（`parallelSafeClassifier`） |
+| Anthropic 流式 toolCalls | `src/core/llm/anthropic-provider.ts` · `provider-base.ts`（`ChatStreamChunk.toolCalls`） |
+| native 指令分层 + 信任门 + role memoize | `src/plugins/agents/native/index.ts`（`readRoleFile`/`readOperatorRole`/`isWorkspaceTrusted`） |
+| viewer delete admin 守卫 | `src/web/server.ts` |
+| IM 入站非阻塞 | `src/plugins/messengers/feishu/feishu-adapter.ts` · `src/plugins/messengers/dingtalk/dingtalk-client.ts` |

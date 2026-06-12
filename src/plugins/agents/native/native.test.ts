@@ -285,6 +285,45 @@ describe('readOperatorRole — memoized + mtime/size invalidation (T1)', () => {
   })
 })
 
+describe('readOperatorRole — project + local hierarchy (T4, local wins)', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agim-role-hier-'))
+    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+  })
+  afterEach(() => {
+    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('concatenates project then local, with local LAST (most model attention)', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'PROJECT ROLE: be terse')
+    writeFileSync(join(dir, 'AGENTS.local.md'), 'LOCAL OVERRIDE: always reply in English')
+    const role = readOperatorRole(dir)
+    expect(role).toContain('PROJECT ROLE')
+    expect(role).toContain('LOCAL OVERRIDE')
+    // local must appear after project so it wins on conflicting guidance
+    expect(role.indexOf('LOCAL OVERRIDE')).toBeGreaterThan(role.indexOf('PROJECT ROLE'))
+  })
+
+  it('local-only is still injected when no project file exists', () => {
+    writeFileSync(join(dir, 'AGENTS.local.md'), 'LOCAL ONLY role')
+    expect(readOperatorRole(dir)).toContain('LOCAL ONLY role')
+  })
+
+  it('IMHUB_NATIVE_AGENT_ROLE_FILE forces a single file, bypassing the hierarchy', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), 'PROJECT should be ignored')
+    writeFileSync(join(dir, 'AGENTS.local.md'), 'LOCAL should be ignored')
+    const pinned = join(dir, 'pinned-role.md')
+    writeFileSync(pinned, 'PINNED role only')
+    process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = pinned
+    const role = readOperatorRole(dir)
+    expect(role).toContain('PINNED role only')
+    expect(role).not.toContain('PROJECT should be ignored')
+    expect(role).not.toContain('LOCAL should be ignored')
+  })
+})
+
 describe('describeNativeAgent — banner', () => {
   it('reports NOT CONFIGURED when no backend', () => {
     loadFromConfig({})

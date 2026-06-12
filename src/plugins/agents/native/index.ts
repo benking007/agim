@@ -324,33 +324,21 @@ export function buildSystemPrompt(
   return lines.join('\n')
 }
 
-/** Read <cwd>/AGENTS.md (if present) and prepare it for injection into
- *  the system prompt. Returns '' on missing file / read failure / empty
- *  content. Sanitises text length (8000 char cap) and scans for the
- *  classic prompt-injection signals ("ignore previous instructions",
- *  "always allow", etc.); when matches are found we still inject (the
- *  operator likely wrote them deliberately) but log a warn + audit
- *  hit so post-incident forensics can correlate. Honours
- *  IMHUB_NATIVE_AGENT_ROLE_FILE for a non-default location. */
-/** Memoized operator-role cache (T1 — context-as-budget).
- *  readOperatorRole used to read AGENTS.md from disk AND run the
- *  prompt-injection scan + 8000-char sanitise on EVERY turn (and once per
- *  candidate provider in the fallback chain). We now cache the sanitised
- *  result keyed by absolute path, invalidating only when the file's own
- *  mtime or size changes — i.e. the cache is "invalidated at the mutation
- *  site" (the file itself) rather than on a timer. The per-turn cost drops
- *  to a single stat().
+/** Memoized single-file role read (T1 — context-as-budget). Reads a role
+ *  file from disk, runs the prompt-injection scan + 8000-char sanitise, and
+ *  caches the sanitised result keyed by absolute path — invalidating only
+ *  when the file's own mtime or size changes ("invalidate at the mutation
+ *  site", not on a timer). The per-turn cost drops to a single stat() per
+ *  layer. When matches are found we still inject (the operator likely wrote
+ *  them deliberately) but log a warn so forensics can correlate.
  *
  *  Limitation: an edit that changes neither mtime nor byte length (same ms,
- *  same size, different bytes) is not detected. That's effectively
- *  impossible for a human-edited AGENTS.md and is the standard make/rsync
- *  freshness heuristic; we accept it to avoid re-reading on every turn. */
+ *  same size, different bytes) is not detected — the standard make/rsync
+ *  freshness heuristic; impossible in practice for a human-edited file. */
 interface OperatorRoleCacheEntry { mtimeMs: number; size: number; content: string }
 const _operatorRoleCache = new Map<string, OperatorRoleCacheEntry>()
 
-export function readOperatorRole(cwd: string): string {
-  const override = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
-  const path = override && override.length > 0 ? override : pathJoin(cwd, 'AGENTS.md')
+function readRoleFile(path: string): string {
   let st: import('node:fs').Stats
   try {
     st = fsStatSync(path)
@@ -383,6 +371,40 @@ export function readOperatorRole(cwd: string): string {
   const content = sanitizeForInjection(trimmed, 8000)
   _operatorRoleCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, content })
   return content
+}
+
+/**
+ * Resolve the operator role definition injected into native's system prompt.
+ *
+ * T4 (instruction hierarchy, distilled from the agentic-harness Memory
+ * pattern's "local overrides win — always"). Instead of a single
+ * `<cwd>/AGENTS.md`, discover a layered stack within the native workspace
+ * and concatenate in ASCENDING priority so the most-local block appears last
+ * and gets the most model attention. LOCAL WINS:
+ *
+ *   1. project — <cwd>/AGENTS.md         (the shared native-workspace role)
+ *   2. local   — <cwd>/AGENTS.local.md   (private override, not version-ctl'd)
+ *
+ * Both layers live under the native workspace cwd, so the stack is
+ * self-contained (no dependency on a global ~/.agim file — native has a
+ * single workspace, so "project" already IS the operator-global role; a
+ * cross-workspace user layer can be added later if that changes).
+ *
+ * IMHUB_NATIVE_AGENT_ROLE_FILE still forces a single explicit file (operators
+ * who pin one path bypass discovery entirely). Each layer is independently
+ * memoized + injection-scanned + capped at 8000 chars by readRoleFile.
+ */
+export function readOperatorRole(cwd: string): string {
+  const override = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+  if (override && override.length > 0) {
+    return readRoleFile(override)
+  }
+  const parts: string[] = []
+  for (const p of [pathJoin(cwd, 'AGENTS.md'), pathJoin(cwd, 'AGENTS.local.md')]) {
+    const c = readRoleFile(p)
+    if (c) parts.push(c)
+  }
+  return parts.join('\n\n')
 }
 
 /** Role priority for picking which LLM backend powers the native chat

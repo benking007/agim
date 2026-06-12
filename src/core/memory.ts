@@ -299,6 +299,44 @@ async function embedAndStoreFact(factId: number, text: string): Promise<void> {
   }
 }
 
+/**
+ * Exact-match lookup of an existing fact's id by its `what` slot, scoped to
+ * one user. Match is case- and surrounding-whitespace-insensitive. Used by
+ * distillation to avoid re-inserting a fact it already learned in an earlier
+ * turn (the append-only "user lives in 杭州 ×3" problem). Returns the oldest
+ * matching id (so reinforcement consistently touches the same row), or null.
+ */
+export function findFactIdByWhat(user_key: string, what: string): number | null {
+  const db = helper.get()
+  if (!db) return null
+  const w = (what ?? '').trim()
+  if (!w) return null
+  try {
+    const row = db.prepare(
+      'SELECT id FROM facts WHERE user_key = ? AND lower(trim(what)) = lower(?) ORDER BY id ASC LIMIT 1',
+    ).get(user_key, w) as { id: number } | undefined
+    return row ? row.id : null
+  } catch (err) {
+    log.warn({ event: 'memory.find_by_what_failed', err: String(err) })
+    return null
+  }
+}
+
+/**
+ * Reinforcement touch: bump `last_referenced_at` so a re-confirmed fact
+ * survives LRU retention without inserting a duplicate row. Best-effort
+ * (never throws). Mirrors how queryFacts keeps recalled facts fresh.
+ */
+export function touchFact(id: number): void {
+  const db = helper.get()
+  if (!db) return
+  try {
+    db.prepare('UPDATE facts SET last_referenced_at = ? WHERE id = ?').run(nowSec(), id)
+  } catch (err) {
+    log.debug({ event: 'memory.touch_failed', id, err: String(err) })
+  }
+}
+
 export function deleteFact(id: number, user_key: string): boolean {
   const db = helper.get()
   if (!db) return false

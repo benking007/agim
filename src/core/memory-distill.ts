@@ -26,7 +26,7 @@
 
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'
-import { saveFact, userKey, type FactCategory } from './memory.js'
+import { saveFact, findFactIdByWhat, touchFact, userKey, type FactCategory } from './memory.js'
 import { isMemoryEnabled } from './persona.js'
 import { logInvocation } from './audit-log.js'
 import { tryIntrospect } from './llm/index.js'
@@ -231,11 +231,26 @@ export async function runDistillation(input: DistillationInput): Promise<number>
     return 0
   }
   let saved = 0
+  let deduped = 0
   for (const ef of extracted) {
     if (typeof ef.what !== 'string' || !ef.what.trim()) continue
+    const what = ef.what.trim().slice(0, 500)
+    // v1.6 — write-time dedup. Distillation runs every turn, so a fact the
+    // user keeps mentioning ("我住在杭州") would otherwise be re-inserted each
+    // time, bloating memory and skewing persona / query results. If an exact
+    // `what` already exists for this user, reinforce it (touch
+    // last_referenced_at so LRU retention keeps it) instead of appending a
+    // duplicate row. This also covers a single batch that repeats a `what`,
+    // since saveFact commits synchronously before the next iteration.
+    const existingId = findFactIdByWhat(key, what)
+    if (existingId !== null) {
+      touchFact(existingId)
+      deduped++
+      continue
+    }
     const id = saveFact({
       user_key: key,
-      what: ef.what.trim().slice(0, 500),
+      what,
       who: typeof ef.who === 'string' ? ef.who.slice(0, 200) : '',
       when_text: typeof ef.when_text === 'string' ? ef.when_text.slice(0, 200) : '',
       where_label: typeof ef.where_label === 'string' ? ef.where_label.slice(0, 200) : '',
@@ -246,7 +261,7 @@ export async function runDistillation(input: DistillationInput): Promise<number>
     })
     if (id !== null) saved++
   }
-  log.info({ event: 'memory.distill.done', saved, attempted: extracted.length, user_key: key })
+  log.info({ event: 'memory.distill.done', saved, deduped, attempted: extracted.length, user_key: key })
   return saved
 }
 

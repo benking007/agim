@@ -397,7 +397,10 @@ export async function routeMessage(
         return formatRateLimitError(wsAgent, limitKeyAgent)
       }
 
-      if (circuitBreaker.isOpen(agent.name)) {
+      // peek() is non-consuming: the probe is only claimed once we commit to
+      // the actual invocation below (after every early-return path), so the
+      // half-open slot is never wasted on a switch/empty-prompt short-circuit.
+      if (circuitBreaker.peek(agent.name)) {
         return `⛔ ${agent.name} is temporarily unavailable (too many consecutive failures). Try again in a few minutes, or use another agent.`
       }
 
@@ -419,6 +422,9 @@ export async function routeMessage(
         ctx.platform, ctx.channelId, ctx.threadId, agent.name
       )
       ctx.intent = 'explicit'
+      // Commit point: claim the half-open probe (if any) now that the call is
+      // guaranteed to run and pair with record* in callAgentWithHistory.
+      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
 
@@ -497,9 +503,9 @@ export async function routeMessage(
       const judge = getLLMJudge()
       if (judge && intent === 'fallback' && ruleScore < (judge.threshold ?? 1.0) && !stickyAgent) {
         const candidates = workspaceRegistry.resolve(ctx.userId || 'unknown').agentWhitelist.size === 0
-          ? registry.listAgents().filter((a) => !circuitBreaker.isOpen(a))
+          ? registry.listAgents().filter((a) => !circuitBreaker.peek(a))
           : registry.listAgents().filter((a) =>
-              !circuitBreaker.isOpen(a) &&
+              !circuitBreaker.peek(a) &&
               workspaceRegistry.resolve(ctx.userId || 'unknown').hasAgent(a))
         const picked = await classifyWithLLM(parsed.prompt, candidates, (n) => registry.findAgent(n))
         if (picked) {
@@ -517,7 +523,7 @@ export async function routeMessage(
         return `❌ Agent "${agentName}" not configured.`
       }
 
-      if (circuitBreaker.isOpen(agent.name)) {
+      if (circuitBreaker.peek(agent.name)) {
         const openAgents = circuitBreaker.listOpen().join(', ')
         return `⛔ ${agent.name} is temporarily unavailable (circuit breaker open).\nCurrently blocked: ${openAgents || 'none'}\n\nTry /agents to see available agents, or wait a few minutes.`
       }
@@ -549,6 +555,9 @@ export async function routeMessage(
       const session = await sessionManager.getOrCreateSession(
         ctx.platform, ctx.channelId, ctx.threadId, agentName
       )
+      // Commit point: claim the half-open probe (if any) now that the call is
+      // guaranteed to run and pair with record* in callAgentWithHistory.
+      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
   }

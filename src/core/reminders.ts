@@ -1012,6 +1012,12 @@ async function fireOne(r: Reminder, now: Date): Promise<void> {
       threadId: r.thread_id,
       payload: formatDelivery(r, body, now),
       kind: 'text',
+      // Idempotency: stable per-occurrence key. If we crash after the outbox
+      // handoff but before this reminder is marked terminal, startup recovery
+      // resets the row 'firing'→'pending' and it re-fires for the SAME fire_at
+      // — the matching dedup_key makes that re-enqueue a no-op, so the user
+      // never gets a duplicate.
+      dedupKey: `reminder:${r.id}:${r.fire_at}`,
     })
     const firedAtIso = new Date().toISOString()
 
@@ -1065,7 +1071,12 @@ export async function tick(now: Date = new Date()): Promise<number> {
 /** Start the periodic ticker. Idempotent. */
 export function startReminderEngine(): void {
   if (tickTimer) return
-  tickTimer = setInterval(() => { void tick() }, TICK_INTERVAL_MS)
+  tickTimer = setInterval(() => {
+    void tick().catch((err) => {
+      log.error({ event: 'reminders.tick.unhandled', err: err instanceof Error ? err.message : String(err) },
+        'reminder tick threw unhandled')
+    })
+  }, TICK_INTERVAL_MS)
   if (typeof tickTimer === 'object' && tickTimer && 'unref' in tickTimer) {
     (tickTimer as { unref: () => void }).unref()
   }

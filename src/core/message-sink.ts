@@ -29,7 +29,7 @@ import type { MessengerAdapter } from './types.js'
 import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
 import {
-  enqueue, pickPending, markDelivered, markFailed,
+  enqueue, pickPending, claimForSend, requeueStuckSending, markDelivered, markFailed,
   type OutboxKind, type OutboxPriority, type OutboxRow,
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
@@ -63,6 +63,12 @@ export interface SinkPayload {
   /** Optional explicit thread key. Default is
    *  `${platform}:${channelId}:${threadId}` (matches session.ts). */
   threadKey?: string
+  /** Optional idempotency key forwarded to outbox.enqueue. When set, a
+   *  repeated deliver with the same key is a no-op (no duplicate row). Used by
+   *  reminder firing so a reminder resurrected from 'firing' after a crash
+   *  can't enqueue the same message twice. Only meaningful for the queued
+   *  (non-high-priority) path. */
+  dedupKey?: string
   /** Optional already-resolved adapter. When provided, sink uses it
    *  directly for the sync attempt instead of consulting the global
    *  registry. Required by callers that maintain their own resolution
@@ -279,7 +285,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
       payload: payloadStr, kind: p.kind, priority,
       status: 'pending', attempts: 0,
       last_attempt_at: null, last_error: null, delivered_at: null,
-      next_attempt_at: null, created_at: new Date().toISOString(),
+      next_attempt_at: null, created_at: new Date().toISOString(), dedup_key: null,
     }
     try {
       await doSend(synthetic, p.adapter)
@@ -308,6 +314,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
   const id = enqueue({
     threadKey, platform: p.platform, channelId: p.channelId, threadId: p.threadId,
     payload: payloadStr, kind: p.kind, priority, jobId: p.jobId ?? null,
+    dedupKey: p.dedupKey ?? null,
   })
   if (id < 0) {
     // Outbox itself is broken (sqlite disabled, e.g. on bun without the
@@ -323,7 +330,7 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
         payload: payloadStr, kind: p.kind, priority,
         status: 'pending', attempts: 0,
         last_attempt_at: null, last_error: null, delivered_at: null,
-        next_attempt_at: null, created_at: new Date().toISOString(),
+        next_attempt_at: null, created_at: new Date().toISOString(), dedup_key: null,
       }, p.adapter)
       return { outboxId: -1, immediate: true }
     } catch (err) {
@@ -438,6 +445,11 @@ async function workerTick(): Promise<void> {
     const batch = pickPending(resolveBatchSize())
     for (const row of batch) {
       if (workerStopRequested) break
+      // Atomically lease the row (pending → sending) before sending. If the
+      // claim is lost (a concurrent drain already took it) skip it. This +
+      // the requeue-on-startup recovery prevents the every-tick duplicate
+      // re-send that a silent markDelivered failure used to cause.
+      if (!claimForSend(row.id)) continue
       try {
         await doSend(row)
         markDelivered(row.id)
@@ -493,6 +505,14 @@ async function workerTick(): Promise<void> {
 export function startWorker(): void {
   if (workerTimer !== null) return
   workerStopRequested = false
+  // Recover rows orphaned in the 'sending' lease by a prior crash before we
+  // begin draining, so they re-enter the pending queue exactly once.
+  try {
+    requeueStuckSending()
+  } catch (err) {
+    log.warn({ event: 'sink.requeue_stuck_failed', err: err instanceof Error ? err.message : String(err) },
+      'requeueStuckSending at worker start failed (non-fatal)')
+  }
   const ms = resolveTickMs()
   workerTimer = setInterval(() => {
     void workerTick().catch((err) => {

@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.148] - 2026-06-12
+
+### Added (built-in ECC skill pack — 229 skills)
+
+打包入了 [ECC](https://github.com/affaan-m/ECC) 项目 `skills/` 目录的精选子集：
+**229 个 skill**（占 ECC 全部 262 个的 87%），覆盖通用 dev 工作流、各语言
+patterns / testing / security / build-resolver、各主流框架（Django / Laravel /
+Spring Boot / Quarkus / NestJS / React / Vue / Nuxt 等）、agent harness 工程、
+verification 循环、cost-aware LLM 流水线等。MIT 许可，license 文件归档于
+`src/core/skills/builtin/ECC_LICENSE`。
+
+#### 标识
+
+- frontmatter `origin: ECC`
+- description 加 `[ECC]` 前缀（便于在 system prompt 一眼区分来源）
+
+#### env switch
+
+- `IMHUB_INCLUDE_ECC_SKILLS=off` （或 `0`/`false`/`no`/`disable`）→ loader 跳过
+  所有 `origin: ECC` 的 skill。默认 ON，保留新装 agim 用户的开箱即用体验。
+- 仅过滤 ECC pack；用户自己写 SKILL.md 时若复用 `origin: ECC` 字段是允许的
+  （但显式标记 ECC pack 的 description `[ECC]` 前缀已写死，不影响 user skill）。
+
+#### 33 项排除清单（不导入）
+
+- ECC 内部：`configure-ecc` / `ecc-guide` / `ecc-tools-cost-audit` / `workspace-surface-audit`
+- ECC operator 工作流：`brand-voice` / `customer-billing-ops` / `google-workspace-ops`
+  / `project-flow-ops` / `social-graph-ranker` / `social-publisher` /
+  `investor-materials` / `investor-outreach` / `carrier-relationship-management`
+  / `connections-optimizer` / `content-engine`
+- 视频生成：`manim-video` / `remotion-video-creation` / `blender-motion-state-inspection`
+- 预测市场（ito-*）：4 个
+- 家庭实验室（homelab-*）：5 个
+- 其他：`agent-architecture-audit` / `agent-payment-x402` / `agent-sort` /
+  `agentic-os` / `canary-watch` / `ck`
+
+#### 文件
+
+- 新增 `src/core/skills/builtin/<229 个目录>/` —— ECC skill 树原样拷贝
+  （部分含 scripts/references/templates 子目录），description 行加 `[ECC]` 前缀
+- 新增 `src/core/skills/builtin/ECC_LICENSE` —— MIT, © Affaan Mustafa
+- 新增 `src/core/skills/builtin/ECC_NOTICE.md` —— 归属说明 + 排除清单
+- `src/core/skills/loader.ts` —— `parseSkill` 加 IMHUB_INCLUDE_ECC_SKILLS 过滤
+- `src/core/skills/loader.test.ts` —— 新增 1 case 覆盖 env switch（默认 ON / off /
+  unrecognized 三态）
+
+#### 体积
+
+- builtin/ 从 12 个目录 → 241 个目录（含原 12 + 新 229）
+- 磁盘 ~80 KB → ~4.4 MB
+- 预估 npm tarball 增量约 +1.5 MB（gzip 后）
+
+#### 注意事项（agim user 视角）
+
+- system prompt 仍只列前 32 个 skill（`MAX_INJECTED_SKILLS=32`），不会爆 context
+- 其余 200+ 个仍可通过 `mcp__imhub__read_skill('name')` 主动调
+- 同名 workspace skill 会 shadow builtin（用户自定义优先）
+
 ## [1.2.147] - 2026-06-12
 
 ### Added (native harness — framework-level tool-call discipline + detector 双保险)

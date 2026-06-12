@@ -499,6 +499,17 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
     log.warn({ event: 'skills.parse.no_frontmatter', name: d.name, dir: d.dir })
     return null
   }
+  // v1.2.148 — operators can disable the bundled ECC skill pack
+  // (229 entries imported from github.com/affaan-m/ECC, MIT) via env.
+  // Detection: each ECC SKILL.md declares `origin: ECC` in frontmatter.
+  // Operator-authored skills with the same `origin` value are honoured
+  // (the assumption is the operator wrote the frontmatter knowingly).
+  if (
+    String(front.origin || '').trim() === 'ECC'
+    && (process.env.IMHUB_INCLUDE_ECC_SKILLS ?? '').toLowerCase().trim() === 'off'
+  ) {
+    return null
+  }
   const name = (front.name || d.name).trim()
   if (!name) return null
   const description = (front.description || '').trim().slice(0, MAX_DESCRIPTION_CHARS)
@@ -539,6 +550,11 @@ interface Frontmatter {
   name?: string
   description?: string
   always?: string
+  /** v1.2.148 — ECC origin tag. Used by the bundled ECC pack so the
+   *  `IMHUB_INCLUDE_ECC_SKILLS=off` switch can drop them in one place
+   *  without a name allowlist. Operator-written skills may set this
+   *  too; that's intentional. */
+  origin?: string
   /** Full "metadata: …" JSON-ish string when the YAML uses the
    *  inline-JSON form `metadata: '{"agim":{"requires":...}}'`. */
   metadataJson?: string
@@ -603,6 +619,7 @@ function extractFrontmatter(body: string): Frontmatter | null {
     if (key === 'name') front.name = value
     else if (key === 'description') front.description = value
     else if (key === 'always') front.always = value
+    else if (key === 'origin') front.origin = value
     else if (key === 'metadata') front.metadataJson = value
   }
   return front

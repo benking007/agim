@@ -560,6 +560,34 @@ body
     expect(s!.always).toBe(false)
   })
 
+  it('IMHUB_INCLUDE_ECC_SKILLS=off filters skills with origin: ECC (v1.2.148)', () => {
+    writeSkill(wsRoot, 'ecc-pack-sample', `---
+name: ecc-pack-sample
+description: A bundled ECC skill that should be dropped when the env knob is off.
+origin: ECC
+---
+body
+`)
+    writeSkill(wsRoot, 'plain-skill', `---
+name: plain-skill
+description: A non-ECC skill that should always load.
+---
+body
+`)
+    process.env.IMHUB_INCLUDE_ECC_SKILLS = 'off'
+    invalidateSkillsCache()
+    expect(getSkillByName('ecc-pack-sample')).toBeNull()
+    expect(getSkillByName('plain-skill')).not.toBeNull()
+    delete process.env.IMHUB_INCLUDE_ECC_SKILLS
+    invalidateSkillsCache()
+    expect(getSkillByName('ecc-pack-sample')).not.toBeNull()
+    expect(getSkillByName('plain-skill')).not.toBeNull()
+    process.env.IMHUB_INCLUDE_ECC_SKILLS = 'yes'
+    invalidateSkillsCache()
+    expect(getSkillByName('ecc-pack-sample')).not.toBeNull()
+    delete process.env.IMHUB_INCLUDE_ECC_SKILLS
+  })
+
   it('buildSkillsSummary produces a real description (NOT ">-") for fin-data-style frontmatter', () => {
     // Reproduces the bug observed in production: fin-data-* skills
     // showed up in the system prompt as `- fin-data-bond-otc: >-`

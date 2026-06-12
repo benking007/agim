@@ -58,6 +58,7 @@ import type {
 } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { runGoalCritic, resolveCriticMode } from './goal-critic.js'
+import { detectHallucinatedToolCall, isHallucinationDetectorOn } from './hallucination-detector.js'
 import { validateAgainstSchema, formatValidationErrors } from './schema-validate.js'
 
 const log = rootLogger.child({ component: 'agent-loop' })
@@ -593,7 +594,7 @@ export const alwaysAllowGate: ApprovalGate = async () => 'allow'
  *    as semantically off-target for the user's prompt / active goal.
  *    Different from stuck_loop (mechanical repeat) — this catches the
  *    "different calls but still pointless" failure mode. */
-export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop' | 'off_track'
+export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop' | 'off_track' | 'hallucinated_tools'
 
 export interface AgentLoopInput {
   provider: LlmProvider
@@ -1026,6 +1027,46 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 
     // No tools, or model decided not to call any → terminate.
     if (result.finishReason !== 'tool_use' || !result.toolCalls || result.toolCalls.length === 0) {
+      // v1.2.147 — hallucinated tool-call detector. When the model
+      // talks about invoking a native_* tool ("我现在调用 native_write_file:
+      // ```python …```") but never emitted the toolCalls schema entry,
+      // we'd otherwise ship the lie as a normal reply. Flag it so the
+      // adapter renders a targeted recap instead.
+      //
+      // Scope: only finishReason==='stop' (model thinks it's done), with
+      // non-empty text and zero real tool calls. Skips when tools array
+      // is undefined (turn had no tool surface) since "narrate without
+      // emit" makes no sense without a surface to emit against.
+      if (
+        result.finishReason === 'stop'
+        && result.text
+        && (!result.toolCalls || result.toolCalls.length === 0)
+        && tools && tools.length > 0
+        && isHallucinationDetectorOn()
+      ) {
+        const det = detectHallucinatedToolCall({
+          text: result.text,
+          toolNames: tools.map((t) => t.name),
+          emittedToolCallCount: 0,
+        })
+        if (det.hallucinated) {
+          log.warn({
+            event: 'agent-loop.hallucinated_tool_call',
+            pattern: det.pattern,
+            evidence: det.evidence,
+            backend: input.provider.name,
+            iter,
+          }, 'model narrated a tool call without emitting toolCalls — flagging recap')
+          signal.cleanup()
+          return {
+            text: lengthRecoveryPrefix + result.text,
+            iterations: iter + 1,
+            toolCalls,
+            usage: usageAcc,
+            finishReason: 'hallucinated_tools',
+          }
+        }
+      }
       signal.cleanup()
       return {
         // v1.2.117 — prefix accumulated partials so a chain of length

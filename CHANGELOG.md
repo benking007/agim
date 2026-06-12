@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.147] - 2026-06-12
+
+### Added (native harness — framework-level tool-call discipline + detector 双保险)
+
+两层组合拳消除 "LLM 说要调工具却不真调" 的硬伤：**框架级 system prompt 段**做事前
+预防（每轮注入、所有用户默认开），**运行时 detector**做事后兜底（即使模型无视
+prompt，命中模式就走复盘卡）。
+
+#### 框架级 system prompt 段（agim 出厂默认）
+
+- `src/plugins/agents/native/index.ts` — 新增常量 `TOOL_CALL_DISCIPLINE_PROMPT`
+  + helper `isToolDisciplineOn()`，`buildSystemPrompt` 在 operator role 之前
+  push 一段 `[agim framework rule — tool-call discipline]` 块。**默认所有 agim 安装
+  生效**，不依赖用户写 AGENTS.md。
+- 段内 5 条硬规则（禁演练、必须真调、不确定走 todo、追问时坦白、副作用工具一次发完整）。
+- env `IMHUB_NATIVE_TOOL_DISCIPLINE`，默认 `on`；`off`/`0`/`false`/`no`/`disable`
+  关掉（escape hatch，给 prompt 调优实验用）。
+
+### Added (native harness — hallucinated tool-call detector)
+
+部分 LLM 后端（实测 DeepSeek-v4 在长上下文 + 反复纠错语境）会**演练**工具调用——
+吐出 "我现在调用 native_write_file: ```python ...```" 这种文本但响应里
+`tool_calls=[]`。下游把这当成普通回复推给用户，造成"承诺却不执行"的硬伤
+（实测：用户问"已经帮我存好文件了吗？"，native 反复说"这次不废话直接写"
+但 audit 里 `native_write_file` 调用次数 = 0）。
+
+#### 新增 detector + recap
+
+- `src/core/llm/hallucination-detector.ts` — pure function
+  `detectHallucinatedToolCall({text, toolNames, emittedToolCallCount})`，
+  4 套高精度模式（zh:direct-write-block / zh:invoke-narration / en:invoke-narration
+  / zh:promise-no-action），fail-closed（紧扣"narrated intent + zero real call"
+  两个信号同时满足才标记）。
+- `src/core/llm/agent-loop.ts` — `LoopFinishReason` 加 `'hallucinated_tools'`；
+  在 no-tools-terminate 出口前插入 hook，命中则覆盖 finishReason 并 log.warn
+  留审计（含 pattern + evidence + backend）。
+- `src/plugins/agents/native/index.ts` — 新增 `composeHallucinatedToolRecap()`，
+  点名失败模式 + 建议换 backend（重点：换 native-chat 角色，而不是死磕 prompt）。
+
+#### Env
+
+- `IMHUB_NATIVE_HALLUCINATION_DETECT` 默认 `on`；`off`/`0`/`false`/`no`/`disable` 关掉
+  （误判 cost 仅是多一张复盘卡，关掉 cost 是放过 silent lies，所以默认开）。
+
+#### Tests
+
+`test/unit/hallucination-detector.test.ts` 17 case 全绿 — 7 个 POSITIVE
+（中英 + 直接写代码块 + 空承诺）、6 个 NEGATIVE（toolCalls 已发 / 未知工具名
+/ 短文本 / 过去时陈述 / 普通代码块）、4 个 env 切换。`src/plugins/agents/native/native.test.ts`
+新增 4 case 验证框架级纪律：默认注入、排在 operator role 之前、env=off 移除、
+未识别值视为 ON。typecheck 双 pass 全绿；agent-loop / native 现有套件 69/70 +
+27/29 通过（剩余 fail 都是 pre-existing on main，与本轮改动无关）。
+
+#### 未做（留续作）
+
+- 自动 retry（`IMHUB_NATIVE_HALLUCINATION_AUTO_RETRY=1` 强制注入纠正 prompt 再跑一轮）
+- web outbox crash-safe delivery（web reply 在 client 重连时丢失）
+- viewer DELETE 加 audit_event
+- `docs/security-hardening.md` §1 env 速查表补 `IMHUB_NATIVE_WEB_ALLOW_PRIVATE`
+  与 `IMHUB_NATIVE_WEB_SSRF_WHITELIST` 两项
+
 ## [1.2.145] - 2026-06-12
 
 一轮严格代码 CR 修复 + 参照 [agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill) 的 native agent "harness 工程"升级。完整导览见 [`docs/architecture/current.md`](docs/architecture/current.md) §七；安全项见 [`docs/security-hardening.md`](docs/security-hardening.md)。

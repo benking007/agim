@@ -363,6 +363,57 @@ describe('readOperatorRole — workspace trust gate (T6)', () => {
   })
 })
 
+describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {
+  const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
+
+  it('injects the framework-level tool-call discipline by default', () => {
+    delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
+    expect(prompt).toContain('[agim framework rule — tool-call discipline]')
+    expect(prompt).toContain('工具调用纪律')
+    // Specific high-value rules must survive into the prompt verbatim:
+    expect(prompt).toContain('禁止用文本')
+    expect(prompt).toContain('不要假装调用了又没调')
+    expect(prompt).toContain('禁止编造')
+  })
+
+  it('places discipline BEFORE the operator role so framework rule dominates', () => {
+    delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    const dir = mkdtempSync(join(tmpdir(), 'agim-role-order-'))
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), 'You are Persona X. Custom rule: be quirky.')
+      const prompt = buildSystemPrompt(stub, 'native-chat', dir)
+      const disciplineIdx = prompt.indexOf('[agim framework rule — tool-call discipline]')
+      const roleIdx = prompt.indexOf('[operator role definition]')
+      expect(disciplineIdx).toBeGreaterThanOrEqual(0)
+      expect(roleIdx).toBeGreaterThan(disciplineIdx)
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it('omits discipline block when IMHUB_NATIVE_TOOL_DISCIPLINE=off', () => {
+    process.env.IMHUB_NATIVE_TOOL_DISCIPLINE = 'off'
+    try {
+      const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
+      expect(prompt).not.toContain('[agim framework rule — tool-call discipline]')
+      expect(prompt).not.toContain('工具调用纪律')
+    } finally {
+      delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    }
+  })
+
+  it('treats unrecognized env values (e.g. "yes") as ON', () => {
+    process.env.IMHUB_NATIVE_TOOL_DISCIPLINE = 'yes'
+    try {
+      const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
+      expect(prompt).toContain('[agim framework rule — tool-call discipline]')
+    } finally {
+      delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    }
+  })
+})
+
 describe('buildSystemPrompt — verification-subagent SOP (T5)', () => {
   const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
   it('includes the verification-subagent + synthesize-dont-delegate guidance', () => {

@@ -79,6 +79,52 @@ import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/pr
 const log = rootLogger.child({ component: 'native-agent' })
 
 /**
+ * v1.2.147 — framework-level tool-call discipline injected into EVERY
+ * native turn's system prompt. Sits at the top, before the operator
+ * role definition, so it dominates any persona-level rules the user
+ * authors. Pure prompt — paired with the runtime hallucination
+ * detector (`detectHallucinatedToolCall`) that catches the failure
+ * mode if the model ignores the rule.
+ *
+ * Why this is hard-coded, not optional:
+ *   - The failure (model narrates a tool call without emitting it) is
+ *     LLM-side and silent; we cannot fully prevent it. But almost every
+ *     instance we've seen would have been deterred by an explicit
+ *     "do not narrate, just emit" rule.
+ *   - Leaving this to operator AGENTS.md means every fresh install
+ *     reproduces the same harm before the operator notices.
+ *   - Escape hatch: IMHUB_NATIVE_TOOL_DISCIPLINE=off (or 0/false/no/
+ *     disable) lets advanced operators drop the block, e.g. when
+ *     measuring whether the prompt itself is hurting tool-call recall.
+ */
+const TOOL_CALL_DISCIPLINE_PROMPT = [
+  '## 工具调用纪律（agim 框架级硬约束）',
+  '',
+  '- 禁止用文本"描述/演练"工具调用。例如不可输出 `我现在调用 native_write_file: \\`\\`\\`python ...\\`\\`\\`` —— 想用工具就直接发 `toolCalls`，不要先用纯文本预告。',
+  '- 工具调用必须真的发生：如果当轮没真正发出 `toolCalls`，就不要输出"已经写好 / 已经存好 / 已经调了 X"这类口径，更不要承诺"下一步直接写"。',
+  '- 不确定是否该调用，用 `native_todo_write` 把意图留为 todo 让用户审，不要假装调用了又没调。',
+  '- 用户追问"做了吗 / 写好了吗 / 又没消息了"，先回顾本轮 `toolCalls` 历史；没有就直接坦白"没调成"，禁止编造"这次直接写""不废话了"等空承诺——空承诺没有任何代价但会摧毁信任。',
+  '- write / edit / exec 类副作用工具一次性写完整调用，不要分两步"先承诺再调用"。',
+  '',
+  '（运行时会有 hallucination 检测器在末轮抓"narrate without emit"，触发会用复盘卡替换原回复。）',
+].join('\n')
+
+/**
+ * Read the IMHUB_NATIVE_TOOL_DISCIPLINE kill-switch. Default ON.
+ * Recognized OFF values: 'off' / '0' / 'false' / 'no' / 'disable'.
+ * Pairs with isHallucinationDetectorOn (hallucination-detector.ts): the
+ * detector still fires when discipline is off, by design — discipline
+ * removed is a prompting test, not a license to ship lies.
+ */
+export function isToolDisciplineOn(): boolean {
+  const raw = (process.env.IMHUB_NATIVE_TOOL_DISCIPLINE ?? '').toLowerCase().trim()
+  if (raw === 'off' || raw === '0' || raw === 'false' || raw === 'no' || raw === 'disable') {
+    return false
+  }
+  return true
+}
+
+/**
  * v1.2.47 — system prompt is rebuilt per IM turn so the model sees:
  *   - which LLM backend + role it's actually running on
  *   - the agim process working directory (no per-thread cwd today)
@@ -127,6 +173,17 @@ export function buildSystemPrompt(
     : '  (none configured)'
 
   const lines: string[] = []
+
+  // v1.2.147 — framework-level tool-call discipline. Prepended BEFORE
+  // the operator role so it dominates persona-level rules. Hard-coded
+  // (not derived from a file) so every fresh agim install gets it, no
+  // per-user setup. Pairs with the runtime hallucination detector.
+  if (isToolDisciplineOn()) {
+    lines.push('[agim framework rule — tool-call discipline]')
+    lines.push(TOOL_CALL_DISCIPLINE_PROMPT)
+    lines.push('[/agim framework rule]')
+    lines.push('')
+  }
 
   // Operator-supplied role definition. Reads <cwd>/AGENTS.md (seeded by
   // bootstrapAgentWorkspaces) and prepends it as a role block. Lets
@@ -608,6 +665,51 @@ function composeOffTrackRecap(
   }
   lines.push('  · 或自己告诉我一个新方向')
   lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手')
+  return lines.join('\n')
+}
+
+/**
+ * v1.2.147 — recap for the "hallucinated tool-call" failure mode.
+ *
+ * Trigger: agent-loop detected the model's final text narrates a
+ * native_* tool invocation (e.g. "我现在调用 native_write_file:
+ * ```python ...```" or "let me invoke native_exec") but the response
+ * carried zero real toolCalls. The model promised an action it did not
+ * take. Without this branch the lie would get shipped to the user as a
+ * normal reply.
+ *
+ * Distinct from the empty / max-iter / stuck-loop recaps because the
+ * fail-mode is model-side rather than budget-side: the model is fine,
+ * just not in a tool-calling mood. The recap points the user at a
+ * backend swap as the most reliable next step, since prompt tweaking
+ * has limited leverage when the model has already drifted out of the
+ * function-calling schema. Pure formatting; no LLM call.
+ */
+function composeHallucinatedToolRecap(
+  result: {
+    toolCalls: ReadonlyArray<{ name: string; isError: boolean; preview?: string }>
+    iterations: number
+    text: string
+  },
+  backend: string,
+): string {
+  const lines: string[] = []
+  lines.push('🧐 模型说要调用工具，但实际上没真的发起调用。')
+  lines.push('为了不让你看到空承诺，已经把这次回复挡下。')
+  lines.push('')
+  lines.push(`当前 native-chat 后端：${backend}`)
+  if (result.toolCalls.length > 0) {
+    lines.push(`本轮在此之前已真正完成了 ${result.toolCalls.length} 次工具调用，那部分有效。`)
+  } else {
+    lines.push('本轮没有任何真实工具调用产出。')
+  }
+  lines.push('')
+  lines.push('怎么继续：')
+  lines.push('  · 直接回「重试」让我重新跑一遍这一步')
+  lines.push('  · 或在 /settings/llm 把 native-chat 角色换成工具调用更稳定的后端（Claude / GPT 系列）')
+  lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手这一步')
+  lines.push('')
+  lines.push('（检测器可用 IMHUB_NATIVE_HALLUCINATION_DETECT=off 关掉）')
   return lines.join('\n')
 }
 
@@ -1509,6 +1611,23 @@ class NativeAgentAdapter implements AgentAdapter {
         ?? composeUnfinishedTurnRecap(result, 'stuck_loop', maxIter)
     } else if (result.finishReason === 'aborted') {
       body = '⏹ native agent aborted before completion.'
+    } else if (result.finishReason === 'hallucinated_tools') {
+      // v1.2.147 — agent-loop detected the model narrated a tool
+      // invocation ("我现在调用 native_write_file: ```python …```")
+      // without actually emitting toolCalls. Surface a recap that
+      // names the failure mode + suggests a backend switch, instead
+      // of shipping the lie as a normal reply.
+      log.warn({
+        event: 'native.turn.hallucinated_tools',
+        sessionId,
+        backend: usedProvider.name,
+        role: usedRole,
+        iterations: result.iterations,
+        toolCallCount: result.toolCalls.length,
+        textLen: (result.text || '').length,
+        elapsedMs: Date.now() - startedAt,
+      }, `native turn ended with hallucinated tool-call narration (no real toolCalls emitted)`)
+      body = composeHallucinatedToolRecap(result, usedProvider.name)
     } else if (!body) {
       // Normal `stop` finish but the model didn't write anything. Most
       // often the model completed a tool chain and forgot to close

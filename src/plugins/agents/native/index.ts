@@ -48,49 +48,21 @@ import { logger as rootLogger } from '../../../core/logger.js'
 import { logInvocation } from '../../../core/audit-log.js'
 import {
   runAgentLoop,
-  buildMcpDispatcher,
-  combineDispatchers,
   getProvider,
-  getAllMcpTools,
   type LlmMessage,
   type LlmProvider,
-  type ToolDef,
 } from '../../../core/llm/index.js'
-import {
-  buildBuiltinDispatcher,
-  getBuiltinTools,
-} from '../../../core/llm/builtin-dispatcher.js'
 import {
   buildPolicyApprovalGate,
   describePolicy,
   type ApprovalMode,
   type PolicyApprovalGateConfig,
 } from '../../../core/llm/policy-approval-gate.js'
-import {
-  buildImhubDispatcher,
-  getImhubTools,
-} from '../../../core/llm/imhub-dispatcher.js'
-import {
-  buildFsDispatcher,
-  getFsTools,
-} from '../../../core/llm/fs-dispatcher.js'
-import {
-  buildWebDispatcher,
-  getWebTools,
-} from '../../../core/llm/web-dispatcher.js'
-import {
-  buildExecDispatcher,
-  getExecTools,
-} from '../../../core/llm/exec-dispatcher.js'
-import {
-  buildTodoDispatcher,
-  getTodoTools,
-} from '../../../core/llm/todo-dispatcher.js'
-import {
-  buildPlanExitDispatcher,
-  getPlanExitTools,
-  PLAN_EXIT_TOOL_NAME,
-} from '../../../core/llm/plan-exit-dispatcher.js'
+// Tool assembly (defs + dispatch + per-call concurrency classifier) moved
+// into tool-registry.ts (#86); the per-dispatcher builder imports live there
+// now. MAX_INJECTED_SKILLS is still needed here for the system-prompt skills
+// cap (#85/T3).
+import { assembleNativeTools } from './tool-registry.js'
 import { listSkills, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -948,32 +920,6 @@ export function isPlanModeOn(threadKey?: string): boolean {
 }
 
 /**
- * v1.2.109 — names of native tools that are safe to dispatch in parallel
- * within a single iteration. Strict opt-in: only tools with no side
- * effects, no shared mutable state, and order-independent semantics.
- * MCP tools beyond explicit read-only ones are NOT listed because they
- * share session state with the agent loop's mcp-client and have caused
- * races in the past (see comment near agent-loop's old serial-only
- * note). Pure/read-only entries:
- *   - native_{echo,now,random_uuid}: pure
- *   - native_{read_file,list_dir,glob,grep}: read-only fs
- *   - native_{web_fetch,web_search}: read-only network (SSRF-checked)
- *   - mcp__imhub__{read_skill,list_skills,search_memos}: read-only
- *   - mcp__imhub__memory_{list,query}: read-only memory
- * Everything else (native_exec, native_write_file, save/update/delete
- * memo, push_message, ask_user, call_agent, long_task, complete_goal,
- * other MCP) remains serial.
- */
-const NATIVE_PARALLEL_SAFE_TOOLS: ReadonlySet<string> = new Set([
-  'native_echo', 'native_now', 'native_random_uuid',
-  'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
-  'native_web_fetch', 'native_web_search',
-  'mcp__imhub__read_skill', 'mcp__imhub__list_skills',
-  'mcp__imhub__search_memos',
-  'mcp__imhub__memory_list', 'mcp__imhub__memory_query',
-])
-
-/**
  * v1.2.60 — bridge native's policy gate to the approval-bus so tools
  * that the gate would otherwise silently deny instead surface an IM
  * approval card. Mirrors how claude-code's MCP sidecar uses
@@ -1257,68 +1203,37 @@ class NativeAgentAdapter implements AgentAdapter {
     // the per-thread workspace subtree. Was previously resolved AFTER
     // dispatch composition; moved up so fs tools see the right root.
     const cwd = resolveAgentCwd('native', opts) || defaultAgentCwd('native')
-    const dispatch = combineDispatchers(
-      buildBuiltinDispatcher(),
-      buildFsDispatcher({ cwd }),
-      buildWebDispatcher(),
-      buildExecDispatcher({
-        cwd,
-        // v1.2.97 — when this thread has a usable RunContext, hand it
-        // to exec-dispatcher so every spawned child inherits a fresh
-        // RPC token bound to the thread. Enables the Python-RPC bridge
-        // (bgjob worker → agim parent → memo/skill/push). Tokens are
-        // per-spawn, expire in 24h, and only authorise THIS thread.
-        rpcCtx: opts.platform && opts.threadId
-          ? {
-            platform: opts.platform,
-            channelId: opts.channelId ?? '',
-            threadId: opts.threadId,
-            userId: opts.userId ?? '',
-          }
-          : undefined,
-      }),
-      // v1.2.124 — TodoWrite-style per-thread plan tracker. Sits
-      // before imhub so a stray tool name collision (none today) would
-      // be caught early. Uses the same composite thread key the PlanMode
-      // resolver does so users can find their list in audit.
-      buildTodoDispatcher(planThreadKey ?? `native:${sessionId}`),
-      // v1.2.131 — ExitPlanMode handshake. Always wired; the dispatcher
-      // itself refuses calls when the thread is NOT in plan mode, so
-      // the model can't accidentally exit something it didn't enter.
-      buildPlanExitDispatcher({
+    // T2 (single tool registry): assemble the advertised tool list, the
+    // dispatch chain, AND the per-call concurrency classifier from ONE
+    // source-of-truth (see tool-registry.ts). This replaced three
+    // hand-maintained parallel lists (tools[] / combineDispatchers / the
+    // static parallelSafeTools Set) that silently drifted when a tool was
+    // added. The plan-exit dispatcher is always wired (it self-refuses off
+    // plan mode); its tool is advertised only when plan mode is on.
+    const assembled = assembleNativeTools({
+      cwd,
+      rpcCtx: opts.platform && opts.threadId
+        ? {
+          platform: opts.platform,
+          channelId: opts.channelId ?? '',
+          threadId: opts.threadId,
+          userId: opts.userId ?? '',
+        }
+        : undefined,
+      todoThreadKey: planThreadKey ?? `native:${sessionId}`,
+      planExitCtx: {
         threadKey: planThreadKey ?? `native:${sessionId}`,
         runId: sessionId,
         platform: opts.platform,
         channelId: opts.channelId,
         threadId: opts.threadId,
         userId: opts.userId,
-      }),
-      buildImhubDispatcher(imhubCtx),
-      buildMcpDispatcher(),
-    )
-
-    // Compose tool list the same way (built-in → fs → web → exec → todo → imhub → external MCP).
-    // Provider tool roster wins on duplicate names via "later
-    // definition wins" semantics inside the provider, but our naming
-    // is namespaced (`native_*`, `mcp__imhub__*`, `mcp_<server>_*`)
-    // so collisions are not expected in practice.
-    const tools: ToolDef[] = [
-      ...getBuiltinTools(),
-      ...getFsTools(),
-      ...getWebTools(),
-      ...getExecTools(),
-      ...getTodoTools(),
-      ...getImhubTools(),
-      ...getAllMcpTools(),
-    ]
-    // v1.2.131 — when this thread is in Plan Mode, advertise the
-    // dedicated exit tool so the model knows the handshake exists. We
-    // don't always advertise it: a model in normal mode shouldn't be
-    // tempted to call it (the dispatcher would refuse anyway, but
-    // keeping the roster honest is cleaner).
-    if (planThreadKey && effectivePlanModeOn(planThreadKey)) {
-      tools.push(...getPlanExitTools())
-    }
+      },
+      advertisePlanExit: !!(planThreadKey && effectivePlanModeOn(planThreadKey)),
+      imhubCtx,
+    })
+    const tools = assembled.tools
+    const dispatch = assembled.dispatch
 
     const policy = resolvePolicy(planThreadKey)
     // v1.2.60 — when the policy would silently deny a tool call,
@@ -1433,11 +1348,12 @@ class NativeAgentAdapter implements AgentAdapter {
           traceId,
         },
         hooks: heartbeats.hooks,
-        // v1.2.109 — declare read-only / pure tools parallel-safe so
+        // v1.2.109 / T2 — declare read-only / pure tools parallel-safe so
         // multi-call iterations (e.g. "read these 3 files") run
-        // concurrently. Conservative allowlist; see the constant for
-        // what's in / out and why.
-        parallelSafeTools: NATIVE_PARALLEL_SAFE_TOOLS,
+        // concurrently. Now a PER-CALL classifier owned by the tool
+        // registry (fail-closed: unknown / throwing → serial), replacing
+        // the static per-name set.
+        parallelSafeClassifier: assembled.isParallelSafe,
         // v1.2.112 — stream provider responses so partial assistant
         // text survives the IM 30-min hard timeout. Env-gated kill
         // switch (`IMHUB_NATIVE_STREAM_PARTIAL=off` + global

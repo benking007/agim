@@ -717,11 +717,31 @@
     "copyUrl": "Copy URL",
     "qrAlt": "QR code for mobile chat sign-in"
   },
+  "skillInjection": {
+    "title": "System Prompt Skill Injection",
+    "subtitle": "Tune the tier-1 skill block injected into every system prompt. When the override file is non-empty, it REPLACES the auto-generated block (the routing header and always-on skill bodies are preserved).",
+    "autoLabel": "Auto-generated (read-only preview)",
+    "overrideLabel": "Operator override (saved on Save)",
+    "overridePlaceholder": "Leave empty to use auto. Common pattern: copy auto above, prune families you don't need, or prepend routing hints at the top.",
+    "overrideActive": "Override active",
+    "overrideInactive": "Auto-generated",
+    "largeWarn": "Large block — watch your token budget",
+    "copyToOverride": "Copy to override",
+    "save": "Save",
+    "clear": "Clear override",
+    "savedToast": "Saved. Next turn picks it up.",
+    "clearedToast": "Override cleared. Back to auto.",
+    "refreshedToast": "Auto preview refreshed.",
+    "overLimitToast": "Body is {{len}} chars, over the {{max}} limit",
+    "confirmClear": "Delete the override file and revert to auto-generated?",
+    "hint": "No restart needed; the next system-prompt build reads the latest content."
+  },
   "agimSkills": {
     "title": "agim Skills",
     "tab": {
       "installed": "Installed",
-      "hot": "skillhub Hot"
+      "hot": "skillhub Hot",
+      "injection": "Prompt Injection"
     },
     "reload": "Reload from disk",
     "subtitle": "SKILL.md files loaded by src/core/skills/loader.ts. Tier-1 summary (name + description) is auto-injected into every agent system prompt; full body is read on-demand via mcp__imhub__read_skill. Workspace skills shadow bundled builtin skills by name.",

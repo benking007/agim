@@ -162,6 +162,9 @@ const router = createBrowserRouter([
           { index: true,        element: <Navigate to="installed" replace /> },
           { path: 'installed',  lazy: lazy(() => import('@/routes/settings/agim-skills/installed')) },
           { path: 'hot',        lazy: lazy(() => import('@/routes/settings/agim-skills/hot')) },
+          // v1.2.151 — system-prompt injection block editor. Operators
+          // see the auto block + can override with their own version.
+          { path: 'injection',  lazy: lazy(() => import('@/routes/settings/agim-skills/injection')) },
         ],
       },
     ],

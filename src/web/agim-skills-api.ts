@@ -21,6 +21,9 @@ import {
   listSkills, getSkillByName, readSkillBody, invalidateSkillsCache,
   writeSkillFile, deleteSkill,
   MAX_SKILL_BODY_CHARS,
+  buildAutoInjectionBlock,
+  readInjectionOverride, writeInjectionOverride, deleteInjectionOverride,
+  injectionOverridePath,
 } from '../core/skills/loader.js'
 
 function send(res: ServerResponse, code: number, body: unknown): void {
@@ -55,6 +58,19 @@ export async function handleAgimSkillsApi(
     const skills = listSkills()
     send(res, 200, { count: skills.length })
     return true
+  }
+  // v1.2.151 — injection-block override editor. Operator-facing tunable
+  // for the tier-1 system-prompt skill block that goes to every agent.
+  // GET returns BOTH the auto-generated block (read-only preview) and
+  // the current override (if any), so the SPA can show side-by-side.
+  if (p === '/api/agim-skills/injection' && m === 'GET') {
+    await handleInjectionGet(res); return true
+  }
+  if (p === '/api/agim-skills/injection' && m === 'PUT') {
+    await handleInjectionPut(req, res); return true
+  }
+  if (p === '/api/agim-skills/injection' && m === 'DELETE') {
+    await handleInjectionDelete(res); return true
   }
   const byName = p.match(/^\/api\/agim-skills\/([A-Za-z0-9._-]+)$/)
   if (byName && m === 'GET')    { await handleGet(res, byName[1]);    return true }
@@ -135,4 +151,62 @@ async function handleDelete(res: ServerResponse, name: string): Promise<void> {
   const ok = deleteSkill(name)
   if (!ok) { send(res, 500, { error: 'delete failed' }); return }
   send(res, 200, { name, deleted: true })
+}
+
+// ─── v1.2.151 — injection override (operator editor) ───────────────────
+
+/** Hard cap on override payload size. The auto block tops out around
+ *  ~10k chars on a large install; allow 4× headroom for operator
+ *  free-text without enabling pathological prompt sizes. */
+const INJECTION_OVERRIDE_MAX_CHARS = 40_000
+
+async function handleInjectionGet(res: ServerResponse): Promise<void> {
+  // Compute the auto block from the live loader state. Returned even
+  // when an override exists so the SPA can preview "what auto would
+  // produce right now" alongside the saved override.
+  const all = listSkills()
+  const auto = all.length === 0 ? '' : buildAutoInjectionBlock(all)
+  const override = readInjectionOverride()
+  send(res, 200, {
+    auto,
+    autoChars: auto.length,
+    override,
+    overrideChars: override?.length ?? 0,
+    overridePath: injectionOverridePath(),
+    overrideActive: override !== null,
+    maxOverrideChars: INJECTION_OVERRIDE_MAX_CHARS,
+  })
+}
+
+async function handleInjectionPut(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const payload = await readJsonBody<{ body?: unknown }>(req)
+  if (!payload || typeof payload.body !== 'string') {
+    send(res, 400, { error: 'body { body: string } required' }); return
+  }
+  const text = payload.body
+  if (text.length > INJECTION_OVERRIDE_MAX_CHARS) {
+    send(res, 413, {
+      error: `override body exceeds ${INJECTION_OVERRIDE_MAX_CHARS} char limit`,
+      length: text.length,
+    })
+    return
+  }
+  if (!text.trim()) {
+    // Empty body == delete; the loader treats empty file as no-override.
+    deleteInjectionOverride()
+    send(res, 200, { saved: false, deleted: true })
+    return
+  }
+  const ok = writeInjectionOverride(text)
+  if (!ok) {
+    send(res, 500, { error: 'failed to write override file' }); return
+  }
+  send(res, 200, { saved: true, length: text.length, path: injectionOverridePath() })
+}
+
+async function handleInjectionDelete(res: ServerResponse): Promise<void> {
+  const had = readInjectionOverride() !== null
+  const ok = deleteInjectionOverride()
+  if (!ok) { send(res, 500, { error: 'failed to delete override file' }); return }
+  send(res, 200, { deleted: had })
 }

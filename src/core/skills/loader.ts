@@ -366,7 +366,7 @@ export function readSkillBody(name: string): string | null {
  *
  * Add / remove freely — this is a curated list, not a registry.
  */
-const ECC_TOP_PICKS: ReadonlySet<string> = new Set([
+const ECC_TOP_PICKS_DEFAULT: ReadonlySet<string> = new Set([
   // Agent harness engineering (11)
   'agentic-engineering', 'agent-eval', 'agent-introspection-debugging',
   'agent-harness-construction', 'autonomous-agent-harness', 'autonomous-loops',
@@ -377,6 +377,113 @@ const ECC_TOP_PICKS: ReadonlySet<string> = new Set([
   'code-tour', 'tdd-workflow', 'security-review', 'benchmark',
   'article-writing', 'content-engine',
 ])
+
+/**
+ * v1.2.151 — Resolve the active ECC top-pick set. Operators can override
+ * via `IMHUB_SKILLS_ECC_PICKS=name1,name2,...`. An empty or unset value
+ * falls back to the default 20-name list. Validation is intentionally
+ * forgiving: unknown names pass through (they just become no-ops when
+ * the named skill isn't installed).
+ */
+export function resolveEccTopPicks(): ReadonlySet<string> {
+  const raw = (process.env.IMHUB_SKILLS_ECC_PICKS || '').trim()
+  if (!raw) return ECC_TOP_PICKS_DEFAULT
+  const names = raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+  if (names.length === 0) return ECC_TOP_PICKS_DEFAULT
+  return new Set(names)
+}
+
+/**
+ * v1.2.151 — ECC remainder injection policy. Default `on` emits the
+ * cluster block. `off` suppresses it entirely (token-saving for ops
+ * who only want the recommended picks). A comma-list value flips to
+ * "allowlist" mode: only remainder skills in the list are emitted.
+ */
+type EccRemainderMode =
+  | { mode: 'on' }
+  | { mode: 'off' }
+  | { mode: 'allowlist'; names: Set<string> }
+
+export function resolveEccRemainderMode(): EccRemainderMode {
+  const raw = (process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER || '').trim().toLowerCase()
+  if (!raw || raw === 'on' || raw === '1' || raw === 'true') return { mode: 'on' }
+  if (raw === 'off' || raw === '0' || raw === 'false') return { mode: 'off' }
+  // Anything else is treated as a comma/whitespace-separated allowlist.
+  const names = raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+  if (names.length === 0) return { mode: 'on' }
+  return { mode: 'allowlist', names: new Set(names) }
+}
+
+// ─── v1.2.151 — operator-tunable injection override ────────────────────
+//
+// Operators frequently want to nudge the auto-generated skills block —
+// pin a specific skill higher, hide one that's noisy, add a routing
+// hint about a custom env, etc. Rather than expanding the env-knob
+// surface for every dimension, agim accepts a verbatim text file at
+// `~/.agim/skill-injection-override.md` that REPLACES the auto block.
+//
+// When the file exists and is non-empty, buildSkillsSummary returns:
+//   - the standard "[agim tool routing — skills first]" header
+//   - the override file contents (verbatim, trimmed)
+//   - the always-on skill bodies (unchanged)
+//
+// The auto-generated block (priority buckets + clusters) is suppressed.
+// Tests and CI override the path via IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+// to avoid polluting the operator's real ~/.agim/.
+//
+// Editor entrypoint: the SPA page `/settings/skill-injection` calls
+// admin endpoints to read auto + read/write/delete the override.
+
+const INJECTION_OVERRIDE_FILENAME = 'skill-injection-override.md'
+
+export function injectionOverridePath(): string {
+  const override = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+  if (override) return override
+  return join(AGIM_HOME, INJECTION_OVERRIDE_FILENAME)
+}
+
+/** Read the override file. Returns the trimmed body, or null when the
+ *  file is missing / empty / unreadable. Never throws. */
+export function readInjectionOverride(): string | null {
+  const path = injectionOverridePath()
+  try {
+    if (!existsSync(path)) return null
+    const raw = readFileSync(path, 'utf-8').trim()
+    return raw || null
+  } catch (err) {
+    log.warn({ event: 'skills.injection_override.read_failed', path, err: String(err) })
+    return null
+  }
+}
+
+/** Write (or replace) the override file. The caller is responsible for
+ *  authorization — this is a thin filesystem helper. Returns true on
+ *  success, false on any disk error. */
+export function writeInjectionOverride(body: string): boolean {
+  const path = injectionOverridePath()
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, body, 'utf-8')
+    return true
+  } catch (err) {
+    log.warn({ event: 'skills.injection_override.write_failed', path, err: String(err) })
+    return false
+  }
+}
+
+/** Delete the override file. Returns true when a file was actually
+ *  removed (or already gone), false on filesystem error. */
+export function deleteInjectionOverride(): boolean {
+  const path = injectionOverridePath()
+  try {
+    if (!existsSync(path)) return true
+    rmSync(path, { force: true })
+    return true
+  } catch (err) {
+    log.warn({ event: 'skills.injection_override.delete_failed', path, err: String(err) })
+    return false
+  }
+}
 
 /**
  * v1.2.149 — Rank a skill into one of four buckets for system-prompt
@@ -418,7 +525,7 @@ export function rankSkillBucket(s: SkillMeta): number {
   // it's the actually-reliable signal.
   const isEcc = s.source === 'builtin'
     && (s.description.startsWith('[ECC] ') || /^ECC\b/i.test(s.origin ?? ''))
-  if (isEcc) return ECC_TOP_PICKS.has(s.name) ? 2 : 4
+  if (isEcc) return resolveEccTopPicks().has(s.name) ? 2 : 4
   if (s.source === 'workspace') return 3
   // non-ECC builtin (agim's own small in-tree pack)
   return 1
@@ -504,6 +611,13 @@ export function clusterSkills(
         })
         for (const s of leftover) used.add(s.name)
       }
+    } else if (qualified.length === 1 && sub.size === 1) {
+      // v1.2.151 — single sub-key contains ALL members (e.g. all `fin-*`
+      // are `fin-data-*` at depth 2). Recurse deeper to split by depth+1
+      // instead of collapsing into a single coarse `fin-data-*` group.
+      // Without this fix, 69 fin-data skills land in one cluster and
+      // the LLM can't tell aspd / stock / fund families apart by name.
+      refine(sub.get(qualified[0])!, segDepth + 1)
     } else {
       emitCluster(group, segDepth - 1)
     }
@@ -576,107 +690,50 @@ const BUCKET_HEADINGS: Record<number, string> = {
   4: 'ECC remainder (read full description via mcp__imhub__read_skill)',
 }
 
-export function buildSkillsSummary(): string {
-  const all = listSkills()
-  if (all.length === 0) return ''
-  // v1.2.150 — bucket + cluster-aware emission.
-  //   Buckets 0, 1, 2: render each skill as an individual row with full
-  //     description. Small + curated; the LLM needs the granularity.
-  //   Bucket 3 (workspace): cluster when ≥ MIN_CLUSTER_SIZE share a
-  //     prefix; otherwise individual rows. Lets operators with one big
-  //     namespace (`fin-data-*`) get all names visible without burning
-  //     dozens of full-description tokens.
-  //   Bucket 4 (ECC remainder): always cluster aggressively + only
-  //     emit name list (no per-cluster trigger hint) since this is the
-  //     "you can read these on demand" pool. We still show every name
-  //     so the LLM knows the surface.
-  const byBucket: Record<number, SkillMeta[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }
-  for (const s of all) byBucket[rankSkillBucket(s)].push(s)
-  for (const b of [0, 1, 2, 3, 4]) {
-    byBucket[b].sort((a, b2) => a.name.localeCompare(b2.name))
-  }
-  const lines: string[] = [
-    // v1.2.137 — routing rule, prepended to the skill list. Applies to
-    // ALL agents (native / claude-code / codex / cursor / opencode) because
-    // the router wraps this block into every turn's prompt. The rule is
-    // intentionally generic — it references the skill list itself, never
-    // any specific skill name, so users with zero skills installed see
-    // an empty block (early return above) and aren't burdened with the
-    // rule text. The "MUST" framing + explicit fallback whitelist is
-    // tuned to be hard enough that models don't drift back to web_fetch
-    // out of habit when a relevant skill exists.
-    '[agim tool routing — skills first]',
-    'Before calling any generic tool (web_fetch / web_search / native_exec /',
-    'shell-style commands), you MUST scan the skill list below. If any entry\'s',
-    'description matches the user\'s intent — even loosely — you MUST call',
-    'mcp__imhub__read_skill(\'<name>\') first to load that skill\'s body. Skill',
-    'bodies contain dedicated tools, endpoints, or queries that produce',
-    'higher-quality, structured results than free-text web pages for the',
-    'same intent. Falling back to the generic tool is only valid when:',
-    '  (a) no skill description plausibly matches, OR',
-    '  (b) you already read a relevant skill and its body explicitly says',
-    '      "this skill is not suitable for X" or lacks the needed coverage.',
-    'This is a routing discipline, not a hint. Skipping it counts as a',
-    'tool-routing error in this conversation.',
-    '',
-    '[agim skills available — read full body with mcp__imhub__read_skill(name)]',
-  ]
+/**
+ * v1.2.137 — Routing rule prepended to every turn's skill block.
+ * v1.2.151 — Extracted into a constant so the override path and the
+ * auto path share the same header verbatim.
+ */
+const SKILLS_ROUTING_HEADER: string = [
+  '[agim tool routing — skills first]',
+  'Before calling any generic tool (web_fetch / web_search / native_exec /',
+  'shell-style commands), you MUST scan the skill list below. If any entry\'s',
+  'description matches the user\'s intent — even loosely — you MUST call',
+  'mcp__imhub__read_skill(\'<name>\') first to load that skill\'s body. Skill',
+  'bodies contain dedicated tools, endpoints, or queries that produce',
+  'higher-quality, structured results than free-text web pages for the',
+  'same intent. Falling back to the generic tool is only valid when:',
+  '  (a) no skill description plausibly matches, OR',
+  '  (b) you already read a relevant skill and its body explicitly says',
+  '      "this skill is not suitable for X" or lacks the needed coverage.',
+  'This is a routing discipline, not a hint. Skipping it counts as a',
+  'tool-routing error in this conversation.',
+].join('\n')
 
-  // Helper: render one skill as an individual row with full description.
-  // Same shape as v1.2.149; defensive fallback for malformed descriptions.
-  const renderRow = (s: SkillMeta): string => {
-    const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
-    const flag = s.always ? ' [always]' : ''
-    const descClean = (s.description || '').trim()
-    const description = descClean && descClean !== '>-' && descClean !== '|'
-      ? descClean
-      : '(no description in SKILL.md — read body via mcp__imhub__read_skill)'
-    return `- ${s.name}: ${description}${reason}${flag}`
-  }
+/**
+ * v1.2.151 — Render one skill as a tier-1 row with full description.
+ * The body is defensive against malformed YAML block-scalar leakage.
+ *
+ * NOTE: workspace skills (bucket 3) MUST always go through this path
+ * — operator-installed business skills are an "I want this" signal
+ * from the deployment, so we keep their full descriptions for routing
+ * precision regardless of how many there are. The token cost is real
+ * but intentional; operators with 100+ workspace skills can use the
+ * SPA `/settings/skill-injection` editor to prune (see override path).
+ */
+function renderSkillRow(s: SkillMeta): string {
+  const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
+  const flag = s.always ? ' [always]' : ''
+  const descClean = (s.description || '').trim()
+  const description = descClean && descClean !== '>-' && descClean !== '|'
+    ? descClean
+    : '(no description in SKILL.md — read body via mcp__imhub__read_skill)'
+  return `- ${s.name}: ${description}${reason}${flag}`
+}
 
-  // Buckets 0, 1, 2: individual rows (curated, small).
-  for (const b of [0, 1, 2]) {
-    const items = byBucket[b]
-    if (items.length === 0) continue
-    lines.push('')
-    lines.push(`## ${BUCKET_HEADINGS[b]} (${items.length})`)
-    for (const s of items) lines.push(renderRow(s))
-  }
-
-  // Bucket 3 (workspace): cluster when MIN_CLUSTER_SIZE shared prefix,
-  // else individual rows. Per-cluster trigger hint included (the LLM is
-  // most likely to route into this bucket on operator-domain queries).
-  const ws = byBucket[3]
-  if (ws.length > 0) {
-    lines.push('')
-    lines.push(`## ${BUCKET_HEADINGS[3]} (${ws.length})`)
-    const { clusters, singletons } = clusterSkills(ws, 3)
-    for (const c of clusters) {
-      lines.push(`- ${c.prefix}-* (${c.names.length}): ${c.names.join(' · ')}`)
-      if (c.triggerHint) lines.push(`  → ${c.triggerHint}`)
-    }
-    for (const s of singletons) lines.push(renderRow(s))
-  }
-
-  // Bucket 4 (ECC remainder): cluster aggressively, name-only (no per-
-  // cluster trigger hint — these are the "on-demand" pool, the LLM gets
-  // a per-skill description if it actually calls read_skill).
-  const eccRem = byBucket[4]
-  if (eccRem.length > 0) {
-    lines.push('')
-    lines.push(`## ${BUCKET_HEADINGS[4]} (${eccRem.length})`)
-    const { clusters, singletons } = clusterSkills(eccRem, 3)
-    for (const c of clusters) {
-      lines.push(`- ${c.prefix}-* (${c.names.length}): ${c.names.join(' · ')}`)
-    }
-    if (singletons.length > 0) {
-      const names = singletons.map((s) => s.name).join(' · ')
-      lines.push(`- (other ECC, ${singletons.length}): ${names}`)
-    }
-  }
-  // Inline `always: true` skills' full bodies regardless of bucket.
-  // Cheap when few; operators opt-in by marking `always: true` in their
-  // SKILL.md, which is rare.
+/** Inline `always: true` skill bodies. Shared between override + auto. */
+function appendAlwaysOnBodies(all: ReadonlyArray<SkillMeta>, lines: string[]): void {
   const alwaysOn = all.filter((s) => s.always && s.available)
   for (const s of alwaysOn) {
     const body = readSkillBody(s.name)
@@ -685,6 +742,88 @@ export function buildSkillsSummary(): string {
     lines.push(`### Always-on skill: ${s.name}`)
     lines.push(body)
   }
+}
+
+/**
+ * v1.2.151 — Build the auto-generated tier-1 block (no header, no
+ * always-on bodies — caller wraps). Separated so the SPA editor can
+ * preview "what would auto produce right now" via the admin API.
+ *
+ * Bucket render order:
+ *   0 framework → 1 builtin → **3 workspace** → 2 ECC picks → 4 ECC remainder
+ *
+ * Operator-installed workspace skills out-rank ECC pinned picks because
+ * they are the strongest "I want this" signal. ECC picks (curated
+ * harness vocabulary) come right after so the LLM still has them
+ * within reach. ECC remainder lives at the bottom as the on-demand
+ * pool.
+ *
+ * Buckets 0/1/2/3 all emit full rows (renderSkillRow). Only bucket 4
+ * (ECC remainder) clusters — and even then, the cluster path can be
+ * disabled or scoped via `IMHUB_SKILLS_INJECT_ECC_REMAINDER`.
+ */
+export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
+  const byBucket: Record<number, SkillMeta[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }
+  for (const s of all) byBucket[rankSkillBucket(s)].push(s)
+  for (const b of [0, 1, 2, 3, 4]) {
+    byBucket[b].sort((a, b2) => a.name.localeCompare(b2.name))
+  }
+  const lines: string[] = ['[agim skills available — read full body with mcp__imhub__read_skill(name)]']
+
+  // Render order: 0 framework, 1 builtin, 3 workspace, 2 ECC picks.
+  // Workspace before ECC picks per v1.2.151 iron rule: operator-installed
+  // business skills rank above framework-curated harness picks.
+  for (const b of [0, 1, 3, 2]) {
+    const items = byBucket[b]
+    if (items.length === 0) continue
+    lines.push('')
+    lines.push(`## ${BUCKET_HEADINGS[b]} (${items.length})`)
+    for (const s of items) lines.push(renderSkillRow(s))
+  }
+
+  // Bucket 4 (ECC remainder) — cluster, with operator opt-out / allowlist.
+  const eccRem = byBucket[4]
+  if (eccRem.length > 0) {
+    const remainderMode = resolveEccRemainderMode()
+    const filtered: SkillMeta[] =
+      remainderMode.mode === 'off' ? []
+      : remainderMode.mode === 'allowlist'
+        ? eccRem.filter((s) => remainderMode.names.has(s.name))
+        : eccRem
+    if (filtered.length > 0) {
+      lines.push('')
+      lines.push(`## ${BUCKET_HEADINGS[4]} (${filtered.length})`)
+      const { clusters, singletons } = clusterSkills(filtered, 3)
+      for (const c of clusters) {
+        lines.push(`- ${c.prefix}-* (${c.names.length}): ${c.names.join(' · ')}`)
+      }
+      if (singletons.length > 0) {
+        const names = singletons.map((s) => s.name).join(' · ')
+        lines.push(`- (other ECC, ${singletons.length}): ${names}`)
+      }
+    }
+  }
+  return lines.join('\n')
+}
+
+export function buildSkillsSummary(): string {
+  const all = listSkills()
+  if (all.length === 0) return ''
+
+  // v1.2.151 — operator override path: if `~/.agim/skill-injection-
+  // override.md` exists, return its body verbatim (still wrapped by
+  // the routing header + always-on bodies). The auto block is
+  // suppressed; the operator gets full editorial control. The SPA at
+  // `/settings/skill-injection` is the recommended way to author this.
+  const override = readInjectionOverride()
+  if (override) {
+    const lines: string[] = [SKILLS_ROUTING_HEADER, '', override]
+    appendAlwaysOnBodies(all, lines)
+    return `${lines.join('\n')}\n`
+  }
+
+  const lines: string[] = [SKILLS_ROUTING_HEADER, '', buildAutoInjectionBlock(all)]
+  appendAlwaysOnBodies(all, lines)
   return `${lines.join('\n')}\n`
 }
 

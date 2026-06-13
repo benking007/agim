@@ -247,13 +247,14 @@ This text MUST appear inline.
     expect(out).toContain('This text MUST appear inline.')
   })
 
-  it('v1.2.150: cluster-aware workspace bucket emits one block + name list when ≥3 share a prefix', () => {
-    // Earlier versions enforced MAX_INJECTED_SKILLS as a hard cap with
-    // "and N more" overflow text. v1.2.150 swapped that for cluster
-    // compression: skills with a common name prefix collapse into ONE
-    // block carrying every member name + a brief trigger hint. The cap
-    // semantically becomes "byte budget", not "row count" — and bucket-3
-    // (workspace) overflow is no longer hidden behind "and N more".
+  it('v1.2.151 iron rule: workspace bucket renders FULL rows, never clustered, regardless of count', () => {
+    // v1.2.150 clustered workspace skills (collapsed all `fin-data-*` to
+    // one line). v1.2.151 reverses that: workspace = operator-installed
+    // business skills, which represent a strong "I want this" signal.
+    // The LLM needs the full description on every row for routing
+    // precision, even when there are 35+ of them. Token cost is real
+    // but intentional; operators with too many can use the SPA
+    // `/settings/skill-injection` editor (override file) to prune.
     for (let i = 0; i < MAX_INJECTED_SKILLS + 3; i++) {
       writeSkill(wsRoot, `fin-data-s${String(i).padStart(3, '0')}`, `---
 name: fin-data-s${String(i).padStart(3, '0')}
@@ -263,13 +264,14 @@ body
 `)
     }
     const out = buildSkillsSummary()
-    // The new emission should contain a single workspace cluster with
-    // every member name visible (not "and N more" truncation).
     expect(out).toContain('Workspace skills (operator-installed business)')
-    expect(out).toContain('fin-data-s000')
-    expect(out).toContain(`fin-data-s${String(MAX_INJECTED_SKILLS + 2).padStart(3, '0')}`)
-    // Cluster header should mention the shared prefix + member count.
-    expect(out).toMatch(/fin-data-\*? \(\d+\):/)
+    // Every member rendered as a full row with description.
+    expect(out).toContain('- fin-data-s000: A-share daily quote endpoint #0.')
+    expect(out).toContain(
+      `- fin-data-s${String(MAX_INJECTED_SKILLS + 2).padStart(3, '0')}: A-share daily quote endpoint #${MAX_INJECTED_SKILLS + 2}.`,
+    )
+    // CRITICAL: cluster header `fin-data-* (35):` must NOT appear.
+    expect(out).not.toMatch(/^- fin-data-\*? \(\d+\):/m)
   })
 
   // v1.2.137 — skills-first routing discipline. The block now prefixes
@@ -649,8 +651,10 @@ body
     expect(rankSkillBucket(byName('kotlin-coroutines-flows'))).toBe(4)
     expect(rankSkillBucket(byName('fin-data-style-pinning'))).toBe(3)
 
-    // Summary block order: agim-* and github-stub MUST appear before
-    // agent-eval, which MUST appear before kotlin-* / fin-data-*.
+    // v1.2.151 render order (iron rule): framework → builtin → WORKSPACE
+    //   → ECC picks → ECC remainder. Workspace is promoted ABOVE ECC
+    // picks because operator-installed business skills are the strongest
+    // "I want this" signal in any deployment.
     const summary = buildSkillsSummary()
     const idxAgim = summary.indexOf('- agim-self-stub:')
     const idxGithub = summary.indexOf('- github-stub:')
@@ -659,12 +663,12 @@ body
     const idxWorkspace = summary.indexOf('- fin-data-style-pinning:')
     expect(idxAgim).toBeGreaterThan(0)
     expect(idxGithub).toBeGreaterThan(idxAgim)
-    expect(idxEccPick).toBeGreaterThan(idxGithub)
-    // The remainder may fall outside the visible cap on a real install,
-    // but with only 6 fixtures they all fit; they must rank below the
-    // pick in the listing.
+    // Workspace must come BEFORE ECC picks (v1.2.151 iron rule).
+    expect(idxWorkspace).toBeGreaterThan(idxGithub)
+    expect(idxEccPick).toBeGreaterThan(idxWorkspace)
+    // ECC remainder may be clustered (single line) — full-row substring
+    // won't appear in that case. When it does, it must be the very last.
     if (idxEccRemainder > -1) expect(idxEccRemainder).toBeGreaterThan(idxEccPick)
-    if (idxWorkspace > -1) expect(idxWorkspace).toBeGreaterThan(idxEccPick)
   })
 
   it('buildSkillsSummary produces a real description (NOT ">-") for fin-data-style frontmatter', () => {
@@ -689,5 +693,178 @@ body content
     expect(summary).toContain('Chinese stock prices')
     // And critically: NOT a raw `>-` literal in the description slot.
     expect(summary).not.toMatch(/- fin-data-style:\s*>-/)
+  })
+})
+
+// ─── v1.2.151 — refine bug fix + env knobs + override file ─────────────
+describe('v1.2.151: cluster refine — single sub-key full-cover recurses deeper', () => {
+  it('does not collapse `fin-data-aspd-* / fin-data-stock-*` into one coarse `fin-data-*` cluster', async () => {
+    const { clusterSkills } = await import('./loader.js')
+    // Build a synthetic set: 4 fin-data-aspd-* + 4 fin-data-stock-* + 3
+    // fin-data-fund-*. ALL share the prefix `fin-data` at depth 2 (only
+    // one sub-key at depth 2). The old algo bottomed out at depth 1 and
+    // emitted one `fin-data-*` cluster. The fix: recurse to depth 3,
+    // splitting into three separate clusters per business sub-namespace.
+    const synth = [
+      ...Array.from({ length: 4 }, (_, i) => ({ name: `fin-data-aspd-${i}` })),
+      ...Array.from({ length: 4 }, (_, i) => ({ name: `fin-data-stock-${i}` })),
+      ...Array.from({ length: 3 }, (_, i) => ({ name: `fin-data-fund-${i}` })),
+    ].map((s) => ({
+      name: s.name,
+      description: '[ECC] dummy',
+      source: 'builtin' as const,
+      dir: '/tmp/x',
+      always: false,
+      requiresBins: [],
+      requiresEnv: [],
+      available: true,
+    }))
+    const { clusters } = clusterSkills(synth, 3)
+    const prefixes = clusters.map((c) => c.prefix).sort()
+    // Expect three distinct clusters, one per sub-namespace.
+    expect(prefixes).toContain('fin-data-aspd')
+    expect(prefixes).toContain('fin-data-stock')
+    expect(prefixes).toContain('fin-data-fund')
+    // Coarse `fin-data` alone must NOT appear as a cluster prefix.
+    expect(prefixes).not.toContain('fin-data')
+  })
+})
+
+describe('v1.2.151: IMHUB_SKILLS_ECC_PICKS env override', () => {
+  const saved = process.env.IMHUB_SKILLS_ECC_PICKS
+
+  afterAll(() => {
+    if (saved === undefined) delete process.env.IMHUB_SKILLS_ECC_PICKS
+    else process.env.IMHUB_SKILLS_ECC_PICKS = saved
+  })
+
+  it('shifts an ECC skill from remainder (bucket 4) → top picks (bucket 2) when listed', async () => {
+    const { rankSkillBucket } = await import('./loader.js')
+    writeSkill(builtinRoot, 'kotlin-coroutines-flows', `---
+name: kotlin-coroutines-flows
+description: '[ECC] Kotlin patterns'
+origin: ECC
+---
+body
+`)
+    invalidateSkillsCache()
+    // Default picks list does NOT include kotlin-coroutines-flows.
+    process.env.IMHUB_SKILLS_ECC_PICKS = ''
+    const all1 = listSkills()
+    const k1 = all1.find((s) => s.name === 'kotlin-coroutines-flows')!
+    expect(rankSkillBucket(k1)).toBe(4)
+    // Override flips it.
+    process.env.IMHUB_SKILLS_ECC_PICKS = 'kotlin-coroutines-flows,agent-eval'
+    expect(rankSkillBucket(k1)).toBe(2)
+  })
+})
+
+describe('v1.2.151: IMHUB_SKILLS_INJECT_ECC_REMAINDER env mode', () => {
+  const saved = process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER
+
+  afterAll(() => {
+    if (saved === undefined) delete process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER
+    else process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = saved
+  })
+
+  it('off → ECC remainder block is fully suppressed', () => {
+    // Three ECC remainder skills sharing a prefix so they would normally
+    // emit at least one cluster line.
+    writeSkill(builtinRoot, 'rust-patterns', `---
+name: rust-patterns
+description: '[ECC] R1'
+origin: ECC
+---
+body
+`)
+    writeSkill(builtinRoot, 'rust-testing', `---
+name: rust-testing
+description: '[ECC] R2'
+origin: ECC
+---
+body
+`)
+    writeSkill(builtinRoot, 'rust-actor-persistence', `---
+name: rust-actor-persistence
+description: '[ECC] R3'
+origin: ECC
+---
+body
+`)
+    invalidateSkillsCache()
+    process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = 'off'
+    const out = buildSkillsSummary()
+    expect(out).not.toContain('ECC remainder')
+    expect(out).not.toContain('rust-patterns')
+  })
+
+  it('allowlist → only listed remainder skills survive', () => {
+    writeSkill(builtinRoot, 'rust-patterns', `---
+name: rust-patterns
+description: '[ECC] R1'
+origin: ECC
+---
+body
+`)
+    writeSkill(builtinRoot, 'rust-testing', `---
+name: rust-testing
+description: '[ECC] R2'
+origin: ECC
+---
+body
+`)
+    invalidateSkillsCache()
+    process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = 'rust-patterns'
+    const out = buildSkillsSummary()
+    expect(out).toContain('rust-patterns')
+    expect(out).not.toContain('rust-testing')
+  })
+})
+
+describe('v1.2.151: ~/.agim/skill-injection-override.md — operator editor', () => {
+  const overrideDir = mkdtempSync(join(tmpdir(), 'agim-injection-override-'))
+  const overridePath = join(overrideDir, 'skill-injection-override.md')
+  const saved = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+  process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
+
+  afterAll(() => {
+    if (saved === undefined) delete process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+    else process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = saved
+    try { rmSync(overrideDir, { recursive: true, force: true }) } catch {}
+  })
+
+  it('replaces the auto block with operator-authored text, keeps routing header and always-on bodies', async () => {
+    const { writeInjectionOverride, deleteInjectionOverride, readInjectionOverride } =
+      await import('./loader.js')
+
+    // Seed a regular workspace skill that should NOT appear under override.
+    writeSkill(wsRoot, 'fin-data-noise', `---
+name: fin-data-noise
+description: This must NOT appear when override is active.
+---
+body
+`)
+    // Plus an always-on body to confirm it survives the override path.
+    writeSkill(wsRoot, 'always-on-skill', `---
+name: always-on-skill
+description: marker
+always: true
+---
+ALWAYS-ON BODY MARKER.
+`)
+    invalidateSkillsCache()
+
+    expect(writeInjectionOverride('## Operator-curated\n- pinned-skill: do X.\n')).toBe(true)
+    expect(readInjectionOverride()).toContain('Operator-curated')
+
+    const out = buildSkillsSummary()
+    expect(out).toContain('[agim tool routing — skills first]')      // header preserved
+    expect(out).toContain('Operator-curated')                         // override content rendered
+    expect(out).toContain('ALWAYS-ON BODY MARKER.')                   // always-on still inlined
+    expect(out).not.toContain('fin-data-noise')                       // auto block suppressed
+    expect(out).not.toContain('## Workspace skills')
+
+    expect(deleteInjectionOverride()).toBe(true)
+    expect(readInjectionOverride()).toBeNull()
   })
 })

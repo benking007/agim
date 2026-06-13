@@ -187,3 +187,105 @@ describe('agim-skills API — routing', () => {
     expect(handled).toBe(false)
   })
 })
+
+// ─── v1.2.151 — /api/agim-skills/injection (operator editor) ───────────
+describe('v1.2.151: /api/agim-skills/injection', () => {
+  const OVERRIDE_DIR = mkdtempSync(join(tmpdir(), 'agim-injection-api-'))
+  const OVERRIDE_PATH = join(OVERRIDE_DIR, 'skill-injection-override.md')
+  const savedPath = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+  process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = OVERRIDE_PATH
+
+  beforeEach(() => {
+    try { rmSync(OVERRIDE_PATH, { force: true }) } catch {}
+    invalidateSkillsCache()
+  })
+
+  it('GET returns auto + override metadata; override null when not set', async () => {
+    // Seed at least one skill so auto is non-empty.
+    const fs = await import('node:fs')
+    const dir = join(WS_OWN, 'demo')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(join(dir, 'SKILL.md'), '---\nname: demo\ndescription: demo skill\n---\nbody\n')
+    invalidateSkillsCache()
+
+    const res = makeRes()
+    await handleAgimSkillsApi(makeReq('GET'), asRes(res), url('/api/agim-skills/injection'))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as {
+      auto: string; override: string | null; overrideActive: boolean
+      overridePath: string; maxOverrideChars: number
+    }
+    expect(body.auto).toContain('demo')
+    expect(body.override).toBeNull()
+    expect(body.overrideActive).toBe(false)
+    expect(body.overridePath).toBe(OVERRIDE_PATH)
+    expect(body.maxOverrideChars).toBeGreaterThan(1000)
+  })
+
+  it('PUT writes the override file; subsequent GET reflects it', async () => {
+    const putRes = makeRes()
+    await handleAgimSkillsApi(
+      makeReq('PUT', { body: '## Operator override\n- only-this\n' }),
+      asRes(putRes), url('/api/agim-skills/injection'),
+    )
+    expect(putRes.statusCode).toBe(200)
+    const saved = JSON.parse(putRes.body)
+    expect(saved.saved).toBe(true)
+
+    const getRes = makeRes()
+    await handleAgimSkillsApi(makeReq('GET'), asRes(getRes), url('/api/agim-skills/injection'))
+    const body = JSON.parse(getRes.body)
+    expect(body.override).toContain('Operator override')
+    expect(body.overrideActive).toBe(true)
+  })
+
+  it('DELETE removes the override file', async () => {
+    // First write something.
+    await handleAgimSkillsApi(
+      makeReq('PUT', { body: 'will be deleted' }),
+      asRes(makeRes()), url('/api/agim-skills/injection'),
+    )
+    const delRes = makeRes()
+    await handleAgimSkillsApi(makeReq('DELETE'), asRes(delRes), url('/api/agim-skills/injection'))
+    expect(delRes.statusCode).toBe(200)
+    expect(JSON.parse(delRes.body).deleted).toBe(true)
+
+    const getRes = makeRes()
+    await handleAgimSkillsApi(makeReq('GET'), asRes(getRes), url('/api/agim-skills/injection'))
+    expect(JSON.parse(getRes.body).override).toBeNull()
+  })
+
+  it('PUT rejects empty body as delete, not save', async () => {
+    // Save first.
+    await handleAgimSkillsApi(
+      makeReq('PUT', { body: 'something' }),
+      asRes(makeRes()), url('/api/agim-skills/injection'),
+    )
+    // Empty body via PUT should clear the override (UX shortcut).
+    const res = makeRes()
+    await handleAgimSkillsApi(
+      makeReq('PUT', { body: '   \n  ' }),
+      asRes(res), url('/api/agim-skills/injection'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ saved: false, deleted: true })
+  })
+
+  it('PUT 413 when override exceeds char limit', async () => {
+    const huge = 'A'.repeat(50_000)  // > 40k limit
+    const res = makeRes()
+    await handleAgimSkillsApi(
+      makeReq('PUT', { body: huge }),
+      asRes(res), url('/api/agim-skills/injection'),
+    )
+    expect(res.statusCode).toBe(413)
+  })
+
+  // Cleanup
+  it('cleanup: restore env', () => {
+    if (savedPath === undefined) delete process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+    else process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = savedPath
+    try { rmSync(OVERRIDE_DIR, { recursive: true, force: true }) } catch {}
+    expect(true).toBe(true)
+  })
+})

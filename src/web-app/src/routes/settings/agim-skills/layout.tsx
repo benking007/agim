@@ -26,6 +26,8 @@ interface SubTab {
 const SUB_TABS: SubTab[] = [
   { to: 'installed', i18nKey: 'agimSkills.tab.installed' },
   { to: 'hot',       i18nKey: 'agimSkills.tab.hot' },
+  // v1.2.151 — system-prompt skill block editor (operator override).
+  { to: 'injection', i18nKey: 'agimSkills.tab.injection' },
 ]
 
 export default function SettingsAgimSkillsLayout(): JSX.Element {

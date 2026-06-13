@@ -717,11 +717,31 @@
     "copyUrl": "复制 URL",
     "qrAlt": "手机端聊天登录二维码"
   },
+  "skillInjection": {
+    "title": "系统提示 Skill 注入",
+    "subtitle": "调整每轮注入到系统提示的 tier-1 skill 块。覆盖文件存在且非空时，会替换自动生成的内容（路由头与 always-on skill 正文保留）。",
+    "autoLabel": "自动生成（只读预览）",
+    "overrideLabel": "运营者覆盖（保存后生效）",
+    "overridePlaceholder": "留空表示使用自动生成。常见做法：从上方复制后删掉不需要的族，或在头部加几行路由提示。",
+    "overrideActive": "覆盖生效中",
+    "overrideInactive": "使用自动生成",
+    "largeWarn": "占用偏大，注意 token 预算",
+    "copyToOverride": "复制到下方编辑",
+    "save": "保存",
+    "clear": "清除覆盖",
+    "savedToast": "已保存。下一轮对话生效。",
+    "clearedToast": "已清除覆盖。回到自动生成。",
+    "refreshedToast": "已刷新自动生成预览。",
+    "overLimitToast": "内容 {{len}} 字符，超过上限 {{max}}",
+    "confirmClear": "清除覆盖文件，回到自动生成？",
+    "hint": "保存后无需重启；下一轮系统提示构建会读取最新内容。"
+  },
   "agimSkills": {
     "title": "agim Skills",
     "tab": {
       "installed": "已安装",
-      "hot": "skillhub 热门"
+      "hot": "skillhub 热门",
+      "injection": "系统提示注入"
     },
     "reload": "从磁盘重新加载",
     "subtitle": "由 src/core/skills/loader.ts 加载的 SKILL.md 文件。Tier-1 摘要（name + description）自动注入每个 agent 系统提示；完整正文通过 mcp__imhub__read_skill 按需读取。工作区 skill 按名称覆盖内置 skill。",

@@ -4,6 +4,83 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.151] - 2026-06-13
+
+### Changed (skills injection — workspace 完整注入铁律 + 编辑入口)
+
+v1.2.150 的 cluster 压缩对 workspace 太狠：35 个 `fin-data-*` 折成一行
+`fin-data-* (35): name1 · name2 · …` 后 LLM 路由质量下降——只剩名字猜，没了
+description 关键词。运营者亲装的 workspace skill 是最强 "我要用" 信号，
+不应该为省 token 牺牲精度。
+
+#### 铁律：workspace 完整注入，不折叠
+
+`buildSkillsSummary` 拆出 `buildAutoInjectionBlock(all)`，bucket 3（workspace）
+重新走 `renderSkillRow`（完整描述行）：
+
+- bucket 0/1/3 全部 full row（agim 框架 / agim builtin / **workspace**）
+- bucket 2 ECC picks 仍 full row（20 个 curated 推荐）
+- 只有 bucket 4（ECC remainder 210 个）才 cluster
+
+#### 渲染顺序调整：0 → 1 → 3 → 2 → 4
+
+workspace 排在 ECC picks 之前。运营者亲装 > 框架预选 > ECC remainder。
+
+#### cluster refine bug fix
+
+旧实现遇到"所有成员都在单个 sub-key 下"（例如全部 `fin-data-*` skill 都共享
+2 段前缀）时 bottom out 不再递归，导致 fin-data 全部折成一行 cluster。
+现在加分支：单 sub-key 占全部成员时自动 `segDepth+1` 继续细分，
+所以 `fin-data-aspd-*` / `fin-data-stock-*` / `fin-data-fund-*` 会拆成
+独立 cluster 而非合并。
+
+#### 编辑入口：~/.agim/skill-injection-override.md
+
+运营者可以覆盖自动生成的 skill 块。文件存在且非空时，**全文替换** auto block
+（路由头 + always-on body 保留）。三个 helper：
+`readInjectionOverride / writeInjectionOverride / deleteInjectionOverride`。
+环境变量 `IMHUB_SKILLS_INJECTION_OVERRIDE_PATH` 可改路径（测试用）。
+
+#### Admin API + SPA 页
+
+- `GET /api/agim-skills/injection` → 返回 `{ auto, override, overrideActive, overridePath, maxOverrideChars }`
+- `PUT /api/agim-skills/injection` body `{ body: string }` → 写 override（空 body=删除；>40k 字符 413）
+- `DELETE /api/agim-skills/injection` → 清除 override
+- 受现有 `/api/agim-skills/*` admin allowlist 守卫
+- 新页面 `/settings/agim-skills/injection`：auto 只读 textarea + override 可编辑 textarea +
+  Save / Clear / Copy-auto / Refresh 按钮 + 字符计数 + ≥10k 警告
+- 中英 i18n 全套
+
+#### 新增 env knob
+
+- `IMHUB_SKILLS_ECC_PICKS=name1,name2,...` 覆盖默认 20 picks（推荐池）
+- `IMHUB_SKILLS_INJECT_ECC_REMAINDER=on|off|name-list`：
+  - `on`（默认）：cluster 模式
+  - `off`：完全抑制 ECC remainder 块（省 token）
+  - 逗号分隔白名单：只保留指定 skill
+
+### Files
+
+- `src/core/skills/loader.ts` — workspace 完整注入 + 顺序调整 + refine bug fix +
+  env knob 解析（`resolveEccTopPicks` / `resolveEccRemainderMode`）+
+  override 文件 helper（read / write / delete / `injectionOverridePath`）+
+  `buildAutoInjectionBlock` 导出供 API 预览
+- `src/web/agim-skills-api.ts` — 新 GET/PUT/DELETE `/api/agim-skills/injection`
+- `src/web/agim-skills-api.test.ts` — +5 case（GET 元数据 / PUT 保存 / DELETE / 空 body=删 / 413 超限）
+- `src/web-app/src/hooks/use-agim-skills.ts` — `useSkillInjection / Save / Delete`
+- `src/web-app/src/routes/settings/agim-skills/injection.tsx` — 新页面
+- `src/web-app/src/routes/settings/agim-skills/layout.tsx` — tab 新增"系统提示注入"
+- `src/web-app/src/router.tsx` — 注册新 route
+- `src/web-app/src/i18n/locales/{zh,en}/settings.json` — `skillInjection.*` 文案
+- `src/core/skills/loader.test.ts` — +5 case（refine 单 sub-key 递归 / picks env / remainder off / remainder allowlist / override 全文替换）；2 case 旧断言更新（workspace 不聚类 / workspace 排在 ECC picks 前）
+
+### Tests
+
+- `loader.test.ts`：42/42 全过
+- `agim-skills-api.test.ts`：19/19 全过
+- typecheck 干净（search.tsx 是历史遗留，不归本 PR）
+- SPA build 干净（`injection-*.js` chunk 已生成）
+
 ## [1.2.150] - 2026-06-12
 
 ### Changed (skills system-prompt injection — cluster-aware compression)

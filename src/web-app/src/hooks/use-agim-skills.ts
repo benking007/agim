@@ -88,3 +88,47 @@ export function useAgimSkillsRefresh() {
     onSuccess: () => qc.invalidateQueries({ queryKey: skillKeys.all }),
   })
 }
+
+// ─── v1.2.151 — injection-block override editor (operator-facing) ──────
+
+export interface AgimSkillsInjectionResponse {
+  /** The auto-generated tier-1 skill block from the live loader state.
+   *  Read-only preview the SPA shows on the left. */
+  auto: string
+  autoChars: number
+  /** Current override file content (null when no override is active). */
+  override: string | null
+  overrideChars: number
+  /** Absolute filesystem path of the override file (display-only). */
+  overridePath: string
+  /** True when the loader is currently using the override instead of
+   *  the auto block. */
+  overrideActive: boolean
+  /** Server-enforced character cap on the override body. */
+  maxOverrideChars: number
+}
+
+const injectionKey = ['agim-skills', 'injection'] as const
+
+export function useSkillInjection() {
+  return useQuery<AgimSkillsInjectionResponse>({
+    queryKey: injectionKey,
+    queryFn: () => client.get<AgimSkillsInjectionResponse>('/api/agim-skills/injection'),
+  })
+}
+
+export function useSkillInjectionSave() {
+  const qc = useQueryClient()
+  return useMutation<{ saved: boolean; deleted?: boolean; length?: number }, Error, string>({
+    mutationFn: (body) => client.put('/api/agim-skills/injection', { body: { body } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: injectionKey }),
+  })
+}
+
+export function useSkillInjectionDelete() {
+  const qc = useQueryClient()
+  return useMutation<{ deleted: boolean }, Error, void>({
+    mutationFn: () => client.delete('/api/agim-skills/injection'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: injectionKey }),
+  })
+}

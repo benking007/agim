@@ -401,8 +401,12 @@ const ECC_TOP_PICKS: ReadonlySet<string> = new Set([
  * homelab skills. Both belong in the on-demand pool, not the cap.
  */
 export function rankSkillBucket(s: SkillMeta): number {
-  if (s.source === 'workspace') return 3
-  // builtin from here on
+  // v1.2.150 — refined buckets to support cluster-aware injection.
+  //   0  agim-* framework skills (always visible, individual rows)
+  //   1  non-ECC builtin (agim's own small pack)
+  //   2  ECC top picks (recommended, individual rows)
+  //   3  workspace skills (operator-installed business — clustered when many)
+  //   4  ECC remainder (210 of them — always heavily clustered)
   if (s.name.startsWith('agim-')) return 0
   // Detect bundled ECC pack. ECC's own SKILL.md files use multiple
   // `origin:` values (`ECC`, `community`, `ECC direct-port adaptation`,
@@ -412,24 +416,185 @@ export function rankSkillBucket(s: SkillMeta): number {
   // with `ECC` for forward compat (e.g. operator-authored skills tagged
   // `origin: ECC fork`). Order matters: prefix check comes first because
   // it's the actually-reliable signal.
-  if (s.description.startsWith('[ECC] ') || /^ECC\b/i.test(s.origin ?? '')) {
-    return ECC_TOP_PICKS.has(s.name) ? 2 : 3
-  }
+  const isEcc = s.source === 'builtin'
+    && (s.description.startsWith('[ECC] ') || /^ECC\b/i.test(s.origin ?? ''))
+  if (isEcc) return ECC_TOP_PICKS.has(s.name) ? 2 : 4
+  if (s.source === 'workspace') return 3
   // non-ECC builtin (agim's own small in-tree pack)
   return 1
+}
+
+/**
+ * v1.2.150 — A prefix-based skill cluster. Many skills sharing a name
+ * prefix (`fin-data-aspd-*`, `white-pig-*`, …) get collapsed into one
+ * block: title + name list + brief trigger hint. The LLM still sees
+ * every skill name, just not every full description; it can call
+ * `read_skill('exact-name')` for granular content.
+ */
+export interface SkillCluster {
+  /** The shared prefix, e.g. "fin-data-aspd" or "white-pig". */
+  prefix: string
+  /** Skill names in the cluster, alphabetically sorted. */
+  names: string[]
+  /** One-line trigger summary derived from member descriptions
+   *  (best effort). Empty when descriptions are unhelpful. */
+  triggerHint: string
+}
+
+/**
+ * v1.2.150 — Pure helper: group `skills` into prefix-based clusters.
+ *
+ * Algorithm:
+ *   1. Group by first dash-segment (`fin-data-aspd-*` → key `fin`).
+ *   2. For groups of size ≥ minSize, try refining to TWO segments
+ *      (`fin-data-*`). If at least 2 two-segment sub-groups themselves
+ *      reach minSize, emit each sub-group as a cluster and the leftover
+ *      single-segment-only members as a fallback `<seg1>-*` cluster.
+ *   3. Sub-clustering attempts also at THREE segments before bottoming
+ *      out, so `fin-data-aspd-*` peels off `fin-data-aspd` instead of
+ *      drowning in a generic `fin-data`.
+ *   4. Skills that don't land in any cluster (≤ minSize − 1 with their
+ *      prefix peers) are returned as singletons; the caller renders
+ *      them as individual rows.
+ *
+ * Pure / deterministic — same input always yields same output.
+ */
+export function clusterSkills(
+  skills: ReadonlyArray<SkillMeta>,
+  minSize = 3,
+): { clusters: SkillCluster[]; singletons: SkillMeta[] } {
+  const clusters: SkillCluster[] = []
+  const used = new Set<string>()
+
+  // Recursive refiner: attempt to peel deeper prefixes when the group is
+  // large enough and has internal structure. Up to 3 segments deep.
+  function refine(group: SkillMeta[], segDepth: number): void {
+    if (group.length < minSize) return
+    if (segDepth >= 4) {
+      // Can't refine further — emit as one cluster.
+      emitCluster(group, segDepth - 1)
+      return
+    }
+    // Try splitting at segDepth.
+    const sub = new Map<string, SkillMeta[]>()
+    for (const s of group) {
+      const parts = s.name.split('-')
+      const key = parts.length >= segDepth ? parts.slice(0, segDepth).join('-') : s.name
+      const arr = sub.get(key) ?? []
+      arr.push(s)
+      sub.set(key, arr)
+    }
+    // Count how many sub-keys reach minSize.
+    const qualified: string[] = []
+    for (const [k, v] of sub) if (v.length >= minSize) qualified.push(k)
+    if (qualified.length >= 2) {
+      for (const k of qualified) refine(sub.get(k)!, segDepth + 1)
+      // Leftover (sub-keys with < minSize) become singletons unless they
+      // collectively form a fallback cluster.
+      const leftover: SkillMeta[] = []
+      for (const [k, v] of sub) if (v.length < minSize) leftover.push(...v)
+      if (leftover.length >= minSize) {
+        // Emit as `<segDepth-1>-*` fallback.
+        const fallbackPrefix = group[0].name.split('-').slice(0, segDepth - 1).join('-') + '-*'
+        leftover.sort((a, b) => a.name.localeCompare(b.name))
+        clusters.push({
+          prefix: fallbackPrefix,
+          names: leftover.map((s) => s.name),
+          triggerHint: extractTriggerHint(leftover),
+        })
+        for (const s of leftover) used.add(s.name)
+      }
+    } else {
+      emitCluster(group, segDepth - 1)
+    }
+  }
+
+  function emitCluster(group: SkillMeta[], _depth: number): void {
+    group.sort((a, b) => a.name.localeCompare(b.name))
+    // Use the actual longest common whole-segment prefix of the group's
+    // names — gives `fin-data` for `fin-data-s000` siblings instead of
+    // falling back to the depth-1 single segment `fin`. Splits each
+    // name on `-`, walks segments left-to-right, stops at first mismatch.
+    const parts = group.map((s) => s.name.split('-'))
+    const lcp: string[] = []
+    const minLen = Math.min(...parts.map((p) => p.length))
+    for (let i = 0; i < minLen; i++) {
+      const seg = parts[0][i]
+      if (parts.every((p) => p[i] === seg)) lcp.push(seg)
+      else break
+    }
+    // If LCP is empty (no common segment — shouldn't happen for grouped
+    // members), fall back to the first segment of the first name.
+    const prefix = lcp.length > 0 ? lcp.join('-') : parts[0][0]
+    clusters.push({
+      prefix,
+      names: group.map((s) => s.name),
+      triggerHint: extractTriggerHint(group),
+    })
+    for (const s of group) used.add(s.name)
+  }
+
+  // Group by first segment.
+  const byHead = new Map<string, SkillMeta[]>()
+  for (const s of skills) {
+    const head = s.name.split('-')[0]
+    const arr = byHead.get(head) ?? []
+    arr.push(s)
+    byHead.set(head, arr)
+  }
+  // Iterate in deterministic order.
+  const heads = Array.from(byHead.keys()).sort()
+  for (const head of heads) refine(byHead.get(head)!, 2)
+
+  const singletons = skills.filter((s) => !used.has(s.name))
+  return { clusters, singletons }
+}
+
+/** Pull a short trigger phrase from the FIRST few skills' descriptions.
+ *  Strips `[ECC] ` prefix and truncates aggressively (each contribution
+ *  ≤ 40 chars). Returned string is ≤ 240 chars total. */
+function extractTriggerHint(skills: ReadonlyArray<SkillMeta>): string {
+  const parts: string[] = []
+  for (const s of skills.slice(0, 5)) {
+    const raw = (s.description || '').replace(/^\[ECC\]\s*/, '').trim()
+    if (!raw) continue
+    // Pull a short snippet: first sentence-ish or first 40 chars.
+    const stop = raw.search(/[。.!?！？]/)
+    let snippet = stop > 0 && stop < 60 ? raw.slice(0, stop) : raw.slice(0, 40)
+    snippet = snippet.replace(/\s+/g, ' ').trim()
+    if (snippet) parts.push(snippet)
+  }
+  return parts.join(' · ').slice(0, 240)
+}
+
+/** v1.2.150 — heading text for each cluster bucket. */
+const BUCKET_HEADINGS: Record<number, string> = {
+  0: 'Framework (agim-* — 长期事实 / 提醒 / 自检 / skill 发现)',
+  1: 'Agim builtin',
+  2: 'ECC harness + methodology picks (recommended)',
+  3: 'Workspace skills (operator-installed business)',
+  4: 'ECC remainder (read full description via mcp__imhub__read_skill)',
 }
 
 export function buildSkillsSummary(): string {
   const all = listSkills()
   if (all.length === 0) return ''
-  // v1.2.149 — bucket-aware sort: priority bucket first, then alphabet
-  // inside each bucket. See rankSkillBucket above for bucket definitions.
-  const sorted = all.slice().sort((a, b) => {
-    const ra = rankSkillBucket(a)
-    const rb = rankSkillBucket(b)
-    if (ra !== rb) return ra - rb
-    return a.name.localeCompare(b.name)
-  })
+  // v1.2.150 — bucket + cluster-aware emission.
+  //   Buckets 0, 1, 2: render each skill as an individual row with full
+  //     description. Small + curated; the LLM needs the granularity.
+  //   Bucket 3 (workspace): cluster when ≥ MIN_CLUSTER_SIZE share a
+  //     prefix; otherwise individual rows. Lets operators with one big
+  //     namespace (`fin-data-*`) get all names visible without burning
+  //     dozens of full-description tokens.
+  //   Bucket 4 (ECC remainder): always cluster aggressively + only
+  //     emit name list (no per-cluster trigger hint) since this is the
+  //     "you can read these on demand" pool. We still show every name
+  //     so the LLM knows the surface.
+  const byBucket: Record<number, SkillMeta[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }
+  for (const s of all) byBucket[rankSkillBucket(s)].push(s)
+  for (const b of [0, 1, 2, 3, 4]) {
+    byBucket[b].sort((a, b2) => a.name.localeCompare(b2.name))
+  }
   const lines: string[] = [
     // v1.2.137 — routing rule, prepended to the skill list. Applies to
     // ALL agents (native / claude-code / codex / cursor / opencode) because
@@ -456,28 +621,63 @@ export function buildSkillsSummary(): string {
     '',
     '[agim skills available — read full body with mcp__imhub__read_skill(name)]',
   ]
-  const visible = sorted.slice(0, MAX_INJECTED_SKILLS)
-  for (const s of visible) {
+
+  // Helper: render one skill as an individual row with full description.
+  // Same shape as v1.2.149; defensive fallback for malformed descriptions.
+  const renderRow = (s: SkillMeta): string => {
     const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
     const flag = s.always ? ' [always]' : ''
-    // v1.2.65 — defensive fallback for SKILL.md files whose description
-    // didn't parse (empty, just a YAML literal-block marker like ">-",
-    // or whitespace-only). Without this the agent sees lines like
-    // `- foo: >-` which look like an instruction tag and confuse the
-    // model. Operator should fix the SKILL.md upstream, but a graceful
-    // hint here keeps the catalog usable in the meantime.
     const descClean = (s.description || '').trim()
     const description = descClean && descClean !== '>-' && descClean !== '|'
       ? descClean
       : '(no description in SKILL.md — read body via mcp__imhub__read_skill)'
-    lines.push(`- ${s.name}: ${description}${reason}${flag}`)
+    return `- ${s.name}: ${description}${reason}${flag}`
   }
-  if (sorted.length > visible.length) {
-    lines.push(`… and ${sorted.length - visible.length} more (use /skill list to see them all)`)
+
+  // Buckets 0, 1, 2: individual rows (curated, small).
+  for (const b of [0, 1, 2]) {
+    const items = byBucket[b]
+    if (items.length === 0) continue
+    lines.push('')
+    lines.push(`## ${BUCKET_HEADINGS[b]} (${items.length})`)
+    for (const s of items) lines.push(renderRow(s))
   }
-  // Inline `always: true` skills' full bodies. Cheap when few; we bound
-  // by injected count above so the agent's prompt budget can't explode.
-  const alwaysOn = visible.filter((s) => s.always && s.available)
+
+  // Bucket 3 (workspace): cluster when MIN_CLUSTER_SIZE shared prefix,
+  // else individual rows. Per-cluster trigger hint included (the LLM is
+  // most likely to route into this bucket on operator-domain queries).
+  const ws = byBucket[3]
+  if (ws.length > 0) {
+    lines.push('')
+    lines.push(`## ${BUCKET_HEADINGS[3]} (${ws.length})`)
+    const { clusters, singletons } = clusterSkills(ws, 3)
+    for (const c of clusters) {
+      lines.push(`- ${c.prefix}-* (${c.names.length}): ${c.names.join(' · ')}`)
+      if (c.triggerHint) lines.push(`  → ${c.triggerHint}`)
+    }
+    for (const s of singletons) lines.push(renderRow(s))
+  }
+
+  // Bucket 4 (ECC remainder): cluster aggressively, name-only (no per-
+  // cluster trigger hint — these are the "on-demand" pool, the LLM gets
+  // a per-skill description if it actually calls read_skill).
+  const eccRem = byBucket[4]
+  if (eccRem.length > 0) {
+    lines.push('')
+    lines.push(`## ${BUCKET_HEADINGS[4]} (${eccRem.length})`)
+    const { clusters, singletons } = clusterSkills(eccRem, 3)
+    for (const c of clusters) {
+      lines.push(`- ${c.prefix}-* (${c.names.length}): ${c.names.join(' · ')}`)
+    }
+    if (singletons.length > 0) {
+      const names = singletons.map((s) => s.name).join(' · ')
+      lines.push(`- (other ECC, ${singletons.length}): ${names}`)
+    }
+  }
+  // Inline `always: true` skills' full bodies regardless of bucket.
+  // Cheap when few; operators opt-in by marking `always: true` in their
+  // SKILL.md, which is rare.
+  const alwaysOn = all.filter((s) => s.always && s.available)
   for (const s of alwaysOn) {
     const body = readSkillBody(s.name)
     if (!body) continue

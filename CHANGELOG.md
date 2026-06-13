@@ -4,6 +4,85 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.150] - 2026-06-12
+
+### Changed (skills system-prompt injection — cluster-aware compression)
+
+v1.2.149 的固定 32 行排序在 builtin 加了 230 ECC 后产生回归：
+**用户业务 skill（workspace 源的 fin-data-* / ash-* / 白猪 / 等）全部跌出 top 32**，
+LLM 看不到 description → 无法 route。
+
+#### 新模型：按桶 + cluster 压缩
+
+`buildSkillsSummary` 重写为"按桶+ cluster"输出：
+
+- **Bucket 0–2**：逐行完整 description（curated 小集合，需要颗粒度）
+  - 0 = `agim-*` 框架（4）
+  - 1 = 非 ECC builtin（github / image-generation / long-goal / my / skill-creator / summarize / tmux / weather）
+  - 2 = ECC pinned 推荐（20）
+- **Bucket 3（workspace）**：≥3 个同前缀 skill 自动 cluster——一行块标注 `prefix-* (N)` + 全名 + 短指引；singleton 仍 full row。运营者业务 skill（如 60 个 `fin-data-*`）只用 ~500 字符就能让 **LLM 看到所有名字 + 触发关键词**，而非吃掉 12000 字符 description 预算
+- **Bucket 4（ECC 余下 210）**：cluster + name-only 输出（无 trigger hint）。LLM 看得到这 210 个名字，但要触发时按 description 关键词或显式 `read_skill('exact-name')` 拉全文
+
+#### `clusterSkills(skills, minSize=3)` 算法（pure helper）
+
+按 dash-segment 分层 group：先一段（`fin-*`），≥3 个则尝试细化到二段（`fin-data-*` 单独成 cluster）……最多 3 段深。Cluster prefix 取实际**最长公共段前缀**，所以 35 个 `fin-data-s000..s034` 合成一个 `fin-data` cluster，不是浅 `fin`。
+
+#### 重新分桶（rankSkillBucket）
+
+- workspace 与 ECC 余下 split 开（之前混在 bucket 3）：
+  - workspace → bucket 3（按运营者意图—亲装的优先 cluster 露出，trigger hint 详细）
+  - ECC 余下 → bucket 4（aggressive cluster，仅名字）
+
+#### 实测（agim 默认 builtin）
+
+```
+## Framework (agim-* — …) (4)
+- agim-memory: …（full row）
+- agim-reminders: …
+- agim-self: …
+- agim-skill-discovery: …
+
+## Agim builtin (8)
+- github: … / image-generation / long-goal / my / skill-creator / summarize / tmux / weather
+
+## ECC harness + methodology picks (recommended) (20)
+- agent-eval / agent-harness-construction / agent-introspection-debugging / agentic-engineering
+  / architecture-decision-records / article-writing / autonomous-* / benchmark / blueprint
+  / code-tour / coding-standards / content-engine / context-budget / continuous-learning-v2
+  / cost-aware-llm-pipeline / prompt-optimizer / security-review / tdd-workflow / verification-loop
+
+## ECC remainder (read full description via mcp__imhub__read_skill) (210)
+- django-* (5): django-celery · django-patterns · django-security · django-tdd · django-verification
+- kotlin-* (5): kotlin-coroutines-flows · kotlin-exposed-patterns · kotlin-ktor-patterns
+                 · kotlin-patterns · kotlin-testing
+- laravel-* (5): laravel-{patterns, plugin-discovery, security, tdd, verification}
+- springboot-* (4): springboot-{patterns, security, tdd, verification}
+- quarkus-* (4): quarkus-{patterns, security, tdd, verification}
+- orch-* (6): orch-add-feature · orch-build-mvp · orch-change-feature · …
+- … 14 个 cluster 共 56 skill + (other ECC, 154 个) name 列表
+```
+
+#### Token 预算
+
+- v1.2.149 old: 32 行 × ~200 chars = ~1700 tokens（32 个 skill 露脸）
+- v1.2.150 new: ~3300 tokens（**241 builtin + workspace skill 全部露脸**）
+- net: token +~1600，但**每个 skill 的"存在感"露出**——对 LLM routing 是巨大改善
+- 用户有 ~80 workspace skill 时，预计 +~500 tokens 加 workspace cluster；总 ~3800 tokens
+
+#### `always: true` 行为
+
+原本只走 visible 32；现在改成扫所有 buckets，按 `s.always && s.available` 来内联——
+operator 主动标 `always: true` 的少数 skill 仍可正常 inline。
+
+### Files
+
+- `src/core/skills/loader.ts` — 新增 `SkillCluster` interface + `clusterSkills` pure function + cluster-aware `buildSkillsSummary` + bucket 3/4 split in `rankSkillBucket`
+- `src/core/skills/loader.test.ts` — 更新 2 case（bucket order workspace=3 / ECC remainder=4；cap test 改为验证 cluster 块）
+
+### Tests
+
+37/37 全过，typecheck 双绿，build 8.2s。
+
 ## [1.2.149] - 2026-06-12
 
 ### Fixed (ECC pack — folded-description parser bug)

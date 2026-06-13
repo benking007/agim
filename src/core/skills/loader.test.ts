@@ -247,17 +247,29 @@ This text MUST appear inline.
     expect(out).toContain('This text MUST appear inline.')
   })
 
-  it('caps at MAX_INJECTED_SKILLS with overflow notice', () => {
+  it('v1.2.150: cluster-aware workspace bucket emits one block + name list when ≥3 share a prefix', () => {
+    // Earlier versions enforced MAX_INJECTED_SKILLS as a hard cap with
+    // "and N more" overflow text. v1.2.150 swapped that for cluster
+    // compression: skills with a common name prefix collapse into ONE
+    // block carrying every member name + a brief trigger hint. The cap
+    // semantically becomes "byte budget", not "row count" — and bucket-3
+    // (workspace) overflow is no longer hidden behind "and N more".
     for (let i = 0; i < MAX_INJECTED_SKILLS + 3; i++) {
-      writeSkill(wsRoot, `s${String(i).padStart(3, '0')}`, `---
-name: s${String(i).padStart(3, '0')}
-description: skill number ${i}
+      writeSkill(wsRoot, `fin-data-s${String(i).padStart(3, '0')}`, `---
+name: fin-data-s${String(i).padStart(3, '0')}
+description: A-share daily quote endpoint #${i}.
 ---
 body
 `)
     }
     const out = buildSkillsSummary()
-    expect(out).toContain('and 3 more')
+    // The new emission should contain a single workspace cluster with
+    // every member name visible (not "and N more" truncation).
+    expect(out).toContain('Workspace skills (operator-installed business)')
+    expect(out).toContain('fin-data-s000')
+    expect(out).toContain(`fin-data-s${String(MAX_INJECTED_SKILLS + 2).padStart(3, '0')}`)
+    // Cluster header should mention the shared prefix + member count.
+    expect(out).toMatch(/fin-data-\*? \(\d+\):/)
   })
 
   // v1.2.137 — skills-first routing discipline. The block now prefixes
@@ -633,7 +645,8 @@ body
     expect(rankSkillBucket(byName('agim-self-stub'))).toBe(0)
     expect(rankSkillBucket(byName('github-stub'))).toBe(1)
     expect(rankSkillBucket(byName('agent-eval'))).toBe(2)
-    expect(rankSkillBucket(byName('kotlin-coroutines-flows'))).toBe(3)
+    // v1.2.150 split: workspace (3) vs ECC remainder (4).
+    expect(rankSkillBucket(byName('kotlin-coroutines-flows'))).toBe(4)
     expect(rankSkillBucket(byName('fin-data-style-pinning'))).toBe(3)
 
     // Summary block order: agim-* and github-stub MUST appear before

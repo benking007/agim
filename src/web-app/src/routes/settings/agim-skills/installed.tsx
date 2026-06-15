@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  BookOpen, FilePlus2, Loader2, RefreshCcw, Save, Trash2,
+  BookOpen, ChevronDown, ChevronRight, FilePlus2, Loader2, RefreshCcw, Save, Search, Trash2,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -123,10 +123,77 @@ export default function SettingsAgimSkillsRoute(): JSX.Element {
 
 /* ─────────────── List pane ─────────────── */
 
+// v1.2.152 — bucket grouping for the installed list. Maps loader's
+// `rankSkillBucket` (0–4) to a stable display order + i18n key. Default
+// expanded vs collapsed: small curated buckets (framework / builtin /
+// ECC picks) expand on first render; the two large reservoirs (workspace
+// + ECC remainder) collapse so the page renders without throwing 300+
+// rows into the DOM tree on mount.
+const BUCKET_DEF: ReadonlyArray<{ bucket: 0 | 1 | 2 | 3 | 4; i18nKey: string; defaultOpen: boolean }> = [
+  { bucket: 0, i18nKey: 'agimSkills.group.framework',    defaultOpen: true  },
+  { bucket: 1, i18nKey: 'agimSkills.group.builtin',      defaultOpen: true  },
+  { bucket: 3, i18nKey: 'agimSkills.group.workspace',    defaultOpen: false },
+  { bucket: 2, i18nKey: 'agimSkills.group.eccPicks',     defaultOpen: true  },
+  { bucket: 4, i18nKey: 'agimSkills.group.eccRemainder', defaultOpen: false },
+]
+
+function bucketOf(s: AgimSkillMeta): 0 | 1 | 2 | 3 | 4 {
+  // Server tells us via the `bucket` field (v1.2.152+); fall back to a
+  // best-effort client-side derivation for older agim servers.
+  if (typeof s.bucket === 'number') return s.bucket
+  if (s.name.startsWith('agim-')) return 0
+  const isEcc = s.source === 'builtin' && s.description.startsWith('[ECC] ')
+  if (isEcc) return 4
+  if (s.source === 'workspace') return 3
+  return 1
+}
+
 function SkillsList({
   skills, selected, onSelect, loading,
 }: { skills: AgimSkillMeta[]; selected: string | null; onSelect: (n: string) => void; loading: boolean }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
+  const [query, setQuery] = useState('')
+  const [openBuckets, setOpenBuckets] = useState<Set<number>>(
+    () => new Set(BUCKET_DEF.filter((d) => d.defaultOpen).map((d) => d.bucket)),
+  )
+
+  // Group skills by bucket. Each bucket sorted alphabetically.
+  const grouped = useMemo(() => {
+    const m = new Map<number, AgimSkillMeta[]>()
+    for (const s of skills) {
+      const b = bucketOf(s)
+      const arr = m.get(b) ?? []
+      arr.push(s)
+      m.set(b, arr)
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.name.localeCompare(b.name))
+    return m
+  }, [skills])
+
+  // Active search => filter + flatten. Bucket headers still show with
+  // their per-bucket match count; matching groups auto-expand.
+  const q = query.trim().toLowerCase()
+  const filteredGrouped = useMemo(() => {
+    if (!q) return grouped
+    const m = new Map<number, AgimSkillMeta[]>()
+    for (const [b, arr] of grouped) {
+      const hits = arr.filter((s) =>
+        s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
+      )
+      if (hits.length > 0) m.set(b, hits)
+    }
+    return m
+  }, [q, grouped])
+
+  function toggleBucket(b: number): void {
+    setOpenBuckets((prev) => {
+      const next = new Set(prev)
+      if (next.has(b)) next.delete(b)
+      else next.add(b)
+      return next
+    })
+  }
+
   if (loading) return <div className="h-48 rounded-md bg-surface-2 animate-pulse" />
   if (skills.length === 0) {
     return (
@@ -135,41 +202,86 @@ function SkillsList({
       </section>
     )
   }
+
   return (
-    <nav className="rounded-md border border-border bg-surface">
-      <ul className="divide-y divide-border">
-        {skills.map((s) => {
-          const isSelected = selected === s.name
-          const flag = !s.available
-            ? <Badge variant="outline" title={s.unavailableReason}>{t('agimSkills.unavailable')}</Badge>
-            : s.always
-              ? <Badge variant="success">{t('agimSkills.alwaysOn')}</Badge>
-              : null
-          const src = s.source === 'workspace'
-            ? <Badge variant="info">{t('agimSkills.sourceWs')}</Badge>
-            : <Badge variant="outline">{t('agimSkills.sourceBuiltin')}</Badge>
+    <div className="flex flex-col gap-2">
+      {/* Search box */}
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-dim" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('agimSkills.searchPlaceholder', { defaultValue: 'Filter skills...' })}
+          className="pl-7 text-xs h-8"
+          aria-label={t('agimSkills.searchPlaceholder', { defaultValue: 'Filter skills' })}
+        />
+      </div>
+
+      {/* Bucket groups */}
+      <nav className="rounded-md border border-border bg-surface">
+        {BUCKET_DEF.map(({ bucket, i18nKey }) => {
+          const items = filteredGrouped.get(bucket) ?? []
+          if (items.length === 0) return null
+          // When searching, force-open buckets that have matches.
+          const open = q ? true : openBuckets.has(bucket)
           return (
-            <li key={s.name}>
+            <section key={bucket} className="border-b border-border last:border-b-0">
               <button
                 type="button"
-                onClick={() => onSelect(s.name)}
-                className={
-                  'flex w-full flex-col items-start gap-1 px-3 py-2 text-left text-xs transition hover:bg-surface-2 '
-                  + (isSelected ? 'bg-surface-2 font-semibold' : '')
-                }
+                onClick={() => toggleBucket(bucket)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium hover:bg-surface-2"
+                aria-expanded={open}
               >
-                <span className="flex w-full items-center gap-2 font-mono text-[12px]">
-                  <span className="grow truncate">{s.name}</span>
-                  {src}
-                  {flag}
-                </span>
-                <span className="line-clamp-2 text-[11px] text-text-dim">{s.description}</span>
+                {open
+                  ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-dim" />
+                  : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-dim" />}
+                <span className="grow truncate">{t(i18nKey)}</span>
+                <Badge variant="outline">{items.length}</Badge>
               </button>
-            </li>
+              {open && (
+                <ul className="divide-y divide-border border-t border-border bg-surface-2/40">
+                  {items.map((s) => {
+                    const isSelected = selected === s.name
+                    const flag = !s.available
+                      ? <Badge variant="outline" title={s.unavailableReason}>{t('agimSkills.unavailable')}</Badge>
+                      : s.always
+                        ? <Badge variant="success">{t('agimSkills.alwaysOn')}</Badge>
+                        : null
+                    const src = s.source === 'workspace'
+                      ? <Badge variant="info">{t('agimSkills.sourceWs')}</Badge>
+                      : <Badge variant="outline">{t('agimSkills.sourceBuiltin')}</Badge>
+                    return (
+                      <li key={s.name}>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(s.name)}
+                          className={
+                            'flex w-full flex-col items-start gap-1 px-3 py-2 text-left text-xs transition hover:bg-surface-2 '
+                            + (isSelected ? 'bg-surface-2 font-semibold' : '')
+                          }
+                        >
+                          <span className="flex w-full items-center gap-2 font-mono text-[12px]">
+                            <span className="grow truncate">{s.name}</span>
+                            {src}
+                            {flag}
+                          </span>
+                          <span className="line-clamp-2 text-[11px] text-text-dim">{s.description}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
           )
         })}
-      </ul>
-    </nav>
+        {q && filteredGrouped.size === 0 && (
+          <div className="px-3 py-4 text-xs text-text-dim">
+            {t('agimSkills.searchEmpty', { defaultValue: 'No matches.' })}
+          </div>
+        )}
+      </nav>
+    </div>
   )
 }
 

@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.152] - 2026-06-15
+
+### Changed (后台 skills 管理体验)
+
+针对 v1.2.151 后两个反馈做体验优化：
+
+#### Q1 — installed 页按 5 bucket 分组 + 默认折叠 + 顶部搜索
+
+364 个 skill 一根长 list 渲染太重；改成 loader 已有的 5 bucket 分组，
+大组默认折叠：
+
+- **Framework**（agim-* 4 条，默认展开）
+- **Agim builtin**（github / weather / 等 8 条，默认展开）
+- **Workspace**（运营者亲装 ~122 条，默认折叠）
+- **ECC 推荐池**（20 条，默认展开）
+- **ECC 余下**（~210 条，默认折叠）
+
+顶部加搜索框（按 name + description 模糊匹配）。搜索激活时所有匹配桶
+强制展开，并在每个桶头显示命中数 badge。
+
+#### Q2 — injection 页 Refresh 升级为"重建默认注入词"
+
+v1.2.151 的 Refresh 按钮只 refetch React Query，没真正失效 loader 5min cache
+——运营者刚新增 skill 后看到的 auto 还是旧的。改成两步：
+1. POST `/api/agim-skills/refresh`（loader 重扫磁盘 + invalidate cache）
+2. refetch `/api/agim-skills/injection`（拿到 fresh auto block）
+
+不影响 override（覆盖文件不动）。
+
+按钮文案：中文"重建默认注入词" / 英文"Rebuild auto block"。
+
+### Files
+
+- `src/web/agim-skills-api.ts` — `handleList` 返回多加 `bucket: 0..4`（复用 `rankSkillBucket`）
+- `src/web-app/src/hooks/use-agim-skills.ts` — `AgimSkillMeta.bucket?: 0|1|2|3|4`
+- `src/web-app/src/routes/settings/agim-skills/installed.tsx` — `SkillsList` 重构为 bucket 分组 + 折叠 + 顶部搜索；导入 ChevronDown / ChevronRight / Search 图标
+- `src/web-app/src/routes/settings/agim-skills/injection.tsx` — 新增 `useAgimSkillsRefresh` 依赖；`onRefresh` 改两步语义；按钮文案改成"重建"
+- `src/web-app/src/i18n/locales/{zh,en}/settings.json` — 新增 `agimSkills.group.*` / `searchPlaceholder` / `searchEmpty` + `skillInjection.rebuild*` / `rebuiltToast`
+
+### Tests
+
+- API list 测试 (`agim-skills-api.test.ts` 13/13 旧 + 6 v1.2.151) + loader (42/42) → 61/61 全过
+- backend typecheck 干净；SPA typecheck 仅遗留 search.tsx 错误（不在本 PR）
+- SPA build 干净
+
 ## [1.2.151] - 2026-06-13
 
 ### Changed (skills injection — workspace 完整注入铁律 + 编辑入口)

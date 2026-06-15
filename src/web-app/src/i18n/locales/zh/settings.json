@@ -732,6 +732,9 @@
     "savedToast": "已保存。下一轮对话生效。",
     "clearedToast": "已清除覆盖。回到自动生成。",
     "refreshedToast": "已刷新自动生成预览。",
+    "rebuild": "重建默认注入词",
+    "rebuildTooltip": "重新扫描磁盘的所有 SKILL.md，按规则重新生成上方自动注入词（不影响下方覆盖）。",
+    "rebuiltToast": "已重新扫描磁盘并按规则生成自动注入词。下次对话生效。",
     "overLimitToast": "内容 {{len}} 字符，超过上限 {{max}}",
     "confirmClear": "清除覆盖文件，回到自动生成？",
     "hint": "保存后无需重启；下一轮系统提示构建会读取最新内容。"
@@ -743,6 +746,15 @@
       "hot": "skillhub 热门",
       "injection": "系统提示注入"
     },
+    "group": {
+      "framework": "Framework（agim-*）",
+      "builtin": "Agim 内置（非 ECC）",
+      "workspace": "Workspace（运营者亲装业务）",
+      "eccPicks": "ECC 推荐池",
+      "eccRemainder": "ECC 余下"
+    },
+    "searchPlaceholder": "搜索 skill 名称或描述…",
+    "searchEmpty": "没有匹配的 skill。",
     "reload": "从磁盘重新加载",
     "subtitle": "由 src/core/skills/loader.ts 加载的 SKILL.md 文件。Tier-1 摘要（name + description）自动注入每个 agent 系统提示；完整正文通过 mcp__imhub__read_skill 按需读取。工作区 skill 按名称覆盖内置 skill。",
     "reloadedToast": "已重新加载 — 磁盘上 {{count}} 个 skill",

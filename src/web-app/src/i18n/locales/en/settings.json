@@ -732,6 +732,9 @@
     "savedToast": "Saved. Next turn picks it up.",
     "clearedToast": "Override cleared. Back to auto.",
     "refreshedToast": "Auto preview refreshed.",
+    "rebuild": "Rebuild auto block",
+    "rebuildTooltip": "Rescan all SKILL.md on disk and regenerate the auto-generated block above (override below is unaffected).",
+    "rebuiltToast": "Rescanned and rebuilt the auto-generated block. Picks up next turn.",
     "overLimitToast": "Body is {{len}} chars, over the {{max}} limit",
     "confirmClear": "Delete the override file and revert to auto-generated?",
     "hint": "No restart needed; the next system-prompt build reads the latest content."
@@ -743,6 +746,15 @@
       "hot": "skillhub Hot",
       "injection": "Prompt Injection"
     },
+    "group": {
+      "framework": "Framework (agim-*)",
+      "builtin": "Agim builtin (non-ECC)",
+      "workspace": "Workspace (operator-installed)",
+      "eccPicks": "ECC recommended picks",
+      "eccRemainder": "ECC remainder"
+    },
+    "searchPlaceholder": "Filter skills by name or description...",
+    "searchEmpty": "No matching skills.",
     "reload": "Reload from disk",
     "subtitle": "SKILL.md files loaded by src/core/skills/loader.ts. Tier-1 summary (name + description) is auto-injected into every agent system prompt; full body is read on-demand via mcp__imhub__read_skill. Workspace skills shadow bundled builtin skills by name.",
     "reloadedToast": "Reloaded — {{count}} skill(s) on disk",

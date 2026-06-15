@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   useSkillInjection, useSkillInjectionSave, useSkillInjectionDelete,
+  useAgimSkillsRefresh,
 } from '@/hooks/use-agim-skills'
 
 const TOKEN_WARN_CHARS = 10_000
@@ -41,6 +42,11 @@ export default function InjectionEditorRoute(): JSX.Element {
   const query = useSkillInjection()
   const save = useSkillInjectionSave()
   const del = useSkillInjectionDelete()
+  // v1.2.152 — "Refresh" 改成"重建自动注入词"：先让 loader 重扫磁盘
+  // (POST /api/agim-skills/refresh 会调用 invalidateSkillsCache 失效 5 分钟
+  // TTL 缓存)，然后再 refetch GET injection 拿到 fresh auto block。
+  // override 字段不受影响。
+  const refreshLoader = useAgimSkillsRefresh()
 
   // Local draft state; sync from server on first load + after a save.
   const [draft, setDraft] = useState('')
@@ -87,9 +93,16 @@ export default function InjectionEditorRoute(): JSX.Element {
   }
 
   async function onRefresh(): Promise<void> {
+    // Two-step: invalidate loader cache (re-scan disk) → refetch injection.
+    try {
+      await refreshLoader.mutateAsync()
+    } catch (err) {
+      toast.error((err as Error)?.message ?? String(err))
+      return
+    }
     await query.refetch()
     if (!touched) setDraft(query.data?.override ?? '')
-    toast.info(t('skillInjection.refreshedToast'))
+    toast.success(t('skillInjection.rebuiltToast'))
   }
 
   function onCopyAuto(): void {
@@ -105,14 +118,15 @@ export default function InjectionEditorRoute(): JSX.Element {
           ? <Badge variant="success">{t('skillInjection.overrideActive')}</Badge>
           : <Badge variant="outline">{t('skillInjection.overrideInactive')}</Badge>}
         <Button
-          variant="ghost" size="sm" className="ml-auto"
+          variant="outline" size="sm" className="ml-auto"
           onClick={() => void onRefresh()}
-          disabled={query.isFetching}
+          disabled={query.isFetching || refreshLoader.isPending}
+          title={t('skillInjection.rebuildTooltip')}
         >
-          {query.isFetching
+          {(query.isFetching || refreshLoader.isPending)
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <RefreshCcw className="h-4 w-4" />}
-          <span className="hidden sm:inline">{t('common:refresh', { defaultValue: 'Refresh' })}</span>
+          <span className="hidden sm:inline">{t('skillInjection.rebuild')}</span>
         </Button>
       </header>
       <p className="text-sm text-text-dim">{t('skillInjection.subtitle')}</p>

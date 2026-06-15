@@ -24,6 +24,7 @@ import {
   buildAutoInjectionBlock,
   readInjectionOverride, writeInjectionOverride, deleteInjectionOverride,
   injectionOverridePath,
+  rankSkillBucket,
 } from '../core/skills/loader.js'
 
 function send(res: ServerResponse, code: number, body: unknown): void {
@@ -92,6 +93,11 @@ async function handleList(res: ServerResponse): Promise<void> {
     requiresBins: s.requiresBins,
     requiresEnv: s.requiresEnv,
     dir: s.dir,
+    // v1.2.152 — system-prompt injection bucket (0=agim framework /
+    // 1=non-ECC builtin / 2=ECC top picks / 3=workspace / 4=ECC remainder).
+    // SPA uses this to group + collapse the installed list so operators
+    // with 300+ skills don't render one giant flat list.
+    bucket: rankSkillBucket(s),
   }))
   send(res, 200, { skills, count: skills.length, maxBodyChars: MAX_SKILL_BODY_CHARS })
 }

@@ -21,6 +21,10 @@ export interface AgimSkillMeta {
   requiresBins: string[]
   requiresEnv: string[]
   dir: string
+  /** v1.2.152 — system-prompt injection bucket (0–4). See loader.ts
+   *  `rankSkillBucket`. SPA uses this to group + collapse the installed
+   *  list. Optional for backward compat with older agim builds. */
+  bucket?: 0 | 1 | 2 | 3 | 4
 }
 
 export interface AgimSkillsListResponse {

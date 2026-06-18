@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.153] - 2026-06-19
+
+### Fixed (P0：会话过期后整个后台白屏，连登陆页都进不去)
+
+`src/web/server.ts:77` 的 `PUBLIC_PREFIX_PATHS` 漏列 `/assets/`。结果：
+
+- 浏览器 GET `/login` → 公开路径放行 → 200 返回 v2 SPA shell
+- SPA shell 引用 `/assets/index-*.js`
+- 浏览器 GET `/assets/index-*.js` → checkAuth 撤销 loopback 豁免（反代请求带 X-Forwarded-*）→ 无 token cookie → **302 跳 /login**
+- 浏览器拿到 HTML 当 JS 解析 → MIME 错误 → React 永远 boot 不起来 → 白屏
+- 用户看到的是空 SPA shell，**连重登陆的入口都不存在**
+
+cookie 有效时不触发（路径鉴权直接通过），所以 v1.2.140 起这个坑一直存在但没被发现，cookie 一过期就暴雷。
+
+修复：把 `/assets/` 加进 `PUBLIC_PREFIX_PATHS`。SPA bundle 是 vite hash 命名的纯 app 代码（无密钥），跟已经公开的 `/vendor/`（chart.js 等第三方 CDN 资产）同性质。
+
+### Files
+
+- `src/web/server.ts` — `PUBLIC_PREFIX_PATHS` 加 `/assets/` + 注释说明；export `isPublicPath` 供测试
+- `test/unit/web-auth-guards.test.ts` — 新增 3 case：/assets/* 公开 / /api/* 仍 gated / 老公开集 regression
+
+### Tests
+
+- `web-auth-guards.test.ts` 8/8 全过（5 老 + 3 新）
+- backend typecheck 干净
+
+### 操作员升级
+
+```
+npm i -g agim-cli@1.2.153
+agim restart
+```
+
+老进程跑 5 天的 agim 升级后所有 cookie-expired 用户都能直接看到登陆框。
+
 ## [1.2.152] - 2026-06-15
 
 ### Changed (后台 skills 管理体验)

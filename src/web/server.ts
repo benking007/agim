@@ -74,7 +74,16 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
   '/m/login', '/m/login.html',
   '/favicon.ico', '/favicon.svg',
 ])
-const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/']
+// v1.2.153 — `/assets/` added so SPA can bootstrap on cookie-expired
+// loads: the index.html is public (`/login` exact-path), but it
+// references `/assets/index-*.js` and `/assets/index-*.css` via
+// vite-built script tags. Without this prefix, the bundle 302's to
+// `/login` and the browser parses the redirect HTML as JavaScript → MIME
+// error → white screen → user can't even reach the login form. The
+// vendor/ prefix has been public for the same reason; assets/ is the
+// agim-built sibling. Bundle contents are minified app code with no
+// secrets — same trust model as serving the index.html itself.
+const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/', '/assets/']
 const PUBLIC_API_VIEWER_RE = /^\/api\/viewer\/[0-9a-f-]{8,}$/i
 
 function isPublicPath(pathname: string, method: string): boolean {
@@ -295,6 +304,7 @@ function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
 export const __webAuthForTesting = {
   isTrustedLoopbackPeer,
   isRequestAdmin,
+  isPublicPath,
   setTokenModule(mod: typeof import('../core/access-token.js') | null): void {
     _tokenModule = mod
   },

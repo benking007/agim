@@ -83,3 +83,31 @@ describe('web auth guard hardening', () => {
     }))).toBe(true)
   })
 })
+
+// v1.2.153 — regression test for the cookie-expired white-screen bug.
+// Pre-1.2.153 the SPA bundle under `/assets/` required a token, so a
+// reverse-proxied user with no cookie got 302'd to /login when fetching
+// the JS — but the JS request returned login HTML, breaking module MIME
+// and never letting them reach the login form. /assets/ is now public.
+describe('v1.2.153: isPublicPath — SPA bundle bootstrap', () => {
+  it('treats /assets/<vite-hash>.{js,css} as public so SPA can boot uncookied', () => {
+    expect(__webAuthForTesting.isPublicPath('/assets/index-BihXHOze.js', 'GET')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/assets/index-uKzGZ_Df.css', 'GET')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/assets/react-C9F3QeMB.js', 'GET')).toBe(true)
+  })
+
+  it('keeps API + admin paths gated — the fix scopes to /assets/ ONLY', () => {
+    expect(__webAuthForTesting.isPublicPath('/api/agim-skills', 'GET')).toBe(false)
+    expect(__webAuthForTesting.isPublicPath('/api/config', 'GET')).toBe(false)
+    expect(__webAuthForTesting.isPublicPath('/api/jobs', 'POST')).toBe(false)
+    expect(__webAuthForTesting.isPublicPath('/tasks', 'GET')).toBe(false)
+  })
+
+  it('keeps the pre-existing public set intact (regression guard)', () => {
+    expect(__webAuthForTesting.isPublicPath('/login', 'GET')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/api/auth/login', 'POST')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/favicon.svg', 'GET')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/vendor/chart.umd.min.js', 'GET')).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/l/abc123', 'GET')).toBe(true)
+  })
+})

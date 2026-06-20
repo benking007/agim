@@ -4,6 +4,7 @@
  * `init` / `agents` messages.
  */
 
+import { useTranslation } from 'react-i18next'
 import {
   Select,
   SelectContent,
@@ -19,8 +20,23 @@ export interface AgentPickerProps {
 }
 
 export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.Element {
+  const { t } = useTranslation()
+  // Confirm before switching so an accidental tap doesn't move the
+  // conversation to a different agent. Picking the current agent is a no-op.
+  function handleChange(next: string): void {
+    if (!next || next === value) return
+    const ok = window.confirm(
+      t('chat.switchAgentConfirm', {
+        agent: next,
+        defaultValue: `切换为「${next}」的对话框？`,
+      }),
+    )
+    if (ok) onChange(next)
+    // On cancel we do nothing — the Select is controlled by `value`, so it
+    // re-renders back to the current agent automatically.
+  }
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
+    <Select value={value || undefined} onValueChange={handleChange}>
       <SelectTrigger className="h-7 w-28 sm:w-36 text-xs">
         <SelectValue placeholder={agents[0] ?? '—'} />
       </SelectTrigger>

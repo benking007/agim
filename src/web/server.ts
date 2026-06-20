@@ -5131,6 +5131,19 @@ async function handleClientMessage(
 
       const parsed = parseMessage(text)
 
+      // Agent-switch command (/na, /cc native, /pi, …): routeMessage persists
+      // the session switch, but the WS client + the chat dropdown only learn
+      // about a switch via the explicit `switch-agent` path. Mirror it here so
+      // a command switch keeps the picker in sync. Gated on availability like
+      // the switch-agent handler so we don't advertise an unusable agent.
+      if (parsed.type === 'agent') {
+        const sw = registry.findAgent(parsed.agent)
+        if (sw && sw.name !== client.agent && (await isAgentAvailableCached(sw.name))) {
+          client.agent = sw.name
+          sendToClient(ws, { type: 'agent-switched', agent: sw.name })
+        }
+      }
+
       try {
         const routeCtx: RouteContext = {
           threadId: clientId,

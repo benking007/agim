@@ -50,7 +50,13 @@ export interface PiNativeDeps {
   /** Per-turn agim policy approval gate (read-only / allow-list / deny-all +
    *  IM approval-card escalation). Consulted from the beforeToolCall hook. */
   resolveApprovalGate?: (opts: AgentSendOpts | undefined, sessionId: string) => ApprovalGate | null
+  /** Max tool-call rounds per turn before the loop is force-stopped. pi's loop
+   *  has no built-in cap, so we enforce one (mirrors agim's
+   *  IMHUB_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
+  maxIterations?: number
 }
+
+const DEFAULT_MAX_ITER = 50
 
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
@@ -146,6 +152,20 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       )
     }
 
+    // Runaway guard: pi's loop has no iteration cap, so terminate the batch
+    // once tool-call rounds hit the limit (mirrors agim max_iter).
+    const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
+    let toolRounds = 0
+    let cappedOut = false
+    harness.on('tool_result', () => {
+      toolRounds += 1
+      if (toolRounds >= maxIter) {
+        cappedOut = true
+        return { terminate: true }
+      }
+      return undefined
+    })
+
     if (fresh && history?.length) {
       for (const m of history) {
         await harness.appendMessage(m.role === 'user' ? seedUserMessage(m.content) : seedAssistantMessage(m.content))
@@ -162,9 +182,14 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       })
     }
 
-    yield result.content
+    const text = result.content
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map((c) => c.text)
       .join('')
+    if (cappedOut && !text.trim()) {
+      yield `（已达最大迭代步数 ${maxIter}，提前停止；可调高 IMHUB_NATIVE_AGENT_MAX_ITER 后重试）`
+      return
+    }
+    yield text
   }
 }

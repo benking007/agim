@@ -14,6 +14,15 @@ import { assembleToolsForPi } from './tools.js'
 // Same role precedence the legacy native adapter uses (native/index.ts).
 const ROLE_CHAIN = ['native-chat', 'cheap']
 
+/** Mirror agim's IMHUB_NATIVE_AGENT_MAX_ITER (default 50, clamp [1,100]). */
+function resolveMaxIterations(): number {
+  const raw = process.env.IMHUB_NATIVE_AGENT_MAX_ITER
+  if (!raw?.trim()) return 50
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return 50
+  return Math.min(n, 100)
+}
+
 export function createPiNativeAdapter(): PiNativeAgentAdapter {
   const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
   try {
@@ -36,6 +45,7 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // Same policy gating as legacy native (read-only / allow-list / plan-mode /
     // IM approval card).
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
+    maxIterations: resolveMaxIterations(),
   })
 }
 

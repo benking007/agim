@@ -115,4 +115,29 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(ran).toEqual([]) // gate blocked execution
     expect(out).toContain('denied')
   })
+
+  it('caps tool-call rounds at maxIterations (runaway guard)', async () => {
+    const reg = faux()
+    // The model loops forever, always emitting another tool call.
+    reg.setResponses(
+      Array.from({ length: 8 }, (_v, i) =>
+        fauxAssistantMessage(fauxToolCall('spin', {}, { id: `r${i}` }), { stopReason: 'toolUse' }),
+      ),
+    )
+    const ran: number[] = []
+    const tool: ToolDef = { name: 'spin', description: 'spins', parameters: { type: 'object', properties: {}, required: [] } }
+    const dispatch: ToolDispatcher = async () => {
+      ran.push(1)
+      return { text: 'spun', isError: false }
+    }
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+      maxIterations: 3,
+    })
+    const out = await collect(adapter.sendPrompt('s6', 'spin forever'))
+    expect(ran.length).toBe(3) // stopped at the cap instead of looping out the queue
+    expect(out).toContain('最大迭代')
+  })
 })

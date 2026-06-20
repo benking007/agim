@@ -35,8 +35,13 @@ export interface PiNativeDeps {
   /** agim BackendConfig → pi-ai Model + auth. Returns null when no backend is
    *  configured (adapter then reports unavailable / fails the turn cleanly). */
   resolveModel: (opts?: AgentSendOpts) => Promise<PiModelBinding | null>
-  /** The agim tool surface (schemas + dispatcher) to expose this turn. */
-  resolveTools?: (opts?: AgentSendOpts) => { tools: ToolDef[]; dispatch: ToolDispatcher } | null
+  /** The agim tool surface (schemas + dispatcher) to expose this turn. Receives
+   *  the session id so per-thread tool state (todo tracker, plan-exit) keys
+   *  correctly. */
+  resolveTools?: (
+    opts: AgentSendOpts | undefined,
+    sessionId: string,
+  ) => { tools: ToolDef[]; dispatch: ToolDispatcher; parallelSafe?: (toolName: string) => boolean } | null
   /** Tool names denied under plan-mode (mutating/stateful). */
   planModeMutatingTools?: ReadonlySet<string>
   /** Read-only verdict for parallel tool execution. */
@@ -96,11 +101,11 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       ? await repo.open(existing)
       : await repo.create({ cwd: this.deps.sessionsRoot, id: sessionId })
 
-    const toolSurface = this.deps.resolveTools?.(opts) ?? null
+    const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
     const tools = toolSurface
       ? agimToolsToPi(toolSurface.tools, toolSurface.dispatch, {
           traceId: opts?.traceId,
-          parallelSafe: this.deps.parallelSafe,
+          parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
         })
       : []
 

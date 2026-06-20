@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { PiNativeAgentAdapter } from './index.js'
 import { resolvePiModelForRole } from './provider-resolver.js'
+import { assembleToolsForPi } from './tools.js'
 
 // Same role precedence the legacy native adapter uses (native/index.ts).
 const ROLE_CHAIN = ['native-chat', 'cheap']
@@ -28,8 +29,9 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
       }
       return null
     },
-    // resolveTools: follow-up — wire agim's native tool assembly (imhub /
-    // builtin / MCP dispatchers). Chat-only until then.
+    // Full agim tool surface (builtin / fs / web / exec / todo / imhub / MCP),
+    // assembled per-turn from native's single source of truth.
+    resolveTools: (opts, sessionId) => assembleToolsForPi(opts, sessionId),
   })
 }
 

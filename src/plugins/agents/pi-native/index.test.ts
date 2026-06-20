@@ -140,4 +140,28 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(ran.length).toBe(3) // stopped at the cap instead of looping out the queue
     expect(out).toContain('最大迭代')
   })
+
+  it('stops on a stuck loop (same tool + args erroring 3x) before max_iter', async () => {
+    const reg = faux()
+    reg.setResponses(
+      Array.from({ length: 8 }, (_v, i) =>
+        fauxAssistantMessage(fauxToolCall('flaky', {}, { id: `s${i}` }), { stopReason: 'toolUse' }),
+      ),
+    )
+    let calls = 0
+    const tool: ToolDef = { name: 'flaky', description: 'always fails', parameters: { type: 'object', properties: {}, required: [] } }
+    const dispatch: ToolDispatcher = async () => {
+      calls += 1
+      return { text: 'upstream 503', isError: true } // same error every time
+    }
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+      maxIterations: 50, // high — stuck-loop must fire first
+    })
+    const out = await collect(adapter.sendPrompt('s7', 'do the flaky thing'))
+    expect(calls).toBe(3) // exact stuck-loop window
+    expect(out).toContain('死循环')
+  })
 })

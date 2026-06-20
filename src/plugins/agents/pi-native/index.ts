@@ -58,6 +58,14 @@ export interface PiNativeDeps {
 
 const DEFAULT_MAX_ITER = 50
 
+function safeJson(v: unknown): string {
+  try {
+    return JSON.stringify(v) ?? 'null'
+  } catch {
+    return String(v)
+  }
+}
+
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
 function seedUserMessage(text: string) {
@@ -152,15 +160,26 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       )
     }
 
-    // Runaway guard: pi's loop has no iteration cap, so terminate the batch
-    // once tool-call rounds hit the limit (mirrors agim max_iter).
+    // Runaway guards: pi's loop has no iteration cap and no stuck-loop
+    // detection, so we enforce both via the tool_result terminate hint.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
     let toolRounds = 0
-    let cappedOut = false
-    harness.on('tool_result', () => {
+    let stopReason: 'max_iter' | 'stuck_loop' | null = null
+    const recentSigs: string[] = []
+    harness.on('tool_result', (ev: { toolName?: string; input?: unknown; isError?: boolean }) => {
       toolRounds += 1
       if (toolRounds >= maxIter) {
-        cappedOut = true
+        stopReason = 'max_iter'
+        return { terminate: true }
+      }
+      // Stuck-loop: the same tool + same args erroring 3× in a row (mirrors
+      // agim's exact stuck-loop detector — catches a model wedged on one
+      // failing call well before it burns the whole iteration budget).
+      const sig = `${ev.toolName}|${safeJson(ev.input)}|${ev.isError ? 'E' : 'ok'}`
+      recentSigs.push(sig)
+      if (recentSigs.length > 3) recentSigs.shift()
+      if (ev.isError && recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
+        stopReason = 'stuck_loop'
         return { terminate: true }
       }
       return undefined
@@ -186,8 +205,10 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map((c) => c.text)
       .join('')
-    if (cappedOut && !text.trim()) {
-      yield `（已达最大迭代步数 ${maxIter}，提前停止；可调高 IMHUB_NATIVE_AGENT_MAX_ITER 后重试）`
+    if (stopReason && !text.trim()) {
+      yield stopReason === 'stuck_loop'
+        ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
+        : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 IMHUB_NATIVE_AGENT_MAX_ITER 后重试）`
       return
     }
     yield text

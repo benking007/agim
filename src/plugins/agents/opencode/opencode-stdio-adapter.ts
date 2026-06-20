@@ -108,6 +108,9 @@ export class OpenCodeAdapter extends AgentBase {
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
+      // SEC: forward plan-mode so a call_agent from inside this run can't
+      // launch the callee with full write access.
+      ...(opts.planMode ? { callerPlanMode: true } : {}),
     })
     log.info({ event: 'opencode.mcp.run_registered', runId, threadId: opts.threadId },
       'opencode run registered with bus for MCP reminder tools')

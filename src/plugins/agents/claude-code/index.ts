@@ -206,6 +206,10 @@ export class ClaudeCodeAdapter extends AgentBase {
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
+      // SEC: forward plan-mode so a call_agent from inside this run can't
+      // escalate the callee to write access. (claude-code's plan path
+      // short-circuits before here today, but keep it for defense-in-depth.)
+      ...(opts.planMode ? { callerPlanMode: true } : {}),
     })
 
     log.info({ event: 'claude.approval.routed', runId, threadId, platform },

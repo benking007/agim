@@ -197,6 +197,14 @@ export interface RunContext {
    *  the run was spawned from another agent's mcp__imhub__call_agent
    *  call. Optional for top-level runs. */
   parentJobId?: number
+  /** SEC: this run is executing under plan-mode (user did /plan on, so the
+   *  parent agent runs read-only). Adapters set this when registering a run
+   *  whose opts.planMode is true. bus.handleA2A propagates it to the callee
+   *  so a plan-mode run can't delegate a write task to another agent that
+   *  would launch with full write access — bypassing the user's intent.
+   *  Mirrors a2a.ts / imhub-dispatcher.ts (callerPlanMode) which already do
+   *  this for their own spawn paths. */
+  callerPlanMode?: boolean
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -856,6 +864,8 @@ export class ApprovalBus {
       callerAgent: ctx.callerAgent,
       callerDepth: ctx.callDepth ?? 0,
       parentJobId: ctx.parentJobId ?? null,
+      // SEC: a plan-mode parent must not launch the callee with write access.
+      ...(ctx.callerPlanMode ? { planMode: true } : {}),
       timeoutMs,
       ...(inputs && inputs.length > 0 ? { inputs } : {}),
       ...(expectOutputs && expectOutputs.length > 0 ? { expectOutputs } : {}),

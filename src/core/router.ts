@@ -39,7 +39,7 @@ import { classifyIntent } from './intent.js'
 import { classifyWithLLM, getLLMJudge } from './intent-llm.js'
 import { userLimiter } from './rate-limiter.js'
 import { workspaceRegistry } from './workspace.js'
-import { getJob } from './job-board.js'
+import { createInlineJob, getJob } from './job-board.js'
 
 /** Route context passed through the routing pipeline */
 export interface RouteContext {
@@ -687,6 +687,25 @@ export async function callAgentWithHistory(
   const skillsSnippet = buildSkillsSummary()
   const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
   const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
+
+  // A2A coverage: ensure EVERY top-level agent turn has a parent inline job,
+  // regardless of entry point. The IM inbound path (cli.ts) pre-creates one
+  // and stamps ctx.parentJobId; non-IM entry points (web /api/invoke, mobile
+  // web, cron, ACP, …) don't — without a parent id any A2A the agent fires
+  // gets parent_id=NULL and is invisible in the web A2A views. Create one here
+  // when missing so no channel silently drops A2A records. Idempotent (skips
+  // when already set) and best-effort (a failed insert never blocks the turn).
+  if (typeof ctx.parentJobId !== 'number') {
+    try {
+      const pj = createInlineJob({
+        agent: agent.name,
+        prompt,
+        threadKey: `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
+        creatorId: ctx.userId ?? '',
+      })
+      if (pj > 0) ctx.parentJobId = pj
+    } catch { /* tracking-only; the turn still runs without the anchor row */ }
+  }
 
   const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
     model,

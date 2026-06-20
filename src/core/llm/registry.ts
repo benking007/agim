@@ -34,11 +34,27 @@ const log = rootLogger.child({ component: 'llm-registry' })
  *  agim without type errors. */
 export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | string
 
+/** Resolved backend wiring exposed for engines that drive their own LLM
+ *  client (e.g. the pi-native adapter feeds this to pi-ai). Mirrors the same
+ *  resolution loadFromConfig already does for the built-in providers, so the
+ *  vendor-env key fallback and per-backend settings stay single-sourced. */
+export interface LlmBackendBinding {
+  name: string
+  providerType: string
+  model: string
+  baseUrl?: string
+  apiKey?: string
+  extraHeaders?: Record<string, string>
+  temperature?: number
+  maxTokens?: number
+}
+
 interface RegistryState {
   providers: Map<string, LlmProvider>   // backend name → provider
   roles: Map<string, string>            // role name → backend name
   unconfigured: Set<string>             // backend names that lack a secret
   duplicates: Set<string>               // backend names that collided
+  bindings: Map<string, LlmBackendBinding> // backend name → resolved binding
 }
 
 let state: RegistryState = freshState()
@@ -49,6 +65,7 @@ function freshState(): RegistryState {
     roles: new Map(),
     unconfigured: new Set(),
     duplicates: new Set(),
+    bindings: new Map(),
   }
 }
 
@@ -97,6 +114,16 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
       continue
     }
     next.providers.set(cfg.name, provider)
+    next.bindings.set(cfg.name, {
+      name: cfg.name,
+      providerType: cfg.provider,
+      model: cfg.model,
+      baseUrl: cfg.baseUrl,
+      apiKey,
+      extraHeaders: cfg.extraHeaders,
+      temperature: cfg.temperature,
+      maxTokens: cfg.maxTokens,
+    })
   }
 
   const roleMap = (cfg as { llmRoles?: Record<string, unknown> }).llmRoles
@@ -135,6 +162,21 @@ export function getProvider(role: LlmRole): LlmProvider | null {
  *  "Test connection" button and unit tests). */
 export function getProviderByName(name: string): LlmProvider | null {
   return state.providers.get(name) ?? null
+}
+
+/** Resolved backend binding for `role`, or null when no usable backend is
+ *  wired. Used by engines (pi-native) that drive their own LLM client and
+ *  need the raw provider type / model / baseUrl / key rather than agim's
+ *  built-in LlmProvider object. */
+export function getBackendBindingForRole(role: LlmRole): LlmBackendBinding | null {
+  const backend = state.roles.get(role)
+  if (!backend) return null
+  return state.bindings.get(backend) ?? null
+}
+
+/** Resolved backend binding by backend name. */
+export function getBackendBindingByName(name: string): LlmBackendBinding | null {
+  return state.bindings.get(name) ?? null
 }
 
 /** List all configured backends — handy for the web UI roster. */

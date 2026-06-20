@@ -31,10 +31,11 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     /* best-effort; sendPrompt surfaces a clear error if the dir is unusable */
   }
   return new PiNativeAgentAdapter({
-    // pi is the default engine: register under the 'native' name so existing
-    // routing + `/cc native` resolve to it. `/cc pi` / `/cc pi-native` also work.
+    // pi is the default engine: register under the 'native' name AND inherit
+    // the legacy native adapter's aliases (llm / native-llm / na) so existing
+    // muscle memory (`/na`, `/llm`) keeps working transparently, plus pi names.
     name: 'native',
-    aliases: ['pi', 'pi-native'],
+    aliases: ['na', 'llm', 'native-llm', 'pi', 'pi-native'],
     sessionsRoot,
     resolveModel: async () => {
       for (const role of ROLE_CHAIN) {

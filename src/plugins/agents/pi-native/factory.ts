@@ -31,6 +31,10 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     /* best-effort; sendPrompt surfaces a clear error if the dir is unusable */
   }
   return new PiNativeAgentAdapter({
+    // pi is the default engine: register under the 'native' name so existing
+    // routing + `/cc native` resolve to it. `/cc pi` / `/cc pi-native` also work.
+    name: 'native',
+    aliases: ['pi', 'pi-native'],
     sessionsRoot,
     resolveModel: async () => {
       for (const role of ROLE_CHAIN) {

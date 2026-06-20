@@ -232,18 +232,21 @@ class PluginRegistry {
     // registered; isAvailable() reflects whether an LLM backend with
     // role `native-chat` (or `cheap` fallback) is configured. Operators
     // who don't configure llmBackends never see /cc native available.
-    const { nativeAgentAdapter } = await import('../plugins/agents/native/index.js')
-    this.registerAgent(nativeAgentAdapter)
-
-    // Experimental pi-agent-core engine — opt-in via IMHUB_NATIVE_ENGINE=pi.
-    // Registered as a SEPARATE 'pi-native' adapter (alias 'pi'); the legacy
-    // native engine is left untouched so operators can A/B it via
-    // `/cc pi-native` before any cutover. isAvailable() reflects whether a
-    // `native-chat`/`cheap` backend is configured.
-    if (process.env.IMHUB_NATIVE_ENGINE === 'pi') {
+    // Native (in-process LLM) engine. The pi-agent-core engine is now the
+    // DEFAULT (durable sessions + phase state machine + Result error model);
+    // it registers UNDER the 'native' name so existing routing + `/cc native`
+    // resolve to it transparently. Set IMHUB_NATIVE_ENGINE=legacy to fall back
+    // to the original native engine (escape hatch during the migration).
+    if (process.env.IMHUB_NATIVE_ENGINE === 'legacy') {
+      const { nativeAgentAdapter } = await import('../plugins/agents/native/index.js')
+      this.registerAgent(nativeAgentAdapter)
+      log.info({ event: 'registry.native_engine', engine: 'legacy' },
+        'native engine: legacy (IMHUB_NATIVE_ENGINE=legacy)')
+    } else {
       const { piNativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
       this.registerAgent(piNativeAgentAdapter)
-      log.info({ event: 'registry.pi_native_enabled' }, 'pi-native engine registered (IMHUB_NATIVE_ENGINE=pi)')
+      log.info({ event: 'registry.native_engine', engine: 'pi' },
+        'native engine: pi-agent-core (default; set IMHUB_NATIVE_ENGINE=legacy to revert)')
     }
 
     log.info({ messengers: this.messengers.size, agents: this.agents.size },

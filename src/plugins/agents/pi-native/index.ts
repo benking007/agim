@@ -31,6 +31,11 @@ export interface PiModelBinding {
 }
 
 export interface PiNativeDeps {
+  /** Adapter name to register under. Defaults to 'pi-native'; the default
+   *  engine registers as 'native' to transparently replace the legacy one. */
+  name?: string
+  /** Adapter aliases. Defaults to ['pi']. */
+  aliases?: string[]
   /** Directory under which per-session JSONL files live. */
   sessionsRoot: string
   /** agim BackendConfig → pi-ai Model + auth. Returns null when no backend is
@@ -85,11 +90,16 @@ function seedAssistantMessage(text: string) {
 }
 
 export class PiNativeAgentAdapter implements AgentAdapter {
-  readonly name = 'pi-native'
-  readonly aliases: string[] = ['pi']
+  readonly name: string
+  readonly aliases: string[]
   readonly kind: AgentAdapterKind = 'in-process'
 
-  constructor(private deps: PiNativeDeps) {}
+  constructor(private deps: PiNativeDeps) {
+    // When pi is the default engine it registers UNDER the 'native' name so
+    // existing routing (and `/cc native`) resolves to it transparently.
+    this.name = deps.name ?? 'pi-native'
+    this.aliases = deps.aliases ?? ['pi']
+  }
 
   async isAvailable(): Promise<boolean> {
     return (await this.deps.resolveModel()) !== null

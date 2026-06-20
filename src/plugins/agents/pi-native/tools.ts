@@ -31,6 +31,8 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     userId: o.userId || 'unknown',
     callerAgent: 'pi-native',
     callerDepth: o.callDepth ?? 0,
+    // Link A2A callee rows to the parent turn so the web A2A views can see them.
+    ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
     // Propagate plan-mode to any call_agent the imhub dispatcher fires, so a
     // plan-mode parent can't delegate a write task at full access (mirrors the
     // v1.2.154 approval-bus fix on the legacy path).

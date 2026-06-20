@@ -1294,6 +1294,9 @@ class NativeAgentAdapter implements AgentAdapter {
       userId: opts.userId || 'unknown',
       callerAgent: 'native',
       callerDepth: opts.callDepth ?? 0,
+      // Link A2A callee rows to the parent turn so the web A2A views (which
+      // filter parent_id IS NOT NULL) can see native-originated A2A.
+      ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       // v1.2.139 — propagate parent's plan-mode to the imhub dispatcher
       // so any call_agent invocation it makes hands the flag to the
       // sub-agent (claude-code / opencode / codex / native). Without

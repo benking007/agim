@@ -85,6 +85,12 @@ export interface ImhubDispatcherCtx {
    *  run read-only. Resolved by native/index.ts via
    *  effectivePlanModeOn(planThreadKey) before building the dispatcher. */
   callerPlanMode?: boolean
+  /** The parent turn's inline-job id (cli.ts stamps routeCtx.parentJobId on
+   *  every inbound turn). Threaded into callAgentByName so the A2A callee row
+   *  gets parent_id set — without it native-originated A2A jobs have a NULL
+   *  parent_id and the web `/api/a2a/*` views (which filter parent_id IS NOT
+   *  NULL) show them as 0. */
+  parentJobId?: number
 }
 
 /** v1.2.139 — env-driven output cap. When a sub-agent's reply exceeds
@@ -681,6 +687,9 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           const baseOpts = {
             callerDepth: ctx.callerDepth ?? 0,
             callerAgent: ctx.callerAgent,
+            // Link the callee row to the parent turn so the web A2A views
+            // (parent_id IS NOT NULL) can see native-originated A2A.
+            ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
             // v1.2.139 — propagate parent's plan-mode to the sub-agent.
             ...(ctx.callerPlanMode ? { planMode: true } : {}),
           }

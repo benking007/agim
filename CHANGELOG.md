@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.155] - 2026-06-21
+
+### Added — pi-native 引擎
+
+把 pi-agent-core 接成 agim 原生 agent 引擎，并**设为默认 native engine**（legacy 引擎降级为逃生通道，`IMHUB_NATIVE_ENGINE=legacy` 可回退）。
+
+- 新增 `src/plugins/agents/pi-native/`：factory / tool-bridge（agim `ToolDef[]`+Dispatcher → pi `AgentTool`）/ provider-resolver（agim backend → pi-ai model resolver）/ approval（policy 审批门接入 `beforeToolCall`）/ tools
+- 护栏：max-iteration runaway guard（对齐 `IMHUB_NATIVE_AGENT_MAX_ITER`）、stuck-loop guard（同 tool+args 连错 3 次中断）、turn 错误不再静默吞掉、注入"真实身份 + role + skills"的 native system prompt
+- 继承 legacy native 别名（`na` / `llm` / `native-llm`）
+
+### Fixed — A2A job 串联
+
+- 每个 agent turn 在所有通道都建父 inline job；`parentJobId` 穿透到 native `call_agent`，web 端 A2A 视图可见子任务
+
+### Changed — web-chat
+
+- 助手消息「复制为 markdown」按钮；从 picker 切换 agent 前确认；命令切换（`/na` `/cc` 等）后同步 agent picker
+- 修复 search chain editor 的 `noUncheckedIndexedAccess` TS 报错
+
+### Tests
+
+- pi-native 单测 14 pass（含 never-fail-silently 错误路径）；后端 `typecheck` PASS
+
 ## [1.2.153] - 2026-06-19
 
 ### Fixed (P0：会话过期后整个后台白屏，连登陆页都进不去)

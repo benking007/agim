@@ -601,10 +601,16 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
             const inProcParentTrace = toolCtx?.traceId
             const inProcA2aTrace = inProcParentTrace ? `${inProcParentTrace}/a2a-${call.id}` : undefined
             const runOnce = async (): Promise<string> => {
-              const native = await import('../../plugins/agents/native/index.js')
+              // Route to whatever engine is registered under 'native' (pi by
+              // default; legacy only under IMHUB_NATIVE_ENGINE=legacy) so the
+              // in-process sub-agent runs the SAME engine as the parent instead
+              // of always falling back to the legacy native singleton.
+              const { registry } = await import('../registry.js')
+              const nativeAdapter = registry.findAgent('native')
+              if (!nativeAdapter) throw new Error('native engine not registered')
               const subSessionId = `${ctx.threadId}-spawn-${call.id}`
               const parts: string[] = []
-              for await (const chunk of native.nativeAgentAdapter.sendPrompt(
+              for await (const chunk of nativeAdapter.sendPrompt(
                 subSessionId,
                 prompt,
                 [],

@@ -98,6 +98,11 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   readonly aliases: string[]
   readonly kind: AgentAdapterKind = 'in-process'
 
+  // sessionId → JSONL metadata. Avoids a full repo.list() scan (which reads
+  // every session file's header) on every turn; bounds it to one scan per
+  // session per process lifetime.
+  private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
+
   constructor(private deps: PiNativeDeps) {
     // When pi is the default engine it registers UNDER the 'native' name so
     // existing routing (and `/cc native`) resolves to it transparently.
@@ -148,11 +153,23 @@ export class PiNativeAgentAdapter implements AgentAdapter {
 
     // One JSONL file per agim session id. Reopen if it exists (pi owns the
     // history + leaf), else create a fresh one and seed prior agim history.
-    const existing = (await repo.list()).find((m) => m.id === sessionId)
-    const fresh = !existing
-    const session = existing
-      ? await repo.open(existing)
-      : await repo.create({ cwd: this.deps.sessionsRoot, id: sessionId })
+    // Cache the metadata so we don't rescan every session file each turn.
+    let fresh = false
+    let session: Awaited<ReturnType<typeof repo.open>>
+    const cachedMeta = this.sessionMeta.get(sessionId)
+    if (cachedMeta) {
+      session = await repo.open(cachedMeta)
+    } else {
+      const found = (await repo.list()).find((m) => m.id === sessionId)
+      if (found) {
+        session = await repo.open(found)
+        this.sessionMeta.set(sessionId, found)
+      } else {
+        session = await repo.create({ cwd: this.deps.sessionsRoot, id: sessionId })
+        fresh = true
+        this.sessionMeta.set(sessionId, await session.getMetadata())
+      }
+    }
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
     const tools = toolSurface

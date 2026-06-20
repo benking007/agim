@@ -114,7 +114,11 @@ export default function SettingsSearchRoute(): JSX.Element {
       const next = [...d.chain]
       const swap = idx + delta
       if (swap < 0 || swap >= next.length) return d
-      ;[next[idx], next[swap]] = [next[swap], next[idx]]
+      const a = next[idx]
+      const b = next[swap]
+      if (!a || !b) return d
+      next[idx] = b
+      next[swap] = a
       return { ...d, chain: next }
     })
   }
@@ -122,7 +126,9 @@ export default function SettingsSearchRoute(): JSX.Element {
   function toggleRow(idx: number, enabled: boolean): void {
     setDraft((d) => {
       const next = [...d.chain]
-      next[idx] = { ...next[idx], enabled }
+      const row = next[idx]
+      if (!row) return d
+      next[idx] = { ...row, enabled }
       return { ...d, chain: next }
     })
   }

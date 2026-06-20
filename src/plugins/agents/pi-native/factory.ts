@@ -5,7 +5,11 @@
 
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
+import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
+import { getProvider } from '../../../core/llm/registry.js'
+import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
 import { PiNativeAgentAdapter } from './index.js'
 import { resolvePiModelForRole } from './provider-resolver.js'
@@ -51,6 +55,21 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // IM approval card).
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
     maxIterations: resolveMaxIterations(),
+    // Reuse native's full system prompt so the model knows its real backend +
+    // model + role (fixes "what model are you" → it stops hallucinating claude)
+    // and gets the operator role + skill routing + tool guides.
+    resolveSystemPrompt: (opts) => {
+      const o = opts ?? {}
+      for (const role of ROLE_CHAIN) {
+        const provider = getProvider(role)
+        if (!provider) continue
+        const planThreadKey =
+          o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
+        const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+        return buildSystemPrompt(provider, role, cwd, planThreadKey)
+      }
+      return undefined
+    },
   })
 }
 

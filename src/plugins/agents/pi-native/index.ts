@@ -55,6 +55,10 @@ export interface PiNativeDeps {
   /** Per-turn agim policy approval gate (read-only / allow-list / deny-all +
    *  IM approval-card escalation). Consulted from the beforeToolCall hook. */
   resolveApprovalGate?: (opts: AgentSendOpts | undefined, sessionId: string) => ApprovalGate | null
+  /** Per-turn system prompt (runtime identity: real backend + model + role,
+   *  operator role, skill routing, tool guides). Without it the model has no
+   *  idea what it is and hallucinates its identity. */
+  resolveSystemPrompt?: (opts: AgentSendOpts | undefined, sessionId: string) => string | undefined
   /** Max tool-call rounds per turn before the loop is force-stopped. pi's loop
    *  has no built-in cap, so we enforce one (mirrors agim's
    *  IMHUB_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
@@ -137,12 +141,14 @@ export class PiNativeAgentAdapter implements AgentAdapter {
         })
       : []
 
+    const systemPrompt = this.deps.resolveSystemPrompt?.(opts, sessionId)
     const harness = new AgentHarness({
       env,
       session,
       model: binding.model,
       getApiKeyAndHeaders: binding.getApiKeyAndHeaders,
       tools,
+      ...(systemPrompt ? { systemPrompt } : {}),
     })
 
     const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null

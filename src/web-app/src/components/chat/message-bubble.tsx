@@ -21,6 +21,7 @@
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownView } from '@/components/chat/markdown-view'
@@ -42,6 +43,8 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
   }
 
   const isUser = msg.role === 'user'
+  // Assistant replies can be copied as raw markdown (tables/code survive).
+  const canCopy = !isUser && !!msg.content
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -52,8 +55,11 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
             : 'bg-surface text-text border border-border',
         )}
       >
-        {!isUser && msg.agent && (
-          <div className="mb-1 text-xs font-medium text-text-muted">{msg.agent}</div>
+        {!isUser && (msg.agent || canCopy) && (
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-text-muted">{msg.agent ?? ''}</span>
+            {canCopy && <CopyButton text={msg.content} />}
+          </div>
         )}
         {/* v1.2.116 — render assistant responses as markdown (GFM:
             tables, code, headings, lists). User input stays plain so
@@ -70,6 +76,35 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
         )}
       </div>
     </div>
+  )
+}
+
+/** Copy the assistant message's raw markdown to the clipboard. Always
+ *  visible (works on touch — no hover dependency) and gives transient
+ *  "已复制" feedback. */
+function CopyButton({ text }: { text: string }): JSX.Element {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  async function handleCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error(t('chat.copyFailed', { defaultValue: '复制失败' }))
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={t('chat.copyMarkdown', { defaultValue: '复制 Markdown' })}
+      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-text-dim transition hover:bg-surface-2 hover:text-text"
+    >
+      {copied
+        ? t('chat.copied', { defaultValue: '✓ 已复制' })
+        : t('chat.copy', { defaultValue: '复制' })}
+    </button>
   )
 }
 

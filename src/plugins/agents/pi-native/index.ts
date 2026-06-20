@@ -19,6 +19,7 @@ import { AgentHarness, JsonlSessionRepo } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { Model } from '@earendil-works/pi-ai'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from '../../../core/types.js'
+import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { agimToolsToPi } from './tool-bridge.js'
@@ -46,6 +47,9 @@ export interface PiNativeDeps {
   planModeMutatingTools?: ReadonlySet<string>
   /** Read-only verdict for parallel tool execution. */
   parallelSafe?: (toolName: string) => boolean
+  /** Per-turn agim policy approval gate (read-only / allow-list / deny-all +
+   *  IM approval-card escalation). Consulted from the beforeToolCall hook. */
+  resolveApprovalGate?: (opts: AgentSendOpts | undefined, sessionId: string) => ApprovalGate | null
 }
 
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
@@ -117,10 +121,28 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       tools,
     })
 
-    if (opts?.planMode) {
-      const deny = this.deps.planModeMutatingTools ?? DEFAULT_PLAN_DENY
-      harness.on('tool_call', (ev: { toolName: string }) =>
-        deny.has(ev.toolName) ? { block: true, reason: 'plan-mode: mutating tools are denied' } : undefined,
+    const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
+    const planDeny = this.deps.planModeMutatingTools ?? DEFAULT_PLAN_DENY
+    if (opts?.planMode || gate) {
+      harness.on(
+        'tool_call',
+        async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
+          // Plan-mode hard deny (covers A2A-propagated plan-mode even without
+          // an IM thread for the policy gate to read).
+          if (opts?.planMode && planDeny.has(ev.toolName)) {
+            return { block: true, reason: 'plan-mode: mutating tools are denied' }
+          }
+          // agim policy gate: read-only / allow-list / deny-all, escalating to
+          // an IM approval card when configured.
+          if (gate) {
+            const decision = await gate(
+              { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
+              0,
+            )
+            if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
+          }
+          return undefined
+        },
       )
     }
 

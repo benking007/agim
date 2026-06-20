@@ -1030,7 +1030,9 @@ export function isPlanModeOn(threadKey?: string): boolean {
  * the gate) when the bus can't reach the user — caller falls back to
  * silent-deny in that case.
  */
-function buildNativeAskUser(opts: {
+// Exported for reuse by the pi-native engine, which builds the same IM
+// approval-card escalation around its own approval gate.
+export function buildNativeAskUser(opts: {
   runId: string
   platform: string
   channelId: string

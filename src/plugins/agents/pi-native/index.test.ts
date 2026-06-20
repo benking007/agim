@@ -91,4 +91,28 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(await adapter.isAvailable()).toBe(false)
     await expect(collect(adapter.sendPrompt('s4', 'hi'))).rejects.toThrow(/no LLM backend/)
   })
+
+  it('consults the approval gate and blocks a denied tool', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('native_exec', { cmd: 'rm -rf /' }, { id: 'x1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('denied, did nothing'),
+    ])
+    const ran: string[] = []
+    const tool: ToolDef = { name: 'native_exec', description: 'exec', parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } }
+    const dispatch: ToolDispatcher = async (call) => {
+      ran.push(String(call.arguments.cmd))
+      return { text: 'ran', isError: false }
+    }
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+      // deny-all gate
+      resolveApprovalGate: () => async () => 'deny',
+    })
+    const out = await collect(adapter.sendPrompt('s5', 'run something'))
+    expect(ran).toEqual([]) // gate blocked execution
+    expect(out).toContain('denied')
+  })
 })

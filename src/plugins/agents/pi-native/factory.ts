@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
+import { buildPiApprovalGate } from './approval.js'
 import { PiNativeAgentAdapter } from './index.js'
 import { resolvePiModelForRole } from './provider-resolver.js'
 import { assembleToolsForPi } from './tools.js'
@@ -32,6 +33,9 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // Full agim tool surface (builtin / fs / web / exec / todo / imhub / MCP),
     // assembled per-turn from native's single source of truth.
     resolveTools: (opts, sessionId) => assembleToolsForPi(opts, sessionId),
+    // Same policy gating as legacy native (read-only / allow-list / plan-mode /
+    // IM approval card).
+    resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
   })
 }
 

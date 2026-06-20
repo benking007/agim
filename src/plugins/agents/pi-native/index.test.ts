@@ -89,7 +89,22 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveModel: async () => null,
     })
     expect(await adapter.isAvailable()).toBe(false)
-    await expect(collect(adapter.sendPrompt('s4', 'hi'))).rejects.toThrow(/no LLM backend/)
+    // sendPrompt must never throw silently — it yields a visible notice instead.
+    const out = await collect(adapter.sendPrompt('s4', 'hi'))
+    expect(out).toContain('未配置可用的 LLM 后端')
+  })
+
+  it('yields a visible error instead of throwing when the turn fails', async () => {
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      // resolveModel throws → must be caught and surfaced, not silent.
+      resolveModel: async () => {
+        throw new Error('boom-provider-down')
+      },
+    })
+    const out = await collect(adapter.sendPrompt('s8', 'hi'))
+    expect(out).toContain('pi-native 引擎本轮出错')
+    expect(out).toContain('boom-provider-down')
   })
 
   it('consults the approval gate and blocks a denied tool', async () => {

@@ -119,8 +119,29 @@ export class PiNativeAgentAdapter implements AgentAdapter {
     history?: ChatMessage[],
     opts?: AgentSendOpts,
   ): AsyncGenerator<string> {
+    try {
+      yield* this.runTurn(sessionId, prompt, history, opts)
+    } catch (err) {
+      // Never fail silently: a thrown turn would otherwise reach the IM layer
+      // as "no response". Surface the error so it's visible + diagnosable.
+      const msg = err instanceof Error ? `${err.message}` : String(err)
+      // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
+      console.error('[pi-native] turn failed:', err instanceof Error ? err.stack : err)
+      yield `⚠️ pi-native 引擎本轮出错：${msg}\n（可设 IMHUB_NATIVE_ENGINE=legacy 重启后临时回退旧引擎）`
+    }
+  }
+
+  private async *runTurn(
+    sessionId: string,
+    prompt: string,
+    history: ChatMessage[] | undefined,
+    opts: AgentSendOpts | undefined,
+  ): AsyncGenerator<string> {
     const binding = await this.deps.resolveModel(opts)
-    if (!binding) throw new Error('pi-native: no LLM backend configured (resolveModel returned null)')
+    if (!binding) {
+      yield '⚠️ pi-native：未配置可用的 LLM 后端（检查 llmBackends 是否配了 native-chat / cheap role）'
+      return
+    }
 
     const env = new NodeExecutionEnv({ cwd: this.deps.sessionsRoot })
     const repo = new JsonlSessionRepo({ fs: env, sessionsRoot: this.deps.sessionsRoot })
@@ -225,6 +246,10 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       yield stopReason === 'stuck_loop'
         ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
         : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 IMHUB_NATIVE_AGENT_MAX_ITER 后重试）`
+      return
+    }
+    if (!text.trim()) {
+      yield '（本轮没有产出文本回复——模型可能只调了工具或返回为空，请重试或换个问法）'
       return
     }
     yield text

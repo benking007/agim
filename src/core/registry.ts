@@ -235,6 +235,17 @@ class PluginRegistry {
     const { nativeAgentAdapter } = await import('../plugins/agents/native/index.js')
     this.registerAgent(nativeAgentAdapter)
 
+    // Experimental pi-agent-core engine — opt-in via IMHUB_NATIVE_ENGINE=pi.
+    // Registered as a SEPARATE 'pi-native' adapter (alias 'pi'); the legacy
+    // native engine is left untouched so operators can A/B it via
+    // `/cc pi-native` before any cutover. isAvailable() reflects whether a
+    // `native-chat`/`cheap` backend is configured.
+    if (process.env.IMHUB_NATIVE_ENGINE === 'pi') {
+      const { piNativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
+      this.registerAgent(piNativeAgentAdapter)
+      log.info({ event: 'registry.pi_native_enabled' }, 'pi-native engine registered (IMHUB_NATIVE_ENGINE=pi)')
+    }
+
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')
   }

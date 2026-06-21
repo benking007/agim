@@ -5093,6 +5093,8 @@ async function handleClientMessage(
       if (!msg.text?.trim()) return
 
       const text = msg.text.trim()
+      const runId = `run-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
+      const runStartedAt = Date.now()
       const traceId = generateTraceId()
       const logger = createLogger({ traceId, platform: 'web', component: 'web' })
 
@@ -5114,6 +5116,12 @@ async function handleClientMessage(
           sendToClient(ws, { type: 'agent-switched', agent: sw.name })
         }
       }
+      sendToClient(ws, {
+        type: 'run-start',
+        runId,
+        agent: client.agent,
+        startedAt: new Date(runStartedAt).toISOString(),
+      })
 
       try {
         const routeCtx: RouteContext = {
@@ -5132,7 +5140,22 @@ async function handleClientMessage(
 
         // String response (built-in commands, errors)
         if (typeof result === 'string') {
-          sendToClient(ws, { type: 'done', text: result })
+          const finishedAt = Date.now()
+          const durationMs = Math.max(0, finishedAt - runStartedAt)
+          sendToClient(ws, { type: 'done', text: result, runId })
+          sendToClient(ws, {
+            type: 'usage',
+            runId,
+            durationMs,
+            outputChars: result.length,
+          })
+          sendToClient(ws, {
+            type: 'run-finish',
+            runId,
+            status: 'success',
+            finishedAt: new Date(finishedAt).toISOString(),
+            durationMs,
+          })
           return
         }
 
@@ -5146,13 +5169,37 @@ async function handleClientMessage(
           // to GBs for a long agent response.
           await awaitWsDrain(ws)
           if (ws.readyState !== ws.OPEN) break
-          sendToClient(ws, { type: 'chunk', text: chunk })
+          sendToClient(ws, { type: 'chunk', text: chunk, runId })
         }
-        sendToClient(ws, { type: 'done', text: fullText })
+        const finishedAt = Date.now()
+        const durationMs = Math.max(0, finishedAt - runStartedAt)
+        sendToClient(ws, { type: 'done', text: fullText, runId })
+        sendToClient(ws, {
+          type: 'usage',
+          runId,
+          durationMs,
+          outputChars: fullText.length,
+        })
+        sendToClient(ws, {
+          type: 'run-finish',
+          runId,
+          status: 'success',
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs,
+        })
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const stack = err instanceof Error ? err.stack : undefined
         logger.error({ event: 'web.handle.error', err: errorMsg, stack }, 'Error handling client message')
+        const finishedAt = Date.now()
+        sendToClient(ws, {
+          type: 'run-finish',
+          runId,
+          status: 'error',
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: Math.max(0, finishedAt - runStartedAt),
+          error: errorMsg,
+        })
         sendToClient(ws, { type: 'error', message: `Agent error: ${errorMsg}` })
       }
       break

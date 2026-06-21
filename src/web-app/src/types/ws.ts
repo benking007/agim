@@ -30,13 +30,44 @@ export type ChatIncoming =
   | { type: 'history'; messages: HistoryMessage[]; agent: string }
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
-  | { type: 'chunk'; text: string }
-  | { type: 'done'; text: string }
+  | { type: 'chunk'; text: string; runId?: string }
+  | { type: 'done'; text: string; runId?: string }
+  | RunStartEvent
+  | RunUsageEvent
+  | RunFinishEvent
   | { type: 'error'; message: string }
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
   | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }
   | { type: 'metrics'; agents: AgentMetric[]; timestamp: string }
+
+/** Run lifecycle events emitted around each web chat request.
+ *  These are additive (old servers may not send them) and let the
+ *  mobile UI render an execution timeline rather than only final text. */
+export interface RunStartEvent {
+  type: 'run-start'
+  runId: string
+  agent: string
+  startedAt: string
+}
+
+/** Lightweight usage snapshot for a run. For now this is duration +
+ *  output size; future server versions may add token counts. */
+export interface RunUsageEvent {
+  type: 'usage'
+  runId: string
+  durationMs: number
+  outputChars: number
+}
+
+export interface RunFinishEvent {
+  type: 'run-finish'
+  runId: string
+  status: 'success' | 'error'
+  finishedAt: string
+  durationMs: number
+  error?: string
+}
 
 /** Mirror of src/core/types.ts:ApprovalCardPrompt — the structured
  *  body of an approval-card message. v1 rendered toolName + inputJson

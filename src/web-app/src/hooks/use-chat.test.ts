@@ -219,16 +219,38 @@ describe('chatReducer', () => {
     expect(after.pendingApprovals[0]?.messageId).toBe('b')
   })
 
+  it('RUN_START / RUN_USAGE / RUN_FINISH track recent run activity', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'RUN_START', runId: 'run-1', agent: 'claude', startedAt: 1000 },
+      { kind: 'RUN_USAGE', runId: 'run-1', durationMs: 320, outputChars: 128 },
+      { kind: 'RUN_FINISH', runId: 'run-1', status: 'success', finishedAt: 1320, durationMs: 320 },
+    )
+    expect(after.activeRunId).toBeNull()
+    expect(after.runActivities).toHaveLength(1)
+    expect(after.runActivities[0]).toMatchObject({
+      runId: 'run-1',
+      agent: 'claude',
+      status: 'success',
+      durationMs: 320,
+      outputChars: 128,
+      finishedAt: 1320,
+    })
+  })
+
   it('RESET_CONVERSATION clears messages + reply id + error; keeps agents + agent', () => {
     const seeded = reduce(initialChatState,
       { kind: 'WS_STATUS', status: 'open' },
       { kind: 'INIT', agents: ['claude', 'codex'], defaultAgent: 'claude' },
       { kind: 'SEND_USER', message: userMsg('u-1', 'hi'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'claude', startedAt: 1000 },
       { kind: 'ERROR', message: 'old' },
     )
     const after = reduce(seeded, { kind: 'RESET_CONVERSATION' })
     expect(after.messages).toEqual([])
     expect(after.pendingApprovals).toEqual([])
+    expect(after.runActivities).toEqual([])
+    expect(after.activeRunId).toBeNull()
     expect(after.currentReplyId).toBeNull()
     expect(after.error).toBeNull()
     // Preserved

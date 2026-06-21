@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
+import { isNativeSetupError } from '@/components/chat/error-hints'
 import { cn } from '@/lib/utils'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -167,9 +168,22 @@ export default function MobileChatRoute(): JSX.Element {
   // Surface WS errors as toast and clear.
   useEffect(() => {
     if (!state.error) return
-    toast.error(state.error)
+    if (isNativeSetupError(state.error)) {
+      toast.error(t('chat.nativeSetupRequired', {
+        defaultValue:
+          'Native agent 未配置。请先在 /settings/llm 配置模型 API 并绑定 native-chat（或 cheap）角色。',
+      }), {
+        duration: 9000,
+        action: {
+          label: t('chat.nativeSetupAction', { defaultValue: '去配置' }),
+          onClick: () => window.location.assign('/settings/llm'),
+        },
+      })
+    } else {
+      toast.error(state.error)
+    }
     clearError()
-  }, [state.error, clearError])
+  }, [state.error, clearError, t])
 
   // Auto-grow textarea up to 6 lines.
   useEffect(() => {
@@ -460,6 +474,17 @@ export default function MobileChatRoute(): JSX.Element {
                   onClick={() => setSheet('activity')}
                 >
                   {t('chat.activity', { defaultValue: 'Activity' })}
+                </button>
+
+                <button
+                  type="button"
+                  className="block w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-surface-hover"
+                  onClick={() => {
+                    setSheet('none')
+                    window.location.assign('/settings/llm')
+                  }}
+                >
+                  {t('chat.llmSettings', { defaultValue: 'LLM settings' })}
                 </button>
 
                 <button

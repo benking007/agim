@@ -37,6 +37,7 @@ const webLog = rootLogger.child({ component: 'web' })
 let webButtonHandler: ((cb: import('../core/types.js').ButtonCallback) => Promise<void>) | undefined
 
 import {
+  formatAgentNotAvailableError,
   isAgentAvailableCached,
   loadConfig,
   saveConfig,
@@ -55,6 +56,16 @@ interface ClientConnection {
   ws: WebSocket
   id: string
   agent: string
+}
+
+function formatWebAgentUnavailableMessage(agentName: string): string {
+  if (agentName === 'native') {
+    return [
+      'Native agent is not configured yet.',
+      '请先到 /settings/llm 配置一个大模型 API，并绑定 llmRoles.native-chat（或 cheap），再重试。',
+    ].join(' ')
+  }
+  return formatAgentNotAvailableError(agentName)
 }
 
 /** v1.1.10 — paths that never require a web token. */
@@ -5213,7 +5224,10 @@ async function handleClientMessage(
         return
       }
       if (!(await isAgentAvailableCached(agent.name))) {
-        sendToClient(ws, { type: 'error', message: `Agent "${agent.name}" is not available` })
+        sendToClient(ws, {
+          type: 'error',
+          message: formatWebAgentUnavailableMessage(agent.name),
+        })
         return
       }
       client.agent = agent.name

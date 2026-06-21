@@ -106,6 +106,9 @@
     "activity": "运行动态",
     "activityTitle": "运行动态",
     "activityEmpty": "暂无运行记录。",
+    "llmSettings": "LLM 配置",
+    "nativeSetupRequired": "Native agent 未配置。请先在 /settings/llm 配置模型 API 并绑定 native-chat（或 cheap）角色。",
+    "nativeSetupAction": "去配置",
     "pendingApprovals": "待审批数",
     "quickPrompt": {
       "plan": "先帮我拆解这个任务",

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.158] - 2026-06-21
+
+### Added — TUI 体验(借鉴 pi CLI)
+
+- **`/agent` 参数补全**:`/agent ` 后从 `registry.listAgents()` 实时补全 agent 名
+  (Tab/↑↓ 选,Enter 先补全再回车切换)。原先 slash popup 只补命令名、遇空格即关;
+  这是首个命令参数补全。
+- **实时 token/cost 状态栏**:底部状态栏显示本会话累计用量(⇅ in/out tokens ·
+  $cost),由 `sendPrompt` 的 `onUsage` 馈送。pi-native 三项全发,只发 cost 的
+  adapter 也能显示。与本轮 compaction 搭配——上下文花费可见。
+
 ## [1.2.157] - 2026-06-21
 
 ### Added — A2A 子输出压缩

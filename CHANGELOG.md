@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-21
+
+里程碑版本 — 汇总 1.2.155–1.2.160 这一轮：native 引擎换底座(pi-agent-core)、
+从 pi 续接的稳定性/成本能力、auth 重构与手机端体验。无新增改动,仅版本定格。
+
+### Highlights
+
+- **pi-native 成为默认 native 引擎**(1.2.155):in-process 循环换成 pi 的
+  `AgentHarness` + durable JSONL session(崩溃可恢复);legacy 降级为逃生通道
+  (`IMHUB_NATIVE_ENGINE=legacy`)。含 approval 门 / plan-mode / max-iter /
+  stuck-loop 护栏 / 真实身份 system prompt。
+- **上下文压缩 + provider 韧性**(1.2.156):每轮按 token 阈值 `harness.compact()`;
+  provider 重试/退避/超时 + prompt 缓存,全 `IMHUB_NATIVE_*` 可覆盖。
+- **A2A 子输出压缩**(1.2.157):子代理回传超 `IMHUB_A2A_MAX_RESULT_CHARS`(默认
+  8000)即截断,全文溢出到 `_agim-output/`,父按需 read。
+- **TUI 体验**(1.2.158):`/agent` 名称补全 + 底部 token/cost 实时状态栏。
+- **模型成本/窗口元数据**(1.2.159):复用 pi-ai MODELS 目录,`LlmProvider`
+  在 API 不回成本时按目录回填真实 $(覆盖所有 legacy provider)。
+- **auth 重构 + 手机端**(1.2.160):web-token-only admin 注册表(IM admin 在
+  Settings → Admins 管理,取消 bootstrap token / `IMHUB_ADMIN_USERS` 运行时依赖);
+  手机版聊天 UX + run 活动时间线;native 配置弹窗 + role-optional 后端兜底。
+
+详见各 1.2.15x 段。
+
 ## [1.2.159] - 2026-06-21
 
 ### Added — 模型成本/窗口元数据(复用 pi-ai 目录)

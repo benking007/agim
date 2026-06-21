@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.159] - 2026-06-21
+
+### Added — 模型成本/窗口元数据(复用 pi-ai 目录)
+
+agim 自家 provider(anthropic / openai-compat)只带 `(providerType, model)` 字符串,
+上游 API 常不回 cost → `costUsd` 经常是空。新增 `src/core/llm/model-catalog.ts`
+封装已依赖的 `@earendil-works/pi-ai` MODELS 全表:
+
+- `findCatalogModel` / `lookupModelMeta`(contextWindow / maxTokens)
+- `estimateCostUsd`(用 token 数走 `calculateCost`,含 Anthropic 1h cache 计费特例)
+
+`LlmProvider.enrichUsage()` 在 API 不回成本时按目录回填 `costUsd`——所有 legacy
+provider(以及 v1.2.158 的 TUI token/cost 状态栏)无需自建价格表即可显示真实 $。
+模型未收录或已计价则不动。
+
 ## [1.2.158] - 2026-06-21
 
 ### Added — TUI 体验(借鉴 pi CLI)

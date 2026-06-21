@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.157] - 2026-06-21
+
+### Added — A2A 子输出压缩
+
+`call_agent`/A2A 子代理的 final-text 原先**全量**注入父代理的 LLM 上下文,一份长报告
+会白烧父的上下文窗口。`callAgentByName` 现在按 `IMHUB_A2A_MAX_RESULT_CHARS`
+(默认 8000,`0` 关闭)截断父可见结果,完整内容溢出到
+`_agim-output/__a2a_result_full.md`,父可用 read 工具按需取全文。思路借鉴
+nicobailon/pi-subagents 的 `outputMode:file-only`。
+
+- `artifacts.writeOutput()`(与 `readOutput` 对称)
+- `a2a.getA2AMaxResultChars / compressA2AResult`,在 `listOutputs` 前执行,溢出文件
+  自然出现在 `outputs[]`
+
 ## [1.2.156] - 2026-06-21
 
 ### Added — pi-native 引擎稳定性/成本(从 pi 续接的能力点)

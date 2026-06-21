@@ -26,6 +26,7 @@ import {
   shouldCompact,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
+import type { AgentHarnessStreamOptions } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from '../../../core/types.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
@@ -78,6 +79,12 @@ export interface PiNativeDeps {
    *  the JSONL unbounded until the context overflows. Defaults to enabled; set
    *  false (factory reads IMHUB_NATIVE_COMPACTION=off) to disable. */
   compactionEnabled?: boolean
+  /** Provider request resilience + caching, snapshotted per turn by pi:
+   *  maxRetries / maxRetryDelayMs / timeoutMs (ride out transient 429/5xx from
+   *  the LLM provider) + cacheRetention (provider prompt cache → cuts the repeat
+   *  token cost of the system prompt + history). Factory builds it from
+   *  IMHUB_NATIVE_* envs; omit to use pi defaults. */
+  streamOptions?: AgentHarnessStreamOptions
 }
 
 const DEFAULT_MAX_ITER = 50
@@ -202,6 +209,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       getApiKeyAndHeaders: binding.getApiKeyAndHeaders,
       tools,
       ...(systemPrompt ? { systemPrompt } : {}),
+      ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
 
     const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null

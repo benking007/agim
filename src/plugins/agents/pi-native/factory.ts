@@ -27,6 +27,27 @@ function resolveMaxIterations(): number {
   return Math.min(n, 100)
 }
 
+/** Positive-integer env override, else the given default. */
+function envInt(name: string, def: number): number {
+  const raw = process.env[name]
+  if (!raw?.trim()) return def
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 0 ? n : def
+}
+
+/** Provider resilience + prompt-cache options, all env-overridable. Defaults:
+ *  2 retries, 20s retry-delay cap, 120s/request timeout, 'short' cache. */
+function resolveStreamOptions() {
+  const raw = (process.env.IMHUB_NATIVE_CACHE_RETENTION ?? 'short').trim()
+  const cacheRetention = (['none', 'short', 'long'] as const).find((v) => v === raw) ?? 'short'
+  return {
+    maxRetries: envInt('IMHUB_NATIVE_MAX_RETRIES', 2),
+    maxRetryDelayMs: envInt('IMHUB_NATIVE_MAX_RETRY_DELAY_MS', 20_000),
+    timeoutMs: envInt('IMHUB_NATIVE_REQUEST_TIMEOUT_MS', 120_000),
+    cacheRetention,
+  }
+}
+
 export function createPiNativeAdapter(): PiNativeAgentAdapter {
   const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
   try {
@@ -58,6 +79,9 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // Proactive per-turn compaction (pi never auto-compacts). On by default;
     // IMHUB_NATIVE_COMPACTION=off disables it.
     compactionEnabled: process.env.IMHUB_NATIVE_COMPACTION !== 'off',
+    // Provider retry/backoff/timeout + prompt cache (rides out transient LLM
+    // 429/5xx and cuts repeat token cost). All IMHUB_NATIVE_* env-overridable.
+    streamOptions: resolveStreamOptions(),
     // Reuse native's full system prompt so the model knows its real backend +
     // model + role (fixes "what model are you" → it stops hallucinating claude)
     // and gets the operator role + skill routing + tool guides.

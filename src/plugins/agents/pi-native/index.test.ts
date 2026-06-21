@@ -182,6 +182,27 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('死循环')
   })
 
+  it('forwards provider stream options (retries / timeout / cache) to the provider', async () => {
+    const reg = faux()
+    let seen: { maxRetries?: number; maxRetryDelayMs?: number; timeoutMs?: number; cacheRetention?: string } | undefined
+    reg.setResponses([
+      (_ctx, options) => {
+        seen = options as typeof seen
+        return fauxAssistantMessage('ok')
+      },
+    ])
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+      streamOptions: { maxRetries: 4, maxRetryDelayMs: 12345, timeoutMs: 67890, cacheRetention: 'long' },
+    })
+    expect(await collect(adapter.sendPrompt('so', 'hi'))).toBe('ok')
+    expect(seen?.maxRetries).toBe(4)
+    expect(seen?.maxRetryDelayMs).toBe(12345)
+    expect(seen?.timeoutMs).toBe(67890)
+    expect(seen?.cacheRetention).toBe('long')
+  })
+
   it('compacts an over-budget durable session before the next turn', async () => {
     // Tiny context window → turn-1 usage trips shouldCompact at the start of turn 2.
     const reg = registerFauxProvider({ models: [{ id: 'tiny', contextWindow: 200 }] })

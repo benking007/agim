@@ -8,11 +8,11 @@ import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
-import { getProvider } from '../../../core/llm/registry.js'
+import { getAnyProvider, getProvider } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
 import { PiNativeAgentAdapter } from './index.js'
-import { resolvePiModelForRole } from './provider-resolver.js'
+import { resolveAnyPiModel, resolvePiModelForRole } from './provider-resolver.js'
 import { assembleToolsForPi } from './tools.js'
 
 // Same role precedence the legacy native adapter uses (native/index.ts).
@@ -67,7 +67,7 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
         const binding = resolvePiModelForRole(role)
         if (binding) return binding
       }
-      return null
+      return resolveAnyPiModel()
     },
     // Full agim tool surface (builtin / fs / web / exec / todo / imhub / MCP),
     // assembled per-turn from native's single source of truth.
@@ -94,6 +94,13 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
           o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
         const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
         return buildSystemPrompt(provider, role, cwd, planThreadKey)
+      }
+      const fallback = getAnyProvider()
+      if (fallback) {
+        const planThreadKey =
+          o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
+        const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+        return buildSystemPrompt(fallback, 'auto', cwd, planThreadKey)
       }
       return undefined
     },

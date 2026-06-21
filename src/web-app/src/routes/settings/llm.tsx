@@ -3,8 +3,8 @@
  *
  * Front-end for the `/api/llm/*` REST surface that landed in Stage 4.
  * Operators add an OpenAI-compatible or Anthropic backend, paste an
- * API key, bind it to a role (cheap / evaluator / native-chat), and
- * ping-test the connection — all without hand-editing
+ * API key, optionally bind roles (cheap / evaluator / native-chat),
+ * and ping-test the connection — all without hand-editing
  * ~/.agim/config.json.
  *
  * Intentionally minimal styling — focused on doing the job; matches
@@ -215,6 +215,7 @@ function RolesCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): J
     <section className="rounded-md border border-border bg-surface">
       <header className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">{t('llm.rolesTitle')}</h2>
+        <p className="mt-1 text-xs text-text-dim">{t('llm.rolesOptionalHint')}</p>
       </header>
       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
         {KNOWN_ROLES.map((role) => (

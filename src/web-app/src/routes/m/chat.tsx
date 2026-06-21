@@ -32,6 +32,7 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
+import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { cn } from '@/lib/utils'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -108,6 +109,8 @@ export default function MobileChatRoute(): JSX.Element {
   const [input, setInput] = useState('')
   const [sheet, setSheet] = useState<SheetMode>('none')
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
+  const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -169,21 +172,13 @@ export default function MobileChatRoute(): JSX.Element {
   useEffect(() => {
     if (!state.error) return
     if (isNativeSetupError(state.error)) {
-      toast.error(t('chat.nativeSetupRequired', {
-        defaultValue:
-          'Native agent 未配置。请先在 /settings/llm 配置模型 API 并绑定 native-chat（或 cheap）角色。',
-      }), {
-        duration: 9000,
-        action: {
-          label: t('chat.nativeSetupAction', { defaultValue: '去配置' }),
-          onClick: () => window.location.assign('/settings/llm'),
-        },
-      })
+      setNativeSetupReason(state.error)
+      setNativeSetupDialogOpen(true)
     } else {
       toast.error(state.error)
     }
     clearError()
-  }, [state.error, clearError, t])
+  }, [state.error, clearError])
 
   // Auto-grow textarea up to 6 lines.
   useEffect(() => {
@@ -236,6 +231,13 @@ export default function MobileChatRoute(): JSX.Element {
 
   return (
     <div className="relative flex h-dvh flex-col bg-bg">
+      <NativeSetupDialog
+        open={nativeSetupDialogOpen}
+        reason={nativeSetupReason}
+        onOpenChange={setNativeSetupDialogOpen}
+        onConfigured={() => switchAgent('native')}
+      />
+
       <header
         className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}

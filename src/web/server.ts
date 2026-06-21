@@ -62,7 +62,7 @@ function formatWebAgentUnavailableMessage(agentName: string): string {
   if (agentName === 'native') {
     return [
       'Native agent is not configured yet.',
-      '请先到 /settings/llm 配置一个大模型 API，并绑定 llmRoles.native-chat（或 cheap），再重试。',
+      '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
     ].join(' ')
   }
   return formatAgentNotAvailableError(agentName)

@@ -482,7 +482,8 @@
     "refresh": "刷新",
     "backendsTitle": "后端 ({{count}})",
     "backendsEmpty": "尚未配置 LLM 后端。请在下方添加。",
-    "rolesTitle": "角色绑定",
+    "rolesTitle": "角色绑定（可选，高级）",
+    "rolesOptionalHint": "不配置角色绑定也不会阻塞 native 使用；系统会自动回退到可用 backend。",
     "addTitle": "添加后端",
     "col": {
       "name": "名称",
@@ -506,7 +507,7 @@
     "roleHint": {
       "cheap": "内部 introspection：记忆提取、意图分类、回退链第一阶段。",
       "evaluator": "通知评估器 + router-compare 裁判 LLM。",
-      "native-chat": "/na agent 循环默认角色；/cc native 调用时使用。"
+      "native-chat": "/na agent 循环默认角色；不绑定时会自动回退到任意可用 backend。"
     },
     "preset": "提供商预设",
     "name": "名称",
@@ -594,7 +595,7 @@
     "on": "开",
     "off": "关",
     "roleOverride": "角色覆盖",
-    "roleHint": "native 循环解析的 LLM 角色。默认 native-chat（回退 cheap）。需与 /settings/llm 中的角色绑定一致。",
+    "roleHint": "native 循环优先解析此角色；若未命中，会自动回退到任意可用 backend。角色绑定为可选增强项。",
     "approvalMode": "审批模式",
     "approvalHint": "native 循环中工具调用的门控方式。",
     "modeReadOnly": "read-only（安全默认；仅内置工具）",

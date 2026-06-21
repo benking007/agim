@@ -12,7 +12,12 @@
 //   - auth flows via getApiKeyAndHeaders → stream options.apiKey/headers
 
 import type { Model } from '@earendil-works/pi-ai'
-import { getBackendBindingForRole, type LlmBackendBinding, type LlmRole } from '../../../core/llm/registry.js'
+import {
+  getAnyBackendBinding,
+  getBackendBindingForRole,
+  type LlmBackendBinding,
+  type LlmRole,
+} from '../../../core/llm/registry.js'
 import type { PiModelBinding } from './index.js'
 
 /** agim providerType → pi-ai stream api id. Unmapped types are unsupported
@@ -52,5 +57,11 @@ export function bindingToPiModel(b: LlmBackendBinding): PiModelBinding | null {
  *  backend (or an unsupported provider type) is configured. */
 export function resolvePiModelForRole(role: LlmRole): PiModelBinding | null {
   const binding = getBackendBindingForRole(role)
+  return binding ? bindingToPiModel(binding) : null
+}
+
+/** Resolve a pi model binding from the first configured backend, ignoring roles. */
+export function resolveAnyPiModel(): PiModelBinding | null {
+  const binding = getAnyBackendBinding()
   return binding ? bindingToPiModel(binding) : null
 }

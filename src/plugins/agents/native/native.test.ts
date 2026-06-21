@@ -95,15 +95,32 @@ describe('nativeAgentAdapter — isAvailable', () => {
     expect(await nativeAgentAdapter.isAvailable()).toBe(true)
   })
 
-  it('honours IMHUB_NATIVE_AGENT_ROLE env override', async () => {
-    // Configure a 'custom-role' backend; without env, fallback chain
-    // skips it. With env, it becomes the preferred role.
+  it('returns true when backend exists and llmRoles is empty', async () => {
+    saveSecret('native-mock', 'sk-test')
+    loadFromConfig({
+      llmBackends: [{ name: 'native-mock', provider: 'openai-compat', model: 'gpt' }],
+      llmRoles: {},
+    })
+    expect(await nativeAgentAdapter.isAvailable()).toBe(true)
+  })
+
+  it('falls back to any configured backend when no default role is bound', async () => {
+    // Configure only a custom role. Native should still be available now
+    // because role bindings are optional and it can fall back to any backend.
     saveSecret('native-mock', 'sk-test')
     loadFromConfig({
       llmBackends: [{ name: 'native-mock', provider: 'openai-compat', model: 'gpt' }],
       llmRoles: { 'custom-role': 'native-mock' },
     })
-    expect(await nativeAgentAdapter.isAvailable()).toBe(false)
+    expect(await nativeAgentAdapter.isAvailable()).toBe(true)
+  })
+
+  it('IMHUB_NATIVE_AGENT_ROLE env override still works', async () => {
+    saveSecret('native-mock', 'sk-test')
+    loadFromConfig({
+      llmBackends: [{ name: 'native-mock', provider: 'openai-compat', model: 'gpt' }],
+      llmRoles: { 'custom-role': 'native-mock' },
+    })
     process.env.IMHUB_NATIVE_AGENT_ROLE = 'custom-role'
     expect(await nativeAgentAdapter.isAvailable()).toBe(true)
   })
@@ -114,7 +131,7 @@ describe('nativeAgentAdapter — sendPrompt', () => {
     loadFromConfig({})
     const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'hi'))
     expect(chunks).toHaveLength(1)
-    expect(chunks[0]).toContain('no LLM backend')
+    expect(chunks[0]).toContain('no usable LLM backend')
   })
 
   it('with a backend: yields the LLM text as a single chunk', async () => {

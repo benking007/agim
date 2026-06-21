@@ -24,6 +24,7 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
+import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { Topbar } from '@/components/shell/topbar'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,8 @@ export default function ChatRoute(): JSX.Element {
     state, send, switchAgent, approvalClick, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
+  const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
+  const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -61,21 +64,13 @@ export default function ChatRoute(): JSX.Element {
   useEffect(() => {
     if (!state.error) return
     if (isNativeSetupError(state.error)) {
-      toast.error(t('chat.nativeSetupRequired', {
-        defaultValue:
-          'Native agent 未配置。请先在 /settings/llm 配置模型 API 并绑定 native-chat（或 cheap）角色。',
-      }), {
-        duration: 9000,
-        action: {
-          label: t('chat.nativeSetupAction', { defaultValue: '去配置' }),
-          onClick: () => window.location.assign('/settings/llm'),
-        },
-      })
+      setNativeSetupReason(state.error)
+      setNativeSetupDialogOpen(true)
     } else {
       toast.error(state.error)
     }
     clearError()
-  }, [state.error, clearError, t])
+  }, [state.error, clearError])
 
   function onSubmit(e?: React.FormEvent): void {
     e?.preventDefault()
@@ -138,6 +133,13 @@ export default function ChatRoute(): JSX.Element {
         </Button>
         <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
       </Topbar>
+
+      <NativeSetupDialog
+        open={nativeSetupDialogOpen}
+        reason={nativeSetupReason}
+        onOpenChange={setNativeSetupDialogOpen}
+        onConfigured={() => switchAgent('native')}
+      />
 
       {/* Message list */}
       <div

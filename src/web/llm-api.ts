@@ -26,6 +26,7 @@ import { configSchema } from '../core/config-schema.js'
 import {
   saveSecret, removeSecret, describeSecretSource,
 } from '../core/llm/secrets.js'
+import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
 
 const CONFIG_FILE = join(AGIM_HOME, 'config.json')
@@ -186,6 +187,7 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
   }
   await writeConfig(cfg)
   if (apiKey) saveSecret(name, apiKey)
+  refreshLlmRuntime(cfg)
   send(res, 201, { name, secretStored: !!apiKey })
 }
 
@@ -208,6 +210,7 @@ async function handleRemoveBackend(res: ServerResponse, name: string): Promise<v
   cfg.llmRoles = cleaned
   await writeConfig(cfg)
   removeSecret(name)
+  refreshLlmRuntime(cfg)
   send(res, 200, { removedRoles })
 }
 
@@ -249,6 +252,7 @@ async function handlePutRoles(req: IncomingMessage, res: ServerResponse): Promis
     return
   }
   await writeConfig(cfg)
+  refreshLlmRuntime(cfg)
   send(res, 200, { roles: next })
 }
 
@@ -264,12 +268,14 @@ async function handleSetSecret(req: IncomingMessage, res: ServerResponse, name: 
     return
   }
   saveSecret(name, body.apiKey.trim())
+  refreshLlmRuntime(cfg)
   const src = describeSecretSource(name)
   send(res, 200, { name, source: src.source })
 }
 
 async function handleRemoveSecret(res: ServerResponse, name: string): Promise<void> {
   removeSecret(name)
+  refreshLlmRuntime(await readConfig())
   send(res, 200, { name })
 }
 
@@ -332,4 +338,11 @@ async function writeConfig(cfg: RawConfig): Promise<void> {
   await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
   await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
   try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore on Windows */ }
+}
+
+function refreshLlmRuntime(cfg: RawConfig): void {
+  loadLlmFromConfig(cfg)
+  // Agent availability probes are TTL-cached; clear so native switch can
+  // succeed immediately after backend/key changes.
+  clearAgentCache()
 }

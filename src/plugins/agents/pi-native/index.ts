@@ -166,7 +166,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   ): AsyncGenerator<string> {
     const binding = await this.deps.resolveModel(opts)
     if (!binding) {
-      yield '⚠️ pi-native：未配置可用的 LLM 后端（检查 llmBackends 是否配了 native-chat / cheap role）'
+      yield '⚠️ pi-native：未配置可用的 LLM 后端（请在 /settings/llm 添加任一 backend + API key；角色绑定可选）'
       return
     }
 

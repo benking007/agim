@@ -482,7 +482,8 @@
     "refresh": "Refresh",
     "backendsTitle": "Backends ({{count}})",
     "backendsEmpty": "No LLM backends configured yet. Add one below.",
-    "rolesTitle": "Role Bindings",
+    "rolesTitle": "Role Bindings (optional, advanced)",
+    "rolesOptionalHint": "Native no longer depends on role bindings. It auto-falls back to any usable backend.",
     "addTitle": "Add Backend",
     "col": {
       "name": "Name",
@@ -506,7 +507,7 @@
     "roleHint": {
       "cheap": "Internal introspection: memo extraction, intent classification, fallback chain stage 1.",
       "evaluator": "Notification evaluator + router-compare judge LLM.",
-      "native-chat": "The /na agent loop default. Used when /cc native is invoked."
+      "native-chat": "Default for /na loop; if unbound, native auto-falls back to any usable backend."
     },
     "preset": "Provider preset",
     "name": "Name",
@@ -594,7 +595,7 @@
     "on": "on",
     "off": "off",
     "roleOverride": "Role override",
-    "roleHint": "LLM role the native loop resolves. Default: native-chat (falls back to cheap). Match a key from /settings/llm role bindings.",
+    "roleHint": "Native prefers this role first; when no role resolves, it auto-falls back to any usable backend. Role bindings are optional.",
     "approvalMode": "Approval mode",
     "approvalHint": "How tool calls from the native loop are gated.",
     "modeReadOnly": "read-only (safe default; built-ins only)",

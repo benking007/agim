@@ -56,6 +56,13 @@ function withMessageIds(messages: ChatMessage[]): ChatMessage[] {
   return messages.map(withMessageId)
 }
 
+/** Compact token count: 1234 → 1.2k, 1_200_000 → 1.2M. */
+function fmtTok(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
+}
+
 interface SlashCommand {
   name: string
   description: string
@@ -168,6 +175,9 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
   const [palette, setPalette] = useState<{ open: boolean; query: string; index: number }>({ open: false, query: '', index: 0 })
   const abortRef = useRef<AbortController | null>(null)
   const filesCacheRef = useRef<FileEntry[] | null>(null)
+  // Cumulative usage this TUI session (fed by sendPrompt's onUsage). pi-native
+  // emits all three; some adapters emit only cost — we accumulate what's there.
+  const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
 
   const cwd = useMemo(() => {
     const home = process.env.HOME
@@ -205,7 +215,22 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       .slice(0, 15)
   }, [filePopupOpen, fileTokenMatch])
 
-  const popupResetKey = `${filteredSlash.length}:${filteredFiles.length}`
+  // ── /agent <name> argument completion ─────────────────────────────
+  // Once a space follows /agent the slash popup closes; this picks up the
+  // partial agent name and completes it from the live registry.
+  const agentArgMatch = useMemo(() => {
+    const m = /^\/agent\s+(\S*)$/.exec(input)
+    return m ? { query: m[1] } : null
+  }, [input])
+  const agentArgPopupOpen = !slashPopupOpen && !filePopupOpen && agentArgMatch !== null
+  const filteredAgentArgs = useMemo(() => {
+    if (!agentArgPopupOpen || !agentArgMatch) return [] as string[]
+    const all = registry.listAgents()
+    const q = agentArgMatch.query.toLowerCase()
+    return (q ? all.filter((a) => a.toLowerCase().includes(q)) : all).slice(0, 15)
+  }, [agentArgPopupOpen, agentArgMatch])
+
+  const popupResetKey = `${filteredSlash.length}:${filteredFiles.length}:${filteredAgentArgs.length}`
   useEffect(() => {
     if (popupResetKey) setPopupIndex(0)
   }, [popupResetKey])
@@ -277,6 +302,16 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
           const before = input.slice(0, fileTokenMatch.start)
           setInput(`${before}@${pick.rel}${pick.isDir ? '' : ' '}`)
         }
+        return
+      }
+    }
+
+    if (agentArgPopupOpen && filteredAgentArgs.length > 0) {
+      if (key.upArrow) { setPopupIndex((i) => (i - 1 + filteredAgentArgs.length) % filteredAgentArgs.length); return }
+      if (key.downArrow) { setPopupIndex((i) => (i + 1) % filteredAgentArgs.length); return }
+      if (key.tab) {
+        const pick = filteredAgentArgs[popupIndex]
+        if (pick) setInput(`/agent ${pick}`)
         return
       }
     }
@@ -412,7 +447,14 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
         .join('\n\n')
       const prompt = `请把以下对话历史浓缩为 3-5 个要点，保留关键决定 / 数据 / 未解决问题，用中文，仅输出摘要本身不要寒暄：\n\n${transcript}`
       let summary = ''
-      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}-compact`, prompt, [], { signal: ac.signal })) {
+      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}-compact`, prompt, [], {
+        signal: ac.signal,
+        onUsage: (d) => setUsage((u) => ({
+          inTok: u.inTok + (d.tokensInput ?? 0),
+          outTok: u.outTok + (d.tokensOutput ?? 0),
+          costUsd: u.costUsd + (d.costUsd ?? 0),
+        })),
+      })) {
         summary += chunk
       }
       setMessages([withMessageId({ role: 'system', content: '【对话已折叠，以下是摘要】\n\n' + summary.trim() })])
@@ -481,7 +523,14 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     abortRef.current = ac
     try {
       let chunks = ''
-      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, history, { signal: ac.signal })) {
+      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, history, {
+        signal: ac.signal,
+        onUsage: (d) => setUsage((u) => ({
+          inTok: u.inTok + (d.tokensInput ?? 0),
+          outTok: u.outTok + (d.tokensOutput ?? 0),
+          costUsd: u.costUsd + (d.costUsd ?? 0),
+        })),
+      })) {
         chunks += chunk
         setMessages((m) => {
           const last = m[m.length - 1]
@@ -540,6 +589,13 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
         const before = input.slice(0, fileTokenMatch.start)
         setInput(`${before}@${pick.rel}${pick.isDir ? '' : ' '}`)
         return
+      }
+    }
+    // /agent: complete the highlighted name first; a 2nd Enter (now exact) submits.
+    if (agentArgPopupOpen && filteredAgentArgs.length > 0 && agentArgMatch) {
+      if (!filteredAgentArgs.includes(agentArgMatch.query)) {
+        const pick = filteredAgentArgs[popupIndex]
+        if (pick) { setInput(`/agent ${pick}`); return }
       }
     }
 
@@ -663,8 +719,20 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
         </Box>
       )}
 
+      {/* /agent argument popup */}
+      {!palette.open && agentArgPopupOpen && filteredAgentArgs.length > 0 && (
+        <Box flexDirection="column" borderStyle="single" borderColor="magenta" paddingX={1}>
+          <Text dimColor>切换 agent（{filteredAgentArgs.length} 个匹配；Tab 补全 · Enter 选中）</Text>
+          {filteredAgentArgs.slice(0, 10).map((a, i) => (
+            <Text key={a} color={i === popupIndex ? 'magenta' : undefined} inverse={i === popupIndex}>
+              {a}{a === agent ? ' (当前)' : ''}
+            </Text>
+          ))}
+        </Box>
+      )}
+
       {/* Input */}
-      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || palette.open) ? 0 : 1}>
+      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open) ? 0 : 1}>
         <Text color={busy ? 'yellow' : 'green'}>{busy ? '⠿' : '›'} </Text>
         <TextInput
           value={input}
@@ -680,6 +748,12 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
           <Text>{cwd}</Text>
           <Text>{'  ·  '}</Text>
           <Text>{messages.filter((m) => m.role !== 'system').length} 条消息</Text>
+          {(usage.inTok > 0 || usage.outTok > 0 || usage.costUsd > 0) && (
+            <Text>
+              {'  ·  '}⇅ {fmtTok(usage.inTok)}/{fmtTok(usage.outTok)} tok
+              {usage.costUsd > 0 ? ` · $${usage.costUsd.toFixed(4)}` : ''}
+            </Text>
+          )}
           <Text>{'  ·  '}</Text>
           <Text>/help 帮助 · Ctrl-P 面板 · Ctrl-C 退出</Text>
         </Text>

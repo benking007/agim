@@ -93,7 +93,7 @@ The current registry (as of Stage 6):
 • /claude-code [cli] (/cc, /claude, /claudecode)
 • /codex       [cli] (/cx, /openai, /codexcli)
 • /opencode    [cli] (/oc, /opencodeai)
-• /native      [in-process] (/na, /llm, /native-llm) — role=native-chat -> openai-compat:deepseek-chat
+• /native      [in-process] (/na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-chat
 ```
 
 ## 5. The Six Things You Get Automatically
@@ -145,9 +145,12 @@ Cross-thread admin views land under two SPA areas:
 
 **`/settings/*`** — configuration:
 
-- `/settings/llm` — list / add / remove LLM backends; bind to roles
-  (`cheap` / `evaluator` / `native-chat`); per-backend **Ping** button
-  via `/api/llm/backends/:name/ping`.
+- `/settings/llm` — list / add / remove LLM backends; optional role
+  bindings (`cheap` / `evaluator` / `native-chat`); per-backend **Ping**
+  button via `/api/llm/backends/:name/ping`.
+- `/chat` + `/m/chat` — when switching to `native` without a usable
+  backend, show a persistent setup modal (instead of transient toast),
+  submit backend config in place, then auto-retry switch.
 - `/settings/mcp` — list / add / remove external MCP servers (stdio
   or HTTP/SSE); per-server **Health** button via
   `/api/mcp/servers/:name/health`. Tools flow into the native agent's
@@ -204,8 +207,9 @@ The peer model gives us a clean upgrade path:
 
 - **More CLI backends** — just implement `AgentAdapter` with
   `kind='cli'`. Drop in `src/plugins/agents/<name>/` and register.
-- **More native models** — add a provider in `src/core/llm/`,
-  reference it in `llmRoles`, native picks it up automatically.
+- **More native models** — add a provider in `src/core/llm/`; native can
+  pick it automatically once it has a usable key. `llmRoles` remains an
+  optional preference layer for deterministic role routing.
 - **Remote backends** — register an ACP-compatible endpoint with
   `kind='remote'`; same A2A / approval / skills behaviour.
 - **Hosted agents** — if a SaaS exposes an agent API tomorrow, write

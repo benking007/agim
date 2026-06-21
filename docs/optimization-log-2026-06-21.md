@@ -41,6 +41,12 @@
 - `src/core/approval-router.test.ts`：新增 `ask:*` 按钮分发回归用例，覆盖 ask 卡按钮到 resolver 的闭环。
 - `test/integration/web-server-api.test.ts`：将 `/api/outbox` 与 `/api/outbox/stats` 纳入 role=user 禁止访问断言集合。
 
+### 6) native 配置体验与文档对齐（补充轮）
+
+- 补齐 `docs/llm-backends.md`：明确 `native` 不再硬依赖 `llmRoles.native-chat` / `cheap`，有任一可用 backend 即可运行；`llmRoles` 改为可选偏好层。
+- 补齐 `docs/architecture-bridge-and-native.md`：补充 `/chat` 与 `/m/chat` 的 native 未配置模态配置流（就地配置 backend + 自动重试切换）。
+- 同步 `README.md` 与 `README.zh-CN.md` 能力描述：Role Bindings 为可选高级配置，不再作为 native 入口前置。
+
 ## 仍待后续治理（未在本次改动完成）
 
 1. `handleMessage` 端到端编排专属集成 harness（当前仍依赖分散测试间接覆盖）。

@@ -15,6 +15,7 @@
 
 - **3 种 IM + 邮件，6 个 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Email（SMTP）；Claude Code、Codex、OpenCode、Antigravity、**Cursor（v1.2.49+ · `/cs`）**，以及内置 `native` LLM agent（DeepSeek / Kimi / Qwen / OpenAI / Anthropic 兼容 · `/na`）。另支持任意 ACP 端点。
 - **原生 LLM 栈（v1.3.0+，v1.2.48 强化）** — 内置 in-process agent loop（`native` adapter），直连任何 OpenAI / Anthropic 兼容 API（DeepSeek / Kimi / GLM / Qwen / Ollama / vLLM / OpenAI / Anthropic）。v1.2.48 让 native 真正进入生产可用：**角色定义** 通过 `~/.agim-workspaces/native/AGENTS.md`（热加载，无需重启）；**多模态**（图片附件 → openai-compat `image_url`）；**自动压缩**长对话（>60k 字符 → 由 cheap role 摘要）；**Provider 失败链路降级**（5xx/超时自动切下一个 role）；**轮级心跳**每 3 分钟一次"⏳ 还在处理"避免多步研究看似卡死；**agent-loop 超时拉到 28 分钟**（旧 5 分钟会切断 multi-hop `call_agent`）。可用作 `memory-distill` / `memory-consolidate` / `intent-llm` 的便宜路由，可作为本地优先的聊天 agent（`/na`），也可作 A2A 的 peer。详见 [`docs/llm-backends.md`](docs/llm-backends.md) 与 [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md)
+- **Native 配置体验（最新）** — 在 `/chat` 或 `/m/chat` 切换 `native` 时，若没有可用 backend，会弹出持久化配置模态框；可直接填写 provider/model/API key 并立刻重试切换。`llmRoles` 角色绑定已改为可选偏好配置，不再阻塞流程。
 - **Skills 多目录扫描（v1.2.48+）** — `IMHUB_SKILLS_MODE=auto`（默认）把 `~/.agim/skills/`（写入目标）与 `~/.claude/skills/`、`~/.config/opencode/skills/`、`~/.codex/skills/` 合并；新装即可看到所有已有 CLI agent 的技能。同名时 workspace 覆盖。Settings → 技能 改成两个子 tab（已安装编辑器 + skillhub 热门）；顶部导航条的 `/skills` 已合并进 Settings
 - **跨通道出口告警（v1.2.48+）** — 某条会话 outbox 失败 ≥3 次时（如 wechat session 过期），agim 自动失效 stale 的 context-token，并向你预设的备用通道（`IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`）推一条"⚠️ outbox 告警"，让你比用户更早发现
 - **会话级长目标（v1.3.0+ · `/goal`）** — 每个 IM 会话最多一个 active 目标，自动注入每条 prompt，确保 Agent 跨多轮不偏题。生命周期：`set / body / progress / pause / resume / complete / cancel / list`。跨会话管理在 `/tasks/goals`。详见 [`docs/goals.md`](docs/goals.md)
@@ -91,7 +92,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 |------|------|
 | **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Email（SMTP，仅推送） |
 | **Agent** | 6 个内置：Claude Code、Codex、OpenCode、Antigravity、Cursor（CLI，统一 `AgentBase`），以及 **`native`**（in-process LLM loop，OpenAI/Anthropic 兼容）。任何 HTTP Agent 通过 ACP 接入——所有 7 类后端走同一份 `AgentAdapter` 接口 |
-| **原生 LLM** | OpenAI / Anthropic 兼容 provider，外挂 MCP 服务器，多轮 agent loop + 策略式审批门，角色绑定（`cheap` / `evaluator` / `native-chat`） |
+| **原生 LLM** | OpenAI / Anthropic 兼容 provider，外挂 MCP 服务器，多轮 agent loop + 策略式审批门，可选角色绑定（`cheap` / `evaluator` / `native-chat`），未绑定时自动回退任意可用 backend |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **长目标 + 心跳 + 提问** | `/goal` 会话级目标、`/heartbeat` 周期 DECIDE/EXECUTE/EVALUATE 节拍、`mcp__imhub__ask_user` 结构化选择题，跨会话视图在 `/tasks/{goals,heartbeat,asks}` |
 | **技能（Skills）** | `~/.agim/skills/<name>/SKILL.md` 被所有 agent（CLI + native）发现；3 层渐进披露；Web 编辑器在 `/settings/agim-skills` |
@@ -122,7 +123,7 @@ agim agents                # 列出可用 Agent
 agim messengers            # 列出可用 IM
 
 # v1.3.0+ — 原生 LLM 栈 + 诊断
-agim setup llm             # 向导：增/查/删 LLM backend，绑定角色，写 secret
+agim setup llm             # 向导：增/查/删 LLM backend，写 secret，角色绑定可选
 agim setup llm native-enable  # 一键启用 `native` agent（前提是已配置 backend）
 agim setup mcp             # 向导：增/查/删 外挂 MCP 服务器（stdio / HTTP / SSE）
 agim setup mcp health      # 探活全部 MCP 服务器

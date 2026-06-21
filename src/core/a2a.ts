@@ -41,6 +41,7 @@ import {
   ensureArtifactsDir,
   getArtifactsDir,
   listOutputs,
+  writeOutput,
   type InputSource,
   type OutputFile,
 } from './artifacts.js'
@@ -87,6 +88,38 @@ export function getA2AMaxDepth(): number {
     if (Number.isFinite(n) && n >= 0) return n
   }
   return A2A_MAX_DEPTH_DEFAULT
+}
+
+// Sub-output compression: a callee's full final-text is injected into the
+// CALLER's LLM context. A long report (a 30k-char research dump) burns the
+// caller's window for little marginal value. Cap what the caller sees; spill
+// the full text to _agim-output/ so it can `read` the rest on demand.
+export const A2A_MAX_RESULT_CHARS_DEFAULT = 8000
+/** File the over-long result is spilled to, under the callee's _agim-output/. */
+export const A2A_FULL_RESULT_FILE = '__a2a_result_full.md'
+
+/** Caller-visible result cap in chars. `IMHUB_A2A_MAX_RESULT_CHARS=0` disables
+ *  truncation (return the full text); unset → default. */
+export function getA2AMaxResultChars(): number {
+  const raw = process.env.IMHUB_A2A_MAX_RESULT_CHARS
+  if (raw === undefined || raw.trim() === '') return A2A_MAX_RESULT_CHARS_DEFAULT
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 0 ? n : A2A_MAX_RESULT_CHARS_DEFAULT
+}
+
+/** Cap `result` for the caller's context; spill the full text to _agim-output/
+ *  when truncated. Returns the (possibly shortened) string. Spill failure falls
+ *  back to the full result rather than losing content. */
+export async function compressA2AResult(jobId: number, result: string): Promise<string> {
+  const cap = getA2AMaxResultChars()
+  if (cap <= 0 || result.length <= cap) return result
+  try {
+    await writeOutput(jobId, A2A_FULL_RESULT_FILE, result)
+    return `${result.slice(0, cap)}\n\n…[已截断：子代理输出 ${result.length} 字符超过上限 ${cap}；完整内容见 _agim-output/${A2A_FULL_RESULT_FILE}（用 read 工具查看）]`
+  } catch (err) {
+    log.warn({ event: 'a2a.result_spill_failed', jobId, err: String(err) }, 'A2A result spill failed; returning full text')
+    return result
+  }
 }
 
 export function getA2ATimeoutMs(ctx?: { platform?: string; channelId?: string; threadId?: string }): number {
@@ -364,6 +397,10 @@ export async function callAgentByName(
     return { ok: false, error: errMsg || outcome, jobId, agent: target.name }
   }
 
+  // Sub-output compression: cap the caller-visible result; spill the full
+  // text to _agim-output/ (BEFORE listOutputs so the spill file is listed).
+  const resultForParent = await compressA2AResult(jobId, result)
+
   // L2: collect callee outputs + softly verify expectOutputs. Missing
   // files become entries in `warnings`, never a hard failure — the
   // callee decided what to produce, our verification is advisory.
@@ -390,7 +427,7 @@ export async function callAgentByName(
     outputs: outputs.map((o) => ({ name: o.name, bytes: o.bytes })),
   })
   return {
-    ok: true, result, jobId, agent: target.name, durationMs,
+    ok: true, result: resultForParent, jobId, agent: target.name, durationMs,
     artifactsDir, outputs,
     ...(warnings.length > 0 ? { warnings } : {}),
   }

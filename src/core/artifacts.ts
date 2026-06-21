@@ -218,6 +218,15 @@ export async function readOutput(jobId: number, name: string): Promise<Buffer | 
   try { return await readFile(p) } catch { return null }
 }
 
+/** Write a single output file into <jobId>/_agim-output/ (used to spill an
+ *  over-long A2A result so the caller can read the full text on demand). */
+export async function writeOutput(jobId: number, name: string, data: string | Buffer): Promise<void> {
+  if (name.includes('/') || name === '..') throw new Error(`invalid output name: ${name}`)
+  const { outputDir } = getArtifactsDir(jobId)
+  await mkdir(outputDir, { recursive: true, mode: 0o700 })
+  await writeFile(join(outputDir, name), data)
+}
+
 /** Drop the whole <jobId>/ tree. Safe on missing dirs. */
 export async function pruneArtifacts(jobId: number): Promise<void> {
   const { jobDir } = getArtifactsDir(jobId)

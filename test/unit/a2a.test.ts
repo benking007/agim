@@ -21,12 +21,14 @@ const TEST_HOME = mkdtempSync(join(tmpdir(), 'agim-a2a-test-'))
 process.env.AGIM_HOME = TEST_HOME
 
 const a2a = await import('../../src/core/a2a.js')
+const artifacts = await import('../../src/core/artifacts.js')
 
 // Snapshot env state we mutate so afterAll can restore it.
 const ENV_SNAPSHOT: Record<string, string | undefined> = {
   IMHUB_A2A_ENABLED: process.env.IMHUB_A2A_ENABLED,
   IMHUB_A2A_MAX_DEPTH: process.env.IMHUB_A2A_MAX_DEPTH,
   IMHUB_A2A_TIMEOUT_DEFAULT_MS: process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS,
+  IMHUB_A2A_MAX_RESULT_CHARS: process.env.IMHUB_A2A_MAX_RESULT_CHARS,
 }
 
 function restoreEnv(): void {
@@ -61,6 +63,17 @@ function fakeCtx(): Parameters<typeof a2a.callAgentByName>[2] {
 
 describe('A2A env helpers', () => {
   beforeEach(() => { restoreEnv() })
+
+  it('getA2AMaxResultChars: default / 0-disables / override / bad→default', () => {
+    delete process.env.IMHUB_A2A_MAX_RESULT_CHARS
+    expect(a2a.getA2AMaxResultChars()).toBe(a2a.A2A_MAX_RESULT_CHARS_DEFAULT)
+    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '0'
+    expect(a2a.getA2AMaxResultChars()).toBe(0)
+    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '1234'
+    expect(a2a.getA2AMaxResultChars()).toBe(1234)
+    process.env.IMHUB_A2A_MAX_RESULT_CHARS = 'abc'
+    expect(a2a.getA2AMaxResultChars()).toBe(a2a.A2A_MAX_RESULT_CHARS_DEFAULT)
+  })
 
   it('isA2AEnabled defaults true; IMHUB_A2A_ENABLED=0 disables', () => {
     delete process.env.IMHUB_A2A_ENABLED
@@ -140,5 +153,32 @@ describe('A2A callAgentByName rejection branches', () => {
     // depth ceiling = 0 means nextDepth=1 > 0 → depth rejection wins
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain('call depth exceeded')
+  })
+})
+
+describe('compressA2AResult (sub-output compression)', () => {
+  beforeEach(() => { restoreEnv(); delete process.env.IMHUB_A2A_MAX_RESULT_CHARS })
+
+  it('returns short results unchanged and writes no spill file', async () => {
+    const jobId = 770001
+    expect(await a2a.compressA2AResult(jobId, 'short result')).toBe('short result')
+    expect(await artifacts.readOutput(jobId, a2a.A2A_FULL_RESULT_FILE)).toBeNull()
+  })
+
+  it('truncates over-cap results and spills the full text to _agim-output', async () => {
+    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '100'
+    const jobId = 770002
+    const full = 'x'.repeat(500)
+    const out = await a2a.compressA2AResult(jobId, full)
+    expect(out.length).toBeLessThan(full.length)
+    expect(out).toContain('已截断')
+    expect(out).toContain(a2a.A2A_FULL_RESULT_FILE)
+    expect((await artifacts.readOutput(jobId, a2a.A2A_FULL_RESULT_FILE))?.toString()).toBe(full)
+  })
+
+  it('cap=0 disables truncation (returns full text)', async () => {
+    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '0'
+    const full = 'y'.repeat(9000)
+    expect(await a2a.compressA2AResult(770003, full)).toBe(full)
   })
 })

@@ -848,9 +848,11 @@ export async function startWebServer(options: {
     // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
     // a retry endpoint for the giving_up row state.
     if (url.pathname === '/api/outbox' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListOutbox(req, res, url)
     }
     if (url.pathname === '/api/outbox/stats' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleOutboxStats(req, res)
     }
     const outboxRetryMatch = url.pathname.match(/^\/api\/outbox\/(\d+)\/retry$/)

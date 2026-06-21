@@ -65,7 +65,7 @@
     "selectRow": "Select row"
   },
   "login": {
-    "intro": "Paste your access token from ~/.agim/tokens.json or `agim token list`.",
+    "intro": "Paste your access token from `agim token bootstrap` (first boot) or `agim token create`.",
     "tokenLabel": "Access token",
     "submit": "Sign in",
     "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with IMHUB_TRUST_LOOPBACK=off."

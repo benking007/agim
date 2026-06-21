@@ -28,8 +28,8 @@
 - **IM 长内容 viewer（v1.1.6+）** — 微信 / 飞书等对富 markdown 渲染差。Agent 回复超过阈值（行数 / 字符数 / 含表格 / 大段代码）时，agim 把完整 markdown 永久存进本机 `~/.agim/viewer.db`（**永远不离开你的机器**），IM 里只发短摘要 + 链接 `https://<你的域名>/v/<uuid>`。链接背后是 agim 自己的 web console，由你自己反代（cloudflared / caddy / tailscale 任选）。Agent 可显式用 `<im-summary>…</im-summary><full-md>…</full-md>` 包装长回答获得最干净体验。开启：`IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://你的域名`
 - **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
 - **崩溃中断可恢复** — 每条入站消息建 inline job；agim 重启时正在跑的会标 `interrupted`，下次启动 10 分钟窗口内通知对应会话。**v1.2.0+** 在飞书等支持的渠道走原生 `🔁 重发 / ✖ 取消` 内联按钮卡片，其余渠道兜底为文字提示。群聊内只有原发起者可点按钮
-- **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理 Tab `/tasks#memory` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
-- **成本与健康仪表盘（v1.2.0+）** — `/tasks#cost` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
+- **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理页 `/memory/facts` + `/memory/persona` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
+- **成本与健康仪表盘（v1.2.0+）** — `/observability/health` + `/observability/topn` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
 - **Agent 主动推送（v1.2.0+）** — 新的 `mcp__imhub__push_message` MCP 工具让运行中的 agent 不需要外部触发就把后续消息推回原 IM 会话（长任务通知、定时类提醒）。`POST /api/notify` 同一能力也暴露给 webhook / 外部脚本。每用户限流 + 跨会话开关防刷屏
 - **管理员邀请（v1.2.2+）** — `agim admin invite`（或 `agim` 交互菜单「邀请新管理员」）生成一次性 IM token，受邀者在 IM 发 `/setup admin <token>` 即升级，不用动 `~/.agim/env`。`agim admin list` 查当前白名单
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
@@ -133,7 +133,7 @@ agim diag mcp              # 连接并列工具
 agim token create [name]   # 新发 user/admin token（接 /api/*、/acp/*）
 agim token list            # 列出 token（只回显末 4 位）
 agim token revoke <id>     # 按 id 撤销
-agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/admin-bootstrap-token`）
+agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/web-bootstrap-token`）
 
 # （`agim …` 作为别名继续可用）
 ```

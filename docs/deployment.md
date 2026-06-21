@@ -70,7 +70,7 @@ npm link
 └── sessions/                # 会话历史（每会话一个 .json + .log）
 ```
 
-> Web 控制台（:3000）**没有内建鉴权**——不要直接 0.0.0.0 暴露，访问控制走反向代理 / 防火墙 / SSH 隧道 / VPN。ACP 端口（:9090）仍走 bearer-token 鉴权。
+> Web 控制台（:3000）默认**内建 token 鉴权**（可用 `IMHUB_WEB_AUTH=off` 显式关闭）。即便如此，0.0.0.0 暴露仍建议走反向代理 / 防火墙 / SSH 隧道 / VPN；ACP 端口（:9090）继续走 bearer-token 鉴权。
 
 ### 3.1 接入 IM 通道
 
@@ -323,7 +323,7 @@ docker run -d \
 > Environment="IMHUB_WEB_BIND=0.0.0.0"
 > ```
 >
-> **Agim 的 web 控制台不带任何内建鉴权（无登录页、无 token、无 session cookie）**——0.0.0.0 暴露时所有访问控制必须走外面：
+> **Agim 的 Web 控制台默认带 token 鉴权（登录页 + Bearer/cookie）**。0.0.0.0 暴露时仍建议叠加外层防护：
 > 1. 用防火墙（云厂商安全组 / iptables / ufw）只允许已知来源 IP；
 > 2. 用 nginx/Caddy 做 HTTPS 反代 + Basic Auth / OAuth2 Proxy / mTLS；
 > 3. 或者别开 0.0.0.0，留在 127.0.0.1 然后用 SSH 隧道 / Tailscale / WireGuard 接进来。
@@ -379,7 +379,7 @@ server {
 | `/tasks` | 任务面板（jobs + schedules，可创建/取消/查看结果） |
 | `/settings` | 配置 agents / messengers / ACP / discovery |
 
-无内建鉴权——所有 `/api/*` 请求直接放行。访问控制必须靠反向代理 / 防火墙。
+默认 token 鉴权开启（`IMHUB_WEB_AUTH=on`）；如显式关闭鉴权（`IMHUB_WEB_AUTH=off`），则所有 `/api/*` 请求都应由反向代理 / 防火墙兜底访问控制。
 
 ---
 
@@ -398,7 +398,7 @@ scrape_configs:
     scheme: https
 ```
 
-> 公网暴露请用 nginx Basic Auth 等手段在反代层加保护，Agim 自身不鉴权。
+> 公网暴露建议在反代层加一层防护（Basic Auth / OAuth2 Proxy / mTLS）；Agim 自身默认有 token 鉴权，可与反代策略叠加。
 
 关键指标：
 
@@ -575,7 +575,7 @@ npm install -g agim --build-from-source=false
 
 ### 启动后 Web 端 401 / 403
 
-Agim 1.x 的 Web 控制台无内建鉴权，401/403 一般来自前面的反向代理。检查 nginx/Caddy 的 Basic Auth、OAuth2 Proxy、Cloudflare Access 等配置。
+Agim 1.x 的 Web 控制台默认有内建 token 鉴权。若出现 401/403，优先检查：是否携带有效 token、`IMHUB_WEB_AUTH` 是否被关闭、以及反向代理层（nginx/Caddy/OAuth2 Proxy/Cloudflare Access）是否额外拦截。
 
 ### 任务跑得太多把内存吃满
 
@@ -626,8 +626,8 @@ Environment="IMHUB_OPENCODE_CWD=/"
 
 ### 想把 Web/ACP 暴露到公网
 
-**Web 控制台没有内建鉴权**，不要直接开放。一定要：
-1. 反向代理强制 HTTPS + Basic Auth / OAuth2 Proxy / mTLS（见 §5.1）
+Web 控制台默认有 token 鉴权，但公网暴露时仍建议：
+1. 反向代理强制 HTTPS，并按需叠加 Basic Auth / OAuth2 Proxy / mTLS（见 §5.1）
 2. 防火墙只允许已知来源 IP
 3. ACP 端口（默认 9090）走 bearer-token 鉴权，token 在 `~/.agim/acp-token`；删该文件 + 重启服务可轮换
 

@@ -65,7 +65,7 @@
     "selectRow": "选中此行"
   },
   "login": {
-    "intro": "粘贴 ~/.agim/tokens.json 里的访问令牌（或运行 `agim token list` 查看）。",
+    "intro": "粘贴访问令牌：首次部署可运行 `agim token bootstrap`，后续可用 `agim token create` 生成。",
     "tokenLabel": "访问令牌",
     "submit": "登录",
     "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 IMHUB_TRUST_LOOPBACK=off 时才会看到此页。"

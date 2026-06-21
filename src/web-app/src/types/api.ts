@@ -1088,8 +1088,8 @@ export interface ServiceActionResponse {
 
 /* ============================================================
  * Admin allowlist — users who can run admin-tier commands.
- * Editor only works when web is bound locally (the backend
- * gates POST + DELETE on isLocalBind).
+ * Admin candidates come from known IM users discovered from
+ * real inbound messages.
  * ============================================================ */
 
 export interface AdminEntry {
@@ -1097,15 +1097,19 @@ export interface AdminEntry {
   userId: string
 }
 
+export interface KnownImUser {
+  platform: string
+  userId: string
+  firstSeenAt: string
+  lastSeenAt: string
+  lastChannelId?: string
+  lastThreadId?: string
+}
+
 export interface AdminAllowlistResponse {
   admins: AdminEntry[]
-  /** True once at least one admin has been set. When false, the
-   *  CLI's bootstrap token is the only privileged path. */
+  knownUsers: KnownImUser[]
   configured: boolean
-  /** Bootstrap token file present on disk — operator can use it
-   *  to seed the first admin. */
-  bootstrapAvailable: boolean
-  bootstrapTokenPath: string
 }
 
 export interface AddAdminBody {

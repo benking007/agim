@@ -1115,20 +1115,19 @@ export async function startWebServer(options: {
       return handleServiceRestart(res)
     }
 
-    // Admin allowlist — list + add/remove via the Safety card. Locally
-    // gated: only allowed when bound to 127.0.0.1, since the page has
-    // no auth and we don't want random LAN visitors granting themselves
-    // admin. See `bindHost` upthread.
+    // IM admin registry — list + add/remove via Settings → Admins.
+    // Web admin token is the single authority in v2 model.
     if (url.pathname === '/api/admin-allowlist' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistGet(res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
-      return handleAdminAllowlistAdd(req, res, bindHost)
+      return handleAdminAllowlistAdd(req, res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'DELETE') {
       if (!requireAdmin(req, res)) return
-      return handleAdminAllowlistRemove(req, res, bindHost)
+      return handleAdminAllowlistRemove(req, res)
     }
 
     res.writeHead(404)
@@ -2299,28 +2298,22 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
 }
 
 // ============================================================
-// Admin allowlist endpoints (Safety card → Admin Users)
+// IM admin registry endpoints (Settings → Admins)
 // ============================================================
 //
-// All three are gated on the server's bindHost being a loopback address.
-// The web console has no auth, so we MUST not let a LAN visitor add
-// themselves as admin. When bindHost is 0.0.0.0 we hide the editor on
-// the frontend AND refuse here as a defense-in-depth.
-
-function isLocalBind(bindHost: string): boolean {
-  return bindHost === '127.0.0.1' || bindHost === '::1' || bindHost === 'localhost'
-}
-
+// Web admin token is the single authority. Candidate IM users are auto-
+// discovered from inbound messages and surfaced here as knownUsers.
 async function handleAdminAllowlistGet(res: ServerResponse): Promise<void> {
   try {
-    const { listAdmins, isAllowlistConfigured } = await import('../core/admin-allowlist.js')
-    const { BOOTSTRAP_TOKEN_FILE } = await import('../core/admin-bootstrap.js')
-    const hasBootstrap = existsSync(BOOTSTRAP_TOKEN_FILE)
+    const {
+      listAdmins,
+      listKnownImUsers,
+      isAllowlistConfigured,
+    } = await import('../core/admin-allowlist.js')
     sendJson(res, 200, {
       admins: listAdmins(),
+      knownUsers: listKnownImUsers(),
       configured: isAllowlistConfigured(),
-      bootstrapAvailable: hasBootstrap,
-      bootstrapTokenPath: BOOTSTRAP_TOKEN_FILE,
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2330,14 +2323,7 @@ async function handleAdminAllowlistGet(res: ServerResponse): Promise<void> {
 async function handleAdminAllowlistAdd(
   req: IncomingMessage,
   res: ServerResponse,
-  bindHost: string,
 ): Promise<void> {
-  if (!isLocalBind(bindHost)) {
-    sendJson(res, 403, {
-      error: 'admin editor disabled when web is bound publicly (no auth on this endpoint).',
-    })
-    return
-  }
   try {
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { platform?: string; userId?: string }
@@ -2348,7 +2334,7 @@ async function handleAdminAllowlistAdd(
       return
     }
     const { promoteAdmin, listAdmins } = await import('../core/admin-allowlist.js')
-    const added = await promoteAdmin(platform, userId)
+    const added = await promoteAdmin(platform, userId, { actor: getRequestActor(req) })
     sendJson(res, 200, { ok: true, added, admins: listAdmins() })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2358,12 +2344,7 @@ async function handleAdminAllowlistAdd(
 async function handleAdminAllowlistRemove(
   req: IncomingMessage,
   res: ServerResponse,
-  bindHost: string,
 ): Promise<void> {
-  if (!isLocalBind(bindHost)) {
-    sendJson(res, 403, { error: 'admin editor disabled on public binds' })
-    return
-  }
   try {
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { platform?: string; userId?: string }
@@ -2373,21 +2354,9 @@ async function handleAdminAllowlistRemove(
       sendJson(res, 400, { error: 'platform and userId required' })
       return
     }
-    const { listAdmins } = await import('../core/admin-allowlist.js')
-    const remaining = listAdmins().filter((a) => !(a.platform === platform && a.userId === userId))
-    const newRaw = remaining.map((a) => `${a.platform}:${a.userId}`).join(',')
-    // Persist to env file. Note this nukes both runtime + env-derived
-    // entries — fine for the editor's use case (it round-trips through
-    // the full list).
-    const { updateEnvFile } = await import('../cli-ui/env-file.js')
-    updateEnvFile({ IMHUB_ADMIN_USERS: newRaw || null })
-    // Update process.env so getEntries() picks it up next call.
-    if (newRaw) process.env.IMHUB_ADMIN_USERS = newRaw
-    else delete process.env.IMHUB_ADMIN_USERS
-    // Reset the parse cache so the change is visible immediately.
-    const { _resetCache } = await import('../core/admin-allowlist.js')
-    _resetCache()
-    sendJson(res, 200, { ok: true, admins: remaining })
+    const { revokeAdmin, listAdmins } = await import('../core/admin-allowlist.js')
+    const removed = await revokeAdmin(platform, userId, { actor: getRequestActor(req) })
+    sendJson(res, 200, { ok: true, removed, admins: listAdmins() })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

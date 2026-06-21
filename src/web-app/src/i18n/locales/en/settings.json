@@ -445,22 +445,26 @@
     "resetTitle": "Reset to default"
   },
   "admins": {
-    "title": "Admin allowlist",
-    "subtitle": "IM-side users who can run admin-tier commands (`/admin promote`, `/admin token`, etc.). The list lives in `IMHUB_ADMIN_USERS`; this editor only works when the agim web port is bound locally.",
+    "title": "IM admin registry",
+    "subtitle": "Web admin tokens decide who can run IM admin-tier commands. Candidate IM users are auto-discovered after they send any message to agim.",
     "configured": "Allowlist configured",
-    "notConfigured": "Allowlist not configured — anyone with the CLI bootstrap token can self-promote.",
-    "bootstrapAvailable": "Bootstrap token file present",
-    "bootstrapPath": "Token path",
+    "notConfigured": "No IM admin configured yet.",
     "empty": "No admins added yet.",
     "col": {
       "platform": "Platform",
       "userId": "User ID"
     },
-    "add": {
-      "title": "Add admin",
-      "platform": "Platform",
-      "userId": "User ID",
-      "submit": "Add"
+    "known": {
+      "title": "Discovered IM users",
+      "hint": "Users appear here automatically after they talk to agim. Grant admin directly from this list.",
+      "count": "Discovered users: {{count}}",
+      "empty": "No discovered IM users yet.",
+      "emptyHint": "Ask the user to send one message to agim first.",
+      "col": {
+        "lastSeen": "Last seen"
+      },
+      "promote": "Grant admin",
+      "alreadyAdmin": "Already admin"
     },
     "remove": {
       "label": "Remove",

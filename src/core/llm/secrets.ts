@@ -3,8 +3,8 @@
 // Why a separate file (not the main config):
 //   - config.json is committed/backed up in many user setups; api keys
 //     belong somewhere we can chmod 0600 without changing user habits.
-//   - Aligns with the same pattern used for `~/.agim/acp-token` and the
-//     web token — secrets live next to their public config but stay in
+//   - Aligns with the same pattern used for the web token files — secrets
+//     live next to their public config but stay in
 //     their own file.
 //
 // File format (intentionally tiny):

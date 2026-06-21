@@ -63,14 +63,14 @@ npm link
 ```
 ~/.agim/
 ├── config.json              # 主配置（所有 messengers / agents / workspaces）
-├── acp-token                # ACP（第三方 agent 调用）鉴权 token，自动生成
+├── im-admins.json           # IM 管理员与已感知 IM 用户（Web 后台维护）
 ├── audit.db                 # 审计日志（30 天保留，可改）
 ├── jobs.db                  # Job Board
 ├── schedules.db             # 定时任务
 └── sessions/                # 会话历史（每会话一个 .json + .log）
 ```
 
-> Web 控制台（:3000）默认**内建 token 鉴权**（可用 `IMHUB_WEB_AUTH=off` 显式关闭）。即便如此，0.0.0.0 暴露仍建议走反向代理 / 防火墙 / SSH 隧道 / VPN；ACP 端口（:9090）继续走 bearer-token 鉴权。
+> Web 控制台（:3000）默认**内建 token 鉴权**（可用 `IMHUB_WEB_AUTH=off` 显式关闭）。ACP 端口（:9090）复用同一套 Web token（admin 角色）鉴权；公网暴露仍建议配反向代理 / 防火墙 / VPN。
 
 ### 3.1 接入 IM 通道
 
@@ -452,8 +452,9 @@ sqlite3 /home/imhub/.agim/reminders.db ".backup /backup/reminders.db"
 sqlite3 /home/imhub/.agim/memory.db   ".backup /backup/memory.db"   # v1.2.0+
 sqlite3 /home/imhub/.agim/viewer.db   ".backup /backup/viewer.db"   # v1.1.6+
 cp /home/imhub/.agim/config.json /backup/
-cp /home/imhub/.agim/env         /backup/   # 含 IMHUB_ADMIN_USERS / SMTP 等
+cp /home/imhub/.agim/env         /backup/   # SMTP 等运行时环境变量
 cp /home/imhub/.agim/tokens.json /backup/   # v1.1.10+ Web 鉴权 token
+cp /home/imhub/.agim/im-admins.json /backup/   # IM 管理员与已感知用户
 cp -r /home/imhub/.agim/sessions /backup/
 # 不需要备份的：cache/ (transformers 模型，重启会重下) / *.log / *.pid
 ```
@@ -462,68 +463,35 @@ cp -r /home/imhub/.agim/sessions /backup/
 
 ---
 
-## 九、管理员管理（v1.0+，v1.2.2 加 invite）
+## 九、管理员管理（v1.3+）
 
-服务管控类操作（`/restart` / `/stop` / 自然语言"重启服务" / web Safety 卡片）都要 admin。
+服务管控类操作（`/restart` / `/stop` / `/outbox ...` / Web 运维类写接口）都需要 IM admin 权限。
 
-### 9.1 首次部署：bootstrap token
+### 9.1 权限模型
 
-agim 启动时检测 `IMHUB_ADMIN_USERS` 为空，会自动生成 12 字符 base32 一次性 token 写到 `~/.agim/admin-bootstrap-token`（chmod 600）+ 日志：
+- **Web token 是唯一鉴权体系**（含 `admin` / `user` 角色）。
+- **IM 不再使用 bootstrap / invite token**，`/setup admin <token>` 仅保留兼容提示。
+- IM 用户只要给 agim 发过消息，就会自动记录到 `~/.agim/im-admins.json` 的 `knownUsers`。
 
-```
-journalctl -u agim | grep "setup admin"
-# 或
-cat ~/.agim/admin-bootstrap-token
-```
+### 9.2 在后台授予 / 移除 IM 管理员
 
-在 IM 里发：
+1. 用 **Web admin token** 登录后台，进入 `Settings → Admins`。
+2. 在「已感知 IM 用户」列表里直接点击「设为管理员」。
+3. 在上方管理员列表中可随时「移除」。
 
-```
-/setup admin <token>
-```
+全部变更即时生效，无需重启，也无需手输 userId。
 
-token 消费后被 unlink，你当前账号 (platform:userId) 写入 `~/.agim/env` 的 `IMHUB_ADMIN_USERS`。
-
-### 9.2 新增管理员（v1.2.2+）
-
-**方式 A · 已有 admin 在终端**：
+### 9.3 CLI 查看当前状态
 
 ```bash
-agim admin invite
-# 输出：
-#   ✓ Admin invite token generated.
-#       token : ABCD-EFGH-IJKL
-#   Forward this to the invitee:
-#       /setup admin ABCD-EFGH-IJKL
+agim admin list   # 当前 IM 管理员
+agim admin known  # 系统已感知的 IM 用户
 ```
 
-把 `/setup admin <token>` 那条发给被邀人，他在自己的 IM（任意接入的渠道）里粘贴即升级。**单次有效**，再生成新 invite 会作废上一个未消费的。
-
-**方式 B · 已有 admin 用交互菜单**：
-
-```bash
-agim              # 进入主菜单
-# 选「邀请新管理员（生成一次性 IM token）」/「Invite a new admin」
-```
-
-**方式 C · web Safety 卡片**：Settings 页 → 安全 → 直接填 platform + user id（适合你已经知道对方 ID 的场景）。
-
-### 9.3 查看 / 删除
-
-```bash
-agim admin list
-# Admins (2):
-#   wechat:wxid_abc123
-#   telegram:8754479311
-
-# 删除：直接编辑 ~/.agim/env 的 IMHUB_ADMIN_USERS 逗号分隔列表，重启服务
-# 或 web Safety 卡片点「移除」按钮（即时生效，无需重启）
-```
-
-### 9.4 拒绝 / 被忽悠的场景
+### 9.4 常见拒绝场景
 
 - 非 admin 在 IM 发 `/restart` → `🛑 你没有权限执行此操作`
-- 完全没配 admin 的全新部署 → 引导消息显示如何取 bootstrap token
+- 尚未配置任何 IM admin → 引导联系 Web 管理员在后台授权
 - 群聊里别人点你的恢复卡按钮 → v1.2.0+ 校验 creator_id，bystander 被拒
 
 ---
@@ -629,7 +597,7 @@ Environment="IMHUB_OPENCODE_CWD=/"
 Web 控制台默认有 token 鉴权，但公网暴露时仍建议：
 1. 反向代理强制 HTTPS，并按需叠加 Basic Auth / OAuth2 Proxy / mTLS（见 §5.1）
 2. 防火墙只允许已知来源 IP
-3. ACP 端口（默认 9090）走 bearer-token 鉴权，token 在 `~/.agim/acp-token`；删该文件 + 重启服务可轮换
+3. ACP 端口（默认 9090）复用 Web token（admin）鉴权；建议仅对可信来源开放
 
 ---
 
@@ -682,7 +650,7 @@ curl -fsS -X POST \
 | `IMHUB_WORKSPACES_ROOT` | `~/.agim-workspaces` | IM Agent 工作区根目录（v2 引入） |
 | `IMHUB_CLAUDE_CODE_CWD` | （未设） | 单独覆盖 IM 入口 Claude 的 cwd |
 | `IMHUB_OPENCODE_CWD` | （未设） | 单独覆盖 IM 入口 opencode 的 cwd |
-| `IMHUB_ADMIN_USERS` | （空：拒绝所有服务管控命令） | 逗号分隔 `platform:userId`；管理 `/restart` / `/stop` / Safety 卡片权限。一般通过 `agim admin invite` 或 web UI 管理，不手动编辑 |
+| `IMHUB_ADMIN_USERS` | （建议不配置） | 仅用于历史版本迁移（启动时一次性导入到 `im-admins.json`）。新版本请在 Web `Settings → Admins` 管理 |
 | `IMHUB_WEB_AUTH` | `on` | `off` 退回 1.1.10 之前的无 token 模式（自担风险） |
 | **v1.2.0+ 记忆** | | |
 | `IMHUB_MEMORY_ENABLED` | `0` | `1`/`true`/`yes` 启用记忆 + 蒸馏 |

@@ -415,23 +415,8 @@ program
     const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
     startMemoSweep()
 
-    // First-run admin onboarding: if IMHUB_ADMIN_USERS is unset, write a
-    // one-time bootstrap token to ~/.agim/admin-bootstrap-token and print
-    // a prominent banner so the operator can self-onboard via
-    // `/setup admin <token>` in IM (instead of having to edit env files
-    // by hand). On already-configured boxes, this is a no-op that also
-    // cleans up any stale token file.
-    try {
-      const { ensureBootstrapTokenIfNeeded } = await import('./core/admin-bootstrap.js')
-      ensureBootstrapTokenIfNeeded()
-    } catch (err) {
-      console.warn(`⚠️ admin bootstrap setup failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-    // Startup diagnostic: log how the admin allowlist resolved (process.env
-    // vs env-file fallback). Helps debug the "admin disappeared after
-    // restart" class of issue where systemd's EnvironmentFile parser
-    // silently drops part of IMHUB_ADMIN_USERS while the file itself
-    // looks fine. Pure log; non-fatal.
+    // Startup diagnostic: IM admin registry summary (admins + known IM users).
+    // The registry is now file-based and managed from Web Settings → Admins.
     try {
       const { logStartupResolution } = await import('./core/admin-allowlist.js')
       logStartupResolution()
@@ -459,7 +444,7 @@ program
     } catch { /* getuid not available on Windows */ }
 
     // v1.2.66 — env file permission audit. ~/.agim/env holds API keys
-    // + DB passwords + IMHUB_ADMIN_USERS. Wizard writes 0600 but if
+    // + DB passwords. Wizard writes 0600 but if
     // the operator manually edited / scp'd it, the mode may have
     // drifted. WARN (not refuse-to-start) so a recovering operator
     // can still bring the service up.
@@ -614,6 +599,22 @@ program
           userId: ctx.message.userId,
           ...sanitizeUserText(ctx.message.text),
         })
+
+        // v2 admin model — auto-discover IM identities. Any user who has
+        // ever talked to agim appears in Web Settings → Admins as a candidate,
+        // so operators never have to hand-type opaque user IDs.
+        try {
+          const { recordSeenImUser } = await import('./core/admin-allowlist.js')
+          recordSeenImUser(ctx.platform, ctx.message.userId, {
+            channelId: ctx.channelId,
+            threadId: ctx.message.threadId,
+          })
+        } catch (err) {
+          ctx.logger.warn({
+            event: 'admin.known_user.record_failed',
+            err: err instanceof Error ? err.message : String(err),
+          }, 'failed to record known IM user; continuing')
+        }
 
         // v1.2.66 — sender allowlist gate. When configured (env
         // IMHUB_ALLOWED_USERS set), unknown senders get a short refusal
@@ -2178,52 +2179,38 @@ tokenCmd
     process.exit(1)
   })
 
-// ─── admin allowlist management (v1.2.2+) ───────────────────────────
-//
-// Non-interactive companion to the entry menu's "邀请新管理员" option.
-// Useful from ansible / setup scripts.
+// ─── IM admin registry helpers (v2 model) ────────────────────────────
 
-const adminCmd = program.command('admin').description('Manage the admin allowlist')
-
-adminCmd
-  .command('invite')
-  .description('Generate a one-time IM invite token. The invitee runs `/setup admin <token>` to onboard.')
-  .action(async () => {
-    const { generateAdminInviteToken } = await import('./core/admin-bootstrap.js')
-    const { token, file } = generateAdminInviteToken()
-    console.log('')
-    console.log('✓ Admin invite token generated.')
-    console.log(`    token : ${token}`)
-    console.log(`    file  : ${file}`)
-    console.log('')
-    console.log('Forward this to the invitee:')
-    console.log(`    /setup admin ${token}`)
-    console.log('')
-    console.log('⚠️  Single-use. Generating another invite invalidates the previous one.')
-  })
+const adminCmd = program.command('admin').description('Inspect IM admin assignments')
 
 adminCmd
   .command('list')
-  .description('List current admins (env + runtime-added)')
+  .description('List current IM admins')
   .action(async () => {
-    // Load ~/.agim/env so IMHUB_ADMIN_USERS is visible when this CLI runs
-    // outside the daemon's process env (e.g. fresh shell invoking the CLI
-    // directly). The daemon already loads this at start.
-    try {
-      const { readEnvFile } = await import('./cli-ui/env-file.js')
-      const f = readEnvFile()
-      if (f.IMHUB_ADMIN_USERS && !process.env.IMHUB_ADMIN_USERS) {
-        process.env.IMHUB_ADMIN_USERS = f.IMHUB_ADMIN_USERS
-      }
-    } catch { /* ignore */ }
     const { listAdmins } = await import('./core/admin-allowlist.js')
     const rows = listAdmins()
     if (rows.length === 0) {
-      console.log('(no admins configured — run `agim admin invite` and have the invitee onboard via /setup admin <token>)')
+      console.log('(no IM admins configured — assign from Web: Settings → Admins)')
       return
     }
-    console.log(`Admins (${rows.length}):`)
+    console.log(`IM Admins (${rows.length}):`)
     for (const r of rows) console.log(`  ${r.platform}:${r.userId}`)
+  })
+
+adminCmd
+  .command('known')
+  .description('List IM users discovered from inbound messages')
+  .action(async () => {
+    const { listKnownImUsers } = await import('./core/admin-allowlist.js')
+    const rows = listKnownImUsers()
+    if (rows.length === 0) {
+      console.log('(no IM users discovered yet — ask someone to send a message first)')
+      return
+    }
+    console.log(`Known IM Users (${rows.length}):`)
+    for (const r of rows) {
+      console.log(`  ${r.platform}:${r.userId}  last_seen=${r.lastSeenAt}`)
+    }
   })
 
 // ─── `agim web` — print the web console URL ─────────────────────────
@@ -2321,22 +2308,6 @@ async function maybeRunEntryMenu(): Promise<boolean> {
     case 'token': {
       const { runTokenMenu } = await import('./cli-ui/token-menu.js')
       await runTokenMenu(lang)
-      return true
-    }
-    case 'invite_admin': {
-      const { generateAdminInviteToken } = await import('./core/admin-bootstrap.js')
-      const { t } = await import('./cli-ui/i18n.js')
-      const { token, file } = generateAdminInviteToken()
-      console.log()
-      console.log(t(lang, 'invite_admin.title'))
-      console.log()
-      console.log(`  ${t(lang, 'invite_admin.generated')} ${token}`)
-      console.log()
-      console.log(`  ${t(lang, 'invite_admin.howto')}`)
-      console.log(`      /setup admin ${token}`)
-      console.log()
-      console.log(`  ${t(lang, 'invite_admin.note')} ${file}`)
-      console.log()
       return true
     }
     case 'uninstall':

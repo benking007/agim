@@ -445,22 +445,26 @@
     "resetTitle": "清空 (使用默认值)"
   },
   "admins": {
-    "title": "管理员名单",
-    "subtitle": "可执行管理员级命令的 IM 用户（`/admin promote`、`/admin token` 等）。名单保存在 `IMHUB_ADMIN_USERS` 环境变量；仅当 agim Web 端口本地绑定时才能在此编辑。",
+    "title": "IM 管理员名单",
+    "subtitle": "Web 管理员 token 是唯一授权源。IM 候选用户会在与 agim 对话后自动出现在这里，可直接授予管理员。",
     "configured": "名单已配置",
-    "notConfigured": "尚未配置名单 — 任何持有 CLI bootstrap token 的人都可自我提权。",
-    "bootstrapAvailable": "Bootstrap token 文件存在",
-    "bootstrapPath": "文件路径",
+    "notConfigured": "尚未配置任何 IM 管理员。",
     "empty": "暂无管理员。",
     "col": {
       "platform": "平台",
       "userId": "用户 ID"
     },
-    "add": {
-      "title": "添加管理员",
-      "platform": "平台",
-      "userId": "用户 ID",
-      "submit": "添加"
+    "known": {
+      "title": "已感知 IM 用户",
+      "hint": "用户给 agim 发过消息后会自动出现在此列表，可直接设为管理员。",
+      "count": "已感知用户：{{count}}",
+      "empty": "暂无已感知 IM 用户。",
+      "emptyHint": "请先让该用户给 agim 发送一条消息。",
+      "col": {
+        "lastSeen": "最近出现时间"
+      },
+      "promote": "设为管理员",
+      "alreadyAdmin": "已是管理员"
     },
     "remove": {
       "label": "移除",

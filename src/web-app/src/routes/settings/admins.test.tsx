@@ -1,10 +1,9 @@
 /**
  * /settings/admins smoke — verifies:
- *   * Admin list renders from /api/admin-allowlist with the
- *     configured / bootstrap badges
- *   * Add form posts to /api/admin-allowlist
+ *   * Admin list renders from /api/admin-allowlist with configured badge
+ *   * Known users render and grant-admin button posts to /api/admin-allowlist
  *   * Per-row Remove → ConfirmDialog → DELETE
- *   * Empty list → friendly empty-state
+ *   * Empty discovered list → friendly empty-state
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,47 +47,55 @@ function renderPage(): ReturnType<typeof render> {
 }
 
 const PAYLOAD = {
-  admins: [
-    { platform: 'wechat', userId: 'wxid_alice' },
-    { platform: 'feishu', userId: 'ou_bob' },
+  admins: [{ platform: 'wechat', userId: 'wxid_alice' }],
+  knownUsers: [
+    {
+      platform: 'wechat',
+      userId: 'wxid_alice',
+      firstSeenAt: '2026-06-21T12:00:00.000Z',
+      lastSeenAt: '2026-06-21T12:30:00.000Z',
+    },
+    {
+      platform: 'feishu',
+      userId: 'ou_bob',
+      firstSeenAt: '2026-06-21T12:01:00.000Z',
+      lastSeenAt: '2026-06-21T12:31:00.000Z',
+    },
   ],
   configured: true,
-  bootstrapAvailable: true,
-  bootstrapTokenPath: '/root/.agim/bootstrap-token.txt',
 }
 
 describe('/settings/admins', () => {
-  it('renders admin rows + configured badge', async () => {
+  it('renders admin rows + configured badge + known count', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(PAYLOAD))
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('wxid_alice')).toBeInTheDocument()
+      expect(screen.getAllByText('wxid_alice').length).toBeGreaterThan(0)
     })
-    expect(screen.getByText('ou_bob')).toBeInTheDocument()
     expect(screen.getByText('Allowlist configured')).toBeInTheDocument()
-    expect(screen.getByText('Bootstrap token file present')).toBeInTheDocument()
+    expect(screen.getByText('Discovered users: 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Already admin' })).toBeDisabled()
   })
 
-  it('Add form posts to /api/admin-allowlist', async () => {
+  it('Grant admin button posts to /api/admin-allowlist', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const u = String(input)
       if (u === '/api/admin-allowlist' && init?.method === 'POST') {
         const body = init.body ? JSON.parse(String(init.body)) : {}
-        expect(body).toMatchObject({ platform: 'telegram', userId: '12345' })
+        expect(body).toMatchObject({ platform: 'feishu', userId: 'ou_bob' })
         return jsonResponse({
-          ok: true, added: true,
-          admins: [...PAYLOAD.admins, { platform: 'telegram', userId: '12345' }],
+          ok: true,
+          added: true,
+          admins: [...PAYLOAD.admins, { platform: 'feishu', userId: 'ou_bob' }],
         })
       }
       if (u === '/api/admin-allowlist') return jsonResponse(PAYLOAD)
       return jsonResponse({})
     })
     renderPage()
-    await waitFor(() => expect(screen.getByText('wxid_alice')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Platform'), { target: { value: 'telegram' } })
-    fireEvent.change(screen.getByLabelText('User ID'), { target: { value: '12345' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await waitFor(() => expect(screen.getAllByText('wxid_alice').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getByRole('button', { name: 'Grant admin' }))
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(
@@ -105,21 +112,21 @@ describe('/settings/admins', () => {
       if (u === '/api/admin-allowlist' && init?.method === 'DELETE') {
         const body = init.body ? JSON.parse(String(init.body)) : {}
         expect(body).toMatchObject({ platform: 'wechat', userId: 'wxid_alice' })
-        return jsonResponse({ ok: true, admins: [PAYLOAD.admins[1]] })
+        return jsonResponse({ ok: true, removed: true, admins: [] })
       }
       if (u === '/api/admin-allowlist') return jsonResponse(PAYLOAD)
       return jsonResponse({})
     })
     renderPage()
-    await waitFor(() => expect(screen.getByText('wxid_alice')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('wxid_alice').length).toBeGreaterThan(0))
     const rowRemoves = screen.getAllByRole('button', { name: 'Remove' })
     fireEvent.click(rowRemoves[0]!)
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     const dialog = screen.getByRole('dialog')
     const candidates = within(dialog).getAllByRole('button', { name: 'Remove' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
-    expect(destructive).toBeDefined()
-    fireEvent.click(destructive!)
+    if (!destructive) throw new Error('destructive remove button not found')
+    fireEvent.click(destructive)
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(
@@ -131,11 +138,13 @@ describe('/settings/admins', () => {
 
   it('empty list → friendly empty-state', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
-      admins: [], configured: false, bootstrapAvailable: false, bootstrapTokenPath: '',
+      admins: [],
+      knownUsers: [],
+      configured: false,
     }))
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('No admins added yet.')).toBeInTheDocument()
+      expect(screen.getByText('No discovered IM users yet.')).toBeInTheDocument()
     })
   })
 })

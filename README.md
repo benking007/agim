@@ -35,7 +35,7 @@
 - **Long-term memory (v1.2.0+)** — per-user fact store + auto-distilled "persona" summary injected into every prompt. SQLite + FTS5 default; optional vector retrieval (local BGE via `@xenova/transformers` ONNX, or any OpenAI-compatible `/v1/embeddings` endpoint) with reciprocal-rank fusion. Default OFF; enable in Settings → 自动化记忆. Web admin pages `/memory/facts` + `/memory/persona` expose per-user persona editing, fact browsing, and JSON export. All data stays in `~/.agim/memory.db` locally.
 - **Cost & Health dashboard (v1.2.0+)** — `/observability/health` + `/observability/topn` aggregate per-day spend / calls / errors / p95 latency from the audit log. Filter 1 / 7 / 30 / 90 days; top-N by user / agent / platform; daily trend chart with metric toggle. Claude per-run cost extracted from `--output-format json`.
 - **Agent-initiated push (v1.2.0+)** — `mcp__imhub__push_message` MCP tool lets a running agent push a follow-up message back into the IM thread without an inbound trigger (long-running jobs, schedule-aware notifications). `POST /api/notify` exposes the same primitive to webhooks / cron. Per-user rate limit + cross-thread gating.
-- **Admin invite (v1.2.2+)** — `agim admin invite` (or the entry-menu's "邀请新管理员" option) generates a single-use IM token; the invitee runs `/setup admin <token>` to onboard without ever touching `~/.agim/env`. `agim admin list` shows the current allowlist.
+- **IM admin assignment (v1.3+)** — Web admin token is the single authority. Any IM user who has chatted with agim is auto-discovered in `Settings → Admins`; operators grant/revoke admin in one click (no `/setup admin`, no manual userId typing). `agim admin list` / `agim admin known` show current state.
 - **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
 - **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
 - **Browser dashboard** — chat UI; Tasks panel with 12 tabs (jobs / background / subtasks / schedules / approvals / health / files / audit / outbox / a2a / **cost / memory**); reminders panel; memos panel; settings page with workspace CRUD + admin allowlist + Safety card (restart / stop). Bilingual (EN / 中文) with per-page lang switcher and contextual `(?)` help tooltips on jargon (v1.1.4+)
@@ -109,7 +109,7 @@ units that call `agim` continue to work without any extra setup.
 | **Routing** | Intent classifier, circuit breaker, rate limiter, sticky sessions, LLM judge fallback; `/router compare` A/B evaluator |
 | **Workspaces** | Multi-tenant; agent whitelist + rate limits; command-level ACL |
 | **Observability** | pino structured logs, traceId, Prometheus `/api/metrics`, SQLite audit log |
-| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent) with token-gated `~/.agim/acp-token` (legacy fallback `~/.agim/web-token`) |
+| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent), authenticated by the same Web token system (admin role) |
 
 ## CLI Commands
 
@@ -137,7 +137,7 @@ agim setup mcp health      # Probe every configured MCP server
 agim diag llm              # Ping every backend + show which role binds to what
 agim diag mcp              # Connect-and-list-tools per MCP server
 
-# v1.1.10+ — Web/ACP token management
+# v1.1.10+ — Web token management
 agim token create [name]   # Mint a new user/admin token for /api/* + /acp/*
 agim token list            # List tokens (last 4 chars only)
 agim token revoke <id>     # Revoke a token by id

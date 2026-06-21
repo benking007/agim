@@ -169,11 +169,11 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'start') return { type: 'command', command: 'start', args: rest }
   if (cmd === 'help' || cmd === '?') return { type: 'command', command: 'help', args: rest }
   // Service-control commands. /status read-only / open; /restart + /stop
-  // gated on IMHUB_ADMIN_USERS allowlist (enforced inside the handler).
+  // gated on IM admin registry (enforced inside the handler).
   if (cmd === 'status') return { type: 'service', action: 'status', args: rest }
   if (cmd === 'restart') return { type: 'service', action: 'restart', args: rest }
   if (cmd === 'stop') return { type: 'service', action: 'stop', args: rest }
-  // /setup admin <token> — one-time admin onboarding, see commands/setup.ts.
+  // /setup — legacy compatibility hint (admin onboarding moved to Web settings).
   if (cmd === 'setup') return { type: 'setup', args: rest }
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }

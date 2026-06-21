@@ -5,59 +5,37 @@
 //   POST /tasks         → Create task (sync or stream via SSE)
 //   GET  /tasks/{id}    → Get task status
 //
-// Runs on a separate port (default 9090). Reuses web token for auth.
+// Runs on a separate port (default 9090). Reuses Web admin token auth.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { AGIM_HOME } from './agim-paths.js'
 import { parseMessage, routeMessage, type RouteContext } from './router.js'
 import { generateTraceId, createLogger, logger as rootLogger } from './logger.js'
 import { registry } from './registry.js'
 import { getDefaultAgent } from './live-config.js'
 import { createJob, getJob, runJob } from './job-board.js'
-import { safeEqual } from '../utils/safe-equal.js'
 
 const DEFAULT_ACP_PORT = 9090
-const ACP_TOKEN_FILE = join(AGIM_HOME, 'acp-token')
-// Legacy fallback: 0.x deployments shared one token file with the web console
-// at ~/.agim/web-token (or ~/.im-hub/web-token). The web console no longer
-// uses any token, so on a fresh 1.x deployment we keep ACP's bearer-token in
-// its own file; on upgrade we keep reading the legacy file so existing ACP
-// callers don't break.
-const LEGACY_TOKEN_FILE = join(AGIM_HOME, 'web-token')
 /** Max POST body size (per ACP request). Larger requests get 413. */
 const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
 
-function getOrCreateAcpToken(): string {
-  if (existsSync(ACP_TOKEN_FILE)) {
-    return readFileSync(ACP_TOKEN_FILE, 'utf-8').trim()
+async function parseAuth(req: IncomingMessage): Promise<{ ok: boolean; status?: number; error?: string }> {
+  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') {
+    return { ok: true }
   }
-  if (existsSync(LEGACY_TOKEN_FILE)) {
-    return readFileSync(LEGACY_TOKEN_FILE, 'utf-8').trim()
-  }
-  const token = randomBytes(32).toString('hex')
-  mkdirSync(AGIM_HOME, { recursive: true })
-  writeFileSync(ACP_TOKEN_FILE, token, { mode: 0o600 })
-  return token
-}
-
-function getToken(): string | null {
-  try { return getOrCreateAcpToken() } catch { return null }
-}
-
-function parseAuth(req: IncomingMessage): { ok: boolean; error?: string } {
-  const token = getToken()
-  if (!token) return { ok: false, error: 'Server not configured' }
   const auth = String(req.headers.authorization || '')
-  if (auth.startsWith('Bearer ') && safeEqual(auth.slice(7), token)) return { ok: true }
-
-  // Also accept X-IM-Hub-Token header
-  const xToken = String(req.headers['x-im-hub-token'] || '')
-  if (xToken && safeEqual(xToken, token)) return { ok: true }
-
-  return { ok: false, error: 'Unauthorized' }
+  if (!auth.startsWith('Bearer ')) return { ok: false, status: 401, error: 'Unauthorized' }
+  const raw = auth.slice(7).trim()
+  if (!raw) return { ok: false, status: 401, error: 'Unauthorized' }
+  try {
+    const { verifyToken, isAdminTokenId } = await import('./access-token.js')
+    const tokenId = verifyToken(raw)
+    if (!tokenId) return { ok: false, status: 401, error: 'Unauthorized' }
+    if (!isAdminTokenId(tokenId)) return { ok: false, status: 403, error: 'Forbidden: admin token required' }
+    return { ok: true }
+  } catch {
+    return { ok: false, status: 500, error: 'Auth backend unavailable' }
+  }
 }
 
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -121,11 +99,14 @@ export async function startACPServer(options: {
     // CORS for browser-based ACP clients
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-IM-Hub-Token')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
-    const auth = parseAuth(req)
-    if (!auth.ok) { sendJson(res, 401, { error: auth.error }); return }
+    const auth = await parseAuth(req)
+    if (!auth.ok) {
+      sendJson(res, auth.status || 401, { error: auth.error || 'Unauthorized' })
+      return
+    }
 
     // GET /agent/card
     if (req.method === 'GET' && url.pathname === '/agent/card') {
@@ -274,7 +255,7 @@ export async function startACPServer(options: {
   // R13 A2 — bind defaults to 127.0.0.1 (loopback only). Operators
   // who run A2A across hosts can opt-in with IMHUB_ACP_BIND=<addr>.
   // We warn loudly when non-loopback so the deployment audit log
-  // captures the elevation; the bearer-token gate (parseAuth)
+  // captures the elevation; the Web admin token gate (parseAuth)
   // remains the only client-facing protection regardless.
   const bind = (process.env.IMHUB_ACP_BIND || '127.0.0.1').trim()
   const isLoopback = bind === '127.0.0.1' || bind === '::1' || bind === 'localhost'
@@ -289,7 +270,7 @@ export async function startACPServer(options: {
       bind, port,
     }, `⚠️  ACP Server bound to ${bind}:${port} — accessible beyond loopback. `
        + `Ensure your firewall restricts ${bind}:${port} to trusted hosts; `
-       + `bearer-token gate is the only client-facing protection.`)
+       + `Web admin token gate is the only client-facing protection.`)
     // Also emit a persistent audit row so the binding decision is
     // visible in /api/audit/events long after the boot log rolls.
     try {

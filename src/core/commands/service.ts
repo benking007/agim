@@ -1,7 +1,7 @@
 // `/restart`, `/stop`, `/status` — IM slash commands for service control.
 //
-// Same admin-allowlist gating as the natural-language path (see
-// core/service-intent.ts) so users can't bypass IMHUB_ADMIN_USERS by
+// Same IM-admin gating as the natural-language path (see
+// core/service-intent.ts) so users can't bypass the admin registry by
 // preferring the slash form.
 //
 // `/status` is read-only and accepts non-admin callers (it surfaces only

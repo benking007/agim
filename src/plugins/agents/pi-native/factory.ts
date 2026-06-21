@@ -55,6 +55,9 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // IM approval card).
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
     maxIterations: resolveMaxIterations(),
+    // Proactive per-turn compaction (pi never auto-compacts). On by default;
+    // IMHUB_NATIVE_COMPACTION=off disables it.
+    compactionEnabled: process.env.IMHUB_NATIVE_COMPACTION !== 'off',
     // Reuse native's full system prompt so the model knows its real backend +
     // model + role (fixes "what model are you" → it stops hallucinating claude)
     // and gets the operator role + skill routing + tool guides.

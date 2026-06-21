@@ -12,10 +12,19 @@
 //   - history     → seeded into a COLD session only
 //   - opts.planMode → tool_call hook blocks mutating tools
 //   - opts.onUsage  → surfaced from the returned AssistantMessage.usage
+//   - compaction    → before each turn, summarize old history when the session
+//                     exceeds the model window (pi never auto-compacts)
 //   - yields        → final assistant text (buffered; token streaming is a
 //                     follow-up — pi exposes an event stream we can wire later)
 
-import { AgentHarness, JsonlSessionRepo } from '@earendil-works/pi-agent-core'
+import {
+  AgentHarness,
+  calculateContextTokens,
+  DEFAULT_COMPACTION_SETTINGS,
+  getLastAssistantUsage,
+  JsonlSessionRepo,
+  shouldCompact,
+} from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { Model } from '@earendil-works/pi-ai'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from '../../../core/types.js'
@@ -63,6 +72,12 @@ export interface PiNativeDeps {
    *  has no built-in cap, so we enforce one (mirrors agim's
    *  IMHUB_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
   maxIterations?: number
+  /** Proactive context compaction before each turn. pi never auto-compacts, so
+   *  when a durable session grows past the model window (minus reserve) the
+   *  adapter summarizes old history — without this, long-lived IM sessions grow
+   *  the JSONL unbounded until the context overflows. Defaults to enabled; set
+   *  false (factory reads IMHUB_NATIVE_COMPACTION=off) to disable. */
+  compactionEnabled?: boolean
 }
 
 const DEFAULT_MAX_ITER = 50
@@ -242,6 +257,23 @@ export class PiNativeAgentAdapter implements AgentAdapter {
     if (fresh && history?.length) {
       for (const m of history) {
         await harness.appendMessage(m.role === 'user' ? seedUserMessage(m.content) : seedAssistantMessage(m.content))
+      }
+    }
+
+    // Proactive compaction (pi never auto-compacts): if the durable session has
+    // grown past the model window minus reserve, summarize old history BEFORE
+    // this turn so it neither overflows the context nor re-pays for the full
+    // backlog every turn. Best-effort — a failed compaction must not block the
+    // turn (it just runs with the larger context). Off via IMHUB_NATIVE_COMPACTION=off.
+    if (this.deps.compactionEnabled !== false && Number.isFinite(binding.model.contextWindow)) {
+      try {
+        const usage = getLastAssistantUsage(await session.getEntries())
+        if (usage && shouldCompact(calculateContextTokens(usage), binding.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
+          await harness.compact()
+        }
+      } catch (err) {
+        // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
+        console.error('[pi-native] compaction skipped:', err instanceof Error ? err.message : err)
       }
     }
 

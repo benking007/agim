@@ -1,6 +1,8 @@
 // Drive PiNativeAgentAdapter through agim's AgentAdapter contract with an
 // injected faux model binding (provider/auth resolution is tested separately).
 
+import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
+import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, type Model, registerFauxProvider } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
@@ -178,5 +180,45 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     const out = await collect(adapter.sendPrompt('s7', 'do the flaky thing'))
     expect(calls).toBe(3) // exact stuck-loop window
     expect(out).toContain('死循环')
+  })
+
+  it('compacts an over-budget durable session before the next turn', async () => {
+    // Tiny context window → turn-1 usage trips shouldCompact at the start of turn 2.
+    const reg = registerFauxProvider({ models: [{ id: 'tiny', contextWindow: 200 }] })
+    regs.push(reg)
+    reg.setResponses([fauxAssistantMessage('t1')])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ad-'))
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+    })
+    await collect(adapter.sendPrompt('cmp', 'q1'))
+    // Turn 2 is over budget → an extra summary call fires before the turn itself.
+    reg.appendResponses([fauxAssistantMessage('history summary'), fauxAssistantMessage('t2')])
+    expect(await collect(adapter.sendPrompt('cmp', 'q2'))).toBe('t2')
+    // The durable session now carries a compaction entry.
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const meta = (await repo.list()).find((m) => m.id === 'cmp')
+    expect(meta).toBeDefined()
+    const entries = await (await repo.open(meta!)).getEntries()
+    expect(entries.some((e) => e.type === 'compaction')).toBe(true)
+  })
+
+  it('skips compaction when disabled (no extra summary call)', async () => {
+    const reg = registerFauxProvider({ models: [{ id: 'tiny', contextWindow: 200 }] })
+    regs.push(reg)
+    // Only two turn responses queued — if compaction fired it would starve the queue.
+    reg.setResponses([fauxAssistantMessage('t1'), fauxAssistantMessage('t2')])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ad-'))
+    const adapter = new PiNativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFrom(reg.getModel()!),
+      compactionEnabled: false,
+    })
+    await collect(adapter.sendPrompt('nc', 'q1'))
+    expect(await collect(adapter.sendPrompt('nc', 'q2'))).toBe('t2')
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const entries = await (await repo.open((await repo.list()).find((m) => m.id === 'nc')!)).getEntries()
+    expect(entries.some((e) => e.type === 'compaction')).toBe(false)
   })
 })

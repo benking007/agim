@@ -40,8 +40,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChoiceCardPrompt } from './types.js'
 import type { RunContext } from './approval-bus.js'
 import { logger as rootLogger } from './logger.js'
-import { sink } from './message-sink.js'
-import { registry } from './registry.js'
+import { sink, resolveMessenger } from './message-sink.js'
 
 const log = rootLogger.child({ component: 'ask-user-rpc' })
 
@@ -168,7 +167,7 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
   // through to text-only via sink, which will queue and eventually fail
   // delivery with a clear error. We refuse the ask in that case so the
   // agent doesn't sit on a Promise that can never resolve.
-  const messenger = registry.getMessenger(ctx.platform)
+  const messenger = resolveMessenger(ctx.platform)
   if (!messenger) {
     return {
       ok: false,

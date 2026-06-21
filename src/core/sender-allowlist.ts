@@ -5,7 +5,7 @@
 //   - sender-allowlist: who can SEND ANY MESSAGE to the bot at all
 //
 // Source: IMHUB_ALLOWED_USERS env, comma-separated `platform:userId` pairs.
-// Same syntax as IMHUB_ADMIN_USERS:
+// Same `platform:userId` syntax as IM admin registry entries:
 //   IMHUB_ALLOWED_USERS=telegram:8754479311,wechat-ilink:wxid_abc
 //
 // **Default policy when env is UNSET: OPEN** (no filtering).

@@ -18,7 +18,6 @@ export type EntryAction =
   | { kind: 'restart' }
   | { kind: 'stop' }
   | { kind: 'token' }
-  | { kind: 'invite_admin' }
   | { kind: 'uninstall' }
   | { kind: 'quit' }
 
@@ -45,7 +44,6 @@ export async function runEntryMenu(): Promise<{ action: EntryAction; lang: Lang 
         { value: 'restart',   name: t(lang, 'menu.restart') },
         { value: 'stop',      name: t(lang, 'menu.stop') },
         { value: 'token',        name: t(lang, 'menu.token'),        separatorBefore: true },
-        { value: 'invite_admin', name: t(lang, 'menu.invite_admin') },
         { value: 'uninstall',    name: t(lang, 'menu.uninstall') },
         { value: 'quit',      name: t(lang, 'menu.quit'),      separatorBefore: true },
       ],

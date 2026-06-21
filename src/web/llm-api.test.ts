@@ -15,6 +15,7 @@ process.env.AGIM_HOME = TMP_OWN
 
 const { handleLlmApi } = await import('./llm-api.js')
 const { AGIM_HOME } = await import('../core/agim-paths.js')
+const { getAnyProvider, _resetRegistry } = await import('../core/llm/registry.js')
 const TMP = AGIM_HOME
 
 interface MockRes {
@@ -60,6 +61,7 @@ function url(path: string): URL {
 beforeEach(() => {
   try { rmSync(TMP, { recursive: true, force: true }) } catch {}
   mkdirSync(TMP, { recursive: true })
+  _resetRegistry()
 })
 
 describe('handleLlmApi — list', () => {
@@ -107,6 +109,15 @@ describe('handleLlmApi — add backend', () => {
     expect(body.backends).toHaveLength(1)
     expect(body.backends[0].name).toBe('deepseek')
     expect(body.backends[0].secret.source).toBe('file')
+  })
+
+  it('refreshes in-process LLM registry immediately after save', async () => {
+    const add = { name: 'runtime-ok', provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-live' }
+    const res = makeRes()
+    await handleLlmApi(makeReq('POST', add), res as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res.statusCode).toBe(201)
+    expect(getAnyProvider()?.name).toBe('runtime-ok')
   })
 
   it('refuses duplicate name with 409', async () => {
@@ -182,6 +193,7 @@ describe('handleLlmApi — secrets', () => {
     const rmRes = makeRes()
     await handleLlmApi(makeReq('DELETE'), rmRes as unknown as import('node:http').ServerResponse, url('/api/llm/secrets/s1'))
     expect(rmRes.statusCode).toBe(200)
+    expect(getAnyProvider()).toBeNull()
   })
 
   it('rejects empty apiKey', async () => {

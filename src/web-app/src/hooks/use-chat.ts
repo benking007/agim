@@ -72,6 +72,17 @@ export interface PendingApproval {
   resolvedAt?: number
 }
 
+export interface RunActivity {
+  runId: string
+  agent: string
+  startedAt: number
+  status: 'running' | 'success' | 'error'
+  finishedAt?: number
+  durationMs?: number
+  outputChars?: number
+  error?: string
+}
+
 export interface ChatState {
   messages: ChatMessage[]
   /** Active approval cards rendered in the dock (NOT in `messages`).
@@ -79,6 +90,11 @@ export interface ChatState {
    *  but resolved cards lingered in history clutter. Dock approach:
    *  show only while pending → toast on resolve → dismiss. */
   pendingApprovals: PendingApproval[]
+  /** Timeline rows for recent run lifecycle updates (run-start →
+   *  usage → run-finish). Newest first, bounded list. */
+  runActivities: RunActivity[]
+  /** Current in-flight run id, if any. */
+  activeRunId: string | null
   agents: string[]
   agent: string                  // currently selected
   status: WsStatus
@@ -91,6 +107,8 @@ export interface ChatState {
 const initialState: ChatState = {
   messages: [],
   pendingApprovals: [],
+  runActivities: [],
+  activeRunId: null,
   agents: [],
   agent: '',
   status: 'connecting',
@@ -112,8 +130,20 @@ type Action =
   | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
   | { kind: 'APPROVAL_EDIT'; messageId: string; outcome: ApprovalCardOutcome }
   | { kind: 'APPROVAL_DISMISS'; messageId: string }
+  | { kind: 'RUN_START'; runId: string; agent: string; startedAt: number }
+  | { kind: 'RUN_USAGE'; runId: string; durationMs: number; outputChars: number }
+  | {
+      kind: 'RUN_FINISH'
+      runId: string
+      status: 'success' | 'error'
+      finishedAt: number
+      durationMs: number
+      error?: string
+    }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
+
+const MAX_RUN_ACTIVITIES = 24
 
 function reducer(s: ChatState, a: Action): ChatState {
   switch (a.kind) {
@@ -195,6 +225,61 @@ function reducer(s: ChatState, a: Action): ChatState {
         ...s,
         pendingApprovals: s.pendingApprovals.filter((p) => p.messageId !== a.messageId),
       }
+    case 'RUN_START': {
+      const next: RunActivity[] = [
+        {
+          runId: a.runId,
+          agent: a.agent,
+          startedAt: a.startedAt,
+          status: 'running',
+        },
+        ...s.runActivities.filter((r) => r.runId !== a.runId),
+      ]
+      return {
+        ...s,
+        runActivities: next.slice(0, MAX_RUN_ACTIVITIES),
+        activeRunId: a.runId,
+      }
+    }
+    case 'RUN_USAGE': {
+      const idx = s.runActivities.findIndex((r) => r.runId === a.runId)
+      if (idx < 0) return s
+      const next = [...s.runActivities]
+      const cur = next[idx]
+      if (cur) {
+        next[idx] = {
+          ...cur,
+          durationMs: a.durationMs,
+          outputChars: a.outputChars,
+        }
+      }
+      return { ...s, runActivities: next }
+    }
+    case 'RUN_FINISH': {
+      const idx = s.runActivities.findIndex((r) => r.runId === a.runId)
+      if (idx < 0) {
+        return {
+          ...s,
+          activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
+        }
+      }
+      const next = [...s.runActivities]
+      const cur = next[idx]
+      if (cur) {
+        next[idx] = {
+          ...cur,
+          status: a.status,
+          finishedAt: a.finishedAt,
+          durationMs: a.durationMs,
+          error: a.error,
+        }
+      }
+      return {
+        ...s,
+        runActivities: next,
+        activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
+      }
+    }
     case 'RESET_CONVERSATION':
       // Clear all chat state but keep WS status + agent list + current
       // agent. Pending dock entries also clear — server's empty
@@ -203,6 +288,8 @@ function reducer(s: ChatState, a: Action): ChatState {
         ...s,
         messages: [],
         pendingApprovals: [],
+        runActivities: [],
+        activeRunId: null,
         currentReplyId: null,
         error: null,
       }
@@ -357,6 +444,36 @@ export function useChat(): UseChat {
         return
       case 'agent-switched':
         dispatch({ kind: 'AGENT_SWITCHED', agent: msg.agent })
+        return
+      case 'run-start':
+        dispatch({
+          kind: 'RUN_START',
+          runId: msg.runId,
+          agent: msg.agent,
+          startedAt: Number.isFinite(Date.parse(msg.startedAt))
+            ? Date.parse(msg.startedAt)
+            : Date.now(),
+        })
+        return
+      case 'usage':
+        dispatch({
+          kind: 'RUN_USAGE',
+          runId: msg.runId,
+          durationMs: msg.durationMs,
+          outputChars: msg.outputChars,
+        })
+        return
+      case 'run-finish':
+        dispatch({
+          kind: 'RUN_FINISH',
+          runId: msg.runId,
+          status: msg.status,
+          finishedAt: Number.isFinite(Date.parse(msg.finishedAt))
+            ? Date.parse(msg.finishedAt)
+            : Date.now(),
+          durationMs: msg.durationMs,
+          error: msg.error,
+        })
         return
       case 'chunk':
         bufferChunk(msg.text)

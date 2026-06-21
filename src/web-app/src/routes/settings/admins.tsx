@@ -1,24 +1,19 @@
 /**
- * /settings/admins — manage `IMHUB_ADMIN_USERS` entries.
+ * /settings/admins — manage IM administrators via known IM users.
  *
- * Each entry is a `(platform, userId)` pair (e.g. `wechat:wxid_abc`).
- * Add via the inline form at the bottom; remove via per-row trash
- * button → ConfirmDialog. The backend's POST/DELETE handlers gate
- * on isLocalBind — if the operator is hitting agim from another
- * host the mutations 403; we surface that toast verbatim.
+ * Candidate users are auto-discovered from real inbound IM messages.
+ * Operators grant admin from the discovered list (no manual userId typing).
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Loader2, RefreshCcw, Shield, Trash2, UserPlus } from 'lucide-react'
+import { Loader2, RefreshCcw, Shield, Trash2, UserPlus, Users } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { EmptyState } from '@/components/common/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -33,7 +28,13 @@ import {
   useRemoveAdmin,
 } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
-import type { AdminEntry } from '@/types/api'
+import type { AdminEntry, KnownImUser } from '@/types/api'
+
+function formatSeenAt(value: string): string {
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return value
+  return dt.toLocaleString()
+}
 
 export default function SettingsAdminsRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
@@ -43,20 +44,16 @@ export default function SettingsAdminsRoute(): JSX.Element {
   const addAdmin = useAddAdmin()
   const removeAdmin = useRemoveAdmin()
 
-  const [platform, setPlatform] = useState('')
-  const [userId, setUserId] = useState('')
   const [removeTarget, setRemoveTarget] = useState<AdminEntry | null>(null)
+  const adminKeys = useMemo(
+    () => new Set((data?.admins ?? []).map((row) => `${row.platform}:${row.userId}`)),
+    [data?.admins],
+  )
 
-  async function onAdd(e: React.FormEvent): Promise<void> {
-    e.preventDefault()
-    const p = platform.trim()
-    const u = userId.trim()
-    if (!p || !u) return
+  async function onPromote(user: KnownImUser): Promise<void> {
     try {
-      await addAdmin.mutateAsync({ platform: p, userId: u })
+      await addAdmin.mutateAsync({ platform: user.platform, userId: user.userId })
       toast.success(t('admins.toast.added'))
-      setPlatform('')
-      setUserId('')
     } catch (err) {
       toast.error(describeError(err, t).message)
     }
@@ -100,11 +97,7 @@ export default function SettingsAdminsRoute(): JSX.Element {
           ) : (
             <Badge variant="warning">{t('admins.notConfigured')}</Badge>
           )}
-          {data.bootstrapAvailable && (
-            <Badge variant="info" title={data.bootstrapTokenPath}>
-              {t('admins.bootstrapAvailable')}
-            </Badge>
-          )}
+          <Badge variant="info">{t('admins.known.count', { count: data.knownUsers.length })}</Badge>
         </div>
       )}
 
@@ -144,47 +137,57 @@ export default function SettingsAdminsRoute(): JSX.Element {
         </Table>
       ) : null}
 
-      {/* Add form */}
-      <form
-        onSubmit={(e) => void onAdd(e)}
-        className="rounded-md border border-border bg-surface p-4"
-      >
-        <div className="mb-3 text-sm font-medium">{t('admins.add.title')}</div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_1fr_auto] sm:items-end">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="admin-platform" className="text-xs text-text-dim">
-              {t('admins.add.platform')}
-            </Label>
-            <Input
-              id="admin-platform"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              placeholder="wechat"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="admin-user" className="text-xs text-text-dim">
-              {t('admins.add.userId')}
-            </Label>
-            <Input
-              id="admin-user"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="wxid_abc123"
-              className="font-mono text-xs"
-            />
-          </div>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={addAdmin.isPending || !platform.trim() || !userId.trim()}
-          >
-            {addAdmin.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-            {t('admins.add.submit')}
-          </Button>
+      <section className="rounded-md border border-border bg-surface p-4">
+        <div className="mb-3 flex flex-col gap-1">
+          <div className="text-sm font-medium">{t('admins.known.title')}</div>
+          <div className="text-xs text-text-dim">{t('admins.known.hint')}</div>
         </div>
-      </form>
+        {listQuery.isLoading ? (
+          <div className="h-20 rounded-md bg-surface-2 animate-pulse" />
+        ) : data && data.knownUsers.length === 0 ? (
+          <EmptyState
+            icon={<Users />}
+            title={t('admins.known.empty')}
+            description={t('admins.known.emptyHint')}
+          />
+        ) : data ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-40">{t('admins.col.platform')}</TableHead>
+                <TableHead>{t('admins.col.userId')}</TableHead>
+                <TableHead className="w-48">{t('admins.known.col.lastSeen')}</TableHead>
+                <TableHead className="w-32" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.knownUsers.map((u) => {
+                const key = `${u.platform}:${u.userId}`
+                const alreadyAdmin = adminKeys.has(key)
+                return (
+                  <TableRow key={key}>
+                    <TableCell className="font-mono">{u.platform}</TableCell>
+                    <TableCell className="font-mono text-xs">{u.userId}</TableCell>
+                    <TableCell className="text-xs text-text-dim">{formatSeenAt(u.lastSeenAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant={alreadyAdmin ? 'ghost' : 'outline'}
+                        disabled={alreadyAdmin || addAdmin.isPending}
+                        onClick={() => void onPromote(u)}
+                        aria-label={alreadyAdmin ? t('admins.known.alreadyAdmin') : t('admins.known.promote')}
+                      >
+                        {addAdmin.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                        {alreadyAdmin ? t('admins.known.alreadyAdmin') : t('admins.known.promote')}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        ) : null}
+      </section>
 
       <ConfirmDialog
         open={removeTarget != null}

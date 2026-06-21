@@ -48,7 +48,10 @@ import { logger as rootLogger } from '../../../core/logger.js'
 import { logInvocation } from '../../../core/audit-log.js'
 import {
   runAgentLoop,
+  getAnyProvider,
   getProvider,
+  getProviderByName,
+  listProviders,
   type LlmMessage,
   type LlmProvider,
 } from '../../../core/llm/index.js'
@@ -706,7 +709,7 @@ function composeHallucinatedToolRecap(
   lines.push('')
   lines.push('怎么继续：')
   lines.push('  · 直接回「重试」让我重新跑一遍这一步')
-  lines.push('  · 或在 /settings/llm 把 native-chat 角色换成工具调用更稳定的后端（Claude / GPT 系列）')
+  lines.push('  · 或在 /settings/llm 切换到工具调用更稳定的后端（可选再把 native-chat 角色绑定到它）')
   lines.push('  · 或 /cc / /oc / /cs 切到别的智能体接手这一步')
   lines.push('')
   lines.push('（检测器可用 IMHUB_NATIVE_HALLUCINATION_DETECT=off 关掉）')
@@ -895,6 +898,8 @@ function pickProvider(): { provider: LlmProvider; role: string } | null {
     const p = getProvider(role)
     if (p) return { provider: p, role }
   }
+  const fallback = getAnyProvider()
+  if (fallback) return { provider: fallback, role: 'auto' }
   return null
 }
 
@@ -919,6 +924,15 @@ function pickProviderChain(): Array<{ provider: LlmProvider; role: string }> {
     if (seen.has(p.name)) continue
     seen.add(p.name)
     chain.push({ provider: p, role })
+  }
+  // Roles are optional now. If no role resolves (or role-resolved set is
+  // incomplete), append any remaining configured backends so native can run
+  // as soon as one backend is configured.
+  for (const meta of listProviders()) {
+    const p = getProviderByName(meta.name)
+    if (!p || seen.has(p.name)) continue
+    seen.add(p.name)
+    chain.push({ provider: p, role: 'auto' })
   }
   return chain
 }
@@ -1235,7 +1249,7 @@ class NativeAgentAdapter implements AgentAdapter {
   ): AsyncGenerator<string> {
     const picked = pickProvider()
     if (!picked) {
-      const msg = '❌ native agent: no LLM backend configured for role `native-chat` or `cheap`. Add one in `~/.agim/config.json` `llmBackends`/`llmRoles` (see docs/llm-backends.md).'
+      const msg = '❌ native agent: no usable LLM backend configured. Add one in /settings/llm (or ~/.agim/config.json llmBackends + API key). Role bindings are optional.'
       yield msg
       return
     }
@@ -1718,6 +1732,6 @@ export const nativeAgentAdapter: AgentAdapter = new NativeAgentAdapter()
  *  thread. */
 export function describeNativeAgent(): string {
   const picked = pickProvider()
-  if (!picked) return 'native agent: NOT CONFIGURED (no llmRoles.native-chat / .cheap)'
+  if (!picked) return 'native agent: NOT CONFIGURED (no usable llmBackends + API key)'
   return `native agent: backend=${picked.provider.name} (role=${picked.role}); policy=${describePolicy(resolvePolicy())}`
 }

@@ -1,246 +1,303 @@
-// Admin allowlist — gates service-management commands (`/restart`, `/stop`,
-// natural-language "重启服务", web /api/service/* mutating endpoints).
+// IM admin registry — single source of truth for:
+//   1) Who can run admin-only IM commands (/restart, /stop, ...)
+//   2) Which IM identities have talked to agim (for Web settings selection)
 //
-// Source: IMHUB_ADMIN_USERS env, comma-separated `platform:userId` pairs.
-// Examples:
-//   IMHUB_ADMIN_USERS=wechat-ilink:wxid_abc123,telegram:456789
-//   IMHUB_ADMIN_USERS=feishu:ou_xxx
+// v2 model:
+//   - No IM admin bootstrap token
+//   - No IMHUB_ADMIN_USERS runtime dependency
+//   - Web admin token operators manage IM admins in Settings → Admins
 //
-// Platform matching is case-insensitive (telegram == Telegram). userId is
-// case-sensitive (most IMs use case-sensitive ids).
-//
-// Default policy when the env is unset: DENY. The previous "open access"
-// default was fine for a console at 127.0.0.1, but service-control commands
-// can take the bot offline — small users opening their bot to friends would
-// otherwise expose `/restart` to anyone. Operators get a clear error message
-// telling them how to enable themselves.
+// Back-compat:
+//   - If legacy IMHUB_ADMIN_USERS is present, we import it once into the
+//     file store on first load, then continue using the file as source of truth.
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'admin-allowlist' })
 
+function storeFilePath(): string {
+  return join(process.env.AGIM_HOME || process.env.IMHUB_HOME || AGIM_HOME, 'im-admins.json')
+}
+
 interface Entry {
-  platform: string  // lower-cased
+  platform: string
   userId: string
 }
 
-let cachedEntries: Entry[] | null = null
-let cachedRaw = ''
-/** Runtime-added admins (from `/setup admin <token>` or web UI). Survives
- *  this process but not restart — `promoteAdmin()` ALSO writes to the env
- *  file so a restart picks them up. */
-const runtimeEntries: Entry[] = []
-
-/** Read IMHUB_ADMIN_USERS directly from ~/.agim/env, bypassing systemd's
- *  EnvironmentFile parser. systemd's parser is strict about quoting +
- *  silently drops lines it can't make sense of, so when an operator adds
- *  an admin via /setup admin the env-file write may succeed but the
- *  next service restart loads a partial value (observed 2026-05-25:
- *  env file has wechat,telegram but process.env only sees wechat).
- *  This file-direct fallback runs once per process and merges any
- *  entries the systemd-passed value missed. Returns '' when the file
- *  is missing, unreadable, or has no ADMIN_USERS line. */
-let cachedFileRaw: string | null = null
-function readFileAdminUsers(): string {
-  if (cachedFileRaw !== null) return cachedFileRaw
-  cachedFileRaw = ''
-  // Test opt-out: IMHUB_ENV_FILE_PATH='' disables file fallback entirely
-  // so unit tests aren't polluted by the operator's real allowlist. A
-  // non-empty value overrides the default path.
-  const overridePath = process.env.IMHUB_ENV_FILE_PATH
-  if (overridePath === '') return cachedFileRaw
-  try {
-    // Lazy import so unit tests that don't touch admin code don't pay
-    // the disk lookup. ENV_FILE is the same path systemd reads.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs')
-    const { ENV_FILE } = require('../cli-ui/env-file.js') as { ENV_FILE: string }
-    const filePath = overridePath && overridePath.length > 0 ? overridePath : ENV_FILE
-    if (!fs.existsSync(filePath)) return cachedFileRaw
-    const raw = fs.readFileSync(filePath, 'utf-8')
-    // Take the LAST IMHUB_ADMIN_USERS= line (matches systemd's
-    // last-wins semantics + agim's own readEnvFile object overwrite).
-    const lines = raw.split('\n')
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i].trim()
-      if (line.startsWith('IMHUB_ADMIN_USERS=')) {
-        cachedFileRaw = line.slice('IMHUB_ADMIN_USERS='.length).trim()
-        // Strip surrounding quotes if present (systemd-style).
-        if ((cachedFileRaw.startsWith('"') && cachedFileRaw.endsWith('"'))
-            || (cachedFileRaw.startsWith("'") && cachedFileRaw.endsWith("'"))) {
-          cachedFileRaw = cachedFileRaw.slice(1, -1)
-        }
-        break
-      }
-    }
-  } catch { /* best-effort */ }
-  return cachedFileRaw
+export interface KnownImUser {
+  platform: string
+  userId: string
+  firstSeenAt: string
+  lastSeenAt: string
+  lastChannelId?: string
+  lastThreadId?: string
 }
 
-function parseEnv(raw: string): Entry[] {
+interface Store {
+  version: 1
+  admins: Entry[]
+  knownUsers: KnownImUser[]
+}
+
+function emptyStore(): Store {
+  return { version: 1, admins: [], knownUsers: [] }
+}
+
+let cachedStore: Store | null = null
+let loggedOnce = false
+
+function normalizeEntry(platform: string, userId: string | undefined): Entry | null {
+  const p = platform.trim().toLowerCase()
+  const u = (userId ?? '').trim()
+  if (!p || !u) return null
+  return { platform: p, userId: u }
+}
+
+function keyOf(entry: Entry): string {
+  return `${entry.platform}:${entry.userId}`
+}
+
+function dedupeEntries(entries: Entry[]): Entry[] {
+  const m = new Map<string, Entry>()
+  for (const e of entries) m.set(keyOf(e), e)
+  return [...m.values()].sort((a, b) => keyOf(a).localeCompare(keyOf(b)))
+}
+
+function dedupeKnownUsers(rows: KnownImUser[]): KnownImUser[] {
+  const m = new Map<string, KnownImUser>()
+  for (const row of rows) {
+    const norm = normalizeEntry(row.platform, row.userId)
+    if (!norm) continue
+    const existing = m.get(keyOf(norm))
+    if (!existing || existing.lastSeenAt < row.lastSeenAt) {
+      m.set(keyOf(norm), {
+        platform: norm.platform,
+        userId: norm.userId,
+        firstSeenAt: row.firstSeenAt || row.lastSeenAt,
+        lastSeenAt: row.lastSeenAt || row.firstSeenAt,
+        lastChannelId: row.lastChannelId,
+        lastThreadId: row.lastThreadId,
+      })
+    }
+  }
+  return [...m.values()].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))
+}
+
+function parseLegacyAdminEnv(raw: string): Entry[] {
   const out: Entry[] = []
   for (const pair of raw.split(',')) {
     const trimmed = pair.trim()
     if (!trimmed) continue
     const idx = trimmed.indexOf(':')
-    if (idx <= 0 || idx === trimmed.length - 1) {
-      log.warn({ event: 'admin.allowlist.malformed_entry', entry: trimmed },
-        'IMHUB_ADMIN_USERS entry must be platform:userId — skipping')
-      continue
-    }
-    out.push({
-      platform: trimmed.slice(0, idx).toLowerCase(),
-      userId: trimmed.slice(idx + 1),
-    })
+    if (idx <= 0 || idx === trimmed.length - 1) continue
+    const norm = normalizeEntry(trimmed.slice(0, idx), trimmed.slice(idx + 1))
+    if (norm) out.push(norm)
   }
-  return out
+  return dedupeEntries(out)
 }
 
-function getEntries(): Entry[] {
-  // Two sources of truth, both consulted: process.env (systemd's parse
-  // of EnvironmentFile + any Environment= override) and the env file
-  // read directly via Node fs (sidesteps systemd parser quirks). We
-  // dedupe by (platform, userId) so a value present in both doesn't
-  // double-count. Runtime entries from promoteAdmin() are layered on
-  // top so an in-session add is visible even if the file write race'd.
-  const envRaw = process.env.IMHUB_ADMIN_USERS ?? ''
-  const fileRaw = readFileAdminUsers()
-  // Cache invalidation: re-parse when the env value (process or file)
-  // changes. File contents don't change without a restart of this
-  // process so cachedFileRaw is one-shot; only process.env can shift
-  // (admin-allowlist itself mutates process.env? — no, it doesn't.
-  // updateEnvFile DOES touch process.env elsewhere, so be defensive).
-  const composite = `${envRaw}${fileRaw}`
-  if (composite !== cachedRaw) {
-    cachedRaw = composite
-    const dedup = new Map<string, Entry>()
-    for (const e of [...parseEnv(envRaw), ...parseEnv(fileRaw)]) {
-      dedup.set(`${e.platform}:${e.userId}`, e)
-    }
-    cachedEntries = [...dedup.values()]
+function normalizeStore(store: Partial<Store> | null | undefined): Store {
+  return {
+    version: 1,
+    admins: dedupeEntries((store?.admins ?? [])
+      .map((e) => normalizeEntry(e.platform, e.userId))
+      .filter((e): e is Entry => e !== null)),
+    knownUsers: dedupeKnownUsers(store?.knownUsers ?? []),
   }
-  return [...(cachedEntries ?? []), ...runtimeEntries]
 }
 
-/** Returns `true` iff there is at least one admin entry, whether from env
- *  or runtime-added via `/setup admin`. When false, the system has no
- *  admin and service-control commands are blanket denied. */
-export function isAllowlistConfigured(): boolean {
-  return getEntries().length > 0
-}
-
-/** Returns `true` iff (platform, userId) appears in the combined env +
- *  runtime allowlist. */
-export function isAdmin(platform: string, userId: string | undefined): boolean {
-  if (!userId) return false
-  const p = platform.toLowerCase()
-  return getEntries().some((e) => e.platform === p && e.userId === userId)
-}
-
-/** Return a copy of the current admin list (env + runtime). For UI display. */
-export function listAdmins(): Array<{ platform: string; userId: string }> {
-  return getEntries().map((e) => ({ platform: e.platform, userId: e.userId }))
-}
-
-/** Add an admin at runtime: in-memory immediately + persist to env file so
- *  the next restart still has them. Idempotent — duplicates are skipped.
- *  Returns true if added, false if already present. */
-export async function promoteAdmin(platform: string, userId: string, opts?: { actor?: string; traceId?: string }): Promise<boolean> {
-  if (!userId) throw new Error('userId required')
-  const p = platform.toLowerCase()
-  if (getEntries().some((e) => e.platform === p && e.userId === userId)) return false
-
-  runtimeEntries.push({ platform: p, userId })
-
-  // Persist to ~/.agim/env (combined env-string of every current entry).
+function readStoreFromDisk(): Store {
+  const storeFile = storeFilePath()
+  if (!existsSync(storeFile)) return emptyStore()
   try {
-    const { updateEnvFile } = await import('../cli-ui/env-file.js')
-    const combined = getEntries().map((e) => `${e.platform}:${e.userId}`).join(',')
-    updateEnvFile({ IMHUB_ADMIN_USERS: combined })
-    log.info({
-      event: 'admin.allowlist.promoted',
-      platform: p,
-      userId,
-      total: getEntries().length,
-    }, 'admin promoted at runtime + persisted to env file')
+    const raw = JSON.parse(readFileSync(storeFile, 'utf-8')) as Partial<Store>
+    return normalizeStore(raw)
   } catch (err) {
     log.warn({
-      event: 'admin.allowlist.persist_failed',
+      event: 'admin.allowlist.read_failed',
       err: err instanceof Error ? err.message : String(err),
-    }, 'in-memory admin add succeeded but env-file write failed; will be lost on restart')
+    }, 'failed to read admin store; using empty state')
+    return emptyStore()
   }
-  // R12 ⑤ — persistent audit row. Tracks who got admin'd, by whom, when.
+}
+
+function writeStoreToDisk(store: Store): void {
+  const storeFile = storeFilePath()
+  mkdirSync(dirname(storeFile), { recursive: true })
+  writeFileSync(storeFile, JSON.stringify(store, null, 2), 'utf-8')
+  try { chmodSync(storeFile, 0o600) } catch { /* ignore */ }
+}
+
+function ensureStoreLoaded(): Store {
+  if (cachedStore) return cachedStore
+  const loaded = readStoreFromDisk()
+  const legacy = parseLegacyAdminEnv(process.env.IMHUB_ADMIN_USERS ?? '')
+  if (legacy.length > 0) {
+    const before = loaded.admins.length
+    loaded.admins = dedupeEntries([...loaded.admins, ...legacy])
+    if (loaded.admins.length !== before) {
+      writeStoreToDisk(loaded)
+      log.warn({
+        event: 'admin.allowlist.legacy_env_migrated',
+        fromEnvCount: legacy.length,
+        mergedCount: loaded.admins.length,
+      }, 'migrated IMHUB_ADMIN_USERS into im-admins.json; env value is now legacy-only')
+    }
+  }
+  cachedStore = loaded
+  return cachedStore
+}
+
+function commitStore(next: Store): void {
+  const normalized = normalizeStore(next)
+  cachedStore = normalized
+  writeStoreToDisk(normalized)
+}
+
+/** Returns true iff at least one IM admin is configured. */
+export function isAllowlistConfigured(): boolean {
+  return ensureStoreLoaded().admins.length > 0
+}
+
+/** Returns true iff the caller is in IM admin list. */
+export function isAdmin(platform: string, userId: string | undefined): boolean {
+  const norm = normalizeEntry(platform, userId)
+  if (!norm) return false
+  return ensureStoreLoaded().admins.some((e) => e.platform === norm.platform && e.userId === norm.userId)
+}
+
+/** List configured IM admins. */
+export function listAdmins(): Array<{ platform: string; userId: string }> {
+  return ensureStoreLoaded().admins.map((e) => ({ platform: e.platform, userId: e.userId }))
+}
+
+/** List known IM users discovered from real inbound messages. */
+export function listKnownImUsers(): KnownImUser[] {
+  return ensureStoreLoaded().knownUsers.map((u) => ({ ...u }))
+}
+
+/** Record that an IM user has interacted with agim. */
+export function recordSeenImUser(
+  platform: string,
+  userId: string | undefined,
+  meta?: { channelId?: string; threadId?: string },
+): boolean {
+  const norm = normalizeEntry(platform, userId)
+  if (!norm) return false
+  const store = ensureStoreLoaded()
+  const now = new Date().toISOString()
+  const idx = store.knownUsers.findIndex((u) => u.platform === norm.platform && u.userId === norm.userId)
+  if (idx >= 0) {
+    const row = store.knownUsers[idx]!
+    const changed = row.lastSeenAt !== now
+      || row.lastChannelId !== meta?.channelId
+      || row.lastThreadId !== meta?.threadId
+    row.lastSeenAt = now
+    if (meta?.channelId) row.lastChannelId = meta.channelId
+    if (meta?.threadId) row.lastThreadId = meta.threadId
+    if (changed) commitStore(store)
+    return changed
+  }
+  store.knownUsers.push({
+    platform: norm.platform,
+    userId: norm.userId,
+    firstSeenAt: now,
+    lastSeenAt: now,
+    ...(meta?.channelId ? { lastChannelId: meta.channelId } : {}),
+    ...(meta?.threadId ? { lastThreadId: meta.threadId } : {}),
+  })
+  commitStore(store)
+  return true
+}
+
+/** Promote an IM identity to admin (idempotent). */
+export async function promoteAdmin(
+  platform: string,
+  userId: string,
+  opts?: { actor?: string; traceId?: string },
+): Promise<boolean> {
+  const norm = normalizeEntry(platform, userId)
+  if (!norm) throw new Error('platform and userId required')
+  const store = ensureStoreLoaded()
+  if (store.admins.some((e) => e.platform === norm.platform && e.userId === norm.userId)) return false
+  store.admins.push(norm)
+  // Ensure admin target always appears in known list.
+  recordSeenImUser(norm.platform, norm.userId)
+  commitStore(store)
   try {
     const { logAuditEvent } = await import('./audit-log.js')
     logAuditEvent({
       traceId: opts?.traceId,
       eventType: 'admin.elevate',
       actor: opts?.actor ?? 'system',
-      target: `${p}:${userId}`,
+      target: `${norm.platform}:${norm.userId}`,
       outcome: 'ok',
-      details: { total: getEntries().length },
+      details: { total: store.admins.length },
     })
-  } catch { /* audit best-effort */ }
+  } catch { /* best-effort */ }
   return true
 }
 
-/** Localized denial message. Three cases:
- *    A. No admins at all → "首次部署"，引导查 setup token
- *    B. Admins exist, you're not one → 礼貌拒绝，建议联系部署者
- *    C. (handled in setup-command path) bootstrap token consumable → A 已覆盖
- */
+/** Revoke admin permission from an IM identity (idempotent false on missing). */
+export async function revokeAdmin(
+  platform: string,
+  userId: string,
+  opts?: { actor?: string; traceId?: string },
+): Promise<boolean> {
+  const norm = normalizeEntry(platform, userId)
+  if (!norm) throw new Error('platform and userId required')
+  const store = ensureStoreLoaded()
+  const before = store.admins.length
+  store.admins = store.admins.filter((e) => !(e.platform === norm.platform && e.userId === norm.userId))
+  if (store.admins.length === before) return false
+  commitStore(store)
+  try {
+    const { logAuditEvent } = await import('./audit-log.js')
+    logAuditEvent({
+      traceId: opts?.traceId,
+      eventType: 'admin.revoke',
+      actor: opts?.actor ?? 'system',
+      target: `${norm.platform}:${norm.userId}`,
+      outcome: 'ok',
+      details: { total: store.admins.length },
+    })
+  } catch { /* best-effort */ }
+  return true
+}
+
 export function denialMessage(platform: string, userId: string | undefined): string {
+  const me = `${platform.toLowerCase()}:${userId ?? '<unknown>'}`
   if (!isAllowlistConfigured()) {
-    // Case A — no admin yet. Most likely the operator hasn't onboarded
-    // themselves. Tell them where to find the bootstrap token.
     return (
-      '🛑 这个 bot 还没配置管理员。\n' +
-      '\n' +
-      '   如果你是部署者：\n' +
-      '   1. 在服务器终端运行 `journalctl -u agim | grep "setup admin"` 查看一次性 token\n' +
-      '      （或 `cat ~/.agim/admin-bootstrap-token`）\n' +
-      '   2. 在 IM 里发：  /setup admin <token>\n' +
-      '   即可把当前账号 (' + platform.toLowerCase() + ':' + (userId ?? '<your-id>') + ') 设为管理员。\n' +
-      '\n' +
-      '   如果你不是部署者，请联系部署本 bot 的人。'
+      '🛑 这个 bot 还没有配置任何 IM 管理员。\n' +
+      '   请让 Web 后台管理员在“设置 → 管理员”把你加入管理员名单。\n' +
+      `   你的账号：${me}`
     )
   }
-  // Case B — bot has admins, you're not one. Don't reveal current admin
-  // list / internal id format.
   return (
     '🛑 你没有权限执行此操作。\n' +
-    '   如果你是这个 bot 的管理员，请用同一个 IM 账号重试；否则请联系部署者。'
+    '   如果你认为应当有权限，请联系 Web 后台管理员把你的 IM 账号加入管理员名单。'
   )
 }
 
-/** One-shot startup log: how many admins agim resolved from env vs file
- *  vs runtime. Call from cli boot once messengers / web are up so the
- *  line lands in journal with a recognisable event tag. Idempotent. */
-let loggedOnce = false
+/** Startup diagnostics. */
 export function logStartupResolution(): void {
   if (loggedOnce) return
   loggedOnce = true
-  const envRaw = process.env.IMHUB_ADMIN_USERS ?? ''
-  const fileRaw = readFileAdminUsers()
-  const envCount = parseEnv(envRaw).length
-  const fileCount = parseEnv(fileRaw).length
-  const finalCount = getEntries().length
+  const store = ensureStoreLoaded()
   log.info({
     event: 'admin.allowlist.loaded',
-    fromProcessEnv: envCount,
-    fromEnvFile: fileCount,
-    merged: finalCount,
-    fileFallbackActive: fileCount > envCount,
-  }, fileCount > envCount
-    ? `admin allowlist: process.env had ${envCount}, env file had ${fileCount} — file-fallback recovered ${fileCount - envCount} entries lost by systemd's EnvironmentFile parser`
-    : `admin allowlist: ${finalCount} entries loaded`)
+    admins: store.admins.length,
+    knownUsers: store.knownUsers.length,
+    store: storeFilePath(),
+  }, `admin registry loaded: ${store.admins.length} admin(s), ${store.knownUsers.length} known IM user(s)`)
 }
 
-/** Test-only — reset all state so tests can fully isolate. */
+/** Test-only reset. */
 export function _resetCache(): void {
-  cachedEntries = null
-  cachedRaw = ''
-  cachedFileRaw = null
+  cachedStore = null
   loggedOnce = false
-  runtimeEntries.length = 0
 }

@@ -788,7 +788,8 @@ everyone who hasn't opted in.
   "llmBackends": [
     { "name": "deepseek-chat", "provider": "openai-compat", "model": "deepseek-chat", "baseUrl": "https://api.deepseek.com/v1" }
   ],
-  "llmRoles": { "native-chat": "deepseek-chat", "cheap": "deepseek-chat" }
+  // Optional advanced wiring. Native works without llmRoles now.
+  "llmRoles": { "cheap": "deepseek-chat" }
 }
 ```
 
@@ -811,7 +812,7 @@ native: (calls mcp_filesystem_list_files, reads, summarises)
 
 ### Behaviour summary
 
-- **Provider selection**: `IMHUB_NATIVE_AGENT_ROLE` (env override) → `llmRoles.native-chat` → `llmRoles.cheap`. First found wins.
+- **Provider selection**: `IMHUB_NATIVE_AGENT_ROLE` (env override) → `llmRoles.native-chat` → `llmRoles.cheap` → any configured backend. First found wins, so role bindings are optional rather than blocking.
 - **System prompt**: agim-supplied terse default; the loop also forwards `LlmProvider.system` semantics so callers can override per turn if needed.
 - **Tools**: `getBuiltinTools()` (always 4 tools: echo / now / sleep_ms / random_uuid) + `getAllMcpTools()` from the MCP registry, concatenated.
 - **Dispatcher**: `combineDispatchers(builtin, mcp)` — built-in wins on name collision.
@@ -846,7 +847,7 @@ server.
 
 | condition | user sees |
 |---|---|
-| no LLM backend configured | `❌ native agent: no LLM backend configured for role 'native-chat' or 'cheap'. ...` |
+| no usable LLM backend configured | `❌ native agent: no usable LLM backend configured. Add one in /settings/llm (or ~/.agim/config.json llmBackends + API key). Role bindings are optional.` |
 | LLM provider call throws | `❌ native agent error: <detail>` |
 | max iterations reached | `⚠️ native agent hit max iterations without finishing. ...` |
 | signal aborted | `⏹ native agent aborted before completion.` |
@@ -871,7 +872,7 @@ When configured:
 When not configured:
 
 ```text
-🤖 native agent: NOT CONFIGURED (no llmRoles.native-chat / .cheap)
+🤖 native agent: NOT CONFIGURED (no usable llmBackends + API key)
 ```
 
 ## Stage 4 — CLI wizard + Web REST API
@@ -921,11 +922,18 @@ source of truth.
 The React SPA at `/settings/llm` consumes the REST surface above. It
 shows the backend table with per-backend secret status and a **Ping**
 button that issues a tiny `chat` probe (`/api/llm/backends/:name/ping`)
-so operators can verify a backend works without leaving the page. Role
-bindings are exposed as three dropdowns (`cheap` / `evaluator` /
-`native-chat`). The Add Backend card has provider quick-picks
+so operators can verify a backend works without leaving the page.
+Role bindings are exposed as three dropdowns (`cheap` / `evaluator` /
+`native-chat`) and explicitly marked "optional, advanced" because native
+can auto-fallback without them. The Add Backend card has provider quick-picks
 (DeepSeek / Moonshot / GLM / OpenAI / Anthropic / Custom) matching the
 CLI wizard's presets.
+
+Since the native setup UX upgrade, `/chat` and `/m/chat` also show a
+persistent setup modal when users switch to `native` without any usable
+backend. The modal can create a backend directly (provider preset +
+baseUrl + model + API key), then auto-retry `switch-agent` immediately
+after save.
 
 External MCP servers get their own panel at `/settings/mcp` (REST under
 `/api/mcp/*`). Native agent / evaluator / heartbeat behavior knobs live

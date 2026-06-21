@@ -116,6 +116,18 @@ describe('handleAskOp — validation', () => {
 })
 
 describe('handleAskOp — happy paths', () => {
+  it('resolves messenger via fuzzy platform mapping (wechat → wechat-ilink)', async () => {
+    const m = makeFakeMessenger('wechat-ilink', { withCards: false })
+    register(m)
+    const ctx = { ...CTX, platform: 'wechat' }
+    const promise = handleAskOp({ question: 'pick one', choices: ['Yes', 'No'], timeoutSec: 5 }, ctx)
+    await new Promise<void>((r) => setTimeout(r, 50))
+    expect(tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, '1')).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.result.label).toBe('Yes')
+  })
+
   it('sends ChoiceCard when messenger supports it', async () => {
     const m = makeFakeMessenger('h-card-1', { withCards: true })
     register(m)

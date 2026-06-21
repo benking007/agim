@@ -23,6 +23,8 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
+import { isNativeSetupError } from '@/components/chat/error-hints'
+import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { Topbar } from '@/components/shell/topbar'
 import { cn } from '@/lib/utils'
 
@@ -39,6 +41,8 @@ export default function ChatRoute(): JSX.Element {
     state, send, switchAgent, approvalClick, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
+  const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
+  const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -59,7 +63,12 @@ export default function ChatRoute(): JSX.Element {
   // every render).
   useEffect(() => {
     if (!state.error) return
-    toast.error(state.error)
+    if (isNativeSetupError(state.error)) {
+      setNativeSetupReason(state.error)
+      setNativeSetupDialogOpen(true)
+    } else {
+      toast.error(state.error)
+    }
     clearError()
   }, [state.error, clearError])
 
@@ -124,6 +133,13 @@ export default function ChatRoute(): JSX.Element {
         </Button>
         <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
       </Topbar>
+
+      <NativeSetupDialog
+        open={nativeSetupDialogOpen}
+        reason={nativeSetupReason}
+        onOpenChange={setNativeSetupDialogOpen}
+        onConfigured={() => switchAgent('native')}
+      />
 
       {/* Message list */}
       <div

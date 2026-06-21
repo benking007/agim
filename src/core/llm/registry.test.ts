@@ -4,6 +4,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   loadFromConfig,
   getProvider,
+  getAnyProvider,
+  getAnyBackendBinding,
   getProviderByName,
   listProviders,
   describeRegistry,
@@ -185,6 +187,8 @@ describe('LLM registry', () => {
     loadFromConfig({})
     expect(listProviders()).toHaveLength(0)
     expect(getProvider('cheap')).toBeNull()
+    expect(getAnyProvider()).toBeNull()
+    expect(getAnyBackendBinding()).toBeNull()
   })
 
   it("loads provider='anthropic' as AnthropicProvider", () => {
@@ -220,5 +224,20 @@ describe('LLM registry', () => {
     expect(snap.backends).toHaveLength(1)
     expect(snap.backends[0].providerType).toBe('deepseek')
     expect(snap.roles).toEqual({ cheap: 'test-cheap', evaluator: 'test-cheap' })
+  })
+
+  it('returns first configured backend even without role bindings', () => {
+    saveSecret('test-cheap', 'sk-cheap')
+    loadFromConfig({
+      llmBackends: [{
+        name: 'test-cheap',
+        provider: 'openai-compat',
+        model: 'm',
+      }],
+      llmRoles: {},
+    })
+    expect(getProvider('native-chat')).toBeNull()
+    expect(getAnyProvider()?.name).toBe('test-cheap')
+    expect(getAnyBackendBinding()?.name).toBe('test-cheap')
   })
 })

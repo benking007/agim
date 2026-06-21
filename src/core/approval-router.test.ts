@@ -15,6 +15,7 @@ import {
   type RunContext,
 } from './approval-bus.js'
 import { threadKey } from './approval-bus.js'
+import { registry } from './registry.js'
 import {
   parseApprovalReply,
   formatApprovalPrompt,
@@ -25,6 +26,7 @@ import {
   bindButtonHandlerForPlatform,
 } from './approval-router.js'
 import type { MessengerAdapter, ButtonCallback, ApprovalCardOutcome } from './types.js'
+import { handleAskOp, _resetAskBusForTests } from './ask-user-rpc.js'
 
 const RUN_CTX: RunContext = { threadId: 'thread-A', platform: 'feishu', userId: 'u1', channelId: 'c1' }
 /** Composite key matching RUN_CTX. After P0 #4 the bus stores by composite
@@ -470,6 +472,62 @@ describe('bindButtonHandlerForPlatform — late-registered messenger', () => {
     ])
     install({ resolveMessenger: (p) => messengers.get(p) })
     expect(() => bindButtonHandlerForPlatform('no-buttons')).not.toThrow()
+  })
+})
+
+describe('button callback dispatch — ask_user cards', () => {
+  afterEach(() => {
+    uninstall()
+    _resetAskBusForTests()
+  })
+
+  it('routes ask:* callback data to ask-user resolver without touching approval pending', async () => {
+    const ASK_PLATFORM = 'ask-telegram'
+    let buttonHandler: ((cb: ButtonCallback) => Promise<void>) | undefined
+    const cards: Array<{ data: string }> = []
+    const fakeTelegram: MessengerAdapter = {
+      name: ASK_PLATFORM,
+      start: async () => {},
+      stop: async () => {},
+      onMessage: () => {},
+      sendMessage: async () => {},
+      sendChoiceCard: async (_threadId, prompt) => {
+        cards.push({ data: prompt.choices[0]?.data ?? '' })
+        return { messageId: 'ask-card-1' }
+      },
+      onButtonCallback: (h) => { buttonHandler = h },
+    }
+    registry.registerMessenger(fakeTelegram)
+    install({
+      resolveMessenger: (p) => p === ASK_PLATFORM ? fakeTelegram : undefined,
+      buttonCallbackPlatforms: [ASK_PLATFORM],
+    })
+    const askPromise = handleAskOp(
+      { question: '请选择', choices: ['是', '否'], timeoutSec: 5 },
+      { platform: ASK_PLATFORM, channelId: 'c-ask', threadId: 't-ask', userId: 'u-ask' },
+    )
+    await new Promise<void>((r) => setImmediate(r))
+    expect(buttonHandler).toBeDefined()
+    expect(cards.length).toBe(1)
+    const askData = cards[0]?.data
+    expect(askData).toBeTruthy()
+
+    let ackText = ''
+    await buttonHandler!({
+      data: askData!,
+      threadId: 't-ask',
+      userId: 'u-ask',
+      messageId: 'ask-card-1',
+      ack: async (text) => { ackText = text ?? '' },
+    })
+
+    const result = await askPromise
+    expect(ackText).toBe('✓')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.result.index).toBe(1)
+      expect(result.result.via).toBe('button')
+    }
   })
 })
 

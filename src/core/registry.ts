@@ -229,9 +229,9 @@ class PluginRegistry {
     this.registerAgent(cursorAdapter)
 
     // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. Always
-    // registered; isAvailable() reflects whether an LLM backend with
-    // role `native-chat` (or `cheap` fallback) is configured. Operators
-    // who don't configure llmBackends never see /cc native available.
+    // registered; isAvailable() reflects whether any usable LLM backend
+    // is configured. Role bindings are optional and only influence role
+    // preference/order.
     // Native (in-process LLM) engine. The pi-agent-core engine is now the
     // DEFAULT (durable sessions + phase state machine + Result error model);
     // it registers UNDER the 'native' name so existing routing + `/cc native`

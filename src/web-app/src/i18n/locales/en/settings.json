@@ -445,22 +445,26 @@
     "resetTitle": "Reset to default"
   },
   "admins": {
-    "title": "Admin allowlist",
-    "subtitle": "IM-side users who can run admin-tier commands (`/admin promote`, `/admin token`, etc.). The list lives in `IMHUB_ADMIN_USERS`; this editor only works when the agim web port is bound locally.",
+    "title": "IM admin registry",
+    "subtitle": "Web admin tokens decide who can run IM admin-tier commands. Candidate IM users are auto-discovered after they send any message to agim.",
     "configured": "Allowlist configured",
-    "notConfigured": "Allowlist not configured — anyone with the CLI bootstrap token can self-promote.",
-    "bootstrapAvailable": "Bootstrap token file present",
-    "bootstrapPath": "Token path",
+    "notConfigured": "No IM admin configured yet.",
     "empty": "No admins added yet.",
     "col": {
       "platform": "Platform",
       "userId": "User ID"
     },
-    "add": {
-      "title": "Add admin",
-      "platform": "Platform",
-      "userId": "User ID",
-      "submit": "Add"
+    "known": {
+      "title": "Discovered IM users",
+      "hint": "Users appear here automatically after they talk to agim. Grant admin directly from this list.",
+      "count": "Discovered users: {{count}}",
+      "empty": "No discovered IM users yet.",
+      "emptyHint": "Ask the user to send one message to agim first.",
+      "col": {
+        "lastSeen": "Last seen"
+      },
+      "promote": "Grant admin",
+      "alreadyAdmin": "Already admin"
     },
     "remove": {
       "label": "Remove",
@@ -478,7 +482,8 @@
     "refresh": "Refresh",
     "backendsTitle": "Backends ({{count}})",
     "backendsEmpty": "No LLM backends configured yet. Add one below.",
-    "rolesTitle": "Role Bindings",
+    "rolesTitle": "Role Bindings (optional, advanced)",
+    "rolesOptionalHint": "Native no longer depends on role bindings. It auto-falls back to any usable backend.",
     "addTitle": "Add Backend",
     "col": {
       "name": "Name",
@@ -502,7 +507,7 @@
     "roleHint": {
       "cheap": "Internal introspection: memo extraction, intent classification, fallback chain stage 1.",
       "evaluator": "Notification evaluator + router-compare judge LLM.",
-      "native-chat": "The /na agent loop default. Used when /cc native is invoked."
+      "native-chat": "Default for /na loop; if unbound, native auto-falls back to any usable backend."
     },
     "preset": "Provider preset",
     "name": "Name",
@@ -590,7 +595,7 @@
     "on": "on",
     "off": "off",
     "roleOverride": "Role override",
-    "roleHint": "LLM role the native loop resolves. Default: native-chat (falls back to cheap). Match a key from /settings/llm role bindings.",
+    "roleHint": "Native prefers this role first; when no role resolves, it auto-falls back to any usable backend. Role bindings are optional.",
     "approvalMode": "Approval mode",
     "approvalHint": "How tool calls from the native loop are gated.",
     "modeReadOnly": "read-only (safe default; built-ins only)",

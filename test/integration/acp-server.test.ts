@@ -7,12 +7,10 @@
 // the suite run under bun (better-sqlite3 unavailable).
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { AGIM_HOME } from '../../src/core/agim-paths'
 import { startACPServer } from '../../src/core/acp-server'
 import { registry } from '../../src/core/registry'
 import type { AgentAdapter } from '../../src/core/types'
+import { createToken, revokeToken } from '../../src/core/access-token'
 
 // Stub agent the ACP server can route to.
 const stubAgent: AgentAdapter = {
@@ -37,9 +35,10 @@ function makeProfiledStub(name: string): AgentAdapter {
   }
 }
 
-const TOKEN_DIR = AGIM_HOME
-const TOKEN_FILE = join(TOKEN_DIR, 'acp-token')
-const TEST_TOKEN = 'acp-test-token-1234567890'
+let adminToken = ''
+let adminTokenId = ''
+let userToken = ''
+let userTokenId = ''
 
 let port = 0
 let close: () => void
@@ -47,9 +46,12 @@ let close: () => void
 beforeAll(async () => {
   registry.registerAgent(stubAgent)
   for (const n of profiledNames) registry.registerAgent(makeProfiledStub(n))
-  // Plant a known token so parseAuth() finds it.
-  mkdirSync(TOKEN_DIR, { recursive: true })
-  writeFileSync(TOKEN_FILE, TEST_TOKEN, { mode: 0o600 })
+  const admin = createToken('acp-test-admin', { role: 'admin' })
+  adminToken = admin.raw
+  adminTokenId = admin.id
+  const user = createToken('acp-test-user', { role: 'user' })
+  userToken = user.raw
+  userTokenId = user.id
   // Use a random ephemeral port to avoid collisions in CI.
   port = 9000 + Math.floor(Math.random() * 1000)
   const server = await startACPServer({ port, defaultAgent: 'acp-stub' })
@@ -57,6 +59,8 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
+  if (adminTokenId) revokeToken(adminTokenId)
+  if (userTokenId) revokeToken(userTokenId)
   close?.()
 })
 
@@ -75,7 +79,7 @@ describe('ACP Server', () => {
 
   it('returns the agent card with bearer auth', async () => {
     const res = await fetch(url('/agent/card'), {
-      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { authorization: `Bearer ${adminToken}` },
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { name: string; protocols: string[]; capabilities: { agents: Array<{ name: string }> } }
@@ -84,16 +88,16 @@ describe('ACP Server', () => {
     expect(body.capabilities.agents.some((a) => a.name === 'acp-stub')).toBe(true)
   })
 
-  it('returns the agent card with X-IM-Hub-Token auth', async () => {
+  it('rejects user-role web token (admin required)', async () => {
     const res = await fetch(url('/agent/card'), {
-      headers: { 'x-im-hub-token': TEST_TOKEN },
+      headers: { authorization: `Bearer ${userToken}` },
     })
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(403)
   })
 
   it('rejects bearer token with wrong value (constant-time compare)', async () => {
     const res = await fetch(url('/agent/card'), {
-      headers: { authorization: `Bearer ${TEST_TOKEN}-wrong` },
+      headers: { authorization: `Bearer ${adminToken}-wrong` },
     })
     expect(res.status).toBe(401)
   })
@@ -101,7 +105,7 @@ describe('ACP Server', () => {
   it('rejects POST without input.prompt with 400', async () => {
     const res = await fetch(url('/tasks'), {
       method: 'POST',
-      headers: { authorization: `Bearer ${TEST_TOKEN}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ mode: 'sync' }),
     })
     expect(res.status).toBe(400)
@@ -112,7 +116,7 @@ describe('ACP Server', () => {
     const big = 'x'.repeat(2 * 1024 * 1024)
     const res = await fetch(url('/tasks'), {
       method: 'POST',
-      headers: { authorization: `Bearer ${TEST_TOKEN}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ input: { prompt: big } }),
     })
     expect(res.status).toBe(413)
@@ -120,7 +124,7 @@ describe('ACP Server', () => {
 
   it('returns 404 for unknown task id', async () => {
     const res = await fetch(url('/tasks/deadbeef00112233'), {
-      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { authorization: `Bearer ${adminToken}` },
     })
     expect(res.status).toBe(404)
   })
@@ -129,7 +133,7 @@ describe('ACP Server', () => {
     // Just verify the request doesn't blow up with the trace header — full
     // trace correlation is asserted via logger inspection elsewhere.
     const res = await fetch(url('/agent/card'), {
-      headers: { authorization: `Bearer ${TEST_TOKEN}`, 'x-trace-id': 'upstream-abc' },
+      headers: { authorization: `Bearer ${adminToken}`, 'x-trace-id': 'upstream-abc' },
     })
     expect(res.status).toBe(200)
   })
@@ -140,7 +144,7 @@ describe('ACP Server', () => {
 
     const res1 = await fetch(url('/tasks'), {
       method: 'POST',
-      headers: { authorization: `Bearer ${TEST_TOKEN}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         input: { prompt: 'hello' },
         mode: 'sync',
@@ -153,7 +157,7 @@ describe('ACP Server', () => {
 
     const res2 = await fetch(url('/tasks'), {
       method: 'POST',
-      headers: { authorization: `Bearer ${TEST_TOKEN}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         input: { prompt: 'and again' },
         mode: 'sync',

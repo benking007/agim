@@ -158,6 +158,14 @@ export function getProvider(role: LlmRole): LlmProvider | null {
   return state.providers.get(backend) ?? null
 }
 
+/** Return the first configured provider regardless of role bindings.
+ *  Used as a safe fallback so native chat remains usable after adding
+ *  a backend even before optional role wiring is configured. */
+export function getAnyProvider(): LlmProvider | null {
+  const first = state.providers.values().next()
+  return first.done ? null : first.value
+}
+
 /** Look up a provider directly by backend name (mostly for the web
  *  "Test connection" button and unit tests). */
 export function getProviderByName(name: string): LlmProvider | null {
@@ -172,6 +180,12 @@ export function getBackendBindingForRole(role: LlmRole): LlmBackendBinding | nul
   const backend = state.roles.get(role)
   if (!backend) return null
   return state.bindings.get(backend) ?? null
+}
+
+/** First configured backend binding regardless of role bindings. */
+export function getAnyBackendBinding(): LlmBackendBinding | null {
+  const first = state.bindings.values().next()
+  return first.done ? null : first.value
 }
 
 /** Resolved backend binding by backend name. */

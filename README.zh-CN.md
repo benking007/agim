@@ -15,6 +15,7 @@
 
 - **3 种 IM + 邮件，6 个 Agent** — 微信（图片 / 文件 / 语音）、飞书、钉钉（图片 / 语音，自带服务端 ASR）、Email（SMTP）；Claude Code、Codex、OpenCode、Antigravity、**Cursor（v1.2.49+ · `/cs`）**，以及内置 `native` LLM agent（DeepSeek / Kimi / Qwen / OpenAI / Anthropic 兼容 · `/na`）。另支持任意 ACP 端点。
 - **原生 LLM 栈（v1.3.0+，v1.2.48 强化）** — 内置 in-process agent loop（`native` adapter），直连任何 OpenAI / Anthropic 兼容 API（DeepSeek / Kimi / GLM / Qwen / Ollama / vLLM / OpenAI / Anthropic）。v1.2.48 让 native 真正进入生产可用：**角色定义** 通过 `~/.agim-workspaces/native/AGENTS.md`（热加载，无需重启）；**多模态**（图片附件 → openai-compat `image_url`）；**自动压缩**长对话（>60k 字符 → 由 cheap role 摘要）；**Provider 失败链路降级**（5xx/超时自动切下一个 role）；**轮级心跳**每 3 分钟一次"⏳ 还在处理"避免多步研究看似卡死；**agent-loop 超时拉到 28 分钟**（旧 5 分钟会切断 multi-hop `call_agent`）。可用作 `memory-distill` / `memory-consolidate` / `intent-llm` 的便宜路由，可作为本地优先的聊天 agent（`/na`），也可作 A2A 的 peer。详见 [`docs/llm-backends.md`](docs/llm-backends.md) 与 [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md)
+- **Native 配置体验（最新）** — 在 `/chat` 或 `/m/chat` 切换 `native` 时，若没有可用 backend，会弹出持久化配置模态框；可直接填写 provider/model/API key 并立刻重试切换。`llmRoles` 角色绑定已改为可选偏好配置，不再阻塞流程。
 - **Skills 多目录扫描（v1.2.48+）** — `IMHUB_SKILLS_MODE=auto`（默认）把 `~/.agim/skills/`（写入目标）与 `~/.claude/skills/`、`~/.config/opencode/skills/`、`~/.codex/skills/` 合并；新装即可看到所有已有 CLI agent 的技能。同名时 workspace 覆盖。Settings → 技能 改成两个子 tab（已安装编辑器 + skillhub 热门）；顶部导航条的 `/skills` 已合并进 Settings
 - **跨通道出口告警（v1.2.48+）** — 某条会话 outbox 失败 ≥3 次时（如 wechat session 过期），agim 自动失效 stale 的 context-token，并向你预设的备用通道（`IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`）推一条"⚠️ outbox 告警"，让你比用户更早发现
 - **会话级长目标（v1.3.0+ · `/goal`）** — 每个 IM 会话最多一个 active 目标，自动注入每条 prompt，确保 Agent 跨多轮不偏题。生命周期：`set / body / progress / pause / resume / complete / cancel / list`。跨会话管理在 `/tasks/goals`。详见 [`docs/goals.md`](docs/goals.md)
@@ -28,10 +29,10 @@
 - **IM 长内容 viewer（v1.1.6+）** — 微信 / 飞书等对富 markdown 渲染差。Agent 回复超过阈值（行数 / 字符数 / 含表格 / 大段代码）时，agim 把完整 markdown 永久存进本机 `~/.agim/viewer.db`（**永远不离开你的机器**），IM 里只发短摘要 + 链接 `https://<你的域名>/v/<uuid>`。链接背后是 agim 自己的 web console，由你自己反代（cloudflared / caddy / tailscale 任选）。Agent 可显式用 `<im-summary>…</im-summary><full-md>…</full-md>` 包装长回答获得最干净体验。开启：`IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://你的域名`
 - **投递不丢消息** — Agent 回复 / 提醒 / 审批卡片 / 重启通知 全部走 SQLite outbox + 指数退避 worker，IM 平台抖动或断连不再丢回复；`/outbox status | list | failed | retry <id>`
 - **崩溃中断可恢复** — 每条入站消息建 inline job；agim 重启时正在跑的会标 `interrupted`，下次启动 10 分钟窗口内通知对应会话。**v1.2.0+** 在飞书等支持的渠道走原生 `🔁 重发 / ✖ 取消` 内联按钮卡片，其余渠道兜底为文字提示。群聊内只有原发起者可点按钮
-- **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理 Tab `/tasks#memory` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
-- **成本与健康仪表盘（v1.2.0+）** — `/tasks#cost` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
+- **长期记忆（v1.2.0+）** — 按用户的事实库 + 自动蒸馏的 persona 摘要，每次对话自动注入 prompt。默认 SQLite + FTS5；可选向量召回（本地 BGE via `@xenova/transformers` ONNX，或任意 OpenAI 兼容 `/v1/embeddings` 端点），RRF 融合双路。默认关闭，Settings → 自动化记忆 开启。Web 管理页 `/memory/facts` + `/memory/persona` 可看 / 改 / 导出。**全量数据留本机** `~/.agim/memory.db`
+- **成本与健康仪表盘（v1.2.0+）** — `/observability/health` + `/observability/topn` 基于 audit log 聚合每日成本 / 调用数 / 错误数 / p95 延迟。1/7/30/90 天过滤，按用户 / agent / 平台 top-N，日趋势图带指标切换。Claude 每次调用费用自动从 `--output-format json` 提取
 - **Agent 主动推送（v1.2.0+）** — 新的 `mcp__imhub__push_message` MCP 工具让运行中的 agent 不需要外部触发就把后续消息推回原 IM 会话（长任务通知、定时类提醒）。`POST /api/notify` 同一能力也暴露给 webhook / 外部脚本。每用户限流 + 跨会话开关防刷屏
-- **管理员邀请（v1.2.2+）** — `agim admin invite`（或 `agim` 交互菜单「邀请新管理员」）生成一次性 IM token，受邀者在 IM 发 `/setup admin <token>` 即升级，不用动 `~/.agim/env`。`agim admin list` 查当前白名单
+- **IM 管理员配置（v1.3+）** — Web 管理员 token 是唯一授权源。任何给 agim 发过消息的 IM 用户都会自动出现在 `设置 → 管理员`，可一键授予/移除管理员（无需 `/setup admin`，无需手填 userId）。`agim admin list` / `agim admin known` 可查看状态
 - **`/remind` 提醒子系统** — 一次性 + 定期（`每天8点喝水`）；非 slash 消息 LLM 自动识别意图；LLM 润色投递文本；Agent MCP 工具直接创建；Web `/reminders` 管理页；邮件 + IM 双通道投递
 - **`/memo` 5W1H 持久记忆库** — 通用「what / who / when / where / how / why」记事本，可选 GPS（浏览器地理定位 H5 + 百度地理编码）；默认永久保存，临时类（停车、当天会议）单独走 24h 桶；Agent 通过 MCP 工具自动落库 + 检索，闲聊里提到的地点 / 生日 / 待办都能记下
 - **浏览器控制台** — 对话界面；任务面板含 12 个 Tab（Jobs / 后台脚本 / 子任务 / 定时 / 审批 / 健康 / 工作区 / 审计 / 投递队列 / A2A 调用 / **成本与健康 / 记忆**）；提醒、备忘、设置页含工作区 CRUD + 管理员白名单 + Safety 卡片（重启 / 停止）。完整中英双语 + 每页语言切换 + 专业名词 `(?)` 帮助弹窗（v1.1.4+）
@@ -91,7 +92,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 |------|------|
 | **IM 通道** | 微信（iLink — 图片 / 文件 / 语音 / 视频）、飞书（WebSocket）、钉钉（Stream 模式 — 图片 / 语音，自带服务端 ASR）、Email（SMTP，仅推送） |
 | **Agent** | 6 个内置：Claude Code、Codex、OpenCode、Antigravity、Cursor（CLI，统一 `AgentBase`），以及 **`native`**（in-process LLM loop，OpenAI/Anthropic 兼容）。任何 HTTP Agent 通过 ACP 接入——所有 7 类后端走同一份 `AgentAdapter` 接口 |
-| **原生 LLM** | OpenAI / Anthropic 兼容 provider，外挂 MCP 服务器，多轮 agent loop + 策略式审批门，角色绑定（`cheap` / `evaluator` / `native-chat`） |
+| **原生 LLM** | OpenAI / Anthropic 兼容 provider，外挂 MCP 服务器，多轮 agent loop + 策略式审批门，可选角色绑定（`cheap` / `evaluator` / `native-chat`），未绑定时自动回退任意可用 backend |
 | **提醒** | `/remind` slash、LLM 意图识别、LLM 润色投递、Agent MCP 工具（claude-code + opencode）、Web `/reminders` 页面 |
 | **长目标 + 心跳 + 提问** | `/goal` 会话级目标、`/heartbeat` 周期 DECIDE/EXECUTE/EVALUATE 节拍、`mcp__imhub__ask_user` 结构化选择题，跨会话视图在 `/tasks/{goals,heartbeat,asks}` |
 | **技能（Skills）** | `~/.agim/skills/<name>/SKILL.md` 被所有 agent（CLI + native）发现；3 层渐进披露；Web 编辑器在 `/settings/agim-skills` |
@@ -101,7 +102,7 @@ npm 包名是 `agim-cli`（短名 `agim` 被 npm 反 typo-squat 保留了）；�
 | **路由** | 意图分类、断路器、限流、Sticky 会话、LLM 兜底；`/router compare` A/B 评测 |
 | **工作区** | 多租户；Agent 白名单 + 限流；命令级 ACL |
 | **可观测** | pino 结构化日志、traceId、Prometheus `/api/metrics`、SQLite 审计 |
-| **ACP** | 客户端（连接远端 Agent）+ 服务端（阿吉姆自身作为 ACP Agent），bearer 走 `~/.agim/acp-token`（兼容回退 `~/.agim/web-token`） |
+| **ACP** | 客户端（连接远端 Agent）+ 服务端（阿吉姆自身作为 ACP Agent），统一复用 Web token 鉴权（admin 角色） |
 
 ## CLI 命令
 
@@ -122,18 +123,18 @@ agim agents                # 列出可用 Agent
 agim messengers            # 列出可用 IM
 
 # v1.3.0+ — 原生 LLM 栈 + 诊断
-agim setup llm             # 向导：增/查/删 LLM backend，绑定角色，写 secret
+agim setup llm             # 向导：增/查/删 LLM backend，写 secret，角色绑定可选
 agim setup llm native-enable  # 一键启用 `native` agent（前提是已配置 backend）
 agim setup mcp             # 向导：增/查/删 外挂 MCP 服务器（stdio / HTTP / SSE）
 agim setup mcp health      # 探活全部 MCP 服务器
 agim diag llm              # 各 backend ping + 角色绑定表
 agim diag mcp              # 连接并列工具
 
-# v1.1.10+ — Web/ACP 令牌
+# v1.1.10+ — Web 令牌管理
 agim token create [name]   # 新发 user/admin token（接 /api/*、/acp/*）
 agim token list            # 列出 token（只回显末 4 位）
 agim token revoke <id>     # 按 id 撤销
-agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/admin-bootstrap-token`）
+agim token bootstrap       # 输出一次性 web-bootstrap token（`~/.agim/web-bootstrap-token`）
 
 # （`agim …` 作为别名继续可用）
 ```

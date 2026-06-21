@@ -193,6 +193,7 @@ function credentialFiles(): string[] {
   return [
     join(CONFIG_DIR, 'tokens.json'),
     join(CONFIG_DIR, 'admin-bootstrap-token'),
+    // Legacy ACP token file from pre-Web-token-unified versions.
     join(CONFIG_DIR, 'acp-token'),
     join(CONFIG_DIR, 'approval-bus.sock'),
   ]

@@ -2,8 +2,8 @@
  * /login — token-based sign-in.
  *
  * The agim backend's auth model is simple: the operator copies a
- * token from `~/.agim/tokens.json` (or runs `agim token list`) and
- * pastes it here. POST /api/auth/login validates it (timing-safe
+ * token via `agim token bootstrap` (first boot) or `agim token create`,
+ * then pastes it here. POST /api/auth/login validates it (timing-safe
  * SHA-256 compare) and returns `{ok, tokenId}`. We additionally
  * stash the raw token in localStorage so future fetches attach
  * Authorization: Bearer.
@@ -92,7 +92,7 @@ export default function LoginRoute(): JSX.Element {
           <CardDescription>
             {t('login.intro', {
               defaultValue:
-                'Paste your access token from ~/.agim/tokens.json or `agim token list`.',
+                'Paste your access token from `agim token bootstrap` (first boot) or `agim token create`.',
             })}
           </CardDescription>
         </CardHeader>

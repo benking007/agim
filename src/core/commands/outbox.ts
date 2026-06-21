@@ -20,6 +20,7 @@
 // the same way job-board does (createJob's creator_id column).
 
 import type { RouteContext } from '../router.js'
+import { isAdmin, denialMessage } from '../admin-allowlist.js'
 import {
   getOutboxStats, listOutbox, retryGivingUp, type OutboxRow, type OutboxStatus,
 } from '../outbox.js'
@@ -52,8 +53,11 @@ function fmtStatus(): string {
 
 export async function handleOutboxCommand(
   args: string,
-  _ctx: RouteContext,
+  ctx: RouteContext,
 ): Promise<string> {
+  if (!isAdmin(ctx.platform, ctx.userId || '')) {
+    return denialMessage(ctx.platform, ctx.userId)
+  }
   const parts = args.trim().split(/\s+/).filter(Boolean)
   const sub = parts[0] || 'status'
 

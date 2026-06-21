@@ -37,6 +37,7 @@ const webLog = rootLogger.child({ component: 'web' })
 let webButtonHandler: ((cb: import('../core/types.js').ButtonCallback) => Promise<void>) | undefined
 
 import {
+  formatAgentNotAvailableError,
   isAgentAvailableCached,
   loadConfig,
   saveConfig,
@@ -55,6 +56,16 @@ interface ClientConnection {
   ws: WebSocket
   id: string
   agent: string
+}
+
+function formatWebAgentUnavailableMessage(agentName: string): string {
+  if (agentName === 'native') {
+    return [
+      'Native agent is not configured yet.',
+      '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
+    ].join(' ')
+  }
+  return formatAgentNotAvailableError(agentName)
 }
 
 /** v1.1.10 — paths that never require a web token. */
@@ -848,9 +859,11 @@ export async function startWebServer(options: {
     // v1.1.2 — Outbox tab. List rows by status, plus aggregate stats and
     // a retry endpoint for the giving_up row state.
     if (url.pathname === '/api/outbox' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListOutbox(req, res, url)
     }
     if (url.pathname === '/api/outbox/stats' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleOutboxStats(req, res)
     }
     const outboxRetryMatch = url.pathname.match(/^\/api\/outbox\/(\d+)\/retry$/)
@@ -1113,20 +1126,19 @@ export async function startWebServer(options: {
       return handleServiceRestart(res)
     }
 
-    // Admin allowlist — list + add/remove via the Safety card. Locally
-    // gated: only allowed when bound to 127.0.0.1, since the page has
-    // no auth and we don't want random LAN visitors granting themselves
-    // admin. See `bindHost` upthread.
+    // IM admin registry — list + add/remove via Settings → Admins.
+    // Web admin token is the single authority in v2 model.
     if (url.pathname === '/api/admin-allowlist' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAdminAllowlistGet(res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
-      return handleAdminAllowlistAdd(req, res, bindHost)
+      return handleAdminAllowlistAdd(req, res)
     }
     if (url.pathname === '/api/admin-allowlist' && req.method === 'DELETE') {
       if (!requireAdmin(req, res)) return
-      return handleAdminAllowlistRemove(req, res, bindHost)
+      return handleAdminAllowlistRemove(req, res)
     }
 
     res.writeHead(404)
@@ -2297,28 +2309,22 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
 }
 
 // ============================================================
-// Admin allowlist endpoints (Safety card → Admin Users)
+// IM admin registry endpoints (Settings → Admins)
 // ============================================================
 //
-// All three are gated on the server's bindHost being a loopback address.
-// The web console has no auth, so we MUST not let a LAN visitor add
-// themselves as admin. When bindHost is 0.0.0.0 we hide the editor on
-// the frontend AND refuse here as a defense-in-depth.
-
-function isLocalBind(bindHost: string): boolean {
-  return bindHost === '127.0.0.1' || bindHost === '::1' || bindHost === 'localhost'
-}
-
+// Web admin token is the single authority. Candidate IM users are auto-
+// discovered from inbound messages and surfaced here as knownUsers.
 async function handleAdminAllowlistGet(res: ServerResponse): Promise<void> {
   try {
-    const { listAdmins, isAllowlistConfigured } = await import('../core/admin-allowlist.js')
-    const { BOOTSTRAP_TOKEN_FILE } = await import('../core/admin-bootstrap.js')
-    const hasBootstrap = existsSync(BOOTSTRAP_TOKEN_FILE)
+    const {
+      listAdmins,
+      listKnownImUsers,
+      isAllowlistConfigured,
+    } = await import('../core/admin-allowlist.js')
     sendJson(res, 200, {
       admins: listAdmins(),
+      knownUsers: listKnownImUsers(),
       configured: isAllowlistConfigured(),
-      bootstrapAvailable: hasBootstrap,
-      bootstrapTokenPath: BOOTSTRAP_TOKEN_FILE,
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2328,14 +2334,7 @@ async function handleAdminAllowlistGet(res: ServerResponse): Promise<void> {
 async function handleAdminAllowlistAdd(
   req: IncomingMessage,
   res: ServerResponse,
-  bindHost: string,
 ): Promise<void> {
-  if (!isLocalBind(bindHost)) {
-    sendJson(res, 403, {
-      error: 'admin editor disabled when web is bound publicly (no auth on this endpoint).',
-    })
-    return
-  }
   try {
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { platform?: string; userId?: string }
@@ -2346,7 +2345,7 @@ async function handleAdminAllowlistAdd(
       return
     }
     const { promoteAdmin, listAdmins } = await import('../core/admin-allowlist.js')
-    const added = await promoteAdmin(platform, userId)
+    const added = await promoteAdmin(platform, userId, { actor: getRequestActor(req) })
     sendJson(res, 200, { ok: true, added, admins: listAdmins() })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2356,12 +2355,7 @@ async function handleAdminAllowlistAdd(
 async function handleAdminAllowlistRemove(
   req: IncomingMessage,
   res: ServerResponse,
-  bindHost: string,
 ): Promise<void> {
-  if (!isLocalBind(bindHost)) {
-    sendJson(res, 403, { error: 'admin editor disabled on public binds' })
-    return
-  }
   try {
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { platform?: string; userId?: string }
@@ -2371,21 +2365,9 @@ async function handleAdminAllowlistRemove(
       sendJson(res, 400, { error: 'platform and userId required' })
       return
     }
-    const { listAdmins } = await import('../core/admin-allowlist.js')
-    const remaining = listAdmins().filter((a) => !(a.platform === platform && a.userId === userId))
-    const newRaw = remaining.map((a) => `${a.platform}:${a.userId}`).join(',')
-    // Persist to env file. Note this nukes both runtime + env-derived
-    // entries — fine for the editor's use case (it round-trips through
-    // the full list).
-    const { updateEnvFile } = await import('../cli-ui/env-file.js')
-    updateEnvFile({ IMHUB_ADMIN_USERS: newRaw || null })
-    // Update process.env so getEntries() picks it up next call.
-    if (newRaw) process.env.IMHUB_ADMIN_USERS = newRaw
-    else delete process.env.IMHUB_ADMIN_USERS
-    // Reset the parse cache so the change is visible immediately.
-    const { _resetCache } = await import('../core/admin-allowlist.js')
-    _resetCache()
-    sendJson(res, 200, { ok: true, admins: remaining })
+    const { revokeAdmin, listAdmins } = await import('../core/admin-allowlist.js')
+    const removed = await revokeAdmin(platform, userId, { actor: getRequestActor(req) })
+    sendJson(res, 200, { ok: true, removed, admins: listAdmins() })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -5122,6 +5104,8 @@ async function handleClientMessage(
       if (!msg.text?.trim()) return
 
       const text = msg.text.trim()
+      const runId = `run-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
+      const runStartedAt = Date.now()
       const traceId = generateTraceId()
       const logger = createLogger({ traceId, platform: 'web', component: 'web' })
 
@@ -5143,6 +5127,12 @@ async function handleClientMessage(
           sendToClient(ws, { type: 'agent-switched', agent: sw.name })
         }
       }
+      sendToClient(ws, {
+        type: 'run-start',
+        runId,
+        agent: client.agent,
+        startedAt: new Date(runStartedAt).toISOString(),
+      })
 
       try {
         const routeCtx: RouteContext = {
@@ -5161,7 +5151,22 @@ async function handleClientMessage(
 
         // String response (built-in commands, errors)
         if (typeof result === 'string') {
-          sendToClient(ws, { type: 'done', text: result })
+          const finishedAt = Date.now()
+          const durationMs = Math.max(0, finishedAt - runStartedAt)
+          sendToClient(ws, { type: 'done', text: result, runId })
+          sendToClient(ws, {
+            type: 'usage',
+            runId,
+            durationMs,
+            outputChars: result.length,
+          })
+          sendToClient(ws, {
+            type: 'run-finish',
+            runId,
+            status: 'success',
+            finishedAt: new Date(finishedAt).toISOString(),
+            durationMs,
+          })
           return
         }
 
@@ -5175,13 +5180,37 @@ async function handleClientMessage(
           // to GBs for a long agent response.
           await awaitWsDrain(ws)
           if (ws.readyState !== ws.OPEN) break
-          sendToClient(ws, { type: 'chunk', text: chunk })
+          sendToClient(ws, { type: 'chunk', text: chunk, runId })
         }
-        sendToClient(ws, { type: 'done', text: fullText })
+        const finishedAt = Date.now()
+        const durationMs = Math.max(0, finishedAt - runStartedAt)
+        sendToClient(ws, { type: 'done', text: fullText, runId })
+        sendToClient(ws, {
+          type: 'usage',
+          runId,
+          durationMs,
+          outputChars: fullText.length,
+        })
+        sendToClient(ws, {
+          type: 'run-finish',
+          runId,
+          status: 'success',
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs,
+        })
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const stack = err instanceof Error ? err.stack : undefined
         logger.error({ event: 'web.handle.error', err: errorMsg, stack }, 'Error handling client message')
+        const finishedAt = Date.now()
+        sendToClient(ws, {
+          type: 'run-finish',
+          runId,
+          status: 'error',
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: Math.max(0, finishedAt - runStartedAt),
+          error: errorMsg,
+        })
         sendToClient(ws, { type: 'error', message: `Agent error: ${errorMsg}` })
       }
       break
@@ -5195,7 +5224,10 @@ async function handleClientMessage(
         return
       }
       if (!(await isAgentAvailableCached(agent.name))) {
-        sendToClient(ws, { type: 'error', message: `Agent "${agent.name}" is not available` })
+        sendToClient(ws, {
+          type: 'error',
+          message: formatWebAgentUnavailableMessage(agent.name),
+        })
         return
       }
       client.agent = agent.name

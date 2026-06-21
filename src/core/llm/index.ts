@@ -34,7 +34,9 @@ export {
 export {
   loadFromConfig,
   getProvider,
+  getAnyProvider,
   getProviderByName,
+  getAnyBackendBinding,
   listProviders,
   describeRegistry,
   _resetRegistry,

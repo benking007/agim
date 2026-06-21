@@ -264,6 +264,8 @@ describe('Web REST API', () => {
         '/api/memos',
         '/api/memory/users',
         '/api/approvals',
+        '/api/outbox',
+        '/api/outbox/stats',
         '/api/env?reveal=1',
       ]
 

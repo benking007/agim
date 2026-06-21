@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.156] - 2026-06-21
+
+### Added — pi-native 引擎稳定性/成本(从 pi 续接的能力点)
+
+- **上下文压缩**：每轮 prompt 前按 token 阈值主动 `harness.compact()` 摘要旧历史
+  (pi 从不自动压缩)。修复长会话 JSONL 无限增长 → 上下文溢出。best-effort,失败不
+  阻塞本轮。`IMHUB_NATIVE_COMPACTION=off` 可关。
+- **provider 韧性 + prompt 缓存**：透传 `streamOptions`(maxRetries /
+  maxRetryDelayMs / timeoutMs 扛 LLM 429/5xx + cacheRetention 开 provider prompt
+  缓存,省系统提示+历史的重复 token)。全 `IMHUB_NATIVE_*` 可覆盖,默认 2 / 20s /
+  120s / short。
+
+### Docs
+
+- `PROJECTS/pi-native-migration.md`:记录已落地能力 + 3 项待 agim 传输/UI 改造的
+  backlog(token 流式 / steering 队列 / branch 时间旅行)。
+
 ## [1.2.155] - 2026-06-21
 
 ### Added — pi-native 引擎

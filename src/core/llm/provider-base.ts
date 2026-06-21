@@ -23,6 +23,8 @@
 // implement `_callApi` / `_callApiStream`. The base wraps with timeout +
 // telemetry plumbing so providers stay focused on transport details.
 
+import { estimateCostUsd } from './model-catalog.js'
+
 /**
  * Chat message role. We intentionally support only the three canonical
  * roles needed by introspection callers; tool / function roles arrive in
@@ -335,16 +337,29 @@ export abstract class LlmProvider {
    * response. Used by all Stage-1 introspection callers because the
    * downstream parsers want a complete JSON string anyway.
    */
+  /** Backfill costUsd from the pi-ai model catalog when the upstream API
+   *  didn't return a cost (Anthropic / OpenAI direct usually don't). Leaves an
+   *  already-priced usage untouched; no-ops when the model isn't catalogued. */
+  protected enrichUsage(usage: LlmUsage): LlmUsage {
+    if (usage.costUsd !== undefined) return usage
+    const input = usage.promptTokens ?? 0
+    const output = usage.completionTokens ?? 0
+    if (input === 0 && output === 0) return usage
+    const cost = estimateCostUsd(this.providerType, this.model, { input, output })
+    return cost === null ? usage : { ...usage, costUsd: cost }
+  }
+
   async chat(messages: LlmMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
     const prepared = this._prepareMessages(messages, opts)
     const merged = this._mergeOptions(opts)
     const signal = this._buildSignal(opts.signal, merged.timeoutMs)
     const result = await this._callApi(prepared, merged, signal.signal)
     signal.cleanup()
+    const usage = this.enrichUsage(result.usage)
     if (opts.onUsage) {
-      try { opts.onUsage(result.usage) } catch { /* swallow — telemetry is best-effort */ }
+      try { opts.onUsage(usage) } catch { /* swallow — telemetry is best-effort */ }
     }
-    return result
+    return { ...result, usage }
   }
 
   /**
@@ -364,7 +379,7 @@ export abstract class LlmProvider {
         yield chunk
       }
       if (lastUsage && opts.onUsage) {
-        try { opts.onUsage(lastUsage) } catch { /* swallow */ }
+        try { opts.onUsage(this.enrichUsage(lastUsage)) } catch { /* swallow */ }
       }
     } finally {
       signal.cleanup()

@@ -131,14 +131,6 @@ npm run typecheck
 npm test
 ```
 
-## Community
-
-<p align="center">
-  <a href="https://deepseek.club/community/imhub">
-    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" style="width: 150px; height: auto;" alt="DeepSeek">
-  </a>
-</p>
-
 ## License
 
 MIT

@@ -9,7 +9,7 @@
 
 ## Context
 
-im-hub 当前使用 `console.log()` / `console.error()` 输出日志，存在以下问题：
+agim 当前使用 `console.log()` / `console.error()` 输出日志，存在以下问题：
 
 1. **无结构化字段**：无法按 `platform` / `agent` / `userId` 过滤或聚合
 2. **无 trace**：无法将一条消息的完整处理链路（messenger → router → agent → reply）串联

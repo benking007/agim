@@ -7,7 +7,7 @@
 
 ## Context
 
-im-hub 目前有 5 个 Agent 适配器（opencode、claude-code、codex、copilot、ACP），每个独立实现了 `isAvailable()`、`sendPrompt()`、超时处理、abort 支持、流式解析。这使得以下行为不一致：
+agim 目前有 5 个 Agent 适配器（opencode、claude-code、codex、copilot、ACP），每个独立实现了 `isAvailable()`、`sendPrompt()`、超时处理、abort 支持、流式解析。这使得以下行为不一致：
 
 - 只有 opencode 有 30min 超时，其他无超时保护
 - 只有 opencode 和 ACP 支持 abort signal

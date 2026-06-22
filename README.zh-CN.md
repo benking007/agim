@@ -131,14 +131,6 @@ npm run typecheck
 npm test
 ```
 
-## 社区
-
-<p align="center">
-  <a href="https://deepseek.club/community/imhub">
-    <img src="https://deepseek.club/assets/logo-DH6LfKkF.png" style="width: 150px; height: auto;" alt="DeepSeek">
-  </a>
-</p>
-
 ## 许可证
 
 MIT

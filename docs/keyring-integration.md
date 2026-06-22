@@ -58,7 +58,7 @@ Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus"
 - `ExecStart` 是干净的 `node` 进程，systemd `MainPID = node PID`, cgroup 完整
 - 后续 `systemctl stop agim` → cgroup-kill 能把所有 agim 子进程一锅端
 
-`%U` 是 systemd 的占位符，会被替换成 `User=` 指定的 uid（imhub 用户的 uid）。如果你 unit 没用专用账号、跑在 root 下，把 `%U` 换成 `0`。
+`%U` 是 systemd 的占位符，会被替换成 `User=` 指定的 uid（agim 服务用户的 uid）。如果你 unit 没用专用账号、跑在 root 下，把 `%U` 换成 `0`。
 
 ---
 

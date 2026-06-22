@@ -1,4 +1,4 @@
-# Agent CWD 与长期项目记忆设计（im-hub v2 Phase B + C）
+# Agent CWD 与长期项目记忆设计（agim v2 Phase B + C）
 
 > 状态：**已实施（2026-05-02）**
 > 关联：`docs/im-gateway-v2-plan.md`、`docs/adr/0004-sticky-agent-and-split-ttl.md`、`docs/adr/0005-agent-cwd-isolation.md`
@@ -13,7 +13,7 @@
 
 ### 现状
 
-- im-hub.service 通过 systemd 启动，无 `WorkingDirectory` 配置，进程 cwd = `/`。
+- agim.service 通过 systemd 启动，无 `WorkingDirectory` 配置，进程 cwd = `/`。
 - `src/utils/cross-platform.ts:crossSpawn` 不接收 cwd 参数，spawn 出来的 Claude / opencode 子进程继承 `/` 作为工作目录。
 - Claude Code 用 cwd 作为 project key（`~/.claude/projects/<cwd-encoded>/`），所以**所有 IM 入口的 Claude 会话**都共享 `~/.claude/projects/-/` 这一个目录的 memory、CLAUDE.md、jsonl 历史。
 - opencode 同理，所有 IM 入口共用 `~/.config/opencode/memory/` 与 `AGENTS.md`。
@@ -40,7 +40,7 @@
 ### 目录结构
 
 ```
-~/.im-hub-workspaces/
+~/.agim-workspaces/
 ├── claude-code/
 │   ├── CLAUDE.md           # IM 入口的 Claude Code 角色定义
 │   ├── AGENTS.md           # （可选）opencode 来同一目录时也能读到
@@ -105,7 +105,7 @@ export function resolveAgentCwd(agent: string, opts: AgentSendOpts): string | un
   // 2. IM 上下文 → 工作区
   if (opts.threadId && opts.platform) {
     const root = process.env.IMHUB_WORKSPACES_ROOT
-      || join(homedir(), '.im-hub-workspaces')
+      || join(homedir(), '.agim-workspaces')
     return join(root, agent)
   }
   // 3. 非 IM 上下文（web / scheduler / intent-llm）→ 不注入
@@ -120,7 +120,7 @@ opencode 之前没有 `prepareCommand` 重写，新加一个；逻辑与 claude-
 
 #### 5. systemd 不动
 
-im-hub 主进程 cwd 仍为 `/`，所有 cwd 注入都在 spawn 时按 agent 决定，不影响 im-hub 本身。
+agim 主进程 cwd 仍为 `/`，所有 cwd 注入都在 spawn 时按 agent 决定，不影响 agim 本身。
 
 ---
 
@@ -133,7 +133,7 @@ function resolveCwd(opts: AgentSendOpts): string | undefined {
   if (process.env.IMHUB_CC_CWD) return process.env.IMHUB_CC_CWD
   if (!opts.threadId || !opts.platform) return undefined
   const userScope = opts.userId || 'shared'
-  return join(homedir(), '.im-hub-workspaces', 'claude-code', userScope)
+  return join(homedir(), '.agim-workspaces', 'claude-code', userScope)
 }
 ```
 
@@ -147,13 +147,13 @@ function resolveCwd(opts: AgentSendOpts): string | undefined {
 
 ### Claude Code
 
-- `~/.im-hub-workspaces/claude-code/CLAUDE.md` 自动加载（Claude 的标准行为）
-- `~/.im-hub-workspaces/claude-code/memory/MEMORY.md` 是 Claude auto-memory 的入口，Claude 会自己往里写
-- `~/.claude/projects/-root-im-hub-workspaces-claude-code/` 落 jsonl 完整历史
+- `~/.agim-workspaces/claude-code/CLAUDE.md` 自动加载（Claude 的标准行为）
+- `~/.agim-workspaces/claude-code/memory/MEMORY.md` 是 Claude auto-memory 的入口，Claude 会自己往里写
+- `~/.claude/projects/-root-agim-workspaces-claude-code/` 落 jsonl 完整历史
 
 ### opencode
 
-- `~/.im-hub-workspaces/opencode/AGENTS.md` 自动加载
+- `~/.agim-workspaces/opencode/AGENTS.md` 自动加载
 - 项目档案手写到 `PROJECT.md`，在 `AGENTS.md` 里指引读取
 
 ### 可选增强：`/memo` 命令
@@ -174,8 +174,8 @@ function resolveCwd(opts: AgentSendOpts): string | undefined {
 
 | 风险 | 缓解 |
 |---|---|
-| Claude 看到 cwd = `~/.im-hub-workspaces/claude-code/` 时尝试在该目录里搜代码 | 该目录里只有 CLAUDE.md，明确告诉 Claude "你在 IM 模式下，要查文件请去 `/root/workspace/...`" |
-| 历史 IM 用户已经在 `/root/.claude/projects/-/memory/` 累积的 MEMORY.md 不会自动迁移 | 手工拷贝；或者把 `~/.im-hub-workspaces/claude-code/memory/MEMORY.md` 软链到旧路径，让记忆"两边都能看见"再分头维护 |
+| Claude 看到 cwd = `~/.agim-workspaces/claude-code/` 时尝试在该目录里搜代码 | 该目录里只有 CLAUDE.md，明确告诉 Claude "你在 IM 模式下，要查文件请去 `/root/workspace/...`" |
+| 历史 IM 用户已经在 `/root/.claude/projects/-/memory/` 累积的 MEMORY.md 不会自动迁移 | 手工拷贝；或者把 `~/.agim-workspaces/claude-code/memory/MEMORY.md` 软链到旧路径，让记忆"两边都能看见"再分头维护 |
 | opencode 的 `opencode run` 是否尊重 cwd 待验证 | Phase B 实施前先做 spike：`cd /tmp/x && opencode run "pwd"`，观察 stdout |
 
 ---
@@ -184,8 +184,8 @@ function resolveCwd(opts: AgentSendOpts): string | undefined {
 
 Phase B 完成的标志：
 
-1. 在 IM 中给 Claude Code 发 `pwd`，回 `~/.im-hub-workspaces/claude-code`（而非 `/`）
-2. 在 `~/.im-hub-workspaces/claude-code/CLAUDE.md` 写一句"你叫小明"，IM 中问"你叫什么"，Claude 回"小明"
+1. 在 IM 中给 Claude Code 发 `pwd`，回 `~/.agim-workspaces/claude-code`（而非 `/`）
+2. 在 `~/.agim-workspaces/claude-code/CLAUDE.md` 写一句"你叫小明"，IM 中问"你叫什么"，Claude 回"小明"
 3. 同时在直连终端跑 `claude`，cwd 是当前终端目录，**不**读到上面的"小明"配置
 4. opencode 同样验证一遍
 
@@ -222,7 +222,7 @@ Phase C 完成的标志：
 - [x] `opencode` adapter 引入 `prepareCommand`，调 `resolveAgentCwd`
 - [x] `core/agent-cwd.ts` 新建：`resolveAgentCwd()` + `bootstrapAgentWorkspaces()`
 - [x] `cli.ts:start` 启动时调 `bootstrapAgentWorkspaces()`，幂等创建 + 种子模板
-- [x] `~/.im-hub-workspaces/{claude-code/CLAUDE.md, opencode/AGENTS.md}` 初始模板
+- [x] `~/.agim-workspaces/{claude-code/CLAUDE.md, opencode/AGENTS.md}` 初始模板
       已就位（已存在不覆盖）
 - [x] 测试：`core/agent-cwd.test.ts` 13 pass，覆盖 4 条决策分支 + 种子幂等性 +
       env override 优先级 + `opts.threadId` 为空回退 undefined

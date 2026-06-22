@@ -8,7 +8,7 @@
 
 ## 一句话
 
-im-hub 的 reminders 是一个轻量"一次性 / 定期"提醒子系统，提供 4 种创建路径，2 种投递增强，3 种 agent 集成，覆盖 IM、Web、邮件三种出口。
+agim 的 reminders 是一个轻量"一次性 / 定期"提醒子系统，提供 4 种创建路径，2 种投递增强，3 种 agent 集成，覆盖 IM、Web、邮件三种出口。
 
 ```
                 ┌──────────────── 创建路径 ────────────────┐
@@ -39,7 +39,7 @@ im-hub 的 reminders 是一个轻量"一次性 / 定期"提醒子系统，提供
 
 ## 数据模型
 
-`~/.im-hub/reminders.db` (SQLite, WAL, fail-soft via `core/sqlite-helper.ts`)
+`~/.agim/reminders.db` (SQLite, WAL, fail-soft via `core/sqlite-helper.ts`)
 
 ```sql
 CREATE TABLE reminders (
@@ -161,8 +161,8 @@ CREATE TABLE user_aiwatch_settings (
 
 1. `opencode-http-adapter.ts: buildImContextInstruction` 在每条 prompt 前注入：
    ```
-   [im-hub MCP routing — important]
-   When you call any imhub tool, you MUST include this exact `_im_context`:
+   [agim MCP routing — important]
+   When you call any agim tool, you MUST include this exact `_im_context`:
      "_im_context": {"platform":"wechat","threadId":"...","channelId":"...","userId":"..."}
    Pass these values verbatim — do not invent or modify them.
    ```
@@ -248,7 +248,7 @@ src/plugins/messengers/
   wechat/context-store.ts                    wechat context_token 持久化
 
 src/plugins/agents/opencode/
-  ensure-mcp-config.ts     启动时把 imhub MCP 写入 opencode 全局配置（idempotent）
+  ensure-mcp-config.ts     启动时把 agim MCP 写入 opencode 全局配置（idempotent）
 
 src/web/public/reminders.html                Web 管理页
 

@@ -1,7 +1,7 @@
 # ADR-0004: Sticky-Agent 绝对锁 + 会话 TTL 双层拆分
 
 - **日期**：2026-05-02
-- **状态**：接受（im-hub v2 Phase A + D 落地）
+- **状态**：接受（agim v2 Phase A + D 落地）
 - **相关计划**：`docs/im-gateway-v2-plan.md`
 
 ---
@@ -15,7 +15,7 @@
 ### 根因（漂移路径）
 
 1. `core/session.ts:38` `DEFAULT_TTL = 30 * 60 * 1000`（30 min）。
-2. cleanup 定时器（5 min 间隔）发现 idle > TTL → 删除 in-memory + `~/.im-hub/sessions/<key>.{json,log}`，**包括** `claudeSessionId` / `claudeSessionPrimed`。
+2. cleanup 定时器（5 min 间隔）发现 idle > TTL → 删除 in-memory + `~/.agim/sessions/<key>.{json,log}`，**包括** `claudeSessionId` / `claudeSessionPrimed`。
 3. 下条消息进来，`getExistingSession` → undefined → `stickyAgent = undefined`。
 4. `classifyIntent` 重跑：opencode `weight=1.2` vs claude-code `1.0`，加上"代码/code/git/test/bug"等关键字大量重叠，opencode 几乎必赢。
 5. router.ts:337-339 `agentName !== stickyAgent` → `switchAgent` 真切走。
@@ -88,7 +88,7 @@ META_TTL     = 7 days   (env: IMHUB_SESSION_META_TTL_MS)
 ### 负面
 
 - **冷 thread 永久绑定**：用户半年前在某 thread 用过 opencode 然后忘了，半年后回来 sticky 已自然过期（>7d）才会重新分类。中间可能让人困惑。**缓解**：`/agents` 看可用，`/<agent>` 一键切，`/new` 重置。
-- **磁盘上常驻 session 元数据**：`~/.im-hub/sessions/*.json` 文件数量随 thread 增长，单文件 < 2KB；7d 后 cleanup。可接受。
+- **磁盘上常驻 session 元数据**：`~/.agim/sessions/*.json` 文件数量随 thread 增长，单文件 < 2KB；7d 后 cleanup。可接受。
 - **Phase D 之后，对 opencode 的"上下文连续性"无改善**：opencode 没有自己的 resumable session 概念，30 min 后 messages 被清空，下次上下文丢失 — 这是 opencode `run` 模型本身的限制，非本 ADR 范围。
 
 ### 中性

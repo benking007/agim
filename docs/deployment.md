@@ -29,7 +29,7 @@ agim --version
 ### 2.2 源码部署（可选）
 
 ```bash
-git clone https://github.com/benking007/imhub.git /opt/agim
+git clone https://github.com/benking007/agim.git /opt/agim
 cd /opt/agim
 npm install --no-package-lock
 npm --prefix src/web-app install

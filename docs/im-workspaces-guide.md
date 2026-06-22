@@ -158,7 +158,7 @@ cat >> ~/.agim-workspaces/opencode/PROJECT.md <<'EOF'
 # IM 入口 opencode 项目档案
 
 ## 项目清单
-- agim: /root/workspace/imhub
+- agim: /root/workspace/agim
 
 ## 用户偏好
 - 中文沟通
@@ -265,7 +265,7 @@ sudo systemctl restart agim
 
 ```bash
 systemctl status agim --no-pager
-ls -la /root/workspace/imhub/dist/core/agent-cwd.js
+ls -la /root/workspace/agim/dist/core/agent-cwd.js
 ls -la ~/.agim-workspaces/claude-code/CLAUDE.md
 journalctl -u agim --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
 systemctl cat agim | grep IMHUB

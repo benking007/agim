@@ -33,8 +33,6 @@
     "agim",
     "agim-cli",
     "阿吉姆",
-    "im-hub",
-    "im-hub-pro",
     "wechat",
     "feishu",
     "dingtalk",
@@ -53,11 +51,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/benking007/imhub.git"
+    "url": "git+https://github.com/benking007/agim.git"
   },
-  "homepage": "https://github.com/benking007/imhub#readme",
+  "homepage": "https://github.com/benking007/agim#readme",
   "bugs": {
-    "url": "https://github.com/benking007/imhub/issues"
+    "url": "https://github.com/benking007/agim/issues"
   },
   "publishConfig": {
     "access": "public"

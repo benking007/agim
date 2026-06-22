@@ -1,8 +1,7 @@
 # `/goal` — sustained-objective tracking
 
-> P0 #2 of the nanobot-vs-agim comparison plan. One active goal per IM
-> thread; injected into every prompt so the agent stays on-mission across
-> many turns.
+One active goal per IM thread, injected into every prompt so the agent
+stays on-mission across many turns.
 
 ## Why a separate primitive
 

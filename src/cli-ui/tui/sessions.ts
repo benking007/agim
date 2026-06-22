@@ -2,7 +2,7 @@
 // can pick up where they left off with `agim tui --resume <id>`.
 //
 // Storage: <AGIM_HOME>/tui-sessions/<id>.json
-// File shape: { id, agent, cwd, createdAt, updatedAt, messages: [...] }
+// File shape: { id, agent, agentSessions?, cwd, createdAt, updatedAt, messages: [...] }
 //
 // We save on:
 //   - graceful exit (TuiApp's onExit handler)
@@ -33,6 +33,8 @@ export interface StoredMessage {
 export interface StoredSession {
   id: string
   agent: string | undefined
+  /** Agent-native resumable session ids keyed by agent name. */
+  agentSessions?: Record<string, string>
   cwd: string
   createdAt: string
   updatedAt: string
@@ -72,7 +74,17 @@ export function loadSession(id: string): StoredSession | null {
   const file = join(TUI_SESSIONS_DIR, `${id}.json`)
   if (!existsSync(file)) return null
   try {
-    return JSON.parse(readFileSync(file, 'utf-8')) as StoredSession
+    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Partial<StoredSession>
+    const next: StoredSession = {
+      id: parsed.id || id,
+      agent: parsed.agent,
+      agentSessions: parsed.agentSessions && typeof parsed.agentSessions === 'object' ? parsed.agentSessions : undefined,
+      cwd: parsed.cwd || '',
+      createdAt: parsed.createdAt || new Date(0).toISOString(),
+      updatedAt: parsed.updatedAt || new Date(0).toISOString(),
+      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+    }
+    return next
   } catch (err) {
     log.warn({ event: 'tui.sessions.load_failed', file, err: err instanceof Error ? err.message : String(err) })
     return null
@@ -115,7 +127,7 @@ export function listSessions(limit = 20, full = false): SessionMeta[] {
         agent = parsed.agent
         cwd = parsed.cwd
         updatedAt = parsed.updatedAt || updatedAt
-        msgCount = parsed.messages.length
+        msgCount = Array.isArray(parsed.messages) ? parsed.messages.length : 0
       } catch { /* ignore */ }
     }
     out.push({ id, agent, cwd, updatedAt, messages: msgCount, bytes: st.size })

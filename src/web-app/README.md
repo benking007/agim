@@ -1,11 +1,7 @@
-# `src/web-app/` — agim Web 后台 v2
+# `src/web-app/` — agim Web 后台
 
-完整重写的 React SPA，规划与现状盘点见
-[`/root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md`](../../root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md)（外部仅做参考，不进 release）。
-
-旧 `src/web/public/*.html`（settings / tasks / reminders / memos）已在
-v1.2.72 彻底删除，`IMHUB_WEB_V2` 环境变量也已移除 — 没有 v1 回退路径，
-所有 web 后台请求统一走 SPA shell（`index.html` + `/assets/*.js`）。
+当前后台是 React SPA，统一通过 `index.html` + `/assets/*` 提供页面与静态资源。
+不再维护旧版多 HTML 页面形态，所有后台功能都在这一套前端中演进。
 
 ## 开发流程
 

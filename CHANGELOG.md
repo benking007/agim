@@ -28,85 +28,64 @@ All notable changes to this project will be documented in this file.
 
 详见各 1.2.15x 段。
 
+## Native engine (pi-native) overview
+
+> Consolidated from historical pi-native migration notes.
+> Default native engine since `1.2.155`; legacy escape hatch: `IMHUB_NATIVE_ENGINE=legacy`.
+
+### Shipped (1.2.155 → 1.2.159)
+
+- **1.2.155**: switched native engine to pi-native (`AgentHarness` + durable JSONL session), added tool bridge, resolver, approval integration, runaway/stuck-loop guards.
+- **1.2.156**: added pre-turn compaction (`IMHUB_NATIVE_COMPACTION`), provider retry/cache tuning (`IMHUB_NATIVE_*`).
+- **1.2.157**: added A2A result compression (`IMHUB_A2A_MAX_RESULT_CHARS`) with overflow to artifact files.
+- **1.2.158**: improved TUI interaction (`/agent` completion + token/cost status visibility).
+- **1.2.159**: added model catalog-based usage enrichment for cost/window metadata backfill.
+
+### Backlog (transport/UI dependent)
+
+| ID | Capability | Blocker |
+|---|---|---|
+| B1 | token-level streaming | no incremental consumer path in IM/web transport |
+| B2 | steering / follow-up queue | router is still one-message-per-turn |
+| B3 | branch/time-travel navigation | no session-tree navigation in web chat |
+
+### Ops note
+
+Avoid running full `bun test` / full build in low-memory production hosts managed by agim itself; prefer focused verification + CI for heavy suites.
+
 ## [1.2.159] - 2026-06-21
 
-### Added — 模型成本/窗口元数据(复用 pi-ai 目录)
+### Added
 
-agim 自家 provider(anthropic / openai-compat)只带 `(providerType, model)` 字符串,
-上游 API 常不回 cost → `costUsd` 经常是空。新增 `src/core/llm/model-catalog.ts`
-封装已依赖的 `@earendil-works/pi-ai` MODELS 全表:
-
-- `findCatalogModel` / `lookupModelMeta`(contextWindow / maxTokens)
-- `estimateCostUsd`(用 token 数走 `calculateCost`,含 Anthropic 1h cache 计费特例)
-
-`LlmProvider.enrichUsage()` 在 API 不回成本时按目录回填 `costUsd`——所有 legacy
-provider(以及 v1.2.158 的 TUI token/cost 状态栏)无需自建价格表即可显示真实 $。
-模型未收录或已计价则不动。
+- Added model catalog lookup and usage enrichment so missing provider-side cost metadata can be backfilled consistently.
 
 ## [1.2.158] - 2026-06-21
 
-### Added — TUI 体验(借鉴 pi CLI)
+### Added
 
-- **`/agent` 参数补全**:`/agent ` 后从 `registry.listAgents()` 实时补全 agent 名
-  (Tab/↑↓ 选,Enter 先补全再回车切换)。原先 slash popup 只补命令名、遇空格即关;
-  这是首个命令参数补全。
-- **实时 token/cost 状态栏**:底部状态栏显示本会话累计用量(⇅ in/out tokens ·
-  $cost),由 `sendPrompt` 的 `onUsage` 馈送。pi-native 三项全发,只发 cost 的
-  adapter 也能显示。与本轮 compaction 搭配——上下文花费可见。
+- Improved TUI usability: `/agent` argument completion and cumulative token/cost status line.
 
 ## [1.2.157] - 2026-06-21
 
-### Added — A2A 子输出压缩
+### Added
 
-`call_agent`/A2A 子代理的 final-text 原先**全量**注入父代理的 LLM 上下文,一份长报告
-会白烧父的上下文窗口。`callAgentByName` 现在按 `IMHUB_A2A_MAX_RESULT_CHARS`
-(默认 8000,`0` 关闭)截断父可见结果,完整内容溢出到
-`_agim-output/__a2a_result_full.md`,父可用 read 工具按需取全文。思路借鉴
-nicobailon/pi-subagents 的 `outputMode:file-only`。
-
-- `artifacts.writeOutput()`(与 `readOutput` 对称)
-- `a2a.getA2AMaxResultChars / compressA2AResult`,在 `listOutputs` 前执行,溢出文件
-  自然出现在 `outputs[]`
+- Added A2A result compression with configurable max visible chars and artifact overflow output.
 
 ## [1.2.156] - 2026-06-21
 
-### Added — pi-native 引擎稳定性/成本(从 pi 续接的能力点)
+### Added
 
-- **上下文压缩**：每轮 prompt 前按 token 阈值主动 `harness.compact()` 摘要旧历史
-  (pi 从不自动压缩)。修复长会话 JSONL 无限增长 → 上下文溢出。best-effort,失败不
-  阻塞本轮。`IMHUB_NATIVE_COMPACTION=off` 可关。
-- **provider 韧性 + prompt 缓存**：透传 `streamOptions`(maxRetries /
-  maxRetryDelayMs / timeoutMs 扛 LLM 429/5xx + cacheRetention 开 provider prompt
-  缓存,省系统提示+历史的重复 token)。全 `IMHUB_NATIVE_*` 可覆盖,默认 2 / 20s /
-  120s / short。
-
-### Docs
-
-- `PROJECTS/pi-native-migration.md`:记录已落地能力 + 3 项待 agim 传输/UI 改造的
-  backlog(token 流式 / steering 队列 / branch 时间旅行)。
+- Added native pre-turn compaction and provider resilience/cache tuning knobs.
 
 ## [1.2.155] - 2026-06-21
 
-### Added — pi-native 引擎
+### Added
 
-把 pi-agent-core 接成 agim 原生 agent 引擎，并**设为默认 native engine**（legacy 引擎降级为逃生通道，`IMHUB_NATIVE_ENGINE=legacy` 可回退）。
+- Introduced pi-native as default native engine with durable session model and tool/policy integration.
 
-- 新增 `src/plugins/agents/pi-native/`：factory / tool-bridge（agim `ToolDef[]`+Dispatcher → pi `AgentTool`）/ provider-resolver（agim backend → pi-ai model resolver）/ approval（policy 审批门接入 `beforeToolCall`）/ tools
-- 护栏：max-iteration runaway guard（对齐 `IMHUB_NATIVE_AGENT_MAX_ITER`）、stuck-loop guard（同 tool+args 连错 3 次中断）、turn 错误不再静默吞掉、注入"真实身份 + role + skills"的 native system prompt
-- 继承 legacy native 别名（`na` / `llm` / `native-llm`）
+### Fixed
 
-### Fixed — A2A job 串联
-
-- 每个 agent turn 在所有通道都建父 inline job；`parentJobId` 穿透到 native `call_agent`，web 端 A2A 视图可见子任务
-
-### Changed — web-chat
-
-- 助手消息「复制为 markdown」按钮；从 picker 切换 agent 前确认；命令切换（`/na` `/cc` 等）后同步 agent picker
-- 修复 search chain editor 的 `noUncheckedIndexedAccess` TS 报错
-
-### Tests
-
-- pi-native 单测 14 pass（含 never-fail-silently 错误路径）；后端 `typecheck` PASS
+- Improved A2A parent-child job linkage and web visibility.
 
 ## [1.2.153] - 2026-06-19
 

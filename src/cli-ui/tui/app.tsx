@@ -31,7 +31,7 @@ import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
-import { generateSessionId, saveSession, type StoredMessage } from './sessions.js'
+import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -63,6 +63,10 @@ function fmtTok(n: number): string {
   return String(n)
 }
 
+function shortSessionId(id: string): string {
+  return id.length <= 14 ? id : `${id.slice(0, 14)}…`
+}
+
 interface SlashCommand {
   name: string
   description: string
@@ -72,6 +76,8 @@ interface SlashCommand {
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/agents',  description: '列出已注册的 agent' },
   { name: '/agent',   description: '切换 agent — 例：/agent codex', takesArg: true },
+  { name: '/new',     description: '创建新会话（清空当前聊天历史）' },
+  { name: '/sessions', description: '查看最近会话（可配合 --resume）' },
   { name: '/editor',  description: '调外部 $EDITOR 写长 prompt（vi 兜底）' },
   { name: '/compact', description: '请 agent 摘要历史并把摘要作为新起点' },
   { name: '/redo',    description: '重新发送上一条用户消息' },
@@ -115,10 +121,20 @@ function scanFiles(root: string, max = 2000): FileEntry[] {
 interface AppProps {
   initialAgent?: string
   /** Resume from disk; overrides initial empty state. */
-  resumed?: { id: string; agent?: string; messages: ChatMessage[] }
+  resumed?: { id: string; agent?: string; messages: ChatMessage[]; createdAt?: string; agentSessions?: Record<string, string> }
   /** Stable session id — generated upstream and printed on exit so
    *  user can `agim tui --resume <id>` next time. */
   sessionId: string
+  /** Notify entry so exit hint prints the latest in-app session id. */
+  onSessionIdChange?: (id: string) => void
+}
+
+interface PaletteItem {
+  id: string
+  name: string
+  description: string
+  takesArg?: boolean
+  action?: 'help'
 }
 
 // Memoized chat history — input keystrokes change `input` state on
@@ -161,23 +177,38 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
   )
 })
 
-export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Element {
+export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const { setRawMode } = useStdin()
 
   const [agent, setAgent] = useState<string | undefined>(resumed?.agent ?? initialAgent)
   const [messages, setMessages] = useState<ChatMessage[]>(() => withMessageIds(resumed?.messages ?? []))
+  const [activeSessionId, setActiveSessionId] = useState<string>(resumed?.id ?? sessionId)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [popupIndex, setPopupIndex] = useState(0)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [palette, setPalette] = useState<{ open: boolean; query: string; index: number }>({ open: false, query: '', index: 0 })
+  const [agentSessions, setAgentSessions] = useState<Record<string, string>>(() => ({ ...(resumed?.agentSessions ?? {}) }))
   const abortRef = useRef<AbortController | null>(null)
   const filesCacheRef = useRef<FileEntry[] | null>(null)
+  const agentSessionsRef = useRef<Record<string, string>>(agentSessions)
+  const inputHistoryRef = useRef<string[]>([])
+  const historyCursorRef = useRef<number>(-1)
+  const historyDraftRef = useRef<string>('')
   // Cumulative usage this TUI session (fed by sendPrompt's onUsage). pi-native
   // emits all three; some adapters emit only cost — we accumulate what's there.
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
+
+  useEffect(() => {
+    agentSessionsRef.current = agentSessions
+  }, [agentSessions])
+
+  useEffect(() => {
+    onSessionIdChange?.(activeSessionId)
+  }, [activeSessionId, onSessionIdChange])
 
   const cwd = useMemo(() => {
     const home = process.env.HOME
@@ -187,6 +218,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
 
   const cols = stdout?.columns ?? 80
   const chatWidth = Math.min(cols - 4, 120)
+  const currentAgentSession = agent ? agentSessions[agent] : undefined
 
   // ── Slash-command popup state ─────────────────────────────────────
   const slashPopupOpen = input.startsWith('/') && !input.includes(' ')
@@ -236,19 +268,49 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
   }, [popupResetKey])
 
   // ── Command palette (ctrl+p) ──────────────────────────────────────
+  const paletteItems = useMemo((): PaletteItem[] => {
+    const base = SLASH_COMMANDS.map((c) => ({
+      id: `slash:${c.name}`,
+      name: c.name,
+      description: c.description,
+      takesArg: c.takesArg,
+    }))
+    return [
+      ...base,
+      { id: 'action:help', name: '快捷键帮助', description: '打开帮助浮层（?）', action: 'help' },
+      { id: 'action:new', name: '新建会话', description: '立即执行 /new（清空历史并生成新会话）' },
+      { id: 'action:sessions', name: '最近会话', description: '立即执行 /sessions（查看最近会话）' },
+    ]
+  }, [])
+
   const filteredPalette = useMemo(() => {
-    if (!palette.open) return [] as SlashCommand[]
+    if (!palette.open) return [] as PaletteItem[]
     const q = palette.query.toLowerCase().trim()
-    if (!q) return SLASH_COMMANDS
-    return SLASH_COMMANDS.filter((c) =>
+    if (!q) return paletteItems
+    return paletteItems.filter((c) =>
       c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q),
     )
-  }, [palette])
+  }, [palette, paletteItems])
 
   useInput((inputCh, key) => {
     // Ctrl-P opens / closes the command palette regardless of mode.
     if (key.ctrl && inputCh === 'p') {
+      setHelpOpen(false)
       setPalette((p) => ({ open: !p.open, query: '', index: 0 }))
+      return
+    }
+
+    const popupOpen = slashPopupOpen || filePopupOpen || agentArgPopupOpen
+
+    // `?` toggles the help overlay when the prompt box is empty so users
+    // can discover keys without `/help` being pushed away by chat history.
+    if (!key.ctrl && !key.meta && inputCh === '?' && !palette.open && !popupOpen && input.trim().length === 0) {
+      setHelpOpen((h) => !h)
+      return
+    }
+
+    if (helpOpen) {
+      if (key.escape || key.return || inputCh === '?') setHelpOpen(false)
       return
     }
 
@@ -269,7 +331,13 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
         const pick = filteredPalette[palette.index]
         if (pick) {
           setPalette({ open: false, query: '', index: 0 })
-          setInput(pick.name + (pick.takesArg ? ' ' : ''))
+          if (pick.action === 'help') {
+            setHelpOpen(true)
+          } else if (pick.takesArg) {
+            setInput(pick.name + ' ')
+          } else {
+            void executeSlashCommand(pick.name)
+          }
         }
         return
       }
@@ -316,6 +384,33 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       }
     }
 
+    if (!busy && !palette.open && !popupOpen) {
+      if (key.upArrow) {
+        const history = inputHistoryRef.current
+        if (history.length === 0) return
+        if (historyCursorRef.current === -1) historyDraftRef.current = input
+        const next = historyCursorRef.current === -1
+          ? history.length - 1
+          : Math.max(0, historyCursorRef.current - 1)
+        historyCursorRef.current = next
+        setInput(history[next] ?? '')
+        return
+      }
+      if (key.downArrow) {
+        const history = inputHistoryRef.current
+        if (history.length === 0 || historyCursorRef.current === -1) return
+        const next = historyCursorRef.current + 1
+        if (next >= history.length) {
+          historyCursorRef.current = -1
+          setInput(historyDraftRef.current)
+          return
+        }
+        historyCursorRef.current = next
+        setInput(history[next] ?? '')
+        return
+      }
+    }
+
     if (key.escape && busy && abortRef.current) {
       abortRef.current.abort()
       setBusy(false)
@@ -337,7 +432,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
 
   // v1.2.78 — persist session after each agent turn finishes, so a
   // SIGKILL still preserves the last full exchange.
-  const createdAtRef = useRef<string>(new Date().toISOString())
+  const createdAtRef = useRef<string>(resumed?.createdAt ?? new Date().toISOString())
   const persistSnapshot = useCallback((snap: ChatMessage[], curAgent: string | undefined): void => {
     const stored: StoredMessage[] = snap.map((m) => ({
       role: m.role,
@@ -346,14 +441,15 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       agentName: m.agentName,
     }))
     saveSession({
-      id: sessionId,
+      id: activeSessionId,
       agent: curAgent,
+      agentSessions: agentSessionsRef.current,
       cwd: process.cwd(),
       createdAt: createdAtRef.current,
       updatedAt: new Date().toISOString(),
       messages: stored,
     })
-  }, [sessionId])
+  }, [activeSessionId])
 
   // ── helpers ───────────────────────────────────────────────────────
 
@@ -491,6 +587,93 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     void doSendPrompt(lastUser)
   }
 
+  function rememberSubmittedLine(text: string): void {
+    const normalized = text.trim()
+    if (!normalized) return
+    const history = inputHistoryRef.current
+    if (history[history.length - 1] !== normalized) history.push(normalized)
+    if (history.length > 200) history.splice(0, history.length - 200)
+    historyCursorRef.current = -1
+    historyDraftRef.current = ''
+  }
+
+  function showRecentSessions(): void {
+    const sessions = listSessions(10, true)
+    if (sessions.length === 0) {
+      pushSystem('(暂无已保存会话；发送至少一条消息后会自动落盘)')
+      return
+    }
+    const lines = sessions.map((s, i) => {
+      const ts = s.updatedAt.replace('T', ' ').slice(0, 19)
+      const marker = s.id === activeSessionId ? '★' : ' '
+      const ag = s.agent ? ` · ${s.agent}` : ''
+      const msg = s.messages > 0 ? ` · ${s.messages} 条` : ''
+      return `${String(i + 1).padStart(2, '0')}. ${marker} ${s.id}  ${ts}${ag}${msg}`
+    })
+    if (!sessions.some((s) => s.id === activeSessionId)) {
+      lines.unshift(`00. ★ ${activeSessionId}  (当前会话尚未落盘)`)
+    }
+    pushSystem(
+      `最近会话（★ 当前）：\n${lines.join('\n')}\n\n恢复：agim tui --resume <id>\n自动最近：agim tui --resume last`,
+    )
+  }
+
+  function startNewSession(): void {
+    if (busy) { setError('正在生成中，无法新建会话'); return }
+    persistSnapshot(messages, agent)
+    const nextId = generateSessionId()
+    createdAtRef.current = new Date().toISOString()
+    setActiveSessionId(nextId)
+    setMessages([withMessageId({ role: 'system', content: `已创建新会话：${nextId}\n提示：上一会话可用 agim tui --resume ${activeSessionId} 恢复` })])
+    setUsage({ inTok: 0, outTok: 0, costUsd: 0 })
+    setError(null)
+    setInput('')
+    setHelpOpen(false)
+    setPalette({ open: false, query: '', index: 0 })
+    setAgentSessions({})
+    historyCursorRef.current = -1
+    historyDraftRef.current = ''
+  }
+
+  async function executeSlashCommand(text: string): Promise<boolean> {
+    if (text === '/exit' || text === '/quit') { exit(); return true }
+    if (text === '/clear')   { setMessages([]); return true }
+    if (text === '/new')     { startNewSession(); return true }
+    if (text === '/sessions') { showRecentSessions(); return true }
+    if (text === '/redo')    { doRedo(); return true }
+    if (text === '/undo')    { doUndo(); return true }
+    if (text === '/editor')  { openEditor(); return true }
+    if (text === '/compact') { void doCompact(); return true }
+    if (text === '/export')  { void exportTranscript(); return true }
+    if (text === '/help') {
+      setHelpOpen(true)
+      pushSystem(
+        SLASH_COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n')
+        + '\n\n键位：Enter 发送 · Esc 取消 · ↑↓ 选项/历史 · Tab 补全 · Ctrl-P 命令面板 · ? 帮助 · Ctrl-C 退出'
+        + '\n特殊：!<cmd> 行内 bash · @<file> 文件引用',
+      )
+      return true
+    }
+    if (text === '/agents') {
+      const list = registry.listAgents()
+      pushSystem(list.length === 0 ? '(没有注册 agent)' : `可用：${list.join(', ')}\n当前：${agent ?? '<none>'}`)
+      return true
+    }
+    if (text.startsWith('/agent ')) {
+      const next = text.slice('/agent '.length).trim()
+      const found = registry.findAgent(next)
+      if (!found) { setError(`未找到 agent "${next}"`); return true }
+      setAgent(found.name)
+      pushSystem(`已切换到 agent: ${found.name}`)
+      return true
+    }
+    if (text.startsWith('/')) {
+      pushSystem(`未知命令: ${text}（输入 /help 或 ?）`)
+      return true
+    }
+    return false
+  }
+
   async function doSendPrompt(text: string): Promise<void> {
     if (!agent) { setError('未选择 agent'); return }
     const adapter = registry.findAgent(agent)
@@ -519,11 +702,24 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       withMessageId({ role: 'assistant', content: '', pending: true, agentName: agent }),
     ])
 
+    const currentAgentSessionId = agentSessionsRef.current[agent]
     const ac = new AbortController()
     abortRef.current = ac
     try {
       let chunks = ''
       for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, history, {
+        agentSessionId: currentAgentSessionId,
+        agentSessionResume: Boolean(currentAgentSessionId),
+        onAgentSessionId: (id) => {
+          const normalized = id.trim()
+          if (!normalized) return
+          setAgentSessions((prev) => {
+            if (prev[agent] === normalized) return prev
+            const next = { ...prev, [agent]: normalized }
+            agentSessionsRef.current = next
+            return next
+          })
+        },
         signal: ac.signal,
         onUsage: (d) => setUsage((u) => ({
           inTok: u.inTok + (d.tokensInput ?? 0),
@@ -600,6 +796,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     }
 
     setInput('')
+    rememberSubmittedLine(text)
 
     // ── Inline bash ────────────────────────────────────────────────
     if (text.startsWith('!')) {
@@ -610,38 +807,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
     }
 
     // ── Slash commands ─────────────────────────────────────────────
-    if (text === '/exit' || text === '/quit') { exit(); return }
-    if (text === '/clear')   { setMessages([]); return }
-    if (text === '/redo')    { doRedo(); return }
-    if (text === '/undo')    { doUndo(); return }
-    if (text === '/editor')  { openEditor(); return }
-    if (text === '/compact') { void doCompact(); return }
-    if (text === '/export')  { void exportTranscript(); return }
-    if (text === '/help') {
-      pushSystem(
-        SLASH_COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n')
-        + '\n\n键位：Enter 发送 · Esc 取消 · ↑↓ 选项 · Tab 补全 · Ctrl-P 命令面板 · Ctrl-C 退出'
-        + '\n特殊：!<cmd> 行内 bash · @<file> 文件引用',
-      )
-      return
-    }
-    if (text === '/agents') {
-      const list = registry.listAgents()
-      pushSystem(list.length === 0 ? '(没有注册 agent)' : `可用：${list.join(', ')}\n当前：${agent ?? '<none>'}`)
-      return
-    }
-    if (text.startsWith('/agent ')) {
-      const next = text.slice('/agent '.length).trim()
-      const found = registry.findAgent(next)
-      if (!found) { setError(`未找到 agent "${next}"`); return }
-      setAgent(found.name)
-      pushSystem(`已切换到 agent: ${found.name}`)
-      return
-    }
-    if (text.startsWith('/')) {
-      pushSystem(`未知命令: ${text}（输入 /help）`)
-      return
-    }
+    if (await executeSlashCommand(text)) return
 
     // Regular prompt path — including @file refs left as raw text;
     // the agent receives the literal `@path/to/file` and can choose to
@@ -654,12 +820,17 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
   return (
     <Box flexDirection="column" width="100%">
       {/* Header */}
-      <Box paddingX={1}>
+      <Box paddingX={1} flexDirection="column">
         <Text>
           <Text bold color="cyan">agim TUI</Text>
-          <Text dimColor>{'  '}</Text>
+          <Text dimColor>{'  ·  会话 '}</Text>
+          <Text color="yellow">{shortSessionId(activeSessionId)}</Text>
+          <Text dimColor>{'  ·  agent '}</Text>
           <Text color="green">{agent ?? '<no agent>'}</Text>
+          <Text dimColor>{'  ·  '}</Text>
+          <Text color={busy ? 'yellow' : 'green'}>{busy ? '生成中' : '就绪'}</Text>
         </Text>
+        <Text dimColor>cwd: {cwd}</Text>
       </Box>
 
       {/* Chat history — memoized so input keystrokes don't re-render
@@ -672,6 +843,20 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
         </Box>
       )}
 
+      {/* help overlay */}
+      {!palette.open && helpOpen && (
+        <Box flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={1}>
+          <Text>
+            <Text bold>快捷键帮助</Text>
+            <Text dimColor>  · Esc / ? 关闭</Text>
+          </Text>
+          <Text dimColor>发送: Enter · 取消生成: Esc · 历史: ↑↓ · 补全: Tab</Text>
+          <Text dimColor>面板: Ctrl-P · 退出: Ctrl-C · 多行编辑: /editor</Text>
+          <Text dimColor>会话: /new 新会话 · /sessions 最近会话 · /export 导出</Text>
+          <Text dimColor>{'特殊输入: !<shell> 运行命令 · @<file> 引用文件'}</Text>
+        </Box>
+      )}
+
       {/* Command palette (modal) */}
       {palette.open && (
         <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
@@ -681,9 +866,9 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
           </Text>
           <Text color="cyan">› {palette.query}<Text inverse> </Text></Text>
           {filteredPalette.slice(0, 12).map((c, i) => (
-            <Box key={c.name}>
+            <Box key={c.id}>
               <Text color={i === palette.index ? 'cyan' : undefined} inverse={i === palette.index}>
-                {c.name.padEnd(10)}
+                {c.name.padEnd(12)}
               </Text>
               <Text dimColor>  {c.description}</Text>
             </Box>
@@ -732,22 +917,44 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
       )}
 
       {/* Input */}
-      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open) ? 0 : 1}>
+      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open || helpOpen) ? 0 : 1}>
         <Text color={busy ? 'yellow' : 'green'}>{busy ? '⠿' : '›'} </Text>
         <TextInput
           value={input}
-          onChange={setInput}
+          onChange={(next) => {
+            if (
+              next === '?'
+              && input.length === 0
+              && !busy
+              && !palette.open
+              && !slashPopupOpen
+              && !filePopupOpen
+              && !agentArgPopupOpen
+            ) {
+              setHelpOpen((h) => !h)
+              setInput('')
+              return
+            }
+            if (historyCursorRef.current !== -1) {
+              historyCursorRef.current = -1
+              historyDraftRef.current = ''
+            }
+            setInput(next)
+          }}
           onSubmit={onSubmit}
-          placeholder={busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · Ctrl-P 面板'}
+          placeholder={busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
         />
       </Box>
 
       {/* Bottom status bar */}
       <Box paddingX={1}>
         <Text dimColor>
-          <Text>{cwd}</Text>
+          <Text>session {shortSessionId(activeSessionId)}</Text>
           <Text>{'  ·  '}</Text>
           <Text>{messages.filter((m) => m.role !== 'system').length} 条消息</Text>
+          {currentAgentSession && (
+            <Text>{'  ·  '}agent-session {shortSessionId(currentAgentSession)}</Text>
+          )}
           {(usage.inTok > 0 || usage.outTok > 0 || usage.costUsd > 0) && (
             <Text>
               {'  ·  '}⇅ {fmtTok(usage.inTok)}/{fmtTok(usage.outTok)} tok
@@ -755,7 +962,7 @@ export function TuiApp({ initialAgent, resumed, sessionId }: AppProps): JSX.Elem
             </Text>
           )}
           <Text>{'  ·  '}</Text>
-          <Text>/help 帮助 · Ctrl-P 面板 · Ctrl-C 退出</Text>
+          <Text>/help · ? 帮助 · Ctrl-P 面板 · Ctrl-C 退出</Text>
         </Text>
       </Box>
     </Box>

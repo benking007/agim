@@ -1,467 +1,134 @@
-# Agim · 阿吉姆
+# Agim · Universal IM-to-Agent Bridge
 
-[中文文档](README.zh-CN.md)
+[中文说明](README.zh-CN.md)
 
-**Universal messenger-to-agent bridge** — connect WeChat / Feishu / DingTalk / Email to Claude Code / Codex / OpenCode, or any custom agent via ACP. Single Node.js process, no Docker, no Redis.
+Agim connects IM channels to AI agents with one Node.js process.
+It is designed for production use: persistent delivery, session continuity, human approval, and observable operations.
 
-> **Naming**: Agim ⟵ Agent + IM (with a hint of "agile"). Chinese name 阿吉姆.
-> npm package: **`agim-cli`** (the unscoped `agim` is reserved by npm's
-> anti-typosquat policy); the installed binary is **`agim`** — that's what
-> you type. The legacy `im-hub-pro` bin name is kept as an alias so existing
-> systemd units / shell aliases keep working unchanged.
-> On-disk paths default to **`~/.agim/`** for fresh installs but auto-detect
-> and continue using a pre-existing **`~/.agim/`** if one is present.
-> Env vars (`IMHUB_*`), HTTP headers (`X-IM-Hub-Token`), and the systemd
-> unit `im-hub.service` retain their legacy names for drop-in compatibility
-> with installations from the 0.x line — see [Migrating](#migrating).
+## What matters
 
-## Highlights
+- **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
+- **Agent flexibility**: Claude Code, Codex, OpenCode, Cursor, Antigravity, native LLM, and ACP remote agents.
+- **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
+- **Reliable runtime**: SQLite outbox, restart recovery, job board, structured audit.
+- **Safety by default**: token auth, approval gate, sensitive-path denylist, optional global-IM disable.
 
-- **3 messengers + email, 6 agents** — WeChat (image / file / voice), Feishu, DingTalk (image / voice with server-side ASR), Email (SMTP); Claude Code, Codex, OpenCode, Antigravity, **Cursor (v1.2.49+ · `/cs`)**, and the in-process `native` LLM agent (DeepSeek / Kimi / Qwen / OpenAI / Anthropic compat — `/na`). Plus any ACP endpoint.
-- **Native LLM stack (v1.3.0+, hardened in v1.2.48)** — built-in in-process agent loop (`native` adapter) that talks directly to any OpenAI- / Anthropic-compatible API (DeepSeek, Kimi, GLM, Qwen, Ollama, vLLM, OpenAI, Anthropic). v1.2.48 makes native production-ready: **operator role definition** via `~/.agim-workspaces/native/AGENTS.md` (hot-reloaded, no restart), **multimodal vision** (image attachments → openai-compat `image_url` blocks), **auto-compact** long histories (>60k chars summarised by cheap role), **provider fallback chain** on transient 5xx/timeout, **turn-level heartbeat** every 3 min so multi-hop research turns never look dead, **28-min agent-loop timeout** (was 5-min default, killed long `call_agent` chains). Use it as a cheap router for `memory-distill` / `memory-consolidate` / `intent-llm`, as a local-first chat agent (`/na`), or as a peer in A2A. See [`docs/llm-backends.md`](docs/llm-backends.md) + [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md).
-- **Native setup UX (latest)** — switching to `native` from `/chat` or `/m/chat` now opens a persistent setup modal when no usable backend exists; users can configure provider + model + API key inline and retry immediately. `llmRoles` role bindings are now optional preference wiring, not a hard blocker.
-- **Skills multi-root scan (v1.2.48+)** — `IMHUB_SKILLS_MODE=auto` (default) merges `~/.agim/skills/` (write target) with `~/.claude/skills/`, `~/.config/opencode/skills/`, `~/.codex/skills/` so a fresh install sees every skill you already have from CLI agents. Workspace skills shadow same-named inherited entries. Settings → 技能 has 2 subtabs (Installed editor + skillhub 热门); top-level `/skills` nav merged into Settings.
-- **Cross-channel outbox alert (v1.2.48+)** — when a thread's outbox is dead (e.g. wechat session expired), agim auto-invalidates the stale context-token + pushes a "⚠️ outbox 告警" to your configured backup channel (`IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`) so you find out before the user does.
-- **Per-thread sustained goals (v1.3.0+ · `/goal`)** — one active multi-turn objective per IM thread, auto-injected into every prompt so the agent stays on-mission across many user turns. Lifecycle: `set / body / progress / pause / resume / complete / cancel / list`. Cross-thread admin at `/tasks/goals`. See [`docs/goals.md`](docs/goals.md).
-- **Heartbeat scheduler (v1.3.0+ · `/heartbeat`)** — bind a thread to a periodic "anything to do right now?" tick. Each tick runs DECIDE (cheap LLM) → EXECUTE (the agent does the work) → EVALUATE (notification gate decides whether to ping the user). Cross-thread admin at `/tasks/heartbeat`.
-- **Structured agent → user choice (v1.3.0+ · `mcp__imhub__ask_user`)** — agents present an N-way multiple-choice question and reliably get a typed answer back (button + text reply, configurable timeout). Avoids the "free-form chat" ambiguity for disambiguation. Pending-queue admin at `/tasks/asks`. See [`docs/ask-user.md`](docs/ask-user.md).
-- **agim Skills engine (v1.3.0+ · `/skill`)** — drop a `SKILL.md` into `~/.agim/skills/<name>/`, every CLI agent + native sees it. 3-tier progressive disclosure (name+desc always-on, body on-demand via `mcp__imhub__read_skill`, scripts/refs via normal file-read). Web editor at `/settings/agim-skills`. See [`docs/skills.md`](docs/skills.md).
-- **`/router compare` A/B evaluator (v1.3.0+)** — run the same prompt against two backends side-by-side (any combo of CLI and native), get latency + tokens + outputs in one card so you can pick a winner before changing `defaultAgent`.
-- **Compliance-first defaults (v1.2.23+)** — global IM adapters (Discord, Telegram) and the remote-ACP-agent surface are **hidden** by default; no installer prompt or web-admin card exposes them. Mainland-China deployments should leave them disabled. For cross-border setups, opt-in via `IMHUB_ENABLE_GLOBAL_IM=1` / `IMHUB_ENABLE_REMOTE_AGENT=1`. See [`docs/security-hardening.md`](docs/security-hardening.md) for the full security control catalogue (~30 env vars / sensitive-path denylist / outbound secret scrubber / audit-events table / admin role on tokens / R14 systemctl-aware lifecycle).
-- **Agent-to-Agent (A2A)** — agents call other agents inline via `mcp__imhub__call_agent`. Just say *"用 codex 帮我跑 git status"* / *"ask opencode to run the tests"* — the active agent hands off, waits, integrates the reply. Guardrails: depth limit (default 3), self-call ban, workspace whitelist, per-user budget. Observability: `/a2a stats | recent | tree <id>`. Disable with `IMHUB_A2A_ENABLED=0`.
-- **A2A shared artifacts (v1.1.3+)** — caller drops files into the callee's workspace via `inputs[]` (`fromAbsolutePath` / `fromCallerOutput` / inline `content`), and callee writes products to `~/.agim/artifacts/<jobId>/_agim-output/`. Returned `outputs[]` lets the caller read files on demand. Hard-link first, copy fallback. Size caps configurable.
-- **IM long-message viewer (v1.1.6+)** — WeChat / Feishu and friends render rich markdown poorly. When an agent's reply exceeds the size threshold (or contains a markdown table / large code block), agim stashes the full markdown in `~/.agim/viewer.db` (permanent, local-only — content never leaves your host) and sends the IM a short summary + a link `https://<your-host>/v/<uuid>`. The link is served by agim's own web console — operator exposes the web port (cloudflared / caddy / tailscale of choice). Agents can opt in explicitly by wrapping long answers in `<im-summary>…</im-summary><full-md>…</full-md>`. Enable with `IMHUB_VIEWER_ENABLED=1` + `IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-host`.
-- **Crash-safe delivery** — every outbound message (replies, reminders, approvals, restart notices) flows through a SQLite outbox; a worker drains pending rows with exponential backoff. IM glitches and brief disconnects no longer drop replies. `/outbox status | list | failed | retry <id>`.
-- **In-flight job recovery** — every inbound message becomes a tracked inline job. When agim is restarted mid-flight, the next startup notifies each affected thread within 10 min. **v1.2.0+** uses native inline-button cards (`🔁 重发 / ✖ 取消`) on Feishu and other platforms that support inline buttons, falling back to text on adapters without buttons. Bystander-safe: only the original requester can resolve in group chats.
-- **Long-term memory (v1.2.0+)** — per-user fact store + auto-distilled "persona" summary injected into every prompt. SQLite + FTS5 default; optional vector retrieval (local BGE via `@xenova/transformers` ONNX, or any OpenAI-compatible `/v1/embeddings` endpoint) with reciprocal-rank fusion. Default OFF; enable in Settings → 自动化记忆. Web admin pages `/memory/facts` + `/memory/persona` expose per-user persona editing, fact browsing, and JSON export. All data stays in `~/.agim/memory.db` locally.
-- **Cost & Health dashboard (v1.2.0+)** — `/observability/health` + `/observability/topn` aggregate per-day spend / calls / errors / p95 latency from the audit log. Filter 1 / 7 / 30 / 90 days; top-N by user / agent / platform; daily trend chart with metric toggle. Claude per-run cost extracted from `--output-format json`.
-- **Agent-initiated push (v1.2.0+)** — `mcp__imhub__push_message` MCP tool lets a running agent push a follow-up message back into the IM thread without an inbound trigger (long-running jobs, schedule-aware notifications). `POST /api/notify` exposes the same primitive to webhooks / cron. Per-user rate limit + cross-thread gating.
-- **IM admin assignment (v1.3+)** — Web admin token is the single authority. Any IM user who has chatted with agim is auto-discovered in `Settings → Admins`; operators grant/revoke admin in one click (no `/setup admin`, no manual userId typing). `agim admin list` / `agim admin known` show current state.
-- **`/remind` reminders subsystem** — one-shot + recurring (`每天8点喝水`); LLM auto-detects reminder intent in casual chat; LLM polishes delivery; agent MCP tools; web `/reminders` page; email + IM delivery
-- **`/memo` 5W1H persistent memory** — generic "what / who / when / where / how / why" notes with optional GPS capture (browser geolocation H5 + Baidu geocoder); permanent by default, transient bucket for parking spots / today's meeting; agents store + retrieve via MCP tools so casual mentions get remembered automatically
-- **Browser dashboard** — chat UI; Tasks panel with 12 tabs (jobs / background / subtasks / schedules / approvals / health / files / audit / outbox / a2a / **cost / memory**); reminders panel; memos panel; settings page with workspace CRUD + admin allowlist + Safety card (restart / stop). Bilingual (EN / 中文) with per-page lang switcher and contextual `(?)` help tooltips on jargon (v1.1.4+)
-- **Human-in-the-loop tool approval** — Claude tool calls pause for `y`/`n` in IM or in-page card; works across all platforms
-- **Rich media in WeChat / DingTalk** — receive images, files, videos; voice messages transcribed via WeChat STT, DingTalk's server-side ASR, OpenAI Whisper, or whisper.cpp (per-platform fallback chain)
-- **Smart routing** — intent classifier (CJK + ASCII), sticky sessions, circuit breaker, rate limiter
-- **Multi-tenant workspaces** — per-workspace agent whitelist, rate limits, command-level ACL
-- **Persistent jobs & cron** — SQLite-backed, survives restarts, 30-day retention (24h for auto-tracked inline jobs)
-- **Observability** — structured logging (pino + traceId), Prometheus metrics, audit log
-- **Security** — token-based admin/user roles (R13), sensitive-path hard-deny + outbound secret scrubber (R13), prompt-injection guard on memory + AGENTS.md (R13), per-IP WS rate limit, timing-safe auth, SSRF guards, credential file permissions, approval socket entropy, persistent `audit_events` table with 180-day retention (R12 ⑤), 25s graceful shutdown + reap (R14), startup PID self-check (R14)
-
-See [CHANGELOG.md](CHANGELOG.md) for the full version history.
-
-## Quick Start
+## Quick start
 
 ```bash
-npm install -g agim-cli      # Requires Node.js ≥ 18 (≥ 22 LTS recommended)
-
-# Configure at least one messenger
-agim                            # arrow-key wizard (recommended) — picks language,
-                                # then per-component setup for every messenger / agent
-                                # — or use the legacy per-component commands below:
-agim config wechat              # QR-code login
-agim config feishu              # App ID + Secret (no webhook needed)
-agim config dingtalk            # ClientID + ClientSecret (Stream-mode bot)
-
-# (Optional) Connect a custom remote agent over ACP
-agim config agent
-
-# Start the bridge
+npm install -g agim-cli
+agim                         # interactive setup wizard
 agim start
 ```
 
-Web UI at `http://localhost:3000` — chat at `/`, tasks at `/tasks`, settings at `/settings`.
+Web console: `http://localhost:3000`
 
-### Migrating
+- Chat: `/`
+- Tasks: `/tasks`
+- Settings: `/settings`
 
-#### From the original `agim`
-```bash
-npm uninstall -g im-hub
-npm install -g agim-cli
-agim start            # config, env vars, headers all unchanged
-```
+## Choose your AI backend
 
-#### From `agim` (0.x → 1.0)
-```bash
-npm uninstall -g im-hub-pro
-npm install -g agim-cli
-agim start            # same config dir, same env vars, same headers
-```
+| Scenario | Recommended path |
+|---|---|
+| Strong coding agent loop | `claude-code` / `codex` / `opencode` / `cursor` |
+| API-only, low-cost native mode | `native` + `llmBackends` |
+| Bring your own remote agent | ACP (`acpAgents`) |
 
-The npm package is named `agim-cli` (the unscoped name `agim` is reserved
-by npm's anti-typosquat policy); the **binary** it installs is `agim`,
-which is what you'll actually type. `agim` is also retained as a
-binary alias inside the package, so previous shell aliases and systemd
-units that call `agim` continue to work without any extra setup.
+Native setup details: `docs/llm-backends.md`
 
-## Features
+## Core AI workflows
 
-| Category | Details |
-|----------|---------|
-| **Messengers** | WeChat (iLink — image / file / voice / video), Feishu (WebSocket), DingTalk (Stream mode — image / voice with built-in ASR), Email (SMTP, push-only) |
-| **Agents** | 6 built-in: Claude Code, Codex, OpenCode, Antigravity, Cursor (CLI via shared `AgentBase`), and **`native`** (in-process LLM loop, OpenAI/Anthropic compat). Any HTTP agent via ACP — all 7 share one `AgentAdapter` interface |
-| **Native LLM** | OpenAI- + Anthropic-compatible providers, external MCP server attach, multi-iteration agent loop with policy approval gate, optional role bindings (`cheap` / `evaluator` / `native-chat`) with auto-fallback to any usable backend |
-| **Reminders** | `/remind` slash, LLM intent detection, LLM-polished delivery, MCP tools for agents (claude-code + opencode), web `/reminders` UI |
-| **Goals + Heartbeat + Ask** | `/goal` per-thread objective, `/heartbeat` periodic DECIDE/EXECUTE/EVALUATE tick, `mcp__imhub__ask_user` structured multi-choice with `/tasks/{goals,heartbeat,asks}` cross-thread admin |
-| **Skills** | `~/.agim/skills/<name>/SKILL.md` discovered by every agent (CLI + native); 3-tier progressive disclosure; web editor at `/settings/agim-skills` |
-| **Web UI** | Chat with streaming, three-state theme (light / dark / system), bilingual (EN / 中文 — every new v1.3.0 page included), SSE dashboard, settings tabs for LLM / MCP / Native Agent / Skills |
-| **Tool Approval** | Human-in-the-loop over IM + in-page cards; MCP sidecar for Claude; allow-list policy gate for native |
-| **Jobs** | Persistent SQLite job board + cron scheduler; batch ops; background task reader |
-| **Routing** | Intent classifier, circuit breaker, rate limiter, sticky sessions, LLM judge fallback; `/router compare` A/B evaluator |
-| **Workspaces** | Multi-tenant; agent whitelist + rate limits; command-level ACL |
-| **Observability** | pino structured logs, traceId, Prometheus `/api/metrics`, SQLite audit log |
-| **ACP** | Client (connect to remote agents) + Server (Agim itself as an ACP agent), authenticated by the same Web token system (admin role) |
+| Capability | Description | Docs |
+|---|---|---|
+| Long-term memory | facts + persona, optional vector retrieval | `docs/memory-and-vector.md` |
+| Skills | shared `SKILL.md` capability layer across agents | `docs/skills.md` |
+| Goals | sustained objective per thread (`/goal`) | `docs/goals.md` |
+| Heartbeat | periodic proactive loop (`/heartbeat`) | `docs/architecture/reminders.md` |
+| Ask user | structured agent->user choices | `docs/ask-user.md` |
+| Reminders | one-shot / recurring reminders | `docs/architecture/reminders.md` |
+| Memos | 5W1H persistent notes with optional location | `docs/im-workspaces-guide.md` |
+| A2A | agent-to-agent calls with traceability | `CHANGELOG.md` |
 
-## CLI Commands
+## Security defaults
 
-```
-agim                       # Arrow-key wizard (bilingual zh/en) — recommended entry
-agim start                 # Start the bridge + web UI (foreground)
-agim start --bg            # Start as a background daemon
-agim status                # Show service status (systemd / bg / fg)
-agim restart               # Restart the running service
-agim stop                  # Stop the running service
-agim uninstall             # Uninstall (keeps ~/.agim-workspaces/)
-agim config wechat         # Configure WeChat
-agim config feishu         # Configure Feishu
-agim config dingtalk       # Configure DingTalk (Stream-mode internal app)
-agim config claude         # Configure Claude Code
-agim config agent          # Connect a custom ACP agent
-agim agents                # List available agents
-agim messengers            # List available messengers
+- Web token auth enabled by default.
+- Approval gate enabled by default.
+- Sensitive files/paths are denied by policy.
+- Global IM connectors can stay disabled in domestic deployments.
 
-# v1.3.0+ — native LLM stack & diagnostics
-agim setup llm             # Wizard: add/list/remove LLM backends, set secrets, optional role bindings
-agim setup llm native-enable  # One-shot: enable `native` agent if a backend is configured
-agim setup mcp             # Wizard: add/list/remove external MCP servers (stdio / HTTP / SSE)
-agim setup mcp health      # Probe every configured MCP server
-agim diag llm              # Ping every backend + show which role binds to what
-agim diag mcp              # Connect-and-list-tools per MCP server
+Security reference: `docs/security-hardening.md`
 
-# v1.1.10+ — Web token management
-agim token create [name]   # Mint a new user/admin token for /api/* + /acp/*
-agim token list            # List tokens (last 4 chars only)
-agim token revoke <id>     # Revoke a token by id
-agim token bootstrap       # Print one-shot web-bootstrap token (`~/.agim/web-bootstrap-token`)
+## Essential IM commands
 
-# (`im-hub-pro …` continues to work as a deprecated alias)
-```
+| Command | Purpose |
+|---|---|
+| `/cc ...` `/oc ...` `/cx ...` `/cs ...` `/na ...` | Route to a target agent |
+| `/new` | Start a new conversation session |
+| `/model` `/models` | Inspect/switch model (where supported) |
+| `/goal ...` | Manage per-thread long goal |
+| `/heartbeat ...` | Manage heartbeat schedule |
+| `/remind ...` | Manage reminders |
+| `/memo ...` | Manage memo records |
+| `/job ...` `/cron ...` `/audit ...` `/stats` | Runtime operations |
+| `/outbox ...` | Delivery queue operations |
+| `/a2a ...` | A2A runtime visibility |
 
-## Chat Commands
+## Minimal config shape
 
-| Command | What it does |
-|---------|-------------|
-| any text | Route to agent (sticky session, intent-classified) |
-| `/<agent> <prompt>` | Switch agent — `/cc`, `/oc`, `/cx`, `/co` |
-| `/new` | New conversation (clear context) |
-| `/model [id]` / `/models [filter]` | View / list / switch the active agent's model. Works for opencode (`provider/model`) and cursor (flat names like `gpt-5.2`, `sonnet-4-thinking`). v1.2.50+ |
-| `/think on\|off` | Toggle extended thinking |
-| `/remind …` | Reminders — see [Reminders](#reminders) below |
-| `/memo …` | 5W1H persistent memory — see [Memos](#memos) below (aliases `/记`, `/note`) |
-| `/job`, `/cron`, `/audit`, `/stats` | Manage jobs, cron schedules, audit, stats (`/schedule` aliases `/cron` until v0.4.0) |
-| `/outbox status\|list\|failed\|retry <id>` | Inspect & operate the persistent IM delivery queue (v1.1.2+) |
-| `/a2a stats\|recent\|tree <id>` | Agent-to-Agent observability — chain, latency, callee histogram (v1.1.2+) |
-| `/router status\|explain` | Inspect routing decisions |
-| `/router compare agent:<a> agent:<b> "<prompt>"` | A/B evaluator — run the same prompt against two backends, side-by-side card with latency / tokens / outputs (v1.3.0+) |
-| `/goal …` | Sustained per-thread objective — `set / body / progress / pause / resume / complete / cancel / list / show` (v1.3.0+) |
-| `/heartbeat …` | Periodic DECIDE→EXECUTE→EVALUATE tick — `bind / unbind / show / pause / resume / status` (v1.3.0+) |
-| `/skill list\|show <name>\|refresh` | Inspect agim Skills loaded from `~/.agim/skills/` (v1.3.0+) |
-| `/cc native …` / `/na …` / `/llm …` | Route to the in-process native LLM agent (v1.3.0+) |
-| `/cs …` / `/cur …` / `/cc cursor …` | Route to Cursor CLI agent (v1.2.49+); `/cs plan` enters plan mode for one turn |
-| `/agy …` / `/cc antigravity …` | Route to Google Antigravity (agy) CLI agent |
-| `y` / `n` / `批准` / `拒绝` | Approve / deny Claude tool call (or reminder confirmation card) |
-| `1` / `2` | After a service restart, reply `1` to redo the interrupted message or `2` to cancel (10 min window) |
-
-## Human-in-the-loop Tool Approval
-
-When a Claude run tries to use a tool, Agim pauses and sends an approval card:
-
-```
-🔐 Tool approval request
-Tool: Bash
-Input: {"command":"rm -rf node_modules"}
-Reply y to approve / n to deny  (auto-deny in 5 min)
-```
-
-Reply `y` / `n` in IM, or click Allow / Deny in the web UI. Works identically across WeChat, Feishu, and DingTalk. Disable with `IMHUB_APPROVAL_DISABLED=1`.
-
-## Reminders
-
-Built-in `/remind` subsystem — one-shot or recurring, with three creation paths and three delivery enhancements.
-
-```bash
-# One-shot
-/remind 2m drink water
-/remind 40秒喝水
-/remind 下午6点下班
-/remind 18:30 出门
-
-# Recurring 🔁
-/remind 每5分钟看屏幕外
-/remind 每天早上8点喝水
-/remind 每周一三五9点站会
-/remind 每个工作日18:00下班
-
-# Email delivery ✉️ (requires SMTP — see Configuration)
-/remind email me@x.com 8:00 morning briefing
-/remind bindemail me@x.com   # bind default → /remind email 每天8点 早安
-/remind unbindemail
-
-# Manage
-/remind list
-/remind cancel <id>
-/remind clear
-/remind snooze <id> 5m
-/remind aiwatch on|off       # toggle the LLM intent detector
-
-# Disable LLM polish for one reminder
-/remind literal 每5分钟 喝水
-```
-
-**Three creation paths** (all land in the same `~/.agim/reminders.db`):
-
-1. **`/remind` slash** — explicit, structured input
-2. **LLM intent detection** (default-on) — say "明天早上8点提醒我开会" without `/remind`, the bot pops a confirmation card; reply `y` to create
-3. **Agent MCP tools** — claude-code and opencode (stdio) auto-call `create_reminder` when you mention future commitments in chat. Works with opencode (http) too via single-user agent-asserted context
-
-**Two delivery enhancements**:
-
-- **LLM polish** (default-on): at fire time the active agent rewrites the literal seed text into a natural one-liner ("早上好，记得喝杯水"). Tone constrained: *no flattery, no over-humor, no exaggeration*. Falls back to literal text on agent failure / timeout
-- **Late-delivery tag**: > 1 h overdue gets `⏰ 延迟投递` prefix so users know the bot was offline
-
-Manage reminders in the web UI at `/reminders` (status filters, snooze, cancel).
-
-Full design: [`docs/architecture/reminders.md`](docs/architecture/reminders.md).
-
-## Memos
-
-`/memo` is a 5W1H persistent memory database. Every memo can carry any subset of `what` / `who` / `when_at` / `where (lat/lng/label)` / `how` / `why` plus an optional `expires_at` lifecycle. Locations are just one axis — the same store also remembers "我爸生日 5月8日" or "苹果发了 AVP2".
-
-```bash
-# Slash
-/memo                          # search hint + recent memos
-/memo list                     # last 10
-/memo show <id>
-/memo delete <id>
-/memo search 茶馆
-/memo here [备注]              # one-shot HTTPS link → browser GPS capture
-/memo 39.9,116.4 家            # raw coords + label
-
-# Aliases: /记, /note
-```
-
-The agent (claude-code / opencode) sees 5 MCP tools and uses them automatically when you mention something worth remembering — no need to invoke a slash:
-
-- `save_memo` — extract 5W1H from natural language and store; `address` arg triggers Baidu geocoder
-- `request_location_capture` — return a one-shot H5 link so the user can authorize browser geolocation
-- `search_memos` — multi-field AND-combined retrieval ("我的车在哪")
-- `update_memo` — patch existing entry (e.g. add `where_*` later, or pass `address` to geocode)
-- `delete_memo`
-
-**Lifecycle**: memos default to permanent. Agents only set `expires_in_hours` when content is clearly transient ("我把车停这了" / "今天下午3点开会"). A background sweep deletes expired rows.
-
-**Time zone**: all times are interpreted as Asia/Shanghai (UTC+8) and stored as bare-local `YYYY-MM-DD HH:MM:SS`. Override with `IMHUB_TZ_OFFSET_HOURS` if your deployment is elsewhere.
-
-**Browser GPS capture**: `/memo here` and `request_location_capture` send a one-shot 10-min HTTPS link. Default base URL is `https://agent.iclaw.host`; override with `IMHUB_LOC_BASE_URL=https://your-host` if you want to keep H5 traffic on your own domain.
-
-**Address geocoding (optional)**: set `IMHUB_BAIDU_MAP_AK` to a Baidu Maps AK to enable `address: "中关村大街27号"` style inputs in `save_memo` / `update_memo`. Without it, those calls return "geocoding not configured" but raw coords + browser GPS still work. Get a free AK at [lbsyun.baidu.com](https://lbsyun.baidu.com/) → Console → 应用管理 → 创建应用 → 服务端 API. The default key flow doesn't need SN signing; if you enable SN校验 in the console, see notes in `src/core/locations.ts`.
-
-## Configuration
-
-### Config file
-`~/.agim/config.json` (validated by zod at startup):
+`~/.agim/config.json`
 
 ```json
 {
-  "messengers": ["wechat-ilink", "feishu"],
-  "agents": ["claude-code", "opencode"],
+  "messengers": ["wechat-ilink"],
+  "agents": ["claude-code", "native"],
   "defaultAgent": "claude-code",
-  "feishu": { "appId": "cli_***", "appSecret": "***" },
-  "acpAgents": [
+  "llmBackends": [
     {
-      "name": "my-agent",
-      "endpoint": "https://api.example.com",
-      "auth": { "type": "bearer", "token": "***" }
+      "name": "default-native",
+      "provider": "openai-compat",
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini"
     }
   ],
-  "workspaces": [
-    {
-      "id": "team-data",
-      "name": "Data team",
-      "agents": ["opencode", "my-agent"],
-      "members": ["user-123"],
-      "rateLimit": { "rate": 30, "intervalSec": 60, "burst": 60 }
-    }
-  ]
+  "llmRoles": {
+    "cheap": "default-native"
+  }
 }
 ```
 
-### Email reminders (SMTP)
+Secrets are stored separately from this file.
 
-To enable `/remind email …`, set these environment variables before starting:
+## Operations
 
-```bash
-# Required
-export IMHUB_SMTP_HOST=smtp.gmail.com
-export IMHUB_SMTP_USER=you@gmail.com
-export IMHUB_SMTP_PASS=<16-char-app-password>      # NOT your normal password
+- Deployment guide: `docs/deployment.md`
+- Runbook: `docs/runbook.md`
+- Architecture stance: `docs/architecture-bridge-and-native.md`
+- Full changelog: `CHANGELOG.md`
 
-# Optional
-export IMHUB_SMTP_PORT=465                         # default 465
-export IMHUB_SMTP_FROM=you@gmail.com               # default = USER
-export IMHUB_SMTP_SECURE=auto                      # auto | true | false
-```
+## Docs index
 
-**Provider quick reference**:
+Start from: `docs/README.md`
 
-| Provider | HOST | PORT | Notes |
-|----------|------|------|-------|
-| Gmail | `smtp.gmail.com` | 465 | Use [App Password](https://myaccount.google.com/apppasswords) — 2-Step Verification required |
-| QQ Mail | `smtp.qq.com` | 465 | "授权码" (account → POP3/SMTP service) |
-| 163 Mail | `smtp.163.com` | 465 | "授权码" (account → POP3/SMTP/IMAP service) |
-| Outlook | `smtp-mail.outlook.com` | 587 | Set `IMHUB_SMTP_SECURE=false` (STARTTLS) |
-| Custom | any host | any port | Set `SECURE` per provider docs |
+## Migration notes
 
-Without these env vars, the email adapter still loads but `/remind email …` returns "Email adapter not configured" — IM reminders keep working.
+Legacy installs remain compatible:
 
-For systemd, put env in your unit file:
-```ini
-[Service]
-Environment="IMHUB_SMTP_HOST=smtp.gmail.com"
-Environment="IMHUB_SMTP_USER=you@gmail.com"
-Environment="IMHUB_SMTP_PASS=xxxxxxxxxxxxxxxx"
-```
-
-### Other env vars
-
-| Env | Default | What it does |
-|-----|---------|-------------|
-| `IMHUB_WEB_BIND` | `127.0.0.1` | Web UI bind address (set `0.0.0.0` to expose; front with HTTPS reverse proxy) |
-| `IMHUB_APPROVAL_DISABLED` | unset | Set `=1` to skip the human-in-the-loop tool approval gate |
-| `IMHUB_OPENCODE_DRIVER` | `stdio` | `http` selects the HTTP driver (faster, but reminder MCP path uses single-user agent-asserted context) |
-| `IMHUB_OPENCODE_GATE` | `medium` | `strict` / `loose` / `none` — opencode permission gate |
-| `IM_HUB_LLM_JUDGE_AGENT` | unset | Agent name used as LLM router fallback judge |
-| `OPENAI_API_KEY` | unset | Enables OpenAI Whisper for voice transcription |
-| `IMHUB_WHISPERCPP_BIN` + `IMHUB_WHISPERCPP_MODEL` | unset | Local Whisper.cpp for voice transcription (no cloud) |
-| `IMHUB_BAIDU_MAP_AK` | unset | Baidu Maps AK; enables `/memo` address-based geocoding. Without it, raw coords + browser GPS still work. |
-| `IMHUB_LOC_BASE_URL` | `https://agent.iclaw.host` | Public HTTPS base URL the `/memo here` H5 capture link points at. Override for self-hosted deployments. |
-| `IMHUB_TZ_OFFSET_HOURS` | `8` | Hours offset from UTC for memo timestamps (Asia/Shanghai default). Change only if your deployment is elsewhere. |
-| `IMHUB_TELEGRAM_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to Telegram native location/venue messages. Default off (WGS-84 pass-through). Turn on if your Telegram clients are Apple devices in mainland China — iOS Core Location applies the GCJ offset before handing coords to Telegram. |
-| `IMHUB_H5_COORDS_GCJ02` | unset | Set to `1` to apply GCJ-02 → WGS-84 to coords POSTed from `/memo here` H5 capture pages. Default off (WGS-84 pass-through, fits WeChat X5 webview + Android Chrome). Turn on if your users open the H5 link in iOS Safari / iOS WebKit in mainland China. See [`src/core/coord-systems.ts`](src/core/coord-systems.ts) for the full per-platform policy. |
-| `AGIM_HOME` | auto | Per-user state directory. By default Agim picks `~/.agim/` on a fresh install and `~/.im-hub/` on a legacy 0.x install (auto-detected). Set explicitly if you want to pin a location — e.g. on shared machines or for tests. `IMHUB_HOME` is also honored. |
-| `AGIM_WORKSPACES` | auto | Per-agent workspace root. Same dual-detect logic as `AGIM_HOME` (`~/.agim-workspaces/` preferred, `~/.im-hub-workspaces/` if it exists). `IMHUB_WORKSPACES` also honored. |
-
-## Architecture
-
-```
-┌─ IM ingress ─────────────────────────────────────┐
-│ WeChat iLink   (long-poll + image/voice/file)    │
-│ Telegram       (grammy + photo/voice/audio)      │
-│ Feishu         (Lark SDK WebSocket)              │
-│ DingTalk       (Stream WebSocket + ASR baked in) │
-│ Discord        (discord.js Gateway)              │
-│ Web Chat       (browser WebSocket)               │
-└───────────────────────┬──────────────────────────┘
-                        │ MessageContext
-                        ▼
-          ┌── Pre-route gates ────────────────┐
-          │ workspace · rate limiter · traceId │
-          └────────────────┬──────────────────┘
-                           ▼
-          ┌── Intent router ──────────────────┐
-          │ command → builtin                  │
-          │ /agent  → explicit switch          │
-          │ default → classify (regex/keyword/ │
-          │           sticky/LLM judge)        │
-          └────────────────┬──────────────────┘
-                           ▼
-          ┌── Agent invocation ───────────────┐
-          │ circuit breaker + spawn stream     │
-          └───┬──────┬──────┬──────┬───┘
-              ▼      ▼      ▼      ▼
-          claude  opencode codex  ACP
-              │
-              ▼ (tool approval)
-        MCP sidecar → approvalBus → IM thread
-
-┌─ Cross-cutting ──────────────────────────────────┐
-│ SQLite (audit · jobs · schedules)                │
-│ session (append-only JSONL)                      │
-│ Prometheus metrics · pino structured logging     │
-└──────────────────────────────────────────────────┘
-```
-
-Single process, zero external dependencies — SQLite + session files are the entire persistence layer.
-
-For the full deep-dive see [`docs/architecture/current.md`](docs/architecture/current.md).
-For the native LLM stack and the peer-`AgentAdapter` design that lets CLI agents and the in-process loop share one router / approval bus / A2A / skills pipeline, see [`docs/architecture-bridge-and-native.md`](docs/architecture-bridge-and-native.md) and the PR-by-PR landing order in [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md).
-
-## Requirements
-
-- **Node.js ≥ 18** (≥ 22 LTS recommended)
-- At least one agent CLI or ACP endpoint:
-  - `npm i -g @anthropic-ai/claude-code`
-  - `npm i -g @openai/codex`
-  - `npm i -g opencode-ai`
+- command alias compatibility retained
+- legacy env naming retained
+- old data path autodetected
 
 ## Development
 
 ```bash
-git clone https://github.com/benking007/imhub.git && cd imhub
-npm install
-npm run build      # tsc + copy public/
-npm run dev        # tsc --watch
-npm test           # bun test
-npm run lint       # biome lint
-npm run typecheck  # tsc --noEmit
+git clone https://github.com/benking007/imhub.git
+cd imhub
+npm install --no-package-lock
+npm --prefix src/web-app install
+npm run build
+npm run typecheck
+bun test
 ```
-
-## Deployment
-
-See [`docs/deployment.md`](docs/deployment.md) for systemd, Docker, nginx, monitoring, admin-allowlist management, backup, and upgrade instructions. For long-term memory + vector retrieval setup / tuning / privacy, see [`docs/memory-and-vector.md`](docs/memory-and-vector.md).
-
-## Roadmap
-
-### Done
-
-| Version | Theme |
-|---------|-------|
-| v0.1.x | MVP — WeChat + 4 agents + command routing |
-| v0.2.0 | Multi-IM — Feishu, Telegram, sessions, ACP |
-| v0.2.13 | Foundations — logging, audit, intent, jobs, metrics, workspaces |
-| v0.2.14 | Human-in-the-loop tool approval |
-| v0.2.15 | Discord adapter + tasks dashboard |
-| v0.2.16–17 | Security hardening + observability |
-| v0.2.18–19 | IM reconnect backoff, Codex sandbox, dashboard filters |
-| v0.2.20–23 | Web console — theme, approvals, SSE, files, batch ops |
-| v0.2.30 | Production hardening — session isolation, serial WS, loopback bind |
-| v0.2.35 | WeChat & Telegram rich media — image / file / voice / video |
-| v0.2.37 | Reminders subsystem — `/remind`, LLM intent + polish, agent MCP tools, email channel, web `/reminders`, WeChat context_token persistence |
-| v0.3.0 | `/memo` 5W1H persistent memory — `/location` → `/memo` rename, address geocoding via Baidu Maps, opencode HTTP driver SSE drain |
-| v0.3.1 | Native location messages on Telegram + Feishu, GCJ-02 → WGS-84 fix across all ingest paths, `memo` column + LLM/heuristic `what` extractor |
-| v0.4.0 | codex agent now sees the full imhub MCP toolset (reminder + memo); Telegram + Feishu location messages routed through agent-driven decision making (matches WeChat H5 architecture) |
-| v0.5.0–0.5.2 | Bilingual arrow-key `agim` wizard (then `im-hub-pro` pre-rename); per-component flows (QR for WeChat, credentials prompts for Feishu / Telegram / Discord; live install detection for agents); systemd-unit env fallback for SMTP / Baidu prefill; full service lifecycle commands (`status / start --bg / restart / stop / uninstall`) |
-| v0.6.0 | DingTalk Stream-mode adapter — bidirectional bot bridge via WebSocket, image inbound (`messageFiles/download` → claude-code multimodal Read), voice inbound (server-side ASR `recognition` field, whisper.cpp fallback) |
-| v0.6.3 | Per-platform coord-system handling for native location messages (Telegram defaults WGS pass-through; H5 WGS pass-through fixes WeChat-X5 markers; DingTalk routes Baidu link URLs through BD-09→WGS) |
-| **v1.0.0** | Brand rename to **Agim · 阿吉姆**. New canonical bin `agim`; `im-hub-pro` retained as deprecation alias. On-disk paths / env vars / HTTP headers / systemd unit name kept stable for drop-in compat with 0.x installs. |
-| v1.1.2–1.1.3 | A2A L1 (call chain visualization) + L2 (shared artifact pool between agents) |
-| v1.1.4 | Web dashboard bilingual + jargon tooltips |
-| v1.1.6–1.1.8 | IM long-message viewer + cloudflared auto-tunnel |
-| v1.1.10 | Web console token authentication (cookie + Bearer + loopback bypass), restart message-order fix |
-| v1.1.11 | Viewer dark-mode readability |
-| **v1.2.0** | **Long-term memory** (SQLite + FTS5 + persona + 4 MCP tools + auto-distillation + Web admin tab); **vector retrieval** (local BGE / OpenAI-compatible, RRF fusion); **Cost & Health dashboard**; **agent-initiated push** (`mcp__imhub__push_message`); recovery card with native inline buttons. |
-| v1.2.1 | Vector backend auto-warm on restart; Memory + Cost tab i18n. |
-| v1.2.2 | `agim admin invite` for onboarding additional admins via IM; vector eager-warm at boot; async consolidate (jobId + polling). |
-| v1.2.27–v1.2.32 | R14/R15 lifecycle hardening — 25s graceful-shutdown hard cap, port-first teardown, reap stray agim processes, argv-strict /proc scan in `findAgimProcesses`, PID file on every successful start, CLI wizard "Web bind+port" section, ACP port gate (`IMHUB_ENABLE_REMOTE_AGENT`). |
-| **v1.3.0** | **nanobot-vs-agim comparison rollout** — `native` in-process AgentAdapter (LLM client + agent loop + MCP attach + policy approval gate, OpenAI/Anthropic-compatible); `llmBackends` + `llmRoles` + `~/.agim/llm-secrets.json` config; `/goal` per-thread sustained objective (P0 #2); `/heartbeat` 3-phase scheduler (P0 #1); `mcp__imhub__ask_user` structured choice (P0 #5); agim Skills 3-tier engine (Stage 3 + P0 #3); inline row-age annotations on memory facts (P0 #4); notification evaluator for `mcp__imhub__push_message` (P0 #9); `/router compare` A/B evaluator (Stage 5); `tryIntrospectChain` fallback helper; Web admin pages `/settings/{llm,mcp,native-agent,agim-skills}` + `/tasks/{heartbeat,goals,asks}`; CLI wizards `agim setup {llm,mcp}` + diagnostics `agim diag {llm,mcp}` + `agim setup llm native-enable` quick path; CLI + Web full i18n (en/zh) for every new surface; `acp-token` separation from `web-token`; `agim token bootstrap` printer; `gen-endpoints --check` drift guard. See [`docs/nanobot-comparison-rollout.md`](docs/nanobot-comparison-rollout.md). |
-
-### Next
-
-- [ ] Slack adapter
-- [ ] DingTalk button-style approval cards (Feishu done)
-- [ ] Multi-instance event bus (Redis Streams / NATS)
-- [ ] Workspace member picker UI
-- [ ] Memory consolidation: scheduled boot+5min first run (currently waits a full 24h)
 
 ## Community
 

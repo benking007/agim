@@ -1,5 +1,5 @@
 // Bridges agim's tool surface (ToolDef[] schemas + a ToolDispatcher) onto pi's
-// AgentTool[] so the pi-native engine reuses agim's existing builtin / imhub /
+// AgentTool[] so Agim Agent reuses agim's existing builtin / imhub /
 // MCP dispatchers unchanged.
 //
 // Two facts (validated against pi source, see CHANGELOG native engine overview):

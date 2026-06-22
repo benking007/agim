@@ -7,7 +7,7 @@ describe('isNativeSetupError', () => {
     expect(isNativeSetupError(msg)).toBe(true)
   })
 
-  it('matches legacy native not-available text', () => {
+  it('matches native not-available text', () => {
     expect(isNativeSetupError('Agent "native" is not available')).toBe(true)
   })
 

@@ -1,4 +1,4 @@
-// Wires the production PiNativeAgentAdapter: real provider resolution off
+// Wires the production Agim Agent adapter: real provider resolution off
 // agim's LLM registry + durable session storage under AGIM_HOME. Kept separate
 // from index.ts so the adapter class stays free of registry/path coupling
 // (and unit-testable with injected deps).
@@ -11,11 +11,10 @@ import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getAnyProvider, getProvider } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
-import { PiNativeAgentAdapter } from './index.js'
+import { NativeAgentAdapter } from './index.js'
 import { resolveAnyPiModel, resolvePiModelForRole } from './provider-resolver.js'
 import { assembleToolsForPi } from './tools.js'
 
-// Same role precedence the legacy native adapter uses (native/index.ts).
 const ROLE_CHAIN = ['native-chat', 'cheap']
 
 /** Mirror agim's IMHUB_NATIVE_AGENT_MAX_ITER (default 50, clamp [1,100]). */
@@ -48,20 +47,16 @@ function resolveStreamOptions() {
   }
 }
 
-export function createPiNativeAdapter(): PiNativeAgentAdapter {
+export function createNativeAgentAdapter(): NativeAgentAdapter {
   const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
   try {
     mkdirSync(sessionsRoot, { recursive: true })
   } catch {
     /* best-effort; sendPrompt surfaces a clear error if the dir is unusable */
   }
-  return new PiNativeAgentAdapter({
-    // pi is the default engine: register under the 'native' name AND inherit
-    // the legacy native adapter's aliases (agim / llm / native-llm / na) so
-    // existing muscle memory (`/agim`, `/na`, `/llm`) keeps working
-    // transparently, plus pi names.
+  return new NativeAgentAdapter({
     name: 'native',
-    aliases: ['agim', 'na', 'llm', 'native-llm', 'pi', 'pi-native'],
+    aliases: ['agim', 'na', 'llm', 'native-llm'],
     sessionsRoot,
     resolveModel: async () => {
       for (const role of ROLE_CHAIN) {
@@ -73,8 +68,8 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
     // Full agim tool surface (builtin / fs / web / exec / todo / imhub / MCP),
     // assembled per-turn from native's single source of truth.
     resolveTools: (opts, sessionId) => assembleToolsForPi(opts, sessionId),
-    // Same policy gating as legacy native (read-only / allow-list / plan-mode /
-    // IM approval card).
+    // Same policy gating as the public Agim Agent contract (read-only /
+    // allow-list / plan-mode / IM approval card).
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
     maxIterations: resolveMaxIterations(),
     // Proactive per-turn compaction (pi never auto-compacts). On by default;
@@ -108,5 +103,4 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
   })
 }
 
-/** Singleton registered by the plugin registry when IMHUB_NATIVE_ENGINE=pi. */
-export const piNativeAgentAdapter = createPiNativeAdapter()
+export const nativeAgentAdapter = createNativeAgentAdapter()

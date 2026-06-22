@@ -1,4 +1,4 @@
-// Drive PiNativeAgentAdapter through agim's AgentAdapter contract with an
+// Drive NativeAgentAdapter through agim's AgentAdapter contract with an
 // injected faux model binding (provider/auth resolution is tested separately).
 
 import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
@@ -10,13 +10,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
-import { type PiModelBinding, PiNativeAgentAdapter } from './index.js'
+import { type NativeModelBinding, NativeAgentAdapter } from './index.js'
 
 const regs: Array<{ unregister(): void }> = []
 afterEach(() => {
   while (regs.length) regs.pop()?.unregister()
 })
-function bindingFrom(model: Model<string>): PiModelBinding {
+function bindingFrom(model: Model<string>): NativeModelBinding {
   return { model, getApiKeyAndHeaders: async () => ({ apiKey: 'test', headers: {} }) }
 }
 function faux() {
@@ -30,11 +30,11 @@ async function collect(gen: AsyncGenerator<string>): Promise<string> {
   return out
 }
 
-describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
+describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('yields final assistant text', async () => {
     const reg = faux()
     reg.setResponses([fauxAssistantMessage('hi from pi engine')])
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
     })
@@ -54,7 +54,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
         return fauxAssistantMessage('t2')
       },
     ])
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
     })
@@ -75,7 +75,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       sink.push(String(call.arguments.path))
       return { text: 'wrote', isError: false }
     }
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       resolveTools: () => ({ tools: [tool], dispatch }),
@@ -86,18 +86,18 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
   })
 
   it('reports unavailable and throws cleanly when no backend is configured', async () => {
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => null,
     })
     expect(await adapter.isAvailable()).toBe(false)
     // sendPrompt must never throw silently — it yields a visible notice instead.
     const out = await collect(adapter.sendPrompt('s4', 'hi'))
-    expect(out).toContain('未配置可用的 LLM 后端')
+    expect(out).toContain('未配置可用的大模型 API')
   })
 
   it('yields a visible error instead of throwing when the turn fails', async () => {
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       // resolveModel throws → must be caught and surfaced, not silent.
       resolveModel: async () => {
@@ -105,7 +105,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       },
     })
     const out = await collect(adapter.sendPrompt('s8', 'hi'))
-    expect(out).toContain('pi-native 引擎本轮出错')
+    expect(out).toContain('Agim Agent 本轮出错')
     expect(out).toContain('boom-provider-down')
   })
 
@@ -121,7 +121,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       ran.push(String(call.arguments.cmd))
       return { text: 'ran', isError: false }
     }
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       resolveTools: () => ({ tools: [tool], dispatch }),
@@ -147,7 +147,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       ran.push(1)
       return { text: 'spun', isError: false }
     }
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       resolveTools: () => ({ tools: [tool], dispatch }),
@@ -170,7 +170,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       parameters: { type: 'object', properties: {}, required: [] },
     }
     const dispatch: ToolDispatcher = async () => ({ text: 'skills: foo,bar', isError: false })
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       resolveTools: () => ({ tools: [tool], dispatch }),
@@ -195,7 +195,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
       calls += 1
       return { text: 'upstream 503', isError: true } // same error every time
     }
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       resolveTools: () => ({ tools: [tool], dispatch }),
@@ -215,7 +215,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
         return fauxAssistantMessage('ok')
       },
     ])
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFrom(reg.getModel()!),
       streamOptions: { maxRetries: 4, maxRetryDelayMs: 12345, timeoutMs: 67890, cacheRetention: 'long' },
@@ -233,7 +233,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     regs.push(reg)
     reg.setResponses([fauxAssistantMessage('t1')])
     const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ad-'))
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot,
       resolveModel: async () => bindingFrom(reg.getModel()!),
     })
@@ -255,7 +255,7 @@ describe('PiNativeAgentAdapter (agim AgentAdapter contract)', () => {
     // Only two turn responses queued — if compaction fired it would starve the queue.
     reg.setResponses([fauxAssistantMessage('t1'), fauxAssistantMessage('t2')])
     const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ad-'))
-    const adapter = new PiNativeAgentAdapter({
+    const adapter = new NativeAgentAdapter({
       sessionsRoot,
       resolveModel: async () => bindingFrom(reg.getModel()!),
       compactionEnabled: false,

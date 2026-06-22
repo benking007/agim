@@ -1,6 +1,6 @@
-// PiNativeAgentAdapter — agim's AgentAdapter backed by pi's AgentHarness.
+// NativeAgentAdapter — agim's single Agim Agent adapter backed by pi's AgentHarness.
 //
-// This is the orchestration half of the pi-native engine: it maps agim's
+// This maps agim's
 // sendPrompt contract onto a pi AgentHarness with durable per-session storage,
 // the agim tool bridge, and plan-mode enforcement. The provider/auth half
 // (agim BackendConfig → pi-ai Model + key) is INJECTED via `resolveModel` so
@@ -35,22 +35,21 @@ import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { agimToolsToPi } from './tool-bridge.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
-export interface PiModelBinding {
+export interface NativeModelBinding {
   model: Model<string>
   getApiKeyAndHeaders: () => Promise<{ apiKey: string; headers: Record<string, string> }>
 }
 
-export interface PiNativeDeps {
-  /** Adapter name to register under. Defaults to 'pi-native'; the default
-   *  engine registers as 'native' to transparently replace the legacy one. */
+export interface NativeAgentDeps {
+  /** Adapter name to register under. Defaults to 'native'. */
   name?: string
-  /** Adapter aliases. Defaults to ['pi']. */
+  /** Adapter aliases. Defaults to the public Agim Agent aliases. */
   aliases?: string[]
   /** Directory under which per-session JSONL files live. */
   sessionsRoot: string
   /** agim BackendConfig → pi-ai Model + auth. Returns null when no backend is
    *  configured (adapter then reports unavailable / fails the turn cleanly). */
-  resolveModel: (opts?: AgentSendOpts) => Promise<PiModelBinding | null>
+  resolveModel: (opts?: AgentSendOpts) => Promise<NativeModelBinding | null>
   /** The agim tool surface (schemas + dispatcher) to expose this turn. Receives
    *  the session id so per-thread tool state (todo tracker, plan-exit) keys
    *  correctly. */
@@ -97,13 +96,13 @@ function safeJson(v: unknown): string {
   }
 }
 
-interface PiToolRun {
+interface NativeToolRun {
   name: string
   isError: boolean
   preview?: string
 }
 
-interface PiToolResultEvent {
+interface NativeToolResultEvent {
   toolName?: string
   input?: unknown
   isError?: boolean
@@ -111,7 +110,7 @@ interface PiToolResultEvent {
   details?: unknown
 }
 
-function previewToolResult(ev: PiToolResultEvent): string | undefined {
+function previewToolResult(ev: NativeToolResultEvent): string | undefined {
   const contentText = (ev.content ?? [])
     .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
     .map((c) => c.text)
@@ -124,7 +123,7 @@ function previewToolResult(ev: PiToolResultEvent): string | undefined {
   return undefined
 }
 
-function composeEmptyTurnRecap(toolRuns: readonly PiToolRun[], availableToolNames: readonly string[]): string {
+function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableToolNames: readonly string[]): string {
   if (toolRuns.length === 0) {
     const sample = availableToolNames.slice(0, 8)
     const toolHint = availableToolNames.length === 0
@@ -186,7 +185,7 @@ function seedAssistantMessage(text: string) {
   }
 }
 
-export class PiNativeAgentAdapter implements AgentAdapter {
+export class NativeAgentAdapter implements AgentAdapter {
   readonly name: string
   readonly aliases: string[]
   readonly kind: AgentAdapterKind = 'in-process'
@@ -197,11 +196,9 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   // session per process lifetime.
   private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
 
-  constructor(private deps: PiNativeDeps) {
-    // When pi is the default engine it registers UNDER the 'native' name so
-    // existing routing (and `/cc native`) resolves to it transparently.
-    this.name = deps.name ?? 'pi-native'
-    this.aliases = deps.aliases ?? ['pi']
+  constructor(private deps: NativeAgentDeps) {
+    this.name = deps.name ?? 'native'
+    this.aliases = deps.aliases ?? ['agim', 'na', 'llm', 'native-llm']
   }
 
   async isAvailable(): Promise<boolean> {
@@ -209,7 +206,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   }
 
   describe(): string | undefined {
-    return 'engine: pi-agent-core'
+    return 'engine=agim-agent'
   }
 
   async *sendPrompt(
@@ -225,8 +222,8 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       // as "no response". Surface the error so it's visible + diagnosable.
       const msg = err instanceof Error ? `${err.message}` : String(err)
       // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
-      console.error('[pi-native] turn failed:', err instanceof Error ? err.stack : err)
-      yield `⚠️ pi-native 引擎本轮出错：${msg}\n（可设 IMHUB_NATIVE_ENGINE=legacy 重启后临时回退旧引擎）`
+      console.error('[native] turn failed:', err instanceof Error ? err.stack : err)
+      yield `⚠️ Agim Agent 本轮出错：${msg}`
     }
   }
 
@@ -238,7 +235,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   ): AsyncGenerator<string> {
     const binding = await this.deps.resolveModel(opts)
     if (!binding) {
-      yield '⚠️ pi-native：未配置可用的 LLM 后端（请在 /settings/llm 添加任一 backend + API key；角色绑定可选）'
+      yield '⚠️ Agim Agent：未配置可用的大模型 API（请在 /settings/llm 添加 API + API Key；角色绑定可选）'
       return
     }
 
@@ -315,8 +312,8 @@ export class PiNativeAgentAdapter implements AgentAdapter {
     let toolRounds = 0
     let stopReason: 'max_iter' | 'stuck_loop' | null = null
     const recentSigs: string[] = []
-    const toolRuns: PiToolRun[] = []
-    harness.on('tool_result', (ev: PiToolResultEvent) => {
+    const toolRuns: NativeToolRun[] = []
+    harness.on('tool_result', (ev: NativeToolResultEvent) => {
       toolRounds += 1
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
@@ -360,7 +357,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
         }
       } catch (err) {
         // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
-        console.error('[pi-native] compaction skipped:', err instanceof Error ? err.message : err)
+        console.error('[native] compaction skipped:', err instanceof Error ? err.message : err)
       }
     }
 

@@ -228,26 +228,12 @@ class PluginRegistry {
     const { cursorAdapter } = await import('../plugins/agents/cursor/index.js')
     this.registerAgent(cursorAdapter)
 
-    // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. Always
-    // registered; isAvailable() reflects whether any usable LLM backend
-    // is configured. Role bindings are optional and only influence role
-    // preference/order.
-    // Native (in-process LLM) engine. The pi-agent-core engine is now the
-    // DEFAULT (durable sessions + phase state machine + Result error model);
-    // it registers UNDER the 'native' name so existing routing + `/cc native`
-    // resolve to it transparently. Set IMHUB_NATIVE_ENGINE=legacy to fall back
-    // to the original native engine (escape hatch during the migration).
-    if (process.env.IMHUB_NATIVE_ENGINE === 'legacy') {
-      const { nativeAgentAdapter } = await import('../plugins/agents/native/index.js')
-      this.registerAgent(nativeAgentAdapter)
-      log.info({ event: 'registry.native_engine', engine: 'legacy' },
-        'native engine: legacy (IMHUB_NATIVE_ENGINE=legacy)')
-    } else {
-      const { piNativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
-      this.registerAgent(piNativeAgentAdapter)
-      log.info({ event: 'registry.native_engine', engine: 'pi' },
-        'native engine: pi-agent-core (default; set IMHUB_NATIVE_ENGINE=legacy to revert)')
-    }
+    // Agim Agent (public name: native/agim). Single in-process implementation
+    // backed by pi-agent-core; the old legacy native loop has been retired.
+    const { nativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
+    this.registerAgent(nativeAgentAdapter)
+    log.info({ event: 'registry.native_engine', engine: 'agim-agent' },
+      'native engine: agim-agent')
 
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')

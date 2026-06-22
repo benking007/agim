@@ -5,7 +5,7 @@
 // them onto pi-ai's catalog to:
 //   - backfill real USD cost from token counts (calculateCost), and
 //   - expose contextWindow / maxTokens for context-budget decisions.
-// pi-native already gets this directly from pi-ai; this brings the same to the
+// Agim Agent gets this directly from pi-ai; this brings the same to the
 // legacy providers WITHOUT maintaining a second price table.
 
 import { calculateCost, getModels, getProviders, type Model } from '@earendil-works/pi-ai'

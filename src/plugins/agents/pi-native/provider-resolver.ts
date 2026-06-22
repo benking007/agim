@@ -1,5 +1,5 @@
 // Maps agim's resolved LLM backend binding (provider type / model / baseUrl /
-// key) onto a pi-ai Model + auth, so the pi-native engine drives real LLMs
+// key) onto a pi-ai Model + auth, so Agim Agent drives real LLMs
 // using agim's existing backend config + secrets (no new key plumbing).
 //
 // pi-ai facts (probed against the installed package):
@@ -18,7 +18,7 @@ import {
   type LlmBackendBinding,
   type LlmRole,
 } from '../../../core/llm/registry.js'
-import type { PiModelBinding } from './index.js'
+import type { NativeModelBinding } from './index.js'
 
 /** agim providerType → pi-ai stream api id. Unmapped types are unsupported
  *  by the pi engine (resolver returns null → adapter reports unavailable). */
@@ -32,7 +32,7 @@ const DEFAULT_BASE_URL: Record<string, string> = {
   'anthropic-messages': 'https://api.anthropic.com',
 }
 
-export function bindingToPiModel(b: LlmBackendBinding): PiModelBinding | null {
+export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | null {
   const api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
   const model = {
@@ -55,13 +55,13 @@ export function bindingToPiModel(b: LlmBackendBinding): PiModelBinding | null {
 
 /** Resolve a pi model binding for an agim LLM role, or null when no usable
  *  backend (or an unsupported provider type) is configured. */
-export function resolvePiModelForRole(role: LlmRole): PiModelBinding | null {
+export function resolvePiModelForRole(role: LlmRole): NativeModelBinding | null {
   const binding = getBackendBindingForRole(role)
   return binding ? bindingToPiModel(binding) : null
 }
 
 /** Resolve a pi model binding from the first configured backend, ignoring roles. */
-export function resolveAnyPiModel(): PiModelBinding | null {
+export function resolveAnyPiModel(): NativeModelBinding | null {
   const binding = getAnyBackendBinding()
   return binding ? bindingToPiModel(binding) : null
 }

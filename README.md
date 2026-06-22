@@ -121,13 +121,14 @@ Legacy installs remain compatible:
 ## Development
 
 ```bash
-git clone https://github.com/benking007/imhub.git
-cd imhub
+git clone https://github.com/benking007/agim.git
+cd agim
 npm install --no-package-lock
 npm --prefix src/web-app install
 npm run build
+npm run lint
 npm run typecheck
-bun test
+npm test
 ```
 
 ## Community

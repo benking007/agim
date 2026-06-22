@@ -6,7 +6,7 @@
     "email": "邮件 (SMTP)",
     "viewer": "Viewer & 地图",
     "agents": "Agent",
-    "llm": "LLM 后端",
+    "llm": "大模型API",
     "mcp": "MCP 服务器",
     "nativeAgent": "Native Agent",
     "search": "Web 搜索",
@@ -477,7 +477,7 @@
     }
   },
   "llm": {
-    "title": "Native LLM 后端",
+    "title": "大模型API配置",
     "subtitle": "这些后端为进程内 native agent 及内部 introspection 调用方（记忆提取、意图分类、通知评估器、心跳）提供能力。后端元数据保存在 ~/.agim/config.json；API Key 保存在 ~/.agim/llm-secrets.json（0600）或 AGIM_LLM_SECRET_<NAME> 环境变量。",
     "refresh": "刷新",
     "backendsTitle": "后端 ({{count}})",

@@ -4,16 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
+## [1.3.7] - 2026-06-22
 
-- `mcp__imhub__ask_user` 扩展为结构化决策模式：支持单选/多选/自定义输入，新增 `selectionMode`、`minSelections`、`maxSelections`、`allowCustomInput`、`customInputLabel` 参数，并在结果中返回 `selectionMode`、`indexes`、`labels`、`customText`（保持旧字段兼容）。
-- TUI 新增统一决策交互面板，覆盖审批与 `ask_user`：支持键盘单选、多选（Space 勾选）和自定义输入提交流程。
+### Security
+
+- 收紧 exec / web / auth 边界（F6–F13 安全 review 跟进）；pending approvals 数量上限（F8，防积压）；`complete_goal` 幂等（F9）。
+
+### Changed
+
+- **退役 legacy native adapter** —— pi-native（Agim Agent）成为唯一 native 引擎，移除旧 in-process 循环（`native/index.ts` −1598 行）及过时的 stage-report 测试套件。
+
+### Fixed
+
+- pi-native 空回合：返回"可用工具提示 / 工具动作回顾"替代空文本兜底（修 native 空回复）。
+- skills 注入 override 在各 agent 路径下统一生效。
+- web admin 掉权限后给出重新登录引导（不再静默空白，1.3.5）。
+
+### Added（自 1.3.0 累积）
+
+- `mcp__imhub__ask_user` 扩展为结构化决策模式：单选/多选/自定义输入（`selectionMode`、`minSelections`、`maxSelections`、`allowCustomInput`、`customInputLabel`；结果含 `selectionMode`、`indexes`、`labels`、`customText`，旧字段兼容）。
+- TUI 统一决策交互面板（审批 + `ask_user`：键盘单选 / 多选 Space 勾选 / 自定义输入）；会话管理 `/new` `/sessions`；`/agent` 名称补全；token/cost 状态栏；工具调用审批桥。
 
 ### Documentation
 
-- 更新 `docs/architecture/current.md`，补充“审批 + ask_user”统一决策链路与核心模块说明。
-- 重写 `docs/ask-user.md`，同步最新协议、按钮编码、平台行为与 TUI 交互。
-- 更新 `docs/architecture-bridge-and-native.md` 的对客命名与命令别名，明确 Agim Agent（内部 id `native`）与 `/agim` 入口。
+- 更新 `docs/architecture/current.md`（“审批 + ask_user”统一决策链路）、重写 `docs/ask-user.md`、更新 `docs/architecture-bridge-and-native.md`（Agim Agent 内部 id `native` 与 `/agim` 入口）。
 
 ## [1.3.0] - 2026-06-21
 

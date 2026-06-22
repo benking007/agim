@@ -22,6 +22,13 @@ import {
   listSessions,
   loadSession,
 } from './sessions.js'
+import { TuiApprovalBridge } from './approval-bridge.js'
+import { approvalBus } from '../../core/approval-bus.js'
+import {
+  install as installApprovalRouter,
+  uninstall as uninstallApprovalRouter,
+  bindButtonHandlerForPlatform,
+} from '../../core/approval-router.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -173,18 +180,42 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   }
 
   let finalSessionId = sessionId
+  const approvalBridge = new TuiApprovalBridge(sessionId)
+  let approvalStarted = false
+  if (process.env.IMHUB_APPROVAL_DISABLED !== '1') {
+    try {
+      const sockPath = approvalBus.getSocketPath() ?? await approvalBus.start()
+      process.env.IMHUB_APPROVAL_SOCK = sockPath
+      approvalStarted = true
+      installApprovalRouter({
+        resolveMessenger: (platform: string) => platform === 'tui' ? approvalBridge : undefined,
+        buttonCallbackPlatforms: ['tui'],
+      })
+      bindButtonHandlerForPlatform('tui')
+    } catch (err) {
+      log.warn({
+        event: 'tui.approval.start_failed',
+        err: err instanceof Error ? err.message : String(err),
+      }, 'TUI approval bridge failed to start')
+    }
+  }
   const { waitUntilExit } = render(
     React.createElement(TuiApp, {
       initialAgent,
       resumed,
       sessionId,
       onSessionIdChange: (id: string) => { finalSessionId = id },
+      approvalBridge,
     }),
     { patchConsole: true, exitOnCtrlC: true },
   )
   try {
     await waitUntilExit()
   } finally {
+    if (approvalStarted) {
+      uninstallApprovalRouter()
+      await approvalBus.stop().catch(() => {})
+    }
     rootLogger.level = savedLevel
     // v1.2.78 — drop a clean newline and print the resume hint AFTER
     // Ink relinquishes the screen. Without these the next shell

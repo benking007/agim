@@ -23,8 +23,8 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink'
 import TextInput from 'ink-text-input'
 import { spawnSync, exec as cpExec } from 'node:child_process'
-import { writeFileSync, mkdtempSync, readFileSync, unlinkSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { writeFileSync, mkdtempSync, readFileSync, unlinkSync, readdirSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { registry } from '../../core/registry.js'
@@ -32,6 +32,7 @@ import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
+import type { TuiApprovalBridge, TuiApprovalView } from './approval-bridge.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -127,6 +128,8 @@ interface AppProps {
   sessionId: string
   /** Notify entry so exit hint prints the latest in-app session id. */
   onSessionIdChange?: (id: string) => void
+  /** In-process approval surface used by `agim tui` for tool-call approvals. */
+  approvalBridge?: TuiApprovalBridge
 }
 
 interface PaletteItem {
@@ -177,7 +180,46 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
   )
 })
 
-export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: AppProps): JSX.Element {
+function approvalDecisionLabel(decision: NonNullable<TuiApprovalView['outcome']>['decision']): string {
+  switch (decision) {
+    case 'allowed': return '已批准'
+    case 'allowed-pinned': return '已批准并记住本类请求'
+    case 'denied': return '已拒绝'
+    case 'denied-revoked': return '已拒绝并撤销自动批准'
+    case 'expired': return '已过期'
+  }
+}
+
+function ApprovalDock({ approval }: { approval: TuiApprovalView }): JSX.Element {
+  const preview = approval.prompt.inputJson.length > 600
+    ? `${approval.prompt.inputJson.slice(0, 600)}…`
+    : approval.prompt.inputJson
+  return (
+    <Box flexDirection="column" borderStyle="double" borderColor={approval.outcome ? 'gray' : 'yellow'} paddingX={1} marginX={1} marginTop={1}>
+      <Text>
+        <Text bold color={approval.outcome ? 'gray' : 'yellow'}>审批请求 </Text>
+        <Text>{approval.prompt.toolName}</Text>
+        {approval.prompt.mode === 'auto-allow' && (
+          <Text dimColor> · 自动批准倒计时 {approval.prompt.graceSeconds ?? '?'}s</Text>
+        )}
+      </Text>
+      <Text dimColor>{preview}</Text>
+      {approval.outcome ? (
+        <Text color="green">✓ {approvalDecisionLabel(approval.outcome.decision)}</Text>
+      ) : (
+        <Text>
+          <Text color="green">y 批准</Text>
+          <Text dimColor> · </Text>
+          <Text color="red">n 拒绝</Text>
+          <Text dimColor> · </Text>
+          <Text color="cyan">all 本会话同类自动批准</Text>
+        </Text>
+      )}
+    </Box>
+  )
+}
+
+export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const { setRawMode } = useStdin()
@@ -201,6 +243,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: 
   // Cumulative usage this TUI session (fed by sendPrompt's onUsage). pi-native
   // emits all three; some adapters emit only cost — we accumulate what's there.
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
+  const [approval, setApproval] = useState<TuiApprovalView | null>(null)
 
   useEffect(() => {
     agentSessionsRef.current = agentSessions
@@ -209,6 +252,14 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: 
   useEffect(() => {
     onSessionIdChange?.(activeSessionId)
   }, [activeSessionId, onSessionIdChange])
+
+  useEffect(() => {
+    if (!approvalBridge) return
+    approvalBridge.setSession(activeSessionId)
+    return approvalBridge.subscribe((next) => {
+      setApproval(next)
+    })
+  }, [approvalBridge, activeSessionId])
 
   const cwd = useMemo(() => {
     const home = process.env.HOME
@@ -707,9 +758,13 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: 
     abortRef.current = ac
     try {
       let chunks = ''
-      for await (const chunk of adapter.sendPrompt(`tui-${process.pid}`, text, history, {
+      for await (const chunk of adapter.sendPrompt(`tui-${activeSessionId}`, text, history, {
         agentSessionId: currentAgentSessionId,
         agentSessionResume: Boolean(currentAgentSessionId),
+        platform: 'tui',
+        channelId: 'local',
+        threadId: activeSessionId,
+        userId: process.env.USER || 'tui',
         onAgentSessionId: (id) => {
           const normalized = id.trim()
           if (!normalized) return
@@ -769,7 +824,18 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: 
 
   async function onSubmit(line: string): Promise<void> {
     const text = line.trim()
-    if (!text || busy) return
+    if (!text) return
+
+    if (approval && !approval.outcome) {
+      const handled = await approvalBridge?.submitText(text)
+      if (handled) {
+        setInput('')
+        rememberSubmittedLine(text)
+        return
+      }
+    }
+
+    if (busy) return
 
     // Popup auto-accept on Enter when user clearly wants the suggestion.
     if (slashPopupOpen && filteredSlash.length > 0) {
@@ -836,6 +902,8 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange }: 
       {/* Chat history — memoized so input keystrokes don't re-render
           every message box (v1.2.78 flicker fix). */}
       <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
+
+      {approval && <ApprovalDock approval={approval} />}
 
       {error && (
         <Box paddingX={1}>

@@ -46,4 +46,33 @@ describe('TuiApprovalBridge', () => {
     expect(await bridge.submitText('y')).toBe(true)
     expect(decision).toEqual({ behavior: 'allow' })
   })
+
+  it('resolves selected all option as auto-allow', async () => {
+    const bridge = new TuiApprovalBridge('session-2')
+    let decision: Decision | undefined
+
+    installApprovalRouter({
+      resolveMessenger: (platform) => platform === 'tui' ? bridge : undefined,
+      buttonCallbackPlatforms: ['tui'],
+    })
+
+    await approvalBus.registerSyntheticPending({
+      runId: 'run-2',
+      reqId: 'req-2',
+      toolName: 'Bash',
+      input: { command: 'pwd' },
+      ctx: {
+        platform: 'tui',
+        channelId: 'local',
+        threadId: 'session-2',
+        userId: 'tester',
+        callerAgent: 'native',
+      },
+      dispatch: (d) => { decision = d },
+    })
+
+    expect(await bridge.submitChoice('a')).toBe(true)
+    expect(decision).toEqual({ behavior: 'allow', autoAllowFurther: true })
+    expect(approvalBus.getAutoAllowKeys('tui:local:session-2')).toHaveLength(1)
+  })
 })

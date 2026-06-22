@@ -32,7 +32,7 @@ import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
-import type { TuiApprovalBridge, TuiApprovalView } from './approval-bridge.js'
+import type { TuiApprovalBridge, TuiApprovalChoice, TuiApprovalView } from './approval-bridge.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -190,7 +190,16 @@ function approvalDecisionLabel(decision: NonNullable<TuiApprovalView['outcome']>
   }
 }
 
-function ApprovalDock({ approval }: { approval: TuiApprovalView }): JSX.Element {
+const APPROVAL_ACTIONS: Array<{ choice: TuiApprovalChoice; label: string; color: 'green' | 'cyan' | 'red' }> = [
+  { choice: 'y', label: '批准', color: 'green' },
+  { choice: 'a', label: '同类默认批准', color: 'cyan' },
+  { choice: 'n', label: '拒绝', color: 'red' },
+]
+
+function ApprovalDock({ approval, selectedIndex }: {
+  approval: TuiApprovalView
+  selectedIndex: number
+}): JSX.Element {
   const preview = approval.prompt.inputJson.length > 600
     ? `${approval.prompt.inputJson.slice(0, 600)}…`
     : approval.prompt.inputJson
@@ -207,13 +216,23 @@ function ApprovalDock({ approval }: { approval: TuiApprovalView }): JSX.Element 
       {approval.outcome ? (
         <Text color="green">✓ {approvalDecisionLabel(approval.outcome.decision)}</Text>
       ) : (
-        <Text>
-          <Text color="green">y 批准</Text>
-          <Text dimColor> · </Text>
-          <Text color="red">n 拒绝</Text>
-          <Text dimColor> · </Text>
-          <Text color="cyan">all 本会话同类自动批准</Text>
-        </Text>
+        <Box flexDirection="column">
+          <Box>
+            {APPROVAL_ACTIONS.map((action, index) => (
+              <Text key={action.choice}>
+                <Text
+                  color={action.color}
+                  inverse={index === selectedIndex}
+                  bold={index === selectedIndex}
+                >
+                  {index === selectedIndex ? `› ${action.label} ` : `  ${action.label} `}
+                </Text>
+                <Text> </Text>
+              </Text>
+            ))}
+          </Box>
+          <Text dimColor>↑↓/←→/Tab 选择 · Enter 确认 · 仍兼容 y / n / all 快捷输入</Text>
+        </Box>
       )}
     </Box>
   )
@@ -244,6 +263,10 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   // emits all three; some adapters emit only cost — we accumulate what's there.
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
   const [approval, setApproval] = useState<TuiApprovalView | null>(null)
+  const [approvalActionIndex, setApprovalActionIndex] = useState(0)
+  const approvalReqId = approval?.prompt.reqId
+  const approvalOutcome = approval?.outcome
+  const activeApprovalPending = Boolean(approvalReqId && !approvalOutcome)
 
   useEffect(() => {
     agentSessionsRef.current = agentSessions
@@ -257,6 +280,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     if (!approvalBridge) return
     approvalBridge.setSession(activeSessionId)
     return approvalBridge.subscribe((next) => {
+      if (next && !next.outcome) setApprovalActionIndex(0)
       setApproval(next)
     })
   }, [approvalBridge, activeSessionId])
@@ -352,6 +376,25 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     }
 
     const popupOpen = slashPopupOpen || filePopupOpen || agentArgPopupOpen
+    if (activeApprovalPending && !palette.open && !helpOpen && !popupOpen) {
+      if (key.leftArrow || key.upArrow) {
+        setApprovalActionIndex((index) => (index - 1 + APPROVAL_ACTIONS.length) % APPROVAL_ACTIONS.length)
+        return
+      }
+      if (key.rightArrow || key.downArrow || key.tab) {
+        setApprovalActionIndex((index) => (index + 1) % APPROVAL_ACTIONS.length)
+        return
+      }
+      if (key.return) {
+        const action = APPROVAL_ACTIONS[approvalActionIndex] ?? APPROVAL_ACTIONS[0]
+        if (action) {
+          void approvalBridge?.submitChoice(action.choice).then((handled) => {
+            if (handled) setInput('')
+          })
+        }
+        return
+      }
+    }
 
     // `?` toggles the help overlay when the prompt box is empty so users
     // can discover keys without `/help` being pushed away by chat history.
@@ -903,7 +946,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           every message box (v1.2.78 flicker fix). */}
       <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
 
-      {approval && <ApprovalDock approval={approval} />}
+      {approval && <ApprovalDock approval={approval} selectedIndex={approvalActionIndex} />}
 
       {error && (
         <Box paddingX={1}>
@@ -1010,7 +1053,10 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
             setInput(next)
           }}
           onSubmit={onSubmit}
-          placeholder={busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
+          placeholder={activeApprovalPending
+            ? '审批待处理：用方向键选择，Enter 确认'
+            : busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
+          focus={!activeApprovalPending}
         />
       </Box>
 

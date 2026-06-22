@@ -13,6 +13,8 @@ export interface TuiApprovalView {
   outcome?: ApprovalCardOutcome
 }
 
+export type TuiApprovalChoice = 'y' | 'n' | 'a'
+
 type Listener = (approval: TuiApprovalView | null) => void
 
 function choiceFromText(text: string): 'y' | 'n' | 'a' | null {
@@ -92,10 +94,8 @@ export class TuiApprovalBridge implements MessengerAdapter {
     this.emit()
   }
 
-  async submitText(text: string): Promise<boolean> {
+  async submitChoice(choice: TuiApprovalChoice): Promise<boolean> {
     if (!this.current || this.current.outcome || !this.buttonHandler) return false
-    const choice = choiceFromText(text)
-    if (!choice) return false
     const approval = this.current
     await this.buttonHandler({
       data: `apv:${approval.prompt.reqId}:${choice}`,
@@ -106,6 +106,12 @@ export class TuiApprovalBridge implements MessengerAdapter {
       ack: async () => {},
     })
     return true
+  }
+
+  async submitText(text: string): Promise<boolean> {
+    const choice = choiceFromText(text)
+    if (!choice) return false
+    return this.submitChoice(choice)
   }
 
   private emit(): void {

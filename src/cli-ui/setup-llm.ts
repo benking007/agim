@@ -448,11 +448,43 @@ function readline(): ReturnType<typeof createInterface> {
 interface AskOpts { silent?: boolean }
 
 function ask(rl: ReturnType<typeof createInterface>, prompt: string, opts: AskOpts = {}): Promise<string> {
-  // We don't implement silent input here — the cli context expects a
-  // TTY and we'd need raw mode to mask. The function exists so we can
-  // upgrade to masked input later without changing call sites.
-  void opts
-  return new Promise<string>((resolve) => rl.question(prompt, resolve))
+  if (!opts.silent || !process.stdin.isTTY || !process.stdout.isTTY) {
+    return new Promise<string>((resolve) => rl.question(prompt, resolve))
+  }
+
+  type ReadlineWithMask = ReturnType<typeof createInterface> & {
+    stdoutMuted?: boolean
+    _writeToOutput?: (str: string) => void
+    output: NodeJS.WritableStream
+  }
+
+  const maskedRl = rl as ReadlineWithMask
+  const prevWrite = maskedRl._writeToOutput
+
+  return new Promise<string>((resolve) => {
+    maskedRl.stdoutMuted = true
+    maskedRl._writeToOutput = function (this: ReadlineWithMask, text: string): void {
+      if (!this.stdoutMuted) {
+        if (typeof prevWrite === 'function') prevWrite.call(this, text)
+        else this.output.write(text)
+        return
+      }
+      if (text === '\n' || text === '\r' || text === '\r\n') {
+        this.output.write(text)
+        return
+      }
+      // Mask each user keystroke chunk while keeping the prompt visible.
+      this.output.write('*')
+    }
+
+    process.stdout.write(prompt)
+    rl.question('', (answer) => {
+      maskedRl.stdoutMuted = false
+      if (typeof prevWrite === 'function') maskedRl._writeToOutput = prevWrite
+      else delete maskedRl._writeToOutput
+      resolve(answer)
+    })
+  })
 }
 
 function cancel(reason: string): number {

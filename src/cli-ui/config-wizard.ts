@@ -30,6 +30,7 @@ import {
 } from './prompts.js'
 import { t, type Lang, type Key } from './i18n.js'
 import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
+import { describeSecretSource } from '../core/llm/secrets.js'
 import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEnvFile, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
@@ -525,8 +526,16 @@ const AGENT_SPECS: AgentSpec[] = [
 async function nativeLlmConfigured(): Promise<boolean> {
   try {
     const cfg = await loadConfig()
-    const raw = cfg as { llmBackends?: unknown[] }
-    return Array.isArray(raw.llmBackends) && raw.llmBackends.length > 0
+    const raw = cfg as {
+      llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown }>
+    }
+    if (!Array.isArray(raw.llmBackends) || raw.llmBackends.length === 0) return false
+    return raw.llmBackends.some((backend) => {
+      if (!backend || typeof backend.name !== 'string' || backend.name.trim() === '') return false
+      const provider = typeof backend.provider === 'string' ? backend.provider : undefined
+      const baseUrl = typeof backend.baseUrl === 'string' ? backend.baseUrl : undefined
+      return describeSecretSource(backend.name, { provider, baseUrl }).source !== 'none'
+    })
   } catch {
     return false
   }

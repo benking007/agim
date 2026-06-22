@@ -34,10 +34,15 @@ import { Markdown } from './markdown.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
 import type {
   TuiApprovalBridge,
-  TuiApprovalChoice,
   TuiApprovalView,
   TuiAskView,
 } from './approval-bridge.js'
+import {
+  approvalActionsFor,
+  toApprovalStatusLine,
+  type TuiApprovalAction,
+  type TuiApprovalStatusLine,
+} from './approval-view.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -185,64 +190,74 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
   )
 })
 
-function approvalDecisionLabel(decision: NonNullable<TuiApprovalView['outcome']>['decision']): string {
-  switch (decision) {
-    case 'allowed': return '已批准'
-    case 'allowed-pinned': return '已批准并记住本类请求'
-    case 'denied': return '已拒绝'
-    case 'denied-revoked': return '已拒绝并撤销自动批准'
-    case 'expired': return '已过期'
-  }
-}
-
 function askChoiceLabel(label: string): string {
   return label.replace(/^\d+\.\s*/, '').trim()
 }
 
-const APPROVAL_ACTIONS: Array<{ choice: TuiApprovalChoice; label: string; color: 'green' | 'cyan' | 'red' }> = [
-  { choice: 'y', label: '批准', color: 'green' },
-  { choice: 'a', label: '同类默认批准', color: 'cyan' },
-  { choice: 'n', label: '拒绝', color: 'red' },
-]
-
-function ApprovalDock({ approval, selectedIndex }: {
+function ApprovalDock({ approval, selectedIndex, actions }: {
   approval: TuiApprovalView
   selectedIndex: number
+  actions: readonly TuiApprovalAction[]
 }): JSX.Element {
   const preview = approval.prompt.inputJson.length > 600
     ? `${approval.prompt.inputJson.slice(0, 600)}…`
     : approval.prompt.inputJson
+  const autoAllowMode = approval.prompt.mode === 'auto-allow'
+  const hasSingleDeny = autoAllowMode && actions.length === 1
+  if (hasSingleDeny) {
+    const deny = actions[0]
+    return (
+      <Box borderStyle="single" borderColor="yellow" paddingX={1} marginX={1} marginTop={1}>
+        <Text>
+          <Text bold color="yellow">默认放行命中 </Text>
+          <Text>{approval.prompt.toolName}</Text>
+          <Text dimColor> · 仅在你拒绝时中断执行</Text>
+        </Text>
+        <Text dimColor>{preview}</Text>
+        <Text>
+          <Text color={deny.color} inverse={selectedIndex === 0} bold={selectedIndex === 0}>
+            {selectedIndex === 0 ? `› ${deny.label}` : `  ${deny.label}`}
+          </Text>
+          <Text dimColor> · Enter 立即拒绝 · 仍兼容 n 快捷输入</Text>
+        </Text>
+      </Box>
+    )
+  }
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor={approval.outcome ? 'gray' : 'yellow'} paddingX={1} marginX={1} marginTop={1}>
+    <Box flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={1} marginX={1} marginTop={1}>
       <Text>
-        <Text bold color={approval.outcome ? 'gray' : 'yellow'}>审批请求 </Text>
+        <Text bold color="yellow">审批请求 </Text>
         <Text>{approval.prompt.toolName}</Text>
-        {approval.prompt.mode === 'auto-allow' && (
-          <Text dimColor> · 自动批准倒计时 {approval.prompt.graceSeconds ?? '?'}s</Text>
-        )}
       </Text>
       <Text dimColor>{preview}</Text>
-      {approval.outcome ? (
-        <Text color="green">✓ {approvalDecisionLabel(approval.outcome.decision)}</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Box>
-            {APPROVAL_ACTIONS.map((action, index) => (
-              <Text key={action.choice}>
-                <Text
-                  color={action.color}
-                  inverse={index === selectedIndex}
-                  bold={index === selectedIndex}
-                >
-                  {index === selectedIndex ? `› ${action.label} ` : `  ${action.label} `}
-                </Text>
-                <Text> </Text>
+      <Box flexDirection="column">
+        <Box>
+          {actions.map((action, index) => (
+            <Text key={action.choice}>
+              <Text
+                color={action.color}
+                inverse={index === selectedIndex}
+                bold={index === selectedIndex}
+              >
+                {index === selectedIndex ? `› ${action.label} ` : `  ${action.label} `}
               </Text>
-            ))}
-          </Box>
-          <Text dimColor>↑↓/←→/Tab 选择 · Enter 确认 · 仍兼容 y / n / all 快捷输入</Text>
+              <Text> </Text>
+            </Text>
+          ))}
         </Box>
-      )}
+        <Text dimColor>↑↓/←→/Tab 选择 · Enter 确认 · 仍兼容 y / n / all 快捷输入</Text>
+      </Box>
+    </Box>
+  )
+}
+
+function ApprovalStatusBar({ status }: { status: TuiApprovalStatusLine }): JSX.Element {
+  return (
+    <Box paddingX={1}>
+      <Text>
+        <Text dimColor>审批状态 · {status.toolName} · </Text>
+        <Text color={status.color}>{status.label}</Text>
+      </Text>
     </Box>
   )
 }
@@ -337,6 +352,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   // emits all three; some adapters emit only cost — we accumulate what's there.
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
   const [approval, setApproval] = useState<TuiApprovalView | null>(null)
+  const [approvalStatusLine, setApprovalStatusLine] = useState<TuiApprovalStatusLine | null>(null)
   const [approvalActionIndex, setApprovalActionIndex] = useState(0)
   const [ask, setAsk] = useState<TuiAskView | null>(null)
   const [askActionIndex, setAskActionIndex] = useState(0)
@@ -347,6 +363,8 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   const askPending = Boolean(ask && !ask.finalText)
   const activeApprovalPending = Boolean(approvalReqId && !approvalOutcome)
   const activeDecisionPending = askPending || activeApprovalPending
+  const approvalActions = useMemo(() => approvalActionsFor(approval), [approval])
+  const approvalActionSafeIndex = Math.max(0, Math.min(approvalActionIndex, approvalActions.length - 1))
 
   useEffect(() => {
     agentSessionsRef.current = agentSessions
@@ -360,7 +378,16 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     if (!approvalBridge) return
     approvalBridge.setSession(activeSessionId)
     const unsubscribeApproval = approvalBridge.subscribe((next) => {
-      if (next && !next.outcome) setApprovalActionIndex(0)
+      if (next?.outcome) {
+        const status = toApprovalStatusLine(next)
+        if (status) setApprovalStatusLine(status)
+        setApproval(null)
+        return
+      }
+      if (next) {
+        setApprovalActionIndex(0)
+        setApprovalStatusLine(null)
+      }
       setApproval(next)
     })
     const unsubscribeAsk = approvalBridge.subscribeAsk((next) => {
@@ -553,17 +580,18 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         return
       }
     }
-    if (activeApprovalPending && !askPending && !palette.open && !helpOpen && !popupOpen) {
-      if (key.leftArrow || key.upArrow) {
-        setApprovalActionIndex((index) => (index - 1 + APPROVAL_ACTIONS.length) % APPROVAL_ACTIONS.length)
+    if (activeApprovalPending && !askPending && !palette.open && !helpOpen && !popupOpen && approval) {
+      const actionCount = Math.max(approvalActions.length, 1)
+      if ((key.leftArrow || key.upArrow) && actionCount > 1) {
+        setApprovalActionIndex((index) => (index - 1 + actionCount) % actionCount)
         return
       }
-      if (key.rightArrow || key.downArrow || key.tab) {
-        setApprovalActionIndex((index) => (index + 1) % APPROVAL_ACTIONS.length)
+      if ((key.rightArrow || key.downArrow || key.tab) && actionCount > 1) {
+        setApprovalActionIndex((index) => (index + 1) % actionCount)
         return
       }
       if (key.return) {
-        const action = APPROVAL_ACTIONS[approvalActionIndex] ?? APPROVAL_ACTIONS[0]
+        const action = approvalActions[approvalActionSafeIndex] ?? approvalActions[0]
         if (action) {
           void approvalBridge?.submitChoice(action.choice).then((handled) => {
             if (handled) setInput('')
@@ -1146,7 +1174,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           customInputMode={askCustomInputMode}
         />
       )}
-      {approval && !askPending && <ApprovalDock approval={approval} selectedIndex={approvalActionIndex} />}
+      {approval && !askPending && (
+        <ApprovalDock approval={approval} selectedIndex={approvalActionSafeIndex} actions={approvalActions} />
+      )}
 
       {error && (
         <Box paddingX={1}>
@@ -1264,11 +1294,15 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
                     )
               )
             : activeApprovalPending
-              ? '审批待处理：用方向键选择，Enter 确认'
+              ? (approval?.prompt.mode === 'auto-allow'
+                  ? '默认放行中：Enter 或输入 n 可拒绝'
+                  : '审批待处理：用方向键选择，Enter 确认')
               : busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
           focus={!activeDecisionPending || askCustomInputMode}
         />
       </Box>
+
+      {!activeApprovalPending && approvalStatusLine && <ApprovalStatusBar status={approvalStatusLine} />}
 
       {/* Bottom status bar */}
       <Box paddingX={1}>

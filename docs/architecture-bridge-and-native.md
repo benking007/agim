@@ -1,10 +1,10 @@
-# Architecture: bridge agent + native agent are peers
+# Architecture: bridge agents + Agim Agent are peers
 
-> Why does agim have both a "bridge" mode and a "native" agent? Are they
+> Why does agim have both a "bridge" mode and an "Agim Agent"? Are they
 > two separate products?
 
 **No.** agim is, and continues to be, a **messenger-to-agent bridge**.
-The native agent is just another `AgentAdapter` in the registry —
+The Agim Agent (internal id: `native`) is just another `AgentAdapter` in the registry —
 peer-equal to `claude-code`, `codex`, `opencode`, and `antigravity`.
 The only thing that's "special" about it is **where it runs**
 (in-process LLM loop, no subprocess spawn).
@@ -81,7 +81,7 @@ The current registry:
 | `codex` | `/cx`, `/openai`, `/codexcli` | `cli` | `codex exec` subprocess |
 | `opencode` | `/oc`, `/opencodeai` | `cli` | opencode CLI (stdio or HTTP daemon) |
 | `antigravity` | `/agy`, `/gemini`, `/ag` | `cli` | Google Antigravity CLI |
-| `native` | `/na`, `/llm`, `/native-llm` | `in-process` | LLM client + agent loop (no subprocess) |
+| `native` | `/agim`, `/na`, `/llm`, `/native-llm` | `in-process` | LLM client + agent loop (no subprocess) |
 | (per-config) | per-config | `remote` | ACP endpoint over HTTP |
 
 `/agents` renders every row with its `kind` tag and a one-line
@@ -93,7 +93,7 @@ The current registry:
 • /claude-code [cli] (/cc, /claude, /claudecode)
 • /codex       [cli] (/cx, /openai, /codexcli)
 • /opencode    [cli] (/oc, /opencodeai)
-• /native      [in-process] (/na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-chat
+• /agim        [in-process] (/agim, /na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-chat
 ```
 
 ## 5. The Six Things You Get Automatically
@@ -104,7 +104,7 @@ works without per-feature wiring. Concretely:
 ### 5a. Routing
 
 The same `resolveActiveAgent` picks among them. `defaultAgent: 'native'`
-is a valid config. `/cc`, `/cx`, `/oc`, `/na` all switch sticky session.
+is a valid config. `/cc`, `/cx`, `/oc`, `/agim` all switch sticky session.
 
 ### 5b. A2A (cross-agent calls)
 

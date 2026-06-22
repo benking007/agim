@@ -21,7 +21,6 @@ import {
   generateSessionId,
   listSessions,
   loadSession,
-  type StoredMessage,
 } from './sessions.js'
 
 const log = rootLogger.child({ component: 'tui' })
@@ -62,7 +61,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   // explicit id means look that one up. Either way, returns null if
   // we couldn't find it and we treat that as a fresh start with a
   // warning.
-  let resumed: { id: string; agent?: string; messages: ChatMessage[] } | undefined
+  let resumed: { id: string; agent?: string; messages: ChatMessage[]; createdAt?: string; agentSessions?: Record<string, string> } | undefined
   let sessionId: string = generateSessionId()
   let resumeWarning: string | undefined
   if (opts.resume !== undefined) {
@@ -74,7 +73,13 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       } else {
         const s = loadSession(sessions[0].id)
         if (s) {
-          resumed = { id: s.id, agent: s.agent, messages: s.messages as ChatMessage[] }
+          resumed = {
+            id: s.id,
+            agent: s.agent,
+            createdAt: s.createdAt,
+            agentSessions: s.agentSessions,
+            messages: s.messages as ChatMessage[],
+          }
           sessionId = s.id
         } else {
           resumeWarning = `读取最新会话 ${sessions[0].id} 失败，按新会话启动。`
@@ -83,7 +88,13 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     } else {
       const s = loadSession(wantedId)
       if (s) {
-        resumed = { id: s.id, agent: s.agent, messages: s.messages as ChatMessage[] }
+        resumed = {
+          id: s.id,
+          agent: s.agent,
+          createdAt: s.createdAt,
+          agentSessions: s.agentSessions,
+          messages: s.messages as ChatMessage[],
+        }
         sessionId = s.id
       } else {
         resumeWarning = `没找到会话 "${wantedId}"，按新会话启动。`
@@ -161,8 +172,14 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     initialAgent = found.name
   }
 
+  let finalSessionId = sessionId
   const { waitUntilExit } = render(
-    React.createElement(TuiApp, { initialAgent, resumed, sessionId }),
+    React.createElement(TuiApp, {
+      initialAgent,
+      resumed,
+      sessionId,
+      onSessionIdChange: (id: string) => { finalSessionId = id },
+    }),
     { patchConsole: true, exitOnCtrlC: true },
   )
   try {
@@ -177,8 +194,8 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     if (resumeWarning) {
       console.warn('⚠ ' + resumeWarning)
     }
-    console.log(`会话 ID：${sessionId}`)
-    console.log(`恢复命令：agim tui --resume ${sessionId}`)
+    console.log(`会话 ID：${finalSessionId}`)
+    console.log(`恢复命令：agim tui --resume ${finalSessionId}`)
     console.log(`查看所有会话：agim tui --list-sessions`)
   }
 }

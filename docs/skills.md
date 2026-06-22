@@ -1,8 +1,7 @@
 # agim skills engine
 
-> Stage 3 + P0 #3 of the nanobot-vs-agim comparison plan. Drop a
-> `SKILL.md` into `~/.agim/skills/<name>/` and every CLI agent (Claude
-> Code / Codex / OpenCode) plus the native agent sees it.
+Drop a `SKILL.md` into `~/.agim/skills/<name>/` and every CLI agent
+(Claude Code / Codex / OpenCode) plus the native agent can use it.
 
 ## What a skill is
 

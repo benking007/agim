@@ -1,8 +1,7 @@
 # agim 会话模型与 Agent 会话的关系
 
-> 适用：v0.2.15 + v2 升级（A/D/B/C 已落地）
-> 作用：把 agim 自己的 session、Claude Code 的 session、opencode 的"无 session"摆到同一张桌子上看，便于排查"为什么会话突然没了 / Claude 续不上 / opencode 像失忆"。
-> 关联：[`adr/0003-session-path-safety.md`](./adr/0003-session-path-safety.md) · [`adr/0004-sticky-agent-and-split-ttl.md`](./adr/0004-sticky-agent-and-split-ttl.md) · [`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md) · [`im-workspaces-guide.md`](./im-workspaces-guide.md)
+> 作用：把 agim 自己的 session、Claude Code 的 session、OpenCode/Codex 的 session 关系放到一张图里，便于排查"为什么会话突然没了 / 续不上 / 像失忆"。
+> 关联：[`adr/0003-session-path-safety.md`](./adr/0003-session-path-safety.md) · [`adr/0004-sticky-agent-and-split-ttl.md`](./adr/0004-sticky-agent-and-split-ttl.md) · [`im-workspaces-guide.md`](./im-workspaces-guide.md)
 
 ---
 

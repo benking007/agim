@@ -2,7 +2,7 @@
 // AgentTool[] so the pi-native engine reuses agim's existing builtin / imhub /
 // MCP dispatchers unchanged.
 //
-// Two facts (validated against pi source, see PROJECTS/pi-native-migration.md):
+// Two facts (validated against pi source, see CHANGELOG native engine overview):
 //   - pi accepts a plain JSON Schema as AgentTool.parameters (it reads only
 //     .properties / .required). agim's ToolDef.parameters is already that.
 //   - pi has NO isError field on a tool result; a tool signals an error by

@@ -1,1033 +1,155 @@
-# Native LLM backends (D+ Stage 1)
+# Native LLM 配置指南
 
-> **Status**: Stage 1 of the D+ plan (see `/opt/cursor/artifacts/plans/nanobot_vs_agim_*.plan.md`).
-> Ships in v1.3.0. CLI agent fallback is still the default — native backends
-> are strictly **opt-in** and only used by internal introspection callers in
-> this stage.
+本页说明如何为 Agim 配置 `native` agent 的 LLM 后端。
+目标：**只配一次就能跑**，角色绑定是可选优化项，不是阻塞条件。
 
-## What this is
+## 1. 核心原则
 
-agim's "agent brain" has historically been a third-party CLI (Claude Code / Codex / OpenCode) spawned per request. That's still the main path. **Native LLM backends** let agim talk directly to an OpenAI/Anthropic-compatible HTTP API for *internal* tasks where spawning a CLI is wasteful:
+- `native` 只需要至少一个可用 backend（`baseUrl + model + apiKey`）。
+- `llmRoles` 是可选策略层，用于精细路由（如 cheap/evaluator）。
+- 未配置角色时，`native` 会自动回退到任意可用 backend。
 
-- `memory-distill` — extracts long-term facts from a (user msg, agent reply) turn
-- `memory-consolidate` — daily rebuild of per-user persona summary
-- `intent-llm` — picks an agent when the rule-based router is unsure
+## 2. 配置方式
 
-Wins:
+你可以任选一种方式：
 
-- ~200ms per call instead of seconds (no CLI spawn)
-- Costs a tenth (cheap models are fine for these JSON-out tasks)
-- Lets you point agim at DeepSeek / Kimi / Qwen / Ollama / vLLM directly without waiting for upstream CLI support
+1. Web：`/settings/llm`
+2. CLI：`agim setup llm`
+3. 手工编辑 `~/.agim/config.json` + `~/.agim/llm-secrets.json`
 
-What's **not** in Stage 1 (lands in later stages):
+## 3. 配置结构
 
-- ❌ Tool calling / agent loop (Stage 2)
-- ❌ MCP client (Stage 2)
-- ❌ A `native-chat` agent users can route to from IM (Stage 2)
-- ❌ Configuration via `agim` CLI wizard or web UI (Stage 4)
-- ❌ A/B evaluator + automatic fallback chain (Stage 5)
-
-Stage 1 is plumbing; everything wires together in later stages.
-
-## Configuration
-
-Two pieces — both optional. When absent, every caller falls back to the existing CLI agent path and behaviour is unchanged.
-
-### 1. `llmBackends` array in `~/.agim/config.json`
+### 3.1 `config.json`
 
 ```json
 {
   "llmBackends": [
     {
-      "name": "deepseek-cheap",
+      "name": "deepseek-main",
       "provider": "openai-compat",
-      "model": "deepseek-chat",
       "baseUrl": "https://api.deepseek.com/v1",
-      "label": "deepseek",
+      "model": "deepseek-chat",
       "temperature": 0.2,
-      "maxTokens": 1024
-    },
-    {
-      "name": "ollama-local",
-      "provider": "openai-compat",
-      "model": "qwen2.5:7b-instruct",
-      "baseUrl": "http://localhost:11434/v1",
-      "label": "ollama"
+      "maxTokens": 2048
     }
   ],
   "llmRoles": {
-    "cheap": "deepseek-cheap"
+    "cheap": "deepseek-main",
+    "evaluator": "deepseek-main"
   }
 }
 ```
 
-Fields:
+### 3.2 密钥文件（推荐）
 
-| field | required | notes |
-|---|---|---|
-| `name` | yes | Unique within the array; alphanumeric + `._-`. Used as the env-var suffix for the secret (see below). |
-| `provider` | yes | `openai-compat` (OpenAI / DeepSeek / Moonshot / Qwen / Ollama / vLLM / OpenRouter / Together / Groq / SiliconFlow / Azure-compat) OR `anthropic` (Anthropic Messages API, since Stage 2 sub-PR #1). |
-| `model` | yes | The default model id sent in every request. |
-| `baseUrl` | no | Defaults to `https://api.openai.com/v1`. Strip the trailing `/chat/completions`; the provider appends it. |
-| `label` | no | Display label for logs / future cost dashboard (e.g. `deepseek` / `kimi`). Defaults to `openai-compat`. |
-| `extraHeaders` | no | Merged into every request. Useful for OpenRouter (`HTTP-Referer`, `X-Title`), Azure (`api-key`). `Authorization` is NOT overridable here — it's set automatically from the secret. |
-| `temperature` | no | Default 0.3 (deterministic JSON). |
-| `maxTokens` | no | Default 1024. |
-| `retryOnTransient` | no | Number of retries on 408/429/5xx. Default 1. |
-| `enabled` | no | Soft kill-switch. Default true. |
-
-### 2. `llmRoles` map
-
-Roles are operational concepts agim's internal callers ask for. Stage 1 + the #9 follow-up consume:
-
-- `cheap` — distill / consolidate / intent-llm
-- `evaluator` — notification-evaluator gate (see [Notification evaluator](#notification-evaluator-d-stage-1-follow-up-9) below)
-
-Other role keys (`native-chat`, `native-coder`) are reserved for later stages and accepted by the schema for forward compatibility.
-
-A role pointing at a backend that doesn't exist (or has no secret) is logged at warn level on startup but doesn't crash agim — the caller silently falls back to its CLI agent path.
-
-### 3. Secret storage
-
-API keys are **not** in `config.json`. Two precedence-ordered paths:
-
-1. Environment variable `AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` (hyphens → underscores). Example: backend `deepseek-cheap` → `AGIM_LLM_SECRET_DEEPSEEK_CHEAP`. Wins over the file. Useful for systemd / CI / cloud-agent injection.
-2. `~/.agim/llm-secrets.json` (mode `0600`):
-
-   ```json
-   {
-     "version": 1,
-     "keys": {
-       "deepseek-cheap": "sk-...",
-       "ollama-local": ""
-     }
-   }
-   ```
-
-   Stage 4 ships `agim config llm add` to write this file via wizard; for now, edit by hand (`chmod 600` after saving).
-
-Backends with neither an env var nor a file entry are **silently skipped** at registry load with an info-level log line — `llm-registry.unconfigured`. Their roles dangle and callers fall back to CLI.
-
-## Provider quick reference
-
-All vendors below speak OpenAI's `/v1/chat/completions` schema; just plug in their base URL + an API key.
-
-| vendor | baseUrl | env-var suffix example |
-|---|---|---|
-| OpenAI | (default) | `AGIM_LLM_SECRET_GPT` |
-| DeepSeek | `https://api.deepseek.com/v1` | `AGIM_LLM_SECRET_DEEPSEEK_CHEAP` |
-| Moonshot / Kimi | `https://api.moonshot.cn/v1` | `AGIM_LLM_SECRET_KIMI` |
-| Qwen DashScope (compat) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `AGIM_LLM_SECRET_QWEN` |
-| Ollama (local) | `http://localhost:11434/v1` | — (Ollama doesn't require a key; pass any non-empty string) |
-| vLLM (local) | `http://localhost:8000/v1` | — |
-| OpenRouter | `https://openrouter.ai/api/v1` | `AGIM_LLM_SECRET_OPENROUTER` (also set `extraHeaders: { "HTTP-Referer": "https://your-host", "X-Title": "agim" }`) |
-| Together | `https://api.together.xyz/v1` | `AGIM_LLM_SECRET_TOGETHER` |
-| Groq | `https://api.groq.com/openai/v1` | `AGIM_LLM_SECRET_GROQ` |
-| SiliconFlow | `https://api.siliconflow.cn/v1` | `AGIM_LLM_SECRET_SILICONFLOW` |
-| Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/openai` | set `extraHeaders: { "api-key": "..." }` instead of the standard secret (Azure doesn't use Bearer) |
-
-## Auditing & cost tracking
-
-Every introspection call records an `invocations` row with:
-
-- `agent`: `llm:<backend-name>` (e.g. `llm:deepseek-cheap`) — lets the cost dashboard split CLI vs LLM spend
-- `intent`: `memory.distill` / `memory.consolidate` / (future) `intent.fallback` / `heartbeat.evaluator`
-- `cost`: USD reported by the provider, when available (OpenRouter reports it directly; most others don't)
-
-`/api/metrics` and `/tasks#cost` aggregate over `agent` so a backend's volume + spend show up alongside CLI agents automatically.
-
-## Fallback semantics
-
-Every Stage-1 caller follows the same rule:
-
-```text
-if (llmBackend for 'cheap' role configured AND call succeeds):
-    use the LLM result
-else:
-    spawn the user's CLI agent and proceed as before
-```
-
-So you can:
-
-- Add `llmBackends` without re-deploying or restarting any other component
-- Remove `llmBackends` and revert to pre-D+ behaviour with zero risk
-- Mix: leave `cheap` configured for distill/consolidate but never enable `evaluator` / `native-chat` until you're comfortable
-
-## Notification evaluator (D+ Stage 1 follow-up #9)
-
-A configured `evaluator` role enables a small LLM gate that filters
-**agent-initiated** outbound messages before they hit your IM. User
-replies are never gated — only paths where an agent or scheduled job
-decides on its own to ping you (the `push_message` MCP tool, future
-heartbeat ticks, optionally `/api/notify`).
-
-### Why
-
-Long-running agent loops, monitoring jobs, and heartbeat ticks tend to
-generate noisy "task done, nothing new" updates. The evaluator asks a
-cheap model "is this actually worth pinging the user about?" and drops
-routine chatter. Suppressions show up as `notification.suppress` rows
-in `audit_events` so operators can sanity-check what's being filtered.
-
-### Configuration
-
-```bash
-# 1. Master switch (default off — explicit opt-in)
-export IMHUB_NOTIFICATION_EVALUATOR=on
-
-# 2. Optional: pick which sources go through the gate. Defaults to
-#    push,heartbeat. Comma-list. Valid: push,notify,reminder,heartbeat.
-export IMHUB_NOTIFICATION_EVALUATOR_SOURCES=push,heartbeat,notify
-```
-
-Add an `evaluator` role mapping in `~/.agim/config.json`:
+`~/.agim/llm-secrets.json`
 
 ```json
 {
-  "llmBackends": [
-    {
-      "name": "evaluator-cheap",
-      "provider": "openai-compat",
-      "model": "deepseek-chat",
-      "baseUrl": "https://api.deepseek.com/v1",
-      "label": "deepseek"
-    }
-  ],
-  "llmRoles": {
-    "cheap": "evaluator-cheap",
-    "evaluator": "evaluator-cheap"
+  "version": 1,
+  "keys": {
+    "deepseek-main": "sk-xxxx"
   }
 }
 ```
 
-You can reuse the same backend as `cheap`, or point `evaluator` at a
-slightly stronger model when you want fewer false suppressions. The
-verdict prompt is tiny (~200 tokens out + ~30 tokens in) so cost is
-negligible either way.
+> 该文件应为私有权限（仅当前用户可读写）。
 
-### Fail-open behaviour
+### 3.3 环境变量密钥（可选）
 
-The evaluator NEVER drops a message because the infrastructure broke.
-Specifically:
+格式：`AGIM_LLM_SECRET_<BACKEND_NAME_UPPER>`
 
-| condition | result |
-|---|---|
-| `IMHUB_NOTIFICATION_EVALUATOR` not `on` | deliver, `via=disabled` |
-| source not in gated set | deliver, `via=source-excluded` |
-| no `evaluator` backend configured (or call failed) | deliver, `via=no-backend` |
-| LLM returned unparseable text | deliver, `via=fail-open` |
-| LLM said `deliver: true` | deliver, `via=evaluator` |
-| LLM said `deliver: false` | **silently drop**, `via=evaluator` |
-
-So flipping the switch on never loses messages unless the LLM actively
-voted to suppress them. Cards (approval / recovery / choice) bypass
-the gate entirely because they carry user actions.
-
-### Auditing
-
-Every suppression writes a row to `audit_events` with:
-
-- `event_type = 'notification.suppress'`
-- `actor = '<platform>:<userId>'` (or `'system'` for non-attributable sources)
-- `target = '<platform>:<channelId>:<threadId>'`
-- `details.source` — `'push'` / `'notify'` / `'heartbeat'` / `'reminder'`
-- `details.backend` — which backend made the verdict
-- `details.reason` — first 200 chars of the LLM's verdict reason
-- `details.agent` — the calling agent's name (for push only)
-- `details.textLen`
-
-Query from `/tasks#audit` filter on event type, or programmatically:
-
-```ts
-import { queryAuditEvents } from './core/audit-log.js'
-queryAuditEvents({ types: ['notification.suppress'], days: 7 })
-```
-
-### Tuning
-
-If the gate suppresses too aggressively:
-
-1. Look at recent `notification.suppress` rows — what messages are
-   getting dropped?
-2. Lower the temperature back to 0 (already default) and re-test
-3. Switch to a stronger `evaluator` backend (e.g. gpt-4.1-mini instead
-   of a 7B local model)
-4. Disable selectively with `IMHUB_NOTIFICATION_EVALUATOR_SOURCES=heartbeat`
-   to keep heartbeat gated but pass all push messages through
-5. Last resort: `unset IMHUB_NOTIFICATION_EVALUATOR` to go back to
-   pre-D+ behaviour with zero risk
-
-## Heartbeat (proactive wake-up loop, P0 #1)
-
-Beyond reminders (you ask for "remind me at 8am") and cron ("run /agent at
-06:00 daily"), agim now offers **heartbeats**: an LLM-supervised periodic
-loop that decides *whether anything is worth doing right now*, runs the
-work via the user's CLI agent, and only pings the IM thread when the
-result is actually actionable. Built on the LLM client + notification
-evaluator from earlier follow-ups.
-
-### Why
-
-Cron is too dumb — you'll get pinged every tick regardless of whether
-anything happened. Reminders are too one-shot — they don't carry an
-ongoing intent across days. Heartbeats fit the middle gap: "every 30
-min, check if my watchlist hit a stop-loss; if not, say nothing."
-
-### Configuration
+例如 backend `deepseek-main`：
 
 ```bash
-# 1. Master switch — without this no automatic ticks fire.
-export IMHUB_HEARTBEAT_ENABLED=on
-
-# 2. (Optional) Scheduler scan period. Default 60s; each row's own
-#    interval (set per /heartbeat bind) is still honoured.
-export IMHUB_HEARTBEAT_TICK_INTERVAL_MS=60000
-
-# 3. (Optional) Default per-binding recurrence (minutes) for new
-#    /heartbeat bind calls. Default 30 (matches nanobot). Users can
-#    override per binding with /heartbeat interval N.
-export IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN=30
+export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 ```
 
-Also wire an `evaluator` role (recommended) and a `cheap` role:
+环境变量优先级高于密钥文件。
 
-```json
-{
-  "llmRoles": {
-    "cheap": "evaluator-cheap",
-    "evaluator": "evaluator-cheap"
-  }
-}
-```
+## 4. 字段说明
 
-`cheap` powers the decide phase ("is there anything to do?"); `evaluator`
-powers the gate at the end ("is the agent's output worth pinging the
-user?"). They can share one backend.
-
-### Slash commands
-
-| command | what |
-|---|---|
-| `/heartbeat`                | show binding for this thread (or help) |
-| `/heartbeat bind <body…>`   | create/replace binding; `body` is the markdown the LLM reasons against |
-| `/heartbeat show`           | last tick status, recurrence, body preview |
-| `/heartbeat interval 60`    | change recurrence (5–1440 minutes) |
-| `/heartbeat run-now`        | fire one tick now (debug; still routed through evaluator) |
-| `/heartbeat cancel` / `resume` | disable / re-enable this thread's binding |
-| `/heartbeat list`           | every binding (admin only) |
-| `/heartbeat status`         | scheduler enabled? running? scan period? |
-
-### Tick flow
-
-```
-                    ┌─── DECIDE ────────────────────┐
-                    │ cheap LLM reads body, answers │
-   every N min ───▶ │ {run, summary} JSON           │
-                    └──────┬──────────────┬─────────┘
-                           │ run=false    │ run=true
-                           ▼              ▼
-                   ┌─ EXECUTE ────────────────────────┐
-                   │ user's CLI agent runs summary;    │
-                   │ NO_UPDATE sentinel = no result    │
-                   └──────┬──────────────┬─────────────┘
-                          │ NO_UPDATE    │ free-form text
-                          ▼              ▼
-                   ┌─ EVALUATE ───────────────────────┐
-                   │ notification-evaluator gate       │
-                   │ (source='heartbeat', default-on)  │
-                   └──────┬──────────────┬─────────────┘
-                          │ suppress     │ deliver
-                          ▼              ▼
-                       audit-log     sink.deliver()
-                                     ↓
-                                   user's IM
-```
-
-All five outcomes (`skipped`, `delivered`, `suppressed`, `no-agent`,
-`failed`) are stamped onto the binding row so `/heartbeat show` always
-knows what happened last tick.
-
-### Failure modes & fail-open
-
-| condition | result | rationale |
+| 字段 | 是否必需 | 说明 |
 |---|---|---|
-| no `cheap` backend | decide phase fail-opens to `run=true`, then execute path runs | better noisy than silent |
-| decide LLM returns gibberish | same — fail-open | warn logged, manual debug via `/heartbeat run-now` |
-| no CLI agent registered for thread | `status='no-agent'` (stamped + skipped) | new deployments see this until they configure an agent |
-| agent returns `NO_UPDATE` sentinel | `status='skipped'` | no audit, no IM message |
-| evaluator says deliver:false | `status='suppressed'` | audit-logged as `notification.suppress` |
-| sink delivery throws | `status='failed'` | check outbox / messenger logs |
+| `name` | 是 | backend 唯一标识 |
+| `provider` | 是 | `openai-compat` 或 `anthropic` |
+| `baseUrl` | 建议 | API 基地址 |
+| `model` | 是 | 默认模型 ID |
+| `temperature` | 否 | 默认 0.2~0.3 |
+| `maxTokens` | 否 | 输出 token 上限 |
+| `enabled` | 否 | 软开关，默认启用 |
 
-### Tuning
+## 5. 推荐 provider 示例
 
-- **Per-thread recurrence**: shorter intervals (5–15 min) make sense for
-  trading-hour monitors; longer (60–360 min) for daily summarisers.
-- **Evaluator strictness**: if you want fewer suppressions, swap
-  `evaluator` to a smarter model (e.g. gpt-4.1-mini instead of a 7B
-  local model). Or `unset IMHUB_NOTIFICATION_EVALUATOR` to disable the
-  gate entirely while keeping heartbeats.
-- **Cost**: each tick is ~ (decide LLM call) + (execute CLI agent call)
-  + (evaluator LLM call). If the agent is the dominant cost, reduce
-  recurrence; if cheap LLMs are dominant, configure both `cheap` and
-  `evaluator` to point at a tiny model.
+| 平台 | provider | baseUrl 示例 |
+|---|---|---|
+| OpenAI | openai-compat | `https://api.openai.com/v1` |
+| DeepSeek | openai-compat | `https://api.deepseek.com/v1` |
+| Moonshot/Kimi | openai-compat | `https://api.moonshot.cn/v1` |
+| Qwen 兼容网关 | openai-compat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| Ollama | openai-compat | `http://localhost:11434/v1` |
+| vLLM | openai-compat | `http://localhost:8000/v1` |
+| Anthropic | anthropic | `https://api.anthropic.com` |
 
-### Storage
+## 6. 角色绑定（可选）
 
-Per-thread bindings live in `~/.agim/heartbeat.db` (SQLite). One row per
-IM thread; UPSERT keyed on `(platform, channel_id, thread_id)`. Rebinding
-the same thread resets `last_tick_at` so the new body takes effect on
-the next tick.
+常见角色：
 
-## Anthropic native provider (Stage 2 sub-PR #1)
+- `cheap`：低成本任务（摘要、分类、日常推理）
+- `evaluator`：通知评估等判定任务
+- `native-chat`：指定聊天主角色（可选）
 
-When `provider: 'anthropic'`, agim talks directly to the
-[Messages API](https://docs.anthropic.com/en/api/messages) instead of
-going through the OpenAI compatibility path. This matters because:
+即使不配置这些角色，只要有可用 backend，`native` 仍可运行。
 
-- `system` is a top-level body field (Anthropic doesn't accept a system
-  message in the array)
-- assistant content is a `[{type:'text'}, {type:'tool_use'}]` block
-  array, not a flat string + tool_calls field
-- tool results live inside a `user` message as `tool_result` blocks
-  rather than a separate `role: 'tool'`
-- response `stop_reason` values are different (`end_turn`, `tool_use`,
-  `max_tokens`, `stop_sequence`, …)
-
-Agim normalises all of this so callers see the same `LlmMessage`,
-`ChatResult`, `ToolCallRequest` types regardless of backend. The
-serializer / deserializer logic lives in `anthropic-provider.ts`.
-
-### Recipe
+## 7. 常用 CLI
 
 ```bash
-export AGIM_LLM_SECRET_CLAUDE_BIG=sk-ant-...
+agim setup llm
+agim setup llm native-enable
+agim diag llm
 ```
 
-```jsonc
-{
-  "llmBackends": [
-    {
-      "name": "claude-big",
-      "provider": "anthropic",
-      "model": "claude-3-5-sonnet-20241022",
-      "label": "anthropic"
-    }
-  ],
-  "llmRoles": {
-    "evaluator": "claude-big"
-  }
-}
-```
+## 8. 运行时行为
 
-### Provider config knobs
+当收到 `native` 请求时：
 
-| field | default | what |
-|---|---|---|
-| `baseUrl` | `https://api.anthropic.com` | Override for Bedrock / Vertex / corporate gateway |
-| `apiVersion` | `2023-06-01` | `anthropic-version` header — Anthropic pins API behaviour by this date |
-| `extraHeaders` | `{}` | Extra headers (e.g. for a gateway). `x-api-key`, `anthropic-version`, `content-type` are always set by the provider |
-| `temperature`, `maxTokens`, `retryOnTransient` | (same defaults as openai-compat) | |
+1. 先尝试角色绑定对应 backend（如果有）。
+2. 若角色无可用项，自动回退到任意已配置且可用 backend。
+3. 若仍无可用 backend，返回配置引导错误。
 
-### Out of scope (deferred)
+## 9. 排障
 
-- Streaming (the buffered path already works for all Stage-1 + Stage-2
-  callers; streaming lands when we wire the "show thinking" feature)
-- Prompt caching (`cache_control: {type:'ephemeral'}`) — easy to add
-  once we have a place to decide which blocks deserve it
-- Extended thinking blocks (`thinking: {type:'enabled'}`)
-- Direct Bedrock / Vertex transports (those need different auth flows;
-  a separate provider class later)
+### 9.1 提示“no usable LLM backend configured”
 
-## Tool calling (Stage 2 sub-PR #1)
+排查顺序：
 
-Both `openai-compat` and `anthropic` providers now expose tool calling
-through a unified type:
+1. `llmBackends` 是否至少有一项
+2. 对应 API key 是否存在（环境变量或 secrets 文件）
+3. `baseUrl` 是否可访问
+4. `model` 是否存在/可用
 
-```ts
-import type { ChatOptions, ToolDef, ToolCallRequest } from 'agim/llm'
+### 9.2 刚保存配置但 native 仍不可用
 
-const tools: ToolDef[] = [{
-  name: 'list_files',
-  description: 'List files under a directory',
-  parameters: {
-    type: 'object',
-    properties: { path: { type: 'string' } },
-    required: ['path'],
-  },
-}]
+一般无需重启；若仍异常：
 
-const result = await provider.chat(messages, { tools, toolChoice: 'auto' })
+- 执行 `agim diag llm` 检查每个 backend 健康状态
+- 查看服务日志确认是否加载到新配置
 
-if (result.finishReason === 'tool_use' && result.toolCalls) {
-  for (const call of result.toolCalls) {
-    const out = await execute(call.name, call.arguments)
-    messages.push({
-      role: 'assistant',
-      content: result.text,
-      toolCalls: result.toolCalls,
-    })
-    messages.push({
-      role: 'tool',
-      toolCallId: call.id,
-      content: out,
-    })
-  }
-  // call provider.chat(messages, ...) again to continue the loop
-}
-```
+### 9.3 角色绑定写错
 
-Stage 2 sub-PR #1 only adds the **provider plumbing** for tool calls —
-the agent loop that orchestrates the iteration above ships in sub-PR
-#3. Stage-1 introspection callers don't pass `tools`, so they're
-unaffected.
+角色不是硬依赖。
+只要 backend 有一个可用，native 依然可跑；修复角色绑定用于优化而非解阻塞。
 
-### Tool-choice support matrix
+## 10. 最小上线建议
 
-| value | openai-compat | anthropic |
-|---|---|---|
-| `'auto'` (default) | `tool_choice: "auto"` | `tool_choice: {type:"auto"}` |
-| `'required'` | `tool_choice: "required"` | `tool_choice: {type:"any"}` |
-| `'none'` | `tool_choice: "none"` | (omitted; caller should pass `tools: []` instead) |
-| `{type:'tool', name}` | `tool_choice: {type:"function", function:{name}}` | `tool_choice: {type:"tool", name}` |
+1. 先配一个稳定 backend（例如 `deepseek-main`）
+2. 验证 `native` 能跑通
+3. 再逐步添加 `cheap/evaluator` 角色绑定
+4. 最后增加第二 backend 做冗余
 
-### Malformed JSON arguments
+## 11. 相关文档
 
-OpenAI emits `function.arguments` as a JSON-encoded string. When the
-model produces invalid JSON, agim surfaces it as
-`ToolCallRequest.argumentsRaw` and sets `arguments = {}`. Tool
-implementations should validate `arguments` themselves or check for
-the presence of `argumentsRaw` to handle malformed inputs.
-
-Anthropic doesn't have this issue — `tool_use.input` arrives already
-parsed by the API.
-
-## External MCP servers (Stage 2 sub-PR #2)
-
-Agim can attach any number of external MCP (Model Context Protocol)
-servers; their tools become available to the native agent loop (sub-PR
-#3) alongside the built-in agim tools. The CLI agents (Claude Code /
-Codex / OpenCode) keep using their own MCP configs — this layer is
-exclusively for the native loop.
-
-### Configuration
-
-```jsonc
-{
-  "mcpServers": [
-    {
-      "name": "filesystem",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
-    },
-    {
-      "name": "github",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
-    },
-    {
-      "name": "remote-tools",
-      "url": "https://mcp.example.com",
-      "headers": { "Authorization": "Bearer ${OPS_TOKEN}" }
-    }
-  ]
-}
-```
-
-### Transport selection
-
-| field set | transport |
-|---|---|
-| `command` (+ optional `args`, `env`, `cwd`) | **stdio** — spawn subprocess; MCP framing over stdin/stdout |
-| `url` ending in `/sse` | **SSE** (legacy MCP HTTP transport) |
-| `url` otherwise | **Streamable HTTP** (modern MCP HTTP transport) |
-
-Exactly one of `command` or `url` must be set per entry; the schema
-rejects both/neither at startup with a clear error.
-
-### Per-server knobs
-
-| field | default | what |
-|---|---|---|
-| `toolTimeoutMs` | `30000` | per-tool-call hard timeout |
-| `enabledTools` | `["*"]` | comma-list of tool names (original OR namespaced) to expose. Default = all. |
-| `enabled` | `true` | soft kill-switch (keeps the entry, skips connect) |
-| `headers` | `{}` | extra HTTP headers (auth tokens, custom routing) — http/sse only |
-| `env`, `cwd`, `args` | — | child process knobs — stdio only |
-
-### Tool naming
-
-Discovered tools are prefixed `mcp_{server}_{tool}` to dodge collisions
-when two servers both expose the same name (`read_file` is everywhere).
-The original name is preserved for error messages + `enabledTools`
-filtering (the filter accepts either form).
-
-Example: `@modelcontextprotocol/server-filesystem`'s `read_file` tool
-under a server named `filesystem` is exposed as `mcp_filesystem_read_file`.
-
-### Lifecycle
-
-- **Boot**: `loadFromConfig` (synchronous) instantiates clients;
-  `connectAll` (async) opens transports in parallel. Per-server failures
-  are recorded as `unhealthy` rows; one broken MCP doesn't take down
-  agim. Boot log summarises:
-
-  ```text
-  🧩 MCP servers: 2 connected (filesystem, github); 14 tools available
-     ⚠ remote-tools: HTTP 503 from mcp.example.com
-  ```
-
-- **Tool call**: `callMcpToolByName(callName, args)` dispatches to the
-  right client. Unknown tool names return `{isError: true, text:'unknown
-  MCP tool: ...'}` rather than throwing.
-
-- **Shutdown**: `closeAll` (registered on SIGTERM/SIGINT) terminates
-  stdio subprocesses cleanly so agim restarts don't leak orphan
-  processes.
-
-### Out of scope (deferred)
-
-- MCP resources (server → client notifications). The agent loop in
-  sub-PR #3 doesn't consume them; we can wire them when a use case
-  appears.
-- MCP prompts exposed as tools (nanobot's pattern). Useful but not
-  required.
-- Schema normalisation for strict OpenAI `tools[]` (nullable union
-  rejection). Will add when a real-world server trips the issue.
-- Auto-reconnect on transport drop. The SDK handles some recovery
-  internally; if a server goes unhealthy mid-session the agent loop
-  surfaces it as a tool error and the user can re-bind via
-  `/heartbeat run-now` or by restarting their thread.
-
-### Inspection
-
-`describeMcpRegistry()` returns:
-
-```ts
-{
-  servers: [
-    { name: 'filesystem', connected: true, toolCount: 8 },
-    { name: 'remote-tools', connected: false, toolCount: 0, error: 'HTTP 503 ...' },
-  ],
-  totalTools: 8,
-}
-```
-
-Currently only consumed by the boot log; a web settings panel showing
-the same data lands in Stage 2 sub-PR #4.
-
-## Native agent loop (Stage 2 sub-PR #3)
-
-Glues the providers + MCP layers into a multi-iteration "think → call
-tool → look at result → think again → answer" loop. The agent loop is
-the engine the upcoming `native` AgentAdapter (sub-PR #4) will drive
-inside a real IM turn; it's also directly callable from any future
-introspection use case that needs tool use.
-
-### Tick diagram
-
-```
-                ┌──────────────────────────────────────────────────────┐
-                │ messages = [system?, user, ...history?]              │
-                │ tools    = []  (or [ToolDef, ToolDef, ...])           │
-                └────────────────────────┬─────────────────────────────┘
-                                         ▼
-             ┌───── iteration  i = 0 .. maxIterations-1 ───────┐
-             │  provider.chat(messages, {tools})                │
-             │      ↓                                            │
-             │  finishReason ∈ {'stop','length','content_filter',│
-             │                  'tool_use','error','unknown'}    │
-             │                                                  │
-             │      ├─ tool_use → for each toolCall in result:  │
-             │      │     1. approve(call) → allow|deny         │
-             │      │     2. dispatch(call) → DispatcherResult  │
-             │      │     3. append assistant turn (with tool   │
-             │      │        calls) + {role:'tool', toolCallId, │
-             │      │        content:result.text}                │
-             │      │     continue.                              │
-             │      │                                            │
-             │      └─ anything else → return final text.       │
-             └──────────────────────────────────────────────────┘
-```
-
-### Public API
-
-```ts
-import {
-  runAgentLoop,
-  alwaysAllowGate,
-  buildMcpDispatcher,
-  combineDispatchers,
-  getProvider,
-} from 'agim/llm'
-
-const provider = getProvider('native-coder')!
-const result = await runAgentLoop({
-  provider,
-  systemPrompt: 'You are agim native. Be terse.',
-  messages: [{ role: 'user', content: 'list .ts files under /workspace/src' }],
-  tools: getAllMcpTools(),
-  dispatch: buildMcpDispatcher(),
-  approve: alwaysAllowGate,    // production: pass an IM-integrated gate
-  maxIterations: 20,
-  timeoutMs: 5 * 60 * 1000,
-  audit: {
-    agent: 'llm:native-coder',
-    intent: 'native.agent.turn',
-    userId, platform, traceId,
-  },
-})
-
-console.log(result.text)
-console.log(`took ${result.iterations} iters, ${result.toolCalls.length} tool calls, cost $${result.usage.costUsd?.toFixed(4) ?? '?'}`)
-```
-
-### Finish reasons
-
-| value | meaning |
-|---|---|
-| `'stop'` | model emitted final text |
-| `'length'` | hit provider `maxTokens` limit; partial text returned |
-| `'content_filter'` | provider's safety layer blocked output |
-| `'tool_use'` | should never escape the loop — would mean the loop's bookkeeping is broken |
-| `'error'` | provider call threw; `result.error` has the message; `result.text === ''` |
-| `'max_iterations'` | loop hit `maxIterations` while model kept requesting tools |
-| `'aborted'` | `signal` fired before the loop finished |
-| `'unknown'` | provider returned a finish_reason agim doesn't map; usually equivalent to 'stop' for output purposes |
-
-### Audit & cost accounting
-
-Each provider iteration writes one `invocations` row:
-
-```
-{
-  agent:        'llm:<backend>'                  (passed in via audit.agent)
-  intent:       'native.agent.iter'              (overridable)
-  prompt_len:   sum of message content lengths
-  response_len: assistant text length
-  cost:         provider's reported per-call cost (when available)
-  duration_ms:  iteration wall-clock
-}
-```
-
-`/tasks#cost` already pivots on (agent, intent) so the iteration rows
-naturally show up under the native agent's budget. The caller can also
-write a parent "turn" row that sums these — sub-PR #4 will do that
-inside the AgentAdapter.
-
-### Tool dispatcher
-
-Stage 2 sub-PR #3 ships `buildMcpDispatcher()` which routes every
-`mcp_*` tool call to the MCP registry and surfaces unknown names as
-isError results. Sub-PR #4 adds an optional built-in dispatcher (echo
-/ time / web_search) layered ABOVE MCP via:
-
-```ts
-const dispatch = combineDispatchers(
-  builtinDispatcher,    // landed in sub-PR #4
-  buildMcpDispatcher(),
-)
-```
-
-The "first one that recognises the name wins" semantic prevents an MCP
-server from accidentally shadowing built-in functionality.
-
-### Approval gate
-
-The loop calls `approve(call, iteration)` before every dispatch:
-
-- Return `'allow'` to run the tool
-- Return `'deny'` to skip dispatch and inject a `tool result = "tool
-  call denied by user: name"` so the model can react
-- Throwing is treated as `'deny'` (fail-closed)
-
-`alwaysAllowGate` is the default. Sub-PR #4 ships an IM-integrated
-gate that sends an inline-button card (Telegram / Feishu) or text
-prompt (WeChat / DingTalk) to the originating thread and waits on the
-existing approval-router pipeline.
-
-### Failure semantics (every path is safe)
-
-| failure | behaviour |
-|---|---|
-| `dispatch` is undefined but `tools` is non-empty | **throws** — misconfig caught before the first iteration |
-| `dispatch` throws on a call | tool result `text = "tool threw: <err>"`, isError=true; loop continues |
-| `approve` throws | treated as `deny`; loop continues |
-| `provider.chat` throws | finishReason='error', text='', error set; loop exits |
-| `tools` empty / undefined + model still emits tool_calls | unusual but harmless; the loop terminates because finishReason is whatever the provider reported |
-| `signal` aborted | finishReason='aborted', text='' (or whatever was generated so far) |
-| `maxIterations` reached | finishReason='max_iterations', text='' (loop never reached a non-tool finish) |
-| `dispatcher` returns isError=true | treated as a normal tool result; the model decides whether to retry or give up |
-
-### Limits
-
-- **Sequential tool execution** within one iteration. The first
-  real-world workload that justifies concurrent execution will land
-  the change; for now serial preserves conversation-log order and
-  dodges races against MCP session state.
-- **Max 100 iterations** absolute cap (the default is 20; max is 100 if
-  someone overrides). Above that, prefer breaking the task up.
-- **5-minute default wall-clock timeout** on the whole loop. Stage 2
-  callers (IM AgentAdapter) typically pass a tighter signal anyway.
-
-## Native AgentAdapter (Stage 2 sub-PR #4)
-
-The native agent is **opt-in backup** for any IM user: configure a
-backend, register `native` in `config.json` `agents[]`, and `/cc native`
-in IM gets you the in-process loop with built-in tools + MCP tools.
-CLI agents (Claude Code / Codex / OpenCode) remain the main route for
-everyone who hasn't opted in.
-
-### Recipe
-
-```jsonc
-// ~/.agim/config.json
-{
-  "agents": ["claude-code", "native"],
-  "defaultAgent": "claude-code",
-  "llmBackends": [
-    { "name": "deepseek-chat", "provider": "openai-compat", "model": "deepseek-chat", "baseUrl": "https://api.deepseek.com/v1" }
-  ],
-  // Optional advanced wiring. Native works without llmRoles now.
-  "llmRoles": { "cheap": "deepseek-chat" }
-}
-```
-
-```bash
-export AGIM_LLM_SECRET_DEEPSEEK_CHAT=sk-...
-
-# Recommend running read-only mode while you get a feel for the agent.
-export IMHUB_NATIVE_AGENT_MODE=read-only
-
-agim start
-```
-
-In IM:
-
-```
-You: /cc native
-You: list all .ts files under src/core/llm
-native: (calls mcp_filesystem_list_files, reads, summarises)
-```
-
-### Behaviour summary
-
-- **Provider selection**: `IMHUB_NATIVE_AGENT_ROLE` (env override) → `llmRoles.native-chat` → `llmRoles.cheap` → any configured backend. First found wins, so role bindings are optional rather than blocking.
-- **System prompt**: agim-supplied terse default; the loop also forwards `LlmProvider.system` semantics so callers can override per turn if needed.
-- **Tools**: `getBuiltinTools()` (always 4 tools: echo / now / sleep_ms / random_uuid) + `getAllMcpTools()` from the MCP registry, concatenated.
-- **Dispatcher**: `combineDispatchers(builtin, mcp)` — built-in wins on name collision.
-- **Approval gate**: `buildPolicyApprovalGate({mode, autoAllow, denyList})` reading `IMHUB_NATIVE_AGENT_MODE` / `IMHUB_NATIVE_AGENT_AUTOALLOW` / `IMHUB_NATIVE_AGENT_DENYLIST`.
-- **Audit**: per-iteration rows from the agent loop + one aggregated turn row written here with `agent='native'`, `intent='native.agent.turn'`.
-
-### Approval policy modes
-
-| `IMHUB_NATIVE_AGENT_MODE` | behaviour |
-|---|---|
-| `allow-list` (default) | only tools in `IMHUB_NATIVE_AGENT_AUTOALLOW` pass. Built-ins `native_echo`/`native_now`/`native_random_uuid` are auto-added so the agent has something to call out of the box. |
-| `read-only` | tools whose name (after stripping `mcp_{server}_`) starts/ends with a read-only verb (`read`, `list`, `get`, `search`, `find`, `fetch`, `show`, `view`, `inspect`, `describe`, `status`) pass; everything else is denied. **Recommended starter mode.** |
-| `allow-all` | every tool passes except those in `IMHUB_NATIVE_AGENT_DENYLIST`. Use only in CI / monitoring. |
-| `deny-all` | every tool denied unless explicitly in `IMHUB_NATIVE_AGENT_AUTOALLOW`. Strict ops. |
-
-`IMHUB_NATIVE_AGENT_DENYLIST` always wins, regardless of mode — your emergency brake.
-
-### Built-in tools (always available)
-
-| name | what |
-|---|---|
-| `native_echo` | return text argument verbatim |
-| `native_now` | ISO UTC + local time + configured offset |
-| `native_sleep_ms` | bounded sleep (max 5000ms) |
-| `native_random_uuid` | fresh v4 UUID |
-
-These exist mostly so the agent has a smoke-test path that works with
-zero MCP servers configured. For anything non-trivial, attach an MCP
-server.
-
-### Failure modes (always safe)
-
-| condition | user sees |
-|---|---|
-| no usable LLM backend configured | `❌ native agent: no usable LLM backend configured. Add one in /settings/llm (or ~/.agim/config.json llmBackends + API key). Role bindings are optional.` |
-| LLM provider call throws | `❌ native agent error: <detail>` |
-| max iterations reached | `⚠️ native agent hit max iterations without finishing. ...` |
-| signal aborted | `⏹ native agent aborted before completion.` |
-| LLM returned empty text | `(native agent returned an empty response)` |
-
-### NOT included in this stage (deferred follow-ups)
-
-- **IM-interactive approval cards**: the policy gate is sufficient for the initial release. Wiring inline-button approval cards (Telegram / Feishu) + text-reply fallback (WeChat / DingTalk) requires extending `approval-router.ts` to consume in-process awaiters; tracked separately.
-- **Streaming thinking to IM**: the loop already supports `LlmProvider.chatStream`, but exposing partial deltas to IM has UX implications (frequency caps, viewer routing) that deserve their own design pass.
-- **Per-thread provider preference**: today `IMHUB_NATIVE_AGENT_ROLE` applies globally. Per-workspace overrides are a small change once the cost dashboard surfaces per-backend spend in production.
-
-### Boot log
-
-When configured:
-
-```text
-🧠 LLM backends: 1 configured · roles: native-chat→deepseek-chat
-🧩 MCP servers: 1 connected (filesystem); 8 tools available
-🤖 native agent: backend=deepseek-chat (role=native-chat); policy=mode=read-only, autoAllow=3, denyList=0
-```
-
-When not configured:
-
-```text
-🤖 native agent: NOT CONFIGURED (no usable llmBackends + API key)
-```
-
-## Stage 4 — CLI wizard + Web REST API
-
-Stage 4 makes the LLM-backend layer reachable from both the terminal
-and the web console — no more hand-editing `~/.agim/config.json` to
-add a backend.
-
-### CLI: `agim setup llm`
-
-Interactive wizard. Subcommands:
-
-| command | what it does |
-|---|---|
-| `agim setup llm`            | print help |
-| `agim setup llm list`       | show configured backends + role bindings + per-backend secret source |
-| `agim setup llm add`        | provider preset (DeepSeek, Moonshot, GLM, OpenAI, Anthropic, Custom) → backend name → model → API key → role bindings, all in one walk |
-| `agim setup llm role`       | edit `llmRoles` — pick a backend per role (`cheap` / `evaluator` / `native-chat` / unbind) |
-| `agim setup llm remove [<name>]` | drop a backend; auto-drops dangling role bindings + clears the on-disk API key |
-| `agim setup llm secret [<name>]` | (re)set the API key for an existing backend |
-
-Cancel-safe at every prompt — Ctrl-C or an empty answer aborts before
-anything is written. Every save runs through `configSchema.safeParse`
-so a typo can't poison `config.json`.
-
-### Web: `/api/llm/*`
-
-REST endpoints behind the existing web auth model (writes are gated by
-`requireAdmin`; GET is open since it never reveals secret VALUES, only
-their source).
-
-| method | path | body | response |
-|---|---|---|---|
-| `GET` | `/api/llm` | – | `{ backends: [{name, provider, baseUrl, model, secret: {source, envKey}}], roles: {...} }` |
-| `POST` | `/api/llm/backends` | `{ name, provider, baseUrl, model, apiKey? }` | 201 `{name, secretStored}` / 400 validation / 409 duplicate |
-| `DELETE` | `/api/llm/backends/:name` | – | 200 `{removedRoles}` (also drops dangling role bindings + the secret) |
-| `PUT` | `/api/llm/roles` | `{role: backendName | null}` (null/empty unbinds) | 200 `{roles}` / 400 unknown backend |
-| `POST` | `/api/llm/secrets/:name` | `{apiKey}` | 200 `{name, source}` |
-| `DELETE` | `/api/llm/secrets/:name` | – | 200 `{name}` |
-| `POST` | `/api/llm/backends/:name/ping` | – | 200 `{ok, durationMs, tokensIn, tokensOut, sampleText}` on success; 200 `{ok:false, error}` on failure (never throws) |
-
-Same validation rules as the CLI wizard — the schema is the single
-source of truth.
-
-### Web SPA — `/settings/llm` panel (Stage 6)
-
-The React SPA at `/settings/llm` consumes the REST surface above. It
-shows the backend table with per-backend secret status and a **Ping**
-button that issues a tiny `chat` probe (`/api/llm/backends/:name/ping`)
-so operators can verify a backend works without leaving the page.
-Role bindings are exposed as three dropdowns (`cheap` / `evaluator` /
-`native-chat`) and explicitly marked "optional, advanced" because native
-can auto-fallback without them. The Add Backend card has provider quick-picks
-(DeepSeek / Moonshot / GLM / OpenAI / Anthropic / Custom) matching the
-CLI wizard's presets.
-
-Since the native setup UX upgrade, `/chat` and `/m/chat` also show a
-persistent setup modal when users switch to `native` without any usable
-backend. The modal can create a backend directly (provider preset +
-baseUrl + model + API key), then auto-retry `switch-agent` immediately
-after save.
-
-External MCP servers get their own panel at `/settings/mcp` (REST under
-`/api/mcp/*`). Native agent / evaluator / heartbeat behavior knobs live
-at `/settings/native-agent` (writes through the existing `/api/env`).
-
-### Where the data lives
-
-Both surfaces write to the same files:
-
-| file | what |
-|---|---|
-| `~/.agim/config.json` `llmBackends` | backend list |
-| `~/.agim/config.json` `llmRoles`    | role-to-backend bindings |
-| `~/.agim/llm-secrets.json`          | API keys (0600, agim-managed) |
-
-`AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` env var still overrides the
-on-disk key per the precedence in the "Lookup precedence" section.
-
-## Stage 5 — `/router compare` A/B evaluator + fallback chains
-
-Stage 5 ships two related primitives that make the multi-backend story
-practical: an A/B comparator for operators to pick winners empirically,
-and a multi-role fallback chain helper that internal callers use to
-cascade through cheap → smarter backends until one returns a result.
-
-### `/router compare` slash command
-
-```
-/router compare <a> <b> <prompt>
-/router compare help
-```
-
-Backend specs are `kind:name`:
-
-| kind | name |
-|---|---|
-| `agent` | a CLI / native AgentAdapter name (`claude-code`, `codex`, `opencode`, `native`, ...) |
-| `llm` | a native LLM role (`cheap`, `evaluator`, `native-chat`) |
-| `backend` | a native LLM backend name from `llmBackends` |
-
-The same prompt runs against both sides in parallel; the formatter
-returns a two-section markdown block with per-side latency + token
-counts. Failures don't throw — they render as `❌` next to the side
-that failed so you still see the other.
-
-### Optional LLM judge
-
-When `IMHUB_ROUTER_COMPARE_JUDGE_ROLE` is set, the configured role
-also gets called as an impartial judge after both sides return. It
-picks `a`/`b`/`tie` and writes a one-sentence rationale. Cost is
-reported as a separate line so per-side numbers stay honest.
-
-```bash
-IMHUB_ROUTER_COMPARE_JUDGE_ROLE=evaluator
-```
-
-The judge prompt is JSON-mode so the response is parseable. If the
-model wraps the JSON in fences or ignores the format, we fall back
-to substring-sniff ("A is better" → A) and finally `inconclusive`.
-
-### Fallback chain — `tryIntrospectChain`
-
-The same `IntrospectionInput` shape, but `role: LlmRole` becomes
-`roles: LlmRole[]`. The helper tries each in order until one returns
-a result. Used internally by callers that want to escalate (e.g.
-`['cheap', 'native-chat']` — try the cheap free-tier model first, fall
-back to a smarter paid model on transient failure or empty output).
-
-```ts
-import { tryIntrospectChain } from '@agim/core/llm/introspection'
-
-const r = await tryIntrospectChain({
-  roles: ['cheap', 'native-chat', 'evaluator'],
-  prompt: '...',
-  perRoleTimeoutMs: 10_000,
-})
-if (r) {
-  console.log(r.text)              // first non-null response
-  console.log(r.triedRoles)        // e.g. ['cheap', 'native-chat'] when cheap failed
-  console.log(r.backendName)       // which backend actually responded
-}
-```
-
-Failures audit through the same `llm.introspect.failed` event each
-role emits; the chain itself adds `llm.introspect.chain.success` /
-`chain.exhausted` so the operator can grep for fallback frequency.
-
-### When to use which
-
-- **A/B compare**: human-in-the-loop "which model gives me a better
-  answer for THIS prompt?" exploration. One-shot, results rendered
-  for inspection.
-- **Fallback chain**: in-process, no human; "try the cheap path, only
-  pay the smarter model when cheap fails." Used by internal helpers
-  (intent classifier, memo extractor, etc.) where latency and cost
-  matter and the caller has a sane CLI fallback as a final safety
-  net.
+- 架构立场：`architecture-bridge-and-native.md`
+- 部署：`deployment.md`
+- 安全：`security-hardening.md`
+- 版本变更：`../CHANGELOG.md`

@@ -1,9 +1,8 @@
 # `mcp__imhub__ask_user` — structured multi-choice agent → user question
 
-> P0 #5 of the nanobot-vs-agim comparison plan. Lets the agent present a
-> well-defined choice ("did you mean A or B?") and reliably get the
-> answer back without the user accidentally treating the message as a
-> new request.
+Lets the agent present a well-defined choice ("did you mean A or B?")
+and reliably get the answer back without the user accidentally treating
+the prompt as a new request.
 
 ## Why a separate primitive
 

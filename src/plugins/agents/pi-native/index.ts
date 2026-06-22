@@ -6,7 +6,7 @@
 // (agim BackendConfig → pi-ai Model + key) is INJECTED via `resolveModel` so
 // it can be wired and tested independently.
 //
-// Validated mappings (PROJECTS/pi-native-migration.md, P0–P2 spikes):
+// Validated mappings (see CHANGELOG native engine overview):
 //   - sessionId   → JsonlSessionRepo session file (durable; survives restart;
 //                   pi owns history, so agim need not re-thread it each turn)
 //   - history     → seeded into a COLD session only

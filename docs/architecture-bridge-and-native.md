@@ -4,10 +4,10 @@
 > two separate products?
 
 **No.** agim is, and continues to be, a **messenger-to-agent bridge**.
-The native agent introduced in Stage 1-5 is just another `AgentAdapter`
-in the registry — peer-equal to `claude-code`, `codex`, `opencode`, and
-`antigravity`. The only thing that's "special" about it is **where it
-runs** (in-process LLM loop, no subprocess spawn).
+The native agent is just another `AgentAdapter` in the registry —
+peer-equal to `claude-code`, `codex`, `opencode`, and `antigravity`.
+The only thing that's "special" about it is **where it runs**
+(in-process LLM loop, no subprocess spawn).
 
 This doc explains the architecture, the invariants, and the practical
 consequences for operators + contributors.
@@ -73,7 +73,7 @@ compatible without recompile.
 
 ## 4. The peers
 
-The current registry (as of Stage 6):
+The current registry:
 
 | name | aliases | kind | implementation |
 |---|---|---|---|

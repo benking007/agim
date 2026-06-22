@@ -1,7 +1,7 @@
 # viewer-paste — reference paste server for agim viewer remote mode
 
-Companion service for `IMHUB_VIEWER_REMOTE_PASTE_URL` (introduced in
-agim **v1.2.42**). agim clients POST markdown here; this service
+Companion service for `IMHUB_VIEWER_REMOTE_PASTE_URL`. agim clients
+POST markdown here; this service
 returns a public URL the IM message can link to.
 
 This directory is a **reference implementation** — you do not have to

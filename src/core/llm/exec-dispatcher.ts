@@ -52,6 +52,7 @@ const log = rootLogger.child({ component: 'exec-dispatcher' })
 
 const DEFAULT_TIMEOUT_MS = 60_000
 const HARD_TIMEOUT_CAP_MS = 600_000
+const MIN_TIMEOUT_MS = 100  // F10 — floor so timeout_ms=1 can't self-DoS
 const DEFAULT_MAX_OUTPUT = 32 * 1024
 
 const EXEC_TOOL_NAMES = ['native_exec'] as const
@@ -462,17 +463,24 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
   })
 }
 
-function clampTimeout(raw: unknown): number {
+export function clampTimeout(raw: unknown): number {
+  // v1.3.7 (F10) — floor at MIN_TIMEOUT_MS. Previously any n>0 was accepted,
+  // so timeout_ms=1 would SIGTERM the child almost immediately (a self-DoS
+  // the model could trip itself into). Clamp into [MIN, HARD_CAP].
   const fromArg = typeof raw === 'number' ? raw : Number(raw)
   if (Number.isFinite(fromArg) && fromArg > 0) {
-    return Math.min(HARD_TIMEOUT_CAP_MS, Math.floor(fromArg))
+    return clampMs(fromArg)
   }
   const env = process.env.IMHUB_EXEC_TIMEOUT_MS
   if (env) {
     const n = Number(env)
-    if (Number.isFinite(n) && n > 0) return Math.min(HARD_TIMEOUT_CAP_MS, Math.floor(n))
+    if (Number.isFinite(n) && n > 0) return clampMs(n)
   }
   return DEFAULT_TIMEOUT_MS
+}
+
+function clampMs(n: number): number {
+  return Math.min(HARD_TIMEOUT_CAP_MS, Math.max(MIN_TIMEOUT_MS, Math.floor(n)))
 }
 
 function clampNumber(input: unknown, dflt: number, min: number, max: number): number {

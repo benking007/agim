@@ -629,8 +629,24 @@ program
         try {
           const { isSenderAllowlistConfigured, isSenderAllowed, senderDenialMessage } =
             await import('./core/sender-allowlist.js')
-          if (isSenderAllowlistConfigured()
-              && !isSenderAllowed(ctx.platform, ctx.message.userId)) {
+          const configured = isSenderAllowlistConfigured()
+          let allowed = true
+          if (configured) {
+            try {
+              allowed = isSenderAllowed(ctx.platform, ctx.message.userId)
+            } catch (err) {
+              // v1.3.7 (F6) — a deny-gate must NOT fail open. If the
+              // allowlist is configured but we can't evaluate it, treat the
+              // sender as NOT allowed rather than silently letting them in.
+              ctx.logger.error({
+                event: 'sender.allowlist.eval_failed',
+                platform: ctx.platform,
+                err: err instanceof Error ? err.message : String(err),
+              }, 'sender allowlist evaluation failed while configured — failing CLOSED (deny)')
+              allowed = false
+            }
+          }
+          if (configured && !allowed) {
             ctx.logger.warn({
               event: 'sender.allowlist.denied',
               platform: ctx.platform,
@@ -650,10 +666,14 @@ program
             return
           }
         } catch (err) {
-          ctx.logger.warn({
+          // v1.3.7 (F6) — the module failed to load, so we genuinely cannot
+          // tell whether a restriction is configured. Surface LOUDLY (was a
+          // quiet fail-open warn). Open posture is preserved only because we
+          // can't prove a restriction exists.
+          ctx.logger.error({
             event: 'sender.allowlist.error',
             err: err instanceof Error ? err.message : String(err),
-          }, 'sender allowlist check failed; continuing open (fail-open)')
+          }, 'sender allowlist module failed to load; cannot enforce — review IMHUB_ALLOWED_USERS')
         }
 
         // Phase 3 — interrupted-job recovery reply. If the user has a

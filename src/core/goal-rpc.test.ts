@@ -96,11 +96,23 @@ describe('goal-rpc', () => {
     expect(active?.body).toBe('daily 9am brief')
   })
 
-  it('long_task auto-pauses previous active goal', async () => {
+  it('long_task refuses to override an active goal without force (F7)', async () => {
     if (!(await dbAvailable())) return
     const r1 = await handleGoalOp('long_task', { goal: 'First objective' }, CTX)
     expect(r1.ok).toBe(true)
-    const r2 = await handleGoalOp('long_task', { goal: 'Second objective' }, CTX)
+    const refused = await handleGoalOp('long_task', { goal: 'Second objective' }, CTX)
+    expect(refused.ok).toBe(false)
+    if (refused.ok) return
+    expect(refused.error).toMatch(/already exists|force/)
+    // The prior goal must remain active (not paused) after a refusal.
+    expect(_activeGoalSnapshot(CTX)?.title).toBe('First objective')
+  })
+
+  it('long_task with force:true pauses the prior active goal (F7)', async () => {
+    if (!(await dbAvailable())) return
+    const r1 = await handleGoalOp('long_task', { goal: 'First objective' }, CTX)
+    expect(r1.ok).toBe(true)
+    const r2 = await handleGoalOp('long_task', { goal: 'Second objective', force: true }, CTX)
     expect(r2.ok).toBe(true)
     if (!r2.ok) return
     const prior = r2.result.previous_active_goal_paused as { id: number; title: string } | null

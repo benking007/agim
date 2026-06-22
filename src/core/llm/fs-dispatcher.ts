@@ -24,7 +24,7 @@
 // (default 60_000). Honors the loop AbortSignal too.
 
 import { promises as fs, statSync } from 'node:fs'
-import { resolve as resolvePath, isAbsolute, relative, sep } from 'node:path'
+import { resolve as resolvePath, isAbsolute, relative, sep, join as joinPath, delimiter as pathDelimiter } from 'node:path'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { logger as rootLogger } from '../logger.js'
@@ -459,18 +459,31 @@ async function runRipgrepSearch(pattern: string, path: string, opts: GrepOpts):
 let _rgCheckCache: boolean | undefined
 function hasRipgrep(): boolean {
   if (_rgCheckCache !== undefined) return _rgCheckCache
-  try {
-    statSync('/usr/bin/rg')
-    _rgCheckCache = true
-    return true
-  } catch { /* try PATH below */ }
-  try {
-    statSync('/usr/local/bin/rg')
-    _rgCheckCache = true
-    return true
-  } catch { /* fall through */ }
-  _rgCheckCache = false
+  // v1.3.7 (F11) — search the two common absolute locations AND every
+  // directory on $PATH, rather than only the two hardcoded paths. A user
+  // with `rg` in ~/.cargo/bin or /opt/homebrew/bin was previously told
+  // "ripgrep not installed" and silently fell back to the slow walker.
+  _rgCheckCache = rgIsOnDisk()
+  return _rgCheckCache
+}
+
+function rgIsOnDisk(): boolean {
+  for (const p of ['/usr/bin/rg', '/usr/local/bin/rg']) {
+    try { statSync(p); return true } catch { /* keep looking */ }
+  }
+  const pathEnv = process.env.PATH
+  if (!pathEnv) return false
+  for (const dir of pathEnv.split(pathDelimiter)) {
+    if (!dir) continue
+    try { statSync(joinPath(dir, 'rg')); return true } catch { /* keep looking */ }
+  }
   return false
+}
+
+/** Test seam: clear the ripgrep-presence cache so a test can re-probe
+ *  after changing $PATH. Not used in production paths. */
+export function __resetRipgrepCacheForTesting(): void {
+  _rgCheckCache = undefined
 }
 
 interface CmdResult {

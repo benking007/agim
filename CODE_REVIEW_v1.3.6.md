@@ -58,25 +58,26 @@ created token or a role change). Token comparison itself is `timingSafeEqual` (s
 **Fix:** throttle the write — only rewrite when the stamp is stale (≥30s), shrinking the race window
 to near-zero for the common repeated-request case while still recording usage.
 
-**F6 · inbound sender allow-list is default-open AND fail-open** ⚠️ NOT CHANGED
+**F6 · inbound sender allow-list was default-open AND fail-open** ✅ FIXED
 `src/cli.ts` — the central `isSenderAllowed` gate is applied to all platforms, but when the check
-throws it `catch`es and continues processing ("continuing open"). A deny-gate that fails open.
-**Recommendation:** at minimum make the failure fail-closed or emit a high-visibility alert.
-(Default-open when unconfigured is a documented design choice with a boot WARN — left as-is.)
+threw it `catch`ed and continued processing ("continuing open"). A deny-gate that fails open.
+**Fix:** when the allow-list is configured but evaluation throws, fail **closed** (deny) instead of
+open; module-load failure is now logged at `error` (was a quiet `warn`). Default-open-when-unconfigured
+is a documented design choice with a boot WARN — left as-is.
 
-**F7 · `long_task` silently pauses the prior active goal** ⚠️ NOT CHANGED
-`src/core/goal-rpc.ts` → `setActiveGoal` unconditionally pauses the existing goal, no confirmation.
-(Was CR-17.) **Recommendation:** add a `force` param; default false rejects with a hint to
-`complete_goal` first.
+**F7 · `long_task` silently paused the prior active goal** ✅ FIXED
+`src/core/goal-rpc.ts` → `setActiveGoal` unconditionally paused the existing goal, no confirmation.
+(Was CR-17.) **Fix:** `long_task` now refuses when a goal is already active unless `force: true` is
+passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema.
 
-### 🟡 P2 — medium (recommendations, not changed)
+### 🟡 P2 — medium
 
-- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` have no upper bound → OOM under approval spam. Add a cap + oldest-eviction.
-- **F9** `goal-rpc.ts` `complete_goal` is not idempotent; retries rewrite a closed goal. (CR-30.)
-- **F10** `exec-dispatcher` `clampTimeout` lacks a lower bound; `timeout_ms=1` self-DoS. (CR-15.) Use `Math.max(100, …)`.
-- **F11** `web-dispatcher` `hasRipgrep()` checks two hardcoded paths and caches forever; no PATH lookup. (CR-24.)
-- **F12** Discord adapter: with only `allowedGuilds` set (no `allowedChannels`), DMs (`message.guildId` empty) skip the guild check (`discord-adapter.ts:223`). Backstopped by the central allow-list if `IMHUB_ALLOWED_USERS` is set; otherwise DMs reach the agent. Add an explicit DM policy.
-- **F13** Approval notifier errors are uniformly silent-deny (`approval-bus.ts`); an IM-push outage looks like a model "denied" with no operator signal. (CR-19.)
+- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` have no upper bound → OOM under approval spam. ⚠️ NOT CHANGED (hot-path; needs careful eviction design). Add a cap + oldest-eviction.
+- **F9** `goal-rpc.ts` `complete_goal` is not idempotent. ⚠️ NOT CHANGED — with synchronous better-sqlite3 and the existing no-active-goal guard, a retry after completion already errors cleanly; the practical window is negligible. (CR-30.)
+- **F10** `exec-dispatcher` `clampTimeout` lacked a lower bound; `timeout_ms=1` self-DoS. ✅ FIXED — floored at 100ms. (CR-15.)
+- **F11** `fs-dispatcher` `hasRipgrep()` checked two hardcoded paths only. ✅ FIXED — now also searches every `$PATH` dir. (CR-24.)
+- **F12** Discord adapter: with only `allowedGuilds` set, DMs (`message.guildId` empty) skipped the guild check. ✅ FIXED — DMs are now dropped when `allowedGuilds` is set unless an `allowedChannels` entry permits the DM channel (`discord-adapter.ts`).
+- **F13** Approval-gate `askUser` failures were a silent deny. ✅ FIXED — now logged at `warn` (`policy-approval-gate.ts`) so an IM-push outage is visible. (Note: the analogous notifier path in `approval-bus.ts` is left for a follow-up.)
 
 ---
 
@@ -116,27 +117,35 @@ throws it `catch`es and continues processing ("continuing open"). A deny-gate th
 2. **F1 env allow-list** — directly stops secret exfil.
 3. **F3 DNS-aware SSRF** — closes the trivial rebind bypass.
 
-(All three, plus F4 and F5, are addressed in this change set.)
+(All three, plus F4–F7 and F10–F13, are addressed in this change set.)
 
 ---
 
-## 5. Changes made in this commit
+## 5. Changes made
 
 | File | Finding | Change |
 |---|---|---|
 | `src/core/llm/exec-dispatcher.ts` | F1 | `buildExecEnv()` env allow-list + `IMHUB_EXEC_ENV_PASS` |
 | `src/core/llm/exec-dispatcher.ts` | F2 | bwrap default-on; `=off` warns once |
+| `src/core/llm/exec-dispatcher.ts` | F10 | `clampTimeout` floored at 100ms |
 | `src/core/llm/web-dispatcher.ts` | F3 | `checkUrlSafetyAsync()` DNS-resolving SSRF check, wired into fetch + redirects |
 | `src/core/llm/policy-approval-gate.ts` | F4 | removed `'fetch'` from `READ_ONLY_HINTS` |
+| `src/core/llm/policy-approval-gate.ts` | F13 | `askUser` failure logged (was silent deny) |
 | `src/core/access-token.ts` | F5 | throttled `last_used_at` write (≥30s) |
-| `*.test.ts` (4 files) | — | red-team + regression tests for F1–F5 |
+| `src/cli.ts` | F6 | sender gate fails **closed** when configured; load failure logged at `error` |
+| `src/core/goal-rpc.ts`, `imhub-dispatcher.ts` | F7 | `long_task` requires `force:true` to override an active goal |
+| `src/core/llm/fs-dispatcher.ts` | F11 | `hasRipgrep()` searches `$PATH` |
+| `src/plugins/messengers/discord/discord-adapter.ts` | F12 | DMs dropped when `allowedGuilds` set (unless a channel permits) |
+| `*.test.ts` (6 files) | — | red-team + regression tests for F1–F5, F7, F10 |
 
-**Verification:** `tsc --noEmit` (src + test) exit 0; `biome lint` exit 0 (pre-existing infos only);
-the 4 touched suites pass (105/105). The 6 failures in the full `bun test` run are all pre-existing
+**Verification:** `tsc --noEmit` (src + test) exit 0; `biome lint` exit 0 (pre-existing warnings only);
+all touched suites pass (138/138). The 6 failures in the full `bun test` run are all pre-existing
 on the clean baseline (5 cross-test global-state pollution per `AGENTS.md`, 1 pre-existing
 `runAgentLoop` maxIterations case) — none introduced here.
 
-**Not addressed (recommended follow-ups):** F6 fail-open sender gate, F7 goal auto-pause, F8–F13.
+**Not addressed (recommended follow-ups):** F8 (approval-bus pending cap — hot-path eviction design),
+F9 (complete_goal idempotency — negligible window under sync sqlite), and the `approval-bus.ts`
+notifier-error variant of F13.
 
 ---
 

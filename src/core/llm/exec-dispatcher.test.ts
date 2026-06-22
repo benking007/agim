@@ -8,6 +8,7 @@ import {
   buildExecDispatcher,
   isBgjobInvocation,
   buildExecEnv,
+  clampTimeout,
 } from './exec-dispatcher.js'
 
 const NEVER_ABORT = new AbortController().signal
@@ -82,6 +83,26 @@ describe('exec-dispatcher', () => {
       expect(env.IMHUB_RPC_TOKEN).toBe('tok')
       expect(env.IMHUB_RPC_SOCKET).toBe('/run/x.sock')
       expect(env.OPENAI_API_KEY).toBeUndefined()
+    })
+  })
+
+  describe('clampTimeout — floor + cap (F10)', () => {
+    it('floors tiny values at 100ms (no self-DoS via timeout_ms=1)', () => {
+      expect(clampTimeout(1)).toBe(100)
+      expect(clampTimeout(50)).toBe(100)
+      expect(clampTimeout(99)).toBe(100)
+    })
+    it('passes through reasonable values', () => {
+      expect(clampTimeout(5000)).toBe(5000)
+    })
+    it('caps at the hard ceiling', () => {
+      expect(clampTimeout(10_000_000)).toBe(600_000)
+    })
+    it('falls back to the default for non-positive / non-finite input', () => {
+      expect(clampTimeout(0)).toBe(60_000)
+      expect(clampTimeout(-5)).toBe(60_000)
+      expect(clampTimeout('nope')).toBe(60_000)
+      expect(clampTimeout(undefined)).toBe(60_000)
     })
   })
 

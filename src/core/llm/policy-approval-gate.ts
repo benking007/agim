@@ -22,8 +22,11 @@
 //     here doesn't preclude swapping for a richer gate later. Tests
 //     verify the contract.
 
+import { logger as rootLogger } from '../logger.js'
 import type { ToolCallRequest } from './provider-base.js'
 import type { ApprovalGate } from './agent-loop.js'
+
+const log = rootLogger.child({ component: 'policy-approval-gate' })
 
 /**
  * Approval mode. Defaults to 'allow-list' which is the safest sane
@@ -127,10 +130,17 @@ export function buildPolicyApprovalGate(cfg: PolicyApprovalGateConfig = {}): App
     if (modeDecision === 'deny' && askUser && mode !== 'deny-all') {
       try {
         return await askUser(call)
-      } catch {
+      } catch (err) {
         // If the IM card pipeline throws (no notifier, socket closed,
-        // ctx missing), fall back to the legacy silent-deny so the
-        // agent loop still makes progress.
+        // ctx missing), fall back to deny so the agent loop still makes
+        // progress. v1.3.7 (F13) — this was a SILENT deny: the operator
+        // had no signal that approvals were failing to deliver (looked
+        // like the model just "got denied"). Surface it at warn level.
+        log.warn({
+          event: 'policy.askUser_failed',
+          tool: call.name,
+          err: err instanceof Error ? err.message : String(err),
+        }, 'approval escalation (askUser) threw — denying this call; check the IM approval pipeline')
         return 'deny'
       }
     }

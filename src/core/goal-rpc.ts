@@ -62,6 +62,11 @@ export type GoalOp = 'long_task' | 'complete_goal'
 export interface LongTaskPayload {
   goal?: unknown
   summary?: unknown
+  /** v1.3.7 (F7) — must be true to override (auto-pause) an existing
+   *  active goal. Without it, long_task refuses when a goal is already
+   *  active so the model makes an explicit choice rather than silently
+   *  burying the prior objective. */
+  force?: unknown
 }
 
 export interface CompleteGoalPayload {
@@ -86,11 +91,22 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
   const goal = typeof p.goal === 'string' ? p.goal.trim() : ''
   if (!goal) return { ok: false, error: 'long_task requires a non-empty `goal` string (one-line objective).' }
   const summary = typeof p.summary === 'string' ? p.summary : undefined
+  const force = p.force === true
 
-  // Surface the pre-existing active goal to the caller; the model can
-  // decide to complete it first or override. setActiveGoal() will
-  // auto-pause any current 'active' row, so we don't refuse here.
+  // v1.3.7 (F7) — refuse to silently bury an existing active goal.
+  // setActiveGoal() auto-pauses any current 'active' row, so without this
+  // guard a stray long_task call would pause the user's real objective
+  // with no confirmation. Require an explicit force:true (or complete the
+  // prior goal first).
   const prior = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
+  if (prior && !force) {
+    return {
+      ok: false,
+      error: `an active goal already exists on this thread: #${prior.id} "${prior.title}". ` +
+        'Call complete_goal first if it is done, or retry long_task with force:true to ' +
+        'pause it and start the new objective.',
+    }
+  }
 
   const row = setActiveGoal({
     platform: ctx.platform,

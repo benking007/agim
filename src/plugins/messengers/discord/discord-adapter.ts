@@ -220,8 +220,19 @@ export class DiscordAdapter implements MessengerAdapter {
     }
 
     // Guild whitelist filter
-    if (this.config?.allowedGuilds?.length && message.guildId) {
-      if (!this.config.allowedGuilds.includes(message.guildId)) {
+    if (this.config?.allowedGuilds?.length) {
+      // v1.3.7 (F12) — DMs have no guildId. Previously the guild check was
+      // skipped entirely for DMs (the `&& message.guildId` guard), so an
+      // operator who restricted the bot to specific guilds would still
+      // accept unsolicited DMs from anyone. Treat a DM as outside the
+      // allowed-guild scope unless a channel allowlist explicitly permits
+      // its DM channel below.
+      if (!message.guildId) {
+        if (!this.config?.allowedChannels?.length) {
+          log.debug({ channelId: message.channelId }, 'DM ignored — allowedGuilds set but no allowedChannels permits DMs')
+          return
+        }
+      } else if (!this.config.allowedGuilds.includes(message.guildId)) {
         log.debug({ guildId: message.guildId }, 'Message from non-whitelisted guild, ignoring')
         return
       }

@@ -341,7 +341,8 @@ export function getImhubTools(): ToolDef[] {
         'Register a sustained multi-turn objective for this thread. Use when the user describes ' +
         'work that should stay visible across many turns ("ship v1.3 this week", "track X for the ' +
         'next 3 days"). The goal is injected into your future system prompts as an `[Active goal]` ' +
-        'block. Auto-pauses any prior active goal on the thread. NOT for one-shot questions — ' +
+        'block. If a goal is ALREADY active on this thread, this refuses unless you pass force:true ' +
+        '(complete_goal first, or force to pause the prior one). NOT for one-shot questions — ' +
         'use this only when persistence across turns is the point.',
       parameters: {
         type: 'object',
@@ -355,6 +356,11 @@ export function getImhubTools(): ToolDef[] {
           summary: {
             type: 'string',
             description: 'Optional short acceptance criteria / scope notes (≤ 4000 chars).',
+          },
+          force: {
+            type: 'boolean',
+            description: 'Set true to override (auto-pause) an existing active goal on this thread. ' +
+              'Defaults to false, which refuses when a goal is already active.',
           },
         },
         required: ['goal'],

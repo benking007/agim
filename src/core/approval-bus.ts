@@ -36,6 +36,16 @@ const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 
+// v1.3.7 (F8) — hard cap on concurrently-pending approvals. Without it,
+// pendingById / pendingByThread grow unbounded: a misbehaving agent (or a
+// flood of tool calls) can pin tens of thousands of timers + objects in
+// memory. When the cap is hit we evict the OLDEST unresolved request with a
+// deny so the maps stay bounded. Generous default; override via env.
+const MAX_PENDING_APPROVALS = (() => {
+  const n = Number(process.env.IMHUB_APPROVAL_MAX_PENDING)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
+})()
+
 // IMHUB_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
 // returns when a normal-mode approval times out without a user response.
 // Auto-allow grace expiry is unaffected — it always resolves to allow.
@@ -1520,6 +1530,12 @@ export class ApprovalBus {
         }
       }, timeoutMs),
     }
+    // v1.3.7 (F8) — enforce the pending cap BEFORE inserting the new entry.
+    // Evict the oldest unresolved request (deny) so a flood can't grow the
+    // maps without bound. The new request always gets a slot.
+    if (this.pendingById.size >= MAX_PENDING_APPROVALS) {
+      this.evictOldestPending()
+    }
     this.pendingById.set(args.reqId, pending)
     const q = this.pendingByThread.get(cKey) ?? []
     q.push(pending)
@@ -1559,6 +1575,23 @@ export class ApprovalBus {
       // "notifier error". For non-Error throws we keep the old fallback.
       const errMsg = err instanceof Error && err.message ? err.message : 'notifier error'
       this.cancelPending(pending, { behavior: 'deny', message: errMsg }, 'notifier-error')
+    }
+  }
+
+  /** v1.3.7 (F8) — deny + drop the oldest unresolved pending approval so the
+   *  maps stay under MAX_PENDING_APPROVALS. Insertion order of a Map is
+   *  iteration order, and pendingById is inserted in registration order, so
+   *  the first unresolved entry is the oldest. */
+  private evictOldestPending(): void {
+    for (const p of this.pendingById.values()) {
+      if (p.resolved) continue
+      log.warn({
+        event: 'approval.bus.pending_cap_evict',
+        reqId: p.reqId, runId: p.runId, toolName: p.toolName,
+        pending: this.pendingById.size, cap: MAX_PENDING_APPROVALS,
+      }, `pending-approval cap (${MAX_PENDING_APPROVALS}) reached — denying oldest request ${p.reqId}`)
+      this.cancelPending(p, { behavior: 'deny', message: 'approval evicted: too many pending approvals' }, 'timeout')
+      return
     }
   }
 

@@ -10,7 +10,7 @@ const _TMP = mkdtempSync(join(tmpdir(), 'agim-goal-rpc-'))
 process.env.IMHUB_GOALS_DB = join(_TMP, 'goals.db')
 
 import { describe, it, expect, afterAll, beforeEach } from 'bun:test'
-import { handleGoalOp, _activeGoalSnapshot } from './goal-rpc.js'
+import { handleGoalOp, _activeGoalSnapshot, __resetCompletionCacheForTesting } from './goal-rpc.js'
 
 afterAll(() => {
   try { rmSync(_TMP, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -39,6 +39,9 @@ async function dbAvailable(): Promise<boolean> {
   if (r.ok) {
     // clean up the probe row
     await handleGoalOp('complete_goal', { status: 'cancelled', recap: 'test cleanup' }, CTX)
+    // The probe's completion lands in the F9 idempotency cache; clear it so
+    // the probe doesn't leak an `already_completed` into the test body.
+    __resetCompletionCacheForTesting()
     return true
   }
   return false
@@ -49,6 +52,7 @@ describe('goal-rpc', () => {
     // Clean: complete any active goal between tests so each starts fresh
     const a = _activeGoalSnapshot(CTX)
     if (a) await handleGoalOp('complete_goal', { status: 'cancelled', recap: 'test cleanup' }, CTX)
+    __resetCompletionCacheForTesting()  // F9 idempotency cache must not leak across tests
   })
 
   // ── Shape tests (db-independent) ─────────────────────────────────
@@ -140,6 +144,19 @@ describe('goal-rpc', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.result.status).toBe('cancelled')
+  })
+
+  it('complete_goal is idempotent on retry within the window (F9)', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Idempotent task' }, CTX)
+    const first = await handleGoalOp('complete_goal', { recap: 'done the first time' }, CTX)
+    expect(first.ok).toBe(true)
+    // Retry: no active goal now, but the recent completion replays as ok.
+    const retry = await handleGoalOp('complete_goal', { recap: 'done the first time' }, CTX)
+    expect(retry.ok).toBe(true)
+    if (!retry.ok) return
+    expect(retry.result.already_completed).toBe(true)
+    expect(retry.result.status).toBe('completed')
   })
 
   it('complete_goal refuses when no active goal', async () => {

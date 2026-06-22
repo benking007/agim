@@ -72,12 +72,12 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 
 ### 🟡 P2 — medium
 
-- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` have no upper bound → OOM under approval spam. ⚠️ NOT CHANGED (hot-path; needs careful eviction design). Add a cap + oldest-eviction.
-- **F9** `goal-rpc.ts` `complete_goal` is not idempotent. ⚠️ NOT CHANGED — with synchronous better-sqlite3 and the existing no-active-goal guard, a retry after completion already errors cleanly; the practical window is negligible. (CR-30.)
+- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` had no upper bound → OOM under approval spam. ✅ FIXED — `MAX_PENDING_APPROVALS` cap (default 5000, `IMHUB_APPROVAL_MAX_PENDING`); the oldest unresolved request is denied + evicted when the cap is hit.
+- **F9** `goal-rpc.ts` `complete_goal` was not idempotent. ✅ FIXED — a retried call within a 60s window replays an `already_completed` ok result (bounded, self-pruning cache) instead of a confusing "no active goal" error. (CR-30.)
 - **F10** `exec-dispatcher` `clampTimeout` lacked a lower bound; `timeout_ms=1` self-DoS. ✅ FIXED — floored at 100ms. (CR-15.)
 - **F11** `fs-dispatcher` `hasRipgrep()` checked two hardcoded paths only. ✅ FIXED — now also searches every `$PATH` dir. (CR-24.)
 - **F12** Discord adapter: with only `allowedGuilds` set, DMs (`message.guildId` empty) skipped the guild check. ✅ FIXED — DMs are now dropped when `allowedGuilds` is set unless an `allowedChannels` entry permits the DM channel (`discord-adapter.ts`).
-- **F13** Approval-gate `askUser` failures were a silent deny. ✅ FIXED — now logged at `warn` (`policy-approval-gate.ts`) so an IM-push outage is visible. (Note: the analogous notifier path in `approval-bus.ts` is left for a follow-up.)
+- **F13** Approval-gate `askUser` failures were a silent deny. ✅ FIXED — now logged at `warn` (`policy-approval-gate.ts`) so an IM-push outage is visible. The analogous notifier path in `approval-bus.ts` was already adequate (logs at `error` + forwards the real error message to the agent).
 
 ---
 
@@ -117,7 +117,7 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 2. **F1 env allow-list** — directly stops secret exfil.
 3. **F3 DNS-aware SSRF** — closes the trivial rebind bypass.
 
-(All three, plus F4–F7 and F10–F13, are addressed in this change set.)
+(All three, plus F4–F13, are addressed in this change set.)
 
 ---
 
@@ -136,16 +136,16 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 | `src/core/goal-rpc.ts`, `imhub-dispatcher.ts` | F7 | `long_task` requires `force:true` to override an active goal |
 | `src/core/llm/fs-dispatcher.ts` | F11 | `hasRipgrep()` searches `$PATH` |
 | `src/plugins/messengers/discord/discord-adapter.ts` | F12 | DMs dropped when `allowedGuilds` set (unless a channel permits) |
-| `*.test.ts` (6 files) | — | red-team + regression tests for F1–F5, F7, F10 |
+| `src/core/approval-bus.ts` | F8 | `MAX_PENDING_APPROVALS` cap with oldest-eviction |
+| `src/core/goal-rpc.ts` | F9 | idempotent `complete_goal` retry (60s bounded cache) |
+| `*.test.ts` (7 files) | — | red-team + regression tests for F1–F5, F7, F9, F10 |
 
-**Verification:** `tsc --noEmit` (src + test) exit 0; `biome lint` exit 0 (pre-existing warnings only);
-all touched suites pass (138/138). The 6 failures in the full `bun test` run are all pre-existing
-on the clean baseline (5 cross-test global-state pollution per `AGENTS.md`, 1 pre-existing
-`runAgentLoop` maxIterations case) — none introduced here.
+**Verification:** `tsc --noEmit` (src + test) exit 0; `biome lint` exit 0; all touched suites pass.
+The 6 failures in the full `bun test` run are all pre-existing on the clean baseline (5 cross-test
+global-state pollution per `AGENTS.md`, 1 pre-existing `runAgentLoop` maxIterations case) — none
+introduced here.
 
-**Not addressed (recommended follow-ups):** F8 (approval-bus pending cap — hot-path eviction design),
-F9 (complete_goal idempotency — negligible window under sync sqlite), and the `approval-bus.ts`
-notifier-error variant of F13.
+**Remaining:** all P0/P1/P2 findings (F1–F13) are addressed. No outstanding review items.
 
 ---
 

@@ -47,6 +47,33 @@ function emitGoalEvent(
 
 const log = rootLogger.child({ component: 'goal-rpc' })
 
+// v1.3.7 (F9) — idempotency for complete_goal. A retried call (network
+// blip, double-send) finds no active goal and would otherwise return a
+// confusing "no active goal" error. We remember each thread's most recent
+// completion for a short window and replay an `already_completed` ok result
+// instead. Entries are pruned on write (only the last ~minute is kept), so
+// the map can't grow unbounded.
+const COMPLETE_IDEMPOTENT_WINDOW_MS = 60_000
+interface RecentCompletion { goalId: number; title: string; status: 'completed' | 'cancelled'; at: number }
+const recentCompletions = new Map<string, RecentCompletion>()
+
+function threadKey(ctx: GoalRpcCtx): string {
+  return `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
+}
+
+function recordCompletion(ctx: GoalRpcCtx, c: RecentCompletion): void {
+  const now = Date.now()
+  for (const [k, v] of recentCompletions) {
+    if (now - v.at > COMPLETE_IDEMPOTENT_WINDOW_MS) recentCompletions.delete(k)
+  }
+  recentCompletions.set(threadKey(ctx), c)
+}
+
+/** Test seam: clear the idempotency cache between cases. */
+export function __resetCompletionCacheForTesting(): void {
+  recentCompletions.clear()
+}
+
 export interface GoalRpcCtx {
   platform: string
   channelId: string
@@ -165,6 +192,15 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
   // blocking failure regardless of recap.
   const active = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
   if (!active) {
+    // v1.3.7 (F9) — idempotent retry: if THIS thread just completed a goal,
+    // replay that result instead of a confusing error.
+    const recent = recentCompletions.get(threadKey(ctx))
+    if (recent && Date.now() - recent.at <= COMPLETE_IDEMPOTENT_WINDOW_MS) {
+      return {
+        ok: true,
+        result: { goalId: recent.goalId, title: recent.title, status: recent.status, already_completed: true },
+      }
+    }
     return { ok: false, error: 'no active goal on this thread to complete' }
   }
   // v1.2.86 — recap is now required (≥ 10 chars). Without it the
@@ -187,6 +223,7 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
   if (!ok) {
     return { ok: false, error: `failed to mark goal #${active.id} ${status}` }
   }
+  recordCompletion(ctx, { goalId: active.id, title: active.title, status, at: Date.now() })  // F9
   // v1.2.86 — emit so the web view can flip the row from active to
   // completed/cancelled immediately.
   emitGoalEvent('status', {

@@ -181,6 +181,9 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
 
   let finalSessionId = sessionId
   const approvalBridge = new TuiApprovalBridge(sessionId)
+  // Register the in-process TUI messenger so ask_user can resolve
+  // platform=tui via message-sink.resolveMessenger().
+  registry.registerMessenger(approvalBridge)
   let approvalStarted = false
   if (process.env.IMHUB_APPROVAL_DISABLED !== '1') {
     try {

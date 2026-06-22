@@ -305,13 +305,18 @@ export function getImhubTools(): ToolDef[] {
     {
       name: 'mcp__imhub__ask_user',
       description:
-        'Present the user with an N-way multiple-choice question and reliably get a typed answer back (1-indexed). Use when you need disambiguation rather than free-form chat. Default timeout 90s.',
+        'Present the user with a structured question and reliably get an answer back. Supports single-select (default), multi-select, and optional custom free-form input. Use when you need disambiguation rather than free-form chat. Default timeout 90s.',
       parameters: {
         type: 'object',
         properties: {
           question: { type: 'string', description: 'Single-line question, ≤400 chars.' },
           choices: { type: 'array', items: { type: 'string' }, description: '2-9 short choice labels.' },
           timeoutSec: { type: 'integer', minimum: 5, maximum: 600, default: 90 },
+          selectionMode: { type: 'string', enum: ['single', 'multi'], default: 'single' },
+          minSelections: { type: 'integer', minimum: 1, description: 'Only for multi mode. Default 1.' },
+          maxSelections: { type: 'integer', minimum: 1, description: 'Only for multi mode. Default = choices.length.' },
+          allowCustomInput: { type: 'boolean', default: false, description: 'Allow the user to answer with free-form text.' },
+          customInputLabel: { type: 'string', description: 'Optional display label for custom input entry.' },
           allowTextReply: { type: 'boolean', default: true, description: 'When true, text "1"/"a"/label substring also matches.' },
         },
         required: ['question', 'choices'],
@@ -511,7 +516,17 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
         }
         case 'ask_user': {
           const r = await handleAskOp(
-            args as { question?: unknown; choices?: unknown; timeoutSec?: unknown; allowTextReply?: unknown },
+            args as {
+              question?: unknown
+              choices?: unknown
+              timeoutSec?: unknown
+              selectionMode?: unknown
+              minSelections?: unknown
+              maxSelections?: unknown
+              allowCustomInput?: unknown
+              customInputLabel?: unknown
+              allowTextReply?: unknown
+            },
             runCtxBase,
           )
           if (!r.ok) return err(`ask_user failed (${r.reason || 'error'}): ${r.error}`)

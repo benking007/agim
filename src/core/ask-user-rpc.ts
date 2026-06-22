@@ -58,11 +58,22 @@ const MAX_TIMEOUT_SEC = 60 * 30  // 30 min
 
 /** Reserved button-data prefix — short to fit Telegram's 64-byte cap. */
 const BTN_PREFIX = 'ask:'
+const DEFAULT_CUSTOM_INPUT_LABEL = '其他（自定义输入）'
 
 export interface AskPayload {
   question?: unknown
   choices?: unknown    // string[]; index encoded as key in the result
   timeoutSec?: unknown
+  /** Selection mode. single=pick one; multi=pick N items at once. */
+  selectionMode?: unknown
+  /** Multi-select lower bound (only used when selectionMode=multi). */
+  minSelections?: unknown
+  /** Multi-select upper bound (only used when selectionMode=multi). */
+  maxSelections?: unknown
+  /** Allow free-form text as an alternative answer path. */
+  allowCustomInput?: unknown
+  /** Label for the custom-input pseudo option (TUI only). */
+  customInputLabel?: unknown
   /** When true (default), text replies like "1" / "a" / the choice
    *  label substring match the corresponding option. Disable for
    *  strict button-only flows (the user must click a button or wait
@@ -77,21 +88,31 @@ export interface AskChoice {
   label: string
 }
 
+export type AskSelectionMode = 'single' | 'multi'
+
+interface AskSuccessResult {
+  /** 1-indexed primary choice. For multi-select this is the first pick. */
+  index: number
+  /** Primary label. For multi-select this is the first pick label. */
+  label: string
+  /** How the answer reached agim. */
+  via: 'button' | 'text'
+  /** Raw user-typed text or callback payload. */
+  raw: string
+  /** Chosen selection mode. */
+  selectionMode: AskSelectionMode
+  /** Present for multi-select answers. */
+  indexes?: number[]
+  /** Present for multi-select answers. */
+  labels?: string[]
+  /** Present when the user gave free-form custom input. */
+  customText?: string
+}
+
 export type AskResult =
   | {
       ok: true
-      result: {
-        /** 1-indexed choice the user picked. */
-        index: number
-        /** The label that was shown for that choice. */
-        label: string
-        /** 'button' | 'text' | 'timeout'. timeout never has a chosen
-         *  index either — see ok=false for that. */
-        via: 'button' | 'text'
-        /** Raw user-typed text or button data; lets the agent diff
-         *  against what was shown if needed. */
-        raw: string
-      }
+      result: AskSuccessResult
     }
   | { ok: false; error: string; reason?: 'timeout' | 'cancelled' | 'invalid' | 'no-messenger' }
 
@@ -105,6 +126,11 @@ interface PendingAsk {
   userId: string
   question: string
   choices: AskChoice[]
+  selectionMode: AskSelectionMode
+  minSelections: number
+  maxSelections: number
+  allowCustomInput: boolean
+  customInputLabel: string
   allowTextReply: boolean
   resolve: (r: AskResult) => void
   /** Timeout handle so we can clear it on early resolution. */
@@ -159,6 +185,25 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
       reason: 'invalid',
     }
   }
+  const selectionMode = normalizeSelectionMode(payload.selectionMode)
+  if (!selectionMode) {
+    return { ok: false, error: 'selectionMode must be "single" or "multi"', reason: 'invalid' }
+  }
+  const minSelections = selectionMode === 'multi'
+    ? normalizeSelectionBound(payload.minSelections, 1)
+    : 1
+  const maxSelections = selectionMode === 'multi'
+    ? normalizeSelectionBound(payload.maxSelections, choices.length)
+    : 1
+  if (selectionMode === 'multi' && (minSelections > maxSelections || maxSelections > choices.length)) {
+    return {
+      ok: false,
+      error: `invalid selection bounds: minSelections=${minSelections}, maxSelections=${maxSelections}, choices=${choices.length}`,
+      reason: 'invalid',
+    }
+  }
+  const allowCustomInput = payload.allowCustomInput === true
+  const customInputLabel = normalizeCustomInputLabel(payload.customInputLabel)
   const timeoutSec = clampTimeout(payload.timeoutSec)
   const allowTextReply = payload.allowTextReply !== false  // default true
 
@@ -175,6 +220,17 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
       reason: 'no-messenger',
     }
   }
+  const canSendChoiceCard = Boolean(
+    messenger.sendChoiceCard
+    && (ctx.platform === 'tui' || (selectionMode === 'single' && !allowCustomInput)),
+  )
+  if (!allowTextReply && !canSendChoiceCard) {
+    return {
+      ok: false,
+      error: 'allowTextReply=false requires a card-capable messenger for this ask mode',
+      reason: 'invalid',
+    }
+  }
 
   // Build the pending entry FIRST so onMessage callbacks can find it
   // even before sink finishes its delivery (rare race; cheap insurance).
@@ -187,6 +243,11 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
     userId: ctx.userId || '',
     question,
     choices,
+    selectionMode,
+    minSelections,
+    maxSelections,
+    allowCustomInput,
+    customInputLabel,
     allowTextReply,
     resolve: () => { /* placeholder; replaced below */ },
     timer: null,
@@ -225,16 +286,33 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
   // Compose the prompt. Cards on adapters that support them, text on
   // everything else. The card's data field encodes reqId + index so
   // the button callback can route directly without an extra lookup.
+  const cardChoices = choices.map((c) => ({
+    label: `${c.index}. ${c.label}`,
+    data: `${BTN_PREFIX}${reqId}:${c.index}`,
+  }))
+  if (ctx.platform === 'tui' && allowCustomInput) {
+    cardChoices.push({
+      label: `0. ${customInputLabel}`,
+      data: `${BTN_PREFIX}${reqId}:custom`,
+    })
+  }
   const card: ChoiceCardPrompt = {
     title: 'agim · 请选择',
     body: question,
-    choices: choices.map((c) => ({
-      label: `${c.index}. ${c.label}`,
-      data: `${BTN_PREFIX}${reqId}:${c.index}`,
-    })),
+    choices: cardChoices,
+    meta: {
+      kind: 'ask-user',
+      reqId,
+      selectionMode,
+      minSelections,
+      maxSelections,
+      allowCustomInput,
+      customInputLabel,
+      timeoutSec,
+    },
   }
   let cardSent = false
-  if (messenger.sendChoiceCard) {
+  if (canSendChoiceCard && messenger.sendChoiceCard) {
     try {
       await messenger.sendChoiceCard(ctx.threadId, card)
       cardSent = true
@@ -248,12 +326,19 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
     }
   }
   if (!cardSent) {
+    const textHint = renderTextReplyHint({
+      choiceCount: choices.length,
+      selectionMode,
+      minSelections,
+      maxSelections,
+      allowCustomInput,
+      allowTextReply,
+      timeoutSec,
+    })
     const lines = [
       `❓ ${question}`,
       ...choices.map((c) => `  ${c.index}. ${c.label}`),
-      allowTextReply
-        ? `回复数字 (1-${choices.length}) 或选项关键字；${timeoutSec}s 后超时。`
-        : `请等待按钮回调；${timeoutSec}s 后超时。`,
+      textHint,
     ]
     try {
       await sink.deliver({
@@ -280,6 +365,7 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
     event: 'ask.opened', reqId,
     platform: ctx.platform, threadId: ctx.threadId,
     choices: choices.length, timeoutSec, cardSent,
+    selectionMode, minSelections, maxSelections, allowCustomInput,
   })
 
   return promise
@@ -306,13 +392,17 @@ export function tryResolvePendingAsk(
     const p = PENDING.get(reqId)
     if (!p) continue
     if (!p.allowTextReply) continue
-    const match = matchTextToChoice(cleaned, p.choices)
-    if (!match) continue
-    p.resolve({
-      ok: true,
-      result: { index: match.index, label: match.label, via: 'text', raw: cleaned },
+    const result = resolveTextReply(p, cleaned)
+    if (!result) continue
+    p.resolve({ ok: true, result })
+    log.info({
+      event: 'ask.resolved.text',
+      reqId,
+      choice: result.index,
+      mode: result.selectionMode,
+      picks: result.indexes?.length ?? 1,
+      custom: typeof result.customText === 'string',
     })
-    log.info({ event: 'ask.resolved.text', reqId, choice: match.index })
     return true
   }
   return false
@@ -320,27 +410,44 @@ export function tryResolvePendingAsk(
 
 /**
  * Messenger-side: button callback handler. The data field is the
- * card's `data` we stored as `ask:<reqId>:<index>`. Returns true iff
- * resolved (caller can ack the tap).
+ * card's `data` we stored as one of:
+ *   - ask:<reqId>:<index>           (single)
+ *   - ask:<reqId>:multi:1,3         (multi)
+ *   - ask:<reqId>:custom:<base64>   (custom text)
+ * Returns true iff resolved (caller can ack the tap).
  */
 export function tryResolvePendingAskByButton(data: string): boolean {
-  if (!data.startsWith(BTN_PREFIX)) return false
-  const rest = data.slice(BTN_PREFIX.length)
-  const sep = rest.indexOf(':')
-  if (sep === -1) return false
-  const reqId = rest.slice(0, sep)
-  const idxStr = rest.slice(sep + 1)
-  const idx = parseInt(idxStr, 10)
-  if (!Number.isFinite(idx)) return false
-  const p = PENDING.get(reqId)
+  const parsed = parseAskButtonData(data)
+  if (!parsed) return false
+  const p = PENDING.get(parsed.reqId)
   if (!p) return false
-  const choice = p.choices.find((c) => c.index === idx)
-  if (!choice) return false
-  p.resolve({
-    ok: true,
-    result: { index: choice.index, label: choice.label, via: 'button', raw: data },
-  })
-  log.info({ event: 'ask.resolved.button', reqId, choice: choice.index })
+  if (parsed.kind === 'single') {
+    const choice = p.choices.find((c) => c.index === parsed.index)
+    if (!choice) return false
+    if (p.selectionMode === 'multi') {
+      if (p.minSelections > 1 || p.maxSelections < 1) return false
+      p.resolve({ ok: true, result: toMultiResult([choice], 'button', data) })
+      log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: 'multi', picks: 1 })
+      return true
+    }
+    p.resolve({ ok: true, result: toSingleResult(choice, 'button', data, p.selectionMode) })
+    log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, choice: choice.index, mode: p.selectionMode })
+    return true
+  }
+  if (parsed.kind === 'multi') {
+    if (p.selectionMode !== 'multi') return false
+    const picked = getChoicesByIndexes(p.choices, parsed.indexes)
+    if (!picked) return false
+    if (picked.length < p.minSelections || picked.length > p.maxSelections) return false
+    p.resolve({ ok: true, result: toMultiResult(picked, 'button', data) })
+    log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: 'multi', picks: picked.length })
+    return true
+  }
+  if (!p.allowCustomInput) return false
+  const customText = parsed.text.trim()
+  if (!customText) return false
+  p.resolve({ ok: true, result: toCustomResult(customText, 'button', data, p) })
+  log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: p.selectionMode, custom: true })
   return true
 }
 
@@ -412,6 +519,124 @@ function clampTimeout(raw: unknown): number {
   return n
 }
 
+function normalizeSelectionMode(raw: unknown): AskSelectionMode | null {
+  if (raw === undefined || raw === null || raw === '') return 'single'
+  if (raw === 'single' || raw === 'multi') return raw
+  return null
+}
+
+function normalizeSelectionBound(raw: unknown, fallback: number): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback
+  const v = Math.floor(raw)
+  return v < 1 ? 1 : v
+}
+
+function normalizeCustomInputLabel(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_CUSTOM_INPUT_LABEL
+  const s = raw.trim().slice(0, MAX_CHOICE_LABEL_CHARS)
+  return s || DEFAULT_CUSTOM_INPUT_LABEL
+}
+
+function renderTextReplyHint(params: {
+  choiceCount: number
+  selectionMode: AskSelectionMode
+  minSelections: number
+  maxSelections: number
+  allowCustomInput: boolean
+  allowTextReply: boolean
+  timeoutSec: number
+}): string {
+  const {
+    choiceCount, selectionMode, minSelections, maxSelections,
+    allowCustomInput, allowTextReply, timeoutSec,
+  } = params
+  if (!allowTextReply) return `请点击按钮完成选择；${timeoutSec}s 后超时。`
+  if (selectionMode === 'single') {
+    const base = `回复数字 (1-${choiceCount}) / 字母 (a-${String.fromCharCode('a'.charCodeAt(0) + choiceCount - 1)}) / 选项关键字`
+    return allowCustomInput
+      ? `${base}，或直接输入自定义文本；${timeoutSec}s 后超时。`
+      : `${base}；${timeoutSec}s 后超时。`
+  }
+  const multi = `可多选：回复如 "1,3" 或 "a c"（至少 ${minSelections} 项，最多 ${maxSelections} 项）`
+  return allowCustomInput
+    ? `${multi}，或直接输入自定义文本；${timeoutSec}s 后超时。`
+    : `${multi}；${timeoutSec}s 后超时。`
+}
+
+function resolveTextReply(p: PendingAsk, cleaned: string): AskSuccessResult | null {
+  if (p.selectionMode === 'single') {
+    const match = matchTextToChoice(cleaned, p.choices)
+    if (match) return toSingleResult(match, 'text', cleaned, p.selectionMode)
+    if (!p.allowCustomInput) return null
+    return toCustomResult(cleaned, 'text', cleaned, p)
+  }
+  const picks = matchTextToChoices(cleaned, p.choices)
+  if (picks) {
+    if (picks.length < p.minSelections || picks.length > p.maxSelections) return null
+    return toMultiResult(picks, 'text', cleaned)
+  }
+  if (!p.allowCustomInput) return null
+  return toCustomResult(cleaned, 'text', cleaned, p)
+}
+
+function toSingleResult(
+  choice: AskChoice,
+  via: AskSuccessResult['via'],
+  raw: string,
+  selectionMode: AskSelectionMode = 'single',
+): AskSuccessResult {
+  return {
+    index: choice.index,
+    label: choice.label,
+    via,
+    raw,
+    selectionMode,
+  }
+}
+
+function toMultiResult(
+  picked: AskChoice[],
+  via: AskSuccessResult['via'],
+  raw: string,
+): AskSuccessResult {
+  const [first] = picked
+  return {
+    index: first.index,
+    label: first.label,
+    via,
+    raw,
+    selectionMode: 'multi',
+    indexes: picked.map((c) => c.index),
+    labels: picked.map((c) => c.label),
+  }
+}
+
+function toCustomResult(
+  customText: string,
+  via: AskSuccessResult['via'],
+  raw: string,
+  pending: PendingAsk,
+): AskSuccessResult {
+  return {
+    index: 0,
+    label: pending.customInputLabel,
+    via,
+    raw,
+    selectionMode: pending.selectionMode,
+    customText,
+  }
+}
+
+function getChoicesByIndexes(choices: AskChoice[], indexes: number[]): AskChoice[] | null {
+  const out: AskChoice[] = []
+  for (const idx of indexes) {
+    const choice = choices.find((c) => c.index === idx)
+    if (!choice) return null
+    out.push(choice)
+  }
+  return out
+}
+
 /**
  * Match an inbound text reply to a choice. Order of attempts:
  *   1. exact numeric "1"/"2"/…
@@ -444,4 +669,102 @@ function matchTextToChoice(text: string, choices: AskChoice[]): AskChoice | null
     if (lower.includes(c.label.toLowerCase())) return c
   }
   return null
+}
+
+function matchTextToChoices(text: string, choices: AskChoice[]): AskChoice[] | null {
+  const lower = text.toLowerCase()
+  const picked = new Map<number, AskChoice>()
+
+  // 1) explicit numeric references anywhere in the text: "1,3"
+  const nums = lower.match(/\d+/g) ?? []
+  for (const nText of nums) {
+    const n = Number.parseInt(nText, 10)
+    if (!Number.isFinite(n) || n < 1 || n > choices.length) continue
+    picked.set(n, choices[n - 1])
+  }
+
+  // 2) single-letter references: "a c"
+  const letters = lower.match(/\b[a-z]\b/g) ?? []
+  for (const token of letters) {
+    const i = token.charCodeAt(0) - 'a'.charCodeAt(0)
+    if (i >= 0 && i < choices.length) picked.set(i + 1, choices[i])
+  }
+
+  if (picked.size > 0) {
+    return Array.from(picked.values()).sort((a, b) => a.index - b.index)
+  }
+
+  // 3) tokenized exact label matches
+  const tokens = lower.split(/[\s,，、;；|]+/).filter(Boolean)
+  for (const token of tokens) {
+    const exact = choices.find((c) => c.label.toLowerCase() === token)
+    if (exact) picked.set(exact.index, exact)
+  }
+  if (picked.size > 0) {
+    return Array.from(picked.values()).sort((a, b) => a.index - b.index)
+  }
+
+  // 4) fallback label substring scan
+  for (const c of choices) {
+    if (lower.includes(c.label.toLowerCase())) picked.set(c.index, c)
+  }
+  if (picked.size === 0) return null
+  return Array.from(picked.values()).sort((a, b) => a.index - b.index)
+}
+
+type AskButtonData =
+  | { reqId: string; kind: 'single'; index: number }
+  | { reqId: string; kind: 'multi'; indexes: number[] }
+  | { reqId: string; kind: 'custom'; text: string }
+
+function parseAskButtonData(data: string): AskButtonData | null {
+  if (!data.startsWith(BTN_PREFIX)) return null
+  const parts = data.slice(BTN_PREFIX.length).split(':')
+  if (parts.length < 2) return null
+  const reqId = parts[0]
+  if (!reqId) return null
+  const action = parts[1]
+
+  // Legacy / default format: ask:<reqId>:<index>
+  if (action !== 'multi' && action !== 'custom') {
+    const idx = Number.parseInt(action, 10)
+    if (!Number.isFinite(idx)) return null
+    return { reqId, kind: 'single', index: idx }
+  }
+
+  if (action === 'multi') {
+    const raw = parts.slice(2).join(':')
+    const indexes = parseMultiIndexes(raw)
+    if (!indexes || indexes.length === 0) return null
+    return { reqId, kind: 'multi', indexes }
+  }
+
+  const encoded = parts.slice(2).join(':')
+  const text = decodeBase64Url(encoded)
+  if (text === null) return null
+  return { reqId, kind: 'custom', text }
+}
+
+function parseMultiIndexes(raw: string): number[] | null {
+  if (!raw) return null
+  const tokens = raw.split(/[\s,，、;；|]+/).filter(Boolean)
+  if (tokens.length === 0) return null
+  const out = new Set<number>()
+  for (const token of tokens) {
+    const n = Number.parseInt(token, 10)
+    if (!Number.isFinite(n) || n < 1) return null
+    out.add(n)
+  }
+  return Array.from(out.values()).sort((a, b) => a - b)
+}
+
+function decodeBase64Url(input: string): string | null {
+  if (!input) return null
+  const base64 = input.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  try {
+    return Buffer.from(padded, 'base64').toString('utf8')
+  } catch {
+    return null
+  }
 }

@@ -32,7 +32,12 @@ import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
-import type { TuiApprovalBridge, TuiApprovalChoice, TuiApprovalView } from './approval-bridge.js'
+import type {
+  TuiApprovalBridge,
+  TuiApprovalChoice,
+  TuiApprovalView,
+  TuiAskView,
+} from './approval-bridge.js'
 
 const log = rootLogger.child({ component: 'tui' })
 
@@ -190,6 +195,10 @@ function approvalDecisionLabel(decision: NonNullable<TuiApprovalView['outcome']>
   }
 }
 
+function askChoiceLabel(label: string): string {
+  return label.replace(/^\d+\.\s*/, '').trim()
+}
+
 const APPROVAL_ACTIONS: Array<{ choice: TuiApprovalChoice; label: string; color: 'green' | 'cyan' | 'red' }> = [
   { choice: 'y', label: '批准', color: 'green' },
   { choice: 'a', label: '同类默认批准', color: 'cyan' },
@@ -238,6 +247,71 @@ function ApprovalDock({ approval, selectedIndex }: {
   )
 }
 
+function AskDock({
+  ask,
+  selectedIndex,
+  selectedMulti,
+  customInputMode,
+}: {
+  ask: TuiAskView
+  selectedIndex: number
+  selectedMulti: number[]
+  customInputMode: boolean
+}): JSX.Element {
+  const hasCustomOption = ask.prompt.choices.some((choice) => choice.data.endsWith(':custom'))
+  const options = [...ask.prompt.choices]
+  if (ask.allowCustomInput && !hasCustomOption) {
+    options.push({
+      label: `0. ${ask.customInputLabel}`,
+      data: `ask:${ask.reqId}:custom`,
+    })
+  }
+  const selectedSet = new Set(selectedMulti)
+  const maxIndex = Math.max(0, options.length - 1)
+  const safeIndex = Math.min(selectedIndex, maxIndex)
+
+  return (
+    <Box flexDirection="column" borderStyle="double" borderColor={ask.finalText ? 'gray' : 'cyan'} paddingX={1} marginX={1} marginTop={1}>
+      <Text>
+        <Text bold color={ask.finalText ? 'gray' : 'cyan'}>用户决策 </Text>
+        <Text>{ask.prompt.title || '请选择'}</Text>
+        <Text dimColor> · {ask.selectionMode === 'multi' ? `多选 ${ask.minSelections}-${ask.maxSelections}` : '单选'}</Text>
+      </Text>
+      <Text dimColor>{ask.prompt.body}</Text>
+      {ask.finalText ? (
+        <Text color="green">✓ {ask.finalText}</Text>
+      ) : customInputMode ? (
+        <Text color="yellow">输入自定义回复后按 Enter 提交（Esc 返回选项）</Text>
+      ) : (
+        <Box flexDirection="column">
+          {options.map((choice, index) => {
+            const isCustom = choice.data.endsWith(':custom')
+            const display = askChoiceLabel(choice.label)
+            const selected = ask.selectionMode === 'multi' && !isCustom ? selectedSet.has(index + 1) : false
+            return (
+              <Text
+                key={`${choice.data}-${choice.label}`}
+                inverse={index === safeIndex}
+                color={index === safeIndex ? 'cyan' : (selected ? 'green' : undefined)}
+              >
+                {ask.selectionMode === 'multi' && !isCustom ? (selected ? '[x] ' : '[ ] ') : '    '}
+                {index === safeIndex ? '› ' : '  '}
+                {display}
+                {isCustom ? ' (自定义输入)' : ''}
+              </Text>
+            )
+          })}
+          <Text dimColor>
+            {ask.selectionMode === 'multi'
+              ? '↑↓/Tab 选择 · Space 勾选 · Enter 提交'
+              : '↑↓/Tab 选择 · Enter 确认'}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
@@ -264,9 +338,15 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
   const [approval, setApproval] = useState<TuiApprovalView | null>(null)
   const [approvalActionIndex, setApprovalActionIndex] = useState(0)
+  const [ask, setAsk] = useState<TuiAskView | null>(null)
+  const [askActionIndex, setAskActionIndex] = useState(0)
+  const [askSelectedIndexes, setAskSelectedIndexes] = useState<number[]>([])
+  const [askCustomInputMode, setAskCustomInputMode] = useState(false)
   const approvalReqId = approval?.prompt.reqId
   const approvalOutcome = approval?.outcome
+  const askPending = Boolean(ask && !ask.finalText)
   const activeApprovalPending = Boolean(approvalReqId && !approvalOutcome)
+  const activeDecisionPending = askPending || activeApprovalPending
 
   useEffect(() => {
     agentSessionsRef.current = agentSessions
@@ -279,10 +359,22 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   useEffect(() => {
     if (!approvalBridge) return
     approvalBridge.setSession(activeSessionId)
-    return approvalBridge.subscribe((next) => {
+    const unsubscribeApproval = approvalBridge.subscribe((next) => {
       if (next && !next.outcome) setApprovalActionIndex(0)
       setApproval(next)
     })
+    const unsubscribeAsk = approvalBridge.subscribeAsk((next) => {
+      if (next && !next.finalText) {
+        setAskActionIndex(0)
+        setAskSelectedIndexes([])
+        setAskCustomInputMode(false)
+      }
+      setAsk(next)
+    })
+    return () => {
+      unsubscribeApproval()
+      unsubscribeAsk()
+    }
   }, [approvalBridge, activeSessionId])
 
   const cwd = useMemo(() => {
@@ -294,6 +386,24 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   const cols = stdout?.columns ?? 80
   const chatWidth = Math.min(cols - 4, 120)
   const currentAgentSession = agent ? agentSessions[agent] : undefined
+  const askOptions = useMemo(() => {
+    if (!ask) return [] as Array<{ label: string; data: string; index: number; isCustom: boolean }>
+    const base = ask.prompt.choices.map((choice, i) => ({
+      label: choice.label,
+      data: choice.data,
+      index: i + 1,
+      isCustom: choice.data.endsWith(':custom'),
+    }))
+    if (ask.allowCustomInput && !base.some((item) => item.isCustom)) {
+      base.push({
+        label: `0. ${ask.customInputLabel}`,
+        data: `ask:${ask.reqId}:custom`,
+        index: base.length + 1,
+        isCustom: true,
+      })
+    }
+    return base
+  }, [ask])
 
   // ── Slash-command popup state ─────────────────────────────────────
   const slashPopupOpen = input.startsWith('/') && !input.includes(' ')
@@ -376,7 +486,74 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     }
 
     const popupOpen = slashPopupOpen || filePopupOpen || agentArgPopupOpen
-    if (activeApprovalPending && !palette.open && !helpOpen && !popupOpen) {
+    if (askPending && !palette.open && !helpOpen && !popupOpen && ask) {
+      if (!askCustomInputMode) {
+        if (key.leftArrow || key.upArrow) {
+          setAskActionIndex((index) => (index - 1 + askOptions.length) % Math.max(askOptions.length, 1))
+          return
+        }
+        if (key.rightArrow || key.downArrow || key.tab) {
+          setAskActionIndex((index) => (index + 1) % Math.max(askOptions.length, 1))
+          return
+        }
+        if (key.escape && ask.allowCustomInput) {
+          setAskCustomInputMode(false)
+          return
+        }
+        if (key.return) {
+          const pick = askOptions[askActionIndex]
+          if (!pick) return
+          if (pick.isCustom) {
+            setAskCustomInputMode(true)
+            setInput('')
+            return
+          }
+          if (ask.selectionMode === 'multi') {
+            const picks = askSelectedIndexes.length > 0
+              ? askSelectedIndexes
+              : [pick.index]
+            if (picks.length < ask.minSelections || picks.length > ask.maxSelections) {
+              setError(`请先选择 ${ask.minSelections}-${ask.maxSelections} 项`)
+              return
+            }
+            void approvalBridge?.submitAskMulti(picks).then((handled) => {
+              if (handled) {
+                setInput('')
+                setAskCustomInputMode(false)
+                setAskSelectedIndexes([])
+              }
+            })
+            return
+          }
+          void approvalBridge?.submitAskSingle(pick.index).then((handled) => {
+            if (handled) {
+              setInput('')
+              setAskCustomInputMode(false)
+              setAskSelectedIndexes([])
+            }
+          })
+          return
+        }
+        if (ask.selectionMode === 'multi' && inputCh === ' ') {
+          const pick = askOptions[askActionIndex]
+          if (!pick || pick.isCustom) return
+          setAskSelectedIndexes((prev) => {
+            if (prev.includes(pick.index)) return prev.filter((n) => n !== pick.index)
+            if (prev.length >= ask.maxSelections) {
+              setError(`最多选择 ${ask.maxSelections} 项`)
+              return prev
+            }
+            return [...prev, pick.index].sort((a, b) => a - b)
+          })
+          return
+        }
+      } else if (key.escape) {
+        setAskCustomInputMode(false)
+        setInput('')
+        return
+      }
+    }
+    if (activeApprovalPending && !askPending && !palette.open && !helpOpen && !popupOpen) {
       if (key.leftArrow || key.upArrow) {
         setApprovalActionIndex((index) => (index - 1 + APPROVAL_ACTIONS.length) % APPROVAL_ACTIONS.length)
         return
@@ -478,7 +655,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       }
     }
 
-    if (!busy && !palette.open && !popupOpen) {
+    if (!busy && !palette.open && !popupOpen && !activeDecisionPending) {
       if (key.upArrow) {
         const history = inputHistoryRef.current
         if (history.length === 0) return
@@ -869,6 +1046,21 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     const text = line.trim()
     if (!text) return
 
+    if (askPending && ask) {
+      const handled = askCustomInputMode
+        ? await approvalBridge?.submitAskCustom(text)
+        : await approvalBridge?.submitAskText(text)
+      if (handled) {
+        setInput('')
+        setAskCustomInputMode(false)
+        setAskSelectedIndexes([])
+        rememberSubmittedLine(text)
+        return
+      }
+      setError('未识别该回复，请用方向键选择或输入合法选项')
+      return
+    }
+
     if (approval && !approval.outcome) {
       const handled = await approvalBridge?.submitText(text)
       if (handled) {
@@ -946,7 +1138,15 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           every message box (v1.2.78 flicker fix). */}
       <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
 
-      {approval && <ApprovalDock approval={approval} selectedIndex={approvalActionIndex} />}
+      {ask && (
+        <AskDock
+          ask={ask}
+          selectedIndex={askActionIndex}
+          selectedMulti={askSelectedIndexes}
+          customInputMode={askCustomInputMode}
+        />
+      )}
+      {approval && !askPending && <ApprovalDock approval={approval} selectedIndex={approvalActionIndex} />}
 
       {error && (
         <Box paddingX={1}>
@@ -1053,10 +1253,20 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
             setInput(next)
           }}
           onSubmit={onSubmit}
-          placeholder={activeApprovalPending
-            ? '审批待处理：用方向键选择，Enter 确认'
-            : busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
-          focus={!activeApprovalPending}
+          placeholder={askPending
+            ? (
+                askCustomInputMode
+                  ? '请输入自定义回复，Enter 提交，Esc 返回选项'
+                  : (
+                      ask?.selectionMode === 'multi'
+                        ? '待决策：↑↓ 选择 · Space 勾选 · Enter 提交'
+                        : '待决策：↑↓ 选择 · Enter 确认'
+                    )
+              )
+            : activeApprovalPending
+              ? '审批待处理：用方向键选择，Enter 确认'
+              : busy ? '生成中…（Esc 取消）' : '输入消息 · / 命令 · ! shell · @ 文件 · ↑↓ 历史 · ? 帮助 · Ctrl-P 面板'}
+          focus={!activeDecisionPending || askCustomInputMode}
         />
       </Box>
 

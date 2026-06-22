@@ -18,7 +18,7 @@
     "title": "暂无待审批请求",
     "description": "队列为空。当 Agent 调用尚未加入白名单的工具时，请求会在这里出现。"
   },
-  "threadLabel":      "Thread",
+  "threadLabel":      "线程",
   "autoAllowedTag":   "自动放行",
   "autoAllowedTitle": "后端已对该只读工具自动放行；此处仅供可见性展示。",
   "allow": "放行",

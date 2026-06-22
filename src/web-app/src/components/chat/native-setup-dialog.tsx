@@ -38,42 +38,42 @@ const PRESETS: PresetDef[] = [
     provider: 'openai-compat',
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
-    baseName: 'deepseek-native',
+    baseName: 'deepseek-agim',
   },
   {
     key: 'moonshot',
     provider: 'openai-compat',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'moonshot-v1-8k',
-    baseName: 'moonshot-native',
+    baseName: 'moonshot-agim',
   },
   {
     key: 'zhipu',
     provider: 'openai-compat',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4-air',
-    baseName: 'zhipu-native',
+    baseName: 'zhipu-agim',
   },
   {
     key: 'openai',
     provider: 'openai-compat',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
-    baseName: 'openai-native',
+    baseName: 'openai-agim',
   },
   {
     key: 'anthropic',
     provider: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-3-5-sonnet-20241022',
-    baseName: 'anthropic-native',
+    baseName: 'anthropic-agim',
   },
   {
     key: 'custom',
     provider: 'openai-compat',
     baseUrl: '',
     model: '',
-    baseName: 'native-backend',
+    baseName: 'agim-api',
   },
 ]
 const DEFAULT_PRESET: PresetDef = PRESETS[0] as PresetDef
@@ -115,7 +115,7 @@ export function NativeSetupDialog({
     [llmList.data],
   )
 
-  const [name, setName] = useState(() => suggestName('deepseek-native', []))
+  const [name, setName] = useState(() => suggestName('deepseek-agim', []))
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
   const [model, setModel] = useState(preset.model)
   const [apiKey, setApiKey] = useState('')
@@ -138,7 +138,7 @@ export function NativeSetupDialog({
     }
     if (!model.trim()) { toast.error(t('llm.modelRequired', { ns: 'settings' })); return }
     if (!apiKey.trim()) {
-      toast.error(t('chat.nativeSetupApiKeyRequired', { defaultValue: '请填写 API Key' }))
+      toast.error(t('chat.nativeSetupApiKeyRequired'))
       return
     }
     try {
@@ -149,9 +149,7 @@ export function NativeSetupDialog({
         model: model.trim(),
         apiKey: apiKey.trim(),
       })
-      toast.success(t('chat.nativeSetupSaved', {
-        defaultValue: 'LLM 配置已保存，正在重试切换 native…',
-      }))
+      toast.success(t('chat.nativeSetupSaved'))
       setApiKey('')
       onOpenChange(false)
       onConfigured?.()
@@ -165,15 +163,10 @@ export function NativeSetupDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {t('chat.nativeSetupDialogTitle', {
-              defaultValue: '配置 Native Agent 所需 LLM',
-            })}
+            {t('chat.nativeSetupDialogTitle')}
           </DialogTitle>
           <DialogDescription>
-            {t('chat.nativeSetupDialogDesc', {
-              defaultValue:
-                '只要配置一个可用的 LLM backend（含 API Key），native 就可以使用。Role Bindings 属于可选高级配置。',
-            })}
+            {t('chat.nativeSetupDialogDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -181,7 +174,7 @@ export function NativeSetupDialog({
           {reason && (
             <div className="rounded-md border border-warning/50 bg-warning-bg/40 p-3 text-xs text-warning">
               <div className="mb-1 font-medium">
-                {t('chat.nativeSetupDialogReason', { defaultValue: '最近一次错误信息' })}
+                {t('chat.nativeSetupDialogReason')}
               </div>
               <div className="break-words">{reason}</div>
             </div>
@@ -229,7 +222,7 @@ export function NativeSetupDialog({
               />
             </div>
             <div>
-              <Label className="text-xs font-medium">{t('llm.apiKeyOptional', { ns: 'settings' })}</Label>
+              <Label className="text-xs font-medium">{t('llm.apiKey', { ns: 'settings' })}</Label>
               <Input
                 type="password"
                 value={apiKey}
@@ -242,9 +235,7 @@ export function NativeSetupDialog({
           </div>
 
           <p className="text-xs text-text-dim">
-            {t('chat.nativeSetupDialogRoleOptional', {
-              defaultValue: 'Role Bindings 是可选增强项，不配置也不会阻塞 native。',
-            })}
+            {t('chat.nativeSetupDialogRoleOptional')}
           </p>
 
           <DialogFooter>
@@ -253,13 +244,13 @@ export function NativeSetupDialog({
               variant="ghost"
               onClick={() => window.location.assign('/settings/llm')}
             >
-              {t('chat.nativeSetupDialogAdvanced', { defaultValue: '打开完整 LLM 设置页' })}
+              {t('chat.nativeSetupDialogAdvanced')}
             </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {t('chat.nativeSetupDialogCancel', { defaultValue: '稍后再配' })}
+              {t('chat.nativeSetupDialogCancel')}
             </Button>
             <Button type="submit" disabled={addBackend.isPending}>
-              {t('chat.nativeSetupDialogSave', { defaultValue: '保存并启用 native' })}
+              {t('chat.nativeSetupDialogSave')}
             </Button>
           </DialogFooter>
         </form>

@@ -37,6 +37,7 @@ import {
   useWriteWorkspaceFile,
 } from '@/hooks/use-workspace'
 import { describeError } from '@/lib/api/errors'
+import { agentDisplayName } from '@/lib/agent-label'
 import type {
   WorkspaceFileContent,
   WorkspaceFileEntry,
@@ -124,7 +125,7 @@ export default function WorkspaceRoute(): JSX.Element {
                 {agentNames.map((name) => (
                   <SelectItem key={name} value={name}>
                     <span className="flex items-center gap-2">
-                      <span className="font-mono text-xs">{name}</span>
+                      <span className="font-mono text-xs">{agentDisplayName(name)}</span>
                       <span className={cn(
                         'inline-block h-1.5 w-1.5 rounded-full',
                         agents[name] ? 'bg-success' : 'bg-text-muted',
@@ -324,7 +325,7 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
           {t('tree.up')}
         </Button>
         <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs font-mono">{file.path}</code>
-        {file.truncated && <Badge variant="warning">truncated</Badge>}
+        {file.truncated && <Badge variant="warning">{t('editor.truncatedBadge')}</Badge>}
         {dirty && <Badge variant="info">{t('editor.dirtyHint')}</Badge>}
         <Button
           type="button"

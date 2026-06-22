@@ -45,6 +45,7 @@ export default function ChatRoute(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
 
   // Auto-scroll to bottom on new messages OR streaming chunk. Use
   // requestAnimationFrame so the layout has settled before we scroll;
@@ -109,9 +110,9 @@ export default function ChatRoute(): JSX.Element {
       <Topbar>
         <span
           className={cn('inline-block h-2 w-2 rounded-full', STATUS_STYLES[state.status])}
-          title={state.status}
+          title={statusLabel}
         />
-        <span className="hidden text-xs text-text-dim sm:inline">{state.status}</span>
+        <span className="hidden text-xs text-text-dim sm:inline">{statusLabel}</span>
         <Button
           variant="ghost"
           size="sm"
@@ -138,7 +139,7 @@ export default function ChatRoute(): JSX.Element {
         open={nativeSetupDialogOpen}
         reason={nativeSetupReason}
         onOpenChange={setNativeSetupDialogOpen}
-        onConfigured={() => switchAgent('native')}
+        onConfigured={() => switchAgent('agim')}
       />
 
       {/* Message list */}

@@ -87,7 +87,19 @@ type PendingMemoryRpc = PendingReminderRpc
 // question and waits for the reply. Wire success is { index, label,
 // via:'button'|'text', raw }; failure carries an optional reason
 // ('timeout' | 'cancelled' | 'invalid' | 'no-messenger').
-interface AskOk { ok: true; result: { index: number; label: string; via: 'button' | 'text'; raw: string } }
+interface AskOk {
+  ok: true
+  result: {
+    index: number
+    label: string
+    via: 'button' | 'text'
+    raw: string
+    selectionMode?: 'single' | 'multi'
+    indexes?: number[]
+    labels?: string[]
+    customText?: string
+  }
+}
 interface AskFail { ok: false; error: string; reason?: 'timeout' | 'cancelled' | 'invalid' | 'no-messenger' }
 type AskResult = AskOk | AskFail
 interface PendingAskRpc { resolve: (r: AskResult) => void }
@@ -1067,11 +1079,11 @@ export function buildServer(client: ApprovalClient): McpServer {
   // IMHUB_PUSH_CROSS_THREAD=on. Rate limit IMHUB_PUSH_RATE_PER_MINUTE
   // (default 10/min/user).
   // ─── P0 #5 — structured ask_user ─────────────────────────────────
-  // The agent presents a question with 2-9 choices and waits for the
-  // user to pick one (button tap on Telegram/Feishu, text reply
-  // everywhere else). Returns { index, label, via, raw }. Use this
-  // for explicit clarification ("did you mean A or B?") rather than
-  // forcing the user back into free-form chat.
+  // The agent presents a structured question with 2-9 choices and waits
+  // for the user to answer. Supports single-select (default), multi-
+  // select, and optional custom free-form input. Use this for explicit
+  // clarification ("did you mean A or B?") rather than forcing the user
+  // back into free-form chat.
   server.registerTool(
     'ask_user',
     {
@@ -1081,7 +1093,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'confirm-then-proceed flows, picking one of several known options. The user sees a button ' +
         'card on platforms that support it (Telegram / Feishu / Discord); other platforms (WeChat / ' +
         'DingTalk) receive a numbered text prompt and the user replies with the number or label.\n\n' +
-        'Returns { ok: true, result: { index, label, via, raw } } on success; ' +
+        'Returns { ok: true, result: { index, label, via, raw, selectionMode?, indexes?, labels?, customText? } } on success; ' +
         '{ ok: false, error, reason } on failure (reason ∈ timeout|cancelled|invalid|no-messenger). ' +
         'Timeout defaults to 300s; the user gets a single chance to respond.\n\n' +
         'Do NOT use for: free-form questions (just ask in chat), Y/N permission gates (those go ' +
@@ -1093,6 +1105,21 @@ export function buildServer(client: ApprovalClient): McpServer {
         ),
         timeoutSec: z.number().int().min(5).max(1800).optional().describe(
           'Seconds to wait before resolving with reason:timeout. Default 300, range 5-1800.',
+        ),
+        selectionMode: z.enum(['single', 'multi']).optional().describe(
+          'Selection mode. `single` (default) expects one option; `multi` allows selecting multiple options at once.',
+        ),
+        minSelections: z.number().int().min(1).optional().describe(
+          'Only for `selectionMode=multi`. Minimum number of selected options. Default 1.',
+        ),
+        maxSelections: z.number().int().min(1).optional().describe(
+          'Only for `selectionMode=multi`. Maximum number of selected options. Default = choices.length.',
+        ),
+        allowCustomInput: z.boolean().optional().describe(
+          'When true, user may answer with custom free-form text instead of choosing listed options.',
+        ),
+        customInputLabel: z.string().min(1).max(80).optional().describe(
+          'Optional display label for the custom-input option in richer clients.',
         ),
         allowTextReply: z.boolean().optional().describe(
           'When true (default), user can type the number / letter / label substring; when false, only button taps resolve.',

@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { agentDisplayName } from '@/lib/agent-label'
 
 export interface AgentPickerProps {
   agents: string[]
@@ -25,11 +26,9 @@ export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.
   // conversation to a different agent. Picking the current agent is a no-op.
   function handleChange(next: string): void {
     if (!next || next === value) return
+    const displayNext = agentDisplayName(next)
     const ok = window.confirm(
-      t('chat.switchAgentConfirm', {
-        agent: next,
-        defaultValue: `切换为「${next}」的对话框？`,
-      }),
+      t('chat.switchAgentConfirm', { agent: displayNext }),
     )
     if (ok) onChange(next)
     // On cancel we do nothing — the Select is controlled by `value`, so it
@@ -38,12 +37,12 @@ export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.
   return (
     <Select value={value || undefined} onValueChange={handleChange}>
       <SelectTrigger className="h-7 w-28 sm:w-36 text-xs">
-        <SelectValue placeholder={agents[0] ?? '—'} />
+        <SelectValue placeholder={agentDisplayName(agents[0] ?? '—')} />
       </SelectTrigger>
       <SelectContent>
         {agents.map((a) => (
           <SelectItem key={a} value={a}>
-            {a}
+            {agentDisplayName(a)}
           </SelectItem>
         ))}
       </SelectContent>

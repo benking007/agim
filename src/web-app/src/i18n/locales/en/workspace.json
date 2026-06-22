@@ -25,6 +25,7 @@
     "noFile":    "Select a file from the tree to view or edit it.",
     "binary":    "This file looks binary (base64-encoded) — editing not supported.",
     "truncated": "File is over 1 MiB; only the first 1 MiB is shown. Saving from here would replace the whole file with the truncated content — close without saving.",
+    "truncatedBadge": "Truncated",
     "save":      "Save",
     "saving":    "Saving…",
     "savedMeta": "Saved · {{size}} bytes · {{at}}",

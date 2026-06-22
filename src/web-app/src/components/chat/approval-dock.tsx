@@ -87,7 +87,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <Badge variant="warning" className="gap-1">
           <ShieldCheck className="h-3 w-3" />
-          {t('chat.approvalTitle', { defaultValue: '工具授权' })}
+          {t('chat.approvalTitle')}
         </Badge>
         {isAuto && !outcome && (
           <Badge variant="outline" className="text-[10px] uppercase">
@@ -118,7 +118,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
                   disabled={pendingChoice !== null}
                   onClick={() => handleClick('y')}
                 >
-                  {t('chat.approvalAllow', { defaultValue: '批准' })}
+                  {t('chat.approvalAllow')}
                 </Button>
                 <Button
                   size="sm"
@@ -129,7 +129,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
                     defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
                   })}
                 >
-                  {t('chat.approvalAuto', { defaultValue: '本类自动放行' })}
+                  {t('chat.approvalAuto')}
                 </Button>
               </>
             )}
@@ -139,12 +139,12 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
               disabled={pendingChoice !== null}
               onClick={() => handleClick('n')}
             >
-              {t('chat.approvalDeny', { defaultValue: '拒绝' })}
+              {t('chat.approvalDeny')}
             </Button>
           </div>
           {pendingChoice !== null && (
             <p className="mt-1.5 text-xs text-text-dim">
-              {t('chat.approvalSubmitting', { defaultValue: '已发送，等待结果…' })}
+              {t('chat.approvalSubmitting')}
             </p>
           )}
         </>

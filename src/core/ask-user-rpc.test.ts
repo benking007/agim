@@ -113,6 +113,17 @@ describe('handleAskOp — validation', () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe('no-messenger')
   })
+
+  it('rejects strict text-disabled asks when cards are unavailable', async () => {
+    const m = makeFakeMessenger('v-no-card', { withCards: false })
+    register(m)
+    const r = await handleAskOp(
+      { question: 'q?', choices: ['a', 'b'], allowTextReply: false },
+      { ...CTX, platform: 'v-no-card' },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe('invalid')
+  })
 })
 
 describe('handleAskOp — happy paths', () => {
@@ -223,6 +234,101 @@ describe('handleAskOp — happy paths', () => {
     // doesn't leak a long-lived timer.
     expect(tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, 'a')).toBe(true)
     await p
+  })
+
+  it('resolves multi-select ask via text reply', async () => {
+    const m = makeFakeMessenger('h-multi-text')
+    register(m)
+    const ctx = { ...CTX, platform: 'h-multi-text' }
+    const promise = handleAskOp({
+      question: 'pick',
+      choices: ['alpha', 'beta', 'gamma'],
+      selectionMode: 'multi',
+      minSelections: 2,
+      maxSelections: 3,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, '1,3')).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.selectionMode).toBe('multi')
+      expect(r.result.indexes).toEqual([1, 3])
+      expect(r.result.labels).toEqual(['alpha', 'gamma'])
+      expect(r.result.index).toBe(1)
+    }
+  })
+
+  it('resolves custom input via text when enabled', async () => {
+    const m = makeFakeMessenger('h-custom-text')
+    register(m)
+    const ctx = { ...CTX, platform: 'h-custom-text' }
+    const promise = handleAskOp({
+      question: 'pick',
+      choices: ['alpha', 'beta'],
+      allowCustomInput: true,
+      customInputLabel: '其他方案',
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, '我想走第三种方案')).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.customText).toBe('我想走第三种方案')
+      expect(r.result.label).toBe('其他方案')
+      expect(r.result.index).toBe(0)
+    }
+  })
+
+  it('resolves multi-select via button payload', async () => {
+    const m = makeFakeMessenger('tui', { withCards: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tui' }
+    const promise = handleAskOp({
+      question: 'pick',
+      choices: ['a', 'b', 'c'],
+      selectionMode: 'multi',
+      minSelections: 2,
+      maxSelections: 3,
+      allowTextReply: false,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const firstData = m.cards[0]?.prompt.choices[0]?.data ?? ''
+    const reqId = /^ask:([^:]+):/.exec(firstData)?.[1]
+    expect(reqId).toBeTruthy()
+    expect(tryResolvePendingAskByButton(`ask:${reqId}:multi:1,2`)).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.selectionMode).toBe('multi')
+      expect(r.result.indexes).toEqual([1, 2])
+      expect(r.result.via).toBe('button')
+    }
+  })
+
+  it('resolves custom input via button payload', async () => {
+    const m = makeFakeMessenger('tui', { withCards: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tui' }
+    const promise = handleAskOp({
+      question: 'pick',
+      choices: ['a', 'b'],
+      allowCustomInput: true,
+      allowTextReply: false,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const firstData = m.cards[0]?.prompt.choices[0]?.data ?? ''
+    const reqId = /^ask:([^:]+):/.exec(firstData)?.[1]
+    expect(reqId).toBeTruthy()
+    const encoded = Buffer.from('my custom answer', 'utf8').toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+    expect(tryResolvePendingAskByButton(`ask:${reqId}:custom:${encoded}`)).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.customText).toBe('my custom answer')
+      expect(r.result.via).toBe('button')
+    }
   })
 })
 

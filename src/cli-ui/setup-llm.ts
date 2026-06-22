@@ -400,7 +400,7 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
   if (src.source === 'none') {
     process.stdout.write(`⚠️  No API key for "${name}". Run \`agim setup llm secret ${name}\` to add one.\n`)
   }
-  process.stdout.write(`\nTry it: in any IM thread, send \`/na hello\` (or just chat if you set defaultAgent above).\n`)
+  process.stdout.write(`\nTry it: in any IM thread, send \`/agim hello\` (legacy \`/na\` still works; or just chat if you set defaultAgent above).\n`)
   return 0
 }
 

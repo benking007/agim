@@ -25,6 +25,7 @@
     "noFile":    "从左侧选择一个文件查看或编辑。",
     "binary":    "该文件是二进制（base64 编码）— 不支持编辑。",
     "truncated": "文件超过 1 MiB；仅显示前 1 MiB。直接保存会用截断内容覆盖整个文件 — 请关闭而不要保存。",
+    "truncatedBadge": "已截断",
     "save":      "保存",
     "saving":    "保存中…",
     "savedMeta": "已保存 · {{size}} 字节 · {{at}}",

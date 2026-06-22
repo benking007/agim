@@ -51,6 +51,8 @@ import observabilityZh from './locales/zh/observability.json'
 import settingsEn from './locales/en/settings.json'
 import settingsZh from './locales/zh/settings.json'
 
+const initialLang = detectInitialLang()
+
 void i18n
   .use(HttpBackend)
   .use(initReactI18next)
@@ -59,7 +61,7 @@ void i18n
       en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn, skills: skillsEn, workspace: workspaceEn, observability: observabilityEn, settings: settingsEn },
       zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh, skills: skillsZh, workspace: workspaceZh, observability: observabilityZh, settings: settingsZh },
     },
-    lng: detectInitialLang(),
+    lng: initialLang,
     fallbackLng: 'en',
     supportedLngs: ['en', 'zh'],
     ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory', 'skills', 'workspace', 'observability', 'settings'],
@@ -79,6 +81,9 @@ void i18n
       caches: [],
     },
   })
+  .then(() => {
+    syncDocumentLang(i18n.language === 'zh' ? 'zh' : 'en')
+  })
 
 function detectInitialLang(): 'en' | 'zh' {
   try {
@@ -94,8 +99,14 @@ function detectInitialLang(): 'en' | 'zh' {
  *  also by tests that want to force a language without going through
  *  the zustand store. */
 export function syncI18nLanguage(lang: 'en' | 'zh'): void {
+  syncDocumentLang(lang)
   if (i18n.language === lang) return
   void i18n.changeLanguage(lang)
+}
+
+function syncDocumentLang(lang: 'en' | 'zh'): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
 }
 
 export default i18n

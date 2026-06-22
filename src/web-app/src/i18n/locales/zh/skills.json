@@ -44,15 +44,16 @@
     "col": {
       "slug":     "slug",
       "name":     "名称 / 描述",
-      "stars":    "stars",
-      "installs": "installs"
+      "stars":    "收藏",
+      "installs": "安装量"
     },
     "detail": {
+      "slug":         "标识",
       "version":      "版本",
       "category":     "类别",
-      "stars":        "stars",
-      "installs":     "installs",
-      "downloads":    "downloads",
+      "stars":        "收藏",
+      "installs":     "安装量",
+      "downloads":    "下载量",
       "howInstall":   "安装方式（任选一个；agim 不会自动跑）",
       "copy":         "复制",
       "copied":       "已复制",

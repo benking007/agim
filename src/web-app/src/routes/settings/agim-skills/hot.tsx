@@ -212,7 +212,7 @@ interface RemoteSkillDialogProps {
 }
 
 function RemoteSkillDialog({ skill, onOpenChange }: RemoteSkillDialogProps): JSX.Element {
-  const { t } = useTranslation('skills')
+  const { t, i18n } = useTranslation('skills')
 
   // Three copy-pasteable install paths. agim never executes them itself
   // — the operator chooses CLI or IM.
@@ -221,9 +221,14 @@ function RemoteSkillDialog({ skill, onOpenChange }: RemoteSkillDialogProps): JSX
     return [
       { key: 'cliInstall', cmd: `skillhub install ${skill.slug}` },
       { key: 'cliSearch',  cmd: `skillhub search ${skill.slug}` },
-      { key: 'imAsk',      cmd: `请用 skillhub 安装 ${skill.slug} 技能` },
+      {
+        key: 'imAsk',
+        cmd: i18n.language.startsWith('zh')
+          ? `请用 skillhub 安装 ${skill.slug} 技能`
+          : `Please install ${skill.slug} via skillhub`,
+      },
     ]
-  }, [skill])
+  }, [i18n.language, skill])
 
   return (
     <Dialog open={skill != null} onOpenChange={onOpenChange}>
@@ -238,7 +243,7 @@ function RemoteSkillDialog({ skill, onOpenChange }: RemoteSkillDialogProps): JSX
         {skill && (
           <>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-text-dim">slug</dt>
+              <dt className="text-text-dim">{t('hot.detail.slug')}</dt>
               <dd className="font-mono">{skill.slug}</dd>
               {skill.version && (
                 <>

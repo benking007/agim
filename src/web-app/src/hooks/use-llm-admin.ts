@@ -19,7 +19,7 @@ export interface LlmBackendRow {
   provider: 'openai-compat' | 'anthropic'
   baseUrl?: string
   model: string
-  secret: { source: 'env' | 'file' | 'none'; envKey: string }
+  secret: { source: 'env' | 'file' | 'vendor' | 'none'; envKey: string }
 }
 
 export interface LlmListResponse {
@@ -32,7 +32,7 @@ export interface LlmAddBody {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
-  apiKey?: string
+  apiKey: string
 }
 
 export interface LlmPingResponse {

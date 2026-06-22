@@ -1,10 +1,10 @@
 /**
- * /settings/llm — native LLM backends + role bindings (Stage 6).
+ * /settings/llm — Agim Agent model APIs + runtime settings.
  *
  * Front-end for the `/api/llm/*` REST surface that landed in Stage 4.
- * Operators add an OpenAI-compatible or Anthropic backend, paste an
- * API key, optionally bind roles (cheap / evaluator / native-chat),
- * and ping-test the connection — all without hand-editing
+ * Operators add an OpenAI-compatible or Anthropic API, paste an API
+ * key, optionally bind roles (cheap / evaluator / native-chat), and
+ * tune built-in Agim Agent runtime behavior without hand-editing
  * ~/.agim/config.json.
  *
  * Intentionally minimal styling — focused on doing the job; matches
@@ -29,6 +29,7 @@ import {
 import {
   useLlmList, useLlmAddBackend, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
 } from '@/hooks/use-llm-admin'
+import { NativeAgentSettingsPanel } from '@/routes/settings/native-agent'
 
 const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
 const UNBIND_SENTINEL = '__unbind__'
@@ -83,8 +84,13 @@ export default function SettingsLlmRoute(): JSX.Element {
       ) : (
         <>
           <BackendsCard data={listQuery.data} />
-          <RolesCard data={listQuery.data} />
           <AddBackendCard />
+          <RolesCard data={listQuery.data} />
+          <section id="agim-agent" className="rounded-md border border-border bg-surface px-4 py-3">
+            <h2 className="text-sm font-semibold">{t('llm.agimAgentRuntimeTitle')}</h2>
+            <p className="mt-1 text-xs text-text-dim">{t('llm.agimAgentRuntimeHint')}</p>
+          </section>
+          <NativeAgentSettingsPanel embedded />
         </>
       )}
     </div>
@@ -256,6 +262,12 @@ function AddBackendCard(): JSX.Element {
   const [baseUrl, setBaseUrl] = useState(PRESETS[0]?.baseUrl ?? '')
   const [model, setModel] = useState(PRESETS[0]?.modelHint ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+
+  function fail(message: string): void {
+    setFormError(message)
+    toast.error(message)
+  }
 
   function onPickPreset(idx: number): void {
     setPresetIdx(idx)
@@ -268,26 +280,25 @@ function AddBackendCard(): JSX.Element {
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const p = PRESETS[presetIdx]
-    if (!p) { toast.error(t('llm.invalidPreset')); return }
-    if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
-    if (!baseUrl.trim()) { toast.error(t('llm.baseUrlRequired')); return }
-    if (!model.trim()) { toast.error(t('llm.modelRequired')); return }
+    if (!p) { fail(t('llm.invalidPreset')); return }
+    if (!name.trim()) { fail(t('llm.nameRequired')); return }
+    if (!baseUrl.trim()) { fail(t('llm.baseUrlRequired')); return }
+    if (!model.trim()) { fail(t('llm.modelRequired')); return }
+    if (!apiKey.trim()) { fail(t('llm.apiKeyRequired')); return }
     try {
       await addBackend.mutateAsync({
         name: name.trim(),
         provider: p.provider,
         baseUrl: baseUrl.trim(),
         model: model.trim(),
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        apiKey: apiKey.trim(),
       })
-      toast.success(
-        apiKey.trim()
-          ? t('llm.addedWithKey', { name: name.trim() })
-          : t('llm.addedNoKey', { name: name.trim() }),
-      )
+      setFormError(null)
+      toast.success(t('llm.addedWithKey', { name: name.trim() }))
       setName(''); setApiKey('')
     } catch (err) {
-      toast.error(((err as Error)?.message ?? String(err)))
+      const message = ((err as Error)?.message ?? String(err))
+      fail(message)
     }
   }
 
@@ -335,7 +346,7 @@ function AddBackendCard(): JSX.Element {
           />
         </div>
         <div>
-          <Label className="text-xs font-medium">{t('llm.apiKeyOptional')}</Label>
+          <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
           <Input
             type="password"
             value={apiKey} onChange={(e) => setApiKey(e.target.value)}
@@ -345,14 +356,19 @@ function AddBackendCard(): JSX.Element {
           />
         </div>
         <div className="sm:col-span-2 flex">
-          <Button
-            type="submit"
-            disabled={addBackend.isPending}
-            className="ml-auto"
-          >
-            {addBackend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {t('llm.addBackend')}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:items-end">
+            {formError && (
+              <p className="text-xs text-danger">{formError}</p>
+            )}
+            <Button
+              type="submit"
+              disabled={addBackend.isPending}
+              className="ml-auto"
+            >
+              {addBackend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {t('llm.addBackend')}
+            </Button>
+          </div>
         </div>
       </form>
     </section>

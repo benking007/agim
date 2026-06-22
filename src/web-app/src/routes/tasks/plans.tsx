@@ -69,7 +69,7 @@ export default function TasksPlansRoute(): JSX.Element {
     <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4">
       <header className="flex items-center gap-3">
         <ClipboardList className="h-5 w-5 text-text-dim" />
-        <h1 className="text-xl font-semibold">{t('plans.title', { defaultValue: 'Plan history' })}</h1>
+        <h1 className="text-xl font-semibold">{t('plans.title')}</h1>
         <Badge variant="info">{rows.length}</Badge>
         <Button
           variant="ghost" size="sm" className="ml-auto"
@@ -80,20 +80,17 @@ export default function TasksPlansRoute(): JSX.Element {
           {listQuery.isFetching
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <RefreshCcw className="h-4 w-4" />}
-          <span className="hidden sm:inline">{t('plans.refresh', { defaultValue: 'Refresh' })}</span>
+          <span className="hidden sm:inline">{t('plans.refresh')}</span>
         </Button>
       </header>
       <p className="text-sm text-text-dim">
-        {t('plans.subtitle', {
-          defaultValue:
-            'Every native_exit_plan_mode handshake (v1.2.131) lands here with outcome + the plan markdown the model proposed.',
-        })}
+        {t('plans.subtitle')}
       </p>
 
       <section className="flex items-end gap-2 rounded-md border border-border bg-surface p-3">
         <div className="flex flex-1 flex-col gap-1">
           <Label className="text-xs font-medium">
-            {t('plans.filterLabel', { defaultValue: 'Filter by thread key (optional)' })}
+            {t('plans.filterLabel')}
           </Label>
           <Input
             value={filter}
@@ -104,14 +101,14 @@ export default function TasksPlansRoute(): JSX.Element {
           />
         </div>
         <Button size="sm" onClick={applyFilter} disabled={listQuery.isFetching}>
-          {t('plans.applyFilter', { defaultValue: 'Apply' })}
+          {t('plans.applyFilter')}
         </Button>
         {appliedFilter && (
           <Button
             size="sm" variant="ghost"
             onClick={() => { setFilter(''); setAppliedFilter('') }}
           >
-            {t('plans.clearFilter', { defaultValue: 'Clear' })}
+            {t('plans.clearFilter')}
           </Button>
         )}
       </section>
@@ -121,23 +118,19 @@ export default function TasksPlansRoute(): JSX.Element {
       ) : rows.length === 0 ? (
         <section className="rounded-md border border-border bg-surface p-6 text-center text-sm text-text-dim">
           {appliedFilter
-            ? t('plans.emptyFiltered', {
-                defaultValue: 'No plan history for this thread. Either the thread never entered plan mode, or it was approved without going through the exit handshake (e.g. /plan off manually).',
-              })
-            : t('plans.empty', {
-                defaultValue: 'No plans yet. Try /plan on in an IM thread and let the model build a plan.',
-              })}
+            ? t('plans.emptyFiltered')
+            : t('plans.empty')}
         </section>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
-              <TableHead>{t('plans.col.outcome', { defaultValue: 'Outcome' })}</TableHead>
-              <TableHead>{t('plans.col.thread', { defaultValue: 'Thread' })}</TableHead>
-              <TableHead>{t('plans.col.resolvedAt', { defaultValue: 'Resolved' })}</TableHead>
-              <TableHead>{t('plans.col.pending', { defaultValue: 'Wait' })}</TableHead>
-              <TableHead>{t('plans.col.detail', { defaultValue: 'Detail' })}</TableHead>
+              <TableHead>{t('plans.col.outcome')}</TableHead>
+              <TableHead>{t('plans.col.thread')}</TableHead>
+              <TableHead>{t('plans.col.resolvedAt')}</TableHead>
+              <TableHead>{t('plans.col.pending')}</TableHead>
+              <TableHead>{t('plans.col.detail')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -161,7 +154,7 @@ function PlanRow({ row }: { row: PlanHistoryRow }): JSX.Element {
         <TableCell className="align-top">
           <Badge variant={OUTCOME_VARIANT[row.outcome]}>
             {OUTCOME_ICONS[row.outcome]}
-            <span className="ml-1">{row.outcome}</span>
+            <span className="ml-1">{t(`plans.outcome.${row.outcome}`, { defaultValue: row.outcome })}</span>
           </Badge>
         </TableCell>
         <TableCell className="align-top">
@@ -179,7 +172,7 @@ function PlanRow({ row }: { row: PlanHistoryRow }): JSX.Element {
         <TableRow>
           <TableCell colSpan={6} className="bg-surface-2 p-3">
             <div className="text-[11px] text-text-dim">
-              {t('plans.planMdLabel', { defaultValue: 'Plan markdown the model proposed:' })}
+              {t('plans.planMdLabel')}
             </div>
             <pre className="mt-1 max-h-96 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-surface p-3 text-[12px]">
               {row.planMd}

@@ -3,7 +3,7 @@ import { isNativeSetupError } from './error-hints'
 
 describe('isNativeSetupError', () => {
   it('matches native unavailable message from switch-agent WS path', () => {
-    const msg = 'Native agent is not configured yet. 请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。'
+    const msg = 'Agim Agent is not configured yet. 请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。'
     expect(isNativeSetupError(msg)).toBe(true)
   })
 

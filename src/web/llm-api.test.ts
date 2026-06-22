@@ -81,10 +81,11 @@ describe('handleLlmApi — add backend', () => {
   it('rejects missing name / bad provider / non-http baseUrl', async () => {
     for (const bad of [
       {},
-      { name: 'bad name with spaces', provider: 'openai-compat', baseUrl: 'https://x.com', model: 'm' },
-      { name: 'ok', provider: 'mystery', baseUrl: 'https://x.com', model: 'm' },
-      { name: 'ok', provider: 'openai-compat', baseUrl: 'ftp://x.com', model: 'm' },
-      { name: 'ok', provider: 'openai-compat', baseUrl: 'https://x.com', model: '' },
+      { name: 'bad name with spaces', provider: 'openai-compat', baseUrl: 'https://x.com', model: 'm', apiKey: 'k' },
+      { name: 'ok', provider: 'mystery', baseUrl: 'https://x.com', model: 'm', apiKey: 'k' },
+      { name: 'ok', provider: 'openai-compat', baseUrl: 'ftp://x.com', model: 'm', apiKey: 'k' },
+      { name: 'ok', provider: 'openai-compat', baseUrl: 'https://x.com', model: '', apiKey: 'k' },
+      { name: 'ok', provider: 'openai-compat', baseUrl: 'https://x.com', model: 'm', apiKey: '' },
     ]) {
       const res = makeRes()
       await handleLlmApi(makeReq('POST', bad), res as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
@@ -122,7 +123,7 @@ describe('handleLlmApi — add backend', () => {
 
   it('refuses duplicate name with 409', async () => {
     const base = { name: 'foo', provider: 'openai-compat',
-      baseUrl: 'https://x.com/v1', model: 'm' }
+      baseUrl: 'https://x.com/v1', model: 'm', apiKey: 'k' }
     const r1 = makeRes()
     await handleLlmApi(makeReq('POST', base), r1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     expect(r1.statusCode).toBe(201)
@@ -165,7 +166,7 @@ describe('handleLlmApi — roles', () => {
   })
 
   it('null / empty value unbinds the role', async () => {
-    const add = { name: 'a', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm' }
+    const add = { name: 'a', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm', apiKey: 'k' }
     await handleLlmApi(makeReq('POST', add), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     await handleLlmApi(makeReq('PUT', { cheap: 'a' }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/roles'))
     const r = makeRes()
@@ -183,7 +184,7 @@ describe('handleLlmApi — secrets', () => {
   })
 
   it('round-trips save and remove for an existing backend', async () => {
-    const add = { name: 's1', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm' }
+    const add = { name: 's1', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm', apiKey: 'k1' }
     await handleLlmApi(makeReq('POST', add), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
 
     const saveRes = makeRes()
@@ -197,7 +198,7 @@ describe('handleLlmApi — secrets', () => {
   })
 
   it('rejects empty apiKey', async () => {
-    const add = { name: 's2', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm' }
+    const add = { name: 's2', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm', apiKey: 'k2' }
     await handleLlmApi(makeReq('POST', add), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     const res = makeRes()
     await handleLlmApi(makeReq('POST', { apiKey: '' }), res as unknown as import('node:http').ServerResponse, url('/api/llm/secrets/s2'))
@@ -213,7 +214,7 @@ describe('handleLlmApi — non-matching URL returns false', () => {
   })
 
   it('disk written with 0600 perms', async () => {
-    const add = { name: 'p1', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm' }
+    const add = { name: 'p1', provider: 'openai-compat', baseUrl: 'https://x.com/v1', model: 'm', apiKey: 'k' }
     await handleLlmApi(makeReq('POST', add), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     const content = readFileSync(join(TMP, 'config.json'), 'utf-8')
     expect(content).toContain('"p1"')

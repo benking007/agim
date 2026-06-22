@@ -57,10 +57,11 @@ export function createPiNativeAdapter(): PiNativeAgentAdapter {
   }
   return new PiNativeAgentAdapter({
     // pi is the default engine: register under the 'native' name AND inherit
-    // the legacy native adapter's aliases (llm / native-llm / na) so existing
-    // muscle memory (`/na`, `/llm`) keeps working transparently, plus pi names.
+    // the legacy native adapter's aliases (agim / llm / native-llm / na) so
+    // existing muscle memory (`/agim`, `/na`, `/llm`) keeps working
+    // transparently, plus pi names.
     name: 'native',
-    aliases: ['na', 'llm', 'native-llm', 'pi', 'pi-native'],
+    aliases: ['agim', 'na', 'llm', 'native-llm', 'pi', 'pi-native'],
     sessionsRoot,
     resolveModel: async () => {
       for (const role of ROLE_CHAIN) {

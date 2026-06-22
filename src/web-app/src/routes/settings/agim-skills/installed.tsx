@@ -401,7 +401,7 @@ function NewSkillButton({ onCreate }: { onCreate: (name: string) => void }): JSX
     const trimmed = name.trim()
     if (!trimmed) { toast.error(t('agimSkills.nameRequired')); return }
     if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) {
-      toast.error('safe chars only: [A-Za-z0-9._-]'); return
+      toast.error(t('agimSkills.invalidNameChars')); return
     }
     const body = STARTER_TEMPLATE.replace('name: my-skill', `name: ${trimmed}`)
     try {

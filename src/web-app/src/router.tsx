@@ -150,7 +150,7 @@ const router = createBrowserRouter([
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
       { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
       { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
-      { path: 'native-agent', lazy: lazy(() => import('@/routes/settings/native-agent')) },
+      { path: 'native-agent', element: <Navigate to="/settings/llm" replace /> },
       // v1.2.126 — web_search provider chain + per-provider API keys.
       { path: 'search',       lazy: lazy(() => import('@/routes/settings/search')) },
       // v1.2.129 — admin generates mobile QR for /m/chat.

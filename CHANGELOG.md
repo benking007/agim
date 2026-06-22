@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `mcp__imhub__ask_user` 扩展为结构化决策模式：支持单选/多选/自定义输入，新增 `selectionMode`、`minSelections`、`maxSelections`、`allowCustomInput`、`customInputLabel` 参数，并在结果中返回 `selectionMode`、`indexes`、`labels`、`customText`（保持旧字段兼容）。
+- TUI 新增统一决策交互面板，覆盖审批与 `ask_user`：支持键盘单选、多选（Space 勾选）和自定义输入提交流程。
+
+### Documentation
+
+- 更新 `docs/architecture/current.md`，补充“审批 + ask_user”统一决策链路与核心模块说明。
+- 重写 `docs/ask-user.md`，同步最新协议、按钮编码、平台行为与 TUI 交互。
+- 更新 `docs/architecture-bridge-and-native.md` 的对客命名与命令别名，明确 Agim Agent（内部 id `native`）与 `/agim` 入口。
+
 ## [1.3.0] - 2026-06-21
 
 里程碑版本 — 汇总 1.2.155–1.2.160 这一轮：native 引擎换底座(pi-agent-core)、

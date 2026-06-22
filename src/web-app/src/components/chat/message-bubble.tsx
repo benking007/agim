@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownView } from '@/components/chat/markdown-view'
+import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ApprovalChoice } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
@@ -45,6 +46,7 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
   const isUser = msg.role === 'user'
   // Assistant replies can be copied as raw markdown (tables/code survive).
   const canCopy = !isUser && !!msg.content
+  const displayAgent = msg.agent ? agentDisplayName(msg.agent) : ''
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -57,7 +59,7 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
       >
         {!isUser && (msg.agent || canCopy) && (
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-text-muted">{msg.agent ?? ''}</span>
+            <span className="text-xs font-medium text-text-muted">{displayAgent}</span>
             {canCopy && <CopyButton text={msg.content} />}
           </div>
         )}
@@ -91,19 +93,19 @@ function CopyButton({ text }: { text: string }): JSX.Element {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast.error(t('chat.copyFailed', { defaultValue: '复制失败' }))
+      toast.error(t('chat.copyFailed'))
     }
   }
   return (
     <button
       type="button"
       onClick={handleCopy}
-      title={t('chat.copyMarkdown', { defaultValue: '复制 Markdown' })}
+      title={t('chat.copyMarkdown')}
       className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-text-dim transition hover:bg-surface-2 hover:text-text"
     >
       {copied
-        ? t('chat.copied', { defaultValue: '✓ 已复制' })
-        : t('chat.copy', { defaultValue: '复制' })}
+        ? t('chat.copied')
+        : t('chat.copy')}
     </button>
   )
 }
@@ -231,9 +233,7 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
           </div>
           {pendingChoice !== null && (
             <p className="mt-2 text-xs text-text-dim">
-              {t('chat.approvalSubmitting', {
-                defaultValue: '已发送，等待结果…',
-              })}
+              {t('chat.approvalSubmitting')}
             </p>
           )}
         </>

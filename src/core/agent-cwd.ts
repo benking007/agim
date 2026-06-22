@@ -269,7 +269,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   const nativeSeed = `# agim native — 角色定义 + 工作区说明
 
-> 这是 agim 自带的 in-process LLM agent (\`/na\` / \`/llm\`) 的工作目录。
+> 这是 agim 自带的 in-process LLM agent（\`/agim\`，兼容 \`/na\` / \`/llm\`）的工作目录。
 > 不同于 claude-code / opencode / codex，native 没有外部 CLI 进程；它把
 > 这里当作"自己的家"。
 >

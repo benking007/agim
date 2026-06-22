@@ -307,6 +307,12 @@ export interface ChoiceCardPrompt {
   body: string
   /** 1-3 buttons (rows). Each row holds 1-2 buttons depending on platform. */
   choices: Array<{ label: string; data: string }>
+  /**
+   * Optional opaque metadata for adapter-specific rendering. Callers should
+   * treat this as best-effort hinting; adapters that don't understand it
+   * must ignore it and rely on title/body/choices only.
+   */
+  meta?: Record<string, unknown>
 }
 
 /**

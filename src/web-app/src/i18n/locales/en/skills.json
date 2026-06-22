@@ -48,6 +48,7 @@
       "installs": "installs"
     },
     "detail": {
+      "slug":         "Slug",
       "version":      "Version",
       "category":     "Category",
       "stars":        "Stars",

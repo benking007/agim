@@ -14,7 +14,7 @@
 
 - `skills.md`：Skills 机制
 - `goals.md`：`/goal` 长目标
-- `ask-user.md`：结构化提问（ask_user）
+- `ask-user.md`：结构化提问（ask_user，支持单选/多选/自定义输入）
 - `memory-and-vector.md`：长期记忆与向量召回
 - `architecture/reminders.md`：提醒与主动通知链路
 
@@ -34,7 +34,7 @@
 
 ## 架构补充
 
-- `architecture/current.md`：当前实现结构图与模块说明
+- `architecture/current.md`：当前实现结构图、模块说明与决策交互链路
 - `architecture/agent-cwd-and-memory.md`：工作目录与记忆隔离
 - `adr/`：架构决策记录（ADR）
 

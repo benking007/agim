@@ -56,8 +56,11 @@ IM delivery + web views
 | `core/registry.ts` | agent/messenger 注册与查找 |
 | `core/message-sink.ts` | 统一投递入口（含 outbox） |
 | `core/approval-bus.ts` | 工具审批与跨流程交互总线 |
+| `core/approval-router.ts` | 审批按钮与 IM 回调路由 |
+| `core/ask-user-rpc.ts` | 结构化提问（单选/多选/自定义输入） |
 | `core/job-board.ts` | 任务与调度持久层 |
 | `web/server.ts` | Web/REST/WS 入口 |
+| `cli-ui/tui/*` | 本地 TUI 交互层（含决策面板） |
 
 ## 4. 数据与状态
 
@@ -101,7 +104,28 @@ IM delivery + web views
 
 运维手册：`../runbook.md`
 
-## 8. 推荐阅读顺序
+## 8. 交互决策层（审批 + ask_user）
+
+Agim 在用户决策交互上有两条并行能力，并复用同一套回调通道：
+
+- **工具审批**：控制高风险工具调用（允许 / 拒绝 / 同类自动允许）
+- **结构化提问（ask_user）**：用于业务消歧与用户决策（单选/多选/自定义输入）
+
+核心链路：
+
+1. Agent 发起审批或 `ask_user`
+2. `approval-bus` 统一受理并分发
+3. `approval-router` 将按钮回调或文本回复路由到对应 resolver
+4. resolver 产出结构化结果并回传给 agent 继续执行
+
+在 TUI 中，两类交互已合并为统一决策面板：
+
+- 审批：方向键选择 + Enter 确认
+- ask_user 单选：方向键选择 + Enter
+- ask_user 多选：方向键选择 + Space 勾选 + Enter 提交
+- ask_user 自定义输入：选中后进入文本输入态
+
+## 9. 推荐阅读顺序
 
 1. `../../README.md` 或 `../../README.zh-CN.md`
 2. `../architecture-bridge-and-native.md`

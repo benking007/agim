@@ -19,6 +19,7 @@ import { useEffect, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming } from '@/types/ws'
+import i18n from '@/i18n'
 
 /** v1.2.115 — how long the resolved card lingers in the dock before
  *  auto-dismiss. Long enough to read the ✅/❌ flip, short enough to
@@ -302,12 +303,26 @@ function reducer(s: ChatState, a: Action): ChatState {
  *  the dock row itself already shows the colored badge; the toast is
  *  the lingering confirmation when the row fades. */
 function toastForOutcome(o: ApprovalCardOutcome): void {
+  const tr = (key: string, fallback: string): string => i18n.t(`chat.outcome.${key}`, {
+    ns: 'common',
+    defaultValue: fallback,
+  })
   switch (o.decision) {
-    case 'allowed': toast.success('已批准'); return
-    case 'allowed-pinned': toast.success('已批准 · 后续同类自动放行'); return
-    case 'denied': toast.error('已拒绝'); return
-    case 'denied-revoked': toast.error('已拒绝 · 撤销自动放行规则'); return
-    case 'expired': toast.warning('已过期'); return
+    case 'allowed':
+      toast.success(tr('allowed', 'Allowed'))
+      return
+    case 'allowed-pinned':
+      toast.success(tr('allowedPinned', 'Allowed + auto-allow further'))
+      return
+    case 'denied':
+      toast.error(tr('denied', 'Denied'))
+      return
+    case 'denied-revoked':
+      toast.error(tr('deniedRevoked', 'Denied (auto-allow revoked)'))
+      return
+    case 'expired':
+      toast.warning(tr('expired', 'Timed out'))
+      return
   }
 }
 
@@ -568,7 +583,10 @@ export function useChat(): UseChat {
     })
     const ok = ws.send({ type: 'message', text: trimmed, agent: state.agent })
     if (!ok) {
-      dispatch({ kind: 'ERROR', message: 'Not connected. Reconnecting…' })
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
+      })
     }
   }
 
@@ -594,7 +612,13 @@ export function useChat(): UseChat {
       messageId,
     })
     if (!ok) {
-      dispatch({ kind: 'ERROR', message: 'Not connected. Reconnecting — try clicking again in a moment.' })
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnectedRetry', {
+          ns: 'common',
+          defaultValue: 'Not connected. Reconnecting — try again in a moment.',
+        }),
+      })
     }
     return ok
   }

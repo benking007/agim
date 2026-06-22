@@ -1,6 +1,6 @@
-# Native LLM 配置指南
+# Agim Agent 大模型 API 配置指南
 
-本页说明如何为 Agim 配置 `native` agent 的 LLM 后端。
+本页说明如何为 Agim 配置 `native` agent（对外名称：Agim Agent）的大模型 API。
 目标：**只配一次就能跑**，角色绑定是可选优化项，不是阻塞条件。
 
 ## 1. 核心原则
@@ -11,11 +11,14 @@
 
 ## 2. 配置方式
 
-你可以任选一种方式：
+建议优先用 `agim config`：
 
-1. Web：`/settings/llm`
-2. CLI：`agim setup llm`
-3. 手工编辑 `~/.agim/config.json` + `~/.agim/llm-secrets.json`
+1. CLI 主入口：`agim config` → `Agim Agent 大模型 API`
+2. Web：`/settings/llm`
+3. CLI 高级命令：`agim setup llm`
+4. 手工编辑 `~/.agim/config.json` + `~/.agim/llm-secrets.json`
+
+> `agim setup llm add` 现在要求 API Key 必填；如果你走环境变量模式，也需要保证对应 backend 名称能解析到有效密钥来源。
 
 ## 3. 配置结构
 
@@ -104,6 +107,9 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 ## 7. 常用 CLI
 
 ```bash
+agim config
+# → 选择 "Agim Agent 大模型 API"
+
 agim setup llm
 agim setup llm native-enable
 agim diag llm

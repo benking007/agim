@@ -514,9 +514,14 @@ program
       console.log('')
     }
 
-    // Set defaultAgent to first available installed agent
+    // Keep operator intent: only fall back when the configured default
+    // is empty or currently unavailable. Overwriting on every boot made
+    // default-agent selection appear "non-persistent" after restart.
     if (agentResult.available.length > 0) {
-      config.defaultAgent = agentResult.available[0]
+      const configuredDefault = config.defaultAgent
+      if (!configuredDefault || !agentResult.available.includes(configuredDefault)) {
+        config.defaultAgent = agentResult.available[0]
+      }
     }
 
     // ============================================
@@ -1959,6 +1964,7 @@ program
       default:
         console.log(`Unknown component: ${component}`)
         console.log('Run "agim config" to see available components.')
+        process.exitCode = 1
         return
     }
 
@@ -2044,6 +2050,57 @@ program
     for (const name of messengers) {
       console.log(`  ${name}`)
     }
+  })
+
+// ─── setup / diag helpers (native LLM + MCP) ────────────────────────────
+// Keep these as first-class commands so docs + CLI stay aligned:
+//   agim setup llm ...
+//   agim setup mcp ...
+//   agim diag llm
+//   agim diag mcp
+
+const setupCmd = program
+  .command('setup')
+  .description('Interactive setup helpers (LLM backends / MCP servers)')
+
+setupCmd
+  .command('llm [args...]')
+  .description('Manage Agim Agent model API backends')
+  .action(async (args: string[] = []) => {
+    const { runSetupLlm } = await import('./cli-ui/setup-llm.js')
+    const code = await runSetupLlm(args)
+    if (code !== 0) process.exit(code)
+  })
+
+setupCmd
+  .command('mcp [args...]')
+  .description('Manage MCP server configuration')
+  .action(async (args: string[] = []) => {
+    const { runSetupMcp } = await import('./cli-ui/setup-mcp.js')
+    const code = await runSetupMcp(args)
+    if (code !== 0) process.exit(code)
+  })
+
+const diagCmd = program
+  .command('diag')
+  .description('Run local diagnostics for LLM/MCP configuration')
+
+diagCmd
+  .command('llm')
+  .description('Diagnose configured LLM backends')
+  .action(async () => {
+    const { runDiagLlm } = await import('./cli-ui/diag.js')
+    const code = await runDiagLlm()
+    if (code !== 0) process.exit(code)
+  })
+
+diagCmd
+  .command('mcp')
+  .description('Diagnose configured MCP servers')
+  .action(async () => {
+    const { runDiagMcp } = await import('./cli-ui/diag.js')
+    const code = await runDiagMcp()
+    if (code !== 0) process.exit(code)
   })
 
 // ─── service-management commands (v0.5.0) ──────────────────────────────

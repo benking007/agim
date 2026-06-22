@@ -1,38 +1,41 @@
 // cli-ui/config-wizard.ts — interactive `agim config` flow.
 //
-// Top-level menu has 5 sections:
+// Top-level menu focuses on first-run essentials:
 //   1. Messengers     — list-of-channels; each opens its own sub-menu
 //                       (WeChat QR scan / Telegram & Feishu & Discord
 //                        credential prompts / Email toggle)
 //   2. Agents         — list-of-agents with live CLI install detection;
 //                       per-agent sub-menu lets you enable/disable, see
 //                       install / auth instructions, set as default
-//   3. Remote ACP     — list / add / edit / remove
-//   4. SMTP           — Edit / Disable / Back; preset picker → host/port/
-//                       user/pass/from/secure (writes to ENV_FILE)
-//   5. Baidu Maps AK  — Set / Clear / Back (writes IMHUB_BAIDU_MAP_AK)
+//   3. Agim Agent API — model API management (delegates to setup-llm)
+//   4. IM Admins      — add/remove by picking known IM identities
+//   5. Web port       — only webPort (ACP keeps default bind/port)
+// Advanced sections (ACP / SMTP / Baidu) remain available below.
 //
 // Design rule: every sub-menu has a ← Back entry. The wizard never
 // requires Ctrl-C to escape (first-time users don't know it works).
 //
-// Edits land in the in-memory Config object until "Done — save and exit".
-// SMTP / Baidu writes are immediate to env-file.ts so a crash mid-wizard
-// doesn't lose the secrets the user already typed.
+// Edits mostly land in the in-memory Config object until
+// "Done — save and exit". Exceptions:
+//   - SMTP / Baidu write env keys immediately.
+//   - Agim Agent API section delegates to setup-llm (writes config+secrets immediately).
+//   - IM admins are stored in a separate admin registry file immediately.
 
 import { crossSpawn } from '../utils/cross-platform.js'
 import {
   menu,
   inputText,
   inputSecret,
-  yesNo,
   BACK,
   UserAbortError,
 } from './prompts.js'
 import { t, type Lang, type Key } from './i18n.js'
 import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
+import { describeSecretSource } from '../core/llm/secrets.js'
 import { CONFIG_DIR } from './paths.js'
-import { ENV_FILE, readEnvFile, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
+import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
+import { listAdmins, listKnownImUsers, promoteAdmin, revokeAdmin } from '../core/admin-allowlist.js'
 
 /** Probe whether a CLI command exists on PATH. Mirrors the `--version`
  *  spawn check the legacy `config <agent>` flow used. Resolves quickly:
@@ -46,7 +49,7 @@ function cliAvailable(cmd: string): Promise<boolean> {
   })
 }
 
-type Section = 'messengers' | 'agents' | 'acp' | 'web' | 'smtp' | 'baidu' | 'done'
+type Section = 'messengers' | 'agents' | 'agim' | 'admins' | 'acp' | 'web' | 'smtp' | 'baidu' | 'done'
 
 export async function runConfigWizard(lang: Lang): Promise<void> {
   let config = await loadConfig()
@@ -65,13 +68,15 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
       const sectionChoices: Array<{ value: Section; name: string; separatorBefore?: boolean }> = [
         { value: 'messengers', name: t(lang, 'config.section.messengers') },
         { value: 'agents', name: t(lang, 'config.section.agents') },
+        { value: 'agim', name: t(lang, 'config.section.agim') },
+        { value: 'admins', name: t(lang, 'config.section.admins') },
+        { value: 'web', name: t(lang, 'config.section.web') },
       ]
       if (isRemoteAgentEnabled()) {
-        sectionChoices.push({ value: 'acp', name: t(lang, 'config.section.acp') })
+        sectionChoices.push({ value: 'acp', name: t(lang, 'config.section.acp'), separatorBefore: true })
       }
       sectionChoices.push(
-        { value: 'web', name: t(lang, 'config.section.web') },
-        { value: 'smtp', name: t(lang, 'config.section.smtp') },
+        { value: 'smtp', name: t(lang, 'config.section.smtp'), separatorBefore: !isRemoteAgentEnabled() },
         { value: 'baidu', name: t(lang, 'config.section.baidu') },
         { value: 'done', name: t(lang, 'config.section.done'), separatorBefore: true },
       )
@@ -89,6 +94,13 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
     try {
       if (picked === 'messengers') config = await sectionMessengers(lang, config)
       else if (picked === 'agents') config = await sectionAgents(lang, config)
+      else if (picked === 'agim') {
+        await sectionAgimAgent(lang)
+        // setup-llm mutates ~/.agim/config.json directly; reload so the
+        // final wizard save never clobbers those updates.
+        config = await loadConfig()
+      }
+      else if (picked === 'admins') await sectionAdmins(lang)
       else if (picked === 'acp') config = await sectionAcp(lang, config)
       else if (picked === 'web') config = await sectionWeb(lang, config)
       else if (picked === 'smtp') await sectionSmtp(lang)
@@ -525,8 +537,16 @@ const AGENT_SPECS: AgentSpec[] = [
 async function nativeLlmConfigured(): Promise<boolean> {
   try {
     const cfg = await loadConfig()
-    const raw = cfg as { llmBackends?: unknown[] }
-    return Array.isArray(raw.llmBackends) && raw.llmBackends.length > 0
+    const raw = cfg as {
+      llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown }>
+    }
+    if (!Array.isArray(raw.llmBackends) || raw.llmBackends.length === 0) return false
+    return raw.llmBackends.some((backend) => {
+      if (!backend || typeof backend.name !== 'string' || backend.name.trim() === '') return false
+      const provider = typeof backend.provider === 'string' ? backend.provider : undefined
+      const baseUrl = typeof backend.baseUrl === 'string' ? backend.baseUrl : undefined
+      return describeSecretSource(backend.name, { provider, baseUrl }).source !== 'none'
+    })
   } catch {
     return false
   }
@@ -720,6 +740,176 @@ async function agentSubMenu(
       installs.set(spec.id, newInstalls.get(spec.id) ?? false)
       console.log('🔄 Re-checked.')
     }
+  }
+}
+
+// ─── Agim Agent (model API) section ────────────────────────────────────
+
+async function sectionAgimAgent(lang: Lang): Promise<void> {
+  while (true) {
+    const cfg = await loadConfig()
+    const raw = cfg as { llmBackends?: unknown[] }
+    const backendCount = Array.isArray(raw.llmBackends) ? raw.llmBackends.length : 0
+    const ready = await nativeLlmConfigured()
+
+    console.log()
+    console.log(t(lang, 'agim_agent.title'))
+    console.log(t(lang, 'agim_agent.subtitle', {
+      backends: String(backendCount),
+      status: ready ? t(lang, 'agim_agent.status.ready') : t(lang, 'agim_agent.status.missing'),
+    }))
+    console.log()
+
+    const action = (await menu<'add' | 'secret' | 'role' | 'remove' | 'native_enable' | 'list' | 'diag'>({
+      lang,
+      message: t(lang, 'menu.subtitle'),
+      choices: [
+        { value: 'add', name: t(lang, 'agim_agent.action.add') },
+        {
+          value: 'secret',
+          name: t(lang, 'agim_agent.action.secret'),
+          disabled: backendCount === 0 ? t(lang, 'agim_agent.disabled.need_backend') : false,
+        },
+        {
+          value: 'role',
+          name: t(lang, 'agim_agent.action.role'),
+          disabled: backendCount === 0 ? t(lang, 'agim_agent.disabled.need_backend') : false,
+        },
+        {
+          value: 'remove',
+          name: t(lang, 'agim_agent.action.remove'),
+          disabled: backendCount === 0 ? t(lang, 'agim_agent.disabled.need_backend') : false,
+        },
+        {
+          value: 'native_enable',
+          name: t(lang, 'agim_agent.action.native_enable'),
+          disabled: backendCount === 0 ? t(lang, 'agim_agent.disabled.need_backend') : false,
+        },
+        { value: 'list', name: t(lang, 'agim_agent.action.list') },
+        { value: 'diag', name: t(lang, 'agim_agent.action.diag') },
+      ],
+      back: 'agim_agent.action.back',
+    })) as 'add' | 'secret' | 'role' | 'remove' | 'native_enable' | 'list' | 'diag' | typeof BACK
+    if (action === BACK) return
+
+    if (action === 'diag') {
+      const { runDiagLlm } = await import('./diag.js')
+      const code = await runDiagLlm()
+      if (code !== 0) console.log(t(lang, 'agim_agent.command_failed', { code: String(code) }))
+      continue
+    }
+
+    const { runSetupLlm } = await import('./setup-llm.js')
+    const args = (
+      action === 'add' ? ['add']
+        : action === 'secret' ? ['secret']
+          : action === 'role' ? ['role']
+            : action === 'remove' ? ['remove']
+              : action === 'native_enable' ? ['native-enable']
+                : ['list']
+    )
+    const code = await runSetupLlm(args)
+    if (code !== 0) console.log(t(lang, 'agim_agent.command_failed', { code: String(code) }))
+  }
+}
+
+// ─── IM admin picker section ────────────────────────────────────────────
+
+function adminKey(platform: string, userId: string): string {
+  return `${platform}\u0000${userId}`
+}
+
+function decodeAdminKey(key: string): { platform: string; userId: string } {
+  const idx = key.indexOf('\u0000')
+  if (idx < 0) return { platform: key, userId: '' }
+  return { platform: key.slice(0, idx), userId: key.slice(idx + 1) }
+}
+
+async function sectionAdmins(lang: Lang): Promise<void> {
+  while (true) {
+    const admins = listAdmins()
+    const known = listKnownImUsers()
+    const adminSet = new Set(admins.map((a) => adminKey(a.platform, a.userId)))
+    const candidates = known.filter((u) => !adminSet.has(adminKey(u.platform, u.userId)))
+
+    console.log()
+    console.log(t(lang, 'admins.title'))
+    console.log(t(lang, 'admins.subtitle', {
+      admins: String(admins.length),
+      known: String(known.length),
+    }))
+    console.log()
+
+    const action = (await menu<'add' | 'remove' | 'show'>({
+      lang,
+      message: t(lang, 'menu.subtitle'),
+      choices: [
+        {
+          value: 'add',
+          name: t(lang, 'admins.action.add'),
+          disabled: candidates.length === 0 ? t(lang, 'admins.disabled.no_candidate') : false,
+        },
+        {
+          value: 'remove',
+          name: t(lang, 'admins.action.remove'),
+          disabled: admins.length === 0 ? t(lang, 'admins.disabled.no_admin') : false,
+        },
+        { value: 'show', name: t(lang, 'admins.action.show') },
+      ],
+      back: 'admins.action.back',
+    })) as 'add' | 'remove' | 'show' | typeof BACK
+    if (action === BACK) return
+
+    if (action === 'show') {
+      if (admins.length === 0) console.log(t(lang, 'admins.current.empty'))
+      else {
+        console.log(t(lang, 'admins.current.title', { count: String(admins.length) }))
+        for (const row of admins) console.log(`  ${row.platform}:${row.userId}`)
+      }
+      if (known.length === 0) console.log(t(lang, 'admins.known.empty'))
+      else {
+        console.log(t(lang, 'admins.known.title', { count: String(known.length) }))
+        for (const row of known) {
+          console.log(`  ${row.platform}:${row.userId}  last_seen=${row.lastSeenAt}`)
+        }
+      }
+      continue
+    }
+
+    if (action === 'add') {
+      const picked = (await menu<string>({
+        lang,
+        message: t(lang, 'admins.pick.add'),
+        choices: candidates.map((row) => ({
+          value: adminKey(row.platform, row.userId),
+          name: `${row.platform}:${row.userId}  last_seen=${row.lastSeenAt}`,
+        })),
+        back: 'admins.action.back',
+      })) as string | typeof BACK
+      if (picked === BACK) continue
+      const target = decodeAdminKey(picked)
+      const changed = await promoteAdmin(target.platform, target.userId, { actor: 'cli:config' })
+      console.log(changed
+        ? t(lang, 'admins.result.added', { target: `${target.platform}:${target.userId}` })
+        : t(lang, 'admins.result.already', { target: `${target.platform}:${target.userId}` }))
+      continue
+    }
+
+    const picked = (await menu<string>({
+      lang,
+      message: t(lang, 'admins.pick.remove'),
+      choices: admins.map((row) => ({
+        value: adminKey(row.platform, row.userId),
+        name: `${row.platform}:${row.userId}`,
+      })),
+      back: 'admins.action.back',
+    })) as string | typeof BACK
+    if (picked === BACK) continue
+    const target = decodeAdminKey(picked)
+    const changed = await revokeAdmin(target.platform, target.userId, { actor: 'cli:config' })
+    console.log(changed
+      ? t(lang, 'admins.result.removed', { target: `${target.platform}:${target.userId}` })
+      : t(lang, 'admins.result.missing', { target: `${target.platform}:${target.userId}` }))
   }
 }
 
@@ -977,19 +1167,11 @@ async function sectionBaidu(lang: Lang): Promise<void> {
   }
 }
 
-// ─── Web bind / port section (R15) ──────────────────────────────────
+// ─── Web port section ─────────────────────────────────────────────────
 //
-// Two values to edit:
-//   * IMHUB_WEB_BIND  (env-file) — listen address. Default 127.0.0.1
-//                     (loopback). Operators behind a TLS reverse proxy
-//                     can opt-in to 0.0.0.0 with an explicit warning
-//                     about the deployment checklist.
-//   * webPort         (config.json) — listen port. Default 3000.
-//
-// Bind lives in env, not config.json, because startWebServer reads
-// process.env at boot — making it a runtime-overridable knob. Port
-// lives in config because the daemon honours it from saveConfig
-// directly. We don't try to unify the two; matches existing schema.
+// On first-run we keep this intentionally small: only expose webPort.
+// ACP keeps its own default endpoint/port unless the operator opts into
+// advanced env edits manually.
 async function sectionWeb(lang: Lang, cfg: Config): Promise<Config> {
   let config = cfg
   while (true) {
@@ -998,87 +1180,32 @@ async function sectionWeb(lang: Lang, cfg: Config): Promise<Config> {
     console.log(t(lang, 'web.subtitle'))
     console.log()
 
-    const effective = readEffectiveEnv()
-    const currentBind = effective.IMHUB_WEB_BIND || '127.0.0.1'
     const currentPort = (config.webPort as number | undefined) ?? 3000
 
-    const action = (await menu<'bind' | 'port'>({
+    const action = (await menu<'port'>({
       lang,
-      message: t(lang, 'web.current', { bind: currentBind, port: String(currentPort) }),
+      message: t(lang, 'web.current', { port: String(currentPort) }),
       choices: [
-        { value: 'bind', name: t(lang, 'web.action.bind') },
         { value: 'port', name: t(lang, 'web.action.port') },
       ],
       back: 'web.action.back',
-    })) as 'bind' | 'port' | typeof BACK
+    })) as 'port' | typeof BACK
     if (action === BACK) return config
 
-    if (action === 'bind') {
-      // Choose-one menu instead of free-text so we can keep the
-      // operator on a known-safe path. "Other" is intentionally absent
-      // — anyone setting a specific NIC IP can edit ~/.agim/env
-      // directly.
-      const next = (await menu<'127.0.0.1' | '0.0.0.0'>({
-        lang,
-        message: t(lang, 'web.bind.prompt'),
-        choices: [
-          { value: '127.0.0.1', name: t(lang, 'web.bind.option.loopback') },
-          { value: '0.0.0.0', name: t(lang, 'web.bind.option.public') },
-        ],
-        back: 'web.action.back',
-      })) as '127.0.0.1' | '0.0.0.0' | typeof BACK
-      if (next === BACK) continue
-
-      if (next === '0.0.0.0') {
-        // Belt + suspenders confirmation. The boot-time banner (R13 C2)
-        // already warns; the wizard makes the operator say "yes" before
-        // we even write the env line.
-        console.log()
-        console.log(t(lang, 'web.bind.public_warn'))
-        console.log()
-        const ok = await yesNo({
-          message: t(lang, 'web.bind.public_confirm'),
-          default: false,
-        })
-        if (!ok) continue
-      }
-
-      if (next === '127.0.0.1') {
-        // 127.0.0.1 is the agim default — unset the env var instead of
-        // pinning the value, so future changes to the default propagate.
-        unsetEnvKey('IMHUB_WEB_BIND')
-      } else {
-        updateEnvFile({ IMHUB_WEB_BIND: next })
-      }
-      console.log(t(lang, 'web.bind.saved', { bind: next, file: ENV_FILE }))
-      if (hasProcessEnvOverride('IMHUB_WEB_BIND')) {
-        console.log(t(lang, 'env.shadowed_warn', { key: 'IMHUB_WEB_BIND', file: ENV_FILE }))
-      }
-      continue
-    }
-
-    if (action === 'port') {
-      const portStr = await inputText({
-        message: t(lang, 'web.port.prompt', { current: String(currentPort) }),
-        default: String(currentPort),
-        validate: (v) => {
-          if (!v.trim()) return 'Required (or pick ← Back)'
-          const n = parseInt(v, 10)
-          if (!Number.isFinite(n)) return 'Must be a number'
-          if (n < 1 || n > 65535) return 'Must be in 1..65535'
-          if (n < 1024) return 'Ports < 1024 require root; pick something >= 1024'
-          return true
-        },
-      })
-      const port = parseInt(portStr, 10)
-      const next = { ...config, webPort: port }
-      await saveConfig(next)
-      config = next
-      console.log(t(lang, 'web.port.saved', { port: String(port) }))
-      continue
-    }
+    const portStr = await inputText({
+      message: t(lang, 'web.port.prompt', { current: String(currentPort) }),
+      default: String(currentPort),
+      validate: (v) => {
+        if (!v.trim()) return 'Required (or pick ← Back)'
+        const n = parseInt(v, 10)
+        if (!Number.isFinite(n)) return 'Must be a number'
+        if (n < 1 || n > 65535) return 'Must be in 1..65535'
+        if (n < 1024) return 'Ports < 1024 require root; pick something >= 1024'
+        return true
+      },
+    })
+    const port = parseInt(portStr, 10)
+    config = { ...config, webPort: port }
+    console.log(t(lang, 'web.port.saved', { port: String(port) }))
   }
 }
-
-// Suppress an unused-import warning for yesNo — exposed for future sections.
-void yesNo

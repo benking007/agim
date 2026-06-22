@@ -256,6 +256,12 @@ function AddBackendCard(): JSX.Element {
   const [baseUrl, setBaseUrl] = useState(PRESETS[0]?.baseUrl ?? '')
   const [model, setModel] = useState(PRESETS[0]?.modelHint ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+
+  function fail(message: string): void {
+    setFormError(message)
+    toast.error(message)
+  }
 
   function onPickPreset(idx: number): void {
     setPresetIdx(idx)
@@ -268,11 +274,11 @@ function AddBackendCard(): JSX.Element {
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const p = PRESETS[presetIdx]
-    if (!p) { toast.error(t('llm.invalidPreset')); return }
-    if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
-    if (!baseUrl.trim()) { toast.error(t('llm.baseUrlRequired')); return }
-    if (!model.trim()) { toast.error(t('llm.modelRequired')); return }
-    if (!apiKey.trim()) { toast.error(t('llm.apiKeyRequired')); return }
+    if (!p) { fail(t('llm.invalidPreset')); return }
+    if (!name.trim()) { fail(t('llm.nameRequired')); return }
+    if (!baseUrl.trim()) { fail(t('llm.baseUrlRequired')); return }
+    if (!model.trim()) { fail(t('llm.modelRequired')); return }
+    if (!apiKey.trim()) { fail(t('llm.apiKeyRequired')); return }
     try {
       await addBackend.mutateAsync({
         name: name.trim(),
@@ -281,10 +287,12 @@ function AddBackendCard(): JSX.Element {
         model: model.trim(),
         apiKey: apiKey.trim(),
       })
+      setFormError(null)
       toast.success(t('llm.addedWithKey', { name: name.trim() }))
       setName(''); setApiKey('')
     } catch (err) {
-      toast.error(((err as Error)?.message ?? String(err)))
+      const message = ((err as Error)?.message ?? String(err))
+      fail(message)
     }
   }
 
@@ -342,14 +350,19 @@ function AddBackendCard(): JSX.Element {
           />
         </div>
         <div className="sm:col-span-2 flex">
-          <Button
-            type="submit"
-            disabled={addBackend.isPending}
-            className="ml-auto"
-          >
-            {addBackend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {t('llm.addBackend')}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:items-end">
+            {formError && (
+              <p className="text-xs text-danger">{formError}</p>
+            )}
+            <Button
+              type="submit"
+              disabled={addBackend.isPending}
+              className="ml-auto"
+            >
+              {addBackend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {t('llm.addBackend')}
+            </Button>
+          </div>
         </div>
       </form>
     </section>

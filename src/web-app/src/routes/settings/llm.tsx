@@ -272,19 +272,16 @@ function AddBackendCard(): JSX.Element {
     if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
     if (!baseUrl.trim()) { toast.error(t('llm.baseUrlRequired')); return }
     if (!model.trim()) { toast.error(t('llm.modelRequired')); return }
+    if (!apiKey.trim()) { toast.error(t('llm.apiKeyRequired')); return }
     try {
       await addBackend.mutateAsync({
         name: name.trim(),
         provider: p.provider,
         baseUrl: baseUrl.trim(),
         model: model.trim(),
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        apiKey: apiKey.trim(),
       })
-      toast.success(
-        apiKey.trim()
-          ? t('llm.addedWithKey', { name: name.trim() })
-          : t('llm.addedNoKey', { name: name.trim() }),
-      )
+      toast.success(t('llm.addedWithKey', { name: name.trim() }))
       setName(''); setApiKey('')
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
@@ -335,7 +332,7 @@ function AddBackendCard(): JSX.Element {
           />
         </div>
         <div>
-          <Label className="text-xs font-medium">{t('llm.apiKeyOptional')}</Label>
+          <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
           <Input
             type="password"
             value={apiKey} onChange={(e) => setApiKey(e.target.value)}

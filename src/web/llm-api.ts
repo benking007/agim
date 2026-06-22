@@ -6,7 +6,7 @@
 // Endpoints exposed:
 //
 //   GET    /api/llm                      → { backends, roles, status }
-//   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey? }
+//   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
 //   PUT    /api/llm/roles                body { cheap?, evaluator?, "native-chat"?, … }
@@ -169,6 +169,10 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'model is required' })
     return
   }
+  if (!apiKey) {
+    send(res, 400, { error: 'apiKey is required (non-empty string)' })
+    return
+  }
   const cfg = await readConfig()
   const existing = cfg.llmBackends ?? []
   if (existing.some((b) => b.name === name)) {
@@ -186,9 +190,9 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     return
   }
   await writeConfig(cfg)
-  if (apiKey) saveSecret(name, apiKey)
+  saveSecret(name, apiKey)
   refreshLlmRuntime(cfg)
-  send(res, 201, { name, secretStored: !!apiKey })
+  send(res, 201, { name, secretStored: true })
 }
 
 async function handleRemoveBackend(res: ServerResponse, name: string): Promise<void> {

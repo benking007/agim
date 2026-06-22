@@ -222,7 +222,7 @@ export function NativeSetupDialog({
               />
             </div>
             <div>
-              <Label className="text-xs font-medium">{t('llm.apiKeyOptional', { ns: 'settings' })}</Label>
+              <Label className="text-xs font-medium">{t('llm.apiKey', { ns: 'settings' })}</Label>
               <Input
                 type="password"
                 value={apiKey}

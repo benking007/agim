@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownView } from '@/components/chat/markdown-view'
+import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ApprovalChoice } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
@@ -45,6 +46,7 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
   const isUser = msg.role === 'user'
   // Assistant replies can be copied as raw markdown (tables/code survive).
   const canCopy = !isUser && !!msg.content
+  const displayAgent = msg.agent ? agentDisplayName(msg.agent) : ''
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -57,7 +59,7 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
       >
         {!isUser && (msg.agent || canCopy) && (
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-text-muted">{msg.agent ?? ''}</span>
+            <span className="text-xs font-medium text-text-muted">{displayAgent}</span>
             {canCopy && <CopyButton text={msg.content} />}
           </div>
         )}

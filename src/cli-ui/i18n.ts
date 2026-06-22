@@ -311,7 +311,7 @@ const en = {
   // ─── agim start — native LLM / MCP boot (PR81) ─────────────────────
   'start.mcp_connected': 'MCP 服务器已连接：{servers}（{toolCount} 个工具）',
   'start.mcp_connect_failures': 'MCP 服务器连接失败：{failures}',
-  'start.native_agent': 'native agent：{desc}',
+  'start.native_agent': 'Agim Agent：{desc}',
   'start.native_boot_failed': 'Native LLM/MCP 启动失败：{message}',
   'start.agents_unavailable': '部分 agent 不可用：{missing}',
   'start.agents_install_header': '安装 agent：',
@@ -323,7 +323,7 @@ const en = {
   'start.workspace_boot_failed': 'Agent 工作区初始化失败：{message}',
   'start.workspace_fallback': 'Agent 将回退到 Agim cwd（systemd 下为 "/"）',
   'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
-  'agents.label.native': 'Native（进程内 LLM）',
+  'agents.label.native': 'Agim Agent（进程内 LLM）',
   'agents.install_hint.native': '在 ~/.agim/config.json 配置 llmBackends + API Key（llmRoles 可选）— 见 /settings/llm 或 docs/llm-backends.md',
   'token.cli.create_ok': '已创建新的访问 token。',
   'token.cli.create_warn': '原始值仅显示这一次，请立即保存。',
@@ -643,7 +643,7 @@ const zh: Record<Key, string> = {
   // ─── agim start — native LLM / MCP boot (PR81) ─────────────────────
   'start.mcp_connected': 'MCP 服务器已连接：{servers}（{toolCount} 个工具）',
   'start.mcp_connect_failures': 'MCP 服务器连接失败：{failures}',
-  'start.native_agent': 'native agent：{desc}',
+  'start.native_agent': 'Agim Agent：{desc}',
   'start.native_boot_failed': 'Native LLM/MCP 启动失败：{message}',
   'start.agents_unavailable': '部分 agent 不可用：{missing}',
   'start.agents_install_header': '安装 agent：',
@@ -657,7 +657,7 @@ const zh: Record<Key, string> = {
   'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
 
   // ─── agent install hints (PR81 native) ─────────────────────────────
-  'agents.label.native': 'Native（进程内 LLM）',
+  'agents.label.native': 'Agim Agent（进程内 LLM）',
   'agents.install_hint.native': '在 ~/.agim/config.json 配置 llmBackends + API Key（llmRoles 可选）— 见 /settings/llm 或 docs/llm-backends.md',
 
   // ─── non-interactive token CLI ─────────────────────────────────────

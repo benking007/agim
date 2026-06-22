@@ -9,7 +9,8 @@ export function isNativeSetupError(message: string): boolean {
   const raw = String(message || '')
   if (!raw) return false
   const m = raw.toLowerCase()
-  if (!m.includes('native')) return false
+  const mentionsAgent = m.includes('native') || m.includes('agim')
+  if (!mentionsAgent && !raw.includes('/settings/llm')) return false
   return (
     m.includes('not configured')
     || m.includes('not available')

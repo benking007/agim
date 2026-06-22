@@ -38,42 +38,42 @@ const PRESETS: PresetDef[] = [
     provider: 'openai-compat',
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
-    baseName: 'deepseek-native',
+    baseName: 'deepseek-agim',
   },
   {
     key: 'moonshot',
     provider: 'openai-compat',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'moonshot-v1-8k',
-    baseName: 'moonshot-native',
+    baseName: 'moonshot-agim',
   },
   {
     key: 'zhipu',
     provider: 'openai-compat',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4-air',
-    baseName: 'zhipu-native',
+    baseName: 'zhipu-agim',
   },
   {
     key: 'openai',
     provider: 'openai-compat',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
-    baseName: 'openai-native',
+    baseName: 'openai-agim',
   },
   {
     key: 'anthropic',
     provider: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-3-5-sonnet-20241022',
-    baseName: 'anthropic-native',
+    baseName: 'anthropic-agim',
   },
   {
     key: 'custom',
     provider: 'openai-compat',
     baseUrl: '',
     model: '',
-    baseName: 'native-backend',
+    baseName: 'agim-api',
   },
 ]
 const DEFAULT_PRESET: PresetDef = PRESETS[0] as PresetDef
@@ -115,7 +115,7 @@ export function NativeSetupDialog({
     [llmList.data],
   )
 
-  const [name, setName] = useState(() => suggestName('deepseek-native', []))
+  const [name, setName] = useState(() => suggestName('deepseek-agim', []))
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
   const [model, setModel] = useState(preset.model)
   const [apiKey, setApiKey] = useState('')

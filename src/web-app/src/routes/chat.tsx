@@ -139,7 +139,7 @@ export default function ChatRoute(): JSX.Element {
         open={nativeSetupDialogOpen}
         reason={nativeSetupReason}
         onOpenChange={setNativeSetupDialogOpen}
-        onConfigured={() => switchAgent('native')}
+        onConfigured={() => switchAgent('agim')}
       />
 
       {/* Message list */}

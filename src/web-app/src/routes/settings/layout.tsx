@@ -21,12 +21,9 @@ const SUB_TABS: SubTab[] = [
   { to: 'email',        i18nKey: 'tabs.email',        mounted: true },
   { to: 'viewer',       i18nKey: 'tabs.viewer',       mounted: true },
   { to: 'agents',       i18nKey: 'tabs.agents',       mounted: true },
-  // Stage 6 — native LLM stack. Three tabs in a logical group:
-  // LLM backends (config + secrets) -> MCP external servers ->
-  // native agent / evaluator / heartbeat behavior knobs.
+  // Stage 6 — Agim Agent stack (model APIs + runtime knobs).
   { to: 'llm',          i18nKey: 'tabs.llm',          mounted: true },
   { to: 'mcp',          i18nKey: 'tabs.mcp',          mounted: true },
-  { to: 'native-agent', i18nKey: 'tabs.nativeAgent',  mounted: true },
   // v1.2.126 — web_search provider chain + per-provider keys.
   { to: 'search',       i18nKey: 'tabs.search',       mounted: true },
   // v1.2.129 — mobile QR generator (open /m/chat from a phone).

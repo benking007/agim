@@ -1,5 +1,5 @@
 /**
- * /settings/native-agent — focused env editor for native agent +
+ * /settings/native-agent — focused env editor for Agim Agent +
  * notification evaluator + heartbeat (Stage 6).
  *
  * All three subsystems are env-driven; their env keys are already in
@@ -7,8 +7,8 @@
  * page just gives them a curated form so operators don't have to dig
  * through the 200+-key generic env editor.
  *
- * The actual native agent backend selection (which LLM, which role)
- * lives on /settings/llm; this page only covers the BEHAVIORAL knobs.
+ * The actual model API selection (which LLM, which role) lives on
+ * /settings/llm; this module covers behavioral knobs.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -31,7 +31,7 @@ import { useEnv, useUpdateEnv } from '@/hooks/use-settings'
 type ApprovalMode = 'allow-all' | 'read-only' | 'allow-list' | 'deny-all'
 
 interface Draft {
-  // Native agent
+  // Agim Agent
   role: string
   mode: ApprovalMode
   autoAllow: string
@@ -140,6 +140,14 @@ function SubtitleWithLlmLink(): JSX.Element {
 }
 
 export default function SettingsNativeAgentRoute(): JSX.Element {
+  return <NativeAgentSettingsPanel />
+}
+
+export interface NativeAgentSettingsPanelProps {
+  embedded?: boolean
+}
+
+export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettingsPanelProps): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const envQuery = useEnv({ reveal: false })
   const updateEnv = useUpdateEnv()
@@ -271,22 +279,26 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <header className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold">{t('nativeAgent.title')}</h1>
-        <Button
-          variant="ghost" size="sm" className="ml-auto"
-          onClick={() => void envQuery.refetch()}
-          disabled={envQuery.isFetching}
-          aria-label={t('actions.refresh', { ns: 'common' })}
-        >
-          {envQuery.isFetching
-            ? <Loader2 className="h-4 w-4 animate-spin" />
-            : <RefreshCcw className="h-4 w-4" />}
-          <span className="hidden sm:inline">{t('nativeAgent.refresh')}</span>
-        </Button>
-      </header>
-      <SubtitleWithLlmLink />
+    <div className={embedded ? 'flex flex-col gap-6' : 'mx-auto flex max-w-4xl flex-col gap-6'}>
+      {!embedded && (
+        <>
+          <header className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">{t('nativeAgent.title')}</h1>
+            <Button
+              variant="ghost" size="sm" className="ml-auto"
+              onClick={() => void envQuery.refetch()}
+              disabled={envQuery.isFetching}
+              aria-label={t('actions.refresh', { ns: 'common' })}
+            >
+              {envQuery.isFetching
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCcw className="h-4 w-4" />}
+              <span className="hidden sm:inline">{t('nativeAgent.refresh')}</span>
+            </Button>
+          </header>
+          <SubtitleWithLlmLink />
+        </>
+      )}
 
       {envQuery.isLoading ? (
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
@@ -304,7 +316,10 @@ export default function SettingsNativeAgentRoute(): JSX.Element {
       )}
 
       {isDirty && (
-        <div className="sticky bottom-2 flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-3 shadow">
+        <div className={embedded
+          ? 'flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-3 shadow'
+          : 'sticky bottom-2 flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-3 shadow'}
+        >
           <Badge variant="info">{t('nativeAgent.unsaved')}</Badge>
           <Button
             variant="ghost" size="sm" className="ml-auto"

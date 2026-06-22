@@ -61,7 +61,7 @@ interface ClientConnection {
 function formatWebAgentUnavailableMessage(agentName: string): string {
   if (agentName === 'native') {
     return [
-      'Native agent is not configured yet.',
+      'Agim Agent is not configured yet.',
       '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
     ].join(' ')
   }
@@ -5115,7 +5115,7 @@ async function handleClientMessage(
 
       const parsed = parseMessage(text)
 
-      // Agent-switch command (/na, /cc native, /pi, …): routeMessage persists
+      // Agent-switch command (/agim, /cc, /pi, …): routeMessage persists
       // the session switch, but the WS client + the chat dropdown only learn
       // about a switch via the explicit `switch-agent` path. Mirror it here so
       // a command switch keeps the picker in sync. Gated on availability like

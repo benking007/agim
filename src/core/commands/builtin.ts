@@ -32,7 +32,7 @@ const HELP_ZH = [
   '',
   '/new          开新会话',
   '/agents       列出可用 agent',
-  '/[agent]      向指定 agent 发消息',
+  '/[agent]      向指定 agent 发消息（如 /cc /agim）',
   '/help [cmd]   查看帮助（/help en 英文）',
   '/remind …     提醒（一次性/周期/邮件）',
   '/memo …       5W1H 持久记录（自然语言交给 agent 自动拆解）',
@@ -77,8 +77,8 @@ const HELP_EN = [
   'agim Commands',
   '',
   '/new          start a new session',
-  '/agents       list available agents (kind tag: [cli]=bridged CLI / [in-process]=native / [remote]=ACP)',
-  '/[agent]      send message to agent (/cc claude / /cx codex / /oc opencode / /na native …)',
+  '/agents       list available agents (kind tag: [cli]=bridged CLI / [in-process]=agim / [remote]=ACP)',
+  '/[agent]      send message to agent (/cc claude / /cx codex / /oc opencode / /agim …)',
   '/help [cmd]   show help (/help zh for Chinese)',
   '/remind …     reminders (one-shot/recurring/email)',
   '/memo …       5W1H persistent memos (let agent parse natural language)',
@@ -332,10 +332,16 @@ export async function handleBuiltInCommand(
         if (!adapter) return `• ${name}`
         const kind = adapter.kind ?? 'cli'
         const flag = ({ cli: '[cli]', 'in-process': '[in-process]', remote: '[remote]' })[kind] ?? `[${kind}]`
-        const aliases = adapter.aliases.length > 0 ? ` (${adapter.aliases.map((a) => `/${a}`).join(', ')})` : ''
+        const displayName = name === 'native' ? 'agim' : name
+        const aliasSet = new Set<string>()
+        if (name === 'native') aliasSet.add('native')
+        for (const a of adapter.aliases) {
+          if (a !== displayName) aliasSet.add(a)
+        }
+        const aliases = aliasSet.size > 0 ? ` (${Array.from(aliasSet).map((a) => `/${a}`).join(', ')})` : ''
         const summary = typeof adapter.describe === 'function' ? adapter.describe() : undefined
         const summaryStr = summary ? ` — ${summary}` : ''
-        return `• /${name} ${flag}${aliases}${summaryStr}`
+        return `• /${displayName} ${flag}${aliases}${summaryStr}`
       })
       return `🤖 Available Agents\n\n${lines.join('\n')}\n\nUse /<agent> or its alias to switch.`
     }
@@ -343,7 +349,8 @@ export async function handleBuiltInCommand(
     case 'new': {
       const session = await sessionManager.resetConversation(ctx.platform, ctx.channelId, ctx.threadId)
       if (session) {
-        return `🆕 New conversation started with ${session.agent}.\n\nPrevious context has been cleared.`
+        const displayAgent = session.agent === 'native' ? 'agim' : session.agent
+        return `🆕 New conversation started with ${displayAgent}.\n\nPrevious context has been cleared.`
       }
       return `🆕 Ready to start a new conversation.\n\nSend a message to begin.`
     }

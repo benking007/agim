@@ -102,6 +102,10 @@ function formatRateLimitError(ws: ReturnType<typeof workspaceRegistry.resolve>, 
   return `⏱️ 请求过于频繁（${s.rate} 次/${s.intervalSec}秒，剩余 ${s.remaining}）${tail}`
 }
 
+function displayAgentName(name: string): string {
+  return name === 'native' ? 'agim' : name
+}
+
 /**
  * Parse a message to determine how to route it
  *
@@ -384,7 +388,7 @@ export async function routeMessage(
       // bypassing it via /cc directly.
       const wsAgent = workspaceRegistry.resolve(ctx.userId || 'unknown')
       if (!wsAgent.hasAgent(agent.name)) {
-        return `🚫 Agent "${agent.name}" is not available in your workspace.\n\nTry /agents to see available agents.`
+        return `🚫 Agent "${displayAgentName(agent.name)}" is not available in your workspace.\n\nTry /agents to see available agents.`
       }
 
       // Per-workspace rate limit (falls back to userLimiter for default
@@ -401,7 +405,7 @@ export async function routeMessage(
       // the actual invocation below (after every early-return path), so the
       // half-open slot is never wasted on a switch/empty-prompt short-circuit.
       if (circuitBreaker.peek(agent.name)) {
-        return `⛔ ${agent.name} is temporarily unavailable (too many consecutive failures). Try again in a few minutes, or use another agent.`
+        return `⛔ ${displayAgentName(agent.name)} is temporarily unavailable (too many consecutive failures). Try again in a few minutes, or use another agent.`
       }
 
       if (!(await isAgentAvailableCached(agent.name))) {
@@ -411,7 +415,7 @@ export async function routeMessage(
       await sessionManager.switchAgent(ctx.platform, ctx.channelId, ctx.threadId, agent.name)
 
       if (!parsed.prompt) {
-        return `✅ Switched to ${agent.name}`
+        return `✅ Switched to ${displayAgentName(agent.name)}`
       }
 
       if (ctx.onAgentResolved) {
@@ -455,13 +459,13 @@ export async function routeMessage(
         }
         const tAgent = registry.findAgent(job.agent)
         if (!tAgent) {
-          return `❌ 任务 #${tid} 的 Agent "${job.agent}" 不可用。`
+          return `❌ 任务 #${tid} 的 Agent "${displayAgentName(job.agent)}" 不可用。`
         }
         const subSession = await sessionManager.getOrCreateSubSession(
           ctx.platform, ctx.channelId, ctx.threadId, tid, job.agent
         )
         if (!parsed.prompt) {
-          return `💬 继续对话（任务 #${tid}, ${job.agent}）`
+          return `💬 继续对话（任务 #${tid}, ${displayAgentName(job.agent)}）`
         }
         const subThreadId = `${ctx.threadId}:sub:${tid}`
         const callOptions = await prepareSubtaskAgentCallOptions(tAgent.name, ctx, subThreadId, subSession)
@@ -520,18 +524,18 @@ export async function routeMessage(
 
       const agent = registry.findAgent(agentName)
       if (!agent) {
-        return `❌ Agent "${agentName}" not configured.`
+        return `❌ Agent "${displayAgentName(agentName)}" not configured.`
       }
 
       if (circuitBreaker.peek(agent.name)) {
-        const openAgents = circuitBreaker.listOpen().join(', ')
-        return `⛔ ${agent.name} is temporarily unavailable (circuit breaker open).\nCurrently blocked: ${openAgents || 'none'}\n\nTry /agents to see available agents, or wait a few minutes.`
+        const openAgents = circuitBreaker.listOpen().map(displayAgentName).join(', ')
+        return `⛔ ${displayAgentName(agent.name)} is temporarily unavailable (circuit breaker open).\nCurrently blocked: ${openAgents || 'none'}\n\nTry /agents to see available agents, or wait a few minutes.`
       }
 
       // Workspace already resolved above — check the whitelist before
       // exposing the agent to the message.
       if (!ws.hasAgent(agent.name)) {
-        return `🚫 Agent "${agent.name}" is not available in your workspace.\n\nTry /agents to see available agents.`
+        return `🚫 Agent "${displayAgentName(agent.name)}" is not available in your workspace.\n\nTry /agents to see available agents.`
       }
 
       if (!(await isAgentAvailableCached(agent.name))) {

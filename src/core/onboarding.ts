@@ -139,7 +139,7 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
     agent: 'native',
     npmPackage: '',
     command: '',
-    installCmd: 'Configure any native LLM backend in ~/.agim/config.json (llmBackends + API key; llmRoles optional) — see docs/llm-backends.md',
+    installCmd: 'Configure Agim Agent model APIs in ~/.agim/config.json (llmBackends + API key; llmRoles optional) — see docs/llm-backends.md',
   },
 }
 
@@ -344,7 +344,7 @@ export function formatAgentNotAvailableError(agentName: string): string {
     else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
   }
 
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /cc - Claude Code\n  /cx - Codex\n  /oc - OpenCode\n  /agy - Antigravity`
+  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /oc - OpenCode\n  /agy - Antigravity`
 }
 
 // ============================================

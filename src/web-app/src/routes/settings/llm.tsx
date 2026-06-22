@@ -1,10 +1,10 @@
 /**
- * /settings/llm — native LLM backends + role bindings (Stage 6).
+ * /settings/llm — Agim Agent model APIs + runtime settings.
  *
  * Front-end for the `/api/llm/*` REST surface that landed in Stage 4.
- * Operators add an OpenAI-compatible or Anthropic backend, paste an
- * API key, optionally bind roles (cheap / evaluator / native-chat),
- * and ping-test the connection — all without hand-editing
+ * Operators add an OpenAI-compatible or Anthropic API, paste an API
+ * key, optionally bind roles (cheap / evaluator / native-chat), and
+ * tune built-in Agim Agent runtime behavior without hand-editing
  * ~/.agim/config.json.
  *
  * Intentionally minimal styling — focused on doing the job; matches
@@ -29,6 +29,7 @@ import {
 import {
   useLlmList, useLlmAddBackend, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
 } from '@/hooks/use-llm-admin'
+import { NativeAgentSettingsPanel } from '@/routes/settings/native-agent'
 
 const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
 const UNBIND_SENTINEL = '__unbind__'
@@ -83,8 +84,13 @@ export default function SettingsLlmRoute(): JSX.Element {
       ) : (
         <>
           <BackendsCard data={listQuery.data} />
-          <RolesCard data={listQuery.data} />
           <AddBackendCard />
+          <RolesCard data={listQuery.data} />
+          <section id="agim-agent" className="rounded-md border border-border bg-surface px-4 py-3">
+            <h2 className="text-sm font-semibold">{t('llm.agimAgentRuntimeTitle')}</h2>
+            <p className="mt-1 text-xs text-text-dim">{t('llm.agimAgentRuntimeHint')}</p>
+          </section>
+          <NativeAgentSettingsPanel embedded />
         </>
       )}
     </div>

@@ -287,7 +287,7 @@ export function buildSystemPrompt(
     `  - NEVER call native_web_fetch with a URL you fabricated from the user's keywords.`,
     ``,
     `Short-input rule:`,
-    `  - If the user's message is ONLY a slash command alias for an agent name (e.g. "/native", "/llm",`,
+    `  - If the user's message is ONLY a slash command alias for an agent name (e.g. "/agim", "/native", "/llm",`,
     `    "/na", "/cc", "/oc") and you are already that agent, respond with ONE short line confirming`,
     `    your identity (e.g. "我是 native，正在听。"). Do NOT call any tool. The slash router handles`,
     `    actual agent switching; if it didn't switch, the user is already on this agent.`,
@@ -1223,7 +1223,7 @@ function buildHeartbeats(runCtx: {
 
 class NativeAgentAdapter implements AgentAdapter {
   readonly name = 'native'
-  readonly aliases = ['llm', 'native-llm', 'na']
+  readonly aliases = ['agim', 'llm', 'native-llm', 'na']
   readonly kind = 'in-process' as const
 
   /** One-line UI hint surfaced by `/agents`: which LLM role + backend
@@ -1249,7 +1249,7 @@ class NativeAgentAdapter implements AgentAdapter {
   ): AsyncGenerator<string> {
     const picked = pickProvider()
     if (!picked) {
-      const msg = '❌ native agent: no usable LLM backend configured. Add one in /settings/llm (or ~/.agim/config.json llmBackends + API key). Role bindings are optional.'
+      const msg = '❌ Agim Agent: no usable LLM backend configured. Add one in /settings/llm (or ~/.agim/config.json llmBackends + API key). Role bindings are optional.'
       yield msg
       return
     }
@@ -1499,7 +1499,7 @@ class NativeAgentAdapter implements AgentAdapter {
     if (!result) {
       // Shouldn't happen — pickProvider above already returned the primary
       // so the chain has at least one entry. Defensive belt-and-suspenders.
-      yield '❌ native agent: provider chain ended without any attempt'
+      yield '❌ Agim Agent: provider chain ended without any attempt'
       return
     }
 
@@ -1573,7 +1573,7 @@ class NativeAgentAdapter implements AgentAdapter {
     }
 
     if (result.finishReason === 'error') {
-      body = `❌ native agent error: ${result.error ?? '(no detail)'}`
+      body = `❌ Agim Agent error: ${result.error ?? '(no detail)'}`
     } else if (result.finishReason === 'max_iterations') {
       log.warn({
         event: 'native.turn.max_iterations',
@@ -1629,7 +1629,7 @@ class NativeAgentAdapter implements AgentAdapter {
       body = (await stageOrFallback('stuck_loop'))
         ?? composeUnfinishedTurnRecap(result, 'stuck_loop', maxIter)
     } else if (result.finishReason === 'aborted') {
-      body = '⏹ native agent aborted before completion.'
+      body = '⏹ Agim Agent aborted before completion.'
     } else if (result.finishReason === 'hallucinated_tools') {
       // v1.2.147 — agent-loop detected the model narrated a tool
       // invocation ("我现在调用 native_write_file: ```python …```")
@@ -1732,6 +1732,6 @@ export const nativeAgentAdapter: AgentAdapter = new NativeAgentAdapter()
  *  thread. */
 export function describeNativeAgent(): string {
   const picked = pickProvider()
-  if (!picked) return 'native agent: NOT CONFIGURED (no usable llmBackends + API key)'
-  return `native agent: backend=${picked.provider.name} (role=${picked.role}); policy=${describePolicy(resolvePolicy())}`
+  if (!picked) return 'Agim Agent: NOT CONFIGURED (no usable llmBackends + API key)'
+  return `Agim Agent: backend=${picked.provider.name} (role=${picked.role}); policy=${describePolicy(resolvePolicy())}`
 }

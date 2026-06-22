@@ -37,6 +37,7 @@ import {
   useWriteWorkspaceFile,
 } from '@/hooks/use-workspace'
 import { describeError } from '@/lib/api/errors'
+import { agentDisplayName } from '@/lib/agent-label'
 import type {
   WorkspaceFileContent,
   WorkspaceFileEntry,
@@ -124,7 +125,7 @@ export default function WorkspaceRoute(): JSX.Element {
                 {agentNames.map((name) => (
                   <SelectItem key={name} value={name}>
                     <span className="flex items-center gap-2">
-                      <span className="font-mono text-xs">{name}</span>
+                      <span className="font-mono text-xs">{agentDisplayName(name)}</span>
                       <span className={cn(
                         'inline-block h-1.5 w-1.5 rounded-full',
                         agents[name] ? 'bg-success' : 'bg-text-muted',

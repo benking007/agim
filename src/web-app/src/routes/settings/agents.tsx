@@ -47,6 +47,7 @@ import {
   useUpdateConfig,
 } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
+import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
 
@@ -61,18 +62,24 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
  *                     runtime always exposes it via `isAgentEnabled`
  *                     regardless of config.agents, so default-picker
  *                     eligibility ignores the enabled-list constraint. */
-const BUILTIN_AGENTS: Record<string, { aliases: string[]; pkg: string; kind: 'cli' | 'in-process' }> = {
-  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli' },
-  'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli' },
-  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai',               kind: 'cli' },
-  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)', kind: 'cli' },
+const BUILTIN_AGENTS: Record<string, {
+  aliases: string[]
+  pkg: string
+  kind: 'cli' | 'in-process'
+  scope: 'bridged' | 'agim'
+}> = {
+  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli', scope: 'bridged' },
+  'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli', scope: 'bridged' },
+  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai',               kind: 'cli', scope: 'bridged' },
+  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)', kind: 'cli', scope: 'bridged' },
   // v1.2.140 — surface the in-process `native` agent in the admin list.
   // Previously the agent was registered + always-enabled at runtime but
   // hidden from this page, so operators could only reach it via the CLI.
-  'native':      { aliases: ['na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process' },
+  'native':      { aliases: ['agim', 'na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process', scope: 'agim' },
 }
 
 const AGENT_NAMES = Object.keys(BUILTIN_AGENTS)
+const BRIDGED_AGENT_NAMES = AGENT_NAMES.filter((name) => BUILTIN_AGENTS[name]?.scope === 'bridged')
 
 export default function SettingsAgentsRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
@@ -197,14 +204,14 @@ export default function SettingsAgentsRoute(): JSX.Element {
         <>
           {/* Agent rows */}
           <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
-            {AGENT_NAMES.map((name) => {
+            {BRIDGED_AGENT_NAMES.map((name) => {
               const info = BUILTIN_AGENTS[name]!
               const installed = !!status[name]
               const isEnabled = enabled.includes(name)
               return (
                 <AgentRow
                   key={name}
-                  name={name}
+                  displayName={agentDisplayName(name)}
                   aliases={info.aliases}
                   pkg={info.pkg}
                   kind={info.kind}
@@ -215,6 +222,19 @@ export default function SettingsAgentsRoute(): JSX.Element {
               )
             })}
           </div>
+
+          <section className="rounded-md border border-border bg-surface p-4">
+            <h3 className="text-sm font-semibold">{t('agents.agimAgentCardTitle')}</h3>
+            <p className="mt-1 text-xs text-text-dim">{t('agents.agimAgentCardDesc')}</p>
+            <Button
+              className="mt-3"
+              variant="secondary"
+              size="sm"
+              onClick={() => { window.location.assign('/settings/llm') }}
+            >
+              {t('agents.agimAgentCardAction')}
+            </Button>
+          </section>
 
           {/* Default agent picker */}
           <section className="rounded-md border border-border bg-surface p-4">
@@ -235,7 +255,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
                   <SelectItem value="__none__" disabled>{t('agents.noEligible')}</SelectItem>
                 ) : (
                   eligibleDefaults.map((a) => (
-                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                    <SelectItem key={a} value={a}>{agentDisplayName(a)}</SelectItem>
                   ))
                 )}
               </SelectContent>
@@ -284,7 +304,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
 /* ─────────────── Row ─────────────── */
 
 interface AgentRowProps {
-  name: string
+  displayName: string
   aliases: string[]
   pkg: string
   /** v1.2.140 — 'in-process' agents show a different "not installed"
@@ -298,7 +318,7 @@ interface AgentRowProps {
 }
 
 function AgentRow({
-  name, aliases, pkg, kind, installed, enabled, onToggle,
+  displayName, aliases, pkg, kind, installed, enabled, onToggle,
 }: AgentRowProps): JSX.Element {
   const { t } = useTranslation('settings')
   const inProcess = kind === 'in-process'
@@ -309,7 +329,7 @@ function AgentRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-text">{name}</span>
+          <span className="font-medium text-text">{displayName}</span>
           <Badge variant={installed ? 'success' : 'outline'} className="text-[10px]">
             <span className={cn(
               'inline-block h-1.5 w-1.5 rounded-full',

@@ -33,6 +33,7 @@ import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
+import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -236,7 +237,7 @@ export default function MobileChatRoute(): JSX.Element {
         open={nativeSetupDialogOpen}
         reason={nativeSetupReason}
         onOpenChange={setNativeSetupDialogOpen}
-        onConfigured={() => switchAgent('native')}
+        onConfigured={() => switchAgent('agim')}
       />
 
       <header
@@ -256,7 +257,7 @@ export default function MobileChatRoute(): JSX.Element {
           <span className="truncate text-sm font-semibold">{latestUserTitle}</span>
           <span className="flex items-center gap-1.5 text-[11px] text-text-dim">
             <span className={cn('inline-block h-1.5 w-1.5 rounded-full', STATUS_STYLES[state.status])} />
-            <span>{state.agent || '—'}</span>
+              <span>{state.agent ? agentDisplayName(state.agent) : '—'}</span>
             <span>·</span>
             <span>{state.activeRunId ? t('chat.running', { defaultValue: 'Running' }) : statusLabel}</span>
           </span>
@@ -368,7 +369,7 @@ export default function MobileChatRoute(): JSX.Element {
               {t('chat.running', { defaultValue: 'Running' })}
             </span>
             <span className="truncate text-xs text-text-dim">
-              {activeRun.agent} · {formatDurationMs(activeRun.durationMs)}
+              {agentDisplayName(activeRun.agent)} · {formatDurationMs(activeRun.durationMs)}
             </span>
           </div>
         )}
@@ -531,7 +532,7 @@ export default function MobileChatRoute(): JSX.Element {
                         <Badge className={cn('border-0', runStatusBadgeClass(run.status))}>
                           {run.status}
                         </Badge>
-                        <span className="truncate text-xs font-medium">{run.agent}</span>
+                        <span className="truncate text-xs font-medium">{agentDisplayName(run.agent)}</span>
                         <span className="ml-auto text-[11px] text-text-muted">
                           {formatDurationMs(run.durationMs)}
                         </span>

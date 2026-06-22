@@ -5,7 +5,7 @@
     "messengers": "IM 平台",
     "email": "邮件 (SMTP)",
     "viewer": "Viewer & 地图",
-    "agents": "桥接Agent",
+    "agents": "Agents",
     "llm": "Agim Agent",
     "mcp": "MCP 服务器",
     "nativeAgent": "Agim Agent",
@@ -20,7 +20,7 @@
     "service": "服务"
   },
   "agents": {
-    "title": "桥接Agent",
+    "title": "Agents",
     "subtitle": "这里管理桥接的外部 Agent（CLI / ACP）。Agim Agent 是系统内置默认 Agent，在「Agim Agent」页通过大模型 API 配置。",
     "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
     "nativeInstallHint": "Agim Agent 尚未配置大模型 API。前往 设置 → Agim Agent 添加一个 API（OpenAI / DeepSeek / Anthropic 等）即可使用。",
@@ -480,7 +480,7 @@
     }
   },
   "llm": {
-    "title": "Agim Agent 与大模型API",
+    "title": "Agim Agent配置",
     "subtitle": "在一个页面完成 Agim Agent 的大模型 API 添加与运行参数配置。API 元数据保存在 ~/.agim/config.json；API Key 保存在 ~/.agim/llm-secrets.json（0600）或 AGIM_LLM_SECRET_<NAME> 环境变量。",
     "refresh": "刷新",
     "backendsTitle": "API ({{count}})",

@@ -5,7 +5,7 @@
     "messengers": "Messengers",
     "email": "Email (SMTP)",
     "viewer": "Viewer & Maps",
-    "agents": "Bridged Agents",
+    "agents": "Agents",
     "llm": "Agim Agent",
     "mcp": "MCP Servers",
     "nativeAgent": "Agim Agent",
@@ -20,7 +20,7 @@
     "service": "Service"
   },
   "agents": {
-    "title": "Bridged Agents",
+    "title": "Agents",
     "subtitle": "Manage bridged external agents (CLI / ACP). Agim Agent is the built-in default agent and is configured from the Agim Agent tab via Model APIs.",
     "installHint": "Not installed. `npm install -g {{pkg}}` on the host.",
     "nativeInstallHint": "No model API configured for Agim Agent. Open Settings → Agim Agent to add one (OpenAI / DeepSeek / Anthropic / …).",
@@ -480,7 +480,7 @@
     }
   },
   "llm": {
-    "title": "Agim Agent & Model APIs",
+    "title": "Agim Agent Settings",
     "subtitle": "Configure Agim Agent by adding model APIs and runtime behavior in one place. API metadata is saved in ~/.agim/config.json; API keys are saved in ~/.agim/llm-secrets.json (0600) or AGIM_LLM_SECRET_<NAME>.",
     "refresh": "Refresh",
     "backendsTitle": "APIs ({{count}})",

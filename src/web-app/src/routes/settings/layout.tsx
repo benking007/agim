@@ -18,19 +18,19 @@ interface SubTab {
 
 const SUB_TABS: SubTab[] = [
   { to: 'messengers',   i18nKey: 'tabs.messengers',   mounted: true },
-  { to: 'email',        i18nKey: 'tabs.email',        mounted: true },
-  { to: 'viewer',       i18nKey: 'tabs.viewer',       mounted: true },
   { to: 'agents',       i18nKey: 'tabs.agents',       mounted: true },
   // Stage 6 — Agim Agent stack (model APIs + runtime knobs).
   { to: 'llm',          i18nKey: 'tabs.llm',          mounted: true },
-  { to: 'mcp',          i18nKey: 'tabs.mcp',          mounted: true },
-  // v1.2.126 — web_search provider chain + per-provider keys.
-  { to: 'search',       i18nKey: 'tabs.search',       mounted: true },
   // v1.2.129 — mobile QR generator (open /m/chat from a phone).
   { to: 'mobile',       i18nKey: 'tabs.mobile',       mounted: true },
   // P1 follow-up — agim SKILL.md editor.
   { to: 'agim-skills',  i18nKey: 'tabs.agimSkills',   mounted: true },
+  // v1.2.126 — web_search provider chain + per-provider keys.
+  { to: 'search',       i18nKey: 'tabs.search',       mounted: true },
+  { to: 'mcp',          i18nKey: 'tabs.mcp',          mounted: true },
   { to: 'policy',       i18nKey: 'tabs.policy',       mounted: true },
+  { to: 'email',        i18nKey: 'tabs.email',        mounted: true },
+  { to: 'viewer',       i18nKey: 'tabs.viewer',       mounted: true },
   { to: 'security',     i18nKey: 'tabs.security',     mounted: true },
   { to: 'workspaces',   i18nKey: 'tabs.workspaces',   mounted: true },
   { to: 'admins',       i18nKey: 'tabs.admins',       mounted: true },

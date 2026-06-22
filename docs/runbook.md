@@ -10,7 +10,7 @@
 |---|---|
 | 启用 Discord / Telegram | [§1](#1-启用-discord--telegram) |
 | 启用远程 ACP Agent | [§2](#2-启用远程-acp-agent) |
-| 改 Web 监听地址 / 端口 | [§3](#3-改-web-监听地址--端口) |
+| 改 Web 端口 | [§3](#3-改-web-端口) |
 | 重启服务 | [§4](#4-重启服务) |
 | 停止 / 启动服务 | [§5](#5-停止--启动服务) |
 | 卸载 agim | [§6](#6-卸载-agim) |
@@ -43,7 +43,7 @@ Environment="IMHUB_ENABLE_GLOBAL_IM=1"
 ```
 
 **验证**：
-1. 跑 `agim config` → AI Agent 之后应该出现 `Web 后台 — 监听地址 + 端口`、`SMTP`、`百度地图` 三个段，再往下找应该能看到 Telegram / Discord 在 messengers 段里
+1. 跑 `agim config` → 主菜单应包含 `Agim Agent 大模型 API`、`IM 管理员`、`Web 后台 — 端口` 三段；Telegram / Discord 仍在 messengers 段里按开关显示
 2. Web 后台 `/settings/messengers` → Telegram + Discord 卡片可见
 
 **关闭**：删 env 行或改成 `0` → `systemctl restart agim`。**关闭不会删** `~/.agim/config.json` 里已有的 telegram/discord 凭据 —— 翻开开关后立即恢复。
@@ -75,31 +75,26 @@ systemctl restart agim
 
 ---
 
-## 3. 改 Web 监听地址 / 端口
+## 3. 改 Web 端口
 
-R15 在 CLI 向导加了专门段：
+CLI 向导里有专门段：
 
 ```bash
 agim config
-# → Web 后台 — 监听地址 + 端口
+# → Web 后台 — 端口
 ```
 
-**127.0.0.1（默认，仅本机）vs 0.0.0.0（所有网卡）**：
-
-- 选 `127.0.0.1` → CLI 写 `unset IMHUB_WEB_BIND`（回归默认）
-- 选 `0.0.0.0` → CLI 强制 yesNo 确认"你已经在 agim 前面配好 TLS 反代了吗？"再写
-
-**端口**：1024-65535 任意。`< 1024` 拒绝（需要 root capabilities，建议反代）。
+只在向导里修改端口：1024-65535 任意。`< 1024` 拒绝（需要 root capabilities，建议反代）。
 
 **手动方式**（不走 CLI）：
 
 ```bash
-# 改 bind（写 env 文件）
-echo 'IMHUB_WEB_BIND=0.0.0.0' >> ~/.agim/env
-echo 'IMHUB_WEB_TLS_ACK=1' >> ~/.agim/env  # 你确认了 TLS 反代，静默启动横幅
-
 # 改端口（写 config.json）
 # 编辑 ~/.agim/config.json: "webPort": 8080
+
+# 如需改监听地址（高级场景）
+echo 'IMHUB_WEB_BIND=0.0.0.0' >> ~/.agim/env
+echo 'IMHUB_WEB_TLS_ACK=1' >> ~/.agim/env  # 前置 TLS 反代后再确认
 
 systemctl restart agim
 ```

@@ -194,7 +194,10 @@ async function addAction(): Promise<number> {
     if (preset.apiKeyDoc) {
       process.stdout.write(`(API key: get one at ${preset.apiKeyDoc})\n`)
     }
-    const apiKey = (await ask(rl, 'Paste API key (empty to skip): ', { silent: true })).trim()
+    const apiKey = (await ask(rl, 'Paste API key: ', { silent: true })).trim()
+    if (!apiKey) {
+      return cancel('API key is required')
+    }
 
     const cfg = await readConfig()
     const backends = cfg.llmBackends ?? []
@@ -212,13 +215,9 @@ async function addAction(): Promise<number> {
     }
 
     await writeConfig(cfg)
-    if (apiKey) saveSecret(name, apiKey)
+    saveSecret(name, apiKey)
 
     process.stdout.write(`\n✅ Saved backend "${name}" (${provider} / ${model}).\n`)
-    if (!apiKey) {
-      process.stdout.write(`⚠️  No API key stored. Set env var AGIM_LLM_SECRET_${envSuffix(name)} ` +
-        `or rerun \`agim setup llm secret ${name}\` to add one.\n`)
-    }
 
     process.stdout.write('\nBind to which role(s)? (comma-separated, empty to skip)\n')
     process.stdout.write(`  Known roles: ${KNOWN_ROLES.join(', ')}\n`)

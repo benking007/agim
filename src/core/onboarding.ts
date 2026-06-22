@@ -139,7 +139,7 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
     agent: 'native',
     npmPackage: '',
     command: '',
-    installCmd: 'Configure Agim Agent model APIs in ~/.agim/config.json (llmBackends + API key; llmRoles optional) — see docs/llm-backends.md',
+    installCmd: 'Run `agim config` → Agim Agent model APIs (or edit ~/.agim/config.json llmBackends + API key) — see docs/llm-backends.md',
   },
 }
 

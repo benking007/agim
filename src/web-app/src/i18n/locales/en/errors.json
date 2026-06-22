@@ -1,6 +1,7 @@
 {
   "NETWORK": "Couldn't reach the server. Check your connection and retry.",
   "AUTH_INVALID": "Your session expired. Please sign in again.",
+  "AUTH_ADMIN_REQUIRED": "This token has no admin permission. Please sign in with an admin token.",
   "AUTH_REQUIRED": "Sign-in required.",
   "AUTH_TOKEN_REQUIRED": "Auth token missing from request.",
   "AUTH_NOT_READY": "Auth subsystem isn't ready yet. Retry in a moment.",

@@ -53,5 +53,6 @@ export function describeError(err: unknown, t: TFunction): { code: string; messa
  * Used by useAuth + the QueryClient to trigger the /login redirect.
  */
 export function isAuthError(err: unknown): boolean {
-  return err instanceof ApiClientError && (err.code === 'AUTH_INVALID' || err.status === 401)
+  return err instanceof ApiClientError
+    && (err.code === 'AUTH_INVALID' || err.code === 'AUTH_ADMIN_REQUIRED' || err.status === 401)
 }

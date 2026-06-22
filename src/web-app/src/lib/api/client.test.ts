@@ -109,6 +109,40 @@ describe('client', () => {
     expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=/)
   })
 
+  it('on AUTH_ADMIN_REQUIRED 403 → clears token + redirects with reason=admin', async () => {
+    const loc = mockLocation('/settings/llm', '?pane=api')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'AUTH_ADMIN_REQUIRED', error: 'admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await expect(client.get('/api/agim-skills')).rejects.toMatchObject({
+      code: 'AUTH_ADMIN_REQUIRED',
+      status: 403,
+    })
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(loc.setHref).toHaveBeenCalledTimes(1)
+    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*&reason=admin$/)
+  })
+
+  it('on legacy 403 "admin role required" → redirects to login', async () => {
+    const loc = mockLocation('/settings/service')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await expect(client.post('/api/service/restart')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      status: 403,
+    })
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(loc.setHref).toHaveBeenCalledTimes(1)
+    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*&reason=admin$/)
+  })
+
   it('does NOT redirect when /api/auth/* itself returns 401', async () => {
     const loc = mockLocation('http://localhost:3000/login')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(

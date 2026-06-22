@@ -5,7 +5,7 @@
  *     surfaces the original message via {{detail}}
  *   * Generic Error → UNKNOWN code, name as detail
  *   * Non-Error throws (strings, objects) → UNKNOWN code, String(value)
- *   * isAuthError true for AUTH_INVALID or HTTP 401
+ *   * isAuthError true for AUTH_INVALID / AUTH_ADMIN_REQUIRED or HTTP 401
  *   * isAuthError false for generic codes / non-Error values
  */
 
@@ -79,6 +79,12 @@ describe('isAuthError', () => {
   it('true for AUTH_INVALID code', () => {
     expect(
       isAuthError(new ApiClientError({ message: 'expired', code: 'AUTH_INVALID', status: 401 })),
+    ).toBe(true)
+  })
+
+  it('true for AUTH_ADMIN_REQUIRED code', () => {
+    expect(
+      isAuthError(new ApiClientError({ message: 'admin role required', code: 'AUTH_ADMIN_REQUIRED', status: 403 })),
     ).toBe(true)
   })
 

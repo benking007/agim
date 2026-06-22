@@ -26,10 +26,7 @@ export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.
   function handleChange(next: string): void {
     if (!next || next === value) return
     const ok = window.confirm(
-      t('chat.switchAgentConfirm', {
-        agent: next,
-        defaultValue: `切换为「${next}」的对话框？`,
-      }),
+      t('chat.switchAgentConfirm', { agent: next }),
     )
     if (ok) onChange(next)
     // On cancel we do nothing — the Select is controlled by `value`, so it

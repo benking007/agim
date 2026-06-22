@@ -113,12 +113,13 @@ export default function MobileChatRoute(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
 
   const quickPrompts = useMemo(
     () => [
-      t('chat.quickPrompt.plan', { defaultValue: '帮我先拆解这个任务' }),
-      t('chat.quickPrompt.risks', { defaultValue: '先列出风险与回滚方案' }),
-      t('chat.quickPrompt.summary', { defaultValue: '输出一版可发给老板的摘要' }),
+      t('chat.quickPrompt.plan'),
+      t('chat.quickPrompt.risks'),
+      t('chat.quickPrompt.summary'),
     ],
     [t],
   )
@@ -257,7 +258,7 @@ export default function MobileChatRoute(): JSX.Element {
             <span className={cn('inline-block h-1.5 w-1.5 rounded-full', STATUS_STYLES[state.status])} />
             <span>{state.agent || '—'}</span>
             <span>·</span>
-            <span>{state.activeRunId ? t('chat.running', { defaultValue: 'Running' }) : state.status}</span>
+            <span>{state.activeRunId ? t('chat.running', { defaultValue: 'Running' }) : statusLabel}</span>
           </span>
         </div>
         <Button
@@ -419,7 +420,7 @@ export default function MobileChatRoute(): JSX.Element {
             )}
             {!state.currentReplyId && (
               <span className="text-[11px] text-text-muted">
-                {t('chat.mobileHint', { defaultValue: 'Enter 换行，点发送提交。' })}
+                {t('chat.mobileHint')}
               </span>
             )}
           </div>

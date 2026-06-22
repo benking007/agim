@@ -5,7 +5,7 @@
     "label":      "用户",
     "placeholder":"选择一个用户",
     "factsLabel": "{{count}} 条事实",
-    "personaTag": "persona"
+    "personaTag": "画像"
   },
   "noUserSelected": {
     "title": "选择一个用户查看其记忆",
@@ -13,7 +13,7 @@
   },
   "tabs": {
     "facts":   "事实",
-    "persona": "Persona",
+    "persona": "画像",
     "vector":  "向量",
     "skills":  "技能"
   },

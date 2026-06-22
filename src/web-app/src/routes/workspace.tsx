@@ -324,7 +324,7 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
           {t('tree.up')}
         </Button>
         <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs font-mono">{file.path}</code>
-        {file.truncated && <Badge variant="warning">truncated</Badge>}
+        {file.truncated && <Badge variant="warning">{t('editor.truncatedBadge')}</Badge>}
         {dirty && <Badge variant="info">{t('editor.dirtyHint')}</Badge>}
         <Button
           type="button"

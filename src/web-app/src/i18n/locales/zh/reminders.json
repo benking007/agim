@@ -31,7 +31,7 @@
     "text":       "内容",
     "status":     "状态",
     "platform":   "平台",
-    "thread":     "Thread",
+    "thread":     "线程",
     "source":     "来源",
     "recurrence": "周期",
     "createdAt":  "创建时间"

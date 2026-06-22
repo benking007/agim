@@ -10,7 +10,7 @@
     "heartbeat": "心跳",
     "goals": "目标",
     "asks": "待回答",
-    "plans": "Plan 审计"
+    "plans": "计划审计"
   },
   "jobs": {
     "title": "作业",
@@ -30,7 +30,7 @@
     "col": {
       "id": "ID",
       "agent": "Agent",
-      "prompt": "Prompt",
+      "prompt": "提示词",
       "status": "状态",
       "createdAt": "创建时间",
       "duration": "耗时",
@@ -87,7 +87,7 @@
     "col": {
       "id": "ID",
       "agent": "Agent",
-      "prompt": "Prompt",
+      "prompt": "提示词",
       "status": "状态",
       "parent": "父级",
       "platform": "平台",
@@ -158,7 +158,7 @@
     "filter": {
       "status": "状态",
       "statusAny": "全部状态",
-      "thread": "Thread 标识"
+      "thread": "线程标识"
     },
     "stats": {
       "pending": "待发送",
@@ -171,12 +171,12 @@
       "status": "状态",
       "platform": "平台",
       "preview": "内容",
-      "thread": "Thread",
+      "thread": "线程",
       "kind": "类型",
       "attempts": "尝试次数",
       "createdAt": "创建时间",
       "lastError": "最后错误",
-      "jobId": "Job"
+      "jobId": "作业"
     },
     "status": {
       "pending": "待发送",
@@ -207,7 +207,7 @@
       "parent": "父级",
       "depth": "深度",
       "status": "状态",
-      "prompt": "Prompt",
+      "prompt": "提示词",
       "createdAt": "创建时间"
     }
   },
@@ -255,6 +255,11 @@
     "pause": "暂停",
     "complete": "完成",
     "cancel": "取消",
+    "status": {
+      "paused": "暂停",
+      "completed": "完成",
+      "cancelled": "取消"
+    },
     "body": "正文",
     "recentProgress": "最近进度（最新 {{count}} 条）",
     "created": "创建于 {{at}}",
@@ -281,5 +286,29 @@
     "seconds": "{{count}} 秒",
     "minutes": "{{count}} 分",
     "hours": "{{count}} 小时"
+  },
+  "plans": {
+    "title": "计划记录",
+    "subtitle": "查看 Plan 模式退出时的处理结果与计划正文。",
+    "refresh": "刷新",
+    "filterLabel": "按线程标识筛选（可选）",
+    "applyFilter": "应用",
+    "clearFilter": "清空",
+    "empty": "暂无计划记录。",
+    "emptyFiltered": "该线程暂无计划记录。",
+    "planMdLabel": "计划正文：",
+    "col": {
+      "outcome": "结果",
+      "thread": "线程",
+      "resolvedAt": "处理时间",
+      "pending": "等待时长",
+      "detail": "说明"
+    },
+    "outcome": {
+      "approved": "已通过",
+      "rejected": "已拒绝",
+      "edited": "已修改",
+      "expired": "已超时"
+    }
   }
 }

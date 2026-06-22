@@ -25,7 +25,9 @@ export default function TasksGoalsRoute(): JSX.Element {
   async function onChangeStatus(g: GoalRow, status: GoalRow['status']): Promise<void> {
     try {
       await updateStatus.mutateAsync({ id: g.id, status })
-      toast.success(t('goals.statusUpdated', { status }))
+      toast.success(t('goals.statusUpdated', {
+        status: t(`goals.status.${status}`, { defaultValue: status }),
+      }))
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
     }
@@ -130,8 +132,8 @@ export default function TasksGoalsRoute(): JSX.Element {
                                   {t('goals.recentProgress', { count: g.progressLog.length })}
                                 </div>
                                 <ul className="mt-1 space-y-1">
-                                  {g.progressLog.slice().reverse().map((n, i) => (
-                                    <li key={i} className="font-mono text-[11px]">
+                                  {g.progressLog.slice().reverse().map((n) => (
+                                    <li key={`${n.ts}-${n.by}-${n.text}`} className="font-mono text-[11px]">
                                       <span className="text-text-dim">{n.ts.slice(0, 19)} ({n.by})</span> {n.text}
                                     </li>
                                   ))}

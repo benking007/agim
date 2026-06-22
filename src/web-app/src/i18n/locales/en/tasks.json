@@ -229,8 +229,8 @@
     "enable": "Enable",
     "show": "Show",
     "hide": "Hide",
-    "enabledToast": "enabled binding",
-    "disabledToast": "disabled binding",
+    "enabledToast": "Binding enabled",
+    "disabledToast": "Binding paused",
     "justNow": "just now",
     "minutesAgo": "{{count}}m ago",
     "hoursAgo": "{{count}}h ago",
@@ -255,6 +255,11 @@
     "pause": "Pause",
     "complete": "Complete",
     "cancel": "Cancel",
+    "status": {
+      "paused": "Paused",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
     "body": "Body",
     "recentProgress": "Recent progress (latest {{count}})",
     "created": "created {{at}}",
@@ -281,5 +286,29 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
+  },
+  "plans": {
+    "title": "Plan history",
+    "subtitle": "Audit log of plan-mode exit handshakes, including outcomes and proposed plan text.",
+    "refresh": "Refresh",
+    "filterLabel": "Filter by thread key (optional)",
+    "applyFilter": "Apply",
+    "clearFilter": "Clear",
+    "empty": "No plan history yet.",
+    "emptyFiltered": "No plan history for this thread key.",
+    "planMdLabel": "Proposed plan:",
+    "col": {
+      "outcome": "Outcome",
+      "thread": "Thread",
+      "resolvedAt": "Resolved",
+      "pending": "Wait",
+      "detail": "Detail"
+    },
+    "outcome": {
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "edited": "Edited",
+      "expired": "Expired"
+    }
   }
 }

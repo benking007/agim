@@ -3,7 +3,7 @@
   "subtitle": "运行健康：调用总量、Top-N 排行与审计时间线。",
   "tabs": {
     "health": "健康",
-    "topn":   "Top-N",
+    "topn":   "排行",
     "audit":  "审计"
   },
   "window": {
@@ -55,7 +55,7 @@
     },
     "col": {
       "rank":           "#",
-      "key":            "Key",
+      "key":            "键",
       "calls":          "调用",
       "cost":           "成本",
       "errors":         "错误",
@@ -80,7 +80,7 @@
     },
     "col": {
       "ts":        "时间",
-      "trace":     "Trace",
+      "trace":     "追踪 ID",
       "agent":     "Agent",
       "platform":  "平台",
       "user":      "用户",

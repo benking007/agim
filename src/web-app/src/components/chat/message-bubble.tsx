@@ -91,19 +91,19 @@ function CopyButton({ text }: { text: string }): JSX.Element {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast.error(t('chat.copyFailed', { defaultValue: '复制失败' }))
+      toast.error(t('chat.copyFailed'))
     }
   }
   return (
     <button
       type="button"
       onClick={handleCopy}
-      title={t('chat.copyMarkdown', { defaultValue: '复制 Markdown' })}
+      title={t('chat.copyMarkdown')}
       className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-text-dim transition hover:bg-surface-2 hover:text-text"
     >
       {copied
-        ? t('chat.copied', { defaultValue: '✓ 已复制' })
-        : t('chat.copy', { defaultValue: '复制' })}
+        ? t('chat.copied')
+        : t('chat.copy')}
     </button>
   )
 }
@@ -231,9 +231,7 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
           </div>
           {pendingChoice !== null && (
             <p className="mt-2 text-xs text-text-dim">
-              {t('chat.approvalSubmitting', {
-                defaultValue: '已发送，等待结果…',
-              })}
+              {t('chat.approvalSubmitting')}
             </p>
           )}
         </>

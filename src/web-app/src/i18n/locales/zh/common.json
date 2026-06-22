@@ -71,7 +71,7 @@
     "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 IMHUB_TRUST_LOOPBACK=off 时才会看到此页。"
   },
   "home": {
-    "placeholder": "已登录。聊天界面将在 PR-6 落地；当前页暂为占位。",
+    "placeholder": "已登录，请从侧栏进入对话。",
     "healthCheck": "后端可达"
   },
   "notFound": {
@@ -94,7 +94,14 @@
     "send": "发送",
     "streaming": "… 接收中",
     "running": "处理中",
+    "status": {
+      "open": "已连接",
+      "connecting": "连接中…",
+      "closed": "已断开",
+      "error": "连接异常"
+    },
     "notConnected": "未连接，正在重连…",
+    "notConnectedRetry": "未连接，正在重连，请稍后重试。",
     "connecting": "正在连接 agim…",
     "disconnected": "已断开，自动重连中；可以继续输入。",
     "welcomeTitle": "开始对话",
@@ -127,6 +134,11 @@
     "newConv":     "新对话",
     "newConvHint": "清空消息并开启新会话",
     "newConvToast":"已开启新对话",
+    "switchAgentConfirm": "切换到「{{agent}}」？",
+    "copy": "复制",
+    "copied": "已复制",
+    "copyMarkdown": "复制 Markdown",
+    "copyFailed": "复制失败",
     "approvalTitle":         "🔐 工具授权",
     "approvalAutoBadge":     "自动放行",
     "approvalAutoIn":        "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
@@ -137,6 +149,7 @@
     "approvalAuto":          "本类自动放行",
     "approvalAutoTip":       "批准并对本会话内同类调用自动放行",
     "approvalDeny":          "拒绝",
+    "approvalSubmitting": "已发送，等待结果…",
     "outcome": {
       "allowed":        "✅ 已批准",
       "allowedPinned":  "✅ 已批准 · 后续同类自动放行",

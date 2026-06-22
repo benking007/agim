@@ -7,6 +7,7 @@ import {
   isExecToolName,
   buildExecDispatcher,
   isBgjobInvocation,
+  buildExecEnv,
 } from './exec-dispatcher.js'
 
 const NEVER_ABORT = new AbortController().signal
@@ -32,6 +33,56 @@ describe('exec-dispatcher', () => {
     delete process.env.IMHUB_EXEC_SANDBOX
     delete process.env.IMHUB_EXEC_TIMEOUT_MS
     delete process.env.IMHUB_EXEC_MAX_OUTPUT
+  })
+
+  describe('buildExecEnv — env allow-list (F1)', () => {
+    const SAVED: Record<string, string | undefined> = {}
+    const touch = (k: string, v: string | undefined) => {
+      SAVED[k] = process.env[k]
+      if (v === undefined) delete process.env[k]; else process.env[k] = v
+    }
+    afterEach(() => {
+      for (const [k, v] of Object.entries(SAVED)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v
+      }
+    })
+
+    it('does NOT forward secret-bearing env vars', () => {
+      touch('OPENAI_API_KEY', 'sk-secret')
+      touch('DB_PASSWORD', 'hunter2')
+      touch('AWS_SECRET_ACCESS_KEY', 'topsecret')
+      const env = buildExecEnv()
+      expect(env.OPENAI_API_KEY).toBeUndefined()
+      expect(env.DB_PASSWORD).toBeUndefined()
+      expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined()
+    })
+
+    it('forwards the safe base allow-list (PATH/HOME)', () => {
+      touch('PATH', '/usr/bin:/bin')
+      touch('HOME', '/home/agent')
+      const env = buildExecEnv()
+      expect(env.PATH).toBe('/usr/bin:/bin')
+      expect(env.HOME).toBe('/home/agent')
+    })
+
+    it('honours IMHUB_EXEC_ENV_PASS opt-in', () => {
+      touch('IMHUB_EXEC_ENV_PASS', 'FOO,BAR')
+      touch('FOO', 'foo-val')
+      touch('BAR', 'bar-val')
+      touch('OPENAI_API_KEY', 'sk-secret')
+      const env = buildExecEnv()
+      expect(env.FOO).toBe('foo-val')
+      expect(env.BAR).toBe('bar-val')
+      expect(env.OPENAI_API_KEY).toBeUndefined()
+    })
+
+    it('always preserves the per-spawn extraEnv (RPC token injection)', () => {
+      touch('OPENAI_API_KEY', 'sk-secret')
+      const env = buildExecEnv({ IMHUB_RPC_TOKEN: 'tok', IMHUB_RPC_SOCKET: '/run/x.sock' })
+      expect(env.IMHUB_RPC_TOKEN).toBe('tok')
+      expect(env.IMHUB_RPC_SOCKET).toBe('/run/x.sock')
+      expect(env.OPENAI_API_KEY).toBeUndefined()
+    })
   })
 
   describe('getExecTools / isExecToolName', () => {

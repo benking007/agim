@@ -79,6 +79,21 @@ describe('policy-approval-gate', () => {
     expect(await gate(call('mcp_x_create_thing'), 0)).toBe('deny')
   })
 
+  it('read-only mode does NOT auto-allow outbound fetch tools (F4)', async () => {
+    // native_web_fetch / WebFetch are full outbound HTTP clients (largest
+    // SSRF surface), so 'fetch' was removed from READ_ONLY_HINTS. They now
+    // require an explicit autoAllow / approval even in read-only mode.
+    const gate = buildPolicyApprovalGate({ mode: 'read-only' })
+    expect(await gate(call('native_web_fetch'), 0)).toBe('deny')
+    expect(await gate(call('mcp_http_fetch_url'), 0)).toBe('deny')
+    expect(await gate(call('WebFetch'), 0)).toBe('deny')
+  })
+
+  it('read-only mode still allows explicitly autoAllowed fetch tools', async () => {
+    const gate = buildPolicyApprovalGate({ mode: 'read-only', autoAllow: ['native_web_fetch'] })
+    expect(await gate(call('native_web_fetch'), 0)).toBe('allow')
+  })
+
   it('describePolicy returns a stable one-liner', () => {
     expect(describePolicy({})).toBe('mode=allow-list, autoAllow=0, denyList=0')
     expect(describePolicy({

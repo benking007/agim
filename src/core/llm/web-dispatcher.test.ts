@@ -186,6 +186,63 @@ describe('web-dispatcher', () => {
     })
   })
 
+  describe('checkUrlSafetyAsync — DNS-aware SSRF (F3)', () => {
+    it('rejects a hostname that resolves to the IMDS link-local address', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      const rebind = async () => [{ address: '169.254.169.254', family: 4 }]
+      const r = await checkUrlSafetyAsync('http://evil.example.com/', rebind)
+      expect(r.ok).toBe(false)
+      expect(r.reason).toContain('169.254.169.254')
+    })
+
+    it('rejects a hostname that resolves to RFC1918 / loopback', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      expect((await checkUrlSafetyAsync('http://a.test/', async () => [{ address: '10.0.0.5', family: 4 }])).ok).toBe(false)
+      expect((await checkUrlSafetyAsync('http://b.test/', async () => [{ address: '127.0.0.1', family: 4 }])).ok).toBe(false)
+      expect((await checkUrlSafetyAsync('http://c.test/', async () => [{ address: '::1', family: 6 }])).ok).toBe(false)
+    })
+
+    it('rejects when ANY resolved address is private (dual-record rebind)', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      const mixed = async () => [{ address: '8.8.8.8', family: 4 }, { address: '169.254.169.254', family: 4 }]
+      expect((await checkUrlSafetyAsync('http://mixed.test/', mixed)).ok).toBe(false)
+    })
+
+    it('allows a hostname that resolves only to public addresses', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      const pub = async () => [{ address: '93.184.216.34', family: 4 }]
+      expect((await checkUrlSafetyAsync('https://example.com/', pub)).ok).toBe(true)
+    })
+
+    it('rejects when DNS resolution fails (fail-closed)', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      const fail = async () => { throw new Error('ENOTFOUND') }
+      expect((await checkUrlSafetyAsync('http://nope.test/', fail)).ok).toBe(false)
+    })
+
+    it('does not resolve IP literals (sync decision stands)', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      let called = false
+      const spy = async () => { called = true; return [{ address: '8.8.8.8', family: 4 }] }
+      expect((await checkUrlSafetyAsync('http://10.0.0.1/', spy)).ok).toBe(false)
+      expect((await checkUrlSafetyAsync('http://8.8.8.8/', spy)).ok).toBe(true)
+      expect(called).toBe(false)
+    })
+
+    it('honours IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 (no resolution)', async () => {
+      const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
+      process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE = '1'
+      try {
+        let called = false
+        const spy = async () => { called = true; return [{ address: '169.254.169.254', family: 4 }] }
+        expect((await checkUrlSafetyAsync('http://evil.example.com/', spy)).ok).toBe(true)
+        expect(called).toBe(false)
+      } finally {
+        delete process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE
+      }
+    })
+  })
+
   describe('parseSsrfWhitelist (v1.2.66)', () => {
     it('parses comma-separated CIDR list', async () => {
       const { parseSsrfWhitelist } = await import('./web-dispatcher.js')

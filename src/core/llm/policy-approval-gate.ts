@@ -67,8 +67,12 @@ export interface PolicyApprovalGateConfig {
  * conventions are loose enough that this works as a starting filter,
  * and the explicit autoAllow always overrides it).
  */
+// v1.3.7 (F4) — 'fetch' removed: native_web_fetch / WebFetch are full
+// outbound HTTP clients (the largest SSRF surface), NOT read-only. Letting
+// any *fetch* tool auto-pass in 'read-only' mode made that mode a misnomer.
+// Outbound fetch now requires explicit autoAllow or an approval card.
 const READ_ONLY_HINTS = [
-  'read', 'list', 'get', 'search', 'find', 'fetch', 'show', 'view',
+  'read', 'list', 'get', 'search', 'find', 'show', 'view',
   'inspect', 'describe', 'status', 'echo', 'now', 'random_uuid',
 ]
 

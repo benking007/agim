@@ -19,6 +19,7 @@
 //
 // All tools are read-only and safe to default-allow in native's policy.
 
+import { lookup as dnsLookup } from 'node:dns/promises'
 import net from 'node:net'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
@@ -143,7 +144,7 @@ async function runWebFetch(args: Record<string, unknown>, signal: AbortSignal): 
   if (!url) return { text: 'url required', isError: true, source: 'web' }
   const format = args.format === 'raw' ? 'raw' : 'reader'
 
-  const safe = checkUrlSafety(url)
+  const safe = await checkUrlSafetyAsync(url)  // v1.3.7 (F3) — DNS-aware
   if (!safe.ok) return { text: `web_fetch refused: ${safe.reason}`, isError: true, source: 'web' }
 
   const initialTarget = format === 'reader'
@@ -220,7 +221,7 @@ async function fetchWithSafeRedirects(
       } catch {
         return { ok: false, error: `web_fetch refused: invalid redirect Location "${location}"` }
       }
-      const safe = checkUrlSafety(nextUrl)
+      const safe = await checkUrlSafetyAsync(nextUrl)  // v1.3.7 (F3) — DNS-aware
       if (!safe.ok) {
         return { ok: false, error: `web_fetch refused: redirect target rejected — ${safe.reason}` }
       }
@@ -753,9 +754,70 @@ export function checkUrlSafety(raw: string): SafetyResult {
     return checkIpv4Safety(v4)
   }
 
-  // Not an IP literal — DNS hostname. Pass without resolution at this
-  // layer; CR-2 (DNS-aware SSRF via custom http.Agent.lookup) is a
-  // separate hardening track.
+  // Not an IP literal — DNS hostname. The synchronous check can't see
+  // where the name resolves; checkUrlSafetyAsync() does the DNS-aware
+  // pass (F3). Sync callers (e.g. exec command scanning) still get the
+  // literal-IP coverage above.
+  return { ok: true }
+}
+
+/** Lookup signature — injectable so tests can simulate DNS rebinding. */
+export type DnsLookupAll = (host: string) => Promise<Array<{ address: string; family: number }>>
+
+const defaultLookupAll: DnsLookupAll = (host) => dnsLookup(host, { all: true })
+
+/**
+ * v1.3.7 (F3) — DNS-aware SSRF check. Closes CR-2: a hostname whose A/AAAA
+ * record points at a private/link-local address (classic DNS-rebinding to
+ * 169.254.169.254 / 10.x / ::1) was previously allowed because the sync
+ * check only inspects IP *literals*. Here we resolve the name and run every
+ * returned address through the same checkIpv4Safety / checkIpv6Safety used
+ * for literals.
+ *
+ * Residual risk: this validates at check time, but fetch() re-resolves at
+ * connect time, so a TTL-0 rebind between the two could still slip through
+ * (true TOCTOU closure needs a connection-level lookup pin via a custom
+ * undici dispatcher — a heavier follow-up). This still removes the trivial
+ * "point your DNS at the metadata endpoint" bypass.
+ */
+export async function checkUrlSafetyAsync(
+  raw: string,
+  lookupAll: DnsLookupAll = defaultLookupAll,
+): Promise<SafetyResult> {
+  const sync = checkUrlSafety(raw)
+  if (!sync.ok) return sync
+  if (process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE === '1') return sync
+
+  let u: URL
+  try { u = new URL(raw) } catch { return { ok: false, reason: `invalid URL: ${raw}` } }
+  const host = u.hostname.toLowerCase()
+  const v6Host = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+  // IP literals + localhost are already fully decided by the sync pass.
+  if (net.isIP(v6Host) || host === 'localhost' || host.endsWith('.localhost') || tryParseIPv4Variants(host)) {
+    return sync
+  }
+
+  let addrs: Array<{ address: string; family: number }>
+  try {
+    addrs = await lookupAll(host)
+  } catch (err) {
+    return { ok: false, reason: `DNS resolution failed for ${host}: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (!addrs || addrs.length === 0) return { ok: false, reason: `no DNS records for ${host}` }
+
+  const whitelist = parseSsrfWhitelist(process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST)
+  for (const a of addrs) {
+    if (a.family === 6) {
+      const r = checkIpv6Safety(a.address)
+      if (!r.ok) return { ok: false, reason: `${host} resolves to ${a.address}: ${r.reason}` }
+    } else {
+      const v4 = tryParseIPv4Variants(a.address)
+      if (!v4) return { ok: false, reason: `${host} resolves to unparseable IP ${a.address}` }
+      if (whitelist.length > 0 && ipInAnyCidr4(v4, whitelist)) continue
+      const r = checkIpv4Safety(v4)
+      if (!r.ok) return { ok: false, reason: `${host} resolves to ${a.address}: ${r.reason}` }
+    }
+  }
   return { ok: true }
 }
 

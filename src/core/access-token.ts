@@ -91,6 +91,9 @@ function sha256Hex(s: string): string {
   return createHash('sha256').update(s, 'utf-8').digest('hex')
 }
 
+/** Minimum seconds between last_used_at rewrites for one token (F5). */
+const LAST_USED_THROTTLE_S = 30
+
 /** Raw token format: `agim_` + 40 hex chars. Easy to identify in logs. */
 export function generateRawToken(): string {
   return 'agim_' + randomBytes(20).toString('hex')
@@ -223,8 +226,18 @@ export function verifyToken(raw: string): string | null {
     } catch { continue }
     if (stored.length !== cBuf.length) continue
     if (timingSafeEqual(stored, cBuf)) {
-      row.last_used_at = Math.floor(Date.now() / 1000)
-      try { writeFile(data) } catch { /* don't fail auth on write error */ }
+      // v1.3.7 (F5) — throttle the last_used_at write. Every successful
+      // auth used to re-serialize the whole tokens.json (read-modify-
+      // write), racing with concurrent createToken / setTokenRole /
+      // revokeToken (last-write-wins could silently drop a freshly added
+      // token or role change). Only rewriting when the stamp is stale
+      // (≥30s) shrinks that window to near-zero for the common case of
+      // repeated requests on the same token while still recording usage.
+      const now = Math.floor(Date.now() / 1000)
+      if (!row.last_used_at || now - row.last_used_at >= LAST_USED_THROTTLE_S) {
+        row.last_used_at = now
+        try { writeFile(data) } catch { /* don't fail auth on write error */ }
+      }
       return row.id
     }
   }

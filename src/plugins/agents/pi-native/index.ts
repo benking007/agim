@@ -124,11 +124,16 @@ function previewToolResult(ev: PiToolResultEvent): string | undefined {
   return undefined
 }
 
-function composeEmptyTurnRecap(toolRuns: readonly PiToolRun[]): string {
+function composeEmptyTurnRecap(toolRuns: readonly PiToolRun[], availableToolNames: readonly string[]): string {
   if (toolRuns.length === 0) {
+    const sample = availableToolNames.slice(0, 8)
+    const toolHint = availableToolNames.length === 0
+      ? '当前没有启用任何工具。'
+      : `当前已启用 ${availableToolNames.length} 个工具（示例：${sample.join(', ')}${availableToolNames.length > sample.length ? ' …' : ''}）。`
     return [
       '🧐 这一轮没有产出可见回复。',
       '可能是模型返回了空内容，或把你的问题误判成无需继续。',
+      toolHint,
       '',
       '你可以：',
       '  · 回「重试」让我再跑一遍',
@@ -379,7 +384,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       return
     }
     if (!text.trim()) {
-      yield composeEmptyTurnRecap(toolRuns)
+      yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
     yield text

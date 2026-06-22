@@ -307,8 +307,10 @@ function isRequestAdmin(req: IncomingMessage): boolean {
  *  `if (!requireAdmin(req, res)) return` */
 function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
   if (isRequestAdmin(req)) return true
-  res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify({ error: 'forbidden', message: 'admin role required' }))
+  sendError(res, 403, 'AUTH_ADMIN_REQUIRED', {
+    message: 'admin role required',
+    extra: { loginUrl: '/login' },
+  })
   return false
 }
 

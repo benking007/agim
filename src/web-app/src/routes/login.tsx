@@ -59,6 +59,8 @@ export default function LoginRoute(): JSX.Element {
   const [token, setLocalToken] = useState('')
 
   const next = safeNext(params.get('next'))
+  const reason = params.get('reason')
+  const requiresAdminToken = reason === 'admin'
 
   const login = useMutation({
     mutationFn: (raw: string) => api.login({ token: raw }),
@@ -97,6 +99,13 @@ export default function LoginRoute(): JSX.Element {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {requiresAdminToken && (
+            <p className="mb-3 rounded-md border border-warning/40 bg-warning-bg/50 px-3 py-2 text-sm text-warning">
+              {t('login.adminRequired', {
+                defaultValue: 'Current token has no admin permission. Please sign in with an admin token.',
+              })}
+            </p>
+          )}
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="token">

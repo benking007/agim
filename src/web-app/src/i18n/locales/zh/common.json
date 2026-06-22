@@ -68,6 +68,7 @@
     "intro": "粘贴访问令牌：首次部署可运行 `agim token bootstrap`，后续可用 `agim token create` 生成。",
     "tokenLabel": "访问令牌",
     "submit": "登录",
+    "adminRequired": "当前 token 没有管理权限，请使用管理员 token 重新登录。",
     "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 IMHUB_TRUST_LOOPBACK=off 时才会看到此页。"
   },
   "home": {

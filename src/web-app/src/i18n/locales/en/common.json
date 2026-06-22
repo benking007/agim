@@ -68,6 +68,7 @@
     "intro": "Paste your access token from `agim token bootstrap` (first boot) or `agim token create`.",
     "tokenLabel": "Access token",
     "submit": "Sign in",
+    "adminRequired": "Current token has no admin permission. Please sign in with an admin token.",
     "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with IMHUB_TRUST_LOOPBACK=off."
   },
   "home": {

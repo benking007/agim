@@ -867,4 +867,18 @@ ALWAYS-ON BODY MARKER.
     expect(deleteInjectionOverride()).toBe(true)
     expect(readInjectionOverride()).toBeNull()
   })
+
+  it('uses operator-authored override even when no skills are loaded', async () => {
+    const { writeInjectionOverride, deleteInjectionOverride } = await import('./loader.js')
+    resetDirs()
+    expect(listSkills()).toEqual([])
+
+    expect(writeInjectionOverride('## Operator-only injection\nAlways obey this saved prompt.')).toBe(true)
+    const out = buildSkillsSummary()
+    expect(out).toContain('[agim tool routing — skills first]')
+    expect(out).toContain('Operator-only injection')
+    expect(out).toContain('Always obey this saved prompt')
+
+    expect(deleteInjectionOverride()).toBe(true)
+  })
 })

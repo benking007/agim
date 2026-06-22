@@ -622,10 +622,8 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
             const inProcParentTrace = toolCtx?.traceId
             const inProcA2aTrace = inProcParentTrace ? `${inProcParentTrace}/a2a-${call.id}` : undefined
             const runOnce = async (): Promise<string> => {
-              // Route to whatever engine is registered under 'native' (pi by
-              // default; legacy only under IMHUB_NATIVE_ENGINE=legacy) so the
-              // in-process sub-agent runs the SAME engine as the parent instead
-              // of always falling back to the legacy native singleton.
+              // Route to the single Agim Agent registered under 'native' so
+              // in-process sub-agent runs use the same adapter as the parent.
               const { registry } = await import('../registry.js')
               const nativeAdapter = registry.findAgent('native')
               if (!nativeAdapter) throw new Error('native engine not registered')

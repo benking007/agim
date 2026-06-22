@@ -15,6 +15,7 @@ import { parseCron, nextOccurrence } from './cron.js'
 import { createJob, runJob } from './job-board.js'
 import { registry } from './registry.js'
 import { AgentBase } from './agent-base.js'
+import { buildSkillsSummary } from './skills/loader.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { lookup } from 'node:dns/promises'
 import { isPrivateAddr } from '../plugins/agents/acp/url-guard.js'
@@ -322,11 +323,14 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
 
   // Run via Job Board so the result is persisted + bounded concurrency.
   void runJob(jobId, async function* (job, _jobLogger, signal) {
+    const prompt = agent.handlesAgimSkillsPrompt
+      ? job.prompt
+      : `${buildSkillsSummary()}${job.prompt}`
     if (agent instanceof AgentBase) {
-      const text = await agent.spawnAndCollect(job.prompt, signal)
+      const text = await agent.spawnAndCollect(prompt, signal)
       if (text) yield text
     } else {
-      for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, job.prompt, [])) {
+      for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [])) {
         if (signal.aborted) break
         yield chunk
       }

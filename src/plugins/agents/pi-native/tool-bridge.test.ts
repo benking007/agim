@@ -39,7 +39,7 @@ const QUOTE_TOOL: ToolDef = {
   },
 }
 
-describe('pi-native tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', () => {
+describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', () => {
   it('routes a model tool call through the agim dispatcher with parsed args', async () => {
     const seen: Array<{ name: string; args: Record<string, unknown> }> = []
     const dispatch: ToolDispatcher = async (call): Promise<DispatcherResult> => {

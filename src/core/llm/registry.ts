@@ -35,7 +35,7 @@ const log = rootLogger.child({ component: 'llm-registry' })
 export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | string
 
 /** Resolved backend wiring exposed for engines that drive their own LLM
- *  client (e.g. the pi-native adapter feeds this to pi-ai). Mirrors the same
+ *  client (e.g. Agim Agent feeds this to pi-ai). Mirrors the same
  *  resolution loadFromConfig already does for the built-in providers, so the
  *  vendor-env key fallback and per-backend settings stay single-sourced. */
 export interface LlmBackendBinding {
@@ -173,7 +173,7 @@ export function getProviderByName(name: string): LlmProvider | null {
 }
 
 /** Resolved backend binding for `role`, or null when no usable backend is
- *  wired. Used by engines (pi-native) that drive their own LLM client and
+ *  wired. Used by engines that drive their own LLM client and
  *  need the raw provider type / model / baseUrl / key rather than agim's
  *  built-in LlmProvider object. */
 export function getBackendBindingForRole(role: LlmRole): LlmBackendBinding | null {

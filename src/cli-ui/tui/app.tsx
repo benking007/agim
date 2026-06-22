@@ -348,7 +348,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   const inputHistoryRef = useRef<string[]>([])
   const historyCursorRef = useRef<number>(-1)
   const historyDraftRef = useRef<string>('')
-  // Cumulative usage this TUI session (fed by sendPrompt's onUsage). pi-native
+  // Cumulative usage this TUI session (fed by sendPrompt's onUsage). Agim Agent
   // emits all three; some adapters emit only cost — we accumulate what's there.
   const [usage, setUsage] = useState<{ inTok: number; outTok: number; costUsd: number }>({ inTok: 0, outTok: 0, costUsd: 0 })
   const [approval, setApproval] = useState<TuiApprovalView | null>(null)

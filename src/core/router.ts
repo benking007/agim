@@ -688,7 +688,7 @@ export async function callAgentWithHistory(
   // P0 #3 (Stage 3) — inject the agim skills tier-1 summary so every
   // agent reply sees what skills are configured. Empty when no skills
   // installed; filter(Boolean) below drops it cleanly.
-  const skillsSnippet = buildSkillsSummary()
+  const skillsSnippet = agent.handlesAgimSkillsPrompt ? '' : buildSkillsSummary()
   const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
   const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
 

@@ -1,6 +1,5 @@
-// Builds the same agim policy approval gate the legacy native engine uses, so
-// pi-native enforces identical tool gating: read-only / allow-list / deny-all
-// modes + plan-mode deny + IM approval-card escalation. The pi adapter calls
+// Builds the Agim Agent policy approval gate: read-only / allow-list /
+// deny-all modes + plan-mode deny + IM approval-card escalation. The adapter calls
 // this gate from its beforeToolCall hook.
 
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'

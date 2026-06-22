@@ -5,7 +5,7 @@ import { describe, expect, it } from 'bun:test'
 import type { LlmBackendBinding } from '../../../core/llm/registry.js'
 import { bindingToPiModel } from './provider-resolver.js'
 
-describe('pi-native provider-resolver (agim binding → pi-ai model)', () => {
+describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
   it('maps an openai-compat backend (deepseek) to openai-completions with its baseUrl', async () => {
     const b: LlmBackendBinding = {
       name: 'deepseek',

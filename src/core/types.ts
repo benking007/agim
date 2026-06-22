@@ -434,6 +434,9 @@ export interface AgentAdapter {
   /** Implementation flavor. Optional for backward compatibility; UIs
    *  default to 'cli' when unset. */
   readonly kind?: AgentAdapterKind
+  /** True when the adapter injects Agim Skills via its own system prompt.
+   *  Router-level prompt prefix injection is skipped to avoid duplicates. */
+  readonly handlesAgimSkillsPrompt?: boolean
   sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], opts?: AgentSendOpts): AsyncGenerator<string>
   isAvailable(): Promise<boolean>
   /** Optional short hint for `/agents` UI ('model: deepseek-chat',

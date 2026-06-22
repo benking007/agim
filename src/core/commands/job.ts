@@ -6,6 +6,7 @@ import { sessionManager } from '../session.js'
 import { AgentBase } from '../agent-base.js'
 import { createJob, getJob, listJobs, cancelJob, runJob, getJobStats, type Job } from '../job-board.js'
 import { workspaceRegistry } from '../workspace.js'
+import { buildSkillsSummary } from '../skills/loader.js'
 
 const JOB_STATUS_ICON: Record<string, string> = {
   pending: '⏳', running: '🔄', completed: '✅', delivered: '📬',
@@ -123,12 +124,15 @@ Agent: ${job.agent}
       // Fire and forget with signal support for cancellation
       const isAgentBaseAgent = agent instanceof AgentBase
       runJob(id, async function* (j, _logger, signal) {
+        const prompt = agent.handlesAgimSkillsPrompt
+          ? j.prompt
+          : `${buildSkillsSummary()}${j.prompt}`
         if (isAgentBaseAgent) {
           const ba = agent as unknown as AgentBase
-          const result = await ba.spawnAndCollect(j.prompt, signal)
+          const result = await ba.spawnAndCollect(prompt, signal)
           if (result) yield result
         } else {
-          const generator = agent.sendPrompt(`job-${j.id}`, j.prompt, [])
+          const generator = agent.sendPrompt(`job-${j.id}`, prompt, [])
           for await (const chunk of generator) {
             if (signal.aborted) break
             yield chunk
@@ -185,9 +189,12 @@ Agent: ${job.agent}
       if (!agent) return `❌ Agent "${mainAgent}" not found.`
 
       const summaryPrompt = `Review and summarize this task result from ${job.agent}:\n\n---\n${job.result}\n---\n\nProvide a concise summary.`
+      const injectedSummaryPrompt = agent.handlesAgimSkillsPrompt
+        ? summaryPrompt
+        : `${buildSkillsSummary()}${summaryPrompt}`
       ctx.logger.info({ event: 'task.collect', taskId: id, agent: mainAgent })
       // Return the generator — caller will stream
-      const generator = agent.sendPrompt(`collect-${id}`, summaryPrompt, [])
+      const generator = agent.sendPrompt(`collect-${id}`, injectedSummaryPrompt, [])
       return (async function* () {
         for await (const chunk of generator) yield chunk
       })()

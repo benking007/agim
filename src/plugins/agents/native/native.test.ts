@@ -5,8 +5,9 @@
 // assert on the AsyncGenerator output + describeNativeAgent banner.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { nativeAgentAdapter, describeNativeAgent, buildSystemPrompt, readOperatorRole, isWorkspaceTrusted } from './index.js'
-import { invalidateSkillsCache, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
+import { describeNativeAgent, buildSystemPrompt, readOperatorRole, isWorkspaceTrusted } from './index.js'
+import { nativeAgentAdapter } from '../pi-native/factory.js'
+import { invalidateSkillsCache } from '../../../core/skills/loader.js'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +33,10 @@ const ENV_KEYS = [
   // so assertions on the recorded messages array stay stable. The
   // blank-retry path is exercised in agent-loop-blank-retry.test.ts.
   'IMHUB_NATIVE_BLANK_RETRY_MAX',
+  'IMHUB_SKILLS_MODE',
+  'IMHUB_SKILLS_WORKSPACE_DIR',
+  'IMHUB_SKILLS_BUILTIN_DIR',
+  'IMHUB_SKILLS_INJECTION_OVERRIDE_PATH',
   envKeyForBackend('native-mock'),
 ]
 
@@ -53,19 +58,6 @@ function configureBackend(role: string = 'native-chat'): void {
     }],
     llmRoles: { [role]: 'native-mock' },
   })
-}
-
-function makeChatResponse(text: string): Response {
-  return new Response(JSON.stringify({
-    choices: [{ message: { content: text }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-}
-
-async function collect(g: AsyncGenerator<string>): Promise<string[]> {
-  const out: string[] = []
-  for await (const c of g) out.push(c)
-  return out
 }
 
 beforeEach(clearAll)
@@ -127,125 +119,19 @@ describe('nativeAgentAdapter — isAvailable', () => {
   })
 })
 
-describe('nativeAgentAdapter — sendPrompt', () => {
-  it('with no backend: yields a helpful error and stops', async () => {
-    loadFromConfig({})
-    const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'hi'))
-    expect(chunks).toHaveLength(1)
-    expect(chunks[0]).toContain('no usable LLM backend')
-  })
-
-  it('with a backend: yields the LLM text as a single chunk', async () => {
-    configureBackend()
-    globalThis.fetch = (async () => makeChatResponse('hello from native')) as unknown as typeof fetch
-    const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'say hi'))
-    expect(chunks).toHaveLength(1)
-    expect(chunks[0]).toBe('hello from native')
-  })
-
-  it('threads history into the LLM messages array', async () => {
-    configureBackend()
-    let seenMessages: Array<{ role: string; content: string }> = []
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(init.body as string) as {
-        messages: Array<{ role: string; content: string }>
-      }
-      seenMessages = body.messages
-      return makeChatResponse('reply')
-    }) as unknown as typeof fetch
-
-    await collect(nativeAgentAdapter.sendPrompt(
-      'sess',
-      'next question',
-      [
-        { role: 'user', content: 'first', timestamp: new Date() },
-        { role: 'assistant', content: 'first answer', timestamp: new Date() },
-      ],
-    ))
-
-    // First message is the synthetic system prompt (injected by the
-    // provider's system= option). Then history. Then the new user msg.
-    expect(seenMessages[0].role).toBe('system')
-    expect(seenMessages[1].role).toBe('user')
-    expect(seenMessages[1].content).toBe('first')
-    expect(seenMessages[2].role).toBe('assistant')
-    expect(seenMessages[2].content).toBe('first answer')
-    expect(seenMessages[3].role).toBe('user')
-    expect(seenMessages[3].content).toBe('next question')
-  })
-
-  it('skips empty history entries', async () => {
-    configureBackend()
-    let seenMessages: Array<{ role: string; content: string }> = []
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(init.body as string) as {
-        messages: Array<{ role: string; content: string }>
-      }
-      seenMessages = body.messages
-      return makeChatResponse('ok')
-    }) as unknown as typeof fetch
-
-    await collect(nativeAgentAdapter.sendPrompt(
-      'sess',
-      'q',
-      [
-        { role: 'user', content: '', timestamp: new Date() },
-        { role: 'assistant', content: 'a', timestamp: new Date() },
-      ],
-    ))
-    // Roles after system + user-prompt
-    const nonSystem = seenMessages.filter((m) => m.role !== 'system')
-    expect(nonSystem).toEqual([
-      { role: 'assistant', content: 'a' },
-      { role: 'user', content: 'q' },
-    ])
-  })
-
-  it('handles provider HTTP error gracefully', async () => {
-    configureBackend()
-    globalThis.fetch = (async () => new Response('boom', { status: 500 })) as unknown as typeof fetch
-    const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'x'))
-    expect(chunks[0]).toMatch(/native agent error/i)
-  })
-
-  it('renders a structured recap when the model returns empty text', async () => {
-    // v1.2.91 — replaced the legacy "(empty response)" banner with a
-    // recap that lists what got done + suggests continuation paths.
-    // When zero tool calls preceded the empty turn we expect the
-    // "没说话也没动工具" branch.
-    configureBackend()
-    globalThis.fetch = (async () => makeChatResponse('')) as unknown as typeof fetch
-    const chunks = await collect(nativeAgentAdapter.sendPrompt('sess', 'x'))
-    expect(chunks[0]).toMatch(/没说话/)
-    // Should suggest at least one continuation option.
-    expect(chunks[0]).toMatch(/继续|切到别的智能体/)
-  })
-
-  it('propagates costUsd to opts.onUsage', async () => {
-    configureBackend()
-    globalThis.fetch = (async () => new Response(JSON.stringify({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.0042 },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
-
-    let seenCost: number | undefined
-    await collect(nativeAgentAdapter.sendPrompt('sess', 'x', [], {
-      onUsage: (delta) => { seenCost = delta.costUsd },
-    }))
-    expect(seenCost).toBeCloseTo(0.0042, 6)
-  })
-})
-
 // A minimal provider stub — buildSystemPrompt only reads providerType + name.
 const stubProvider = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
 
-describe('buildSystemPrompt — skills listing is bounded (T3)', () => {
+describe('buildSystemPrompt — Agim Skills injection', () => {
   let dir = ''
+  let overridePath = ''
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'agim-skills-cap-'))
+    overridePath = join(dir, 'skill-injection-override.md')
     process.env.IMHUB_SKILLS_MODE = 'agim-only'
     process.env.IMHUB_SKILLS_WORKSPACE_DIR = dir
     process.env.IMHUB_SKILLS_BUILTIN_DIR = join(dir, '__no_builtins__')
+    process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
     invalidateSkillsCache()
   })
   afterEach(() => {
@@ -256,23 +142,19 @@ describe('buildSystemPrompt — skills listing is bounded (T3)', () => {
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 
-  it('caps the system-prompt skills block at MAX_INJECTED_SKILLS and shows "+N more"', () => {
-    const total = MAX_INJECTED_SKILLS + 5
-    for (let i = 0; i < total; i++) {
-      const name = `skill-${String(i).padStart(3, '0')}`
-      mkdirSync(join(dir, name), { recursive: true })
-      writeFileSync(
-        join(dir, name, 'SKILL.md'),
-        `---\nname: ${name}\ndescription: does thing ${i}\n---\nbody\n`,
-      )
-    }
+  it('uses the operator-authored injection override in the native system prompt', () => {
+    mkdirSync(join(dir, 'auto-noise'), { recursive: true })
+    writeFileSync(
+      join(dir, 'auto-noise', 'SKILL.md'),
+      '---\nname: auto-noise\ndescription: auto text must be suppressed by override\n---\nbody\n',
+    )
+    writeFileSync(overridePath, '## Operator curated\n- curated-only: must be injected.\n', 'utf-8')
     invalidateSkillsCache()
     const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
-    const shownLines = prompt.split('\n').filter((l) => /^\s+- skill-\d+:/.test(l))
-    expect(shownLines.length).toBe(MAX_INJECTED_SKILLS)
-    expect(prompt).toContain(`… and ${total - MAX_INJECTED_SKILLS} more`)
-    // The overflow skills must NOT be listed inline.
-    expect(prompt).not.toContain('skill-034:')
+    expect(prompt).toContain('Agim Skills system-prompt injection')
+    expect(prompt).toContain('Operator curated')
+    expect(prompt).toContain('curated-only: must be injected')
+    expect(prompt).not.toContain('auto text must be suppressed')
   })
 })
 

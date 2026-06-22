@@ -1,4 +1,4 @@
-// Runtime smoke for the pi-native engine foundation. Proves the PUBLISHED
+// Runtime smoke for the Agim Agent pi-agent-core foundation. Proves the PUBLISHED
 // npm packages (@earendil-works/pi-agent-core + pi-ai) work end-to-end under
 // agim's own runtime — not just typecheck — through their PUBLIC API only:
 //   - AgentHarness + a tool (agim tools wrap as plain JSON Schema; pi accepts it)
@@ -6,7 +6,7 @@
 //     entry — JsonlSessionStorage itself is not in the package exports map)
 //   - faux provider for deterministic, offline execution
 //
-// This is the de-risk gate before building the real pi-native AgentAdapter.
+// This is the de-risk gate before building the real Agim Agent adapter.
 // It registers nothing and touches no live path.
 
 import { mkdtempSync } from 'node:fs'
@@ -17,7 +17,7 @@ import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'bun:test'
 
-describe('pi-native runtime foundation (published npm packages)', () => {
+describe('Agim Agent runtime foundation (published npm packages)', () => {
   it('runs a faux tool turn and persists it durably via JsonlSessionRepo', async () => {
     const reg = registerFauxProvider()
     try {

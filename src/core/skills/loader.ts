@@ -807,20 +807,20 @@ export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
 }
 
 export function buildSkillsSummary(): string {
-  const all = listSkills()
-  if (all.length === 0) return ''
-
   // v1.2.151 — operator override path: if `~/.agim/skill-injection-
   // override.md` exists, return its body verbatim (still wrapped by
   // the routing header + always-on bodies). The auto block is
   // suppressed; the operator gets full editorial control. The SPA at
   // `/settings/skill-injection` is the recommended way to author this.
   const override = readInjectionOverride()
+  const all = listSkills()
   if (override) {
     const lines: string[] = [SKILLS_ROUTING_HEADER, '', override]
     appendAlwaysOnBodies(all, lines)
     return `${lines.join('\n')}\n`
   }
+
+  if (all.length === 0) return ''
 
   const lines: string[] = [SKILLS_ROUTING_HEADER, '', buildAutoInjectionBlock(all)]
   appendAlwaysOnBodies(all, lines)

@@ -35,6 +35,7 @@ import {
 } from './job-board.js'
 import { logInvocation } from './audit-log.js'
 import { applyGoalTimeoutBoost } from './goals.js'
+import { buildSkillsSummary } from './skills/loader.js'
 import {
   buildEnvelope,
   copyInputs,
@@ -272,6 +273,10 @@ export async function callAgentByName(
         expectOutputs: opts.expectOutputs,
       })
       promptWithEnvelope = `${envelope}\n${prompt}`
+    }
+    if (!target.handlesAgimSkillsPrompt) {
+      const skillsSnippet = buildSkillsSummary()
+      if (skillsSnippet) promptWithEnvelope = `${skillsSnippet}\n${promptWithEnvelope}`
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

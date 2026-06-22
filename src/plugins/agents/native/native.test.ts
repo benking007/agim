@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { nativeAgentAdapter, describeNativeAgent, buildSystemPrompt, readOperatorRole, isWorkspaceTrusted } from './index.js'
-import { invalidateSkillsCache, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
+import { invalidateSkillsCache } from '../../../core/skills/loader.js'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +32,10 @@ const ENV_KEYS = [
   // so assertions on the recorded messages array stay stable. The
   // blank-retry path is exercised in agent-loop-blank-retry.test.ts.
   'IMHUB_NATIVE_BLANK_RETRY_MAX',
+  'IMHUB_SKILLS_MODE',
+  'IMHUB_SKILLS_WORKSPACE_DIR',
+  'IMHUB_SKILLS_BUILTIN_DIR',
+  'IMHUB_SKILLS_INJECTION_OVERRIDE_PATH',
   envKeyForBackend('native-mock'),
 ]
 
@@ -239,13 +243,16 @@ describe('nativeAgentAdapter — sendPrompt', () => {
 // A minimal provider stub — buildSystemPrompt only reads providerType + name.
 const stubProvider = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
 
-describe('buildSystemPrompt — skills listing is bounded (T3)', () => {
+describe('buildSystemPrompt — Agim Skills injection', () => {
   let dir = ''
+  let overridePath = ''
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'agim-skills-cap-'))
+    overridePath = join(dir, 'skill-injection-override.md')
     process.env.IMHUB_SKILLS_MODE = 'agim-only'
     process.env.IMHUB_SKILLS_WORKSPACE_DIR = dir
     process.env.IMHUB_SKILLS_BUILTIN_DIR = join(dir, '__no_builtins__')
+    process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
     invalidateSkillsCache()
   })
   afterEach(() => {
@@ -256,23 +263,19 @@ describe('buildSystemPrompt — skills listing is bounded (T3)', () => {
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 
-  it('caps the system-prompt skills block at MAX_INJECTED_SKILLS and shows "+N more"', () => {
-    const total = MAX_INJECTED_SKILLS + 5
-    for (let i = 0; i < total; i++) {
-      const name = `skill-${String(i).padStart(3, '0')}`
-      mkdirSync(join(dir, name), { recursive: true })
-      writeFileSync(
-        join(dir, name, 'SKILL.md'),
-        `---\nname: ${name}\ndescription: does thing ${i}\n---\nbody\n`,
-      )
-    }
+  it('uses the operator-authored injection override in the native system prompt', () => {
+    mkdirSync(join(dir, 'auto-noise'), { recursive: true })
+    writeFileSync(
+      join(dir, 'auto-noise', 'SKILL.md'),
+      '---\nname: auto-noise\ndescription: auto text must be suppressed by override\n---\nbody\n',
+    )
+    writeFileSync(overridePath, '## Operator curated\n- curated-only: must be injected.\n', 'utf-8')
     invalidateSkillsCache()
     const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
-    const shownLines = prompt.split('\n').filter((l) => /^\s+- skill-\d+:/.test(l))
-    expect(shownLines.length).toBe(MAX_INJECTED_SKILLS)
-    expect(prompt).toContain(`… and ${total - MAX_INJECTED_SKILLS} more`)
-    // The overflow skills must NOT be listed inline.
-    expect(prompt).not.toContain('skill-034:')
+    expect(prompt).toContain('Agim Skills system-prompt injection')
+    expect(prompt).toContain('Operator curated')
+    expect(prompt).toContain('curated-only: must be injected')
+    expect(prompt).not.toContain('auto text must be suppressed')
   })
 })
 

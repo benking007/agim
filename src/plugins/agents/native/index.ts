@@ -62,11 +62,9 @@ import {
   type PolicyApprovalGateConfig,
 } from '../../../core/llm/policy-approval-gate.js'
 // Tool assembly (defs + dispatch + per-call concurrency classifier) moved
-// into tool-registry.ts (#86); the per-dispatcher builder imports live there
-// now. MAX_INJECTED_SKILLS is still needed here for the system-prompt skills
-// cap (#85/T3).
+// into tool-registry.ts (#86); the per-dispatcher builder imports live there now.
 import { assembleNativeTools } from './tool-registry.js'
-import { listSkills, MAX_INJECTED_SKILLS } from '../../../core/skills/loader.js'
+import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { handlePushOp } from '../../../core/push-rpc.js'
@@ -147,27 +145,8 @@ export function buildSystemPrompt(
   cwd: string,
   threadKey?: string,
 ): string {
-  // T3 (context-as-budget): bound the tier-1 skills listing. listSkills()
-  // already caps each description at MAX_DESCRIPTION_CHARS; here we also cap
-  // the COUNT to MAX_INJECTED_SKILLS (the same ceiling buildSkillsSummary
-  // uses) so a large catalog can't blow the per-turn system-prompt budget.
-  // Sorted for stable ordering; overflow collapses into a "+N more" hint
-  // that points the model at the on-demand read_skill / /skill list path.
-  // (Previously this re-rolled an UNCAPPED `name: desc` line per skill.)
-  const allSkills = listSkills().slice().sort((a, b) => a.name.localeCompare(b.name))
-  const visibleSkills = allSkills.slice(0, MAX_INJECTED_SKILLS)
-  const skillsBlock = visibleSkills.length
-    ? visibleSkills
-        .map((s) => {
-          const desc = (s.description || '').trim() || '(no description; read body via mcp__imhub__read_skill)'
-          const mark = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
-          return `  - ${s.name}: ${desc}${mark}`
-        })
-        .join('\n')
-      + (allSkills.length > visibleSkills.length
-          ? `\n  … and ${allSkills.length - visibleSkills.length} more (use /skill list; read any with mcp__imhub__read_skill)`
-          : '')
-    : '  (no skill cards loaded; see docs/skills.md to add one)'
+  const skillsBlock = buildSkillsSummary().trim()
+    || '(no skill cards loaded; see docs/skills.md to add one)'
   const mcpReg = describeMcpRegistry()
   const externalMcp = mcpReg.servers.length
     ? mcpReg.servers
@@ -237,7 +216,7 @@ export function buildSystemPrompt(
     `  - External MCP servers configured by the operator:`,
     externalMcp,
     ``,
-    `Available skill cards (call mcp__imhub__read_skill('<name>') for the full body):`,
+    `Agim Skills system-prompt injection:`,
     skillsBlock,
     ``,
     `Guidance:`,
@@ -1225,6 +1204,7 @@ class NativeAgentAdapter implements AgentAdapter {
   readonly name = 'native'
   readonly aliases = ['agim', 'llm', 'native-llm', 'na']
   readonly kind = 'in-process' as const
+  readonly handlesAgimSkillsPrompt = true
 
   /** One-line UI hint surfaced by `/agents`: which LLM role + backend
    *  currently powers this adapter. Returns undefined when not

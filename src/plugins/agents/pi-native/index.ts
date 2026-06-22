@@ -190,6 +190,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
   readonly name: string
   readonly aliases: string[]
   readonly kind: AgentAdapterKind = 'in-process'
+  readonly handlesAgimSkillsPrompt = true
 
   // sessionId → JSONL metadata. Avoids a full repo.list() scan (which reads
   // every session file's header) on every turn; bounds it to one scan per

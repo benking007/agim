@@ -582,7 +582,7 @@ function AcpCard({ agents, onChange }: AcpCardProps): JSX.Element {
         <ul className="divide-y divide-border">
           {agents.map((a, i) => (
             <AcpRow
-              key={`${a.name}-${i}`}
+              key={a.name}
               agent={a}
               onToggle={(on) => onToggleRow(i, on)}
               onTest={() => void onTestRow(i)}

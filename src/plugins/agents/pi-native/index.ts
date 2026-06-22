@@ -97,6 +97,72 @@ function safeJson(v: unknown): string {
   }
 }
 
+interface PiToolRun {
+  name: string
+  isError: boolean
+  preview?: string
+}
+
+interface PiToolResultEvent {
+  toolName?: string
+  input?: unknown
+  isError?: boolean
+  content?: Array<{ type?: string; text?: string }>
+  details?: unknown
+}
+
+function previewToolResult(ev: PiToolResultEvent): string | undefined {
+  const contentText = (ev.content ?? [])
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
+    .map((c) => c.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (contentText) return contentText.slice(0, 180)
+  if (typeof ev.details === 'string' && ev.details.trim()) return ev.details.trim().replace(/\s+/g, ' ').slice(0, 180)
+  if (ev.details !== undefined) return safeJson(ev.details).replace(/\s+/g, ' ').slice(0, 180)
+  return undefined
+}
+
+function composeEmptyTurnRecap(toolRuns: readonly PiToolRun[]): string {
+  if (toolRuns.length === 0) {
+    return [
+      '🧐 这一轮没有产出可见回复。',
+      '可能是模型返回了空内容，或把你的问题误判成无需继续。',
+      '',
+      '你可以：',
+      '  · 回「重试」让我再跑一遍',
+      '  · 或换个更具体的问法',
+      '  · 若持续出现，请在 /settings/llm 切换大模型后端再试',
+    ].join('\n')
+  }
+
+  const counts = new Map<string, { count: number; errors: number }>()
+  for (const t of toolRuns) {
+    const prev = counts.get(t.name)
+    if (prev) {
+      prev.count += 1
+      if (t.isError) prev.errors += 1
+    } else {
+      counts.set(t.name, { count: 1, errors: t.isError ? 1 : 0 })
+    }
+  }
+
+  const last = toolRuns[toolRuns.length - 1]
+  const lines: string[] = ['🧾 这一轮有执行工具，但没有生成收尾文字。', '已执行：']
+  for (const [name, meta] of counts) {
+    const mark = meta.errors === 0 ? '✓' : meta.errors === meta.count ? '✗' : '⚠️'
+    const times = meta.count > 1 ? ` ×${meta.count}` : ''
+    const partial = meta.errors > 0 && meta.errors < meta.count ? `（其中 ${meta.errors} 次失败）` : ''
+    lines.push(`  ${mark} ${name}${times}${partial}`)
+  }
+  if (last?.preview) {
+    lines.push('', `最后一步结果摘要：${last.preview}${last.preview.length >= 180 ? '…' : ''}`)
+  }
+  lines.push('', '你可以回「继续」让我基于这些结果给出结论，或直接换个问法。')
+  return lines.join('\n')
+}
+
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
 function seedUserMessage(text: string) {
@@ -243,8 +309,15 @@ export class PiNativeAgentAdapter implements AgentAdapter {
     let toolRounds = 0
     let stopReason: 'max_iter' | 'stuck_loop' | null = null
     const recentSigs: string[] = []
-    harness.on('tool_result', (ev: { toolName?: string; input?: unknown; isError?: boolean }) => {
+    const toolRuns: PiToolRun[] = []
+    harness.on('tool_result', (ev: PiToolResultEvent) => {
       toolRounds += 1
+      toolRuns.push({
+        name: ev.toolName ?? 'unknown_tool',
+        isError: ev.isError === true,
+        preview: previewToolResult(ev),
+      })
+      if (toolRuns.length > 30) toolRuns.shift()
       if (toolRounds >= maxIter) {
         stopReason = 'max_iter'
         return { terminate: true }
@@ -306,7 +379,7 @@ export class PiNativeAgentAdapter implements AgentAdapter {
       return
     }
     if (!text.trim()) {
-      yield '（本轮没有产出文本回复——模型可能只调了工具或返回为空，请重试或换个问法）'
+      yield composeEmptyTurnRecap(toolRuns)
       return
     }
     yield text

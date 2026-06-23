@@ -31,6 +31,7 @@ import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
 import { Markdown } from './markdown.js'
+import { nextRevealLen, resolveTickMs, streamSmoothingEnabled } from './stream-reveal.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
 import type {
   TuiApprovalBridge,
@@ -160,6 +161,30 @@ interface ChatHistoryProps {
   agent: string | undefined
   chatWidth: number
 }
+// One chat row, memoized on its props. Completed message objects keep a
+// stable identity across reveal ticks (setMessages only swaps the pending
+// row), so React.memo skips re-rendering — and crucially skips re-parsing
+// their Markdown — while the streaming row updates ~25×/s.
+interface MessageRowProps { message: ChatMessage; agent: string | undefined; chatWidth: number }
+const MessageRow = React.memo(function MessageRow({ message: m, agent, chatWidth }: MessageRowProps): JSX.Element {
+  return (
+    <Box flexDirection="column" marginBottom={1} width={chatWidth}>
+      <Text>
+        {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
+        {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
+        {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
+        {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
+      </Text>
+      {m.role === 'assistant' && !m.pending
+        ? <Markdown source={m.content} width={chatWidth} />
+        : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
+      {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
+        <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
+      )}
+    </Box>
+  )
+})
+
 const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth }: ChatHistoryProps): JSX.Element {
   if (messages.length === 0) {
     return (
@@ -171,20 +196,7 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       {messages.map((m) => (
-        <Box key={m.id} flexDirection="column" marginBottom={1} width={chatWidth}>
-          <Text>
-            {m.role === 'user' && <Text color="cyan" bold>你 </Text>}
-            {m.role === 'assistant' && <Text color="magenta" bold>{m.agentName || agent || 'agent'} </Text>}
-            {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
-            {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
-          </Text>
-          {m.role === 'assistant' && !m.pending
-            ? <Markdown source={m.content} width={chatWidth} />
-            : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
-          {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
-            <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
-          )}
-        </Box>
+        <MessageRow key={m.id} message={m} agent={agent} chatWidth={chatWidth} />
       ))}
     </Box>
   )
@@ -1004,8 +1016,33 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     const currentAgentSessionId = agentSessionsRef.current[agent]
     const ac = new AbortController()
     abortRef.current = ac
+    // Smooth reveal (v1.3.8): backends stream coarse chunks; we ease the
+    // accumulated text in a few chars per frame so it doesn't land a
+    // paragraph at a time. `full` is the real accumulated text; `reveal` is
+    // how much is currently shown. Declared out here so catch/finally can
+    // stop the ticker.
+    const smooth = streamSmoothingEnabled()
+    const tickMs = resolveTickMs()
+    let full = ''
+    let reveal = 0
+    let revealTimer: ReturnType<typeof setInterval> | null = null
+    const applyReveal = (): void => {
+      setMessages((m) => {
+        const last = m[m.length - 1]
+        if (!last || last.role !== 'assistant' || !last.pending) return m
+        const content = full.slice(0, reveal)
+        if (content === last.content) return m
+        return [...m.slice(0, -1), { ...last, content }]
+      })
+    }
+    const stopReveal = (): void => { if (revealTimer) { clearInterval(revealTimer); revealTimer = null } }
     try {
-      let chunks = ''
+      if (smooth) {
+        revealTimer = setInterval(() => {
+          const next = nextRevealLen(reveal, full.length)
+          if (next !== reveal) { reveal = next; applyReveal() }
+        }, tickMs)
+      }
       for await (const chunk of adapter.sendPrompt(`tui-${activeSessionId}`, text, history, {
         agentSessionId: currentAgentSessionId,
         agentSessionResume: Boolean(currentAgentSessionId),
@@ -1030,18 +1067,28 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           costUsd: u.costUsd + (d.costUsd ?? 0),
         })),
       })) {
-        chunks += chunk
-        setMessages((m) => {
-          const last = m[m.length - 1]
-          if (!last || last.role !== 'assistant' || !last.pending) return m
-          return [...m.slice(0, -1), { ...last, content: chunks }]
-        })
+        full += chunk
+        // When smoothing is off, push every chunk immediately (legacy
+        // behavior). When on, the ticker advances the reveal.
+        if (!smooth) { reveal = full.length; applyReveal() }
       }
+      // Ease in any not-yet-revealed tail so the message finishes smoothly
+      // instead of snapping to full; bounded so this can never hang.
+      if (smooth) {
+        const cap = Date.now() + 1500
+        while (reveal < full.length && Date.now() < cap) {
+          reveal = nextRevealLen(reveal, full.length)
+          applyReveal()
+          await new Promise((r) => setTimeout(r, tickMs))
+        }
+      }
+      stopReveal()
+      reveal = full.length
       const elapsed = Date.now() - startMs
       setMessages((m) => {
         const last = m[m.length - 1]
         if (!last || last.role !== 'assistant' || !last.pending) return m
-        return [...m.slice(0, -1), { ...last, pending: false, elapsedMs: elapsed }]
+        return [...m.slice(0, -1), { ...last, content: full, pending: false, elapsedMs: elapsed }]
       })
       // Completion bell — visible (well, audible) cue for sshing-into-
       // box-and-waiting users. Suppressible via env.
@@ -1053,18 +1100,23 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       // setMessages updater pattern to avoid a stale closure.
       setMessages((m) => { persistSnapshot(m, agent); return m })
     } catch (err) {
+      stopReveal()
       const msg = err instanceof Error ? err.message : String(err)
       log.warn({ event: 'tui.sendPrompt.error', err: msg })
       const elapsed = Date.now() - startMs
+      // Reveal whatever streamed so far (don't lose partial output on
+      // abort/error), then append the error.
       setMessages((m) => {
         const last = m[m.length - 1]
         if (!last || last.role !== 'assistant' || !last.pending) return m
+        const base = full || last.content || ''
         return [
           ...m.slice(0, -1),
-          { ...last, pending: false, elapsedMs: elapsed, content: (last.content || '') + `\n\n[错误] ${msg}` },
+          { ...last, pending: false, elapsedMs: elapsed, content: `${base}\n\n[错误] ${msg}` },
         ]
       })
     } finally {
+      stopReveal()
       setBusy(false)
       abortRef.current = null
     }

@@ -50,6 +50,22 @@ const log = rootLogger.child({ component: 'agent.claude-code' })
 
 const BASE_ARGS = ['--print', '--verbose', '--output-format', 'stream-json'] as const
 
+/** v1.3.8 — token-level streaming. With `--include-partial-messages` the CLI
+ *  emits `content_block_delta` / `text_delta` events as the model writes,
+ *  instead of one whole text block per turn — so the TUI streams smoothly
+ *  rather than landing a paragraph at a time. Default ON; set
+ *  IMHUB_CLAUDE_PARTIAL_STREAM=0 to fall back to block streaming (e.g. for an
+ *  older Claude Code CLI that doesn't recognise the flag). */
+export function claudePartialStreamEnabled(): boolean {
+  return process.env.IMHUB_CLAUDE_PARTIAL_STREAM !== '0'
+}
+
+/** BASE_ARGS plus the partial-message flag when enabled. Computed at call
+ *  time so the env opt-out (and tests) take effect without a restart. */
+function baseArgs(): string[] {
+  return claudePartialStreamEnabled() ? [...BASE_ARGS, '--include-partial-messages'] : [...BASE_ARGS]
+}
+
 /** First call with a UUID: --session-id (creates the session under that id).
  *  Subsequent calls: --resume (continues from existing). Mixing them up gets
  *  you "Session ID already in use" or "session not found". */
@@ -62,6 +78,12 @@ function sessionFlag(opts: AgentSendOpts): string[] {
 
 interface ClaudeEvent {
   type: string
+  // 'stream_event' wrapper (only with --include-partial-messages): carries a
+  // raw Anthropic streaming event. We use content_block_delta/text_delta.
+  event?: {
+    type?: string
+    delta?: { type?: string; text?: string }
+  }
   message?: {
     content: Array<{ type: string; text?: string; thinking?: string }>
     role: string
@@ -106,7 +128,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     const mode = opts.planMode ? 'plan' : 'dontAsk'
     return [
       ...sessionFlag(opts),
-      ...BASE_ARGS,
+      ...baseArgs(),
       '--permission-mode', mode,
       prompt,
     ]
@@ -142,7 +164,7 @@ export class ClaudeCodeAdapter extends AgentBase {
       return {
         args: [
           ...sessionFlag(opts),
-          ...BASE_ARGS,
+          ...baseArgs(),
           '--dangerously-skip-permissions',
           prompt,
         ],
@@ -224,7 +246,7 @@ export class ClaudeCodeAdapter extends AgentBase {
         // before another `-X` flag so it sees exactly one file path, not the
         // prompt as a second config file.
         '--mcp-config', configPath,
-        ...BASE_ARGS,
+        ...baseArgs(),
         '--permission-mode', 'default',
         '--permission-prompt-tool', 'mcp__imhub__request',
         prompt,
@@ -239,7 +261,19 @@ export class ClaudeCodeAdapter extends AgentBase {
 
   protected extractText(event: unknown): string {
     const msg = event as ClaudeEvent
+    // Partial streaming: emit token-level text deltas as they arrive.
+    if (msg.type === 'stream_event') {
+      const ev = msg.event
+      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+        return ev.delta.text ?? ''
+      }
+      return ''  // ignore thinking_delta / input_json_delta / block start/stop
+    }
     if (msg.type === 'assistant' && msg.message?.content) {
+      // When partial streaming is on, the consolidated `assistant` block
+      // repeats text already emitted via stream_event deltas — skip it to
+      // avoid printing the message twice.
+      if (claudePartialStreamEnabled()) return ''
       const parts: string[] = []
       for (const item of msg.message.content) {
         if (item.type === 'text' && item.text) parts.push(item.text)
@@ -294,5 +328,9 @@ export const _testInternals = {
   buildArgs(adapter: ClaudeCodeAdapter, prompt: string, opts: AgentSendOpts = {}): string[] {
     // @ts-expect-error
     return adapter.buildArgs(prompt, opts)
+  },
+  extractText(adapter: ClaudeCodeAdapter, event: unknown): string {
+    // @ts-expect-error — protected; tests reach in deliberately
+    return adapter.extractText(event)
   },
 }

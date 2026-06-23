@@ -261,3 +261,42 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
     }
   })
 })
+
+describe('ClaudeCodeAdapter — partial-message token streaming (F:streaming)', () => {
+  let adapter: ClaudeCodeAdapter
+  beforeEach(() => { adapter = new ClaudeCodeAdapter(); delete process.env.IMHUB_CLAUDE_PARTIAL_STREAM })
+  afterEach(() => { delete process.env.IMHUB_CLAUDE_PARTIAL_STREAM })
+
+  const delta = (text: string) => ({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } })
+  const assistant = (text: string) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } })
+
+  it('default ON: buildArgs includes --include-partial-messages', () => {
+    const args = _testInternals.buildArgs(adapter, 'p', {})
+    expect(args).toContain('--include-partial-messages')
+  })
+
+  it('env=0: buildArgs omits the flag (block-streaming fallback)', () => {
+    process.env.IMHUB_CLAUDE_PARTIAL_STREAM = '0'
+    const args = _testInternals.buildArgs(adapter, 'p', {})
+    expect(args).not.toContain('--include-partial-messages')
+  })
+
+  it('extractText returns text_delta increments and skips the consolidated assistant block', () => {
+    expect(_testInternals.extractText(adapter, delta('Hel'))).toBe('Hel')
+    expect(_testInternals.extractText(adapter, delta('lo'))).toBe('lo')
+    // consolidated block is skipped while partial streaming is on (no doubling)
+    expect(_testInternals.extractText(adapter, assistant('Hello'))).toBe('')
+  })
+
+  it('extractText ignores non-text deltas (thinking / input_json / block markers)', () => {
+    const thinking = { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', text: 'hmm' } } }
+    const start = { type: 'stream_event', event: { type: 'content_block_start' } }
+    expect(_testInternals.extractText(adapter, thinking)).toBe('')
+    expect(_testInternals.extractText(adapter, start)).toBe('')
+  })
+
+  it('env=0: extractText falls back to the assistant block (legacy behavior)', () => {
+    process.env.IMHUB_CLAUDE_PARTIAL_STREAM = '0'
+    expect(_testInternals.extractText(adapter, assistant('Hello'))).toBe('Hello')
+  })
+})

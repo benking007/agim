@@ -151,6 +151,11 @@
     "approvalAutoTip":       "批准并对本会话内同类调用自动放行",
     "approvalDeny":          "拒绝",
     "approvalSubmitting": "已发送，等待结果…",
+    "askTitle": "🤔 请选择",
+    "askMultiHint": "选择 {{min}}–{{max}} 项",
+    "askSubmit": "提交",
+    "askCustomPlaceholder": "自定义回答…",
+    "askResolved": "✅ 已回答",
     "outcome": {
       "allowed":        "✅ 已批准",
       "allowedPinned":  "✅ 已批准 · 后续同类自动放行",

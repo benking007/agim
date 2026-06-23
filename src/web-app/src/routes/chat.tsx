@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { ApprovalDock } from '@/components/chat/approval-dock'
+import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
@@ -38,7 +39,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
   const {
-    state, send, switchAgent, approvalClick, newConversation, clearError,
+    state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
@@ -198,6 +199,12 @@ export default function ChatRoute(): JSX.Element {
       <ApprovalDock
         approvals={state.pendingApprovals}
         onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+      />
+
+      {/* ask_user (choice) dock — same placement/lifecycle as approvals. */}
+      <AskDock
+        asks={state.pendingAsks}
+        onSubmit={(mid, data) => choiceSubmit(mid, data)}
       />
 
       {/* Input — height matches the h-8 topbar widgets (agent picker /

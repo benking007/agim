@@ -26,15 +26,18 @@ import { normalizeIncomingCoords } from '../core/coord-systems.js'
 const webLog = rootLogger.child({ component: 'web' })
 
 /**
- * Module-level reference to the button-callback handler that approval-router
- * registers on our synthetic web messenger. The WS message switch dispatches
- * `approval-action` events through this so an in-page approval button click
- * flows back into approvalBus.resolvePending(), same path as a Telegram
- * inline-button tap. Set by the web messenger's `onButtonCallback`; remains
- * undefined until approval-router installs (which happens before this file's
- * exported startWebServer is called from cli.ts).
+ * Module-level list of button-callback handlers registered on our synthetic
+ * web messenger. The WS message switch dispatches `approval-action` AND
+ * `choice-action` events through every handler so an in-page button click
+ * flows back into the right bus (approval-router resolves `apv:` data,
+ * ask-user-router resolves `ask:` data), same path as a Telegram inline-button
+ * tap. Both routers self-filter by data prefix, so calling all handlers is
+ * safe — this is the messenger-side handler chaining ask-user-router's docs
+ * call out as the way to host both routers on one chat type. Populated by the
+ * web messenger's `onButtonCallback`; empty until the routers install (which
+ * happens before this file's exported startWebServer is called from cli.ts).
  */
-let webButtonHandler: ((cb: import('../core/types.js').ButtonCallback) => Promise<void>) | undefined
+const webButtonHandlers: ((cb: import('../core/types.js').ButtonCallback) => Promise<void>)[] = []
 
 import {
   formatAgentNotAvailableError,
@@ -1358,50 +1361,52 @@ export async function startWebServer(options: {
     // the run was dead and the user's card UI had been stuck at
     // "已发送，等待结果…" the whole time.
     //
-    // Fix: parse the frame inline first; if it's an `approval-action`,
-    // dispatch directly to the click handler (no queue). Approval clicks
-    // are the agent's UNBLOCKING input — they have no ordering dependency
-    // on chat input. All other types (chat, switch-agent, get-history,
-    // …) still go through enqueueInbound to preserve their per-client
-    // FIFO ordering.
-    async function handleApprovalAction(msg: { data?: unknown; messageId?: unknown }): Promise<void> {
+    // Fix: parse the frame inline first; if it's an `approval-action` (or a
+    // `choice-action` from an ask_user card), dispatch directly to the click
+    // handler (no queue). Both are the agent's UNBLOCKING input — they have no
+    // ordering dependency on chat input. All other types (chat, switch-agent,
+    // get-history, …) still go through enqueueInbound to preserve their
+    // per-client FIFO ordering.
+    async function handleButtonAction(msg: { data?: unknown; messageId?: unknown }): Promise<void> {
       const actionData: string = String(msg.data || '')
       const messageId: string = String(msg.messageId || '')
       // Use `client.id` (mutable; updated on session rekey) — not the
       // original `clientId` const — so the threadId we hand to the bus
-      // matches the threadId the bus stamped on the pending approval
-      // request. Without this, a session that was rekeyed via
-      // `get-history` reports the stale id and the bus can't find the
-      // open req to resolve.
+      // matches the threadId the bus stamped on the pending request.
+      // Without this, a session that was rekeyed via `get-history` reports
+      // the stale id and the bus can't find the open req to resolve.
       const liveId = client.id
       webLog.info({
-        event: 'approval.web.click_received',
+        event: 'button.web.click_received',
         clientId: liveId, data: actionData, messageId,
-        handlerBound: !!webButtonHandler,
+        handlersBound: webButtonHandlers.length,
       })
       if (!actionData || !messageId) {
-        sendToClient(ws, { type: 'error', message: 'approval-action missing data/messageId' })
+        sendToClient(ws, { type: 'error', message: 'button action missing data/messageId' })
         return
       }
-      if (!webButtonHandler) {
-        const why = 'approval handler not bound (router not installed?). Restart agim to rebind.'
-        webLog.warn({ event: 'approval.web.no_handler', clientId: liveId, data: actionData, messageId }, why)
+      if (webButtonHandlers.length === 0) {
+        const why = 'button handler not bound (router not installed?). Restart agim to rebind.'
+        webLog.warn({ event: 'button.web.no_handler', clientId: liveId, data: actionData, messageId }, why)
         sendToClient(ws, { type: 'error', message: why })
         return
       }
       try {
         // Web client doesn't have a platform-native toast, so ack is a
         // no-op resolving to the in-page status the page itself chose
-        // to render after click.
-        await webButtonHandler({
-          data: actionData, threadId: liveId, userId: `web:${liveId}`,
-          userDisplay: 'Web', messageId, ack: async () => {},
-        })
-        webLog.info({ event: 'approval.web.click_resolved', clientId: liveId, data: actionData })
+        // to render after click. Each router self-filters by data prefix
+        // (`apv:` vs `ask:`), so fanning out to all handlers is safe.
+        for (const handler of webButtonHandlers) {
+          await handler({
+            data: actionData, threadId: liveId, userId: `web:${liveId}`,
+            userDisplay: 'Web', messageId, ack: async () => {},
+          })
+        }
+        webLog.info({ event: 'button.web.click_resolved', clientId: liveId, data: actionData })
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
-        webLog.error({ event: 'approval.web.click_failed', clientId: liveId, data: actionData, err: errMsg })
-        sendToClient(ws, { type: 'error', message: `Approval click failed: ${errMsg}` })
+        webLog.error({ event: 'button.web.click_failed', clientId: liveId, data: actionData, err: errMsg })
+        sendToClient(ws, { type: 'error', message: `Button click failed: ${errMsg}` })
       }
     }
 
@@ -1417,10 +1422,11 @@ export async function startWebServer(options: {
         sendToClient(ws, { type: 'error', message: 'Invalid message format' })
         return
       }
-      if (msg && typeof msg === 'object' && (msg as { type?: unknown }).type === 'approval-action') {
+      const msgType = msg && typeof msg === 'object' ? (msg as { type?: unknown }).type : undefined
+      if (msgType === 'approval-action' || msgType === 'choice-action') {
         // Fast path — bypass enqueueInbound. Errors are surfaced to the
-        // client inside handleApprovalAction.
-        void handleApprovalAction(msg as { data?: unknown; messageId?: unknown })
+        // client inside handleButtonAction.
+        void handleButtonAction(msg as { data?: unknown; messageId?: unknown })
         return
       }
       enqueueInbound(async () => {
@@ -1533,34 +1539,53 @@ export async function startWebServer(options: {
       if (!c || c.ws.readyState !== c.ws.OPEN) return
       sendToClient(c.ws, { type: 'approval-card-edit', messageId, outcome })
     },
+    async sendChoiceCard(threadId, prompt) {
+      const c = clients.get(threadId)
+      const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
+      if (c && c.ws.readyState === c.ws.OPEN) {
+        sendToClient(c.ws, { type: 'choice-card', messageId, prompt })
+      }
+      return { messageId }
+    },
+    async editChoiceCard(threadId, messageId, finalText) {
+      const c = clients.get(threadId)
+      if (!c || c.ws.readyState !== c.ws.OPEN) return
+      sendToClient(c.ws, { type: 'choice-card-edit', messageId, finalText })
+    },
     onButtonCallback(handler) {
-      webButtonHandler = handler
-      webLog.info({ event: 'approval.web.handler_bound' },
+      // Chain rather than replace: both approval-router and ask-user-router
+      // bind here, and each self-filters by data prefix. handleButtonAction
+      // fans every click out to all registered handlers.
+      webButtonHandlers.push(handler)
+      webLog.info({ event: 'button.web.handler_bound', count: webButtonHandlers.length },
         'web messenger button-callback handler attached')
     },
   }
   registry.registerMessenger(webMessenger)
-  // approval-router's install() loop bound buttonCallback only for messengers
+  // Both routers' install() loops bind buttonCallback only for messengers
   // registered BEFORE install. Our web messenger was just registered (after
-  // install), so we have to wire it ourselves — otherwise in-page approval
-  // card clicks fire WS 'approval-action' messages with no handler on the
-  // server side and silently do nothing. bindButtonHandlerForPlatform is a
-  // no-op if approval-router hasn't been install()'d yet (e.g. degraded
-  // mode where the bus failed to start).
+  // install), so we wire both ourselves — otherwise in-page approval/choice
+  // card clicks fire WS messages with no handler on the server side and
+  // silently do nothing. bindButtonHandlerForPlatform is a no-op if the
+  // router hasn't been install()'d yet (e.g. degraded mode where the bus
+  // failed to start). The two handlers chain (webButtonHandlers) and each
+  // self-filters by data prefix (`apv:` vs `ask:`).
   try {
     const { bindButtonHandlerForPlatform } = await import('../core/approval-router.js')
     bindButtonHandlerForPlatform('web')
-    if (!webButtonHandler) {
+    const { bindButtonHandlerForPlatform: bindAsk } = await import('../core/ask-user-router.js')
+    bindAsk('web')
+    if (webButtonHandlers.length === 0) {
       // bindButtonHandlerForPlatform is a silent no-op when `installed` is
       // null on the router (bus failed to start, or cli skipped install).
-      // Log so an operator who's confused why approval clicks don't work
-      // sees a clear breadcrumb at startup.
-      webLog.warn({ event: 'approval.web.bind_skipped' },
-        'approval-router not installed — web approval clicks will fail until restart')
+      // Log so an operator who's confused why card clicks don't work sees
+      // a clear breadcrumb at startup.
+      webLog.warn({ event: 'button.web.bind_skipped' },
+        'routers not installed — web card clicks will fail until restart')
     }
   } catch (err) {
-    webLog.warn({ event: 'approval.web.bind_error', err: err instanceof Error ? err.message : String(err) },
-      'approval-router button-handler binding threw')
+    webLog.warn({ event: 'button.web.bind_error', err: err instanceof Error ? err.message : String(err) },
+      'web button-handler binding threw')
   }
 
   // PR-C: periodic metrics tick. Publishes a per-agent snapshot every 5s

@@ -18,7 +18,7 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
-import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming } from '@/types/ws'
+import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming, ChoiceCardPrompt } from '@/types/ws'
 import i18n from '@/i18n'
 
 /** v1.2.115 — how long the resolved card lingers in the dock before
@@ -73,6 +73,22 @@ export interface PendingApproval {
   resolvedAt?: number
 }
 
+/**
+ * ask_user (choice) cards share the approval dock's lifecycle: shown while
+ * pending, briefly flipped to a resolved state, then auto-dismissed. Unlike
+ * approvals, the resolution carries a short `finalText` receipt rather than a
+ * structured outcome.
+ */
+export interface PendingAsk {
+  messageId: string
+  prompt: ChoiceCardPrompt
+  /** Set when the bus resolves (answer accepted, or timed out). Holding it
+   *  briefly gives the user a visible "已发送 / 已失效" flip before the row
+   *  fades. */
+  finalText?: string
+  resolvedAt?: number
+}
+
 export interface RunActivity {
   runId: string
   agent: string
@@ -91,6 +107,9 @@ export interface ChatState {
    *  but resolved cards lingered in history clutter. Dock approach:
    *  show only while pending → toast on resolve → dismiss. */
   pendingApprovals: PendingApproval[]
+  /** Active ask_user (choice) cards rendered in the dock alongside
+   *  approvals. Same show-while-pending → flip → dismiss lifecycle. */
+  pendingAsks: PendingAsk[]
   /** Timeline rows for recent run lifecycle updates (run-start →
    *  usage → run-finish). Newest first, bounded list. */
   runActivities: RunActivity[]
@@ -108,6 +127,7 @@ export interface ChatState {
 const initialState: ChatState = {
   messages: [],
   pendingApprovals: [],
+  pendingAsks: [],
   runActivities: [],
   activeRunId: null,
   agents: [],
@@ -131,6 +151,9 @@ type Action =
   | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
   | { kind: 'APPROVAL_EDIT'; messageId: string; outcome: ApprovalCardOutcome }
   | { kind: 'APPROVAL_DISMISS'; messageId: string }
+  | { kind: 'CHOICE_CARD'; messageId: string; prompt: ChoiceCardPrompt }
+  | { kind: 'CHOICE_EDIT'; messageId: string; finalText: string }
+  | { kind: 'CHOICE_DISMISS'; messageId: string }
   | { kind: 'RUN_START'; runId: string; agent: string; startedAt: number }
   | { kind: 'RUN_USAGE'; runId: string; durationMs: number; outputChars: number }
   | {
@@ -226,6 +249,26 @@ function reducer(s: ChatState, a: Action): ChatState {
         ...s,
         pendingApprovals: s.pendingApprovals.filter((p) => p.messageId !== a.messageId),
       }
+    case 'CHOICE_CARD':
+      // Dock-only, mirroring APPROVAL_CARD. Dedupe by messageId.
+      if (s.pendingAsks.some((p) => p.messageId === a.messageId)) return s
+      return {
+        ...s,
+        pendingAsks: [...s.pendingAsks, { messageId: a.messageId, prompt: a.prompt }],
+      }
+    case 'CHOICE_EDIT': {
+      const idx = s.pendingAsks.findIndex((p) => p.messageId === a.messageId)
+      if (idx < 0) return s
+      const next = [...s.pendingAsks]
+      const cur = next[idx]
+      if (cur) next[idx] = { ...cur, finalText: a.finalText, resolvedAt: Date.now() }
+      return { ...s, pendingAsks: next }
+    }
+    case 'CHOICE_DISMISS':
+      return {
+        ...s,
+        pendingAsks: s.pendingAsks.filter((p) => p.messageId !== a.messageId),
+      }
     case 'RUN_START': {
       const next: RunActivity[] = [
         {
@@ -289,6 +332,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         ...s,
         messages: [],
         pendingApprovals: [],
+        pendingAsks: [],
         runActivities: [],
         activeRunId: null,
         currentReplyId: null,
@@ -349,6 +393,12 @@ export interface UseChat {
    *  socket was reconnecting and the click should be re-tried. The
    *  hook also dispatches an ERROR for the chat surface to render. */
   approvalClick: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean
+  /** ask_user (choice) card answer. `data` is the fully-formed
+   *  `ask:<reqId>:…` callback the AskDock built (single/multi/custom).
+   *  Returns whether the WS send went out; on success the hook
+   *  optimistically resolves + dismisses the dock row, since the bus
+   *  doesn't push a card edit back for asks. */
+  choiceSubmit: (messageId: string, data: string) => boolean
   /** Drop all messages + tell the server to fork a new session
    *  (resetConversation: new id, drops CLI session pins + auto-allow
    *  rules + plan-mode). The server replies with empty history. */
@@ -529,6 +579,26 @@ export function useChat(): UseChat {
           dispatch({ kind: 'APPROVAL_DISMISS', messageId: msg.messageId })
         }, APPROVAL_DISMISS_AFTER_MS)
         return
+      case 'choice-card':
+        dispatch({
+          kind: 'CHOICE_CARD',
+          messageId: msg.messageId,
+          prompt: msg.prompt,
+        })
+        return
+      case 'choice-card-edit':
+        // The ask resolved (answer accepted, or timed out). Flip the dock
+        // row to its receipt for a beat, then dismiss — same cadence as
+        // approval cards.
+        dispatch({
+          kind: 'CHOICE_EDIT',
+          messageId: msg.messageId,
+          finalText: msg.finalText,
+        })
+        window.setTimeout(() => {
+          dispatch({ kind: 'CHOICE_DISMISS', messageId: msg.messageId })
+        }, APPROVAL_DISMISS_AFTER_MS)
+        return
       case 'approval-text':
         // approval-text is the legacy fallback path used by adapters
         // that can't render cards (or for "receipt" lines after a
@@ -623,6 +693,43 @@ export function useChat(): UseChat {
     return ok
   }
 
+  /**
+   * Submit an ask_user answer. `data` is the fully-formed `ask:<reqId>:…`
+   * callback string (built by the AskDock component, since multi/custom
+   * encoding lives next to the UI that knows the selection). ask-user-router
+   * parses it; like approvalClick we route it through unchanged and treat a
+   * failed send as an explicit error so the card can clear its optimistic
+   * "submitting…" state.
+   *
+   * Unlike approvals, the bus does NOT push a card edit back when an ask
+   * resolves (ask-user-rpc leaves the card alone — Telegram just acks the
+   * tap, the TUI updates its own view). So the click IS the terminal state:
+   * on a successful send we optimistically flip the dock row to a receipt
+   * and dismiss it, otherwise it would sit "submitting" forever.
+   */
+  function choiceSubmit(messageId: string, data: string): boolean {
+    const ok = wsRef.current.send({ type: 'choice-action', data, messageId })
+    if (!ok) {
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnectedRetry', {
+          ns: 'common',
+          defaultValue: 'Not connected. Reconnecting — try again in a moment.',
+        }),
+      })
+      return ok
+    }
+    dispatch({
+      kind: 'CHOICE_EDIT',
+      messageId,
+      finalText: i18n.t('chat.askResolved', { ns: 'common', defaultValue: '✅ 已回答' }),
+    })
+    window.setTimeout(() => {
+      dispatch({ kind: 'CHOICE_DISMISS', messageId })
+    }, APPROVAL_DISMISS_AFTER_MS)
+    return ok
+  }
+
   function newConversation(): void {
     // Optimistic clear so the UI repaints empty immediately; the server's
     // follow-up `history` message with messages=[] reconfirms the state.
@@ -635,6 +742,7 @@ export function useChat(): UseChat {
     send,
     switchAgent,
     approvalClick,
+    choiceSubmit,
     newConversation,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
   }

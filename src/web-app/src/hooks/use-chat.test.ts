@@ -18,7 +18,7 @@ import {
   type ChatMessage,
   type ChatState,
 } from './use-chat'
-import type { ApprovalCardPrompt } from '@/types/ws'
+import type { ApprovalCardPrompt, ChoiceCardPrompt } from '@/types/ws'
 
 function mkPrompt(over: Partial<ApprovalCardPrompt> = {}): ApprovalCardPrompt {
   return {
@@ -26,6 +26,28 @@ function mkPrompt(over: Partial<ApprovalCardPrompt> = {}): ApprovalCardPrompt {
     toolName: 'Bash',
     inputJson: 'rm -rf /',
     mode: 'normal',
+    ...over,
+  }
+}
+
+function mkChoicePrompt(over: Partial<ChoiceCardPrompt> = {}): ChoiceCardPrompt {
+  return {
+    title: 'agim · 请选择',
+    body: 'pick one',
+    choices: [
+      { label: '1. a', data: 'ask:req-9:1' },
+      { label: '2. b', data: 'ask:req-9:2' },
+    ],
+    meta: {
+      kind: 'ask-user',
+      reqId: 'req-9',
+      selectionMode: 'single',
+      minSelections: 1,
+      maxSelections: 1,
+      allowCustomInput: false,
+      customInputLabel: '',
+      timeoutSec: 90,
+    },
     ...over,
   }
 }
@@ -219,6 +241,51 @@ describe('chatReducer', () => {
     expect(after.pendingApprovals[0]?.messageId).toBe('b')
   })
 
+  // ask_user (choice) cards — dock slice `pendingAsks`, same lifecycle as
+  // approvals but resolution carries a `finalText` receipt.
+
+  it('CHOICE_CARD pushes onto pendingAsks; chat stream untouched; deduped', () => {
+    const after = reduce(initialChatState,
+      { kind: 'CHOICE_CARD', messageId: 'ask-1', prompt: mkChoicePrompt() },
+      { kind: 'CHOICE_CARD', messageId: 'ask-1', prompt: mkChoicePrompt() },
+    )
+    expect(after.messages).toEqual([])
+    expect(after.pendingAsks).toHaveLength(1)
+    expect(after.pendingAsks[0]).toMatchObject({
+      messageId: 'ask-1',
+      prompt: { body: 'pick one', meta: { reqId: 'req-9', selectionMode: 'single' } },
+    })
+    expect(after.pendingAsks[0]?.finalText).toBeUndefined()
+  })
+
+  it('CHOICE_EDIT marks the matching ask resolved with a receipt + timestamp', () => {
+    const after = reduce(initialChatState,
+      { kind: 'CHOICE_CARD', messageId: 'ask-1', prompt: mkChoicePrompt() },
+      { kind: 'CHOICE_EDIT', messageId: 'ask-1', finalText: '✅ 已回答' },
+    )
+    expect(after.pendingAsks[0]?.finalText).toBe('✅ 已回答')
+    expect(typeof after.pendingAsks[0]?.resolvedAt).toBe('number')
+  })
+
+  it('CHOICE_EDIT for an unknown messageId is a no-op', () => {
+    const before = reduce(initialChatState,
+      { kind: 'CHOICE_CARD', messageId: 'ask-1', prompt: mkChoicePrompt() },
+    )
+    const after = reduce(before, { kind: 'CHOICE_EDIT', messageId: 'never', finalText: 'x' })
+    expect(after).toBe(before)
+  })
+
+  it('CHOICE_DISMISS removes the matching ask', () => {
+    const seeded = reduce(initialChatState,
+      { kind: 'CHOICE_CARD', messageId: 'a', prompt: mkChoicePrompt() },
+      { kind: 'CHOICE_CARD', messageId: 'b', prompt: mkChoicePrompt() },
+    )
+    expect(seeded.pendingAsks).toHaveLength(2)
+    const after = reduce(seeded, { kind: 'CHOICE_DISMISS', messageId: 'a' })
+    expect(after.pendingAsks).toHaveLength(1)
+    expect(after.pendingAsks[0]?.messageId).toBe('b')
+  })
+
   it('RUN_START / RUN_USAGE / RUN_FINISH track recent run activity', () => {
     const after = reduce(
       initialChatState,
@@ -249,6 +316,7 @@ describe('chatReducer', () => {
     const after = reduce(seeded, { kind: 'RESET_CONVERSATION' })
     expect(after.messages).toEqual([])
     expect(after.pendingApprovals).toEqual([])
+    expect(after.pendingAsks).toEqual([])
     expect(after.runActivities).toEqual([])
     expect(after.activeRunId).toBeNull()
     expect(after.currentReplyId).toBeNull()

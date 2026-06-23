@@ -330,6 +330,38 @@ describe('handleAskOp — happy paths', () => {
       expect(r.result.via).toBe('button')
     }
   })
+
+  it('sends a card on web for multi-select + custom (not just single)', async () => {
+    // The web client renders the full card client-side, so the gate lets
+    // web — like tui — get a card for rich ask modes rather than the
+    // "reply 1/2/3" text fallback. Resolution then flows through the
+    // button payload the browser builds (ask:<reqId>:multi:…).
+    const m = makeFakeMessenger('web', { withCards: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'web' }
+    const promise = handleAskOp({
+      question: 'pick some',
+      choices: ['a', 'b', 'c'],
+      selectionMode: 'multi',
+      minSelections: 1,
+      maxSelections: 3,
+      allowCustomInput: true,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(m.cards.length).toBe(1)
+    expect(m.texts.length).toBe(0)
+    const firstData = m.cards[0]?.prompt.choices[0]?.data ?? ''
+    const reqId = /^ask:([^:]+):/.exec(firstData)?.[1]
+    expect(reqId).toBeTruthy()
+    expect(tryResolvePendingAskByButton(`ask:${reqId}:multi:1,3`)).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.selectionMode).toBe('multi')
+      expect(r.result.indexes).toEqual([1, 3])
+      expect(r.result.via).toBe('button')
+    }
+  })
 })
 
 describe('handleAskOp — timeout', () => {

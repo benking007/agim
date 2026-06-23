@@ -220,9 +220,15 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
       reason: 'no-messenger',
     }
   }
+  // tui and web render full-featured cards (multi-select + custom input)
+  // entirely client-side, so they can host any ask mode. Other adapters
+  // (Telegram et al.) only get a card for the simple single-select case;
+  // richer modes fall back to the text-reply path below.
   const canSendChoiceCard = Boolean(
     messenger.sendChoiceCard
-    && (ctx.platform === 'tui' || (selectionMode === 'single' && !allowCustomInput)),
+    && (ctx.platform === 'tui'
+      || ctx.platform === 'web'
+      || (selectionMode === 'single' && !allowCustomInput)),
   )
   if (!allowTextReply && !canSendChoiceCard) {
     return {

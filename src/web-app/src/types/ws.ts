@@ -23,6 +23,12 @@ export type ChatOutgoing =
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router's
    *  `parseCallbackData` expects — v2 routes it through unchanged. */
   | { type: 'approval-action'; data: string; messageId: string }
+  /** Choice (ask_user) card answer. `data` MUST be one of the
+   *  `ask:<reqId>:…` forms ask-user-router parses:
+   *  `ask:<reqId>:<index>` (single), `ask:<reqId>:multi:<i,j>` (multi),
+   *  or `ask:<reqId>:custom:<base64url>` (free-form). The server fans
+   *  this through ask-user-router unchanged. */
+  | { type: 'choice-action'; data: string; messageId: string }
 
 /** Server → Client */
 export type ChatIncoming =
@@ -39,6 +45,8 @@ export type ChatIncoming =
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
   | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }
+  | { type: 'choice-card'; messageId: string; prompt: ChoiceCardPrompt }
+  | { type: 'choice-card-edit'; messageId: string; finalText: string }
   | { type: 'metrics'; agents: AgentMetric[]; timestamp: string }
 
 /** Run lifecycle events emitted around each web chat request.
@@ -101,6 +109,39 @@ export interface ApprovalCardOutcome {
   byUserDisplay?: string
   /** ISO date — server stringifies the core `atDate: Date` field. */
   atDate?: string
+}
+
+/** Mirror of src/core/types.ts:ChoiceCardPrompt — the structured body of
+ *  an ask_user `choice-card` message. The server sends the prompt verbatim;
+ *  `meta` carries everything the client needs to render single/multi/custom
+ *  modes and to construct the `ask:` callback `data` on submit. */
+export interface ChoiceCardPrompt {
+  /** Optional bold title rendered above the body. */
+  title?: string
+  /** The question text. */
+  body: string
+  /** 1-indexed choices. `label` is "1. Foo" style (already prefixed by the
+   *  server); `data` is the ready-to-send single-select callback
+   *  `ask:<reqId>:<index>`. */
+  choices: Array<{ label: string; data: string }>
+  /** ask_user rendering hints. Present for `kind === 'ask-user'` cards. */
+  meta?: ChoiceCardMeta
+}
+
+export interface ChoiceCardMeta {
+  kind: 'ask-user'
+  /** Bus-side request id; needed to build multi/custom callback data. */
+  reqId: string
+  selectionMode: 'single' | 'multi'
+  /** multi-select lower/upper bounds (both 1 for single). */
+  minSelections: number
+  maxSelections: number
+  /** When true, render a free-form text input in addition to the choices. */
+  allowCustomInput: boolean
+  /** Display label for the custom-input entry. */
+  customInputLabel: string
+  /** Seconds the agent will wait before the ask times out. */
+  timeoutSec: number
 }
 
 export interface HistoryMessage {

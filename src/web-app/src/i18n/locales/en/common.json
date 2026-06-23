@@ -151,6 +151,11 @@
     "approvalAutoTip":    "Allow and auto-allow similar calls for the rest of the session",
     "approvalDeny":       "Deny",
     "approvalSubmitting": "Sent — waiting for result…",
+    "askTitle": "🤔 Please choose",
+    "askMultiHint": "Pick {{min}}–{{max}}",
+    "askSubmit": "Submit",
+    "askCustomPlaceholder": "Custom answer…",
+    "askResolved": "✅ Answered",
     "outcome": {
       "allowed":        "✅ Allowed",
       "allowedPinned":  "✅ Allowed + auto-allow further",

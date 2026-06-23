@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.8] - 2026-06-23
+
+### Fixed
+
+- TUI markdown 渲染:**表格**不再被直接丢弃(改为正确渲染);修正**列表 / 引用块**渲染。
+
+### Changed
+
+- TUI markdown:样式化表格单元格 + 更丰富的代码高亮;`Markdown` 组件按 `chatWidth` 自适应宽度。新增 `markdown.test.tsx` 覆盖。
+
 ## [1.3.7] - 2026-06-22
 
 ### Security

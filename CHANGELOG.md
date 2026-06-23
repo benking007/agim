@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.10] - 2026-06-23
+
+### Added
+
+- **ask_user 可视化作答**:web 端可点选选项 + 自定义输入提交;Telegram 端多选 / 自定义输入卡片 + 详情链接。
+
+### Changed
+
+- web:统一走 approval-router 的 `ask:` / `apv:` 调度(重构,审批与 ask_user 共用一条分发链路)。
+
 ## [1.3.9] - 2026-06-23
 
 ### Added

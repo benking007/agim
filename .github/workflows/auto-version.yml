@@ -42,3 +42,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           npm version ${{ steps.bump.outputs.level }} -m "chore: release v%s"
           git push
+
+  # Publish in the SAME run. The bot bump commit above can't trigger release.yml
+  # via its own `push` hook (GitHub blocks bot-commit-triggered workflows), so we
+  # call release.yml as a reusable workflow here instead — no PAT secret needed.
+  publish:
+    needs: bump
+    permissions:
+      contents: write # release.yml: checkout + GitHub Release/tag
+      id-token: write # release.yml: npm OIDC publish
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: main # build/publish/tag the just-pushed bump commit (main HEAD)
+    secrets: inherit

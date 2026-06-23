@@ -5,16 +5,23 @@ on:
     branches: [main]
     paths:
       - 'package.json'
-  # Manual trigger — needed when an auto-version-bump commit lands on main.
-  # GitHub Actions deliberately blocks bot commits (incl. github-actions[bot]
-  # from the auto-version workflow) from triggering other workflows, so an
-  # auto-bumped package.json never fires this push hook. Maintainers run
-  # workflow_dispatch from the Actions UI (or the REST API) to publish.
+  # Manual trigger — fallback for any case the auto path misses.
   workflow_dispatch:
+  # Reusable entry — auto-version.yml calls this in the SAME run right after
+  # its bot bump commit. GitHub blocks bot commits from triggering other
+  # workflows (so the `push` hook above never fires for the auto bump); calling
+  # this as a reusable workflow sidesteps that without needing a PAT secret.
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to build, publish & tag (default: main HEAD)'
+        type: string
+        required: false
+        default: 'main'
 
 permissions:
   id-token: write # 必须：用于 OIDC 身份验证
-  contents: read  # 必须：用于检出代码
+  contents: write # 检出代码 + 创建 GitHub Release/tag
 
 jobs:
   publish:
@@ -24,6 +31,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          # push/dispatch → empty inputs.ref → checkout's default (triggering
+          # ref = main HEAD). workflow_call → inputs.ref ('main') so we pick up
+          # the bump commit auto-version just pushed.
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -112,7 +123,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Tag + GitHub Release for the published version. Idempotent: skips if
+        # the tag already exists (e.g. a manual dispatch re-run). gh creates the
+        # tag at the checked-out HEAD when it doesn't exist.
+        run: |
+          V="v${{ steps.version.outputs.version }}"
+          if gh release view "$V" >/dev/null 2>&1; then
+            echo "GitHub Release $V already exists — skipping."
+          else
+            gh release create "$V" \
+              --target "$(git rev-parse HEAD)" \
+              --title "$V" \
+              --notes "Automated release $V. See CHANGELOG.md for details." \
+              --latest
+          fi
+
       - name: Summary
         if: steps.version.outputs.changed == 'true'
         run: |
-          echo "✅ Published v${{ steps.version.outputs.version }} to npm" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Published v${{ steps.version.outputs.version }} to npm + GitHub Release" >> $GITHUB_STEP_SUMMARY

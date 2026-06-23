@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { marked } from 'marked'
-import { buildTableLines, displayWidth, Markdown } from './markdown.js'
+import { buildTableLines, displayWidth, Markdown, renderInlineCell, inlineCellText, highlightCode } from './markdown.js'
 
 // Walk a React element tree and concatenate all string/number leaves. Lets
 // us assert on rendered text without an ink runtime (ink-testing-library is
@@ -154,6 +154,96 @@ describe('table rendering via <Markdown>', () => {
     expect(text).toContain('B')
     expect(text).toContain('1')
     expect(text).toContain('2')
+  })
+})
+
+// Helper: inline tokens of the first paragraph of `md`.
+function inlineTokens(md: string): unknown[] {
+  const p = marked.lexer(md).find((t) => t.type === 'paragraph') as { tokens: unknown[] }
+  return p.tokens
+}
+
+describe('renderInlineCell — width-preserving inline (table cells)', () => {
+  it('emits styled content with the SAME characters as cell.text (no markup chars)', () => {
+    const toks = inlineTokens('**b** `c` [x](http://u)')
+    // marked produces a `text` token " " between inline spans; flattened text
+    // must equal the visible plain form with NO **, backticks or URL.
+    const flat = flatten(renderInlineCell(toks as never, 'k'))
+    expect(flat).toBe('b c x')
+    expect(flat).not.toContain('*')
+    expect(flat).not.toContain('`')
+    expect(flat).not.toContain('http')
+  })
+
+  it('rendered width matches inlineCellText (keeps columns aligned)', () => {
+    const md = '| H |\n|---|\n| **b** `c` |'
+    const tok = marked.lexer(md).find((t) => t.type === 'table') as {
+      rows: Array<Array<{ text: string; tokens: unknown[] }>>
+    }
+    const c = tok.rows[0][0]
+    // marked keeps raw markup in c.text ("**b** `c`"); the rendered/visible
+    // form is "b c" and that is what width math must use.
+    expect(flatten(renderInlineCell(c.tokens as never, 'k'))).toBe('b c')
+    expect(displayWidth(flatten(renderInlineCell(c.tokens as never, 'k')))).toBe(displayWidth(inlineCellText(c.tokens as never)))
+  })
+})
+
+describe('styled table via <Markdown>', () => {
+  it('renders bold/code cell values fully and without literal markup', () => {
+    const text = renderText('| Name | Note |\n|------|------|\n| **Ann** | `ok` |\n| Bob | done |')
+    expect(text).toContain('Ann')
+    expect(text).toContain('ok')
+    expect(text).toContain('Bob')
+    expect(text).toContain('done')
+    expect(text).not.toContain('**')
+    expect(text).not.toContain('`')
+  })
+})
+
+describe('highlightCode — strings / comments / numbers / keywords', () => {
+  const kindOf = (spans: ReturnType<typeof highlightCode>, substr: string) =>
+    spans.find((s) => s.text.includes(substr))?.kind
+
+  it('does not colour keywords inside strings or comments', () => {
+    const spans = highlightCode('const s = "return 1" // return', 'js')
+    // the string span carries the inner `return`, not a keyword span
+    expect(kindOf(spans, '"return 1"')).toBe('string')
+    expect(kindOf(spans, '// return')).toBe('comment')
+    expect(kindOf(spans, 'const')).toBe('keyword')
+    // no standalone keyword span equal to 'return'
+    expect(spans.some((s) => s.kind === 'keyword' && s.text === 'return')).toBe(false)
+  })
+
+  it('colours numbers', () => {
+    const spans = highlightCode('let x = 42', 'ts')
+    expect(spans.some((s) => s.kind === 'number' && s.text === '42')).toBe(true)
+  })
+
+  it('python uses # line comments', () => {
+    const spans = highlightCode('x = 1  # note', 'py')
+    expect(kindOf(spans, '# note')).toBe('comment')
+  })
+
+  it('reconstructs the exact source (no characters lost)', () => {
+    const src = 'const s = "a" // b\nreturn 3'
+    expect(highlightCode(src, 'js').map((s) => s.text).join('')).toBe(src)
+  })
+
+  it('unknown language → single plain span', () => {
+    const spans = highlightCode('whatever 123', 'made-up-lang')
+    expect(spans).toEqual([{ text: 'whatever 123' }])
+  })
+})
+
+describe('minor token cleanups', () => {
+  it('drops link-reference definitions (no raw leak)', () => {
+    expect(renderText('[id]: https://example.com').trim()).toBe('')
+  })
+
+  it('renders images as alt + url', () => {
+    const text = renderText('![alt text](http://u/x.png)')
+    expect(text).toContain('alt text')
+    expect(text).toContain('http://u/x.png')
   })
 })
 

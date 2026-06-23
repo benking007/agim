@@ -237,6 +237,57 @@ function renderTable(tok: Token, key: string, width: number): React.ReactNode {
   )
 }
 
+// Recursively render a list token. Handles:
+//   * proper inline formatting of item text (bold/code/links — not the
+//     literal `**`/`` ` `` the old flatten-to-text path produced)
+//   * nested sub-lists (indented by depth)
+//   * task checkboxes (`- [ ]` / `- [x]`)
+//   * ordered-list `start` (e.g. a list beginning at "3.")
+function renderList(tok: Token, key: string, width: number, depth: number): React.ReactNode {
+  const ordered = !!(tok as Token & { ordered?: boolean }).ordered
+  const startRaw = (tok as Token & { start?: number | string }).start
+  const start = typeof startRaw === 'number' ? startRaw : 1
+  const items = ((tok as Token & { items?: Token[] }).items ?? []) as Token[]
+  const indent = '  '.repeat(depth)
+  return (
+    <Box key={key} flexDirection="column" marginBottom={depth === 0 ? 1 : 0}>
+      {items.map((item, i) => {
+        const it = item as Token & { task?: boolean; checked?: boolean; tokens?: Token[] }
+        const marker = it.task
+          ? (it.checked ? '☑ ' : '☐ ')
+          : (ordered ? `${start + i}. ` : '• ')
+        // Split item content: inline-ish leading content (text/paragraph)
+        // renders on the marker line; block children (nested lists, code)
+        // render beneath, indented one level deeper.
+        const inlineNodes: React.ReactNode[] = []
+        const childBlocks: Token[] = []
+        for (const b of (it.tokens ?? [])) {
+          const bt = b as Token
+          if (bt.type === 'text' || bt.type === 'paragraph') {
+            inlineNodes.push(...renderInline(bt.tokens, `${key}-${i}`))
+          } else if (bt.type === 'checkbox') {
+            // marker already encodes the checkbox state — skip
+          } else {
+            childBlocks.push(bt)
+          }
+        }
+        return (
+          <Box key={tokenKey(item, key)} flexDirection="column">
+            <Box>
+              <Text dimColor>{indent}{marker}</Text>
+              <Text>{inlineNodes}</Text>
+            </Box>
+            {childBlocks.map((cb, ci) =>
+              cb.type === 'list'
+                ? renderList(cb, `${key}-${i}-${ci}`, width, depth + 1)
+                : renderBlock(cb, `${key}-${i}-${ci}`, width))}
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
 function renderBlock(tok: Token, key: string, width: number): React.ReactNode {
   switch (tok.type) {
     case 'heading': {
@@ -273,35 +324,23 @@ function renderBlock(tok: Token, key: string, width: number): React.ReactNode {
       )
     }
     case 'blockquote':
+      // Render inner blocks recursively (paragraphs, nested lists, code)
+      // behind a dim "│ " gutter. Previously each inner token went through
+      // renderInline, which showed literal markdown for non-paragraph
+      // blocks and dropped nested lists entirely.
       return (
-        <Box key={key} marginBottom={1} flexDirection="column">
-          {(tok.tokens ?? []).map((inner, i) => (
-            <Box key={tokenKey(inner as Token, key)}>
-              <Text dimColor>│ </Text>
-              <Text dimColor>{renderInline((inner as Token).tokens, `${key}-${i}`)}</Text>
-            </Box>
-          ))}
+        <Box key={key} marginBottom={1} flexDirection="row">
+          <Text dimColor>│ </Text>
+          <Box flexDirection="column">
+            {(tok.tokens ?? []).map((inner, i) =>
+              (inner as Token).type === 'list'
+                ? renderList(inner as Token, `${key}-${i}`, width, 0)
+                : renderBlock(inner as Token, `${key}-${i}`, width))}
+          </Box>
         </Box>
       )
-    case 'list': {
-      const ordered = !!(tok as Token & { ordered?: boolean }).ordered
-      const items = ((tok as Token & { items?: Token[] }).items ?? []) as Token[]
-      return (
-        <Box key={key} flexDirection="column" marginBottom={1}>
-          {items.map((item, i) => {
-            const marker = ordered ? `${i + 1}. ` : '• '
-            // list_item tokens have nested tokens; flatten to inline text.
-            const itemTokens = (item as Token).tokens ?? []
-            return (
-              <Box key={tokenKey(item, key)}>
-                <Text dimColor>{marker}</Text>
-                <Text>{renderInline(itemTokens, `${key}-${i}`)}</Text>
-              </Box>
-            )
-          })}
-        </Box>
-      )
-    }
+    case 'list':
+      return renderList(tok, key, width, 0)
     case 'table':
       return renderTable(tok, key, width)
     case 'hr':

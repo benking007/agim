@@ -6,7 +6,22 @@
 
 import { describe, it, expect } from 'bun:test'
 import { marked } from 'marked'
-import { buildTableLines, displayWidth } from './markdown.js'
+import { buildTableLines, displayWidth, Markdown } from './markdown.js'
+
+// Walk a React element tree and concatenate all string/number leaves. Lets
+// us assert on rendered text without an ink runtime (ink-testing-library is
+// not a dependency). We call Markdown() directly to get its element tree.
+// biome-ignore lint/suspicious/noExplicitAny: test-only tree walk
+function flatten(node: any): string {
+  if (node == null || node === false || node === true) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(flatten).join('')
+  if (node.props && 'children' in node.props) return flatten(node.props.children)
+  return ''
+}
+function renderText(md: string, width = 120): string {
+  return flatten(Markdown({ source: md, width }))
+}
 
 // Helper: tokenize a markdown table and pull header/rows/align like the
 // renderer does, so the tests exercise the real marked token shape.
@@ -87,6 +102,58 @@ describe('buildTableLines — list fallback (too wide)', () => {
     expect(joined).toContain('Score: 10')
     expect(joined).toContain('Name: Bob')
     expect(joined).toContain('Score: 7')
+  })
+})
+
+describe('list rendering', () => {
+  it('renders inline formatting in items WITHOUT literal markdown', () => {
+    const text = renderText('- **bold** and `code` here')
+    expect(text).toContain('bold')
+    expect(text).toContain('code')
+    expect(text).not.toContain('**') // no literal asterisks leaking through
+  })
+
+  it('keeps nested sub-list items', () => {
+    const text = renderText('- parent\n  - nested child\n  - second child')
+    expect(text).toContain('parent')
+    expect(text).toContain('nested child')
+    expect(text).toContain('second child')
+  })
+
+  it('shows task checkboxes', () => {
+    const text = renderText('- [ ] todo\n- [x] done')
+    expect(text).toContain('☐')
+    expect(text).toContain('☑')
+    expect(text).toContain('todo')
+    expect(text).toContain('done')
+  })
+
+  it('honours ordered-list start offset', () => {
+    const text = renderText('3. third\n4. fourth')
+    expect(text).toContain('3.')
+    expect(text).toContain('4.')
+    expect(text).toContain('third')
+    expect(text).toContain('fourth')
+  })
+})
+
+describe('blockquote rendering', () => {
+  it('renders quoted bold without literal markup and keeps a quoted list', () => {
+    const text = renderText('> quoted **strong**\n> - quoted item')
+    expect(text).toContain('quoted')
+    expect(text).toContain('strong')
+    expect(text).not.toContain('**')
+    expect(text).toContain('quoted item') // nested list inside the quote survives
+  })
+})
+
+describe('table rendering via <Markdown>', () => {
+  it('renders a table (regression: tables used to vanish)', () => {
+    const text = renderText('| A | B |\n|---|---|\n| 1 | 2 |')
+    expect(text).toContain('A')
+    expect(text).toContain('B')
+    expect(text).toContain('1')
+    expect(text).toContain('2')
   })
 })
 

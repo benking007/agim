@@ -179,7 +179,7 @@ const ChatHistory = React.memo(function ChatHistory({ messages, agent, chatWidth
             {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
           </Text>
           {m.role === 'assistant' && !m.pending
-            ? <Markdown source={m.content} />
+            ? <Markdown source={m.content} width={chatWidth} />
             : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
           {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
             <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>

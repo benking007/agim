@@ -6,8 +6,10 @@
 //   * headings → bold + colored
 //   * unordered + ordered lists (indent + bullet/number)
 //   * blockquotes → dim "│ " prefix
-//   * tables → fall back to markdown source (terminal table is fragile
-//     under CJK width; keeping plain text is the lesser evil)
+//   * tables → real grid when they fit the terminal width, else a
+//     vertical "header: value" record layout (CJK-aware widths). Never
+//     drops cells/rows. (Pre-v1.3.7 this fell through to `tok.text`,
+//     which is undefined for table tokens, so tables silently vanished.)
 //   * links → render text + dim URL inline
 //   * images / html → text fallback
 //
@@ -15,7 +17,7 @@
 
 import React from 'react'
 import { Box, Text } from 'ink'
-import { marked } from 'marked'
+import { marked, type Tokens } from 'marked'
 
 type Token = ReturnType<typeof marked.lexer>[number] & { tokens?: Token[]; items?: Token[]; text?: string; raw?: string; lang?: string; depth?: number; href?: string; title?: string; ordered?: boolean }
 
@@ -115,13 +117,127 @@ function renderInline(tokens: Token[] | undefined, keyPrefix: string): React.Rea
         out.push(<Text key={k}>{'\n'}</Text>)
         break
       default:
-        out.push(<Text key={k}>{tok.text ?? ''}</Text>)
+        out.push(<Text key={k}>{tok.text ?? tok.raw ?? ''}</Text>)
     }
   })
   return out
 }
 
-function renderBlock(tok: Token, key: string): React.ReactNode {
+// ── Table rendering ──────────────────────────────────────────────────
+// A `marked` table token carries no `.text` field (only raw/align/header/
+// rows), so the old default fall-through rendered an empty string and the
+// whole table disappeared. We render it ourselves instead.
+
+type CellAlign = 'left' | 'right' | 'center' | null
+
+/** CJK-aware display width: East-Asian wide / fullwidth code points (and
+ *  most emoji) occupy 2 terminal columns, everything else 1. Iterating with
+ *  for..of so astral chars (surrogate pairs) count once. Dependency-free —
+ *  matches this file's "lean install" ethos. */
+export function displayWidth(s: string): number {
+  let w = 0
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0
+    w += isWideCodePoint(cp) ? 2 : 1
+  }
+  return w
+}
+
+function isWideCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+    cp === 0x2329 || cp === 0x232a ||
+    (cp >= 0x2e80 && cp <= 0x303e) || // CJK radicals … Kangxi
+    (cp >= 0x3041 && cp <= 0x33ff) || // Hiragana/Katakana/CJK symbols
+    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
+    (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
+    (cp >= 0xa000 && cp <= 0xa4cf) || // Yi
+    (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility
+    (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK Compatibility Forms
+    (cp >= 0xff00 && cp <= 0xff60) || // Fullwidth Forms
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) || // emoji & symbols (wide)
+    (cp >= 0x20000 && cp <= 0x3fffd)    // CJK Ext B+
+  )
+}
+
+function padCell(s: string, width: number, align: CellAlign): string {
+  const pad = Math.max(0, width - displayWidth(s))
+  if (align === 'right') return ' '.repeat(pad) + s
+  if (align === 'center') {
+    const left = Math.floor(pad / 2)
+    return ' '.repeat(left) + s + ' '.repeat(pad - left)
+  }
+  return s + ' '.repeat(pad)
+}
+
+/** Format a GFM table into terminal lines. Pure + exported for testing.
+ *  - 'grid' mode (fits availWidth): aligned columns separated by " │ ".
+ *  - 'list' mode (too wide): "header: value" records, one cell per line,
+ *    blank line between rows. Never truncates — wide data degrades to a
+ *    readable record layout rather than dropping cells. */
+export function buildTableLines(
+  header: string[], rows: string[][], align: CellAlign[], availWidth: number,
+): { mode: 'grid' | 'list'; lines: string[] } {
+  const cols = header.length
+  const clean = (v: string | undefined) => (v ?? '').replace(/\s*\n\s*/g, ' ').trim()
+  const H = header.map(clean)
+  const R = rows.map((r) => Array.from({ length: cols }, (_, i) => clean(r[i])))
+  const al = (c: number): CellAlign => align[c] ?? 'left'
+
+  const colW: number[] = []
+  for (let c = 0; c < cols; c++) {
+    let w = displayWidth(H[c])
+    for (const r of R) w = Math.max(w, displayWidth(r[c]))
+    colW.push(w)
+  }
+  const total = colW.reduce((a, b) => a + b, 0) + 3 * Math.max(0, cols - 1)
+
+  if (cols > 0 && total <= availWidth) {
+    const fmtRow = (cells: string[]) => cells.map((cell, c) => padCell(cell, colW[c], al(c))).join(' │ ')
+    const sep = colW.map((w) => '─'.repeat(w)).join('─┼─')
+    return { mode: 'grid', lines: [fmtRow(H), sep, ...R.map(fmtRow)] }
+  }
+
+  const lines: string[] = []
+  R.forEach((r, ri) => {
+    for (let c = 0; c < cols; c++) lines.push(`${H[c]}: ${r[c]}`)
+    if (ri < R.length - 1) lines.push('')
+  })
+  return { mode: 'list', lines }
+}
+
+function renderTable(tok: Token, key: string, width: number): React.ReactNode {
+  const t = tok as unknown as Tokens.Table
+  const header = (t.header ?? []).map((c) => c.text)
+  const rows = (t.rows ?? []).map((r) => r.map((c) => c.text))
+  const align = (t.align ?? []) as CellAlign[]
+  const avail = Math.max(20, width - 2)  // account for the chat box paddingX
+  const { mode, lines } = buildTableLines(header, rows, align, avail)
+  return (
+    <Box key={key} flexDirection="column" marginBottom={1}>
+      {lines.map((line, i) => {
+        const lk = `${key}-l${i}`
+        if (mode === 'grid') {
+          if (i === 0) return <Text key={lk} bold color="cyan">{line}</Text>
+          if (i === 1) return <Text key={lk} dimColor>{line}</Text>
+          return <Text key={lk}>{line}</Text>
+        }
+        if (line === '') return <Text key={lk}>{' '}</Text>
+        const idx = line.indexOf(': ')
+        if (idx === -1) return <Text key={lk}>{line}</Text>
+        return (
+          <Text key={lk}>
+            <Text bold color="cyan">{line.slice(0, idx)}</Text>{line.slice(idx)}
+          </Text>
+        )
+      })}
+    </Box>
+  )
+}
+
+function renderBlock(tok: Token, key: string, width: number): React.ReactNode {
   switch (tok.type) {
     case 'heading': {
       const depth = Math.min((tok.depth ?? 1) - 1, HEADING_COLORS.length - 1)
@@ -186,25 +302,31 @@ function renderBlock(tok: Token, key: string): React.ReactNode {
         </Box>
       )
     }
+    case 'table':
+      return renderTable(tok, key, width)
     case 'hr':
       return <Box key={key} marginBottom={1}><Text dimColor>{'─'.repeat(40)}</Text></Box>
     case 'space':
       return null
     default:
-      // Tables / html / footnotes / etc. — fall back to raw text so
-      // nothing is silently dropped.
+      // html / footnotes / etc. — fall back to RAW markdown source so
+      // nothing is silently dropped. (`tok.text` is undefined for several
+      // token types; `tok.raw` always holds the matched source.)
       return (
         <Box key={key} marginBottom={1}>
-          <Text dimColor>{(tok as Token).text ?? ''}</Text>
+          <Text dimColor>{tok.raw ?? tok.text ?? ''}</Text>
         </Box>
       )
   }
 }
 
-/** Render arbitrary markdown source as Ink components. */
-export function Markdown({ source }: { source: string }): JSX.Element {
+/** Render arbitrary markdown source as Ink components. `width` is the
+ *  available terminal column count for this block (used to decide table
+ *  grid vs. record layout); defaults to the current stdout width. */
+export function Markdown({ source, width }: { source: string; width?: number }): JSX.Element {
   // Empty body: just nothing.
   if (!source) return <Text />
+  const cols = width ?? process.stdout?.columns ?? 80
   let tokens: Token[]
   try {
     tokens = marked.lexer(source) as Token[]
@@ -213,5 +335,5 @@ export function Markdown({ source }: { source: string }): JSX.Element {
     // mid-stream content with unbalanced backticks).
     return <Text>{source}</Text>
   }
-  return <>{tokens.map((t, i) => renderBlock(t, `b-${i}`))}</>
+  return <>{tokens.map((t, i) => renderBlock(t, `b-${i}`, cols))}</>
 }

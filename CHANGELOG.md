@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.9] - 2026-06-23
+
+### Added
+
+- **TUI 平滑流式输出**:新增 `stream-reveal`,助手回复按 ~25×/s 平滑逐段显示(节流揭示,避免整段突现);完成消息行 memo 化,流式行更新时不重解析已完成消息的 markdown。
+- **claude-code 适配器 token 流式**:`claude-code/index.ts` 接入 token 级流式输出。
+
 ## [1.3.8] - 2026-06-23
 
 ### Fixed

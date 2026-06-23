@@ -25,7 +25,7 @@ import type { MessengerAdapter, ButtonCallback } from './types.js'
 import { logger as rootLogger } from './logger.js'
 import {
   tryResolvePendingAsk,
-  tryResolvePendingAskByButton,
+  handleAskButton,
 } from './ask-user-rpc.js'
 
 const log = rootLogger.child({ component: 'ask-user-router' })
@@ -73,28 +73,62 @@ export function tryHandleAskReply(platform: string, channelId: string, threadId:
   return tryResolvePendingAsk(platform, channelId, threadId, text)
 }
 
-/** Telegram / Feishu / Discord button-tap callback dispatcher. Acks the
- *  tap regardless of whether we matched, so the user's spinner clears.
- *  We share onButtonCallback with approval-router (Telegram only fires
- *  ONE handler per chat at a time — that's why each registrar treats
- *  rebind as "replace previous"). To play nice with approval-router,
- *  we recognise our own `ask:` prefix and IGNORE anything else; the
- *  other router does the same. Adapters that need to host both routers
- *  for one chat type should chain handlers via the messenger-side
- *  composition API (TBD; first real-world consumer drives the design).
+/**
+ * Unified `ask:` button-tap handler. Maps handleAskButton's outcome to a
+ * Telegram ack + an optional in-place card edit:
+ *   - resolved      → strip the card to a receipt (editChoiceCard) + ack ✓
+ *   - rerender      → re-render the toggle keyboard in place (updateChoiceCard)
+ *   - await-custom  → prompt the user to type their answer
+ *   - invalid       → ack the hint as a toast (card stays put)
+ *   - unmatched     → ack "已失效"
+ * Acks regardless so the user's spinner clears. Shared by approval-router
+ * (the de-facto unified dispatcher) and this module's own binder.
  */
-async function handleButtonCallback(platform: string, cb: ButtonCallback): Promise<void> {
-  if (!cb.data?.startsWith('ask:')) {
-    // Not ours — silently skip. approval-router (parallel registration)
-    // handles `apv:` prefixed events.
-    return
-  }
-  const resolved = tryResolvePendingAskByButton(cb.data)
+export async function handleAskButtonClick(
+  platform: string,
+  cb: ButtonCallback,
+  resolveMessenger: (platform: string) => MessengerAdapter | undefined,
+): Promise<void> {
+  const outcome = handleAskButton(cb.data)
+  const m = resolveMessenger(platform)
   try {
-    await cb.ack(resolved ? '✓' : '已失效')
-  } catch { /* ack errors are best-effort */ }
-  log.info({
-    event: resolved ? 'ask.router.button_resolved' : 'ask.router.button_unmatched',
-    platform, data: cb.data,
-  })
+    switch (outcome.kind) {
+      case 'resolved':
+        if (m?.editChoiceCard && cb.messageId) {
+          await m.editChoiceCard(cb.threadId, cb.messageId, outcome.finalText).catch(() => {})
+        }
+        await cb.ack('✓')
+        break
+      case 'rerender':
+        if (m?.updateChoiceCard && cb.messageId) {
+          await m.updateChoiceCard(cb.threadId, cb.messageId, outcome.card)
+        }
+        await cb.ack()
+        break
+      case 'await-custom':
+        if (m?.sendMessage) await m.sendMessage(cb.threadId, outcome.prompt)
+        await cb.ack('请输入')
+        break
+      case 'invalid':
+        await cb.ack(outcome.hint)
+        break
+      case 'unmatched':
+        await cb.ack('已失效')
+        break
+    }
+  } catch (err) {
+    log.warn({ event: 'ask.router.button_error', platform, err: err instanceof Error ? err.message : String(err) })
+    try { await cb.ack() } catch { /* best-effort */ }
+  }
+  log.info({ event: 'ask.router.button', platform, kind: outcome.kind })
+}
+
+/** Telegram / Feishu / Discord button-tap callback dispatcher (used when
+ *  this router's install() binds handlers directly). Recognises only our
+ *  `ask:` prefix and delegates to handleAskButtonClick; approval-router
+ *  (parallel registration) handles `apv:` prefixed events. */
+async function handleButtonCallback(platform: string, cb: ButtonCallback): Promise<void> {
+  if (!cb.data?.startsWith('ask:')) return
+  if (!installed) return
+  await handleAskButtonClick(platform, cb, installed.resolveMessenger)
 }

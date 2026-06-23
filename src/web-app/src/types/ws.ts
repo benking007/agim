@@ -124,6 +124,9 @@ export interface ChoiceCardPrompt {
    *  server); `data` is the ready-to-send single-select callback
    *  `ask:<reqId>:<index>`. */
   choices: Array<{ label: string; data: string }>
+  /** Optional non-action links (e.g. "📖 查看详情") rendered as anchors
+   *  under the choices — context the decision depends on. */
+  links?: Array<{ label: string; url: string }>
   /** ask_user rendering hints. Present for `kind === 'ask-user'` cards. */
   meta?: ChoiceCardMeta
 }

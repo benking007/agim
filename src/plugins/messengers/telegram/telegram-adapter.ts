@@ -841,17 +841,57 @@ export class TelegramAdapter implements MessengerAdapter {
     prompt: ChoiceCardPrompt,
   ): Promise<{ messageId: string }> {
     if (!this.bot) throw new Error('Telegram adapter not started')
-    const title = prompt.title ? `<b>${escapeHtml(prompt.title)}</b>\n` : ''
-    const text = `${title}${escapeHtml(prompt.body)}`
-    // Layout: 1 button → single row; 2 → two on one row; 3+ → each on its own row.
-    const rows = prompt.choices.length <= 2
-      ? [prompt.choices.map((c) => ({ text: c.label, callback_data: c.data }))]
-      : prompt.choices.map((c) => [{ text: c.label, callback_data: c.data }])
-    const sent = await this.bot.api.sendMessage(threadId, text, {
+    const sent = await this.bot.api.sendMessage(threadId, renderChoiceCardHtml(prompt), {
       parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: rows },
+      reply_markup: renderChoiceKeyboard(prompt),
     })
     return { messageId: sent.message_id.toString() }
+  }
+
+  /**
+   * Re-render a choice card in place keeping its buttons — used for stateful
+   * multi-select (each ☐/☑️ toggle tap). Tries editMessageText first; on
+   * "not modified" (body unchanged) falls back to editing just the keyboard,
+   * which is the common case since a toggle only changes button labels.
+   * Routine Telegram errors (gone / too-old / rate-limit) are swallowed.
+   */
+  async updateChoiceCard(
+    threadId: string,
+    messageId: string,
+    prompt: ChoiceCardPrompt,
+  ): Promise<void> {
+    if (!this.bot) return
+    const numericId = Number.parseInt(messageId, 10)
+    if (!Number.isFinite(numericId)) {
+      log.warn({ messageId }, 'updateChoiceCard: non-numeric messageId')
+      return
+    }
+    const keyboard = renderChoiceKeyboard(prompt)
+    const benign = (raw: string): boolean =>
+      /message to edit not found|MESSAGE_ID_INVALID|message can't be edited|Too Many Requests|429/i.test(raw)
+    try {
+      await this.bot.api.editMessageText(threadId, numericId, renderChoiceCardHtml(prompt), {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      })
+      return
+    } catch (err) {
+      const msg = String(err)
+      if (/message is not modified/i.test(msg)) {
+        // Body unchanged — update only the keyboard (the toggle changed a label).
+        try {
+          await this.bot.api.editMessageReplyMarkup(threadId, numericId, { reply_markup: keyboard })
+        } catch (err2) {
+          if (!benign(String(err2))) log.warn({ err: String(err2), messageId }, 'updateChoiceCard reply-markup failed')
+        }
+        return
+      }
+      if (benign(msg)) {
+        log.debug({ messageId }, 'updateChoiceCard: card no longer editable, skipping')
+        return
+      }
+      log.warn({ err: msg, messageId }, 'updateChoiceCard editMessageText failed')
+    }
   }
 
   async editChoiceCard(
@@ -1024,6 +1064,31 @@ function renderApprovalKeyboard(p: ApprovalCardPrompt): {
       ],
     ],
   }
+}
+
+/** Body HTML for a generic choice card: optional bold title + escaped body. */
+function renderChoiceCardHtml(p: ChoiceCardPrompt): string {
+  const title = p.title ? `<b>${escapeHtml(p.title)}</b>\n` : ''
+  return `${title}${escapeHtml(p.body)}`
+}
+
+/**
+ * Inline keyboard for a choice card. Choice buttons are callback buttons;
+ * `links` (e.g. "📖 查看详情") become URL buttons, each on its own trailing
+ * row. Layout: ≤2 choices share one row, 3+ stack one per row (so multi-
+ * select toggle lists and their 完成/自定义 buttons read vertically).
+ */
+function renderChoiceKeyboard(p: ChoiceCardPrompt): {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string } | { text: string; url: string }>>
+} {
+  const rows: Array<Array<{ text: string; callback_data: string } | { text: string; url: string }>> =
+    p.choices.length <= 2
+      ? [p.choices.map((c) => ({ text: c.label, callback_data: c.data }))]
+      : p.choices.map((c) => [{ text: c.label, callback_data: c.data }])
+  if (p.links?.length) {
+    for (const l of p.links) rows.push([{ text: l.label, url: l.url }])
+  }
+  return { inline_keyboard: rows }
 }
 
 function renderApprovalOutcomeHtml(o: ApprovalCardOutcome): string {

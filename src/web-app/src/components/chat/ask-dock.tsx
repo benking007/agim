@@ -207,6 +207,22 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
         </div>
       )}
 
+      {prompt.links?.length ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {prompt.links.map((l) => (
+            <a
+              key={l.url}
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded border border-border px-2 py-1 text-xs text-info underline-offset-2 transition hover:bg-surface-2 hover:underline"
+            >
+              {l.label}
+            </a>
+          ))}
+        </div>
+      ) : null}
+
       {submitting && !resolved && (
         <p className="mt-1.5 text-xs text-text-dim">{t('chat.approvalSubmitting')}</p>
       )}

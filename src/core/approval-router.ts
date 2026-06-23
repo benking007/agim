@@ -574,19 +574,16 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
     log.warn({ event: 'approval.router.recovery_dispatch_failed', err: String(err) })
   }
 
-  // ask_user choice cards currently share the same messenger callback
-  // channel as approvals. Route `ask:<reqId>:<index>` here so ask and
-  // approval cards can coexist on Telegram without callback-handler
-  // overwrites between routers.
+  // ask_user choice cards share the same messenger callback channel as
+  // approvals (this router is the de-facto unified dispatcher — ask-user-
+  // router.install() is never wired). Delegate the full `ask:` handling
+  // (single / multi toggle+submit / custom) to ask-user-router, passing our
+  // injected resolveMessenger so it can re-render / strip the card.
   if (cb.data?.startsWith('ask:')) {
     try {
-      const { tryResolvePendingAskByButton } = await import('./ask-user-rpc.js')
-      const resolved = tryResolvePendingAskByButton(cb.data)
-      await cb.ack(resolved ? '✓' : '已失效')
-      log.info({
-        event: resolved ? 'approval.router.ask_button_resolved' : 'approval.router.ask_button_unmatched',
-        platform, data: cb.data,
-      })
+      const { handleAskButtonClick } = await import('./ask-user-router.js')
+      const resolveMessenger = installed?.resolveMessenger ?? (() => undefined)
+      await handleAskButtonClick(platform, cb, resolveMessenger)
     } catch (err) {
       log.warn({ event: 'approval.router.ask_button_failed', err: String(err) })
       try { await cb.ack('处理失败') } catch { /* best-effort */ }

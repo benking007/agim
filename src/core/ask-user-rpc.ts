@@ -79,6 +79,11 @@ export interface AskPayload {
    *  strict button-only flows (the user must click a button or wait
    *  for the timeout). */
   allowTextReply?: unknown
+  /** Optional http(s) URL surfaced as a "查看详情" entry on the card, for
+   *  context the decision depends on (e.g. a viewer/paste link, a PR). */
+  detailsUrl?: unknown
+  /** Optional label for the details link (default "📖 查看详情"). */
+  detailsLabel?: unknown
 }
 
 export interface AskChoice {
@@ -132,6 +137,20 @@ interface PendingAsk {
   allowCustomInput: boolean
   customInputLabel: string
   allowTextReply: boolean
+  timeoutSec: number
+  /** Optional details link surfaced on the card. */
+  detailsUrl?: string
+  detailsLabel?: string
+  /** Server-side multi-select accumulator (1-based indexes). Used when the
+   *  card is stateful (Telegram toggle keyboard); each toggle tap mutates
+   *  this without resolving, and a "submit" tap resolves with its contents. */
+  selected: Set<number>
+  /** Set when the user taps the "custom input" button: the next text reply
+   *  is then taken verbatim as the answer (no choice matching). */
+  awaitingCustomText: boolean
+  /** Messenger message id of the sent card, for in-place edits (toggle
+   *  re-render, terminal strip, timeout cleanup). Set after sendChoiceCard. */
+  cardMessageId?: string
   resolve: (r: AskResult) => void
   /** Timeout handle so we can clear it on early resolution. */
   timer: NodeJS.Timeout | null
@@ -206,6 +225,10 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
   const customInputLabel = normalizeCustomInputLabel(payload.customInputLabel)
   const timeoutSec = clampTimeout(payload.timeoutSec)
   const allowTextReply = payload.allowTextReply !== false  // default true
+  const detailsUrl = normalizeDetailsUrl(payload.detailsUrl)
+  const detailsLabel = typeof payload.detailsLabel === 'string' && payload.detailsLabel.trim()
+    ? payload.detailsLabel.trim().slice(0, MAX_CHOICE_LABEL_CHARS)
+    : undefined
 
   // Resolve the messenger for the IM thread. If the platform isn't
   // registered (rare — usually means a misconfigured ACP caller), fall
@@ -220,14 +243,18 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
       reason: 'no-messenger',
     }
   }
-  // tui and web render full-featured cards (multi-select + custom input)
-  // entirely client-side, so they can host any ask mode. Other adapters
-  // (Telegram et al.) only get a card for the simple single-select case;
-  // richer modes fall back to the text-reply path below.
+  // Who can host a full-featured card (multi-select + custom input)?
+  //  - tui / web render the interaction client-side.
+  //  - adapters implementing updateChoiceCard (Telegram) render a stateful
+  //    server-side toggle keyboard.
+  // Everything else only gets a card for the simple single-select case and
+  // falls back to the text-reply path for richer modes.
+  const serverSideToggle = Boolean(messenger.updateChoiceCard)
   const canSendChoiceCard = Boolean(
     messenger.sendChoiceCard
     && (ctx.platform === 'tui'
       || ctx.platform === 'web'
+      || serverSideToggle
       || (selectionMode === 'single' && !allowCustomInput)),
   )
   if (!allowTextReply && !canSendChoiceCard) {
@@ -255,6 +282,11 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
     allowCustomInput,
     customInputLabel,
     allowTextReply,
+    timeoutSec,
+    detailsUrl,
+    detailsLabel,
+    selected: new Set<number>(),
+    awaitingCustomText: false,
     resolve: () => { /* placeholder; replaced below */ },
     timer: null,
     createdAt: Date.now(),
@@ -290,37 +322,14 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
   }
 
   // Compose the prompt. Cards on adapters that support them, text on
-  // everything else. The card's data field encodes reqId + index so
-  // the button callback can route directly without an extra lookup.
-  const cardChoices = choices.map((c) => ({
-    label: `${c.index}. ${c.label}`,
-    data: `${BTN_PREFIX}${reqId}:${c.index}`,
-  }))
-  if (ctx.platform === 'tui' && allowCustomInput) {
-    cardChoices.push({
-      label: `0. ${customInputLabel}`,
-      data: `${BTN_PREFIX}${reqId}:custom`,
-    })
-  }
-  const card: ChoiceCardPrompt = {
-    title: 'agim · 请选择',
-    body: question,
-    choices: cardChoices,
-    meta: {
-      kind: 'ask-user',
-      reqId,
-      selectionMode,
-      minSelections,
-      maxSelections,
-      allowCustomInput,
-      customInputLabel,
-      timeoutSec,
-    },
-  }
+  // everything else. The card's data field encodes reqId + the button
+  // action so the callback can route directly without an extra lookup.
+  const card = buildAskCard(pending, serverSideToggle)
   let cardSent = false
   if (canSendChoiceCard && messenger.sendChoiceCard) {
     try {
-      await messenger.sendChoiceCard(ctx.threadId, card)
+      const sent = await messenger.sendChoiceCard(ctx.threadId, card)
+      pending.cardMessageId = sent.messageId
       cardSent = true
     } catch (err) {
       log.warn({
@@ -378,6 +387,85 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
 }
 
 /**
+ * Build the ChoiceCardPrompt for a pending ask. Used both for the initial
+ * send and for in-place re-render after a toggle tap, so the keyboard stays
+ * consistent. Two styles:
+ *   - client-side (web/tui): plain per-choice buttons; the client renders
+ *     checkboxes / custom input and assembles `multi:` / `custom:` payloads.
+ *   - server-side toggle (Telegram): for multi, ☐/☑️ toggle buttons +
+ *     "✅ 完成 (n)" submit + optional "✍️" custom trigger; for single, plain
+ *     buttons + optional custom trigger.
+ */
+function buildAskCard(p: PendingAsk, serverSideToggle: boolean): ChoiceCardPrompt {
+  let cardChoices: Array<{ label: string; data: string }>
+  if (!serverSideToggle) {
+    cardChoices = p.choices.map((c) => ({
+      label: `${c.index}. ${c.label}`,
+      data: `${BTN_PREFIX}${p.reqId}:${c.index}`,
+    }))
+    if (p.platform === 'tui' && p.allowCustomInput) {
+      cardChoices.push({ label: `0. ${p.customInputLabel}`, data: `${BTN_PREFIX}${p.reqId}:custom` })
+    }
+  } else if (p.selectionMode === 'multi') {
+    cardChoices = p.choices.map((c) => ({
+      label: `${p.selected.has(c.index) ? '☑️' : '☐'} ${c.index}. ${c.label}`,
+      data: `${BTN_PREFIX}${p.reqId}:t:${c.index}`,
+    }))
+    cardChoices.push({ label: `✅ 完成 (${p.selected.size})`, data: `${BTN_PREFIX}${p.reqId}:ok` })
+    if (p.allowCustomInput) {
+      cardChoices.push({ label: `✍️ ${p.customInputLabel}`, data: `${BTN_PREFIX}${p.reqId}:custom` })
+    }
+  } else {
+    cardChoices = p.choices.map((c) => ({
+      label: `${c.index}. ${c.label}`,
+      data: `${BTN_PREFIX}${p.reqId}:${c.index}`,
+    }))
+    if (p.allowCustomInput) {
+      cardChoices.push({ label: `✍️ ${p.customInputLabel}`, data: `${BTN_PREFIX}${p.reqId}:custom` })
+    }
+  }
+  return {
+    title: 'agim · 请选择',
+    body: p.question,
+    choices: cardChoices,
+    links: p.detailsUrl ? [{ label: p.detailsLabel ?? '📖 查看详情', url: p.detailsUrl }] : undefined,
+    meta: {
+      kind: 'ask-user',
+      reqId: p.reqId,
+      selectionMode: p.selectionMode,
+      minSelections: p.minSelections,
+      maxSelections: p.maxSelections,
+      allowCustomInput: p.allowCustomInput,
+      customInputLabel: p.customInputLabel,
+      timeoutSec: p.timeoutSec,
+    },
+  }
+}
+
+/** Validate an optional details URL: http(s) only, ≤512 chars. Returns
+ *  undefined (silently dropped) on anything invalid — a bad link should
+ *  never block the ask. */
+function normalizeDetailsUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const url = raw.trim()
+  if (!url || url.length > 512) return undefined
+  if (!/^https?:\/\//i.test(url)) return undefined
+  return url
+}
+
+/** Short receipt shown when a card resolves (used for editChoiceCard). */
+function askFinalText(result: AskSuccessResult): string {
+  if (typeof result.customText === 'string') {
+    const t = result.customText.length > 60 ? `${result.customText.slice(0, 59)}…` : result.customText
+    return `✅ 已回答：${t}`
+  }
+  if (result.selectionMode === 'multi' && result.labels?.length) {
+    return `✅ 已选择：${result.labels.join('、')}`
+  }
+  return `✅ 已选择：${result.label}`
+}
+
+/**
  * Router-side: try to resolve a pending ask for this thread with the
  * inbound text. Returns true iff the text was consumed (router should
  * skip normal routing).
@@ -397,10 +485,19 @@ export function tryResolvePendingAsk(
   for (const reqId of Array.from(set)) {
     const p = PENDING.get(reqId)
     if (!p) continue
-    if (!p.allowTextReply) continue
-    const result = resolveTextReply(p, cleaned)
+    // If the user tapped the "custom input" button, the next text is taken
+    // verbatim (no choice matching, and regardless of allowTextReply — they
+    // explicitly opted into typing an answer).
+    let result: AskSuccessResult | null
+    if (p.awaitingCustomText && p.allowCustomInput) {
+      result = toCustomResult(cleaned, 'text', cleaned, p)
+    } else {
+      if (!p.allowTextReply) continue
+      result = resolveTextReply(p, cleaned)
+    }
     if (!result) continue
     p.resolve({ ok: true, result })
+    stripCardBestEffort(p, askFinalText(result))
     log.info({
       event: 'ask.resolved.text',
       reqId,
@@ -414,47 +511,136 @@ export function tryResolvePendingAsk(
   return false
 }
 
+/** Best-effort: after a card-backed ask resolves via text, edit the card to
+ *  its terminal receipt + drop the buttons so a stale tap can't fire. No-op
+ *  when there's no card or the adapter can't edit. */
+function stripCardBestEffort(p: PendingAsk, finalText: string): void {
+  if (!p.cardMessageId) return
+  const m = resolveMessenger(p.platform)
+  if (!m?.editChoiceCard) return
+  void m.editChoiceCard(p.threadId, p.cardMessageId, finalText).catch(() => { /* best-effort */ })
+}
+
 /**
- * Messenger-side: button callback handler. The data field is the
- * card's `data` we stored as one of:
+ * Resolve a pending ask from a "terminal" button payload — i.e. one that
+ * carries the full answer, as produced client-side by web/tui:
  *   - ask:<reqId>:<index>           (single)
  *   - ask:<reqId>:multi:1,3         (multi)
  *   - ask:<reqId>:custom:<base64>   (custom text)
- * Returns true iff resolved (caller can ack the tap).
+ * Returns the result on success. The stateful Telegram kinds (toggle /
+ * submit / custom-trigger) are NOT handled here — see handleAskButton.
  */
-export function tryResolvePendingAskByButton(data: string): boolean {
+function resolveByButton(data: string): AskSuccessResult | null {
   const parsed = parseAskButtonData(data)
-  if (!parsed) return false
+  if (!parsed) return null
   const p = PENDING.get(parsed.reqId)
-  if (!p) return false
+  if (!p) return null
   if (parsed.kind === 'single') {
     const choice = p.choices.find((c) => c.index === parsed.index)
-    if (!choice) return false
+    if (!choice) return null
     if (p.selectionMode === 'multi') {
-      if (p.minSelections > 1 || p.maxSelections < 1) return false
-      p.resolve({ ok: true, result: toMultiResult([choice], 'button', data) })
+      if (p.minSelections > 1 || p.maxSelections < 1) return null
+      const result = toMultiResult([choice], 'button', data)
+      p.resolve({ ok: true, result })
       log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: 'multi', picks: 1 })
-      return true
+      return result
     }
-    p.resolve({ ok: true, result: toSingleResult(choice, 'button', data, p.selectionMode) })
+    const result = toSingleResult(choice, 'button', data, p.selectionMode)
+    p.resolve({ ok: true, result })
     log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, choice: choice.index, mode: p.selectionMode })
-    return true
+    return result
   }
   if (parsed.kind === 'multi') {
-    if (p.selectionMode !== 'multi') return false
+    if (p.selectionMode !== 'multi') return null
     const picked = getChoicesByIndexes(p.choices, parsed.indexes)
-    if (!picked) return false
-    if (picked.length < p.minSelections || picked.length > p.maxSelections) return false
-    p.resolve({ ok: true, result: toMultiResult(picked, 'button', data) })
+    if (!picked) return null
+    if (picked.length < p.minSelections || picked.length > p.maxSelections) return null
+    const result = toMultiResult(picked, 'button', data)
+    p.resolve({ ok: true, result })
     log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: 'multi', picks: picked.length })
-    return true
+    return result
   }
-  if (!p.allowCustomInput) return false
-  const customText = parsed.text.trim()
-  if (!customText) return false
-  p.resolve({ ok: true, result: toCustomResult(customText, 'button', data, p) })
-  log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: p.selectionMode, custom: true })
-  return true
+  if (parsed.kind === 'custom') {
+    if (!p.allowCustomInput) return null
+    const customText = parsed.text.trim()
+    if (!customText) return null
+    const result = toCustomResult(customText, 'button', data, p)
+    p.resolve({ ok: true, result })
+    log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: p.selectionMode, custom: true })
+    return result
+  }
+  return null
+}
+
+/**
+ * Messenger-side: resolve a pending ask from a terminal button payload.
+ * Returns true iff resolved. Kept for web/tui callers (and tests) that send
+ * fully-formed `single` / `multi:` / `custom:<b64>` data.
+ */
+export function tryResolvePendingAskByButton(data: string): boolean {
+  return resolveByButton(data) !== null
+}
+
+/** Outcome of a button tap, for the router to act on (ack + re-render). */
+export type AskButtonOutcome =
+  | { kind: 'resolved'; finalText: string }
+  | { kind: 'rerender'; card: ChoiceCardPrompt }
+  | { kind: 'await-custom'; prompt: string }
+  | { kind: 'invalid'; hint: string }
+  | { kind: 'unmatched' }
+
+/**
+ * Unified ask button dispatch. Handles BOTH the terminal payloads
+ * (single / multi: / custom:<b64>, via resolveByButton) AND the stateful
+ * Telegram kinds (toggle / submit / custom-trigger) that accumulate
+ * server-side. The router maps the returned outcome to an ack + an
+ * optional in-place card edit.
+ */
+export function handleAskButton(data: string): AskButtonOutcome {
+  const parsed = parseAskButtonData(data)
+  if (!parsed) return { kind: 'unmatched' }
+  const p = PENDING.get(parsed.reqId)
+  if (!p) return { kind: 'unmatched' }
+
+  if (parsed.kind === 'toggle') {
+    if (p.selectionMode !== 'multi') return { kind: 'unmatched' }
+    if (!p.choices.some((c) => c.index === parsed.index)) return { kind: 'unmatched' }
+    if (p.selected.has(parsed.index)) {
+      p.selected.delete(parsed.index)
+    } else {
+      if (p.selected.size >= p.maxSelections) {
+        return { kind: 'invalid', hint: `最多选 ${p.maxSelections} 项` }
+      }
+      p.selected.add(parsed.index)
+    }
+    return { kind: 'rerender', card: buildAskCard(p, true) }
+  }
+
+  if (parsed.kind === 'submit') {
+    if (p.selectionMode !== 'multi') return { kind: 'unmatched' }
+    const idxs = Array.from(p.selected).sort((a, b) => a - b)
+    if (idxs.length < p.minSelections || idxs.length > p.maxSelections) {
+      return { kind: 'invalid', hint: `请选择 ${p.minSelections}-${p.maxSelections} 项（已选 ${idxs.length}）` }
+    }
+    const picked = getChoicesByIndexes(p.choices, idxs)
+    if (!picked) return { kind: 'unmatched' }
+    const result = toMultiResult(picked, 'button', data)
+    p.resolve({ ok: true, result })
+    log.info({ event: 'ask.resolved.button', reqId: parsed.reqId, mode: 'multi', picks: picked.length })
+    return { kind: 'resolved', finalText: askFinalText(result) }
+  }
+
+  if (parsed.kind === 'custom-trigger') {
+    if (!p.allowCustomInput) return { kind: 'unmatched' }
+    p.awaitingCustomText = true
+    log.info({ event: 'ask.await_custom', reqId: parsed.reqId })
+    return { kind: 'await-custom', prompt: '请直接输入你的回答（下一条消息将作为答案）' }
+  }
+
+  // Terminal payloads (single / multi: / custom:<b64>).
+  const result = resolveByButton(data)
+  if (!result) return { kind: 'unmatched' }
+  return { kind: 'resolved', finalText: askFinalText(result) }
 }
 
 /** Diagnostic: pending count per thread. Used by /ask status / future
@@ -722,6 +908,10 @@ type AskButtonData =
   | { reqId: string; kind: 'single'; index: number }
   | { reqId: string; kind: 'multi'; indexes: number[] }
   | { reqId: string; kind: 'custom'; text: string }
+  // Stateful Telegram kinds (server-side accumulation):
+  | { reqId: string; kind: 'toggle'; index: number }   // ask:<id>:t:<i>
+  | { reqId: string; kind: 'submit' }                  // ask:<id>:ok
+  | { reqId: string; kind: 'custom-trigger' }          // ask:<id>:custom (no payload)
 
 function parseAskButtonData(data: string): AskButtonData | null {
   if (!data.startsWith(BTN_PREFIX)) return null
@@ -731,24 +921,35 @@ function parseAskButtonData(data: string): AskButtonData | null {
   if (!reqId) return null
   const action = parts[1]
 
-  // Legacy / default format: ask:<reqId>:<index>
-  if (action !== 'multi' && action !== 'custom') {
-    const idx = Number.parseInt(action, 10)
+  // Toggle one multi-select index: ask:<reqId>:t:<index>
+  if (action === 't') {
+    const idx = Number.parseInt(parts[2] ?? '', 10)
     if (!Number.isFinite(idx)) return null
-    return { reqId, kind: 'single', index: idx }
+    return { reqId, kind: 'toggle', index: idx }
   }
-
+  // Submit the accumulated multi-select: ask:<reqId>:ok
+  if (action === 'ok') {
+    return { reqId, kind: 'submit' }
+  }
   if (action === 'multi') {
     const raw = parts.slice(2).join(':')
     const indexes = parseMultiIndexes(raw)
     if (!indexes || indexes.length === 0) return null
     return { reqId, kind: 'multi', indexes }
   }
+  if (action === 'custom') {
+    const encoded = parts.slice(2).join(':')
+    // Bare `custom` (no payload) = trigger: enter await-custom-text mode.
+    if (!encoded) return { reqId, kind: 'custom-trigger' }
+    const text = decodeBase64Url(encoded)
+    if (text === null) return null
+    return { reqId, kind: 'custom', text }
+  }
 
-  const encoded = parts.slice(2).join(':')
-  const text = decodeBase64Url(encoded)
-  if (text === null) return null
-  return { reqId, kind: 'custom', text }
+  // Default format: ask:<reqId>:<index> (single).
+  const idx = Number.parseInt(action, 10)
+  if (!Number.isFinite(idx)) return null
+  return { reqId, kind: 'single', index: idx }
 }
 
 function parseMultiIndexes(raw: string): number[] | null {

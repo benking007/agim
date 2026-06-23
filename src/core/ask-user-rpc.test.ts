@@ -10,6 +10,7 @@ import {
   handleAskOp,
   tryResolvePendingAsk,
   tryResolvePendingAskByButton,
+  handleAskButton,
   listPendingAsks,
   _resetAskBusForTests,
   type AskResult,
@@ -20,24 +21,37 @@ import type { MessengerAdapter, ChoiceCardPrompt } from './types.js'
 interface FakeMessenger extends MessengerAdapter {
   cards: Array<{ threadId: string; prompt: ChoiceCardPrompt }>
   texts: Array<{ threadId: string; text: string }>
+  updates: Array<{ threadId: string; messageId: string; prompt: ChoiceCardPrompt }>
 }
 
-function makeFakeMessenger(name: string, opts: { withCards: boolean } = { withCards: true }): FakeMessenger {
+function makeFakeMessenger(
+  name: string,
+  opts: { withCards?: boolean; withToggle?: boolean } = { withCards: true },
+): FakeMessenger {
   const cards: FakeMessenger['cards'] = []
   const texts: FakeMessenger['texts'] = []
+  const updates: FakeMessenger['updates'] = []
   const base = {
     name,
     cards,
     texts,
+    updates,
     async start() { /* noop */ },
     async stop() { /* noop */ },
     onMessage(_: (ctx: unknown) => Promise<void>) { /* noop */ },
     async sendMessage(threadId: string, text: string) { texts.push({ threadId, text }) },
   } as unknown as FakeMessenger
-  if (opts.withCards) {
+  if (opts.withCards !== false) {
     (base as MessengerAdapter).sendChoiceCard = async (threadId: string, prompt: ChoiceCardPrompt) => {
       cards.push({ threadId, prompt })
       return { messageId: `m-${cards.length}` }
+    }
+  }
+  // A toggle-capable adapter (Telegram-like) also implements updateChoiceCard,
+  // which flips ask-user-rpc into server-side stateful card mode.
+  if (opts.withToggle) {
+    (base as MessengerAdapter).updateChoiceCard = async (threadId: string, messageId: string, prompt: ChoiceCardPrompt) => {
+      updates.push({ threadId, messageId, prompt })
     }
   }
   return base
@@ -407,6 +421,151 @@ describe('disallowed-text-reply mode', () => {
     tryResolvePendingAskByButton(card.prompt.choices[0].data)
     const r = await p
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('server-side toggle (Telegram-style)', () => {
+  function reqIdOf(m: FakeMessenger): string {
+    const data = m.cards[0]?.prompt.choices[0]?.data ?? ''
+    const id = /^ask:([^:]+):/.exec(data)?.[1]
+    if (!id) throw new Error('no reqId in card')
+    return id
+  }
+
+  it('multi-select renders toggle + submit buttons and a card is sent (no text fallback)', async () => {
+    const m = makeFakeMessenger('tg-multi', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-multi' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b', 'c'],
+      selectionMode: 'multi', minSelections: 1, maxSelections: 3,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    // Card path, not text.
+    expect(m.cards.length).toBe(1)
+    expect(m.texts.length).toBe(0)
+    const labels = m.cards[0].prompt.choices.map((c) => c.label)
+    const datas = m.cards[0].prompt.choices.map((c) => c.data)
+    expect(labels.some((l) => l.startsWith('☐'))).toBe(true)         // toggle checkbox
+    expect(datas.some((d) => /:t:\d+$/.test(d))).toBe(true)          // toggle data
+    expect(datas.some((d) => /:ok$/.test(d))).toBe(true)             // submit button
+    // every callback_data stays under Telegram's 64-byte cap
+    for (const d of datas) expect(Buffer.byteLength(d, 'utf8')).toBeLessThan(64)
+    // clean up the pending so the timer doesn't linger
+    const reqId = reqIdOf(m)
+    handleAskButton(`ask:${reqId}:t:1`)
+    handleAskButton(`ask:${reqId}:ok`)
+    await promise
+  })
+
+  it('toggle accumulates server-side; submit resolves with the picked set', async () => {
+    const m = makeFakeMessenger('tg-acc', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-acc' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b', 'c'],
+      selectionMode: 'multi', minSelections: 2, maxSelections: 3,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const reqId = reqIdOf(m)
+
+    const t1 = handleAskButton(`ask:${reqId}:t:1`)
+    expect(t1.kind).toBe('rerender')
+    if (t1.kind === 'rerender') {
+      expect(t1.card.choices[0].label.startsWith('☑️')).toBe(true)   // option 1 now checked
+    }
+    // submit too early (only 1 picked, min 2) → invalid, not resolved
+    const early = handleAskButton(`ask:${reqId}:ok`)
+    expect(early.kind).toBe('invalid')
+
+    handleAskButton(`ask:${reqId}:t:3`)               // now {1,3}
+    const submit = handleAskButton(`ask:${reqId}:ok`)
+    expect(submit.kind).toBe('resolved')
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.selectionMode).toBe('multi')
+      expect(r.result.indexes).toEqual([1, 3])
+      expect(r.result.via).toBe('button')
+    }
+  })
+
+  it('toggling the same index twice clears it', async () => {
+    const m = makeFakeMessenger('tg-tog', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-tog' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b'],
+      selectionMode: 'multi', minSelections: 1, maxSelections: 2,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const reqId = reqIdOf(m)
+    handleAskButton(`ask:${reqId}:t:1`)               // {1}
+    const off = handleAskButton(`ask:${reqId}:t:1`)   // {}
+    expect(off.kind).toBe('rerender')
+    if (off.kind === 'rerender') {
+      expect(off.card.choices[0].label.startsWith('☐')).toBe(true)
+    }
+    const early = handleAskButton(`ask:${reqId}:ok`)
+    expect(early.kind).toBe('invalid')                // nothing selected, min 1
+    // resolve to clean up
+    handleAskButton(`ask:${reqId}:t:2`)
+    handleAskButton(`ask:${reqId}:ok`)
+    await promise
+  })
+
+  it('custom-trigger enters await mode; the next text becomes the answer', async () => {
+    const m = makeFakeMessenger('tg-custom', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-custom' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b'],
+      allowCustomInput: true,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const reqId = reqIdOf(m)
+    // The card carries a custom-trigger button (bare `:custom`).
+    expect(m.cards[0].prompt.choices.some((c) => c.data === `ask:${reqId}:custom`)).toBe(true)
+    const trig = handleAskButton(`ask:${reqId}:custom`)
+    expect(trig.kind).toBe('await-custom')
+    // Now a typed reply is taken verbatim (would otherwise match label "a").
+    expect(tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, '我要自定义')).toBe(true)
+    const r = await promise
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.result.customText).toBe('我要自定义')
+      expect(r.result.via).toBe('text')
+    }
+  })
+
+  it('details link is attached to the card when a valid http url is given', async () => {
+    const m = makeFakeMessenger('tg-link', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-link' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b'],
+      selectionMode: 'multi', minSelections: 1, maxSelections: 2,
+      detailsUrl: 'https://example.com/v/abc', detailsLabel: '查看 diff',
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(m.cards[0].prompt.links).toEqual([{ label: '查看 diff', url: 'https://example.com/v/abc' }])
+    const reqId = reqIdOf(m)
+    handleAskButton(`ask:${reqId}:t:1`); handleAskButton(`ask:${reqId}:ok`)
+    await promise
+  })
+
+  it('invalid details url (non-http) is dropped, no links', async () => {
+    const m = makeFakeMessenger('tg-badlink', { withToggle: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'tg-badlink' }
+    const promise = handleAskOp({
+      question: 'pick', choices: ['a', 'b'],
+      detailsUrl: 'javascript:alert(1)',
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    expect(m.cards[0].prompt.links).toBeUndefined()
+    tryResolvePendingAskByButton(`ask:${reqIdOf(m)}:1`)
+    await promise
   })
 })
 

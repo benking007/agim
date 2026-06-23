@@ -240,8 +240,19 @@ export interface MessengerAdapter {
   /**
    * Replace a choice card's body after a button has been tapped (or the
    * card has otherwise expired). Mirrors editApprovalCard. Best-effort.
+   * Strips the buttons (terminal state).
    */
   editChoiceCard?(threadId: string, messageId: string, finalText: string): Promise<void>
+  /**
+   * Re-render a choice card IN PLACE keeping its buttons — body + inline
+   * keyboard are rebuilt from `prompt`. Distinct from editChoiceCard, which
+   * clears the keyboard for a terminal state. Used for stateful interactions
+   * such as multi-select checkmark toggling on Telegram, where each tap edits
+   * the keyboard without resolving the ask. Adapters that implement this
+   * advertise "server-side stateful card" support (see ask-user-rpc's
+   * canSendChoiceCard gate). Best-effort.
+   */
+  updateChoiceCard?(threadId: string, messageId: string, prompt: ChoiceCardPrompt): Promise<void>
 }
 
 /**
@@ -307,6 +318,13 @@ export interface ChoiceCardPrompt {
   body: string
   /** 1-3 buttons (rows). Each row holds 1-2 buttons depending on platform. */
   choices: Array<{ label: string; data: string }>
+  /**
+   * Optional non-action links rendered alongside the choices (e.g. a
+   * "📖 查看详情" entry pointing at context the decision depends on). On
+   * Telegram these become inline URL buttons; on web an anchor; adapters
+   * that can't render links may show them as a text line or ignore them.
+   */
+  links?: Array<{ label: string; url: string }>
   /**
    * Optional opaque metadata for adapter-specific rendering. Callers should
    * treat this as best-effort hinting; adapters that don't understand it

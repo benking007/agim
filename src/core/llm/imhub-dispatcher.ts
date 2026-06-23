@@ -318,6 +318,8 @@ export function getImhubTools(): ToolDef[] {
           allowCustomInput: { type: 'boolean', default: false, description: 'Allow the user to answer with free-form text.' },
           customInputLabel: { type: 'string', description: 'Optional display label for custom input entry.' },
           allowTextReply: { type: 'boolean', default: true, description: 'When true, text "1"/"a"/label substring also matches.' },
+          detailsUrl: { type: 'string', description: 'Optional http(s) URL shown as a "查看详情" entry on the card — for context the decision depends on (e.g. a viewer/paste link or PR). Invalid/non-http values are ignored.' },
+          detailsLabel: { type: 'string', description: 'Optional label for detailsUrl (default "📖 查看详情").' },
         },
         required: ['question', 'choices'],
       },
@@ -532,6 +534,8 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
               allowCustomInput?: unknown
               customInputLabel?: unknown
               allowTextReply?: unknown
+              detailsUrl?: unknown
+              detailsLabel?: unknown
             },
             runCtxBase,
           )

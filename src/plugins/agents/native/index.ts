@@ -92,7 +92,7 @@ export function buildSystemPrompt(
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal',
-    '  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — constrained to your workspace cwd unless IMHUB_NATIVE_FS_RESTRICT=0',
+    '  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — full filesystem access by default (set IMHUB_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
     '  - native web tools: native_web_fetch, native_web_search. Private IPs blocked by default.',
     '  - native_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers configured by the operator:',

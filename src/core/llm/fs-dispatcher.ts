@@ -7,11 +7,12 @@
 // CLI sub-agent over A2A — slow, costly, and a 30-min hard timeout
 // landmine (see the v1.2.56 crash-loop fix).
 //
-// All five tools are constrained by default to the native agent's per-
-// thread cwd subtree (typically ~/.agim-workspaces/native/<thread>/).
-// Operators who want broader access set IMHUB_NATIVE_FS_RESTRICT=0 —
-// even then, the sensitive-paths.ts denylist still applies so
-// ~/.agim/, /etc/shadow, etc. remain blocked.
+// By default all five tools have real filesystem access (so the native
+// agent isn't crippled). Operators who want to confine access to the native
+// agent's per-thread cwd subtree (typically ~/.agim-workspaces/native/
+// <thread>/) set IMHUB_NATIVE_FS_RESTRICT=1. Either way, the sensitive-
+// paths.ts denylist always applies so ~/.agim/, /etc/shadow, etc. remain
+// blocked.
 //
 // Tools shipped here:
 //   * native_read_file(path, max_bytes?)
@@ -59,8 +60,8 @@ export function getFsTools(): ToolDef[] {
       name: 'native_read_file',
       description:
         'Read a UTF-8 text file by path. Default max 256KB. Paths resolve against the agent cwd; ' +
-        'absolute paths are allowed but constrained to the workspace subtree unless ' +
-        'IMHUB_NATIVE_FS_RESTRICT=0. Sensitive paths (~/.agim, /etc/shadow, etc.) are always denied.',
+        'absolute paths are allowed by default (set IMHUB_NATIVE_FS_RESTRICT=1 to confine to the ' +
+        'workspace subtree). Sensitive paths (~/.agim, /etc/shadow, etc.) are always denied.',
       parameters: {
         type: 'object',
         properties: {
@@ -184,11 +185,11 @@ async function runOne(
 
 // ─── path safety ─────────────────────────────────────────────────────
 
-/** Default-on workspace restriction. Operators can set
- *  IMHUB_NATIVE_FS_RESTRICT=0 to allow paths outside cwd subtree;
- *  sensitive-paths.ts still applies even when this is off. */
+/** Workspace restriction is OPT-IN (default off, so native agents have real
+ *  filesystem access). Operators set IMHUB_NATIVE_FS_RESTRICT=1 to confine
+ *  access to the cwd subtree; sensitive-paths.ts always applies regardless. */
 function workspaceRestricted(): boolean {
-  return process.env.IMHUB_NATIVE_FS_RESTRICT !== '0'
+  return process.env.IMHUB_NATIVE_FS_RESTRICT === '1'
 }
 
 interface ResolvedPath {
@@ -215,7 +216,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
         ok: false,
         reason:
           `path "${abs}" is outside workspace "${ctx.cwd}". ` +
-          'Set IMHUB_NATIVE_FS_RESTRICT=0 to allow broader access.',
+          'Unset IMHUB_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
       }
     }
   }
@@ -241,7 +242,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
           ok: false,
           reason:
             `symlink target "${real}" is outside workspace "${ctx.cwd}". ` +
-            'Set IMHUB_NATIVE_FS_RESTRICT=0 to allow broader access.',
+            'Unset IMHUB_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
         }
       }
     }

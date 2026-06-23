@@ -302,8 +302,8 @@ export default function SettingsSecurityRoute(): JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2">
           <LabeledField label={t('security.fs.restrict')}>
             <Select
-              value={(env.IMHUB_NATIVE_FS_RESTRICT ?? '1') === '0' ? '0' : '1'}
-              onValueChange={(v) => void setValue('IMHUB_NATIVE_FS_RESTRICT', v === '0' ? '0' : null)}
+              value={(env.IMHUB_NATIVE_FS_RESTRICT ?? '0') === '1' ? '1' : '0'}
+              onValueChange={(v) => void setValue('IMHUB_NATIVE_FS_RESTRICT', v === '1' ? '1' : null)}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>

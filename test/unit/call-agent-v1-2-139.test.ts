@@ -168,7 +168,7 @@ describe('v1.2.139 — CallAgentOpts.planMode propagation', () => {
       },
     }
     registry.registerAgent(fake)
-    // depth needs to be allowed; A2A_MAX_DEPTH defaults to 1 (v1.2.119).
+    // depth needs to be allowed; pin an explicit cap independent of the default.
     process.env.IMHUB_A2A_MAX_DEPTH = '5'
 
     const r = await a2a.callAgentByName('test-fake-planmode', 'do nothing', fakeRouteCtx(), {

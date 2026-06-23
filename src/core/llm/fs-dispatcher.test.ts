@@ -71,10 +71,32 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses paths outside workspace when restricted', async () => {
+      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '/etc/hostname' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/outside workspace|sensitive/i)
+    })
+
+    it('by default (unrestricted), reads a non-sensitive file outside the workspace', async () => {
+      // Default = no IMHUB_NATIVE_FS_RESTRICT → native agents have real fs access.
+      const outside = join(tmpdir(), `agim-fs-default-${Date.now()}.txt`)
+      await writeFile(outside, 'outside content')
+      try {
+        const d = buildFsDispatcher({ cwd: workspace })
+        const r = await d({ id: 't', name: 'native_read_file', arguments: { path: outside } }, NEVER_ABORT)
+        expect(r.isError).toBe(false)
+        expect(r.text).toBe('outside content')
+      } finally {
+        await rm(outside, { force: true })
+      }
+    })
+
+    it('by default (unrestricted), still denies sensitive paths', async () => {
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/sensitive/i)
     })
 
     it('refuses sensitive paths even when IMHUB_NATIVE_FS_RESTRICT=0', async () => {
@@ -123,7 +145,8 @@ describe('fs-dispatcher', () => {
       expect(r.text).toBe('AB')
     })
 
-    it('refuses paths outside workspace', async () => {
+    it('refuses paths outside workspace when restricted', async () => {
+      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
         { id: 't', name: 'native_write_file', arguments: { path: '/tmp/agim-evil', content: 'no' } },
@@ -190,19 +213,21 @@ describe('fs-dispatcher', () => {
   // destination.
   describe('symlink escape guard (CR-1)', () => {
     it('refuses to read a symlink whose target is sensitive', async () => {
-      const link = join(workspace, 'evil-passwd')
+      // /etc/shadow is on the sensitive denylist, so this is denied even
+      // under the default (unrestricted) workspace policy — the realpath
+      // guard collapses the symlink and the sensitive check fires. The OLD
+      // lexical check returned ok and happily read the target.
+      const link = join(workspace, 'evil-shadow')
       try { await rm(link, { force: true }) } catch { /* ignore */ }
-      await symlink('/etc/passwd', link)
+      await symlink('/etc/shadow', link)
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-passwd' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-shadow' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
-      // Either sensitive-path block or workspace-escape block — both
-      // legitimate failures. The OLD lexical check returned ok and
-      // happily read /etc/passwd.
-      expect(r.text).toMatch(/sensitive|outside workspace/i)
+      expect(r.text).toMatch(/sensitive/i)
     })
 
     it('refuses to read a symlink whose target is outside workspace', async () => {
+      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
       const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-outside-'))
       await writeFile(join(otherDir, 'secret.txt'), 'top-secret')
       const link = join(workspace, 'escape')
@@ -216,6 +241,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses to write through a symlinked directory pointing outside', async () => {
+      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
       const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-symdir-'))
       const linkDir = join(workspace, 'evil-dir')
       try { await rm(linkDir, { force: true }) } catch { /* ignore */ }

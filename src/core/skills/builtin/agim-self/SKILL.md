@@ -101,10 +101,10 @@ Bash / WebFetch).
   `IMHUB_EXEC_SANDBOX=bwrap` (Linux + `/usr/bin/bwrap`); add
   `IMHUB_EXEC_SANDBOX_NET=off` to also block network.
 
-Filesystem tools are constrained to the per-thread workspace
-(`~/.agim-workspaces/native/<thread>/`) unless
-`IMHUB_NATIVE_FS_RESTRICT=0`. Sensitive paths (`~/.agim/`,
-`/etc/shadow`, `AGENTS.md`, etc.) stay denied even then.
+Filesystem tools have full filesystem access by default. Set
+`IMHUB_NATIVE_FS_RESTRICT=1` to confine them to the per-thread workspace
+(`~/.agim-workspaces/native/<thread>/`). Sensitive paths (`~/.agim/`,
+`/etc/shadow`, `AGENTS.md`, etc.) stay denied either way.
 
 ## Approval policy (v1.2.60)
 

@@ -113,8 +113,13 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   const savedLevel = rootLogger.level
   if (!wantVerbose) rootLogger.level = 'silent'
 
-  // Clear screen + park cursor at top-left.
-  process.stdout.write('\x1b[2J\x1b[H')
+  // Enter the alternate screen buffer, then clear + park cursor at
+  // top-left. The alt-screen is what lets the TUI pin a fixed-height
+  // frame (header sticks to the top, input sticks to the bottom, only
+  // the middle chat region scrolls) without the terminal scrolling the
+  // whole frame — and it preserves the user's shell scrollback so exit
+  // returns them cleanly to where they were. Restored in the finally.
+  process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H')
 
   try {
     // Mirror the `agim start` boot path so the `native` agent (and any
@@ -215,6 +220,10 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   try {
     await waitUntilExit()
   } finally {
+    // Leave the alternate screen buffer FIRST so the original shell
+    // scrollback + cursor position are restored before we print the
+    // resume hint into the normal buffer below.
+    process.stdout.write('\x1b[?1049l')
     if (approvalStarted) {
       uninstallApprovalRouter()
       await approvalBus.stop().catch(() => {})

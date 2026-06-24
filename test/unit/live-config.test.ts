@@ -127,7 +127,12 @@ describe('registry.listAgents / findAgent filter', () => {
     const everyone = registry.listAllAgents()
     if (everyone.length < 2) return
     const keep = everyone[0]
-    setLiveConfig(cfg({ agents: [keep] }))
+    // Pin defaultAgent to `keep` too: the default agent is exempt from the
+    // enabled-filter, so leaving it at the cfg() default ('claude-code')
+    // lets a claude-code adapter registered by another test file leak into
+    // the result (it's registry-wide singleton state). With default===keep,
+    // only `keep` survives the filter regardless of what else is registered.
+    setLiveConfig(cfg({ agents: [keep], defaultAgent: keep }))
     const filtered = registry.listAgents()
     expect(filtered).toContain(keep)
     expect(filtered).toEqual([keep])

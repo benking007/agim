@@ -29,24 +29,25 @@ jobs:
           bun-version: latest
 
       # ───── Backend (agim-cli) ─────
-      # --omit=optional dodges @xenova/transformers (ONNX binary) which
-      # triggers npm's "Exit handler never called!" regression on Node
-      # 22+. End users still get the dep on `npm install -g agim-cli`;
-      # CI doesn't exercise the vector path. Same flag as release.yml.
+      # Install WITHOUT the committed lockfile. package-lock.json pins
+      # ~107 `resolved` URLs to an internal mirror (mirrors.tencentyun.com)
+      # that GitHub's runners can't reach, so a lockfile-honouring
+      # `npm install` hangs on those fetches and dies with npm's
+      # "Exit handler never called!" after ~70s. --no-package-lock makes
+      # npm ignore the baked-in URLs and resolve from the public registry
+      # — the same fix release.yml already uses (see also AGENTS.md).
+      # --omit=optional additionally skips the heavy @xenova/transformers
+      # ONNX binary, which CI doesn't exercise (end users still get it via
+      # `npm install -g agim-cli`).
       #
-      # But biome ALSO uses optionalDependencies for its platform-
-      # specific CLI (@biomejs/cli-linux-x64), and main `biome` requires
-      # it to function — so we re-install biome explicitly after.
-      # The second install still hits the npm "Exit handler" crash
-      # (any re-resolution of @xenova/transformers triggers it), but
-      # npm extracts the new tarball *before* the crash, so the
-      # platform binary is on disk and biome works. `|| true` keeps
-      # the workflow alive; the `test -f` guard catches the case
-      # where extraction didn't happen.
+      # --omit=optional also skips biome's platform CLI
+      # (@biomejs/cli-linux-x64), which `biome` needs to run, so we
+      # re-install just that package explicitly. `|| true` + the `test -f`
+      # guard keep the essential-binary check authoritative.
       - name: Install root dependencies
         run: |
-          npm install --omit=optional --no-audit --no-fund
-          npm install --no-save --no-audit --no-fund @biomejs/cli-linux-x64 || true
+          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps @biomejs/cli-linux-x64 || true
           test -f node_modules/@biomejs/cli-linux-x64/biome
 
       - name: Backend typecheck

@@ -304,7 +304,11 @@ function findAgimProcessesViaProc(): number[] {
     // /proc/<pid>/cmdline is null-byte separated; trailing null possible.
     const argv = raw.split('\x00').filter((s) => s.length > 0)
     if (argv.length < 3) continue
-    const exe = basename(argv[0])
+    // Strip a `.exe` suffix before matching: the bun npm binary is
+    // `bun.exe` even on Linux, so `process.execPath` (and thus argv[0] of
+    // any agim or test process launched under bun) resolves to `bun.exe`.
+    // Without this, bun-launched instances were never recognised.
+    const exe = basename(argv[0]).replace(/\.exe$/, '')
     const isNodeLike = exe === 'node' || exe === 'bun' || exe.startsWith('node')
     if (!isNodeLike) continue
     const script = basename(argv[1])

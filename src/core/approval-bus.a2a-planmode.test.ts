@@ -10,15 +10,28 @@
 // capture the opts it receives, then drive the bus over a real unix socket
 // exactly like a sidecar would.
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test'
 import { type Socket, createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import * as a2aReal from './a2a.js'
 
-// Captures the opts of the most recent callAgentByName invocation.
+// Snapshot the REAL a2a exports BEFORE mocking. bun's mock.module is global
+// and persistent across files, and is NOT undone by mock.restore(); without
+// the afterAll restore below, the partial stub leaks into every later test
+// file and blanks out the real a2a exports (isA2AEnabled / getA2AMaxDepth /
+// getA2AMaxResultChars / compressA2AResult / the real callAgentByName),
+// which manifested as ~19 spurious failures across a2a / imhub-dispatcher /
+// call-agent suites in the full `bun test` run.
+const realA2a = { ...a2aReal }
+
+// Captures the opts of the most recent callAgentByName invocation. We keep
+// all the real exports and override only callAgentByName, so even mid-file
+// the module stays complete.
 let lastCallOpts: Record<string, unknown> | null = null
 mock.module('./a2a.js', () => ({
+  ...realA2a,
   callAgentByName: async (
     agent: string, _prompt: string, _ctx: unknown, opts: Record<string, unknown>,
   ) => {
@@ -26,6 +39,10 @@ mock.module('./a2a.js', () => ({
     return { ok: true, result: 'stub', jobId: 1, agent, durationMs: 1 }
   },
 }))
+
+// Restore the real module once this file's tests finish so the stub above
+// can't bleed into sibling files later in the same `bun test` process.
+afterAll(() => { mock.module('./a2a.js', () => realA2a) })
 
 // Import AFTER the mock is registered. (approval-bus only *dynamically*
 // imports a2a, so static ordering is not load-bearing — kept for clarity.)

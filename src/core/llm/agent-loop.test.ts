@@ -329,7 +329,10 @@ describe('runAgentLoop — limits & abort', () => {
     for (let i = 0; i < 10; i++) {
       scripts.push({
         text: `loop ${i}`,
-        toolCalls: [toolCall(`c${i}`, 'mcp_x_run', {})],
+        // Vary the args each turn so the stuck-loop detector (3× identical
+        // tool+args+outcome) doesn't fire first — this test is about the
+        // maxIterations ceiling, not the stuck-loop break.
+        toolCalls: [toolCall(`c${i}`, 'mcp_x_run', { i })],
         finishReason: 'tool_use',
         usage: {},
         modelUsed: 'fake-1',

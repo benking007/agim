@@ -23,6 +23,7 @@ import {
   loadSession,
 } from './sessions.js'
 import { TuiApprovalBridge } from './approval-bridge.js'
+import { createMouseStdin, type MouseStdin } from './mouse-stdin.js'
 import { approvalBus } from '../../core/approval-bus.js'
 import {
   install as installApprovalRouter,
@@ -113,8 +114,13 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   const savedLevel = rootLogger.level
   if (!wantVerbose) rootLogger.level = 'silent'
 
-  // Clear screen + park cursor at top-left.
-  process.stdout.write('\x1b[2J\x1b[H')
+  // Enter the alternate screen buffer, then clear + park cursor at
+  // top-left. The alt-screen is what lets the TUI pin a fixed-height
+  // frame (header sticks to the top, input sticks to the bottom, only
+  // the middle chat region scrolls) without the terminal scrolling the
+  // whole frame — and it preserves the user's shell scrollback so exit
+  // returns them cleanly to where they were. Restored in the finally.
+  process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H')
 
   try {
     // Mirror the `agim start` boot path so the `native` agent (and any
@@ -202,6 +208,30 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       }, 'TUI approval bridge failed to start')
     }
   }
+  // Mouse-wheel scrolling — route Ink's stdin through a proxy that strips
+  // xterm mouse reports (so they never corrupt the input box) and surfaces
+  // wheel notches to the TUI. Opt out with IMHUB_TUI_NO_MOUSE=1. Cleaned up
+  // in the finally (and on process exit) so the terminal never stays in
+  // mouse-reporting mode.
+  let mouse: MouseStdin | undefined
+  if (process.env.IMHUB_TUI_NO_MOUSE !== '1' && process.stdin.isTTY) {
+    try {
+      mouse = createMouseStdin(process.stdin)
+      mouse.enable(process.stdout)
+    } catch (err) {
+      log.warn({ event: 'tui.mouse.start_failed', err: err instanceof Error ? err.message : String(err) },
+        'TUI mouse wheel unavailable — falling back to keyboard scrolling')
+      mouse = undefined
+    }
+  }
+  const restoreTerminal = (): void => {
+    try { if (mouse) mouse.disable(process.stdout) } catch { /* ignore */ }
+    try { process.stdout.write('\x1b[?1049l') } catch { /* ignore */ }
+  }
+  // Safety net: if we die without unwinding the finally (SIGTERM, uncaught),
+  // still drop mouse reporting + the alt-screen so the shell isn't wedged.
+  process.once('exit', restoreTerminal)
+
   const { waitUntilExit } = render(
     React.createElement(TuiApp, {
       initialAgent,
@@ -209,12 +239,17 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       sessionId,
       onSessionIdChange: (id: string) => { finalSessionId = id },
       approvalBridge,
+      wheel: mouse?.wheel,
     }),
-    { patchConsole: true, exitOnCtrlC: true },
+    { patchConsole: true, exitOnCtrlC: true, ...(mouse ? { stdin: mouse.stdin } : {}) },
   )
   try {
     await waitUntilExit()
   } finally {
+    // Restore the terminal FIRST (drop mouse reporting + leave the
+    // alternate screen) so the original shell scrollback + cursor are
+    // back before we print the resume hint into the normal buffer below.
+    restoreTerminal()
     if (approvalStarted) {
       uninstallApprovalRouter()
       await approvalBus.stop().catch(() => {})

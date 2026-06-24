@@ -20,12 +20,13 @@
 // session list, remote-daemon client mode.
 
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink'
+import { Box, Text, measureElement, useApp, useInput, useStdin, useStdout, type DOMElement } from 'ink'
 import TextInput from 'ink-text-input'
 import { spawnSync, exec as cpExec } from 'node:child_process'
 import { writeFileSync, mkdtempSync, readFileSync, unlinkSync, readdirSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
+import type { EventEmitter } from 'node:events'
 
 import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
@@ -141,6 +142,9 @@ interface AppProps {
   onSessionIdChange?: (id: string) => void
   /** In-process approval surface used by `agim tui` for tool-call approvals. */
   approvalBridge?: TuiApprovalBridge
+  /** Emits 'wheel' (-1 up / +1 down) per mouse-wheel notch; wired by the
+   *  stdin proxy in index.ts. Absent when mouse support is off. */
+  wheel?: EventEmitter
 }
 
 interface PaletteItem {
@@ -339,7 +343,7 @@ function AskDock({
   )
 }
 
-export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge }: AppProps): JSX.Element {
+export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge, wheel }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const { setRawMode } = useStdin()
@@ -422,8 +426,77 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     return home && c.startsWith(home) ? '~' + c.slice(home.length) : c
   }, [])
 
-  const cols = stdout?.columns ?? 80
+  // ── Terminal viewport size (drives the fixed-height frame) ─────────
+  // Track rows/cols in state so a SIGWINCH resize reflows the pinned
+  // layout (header at top, input at bottom, chat scrolls between them).
+  const [termSize, setTermSize] = useState<{ rows: number; cols: number }>(() => ({
+    rows: stdout?.rows ?? 24,
+    cols: stdout?.columns ?? 80,
+  }))
+  useEffect(() => {
+    if (!stdout) return
+    const onResize = (): void => setTermSize({ rows: stdout.rows ?? 24, cols: stdout.columns ?? 80 })
+    stdout.on('resize', onResize)
+    onResize()
+    return () => { stdout.off('resize', onResize) }
+  }, [stdout])
+  const rows = termSize.rows
+  const cols = termSize.cols
   const chatWidth = Math.min(cols - 4, 120)
+
+  // ── Middle-region scroll (header & input stay pinned) ─────────────
+  // The chat history sits in a fixed-height, overflow-hidden viewport.
+  // We scroll it by shifting an inner content box up via a negative
+  // marginTop. `follow` glues the view to the newest line (chat-app
+  // behaviour); PageUp breaks away, scrolling back to the bottom
+  // re-arms it. Heights are measured (not arithmetic) because markdown
+  // rows wrap to variable heights.
+  const viewportRef = useRef<DOMElement | null>(null)
+  const contentRef = useRef<DOMElement | null>(null)
+  const viewportHRef = useRef(0)
+  const contentHRef = useRef(0)
+  const scrollTopRef = useRef(0)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [follow, setFollow] = useState(true)
+  useEffect(() => { scrollTopRef.current = scrollTop }, [scrollTop])
+  // Re-measure after every commit, then clamp the offset (sticking to
+  // the bottom while following). measureElement just reads the laid-out
+  // Yoga node, so this is cheap; setScrollTop bails when unchanged.
+  useEffect(() => {
+    const vh = viewportRef.current ? measureElement(viewportRef.current).height : 0
+    const ch = contentRef.current ? measureElement(contentRef.current).height : 0
+    viewportHRef.current = vh
+    contentHRef.current = ch
+    const maxScroll = Math.max(0, ch - vh)
+    setScrollTop((prev) => (follow ? maxScroll : Math.min(prev, maxScroll)))
+  })
+  const scrollByLines = useCallback((delta: number): void => {
+    const maxScroll = Math.max(0, contentHRef.current - viewportHRef.current)
+    if (maxScroll === 0) { setFollow(true); return }
+    const next = Math.max(0, Math.min(maxScroll, scrollTopRef.current + delta))
+    scrollTopRef.current = next
+    setScrollTop(next)
+    setFollow(next >= maxScroll)
+  }, [])
+  const scrollToTop = useCallback((): void => {
+    scrollTopRef.current = 0
+    setScrollTop(0)
+    setFollow(false)
+  }, [])
+  const scrollToBottom = useCallback((): void => {
+    const maxScroll = Math.max(0, contentHRef.current - viewportHRef.current)
+    scrollTopRef.current = maxScroll
+    setScrollTop(maxScroll)
+    setFollow(true)
+  }, [])
+  // Mouse wheel → scroll a few lines per notch (index.ts feeds these in
+  // via the stdin proxy). scrollByLines is stable, so this subscribes once.
+  useEffect(() => {
+    if (!wheel) return
+    const onWheel = (delta: number): void => scrollByLines(delta * 3)
+    wheel.on('wheel', onWheel)
+    return () => { wheel.off('wheel', onWheel) }
+  }, [wheel, scrollByLines])
   const currentAgentSession = agent ? agentSessions[agent] : undefined
   const askOptions = useMemo(() => {
     if (!ask) return [] as Array<{ label: string; data: string; index: number; isCustom: boolean }>
@@ -523,6 +596,22 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       setPalette((p) => ({ open: !p.open, query: '', index: 0 }))
       return
     }
+
+    // Scroll the middle chat region without moving the pinned header /
+    // input. These keys aren't used elsewhere (and Shift+arrows carry a
+    // distinct `shift` flag), so they work in any mode and never reach
+    // the input history / option-nav handlers below.
+    //   Shift+PageUp / Shift+PageDown → jump to top / bottom
+    //   PageUp / PageDown             → page (viewport minus one line)
+    //   Shift+Up / Shift+Down         → one line
+    // Scrolling back to the bottom re-arms auto-follow.
+    const page = Math.max(1, viewportHRef.current - 1)
+    if (key.shift && key.pageUp) { scrollToTop(); return }
+    if (key.shift && key.pageDown) { scrollToBottom(); return }
+    if (key.pageUp) { scrollByLines(-page); return }
+    if (key.pageDown) { scrollByLines(page); return }
+    if (key.shift && key.upArrow) { scrollByLines(-1); return }
+    if (key.shift && key.downArrow) { scrollByLines(1); return }
 
     const popupOpen = slashPopupOpen || filePopupOpen || agentArgPopupOpen
     if (askPending && !palette.open && !helpOpen && !popupOpen && ask) {
@@ -960,7 +1049,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       setHelpOpen(true)
       pushSystem(
         SLASH_COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n')
-        + '\n\n键位：Enter 发送 · Esc 取消 · ↑↓ 选项/历史 · Tab 补全 · Ctrl-P 命令面板 · ? 帮助 · Ctrl-C 退出'
+        + '\n\n键位：Enter 发送 · Esc 取消 · ↑↓ 选项/历史 · Tab 补全 · 滚轮/PageUp/PageDown/Shift+↑↓ 滚动 · Ctrl-P 命令面板 · ? 帮助 · Ctrl-C 退出'
         + '\n特殊：!<cmd> 行内 bash · @<file> 文件引用',
       )
       return true
@@ -1199,9 +1288,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   // ── render ────────────────────────────────────────────────────────
 
   return (
-    <Box flexDirection="column" width="100%">
-      {/* Header */}
-      <Box paddingX={1} flexDirection="column">
+    <Box flexDirection="column" width={cols} height={rows}>
+      {/* Header — pinned to the top */}
+      <Box flexShrink={0} paddingX={1} flexDirection="column">
         <Text>
           <Text bold color="cyan">agim TUI</Text>
           <Text dimColor>{'  ·  会话 '}</Text>
@@ -1214,10 +1303,20 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         <Text dimColor>cwd: {cwd}</Text>
       </Box>
 
-      {/* Chat history — memoized so input keystrokes don't re-render
-          every message box (v1.2.78 flicker fix). */}
-      <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
+      {/* Chat history — fixed-height, overflow-hidden viewport. The inner
+          content box is shifted up by `scrollTop` rows so only the middle
+          scrolls; the header above and the input below stay pinned.
+          ChatHistory is memoized so input keystrokes don't re-render every
+          message box (v1.2.78 flicker fix). */}
+      <Box ref={viewportRef} flexGrow={1} flexShrink={1} flexDirection="column" overflow="hidden">
+        <Box ref={contentRef} flexShrink={0} flexDirection="column" marginTop={-scrollTop}>
+          <ChatHistory messages={messages} agent={agent} chatWidth={chatWidth} />
+        </Box>
+      </Box>
 
+      {/* Footer — pinned to the bottom: decision docks, transient popups,
+          errors, the scroll hint, the input box and the status bar. */}
+      <Box flexShrink={0} flexDirection="column">
       {ask && (
         <AskDock
           ask={ask}
@@ -1244,6 +1343,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
             <Text dimColor>  · Esc / ? 关闭</Text>
           </Text>
           <Text dimColor>发送: Enter · 取消生成: Esc · 历史: ↑↓ · 补全: Tab</Text>
+          <Text dimColor>滚动: 滚轮 · PageUp/PageDown 翻页 · Shift+↑↓ 逐行 · Shift+PageUp/Dn 顶/底</Text>
           <Text dimColor>面板: Ctrl-P · 退出: Ctrl-C · 多行编辑: /editor</Text>
           <Text dimColor>会话: /new 新会话 · /sessions 最近会话 · /export 导出</Text>
           <Text dimColor>{'特殊输入: !<shell> 运行命令 · @<file> 引用文件'}</Text>
@@ -1309,8 +1409,15 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         </Box>
       )}
 
+      {/* Scroll hint — only while the user has paused auto-follow. */}
+      {!follow && (
+        <Box paddingX={1}>
+          <Text color="yellow" dimColor>▲ 已暂停跟随（上滚 {scrollTop} 行）· 滚轮 / PageUp/PageDown / Shift+↑↓ 滚动 · Shift+PageDn 或滚到底恢复跟随</Text>
+        </Box>
+      )}
+
       {/* Input */}
-      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open || helpOpen) ? 0 : 1}>
+      <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open || helpOpen || !follow) ? 0 : 1}>
         <Text color={busy ? 'yellow' : 'green'}>{busy ? '⠿' : '›'} </Text>
         <TextInput
           value={input}
@@ -1372,8 +1479,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
             </Text>
           )}
           <Text>{'  ·  '}</Text>
-          <Text>/help · ? 帮助 · Ctrl-P 面板 · Ctrl-C 退出</Text>
+          <Text>/help · ? 帮助 · 滚轮/PageUp/Dn 滚动 · Ctrl-P 面板 · Ctrl-C 退出</Text>
         </Text>
+      </Box>
       </Box>
     </Box>
   )

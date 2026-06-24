@@ -23,6 +23,7 @@ import {
   loadSession,
 } from './sessions.js'
 import { TuiApprovalBridge } from './approval-bridge.js'
+import { createMouseStdin, type MouseStdin } from './mouse-stdin.js'
 import { approvalBus } from '../../core/approval-bus.js'
 import {
   install as installApprovalRouter,
@@ -207,6 +208,30 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       }, 'TUI approval bridge failed to start')
     }
   }
+  // Mouse-wheel scrolling — route Ink's stdin through a proxy that strips
+  // xterm mouse reports (so they never corrupt the input box) and surfaces
+  // wheel notches to the TUI. Opt out with IMHUB_TUI_NO_MOUSE=1. Cleaned up
+  // in the finally (and on process exit) so the terminal never stays in
+  // mouse-reporting mode.
+  let mouse: MouseStdin | undefined
+  if (process.env.IMHUB_TUI_NO_MOUSE !== '1' && process.stdin.isTTY) {
+    try {
+      mouse = createMouseStdin(process.stdin)
+      mouse.enable(process.stdout)
+    } catch (err) {
+      log.warn({ event: 'tui.mouse.start_failed', err: err instanceof Error ? err.message : String(err) },
+        'TUI mouse wheel unavailable — falling back to keyboard scrolling')
+      mouse = undefined
+    }
+  }
+  const restoreTerminal = (): void => {
+    try { if (mouse) mouse.disable(process.stdout) } catch { /* ignore */ }
+    try { process.stdout.write('\x1b[?1049l') } catch { /* ignore */ }
+  }
+  // Safety net: if we die without unwinding the finally (SIGTERM, uncaught),
+  // still drop mouse reporting + the alt-screen so the shell isn't wedged.
+  process.once('exit', restoreTerminal)
+
   const { waitUntilExit } = render(
     React.createElement(TuiApp, {
       initialAgent,
@@ -214,16 +239,17 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       sessionId,
       onSessionIdChange: (id: string) => { finalSessionId = id },
       approvalBridge,
+      wheel: mouse?.wheel,
     }),
-    { patchConsole: true, exitOnCtrlC: true },
+    { patchConsole: true, exitOnCtrlC: true, ...(mouse ? { stdin: mouse.stdin } : {}) },
   )
   try {
     await waitUntilExit()
   } finally {
-    // Leave the alternate screen buffer FIRST so the original shell
-    // scrollback + cursor position are restored before we print the
-    // resume hint into the normal buffer below.
-    process.stdout.write('\x1b[?1049l')
+    // Restore the terminal FIRST (drop mouse reporting + leave the
+    // alternate screen) so the original shell scrollback + cursor are
+    // back before we print the resume hint into the normal buffer below.
+    restoreTerminal()
     if (approvalStarted) {
       uninstallApprovalRouter()
       await approvalBus.stop().catch(() => {})

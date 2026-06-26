@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
-import { extractWheel } from './mouse-stdin.js'
+import { PassThrough } from 'node:stream'
+import { extractWheel, createMouseStdin } from './mouse-stdin.js'
 
 describe('extractWheel', () => {
   it('returns plain keystrokes untouched (no mouse)', () => {
@@ -42,5 +43,40 @@ describe('extractWheel', () => {
     const r = extractWheel('\x1b[<64;9;9m')
     expect(r.deltas).toEqual([-1])
     expect(r.clean).toBe('')
+  })
+
+  it('ignores horizontal tilt buttons 66/67 (no vertical delta)', () => {
+    const r = extractWheel('a\x1b[<66;3;4Mb\x1b[<67;3;4Mc')
+    expect(r.deltas).toEqual([])
+    expect(r.clean).toBe('abc')
+  })
+})
+
+describe('createMouseStdin — SGR report split across reads', () => {
+  function fakeReal(): PassThrough & { isTTY: boolean; setRawMode: () => unknown; ref: () => void; unref: () => void } {
+    const s = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: () => unknown; ref: () => void; unref: () => void }
+    s.isTTY = true
+    s.setRawMode = () => s
+    s.ref = () => {}
+    s.unref = () => {}
+    return s
+  }
+
+  it('buffers a wheel report split across two chunks (no fragment leaks)', async () => {
+    const real = fakeReal()
+    const m = createMouseStdin(real as unknown as NodeJS.ReadStream)
+    const deltas: number[] = []
+    m.wheel.on('wheel', (d: number) => deltas.push(d))
+    let passed = ''
+    m.stdin.setEncoding('utf8')
+    m.stdin.on('data', (c: string) => { passed += c })
+
+    real.write('ab\x1b[<64;10;')          // first half of the wheel report
+    await new Promise((r) => setTimeout(r, 10))
+    real.write('5Mcd')                     // second half completes it
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(deltas).toEqual([-1])           // one wheel-up, decoded once
+    expect(passed).toBe('abcd')            // no \x1b[<.. fragment leaked
   })
 })

@@ -20,6 +20,11 @@ import { PassThrough } from 'node:stream'
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC (\x1b) is the literal lead byte of an xterm CSI mouse report.
 const SGR_MOUSE_RE = /\x1b\[<(\d+);\d+;\d+[Mm]/g
 
+// A half-finished SGR report at the END of a chunk: ESC [ < digits/semicolons
+// with no terminating M/m yet. Used to buffer a report split across reads.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC (\x1b) leads the xterm CSI mouse sequence.
+const SGR_MOUSE_PARTIAL_RE = /\x1b\[<[0-9;]*$/
+
 /**
  * Strip SGR mouse reports from a decoded stdin chunk. Returns the clean
  * keystroke text (mouse bytes removed) plus one wheel delta per wheel
@@ -31,9 +36,11 @@ export function extractWheel(chunk: string): { clean: string; deltas: number[] }
   const deltas: number[] = []
   const clean = chunk.replace(SGR_MOUSE_RE, (_match, button: string) => {
     const code = Number(button)
-    // Wheel reports set bit 6 (64). Low bit picks direction: 64 = up,
-    // 65 = down (modifier bits 4/8/16 are ignored).
-    if ((code & 64) !== 0) deltas.push((code & 1) === 1 ? 1 : -1)
+    // Wheel reports set bit 6 (64). Bit 1 (value 2) marks the horizontal
+    // tilt buttons 66/67 — exclude those so a sideways tilt doesn't scroll
+    // vertically. Low bit picks direction: 64 = up, 65 = down (modifier bits
+    // 4/8/16 don't touch bits 0-1, so ctrl/shift/meta+wheel still match).
+    if ((code & 64) !== 0 && (code & 2) === 0) deltas.push((code & 1) === 1 ? 1 : -1)
     return ''
   })
   return { clean, deltas }
@@ -71,11 +78,24 @@ export function createMouseStdin(real: NodeJS.ReadStream): MouseStdin {
   // Read the real TTY ourselves. utf8 decoding keeps multi-byte (CJK) input
   // intact across chunk boundaries.
   real.setEncoding('utf8')
+  // Holds an incomplete trailing SGR mouse sequence so a wheel report split
+  // across two read() chunks is never forwarded to Ink as stray keystrokes.
+  let pending = ''
   const onReadable = (): void => {
     for (;;) {
       const chunk = real.read() as string | null
       if (chunk === null) break
-      const { clean, deltas } = extractWheel(chunk)
+      let data = pending + chunk
+      pending = ''
+      // Carve a half-finished SGR report off the end and hold it for the next
+      // chunk. Bounded: a real report is ~12 chars, so treat >32 as junk and
+      // let it flush through rather than buffer unboundedly.
+      const m = SGR_MOUSE_PARTIAL_RE.exec(data)
+      if (m && data.length - m.index <= 32) {
+        pending = data.slice(m.index)
+        data = data.slice(0, m.index)
+      }
+      const { clean, deltas } = extractWheel(data)
       for (const d of deltas) wheel.emit('wheel', d)
       if (clean) pass.write(clean)
     }

@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test --path-ignore-patterns='**/web-app/**'",
     "test:coverage": "bun test --coverage --path-ignore-patterns='**/web-app/**'",
-    "test:node": "node test/node/memory-recall.mjs",
+    "test:node": "node test/node/memory-recall.mjs && node test/node/memory-distill.mjs",
     "lint": "biome lint src/cli.ts src/index.ts src/cli-ui src/core src/plugins src/scripts src/utils src/web/server.ts src/web/viewer-render.ts test",
     "format": "biome format . --write",
     "prepublishOnly": "npm run build"

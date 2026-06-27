@@ -63,6 +63,20 @@ const SCHEMA = `
     content='',
     tokenize='unicode61'
   );
+
+  -- Dream distillation (P1): raw turns are buffered here on the hot path
+  -- (zero LLM) and batch-extracted by the background distiller when idle.
+  CREATE TABLE IF NOT EXISTS pending_distill (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_key      TEXT    NOT NULL,
+    platform      TEXT    NOT NULL,
+    user_message  TEXT    NOT NULL,
+    agent_reply   TEXT    NOT NULL,
+    agent_name    TEXT    NOT NULL DEFAULT '',
+    trace_id      TEXT    DEFAULT '',
+    created_at    INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_pending_distill_user ON pending_distill(user_key, created_at);
 `
 
 /** v1.6 — vector retrieval columns (added via ALTER, idempotent). */
@@ -992,6 +1006,104 @@ export function pruneExpiredPersona(): number {
     log.warn({ event: 'memory.prune_persona_failed', err: String(err) })
     return 0
   }
+}
+
+// ── Dream-distillation pending buffer ──────────────────────────────
+// Raw turns are buffered on the hot path (zero LLM) and batch-extracted
+// by the background distiller (memory-distiller.ts) when the system is idle.
+
+export interface PendingTurnInput {
+  user_key: string
+  platform: string
+  user_message: string
+  agent_reply: string
+  agent_name?: string
+  trace_id?: string
+}
+export interface PendingTurn {
+  id: number
+  user_key: string
+  platform: string
+  user_message: string
+  agent_reply: string
+  agent_name: string
+  trace_id: string
+  created_at: number
+}
+
+/** Buffer one (user msg, agent reply) turn for later batch distillation.
+ *  Best-effort (a write failure / disabled sqlite is swallowed). Enforces a
+ *  per-user cap by dropping the oldest rows beyond `maxPerUser` (backpressure). */
+export function enqueuePendingTurn(input: PendingTurnInput, maxPerUser = 200): void {
+  const db = helper.get()
+  if (!db) return
+  try {
+    db.prepare(`
+      INSERT INTO pending_distill (user_key, platform, user_message, agent_reply, agent_name, trace_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(input.user_key, input.platform, input.user_message, input.agent_reply,
+      input.agent_name ?? '', input.trace_id ?? '', nowSec())
+    if (maxPerUser > 0) {
+      db.prepare(`
+        DELETE FROM pending_distill WHERE user_key = ? AND id NOT IN (
+          SELECT id FROM pending_distill WHERE user_key = ? ORDER BY id DESC LIMIT ?
+        )
+      `).run(input.user_key, input.user_key, maxPerUser)
+    }
+  } catch (err) {
+    log.warn({ event: 'memory.pending.enqueue_failed', err: String(err) })
+  }
+}
+
+/** Distinct user_keys with buffered turns. When `olderThanSec` is set, only
+ *  users whose OLDEST pending turn is at least that old (the staleness floor). */
+export function listPendingUserKeys(opts: { olderThanSec?: number } = {}): string[] {
+  const db = helper.get()
+  if (!db) return []
+  try {
+    if (opts.olderThanSec && opts.olderThanSec > 0) {
+      const cutoff = nowSec() - opts.olderThanSec
+      return (db.prepare(
+        'SELECT user_key FROM pending_distill GROUP BY user_key HAVING MIN(created_at) <= ?',
+      ).all(cutoff) as Array<{ user_key: string }>).map((r) => r.user_key)
+    }
+    return (db.prepare('SELECT DISTINCT user_key FROM pending_distill').all() as Array<{ user_key: string }>)
+      .map((r) => r.user_key)
+  } catch (err) {
+    log.warn({ event: 'memory.pending.list_users_failed', err: String(err) })
+    return []
+  }
+}
+
+/** Oldest-first buffered turns for a user, capped at `limit`. */
+export function listPendingForUser(user_key: string, limit: number): PendingTurn[] {
+  const db = helper.get()
+  if (!db) return []
+  try {
+    return db.prepare(
+      'SELECT * FROM pending_distill WHERE user_key = ? ORDER BY id ASC LIMIT ?',
+    ).all(user_key, Math.max(1, limit)) as PendingTurn[]
+  } catch (err) {
+    log.warn({ event: 'memory.pending.list_failed', err: String(err) })
+    return []
+  }
+}
+
+export function deletePendingByIds(ids: number[]): void {
+  const db = helper.get()
+  if (!db || ids.length === 0) return
+  try {
+    const stmt = db.prepare('DELETE FROM pending_distill WHERE id = ?')
+    db.transaction((rows: number[]) => { for (const id of rows) stmt.run(id) })(ids)
+  } catch (err) {
+    log.warn({ event: 'memory.pending.delete_failed', err: String(err) })
+  }
+}
+
+export function countPendingTotal(): number {
+  const db = helper.get()
+  if (!db) return 0
+  try { return (db.prepare('SELECT COUNT(*) AS n FROM pending_distill').get() as { n: number }).n } catch { return 0 }
 }
 
 /** Stop the periodic retention sweep (tests + graceful shutdown). */

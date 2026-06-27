@@ -22,14 +22,16 @@ export interface PersonaSnippetOpts {
   platform: string
   /** Per-conversation user id (the human across IMs). */
   userId: string
-  /** Master switch — when false (default for new installs that haven't
-   *  opted in yet), returns ''. Controlled by IMHUB_MEMORY_ENABLED. */
+  /** Master switch — defaults to ON (P3). When false, buildPersonaSnippet
+   *  returns ''. Controlled by IMHUB_MEMORY_ENABLED. */
   enabled?: boolean
 }
 
 export function isMemoryEnabled(): boolean {
-  const raw = (process.env.IMHUB_MEMORY_ENABLED || '').toLowerCase()
-  return raw === '1' || raw === 'true' || raw === 'yes'
+  // P3 — long-term memory is ON by default (opt-out). Disable explicitly
+  // with IMHUB_MEMORY_ENABLED=0 / false / no / off.
+  const raw = (process.env.IMHUB_MEMORY_ENABLED ?? '').trim().toLowerCase()
+  return raw !== '0' && raw !== 'false' && raw !== 'no' && raw !== 'off'
 }
 
 /**

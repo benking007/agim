@@ -75,6 +75,14 @@ const processed2 = await runDistillerOnce()
 check('source=llm with no backend processes 0 users', processed2 === 0)
 check('buffer kept when no usable LLM (retry next pass)', memory.countPendingTotal() === 1)
 
+// 6) P3 — memory is ON by default (opt-out via IMHUB_MEMORY_ENABLED=0).
+const { isMemoryEnabled } = await import(dist('persona.js'))
+delete process.env.IMHUB_MEMORY_ENABLED
+check('P3: memory ON by default when unset', isMemoryEnabled() === true)
+process.env.IMHUB_MEMORY_ENABLED = '0'
+check('P3: opt-out with =0', isMemoryEnabled() === false)
+process.env.IMHUB_MEMORY_ENABLED = '1'
+
 try { memory.closeMemoryDb?.() } catch { /* ignore */ }
 try { rmSync(home, { recursive: true, force: true }) } catch { /* ignore */ }
 

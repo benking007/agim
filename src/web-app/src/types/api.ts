@@ -567,6 +567,29 @@ export interface ConsolidateStatusResponse {
   jobs: ConsolidateJob[]
 }
 
+/** POST /api/memory/distill — fire-and-forget trigger of one distiller pass. */
+export interface DistillTriggerResponse {
+  ok: true
+  hint?: string
+}
+
+/** GET /api/memory/distill/status — mirror of memory-distiller.ts
+ *  getDistillerStatus(): buffer depth + last-run telemetry. */
+export interface DistillStatusResponse {
+  /** A pass is in flight right now (timer tick or manual trigger). */
+  running: boolean
+  /** Epoch ms of the last completed pass, or null if it never ran. */
+  lastRunAt: number | null
+  /** Users processed by the last pass. */
+  lastProcessed: number
+  /** Error string from the last pass, or null on success. */
+  lastError: string | null
+  /** Buffered turns awaiting extraction across all users. */
+  pendingTotal: number
+  /** Distiller master switch (memory on + IMHUB_MEMORY_DISTILL_ENABLED). */
+  enabled: boolean
+}
+
 export type VectorBackendName = 'off' | 'local' | 'openai'
 
 /** Mirror of src/core/memory-vector.ts:BackendStatus. */

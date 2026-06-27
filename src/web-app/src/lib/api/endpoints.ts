@@ -53,6 +53,8 @@ import type {
   CancelReminderResponse,
   ConsolidateMemoryResponse,
   ConsolidateStatusResponse,
+  DistillStatusResponse,
+  DistillTriggerResponse,
   DeleteMemoResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
@@ -266,6 +268,14 @@ export const api = {
   /** GET /api/memory/consolidate/status */
   getMemoryConsolidateStatus: () =>
     client.get<ConsolidateStatusResponse>('/api/memory/consolidate/status'),
+
+  /** POST /api/memory/distill — trigger one dream-distillation pass now. */
+  triggerMemoryDistill: () =>
+    client.post<DistillTriggerResponse>('/api/memory/distill'),
+
+  /** GET /api/memory/distill/status */
+  getMemoryDistillStatus: () =>
+    client.get<DistillStatusResponse>('/api/memory/distill/status'),
 
   /** GET /api/memory/export */
   exportMemory: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

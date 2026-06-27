@@ -19,11 +19,24 @@
 import { logger as rootLogger } from './logger.js'
 import { isMemoryEnabled } from './persona.js'
 import { _activeJobCount } from './job-board.js'
-import { listPendingUserKeys, listPendingForUser, deletePendingByIds } from './memory.js'
+import { listPendingUserKeys, listPendingForUser, deletePendingByIds, countPendingTotal } from './memory.js'
 import { runBatchDistillation } from './memory-distill.js'
 
 const log = rootLogger.child({ component: 'memory-distiller' })
 let timer: ReturnType<typeof setInterval> | null = null
+
+interface DistillerStatus {
+  running: boolean
+  lastRunAt: number | null
+  lastProcessed: number
+  lastError: string | null
+}
+const status: DistillerStatus = { running: false, lastRunAt: null, lastProcessed: 0, lastError: null }
+
+/** Status snapshot for the web Memory tab (POST /api/memory/distill/status). */
+export function getDistillerStatus(): DistillerStatus & { pendingTotal: number; enabled: boolean } {
+  return { ...status, pendingTotal: countPendingTotal(), enabled: isDistillerEnabled() }
+}
 
 function intervalMs(): number {
   const n = Number(process.env.IMHUB_MEMORY_DISTILL_INTERVAL_MS)
@@ -50,10 +63,13 @@ function isDistillerEnabled(): boolean {
  */
 export async function runDistillerOnce(): Promise<number> {
   if (!isDistillerEnabled()) return 0
+  if (status.running) return 0   // no overlapping passes (timer + manual trigger)
+  status.running = true
   const idle = _activeJobCount() === 0
   const users = idle ? listPendingUserKeys() : listPendingUserKeys({ olderThanSec: floorSec() })
-  if (users.length === 0) return 0
+  if (users.length === 0) { status.running = false; status.lastRunAt = Date.now(); return 0 }
   let processed = 0
+  try {
   for (const userKey of users) {
     const turns = listPendingForUser(userKey, batchMax())
     if (turns.length === 0) continue
@@ -80,7 +96,13 @@ export async function runDistillerOnce(): Promise<number> {
       log.warn({ event: 'memory.distill.batch_failed', userKey, err: String(err) })
     }
   }
-  return processed
+    status.lastProcessed = processed
+    status.lastError = null
+    return processed
+  } finally {
+    status.running = false
+    status.lastRunAt = Date.now()
+  }
 }
 
 /** Start the periodic distiller. No-op if already running. */

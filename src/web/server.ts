@@ -1000,6 +1000,16 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleMemoryConsolidateStatus(req, res)
     }
+    // P2 — dream distillation: run a pass now + status (pending buffer size,
+    // last run). Schedule + source knobs are edited via /api/env.
+    if (url.pathname === '/api/memory/distill' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
+      return handleMemoryDistill(req, res)
+    }
+    if (url.pathname === '/api/memory/distill/status' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleMemoryDistillStatus(req, res)
+    }
     // v1.2.3 — Skills browser. Lists locally-installed claude/opencode
     // skills with frontmatter; modal renders the full SKILL.md markdown.
     if (url.pathname === '/api/skills' && req.method === 'GET') {
@@ -2780,6 +2790,15 @@ const ENV_EDITABLE_KEYS = [
   'IMHUB_A2A_HEARTBEAT_MIN',
   // v1.5 — long-term memory (see src/core/memory.ts + persona.ts).
   'IMHUB_MEMORY_ENABLED',
+  // P1/P2 — dream distillation (background fact extraction; see
+  // src/core/memory-distiller.ts).
+  'IMHUB_MEMORY_DISTILL_ENABLED',
+  'IMHUB_MEMORY_DISTILL_SOURCE',
+  'IMHUB_MEMORY_DISTILL_AGENT',
+  'IMHUB_MEMORY_DISTILL_INTERVAL_MS',
+  'IMHUB_MEMORY_DISTILL_FLOOR_MIN',
+  'IMHUB_MEMORY_DISTILL_BATCH_MAX',
+  'IMHUB_MEMORY_DISTILL_MAX_PENDING',
   // v1.6 — vector retrieval (opt-in, OFF by default).
   'IMHUB_MEMORY_VECTOR_BACKEND',
   'IMHUB_MEMORY_VECTOR_LOCAL_MODEL',
@@ -3729,6 +3748,27 @@ async function handleMemoryConsolidate(_req: IncomingMessage, res: ServerRespons
 
 async function handleMemoryConsolidateStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   sendJson(res, 200, { jobs: pickRecentConsolidate() })
+}
+
+// P2 — dream distillation: trigger a pass now (fire-and-forget; status reflects
+// progress) and report the buffer/last-run status for the Memory tab.
+async function handleMemoryDistill(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { runDistillerOnce } = await import('../core/memory-distiller.js')
+    void runDistillerOnce().catch(() => { /* status carries the error */ })
+    sendJson(res, 202, { ok: true, hint: 'poll /api/memory/distill/status for progress' })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleMemoryDistillStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const { getDistillerStatus } = await import('../core/memory-distiller.js')
+    sendJson(res, 200, getDistillerStatus())
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 // v1.2.3 — Skills browser

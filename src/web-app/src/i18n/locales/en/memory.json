@@ -14,6 +14,7 @@
   "tabs": {
     "facts":   "Facts",
     "persona": "Persona",
+    "distill": "Distillation",
     "vector":  "Vector",
     "skills":  "Skills"
   },
@@ -81,6 +82,66 @@
       "doneFailed":   "Consolidation failed",
       "lastRun":      "Last run {{at}}",
       "result":       "Processed {{users}} user(s), {{updated}} persona(s) updated"
+    }
+  },
+  "distill": {
+    "title": "Dream distillation",
+    "subtitle": "Chat turns are buffered, then batch-extracted into facts in the background when the system is idle — or once a user's oldest turn passes the staleness floor. Configure the extraction model + cadence, watch the buffer, or force a pass now.",
+    "form": {
+      "title":          "Configuration",
+      "hint":           "Pick which model extracts facts, then tune the schedule. Changes hit the env file and reload in-process; a restart re-reads them.",
+      "dirty":          "Unsaved changes",
+      "discard":        "Discard",
+      "save":           "Save",
+      "savedToast":     "Saved",
+      "nothingChanged": "Nothing to save",
+      "source":         "Extraction source",
+      "sourceHelp":     "Which LLM turns buffered chat into facts.",
+      "sourceAuto":     "Auto — the turn's own agent",
+      "sourceAgent":    "A specific agent CLI",
+      "sourceLlm":      "A standalone LLM backend",
+      "autoNote":       "Zero-config: each batch is extracted by the agent that handled those turns. Recommended for most installs.",
+      "agent":          "Agent",
+      "agentHelp":      "Use this enabled agent CLI for every extraction, regardless of which agent handled the turn.",
+      "agentPlaceholder": "Pick an agent",
+      "noAgents":       "No agents enabled. Enable one under Settings → Agents first.",
+      "llmBackend":     "LLM backend",
+      "llmBackendHelp": "Bind a configured LLM backend to the `distill` role — a direct API call, no CLI spawn. Manage backends under Settings → LLM.",
+      "llmPlaceholder": "Pick a backend",
+      "noBackends":     "No LLM backends configured. Add one under Settings → LLM first.",
+      "scheduleTitle":  "Schedule",
+      "enabled":        "Distiller",
+      "enabledHelp":    "Master switch for the background pass. When off, turns still buffer but are never extracted.",
+      "enabledOn":      "On",
+      "enabledOff":     "Off",
+      "intervalMs":     "Tick interval (ms)",
+      "intervalMsHelp": "How often the background pass wakes up. Default 300000 (5 min); minimum 10000.",
+      "floorMin":       "Staleness floor (min)",
+      "floorMinHelp":   "On a continuously-busy bot, force-flush a user once their oldest buffered turn is this old. Default 30.",
+      "batchMax":       "Batch size",
+      "batchMaxHelp":   "Max turns fed to one extraction call. Default 20.",
+      "maxPending":     "Per-user buffer cap",
+      "maxPendingHelp": "Max buffered turns kept per user before the oldest are dropped. Default 200.",
+      "errors": {
+        "agentRequired": "Pick an agent for the agent source",
+        "llmRequired":   "Pick an LLM backend for the LLM source",
+        "numRange":      "{{field}} must be a number ≥ {{min}}"
+      }
+    },
+    "status": {
+      "title":         "Status",
+      "enabledTrue":   "Enabled",
+      "enabledFalse":  "Disabled",
+      "running":       "Running",
+      "pending":       "Buffered turns",
+      "lastProcessed": "Last processed",
+      "lastRun":       "Last run",
+      "bufferEmpty":   "Buffer is empty — all turns have been distilled.",
+      "lastError":     "Last error"
+    },
+    "actions": {
+      "runNow":     "Run now",
+      "runStarted": "Distillation pass started"
     }
   },
   "vector": {

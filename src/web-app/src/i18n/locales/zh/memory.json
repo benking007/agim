@@ -14,6 +14,7 @@
   "tabs": {
     "facts":   "事实",
     "persona": "画像",
+    "distill": "蒸馏",
     "vector":  "向量",
     "skills":  "技能"
   },
@@ -81,6 +82,66 @@
       "doneFailed":   "整理失败",
       "lastRun":      "上次运行：{{at}}",
       "result":       "处理 {{users}} 位用户，更新 {{updated}} 条 Persona"
+    }
+  },
+  "distill": {
+    "title": "梦境蒸馏",
+    "subtitle": "聊天轮次会先缓冲下来，在系统空闲时（或某用户最早一条缓冲超过陈旧阈值后）于后台批量抽取为事实。在这里配置抽取所用的模型与节奏、查看缓冲队列，或立即手动触发一次。",
+    "form": {
+      "title":          "配置",
+      "hint":           "选择由哪个模型抽取事实，再调节调度参数。改动写入 env 文件并对本进程生效，重启后从 env 重新加载。",
+      "dirty":          "有未保存的改动",
+      "discard":        "放弃改动",
+      "save":           "保存",
+      "savedToast":     "已保存",
+      "nothingChanged": "没有需要保存的改动",
+      "source":         "抽取来源",
+      "sourceHelp":     "由哪个 LLM 把缓冲的聊天抽取为事实。",
+      "sourceAuto":     "自动 —— 用该轮次自身的 Agent",
+      "sourceAgent":    "指定一个 Agent CLI",
+      "sourceLlm":      "单独配置一个 LLM 后端",
+      "autoNote":       "零配置：每批由处理这些轮次的 Agent 来抽取。适合大多数部署，推荐。",
+      "agent":          "Agent",
+      "agentHelp":      "无论该轮次由谁处理，都用这个已启用的 Agent CLI 来抽取。",
+      "agentPlaceholder": "选择一个 Agent",
+      "noAgents":       "尚未启用任何 Agent。请先在 设置 → Agents 中启用一个。",
+      "llmBackend":     "LLM 后端",
+      "llmBackendHelp": "把一个已配置的 LLM 后端绑定到 `distill` 角色 —— 直接调 API，不拉起 CLI。后端在 设置 → LLM 中管理。",
+      "llmPlaceholder": "选择一个后端",
+      "noBackends":     "尚未配置任何 LLM 后端。请先在 设置 → LLM 中添加一个。",
+      "scheduleTitle":  "调度",
+      "enabled":        "蒸馏器",
+      "enabledHelp":    "后台抽取的总开关。关闭后轮次仍会缓冲，但不会被抽取。",
+      "enabledOn":      "开启",
+      "enabledOff":     "关闭",
+      "intervalMs":     "轮询间隔（毫秒）",
+      "intervalMsHelp": "后台任务的唤醒频率。默认 300000（5 分钟），最小 10000。",
+      "floorMin":       "陈旧阈值（分钟）",
+      "floorMinHelp":   "在持续繁忙的 bot 上，当某用户最早一条缓冲超过此时长时强制抽取。默认 30。",
+      "batchMax":       "批大小",
+      "batchMaxHelp":   "单次抽取调用喂入的最大轮次数。默认 20。",
+      "maxPending":     "单用户缓冲上限",
+      "maxPendingHelp": "每位用户最多保留多少条缓冲轮次，超出后丢弃最旧的。默认 200。",
+      "errors": {
+        "agentRequired": "选择 Agent 来源时必须指定一个 Agent",
+        "llmRequired":   "选择 LLM 来源时必须指定一个 LLM 后端",
+        "numRange":      "{{field}} 必须是 ≥ {{min}} 的数字"
+      }
+    },
+    "status": {
+      "title":         "状态",
+      "enabledTrue":   "已启用",
+      "enabledFalse":  "已禁用",
+      "running":       "运行中",
+      "pending":       "缓冲轮次",
+      "lastProcessed": "上次处理",
+      "lastRun":       "上次运行",
+      "bufferEmpty":   "缓冲为空 —— 所有轮次都已蒸馏。",
+      "lastError":     "最近错误"
+    },
+    "actions": {
+      "runNow":     "立即运行",
+      "runStarted": "已开始一次蒸馏"
     }
   },
   "vector": {

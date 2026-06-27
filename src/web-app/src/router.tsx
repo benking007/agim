@@ -97,6 +97,7 @@ const router = createBrowserRouter([
       { index: true,     element: <Navigate to="facts" replace /> },
       { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
       { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
+      { path: 'distill', lazy: lazy(() => import('@/routes/memory/distill')) },
       { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
       // Skills moved into Settings → 技能 (2026-05 second pass). Old
       // /memory/skills + /skills bookmarks redirect to the new combined

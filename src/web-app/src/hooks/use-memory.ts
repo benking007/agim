@@ -19,6 +19,8 @@ import { ApiClientError } from '@/lib/api/client'
 import type {
   ConsolidateMemoryResponse,
   ConsolidateStatusResponse,
+  DistillStatusResponse,
+  DistillTriggerResponse,
   DeleteMemoryFactsBody,
   DeleteMemoryFactsResponse,
   ListMemoryFactsQuery,
@@ -35,6 +37,7 @@ export const memoryKeys = {
   facts:         (q: ListMemoryFactsQuery) => ['memory', 'facts', q] as const,
   persona:       (user_key: string) => ['memory', 'persona', user_key] as const,
   consolidate:   ['memory', 'consolidate'] as const,
+  distill:       ['memory', 'distill'] as const,
 }
 
 export function useMemoryUsers() {
@@ -151,6 +154,32 @@ export function useTriggerConsolidate() {
     mutationFn: () => api.consolidateMemory(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: memoryKeys.consolidate })
+      qc.invalidateQueries({ queryKey: memoryKeys.all })
+    },
+  })
+}
+
+/* ─────────────── Distill (dream distillation) ─────────────── */
+
+/** Status of the background distiller: buffer depth + last-run telemetry.
+ *  Polls while the page is open so the operator watches a manual "Run now"
+ *  drain the buffer without manual refresh. */
+export function useDistillStatus(opts: { enabled?: boolean } = {}) {
+  return useQuery<DistillStatusResponse>({
+    queryKey: memoryKeys.distill,
+    queryFn: () => api.getMemoryDistillStatus(),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
+    enabled: opts.enabled !== false,
+  })
+}
+
+export function useTriggerDistill() {
+  const qc = useQueryClient()
+  return useMutation<DistillTriggerResponse, Error, void>({
+    mutationFn: () => api.triggerMemoryDistill(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: memoryKeys.distill })
       qc.invalidateQueries({ queryKey: memoryKeys.all })
     },
   })

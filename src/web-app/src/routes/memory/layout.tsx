@@ -27,6 +27,7 @@ interface SubTab {
 const SUB_TABS: SubTab[] = [
   { to: 'facts',   i18nKey: 'tabs.facts',   mounted: true },
   { to: 'persona', i18nKey: 'tabs.persona', mounted: true },
+  { to: 'distill', i18nKey: 'tabs.distill', mounted: true },
   { to: 'vector',  i18nKey: 'tabs.vector',  mounted: true },
   // 'skills' was here; promoted to top-level /skills in 2026-05.
 ]

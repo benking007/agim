@@ -122,6 +122,23 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   // returns them cleanly to where they were. Restored in the finally.
   process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H')
 
+  // Wire terminal restore IMMEDIATELY after entering the alt-screen so any
+  // early exit below (e.g. an unknown --agent calling process.exit(1))
+  // still drops the alt-screen + mouse reporting instead of wedging the
+  // shell. `mouse` is assigned later; the closure reads it at call time.
+  let mouse: MouseStdin | undefined
+  const restoreTerminal = (): void => {
+    try { if (mouse) mouse.disable(process.stdout) } catch { /* ignore */ }
+    try { process.stdout.write('\x1b[?1049l') } catch { /* ignore */ }
+  }
+  process.once('exit', restoreTerminal)
+  // A bare SIGTERM/SIGINT (external `kill`) ends Node without firing 'exit',
+  // so restore + re-exit explicitly. (Ctrl-C in raw mode arrives as a byte
+  // handled by Ink, not as a signal.)
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(sig, () => { restoreTerminal(); process.exit(sig === 'SIGINT' ? 130 : 143) })
+  }
+
   try {
     // Mirror the `agim start` boot path so the `native` agent (and any
     // tool wiring that depends on the LLM / MCP registries) actually
@@ -210,10 +227,9 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   }
   // Mouse-wheel scrolling — route Ink's stdin through a proxy that strips
   // xterm mouse reports (so they never corrupt the input box) and surfaces
-  // wheel notches to the TUI. Opt out with IMHUB_TUI_NO_MOUSE=1. Cleaned up
-  // in the finally (and on process exit) so the terminal never stays in
-  // mouse-reporting mode.
-  let mouse: MouseStdin | undefined
+  // wheel notches to the TUI. Opt out with IMHUB_TUI_NO_MOUSE=1. The restore
+  // wiring (exit/signal handlers, finally) was set up right after entering
+  // the alt-screen above.
   if (process.env.IMHUB_TUI_NO_MOUSE !== '1' && process.stdin.isTTY) {
     try {
       mouse = createMouseStdin(process.stdin)
@@ -224,13 +240,11 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       mouse = undefined
     }
   }
-  const restoreTerminal = (): void => {
-    try { if (mouse) mouse.disable(process.stdout) } catch { /* ignore */ }
-    try { process.stdout.write('\x1b[?1049l') } catch { /* ignore */ }
-  }
-  // Safety net: if we die without unwinding the finally (SIGTERM, uncaught),
-  // still drop mouse reporting + the alt-screen so the shell isn't wedged.
-  process.once('exit', restoreTerminal)
+  // Lets the TUI drop mouse reporting while it hands the terminal to an
+  // external $EDITOR (otherwise clicks/scroll inject \x1b[<..M into the file).
+  const mouseControl = mouse
+    ? { disable: () => mouse?.disable(process.stdout), enable: () => mouse?.enable(process.stdout) }
+    : undefined
 
   const { waitUntilExit } = render(
     React.createElement(TuiApp, {
@@ -240,6 +254,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       onSessionIdChange: (id: string) => { finalSessionId = id },
       approvalBridge,
       wheel: mouse?.wheel,
+      mouseControl,
     }),
     { patchConsole: true, exitOnCtrlC: true, ...(mouse ? { stdin: mouse.stdin } : {}) },
   )

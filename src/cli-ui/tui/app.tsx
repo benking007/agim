@@ -145,6 +145,9 @@ interface AppProps {
   /** Emits 'wheel' (-1 up / +1 down) per mouse-wheel notch; wired by the
    *  stdin proxy in index.ts. Absent when mouse support is off. */
   wheel?: EventEmitter
+  /** Drop/re-arm xterm mouse reporting around handing the terminal to an
+   *  external $EDITOR. Absent when mouse support is off. */
+  mouseControl?: { disable(): void; enable(): void }
 }
 
 interface PaletteItem {
@@ -343,7 +346,7 @@ function AskDock({
   )
 }
 
-export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge, wheel }: AppProps): JSX.Element {
+export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, approvalBridge, wheel, mouseControl }: AppProps): JSX.Element {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const { setRawMode } = useStdin()
@@ -468,7 +471,12 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     viewportHRef.current = vh
     contentHRef.current = ch
     const maxScroll = Math.max(0, ch - vh)
-    setScrollTop((prev) => (follow ? maxScroll : Math.min(prev, maxScroll)))
+    // When everything fits, you're trivially at the bottom — re-arm follow so
+    // a /clear, /new, /compact or /undo while scrolled up doesn't strand the
+    // next streamed reply above the fold (paused follow + scrollTop pinned at
+    // the top while new content grows below the viewport).
+    if (maxScroll === 0 && !follow) setFollow(true)
+    setScrollTop((prev) => (follow || maxScroll === 0 ? maxScroll : Math.min(prev, maxScroll)))
   })
   const scrollByLines = useCallback((delta: number): void => {
     const maxScroll = Math.max(0, contentHRef.current - viewportHRef.current)
@@ -884,9 +892,13 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     }
     const file = join(dir, 'PROMPT.md')
     writeFileSync(file, input || '# 在这里写你的 prompt，保存退出后发送\n# 以 # 开头的行会被忽略\n')
-    // Pause Ink's raw-mode while the editor takes the terminal.
+    // Pause Ink's raw-mode AND xterm mouse reporting while the editor takes
+    // the terminal — otherwise clicks/scroll inside the editor inject
+    // \x1b[<..M escape bytes into the file being composed.
     setRawMode?.(false)
+    mouseControl?.disable()
     const r = spawnSync(editor, [file], { stdio: 'inherit' })
+    mouseControl?.enable()
     setRawMode?.(true)
     if (r.status !== 0 && r.status !== null) {
       setError(`编辑器退出码 ${r.status}`)
@@ -1314,9 +1326,12 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         </Box>
       </Box>
 
-      {/* Footer — pinned to the bottom: decision docks, transient popups,
-          errors, the scroll hint, the input box and the status bar. */}
-      <Box flexShrink={0} flexDirection="column">
+      {/* Footer — pinned to the bottom. On a short terminal the footer may
+          shrink: the overlay block (docks / popups / hint) is clipped first
+          (overflow hidden + flexShrink 1) so the input + status bar below
+          (flexShrink 0) are never pushed off-screen / made unreachable. */}
+      <Box flexShrink={1} flexDirection="column">
+      <Box flexShrink={1} flexDirection="column" overflow="hidden">
       {ask && (
         <AskDock
           ask={ask}
@@ -1416,6 +1431,10 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         </Box>
       )}
 
+      </Box>{/* end overlay block (clipped first when space is tight) */}
+
+      {/* Input + status bar — protected (flexShrink 0): always visible. */}
+      <Box flexShrink={0} flexDirection="column">
       {/* Input */}
       <Box borderStyle="single" borderColor={busy ? 'yellow' : 'gray'} paddingX={1} marginTop={(slashPopupOpen || filePopupOpen || agentArgPopupOpen || palette.open || helpOpen || !follow) ? 0 : 1}>
         <Text color={busy ? 'yellow' : 'green'}>{busy ? '⠿' : '›'} </Text>
@@ -1482,6 +1501,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           <Text>/help · ? 帮助 · 滚轮/PageUp/Dn 滚动 · Ctrl-P 面板 · Ctrl-C 退出</Text>
         </Text>
       </Box>
+      </Box>{/* end protected input + status */}
       </Box>
     </Box>
   )

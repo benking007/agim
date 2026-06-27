@@ -1018,6 +1018,16 @@ program
       console.warn('Memory consolidator failed to start:', err instanceof Error ? err.message : String(err))
     }
 
+    // P1 — dream distillation. Background pass that batch-extracts the turns
+    // buffered on the hot path when the system is idle (or past the staleness
+    // floor). No-op when IMHUB_MEMORY_ENABLED != 1.
+    try {
+      const { startMemoryDistiller } = await import('./core/memory-distiller.js')
+      startMemoryDistiller()
+    } catch (err) {
+      console.warn('Memory distiller failed to start:', err instanceof Error ? err.message : String(err))
+    }
+
     // v1.1.8 — Viewer auto-tunnel. If the operator opted into the
     // cloudflared quick-tunnel mode AND there's no static public URL set,
     // fork cloudflared so /v/:id links the agent puts in IM are reachable

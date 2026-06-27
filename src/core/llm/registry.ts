@@ -32,7 +32,7 @@ const log = rootLogger.child({ component: 'llm-registry' })
 /** Role names recognised by Stage 1 callers. Strings rather than enum so
  *  forward-compat roles (added in later stages) compile against an older
  *  agim without type errors. */
-export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | string
+export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | 'distill' | string
 
 /** Resolved backend wiring exposed for engines that drive their own LLM
  *  client (e.g. Agim Agent feeds this to pi-ai). Mirrors the same

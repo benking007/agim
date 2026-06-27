@@ -417,10 +417,15 @@ export function queryFacts(opts: QueryOpts): QueryResult {
     } else {
       const safeQ = buildFtsMatch(q)
       if (!safeQ) return { facts: [], matched: 0 }
+      // Scope by f.user_key (the real facts table), NOT t.user_key:
+      // facts_fts is a contentless FTS5 table (content='') with user_key
+      // UNINDEXED, so t.user_key reads back NULL and `t.user_key = ?` is
+      // always false — which silently dropped EVERY keyword hit, breaking
+      // memory_query / hybrid recall entirely. We already JOIN facts f.
       rows = db.prepare(`
         SELECT f.* FROM facts_fts t
         JOIN facts f ON f.id = t.rowid
-        WHERE t.user_key = ? AND facts_fts MATCH ?
+        WHERE f.user_key = ? AND facts_fts MATCH ?
         ${cat ? 'AND f.category = ?' : ''}
         ORDER BY bm25(facts_fts), f.created_at DESC
         LIMIT ?
@@ -788,12 +793,12 @@ export function listFacts(opts: {
       if (!safeQ) return { total: 0, limit, offset, facts: [] }
       totalSql = `
         SELECT COUNT(*) AS n FROM facts_fts t JOIN facts f ON f.id = t.rowid
-        WHERE t.user_key = ? AND facts_fts MATCH ? ${cat ? 'AND f.category = ?' : ''}
+        WHERE f.user_key = ? AND facts_fts MATCH ? ${cat ? 'AND f.category = ?' : ''}
       `
       totalParams = cat ? [opts.user_key, safeQ, cat] : [opts.user_key, safeQ]
       rowsSql = `
         SELECT f.* FROM facts_fts t JOIN facts f ON f.id = t.rowid
-        WHERE t.user_key = ? AND facts_fts MATCH ? ${cat ? 'AND f.category = ?' : ''}
+        WHERE f.user_key = ? AND facts_fts MATCH ? ${cat ? 'AND f.category = ?' : ''}
         ORDER BY bm25(facts_fts), f.created_at DESC LIMIT ? OFFSET ?
       `
       rowsParams = cat ? [opts.user_key, safeQ, cat, limit, offset] : [opts.user_key, safeQ, limit, offset]

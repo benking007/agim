@@ -92,3 +92,11 @@ jobs:
       # the CI still validates it independently.
       - name: Backend build
         run: npm run build
+
+      # ───── Node-only memory recall regression ─────
+      # The SQLite memory layer uses better-sqlite3, which bun can't load, so
+      # `bun test` runs it against a disabled DB and can't catch query bugs
+      # (e.g. the contentless-FTS user_key recall bug). This runs the real
+      # store under node against the freshly-built dist.
+      - name: Memory recall regression (node)
+        run: npm run test:node

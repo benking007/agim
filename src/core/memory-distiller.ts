@@ -53,51 +53,69 @@ function batchMax(): number {
 function isDistillerEnabled(): boolean {
   if (!isMemoryEnabled()) return false
   const raw = (process.env.IMHUB_MEMORY_DISTILL_ENABLED || '1').toLowerCase()
-  return raw !== '0' && raw !== 'false' && raw !== 'no'
+  // Honor the same opt-out vocabulary as persona.isMemoryEnabled ('off'
+  // included) so IMHUB_MEMORY_DISTILL_ENABLED=off actually stops the pass
+  // instead of the UI toggle and the runtime disagreeing.
+  return raw !== '0' && raw !== 'false' && raw !== 'no' && raw !== 'off'
 }
 
 /**
- * One distiller pass. When idle (no active agent jobs) processes every user
- * with buffered turns; when busy, only users whose oldest pending turn has
- * crossed the staleness floor. Returns the number of users processed.
+ * One distiller pass. The periodic tick processes every buffered user only
+ * when idle (no active agent jobs); while busy it limits itself to users whose
+ * oldest pending turn has crossed the staleness floor. A manual trigger passes
+ * `force` to flush every buffered user regardless of load — otherwise the web
+ * "Run now" button is a no-op on a continuously-busy bot (the distiller shares
+ * the process with the agent jobs, so it is almost never idle). Returns the
+ * number of users processed.
  */
-export async function runDistillerOnce(): Promise<number> {
+export async function runDistillerOnce(opts: { force?: boolean } = {}): Promise<number> {
   if (!isDistillerEnabled()) return 0
   if (status.running) return 0   // no overlapping passes (timer + manual trigger)
   status.running = true
-  const idle = _activeJobCount() === 0
-  const users = idle ? listPendingUserKeys() : listPendingUserKeys({ olderThanSec: floorSec() })
-  if (users.length === 0) { status.running = false; status.lastRunAt = Date.now(); return 0 }
-  let processed = 0
-  try {
-  for (const userKey of users) {
-    const turns = listPendingForUser(userKey, batchMax())
-    if (turns.length === 0) continue
-    // Representative agent = the newest turn's agent (turns are id-ASC, so the
-    // last one). Used by the zero-config 'auto' source.
-    const representativeAgent = turns[turns.length - 1].agent_name || ''
-    try {
-      const r = await runBatchDistillation(
-        userKey,
-        turns.map((t) => ({ user_message: t.user_message, agent_reply: t.agent_reply })),
-        representativeAgent,
-      )
-      if (r.ok) {
-        // Processed (even if 0 facts were worth keeping) → clear these rows.
-        deletePendingByIds(turns.map((t) => t.id))
-        processed++
-        log.info({ event: 'memory.distill.batch_done', userKey, turns: turns.length, saved: r.saved })
-      } else {
-        // No usable LLM — leave buffered, retry next pass (bounded by the
-        // per-user cap enforced at enqueue time).
-        log.debug({ event: 'memory.distill.batch_skipped', userKey, turns: turns.length })
-      }
-    } catch (err) {
-      log.warn({ event: 'memory.distill.batch_failed', userKey, err: String(err) })
-    }
+  const flushAll = opts.force === true || _activeJobCount() === 0
+  const users = flushAll ? listPendingUserKeys() : listPendingUserKeys({ olderThanSec: floorSec() })
+  if (users.length === 0) {
+    status.lastProcessed = 0
+    status.running = false
+    status.lastRunAt = Date.now()
+    return 0
   }
+  let processed = 0
+  // Remember the last real problem so the web "Last error" tile can explain a
+  // climbing pendingTotal. Cleared to null below only when nothing went wrong.
+  let lastError: string | null = null
+  try {
+    for (const userKey of users) {
+      const turns = listPendingForUser(userKey, batchMax())
+      if (turns.length === 0) continue
+      // Representative agent = the newest turn's agent (turns are id-ASC, so the
+      // last one). Used by the zero-config 'auto' source.
+      const representativeAgent = turns[turns.length - 1].agent_name || ''
+      try {
+        const r = await runBatchDistillation(
+          userKey,
+          turns.map((t) => ({ user_message: t.user_message, agent_reply: t.agent_reply })),
+          representativeAgent,
+        )
+        if (r.ok) {
+          // Processed (even if 0 facts were worth keeping) → clear these rows.
+          deletePendingByIds(turns.map((t) => t.id))
+          processed++
+          log.info({ event: 'memory.distill.batch_done', userKey, turns: turns.length, saved: r.saved })
+        } else {
+          // No usable LLM — leave buffered, retry next pass (bounded by the
+          // per-user cap enforced at enqueue time). Surface it so the operator
+          // sees why distillation is stalled.
+          lastError = 'no usable extraction LLM (check distillation source / agent / distill role)'
+          log.debug({ event: 'memory.distill.batch_skipped', userKey, turns: turns.length })
+        }
+      } catch (err) {
+        lastError = String(err)
+        log.warn({ event: 'memory.distill.batch_failed', userKey, err: String(err) })
+      }
+    }
     status.lastProcessed = processed
-    status.lastError = null
+    status.lastError = lastError
     return processed
   } finally {
     status.running = false

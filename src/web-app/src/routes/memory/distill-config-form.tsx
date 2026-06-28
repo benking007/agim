@@ -107,15 +107,23 @@ export function DistillConfigForm({ onSaved }: DistillConfigFormProps): JSX.Elem
 
   const [form, setForm] = useState<FormState>(readForm)
   const initialRef = useRef<FormState>(form)
+  const seededRef = useRef(false)
 
-  // Re-seed from server once the env + llm roles have both loaded (and on
-  // any later refetch). useEffect so we don't stomp mid-edit on every render.
+  // Seed from the server exactly once, after BOTH env and the llm roles have
+  // loaded (llmBackend is derived from llmQuery). Seeding once — rather than on
+  // every refetch — is deliberate: readForm's identity changes whenever the
+  // env object or currentDistillRole changes, so a re-seed-on-refetch effect
+  // would stomp the operator's unsaved edits the moment an unrelated llmQuery
+  // or env refetch fires (window focus, or role invalidation from a different
+  // save). The post-save baseline is committed directly in onSave instead.
   useEffect(() => {
-    if (!envQuery.data) return
+    if (seededRef.current) return
+    if (!envQuery.data || !llmQuery.data) return
     const next = readForm()
     setForm(next)
     initialRef.current = next
-  }, [envQuery.data, readForm])
+    seededRef.current = true
+  }, [envQuery.data, llmQuery.data, readForm])
 
   const updateEnv = useUpdateEnv()
   const putRoles = useLlmPutRoles()
@@ -201,6 +209,12 @@ export function DistillConfigForm({ onSaved }: DistillConfigFormProps): JSX.Elem
         await putRoles.mutateAsync({ distill: form.llmBackend.trim() })
       }
       toast.success(t('distill.form.savedToast'))
+      // Commit the saved values as the new baseline so the form settles to
+      // non-dirty. We seed from the server only once (see the effect above),
+      // so there's no refetch round-trip to reset it for us; the shallow copy
+      // re-triggers the `dirty` memo against the updated baseline.
+      initialRef.current = { ...form }
+      setForm((f) => ({ ...f }))
       onSaved?.()
     } catch (serr) {
       const { message } = describeError(serr, t)

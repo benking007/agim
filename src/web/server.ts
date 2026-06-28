@@ -3755,7 +3755,9 @@ async function handleMemoryConsolidateStatus(_req: IncomingMessage, res: ServerR
 async function handleMemoryDistill(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const { runDistillerOnce } = await import('../core/memory-distiller.js')
-    void runDistillerOnce().catch(() => { /* status carries the error */ })
+    // force: a manual "Run now" must flush the whole buffer even while the bot
+    // is busy — the idle gate only governs the periodic background tick.
+    void runDistillerOnce({ force: true }).catch(() => { /* status carries the error */ })
     sendJson(res, 202, { ok: true, hint: 'poll /api/memory/distill/status for progress' })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

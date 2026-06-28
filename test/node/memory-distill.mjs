@@ -24,7 +24,7 @@ delete process.env.IMHUB_MEMORY_VECTOR_BACKEND
 
 const memory = await import(dist('memory.js'))
 const { registry } = await import(dist('registry.js'))
-const { runDistillerOnce } = await import(dist('memory-distiller.js'))
+const { runDistillerOnce, getDistillerStatus } = await import(dist('memory-distiller.js'))
 
 let failures = 0
 const check = (name, cond) => { console.log(`  ${cond ? '✓' : '✗'} ${name}`); if (!cond) failures++ }
@@ -74,6 +74,17 @@ memory.enqueuePendingTurn({ user_key: A, platform: 'tui', user_message: '又一�
 const processed2 = await runDistillerOnce()
 check('source=llm with no backend processes 0 users', processed2 === 0)
 check('buffer kept when no usable LLM (retry next pass)', memory.countPendingTotal() === 1)
+// The web "Last error" tile reads status.lastError — a stalled buffer must
+// surface a reason, not stay null.
+check('status surfaces lastError when no usable LLM', /no usable extraction LLM/.test(getDistillerStatus().lastError || ''))
+
+// 5b) opt-out via IMHUB_MEMORY_DISTILL_ENABLED=off must match persona's
+// vocabulary ('off'), and a disabled distiller must NOT drain the buffer.
+process.env.IMHUB_MEMORY_DISTILL_ENABLED = 'off'
+check('=off disables the distiller (status.enabled false)', getDistillerStatus().enabled === false)
+check('=off makes runDistillerOnce a no-op', (await runDistillerOnce()) === 0)
+check('=off leaves the buffer untouched', memory.countPendingTotal() === 1)
+delete process.env.IMHUB_MEMORY_DISTILL_ENABLED
 
 // 6) P3 — memory is ON by default (opt-out via IMHUB_MEMORY_ENABLED=0).
 const { isMemoryEnabled } = await import(dist('persona.js'))

@@ -25,6 +25,12 @@ The committed root `package-lock.json` has ~107 entries whose `resolved` URLs po
 - Building the web UI (`npm run build` → `build:spa`) compiles the Vite SPA in `src/web-app`, which has its own `package.json` (no lockfile). Its deps are installed by `npm --prefix src/web-app install`.
 - The optional `@xenova/transformers` dep (local vector embeddings, default OFF) is heavy; it installs fine with `--no-package-lock` but is not required to run, lint, build, or test the app.
 
+### Release / publish notes
+
+- npm publication is driven by `.github/workflows/release.yml`, not by pushing a git tag. The normal release path is: bump `package.json` (and `package-lock.json`), commit to `main`, then push `main`. The workflow triggers only on `push` to `main` when `package.json` changed; it publishes with GitHub Actions auth (`NPM_TOKEN` / trusted publishing).
+- If the local push fails with HTTPS credential errors (for example a 403 despite the right GitHub username), switch the repository remote to SSH and retry: `git remote set-url origin git@github.com:benking007/agim.git`. Verify the key with `ssh -T git@github.com`; local `npm whoami` is not required for the official release because npm publish happens in GitHub Actions.
+- After the workflow finishes, confirm both sides: the Actions run named `Publish to npm` is green, and `npm view agim-cli version` returns the bumped version.
+
 ### Running the app locally
 
 1. The app requires a config at `~/.agim/config.json`. Without it, an interactive onboarding wizard starts and exits on cancel. Create a minimal config to skip onboarding:

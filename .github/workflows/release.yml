@@ -104,9 +104,9 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         # NOTE: `--provenance` is intentionally omitted. npm requires the
         # source repo to be public for sigstore provenance verification —
-        # benking007/imhub is private (422 Unprocessable Entity). Re-add
-        # `--provenance` once the repo is flipped to public; until then
-        # we publish with the OIDC / NPM_TOKEN auth path but no sigstore
+        # re-add `--provenance` once npm trusted publishing / provenance
+        # has been verified for this repository. Until then, publish with
+        # the OIDC / NPM_TOKEN auth path but no sigstore
         # attestation. (Older 0.2.x / 0.3.x releases shipped the same way.)
         run: npm publish --access public
         env:

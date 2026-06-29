@@ -44,14 +44,14 @@ agim 1.2.0 把长期记忆做成两层：
 /restart                                   # 或 web Safety 卡
 
 # 或终端
-echo 'IMHUB_MEMORY_ENABLED=1' >> ~/.agim/env
+echo 'AGIM_MEMORY_ENABLED=1' >> ~/.agim/env
 sudo systemctl restart agim
 ```
 
 启用后立刻：
 - 每次 agent 回复后台跑「事实抽取 LLM 调用」（fire-and-forget，不阻塞用户）
 - 每次新对话开头把 persona summary 注入 prompt
-- agent 可调 `mcp__imhub__memory_query / save / list / delete` 查改
+- agent 可调 `mcp__agim__memory_query / save / list / delete` 查改
 
 ### 2.2 加向量召回（可选增强）
 
@@ -88,10 +88,10 @@ sudo systemctl restart agim
 兼容任意 `/v1/embeddings` 端点：OpenAI 官方、Azure、Ollama、智谱 GLM、Moonshot 等。
 
 ```env
-IMHUB_MEMORY_VECTOR_BACKEND=openai
-IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL=https://api.openai.com/v1
-IMHUB_MEMORY_VECTOR_OPENAI_MODEL=text-embedding-3-small
-IMHUB_MEMORY_VECTOR_OPENAI_API_KEY=sk-...
+AGIM_MEMORY_VECTOR_BACKEND=openai
+AGIM_MEMORY_VECTOR_OPENAI_BASE_URL=https://api.openai.com/v1
+AGIM_MEMORY_VECTOR_OPENAI_MODEL=text-embedding-3-small
+AGIM_MEMORY_VECTOR_OPENAI_API_KEY=sk-...
 ```
 
 - 30 秒超时（避免网络卡 saveFact 流程）
@@ -102,7 +102,7 @@ IMHUB_MEMORY_VECTOR_OPENAI_API_KEY=sk-...
 Web UI 「本地模型」下拉选「自定义…」→ 填 `Xenova/<your-repo>`。或编辑 env：
 
 ```env
-IMHUB_MEMORY_VECTOR_LOCAL_MODEL=Xenova/your-model
+AGIM_MEMORY_VECTOR_LOCAL_MODEL=Xenova/your-model
 ```
 
 要求模型有 ONNX 导出 + Xenova/transformers.js 支持。
@@ -113,7 +113,7 @@ IMHUB_MEMORY_VECTOR_LOCAL_MODEL=Xenova/your-model
 
 ### 4.1 周期
 
-默认 24h 跑一次（`IMHUB_MEMORY_CONSOLIDATE_HOURS=24`）。**boot 时不立即跑**（避免和首条消息抢资源）——所以下次触发 = 上次 agim 启动时间 + 24h。
+默认 24h 跑一次（`AGIM_MEMORY_CONSOLIDATE_HOURS=24`）。**boot 时不立即跑**（避免和首条消息抢资源）——所以下次触发 = 上次 agim 启动时间 + 24h。
 
 ### 4.2 手动触发（v1.2.2+）
 
@@ -184,7 +184,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### 5.4 Web 端 SECRET_KEYS
 
-`IMHUB_MEMORY_VECTOR_OPENAI_API_KEY` 在 SECRET_KEYS 白名单：
+`AGIM_MEMORY_VECTOR_OPENAI_API_KEY` 在 SECRET_KEYS 白名单：
 
 - GET `/api/env` 返回掩码值（如 `sk-1****wxyz`）
 - 编辑需点「🔓 显示并编辑」按钮（fetch with `?reveal=1`）
@@ -230,7 +230,7 @@ sqlite3 ~/.agim/memory.db \
 ### 6.4 完全关闭
 
 ```env
-IMHUB_MEMORY_ENABLED=0
+AGIM_MEMORY_ENABLED=0
 ```
 
 重启后：

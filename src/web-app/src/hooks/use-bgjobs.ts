@@ -4,7 +4,7 @@
  * Bgjobs are a read-only window into the wrapper-managed bgjob
  * directories (Claude Code's ~/.claude/bgjobs/, opencode's
  * ~/.config/opencode/bgjobs/, codex's ~/.codex/bgjobs/, plus any
- * IMHUB_BGJOB_ROOTS custom paths). No SSE channel for bgjob events;
+ * AGIM_BGJOB_ROOTS custom paths). No SSE channel for bgjob events;
  * the page polls or refresh-on-demand.
  *
  * Response shape varies based on whether `root` is set — when no

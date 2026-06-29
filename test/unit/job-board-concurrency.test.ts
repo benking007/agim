@@ -13,15 +13,15 @@ import type { Logger } from 'pino'
 
 const _logger: Logger = rootLogger
 
-const ORIG_LIMIT = process.env.IM_HUB_MAX_CONCURRENT_JOBS
+const ORIG_LIMIT = process.env.AGIM_MAX_CONCURRENT_JOBS
 
 describe('Job Board concurrency cap', () => {
   beforeEach(() => {
-    process.env.IM_HUB_MAX_CONCURRENT_JOBS = '2'
+    process.env.AGIM_MAX_CONCURRENT_JOBS = '2'
   })
   afterEach(() => {
-    if (ORIG_LIMIT === undefined) delete process.env.IM_HUB_MAX_CONCURRENT_JOBS
-    else process.env.IM_HUB_MAX_CONCURRENT_JOBS = ORIG_LIMIT
+    if (ORIG_LIMIT === undefined) delete process.env.AGIM_MAX_CONCURRENT_JOBS
+    else process.env.AGIM_MAX_CONCURRENT_JOBS = ORIG_LIMIT
   })
 
   it('exposes diagnostics and never throws on stub callers', () => {
@@ -29,7 +29,7 @@ describe('Job Board concurrency cap', () => {
     expect(typeof jobBoard._waitQueueDepth()).toBe('number')
   })
 
-  it('caps concurrent slot holders at IM_HUB_MAX_CONCURRENT_JOBS', async () => {
+  it('caps concurrent slot holders at AGIM_MAX_CONCURRENT_JOBS', async () => {
     // Exercise the concurrency gate directly so the test is independent
     // of better-sqlite3 (not loadable under bun). With max=2:
     //   - first two acquires resolve immediately

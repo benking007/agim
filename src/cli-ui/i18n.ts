@@ -1,7 +1,7 @@
 // cli-ui/i18n.ts — string dictionaries + persistent language preference
 // for the interactive CLI wizard (agim / agim config / status / etc.).
 //
-// Pattern mirrors imhub-site's strings.ts: the EN dict drives the Key type,
+// Pattern mirrors agim-site's strings.ts: the EN dict drives the Key type,
 // the ZH dict is `Record<Key, string>` so missing keys are a compile error.
 //
 // Language preference is persisted to ~/.agim/cli-lang (single-line file
@@ -71,7 +71,7 @@ const en = {
   'web.bind.prompt': 'Pick a bind address:',
   'web.bind.option.loopback': '127.0.0.1 — loopback only (recommended)',
   'web.bind.option.public': '0.0.0.0 — all interfaces (requires reverse-proxy TLS in front!)',
-  'web.bind.public_warn': '⚠️  0.0.0.0 binds every network interface. Web auth tokens will travel cleartext unless you put a TLS-terminating reverse proxy (nginx / caddy / traefik) in front of agim. Set IMHUB_WEB_TLS_ACK=1 to silence the boot banner once your TLS terminator is verified.',
+  'web.bind.public_warn': '⚠️  0.0.0.0 binds every network interface. Web auth tokens will travel cleartext unless you put a TLS-terminating reverse proxy (nginx / caddy / traefik) in front of agim. Set AGIM_WEB_TLS_ACK=1 to silence the boot banner once your TLS terminator is verified.',
   'web.bind.public_confirm': 'You have a TLS reverse proxy in front of agim. Continue?',
   'web.bind.saved': '✅ bind set to {bind} (written to {file}). Restart agim to pick up the new address.',
   'web.port.prompt': 'Enter port (current: {current}):',
@@ -303,7 +303,7 @@ const en = {
   'svc.stop.not_running': 'Nothing to stop — Agim is not running.',
   'svc.stop.stopped': '✅ Stopped.',
 
-  'svc.restart.systemd': 'Restarting via `systemctl restart im-hub.service`…',
+  'svc.restart.systemd': 'Restarting via `systemctl restart agim.service`…',
   'svc.restart.bg': 'Restarting background daemon…',
   'svc.restart.fg_warning': 'A foreground process is running; cannot restart from another shell. Stop it (Ctrl-C) and run `agim start --bg`.',
   'svc.restart.done': '✅ Restarted.',
@@ -441,7 +441,7 @@ const zh: Record<Key, string> = {
   'web.bind.prompt': '选择 bind 地址：',
   'web.bind.option.loopback': '127.0.0.1 —— 仅回环（推荐）',
   'web.bind.option.public': '0.0.0.0 —— 所有网卡（必须有 TLS 反代在前！）',
-  'web.bind.public_warn': '⚠️  0.0.0.0 会绑定所有网卡。Web 鉴权令牌走明文 HTTP 之前，必须有 TLS 反代（nginx / caddy / traefik）在前面终结。TLS 检查通过后设 IMHUB_WEB_TLS_ACK=1 静默启动横幅。',
+  'web.bind.public_warn': '⚠️  0.0.0.0 会绑定所有网卡。Web 鉴权令牌走明文 HTTP 之前，必须有 TLS 反代（nginx / caddy / traefik）在前面终结。TLS 检查通过后设 AGIM_WEB_TLS_ACK=1 静默启动横幅。',
   'web.bind.public_confirm': '你已经在 agim 前面配好 TLS 反代了吗？',
   'web.bind.saved': '✅ bind 已设为 {bind}（写入 {file}）。重启 agim 后生效。',
   'web.port.prompt': '输入端口（当前 {current}）：',
@@ -653,8 +653,8 @@ const zh: Record<Key, string> = {
 
   // ─── service mgmt ────────────────────────────────────────────────
   'svc.status.title': '阿吉姆 · 状态',
-  'svc.status.systemd_active': 'systemd 单元 `im-hub.service` 正在运行（pid {pid}）',
-  'svc.status.systemd_inactive': 'systemd 单元 `im-hub.service` 存在但未启动',
+  'svc.status.systemd_active': 'systemd 单元 `agim.service` 正在运行（pid {pid}）',
+  'svc.status.systemd_inactive': 'systemd 单元 `agim.service` 存在但未启动',
   'svc.status.bg_running': '后台守护进程在跑（pid {pid}，日志：{log}）',
   'svc.status.fg_running': '前台进程在跑（pid {pid}）',
   'svc.status.not_running': '未发现阿吉姆实例',
@@ -665,15 +665,15 @@ const zh: Record<Key, string> = {
   'svc.start.starting_bg': '后台启动中…',
   'svc.start.bg_ready': '✅ 后台守护进程已启动（pid {pid}，日志：{log}）',
   'svc.start.bg_hint': '提示：`agim stop` 终止；`agim status` 查看。',
-  'svc.start.systemd_managed': '已有 systemd 单元管理 im-hub。用 `systemctl start im-hub.service`。',
+  'svc.start.systemd_managed': '已有 systemd 单元管理 agim。用 `systemctl start agim.service`。',
   'svc.start.already_running': '已经在跑（pid {pid}）。用 `agim restart` 重启。',
 
-  'svc.stop.stopping_systemd': '停止 systemd 单元 `im-hub.service`…',
+  'svc.stop.stopping_systemd': '停止 systemd 单元 `agim.service`…',
   'svc.stop.stopping_bg': '停止后台守护进程（pid {pid}）…',
   'svc.stop.not_running': '没在跑，无需停止。',
   'svc.stop.stopped': '✅ 已停止。',
 
-  'svc.restart.systemd': '通过 `systemctl restart im-hub.service` 重启…',
+  'svc.restart.systemd': '通过 `systemctl restart agim.service` 重启…',
   'svc.restart.bg': '重启后台守护进程…',
   'svc.restart.fg_warning': '前台进程在跑，无法从其他 shell 重启它。请在那个 shell 里 Ctrl-C 后用 `agim start --bg`。',
   'svc.restart.done': '✅ 已重启。',

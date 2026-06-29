@@ -59,7 +59,7 @@ describe('isPrivateAddr (IPv6)', () => {
 })
 
 describe('assertSafeAcpUrl', () => {
-  const ALLOW = 'IMHUB_ACP_ALLOW_LOOPBACK'
+  const ALLOW = 'AGIM_ACP_ALLOW_LOOPBACK'
   const orig = process.env[ALLOW]
   beforeEach(() => { delete process.env[ALLOW] })
   afterEach(() => {
@@ -124,7 +124,7 @@ describe('assertSafeAcpUrl', () => {
     }
   })
 
-  it('allows loopback when IMHUB_ACP_ALLOW_LOOPBACK=1 (dev path)', async () => {
+  it('allows loopback when AGIM_ACP_ALLOW_LOOPBACK=1 (dev path)', async () => {
     process.env[ALLOW] = '1'
     const u = await assertSafeAcpUrl('http://127.0.0.1:8080/agent/card', { forwardsCredentials: false })
     expect(u.host).toBe('127.0.0.1:8080')

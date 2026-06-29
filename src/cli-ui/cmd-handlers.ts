@@ -24,12 +24,10 @@ import { readSavedLang, t, type Lang } from './i18n.js'
 import { CONFIG_DIR, CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { ENV_FILE, removeEnvFile } from './env-file.js'
 
-/** Candidate paths for the systemd unit; v1.0 prefers `agim.service`,
- *  pre-v1.0 wrote `im-hub.service`. Resolved at runtime by `findSystemdUnit()`
- *  so we operate on whichever exists. */
+/** Candidate paths for the systemd unit. Resolved at runtime by
+ *  `findSystemdUnit()` so we operate on the unit only when it exists. */
 const SYSTEMD_UNIT_CANDIDATES = [
   '/etc/systemd/system/agim.service',
-  '/etc/systemd/system/im-hub.service',
 ] as const
 
 function findSystemdUnit(): { path: string; name: string } | null {
@@ -92,9 +90,9 @@ export function cmdStatus(): void {
 // ─── start ───────────────────────────────────────────────────────────
 
 /**
- * Foreground start is the legacy `program.command('start').action(...)`
- * path in cli.ts — we DON'T re-implement it here, just delegate. For
- * background, we re-spawn ourselves detached.
+ * Foreground start is implemented by `program.command('start').action(...)`
+ * in cli.ts; this handler delegates to it. For background, we re-spawn
+ * ourselves detached.
  */
 export async function cmdStart(bg: boolean, runForegroundStart: () => Promise<void>): Promise<void> {
   const lang = quietLang()
@@ -186,9 +184,7 @@ export async function cmdRestart(): Promise<void> {
 
 type UninstallMode = 'keep' | 'creds' | 'full'
 
-/** The credential files that mode='creds' and mode='full' both wipe.
- *  Resolved from CONFIG_DIR so the legacy `~/.im-hub/` layout is handled
- *  automatically (agim-paths.ts auto-detects on a 0.x upgrade). */
+/** The credential files that mode='creds' and mode='full' both wipe. */
 function credentialFiles(): string[] {
   return [
     join(CONFIG_DIR, 'tokens.json'),
@@ -231,8 +227,7 @@ function secureDelete(path: string, lang: Lang, shredAvailable: boolean): void {
 export async function cmdUninstall(): Promise<void> {
   const lang = await pickLang()
   // Path interpolations — match whatever AGIM_HOME / AGIM_WORKSPACES
-  // resolved to so the prompts reflect the actual on-disk layout (the
-  // legacy ~/.im-hub/ on upgraded systems, the new ~/.agim/ on fresh).
+  // resolved to so the prompts reflect the actual on-disk layout.
   const pathVars = {
     config: CONFIG_FILE,
     workspaces: WORKSPACES_DIR,
@@ -311,9 +306,7 @@ export async function cmdUninstall(): Promise<void> {
   // 1. Stop any running instance.
   console.log(t(lang, 'svc.uninstall.stopping'))
   await stopService()
-  // 2. Remove systemd unit if present (requires root). Both `agim.service`
-  //    (v1.0+) and the legacy `im-hub.service` are cleaned up so an upgrade
-  //    across the rename doesn't leave a stale unit behind.
+  // 2. Remove systemd unit if present (requires root).
   for (const unitPath of SYSTEMD_UNIT_CANDIDATES) {
     if (!existsSync(unitPath)) continue
     const unitName = unitPath.split('/').pop() ?? ''
@@ -337,10 +330,9 @@ export async function cmdUninstall(): Promise<void> {
   // 4. Uninstall npm package globally.
   console.log(t(lang, 'svc.uninstall.removing_npm'))
   try {
-    // Best-effort uninstall the current package `agim-cli` plus the
-    // legacy npm names `im-hub-pro` and `im-hub` so a user who upgraded
-    // across the rename(s) doesn't end up with stale dangling bins.
-    execSync('npm uninstall -g agim-cli im-hub-pro im-hub', { stdio: 'inherit' })
+    // Best-effort uninstall the current package. The public executable
+    // remains `agim`; npm removes that bin with the package.
+    execSync('npm uninstall -g agim-cli', { stdio: 'inherit' })
   } catch (err) {
     console.warn(`⚠️ npm uninstall failed: ${err instanceof Error ? err.message : String(err)} — run \`npm uninstall -g agim-cli\` manually.`)
   }

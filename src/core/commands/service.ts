@@ -58,9 +58,7 @@ export async function handleStopCommand(args: string, ctx: RouteContext): Promis
   const { existsSync } = await import('node:fs')
   const svc = detectService()
   if (svc.mode === 'systemd') {
-    const unitName = existsSync('/etc/systemd/system/agim.service')
-      ? 'agim.service'
-      : (existsSync('/etc/systemd/system/im-hub.service') ? 'im-hub.service' : null)
+    const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : null
     if (unitName) {
       // Spawn detached so this handler can return synchronously (the
       // IM reply text needs to flush before the process dies). Same

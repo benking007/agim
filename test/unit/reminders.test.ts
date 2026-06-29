@@ -1,6 +1,6 @@
 // Reminders engine — unit tests.
 //
-// Strategy: set IMHUB_REMINDERS_DB to a temp file BEFORE importing the
+// Strategy: set AGIM_REMINDERS_DB to a temp file BEFORE importing the
 // module so the DB lives in /tmp and gets nuked between test files. The
 // engine module itself doesn't auto-start a tick loop on import; tests
 // drive the engine via the exported `tick()`.
@@ -10,9 +10,9 @@ import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_DIR = join(tmpdir(), `imhub-reminders-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+const TEST_DIR = join(tmpdir(), `agim-reminders-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
 const TEST_DB = join(TEST_DIR, 'reminders.db')
-process.env.IMHUB_REMINDERS_DB = TEST_DB
+process.env.AGIM_REMINDERS_DB = TEST_DB
 
 const remindersMod = await import('../../src/core/reminders.js')
 const registryMod = await import('../../src/core/registry.js')

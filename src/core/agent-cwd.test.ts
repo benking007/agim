@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import {
   resolveAgentCwd,
   defaultAgentCwd,
-  imhubWorkspacesRoot,
+  agimWorkspacesRoot,
   ensureAgentWorkspace,
   bootstrapAgentWorkspaces,
 } from './agent-cwd.js'
@@ -20,22 +20,22 @@ describe('resolveAgentCwd', () => {
   let prevOpencodeOverride: string | undefined
 
   beforeEach(async () => {
-    tmpRoot = await mkdtemp(join(tmpdir(), 'imhub-cwdtest-'))
-    prevRoot = process.env.IMHUB_WORKSPACES_ROOT
-    prevClaudeOverride = process.env.IMHUB_CLAUDE_CODE_CWD
-    prevOpencodeOverride = process.env.IMHUB_OPENCODE_CWD
-    process.env.IMHUB_WORKSPACES_ROOT = tmpRoot
-    delete process.env.IMHUB_CLAUDE_CODE_CWD
-    delete process.env.IMHUB_OPENCODE_CWD
+    tmpRoot = await mkdtemp(join(tmpdir(), 'agim-cwdtest-'))
+    prevRoot = process.env.AGIM_WORKSPACES_ROOT
+    prevClaudeOverride = process.env.AGIM_CLAUDE_CODE_CWD
+    prevOpencodeOverride = process.env.AGIM_OPENCODE_CWD
+    process.env.AGIM_WORKSPACES_ROOT = tmpRoot
+    delete process.env.AGIM_CLAUDE_CODE_CWD
+    delete process.env.AGIM_OPENCODE_CWD
   })
 
   afterEach(async () => {
-    if (prevRoot === undefined) delete process.env.IMHUB_WORKSPACES_ROOT
-    else process.env.IMHUB_WORKSPACES_ROOT = prevRoot
-    if (prevClaudeOverride === undefined) delete process.env.IMHUB_CLAUDE_CODE_CWD
-    else process.env.IMHUB_CLAUDE_CODE_CWD = prevClaudeOverride
-    if (prevOpencodeOverride === undefined) delete process.env.IMHUB_OPENCODE_CWD
-    else process.env.IMHUB_OPENCODE_CWD = prevOpencodeOverride
+    if (prevRoot === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+    else process.env.AGIM_WORKSPACES_ROOT = prevRoot
+    if (prevClaudeOverride === undefined) delete process.env.AGIM_CLAUDE_CODE_CWD
+    else process.env.AGIM_CLAUDE_CODE_CWD = prevClaudeOverride
+    if (prevOpencodeOverride === undefined) delete process.env.AGIM_OPENCODE_CWD
+    else process.env.AGIM_OPENCODE_CWD = prevOpencodeOverride
     await rm(tmpRoot, { recursive: true, force: true })
   })
 
@@ -53,23 +53,23 @@ describe('resolveAgentCwd', () => {
   })
 
   it('env override beats default IM dir', () => {
-    process.env.IMHUB_CLAUDE_CODE_CWD = '/srv/explicit'
+    process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe('/srv/explicit')
   })
 
   it('env override also wins for non-IM calls (admin escape hatch)', () => {
-    process.env.IMHUB_CLAUDE_CODE_CWD = '/srv/explicit'
+    process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentCwd('claude-code', NO_IM_OPTS)).toBe('/srv/explicit')
   })
 
   it('env key respects per-agent naming (hyphen to underscore, uppercase)', () => {
-    process.env.IMHUB_OPENCODE_CWD = '/srv/oc'
+    process.env.AGIM_OPENCODE_CWD = '/srv/oc'
     expect(resolveAgentCwd('opencode', FULL_IM_OPTS)).toBe('/srv/oc')
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe(join(tmpRoot, 'claude-code'))
   })
 
-  it('IMHUB_WORKSPACES_ROOT moves the default for every agent at once', () => {
-    expect(imhubWorkspacesRoot()).toBe(tmpRoot)
+  it('AGIM_WORKSPACES_ROOT moves the default for every agent at once', () => {
+    expect(agimWorkspacesRoot()).toBe(tmpRoot)
     expect(defaultAgentCwd('claude-code')).toBe(join(tmpRoot, 'claude-code'))
     expect(defaultAgentCwd('opencode')).toBe(join(tmpRoot, 'opencode'))
   })
@@ -80,14 +80,14 @@ describe('ensureAgentWorkspace', () => {
   let prevRoot: string | undefined
 
   beforeEach(async () => {
-    tmpRoot = await mkdtemp(join(tmpdir(), 'imhub-cwdtest-'))
-    prevRoot = process.env.IMHUB_WORKSPACES_ROOT
-    process.env.IMHUB_WORKSPACES_ROOT = tmpRoot
+    tmpRoot = await mkdtemp(join(tmpdir(), 'agim-cwdtest-'))
+    prevRoot = process.env.AGIM_WORKSPACES_ROOT
+    process.env.AGIM_WORKSPACES_ROOT = tmpRoot
   })
 
   afterEach(async () => {
-    if (prevRoot === undefined) delete process.env.IMHUB_WORKSPACES_ROOT
-    else process.env.IMHUB_WORKSPACES_ROOT = prevRoot
+    if (prevRoot === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+    else process.env.AGIM_WORKSPACES_ROOT = prevRoot
     await rm(tmpRoot, { recursive: true, force: true })
   })
 
@@ -112,9 +112,9 @@ describe('ensureAgentWorkspace', () => {
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toBe('# x')
   })
 
-  it('honors IMHUB_<AGENT>_CWD override and bootstraps THAT path instead', async () => {
+  it('honors AGIM_<AGENT>_CWD override and bootstraps THAT path instead', async () => {
     const altDir = join(tmpRoot, 'custom-spot')
-    process.env.IMHUB_CLAUDE_CODE_CWD = altDir
+    process.env.AGIM_CLAUDE_CODE_CWD = altDir
     try {
       const dir = await ensureAgentWorkspace('claude-code', { filename: 'CLAUDE.md', content: '# alt' })
       expect(dir).toBe(altDir)
@@ -123,7 +123,7 @@ describe('ensureAgentWorkspace', () => {
       try { await access(join(tmpRoot, 'claude-code')); defaultExists = true } catch { /* expected */ }
       expect(defaultExists).toBe(false)
     } finally {
-      delete process.env.IMHUB_CLAUDE_CODE_CWD
+      delete process.env.AGIM_CLAUDE_CODE_CWD
     }
   })
 })
@@ -133,14 +133,14 @@ describe('bootstrapAgentWorkspaces', () => {
   let prevRoot: string | undefined
 
   beforeEach(async () => {
-    tmpRoot = await mkdtemp(join(tmpdir(), 'imhub-cwdtest-'))
-    prevRoot = process.env.IMHUB_WORKSPACES_ROOT
-    process.env.IMHUB_WORKSPACES_ROOT = tmpRoot
+    tmpRoot = await mkdtemp(join(tmpdir(), 'agim-cwdtest-'))
+    prevRoot = process.env.AGIM_WORKSPACES_ROOT
+    process.env.AGIM_WORKSPACES_ROOT = tmpRoot
   })
 
   afterEach(async () => {
-    if (prevRoot === undefined) delete process.env.IMHUB_WORKSPACES_ROOT
-    else process.env.IMHUB_WORKSPACES_ROOT = prevRoot
+    if (prevRoot === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+    else process.env.AGIM_WORKSPACES_ROOT = prevRoot
     await rm(tmpRoot, { recursive: true, force: true })
   })
 

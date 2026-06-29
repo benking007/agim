@@ -161,11 +161,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('returns a readable recap when tools ran but final text is empty', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('mcp__imhub__list_skills', {}, { id: 'ls1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('mcp__agim__list_skills', {}, { id: 'ls1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage(''),
     ])
     const tool: ToolDef = {
-      name: 'mcp__imhub__list_skills',
+      name: 'mcp__agim__list_skills',
       description: 'list skill names',
       parameters: { type: 'object', properties: {}, required: [] },
     }
@@ -177,7 +177,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     })
     const out = await collect(adapter.sendPrompt('s-empty', '有什么 skills 可用'))
     expect(out).toContain('这一轮有执行工具')
-    expect(out).toContain('mcp__imhub__list_skills')
+    expect(out).toContain('mcp__agim__list_skills')
     expect(out).toContain('最后一步结果摘要')
     expect(out).not.toContain('本轮没有产出文本回复')
   })

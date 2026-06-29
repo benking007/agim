@@ -15,17 +15,17 @@
 // imports from here so a future audit can grep `isGlobalImEnabled` /
 // `isRemoteAgentEnabled` and verify coverage.
 
-/** True when IMHUB_ENABLE_GLOBAL_IM=1. Controls visibility of
+/** True when AGIM_ENABLE_GLOBAL_IM=1. Controls visibility of
  *  Discord + Telegram messengers across CLI wizard, web settings,
  *  and runtime adapter registration. */
 export function isGlobalImEnabled(): boolean {
-  return process.env.IMHUB_ENABLE_GLOBAL_IM === '1'
+  return process.env.AGIM_ENABLE_GLOBAL_IM === '1'
 }
 
-/** True when IMHUB_ENABLE_REMOTE_AGENT=1. Controls visibility of the
+/** True when AGIM_ENABLE_REMOTE_AGENT=1. Controls visibility of the
  *  ACP (remote-agent-over-HTTP) feature across CLI wizard, web
  *  settings, and ACP agent registration. Local agents (claude-code,
  *  codex, opencode) are unaffected. */
 export function isRemoteAgentEnabled(): boolean {
-  return process.env.IMHUB_ENABLE_REMOTE_AGENT === '1'
+  return process.env.AGIM_ENABLE_REMOTE_AGENT === '1'
 }

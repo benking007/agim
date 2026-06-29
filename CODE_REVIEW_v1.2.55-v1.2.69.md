@@ -91,14 +91,14 @@
 
 ### CR-6 · `exec-dispatcher.ts` bwrap 沙盒默认关，不是默认开
 
-**位置：** `useSandbox = sandboxMode === 'bwrap' && existsSync('/usr/bin/bwrap')`，默认 `IMHUB_EXEC_SANDBOX` 未设 = 直接 `/bin/sh -c`。
+**位置：** `useSandbox = sandboxMode === 'bwrap' && existsSync('/usr/bin/bwrap')`，默认 `AGIM_EXEC_SANDBOX` 未设 = 直接 `/bin/sh -c`。
 
 **风险：** 整个 v1.2.62-v1.2.66 的设计假设是"沙盒抗逃逸"，但**默认不沙盒**。一个新部署的用户装上 bwrap 也得另外去 web 后台点开。结合 CR-5（regex 拦不住），这是最大的纵深缺口。
 
 **修法：**
 - bwrap 存在 → 默认启用
-- 想关用 `IMHUB_EXEC_SANDBOX=off`
-- 启动时如 `existsSync('/usr/bin/bwrap')` 但 `IMHUB_EXEC_SANDBOX` 显式 off → 打 WARN
+- 想关用 `AGIM_EXEC_SANDBOX=off`
+- 启动时如 `existsSync('/usr/bin/bwrap')` 但 `AGIM_EXEC_SANDBOX` 显式 off → 打 WARN
 
 ---
 
@@ -228,7 +228,7 @@ React uncontrolled input 只读 `defaultValue` 一次。`loadDiagnostics()` 后�
 ## 7. 设计层 takeaways（不算 bug，是值得回头想想的事）
 
 1. **"启发式 + 字符串扫描"作为安全边界靠不住** —— 危险 shell 模式、SSRF URL 文本扫描、READ_ONLY_HINTS 全是 best-effort。**真正的边界只有 bwrap + kernel namespace 隔离**。把心智模型从"扫描 → 拦截"转为"沙盒 → 默认隔离"
-2. **Hot-reload 承诺要兑现或撤回** —— 当前几个新 env (`IMHUB_PLATFORM_BLACKLIST` / `IMHUB_EXEC_SANDBOX`) 在文档里隐含"改完即生效"，实际部分 boot-only。UI 应明确 per-key 标 "applies on next restart" vs "live"
+2. **Hot-reload 承诺要兑现或撤回** —— 当前几个新 env (`AGIM_PLATFORM_BLACKLIST` / `AGIM_EXEC_SANDBOX`) 在文档里隐含"改完即生效"，实际部分 boot-only。UI 应明确 per-key 标 "applies on next restart" vs "live"
 3. **`looksReadOnly` 启发式应该废弃** —— 改用 ToolDef 显式 `readOnly: true` 标志。当前的 substring 启发式是隐藏地雷
 4. **fail-silent 太多** —— `try { } catch { /* best-effort */ }` 在 sender-allowlist、cli.ts 启动检查、approval gate askUser 路径全是这种。整体应该改为"失败也要发 warn 日志"
 5. **`env: process.env` 全量泄漏** —— exec/web tools 都把整个 env 透传，secrets 跟着流。最起码要列一个 allow-list
@@ -238,7 +238,7 @@ React uncontrolled input 只读 `defaultValue` 一次。`loadDiagnostics()` 后�
 ## 8. 哪些做得好（避免只列问题）
 
 - **CHANGELOG 质量** —— 每个版本都有 Why / 实测 / 已知 trade-off。难得
-- **三层防御 IMHUB_PLATFORM_BLACKLIST**（registry + onboarding + web）真的覆盖完整
+- **三层防御 AGIM_PLATFORM_BLACKLIST**（registry + onboarding + web）真的覆盖完整
 - **policy-approval-gate `askUser` 升级** —— 把 silent-deny 改成 IM 卡片是巨大的体验提升
 - **call_agent per-turn cap** —— 简单但极有效，把死循环关在了"模型自己看得见"的层面
 - **dispatcher 测试覆盖** —— exec 28 + web 25 + fs 14 + sender 13 + policy 14 + goal 9 + platform 11 = 114 个单测。任何一个 dispatcher 类改动都有兜底

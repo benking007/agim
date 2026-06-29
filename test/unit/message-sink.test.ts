@@ -188,19 +188,19 @@ describe('deliver text routing via fuzzy match', () => {
 
 describe('deliver viewer routing (agent source)', () => {
   const VIEWER_KEYS = [
-    'IMHUB_VIEWER_ENABLED',
-    'IMHUB_VIEWER_PUBLIC_BASE_URL',
-    'IMHUB_VIEWER_TUNNEL_MODE',
-    'IMHUB_VIEWER_NO_DEFAULT_REMOTE',
-    'IMHUB_VIEWER_REMOTE_PASTE_URL',
+    'AGIM_VIEWER_ENABLED',
+    'AGIM_VIEWER_PUBLIC_BASE_URL',
+    'AGIM_VIEWER_TUNNEL_MODE',
+    'AGIM_VIEWER_NO_DEFAULT_REMOTE',
+    'AGIM_VIEWER_REMOTE_PASTE_URL',
   ] as const
 
   beforeEach(() => {
     for (const k of VIEWER_KEYS) delete process.env[k]
   })
 
-  it('does not truncate or link when IMHUB_VIEWER_ENABLED is off', async () => {
-    process.env.IMHUB_VIEWER_ENABLED = '0'
+  it('does not truncate or link when AGIM_VIEWER_ENABLED is off', async () => {
+    process.env.AGIM_VIEWER_ENABLED = '0'
     const a = makeAdapter('viewoff')
     register(a)
     const long = 'x'.repeat(600)
@@ -213,8 +213,8 @@ describe('deliver viewer routing (agent source)', () => {
   })
 
   it('does not use default remote when enabled but NO_DEFAULT_REMOTE=1 and no URL', async () => {
-    process.env.IMHUB_VIEWER_ENABLED = '1'
-    process.env.IMHUB_VIEWER_NO_DEFAULT_REMOTE = '1'
+    process.env.AGIM_VIEWER_ENABLED = '1'
+    process.env.AGIM_VIEWER_NO_DEFAULT_REMOTE = '1'
     const a = makeAdapter('viewnodef')
     register(a)
     const long = 'y'.repeat(600)

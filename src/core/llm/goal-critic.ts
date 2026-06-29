@@ -39,7 +39,7 @@
 //   - Throttled by a per-turn min-iteration gate (default 5) AND a
 //     per-turn max-call gate (default 2) so a single turn can't fire
 //     the critic more than twice.
-//   - Uses `llmRoles.cheap` (or whatever IMHUB_NATIVE_CRITIC_ROLE points
+//   - Uses `llmRoles.cheap` (or whatever AGIM_NATIVE_CRITIC_ROLE points
 //     at) — operators can plug a small model. Falls back to the same
 //     provider as the turn if `cheap` is unset.
 
@@ -103,7 +103,7 @@ const DEFAULT_SYSTEM_PROMPT =
  *  long-horizon work signalled by an explicit /long_task goal. */
 export type CriticMode = 'off' | 'always' | 'goal-only'
 export function resolveCriticMode(): CriticMode {
-  const raw = (process.env.IMHUB_NATIVE_CRITIC || '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_CRITIC || '').toLowerCase().trim()
   if (raw === 'off' || raw === '0' || raw === 'false') return 'off'
   if (raw === 'always' || raw === 'on' || raw === '1' || raw === 'true') return 'always'
   return 'goal-only'
@@ -113,7 +113,7 @@ function resolveCriticEnabled(): boolean {
 }
 
 function resolveCriticRole(): string {
-  const raw = process.env.IMHUB_NATIVE_CRITIC_ROLE?.trim()
+  const raw = process.env.AGIM_NATIVE_CRITIC_ROLE?.trim()
   return raw || 'cheap'
 }
 
@@ -159,7 +159,7 @@ export async function runGoalCritic(
   }
   const picked = pickCriticProvider()
   if (!picked) {
-    return { onTrack: true, reason: 'critic disabled (no provider for cheap role / IMHUB_NATIVE_CRITIC=off)' }
+    return { onTrack: true, reason: 'critic disabled (no provider for cheap role / AGIM_NATIVE_CRITIC=off)' }
   }
 
   const transcript = buildTranscript(input.recentToolCalls)

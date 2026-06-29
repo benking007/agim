@@ -2,7 +2,7 @@
 // allowed ≤2 chars of padding either side of the asterisks, but
 // maskSecret produces 4 chars of padding for any input >8 chars. That
 // mismatch meant an echoed mask from a buggy / malicious client could
-// overwrite the real IMHUB_SMTP_PASS / Baidu AK / OpenAI key with
+// overwrite the real AGIM_SMTP_PASS / Baidu AK / OpenAI key with
 // literal asterisks (lockout, not exfil — but still a footgun).
 //
 // These tests assert maskSecret(any) → isMasked() === true so the two

@@ -4,7 +4,7 @@
 //   • stdio (default): opencode-stdio-adapter.ts — `opencode run --format json`
 //   • http: opencode-http-adapter.ts — `opencode serve` + REST + SSE (P1.5+)
 //
-// Selection: env IMHUB_OPENCODE_DRIVER=http picks the HTTP driver. Anything
+// Selection: env AGIM_OPENCODE_DRIVER=http picks the HTTP driver. Anything
 // else (incl unset, empty string, unrecognized value) keeps stdio. Default is
 // preserved as stdio so this PR is a no-op until ops flip the env.
 //
@@ -20,14 +20,14 @@ export { OpenCodeAdapter } from './opencode-stdio-adapter.js'
 export { OpenCodeHttpAdapter } from './opencode-http-adapter.js'
 
 function createOpencodeAdapter(): OpenCodeAdapter {
-  const driver = (process.env.IMHUB_OPENCODE_DRIVER || '').toLowerCase()
+  const driver = (process.env.AGIM_OPENCODE_DRIVER || '').toLowerCase()
   if (driver === 'http') {
     return new OpenCodeHttpAdapter()
   }
   if (driver && driver !== 'stdio') {
     logger.warn(
       { component: 'agent.opencode', requestedDriver: driver, fallback: 'stdio' },
-      `[opencode] unknown IMHUB_OPENCODE_DRIVER=${driver}, falling back to stdio`,
+      `[opencode] unknown AGIM_OPENCODE_DRIVER=${driver}, falling back to stdio`,
     )
   }
   return new OpenCodeAdapter()

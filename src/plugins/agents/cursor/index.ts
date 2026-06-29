@@ -17,11 +17,11 @@
 // Permissions model:
 //   - cursor reads MCP servers from `~/.cursor/mcp.json` (global) or
 //     `.cursor/mcp.json` (per-workspace). On adapter init we write the
-//     global file with an `imhub` entry pointing at the shared MCP sidecar
+//     global file with an `agim` entry pointing at the shared MCP sidecar
 //     (the same one claude-code uses). Subsequent tool calls hop through
 //     agim's approval-bus exactly like claude-code's.
 //   - `--approve-mcps` auto-approves MCP servers (no per-launch prompt;
-//     individual `mcp__imhub__*` calls still gate on agim's approval-bus).
+//     individual `mcp__agim__*` calls still gate on agim's approval-bus).
 //   - `--force` (alias `--yolo`) bypasses cursor's own per-tool confirmation
 //     for shell / write / delete actions. Required for headless IM use —
 //     there's no interactive TTY to answer prompts. Operators can still
@@ -63,13 +63,13 @@ import { approvalBus } from '../../../core/approval-bus.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
-import { ensureImhubMcp } from './ensure-mcp-config.js'
+import { ensureAgimMcp } from './ensure-mcp-config.js'
 
 const log = rootLogger.child({ component: 'agent.cursor' })
 
 const DEFAULT_BIN = 'cursor-agent'
 
-/** Path to the imhub MCP sidecar JS file. Shared with claude-code /
+/** Path to the agim MCP sidecar JS file. Shared with claude-code /
  *  antigravity — the protocol surface is host-agnostic. */
 function sidecarPath(): string {
   // From dist/plugins/agents/cursor/index.js the sidecar is at:
@@ -108,13 +108,13 @@ export class CursorAdapter extends AgentBase {
    *  undefined = "probed, not found, fall back to bare name". */
   private resolvedBin: string | null | undefined = null
 
-  /** Have we written the imhub MCP entry to ~/.cursor/mcp.json yet this
+  /** Have we written the agim MCP entry to ~/.cursor/mcp.json yet this
    *  agim process lifetime? Saves the disk hit on every send. Reset on
    *  agim restart so the next run rewrites with the fresh socket path. */
   private mcpReady = false
 
   protected get commandName(): string {
-    const override = process.env.IMHUB_CURSOR_BIN
+    const override = process.env.AGIM_CURSOR_BIN
     if (override) return override
     if (this.resolvedBin !== null) return this.resolvedBin ?? DEFAULT_BIN
 
@@ -145,7 +145,7 @@ export class CursorAdapter extends AgentBase {
     const args: string[] = ['--print', '--output-format', 'stream-json']
     // Trust + force are mandatory for headless IM use — cursor refuses
     // to write / shell otherwise and there's no TTY to answer prompts.
-    // Operators wanting tighter control can use IMHUB_NATIVE_AGENT_DENYLIST
+    // Operators wanting tighter control can use AGIM_NATIVE_AGENT_DENYLIST
     // for agim tools and edit `~/.cursor/cli-config.json`'s `permissions.deny`
     // for cursor-side tool gating.
     args.push('--trust', '--force', '--approve-mcps')
@@ -190,19 +190,19 @@ export class CursorAdapter extends AgentBase {
     const sockPath = approvalBus.getSocketPath()
     if (sockPath && !this.mcpReady) {
       try {
-        await ensureImhubMcp({
+        await ensureAgimMcp({
           command: process.execPath,
           args: [sidecarPath()],
-          env: { IMHUB_APPROVAL_SOCK: sockPath },
+          env: { AGIM_APPROVAL_SOCK: sockPath },
         })
         this.mcpReady = true
       } catch (err) {
         log.warn({ event: 'cursor.mcp.disabled', err: String(err) },
-          'imhub MCP not wired into cursor — agim tools will be invisible to cursor this run')
+          'agim MCP not wired into cursor — agim tools will be invisible to cursor this run')
       }
     }
 
-    // approval-bus registration so mcp__imhub__* tool calls inside the
+    // approval-bus registration so mcp__agim__* tool calls inside the
     // cursor run resolve to this IM thread.
     const { threadId, platform, channelId, userId } = opts
     const runId = randomUUID()
@@ -229,7 +229,7 @@ export class CursorAdapter extends AgentBase {
       args: baseArgs,
       cwd,
       extraEnv: {
-        IMHUB_RUN_ID: runId,
+        AGIM_RUN_ID: runId,
         // cursor reads CURSOR_API_KEY if set; otherwise falls back to
         // OAuth creds in ~/.cursor/cli-config.json. Pass HOME through
         // so systemd-stripped env doesn't break the credential lookup.

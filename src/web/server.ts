@@ -132,7 +132,7 @@ function hasForwardedPeerHeaders(req: IncomingMessage): boolean {
 
 function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
   if (!isLoopbackPeer(req)) return false
-  if (isEnvOff('IMHUB_TRUST_LOOPBACK')) return false
+  if (isEnvOff('AGIM_TRUST_LOOPBACK')) return false
   // A reverse proxy on the same host makes remote users appear as
   // 127.0.0.1. Treat forwarded requests as network traffic and require
   // the normal token path instead of granting the local bootstrap bypass.
@@ -204,7 +204,7 @@ function extractToken(req: IncomingMessage, url: URL): string | null {
 /** Returns true if the request is authenticated (or auth not required). */
 function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   // 1. Disabled by env → pass through.
-  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return true
   // 2. Trusted loopback → pass through (local CLI / browser-on-same-host).
   if (isTrustedLoopbackPeer(req)) return true
   // 3. Public-by-design path → pass through.
@@ -263,7 +263,7 @@ function verifyTokenSync(raw: string): string | null {
  *    - otherwise → 'web:unknown' (request should already have been rejected
  *      by checkAuth — this branch exists for defensive logging). */
 function getRequestActor(req: IncomingMessage): string {
-  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
   if (isTrustedLoopbackPeer(req)) return 'web:loopback'
   let url: URL
   try { url = new URL(req.url || '', 'http://localhost') } catch { return 'web:unknown' }
@@ -280,17 +280,17 @@ function getRequestActor(req: IncomingMessage): string {
  *  can't elevate to control plane (R13 A1).
  *
  *  Trust order:
- *    1. IMHUB_WEB_AUTH=off  → admin (operator explicitly disabled auth)
+ *    1. AGIM_WEB_AUTH=off  → admin (operator explicitly disabled auth)
  *    2. Trusted loopback    → admin (operator on the host)
  *    3. Bearer token        → token.role === 'admin'
  *    4. Otherwise           → not admin
  *
  *  Note: when no token has been created yet (pre-bootstrap), the
  *  trusted-loopback branch still grants admin so the CLI bootstrap flow
- *  works. Disable it with IMHUB_TRUST_LOOPBACK=off. Reverse-proxied
+ *  works. Disable it with AGIM_TRUST_LOOPBACK=off. Reverse-proxied
  *  requests with Forwarded / X-Forwarded-* peer headers never qualify. */
 function isRequestAdmin(req: IncomingMessage): boolean {
-  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return true
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return true
   if (isTrustedLoopbackPeer(req)) return true
   let url: URL
   try { url = new URL(req.url || '', 'http://localhost') } catch { return false }
@@ -342,7 +342,7 @@ export async function startWebServer(options: {
   defaultAgent: string
 }): Promise<{ close: () => void; port: number }> {
   const port = options.port || DEFAULT_PORT
-  const bindHost = process.env.IMHUB_WEB_BIND || '127.0.0.1'
+  const bindHost = process.env.AGIM_WEB_BIND || '127.0.0.1'
   const clients = new Map<string, ClientConnection>()
   // R9: threadId → tokenId ownership. A WS peer claims a threadId on
   // first connection (verifyClient already verified the token); later
@@ -355,7 +355,7 @@ export async function startWebServer(options: {
   // v1.1.10+: token-based auth for the web console.
   // ─ loopback peers (127.0.0.1 / ::1) bypass auth (local CLI / curl)
   // ─ public viewer pages (/v/:id, /loc, /l/<token>) remain public
-  // ─ IMHUB_WEB_AUTH=off disables the gate entirely (for ops with proxy auth)
+  // ─ AGIM_WEB_AUTH=off disables the gate entirely (for ops with proxy auth)
   // On first start, bootstrapIfEmpty() generates a one-time bootstrap token
   // and prints it to stdout + the logger so the operator finds it in journalctl.
   const accessTokenModule = await import('../core/access-token.js')
@@ -369,16 +369,16 @@ export async function startWebServer(options: {
     webLog.warn({
       event: 'web.auth_disabled_on_public_bind',
       bind: bindHost,
-    }, 'IMHUB_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
+    }, 'AGIM_WEB_AUTH=off + public bind — auth deliberately off, ensure your reverse proxy handles access control')
   }
   // R13 C2 — when binding to a non-loopback address, the operator
   // almost certainly intends to put a TLS-terminating reverse proxy
   // in front of agim. We can't reliably detect from inside whether
   // that's been done (X-Forwarded-Proto could be forged), so we
   // surface a one-time banner + audit row at boot. Suppress with
-  // IMHUB_WEB_TLS_ACK=1 for the operator who's already done the
+  // AGIM_WEB_TLS_ACK=1 for the operator who's already done the
   // checklist and wants quiet logs.
-  if (isPublicBind && process.env.IMHUB_WEB_TLS_ACK !== '1') {
+  if (isPublicBind && process.env.AGIM_WEB_TLS_ACK !== '1') {
     const banner = [
       '',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -391,7 +391,7 @@ export async function startWebServer(options: {
       '   any network you do not control.',
       '',
       '   Silence this banner once your terminator is verified:',
-      '       IMHUB_WEB_TLS_ACK=1',
+      '       AGIM_WEB_TLS_ACK=1',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '',
     ].join('\n')
@@ -400,7 +400,7 @@ export async function startWebServer(options: {
       event: 'web.public_bind_no_tls_ack',
       bind: bindHost,
       port,
-    }, `non-loopback bind without IMHUB_WEB_TLS_ACK=1 — confirm reverse-proxy TLS termination`)
+    }, `non-loopback bind without AGIM_WEB_TLS_ACK=1 — confirm reverse-proxy TLS termination`)
     try {
       void (async () => {
         const { logAuditEvent } = await import('../core/audit-log.js')
@@ -418,8 +418,8 @@ export async function startWebServer(options: {
     event: 'web.auth_mode',
     bind: bindHost,
     enabled: isAuthEnabled(),
-    trustLoopback: !isEnvOff('IMHUB_TRUST_LOOPBACK'),
-  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (IMHUB_WEB_AUTH=off)'}`)
+    trustLoopback: !isEnvOff('AGIM_TRUST_LOOPBACK'),
+  }, `Web console auth: ${isAuthEnabled() ? 'token-gated' : 'disabled (AGIM_WEB_AUTH=off)'}`)
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -432,7 +432,7 @@ export async function startWebServer(options: {
 
     // v1.2.72 — v2 SPA is the only web admin. The legacy v1 monolithic
     // HTML pages (settings.html / tasks.html / reminders.html /
-    // memos.html / _app.js) have been removed; the `IMHUB_WEB_V2` env
+    // memos.html / _app.js) have been removed; the `AGIM_WEB_V2` env
     // gate is gone — there is no v1 fallback anymore. Operators who
     // were on the legacy layout flipped over automatically when they
     // upgraded past 1.2.21 (default switch); the env knob remained as
@@ -597,7 +597,7 @@ export async function startWebServer(options: {
       //   - PC browsers anywhere: WGS-84.
       // Default to WGS-84 pass-through (matches the most common Chinese
       // mobile path — WeChat — which was silently miscalibrated before
-      // the 2026-05-12 fix). iOS users in China set IMHUB_H5_COORDS_GCJ02=1
+      // the 2026-05-12 fix). iOS users in China set AGIM_H5_COORDS_GCJ02=1
       // to restore the GCJ→WGS path.  See core/coord-systems.ts.
       const norm = normalizeIncomingCoords('h5-browser-geolocation', rawLat, rawLng)
       const lat = norm.lat
@@ -776,7 +776,7 @@ export async function startWebServer(options: {
       return handleDeleteMemo(req, res, Number.parseInt(memoIdMatch[1], 10))
     }
 
-    // /api/env — read/write SMTP + Baidu AK + IMHUB_WEB_BIND. Values
+    // /api/env — read/write SMTP + Baidu AK + AGIM_WEB_BIND. Values
     // sensitive enough that GET returns them masked (only the last 4 chars
     // visible) unless an explicit ?reveal=1 is passed. Keep the settings
     // surface admin-only: even masked values disclose configured providers.
@@ -790,7 +790,7 @@ export async function startWebServer(options: {
     }
     // v1.2.67 — Security diagnostics. Surfaces boot-time observations the
     // Security UI page renders as read-only badges (uid, env file perms,
-    // bwrap availability, IMHUB_ALLOWED_USERS configured? …).
+    // bwrap availability, AGIM_ALLOWED_USERS configured? …).
     if (url.pathname === '/api/security/diagnostics' && req.method === 'GET') {
       if (!requireAdmin(req, res)) return
       return handleSecurityDiagnostics(req, res)
@@ -1183,7 +1183,7 @@ export async function startWebServer(options: {
 
       // Auth-off / trusted-loopback bypass — mirror checkAuth's two short-circuits
       // so dev / local CLI sessions still work without a token.
-      if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
+      if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
       if (isTrustedLoopbackPeer(info.req as IncomingMessage)) return cb(true)
 
       // Origin check: cookie SameSite=Lax handles most of the CSWSH
@@ -1221,9 +1221,9 @@ export async function startWebServer(options: {
   // M3: cap concurrent WS clients so a leaked / shared web token can't OOM
   // the host by opening unbounded connections. Default 100 is generous for
   // a single-user / small-team setup; production multi-tenant should set
-  // IMHUB_MAX_WS_CLIENTS to a higher value.
+  // AGIM_MAX_WS_CLIENTS to a higher value.
   const maxWsClients = (() => {
-    const raw = process.env.IMHUB_MAX_WS_CLIENTS
+    const raw = process.env.AGIM_MAX_WS_CLIENTS
     if (raw) {
       const n = parseInt(raw, 10)
       if (Number.isFinite(n) && n > 0) return n
@@ -1236,14 +1236,14 @@ export async function startWebServer(options: {
   // token can still spawn N parallel browser tabs / processes and
   // saturate the file-descriptor pool.
   //
-  //   IMHUB_WS_MAX_PER_IP            active connections per IP (default 20)
-  //   IMHUB_WS_MAX_NEW_PER_IP_PER_MIN  new connections per IP per minute (default 30)
+  //   AGIM_WS_MAX_PER_IP            active connections per IP (default 20)
+  //   AGIM_WS_MAX_NEW_PER_IP_PER_MIN  new connections per IP per minute (default 30)
   //
   // Trusted loopback bypasses both — local dev / CLI tooling makes many
   // short connections legitimately. Reverse-proxied loopback traffic is
   // still counted as network traffic.
   const wsMaxPerIp = (() => {
-    const raw = process.env.IMHUB_WS_MAX_PER_IP
+    const raw = process.env.AGIM_WS_MAX_PER_IP
     if (raw) {
       const n = parseInt(raw, 10)
       if (Number.isFinite(n) && n > 0) return n
@@ -1251,7 +1251,7 @@ export async function startWebServer(options: {
     return 20
   })()
   const wsMaxNewPerIpPerMin = (() => {
-    const raw = process.env.IMHUB_WS_MAX_NEW_PER_IP_PER_MIN
+    const raw = process.env.AGIM_WS_MAX_NEW_PER_IP_PER_MIN
     if (raw) {
       const n = parseInt(raw, 10)
       if (Number.isFinite(n) && n > 0) return n
@@ -1500,7 +1500,7 @@ export async function startWebServer(options: {
   })
 
   // Default to loopback; operators can opt into LAN/public exposure with
-  // IMHUB_WEB_BIND=0.0.0.0 behind their firewall/reverse proxy.
+  // AGIM_WEB_BIND=0.0.0.0 behind their firewall/reverse proxy.
   await new Promise<void>((resolve, reject) => {
     httpServer.on('error', reject)
     httpServer.listen(port, bindHost, () => resolve())
@@ -1657,7 +1657,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     const showGlobalIm = isGlobalImEnabled()
     const showRemoteAgent = isRemoteAgentEnabled()
     // v1.2.69 — IM platform blacklist. When an operator sets
-    // IMHUB_PLATFORM_BLACKLIST=telegram,discord (etc.), those platforms
+    // AGIM_PLATFORM_BLACKLIST=telegram,discord (etc.), those platforms
     // are hidden from the admin SPA entirely — credentials still live
     // on disk but the UI shows nothing for that platform AND the
     // registry refuses to register the adapter at boot. Default empty.
@@ -2192,7 +2192,7 @@ async function handleServiceStart(res: ServerResponse): Promise<void> {
       }
       try {
         const { spawn } = await import('node:child_process')
-        const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+        const unitName = 'agim.service'
         // Detached + fire-and-forget so the HTTP response isn't held
         // for the full systemd activation timeline.
         const child = spawn('systemctl', ['start', unitName], { detached: true, stdio: 'ignore' })
@@ -2226,8 +2226,7 @@ async function handleServiceStop(res: ServerResponse): Promise<void> {
     // systemctl stop handles the kill for us — no self-exit needed.
     try {
       const { execSync } = await import('node:child_process')
-      // Match service.ts's detection: prefer agim.service, fall back.
-      const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+      const unitName = 'agim.service'
       execSync(`systemctl stop ${unitName}`)
       // R14 §四 — sweep stray pids after systemctl stop, same way
       // restart does pre-stop. systemctl reports success when its
@@ -2302,7 +2301,7 @@ async function handleServiceRestart(res: ServerResponse): Promise<void> {
     }
     try {
       const { spawn } = await import('node:child_process')
-      const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : 'im-hub.service'
+      const unitName = 'agim.service'
       // v1.5 — fire-and-forget. execSync blocked the HTTP response until
       // systemctl had finished stop+start (5-10s), making the web button
       // look frozen to the user. Detach the child so we can ACK the
@@ -2758,82 +2757,82 @@ async function handleDeleteMemo(_req: IncomingMessage, res: ServerResponse, id: 
 // ─── env file (SMTP + Baidu AK + …) ────────────────────────────────────
 
 const ENV_EDITABLE_KEYS = [
-  'IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS',
-  'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE',
-  'IMHUB_BAIDU_MAP_AK',
-  'IMHUB_LOC_BASE_URL', 'IMHUB_TZ_OFFSET_HOURS',
+  'AGIM_SMTP_HOST', 'AGIM_SMTP_PORT', 'AGIM_SMTP_USER', 'AGIM_SMTP_PASS',
+  'AGIM_SMTP_FROM', 'AGIM_SMTP_SECURE',
+  'AGIM_BAIDU_MAP_AK',
+  'AGIM_LOC_BASE_URL', 'AGIM_TZ_OFFSET_HOURS',
   // Safety card toggle — drives the Claude --dangerously-skip-permissions
   // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
-  'IMHUB_DANGEROUSLY_SKIP_PERMISSIONS',
+  'AGIM_DANGEROUSLY_SKIP_PERMISSIONS',
   // Approval Policy card — 'allow' | 'deny' (default deny). Decides what the
   // approval bus does when a tool-use prompt times out with no human reply.
   // Hot-reload: handlePutEnv mutates process.env so approval-bus picks up the
   // new value on the next timer fire, no restart needed.
-  'IMHUB_TIMEOUT_DEFAULT',
+  'AGIM_TIMEOUT_DEFAULT',
   // v1.2 — IM long-message viewer. Operator sets the public URL pointing at
   // their reverse-proxied agim web port; thresholds tune when routing kicks
   // in. Hot-reload works because viewer-config reads process.env every call.
-  'IMHUB_VIEWER_ENABLED',
-  'IMHUB_VIEWER_PUBLIC_BASE_URL',
-  'IMHUB_VIEWER_CHARS',
-  'IMHUB_VIEWER_LINES',
-  'IMHUB_VIEWER_CODE_LINES',
-  'IMHUB_VIEWER_MAX_PASTES',
-  'IMHUB_VIEWER_TUNNEL_MODE',
+  'AGIM_VIEWER_ENABLED',
+  'AGIM_VIEWER_PUBLIC_BASE_URL',
+  'AGIM_VIEWER_CHARS',
+  'AGIM_VIEWER_LINES',
+  'AGIM_VIEWER_CODE_LINES',
+  'AGIM_VIEWER_MAX_PASTES',
+  'AGIM_VIEWER_TUNNEL_MODE',
   // v1.2.43 — opt out of community default paste server (viewer.iclaw.host).
-  'IMHUB_VIEWER_NO_DEFAULT_REMOTE',
+  'AGIM_VIEWER_NO_DEFAULT_REMOTE',
   // v1.1.10 — A2A notification settings (see src/core/a2a-notify.ts).
-  'IMHUB_A2A_TIMEOUT_DEFAULT_MS',
-  'IMHUB_A2A_MAX_TIMEOUT_MS',
-  'IMHUB_A2A_NOTIFY_MODE',
-  'IMHUB_A2A_NOTIFY_MAX_DEPTH',
-  'IMHUB_A2A_HEARTBEAT_MIN',
+  'AGIM_A2A_TIMEOUT_DEFAULT_MS',
+  'AGIM_A2A_MAX_TIMEOUT_MS',
+  'AGIM_A2A_NOTIFY_MODE',
+  'AGIM_A2A_NOTIFY_MAX_DEPTH',
+  'AGIM_A2A_HEARTBEAT_MIN',
   // v1.5 — long-term memory (see src/core/memory.ts + persona.ts).
-  'IMHUB_MEMORY_ENABLED',
+  'AGIM_MEMORY_ENABLED',
   // P1/P2 — dream distillation (background fact extraction; see
   // src/core/memory-distiller.ts).
-  'IMHUB_MEMORY_DISTILL_ENABLED',
-  'IMHUB_MEMORY_DISTILL_SOURCE',
-  'IMHUB_MEMORY_DISTILL_AGENT',
-  'IMHUB_MEMORY_DISTILL_INTERVAL_MS',
-  'IMHUB_MEMORY_DISTILL_FLOOR_MIN',
-  'IMHUB_MEMORY_DISTILL_BATCH_MAX',
-  'IMHUB_MEMORY_DISTILL_MAX_PENDING',
+  'AGIM_MEMORY_DISTILL_ENABLED',
+  'AGIM_MEMORY_DISTILL_SOURCE',
+  'AGIM_MEMORY_DISTILL_AGENT',
+  'AGIM_MEMORY_DISTILL_INTERVAL_MS',
+  'AGIM_MEMORY_DISTILL_FLOOR_MIN',
+  'AGIM_MEMORY_DISTILL_BATCH_MAX',
+  'AGIM_MEMORY_DISTILL_MAX_PENDING',
   // v1.6 — vector retrieval (opt-in, OFF by default).
-  'IMHUB_MEMORY_VECTOR_BACKEND',
-  'IMHUB_MEMORY_VECTOR_LOCAL_MODEL',
-  'IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL',
-  'IMHUB_MEMORY_VECTOR_OPENAI_MODEL',
-  'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
-  'IMHUB_MEMORY_VECTOR_BATCH_SIZE',
-  'IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT',
+  'AGIM_MEMORY_VECTOR_BACKEND',
+  'AGIM_MEMORY_VECTOR_LOCAL_MODEL',
+  'AGIM_MEMORY_VECTOR_OPENAI_BASE_URL',
+  'AGIM_MEMORY_VECTOR_OPENAI_MODEL',
+  'AGIM_MEMORY_VECTOR_OPENAI_API_KEY',
+  'AGIM_MEMORY_VECTOR_BATCH_SIZE',
+  'AGIM_MEMORY_VECTOR_HYBRID_WEIGHT',
   // v1.2.67 — Security page surfaces these (added in v1.2.58–v1.2.66).
   // Sender allowlist — who can talk to the bot at all.
-  'IMHUB_ALLOWED_USERS',
+  'AGIM_ALLOWED_USERS',
   // Native fs tools — workspace restriction + per-tool timeout.
-  'IMHUB_NATIVE_FS_RESTRICT',
-  'IMHUB_NATIVE_FS_TIMEOUT_MS',
+  'AGIM_NATIVE_FS_RESTRICT',
+  'AGIM_NATIVE_FS_TIMEOUT_MS',
   // Native web tools — SSRF guards.
-  'IMHUB_NATIVE_WEB_ALLOW_PRIVATE',
-  'IMHUB_NATIVE_WEB_SSRF_WHITELIST',
-  'IMHUB_NATIVE_WEB_TIMEOUT_MS',
+  'AGIM_NATIVE_WEB_ALLOW_PRIVATE',
+  'AGIM_NATIVE_WEB_SSRF_WHITELIST',
+  'AGIM_NATIVE_WEB_TIMEOUT_MS',
   // Native exec tool — bwrap sandbox + sub-knobs.
-  'IMHUB_EXEC_SANDBOX',
-  'IMHUB_EXEC_SANDBOX_NET',
-  'IMHUB_EXEC_TIMEOUT_MS',
-  'IMHUB_EXEC_MAX_OUTPUT',
+  'AGIM_EXEC_SANDBOX',
+  'AGIM_EXEC_SANDBOX_NET',
+  'AGIM_EXEC_TIMEOUT_MS',
+  'AGIM_EXEC_MAX_OUTPUT',
   // Native call_agent per-turn cap.
-  'IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
   // v1.2.69 — IM platform blacklist (CSV of platform ids). Default
   // empty (no blocks); listed platforms vanish from web + CLI + are
   // refused at registry.registerMessenger.
-  'IMHUB_PLATFORM_BLACKLIST',
+  'AGIM_PLATFORM_BLACKLIST',
   // v1.2.126 — web_search provider chain (CSV) + each provider's API
-  // key. `IMHUB_WEB_SEARCH_PROVIDERS` orders the fallback chain (e.g.
+  // key. `AGIM_WEB_SEARCH_PROVIDERS` orders the fallback chain (e.g.
   // 'tavily,brave,duckduckgo'); a missing/empty value falls back to
   // DEFAULT_PROVIDER_ORDER in web-dispatcher. The 5 *_API_KEY values
   // gate per-provider availability (duckduckgo needs no key).
-  'IMHUB_WEB_SEARCH_PROVIDERS',
+  'AGIM_WEB_SEARCH_PROVIDERS',
   'TAVILY_API_KEY',
   'BRAVE_API_KEY',
   'SERPER_API_KEY',
@@ -2843,47 +2842,47 @@ const ENV_EDITABLE_KEYS = [
   // timeout / blank-response retry / length-recovery retry). Hot-
   // reload: each subsystem re-reads process.env on every call, so
   // editing these takes effect without a restart.
-  'IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS',
-  'IMHUB_NATIVE_TOOL_TIMEOUT_MS',
-  'IMHUB_NATIVE_BLANK_RETRY_MAX',
-  'IMHUB_NATIVE_LENGTH_RECOVERY_MAX',
+  'AGIM_NATIVE_TOOL_RESULT_MAX_CHARS',
+  'AGIM_NATIVE_TOOL_TIMEOUT_MS',
+  'AGIM_NATIVE_BLANK_RETRY_MAX',
+  'AGIM_NATIVE_LENGTH_RECOVERY_MAX',
   // v1.2.127 — A2A sub-agent spawn (depth / timeout / in-process /
   // per-turn cap). All hot-read; flipping in-process to 'off' makes
   // the next call_agent('native', …) reboot via the subprocess CLI
   // adapter instead of the v1.2.121 fast path.
-  'IMHUB_A2A_MAX_DEPTH',
-  'IMHUB_A2A_TIMEOUT_DEFAULT_MS',
-  'IMHUB_NATIVE_CALL_AGENT_IN_PROCESS',
-  'IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  'AGIM_A2A_MAX_DEPTH',
+  'AGIM_A2A_TIMEOUT_DEFAULT_MS',
+  'AGIM_NATIVE_CALL_AGENT_IN_PROCESS',
+  'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
   // v1.2.127 — early-stop + critic. Semantic stuck-loop default ON
   // catches the v1.2.122 case (3 different tools, same salient arg).
   // Critic default OFF — opt-in goal-divergence detector.
-  'IMHUB_NATIVE_SEMANTIC_STUCK_LOOP',
-  'IMHUB_NATIVE_CRITIC',
-  'IMHUB_NATIVE_CRITIC_ROLE',
-  'IMHUB_NATIVE_PLAN_MODE',
+  'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
+  'AGIM_NATIVE_CRITIC',
+  'AGIM_NATIVE_CRITIC_ROLE',
+  'AGIM_NATIVE_PLAN_MODE',
   // v1.2.135 — auto-enter heuristic + custom phrase list.
-  'IMHUB_PLAN_INTENT_AUTO',
-  'IMHUB_PLAN_INTENT_PHRASES',
+  'AGIM_PLAN_INTENT_AUTO',
+  'AGIM_PLAN_INTENT_PHRASES',
   // v1.2.127 — auto-compact 4 sliders (OpenHands Condenser pattern).
   // KEEP_FIRST defaults to 1 since v1.2.125 (original user goal at idx 0).
-  'IMHUB_NATIVE_COMPACT_TRIGGER_CHARS',
-  'IMHUB_NATIVE_COMPACT_KEEP_TURNS',
-  'IMHUB_NATIVE_COMPACT_KEEP_FIRST',
-  'IMHUB_NATIVE_COMPACT_SUMMARY_CHARS',
+  'AGIM_NATIVE_COMPACT_TRIGGER_CHARS',
+  'AGIM_NATIVE_COMPACT_KEEP_TURNS',
+  'AGIM_NATIVE_COMPACT_KEEP_FIRST',
+  'AGIM_NATIVE_COMPACT_SUMMARY_CHARS',
   // v1.2.127 — streaming + iteration cap. STREAM_PARTIAL default ON
   // preserves partial assistant text on IM's 30-min hard timeout.
-  'IMHUB_NATIVE_STREAM_PARTIAL',
-  'IMHUB_NATIVE_AGENT_MAX_ITER',
+  'AGIM_NATIVE_STREAM_PARTIAL',
+  'AGIM_NATIVE_AGENT_MAX_ITER',
   // v1.2.138 — first-token retry on transient stream errors (terminated /
   // ECONNRESET / fetch failed / socket hang up). Default retries once.
-  'IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX',
-  'IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
+  'AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX',
+  'AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
 ] as const
 const SECRET_KEYS = new Set<string>([
-  'IMHUB_SMTP_PASS',
-  'IMHUB_BAIDU_MAP_AK',
-  'IMHUB_MEMORY_VECTOR_OPENAI_API_KEY',
+  'AGIM_SMTP_PASS',
+  'AGIM_BAIDU_MAP_AK',
+  'AGIM_MEMORY_VECTOR_OPENAI_API_KEY',
   // v1.2.126 — web search keys are bearer tokens / API keys, so
   // they're masked on GET and refused if echoed back on PUT.
   'TAVILY_API_KEY',
@@ -2946,10 +2945,10 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
         // (process.env, which is what runtime sees) without round-tripping
         // through the env file.
         liveEnv: {
-          IMHUB_EXEC_SANDBOX: process.env.IMHUB_EXEC_SANDBOX ?? null,
-          IMHUB_NATIVE_FS_RESTRICT: process.env.IMHUB_NATIVE_FS_RESTRICT ?? null,
-          IMHUB_TIMEOUT_DEFAULT: process.env.IMHUB_TIMEOUT_DEFAULT ?? null,
-          IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS ?? null,
+          AGIM_EXEC_SANDBOX: process.env.AGIM_EXEC_SANDBOX ?? null,
+          AGIM_NATIVE_FS_RESTRICT: process.env.AGIM_NATIVE_FS_RESTRICT ?? null,
+          AGIM_TIMEOUT_DEFAULT: process.env.AGIM_TIMEOUT_DEFAULT ?? null,
+          AGIM_DANGEROUSLY_SKIP_PERMISSIONS: process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS ?? null,
         },
       },
     })
@@ -3038,9 +3037,9 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
     // Drain body even though we don't use it, so the connection doesn't
     // stall under keep-alive.
     await readBody(req, res)
-    const host = process.env.IMHUB_SMTP_HOST?.trim()
-    const user = process.env.IMHUB_SMTP_USER?.trim()
-    const pass = process.env.IMHUB_SMTP_PASS
+    const host = process.env.AGIM_SMTP_HOST?.trim()
+    const user = process.env.AGIM_SMTP_USER?.trim()
+    const pass = process.env.AGIM_SMTP_PASS
     if (!host || !user || !pass) {
       sendError(res, 400, 'EMAIL_NOT_CONFIGURED', {
         message: 'SMTP not configured (host / user / pass required)',
@@ -3048,10 +3047,10 @@ async function handleEmailTest(req: IncomingMessage, res: ServerResponse): Promi
       })
       return
     }
-    const portRaw = process.env.IMHUB_SMTP_PORT?.trim()
+    const portRaw = process.env.AGIM_SMTP_PORT?.trim()
     const portNum = portRaw ? Number.parseInt(portRaw, 10) : 465
     const port = Number.isFinite(portNum) && portNum > 0 && portNum <= 65535 ? portNum : 465
-    const secureRaw = process.env.IMHUB_SMTP_SECURE?.trim().toLowerCase()
+    const secureRaw = process.env.AGIM_SMTP_SECURE?.trim().toLowerCase()
     const secure = secureRaw !== undefined
       ? (secureRaw === '1' || secureRaw === 'true' || secureRaw === 'yes')
       : port === 465
@@ -3916,7 +3915,7 @@ async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Pro
 // install still happens via the skillhub CLI on the host (see docs).
 //
 // Enterprise / air-gapped deployments can disable this endpoint via
-// `IMHUB_SKILLHUB_ENABLED=0`. When disabled, the API returns a stub
+// `AGIM_SKILLHUB_ENABLED=0`. When disabled, the API returns a stub
 // shape `{ disabled: true, items: [] }` so the UI can show "disabled
 // by enterprise policy" without breaking the page. This is the only
 // product-default outbound call to a non-IM domain, so the toggle
@@ -3925,7 +3924,7 @@ let remoteHotCache: { fetchedAt: number; data: unknown } | null = null
 const REMOTE_HOT_TTL_MS = 5 * 60_000
 
 function isSkillhubEnabled(): boolean {
-  const v = (process.env.IMHUB_SKILLHUB_ENABLED ?? '1').trim().toLowerCase()
+  const v = (process.env.AGIM_SKILLHUB_ENABLED ?? '1').trim().toLowerCase()
   return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off'
 }
 
@@ -3935,7 +3934,7 @@ async function handleSkillsRemoteHot(_req: IncomingMessage, res: ServerResponse)
     // so the SPA can render "disabled" copy without a network error
     // toast. Status 200 because this is a deliberate operator choice,
     // not a transient failure.
-    sendJson(res, 200, { disabled: true, items: [], reason: 'IMHUB_SKILLHUB_ENABLED=0' })
+    sendJson(res, 200, { disabled: true, items: [], reason: 'AGIM_SKILLHUB_ENABLED=0' })
     return
   }
   try {
@@ -4541,7 +4540,7 @@ async function handleEventsSSE(req: IncomingMessage, res: ServerResponse): Promi
     res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
   }
 
-  const onEvent = (e: import('../core/event-bus.js').ImhubEvent): void => {
+  const onEvent = (e: import('../core/event-bus.js').AgimEvent): void => {
     try {
       res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
     } catch {
@@ -5397,13 +5396,13 @@ function sendToClient(ws: WebSocket, data: Record<string, unknown>): void {
  *
  * Polls every 50 ms — node's `ws` doesn't emit a `drain` event we can hook,
  * but the buffered amount drops monotonically once the kernel ACKs flush.
- * Bounded by IMHUB_WS_BACKPRESSURE_TIMEOUT_MS (default 5 s) so a frozen
+ * Bounded by AGIM_WS_BACKPRESSURE_TIMEOUT_MS (default 5 s) so a frozen
  * client can't wedge the agent's chunk producer indefinitely.
  */
 async function awaitWsDrain(ws: WebSocket): Promise<void> {
   if (ws.bufferedAmount < WS_BACKPRESSURE_HIGHWATER_BYTES) return
   const timeoutMs = (() => {
-    const raw = process.env.IMHUB_WS_BACKPRESSURE_TIMEOUT_MS
+    const raw = process.env.AGIM_WS_BACKPRESSURE_TIMEOUT_MS
     if (raw) {
       const n = parseInt(raw, 10)
       if (Number.isFinite(n) && n > 0) return n

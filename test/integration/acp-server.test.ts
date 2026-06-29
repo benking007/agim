@@ -83,7 +83,7 @@ describe('ACP Server', () => {
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { name: string; protocols: string[]; capabilities: { agents: Array<{ name: string }> } }
-    expect(body.name).toBe('im-hub-gateway')
+    expect(body.name).toBe('agim-gateway')
     expect(body.protocols).toContain('acp/v1')
     expect(body.capabilities.agents.some((a) => a.name === 'acp-stub')).toBe(true)
   })
@@ -166,7 +166,7 @@ describe('ACP Server', () => {
     })
     expect(res2.status).toBe(200)
     // The two task ids must differ but the underlying session has been
-    // reused (im-hub created one Session entry pinned to acp:session:<id>).
+    // reused (agim created one Session entry pinned to acp:session:<id>).
     const body2 = await res2.json() as { id: string }
     expect(body2.id).not.toBe(body1.id)
   })

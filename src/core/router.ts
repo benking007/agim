@@ -69,7 +69,7 @@ export interface RouteContext {
   /** A2A-L1: inline-jobs row id tracking THIS run. cli.ts stashes the
    *  freshly-created inlineJobId here so callAgentWithHistory forwards it
    *  into AgentSendOpts → adapter.registerRun → RunContext.parentJobId.
-   *  Any mcp__imhub__call_agent fired from inside the run then knows what
+   *  Any mcp__agim__call_agent fired from inside the run then knows what
    *  parent_id to stamp on its callee row. */
   parentJobId?: number
   /** A2A-L1: call_depth (0 for user-originated runs). */
@@ -630,19 +630,19 @@ export async function callAgentWithHistory(
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
   }
 
-  // Plan mode kill-switch: ops can flip IMHUB_DISABLE_PLAN_MODE=1 to ignore
+  // Plan mode kill-switch: ops can flip AGIM_DISABLE_PLAN_MODE=1 to ignore
   // every session's planMode flag without redeploying. Matches the same env
   // var that short-circuits the /plan command itself.
-  let effectivePlanMode = planMode === true && process.env.IMHUB_DISABLE_PLAN_MODE !== '1'
+  let effectivePlanMode = planMode === true && process.env.AGIM_DISABLE_PLAN_MODE !== '1'
 
   // v1.2.135 — heuristic auto-enter. When the operator has opted into
-  // IMHUB_PLAN_INTENT_AUTO and plan mode is currently OFF, a prompt
+  // AGIM_PLAN_INTENT_AUTO and plan mode is currently OFF, a prompt
   // containing a "先想想 / plan only / 等一下别动手" keyword temporarily
   // flips planMode ON for this turn ONLY. The session row stays at
   // off, so the next message goes back to normal unless the user
   // explicitly /plan on or the model itself calls
   // native_exit_plan_mode (v1.2.131). The override never auto-exits.
-  if (!effectivePlanMode && process.env.IMHUB_DISABLE_PLAN_MODE !== '1') {
+  if (!effectivePlanMode && process.env.AGIM_DISABLE_PLAN_MODE !== '1') {
     try {
       const { shouldAutoEnterPlanMode } = await import('./plan-intent.js')
       const matched = shouldAutoEnterPlanMode(prompt)
@@ -795,7 +795,7 @@ export async function callAgentWithHistory(
           durationMs,
         })
         // v1.5 — memory distillation. Fire-and-forget post-reply hook.
-        // Runs only when IMHUB_MEMORY_ENABLED is on; uses the same agent
+        // Runs only when AGIM_MEMORY_ENABLED is on; uses the same agent
         // we just talked to (model-agnostic). Skipped for tiny exchanges.
         try {
           const { scheduleDistillation } = await import('./memory-distill.js')

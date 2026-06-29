@@ -5,7 +5,7 @@
  * DuckDuckGo / Metaso): API-key input (masked-by-default), enable
  * toggle (= "is this name in the chain?"), reorder via up / down,
  * one-shot test button. The chain preview at the top shows what
- * IMHUB_WEB_SEARCH_PROVIDERS resolves to right now.
+ * AGIM_WEB_SEARCH_PROVIDERS resolves to right now.
  *
  * Persistence: API keys go via PUT /api/env (which masks GET +
  * refuses echoed masks on PUT); the chain order is a single CSV
@@ -87,11 +87,11 @@ export default function SettingsSearchRoute(): JSX.Element {
 
   const initial = useMemo<Draft>(
     () => ({
-      chain: envChainOrder(envData.IMHUB_WEB_SEARCH_PROVIDERS, providers),
+      chain: envChainOrder(envData.AGIM_WEB_SEARCH_PROVIDERS, providers),
       keys: {},
       keysTouched: {},
     }),
-    [envData.IMHUB_WEB_SEARCH_PROVIDERS, providers],
+    [envData.AGIM_WEB_SEARCH_PROVIDERS, providers],
   )
 
   const [draft, setDraft] = useState<Draft>(initial)
@@ -154,7 +154,7 @@ export default function SettingsSearchRoute(): JSX.Element {
     const nextCsv = chainToCsv(draft.chain)
     const initialCsv = chainToCsv(initial.chain)
     if (nextCsv !== initialCsv) {
-      updates.IMHUB_WEB_SEARCH_PROVIDERS = nextCsv || null
+      updates.AGIM_WEB_SEARCH_PROVIDERS = nextCsv || null
     }
     for (const [envKey, touched] of Object.entries(draft.keysTouched)) {
       if (!touched) continue

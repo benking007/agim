@@ -18,14 +18,14 @@ export function nextRevealLen(
   return Math.min(target, current + step)
 }
 
-/** Frame interval in ms. Override cadence via IMHUB_TUI_STREAM_FPS. */
+/** Frame interval in ms. Override cadence via AGIM_TUI_STREAM_FPS. */
 export function resolveTickMs(): number {
-  const fps = Number(process.env.IMHUB_TUI_STREAM_FPS)
+  const fps = Number(process.env.AGIM_TUI_STREAM_FPS)
   return Number.isFinite(fps) && fps > 0 ? Math.max(10, Math.round(1000 / fps)) : 40
 }
 
-/** Whether smooth reveal is on. Set IMHUB_TUI_STREAM_SMOOTH=0 to render each
+/** Whether smooth reveal is on. Set AGIM_TUI_STREAM_SMOOTH=0 to render each
  *  chunk immediately (the pre-v1.3.8 behavior). */
 export function streamSmoothingEnabled(): boolean {
-  return process.env.IMHUB_TUI_STREAM_SMOOTH !== '0'
+  return process.env.AGIM_TUI_STREAM_SMOOTH !== '0'
 }

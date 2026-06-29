@@ -19,18 +19,18 @@ The hard part is **where to stash it**.
 
 | Mode | Storage | Public URL source | Best for |
 |---|---|---|---|
-| `local` | This host's `~/.agim/viewer.db` | Your own reverse proxy (`IMHUB_VIEWER_PUBLIC_BASE_URL`) | Operators with a domain + TLS reverse proxy |
+| `local` | This host's `~/.agim/viewer.db` | Your own reverse proxy (`AGIM_VIEWER_PUBLIC_BASE_URL`) | Operators with a domain + TLS reverse proxy |
 | `tunnel` | This host's `~/.agim/viewer.db` | `cloudflared` quick tunnel (`https://*.trycloudflare.com`) | Tinkering / overseas; the URL changes per restart and is often blocked in mainland China |
 | `remote` | An external paste server you (or your maintainer) host | The paste server returns the URL on upload | Users without their own domain — perfect for shipping agim-cli with a single hosted paste service for everyone |
 
 Mode is picked **automatically** in this order, first non-empty wins:
 
-1. `IMHUB_VIEWER_REMOTE_PASTE_URL` is set → **remote** (operator-chosen)
-2. `IMHUB_VIEWER_PUBLIC_BASE_URL` is set → **local**
-3. `IMHUB_VIEWER_TUNNEL_MODE=quick` → **tunnel**
+1. `AGIM_VIEWER_REMOTE_PASTE_URL` is set → **remote** (operator-chosen)
+2. `AGIM_VIEWER_PUBLIC_BASE_URL` is set → **local**
+3. `AGIM_VIEWER_TUNNEL_MODE=quick` → **tunnel**
 4. fallback → **remote** routed through the community default
    `https://viewer.iclaw.host/paste` (introduced in v1.2.43; turn off
-   with `IMHUB_VIEWER_NO_DEFAULT_REMOTE=1`)
+   with `AGIM_VIEWER_NO_DEFAULT_REMOTE=1`)
 5. nothing usable → degrade to inline (IM gets the full markdown text,
    may be ugly but never lost)
 
@@ -39,16 +39,16 @@ Mode is picked **automatically** in this order, first non-empty wins:
 The community default in step 4 means an out-of-the-box agim install
 **uploads long agent replies over HTTPS** to `viewer.iclaw.host`. If
 your deployment can't accept that, set
-`IMHUB_VIEWER_NO_DEFAULT_REMOTE=1` (no upload, no public link — the
-IM gets inline markdown), or set `IMHUB_VIEWER_PUBLIC_BASE_URL` to
+`AGIM_VIEWER_NO_DEFAULT_REMOTE=1` (no upload, no public link — the
+IM gets inline markdown), or set `AGIM_VIEWER_PUBLIC_BASE_URL` to
 keep storage on your own host.
 
 ## Mode `local` — your own domain
 
 ```bash
 # ~/.agim/env
-IMHUB_VIEWER_ENABLED=1
-IMHUB_VIEWER_PUBLIC_BASE_URL=https://agent.example.com
+AGIM_VIEWER_ENABLED=1
+AGIM_VIEWER_PUBLIC_BASE_URL=https://agent.example.com
 ```
 
 What you also need:
@@ -64,8 +64,8 @@ Pastes live in `~/.agim/viewer.db`. The web console serves them at
 
 ```bash
 # ~/.agim/env
-IMHUB_VIEWER_ENABLED=1
-IMHUB_VIEWER_TUNNEL_MODE=quick
+AGIM_VIEWER_ENABLED=1
+AGIM_VIEWER_TUNNEL_MODE=quick
 # (leave PUBLIC_BASE_URL unset)
 ```
 
@@ -84,9 +84,9 @@ markdown body. Either get a domain (mode `local`) or use the
 
 ```bash
 # ~/.agim/env
-IMHUB_VIEWER_ENABLED=1
-IMHUB_VIEWER_REMOTE_PASTE_URL=https://paste.example.com/paste
-IMHUB_VIEWER_REMOTE_PASTE_TOKEN=optional-shared-secret
+AGIM_VIEWER_ENABLED=1
+AGIM_VIEWER_REMOTE_PASTE_URL=https://paste.example.com/paste
+AGIM_VIEWER_REMOTE_PASTE_TOKEN=optional-shared-secret
 ```
 
 What you need:

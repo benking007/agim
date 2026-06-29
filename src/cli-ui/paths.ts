@@ -1,8 +1,6 @@
 // cli-ui/paths.ts — shared filesystem locations used by the CLI wizard
-// + service management. Delegates to `core/agim-paths.ts`, which
-// auto-detects whether the on-disk root is the v1.0+ `~/.agim/` name or
-// the legacy `~/.im-hub/` name from a 0.x install. Existing imports keep
-// working — the constant names didn't change.
+// + service management. Delegates to `core/agim-paths.ts` so CLI and
+// service code share the same AGIM_HOME / AGIM_WORKSPACES resolution.
 
 import { join } from 'node:path'
 import { AGIM_HOME, AGIM_WORKSPACES } from '../core/agim-paths.js'

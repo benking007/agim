@@ -1,7 +1,7 @@
 // user-coord-prefs.ts — per-user coord-system preference store.
 //
 // Why this file exists:
-//   coord-systems.ts uses a single env flag (IMHUB_TELEGRAM_COORDS_GCJ02)
+//   coord-systems.ts uses a single env flag (AGIM_TELEGRAM_COORDS_GCJ02)
 //   to decide whether to treat incoming Telegram coords as GCJ-02 or
 //   WGS-84. That's wrong for any deployment with mixed clients —
 //   iPhone (system location → GCJ-02), Android+GMS (WGS-84), Telegram

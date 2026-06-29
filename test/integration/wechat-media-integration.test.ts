@@ -14,8 +14,8 @@ import type { MessageContext } from '../../src/core/types.js'
 import type { WeixinMessage, CDNMedia } from '../../src/plugins/messengers/wechat/ilink-types.js'
 import { ITEM_TYPE } from '../../src/plugins/messengers/wechat/ilink-types.js'
 
-const TEST_MEDIA_ROOT = join(tmpdir(), `imhub-wechat-integ-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_MEDIA_ROOT = TEST_MEDIA_ROOT
+const TEST_MEDIA_ROOT = join(tmpdir(), `agim-wechat-integ-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_MEDIA_ROOT = TEST_MEDIA_ROOT
 
 // Import AFTER env setup
 const { ILinkWeChatAdapter } = await import('../../src/plugins/messengers/wechat/ilink-adapter.js')
@@ -232,7 +232,7 @@ describe('WeChat iLink adapter — media integration', () => {
     await processMessage(adapter, msg)
 
     expect(captured).toHaveLength(1)
-    // Without OPENAI_API_KEY or IMHUB_WHISPERCPP_BIN, should show "未转写"
+    // Without OPENAI_API_KEY or AGIM_WHISPERCPP_BIN, should show "未转写"
     expect(captured[0].message.text).toContain('语音附件未转写')
     expect(captured[0].message.text).toContain('OPENAI_API_KEY')
   })

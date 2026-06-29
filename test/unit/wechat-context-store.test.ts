@@ -1,6 +1,6 @@
 // WeChat context_token persistent store — unit tests.
 //
-// Sets IMHUB_WECHAT_CONTEXT_DB to a temp file BEFORE importing the module,
+// Sets AGIM_WECHAT_CONTEXT_DB to a temp file BEFORE importing the module,
 // same pattern as reminders.test.ts. DB tests are skip-on-bun via probe.
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
@@ -8,9 +8,9 @@ import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_DIR = join(tmpdir(), `imhub-wechat-ctx-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+const TEST_DIR = join(tmpdir(), `agim-wechat-ctx-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
 const TEST_DB = join(TEST_DIR, 'wechat-context.db')
-process.env.IMHUB_WECHAT_CONTEXT_DB = TEST_DB
+process.env.AGIM_WECHAT_CONTEXT_DB = TEST_DB
 
 const storeMod = await import('../../src/plugins/messengers/wechat/context-store.js')
 const {

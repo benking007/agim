@@ -10,7 +10,7 @@
 // By default all five tools have real filesystem access (so the native
 // agent isn't crippled). Operators who want to confine access to the native
 // agent's per-thread cwd subtree (typically ~/.agim-workspaces/native/
-// <thread>/) set IMHUB_NATIVE_FS_RESTRICT=1. Either way, the sensitive-
+// <thread>/) set AGIM_NATIVE_FS_RESTRICT=1. Either way, the sensitive-
 // paths.ts denylist always applies so ~/.agim/, /etc/shadow, etc. remain
 // blocked.
 //
@@ -21,7 +21,7 @@
 //   * native_glob(pattern, root?, max_results?)
 //   * native_grep(pattern, path?, glob?, output_mode?, max_matches?, case_insensitive?)
 //
-// Per-tool wall-clock: each handler races against IMHUB_NATIVE_FS_TIMEOUT_MS
+// Per-tool wall-clock: each handler races against AGIM_NATIVE_FS_TIMEOUT_MS
 // (default 60_000). Honors the loop AbortSignal too.
 
 import { promises as fs, statSync } from 'node:fs'
@@ -60,7 +60,7 @@ export function getFsTools(): ToolDef[] {
       name: 'native_read_file',
       description:
         'Read a UTF-8 text file by path. Default max 256KB. Paths resolve against the agent cwd; ' +
-        'absolute paths are allowed by default (set IMHUB_NATIVE_FS_RESTRICT=1 to confine to the ' +
+        'absolute paths are allowed by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to the ' +
         'workspace subtree). Sensitive paths (~/.agim, /etc/shadow, etc.) are always denied.',
       parameters: {
         type: 'object',
@@ -186,10 +186,10 @@ async function runOne(
 // ─── path safety ─────────────────────────────────────────────────────
 
 /** Workspace restriction is OPT-IN (default off, so native agents have real
- *  filesystem access). Operators set IMHUB_NATIVE_FS_RESTRICT=1 to confine
+ *  filesystem access). Operators set AGIM_NATIVE_FS_RESTRICT=1 to confine
  *  access to the cwd subtree; sensitive-paths.ts always applies regardless. */
 function workspaceRestricted(): boolean {
-  return process.env.IMHUB_NATIVE_FS_RESTRICT === '1'
+  return process.env.AGIM_NATIVE_FS_RESTRICT === '1'
 }
 
 interface ResolvedPath {
@@ -216,7 +216,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
         ok: false,
         reason:
           `path "${abs}" is outside workspace "${ctx.cwd}". ` +
-          'Unset IMHUB_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
+          'Unset AGIM_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
       }
     }
   }
@@ -242,7 +242,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
           ok: false,
           reason:
             `symlink target "${real}" is outside workspace "${ctx.cwd}". ` +
-            'Unset IMHUB_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
+            'Unset AGIM_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
         }
       }
     }
@@ -561,7 +561,7 @@ function simpleGlobToRegex(pattern: string): RegExp {
 // ─── helpers ─────────────────────────────────────────────────────────
 
 function resolveTimeoutMs(): number {
-  const raw = process.env.IMHUB_NATIVE_FS_TIMEOUT_MS
+  const raw = process.env.AGIM_NATIVE_FS_TIMEOUT_MS
   if (raw) {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0 && n <= 600_000) return n

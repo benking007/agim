@@ -3,7 +3,7 @@
 //
 // Permission flow has three modes, decided per-call in prepareCommand():
 //
-//   1. Skip-permissions opt-in (IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1):
+//   1. Skip-permissions opt-in (AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1):
 //        --dangerously-skip-permissions
 //      Bypasses ALL permission checks — approval prompts, PreToolUse hooks,
 //      everything. Mirrors the Claude CLI flag name 1:1 so the safety
@@ -13,19 +13,19 @@
 //
 //   2. Approval-routed (default when IM context is present and the bus is up):
 //        --permission-mode default
-//        --permission-prompt-tool mcp__imhub__request
+//        --permission-prompt-tool mcp__agim__request
 //        --mcp-config <tmpfile>
 //      The MCP sidecar (mcp-approval-server.js) is registered via
 //      --mcp-config; it connects to agim's approval-bus over a unix
 //      socket, and agim surfaces approval prompts to the originating
 //      IM thread.
 //
-//   3. Legacy "dontAsk" fallback (env IMHUB_APPROVAL_DISABLED=1, OR no IM
+//   3. Legacy "dontAsk" fallback (env AGIM_APPROVAL_DISABLED=1, OR no IM
 //      thread context, OR approvalBus not started, OR mcp-config write
 //      fails):
 //        --permission-mode dontAsk
 //      Claude leans on PreToolUse hooks in ~/.claude/settings.json plus
-//      the CLAUDE_VIA_IM env signal injected by im-hub.service. Less
+//      the CLAUDE_VIA_IM env signal injected by agim.service. Less
 //      drastic than mode 1 — hooks still gate tools when configured.
 //
 // IMPORTANT: every per-spawn resource (runId, mcp-config dir, registry
@@ -54,10 +54,10 @@ const BASE_ARGS = ['--print', '--verbose', '--output-format', 'stream-json'] as 
  *  emits `content_block_delta` / `text_delta` events as the model writes,
  *  instead of one whole text block per turn — so the TUI streams smoothly
  *  rather than landing a paragraph at a time. Default ON; set
- *  IMHUB_CLAUDE_PARTIAL_STREAM=0 to fall back to block streaming (e.g. for an
+ *  AGIM_CLAUDE_PARTIAL_STREAM=0 to fall back to block streaming (e.g. for an
  *  older Claude Code CLI that doesn't recognise the flag). */
 export function claudePartialStreamEnabled(): boolean {
-  return process.env.IMHUB_CLAUDE_PARTIAL_STREAM !== '0'
+  return process.env.AGIM_CLAUDE_PARTIAL_STREAM !== '0'
 }
 
 /** BASE_ARGS plus the partial-message flag when enabled. Computed at call
@@ -117,7 +117,7 @@ export class ClaudeCodeAdapter extends AgentBase {
 
   /**
    * Legacy/fallback args — used when approval routing is disabled or not
-   * applicable (no IM context, bus down, IMHUB_APPROVAL_DISABLED=1).
+   * applicable (no IM context, bus down, AGIM_APPROVAL_DISABLED=1).
    *
    * planMode override: when opts.planMode is true we hand claude
    * `--permission-mode plan` regardless of fallback path. plan is read-only
@@ -147,7 +147,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     // registration also keeps cleanup trivial. buildArgs picks `--permission-mode plan`
     // when opts.planMode is true.
     //
-    // Plan wins over IMHUB_DANGEROUSLY_SKIP_PERMISSIONS: read-only mode
+    // Plan wins over AGIM_DANGEROUSLY_SKIP_PERMISSIONS: read-only mode
     // is still useful as an exploration step even when the operator has
     // turned skip-permissions on globally for normal runs.
     if (opts.planMode) {
@@ -158,7 +158,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     // /settings) when they're OK with Claude running every tool with no
     // approval and no hooks. Mirrors the CLI flag name so grep-ability
     // is high.
-    if (process.env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS === '1') {
+    if (process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS === '1') {
       log.info({ event: 'claude.approval.skip_permissions' },
         'Claude run launched with --dangerously-skip-permissions (operator opt-in)')
       return {
@@ -172,7 +172,7 @@ export class ClaudeCodeAdapter extends AgentBase {
       }
     }
 
-    if (process.env.IMHUB_APPROVAL_DISABLED === '1') {
+    if (process.env.AGIM_APPROVAL_DISABLED === '1') {
       return { args: this.buildArgs(prompt, opts), cwd }
     }
 
@@ -191,7 +191,7 @@ export class ClaudeCodeAdapter extends AgentBase {
 
     let configDir: string
     try {
-      configDir = await mkdtemp(join(tmpdir(), 'imhub-mcp-'))
+      configDir = await mkdtemp(join(tmpdir(), 'agim-mcp-'))
     } catch (err) {
       log.warn({ event: 'claude.approval.mkdtemp_failed', err: String(err) },
         'Falling back to dontAsk: cannot create mcp-config tmpdir')
@@ -201,12 +201,12 @@ export class ClaudeCodeAdapter extends AgentBase {
 
     const config = {
       mcpServers: {
-        imhub: {
+        agim: {
           command: process.execPath,
           args: [SIDECAR_PATH],
           env: {
-            IMHUB_APPROVAL_SOCK: sockPath,
-            IMHUB_RUN_ID: runId,
+            AGIM_APPROVAL_SOCK: sockPath,
+            AGIM_RUN_ID: runId,
           },
         },
       },
@@ -224,7 +224,7 @@ export class ClaudeCodeAdapter extends AgentBase {
     approvalBus.registerRun(runId, {
       threadId, platform, userId: userId ?? '', channelId,
       callerAgent: this.name,
-      // A2A-L1: forward parent + depth so any mcp__imhub__call_agent
+      // A2A-L1: forward parent + depth so any mcp__agim__call_agent
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
@@ -248,7 +248,7 @@ export class ClaudeCodeAdapter extends AgentBase {
         '--mcp-config', configPath,
         ...baseArgs(),
         '--permission-mode', 'default',
-        '--permission-prompt-tool', 'mcp__imhub__request',
+        '--permission-prompt-tool', 'mcp__agim__request',
         prompt,
       ],
       cwd,

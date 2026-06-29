@@ -39,27 +39,27 @@ describe('nextRevealLen', () => {
 
 describe('resolveTickMs / streamSmoothingEnabled', () => {
   afterEach(() => {
-    delete process.env.IMHUB_TUI_STREAM_FPS
-    delete process.env.IMHUB_TUI_STREAM_SMOOTH
+    delete process.env.AGIM_TUI_STREAM_FPS
+    delete process.env.AGIM_TUI_STREAM_SMOOTH
   })
 
   it('defaults to 40ms (~25fps)', () => {
     expect(resolveTickMs()).toBe(40)
   })
 
-  it('honours IMHUB_TUI_STREAM_FPS', () => {
-    process.env.IMHUB_TUI_STREAM_FPS = '50'
+  it('honours AGIM_TUI_STREAM_FPS', () => {
+    process.env.AGIM_TUI_STREAM_FPS = '50'
     expect(resolveTickMs()).toBe(20)
   })
 
   it('clamps absurd fps to a sane floor', () => {
-    process.env.IMHUB_TUI_STREAM_FPS = '100000'
+    process.env.AGIM_TUI_STREAM_FPS = '100000'
     expect(resolveTickMs()).toBe(10)
   })
 
   it('smoothing on by default, off when env=0', () => {
     expect(streamSmoothingEnabled()).toBe(true)
-    process.env.IMHUB_TUI_STREAM_SMOOTH = '0'
+    process.env.AGIM_TUI_STREAM_SMOOTH = '0'
     expect(streamSmoothingEnabled()).toBe(false)
   })
 })

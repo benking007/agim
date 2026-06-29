@@ -13,7 +13,7 @@ You are running as one of agim's agents (native / claude-code / codex / opencode
 | Question | How to answer |
 |---|---|
 | "你是哪个 agent？" | Look at the system reminder block — agim's prompt always tells you which agent you are. The active agent's name also appears in `/agents` output. |
-| "用的什么模型？" | For native: read `process.env.IMHUB_NATIVE_BACKEND` or run `agim model show`. For CLI agents: the model is set by the CLI itself (`/model` inside claude-code, `gpt-5` inside codex etc.). |
+| "用的什么模型？" | For native: read `process.env.AGIM_NATIVE_BACKEND` or run `agim model show`. For CLI agents: the model is set by the CLI itself (`/model` inside claude-code, `gpt-5` inside codex etc.). |
 | "现在的 cwd？" | Each agent has a per-agent cwd under `~/.agim-workspaces/<agent>/`. Read `AGENTS.md` in that dir to see role-specific instructions; the cwd itself is set at process spawn time. |
 | "context 还剩多少？" | If you're running as a CLI agent, the harness usually shows a status line. For native, recent token usage logs into `journalctl -u agim` under `event=native.turn.done`. |
 | "Apps 列表？" | Run `agim agents` or use the `/agents` slash command. |
@@ -36,7 +36,7 @@ The user (and you, with the user's consent) can change runtime settings via slas
 Before saying "I can't do that", run through:
 
 1. **Tool available?** Tell the user the literal tool name you tried; if it's missing, the operator hasn't enabled it.
-2. **Skill exists?** `mcp__imhub__read_skill("<name>")` returns the body; if it errors, the skill isn't installed.
+2. **Skill exists?** `mcp__agim__read_skill("<name>")` returns the body; if it errors, the skill isn't installed.
 3. **Network?** Try `curl -sS -o /dev/null -w "%{http_code}\n" https://www.google.com` (or a target endpoint) — agim runs on the operator's host, no proxy by default.
 4. **API key?** Many skills require `ENV` vars (FINNHUB_API_KEY, MX_APIKEY, etc.). The skill summary block shows `(unavailable: ENV: X)` when missing.
 

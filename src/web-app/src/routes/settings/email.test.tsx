@@ -49,18 +49,18 @@ function renderPage(): ReturnType<typeof render> {
   )
 }
 
-const EMPTY_ENV = { env: {}, secretKeys: ['IMHUB_SMTP_PASS'] }
+const EMPTY_ENV = { env: {}, secretKeys: ['AGIM_SMTP_PASS'] }
 
 const CONFIGURED_ENV = {
   env: {
-    IMHUB_SMTP_HOST: 'smtp.gmail.com',
-    IMHUB_SMTP_PORT: '465',
-    IMHUB_SMTP_USER: 'me@example.com',
-    IMHUB_SMTP_PASS: 'abcd****wxyz', // masked
-    IMHUB_SMTP_FROM: 'me@example.com',
-    IMHUB_SMTP_SECURE: 'true',
+    AGIM_SMTP_HOST: 'smtp.gmail.com',
+    AGIM_SMTP_PORT: '465',
+    AGIM_SMTP_USER: 'me@example.com',
+    AGIM_SMTP_PASS: 'abcd****wxyz', // masked
+    AGIM_SMTP_FROM: 'me@example.com',
+    AGIM_SMTP_SECURE: 'true',
   },
-  secretKeys: ['IMHUB_SMTP_PASS'],
+  secretKeys: ['AGIM_SMTP_PASS'],
 }
 
 /** Match any /api/env GET (`?reveal=0` / `?reveal=1` / bare). */
@@ -167,8 +167,8 @@ describe('/settings/email', () => {
         updates: Record<string, string | null>
       }
       for (const key of [
-        'IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER',
-        'IMHUB_SMTP_PASS', 'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE',
+        'AGIM_SMTP_HOST', 'AGIM_SMTP_PORT', 'AGIM_SMTP_USER',
+        'AGIM_SMTP_PASS', 'AGIM_SMTP_FROM', 'AGIM_SMTP_SECURE',
       ]) {
         expect(body.updates[key]).toBeNull()
       }
@@ -220,9 +220,9 @@ describe('/settings/email', () => {
         updates: Record<string, string | null>
       }
       // Host change sent.
-      expect(body.updates.IMHUB_SMTP_HOST).toBe('mail.example.com')
+      expect(body.updates.AGIM_SMTP_HOST).toBe('mail.example.com')
       // PASS (still the mask `abcd****wxyz`) NOT shipped.
-      expect('IMHUB_SMTP_PASS' in body.updates).toBe(false)
+      expect('AGIM_SMTP_PASS' in body.updates).toBe(false)
     })
   })
 })

@@ -59,8 +59,8 @@ export function envKeyForBackend(name: string): string {
 
 /** Vendor hint passed by the registry so we can fall back to standard
  *  vendor envs (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, …). Optional —
- *  callers from CLI tests etc. can omit it and only see the two
- *  legacy lookup paths. */
+ *  callers from CLI tests etc. can omit it and only see Agim-managed
+ *  lookup paths. */
 export interface BackendHint {
   provider?: string
   baseUrl?: string

@@ -16,7 +16,7 @@ function baseOpts(overrides: Partial<AssembleOpts> = {}): AssembleOpts {
     todoThreadKey: 'native:test',
     planExitCtx: { threadKey: 'native:test', runId: 'run-1' },
     advertisePlanExit: false,
-    imhubCtx: {
+    agimCtx: {
       platform: 'native-agent', channelId: 'default', threadId: 'test',
       userId: 'u', callerAgent: 'native', callerDepth: 0,
     },
@@ -25,16 +25,16 @@ function baseOpts(overrides: Partial<AssembleOpts> = {}): AssembleOpts {
 }
 
 describe('assembleNativeTools — single source of truth', () => {
-  it('advertises every native source plus the imhub tools', () => {
+  it('advertises every native source plus the agim tools', () => {
     const { tools } = assembleNativeTools(baseOpts())
     const names = new Set(tools.map((t) => t.name))
-    // built-in / fs / web / exec / todo / imhub representatives
+    // built-in / fs / web / exec / todo / agim representatives
     for (const n of [
       'native_echo', 'native_now', 'native_random_uuid',
       'native_read_file', 'native_write_file', 'native_list_dir', 'native_glob', 'native_grep',
       'native_web_fetch', 'native_web_search',
       'native_exec', 'native_todo_write',
-      'mcp__imhub__read_skill', 'mcp__imhub__save_memo', 'mcp__imhub__call_agent',
+      'mcp__agim__read_skill', 'mcp__agim__save_memo', 'mcp__agim__call_agent',
     ]) {
       expect(names.has(n)).toBe(true)
     }
@@ -65,13 +65,13 @@ describe('assembleNativeTools — per-call concurrency classifier (fail-closed)'
     const safe = ['native_echo', 'native_now', 'native_random_uuid',
       'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
       'native_web_fetch', 'native_web_search',
-      'mcp__imhub__read_skill', 'mcp__imhub__list_skills', 'mcp__imhub__search_memos',
-      'mcp__imhub__memory_list', 'mcp__imhub__memory_query']
+      'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
+      'mcp__agim__memory_list', 'mcp__agim__memory_query']
     for (const n of safe) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(true)
     }
     const serial = ['native_write_file', 'native_exec', 'native_sleep_ms', 'native_todo_write',
-      'mcp__imhub__save_memo', 'mcp__imhub__push_message', 'mcp__imhub__call_agent',
+      'mcp__agim__save_memo', 'mcp__agim__push_message', 'mcp__agim__call_agent',
       'native_exit_plan_mode']
     for (const n of serial) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(false)

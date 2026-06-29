@@ -11,7 +11,7 @@
 // forward the remaining keystrokes to Ink unchanged, and surface wheel
 // notches on a side EventEmitter the TUI subscribes to. Native text
 // selection becomes Shift+drag while mouse reporting is on; disable the
-// whole thing with IMHUB_TUI_NO_MOUSE=1.
+// whole thing with AGIM_TUI_NO_MOUSE=1.
 
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'

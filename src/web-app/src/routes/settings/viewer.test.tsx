@@ -8,7 +8,7 @@
  *   * Enabling the Viewer opens the Save bar
  *   * Save sends PUT /api/env with the diff
  *   * Baidu AK suspicious-length warning fires when length ≠ 32
- *   * Clear AK sends PUT /api/env with IMHUB_BAIDU_MAP_AK: null
+ *   * Clear AK sends PUT /api/env with AGIM_BAIDU_MAP_AK: null
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -55,23 +55,23 @@ function renderPage(): ReturnType<typeof render> {
 
 const VIEWER_OFF_ENV = {
   env: {
-    IMHUB_VIEWER_ENABLED: '0',
-    IMHUB_VIEWER_TUNNEL_MODE: 'off',
-    IMHUB_VIEWER_NO_DEFAULT_REMOTE: '0',
+    AGIM_VIEWER_ENABLED: '0',
+    AGIM_VIEWER_TUNNEL_MODE: 'off',
+    AGIM_VIEWER_NO_DEFAULT_REMOTE: '0',
   },
-  secretKeys: ['IMHUB_BAIDU_MAP_AK'],
+  secretKeys: ['AGIM_BAIDU_MAP_AK'],
 }
 
 const VIEWER_QUICK_ENV = {
   env: {
-    IMHUB_VIEWER_ENABLED: '1',
-    IMHUB_VIEWER_PUBLIC_BASE_URL: 'https://agim.example.com',
-    IMHUB_VIEWER_TUNNEL_MODE: 'quick',
-    IMHUB_VIEWER_CHARS: '500',
-    IMHUB_VIEWER_LINES: '12',
-    IMHUB_BAIDU_MAP_AK: 'abcd' + '*'.repeat(24) + 'wxyz', // masked 32-char
+    AGIM_VIEWER_ENABLED: '1',
+    AGIM_VIEWER_PUBLIC_BASE_URL: 'https://agim.example.com',
+    AGIM_VIEWER_TUNNEL_MODE: 'quick',
+    AGIM_VIEWER_CHARS: '500',
+    AGIM_VIEWER_LINES: '12',
+    AGIM_BAIDU_MAP_AK: 'abcd' + '*'.repeat(24) + 'wxyz', // masked 32-char
   },
-  secretKeys: ['IMHUB_BAIDU_MAP_AK'],
+  secretKeys: ['AGIM_BAIDU_MAP_AK'],
 }
 
 const TUNNEL_RUNNING = {
@@ -211,19 +211,19 @@ describe('/settings/viewer', () => {
     })
   })
 
-  it('toggling "disable community default" sends PUT with IMHUB_VIEWER_NO_DEFAULT_REMOTE', async () => {
+  it('toggling "disable community default" sends PUT with AGIM_VIEWER_NO_DEFAULT_REMOTE', async () => {
     const enabledEnv = {
       env: {
-        IMHUB_VIEWER_ENABLED: '1',
-        IMHUB_VIEWER_TUNNEL_MODE: 'off',
+        AGIM_VIEWER_ENABLED: '1',
+        AGIM_VIEWER_TUNNEL_MODE: 'off',
       },
-      secretKeys: ['IMHUB_BAIDU_MAP_AK'],
+      secretKeys: ['AGIM_BAIDU_MAP_AK'],
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const u = String(input)
       if (isEnvGet(u, init?.method)) return jsonResponse(enabledEnv)
       if (isEnvPut(u, init?.method)) return jsonResponse({
-        env: { ...enabledEnv.env, IMHUB_VIEWER_NO_DEFAULT_REMOTE: '1' },
+        env: { ...enabledEnv.env, AGIM_VIEWER_NO_DEFAULT_REMOTE: '1' },
         secretKeys: enabledEnv.secretKeys,
       })
       if (u === '/api/viewer/tunnel') return jsonResponse(TUNNEL_RUNNING)
@@ -254,11 +254,11 @@ describe('/settings/viewer', () => {
       const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
         updates: Record<string, string | null>
       }
-      expect(body.updates.IMHUB_VIEWER_NO_DEFAULT_REMOTE).toBe('1')
+      expect(body.updates.AGIM_VIEWER_NO_DEFAULT_REMOTE).toBe('1')
     })
   })
 
-  it('Clear AK sends PUT /api/env with IMHUB_BAIDU_MAP_AK: null', async () => {
+  it('Clear AK sends PUT /api/env with AGIM_BAIDU_MAP_AK: null', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const u = String(input)
       if (isEnvGet(u, init?.method)) return jsonResponse(VIEWER_QUICK_ENV)
@@ -286,7 +286,7 @@ describe('/settings/viewer', () => {
       const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
         updates: Record<string, string | null>
       }
-      expect(body.updates.IMHUB_BAIDU_MAP_AK).toBeNull()
+      expect(body.updates.AGIM_BAIDU_MAP_AK).toBeNull()
     })
   })
 })

@@ -5,7 +5,7 @@
 // `https://*.trycloudflare.com` reassigned per `cloudflared` process.
 // On agim restart, IM links generated before the restart become dead.
 // Operators who want stable URLs should configure
-// `IMHUB_VIEWER_PUBLIC_BASE_URL` to a reverse proxy (caddy / tailscale /
+// `AGIM_VIEWER_PUBLIC_BASE_URL` to a reverse proxy (caddy / tailscale /
 // cloudflared named tunnel) instead — when that env is non-empty we
 // skip the auto-tunnel.
 //

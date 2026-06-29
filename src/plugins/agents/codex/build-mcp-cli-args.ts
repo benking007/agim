@@ -1,5 +1,5 @@
 // build-mcp-cli-args.ts — translate {sockPath, runId} into the `-c` CLI
-// args that register the imhub MCP server inline with `codex exec`.
+// args that register the agim MCP server inline with `codex exec`.
 //
 // Why CLI args (not the global ~/.codex/config.toml):
 //
@@ -9,12 +9,12 @@
 //   value` flag accepts inline TOML and merges over the persisted config
 //   for THAT INVOCATION only — exactly what we need.
 //
-//   Verified against codex 0.130.0: `-c 'mcp_servers.imhub.command="..."'`
-//   + `-c 'mcp_servers.imhub.args=["..."]'` + `-c 'mcp_servers.imhub.env={
+//   Verified against codex 0.130.0: `-c 'mcp_servers.agim.command="..."'`
+//   + `-c 'mcp_servers.agim.args=["..."]'` + `-c 'mcp_servers.agim.env={
 //   K="v"}'` causes codex to spawn the MCP child with that command and env.
 //   The MCP child receives ONLY the env we list there (no parent-process
 //   inheritance), which is fine because mcp-approval-server.ts reads just
-//   IMHUB_APPROVAL_SOCK and IMHUB_RUN_ID, and we hand it the absolute node
+//   AGIM_APPROVAL_SOCK and AGIM_RUN_ID, and we hand it the absolute node
 //   binary path so it doesn't need PATH.
 //
 // TOML escaping: values are wrapped with JSON.stringify, which yields a
@@ -49,15 +49,15 @@ export interface CodexMcpEnvInput {
 }
 
 /**
- * Build the `-c` argument list that registers the imhub MCP server inline
+ * Build the `-c` argument list that registers the agim MCP server inline
  * for one `codex exec` invocation. Returns a flat array suitable for
  * splicing into the codex argv (each `-c` and its key=value are separate
  * argv entries — codex's clap parser requires it).
  *
  * Example output (formatted):
- *   -c mcp_servers.imhub.command="/usr/bin/node"
- *   -c mcp_servers.imhub.args=["/path/to/mcp-approval-server.js"]
- *   -c mcp_servers.imhub.env={IMHUB_APPROVAL_SOCK="/tmp/foo.sock",IMHUB_RUN_ID="abc-123"}
+ *   -c mcp_servers.agim.command="/usr/bin/node"
+ *   -c mcp_servers.agim.args=["/path/to/mcp-approval-server.js"]
+ *   -c mcp_servers.agim.env={AGIM_APPROVAL_SOCK="/tmp/foo.sock",AGIM_RUN_ID="abc-123"}
  */
 export function buildCodexMcpCliArgs(input: CodexMcpEnvInput): string[] {
   const node = input.nodeBinary ?? process.execPath
@@ -66,14 +66,14 @@ export function buildCodexMcpCliArgs(input: CodexMcpEnvInput): string[] {
   const commandVal = JSON.stringify(node)
   const argsVal = JSON.stringify([sidecar])
   const envVal = formatTomlInlineEnv({
-    IMHUB_APPROVAL_SOCK: input.sockPath,
-    IMHUB_RUN_ID: input.runId,
+    AGIM_APPROVAL_SOCK: input.sockPath,
+    AGIM_RUN_ID: input.runId,
   })
 
   return [
-    '-c', `mcp_servers.imhub.command=${commandVal}`,
-    '-c', `mcp_servers.imhub.args=${argsVal}`,
-    '-c', `mcp_servers.imhub.env=${envVal}`,
+    '-c', `mcp_servers.agim.command=${commandVal}`,
+    '-c', `mcp_servers.agim.args=${argsVal}`,
+    '-c', `mcp_servers.agim.env=${envVal}`,
   ]
 }
 
@@ -83,7 +83,7 @@ export function buildCodexMcpCliArgs(input: CodexMcpEnvInput): string[] {
  * grammar is a strict subset of JSON-string grammar for these inputs).
  *
  * No keys are quoted because we control the names — they're ASCII
- * bareword identifiers (IMHUB_* and similar).
+ * bareword identifiers (AGIM_* and similar).
  */
 function formatTomlInlineEnv(env: Record<string, string>): string {
   const pairs = Object.entries(env).map(([k, v]) => `${k}=${JSON.stringify(v)}`)

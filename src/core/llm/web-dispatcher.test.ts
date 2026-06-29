@@ -11,12 +11,12 @@ import {
 const NEVER_ABORT = new AbortController().signal
 
 describe('web-dispatcher', () => {
-  const ORIG_PRIVATE = process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE
+  const ORIG_PRIVATE = process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE
 
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE })
+  beforeEach(() => { delete process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE })
   afterEach(() => {
-    if (ORIG_PRIVATE === undefined) delete process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE
-    else process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE = ORIG_PRIVATE
+    if (ORIG_PRIVATE === undefined) delete process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE
+    else process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE = ORIG_PRIVATE
   })
 
   describe('getWebTools / isWebToolName', () => {
@@ -156,8 +156,8 @@ describe('web-dispatcher', () => {
       expect(tryParseIPv4Variants('not-an-ip')).toBeNull()
     })
 
-    it('IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 lifts the block', () => {
-      process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE = '1'
+    it('AGIM_NATIVE_WEB_ALLOW_PRIVATE=1 lifts the block', () => {
+      process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE = '1'
       expect(checkUrlSafety('http://localhost/').ok).toBe(true)
       expect(checkUrlSafety('http://192.168.1.1/').ok).toBe(true)
     })
@@ -171,17 +171,17 @@ describe('web-dispatcher', () => {
       expect(checkUrlSafety('http://100.128.0.1/').ok).toBe(true)
     })
 
-    it('CIDR whitelist (IMHUB_NATIVE_WEB_SSRF_WHITELIST) allows otherwise-blocked ranges', () => {
-      const ORIG = process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST
+    it('CIDR whitelist (AGIM_NATIVE_WEB_SSRF_WHITELIST) allows otherwise-blocked ranges', () => {
+      const ORIG = process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST
       try {
-        process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST = '100.64.0.0/10,10.20.0.0/16'
+        process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST = '100.64.0.0/10,10.20.0.0/16'
         expect(checkUrlSafety('http://100.64.0.1/').ok).toBe(true)   // CGN whitelisted
         expect(checkUrlSafety('http://10.20.5.5/').ok).toBe(true)     // RFC1918 + whitelist
         expect(checkUrlSafety('http://10.21.0.0/').ok).toBe(false)    // outside whitelist
         expect(checkUrlSafety('http://192.168.1.1/').ok).toBe(false)  // different RFC1918
       } finally {
-        if (ORIG === undefined) delete process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST
-        else process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST = ORIG
+        if (ORIG === undefined) delete process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST
+        else process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST = ORIG
       }
     })
   })
@@ -229,16 +229,16 @@ describe('web-dispatcher', () => {
       expect(called).toBe(false)
     })
 
-    it('honours IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 (no resolution)', async () => {
+    it('honours AGIM_NATIVE_WEB_ALLOW_PRIVATE=1 (no resolution)', async () => {
       const { checkUrlSafetyAsync } = await import('./web-dispatcher.js')
-      process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE = '1'
+      process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE = '1'
       try {
         let called = false
         const spy = async () => { called = true; return [{ address: '169.254.169.254', family: 4 }] }
         expect((await checkUrlSafetyAsync('http://evil.example.com/', spy)).ok).toBe(true)
         expect(called).toBe(false)
       } finally {
-        delete process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE
+        delete process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE
       }
     })
   })

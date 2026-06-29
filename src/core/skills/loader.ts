@@ -13,7 +13,7 @@
 //   tier 1: name + description, injected into every system prompt as a
 //           "skills available" block. Cheap (~30-50 tokens per skill).
 //   tier 2: full SKILL.md body, fetched on-demand via the
-//           mcp__imhub__read_skill MCP tool when the agent decides the
+//           mcp__agim__read_skill MCP tool when the agent decides the
 //           description matches the user's intent.
 //   tier 3: any file inside scripts/ / references/ / assets/ — read
 //           via the model's existing file-read tool when the body
@@ -119,7 +119,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000
  *  land files here regardless of what extra read-only roots are
  *  configured. Override via env for tests / custom deployments. */
 function workspaceSkillsDir(): string {
-  const override = process.env.IMHUB_SKILLS_WORKSPACE_DIR
+  const override = process.env.AGIM_SKILLS_WORKSPACE_DIR
   if (override) return override
   return join(AGIM_HOME, 'skills')
 }
@@ -128,7 +128,7 @@ export type SkillsMode = 'auto' | 'agim-only' | 'custom'
 
 /** Resolve operator's skill discovery mode. See loadSkillsRoots(). */
 function currentSkillsMode(): SkillsMode {
-  const raw = (process.env.IMHUB_SKILLS_MODE || 'auto').trim().toLowerCase()
+  const raw = (process.env.AGIM_SKILLS_MODE || 'auto').trim().toLowerCase()
   if (raw === 'agim-only' || raw === 'agim_only') return 'agim-only'
   if (raw === 'custom') return 'custom'
   return 'auto'
@@ -163,10 +163,10 @@ function parseRootsList(raw: string | undefined): string[] {
  *                + ~/.codex/skills. Reflects the typical "I installed all three
  *                CLI agents and they share via symlink" layout — agim sees
  *                100+ shared skills out of the box without extra config.
- *                Honors IMHUB_SKILLS_EXTRA_ROOTS for adding more.
+ *                Honors AGIM_SKILLS_EXTRA_ROOTS for adding more.
  *   - `agim-only`: only the workspace dir. For deployments that want
  *                isolation from per-user CLI agent directories.
- *   - `custom`:   workspace + IMHUB_SKILLS_ROOTS (explicit operator list).
+ *   - `custom`:   workspace + AGIM_SKILLS_ROOTS (explicit operator list).
  *
  * The builtin dir is NOT included here — it's tier-0 (bundled with agim)
  * and scanned separately as a last resort in doScan().
@@ -174,10 +174,10 @@ function parseRootsList(raw: string | undefined): string[] {
 export function resolveSkillsRoots(): string[] {
   const ws = workspaceSkillsDir()
   const mode = currentSkillsMode()
-  const extra = parseRootsList(process.env.IMHUB_SKILLS_EXTRA_ROOTS)
+  const extra = parseRootsList(process.env.AGIM_SKILLS_EXTRA_ROOTS)
   if (mode === 'agim-only') return [ws]
   if (mode === 'custom') {
-    const explicit = parseRootsList(process.env.IMHUB_SKILLS_ROOTS)
+    const explicit = parseRootsList(process.env.AGIM_SKILLS_ROOTS)
     return Array.from(new Set([ws, ...explicit, ...extra]))
   }
   // auto: workspace + common CLI agent skill dirs (read-only inherit).
@@ -210,7 +210,7 @@ export function describeSkillsConfig(): {
  *  current module file (after build → dist/core/skills/) then walk up
  *  to find `skills/builtin`. Falls back to the src tree during dev. */
 function builtinSkillsDir(): string {
-  const override = process.env.IMHUB_SKILLS_BUILTIN_DIR
+  const override = process.env.AGIM_SKILLS_BUILTIN_DIR
   if (override) return override
   // import.meta.url works in both dev (tsx / bun) and built dist (esm).
   const thisDir = dirname(fileURLToPath(import.meta.url))
@@ -340,7 +340,7 @@ export function readSkillBody(name: string): string | null {
  * Format (kept close to nanobot's so models trained on its docs feel
  * at home):
  *
- *   [agim skills available — read full body with mcp__imhub__read_skill(name)]
+ *   [agim skills available — read full body with mcp__agim__read_skill(name)]
  *   - skill-a: one-line description
  *   - skill-b: one-line description (unavailable: missing bin `foo`)
  *   - skill-c: one-line description
@@ -353,7 +353,7 @@ export function readSkillBody(name: string): string | null {
  * Rationale: agim is a generic IM ↔ Agent bridge; the framework should
  * not assume the operator's business domain. So operator-authored
  * skills (workspace source) and the bundled ECC pack are NOT injected
- * by default — they're reachable via `mcp__imhub__read_skill('name')`
+ * by default — they're reachable via `mcp__agim__read_skill('name')`
  * when their description matches. But ECC ships 200+ skills covering
  * agent harness engineering and general-purpose dev methodology that
  * benefit every agim install; this list pins ~20 of those into the
@@ -380,13 +380,13 @@ const ECC_TOP_PICKS_DEFAULT: ReadonlySet<string> = new Set([
 
 /**
  * v1.2.151 — Resolve the active ECC top-pick set. Operators can override
- * via `IMHUB_SKILLS_ECC_PICKS=name1,name2,...`. An empty or unset value
+ * via `AGIM_SKILLS_ECC_PICKS=name1,name2,...`. An empty or unset value
  * falls back to the default 20-name list. Validation is intentionally
  * forgiving: unknown names pass through (they just become no-ops when
  * the named skill isn't installed).
  */
 export function resolveEccTopPicks(): ReadonlySet<string> {
-  const raw = (process.env.IMHUB_SKILLS_ECC_PICKS || '').trim()
+  const raw = (process.env.AGIM_SKILLS_ECC_PICKS || '').trim()
   if (!raw) return ECC_TOP_PICKS_DEFAULT
   const names = raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
   if (names.length === 0) return ECC_TOP_PICKS_DEFAULT
@@ -405,7 +405,7 @@ type EccRemainderMode =
   | { mode: 'allowlist'; names: Set<string> }
 
 export function resolveEccRemainderMode(): EccRemainderMode {
-  const raw = (process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER || '').trim().toLowerCase()
+  const raw = (process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER || '').trim().toLowerCase()
   if (!raw || raw === 'on' || raw === '1' || raw === 'true') return { mode: 'on' }
   if (raw === 'off' || raw === '0' || raw === 'false') return { mode: 'off' }
   // Anything else is treated as a comma/whitespace-separated allowlist.
@@ -428,7 +428,7 @@ export function resolveEccRemainderMode(): EccRemainderMode {
 //   - the always-on skill bodies (unchanged)
 //
 // The auto-generated block (priority buckets + clusters) is suppressed.
-// Tests and CI override the path via IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+// Tests and CI override the path via AGIM_SKILLS_INJECTION_OVERRIDE_PATH
 // to avoid polluting the operator's real ~/.agim/.
 //
 // Editor entrypoint: the SPA page `/settings/skill-injection` calls
@@ -437,7 +437,7 @@ export function resolveEccRemainderMode(): EccRemainderMode {
 const INJECTION_OVERRIDE_FILENAME = 'skill-injection-override.md'
 
 export function injectionOverridePath(): string {
-  const override = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
+  const override = process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH
   if (override) return override
   return join(AGIM_HOME, INJECTION_OVERRIDE_FILENAME)
 }
@@ -687,7 +687,7 @@ const BUCKET_HEADINGS: Record<number, string> = {
   1: 'Agim builtin',
   2: 'ECC harness + methodology picks (recommended)',
   3: 'Workspace skills (operator-installed business)',
-  4: 'ECC remainder (read full description via mcp__imhub__read_skill)',
+  4: 'ECC remainder (read full description via mcp__agim__read_skill)',
 }
 
 /**
@@ -700,7 +700,7 @@ const SKILLS_ROUTING_HEADER: string = [
   'Before calling any generic tool (web_fetch / web_search / native_exec /',
   'shell-style commands), you MUST scan the skill list below. If any entry\'s',
   'description matches the user\'s intent — even loosely — you MUST call',
-  'mcp__imhub__read_skill(\'<name>\') first to load that skill\'s body. Skill',
+  'mcp__agim__read_skill(\'<name>\') first to load that skill\'s body. Skill',
   'bodies contain dedicated tools, endpoints, or queries that produce',
   'higher-quality, structured results than free-text web pages for the',
   'same intent. Falling back to the generic tool is only valid when:',
@@ -728,7 +728,7 @@ function renderSkillRow(s: SkillMeta): string {
   const descClean = (s.description || '').trim()
   const description = descClean && descClean !== '>-' && descClean !== '|'
     ? descClean
-    : '(no description in SKILL.md — read body via mcp__imhub__read_skill)'
+    : '(no description in SKILL.md — read body via mcp__agim__read_skill)'
   return `- ${s.name}: ${description}${reason}${flag}`
 }
 
@@ -760,7 +760,7 @@ function appendAlwaysOnBodies(all: ReadonlyArray<SkillMeta>, lines: string[]): v
  *
  * Buckets 0/1/2/3 all emit full rows (renderSkillRow). Only bucket 4
  * (ECC remainder) clusters — and even then, the cluster path can be
- * disabled or scoped via `IMHUB_SKILLS_INJECT_ECC_REMAINDER`.
+ * disabled or scoped via `AGIM_SKILLS_INJECT_ECC_REMAINDER`.
  */
 export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
   const byBucket: Record<number, SkillMeta[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }
@@ -768,7 +768,7 @@ export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
   for (const b of [0, 1, 2, 3, 4]) {
     byBucket[b].sort((a, b2) => a.name.localeCompare(b2.name))
   }
-  const lines: string[] = ['[agim skills available — read full body with mcp__imhub__read_skill(name)]']
+  const lines: string[] = ['[agim skills available — read full body with mcp__agim__read_skill(name)]']
 
   // Render order: 0 framework, 1 builtin, 3 workspace, 2 ECC picks.
   // Workspace before ECC picks per v1.2.151 iron rule: operator-installed
@@ -929,7 +929,7 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
   // (the assumption is the operator wrote the frontmatter knowingly).
   if (
     String(front.origin || '').trim() === 'ECC'
-    && (process.env.IMHUB_INCLUDE_ECC_SKILLS ?? '').toLowerCase().trim() === 'off'
+    && (process.env.AGIM_INCLUDE_ECC_SKILLS ?? '').toLowerCase().trim() === 'off'
   ) {
     return null
   }
@@ -944,7 +944,7 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
   // warn so the operator notices.
   if (/^(?:>-?|\|-?)$/.test(description)) {
     log.warn({ event: 'skills.parse.literal_block_scalar', name, dir: d.dir, raw: description })
-    description = '(SKILL.md description used an unsupported YAML form — read body via mcp__imhub__read_skill)'
+    description = '(SKILL.md description used an unsupported YAML form — read body via mcp__agim__read_skill)'
   }
   if (!description) {
     log.warn({ event: 'skills.parse.no_description', name, dir: d.dir })
@@ -985,7 +985,7 @@ interface Frontmatter {
   description?: string
   always?: string
   /** v1.2.148 — ECC origin tag. Used by the bundled ECC pack so the
-   *  `IMHUB_INCLUDE_ECC_SKILLS=off` switch can drop them in one place
+   *  `AGIM_INCLUDE_ECC_SKILLS=off` switch can drop them in one place
    *  without a name allowlist. Operator-written skills may set this
    *  too; that's intentional. */
   origin?: string

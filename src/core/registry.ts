@@ -18,7 +18,7 @@ class PluginRegistry {
 
   registerMessenger(adapter: MessengerAdapter): void {
     // v1.2.69 — platform blacklist gate. Operators set
-    // IMHUB_PLATFORM_BLACKLIST=telegram,discord to hard-refuse
+    // AGIM_PLATFORM_BLACKLIST=telegram,discord to hard-refuse
     // registration of specific IM platforms at boot. Matches the
     // adapter's `name`; also matches a few common aliases
     // ('wechat' ⇔ 'wechat-ilink') so operators don't have to know
@@ -29,8 +29,8 @@ class PluginRegistry {
       log.warn({
         event: 'messenger.blacklisted',
         messenger: adapter.name,
-        hint: 'Remove from IMHUB_PLATFORM_BLACKLIST to enable.',
-      }, `Messenger "${adapter.name}" blocked by IMHUB_PLATFORM_BLACKLIST — registration refused`)
+        hint: 'Remove from AGIM_PLATFORM_BLACKLIST to enable.',
+      }, `Messenger "${adapter.name}" blocked by AGIM_PLATFORM_BLACKLIST — registration refused`)
       return
     }
     if (this.messengers.has(adapter.name)) {
@@ -108,7 +108,7 @@ class PluginRegistry {
    * Load ACP (remote) agents from config. Uses Promise.allSettled
    * for parallel loading so one slow endpoint doesn't block startup.
    *
-   * Compliance gate: IMHUB_ENABLE_REMOTE_AGENT must be '1' or the entire
+   * Compliance gate: AGIM_ENABLE_REMOTE_AGENT must be '1' or the entire
    * call is a no-op. Logged at info level so an operator who flipped
    * config-on-disk without the env flag can see why nothing loaded.
    */
@@ -151,7 +151,7 @@ class PluginRegistry {
    * load every advertised agent through loadACPAgents(). Failures on
    * individual URLs are logged but don't fail the batch.
    *
-   * Compliance gate: same IMHUB_ENABLE_REMOTE_AGENT switch — skip the
+   * Compliance gate: same AGIM_ENABLE_REMOTE_AGENT switch — skip the
    * discovery fetch entirely so disabled deployments don't even emit
    * `.well-known/acp` requests on the network.
    */
@@ -177,7 +177,7 @@ class PluginRegistry {
 
   async loadBuiltInPlugins(): Promise<void> {
     // Load built-in messengers. Discord + Telegram are gated by
-    // IMHUB_ENABLE_GLOBAL_IM — even if config.json still has a
+    // AGIM_ENABLE_GLOBAL_IM — even if config.json still has a
     // `discord` / `telegram` block, the adapter is never instantiated
     // unless the flag is on. This keeps the runtime in the same shape
     // the UI presents (no zombie outbound connections).
@@ -256,7 +256,7 @@ const PLATFORM_ALIAS_MAP: Record<string, string[]> = {
   'wechat-ilink': ['wechat'],
 }
 
-/** Parse IMHUB_PLATFORM_BLACKLIST → normalized Set with alias
+/** Parse AGIM_PLATFORM_BLACKLIST → normalized Set with alias
  *  expansion. Lowercase + trim each entry. Empty list (or unset env)
  *  returns an empty Set. */
 export function parsePlatformBlacklist(raw: string | undefined): Set<string> {
@@ -271,16 +271,16 @@ export function parsePlatformBlacklist(raw: string | undefined): Set<string> {
   return out
 }
 
-/** True iff `platform` is on the IMHUB_PLATFORM_BLACKLIST env list.
+/** True iff `platform` is on the AGIM_PLATFORM_BLACKLIST env list.
  *  Re-parses env on every call so a hot env-file update (PUT /api/env)
  *  takes effect on the next adapter init without restart. */
 export function isPlatformBlacklisted(platform: string): boolean {
-  const list = parsePlatformBlacklist(process.env.IMHUB_PLATFORM_BLACKLIST)
+  const list = parsePlatformBlacklist(process.env.AGIM_PLATFORM_BLACKLIST)
   if (list.size === 0) return false
   return list.has(platform.toLowerCase())
 }
 
 /** Return the current blacklist as an array for diagnostics / UI. */
 export function getPlatformBlacklist(): string[] {
-  return Array.from(parsePlatformBlacklist(process.env.IMHUB_PLATFORM_BLACKLIST))
+  return Array.from(parsePlatformBlacklist(process.env.AGIM_PLATFORM_BLACKLIST))
 }

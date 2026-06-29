@@ -1,20 +1,15 @@
 // cli-ui/service.ts — cross-platform service detection + lifecycle for
-// Agim (formerly im-hub-pro). Knows about three run modes:
+// Agim. Knows about three run modes:
 //
-//   1. systemd-managed   — Linux + root, either /etc/systemd/system/agim.service
-//                          (the v1.0+ unit) OR the legacy im-hub.service exists
-//                          and `systemctl is-active <unit>` returns "active".
-//                          New installs write agim.service; pre-v1.0 systems
-//                          continue to be detected via the legacy name.
-//   2. background daemon — `agim start --bg` writes ~/.im-hub/im-hub.pid
-//                          and ~/.im-hub/im-hub.log (paths kept under the
-//                          legacy ~/.im-hub/ for upgrade compatibility).
+//   1. systemd-managed   — Linux + root, /etc/systemd/system/agim.service
+//                          exists and systemd reports it as enabled.
+//   2. background daemon — `agim start --bg` writes ~/.agim/agim.pid
+//                          and ~/.agim/agim.log.
 //                          nohup + setsid; survives shell exit. Works on
 //                          Linux, macOS, WSL2.
-//   3. foreground        — a TTY-attached `agim start` (or the legacy
-//                          `im-hub-pro start`) somewhere. We detect it via
-//                          `pgrep -af` matching, but can't stop or restart
-//                          it from outside the owning TTY.
+//   3. foreground        — a TTY-attached `agim start` somewhere. We detect
+//                          it via `pgrep -af` matching, but can't stop or
+//                          restart it from outside the owning TTY.
 //
 // The detection helpers are all best-effort: a missing systemctl, a stale
 // pid file, or a pgrep mismatch produces "not running" rather than an
@@ -25,19 +20,13 @@ import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSyn
 import { join, dirname, basename } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
 
-// Pid + log files live inside whatever AGIM_HOME resolved to. Filenames
-// themselves stay `im-hub.*` for backwards compat with any external
-// monitoring / log-collection that's tailing them.
-export const PID_FILE = join(AGIM_HOME, 'im-hub.pid')
-export const LOG_FILE = join(AGIM_HOME, 'im-hub.log')
+// Pid + log files live inside AGIM_HOME.
+export const PID_FILE = join(AGIM_HOME, 'agim.pid')
+export const LOG_FILE = join(AGIM_HOME, 'agim.log')
 
-/** Systemd unit candidates, checked in order. v1.0+ installers should
- *  write `agim.service`; older installs use `im-hub.service`. We accept
- *  either so users who upgraded across the rename don't lose detection.
- *  `getSystemdUnit()` resolves which one exists. */
+/** Systemd unit candidates, checked in order. */
 const SYSTEMD_UNIT_CANDIDATES = [
   '/etc/systemd/system/agim.service',
-  '/etc/systemd/system/im-hub.service',
 ] as const
 
 function getSystemdUnit(): { path: string; name: string } | null {
@@ -156,28 +145,19 @@ export function detectService(): ServiceState {
     } catch { /* fall through */ }
   }
 
-  // 3. foreground — pgrep for our CLI. Match `agim start`, the legacy
-  //    `im-hub-pro start` (kept for users with old bin aliases), or
-  //    `dist/cli.js start`. Excludes the current process (the CLI that's
-  //    running this check).
-  try {
-    const out = execSync('pgrep -af "agim start|im-hub-pro start|dist/cli.js start"', {
-      encoding: 'utf-8',
-    }).trim()
-    const lines = out.split('\n').filter(Boolean)
-    for (const line of lines) {
-      const pid = parseInt(line.split(' ')[0], 10)
-      if (Number.isFinite(pid) && pid !== process.pid && pidAlive(pid)) {
-        return { mode: 'foreground', pid, uptimeSec: uptimeOfPid(pid) }
-      }
+  // 3. foreground — strict argv-shape scan for a TTY-attached CLI.
+  //    Excludes the current process (the CLI that's running this check).
+  for (const pid of findAgimProcesses()) {
+    if (pid !== process.pid && pidAlive(pid)) {
+      return { mode: 'foreground', pid, uptimeSec: uptimeOfPid(pid) }
     }
-  } catch { /* pgrep found nothing — exit 1 */ }
+  }
 
   return { mode: 'none', pid: null }
 }
 
 /**
- * Spawn Agim detached with stdio redirected to ~/.im-hub/im-hub.log.
+ * Spawn Agim detached with stdio redirected to ~/.agim/agim.log.
  * Writes the pid to PID_FILE so subsequent `status` / `stop` find it.
  *
  * Cross-platform: setsid → new session, no controlling tty, parent can exit.
@@ -256,11 +236,11 @@ export function readWebEndpoint(): { bind: string; port: number } | null {
   } catch { return null }
 }
 
-/** R14 — find every agim/im-hub-pro process running on this host.
+/** R14 — find every Agim process running on this host.
  *  Includes pids from background spawns AND systemd-spawned children
  *  that may have escaped the cgroup (the failure mode that motivated
  *  R14: a dbus-run-session wrapper detaches its children from
- *  systemd's control group, leaving the old agim alive after
+ *  systemd's control group, leaving the previous agim alive after
  *  `systemctl stop` "succeeds").
  *
  *  R15 — argv-strict matching. Pre-R15 this used `pgrep -af "agim start"`
@@ -269,18 +249,33 @@ export function readWebEndpoint(): { bind: string; port: number } | null {
  *  helper got SIGTERM'd by the reap path. Now we read /proc/<pid>/cmdline
  *  directly and require:
  *    - argv[0] basename is a node-like interpreter (node / bun)
- *    - argv[1] basename is an agim entry script (agim / im-hub-pro / cli.js)
+ *    - argv[1] basename is an agim entry script (agim / cli.js)
  *    - argv[2] is the literal string 'start'
  *  This is impossible for a shell to satisfy — shells have argv[0]=bash.
  *
- *  Non-Linux (darwin / windows) falls back to the legacy pgrep behavior;
- *  /proc isn't available there, and those platforms aren't the R14
- *  motivating case (server-side cgroup escapes need systemd + Linux). */
+ *  Non-Linux (darwin / windows) falls back to ps output; /proc isn't
+ *  available there, and those platforms aren't the R14 motivating case
+ *  (server-side cgroup escapes need systemd + Linux). */
 export function findAgimProcesses(): number[] {
   if (process.platform === 'linux') {
     try { return findAgimProcessesViaProc() } catch { /* fall through */ }
   }
-  return findAgimProcessesViaPgrep()
+  return findAgimProcessesViaPs()
+}
+
+function isAgimStartArgv(argv: string[]): boolean {
+  if (argv.length < 3) return false
+  // Strip a `.exe` suffix before matching: the bun npm binary is
+  // `bun.exe` even on Linux, so `process.execPath` (and thus argv[0] of
+  // any agim or test process launched under bun) resolves to `bun.exe`.
+  // Without this, bun-launched instances were never recognised.
+  const exe = basename(argv[0]).replace(/\.exe$/, '')
+  const isNodeLike = exe === 'node' || exe === 'bun' || exe.startsWith('node')
+  if (!isNodeLike) return false
+  const script = basename(argv[1])
+  const isAgimEntry = script === 'agim' || script === 'cli.js'
+  if (!isAgimEntry) return false
+  return argv[2] === 'start'
 }
 
 /** Linux precise path — walk /proc and validate argv shape. */
@@ -303,38 +298,28 @@ function findAgimProcessesViaProc(): number[] {
     }
     // /proc/<pid>/cmdline is null-byte separated; trailing null possible.
     const argv = raw.split('\x00').filter((s) => s.length > 0)
-    if (argv.length < 3) continue
-    // Strip a `.exe` suffix before matching: the bun npm binary is
-    // `bun.exe` even on Linux, so `process.execPath` (and thus argv[0] of
-    // any agim or test process launched under bun) resolves to `bun.exe`.
-    // Without this, bun-launched instances were never recognised.
-    const exe = basename(argv[0]).replace(/\.exe$/, '')
-    const isNodeLike = exe === 'node' || exe === 'bun' || exe.startsWith('node')
-    if (!isNodeLike) continue
-    const script = basename(argv[1])
-    const isAgimEntry = script === 'agim' || script === 'im-hub-pro' || script === 'cli.js'
-    if (!isAgimEntry) continue
-    if (argv[2] !== 'start') continue
-    pids.push(pid)
+    if (isAgimStartArgv(argv)) pids.push(pid)
   }
   return pids
 }
 
-/** Legacy substring match — kept for darwin / windows where /proc isn't
- *  available. Wider net (can false-positive on shell scripts containing
- *  the literal "agim start"), but reap's downstream excludePids +
- *  process.pid auto-exclusion + SIGTERM-not-SIGKILL-first behavior
- *  mitigate the damage. */
-function findAgimProcessesViaPgrep(): number[] {
+/** `ps` fallback for platforms without /proc. We still validate the argv
+ *  shape instead of substring matching so shell scripts that merely contain
+ *  "agim start" are not treated as Agim processes. */
+function findAgimProcessesViaPs(): number[] {
   try {
-    const out = execSync('pgrep -af "agim start|im-hub-pro start|dist/cli.js start"', {
+    const out = execSync('ps -axo pid=,command=', {
       encoding: 'utf-8',
     }).trim()
     const lines = out.split('\n').filter(Boolean)
     const pids: number[] = []
     for (const line of lines) {
-      const pid = parseInt(line.split(' ')[0], 10)
-      if (Number.isFinite(pid) && pid > 0) pids.push(pid)
+      const match = line.trim().match(/^(\d+)\s+(.+)$/)
+      if (!match) continue
+      const pid = parseInt(match[1], 10)
+      if (!Number.isFinite(pid) || pid <= 0) continue
+      const argv = match[2].trim().split(/\s+/).filter(Boolean)
+      if (isAgimStartArgv(argv)) pids.push(pid)
     }
     return pids
   } catch {

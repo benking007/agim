@@ -1,6 +1,6 @@
 // listAllSubtasks — covers the dashboard's flattened-subtask view. We can't
 // monkey-patch SESSIONS_DIR (it's a const), so this test goes via the real
-// public API: nextSubtaskId + updateSubtask write to ~/.im-hub/sessions, and
+// public API: nextSubtaskId + updateSubtask write to ~/.agim/sessions, and
 // we then read them back and clean up.
 //
 // We use a unique platform/channelId/threadId triple so we don't collide with
@@ -18,7 +18,7 @@ const THREAD = `t-${Math.random().toString(36).slice(2, 8)}`
 
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
-// CI runs on a fresh runner where ~/.im-hub/sessions/ doesn't exist yet.
+// CI runs on a fresh runner where ~/.agim/sessions/ doesn't exist yet.
 // Without this beforeAll, saveSessionMeta's atomicWrite hits ENOENT, the
 // outer try/catch swallows it (correct for runtime — never crash the
 // session manager on a disk hiccup) and the test sees 0 subtasks instead

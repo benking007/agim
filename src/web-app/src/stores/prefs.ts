@@ -7,7 +7,7 @@
  *   theme    — `agim-theme` ('system' is stored as absence, matching
  *              the legacy _app.js behavior, so v1 → v2 carry-over
  *              is byte-for-byte compatible).
- *   lang     — `im-hub-lang`, the existing key every legacy HTML
+ *   lang     — `agim-lang`, the existing key every legacy HTML
  *              reads. Mirrors the lang the user picked in v1 so
  *              upgrading doesn't reset the UI to English.
  *
@@ -24,7 +24,7 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 export type Lang = 'en' | 'zh'
 
 const THEME_KEY = 'agim-theme'
-const LANG_KEY = 'im-hub-lang'
+const LANG_KEY = 'agim-lang'
 
 interface PrefsState {
   theme: ThemeMode

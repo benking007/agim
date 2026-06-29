@@ -58,8 +58,8 @@ function envInt(name: string, fallback: number): number {
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
-const MESSAGES_TTL = envInt('IMHUB_SESSION_MESSAGES_TTL_MS', 30 * 60 * 1000)
-const META_TTL = envInt('IMHUB_SESSION_META_TTL_MS', 7 * 24 * 60 * 60 * 1000)
+const MESSAGES_TTL = envInt('AGIM_SESSION_MESSAGES_TTL_MS', 30 * 60 * 1000)
+const META_TTL = envInt('AGIM_SESSION_META_TTL_MS', 7 * 24 * 60 * 60 * 1000)
 // Back-compat: external callers (tests, schedule.ts) used to import DEFAULT_TTL
 // to mean "the one ttl". Keep the symbol pointing at META_TTL so anywhere it
 // still appears in logs/metrics gets the long-lived value.

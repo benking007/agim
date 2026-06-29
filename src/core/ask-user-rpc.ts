@@ -10,7 +10,7 @@
 //
 // Wire flow:
 //
-//   agent (via MCP tool mcp__imhub__ask_user)
+//   agent (via MCP tool mcp__agim__ask_user)
 //      ↓
 //   sidecar -> approval-bus  {v:1, type:'ask', runId, reqId, payload:{question, choices, timeoutSec?}}
 //      ↓

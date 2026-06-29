@@ -1,13 +1,13 @@
-// imhub-dispatcher — wires agim's internal RPC handlers (skills /
+// agim-dispatcher — wires agim's internal RPC handlers (skills /
 // memo / push / ask-user / a2a) into the native LLM agent loop so a
-// `native` adapter call can invoke `mcp__imhub__read_skill` etc. with
+// `native` adapter call can invoke `mcp__agim__read_skill` etc. with
 // the exact same wire shape claude-code's MCP sidecar exposes to
 // `claude-code` / `codex` / `opencode`.
 //
 // Why this file exists
 // --------------------
 // `mcp-client.ts` in this directory only handles operator-configured
-// external MCP servers (stdio / sse / streamable-http). The "imhub"
+// external MCP servers (stdio / sse / streamable-http). The "agim"
 // tools (read_skill, save_memo, ask_user, push_message, call_agent…)
 // live inside the agim process and historically were only reachable
 // via the claude-code MCP sidecar process. Before this file, a native
@@ -17,21 +17,21 @@
 //
 // What this file does
 // -------------------
-// 1. `getImhubTools()` returns the `ToolDef[]` to advertise to the
-//    LLM, all named `mcp__imhub__<op>` so the LLM and downstream
+// 1. `getAgimTools()` returns the `ToolDef[]` to advertise to the
+//    LLM, all named `mcp__agim__<op>` so the LLM and downstream
 //    audit observers see the same tool naming as the claude-code MCP
 //    surface.
-// 2. `buildImhubDispatcher(ctx)` returns a `ToolDispatcher` that
+// 2. `buildAgimDispatcher(ctx)` returns a `ToolDispatcher` that
 //    receives a per-IM-turn `RunContext`-equivalent (closure) and
 //    routes each call into the corresponding RPC handler.
 //
-// Tool naming uses double-underscore (`mcp__imhub__read_skill`) to
+// Tool naming uses double-underscore (`mcp__agim__read_skill`) to
 // stay byte-identical to the claude-code MCP-server-emitted names —
 // log greps, audit dashboards, and policy gates configured against
 // the claude-code surface keep matching when native is in use.
 //
 // Anything the dispatcher doesn't recognise returns
-// `source: 'unknown'` so `combineDispatchers(builtin, imhub, mcp)`
+// `source: 'unknown'` so `combineDispatchers(builtin, agim, mcp)`
 // can fall through to the next layer (external MCP servers).
 
 import { logger as rootLogger } from '../logger.js'
@@ -55,21 +55,21 @@ import { savePaste } from '../viewer-local.js'
 import { buildPasteUrl } from '../viewer-config.js'
 import type { RouteContext } from '../router.js'
 
-const log = rootLogger.child({ component: 'imhub-dispatcher' })
+const log = rootLogger.child({ component: 'agim-dispatcher' })
 
 /** v1.2.121 — kill switch for in-process native self-spawn. When set to
  *  'off' (or '0' / 'no'), call_agent('native', …) falls back to the
  *  subprocess CLI boot path. Default is ON (in-process) because
  *  fan-out latency is the main reason this feature exists. */
 function isInProcessSpawnDisabled(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS ?? '').toLowerCase().trim()
   return raw === 'off' || raw === '0' || raw === 'no' || raw === 'false'
 }
 
 /** Per-turn caller identity. Matches the subset of `RunContext` the
  *  agim RPC handlers consume + the optional `agent` for A2A self-call
  *  detection. */
-export interface ImhubDispatcherCtx {
+export interface AgimDispatcherCtx {
   platform: string
   channelId: string
   threadId: string
@@ -100,7 +100,7 @@ export interface ImhubDispatcherCtx {
  *  small enough that 2-3 stacked sub-agents don't blow the parent's
  *  context budget. Set 0 to disable truncation. */
 export function resolveSubAgentOutputCap(): number {
-  const raw = process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS
+  const raw = process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS
   if (raw === undefined) return 8000
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 8000
@@ -162,7 +162,7 @@ export function applyOutputCap(
   return [
     head,
     `\n\n[…truncated ${raw.length - headBudget - tailBudget} of ${raw.length} chars; ` +
-    `cap=IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS=${cap}…]\n\n`,
+    `cap=AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS=${cap}…]\n\n`,
     tail,
     pasteHint,
   ].join('')
@@ -177,18 +177,18 @@ function safeJson(v: unknown): string {
 }
 
 function ok(text: string): DispatcherResult {
-  return { text, isError: false, source: 'imhub' }
+  return { text, isError: false, source: 'agim' }
 }
 
 function err(text: string): DispatcherResult {
-  return { text, isError: true, source: 'imhub' }
+  return { text, isError: true, source: 'agim' }
 }
 
 function unknown(name: string): DispatcherResult {
   // matches builtin-dispatcher's marker so combineDispatchers falls
   // through to the next dispatcher in the stack.
   return {
-    text: `imhub-dispatcher: no handler for "${name}"`,
+    text: `agim-dispatcher: no handler for "${name}"`,
     isError: true,
     source: 'unknown',
   }
@@ -199,10 +199,10 @@ function unknown(name: string): DispatcherResult {
  * the RPC handlers' real expectations without copying claude-code's
  * MCP server's full prose docstrings, which can grow to multi-KB.
  */
-export function getImhubTools(): ToolDef[] {
+export function getAgimTools(): ToolDef[] {
   return [
     {
-      name: 'mcp__imhub__read_skill',
+      name: 'mcp__agim__read_skill',
       description:
         'Read the full body of one agim skill (a markdown reference card maintained by the operator). The skill summary is already injected into the system prompt; call this when you need the full text (examples, exact slash command syntax, gotchas).',
       parameters: {
@@ -214,13 +214,13 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__list_skills',
+      name: 'mcp__agim__list_skills',
       description:
         'Enumerate every skill currently available to this agim install (name + one-line description). Cheap; use it instead of guessing what skill names exist.',
       parameters: { type: 'object', properties: {} },
     },
     {
-      name: 'mcp__imhub__save_memo',
+      name: 'mcp__agim__save_memo',
       description:
         'Record any kind of memo for the user (5W1H). Extract `what` (required), plus `who`, `when_at` / `when_text`, `where_lat`/`where_lng`/`where_label` or `address`, `how`, `why`, `memo` (full original phrasing) from the user message. Defaults to permanent storage; pass `expires_in_hours` for transient notes. All times Asia/Shanghai (UTC+8) format "YYYY-MM-DD HH:MM:SS".',
       parameters: {
@@ -243,7 +243,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__search_memos',
+      name: 'mcp__agim__search_memos',
       description:
         'Recall memos for queries about saved knowledge ("我的车在哪", "我爸爸的生日"). Combines free-text query with optional structured filters; all filters AND-combine.',
       parameters: {
@@ -261,7 +261,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__update_memo',
+      name: 'mcp__agim__update_memo',
       description: 'Patch an existing memo by id. Pass only the fields you want to change.',
       parameters: {
         type: 'object',
@@ -281,7 +281,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__delete_memo',
+      name: 'mcp__agim__delete_memo',
       description: 'Drop one memo by id.',
       parameters: {
         type: 'object',
@@ -290,9 +290,9 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__push_message',
+      name: 'mcp__agim__push_message',
       description:
-        'Push a follow-up message back into the caller IM thread without waiting for the next user turn. Use for proactive notifications during long-running tasks. Default pushes into the caller thread; cross-thread requires operator opt-in (IMHUB_PUSH_CROSS_THREAD=on).',
+        'Push a follow-up message back into the caller IM thread without waiting for the next user turn. Use for proactive notifications during long-running tasks. Default pushes into the caller thread; cross-thread requires operator opt-in (AGIM_PUSH_CROSS_THREAD=on).',
       parameters: {
         type: 'object',
         properties: {
@@ -303,7 +303,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__ask_user',
+      name: 'mcp__agim__ask_user',
       description:
         'Present the user with a structured question and reliably get an answer back. Supports single-select (default), multi-select, and optional custom free-form input. Use when you need disambiguation rather than free-form chat. Default timeout 90s.',
       parameters: {
@@ -325,7 +325,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__call_agent',
+      name: 'mcp__agim__call_agent',
       description:
         'Hand off a prompt to another registered agent (claude-code, codex, opencode, antigravity, native, or any remote ACP). Subject to A2A guardrails: depth limit, self-call ban, workspace ACL, per-user budget. Returns the callee\'s final text.',
       parameters: {
@@ -338,7 +338,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__long_task',
+      name: 'mcp__agim__long_task',
       description:
         'Register a sustained multi-turn objective for this thread. Use when the user describes ' +
         'work that should stay visible across many turns ("ship v1.3 this week", "track X for the ' +
@@ -369,7 +369,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__complete_goal',
+      name: 'mcp__agim__complete_goal',
       description:
         'Mark the thread\'s currently-active goal as done (or cancelled). Use when the work is ' +
         'finished, when the user cancels, or when the user replaces the goal with a different ' +
@@ -384,7 +384,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__create_reminder',
+      name: 'mcp__agim__create_reminder',
       description:
         'Create a one-shot or recurring reminder for the current user. CALL THIS PROACTIVELY ' +
         'whenever the user mentions a future commitment, event, task, or anything they might ' +
@@ -418,14 +418,14 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__list_reminders',
+      name: 'mcp__agim__list_reminders',
       description:
         'List the current user\'s pending reminders. Use when the user asks "我有什么提醒" / ' +
         '"接下来要做什么" or before suggesting cancel/snooze.',
       parameters: { type: 'object', properties: {} },
     },
     {
-      name: 'mcp__imhub__cancel_reminder',
+      name: 'mcp__agim__cancel_reminder',
       description:
         'Cancel a pending reminder by id. Find ids via list_reminders. For recurring reminders ' +
         'this terminates the entire loop.',
@@ -436,7 +436,7 @@ export function getImhubTools(): ToolDef[] {
       },
     },
     {
-      name: 'mcp__imhub__snooze_reminder',
+      name: 'mcp__agim__snooze_reminder',
       description:
         'Push a reminder back by a duration ("5m", "30m", "2h", "1d"). Creates a new reminder ' +
         'with the same text and cancels the original.',
@@ -453,7 +453,7 @@ export function getImhubTools(): ToolDef[] {
 }
 
 /** Build a dispatcher closure over the per-turn IM context. */
-export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
+export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
   const runCtxBase = {
     threadId: ctx.threadId,
     platform: ctx.platform,
@@ -464,10 +464,10 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
   // v1.2.59 A — per-turn call_agent cap. Closure state is scoped to ONE
   // dispatcher instance, which native rebuilds per turn — so the counter
   // resets on every new user message. Default 2; override with
-  // IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN. Set 0 to disable the cap
+  // AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN. Set 0 to disable the cap
   // (legacy unlimited behavior).
   const callAgentMaxPerTurn = (() => {
-    const raw = process.env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN
+    const raw = process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN
     if (!raw) return 2
     const n = Number(raw)
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2
@@ -479,8 +479,8 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
   const callAgentHistory: SubAgentCall[] = []
 
   return async (call, signal, toolCtx): Promise<DispatcherResult> => {
-    if (!call.name.startsWith('mcp__imhub__')) return unknown(call.name)
-    const op = call.name.slice('mcp__imhub__'.length)
+    if (!call.name.startsWith('mcp__agim__')) return unknown(call.name)
+    const op = call.name.slice('mcp__agim__'.length)
     const args = (call.arguments && typeof call.arguments === 'object' ? call.arguments : {}) as Record<string, unknown>
 
     try {
@@ -573,7 +573,7 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
             return err(
               `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn ` +
               `(cap=${callAgentMaxPerTurn}). Prior delegations:\n${summary}\n\n` +
-              `Use your own tools (native_read_file, native_grep, native_list_dir, mcp__imhub__* …) to ` +
+              `Use your own tools (native_read_file, native_grep, native_list_dir, mcp__agim__* …) to ` +
               `finish the task with the information you already gathered. If you genuinely need a CLI ` +
               `agent for the rest, tell the user to /cc, /oc, or /cs to switch — don't keep chaining call_agent.`,
             )
@@ -599,14 +599,14 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
           // matches the pattern Claude Code uses for in-process Task
           // agents.
           //
-          // Disabled via IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off
+          // Disabled via AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off
           // (falls back to subprocess via callAgentByName).
           // Depth + A2A_ENABLED checks still apply.
           if (agentName === 'native' && !isInProcessSpawnDisabled()) {
             const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
             if (!isA2AEnabled()) {
               callAgentHistory.push({ agent: agentName, promptHead, ok: false })
-              return err('call_agent refused: A2A disabled (IMHUB_A2A_ENABLED=0)')
+              return err('call_agent refused: A2A disabled (AGIM_A2A_ENABLED=0)')
             }
             const callerDepth = ctx.callerDepth ?? 0
             const nextDepth = callerDepth + 1
@@ -829,8 +829,8 @@ export function buildImhubDispatcher(ctx: ImhubDispatcherCtx): ToolDispatcher {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      log.warn({ event: 'imhub.dispatcher.error', name: call.name, err: msg })
-      return err(`imhub.${op} crashed: ${msg}`)
+      log.warn({ event: 'agim.dispatcher.error', name: call.name, err: msg })
+      return err(`agim.${op} crashed: ${msg}`)
     } finally {
       void signal // signal is provided for future cancellation; current handlers don't honour it.
     }

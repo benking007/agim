@@ -99,12 +99,12 @@ const cwd = resolveAgentCwd('claude-code', opts)
 // core/agent-cwd.ts
 export function resolveAgentCwd(agent: string, opts: AgentSendOpts): string | undefined {
   // 1. env override（per-agent 大写，运维 escape hatch）
-  const envKey = `IMHUB_${agent.toUpperCase().replace(/-/g, '_')}_CWD`
+  const envKey = `AGIM_${agent.toUpperCase().replace(/-/g, '_')}_CWD`
   const explicit = process.env[envKey]
   if (explicit) return explicit
   // 2. IM 上下文 → 工作区
   if (opts.threadId && opts.platform) {
-    const root = process.env.IMHUB_WORKSPACES_ROOT
+    const root = process.env.AGIM_WORKSPACES_ROOT
       || join(homedir(), '.agim-workspaces')
     return join(root, agent)
   }
@@ -130,7 +130,7 @@ agim 主进程 cwd 仍为 `/`，所有 cwd 注入都在 spawn 时按 agent 决�
 
 ```typescript
 function resolveCwd(opts: AgentSendOpts): string | undefined {
-  if (process.env.IMHUB_CC_CWD) return process.env.IMHUB_CC_CWD
+  if (process.env.AGIM_CC_CWD) return process.env.AGIM_CC_CWD
   if (!opts.threadId || !opts.platform) return undefined
   const userScope = opts.userId || 'shared'
   return join(homedir(), '.agim-workspaces', 'claude-code', userScope)
@@ -207,10 +207,10 @@ Phase C 完成的标志：
    path）。`prepareCommand` 有 4 处 `return`：approval 禁用、socket 启动失败、无 IM
    上下文、mcp 配置写入失败 — 漏一条就让该降级路径偷偷退回 `/`。详见 ADR 0005
    "Why all 4 fallback paths must carry cwd"。
-3. **env 变量名比草案规范化**：`IMHUB_CC_CWD` → `IMHUB_CLAUDE_CODE_CWD`，
-   `IMHUB_OC_CWD` → `IMHUB_OPENCODE_CWD`。原因：与 plugin name 一致，方便后续动态
-   `IMHUB_<AGENT>_CWD`。
-4. **新增** `IMHUB_WORKSPACES_ROOT`，整个工作区根目录可整体迁移。
+3. **env 变量名比草案规范化**：`AGIM_CC_CWD` → `AGIM_CLAUDE_CODE_CWD`，
+   `AGIM_OC_CWD` → `AGIM_OPENCODE_CWD`。原因：与 plugin name 一致，方便后续动态
+   `AGIM_<AGENT>_CWD`。
+4. **新增** `AGIM_WORKSPACES_ROOT`，整个工作区根目录可整体迁移。
 
 ## 落地清单
 

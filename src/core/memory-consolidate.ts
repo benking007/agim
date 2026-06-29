@@ -15,7 +15,7 @@
 //
 // Throttling:
 //   - One LLM call per active user, run interval-spaced via setInterval at
-//     startup. Default 24h, env IMHUB_MEMORY_CONSOLIDATE_HOURS.
+//     startup. Default 24h, env AGIM_MEMORY_CONSOLIDATE_HOURS.
 //   - For agim instances with many users, this batches naturally — each
 //     run picks up where we left off.
 
@@ -36,7 +36,7 @@ const PERSONA_TARGET_CHARS = 600   // ~300 tokens give or take
 const PROMPT_TIMEOUT_MS = 60_000
 
 function intervalMs(): number {
-  const raw = process.env.IMHUB_MEMORY_CONSOLIDATE_HOURS
+  const raw = process.env.AGIM_MEMORY_CONSOLIDATE_HOURS
   if (raw) {
     const h = Number(raw)
     if (Number.isFinite(h) && h > 0) return h * 3600_000
@@ -45,11 +45,11 @@ function intervalMs(): number {
 }
 
 function isMemoryConsolidateEnabled(): boolean {
-  // Master toggle pairs with IMHUB_MEMORY_ENABLED but can be turned off
+  // Master toggle pairs with AGIM_MEMORY_ENABLED but can be turned off
   // separately for operators who want distillation but no consolidation
   // (e.g. very long retention, manual persona edits).
   if (!isMemoryEnabled()) return false
-  const raw = (process.env.IMHUB_MEMORY_CONSOLIDATE_ENABLED || '1').toLowerCase()
+  const raw = (process.env.AGIM_MEMORY_CONSOLIDATE_ENABLED || '1').toLowerCase()
   return raw !== '0' && raw !== 'false' && raw !== 'no'
 }
 

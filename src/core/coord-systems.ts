@@ -68,7 +68,7 @@ export interface NormalizeResult {
  * value that's actually already WGS produces a 500m-1km error, while
  * pass-through on actual GCJ leaves the user with the same ~1km error
  * but in a recoverable direction. Both error modes get the user roughly
- * the right country / city; an `IMHUB_*_COORDS_GCJ02=1` env flag flips
+ * the right country / city; an `AGIM_*_COORDS_GCJ02=1` env flag flips
  * the default for any source whose users tell us their device DOES apply
  * the offset (Apple devices in China + Chinese region most often).
  */
@@ -139,7 +139,7 @@ export function normalizeIncomingCoords(
         // their crowd is predominantly Android/Desktop. Mismatched
         // first-time users get one wrong marker → reply `#wgs` → fixed
         // for the rest of time.
-        if (process.env.IMHUB_TELEGRAM_COORDS_GCJ02 === '0') return false
+        if (process.env.AGIM_TELEGRAM_COORDS_GCJ02 === '0') return false
         return true
       case 'feishu-native':
         // Feishu is mandated GCJ-02 server-side, no override expected.
@@ -157,7 +157,7 @@ export function normalizeIncomingCoords(
         // the old "always GCJ" assumption put markers ~1km off in WeChat.
         // iOS Safari users in China can flip the flag to restore the old
         // GCJ→WGS path.
-        return process.env.IMHUB_H5_COORDS_GCJ02 === '1'
+        return process.env.AGIM_H5_COORDS_GCJ02 === '1'
       case 'web-admin':
         // Developer-facing console; PC browser is overwhelmingly WGS-84.
         return false
@@ -300,12 +300,12 @@ function transformLng(x: number, y: number): number {
 
 // ─── env vars exposed by this module ────────────────────────────────
 //
-// IMHUB_TELEGRAM_COORDS_GCJ02=1
+// AGIM_TELEGRAM_COORDS_GCJ02=1
 //   Apply GCJ-02 → WGS-84 to Telegram native location/venue messages.
 //   Default off (WGS pass-through). Turn ON if your Telegram clients are
 //   Apple devices in China (iOS Core Location applies the offset).
 //
-// IMHUB_H5_COORDS_GCJ02=1
+// AGIM_H5_COORDS_GCJ02=1
 //   Apply GCJ-02 → WGS-84 to coordinates POSTed from the /memo here H5
 //   capture page. Default off (WGS pass-through). Turn ON if your users
 //   open the H5 link in iOS Safari / iOS WebKit in mainland China —

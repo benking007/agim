@@ -35,14 +35,14 @@ const {
   applyOutputCap,
   isTransientSubAgentError,
   resolveSubAgentOutputCap,
-} = await import('../../src/core/llm/imhub-dispatcher.js')
+} = await import('../../src/core/llm/agim-dispatcher.js')
 
 import type { AgentAdapter, AgentSendOpts } from '../../src/core/types.js'
 
 const ENV_KEYS = [
-  'IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS',
-  'IMHUB_A2A_ENABLED',
-  'IMHUB_A2A_MAX_DEPTH',
+  'AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS',
+  'AGIM_A2A_ENABLED',
+  'AGIM_A2A_MAX_DEPTH',
 ] as const
 const ENV_SNAPSHOT: Record<string, string | undefined> = {}
 for (const k of ENV_KEYS) ENV_SNAPSHOT[k] = process.env[k]
@@ -75,7 +75,7 @@ describe('v1.2.139 — applyOutputCap()', () => {
   beforeEach(() => { restoreEnv() })
 
   it('returns input unchanged when under the cap', () => {
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '100'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '100'
     const short = 'a'.repeat(50)
     expect(applyOutputCap(short, 'codex', null)).toBe(short)
   })
@@ -84,12 +84,12 @@ describe('v1.2.139 — applyOutputCap()', () => {
     // Cap large enough for both head (70%) AND tail (cap - head - 200
     // marker reserve) to be positive — the production default 8000
     // is in this regime. With cap=2000: head=1400, tail=2000-1400-200=400.
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '2000'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '2000'
     const big = 'HEAD'.repeat(500) + 'MIDDLE'.repeat(100) + 'TAIL'.repeat(500)
     const out = applyOutputCap(big, 'claude-code', 42)
     expect(out.length).toBeLessThan(big.length)
     expect(out).toMatch(/truncated \d+ of \d+ chars/)
-    expect(out).toContain('cap=IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS=2000')
+    expect(out).toContain('cap=AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS=2000')
     // Head preserved
     expect(out.startsWith('HEAD')).toBe(true)
     // Tail preserved (last block of the original) — confirms we keep
@@ -101,7 +101,7 @@ describe('v1.2.139 — applyOutputCap()', () => {
     // cap=500: head 70% = 350, tail = 500 - 350 - 200 = -50 → clamped 0.
     // Small-cap regime intentionally drops the tail — the marker still
     // tells the model how much was dropped.
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '500'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '500'
     const big = 'HEAD'.repeat(250) + 'TAIL'.repeat(250)
     const out = applyOutputCap(big, 'codex', null)
     expect(out).toMatch(/truncated \d+ of \d+ chars/)
@@ -111,19 +111,19 @@ describe('v1.2.139 — applyOutputCap()', () => {
   })
 
   it('respects 0 as disable (no truncation regardless of length)', () => {
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '0'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '0'
     const big = 'x'.repeat(20000)
     expect(applyOutputCap(big, 'codex', null)).toBe(big)
   })
 
   it('resolveSubAgentOutputCap defaults to 8000 when unset / garbage', () => {
-    delete process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS
+    delete process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS
     expect(resolveSubAgentOutputCap()).toBe(8000)
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = 'bogus'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = 'bogus'
     expect(resolveSubAgentOutputCap()).toBe(8000)
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '-1'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '-1'
     expect(resolveSubAgentOutputCap()).toBe(8000)
-    process.env.IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '1234'
+    process.env.AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS = '1234'
     expect(resolveSubAgentOutputCap()).toBe(1234)
   })
 })
@@ -169,7 +169,7 @@ describe('v1.2.139 — CallAgentOpts.planMode propagation', () => {
     }
     registry.registerAgent(fake)
     // depth needs to be allowed; pin an explicit cap independent of the default.
-    process.env.IMHUB_A2A_MAX_DEPTH = '5'
+    process.env.AGIM_A2A_MAX_DEPTH = '5'
 
     const r = await a2a.callAgentByName('test-fake-planmode', 'do nothing', fakeRouteCtx(), {
       planMode: true,
@@ -194,7 +194,7 @@ describe('v1.2.139 — CallAgentOpts.planMode propagation', () => {
       },
     }
     registry.registerAgent(fake)
-    process.env.IMHUB_A2A_MAX_DEPTH = '5'
+    process.env.AGIM_A2A_MAX_DEPTH = '5'
 
     const r = await a2a.callAgentByName('test-fake-no-planmode', 'hi', fakeRouteCtx(), {
       callerAgent: 'native',

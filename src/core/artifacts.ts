@@ -39,17 +39,17 @@ const DEFAULT_MAX_JOB_BYTES  = 200 * 1024 * 1024     // 200 MB
 const DEFAULT_MAX_FILES      = 200
 
 function resolveMaxFileBytes(): number {
-  const raw = process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_FILE
+  const raw = process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_FILE
   if (raw) { const n = parseInt(raw, 10); if (Number.isFinite(n) && n > 0) return n }
   return DEFAULT_MAX_FILE_BYTES
 }
 function resolveMaxJobBytes(): number {
-  const raw = process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_JOB
+  const raw = process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_JOB
   if (raw) { const n = parseInt(raw, 10); if (Number.isFinite(n) && n > 0) return n }
   return DEFAULT_MAX_JOB_BYTES
 }
 function resolveMaxFiles(): number {
-  const raw = process.env.IMHUB_A2A_ARTIFACT_MAX_FILES_PER_JOB
+  const raw = process.env.AGIM_A2A_ARTIFACT_MAX_FILES_PER_JOB
   if (raw) { const n = parseInt(raw, 10); if (Number.isFinite(n) && n > 0) return n }
   return DEFAULT_MAX_FILES
 }

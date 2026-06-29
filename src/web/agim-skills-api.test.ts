@@ -8,12 +8,12 @@ import { join } from 'node:path'
 
 const WS_OWN = mkdtempSync(join(tmpdir(), 'agim-skills-ws-'))
 const BUILTIN_OWN = mkdtempSync(join(tmpdir(), 'agim-skills-builtin-'))
-process.env.IMHUB_SKILLS_WORKSPACE_DIR = WS_OWN
-process.env.IMHUB_SKILLS_BUILTIN_DIR = BUILTIN_OWN
+process.env.AGIM_SKILLS_WORKSPACE_DIR = WS_OWN
+process.env.AGIM_SKILLS_BUILTIN_DIR = BUILTIN_OWN
 // v1.2.48 multi-root scan (auto mode) inherits ~/.claude/skills etc. which
 // breaks the per-test 'fresh install → count=0' fixture on dev boxes with
 // CLI agents installed. Pin to agim-only so we only see WS_OWN + BUILTIN_OWN.
-process.env.IMHUB_SKILLS_MODE = 'agim-only'
+process.env.AGIM_SKILLS_MODE = 'agim-only'
 
 const { handleAgimSkillsApi } = await import('./agim-skills-api.js')
 const { invalidateSkillsCache } = await import('../core/skills/loader.js')
@@ -192,8 +192,8 @@ describe('agim-skills API — routing', () => {
 describe('v1.2.151: /api/agim-skills/injection', () => {
   const OVERRIDE_DIR = mkdtempSync(join(tmpdir(), 'agim-injection-api-'))
   const OVERRIDE_PATH = join(OVERRIDE_DIR, 'skill-injection-override.md')
-  const savedPath = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
-  process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = OVERRIDE_PATH
+  const savedPath = process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH
+  process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH = OVERRIDE_PATH
 
   beforeEach(() => {
     try { rmSync(OVERRIDE_PATH, { force: true }) } catch {}
@@ -283,8 +283,8 @@ describe('v1.2.151: /api/agim-skills/injection', () => {
 
   // Cleanup
   it('cleanup: restore env', () => {
-    if (savedPath === undefined) delete process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
-    else process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = savedPath
+    if (savedPath === undefined) delete process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH
+    else process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH = savedPath
     try { rmSync(OVERRIDE_DIR, { recursive: true, force: true }) } catch {}
     expect(true).toBe(true)
   })

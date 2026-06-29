@@ -20,7 +20,7 @@
  *     (192.168.1.1) and a name that resolves to one
  *     (metadata.internal → 169.254.169.254).
  *
- * Escape hatch: IMHUB_ACP_ALLOW_LOOPBACK=1 disables the private-address
+ * Escape hatch: AGIM_ACP_ALLOW_LOOPBACK=1 disables the private-address
  * block. Intended for development against `localhost:<port>` ACP
  * services; never set this in shared deployments.
  *
@@ -30,7 +30,7 @@
 
 import { lookup } from 'node:dns/promises'
 
-const ALLOW_LOOPBACK_ENV = 'IMHUB_ACP_ALLOW_LOOPBACK'
+const ALLOW_LOOPBACK_ENV = 'AGIM_ACP_ALLOW_LOOPBACK'
 
 export interface AssertSafeOptions {
   /** When true, only https URLs are accepted (the request will carry a

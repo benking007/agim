@@ -6,8 +6,8 @@
 //   (c) case-insensitive matching
 //   (d) avoids obvious false positives (regular prompts with "plan"
 //       as a noun, not the intent)
-//   (e) IMHUB_PLAN_INTENT_PHRASES env replaces default list (not merge)
-//   (f) master switch IMHUB_PLAN_INTENT_AUTO gates shouldAutoEnterPlanMode
+//   (e) AGIM_PLAN_INTENT_PHRASES env replaces default list (not merge)
+//   (f) master switch AGIM_PLAN_INTENT_AUTO gates shouldAutoEnterPlanMode
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
@@ -19,7 +19,7 @@ import {
 
 describe('plan-intent — phrase detection (v1.2.135)', () => {
   const saved: Record<string, string | undefined> = {}
-  const ENV_KEYS = ['IMHUB_PLAN_INTENT_AUTO', 'IMHUB_PLAN_INTENT_PHRASES']
+  const ENV_KEYS = ['AGIM_PLAN_INTENT_AUTO', 'AGIM_PLAN_INTENT_PHRASES']
   beforeEach(() => {
     for (const k of ENV_KEYS) {
       saved[k] = process.env[k]
@@ -64,8 +64,8 @@ describe('plan-intent — phrase detection (v1.2.135)', () => {
     expect(hasPlanIntent('plain old request')).toBe(false)
   })
 
-  it('IMHUB_PLAN_INTENT_PHRASES replaces default list (not merge)', () => {
-    process.env.IMHUB_PLAN_INTENT_PHRASES = 'magic-word,xyz123'
+  it('AGIM_PLAN_INTENT_PHRASES replaces default list (not merge)', () => {
+    process.env.AGIM_PLAN_INTENT_PHRASES = 'magic-word,xyz123'
     // Default phrase no longer triggers
     expect(detectPlanIntent('plan only please')).toBeNull()
     // Custom phrase triggers
@@ -73,45 +73,45 @@ describe('plan-intent — phrase detection (v1.2.135)', () => {
     expect(detectPlanIntent('try xyz123 path')).toBe('xyz123')
   })
 
-  it('IMHUB_PLAN_INTENT_PHRASES handles empty entries gracefully', () => {
-    process.env.IMHUB_PLAN_INTENT_PHRASES = ',,plan only,,'
+  it('AGIM_PLAN_INTENT_PHRASES handles empty entries gracefully', () => {
+    process.env.AGIM_PLAN_INTENT_PHRASES = ',,plan only,,'
     expect(detectPlanIntent('plan only')).toBe('plan only')
   })
 })
 
 describe('plan-intent — auto-enter master switch', () => {
-  const saved = process.env.IMHUB_PLAN_INTENT_AUTO
+  const saved = process.env.AGIM_PLAN_INTENT_AUTO
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_PLAN_INTENT_AUTO
-    else process.env.IMHUB_PLAN_INTENT_AUTO = saved
+    if (saved === undefined) delete process.env.AGIM_PLAN_INTENT_AUTO
+    else process.env.AGIM_PLAN_INTENT_AUTO = saved
   })
 
   it('isPlanIntentAutoEnabled is false by default', () => {
-    delete process.env.IMHUB_PLAN_INTENT_AUTO
+    delete process.env.AGIM_PLAN_INTENT_AUTO
     expect(isPlanIntentAutoEnabled()).toBe(false)
   })
 
   it('parses common truthy values', () => {
     for (const v of ['on', '1', 'true', 'yes', 'ON', 'True']) {
-      process.env.IMHUB_PLAN_INTENT_AUTO = v
+      process.env.AGIM_PLAN_INTENT_AUTO = v
       expect(isPlanIntentAutoEnabled()).toBe(true)
     }
   })
 
   it('parses falsy values', () => {
     for (const v of ['off', '0', 'false', 'no', '']) {
-      process.env.IMHUB_PLAN_INTENT_AUTO = v
+      process.env.AGIM_PLAN_INTENT_AUTO = v
       expect(isPlanIntentAutoEnabled()).toBe(false)
     }
   })
 
   it('shouldAutoEnterPlanMode requires BOTH switch on AND intent match', () => {
     // Switch off → never trigger even with matching prompt
-    delete process.env.IMHUB_PLAN_INTENT_AUTO
+    delete process.env.AGIM_PLAN_INTENT_AUTO
     expect(shouldAutoEnterPlanMode('plan only please')).toBeNull()
 
     // Switch on but no intent → still null
-    process.env.IMHUB_PLAN_INTENT_AUTO = 'on'
+    process.env.AGIM_PLAN_INTENT_AUTO = 'on'
     expect(shouldAutoEnterPlanMode('refactor X')).toBeNull()
 
     // Both → returns matched phrase

@@ -10,7 +10,7 @@
  *     }
  *   }
  *
- * On adapter init we read-modify-write this file so the `imhub` entry
+ * On adapter init we read-modify-write this file so the `agim` entry
  * is always pointed at the current approval-bus socket (which rotates
  * every agim restart — see core/approval-bus.ts:defaultSocketPath).
  * Other entries the operator already had stay untouched.
@@ -19,7 +19,7 @@
  * agy has no `--mcp-config <path>` flag; the only way to wire MCP is
  * the global file. Concurrency-wise that's fine because the file just
  * tells agy which sidecar to launch — the sidecar itself is stateless
- * across runs (each run gets its own IMHUB_RUN_ID via process env).
+ * across runs (each run gets its own AGIM_RUN_ID via process env).
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -49,13 +49,13 @@ interface McpConfigFile {
 }
 
 /**
- * Ensure `~/.gemini/config/mcp_config.json` has the imhub MCP entry
+ * Ensure `~/.gemini/config/mcp_config.json` has the agim MCP entry
  * pointing at the current approval-bus socket. Preserves any other
  * keys / mcpServers entries the operator already configured.
  *
  * Idempotent: safe to call on every adapter init or before every spawn.
  */
-export async function ensureImhubMcp(spec: McpServerSpec, opts: { path?: string } = {}): Promise<void> {
+export async function ensureAgimMcp(spec: McpServerSpec, opts: { path?: string } = {}): Promise<void> {
   const filePath = opts.path ?? defaultMcpConfigPath()
   let current: McpConfigFile = {}
   try {
@@ -80,7 +80,7 @@ export async function ensureImhubMcp(spec: McpServerSpec, opts: { path?: string 
   if (!current.mcpServers || typeof current.mcpServers !== 'object') {
     current.mcpServers = {}
   }
-  const existing = current.mcpServers.imhub
+  const existing = current.mcpServers.agim
   // Skip write if nothing changed — avoids touching mtime on every send.
   if (existing
       && existing.command === spec.command
@@ -88,24 +88,24 @@ export async function ensureImhubMcp(spec: McpServerSpec, opts: { path?: string 
       && JSON.stringify(existing.env ?? {}) === JSON.stringify(spec.env ?? {})) {
     return
   }
-  current.mcpServers.imhub = spec
+  current.mcpServers.agim = spec
   try {
     await mkdir(dirname(filePath), { recursive: true })
     await writeFile(filePath, JSON.stringify(current, null, 2), 'utf8')
     log.info({ event: 'antigravity.mcp.config_written', filePath },
-      'wrote imhub MCP entry to agy global config')
+      'wrote agim MCP entry to agy global config')
   } catch (err) {
     log.warn({ event: 'antigravity.mcp.write_failed', filePath, err: String(err) },
-      'could not write mcp_config.json — agy will run without imhub MCP')
+      'could not write mcp_config.json — agy will run without agim MCP')
     throw err
   }
 }
 
 /**
- * Remove the imhub MCP entry. Used by tests / uninstall flows; the
+ * Remove the agim MCP entry. Used by tests / uninstall flows; the
  * normal adapter path just overwrites with a fresh socket.
  */
-export async function removeImhubMcp(opts: { path?: string } = {}): Promise<void> {
+export async function removeAgimMcp(opts: { path?: string } = {}): Promise<void> {
   const filePath = opts.path ?? defaultMcpConfigPath()
   let current: McpConfigFile = {}
   try {
@@ -116,8 +116,8 @@ export async function removeImhubMcp(opts: { path?: string } = {}): Promise<void
     if (e.code === 'ENOENT') return
     throw err
   }
-  if (current.mcpServers && current.mcpServers.imhub) {
-    delete current.mcpServers.imhub
+  if (current.mcpServers && current.mcpServers.agim) {
+    delete current.mcpServers.agim
     await writeFile(filePath, JSON.stringify(current, null, 2), 'utf8')
   }
 }

@@ -3,9 +3,9 @@
  * "📨 SMTP" card). Drives email delivery for `/remind email me@x.com …`.
  *
  * Six env keys, persisted to `~/.agim/.env`:
- *   * IMHUB_SMTP_HOST / PORT / USER / PASS / FROM / SECURE
+ *   * AGIM_SMTP_HOST / PORT / USER / PASS / FROM / SECURE
  *
- * IMHUB_SMTP_PASS is in the backend's SECRET_KEYS set — masked unless
+ * AGIM_SMTP_PASS is in the backend's SECRET_KEYS set — masked unless
  * the Reveal toggle issues a `?reveal=1` fetch. Submitting a masked
  * string back is a no-op on the backend (it preserves the real value).
  *
@@ -42,34 +42,34 @@ import { describeError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
 
 const SMTP_KEYS = [
-  'IMHUB_SMTP_HOST',
-  'IMHUB_SMTP_PORT',
-  'IMHUB_SMTP_USER',
-  'IMHUB_SMTP_PASS',
-  'IMHUB_SMTP_FROM',
-  'IMHUB_SMTP_SECURE',
+  'AGIM_SMTP_HOST',
+  'AGIM_SMTP_PORT',
+  'AGIM_SMTP_USER',
+  'AGIM_SMTP_PASS',
+  'AGIM_SMTP_FROM',
+  'AGIM_SMTP_SECURE',
 ] as const
 
 type SmtpKey = typeof SMTP_KEYS[number]
 type SecureMode = 'auto' | 'true' | 'false'
 
 interface Draft {
-  IMHUB_SMTP_HOST: string
-  IMHUB_SMTP_PORT: string
-  IMHUB_SMTP_USER: string
-  IMHUB_SMTP_PASS: string
-  IMHUB_SMTP_FROM: string
-  IMHUB_SMTP_SECURE: SecureMode
+  AGIM_SMTP_HOST: string
+  AGIM_SMTP_PORT: string
+  AGIM_SMTP_USER: string
+  AGIM_SMTP_PASS: string
+  AGIM_SMTP_FROM: string
+  AGIM_SMTP_SECURE: SecureMode
 }
 
 function emptyDraft(): Draft {
   return {
-    IMHUB_SMTP_HOST: '',
-    IMHUB_SMTP_PORT: '',
-    IMHUB_SMTP_USER: '',
-    IMHUB_SMTP_PASS: '',
-    IMHUB_SMTP_FROM: '',
-    IMHUB_SMTP_SECURE: 'auto',
+    AGIM_SMTP_HOST: '',
+    AGIM_SMTP_PORT: '',
+    AGIM_SMTP_USER: '',
+    AGIM_SMTP_PASS: '',
+    AGIM_SMTP_FROM: '',
+    AGIM_SMTP_SECURE: 'auto',
   }
 }
 
@@ -87,12 +87,12 @@ export function normalizeSecure(raw: string | undefined): SecureMode {
 
 function draftFromEnv(env: Record<string, string>): Draft {
   return {
-    IMHUB_SMTP_HOST:   env.IMHUB_SMTP_HOST   ?? '',
-    IMHUB_SMTP_PORT:   env.IMHUB_SMTP_PORT   ?? '',
-    IMHUB_SMTP_USER:   env.IMHUB_SMTP_USER   ?? '',
-    IMHUB_SMTP_PASS:   env.IMHUB_SMTP_PASS   ?? '',
-    IMHUB_SMTP_FROM:   env.IMHUB_SMTP_FROM   ?? '',
-    IMHUB_SMTP_SECURE: normalizeSecure(env.IMHUB_SMTP_SECURE),
+    AGIM_SMTP_HOST:   env.AGIM_SMTP_HOST   ?? '',
+    AGIM_SMTP_PORT:   env.AGIM_SMTP_PORT   ?? '',
+    AGIM_SMTP_USER:   env.AGIM_SMTP_USER   ?? '',
+    AGIM_SMTP_PASS:   env.AGIM_SMTP_PASS   ?? '',
+    AGIM_SMTP_FROM:   env.AGIM_SMTP_FROM   ?? '',
+    AGIM_SMTP_SECURE: normalizeSecure(env.AGIM_SMTP_SECURE),
   }
 }
 
@@ -130,14 +130,14 @@ export default function SettingsEmailRoute(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [envQuery.dataUpdatedAt])
 
-  const isConfigured = !!(env.IMHUB_SMTP_HOST && env.IMHUB_SMTP_USER && env.IMHUB_SMTP_PASS)
+  const isConfigured = !!(env.AGIM_SMTP_HOST && env.AGIM_SMTP_USER && env.AGIM_SMTP_PASS)
 
   const isDirty = useMemo(() => {
     if (!envQuery.data) return false
     const current = draftFromEnv(env)
     for (const k of SMTP_KEYS) {
       // PASS: ignore "user just echoed the mask back" as no-change.
-      if (k === 'IMHUB_SMTP_PASS' && draft[k] && isMasked(draft[k]) && draft[k] === current[k]) continue
+      if (k === 'AGIM_SMTP_PASS' && draft[k] && isMasked(draft[k]) && draft[k] === current[k]) continue
       if (draft[k] !== current[k]) return true
     }
     return false
@@ -163,7 +163,7 @@ export default function SettingsEmailRoute(): JSX.Element {
       // Don't ship a masked PASS as the new value — backend's
       // isMasked-detect already skips it server-side, but keep the
       // wire honest.
-      if (k === 'IMHUB_SMTP_PASS' && isMasked(next)) continue
+      if (k === 'AGIM_SMTP_PASS' && isMasked(next)) continue
       // Empty string → null (explicit unset) for non-PASS fields.
       // For PASS, an empty string also means "clear" (Disable button uses
       // the same path).
@@ -259,8 +259,8 @@ export default function SettingsEmailRoute(): JSX.Element {
           <div className="grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-2">
             <Field label={t('email.host')} hint={t('email.hostHint')}>
               <Input
-                value={draft.IMHUB_SMTP_HOST}
-                onChange={(e) => setField('IMHUB_SMTP_HOST', e.target.value)}
+                value={draft.AGIM_SMTP_HOST}
+                onChange={(e) => setField('AGIM_SMTP_HOST', e.target.value)}
                 placeholder="smtp.gmail.com"
                 autoComplete="off"
               />
@@ -271,16 +271,16 @@ export default function SettingsEmailRoute(): JSX.Element {
                 inputMode="numeric"
                 min={1}
                 max={65535}
-                value={draft.IMHUB_SMTP_PORT}
-                onChange={(e) => setField('IMHUB_SMTP_PORT', e.target.value)}
+                value={draft.AGIM_SMTP_PORT}
+                onChange={(e) => setField('AGIM_SMTP_PORT', e.target.value)}
                 placeholder="465"
                 autoComplete="off"
               />
             </Field>
             <Field label={t('email.user')} hint={t('email.userHint')}>
               <Input
-                value={draft.IMHUB_SMTP_USER}
-                onChange={(e) => setField('IMHUB_SMTP_USER', e.target.value)}
+                value={draft.AGIM_SMTP_USER}
+                onChange={(e) => setField('AGIM_SMTP_USER', e.target.value)}
                 placeholder="you@example.com"
                 autoComplete="off"
               />
@@ -288,25 +288,25 @@ export default function SettingsEmailRoute(): JSX.Element {
             <Field label={t('email.pass')} hint={t('email.passHint')}>
               <Input
                 type={reveal ? 'text' : 'password'}
-                value={draft.IMHUB_SMTP_PASS}
-                onChange={(e) => setField('IMHUB_SMTP_PASS', e.target.value)}
+                value={draft.AGIM_SMTP_PASS}
+                onChange={(e) => setField('AGIM_SMTP_PASS', e.target.value)}
                 placeholder="••••••••"
                 autoComplete="new-password"
-                className={cn(isMasked(draft.IMHUB_SMTP_PASS) && 'font-mono text-text-muted')}
+                className={cn(isMasked(draft.AGIM_SMTP_PASS) && 'font-mono text-text-muted')}
               />
             </Field>
             <Field label={t('email.from')} hint={t('email.fromHint')}>
               <Input
-                value={draft.IMHUB_SMTP_FROM}
-                onChange={(e) => setField('IMHUB_SMTP_FROM', e.target.value)}
+                value={draft.AGIM_SMTP_FROM}
+                onChange={(e) => setField('AGIM_SMTP_FROM', e.target.value)}
                 placeholder=""
                 autoComplete="off"
               />
             </Field>
             <Field label={t('email.secure')} hint={t('email.secureHint')}>
               <Select
-                value={draft.IMHUB_SMTP_SECURE}
-                onValueChange={(v) => setField('IMHUB_SMTP_SECURE', v as SecureMode)}
+                value={draft.AGIM_SMTP_SECURE}
+                onValueChange={(v) => setField('AGIM_SMTP_SECURE', v as SecureMode)}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

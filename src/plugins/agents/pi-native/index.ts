@@ -70,19 +70,19 @@ export interface NativeAgentDeps {
   resolveSystemPrompt?: (opts: AgentSendOpts | undefined, sessionId: string) => string | undefined
   /** Max tool-call rounds per turn before the loop is force-stopped. pi's loop
    *  has no built-in cap, so we enforce one (mirrors agim's
-   *  IMHUB_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
+   *  AGIM_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
   maxIterations?: number
   /** Proactive context compaction before each turn. pi never auto-compacts, so
    *  when a durable session grows past the model window (minus reserve) the
    *  adapter summarizes old history — without this, long-lived IM sessions grow
    *  the JSONL unbounded until the context overflows. Defaults to enabled; set
-   *  false (factory reads IMHUB_NATIVE_COMPACTION=off) to disable. */
+   *  false (factory reads AGIM_NATIVE_COMPACTION=off) to disable. */
   compactionEnabled?: boolean
   /** Provider request resilience + caching, snapshotted per turn by pi:
    *  maxRetries / maxRetryDelayMs / timeoutMs (ride out transient 429/5xx from
    *  the LLM provider) + cacheRetention (provider prompt cache → cuts the repeat
    *  token cost of the system prompt + history). Factory builds it from
-   *  IMHUB_NATIVE_* envs; omit to use pi defaults. */
+   *  AGIM_NATIVE_* envs; omit to use pi defaults. */
   streamOptions?: AgentHarnessStreamOptions
 }
 
@@ -348,7 +348,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     // grown past the model window minus reserve, summarize old history BEFORE
     // this turn so it neither overflows the context nor re-pays for the full
     // backlog every turn. Best-effort — a failed compaction must not block the
-    // turn (it just runs with the larger context). Off via IMHUB_NATIVE_COMPACTION=off.
+    // turn (it just runs with the larger context). Off via AGIM_NATIVE_COMPACTION=off.
     if (this.deps.compactionEnabled !== false && Number.isFinite(binding.model.contextWindow)) {
       try {
         const usage = getLastAssistantUsage(await session.getEntries())
@@ -378,7 +378,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     if (stopReason && !text.trim()) {
       yield stopReason === 'stuck_loop'
         ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
-        : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 IMHUB_NATIVE_AGENT_MAX_ITER 后重试）`
+        : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
       return
     }
     if (!text.trim()) {

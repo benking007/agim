@@ -1,12 +1,12 @@
 ---
 name: agim-reminders
-description: Set / list / cancel / snooze reminders via agim's `mcp__imhub__*_reminder` tools. Use whenever the user mentions a future commitment ("明天要开会", "下周一交报告"), asks for a recurring nudge ("每天9点提醒我吃药"), or asks "我有哪些提醒". This replaces nanobot's `cron` skill — agim has its own scheduler.
+description: Set / list / cancel / snooze reminders via agim's `mcp__agim__*_reminder` tools. Use whenever the user mentions a future commitment ("明天要开会", "下周一交报告"), asks for a recurring nudge ("每天9点提醒我吃药"), or asks "我有哪些提醒". This replaces nanobot's `cron` skill — agim has its own scheduler.
 always: false
 ---
 
 # Reminders
 
-agim exposes four MCP tools (`mcp__imhub__create_reminder`, `list_reminders`, `cancel_reminder`, `snooze_reminder`). Use them PROACTIVELY — don't wait for "提醒我…"; if the user mentions a future event, offer to set one.
+agim exposes four MCP tools (`mcp__agim__create_reminder`, `list_reminders`, `cancel_reminder`, `snooze_reminder`). Use them PROACTIVELY — don't wait for "提醒我…"; if the user mentions a future event, offer to set one.
 
 ## create_reminder
 

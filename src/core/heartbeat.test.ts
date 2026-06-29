@@ -25,8 +25,8 @@ import { existsSync, unlinkSync } from 'node:fs'
 
 const ORIGINAL_FETCH = globalThis.fetch
 const ENV_KEYS = [
-  'IMHUB_HEARTBEAT_ENABLED',
-  'IMHUB_NOTIFICATION_EVALUATOR',
+  'AGIM_HEARTBEAT_ENABLED',
+  'AGIM_NOTIFICATION_EVALUATOR',
   envKeyForBackend('cheap-mock'),
 ]
 

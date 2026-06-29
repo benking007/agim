@@ -5,7 +5,7 @@
 //   - Skips the interactive onboarding (no readline prompts).
 //   - Skips the messenger startup (Telegram/WeChat/Feishu) — this script
 //     is intended for deployments that only expose the Web/REST/ACP
-//     surfaces. Set IM_HUB_ENABLE_MESSENGERS=1 to opt in.
+//     surfaces. Set AGIM_ENABLE_MESSENGERS=1 to opt in.
 //
 // Everything else mirrors cli.ts: load config, plugins, ACP agents,
 // auto-discovery, scheduler, audit retention sweep — so /api/jobs,
@@ -28,7 +28,7 @@ const { logger } = await import(join(here, 'dist/core/logger.js'))
 const log = logger.child({ component: 'start-prod' })
 
 const config = await loadConfig()
-const defaultAgent = config.defaultAgent || 'opencode'
+const defaultAgent = config.defaultAgent || 'claude-code'
 const webPort = config.webPort || 3000
 const acpPort = config.acpPort || 9090
 
@@ -51,7 +51,7 @@ if (Array.isArray(config.acpDiscoveryUrls) && config.acpDiscoveryUrls.length > 0
 // Optional: enable IM messengers when explicitly requested. cli.ts has
 // the full onboarding flow for new users; here we only wire the ones
 // already configured so a misconfigured machine doesn't crash boot.
-if (process.env.IM_HUB_ENABLE_MESSENGERS === '1') {
+if (process.env.AGIM_ENABLE_MESSENGERS === '1') {
   for (const name of config.messengers || []) {
     const messenger = registry.getMessenger(name)
     if (messenger) {
@@ -74,4 +74,4 @@ await startWebServer({ port: webPort, defaultAgent })
 await startACPServer({ port: acpPort, defaultAgent })
 
 log.info({ webPort, acpPort, defaultAgent, agents: registry.listAgents().length },
-  'im-hub headless started')
+  'agim headless started')

@@ -1,4 +1,4 @@
-// push-rpc — handles `mcp__imhub__push_message` invocations relayed by the
+// push-rpc — handles `mcp__agim__push_message` invocations relayed by the
 // approval-bus from MCP sidecars. Lets agents proactively send a message to
 // an IM thread without waiting for the user to ask first.
 //
@@ -13,10 +13,10 @@
 //   - Default scope = caller's OWN thread. The MCP tool resolves the active
 //     RunContext (from runId) and uses that thread; agents can NOT push to
 //     arbitrary threads they didn't originate from.
-//   - Cross-thread targets are gated behind IMHUB_PUSH_CROSS_THREAD=on AND
+//   - Cross-thread targets are gated behind AGIM_PUSH_CROSS_THREAD=on AND
 //     the target must be on the same platform AND user as the caller. No
 //     "push to anyone" capability — that would be an obvious abuse vector.
-//   - Per-user rate limit: IMHUB_PUSH_RATE_PER_MINUTE (default 10) bursts
+//   - Per-user rate limit: AGIM_PUSH_RATE_PER_MINUTE (default 10) bursts
 //     and falls off over a sliding 60s window. Above the cap → returns
 //     error, agent gets to handle it (typically: "sorry, throttled").
 
@@ -31,7 +31,7 @@ export interface PushPayload {
   /** Body text to send. Required. Empty / whitespace-only → error. */
   text?: unknown
   /** Optional override: <platform>:<channelId>:<threadId>. Same-user same-
-   *  platform only; requires IMHUB_PUSH_CROSS_THREAD=on. Omit to push to
+   *  platform only; requires AGIM_PUSH_CROSS_THREAD=on. Omit to push to
    *  the caller's own thread (the common case). */
   toThread?: unknown
   /** Optional placeholder for future card support — ignored for now (v1
@@ -65,7 +65,7 @@ interface PushBudget {
 const budgets = new Map<string, PushBudget>()  // key = `${platform}:${userId}`
 
 function rateLimit(): number {
-  const raw = process.env.IMHUB_PUSH_RATE_PER_MINUTE
+  const raw = process.env.AGIM_PUSH_RATE_PER_MINUTE
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -74,7 +74,7 @@ function rateLimit(): number {
 }
 
 function crossThreadAllowed(): boolean {
-  return (process.env.IMHUB_PUSH_CROSS_THREAD || '').toLowerCase() === 'on'
+  return (process.env.AGIM_PUSH_CROSS_THREAD || '').toLowerCase() === 'on'
 }
 
 function checkAndRecord(key: string): { ok: true } | { ok: false; resetMs: number } {
@@ -106,7 +106,7 @@ export async function handlePushOp(payload: PushPayload, ctx: RunContext): Promi
   const toThread = typeof payload.toThread === 'string' ? payload.toThread.trim() : ''
   if (toThread) {
     if (!crossThreadAllowed()) {
-      return { ok: false, error: 'cross-thread push is disabled (set IMHUB_PUSH_CROSS_THREAD=on to enable)' }
+      return { ok: false, error: 'cross-thread push is disabled (set AGIM_PUSH_CROSS_THREAD=on to enable)' }
     }
     const parts = toThread.split(':')
     if (parts.length < 3) {

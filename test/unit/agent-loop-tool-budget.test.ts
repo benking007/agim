@@ -5,7 +5,7 @@
 // poisoning; timeout prevents wall-clock starvation. The test file
 // pins both contracts:
 //
-//   (a) Tool output over `IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS` is
+//   (a) Tool output over `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` is
 //       truncated with a marker; under the cap is untouched; cap=0
 //       disables.
 //   (b) A wedged tool that doesn't respect its abort signal is bounded
@@ -45,15 +45,15 @@ class ScriptedProvider extends LlmProvider {
 }
 
 describe('runAgentLoop — tool-result byte cap (v1.2.118)', () => {
-  const saved = process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS })
+  const saved = process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+  beforeEach(() => { delete process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS })
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS
-    else process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = saved
+    if (saved === undefined) delete process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+    else process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = saved
   })
 
   it('truncates over-cap tool output with a clear marker', async () => {
-    process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = '100'
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '100'
     const huge = 'x'.repeat(5000)
     const provider = new ScriptedProvider([
       {
@@ -83,7 +83,7 @@ describe('runAgentLoop — tool-result byte cap (v1.2.118)', () => {
   })
 
   it('leaves under-cap output untouched (no marker)', async () => {
-    process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = '1000'
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '1000'
     const small = 'hello world'
     const provider = new ScriptedProvider([
       {
@@ -108,7 +108,7 @@ describe('runAgentLoop — tool-result byte cap (v1.2.118)', () => {
   })
 
   it('cap=0 disables truncation entirely', async () => {
-    process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = '0'
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '0'
     const huge = 'x'.repeat(5000)
     const provider = new ScriptedProvider([
       {
@@ -156,11 +156,11 @@ describe('runAgentLoop — tool-result byte cap (v1.2.118)', () => {
 })
 
 describe('runAgentLoop — per-tool wall timeout (v1.2.118)', () => {
-  const saved = process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS })
+  const saved = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+  beforeEach(() => { delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS })
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS
-    else process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS = saved
+    if (saved === undefined) delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+    else process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = saved
   })
 
   it('returns structured timeout result when a tool hangs past timeoutMs', async () => {

@@ -263,7 +263,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
           </section>
 
           {/* Remote (ACP) agents — gated by features.remoteAgent
-              (IMHUB_ENABLE_REMOTE_AGENT on server). Card is omitted
+              (AGIM_ENABLE_REMOTE_AGENT on server). Card is omitted
               entirely; no breadcrumb hint shown. */}
           {cfg?.features?.remoteAgent ? (
             <AcpCard

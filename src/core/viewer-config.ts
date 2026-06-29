@@ -78,9 +78,9 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
  * Operators who don't have a domain or working tunnel still get usable
  * viewer links out of the box by routing through this public service.
  * Users can:
- *   - Override by setting their own IMHUB_VIEWER_REMOTE_PASTE_URL
- *   - Opt back into a local-only path by setting IMHUB_VIEWER_PUBLIC_BASE_URL
- *   - Disable the default entirely with IMHUB_VIEWER_NO_DEFAULT_REMOTE=1
+ *   - Override by setting their own AGIM_VIEWER_REMOTE_PASTE_URL
+ *   - Opt back into a local-only path by setting AGIM_VIEWER_PUBLIC_BASE_URL
+ *   - Disable the default entirely with AGIM_VIEWER_NO_DEFAULT_REMOTE=1
  *
  * IMPORTANT — privacy: with the default on, any markdown long enough
  * to exit the inline path is uploaded to viewer.iclaw.host over HTTPS.
@@ -90,13 +90,13 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 export const DEFAULT_REMOTE_PASTE_URL = 'https://viewer.iclaw.host/paste'
 
 export function getViewerConfig(): ViewerConfig {
-  const enabledRaw = (process.env.IMHUB_VIEWER_ENABLED || '').toLowerCase()
+  const enabledRaw = (process.env.AGIM_VIEWER_ENABLED || '').toLowerCase()
   const enabled = enabledRaw === '1' || enabledRaw === 'true' || enabledRaw === 'yes'
-  const publicBaseUrl = (process.env.IMHUB_VIEWER_PUBLIC_BASE_URL || '').replace(/\/$/, '')
-  const tunnelModeRaw = (process.env.IMHUB_VIEWER_TUNNEL_MODE || 'off').toLowerCase()
+  const publicBaseUrl = (process.env.AGIM_VIEWER_PUBLIC_BASE_URL || '').replace(/\/$/, '')
+  const tunnelModeRaw = (process.env.AGIM_VIEWER_TUNNEL_MODE || 'off').toLowerCase()
   const tunnelMode: ViewerTunnelMode = tunnelModeRaw === 'quick' ? 'quick' : 'off'
-  const remotePasteUrl = (process.env.IMHUB_VIEWER_REMOTE_PASTE_URL || '').replace(/\/$/, '')
-  const remotePasteToken = process.env.IMHUB_VIEWER_REMOTE_PASTE_TOKEN || ''
+  const remotePasteUrl = (process.env.AGIM_VIEWER_REMOTE_PASTE_URL || '').replace(/\/$/, '')
+  const remotePasteToken = process.env.AGIM_VIEWER_REMOTE_PASTE_TOKEN || ''
   return {
     enabled,
     publicBaseUrl,
@@ -104,9 +104,9 @@ export function getViewerConfig(): ViewerConfig {
     remotePasteUrl,
     remotePasteToken,
     thresholds: {
-      chars: parsePositiveInt(process.env.IMHUB_VIEWER_CHARS, DEFAULT_THRESHOLDS.chars),
-      lines: parsePositiveInt(process.env.IMHUB_VIEWER_LINES, DEFAULT_THRESHOLDS.lines),
-      codeLines: parsePositiveInt(process.env.IMHUB_VIEWER_CODE_LINES, DEFAULT_THRESHOLDS.codeLines),
+      chars: parsePositiveInt(process.env.AGIM_VIEWER_CHARS, DEFAULT_THRESHOLDS.chars),
+      lines: parsePositiveInt(process.env.AGIM_VIEWER_LINES, DEFAULT_THRESHOLDS.lines),
+      codeLines: parsePositiveInt(process.env.AGIM_VIEWER_CODE_LINES, DEFAULT_THRESHOLDS.codeLines),
     },
   }
 }
@@ -120,18 +120,18 @@ export function getViewerConfig(): ViewerConfig {
  *   - Disable default  → opt out of the community paste server fallback
  *
  * Hidden env override (advanced, not surfaced in UI):
- *   - IMHUB_VIEWER_REMOTE_PASTE_URL — point to a different paste
+ *   - AGIM_VIEWER_REMOTE_PASTE_URL — point to a different paste
  *     server (e.g. your own self-hosted clone of viewer-paste). Only
  *     kicks in when neither public base nor tunnel is configured.
  *
  * Order:
  *   1. Public base URL                          → local
  *   2. Tunnel mode = quick                      → tunnel
- *   3. user-set IMHUB_VIEWER_REMOTE_PASTE_URL   → remote (custom server)
+ *   3. user-set AGIM_VIEWER_REMOTE_PASTE_URL   → remote (custom server)
  *   4. community default viewer.iclaw.host       → remote (default-on)
  *   5. nothing                                   → none (inline degrade)
  *
- * Set IMHUB_VIEWER_NO_DEFAULT_REMOTE=1 to skip steps 3-4 entirely.
+ * Set AGIM_VIEWER_NO_DEFAULT_REMOTE=1 to skip steps 3-4 entirely.
  */
 export function resolveViewerMode(cfg: ViewerConfig = getViewerConfig()): ViewerMode {
   if (!cfg.enabled) return 'none'
@@ -144,7 +144,7 @@ export function resolveViewerMode(cfg: ViewerConfig = getViewerConfig()): Viewer
 /**
  * Resolve the effective remote paste URL the sink should POST to.
  * Honours user-set value first, then the community default unless
- * the operator opted out via IMHUB_VIEWER_NO_DEFAULT_REMOTE=1.
+ * the operator opted out via AGIM_VIEWER_NO_DEFAULT_REMOTE=1.
  * Returns null when no usable URL is available.
  */
 export function getEffectiveRemotePasteUrl(cfg: ViewerConfig = getViewerConfig()): string | null {
@@ -154,13 +154,13 @@ export function getEffectiveRemotePasteUrl(cfg: ViewerConfig = getViewerConfig()
 }
 
 function isDefaultRemoteDisabled(): boolean {
-  const v = (process.env.IMHUB_VIEWER_NO_DEFAULT_REMOTE || '').toLowerCase()
+  const v = (process.env.AGIM_VIEWER_NO_DEFAULT_REMOTE || '').toLowerCase()
   return v === '1' || v === 'true' || v === 'yes'
 }
 
 /**
  * Resolve the effective public base URL. Order of preference:
- *   1. Explicit IMHUB_VIEWER_PUBLIC_BASE_URL (operator-managed reverse proxy)
+ *   1. Explicit AGIM_VIEWER_PUBLIC_BASE_URL (operator-managed reverse proxy)
  *   2. Auto-tunnel URL if tunnel_mode=quick and cloudflared has acquired a URL
  *   3. Caller-supplied fallback
  *

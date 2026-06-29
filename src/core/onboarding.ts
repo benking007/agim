@@ -92,7 +92,7 @@ export interface Config {
 // ============================================
 
 // R12 / 2026-05-22 update — Telegram and Discord are kept in the source
-// for IMHUB_ENABLE_GLOBAL_IM=1 deployments but hidden from the default
+// for AGIM_ENABLE_GLOBAL_IM=1 deployments but hidden from the default
 // onboarding flow (mainland-China baseline). DingTalk is added so the
 // legacy prompt matches what the modern wizard surfaces.
 const ALL_MESSENGERS: MessengerInfo[] = [
@@ -104,8 +104,8 @@ const ALL_MESSENGERS: MessengerInfo[] = [
 ]
 
 function getAvailableMessengers(): MessengerInfo[] {
-  const globalSet = process.env.IMHUB_ENABLE_GLOBAL_IM === '1'
-  // v1.2.69 — IMHUB_PLATFORM_BLACKLIST hides platforms from the
+  const globalSet = process.env.AGIM_ENABLE_GLOBAL_IM === '1'
+  // v1.2.69 — AGIM_PLATFORM_BLACKLIST hides platforms from the
   // wizard / web admin entirely. Default is empty (no-op). Layered on
   // top of the GLOBAL_IM filter so an operator can still ban any
   // platform regardless of the global-IM mode.

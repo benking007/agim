@@ -4,7 +4,7 @@
 // via RPC" pattern):
 //   When `native` faces a task that requires many similar tool calls
 //   (e.g. "fetch financial data for 50 stocks, write the result to a
-//   CSV, then email me"), running 50 mcp__imhub__* calls in a chat turn
+//   CSV, then email me"), running 50 mcp__agim__* calls in a chat turn
 //   means 50 LLM round-trips and a real chance of hitting either the
 //   stuck-loop detector (v1.2.95) or the iteration cap. The right shape
 //   for that work is: the model writes ONE Python script, that script
@@ -25,8 +25,8 @@
 //     RunContext (platform / channelId / threadId / userId). A subprocess
 //     that knows the token can ONLY drive that one IM thread — it
 //     cannot spam push_message into someone else's thread.
-//   - Tool whitelist hard-coded to read-only / write-safe imhub MCP
-//     tools. Operators can extend via IMHUB_RPC_ALLOWED_TOOLS env.
+//   - Tool whitelist hard-coded to read-only / write-safe agim MCP
+//     tools. Operators can extend via AGIM_RPC_ALLOWED_TOOLS env.
 //     native_exec / fs writes / call_agent / long_task are NOT exposed
 //     — the bgjob worker already has a shell, no need to indirect.
 //
@@ -67,22 +67,22 @@ interface TokenEntry {
 const tokens = new Map<string, TokenEntry>()
 
 const DEFAULT_TTL_MS = (() => {
-  const raw = process.env.IMHUB_RPC_TOKEN_TTL_MS
+  const raw = process.env.AGIM_RPC_TOKEN_TTL_MS
   if (!raw) return 24 * 60 * 60 * 1000  // 24 h
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000
 })()
 
 const DEFAULT_ALLOWED_TOOLS = [
-  'mcp__imhub__search_memos',
-  'mcp__imhub__save_memo',
-  'mcp__imhub__read_skill',
-  'mcp__imhub__list_skills',
-  'mcp__imhub__push_message',
+  'mcp__agim__search_memos',
+  'mcp__agim__save_memo',
+  'mcp__agim__read_skill',
+  'mcp__agim__list_skills',
+  'mcp__agim__push_message',
 ]
 
 function resolveAllowedTools(): Set<string> {
-  const raw = process.env.IMHUB_RPC_ALLOWED_TOOLS
+  const raw = process.env.AGIM_RPC_ALLOWED_TOOLS
   if (!raw?.trim()) return new Set(DEFAULT_ALLOWED_TOOLS)
   const extra = raw.split(',').map((s) => s.trim()).filter(Boolean)
   return new Set([...DEFAULT_ALLOWED_TOOLS, ...extra])
@@ -115,7 +115,7 @@ function pruneExpired(): void {
 }
 
 export function resolveSocketPath(): string {
-  return process.env.IMHUB_RPC_SOCKET || join(AGIM_HOME, 'rpc.sock')
+  return process.env.AGIM_RPC_SOCKET || join(AGIM_HOME, 'rpc.sock')
 }
 
 let server: Server | null = null
@@ -260,32 +260,32 @@ async function dispatch(
   // Each branch funnels into the SAME RPC handler the in-process
   // native dispatcher uses, so the surface is byte-identical.
   switch (toolName) {
-    case 'mcp__imhub__search_memos': {
+    case 'mcp__agim__search_memos': {
       const r = await handleMemoOp('search', args, ctx)
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
-    case 'mcp__imhub__save_memo': {
+    case 'mcp__agim__save_memo': {
       const r = await handleMemoOp('save', args, ctx)
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
-    case 'mcp__imhub__read_skill': {
+    case 'mcp__agim__read_skill': {
       const r = await handleSkillsOp({ op: 'read', name: typeof args.name === 'string' ? args.name : '' })
       if (!r.ok) return { ok: false, error: r.error }
       if (r.result.op !== 'read') return { ok: false, error: 'unexpected response shape' }
       if (!r.result.available) return { ok: false, error: `skill unavailable: ${r.result.unavailableReason || 'unknown'}` }
       return { ok: true, result: r.result.body }
     }
-    case 'mcp__imhub__list_skills': {
+    case 'mcp__agim__list_skills': {
       const r = await handleSkillsOp({ op: 'list' })
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
-    case 'mcp__imhub__push_message': {
+    case 'mcp__agim__push_message': {
       const r = await handlePushOp(args as { text?: unknown; toThread?: unknown; kind?: unknown }, ctx)
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
     default:
       // Whitelist already filtered upstream; this branch is dead unless
-      // an operator added a tool to IMHUB_RPC_ALLOWED_TOOLS without
+      // an operator added a tool to AGIM_RPC_ALLOWED_TOOLS without
       // adding a corresponding handler here.
       return { ok: false, error: `no handler wired for ${toolName} (operator-extended allowlist?)` }
   }

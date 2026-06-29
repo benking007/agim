@@ -19,7 +19,7 @@ import type { AgentSendOpts } from '../../../core/types.js'
 const { buildArgs, extractText, inspectEvent } = _testInternals
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-codex-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-codex-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 const FULL_OPTS = {
@@ -93,32 +93,32 @@ describe('CodexAdapter buildArgs', () => {
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
   })
 
-  it('IMHUB_CODEX_SAFE_MODE=1 opt-out: drops bypass, keeps -s workspace-write (loses MCP)', () => {
+  it('AGIM_CODEX_SAFE_MODE=1 opt-out: drops bypass, keeps -s workspace-write (loses MCP)', () => {
     const adapter = new CodexAdapter()
-    const original = process.env.IMHUB_CODEX_SAFE_MODE
-    process.env.IMHUB_CODEX_SAFE_MODE = '1'
+    const original = process.env.AGIM_CODEX_SAFE_MODE
+    process.env.AGIM_CODEX_SAFE_MODE = '1'
     try {
       const args = buildArgs(adapter, 'p', {})
       expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
       expect(args).toContain('-s')
       expect(args).toContain('workspace-write')
     } finally {
-      if (original === undefined) delete process.env.IMHUB_CODEX_SAFE_MODE
-      else process.env.IMHUB_CODEX_SAFE_MODE = original
+      if (original === undefined) delete process.env.AGIM_CODEX_SAFE_MODE
+      else process.env.AGIM_CODEX_SAFE_MODE = original
     }
   })
 
-  it('IMHUB_APPROVAL_DISABLED=1 also drops bypass — approval gating is off-by-design', () => {
+  it('AGIM_APPROVAL_DISABLED=1 also drops bypass — approval gating is off-by-design', () => {
     const adapter = new CodexAdapter()
-    const original = process.env.IMHUB_APPROVAL_DISABLED
-    process.env.IMHUB_APPROVAL_DISABLED = '1'
+    const original = process.env.AGIM_APPROVAL_DISABLED
+    process.env.AGIM_APPROVAL_DISABLED = '1'
     try {
       const args = buildArgs(adapter, 'p', {})
       expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
       expect(args).toContain('-s')
     } finally {
-      if (original === undefined) delete process.env.IMHUB_APPROVAL_DISABLED
-      else process.env.IMHUB_APPROVAL_DISABLED = original
+      if (original === undefined) delete process.env.AGIM_APPROVAL_DISABLED
+      else process.env.AGIM_APPROVAL_DISABLED = original
     }
   })
 
@@ -265,11 +265,11 @@ describe('CodexAdapter prepareCommand — fallback paths', () => {
 
   beforeEach(() => {
     adapter = new CodexAdapter()
-    delete process.env.IMHUB_APPROVAL_DISABLED
+    delete process.env.AGIM_APPROVAL_DISABLED
   })
 
   afterEach(() => {
-    delete process.env.IMHUB_APPROVAL_DISABLED
+    delete process.env.AGIM_APPROVAL_DISABLED
   })
 
   it('does not pin cwd for non-IM calls (no threadId/platform)', async () => {
@@ -277,7 +277,7 @@ describe('CodexAdapter prepareCommand — fallback paths', () => {
     expect(plan.cwd).toBeUndefined()
   })
 
-  it('pins cwd to ~/.im-hub-workspaces/codex when threadId+platform present', async () => {
+  it('pins cwd to ~/.agim-workspaces/codex when threadId+platform present', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'p', FULL_OPTS)
     expect(plan.cwd).toBeDefined()
     expect(plan.cwd?.endsWith('/codex')).toBe(true)
@@ -291,8 +291,8 @@ describe('CodexAdapter prepareCommand — fallback paths', () => {
     expect(plan.cleanup).toBeUndefined()
   })
 
-  it('omits MCP -c flags when IMHUB_APPROVAL_DISABLED=1', async () => {
-    process.env.IMHUB_APPROVAL_DISABLED = '1'
+  it('omits MCP -c flags when AGIM_APPROVAL_DISABLED=1', async () => {
+    process.env.AGIM_APPROVAL_DISABLED = '1'
     const plan = await _testInternals.prepareCommand(adapter, 'p', FULL_OPTS)
     expect(plan.args).not.toContain('-c')
     expect(plan.args[0]).toBe('exec')
@@ -354,11 +354,11 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
     // -c pairs must precede `exec` (codex clap requires global flags
     // before the subcommand). The first 6 entries are MCP -c pairs.
     expect(plan.args[0]).toBe('-c')
-    expect(plan.args[1].startsWith('mcp_servers.imhub.command=')).toBe(true)
+    expect(plan.args[1].startsWith('mcp_servers.agim.command=')).toBe(true)
     expect(plan.args[2]).toBe('-c')
-    expect(plan.args[3].startsWith('mcp_servers.imhub.args=')).toBe(true)
+    expect(plan.args[3].startsWith('mcp_servers.agim.args=')).toBe(true)
     expect(plan.args[4]).toBe('-c')
-    expect(plan.args[5].startsWith('mcp_servers.imhub.env=')).toBe(true)
+    expect(plan.args[5].startsWith('mcp_servers.agim.env=')).toBe(true)
     expect(plan.args[6]).toBe('exec')
     // Prompt is still the trailing positional.
     expect(plan.args[plan.args.length - 1]).toBe('hi')
@@ -366,10 +366,10 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
 
   it('embeds the live socket path + a fresh UUID runId in the env -c arg', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
-    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.imhub.env=')) as string
-    expect(envArg).toContain(`IMHUB_APPROVAL_SOCK=${JSON.stringify(bus.getSocketPath() as string)}`)
+    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.agim.env=')) as string
+    expect(envArg).toContain(`AGIM_APPROVAL_SOCK=${JSON.stringify(bus.getSocketPath() as string)}`)
     // runId is a UUID; assert minimally — has the expected shape.
-    const m = envArg.match(/IMHUB_RUN_ID="([^"]+)"/)
+    const m = envArg.match(/AGIM_RUN_ID="([^"]+)"/)
     expect(m).toBeTruthy()
     expect(m![1].length).toBeGreaterThan(8)
   })
@@ -377,8 +377,8 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
   it('cleanup unregisters the run from the bus', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
     expect(plan.cleanup).toBeDefined()
-    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.imhub.env=')) as string
-    const runId = envArg.match(/IMHUB_RUN_ID="([^"]+)"/)![1]
+    const envArg = plan.args.find((a) => a.startsWith('mcp_servers.agim.env=')) as string
+    const runId = envArg.match(/AGIM_RUN_ID="([^"]+)"/)![1]
     expect(registered).toContain(runId)
     expect(unregistered).not.toContain(runId)
     await plan.cleanup?.()
@@ -419,10 +419,10 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
       _testInternals.prepareCommand(adapter, 'p1', FULL_OPTS),
       _testInternals.prepareCommand(adapter, 'p2', FULL_OPTS),
     ])
-    const ridA = (a.args.find((x) => x.startsWith('mcp_servers.imhub.env=')) as string)
-      .match(/IMHUB_RUN_ID="([^"]+)"/)![1]
-    const ridB = (b.args.find((x) => x.startsWith('mcp_servers.imhub.env=')) as string)
-      .match(/IMHUB_RUN_ID="([^"]+)"/)![1]
+    const ridA = (a.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
+      .match(/AGIM_RUN_ID="([^"]+)"/)![1]
+    const ridB = (b.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
+      .match(/AGIM_RUN_ID="([^"]+)"/)![1]
     expect(ridA).not.toBe(ridB)
     await a.cleanup?.()
     await b.cleanup?.()

@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RunContext } from '../../src/core/approval-bus.js'
 
-const TEST_DIR = join(tmpdir(), `imhub-rpc-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_REMINDERS_DB = join(TEST_DIR, 'reminders.db')
+const TEST_DIR = join(tmpdir(), `agim-rpc-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_REMINDERS_DB = join(TEST_DIR, 'reminders.db')
 
 const rpcMod = await import('../../src/core/reminder-rpc.js')
 const remindersMod = await import('../../src/core/reminders.js')

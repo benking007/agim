@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const SAVED = { AGIM_HOME: process.env.AGIM_HOME, IMHUB_HOME: process.env.IMHUB_HOME }
+const SAVED = { AGIM_HOME: process.env.AGIM_HOME }
 let home: string
 
 function readTokens(file: string): { tokens: Array<{ id: string; last_used_at: number | null }> } {
@@ -22,12 +22,10 @@ describe('access-token last_used_at throttle (F5)', () => {
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'agim-tok-test-'))
     process.env.AGIM_HOME = home
-    delete process.env.IMHUB_HOME
   })
   afterEach(() => {
     try { rmSync(home, { recursive: true, force: true }) } catch { /* ignore */ }
     if (SAVED.AGIM_HOME === undefined) delete process.env.AGIM_HOME; else process.env.AGIM_HOME = SAVED.AGIM_HOME
-    if (SAVED.IMHUB_HOME === undefined) delete process.env.IMHUB_HOME; else process.env.IMHUB_HOME = SAVED.IMHUB_HOME
   })
 
   it('does NOT rewrite tokens.json when last_used_at is fresh (<30s)', async () => {

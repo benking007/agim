@@ -32,7 +32,7 @@ const HELP = [
   '',
   '三层加载：',
   '  · tier 1: 名字 + 描述，每轮注入 prompt（自动）',
-  '  · tier 2: 全文 body，agent 用 mcp__imhub__read_skill(name) 取',
+  '  · tier 2: 全文 body，agent 用 mcp__agim__read_skill(name) 取',
   '  · tier 3: scripts/ references/ assets/ 子目录，agent 走文件读取工具',
 ].join('\n')
 

@@ -29,7 +29,7 @@ only when the agent actually needs the skill:
 | tier | what is loaded | when | cost |
 |---|---|---|---|
 | **1** | name + description per skill | every turn (auto-injected into system prompt) | ~30–50 tokens per skill |
-| **2** | full SKILL.md body | on-demand via `mcp__imhub__read_skill('name')` | one body per request |
+| **2** | full SKILL.md body | on-demand via `mcp__agim__read_skill('name')` | one body per request |
 | **3** | files in `scripts/`, `references/`, `assets/` | on-demand via the agent's normal file-read tool, when the body references them | per-file |
 
 Compared to bundling every skill body into the system prompt, this
@@ -59,8 +59,8 @@ Override discovery paths for tests / custom deployments:
 
 | env var | purpose |
 |---|---|
-| `IMHUB_SKILLS_WORKSPACE_DIR` | absolute path; replaces `~/.agim/skills` |
-| `IMHUB_SKILLS_BUILTIN_DIR` | absolute path; replaces bundled dir |
+| `AGIM_SKILLS_WORKSPACE_DIR` | absolute path; replaces `~/.agim/skills` |
+| `AGIM_SKILLS_BUILTIN_DIR` | absolute path; replaces bundled dir |
 
 ## SKILL.md frontmatter reference
 
@@ -111,12 +111,12 @@ Status flags:
 - ⭐ available + `always:true`
 - ⏸ unavailable (with reason)
 
-## MCP tool — `mcp__imhub__read_skill`
+## MCP tool — `mcp__agim__read_skill`
 
 The CLI sidecar exposes:
 
 ```ts
-mcp__imhub__read_skill({
+mcp__agim__read_skill({
   op?: 'read' | 'list' | 'refresh',   // default 'read'
   name?: string,                       // required for 'read'
 })
@@ -139,7 +139,7 @@ The router prepends this block (alongside persona / reminder context)
 before sending the user's prompt to the agent:
 
 ```
-[agim skills available — read full body with mcp__imhub__read_skill(name)]
+[agim skills available — read full body with mcp__agim__read_skill(name)]
 - agim-self: Reference card for agim's built-in slash commands and MCP tools.
 - repo-ops: GitHub repo housekeeping helpers (unavailable: missing bin `gh`)
 - ship-version: One-skill workflow for cutting an npm release [always]

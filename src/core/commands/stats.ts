@@ -29,7 +29,7 @@ function fmtDuration(ms: number): string {
 }
 
 function fxRate(): number {
-  const raw = process.env.IM_HUB_USD_TO_CNY
+  const raw = process.env.AGIM_USD_TO_CNY
   if (raw) {
     const n = parseFloat(raw)
     if (Number.isFinite(n) && n > 0) return n

@@ -3,8 +3,8 @@ import { mkdir, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_ROOT = join(tmpdir(), `imhub-wechat-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_MEDIA_ROOT = TEST_ROOT
+const TEST_ROOT = join(tmpdir(), `agim-wechat-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_MEDIA_ROOT = TEST_ROOT
 
 const {
   MEDIA_ROOT,

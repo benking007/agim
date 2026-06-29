@@ -12,7 +12,7 @@
  *
  * The active language is mirrored from `usePrefs` (zustand) so a
  * single `setLang('zh')` flips both the React state tree and the
- * i18next instance. The legacy localStorage key `im-hub-lang` is
+ * i18next instance. The legacy localStorage key `agim-lang` is
  * preserved so the v1 UI's persisted preference carries over.
  */
 
@@ -87,7 +87,7 @@ void i18n
 
 function detectInitialLang(): 'en' | 'zh' {
   try {
-    const v = localStorage.getItem('im-hub-lang')
+    const v = localStorage.getItem('agim-lang')
     if (v === 'en' || v === 'zh') return v
   } catch {
     /* ignore */

@@ -13,9 +13,9 @@ import { registry } from '../../src/core/registry.js'
 import { _clearForTest as clearPending, getPending } from '../../src/core/pending-reminder.js'
 import type { AgentAdapter, ChatMessage } from '../../src/core/types.js'
 
-const TEST_DIR = join(tmpdir(), `imhub-intent-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+const TEST_DIR = join(tmpdir(), `agim-intent-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
 const TEST_DB = join(TEST_DIR, 'reminders.db')
-process.env.IMHUB_REMINDERS_DB = TEST_DB
+process.env.AGIM_REMINDERS_DB = TEST_DB
 
 const intentMod = await import('../../src/core/remind-intent.js')
 const remindersMod = await import('../../src/core/reminders.js')

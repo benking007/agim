@@ -38,7 +38,7 @@
 // and the broader "shell literal in a doc trips the guard" class with it.
 //
 // LIMITATIONS:
-// 1. When IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1 (Claude only), no approval
+// 1. When AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1 (Claude only), no approval
 //    request is ever generated — Claude runs Bash directly. Layer 2
 //    cannot intercept there. The user opted into "no approval", so the
 //    trade-off is theirs to bear.
@@ -55,7 +55,7 @@
 // closes the loop fully for Claude (default-permission mode) and
 // OpenCode (bus-mode).
 
-const PROCESS_NAMES = '(agim|im-hub-pro|im-hub|dist/cli\\.js)'
+const PROCESS_NAMES = '(agim|agim|agim|dist/cli\\.js)'
 
 /** Patterns matched against Bash's `command` field. These describe *actions*
  *  the shell would actually take — they must NOT be applied to text being
@@ -75,7 +75,7 @@ const BASH_DANGER_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
     reason: 'kill $(pgrep agim)',
   },
   {
-    regex: /\b(agim|im-hub-pro)\s+(restart|stop|start|uninstall)\b/,
+    regex: /\b(agim|agim)\s+(restart|stop|start|uninstall)\b/,
     reason: 'recursive invocation of the agim CLI',
   },
   {

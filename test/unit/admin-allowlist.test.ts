@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const originalAgimHome = process.env.AGIM_HOME
-const originalLegacyEnv = process.env.IMHUB_ADMIN_USERS
+const originalLegacyEnv = process.env.AGIM_ADMIN_USERS
 
 const testHome = mkdtempSync(join(tmpdir(), 'agim-admin-allowlist-'))
 process.env.AGIM_HOME = testHome
-process.env.IMHUB_ENV_FILE_PATH = ''
+process.env.AGIM_ENV_FILE_PATH = ''
 
 type AllowlistModule = typeof import('../../src/core/admin-allowlist.js')
 let cachedModule: AllowlistModule | null = null
@@ -26,7 +26,7 @@ function storeFile(): string {
 
 describe('admin-allowlist', () => {
   beforeEach(async () => {
-    delete process.env.IMHUB_ADMIN_USERS
+    delete process.env.AGIM_ADMIN_USERS
     rmSync(storeFile(), { force: true })
     const mod = await loadAllowlist()
     mod._resetCache()
@@ -35,8 +35,8 @@ describe('admin-allowlist', () => {
   afterAll(() => {
     if (originalAgimHome === undefined) delete process.env.AGIM_HOME
     else process.env.AGIM_HOME = originalAgimHome
-    if (originalLegacyEnv === undefined) delete process.env.IMHUB_ADMIN_USERS
-    else process.env.IMHUB_ADMIN_USERS = originalLegacyEnv
+    if (originalLegacyEnv === undefined) delete process.env.AGIM_ADMIN_USERS
+    else process.env.AGIM_ADMIN_USERS = originalLegacyEnv
     rmSync(testHome, { recursive: true, force: true })
   })
 
@@ -76,8 +76,8 @@ describe('admin-allowlist', () => {
     expect(second[0]?.lastThreadId).toBe('t-2')
   })
 
-  it('imports legacy IMHUB_ADMIN_USERS into im-admins.json once', async () => {
-    process.env.IMHUB_ADMIN_USERS = 'telegram:123,broken,wechat-ilink:wxid_1'
+  it('imports legacy AGIM_ADMIN_USERS into im-admins.json once', async () => {
+    process.env.AGIM_ADMIN_USERS = 'telegram:123,broken,wechat-ilink:wxid_1'
     const mod = await loadAllowlist()
     mod._resetCache()
     expect(mod.listAdmins()).toEqual([

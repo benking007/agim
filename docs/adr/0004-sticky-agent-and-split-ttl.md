@@ -52,8 +52,8 @@ if (stickyAgent && available.includes(stickyAgent)) {
 `core/session.ts` 拆为两个常量（默认值，可被 env 覆盖）：
 
 ```typescript
-MESSAGES_TTL = 30 min   (env: IMHUB_SESSION_MESSAGES_TTL_MS)
-META_TTL     = 7 days   (env: IMHUB_SESSION_META_TTL_MS)
+MESSAGES_TTL = 30 min   (env: AGIM_SESSION_MESSAGES_TTL_MS)
+META_TTL     = 7 days   (env: AGIM_SESSION_META_TTL_MS)
 ```
 
 | TTL | 涵盖字段 | 过期效果 |
@@ -93,7 +93,7 @@ META_TTL     = 7 days   (env: IMHUB_SESSION_META_TTL_MS)
 
 ### 中性
 
-- `IMHUB_STICKY_PINNED` 这种"全局禁分类"开关本想加，但既然 sticky 已经是绝对锁，意义不大，未实现。如果以后要"第一条消息也禁止分类、永远走 defaultAgent"再加。
+- `AGIM_STICKY_PINNED` 这种"全局禁分类"开关本想加，但既然 sticky 已经是绝对锁，意义不大，未实现。如果以后要"第一条消息也禁止分类、永远走 defaultAgent"再加。
 
 ---
 

@@ -2,7 +2,7 @@
 //   (a) every dispatched tool call publishes one audit event with
 //       intent='tool.<name>' and the parent traceId.
 //   (b) dispatchers receive a `toolCtx` carrying the parent traceId so
-//       fan-out paths (imhub-dispatcher → A2A) can chain instead of
+//       fan-out paths (agim-dispatcher → A2A) can chain instead of
 //       minting a fresh root.
 //
 // Why event-bus and not SQLite: the audit DB uses better-sqlite3, which
@@ -22,7 +22,7 @@ import {
 } from '../../src/core/llm/provider-base.js'
 import { runAgentLoop } from '../../src/core/llm/agent-loop.js'
 import type { DispatcherResult, ToolDispatcherContext } from '../../src/core/llm/tool-dispatcher.js'
-import { eventBus, type ImhubEvent, type AuditEvent } from '../../src/core/event-bus.js'
+import { eventBus, type AgimEvent, type AuditEvent } from '../../src/core/event-bus.js'
 
 class QueuedStub extends LlmProvider {
   private readonly q: ChatResult[]
@@ -52,7 +52,7 @@ const done = (text = 'ok'): ChatResult => ({
 
 describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () => {
   let captured: AuditEvent[] = []
-  const onEvent = (e: ImhubEvent) => {
+  const onEvent = (e: AgimEvent) => {
     if (e.type === 'audit') captured.push(e)
   }
   beforeEach(() => {
@@ -120,7 +120,7 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
   it('dispatcher receives toolCtx with parent traceId (A2A chaining hook)', async () => {
     const traceId = `tracectx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const provider = new QueuedStub([
-      turn([tc('a', 'mcp__imhub__call_agent', { agent: 'codex', prompt: 'hi' })]),
+      turn([tc('a', 'mcp__agim__call_agent', { agent: 'codex', prompt: 'hi' })]),
       done(),
     ])
     let observedCtx: ToolDispatcherContext | undefined
@@ -133,7 +133,7 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'mcp__imhub__call_agent', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'mcp__agim__call_agent', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       audit: { agent: 'native-test', userId: 'u3', platform: 'unit-test', traceId },
     })

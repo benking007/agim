@@ -1,6 +1,6 @@
 // Unit tests for the skills loader (Stage 3 / P0 #3).
 //
-// We set IMHUB_SKILLS_WORKSPACE_DIR + IMHUB_SKILLS_BUILTIN_DIR to two
+// We set AGIM_SKILLS_WORKSPACE_DIR + AGIM_SKILLS_BUILTIN_DIR to two
 // temp dirs that we populate per-test, then call the loader's public
 // API. The loader caches scans by default; we call invalidateSkillsCache
 // after every fixture rebuild.
@@ -20,12 +20,12 @@ import { handleSkillsOp } from '../skills-rpc.js'
 const wsRoot = mkdtempSync(join(tmpdir(), 'agim-skills-ws-'))
 const builtinRoot = mkdtempSync(join(tmpdir(), 'agim-skills-builtin-'))
 
-process.env.IMHUB_SKILLS_WORKSPACE_DIR = wsRoot
-process.env.IMHUB_SKILLS_BUILTIN_DIR = builtinRoot
+process.env.AGIM_SKILLS_WORKSPACE_DIR = wsRoot
+process.env.AGIM_SKILLS_BUILTIN_DIR = builtinRoot
 // Pin discovery to the temp workspace only — the multi-root 'auto'
 // default would otherwise inherit ~/.claude/skills + opencode/codex
 // dirs on the dev box and break the per-test fixture counts.
-process.env.IMHUB_SKILLS_MODE = 'agim-only'
+process.env.AGIM_SKILLS_MODE = 'agim-only'
 
 afterAll(() => {
   try { rmSync(wsRoot, { recursive: true, force: true }) } catch {}
@@ -293,7 +293,7 @@ body
       // critical behavioural directives do.
       expect(out).toContain('[agim tool routing — skills first]')
       expect(out).toContain('MUST scan the skill list')
-      expect(out).toContain('mcp__imhub__read_skill')
+      expect(out).toContain('mcp__agim__read_skill')
       // Rule must come before the listing header so models process it
       // first when reading top-down.
       const ruleIdx = out.indexOf('[agim tool routing — skills first]')
@@ -426,7 +426,7 @@ body
 })
 
 describe('skills loader — multi-root discovery', () => {
-  it('custom mode honors IMHUB_SKILLS_ROOTS (workspace always prepended)', async () => {
+  it('custom mode honors AGIM_SKILLS_ROOTS (workspace always prepended)', async () => {
     const extraRoot = mkdtempSync(join(tmpdir(), 'agim-skills-extra-'))
     try {
       writeSkill(extraRoot, 'from-extra', `---
@@ -441,17 +441,17 @@ description: lives in the workspace
 ---
 body
 `)
-      const prevMode = process.env.IMHUB_SKILLS_MODE
-      const prevRoots = process.env.IMHUB_SKILLS_ROOTS
-      process.env.IMHUB_SKILLS_MODE = 'custom'
-      process.env.IMHUB_SKILLS_ROOTS = extraRoot
+      const prevMode = process.env.AGIM_SKILLS_MODE
+      const prevRoots = process.env.AGIM_SKILLS_ROOTS
+      process.env.AGIM_SKILLS_MODE = 'custom'
+      process.env.AGIM_SKILLS_ROOTS = extraRoot
       invalidateSkillsCache()
       try {
         const names = listSkills().map((s) => s.name).sort()
         expect(names).toEqual(['from-extra', 'from-ws'])
       } finally {
-        process.env.IMHUB_SKILLS_MODE = prevMode
-        process.env.IMHUB_SKILLS_ROOTS = prevRoots
+        process.env.AGIM_SKILLS_MODE = prevMode
+        process.env.AGIM_SKILLS_ROOTS = prevRoots
         invalidateSkillsCache()
       }
     } finally {
@@ -474,10 +474,10 @@ description: workspace wins
 ---
 body
 `)
-      const prevMode = process.env.IMHUB_SKILLS_MODE
-      const prevRoots = process.env.IMHUB_SKILLS_ROOTS
-      process.env.IMHUB_SKILLS_MODE = 'custom'
-      process.env.IMHUB_SKILLS_ROOTS = extraRoot
+      const prevMode = process.env.AGIM_SKILLS_MODE
+      const prevRoots = process.env.AGIM_SKILLS_ROOTS
+      process.env.AGIM_SKILLS_MODE = 'custom'
+      process.env.AGIM_SKILLS_ROOTS = extraRoot
       invalidateSkillsCache()
       try {
         const skills = listSkills()
@@ -485,8 +485,8 @@ body
         expect(skills[0].description).toBe('workspace wins')
         expect(skills[0].dir.startsWith(wsRoot)).toBe(true)
       } finally {
-        process.env.IMHUB_SKILLS_MODE = prevMode
-        process.env.IMHUB_SKILLS_ROOTS = prevRoots
+        process.env.AGIM_SKILLS_MODE = prevMode
+        process.env.AGIM_SKILLS_ROOTS = prevRoots
         invalidateSkillsCache()
       }
     } finally {
@@ -496,8 +496,8 @@ body
 
   it('describeSkillsConfig() reports the active mode + roots', async () => {
     const { describeSkillsConfig } = await import('./loader.js')
-    const prev = process.env.IMHUB_SKILLS_MODE
-    process.env.IMHUB_SKILLS_MODE = 'agim-only'
+    const prev = process.env.AGIM_SKILLS_MODE
+    process.env.AGIM_SKILLS_MODE = 'agim-only'
     try {
       const cfg = describeSkillsConfig()
       expect(cfg.mode).toBe('agim-only')
@@ -505,7 +505,7 @@ body
       expect(cfg.readRoots).toEqual([wsRoot])
       expect(cfg.builtinRoot).toBe(builtinRoot)
     } finally {
-      process.env.IMHUB_SKILLS_MODE = prev
+      process.env.AGIM_SKILLS_MODE = prev
     }
   })
 })
@@ -574,7 +574,7 @@ body
     expect(s!.always).toBe(false)
   })
 
-  it('IMHUB_INCLUDE_ECC_SKILLS=off filters skills with origin: ECC (v1.2.148)', () => {
+  it('AGIM_INCLUDE_ECC_SKILLS=off filters skills with origin: ECC (v1.2.148)', () => {
     writeSkill(wsRoot, 'ecc-pack-sample', `---
 name: ecc-pack-sample
 description: A bundled ECC skill that should be dropped when the env knob is off.
@@ -588,18 +588,18 @@ description: A non-ECC skill that should always load.
 ---
 body
 `)
-    process.env.IMHUB_INCLUDE_ECC_SKILLS = 'off'
+    process.env.AGIM_INCLUDE_ECC_SKILLS = 'off'
     invalidateSkillsCache()
     expect(getSkillByName('ecc-pack-sample')).toBeNull()
     expect(getSkillByName('plain-skill')).not.toBeNull()
-    delete process.env.IMHUB_INCLUDE_ECC_SKILLS
+    delete process.env.AGIM_INCLUDE_ECC_SKILLS
     invalidateSkillsCache()
     expect(getSkillByName('ecc-pack-sample')).not.toBeNull()
     expect(getSkillByName('plain-skill')).not.toBeNull()
-    process.env.IMHUB_INCLUDE_ECC_SKILLS = 'yes'
+    process.env.AGIM_INCLUDE_ECC_SKILLS = 'yes'
     invalidateSkillsCache()
     expect(getSkillByName('ecc-pack-sample')).not.toBeNull()
-    delete process.env.IMHUB_INCLUDE_ECC_SKILLS
+    delete process.env.AGIM_INCLUDE_ECC_SKILLS
   })
 
   it('rankSkillBucket and bucket-aware sort prioritize agim-* / non-ECC builtin / ECC top picks (v1.2.149)', async () => {
@@ -730,12 +730,12 @@ describe('v1.2.151: cluster refine — single sub-key full-cover recurses deeper
   })
 })
 
-describe('v1.2.151: IMHUB_SKILLS_ECC_PICKS env override', () => {
-  const saved = process.env.IMHUB_SKILLS_ECC_PICKS
+describe('v1.2.151: AGIM_SKILLS_ECC_PICKS env override', () => {
+  const saved = process.env.AGIM_SKILLS_ECC_PICKS
 
   afterAll(() => {
-    if (saved === undefined) delete process.env.IMHUB_SKILLS_ECC_PICKS
-    else process.env.IMHUB_SKILLS_ECC_PICKS = saved
+    if (saved === undefined) delete process.env.AGIM_SKILLS_ECC_PICKS
+    else process.env.AGIM_SKILLS_ECC_PICKS = saved
   })
 
   it('shifts an ECC skill from remainder (bucket 4) → top picks (bucket 2) when listed', async () => {
@@ -749,22 +749,22 @@ body
 `)
     invalidateSkillsCache()
     // Default picks list does NOT include kotlin-coroutines-flows.
-    process.env.IMHUB_SKILLS_ECC_PICKS = ''
+    process.env.AGIM_SKILLS_ECC_PICKS = ''
     const all1 = listSkills()
     const k1 = all1.find((s) => s.name === 'kotlin-coroutines-flows')!
     expect(rankSkillBucket(k1)).toBe(4)
     // Override flips it.
-    process.env.IMHUB_SKILLS_ECC_PICKS = 'kotlin-coroutines-flows,agent-eval'
+    process.env.AGIM_SKILLS_ECC_PICKS = 'kotlin-coroutines-flows,agent-eval'
     expect(rankSkillBucket(k1)).toBe(2)
   })
 })
 
-describe('v1.2.151: IMHUB_SKILLS_INJECT_ECC_REMAINDER env mode', () => {
-  const saved = process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER
+describe('v1.2.151: AGIM_SKILLS_INJECT_ECC_REMAINDER env mode', () => {
+  const saved = process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER
 
   afterAll(() => {
-    if (saved === undefined) delete process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER
-    else process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = saved
+    if (saved === undefined) delete process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER
+    else process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER = saved
   })
 
   it('off → ECC remainder block is fully suppressed', () => {
@@ -792,7 +792,7 @@ origin: ECC
 body
 `)
     invalidateSkillsCache()
-    process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = 'off'
+    process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER = 'off'
     const out = buildSkillsSummary()
     expect(out).not.toContain('ECC remainder')
     expect(out).not.toContain('rust-patterns')
@@ -814,7 +814,7 @@ origin: ECC
 body
 `)
     invalidateSkillsCache()
-    process.env.IMHUB_SKILLS_INJECT_ECC_REMAINDER = 'rust-patterns'
+    process.env.AGIM_SKILLS_INJECT_ECC_REMAINDER = 'rust-patterns'
     const out = buildSkillsSummary()
     expect(out).toContain('rust-patterns')
     expect(out).not.toContain('rust-testing')
@@ -824,12 +824,12 @@ body
 describe('v1.2.151: ~/.agim/skill-injection-override.md — operator editor', () => {
   const overrideDir = mkdtempSync(join(tmpdir(), 'agim-injection-override-'))
   const overridePath = join(overrideDir, 'skill-injection-override.md')
-  const saved = process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
-  process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
+  const saved = process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH
+  process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
 
   afterAll(() => {
-    if (saved === undefined) delete process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH
-    else process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = saved
+    if (saved === undefined) delete process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH
+    else process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH = saved
     try { rmSync(overrideDir, { recursive: true, force: true }) } catch {}
   })
 

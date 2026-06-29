@@ -36,7 +36,7 @@ export interface DispatcherResult {
 }
 
 /** v1.2.111 — per-call context the agent loop hands to the dispatcher.
- *  Lets dispatchers that fan out further (notably imhub-dispatcher's
+ *  Lets dispatchers that fan out further (notably agim-dispatcher's
  *  call_agent / A2A path) chain the parent trace id instead of minting
  *  a fresh root, so an entire turn's tool chain is traceable end-to-end
  *  via a single trace id prefix. Optional — dispatchers that don't fan

@@ -123,10 +123,10 @@ button:disabled{opacity:0.6;cursor:default}
     document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
     document.getElementById('lang-en').classList.toggle('active', lang === 'en');
     document.getElementById('lang-zh').classList.toggle('active', lang === 'zh');
-    localStorage.setItem('im-hub-lang', lang);
+    localStorage.setItem('agim-lang', lang);
     window.__lang = lang;
   }
-  var initial = localStorage.getItem('im-hub-lang') || (navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+  var initial = localStorage.getItem('agim-lang') || (navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
   applyLang(initial);
   document.getElementById('lang-en').addEventListener('click', function(){ applyLang('en'); });
   document.getElementById('lang-zh').addEventListener('click', function(){ applyLang('zh'); });

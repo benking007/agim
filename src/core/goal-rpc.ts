@@ -1,7 +1,7 @@
 // goal-rpc — thin RPC wrapper around goals.ts for MCP tool exposure
-// (v1.2.63). Used by both the imhub-dispatcher (native) and the
+// (v1.2.63). Used by both the agim-dispatcher (native) and the
 // claude-code MCP sidecar so every agent can self-register a sustained
-// objective via `mcp__imhub__long_task` / `mcp__imhub__complete_goal`.
+// objective via `mcp__agim__long_task` / `mcp__agim__complete_goal`.
 //
 // Two operations:
 //   - 'long_task'    { goal, summary? }  → setActiveGoal({title:goal, body:summary})

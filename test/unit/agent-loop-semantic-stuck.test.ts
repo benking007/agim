@@ -4,7 +4,7 @@
 //     string in their argsKey
 //   - It does NOT fire when names are identical (isStuckLoop's job)
 //   - It does NOT fire when salient strings are too short (≤7 chars)
-//   - Env IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off disables in the loop
+//   - Env AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off disables in the loop
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
@@ -95,7 +95,7 @@ describe('isSemanticStuckLoop (v1.2.122)', () => {
   })
 })
 
-// Integration: the loop honours IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off.
+// Integration: the loop honours AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off.
 class ScriptedProvider extends LlmProvider {
   private readonly script: ChatResult[]
   public chatCalls = 0
@@ -116,11 +116,11 @@ class ScriptedProvider extends LlmProvider {
 }
 
 describe('runAgentLoop — semantic stuck-loop integration (v1.2.122)', () => {
-  const saved = process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP })
+  const saved = process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP
+  beforeEach(() => { delete process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP })
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP
-    else process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP = saved
+    if (saved === undefined) delete process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP
+    else process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP = saved
   })
 
   it('fires + early-terminates with finishReason=stuck_loop', async () => {
@@ -161,8 +161,8 @@ describe('runAgentLoop — semantic stuck-loop integration (v1.2.122)', () => {
     expect(r.toolCalls.length).toBe(3)
   })
 
-  it('IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off disables the check', async () => {
-    process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP = 'off'
+  it('AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off disables the check', async () => {
+    process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP = 'off'
     const provider = new ScriptedProvider([
       {
         text: '',

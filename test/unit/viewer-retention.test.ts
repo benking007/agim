@@ -31,13 +31,13 @@ afterAll(() => {
 
 dbDescribe('pruneExpiredPastes', () => {
   beforeEach(() => {
-    delete process.env.IMHUB_PASTE_RETENTION_DAYS
+    delete process.env.AGIM_PASTE_RETENTION_DAYS
     const raw = openRaw()
     try { raw.prepare('DELETE FROM pastes').run() } finally { raw.close() }
   })
 
   it('does nothing when retention is 0 (permanent)', () => {
-    process.env.IMHUB_PASTE_RETENTION_DAYS = '0'
+    process.env.AGIM_PASTE_RETENTION_DAYS = '0'
     const id = viewer.savePaste({ content: 'ancient paste' })
     expect(id).not.toBeNull()
     const raw = openRaw()
@@ -50,7 +50,7 @@ dbDescribe('pruneExpiredPastes', () => {
   })
 
   it('deletes pastes older than the window', () => {
-    process.env.IMHUB_PASTE_RETENTION_DAYS = '7'
+    process.env.AGIM_PASTE_RETENTION_DAYS = '7'
     const recent = viewer.savePaste({ content: 'recent' })
     const stale = viewer.savePaste({ content: 'stale' })
     expect(recent).not.toBeNull()
@@ -69,7 +69,7 @@ dbDescribe('pruneExpiredPastes', () => {
   })
 
   it('keeps fresh pastes', () => {
-    process.env.IMHUB_PASTE_RETENTION_DAYS = '30'
+    process.env.AGIM_PASTE_RETENTION_DAYS = '30'
     const id = viewer.savePaste({ content: 'fresh paste' })
     expect(id).not.toBeNull()
     expect(viewer.pruneExpiredPastes()).toBe(0)
@@ -77,7 +77,7 @@ dbDescribe('pruneExpiredPastes', () => {
   })
 
   it('invalid env value falls back to default 30d (does not crash)', () => {
-    process.env.IMHUB_PASTE_RETENTION_DAYS = 'garbage'
+    process.env.AGIM_PASTE_RETENTION_DAYS = 'garbage'
     expect(() => viewer.pruneExpiredPastes()).not.toThrow()
   })
 })

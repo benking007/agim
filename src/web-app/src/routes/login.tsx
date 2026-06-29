@@ -136,7 +136,7 @@ export default function LoginRoute(): JSX.Element {
         <CardFooter className="block text-xs text-text-muted">
           {t('login.hint', {
             defaultValue:
-              'Loopback (127.0.0.1) requests bypass this check; you only see this page when accessing agim from another host or with IMHUB_TRUST_LOOPBACK=off.',
+              'Loopback (127.0.0.1) requests bypass this check; you only see this page when accessing agim from another host or with AGIM_TRUST_LOOPBACK=off.',
           })}
         </CardFooter>
       </Card>

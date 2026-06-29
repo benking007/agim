@@ -1,6 +1,6 @@
 ---
 name: agim-memory
-description: Persist and query the user's long-term facts via agim's `mcp__imhub__memory_*` tools and the 5W1H `*_memo` tools. Use proactively when the user reveals preferences ("我不喝咖啡"), holdings ("我持有 600519"), recurring places ("我家在朝阳"), or facts that should survive past this turn. Also use when answering questions that need facts they've told you before.
+description: Persist and query the user's long-term facts via agim's `mcp__agim__memory_*` tools and the 5W1H `*_memo` tools. Use proactively when the user reveals preferences ("我不喝咖啡"), holdings ("我持有 600519"), recurring places ("我家在朝阳"), or facts that should survive past this turn. Also use when answering questions that need facts they've told you before.
 always: false
 ---
 

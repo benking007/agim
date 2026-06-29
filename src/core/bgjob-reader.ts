@@ -12,7 +12,7 @@
 // the source of truth for writes; we are strictly the read side.
 //
 // Multiple roots are supported (claude / opencode are isolated by design).
-// Configurable via env IMHUB_BGJOB_ROOTS — comma-separated absolute paths.
+// Configurable via env AGIM_BGJOB_ROOTS — comma-separated absolute paths.
 
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -60,12 +60,12 @@ const DEFAULT_ROOTS: BgjobRoot[] = [
 ]
 
 /**
- * Resolve the configured roots. Reads env IMHUB_BGJOB_ROOTS — comma-separated
+ * Resolve the configured roots. Reads env AGIM_BGJOB_ROOTS — comma-separated
  * absolute paths, optionally with id prefix `id=path`. Falls back to the two
  * defaults so a fresh install just works.
  */
 export function resolveRoots(): BgjobRoot[] {
-  const raw = process.env.IMHUB_BGJOB_ROOTS
+  const raw = process.env.AGIM_BGJOB_ROOTS
   if (!raw?.trim()) return DEFAULT_ROOTS
   const out: BgjobRoot[] = []
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
@@ -79,7 +79,7 @@ export function resolveRoots(): BgjobRoot[] {
       id = basename(path) || path
     }
     if (!isAbsolute(path)) {
-      log.warn({ part }, 'IMHUB_BGJOB_ROOTS entry must be absolute, ignoring')
+      log.warn({ part }, 'AGIM_BGJOB_ROOTS entry must be absolute, ignoring')
       continue
     }
     out.push({ id, path: resolve(path), label: id })

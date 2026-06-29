@@ -1,7 +1,7 @@
 """agim_rpc — tiny Python client for the agim local RPC bridge.
 
 Spawned by `native_exec` via the bgjob wrapper, this module gives a
-detached Python worker a typed entry point into the same imhub MCP
+detached Python worker a typed entry point into the same agim MCP
 tools the in-process native agent uses (memo / skill / push). One
 worker can do dozens of tool calls without any LLM round-trip.
 
@@ -17,8 +17,8 @@ Usage from a bgjob-launched Python script::
 Design notes:
   * Zero external deps — stdlib only (urllib + json + socket).
   * Communicates with the agim parent process over a Unix-domain socket.
-    Path comes from env IMHUB_RPC_SOCKET (agim sets this when spawning
-    the child); token from IMHUB_RPC_TOKEN.
+    Path comes from env AGIM_RPC_SOCKET (agim sets this when spawning
+    the child); token from AGIM_RPC_TOKEN.
   * Each RPC call is a single HTTP POST. Failures raise RpcError with
     the error string so the worker can decide whether to abort.
   * Whitelist matches the server: search_memos / save_memo / read_skill /
@@ -105,19 +105,19 @@ class AgimRpcClient:
     # ─── typed methods (the v1.2.97 whitelist) ──────────────────────
 
     def search_memos(self, query: str = "", **kwargs: Any) -> Any:
-        return self.call("mcp__imhub__search_memos", {"query": query, **kwargs})
+        return self.call("mcp__agim__search_memos", {"query": query, **kwargs})
 
     def save_memo(self, what: str, **kwargs: Any) -> Any:
-        return self.call("mcp__imhub__save_memo", {"what": what, **kwargs})
+        return self.call("mcp__agim__save_memo", {"what": what, **kwargs})
 
     def read_skill(self, name: str) -> Any:
-        return self.call("mcp__imhub__read_skill", {"name": name})
+        return self.call("mcp__agim__read_skill", {"name": name})
 
     def list_skills(self) -> Any:
-        return self.call("mcp__imhub__list_skills", {})
+        return self.call("mcp__agim__list_skills", {})
 
     def push_message(self, text: str, **kwargs: Any) -> Any:
-        return self.call("mcp__imhub__push_message", {"text": text, **kwargs})
+        return self.call("mcp__agim__push_message", {"text": text, **kwargs})
 
 
 def client(timeout: float = 30.0) -> AgimRpcClient:
@@ -125,16 +125,16 @@ def client(timeout: float = 30.0) -> AgimRpcClient:
     sets before spawning the bgjob worker. Raises RuntimeError if the
     parent process didn't pass them in — that means we're not running
     inside an agim-managed bgjob."""
-    socket_path = os.environ.get("IMHUB_RPC_SOCKET")
-    token = os.environ.get("IMHUB_RPC_TOKEN")
+    socket_path = os.environ.get("AGIM_RPC_SOCKET")
+    token = os.environ.get("AGIM_RPC_TOKEN")
     if not socket_path:
         raise RuntimeError(
-            "IMHUB_RPC_SOCKET not set — agim_rpc only works inside a "
+            "AGIM_RPC_SOCKET not set — agim_rpc only works inside a "
             "bgjob spawned by agim's native_exec. Re-run via the bgjob "
             "wrapper, e.g. /root/.claude/scripts/bgjob start ..."
         )
     if not token:
-        raise RuntimeError("IMHUB_RPC_TOKEN not set — agim parent did not mint a token")
+        raise RuntimeError("AGIM_RPC_TOKEN not set — agim parent did not mint a token")
     if not os.path.exists(socket_path):
         raise RuntimeError(f"RPC socket {socket_path} missing — agim parent may not be running")
     return AgimRpcClient(socket_path, token, timeout=timeout)

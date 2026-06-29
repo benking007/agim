@@ -1,6 +1,6 @@
 # viewer-paste — reference paste server for agim viewer remote mode
 
-Companion service for `IMHUB_VIEWER_REMOTE_PASTE_URL`. agim clients
+Companion service for `AGIM_VIEWER_REMOTE_PASTE_URL`. agim clients
 POST markdown here; this service
 returns a public URL the IM message can link to.
 
@@ -148,7 +148,7 @@ Front with caddy / nginx / cloudflared for HTTPS.
 - [ ] Outbound HTTP works from the agim user's side (China-friendly)
 - [ ] PUBLIC_BASE_URL matches the URL behind your TLS reverse proxy
 - [ ] PASTE_TOKEN set (and the same value goes into agim's
-      `IMHUB_VIEWER_REMOTE_PASTE_TOKEN`)
+      `AGIM_VIEWER_REMOTE_PASTE_TOKEN`)
 - [ ] Disk + bandwidth quota on the host (markdown bodies can add up)
 - [ ] Backup or accept that pastes are ephemeral (30-day default TTL)
 

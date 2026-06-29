@@ -11,7 +11,7 @@
 //                                       for the model to confirm it heard
 //                                       a piece of input, and for tests.
 //   * native_now()                    → ISO timestamp + Asia/Shanghai
-//                                       offset. Honors IMHUB_TZ_OFFSET_HOURS.
+//                                       offset. Honors AGIM_TZ_OFFSET_HOURS.
 //   * native_sleep_ms(ms, ≤ 5000)     → pause for the requested ms; lets
 //                                       the model deliberately yield in
 //                                       tests / rate-limit shimming. Hard
@@ -53,7 +53,7 @@ export function getBuiltinTools(): ToolDef[] {
     },
     {
       name: 'native_now',
-      description: 'Return the current local time as ISO 8601 plus the agim-configured timezone offset (default Asia/Shanghai, override via IMHUB_TZ_OFFSET_HOURS).',
+      description: 'Return the current local time as ISO 8601 plus the agim-configured timezone offset (default Asia/Shanghai, override via AGIM_TZ_OFFSET_HOURS).',
       parameters: {
         type: 'object',
         properties: {},
@@ -199,7 +199,7 @@ function runRandomUuid(): DispatcherResult {
 // ─── helpers ─────────────────────────────────────────────────────────
 
 function resolveTzOffsetHours(): number {
-  const raw = process.env.IMHUB_TZ_OFFSET_HOURS
+  const raw = process.env.AGIM_TZ_OFFSET_HOURS
   if (raw) {
     const n = Number(raw)
     if (Number.isFinite(n) && n >= -14 && n <= 14) return n

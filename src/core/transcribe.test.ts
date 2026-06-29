@@ -7,18 +7,18 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_ROOT = join(tmpdir(), `imhub-transcribe-test-${process.pid}`)
+const TEST_ROOT = join(tmpdir(), `agim-transcribe-test-${process.pid}`)
 
 const { transcribe, detectProvider, TranscribeError } = await import('./transcribe.js')
 
 const ENV_KEYS = [
-  'IMHUB_TRANSCRIBE_PROVIDER',
+  'AGIM_TRANSCRIBE_PROVIDER',
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
-  'IMHUB_OPENAI_TRANSCRIBE_MODEL',
-  'IMHUB_WHISPERCPP_BIN',
-  'IMHUB_WHISPERCPP_MODEL',
-  'IMHUB_WHISPERCPP_ARGS',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_WHISPERCPP_BIN',
+  'AGIM_WHISPERCPP_MODEL',
+  'AGIM_WHISPERCPP_ARGS',
 ]
 
 function clearEnv(): void {
@@ -44,12 +44,12 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('none')
   })
 
-  it('honors explicit IMHUB_TRANSCRIBE_PROVIDER', () => {
-    process.env.IMHUB_TRANSCRIBE_PROVIDER = 'openai'
+  it('honors explicit AGIM_TRANSCRIBE_PROVIDER', () => {
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'openai'
     expect(detectProvider()).toBe('openai')
-    process.env.IMHUB_TRANSCRIBE_PROVIDER = 'whispercpp'
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
-    process.env.IMHUB_TRANSCRIBE_PROVIDER = 'none'
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'none'
     expect(detectProvider()).toBe('none')
   })
 
@@ -59,18 +59,18 @@ describe('transcribe — detectProvider', () => {
   })
 
   it('falls back to whispercpp when only the bin is set', () => {
-    process.env.IMHUB_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
     expect(detectProvider()).toBe('whispercpp')
   })
 
   it('explicit override wins over auto-detection', () => {
     process.env.OPENAI_API_KEY = 'sk-test'
-    process.env.IMHUB_TRANSCRIBE_PROVIDER = 'whispercpp'
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
   })
 
   it('ignores unknown explicit value and falls through to auto-detect', () => {
-    process.env.IMHUB_TRANSCRIBE_PROVIDER = 'garbage'
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'garbage'
     process.env.OPENAI_API_KEY = 'sk-test'
     expect(detectProvider()).toBe('openai')
   })

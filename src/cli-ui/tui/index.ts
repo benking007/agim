@@ -110,7 +110,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     }
   }
 
-  const wantVerbose = process.env.IMHUB_TUI_VERBOSE === '1'
+  const wantVerbose = process.env.AGIM_TUI_VERBOSE === '1'
   const savedLevel = rootLogger.level
   if (!wantVerbose) rootLogger.level = 'silent'
 
@@ -148,7 +148,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     // module-level singleton state. See cli.ts:96-321 for the same
     // sequence in the daemon path.
 
-    // v1.2.85 parity — load ~/.agim/env so API keys / IMHUB_* tunables
+    // v1.2.85 parity — load ~/.agim/env so API keys / AGIM_* tunables
     // edited there reach this process. systemd handles it via the
     // unit's EnvironmentFile=; standalone `agim tui` does not.
     try {
@@ -208,10 +208,10 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   // platform=tui via message-sink.resolveMessenger().
   registry.registerMessenger(approvalBridge)
   let approvalStarted = false
-  if (process.env.IMHUB_APPROVAL_DISABLED !== '1') {
+  if (process.env.AGIM_APPROVAL_DISABLED !== '1') {
     try {
       const sockPath = approvalBus.getSocketPath() ?? await approvalBus.start()
-      process.env.IMHUB_APPROVAL_SOCK = sockPath
+      process.env.AGIM_APPROVAL_SOCK = sockPath
       approvalStarted = true
       installApprovalRouter({
         resolveMessenger: (platform: string) => platform === 'tui' ? approvalBridge : undefined,
@@ -227,10 +227,10 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
   }
   // Mouse-wheel scrolling — route Ink's stdin through a proxy that strips
   // xterm mouse reports (so they never corrupt the input box) and surfaces
-  // wheel notches to the TUI. Opt out with IMHUB_TUI_NO_MOUSE=1. The restore
+  // wheel notches to the TUI. Opt out with AGIM_TUI_NO_MOUSE=1. The restore
   // wiring (exit/signal handlers, finally) was set up right after entering
   // the alt-screen above.
-  if (process.env.IMHUB_TUI_NO_MOUSE !== '1' && process.stdin.isTTY) {
+  if (process.env.AGIM_TUI_NO_MOUSE !== '1' && process.stdin.isTTY) {
     try {
       mouse = createMouseStdin(process.stdin)
       mouse.enable(process.stdout)

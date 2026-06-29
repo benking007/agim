@@ -4,11 +4,11 @@
 //
 // v2 model:
 //   - No IM admin bootstrap token
-//   - No IMHUB_ADMIN_USERS runtime dependency
+//   - No AGIM_ADMIN_USERS runtime dependency
 //   - Web admin token operators manage IM admins in Settings → Admins
 //
 // Back-compat:
-//   - If legacy IMHUB_ADMIN_USERS is present, we import it once into the
+//   - If legacy AGIM_ADMIN_USERS is present, we import it once into the
 //     file store on first load, then continue using the file as source of truth.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
@@ -19,7 +19,7 @@ import { logger as rootLogger } from './logger.js'
 const log = rootLogger.child({ component: 'admin-allowlist' })
 
 function storeFilePath(): string {
-  return join(process.env.AGIM_HOME || process.env.IMHUB_HOME || AGIM_HOME, 'im-admins.json')
+  return join(process.env.AGIM_HOME || process.env.AGIM_HOME || AGIM_HOME, 'im-admins.json')
 }
 
 interface Entry {
@@ -134,7 +134,7 @@ function writeStoreToDisk(store: Store): void {
 function ensureStoreLoaded(): Store {
   if (cachedStore) return cachedStore
   const loaded = readStoreFromDisk()
-  const legacy = parseLegacyAdminEnv(process.env.IMHUB_ADMIN_USERS ?? '')
+  const legacy = parseLegacyAdminEnv(process.env.AGIM_ADMIN_USERS ?? '')
   if (legacy.length > 0) {
     const before = loaded.admins.length
     loaded.admins = dedupeEntries([...loaded.admins, ...legacy])
@@ -144,7 +144,7 @@ function ensureStoreLoaded(): Store {
         event: 'admin.allowlist.legacy_env_migrated',
         fromEnvCount: legacy.length,
         mergedCount: loaded.admins.length,
-      }, 'migrated IMHUB_ADMIN_USERS into im-admins.json; env value is now legacy-only')
+      }, 'migrated AGIM_ADMIN_USERS into im-admins.json; env value is now legacy-only')
     }
   }
   cachedStore = loaded

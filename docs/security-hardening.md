@@ -15,8 +15,8 @@ agim **默认状态**就是合规友好的：
 | 维度 | 默认 |
 |---|---|
 | Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 |
-| Discord / Telegram | **隐藏**（需 `IMHUB_ENABLE_GLOBAL_IM=1` 启用）|
-| 远程 ACP Agent | **隐藏**（需 `IMHUB_ENABLE_REMOTE_AGENT=1` 启用）|
+| Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）|
+| 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）|
 | 长期记忆 / 备忘 | 默认关 |
 | 出网 | 唯一必需：与 IM 厂商通信；其他全部可关 |
 | 用户消息进日志 | 默认只有 `len` / `prefix(6)` / `sha256(12)`，无原文 |
@@ -31,23 +31,23 @@ agim **默认状态**就是合规友好的：
 
 | 变量 | 默认 | 用途 | 引入 |
 |---|---|---|---|
-| `IMHUB_ENABLE_GLOBAL_IM` | 未设 = 关 | `=1` 开启 Discord + Telegram 的 CLI 配置入口、Web 设置卡片、运行时适配器加载 | R12 |
-| `IMHUB_ENABLE_REMOTE_AGENT` | 未设 = 关 | `=1` 开启 ACP（远程 Agent over HTTP）的 CLI 入口、Web 卡片、端口配置、运行时加载、`.well-known/acp` 自动发现 | R12 |
-| `IMHUB_LOG_USER_TEXT` | 未设 = 关 | `=1` 让 pino 日志带原文 user message（默认只记 `len`/`prefix(6)`/`sha256(12)`）。**严格匹配**，`true`/`yes`/`on`/`0` 都视为关 | R12 ① |
-| `IMHUB_MEMORY_FACT_RETENTION_DAYS` | `90` | 长期事实 TTL（按 `last_referenced_at` 而非创建时间，LRU 友好）。`0` 永久 | R12 ② |
-| `IMHUB_PERSONA_RETENTION_DAYS` | `180` | 用户画像 TTL（按 `updated_at`）。`0` 永久 | R12 ② |
-| `IMHUB_PASTE_RETENTION_DAYS` | `30` | viewer paste TTL（按 `created_at`）。`0` 永久 | R12 ② |
-| `IMHUB_AUDIT_EVENTS_RETENTION_DAYS` | `180` | 审计事件表保留天数（满足等保 2.0 三级 ≥ 6 个月） | R12 ⑤ |
-| `IMHUB_SKILLHUB_ENABLED` | `1` = 开 | `=0` 关闭技能热榜对外 fetch（气隙部署） | R12 ⑥ |
-| `IMHUB_ACP_BIND` | `127.0.0.1` | ACP 服务监听地址；改成非回环值会触发 warn + 持久审计记录 | R13 G4 |
-| `IMHUB_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
-| `IMHUB_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
-| `IMHUB_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
-| (已有) `IMHUB_TIMEOUT_DEFAULT` | `deny` | 审批超时策略；设 `allow` 时启动 + 每小时 reminder | R13 G5 C1 |
-| `IMHUB_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `IMHUB_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
-| `IMHUB_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
+| `AGIM_ENABLE_GLOBAL_IM` | 未设 = 关 | `=1` 开启 Discord + Telegram 的 CLI 配置入口、Web 设置卡片、运行时适配器加载 | R12 |
+| `AGIM_ENABLE_REMOTE_AGENT` | 未设 = 关 | `=1` 开启 ACP（远程 Agent over HTTP）的 CLI 入口、Web 卡片、端口配置、运行时加载、`.well-known/acp` 自动发现 | R12 |
+| `AGIM_LOG_USER_TEXT` | 未设 = 关 | `=1` 让 pino 日志带原文 user message（默认只记 `len`/`prefix(6)`/`sha256(12)`）。**严格匹配**，`true`/`yes`/`on`/`0` 都视为关 | R12 ① |
+| `AGIM_MEMORY_FACT_RETENTION_DAYS` | `90` | 长期事实 TTL（按 `last_referenced_at` 而非创建时间，LRU 友好）。`0` 永久 | R12 ② |
+| `AGIM_PERSONA_RETENTION_DAYS` | `180` | 用户画像 TTL（按 `updated_at`）。`0` 永久 | R12 ② |
+| `AGIM_PASTE_RETENTION_DAYS` | `30` | viewer paste TTL（按 `created_at`）。`0` 永久 | R12 ② |
+| `AGIM_AUDIT_EVENTS_RETENTION_DAYS` | `180` | 审计事件表保留天数（满足等保 2.0 三级 ≥ 6 个月） | R12 ⑤ |
+| `AGIM_SKILLHUB_ENABLED` | `1` = 开 | `=0` 关闭技能热榜对外 fetch（气隙部署） | R12 ⑥ |
+| `AGIM_ACP_BIND` | `127.0.0.1` | ACP 服务监听地址；改成非回环值会触发 warn + 持久审计记录 | R13 G4 |
+| `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
+| `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
+| `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
+| (已有) `AGIM_TIMEOUT_DEFAULT` | `deny` | 审批超时策略；设 `allow` 时启动 + 每小时 reminder | R13 G5 C1 |
+| `AGIM_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
+| `AGIM_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
 
-> **重要**：`IMHUB_ENABLE_GLOBAL_IM` 和 `IMHUB_ENABLE_REMOTE_AGENT` 的设计目的是合规分发 —— 它们**不会出现**在任何 README / 安装指南 / 配置向导提示里。要么通过 SSH 编辑 `~/.agim/env`，要么 systemd `Environment=`，要么进程启动前 export。运维之外的人**不可能**通过 Web UI 反向启用。
+> **重要**：`AGIM_ENABLE_GLOBAL_IM` 和 `AGIM_ENABLE_REMOTE_AGENT` 的设计目的是合规分发 —— 它们**不会出现**在任何 README / 安装指南 / 配置向导提示里。要么通过 SSH 编辑 `~/.agim/env`，要么 systemd `Environment=`，要么进程启动前 export。运维之外的人**不可能**通过 Web UI 反向启用。
 
 ---
 
@@ -57,15 +57,15 @@ agim **默认状态**就是合规友好的：
 
 | 表 | 数据库 | 含敏感原文 | 保留期 (env 可调) |
 |---|---|---|---|
-| `invocations` | `audit.db` | ❌ 仅元数据 | `IM_HUB_AUDIT_RETENTION_DAYS=30` |
-| `audit_events` | `audit.db` | ❌ 仅字段名 / 长度 / 哈希前缀 | `IMHUB_AUDIT_EVENTS_RETENTION_DAYS=180` |
-| `jobs` | `jobs.db` | ✅ prompt + result | `IM_HUB_JOB_RETENTION_DAYS=30` |
-| `outbox` | `outbox.db` | ✅ IM 消息体 | `IMHUB_OUTBOX_RETENTION_HOURS=24` |
+| `invocations` | `audit.db` | ❌ 仅元数据 | `AGIM_AUDIT_RETENTION_DAYS=30` |
+| `audit_events` | `audit.db` | ❌ 仅字段名 / 长度 / 哈希前缀 | `AGIM_AUDIT_EVENTS_RETENTION_DAYS=180` |
+| `jobs` | `jobs.db` | ✅ prompt + result | `AGIM_JOB_RETENTION_DAYS=30` |
+| `outbox` | `outbox.db` | ✅ IM 消息体 | `AGIM_OUTBOX_RETENTION_HOURS=24` |
 | `schedules` | `schedules.db` | ✅ prompt | 永久（单条手删） |
-| `persona_profile` | `memory.db` | ✅ summary | `IMHUB_PERSONA_RETENTION_DAYS=180` |
-| `facts` | `memory.db` | ✅ 5W1H + embedding | `IMHUB_MEMORY_FACT_RETENTION_DAYS=90` |
+| `persona_profile` | `memory.db` | ✅ summary | `AGIM_PERSONA_RETENTION_DAYS=180` |
+| `facts` | `memory.db` | ✅ 5W1H + embedding | `AGIM_MEMORY_FACT_RETENTION_DAYS=90` |
 | `memos` | `memos.db` | ✅ 5W1H + 地理坐标 | 单条 `expires_at` |
-| `pastes` | `viewer.db` | ✅ 完整 markdown | `IMHUB_PASTE_RETENTION_DAYS=30` + 容量上限 LRU |
+| `pastes` | `viewer.db` | ✅ 完整 markdown | `AGIM_PASTE_RETENTION_DAYS=30` + 容量上限 LRU |
 | `admin_allowlist` | `admin-allowlist.db` | ❌ | 永久（手 删） |
 
 ### 2.2 文件权限
@@ -78,7 +78,7 @@ agim **默认状态**就是合规友好的：
 | `~/.agim/admin-bootstrap-token` | 0o600 | `core/admin-bootstrap.ts:ensureBootstrapTokenIfNeeded` |
 | `~/.agim/acp-token` | 0o600 | `core/acp-server.ts:getOrCreateAcpToken` |
 | `~/.agim/approval-bus.sock` | 0o600 | `core/approval-bus.ts:start` 后 chmod |
-| `~/.agim/im-hub.pid` | 0o600 | `cli.ts:agim start` 写入（R15） |
+| `~/.agim/agim.pid` | 0o600 | `cli.ts:agim start` 写入（R15） |
 | `~/.agim/sessions/<key>.log` | 0o600 | `core/session.ts:appendFile` |
 | `~/.agim/artifacts/<jobId>/*` | 0o600 文件 / 0o700 目录 | `core/artifacts.ts:ensureArtifactsDir` |
 
@@ -121,7 +121,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 ### 3.2 Loopback / auth-off 绕过
 
 `isRequestAdmin(req)` 信任顺序：
-1. `IMHUB_WEB_AUTH=off` → admin（操作员显式关闭鉴权）
+1. `AGIM_WEB_AUTH=off` → admin（操作员显式关闭鉴权）
 2. Loopback peer（127.0.0.1 / ::1）→ admin（操作员在本机）；**带 `X-Forwarded-*` / `Forwarded` / `X-Real-IP` / `CF-Connecting-IP` 的请求不再视为可信 loopback**（反代场景防伪造，`isTrustedLoopbackPeer`）
 3. Bearer token `role === 'admin'` → admin
 4. 否则 → 403
@@ -131,13 +131,13 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 - `verifyClient` 走 token 鉴权 + Origin 同源校验（防 CSWSH）
 - ClientID 用 `randomBytes(12).toString('base64url')`（96 比特熵）
 - `threadOwners` map 防跨令牌劫持
-- 每令牌上限 100 连接（`IMHUB_MAX_WS_CLIENTS`）
-- **R13 G5 A4 新增按 IP 限流**：`IMHUB_WS_MAX_PER_IP=20` 并发 + `IMHUB_WS_MAX_NEW_PER_IP_PER_MIN=30` 滚动窗口；rate-limit 在鉴权**之前**跑，防止 sha256 暴力 CPU 占用
+- 每令牌上限 100 连接（`AGIM_MAX_WS_CLIENTS`）
+- **R13 G5 A4 新增按 IP 限流**：`AGIM_WS_MAX_PER_IP=20` 并发 + `AGIM_WS_MAX_NEW_PER_IP_PER_MIN=30` 滚动窗口；rate-limit 在鉴权**之前**跑，防止 sha256 暴力 CPU 占用
 
 ### 3.4 ACP 入站端口（R13 G4）
 
 - **默认** `127.0.0.1`（之前是 0.0.0.0 —— 我审计时 Explore agent 报告错了，实际一直是回环）
-- 通过 `IMHUB_ACP_BIND=<addr>` 可改非回环
+- 通过 `AGIM_ACP_BIND=<addr>` 可改非回环
 - 改非回环时启动 warn + 持久审计行 `target=acp-server.bind`
 - 客户端鉴权：`acp-token` Bearer（`~/.agim/acp-token`，0o600）
 
@@ -154,25 +154,25 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 | # | 目标 | 触发条件 | 关闭方式 | 备注 |
 |---|---|---|---|---|
 | 1 | `ilinkai.weixin.qq.com` | 微信适配器启用 | 不配 wechat | TLS |
-| 2 | `api.telegram.org` | Telegram 启用 + R12 IM gate 开 | `IMHUB_ENABLE_GLOBAL_IM` 不设 | TLS |
+| 2 | `api.telegram.org` | Telegram 启用 + R12 IM gate 开 | `AGIM_ENABLE_GLOBAL_IM` 不设 | TLS |
 | 3 | `api.dingtalk.com` | 钉钉启用 | 不配 | TLS |
 | 4 | `open.feishu.cn` | 飞书启用 | 不配 | TLS |
-| 5 | `discord.com` | Discord + R12 IM gate 开 | `IMHUB_ENABLE_GLOBAL_IM` 不设 | TLS |
-| 6 | SMTP 服务器 | `IMHUB_SMTP_*` + `/remind email` | 不设 `IMHUB_SMTP_HOST` | TLS / STARTTLS |
-| 7 | `api.map.baidu.com` | `IMHUB_BAIDU_MAP_AK` + `/memo` 地址 | 不设 AK | TLS |
-| 8 | `*.trycloudflare.com` | `IMHUB_VIEWER_TUNNEL_MODE=quick` | 默认关 | TLS |
+| 5 | `discord.com` | Discord + R12 IM gate 开 | `AGIM_ENABLE_GLOBAL_IM` 不设 | TLS |
+| 6 | SMTP 服务器 | `AGIM_SMTP_*` + `/remind email` | 不设 `AGIM_SMTP_HOST` | TLS / STARTTLS |
+| 7 | `api.map.baidu.com` | `AGIM_BAIDU_MAP_AK` + `/memo` 地址 | 不设 AK | TLS |
+| 8 | `*.trycloudflare.com` | `AGIM_VIEWER_TUNNEL_MODE=quick` | 默认关 | TLS |
 | 9 | OpenAI 兼容服务 | `OPENAI_API_KEY` + 语音/向量功能 | 不设；或 base_url 指向内网 Ollama / LM Studio | TLS |
-| 10 | ACP 远程 Agent | `acpAgents[]` + R12 ACP gate 开 | `IMHUB_ENABLE_REMOTE_AGENT` 不设 | **R13 SSRF**：私网/回环拒绝 + `redirect: 'manual'` |
+| 10 | ACP 远程 Agent | `acpAgents[]` + R12 ACP gate 开 | `AGIM_ENABLE_REMOTE_AGENT` 不设 | **R13 SSRF**：私网/回环拒绝 + `redirect: 'manual'` |
 | 11 | 定时任务 Webhook | 用户传 `notify_url` | 不传 | **R13 SSRF**：私网拒绝（词法）+ **v1.2.145：fetch 前 DNS 解析守卫**（`assertWebhookHostPublic`，堵主机名解析进内网 / DNS-rebinding）；`redirect: 'manual'` |
-| 12 | `api.skillhub.cn` | Web 打开 `/skills` 页 | `IMHUB_SKILLHUB_ENABLED=0` | R12 ⑥ |
+| 12 | `api.skillhub.cn` | Web 打开 `/skills` 页 | `AGIM_SKILLHUB_ENABLED=0` | R12 ⑥ |
 
 ### 4.2 完全切断公网
 
 ```bash
 # 关闭所有可选出口
-unset OPENAI_API_KEY IMHUB_BAIDU_MAP_AK IMHUB_SMTP_HOST
-export IMHUB_VIEWER_TUNNEL_MODE=off
-export IMHUB_SKILLHUB_ENABLED=0
+unset OPENAI_API_KEY AGIM_BAIDU_MAP_AK AGIM_SMTP_HOST
+export AGIM_VIEWER_TUNNEL_MODE=off
+export AGIM_SKILLHUB_ENABLED=0
 
 # IM 必选：选自建飞书私有云 / 钉钉私有云 / 内网 IM
 # 完全气隙：不配任何 IM 适配器，纯 Web 控制台操作
@@ -211,7 +211,7 @@ export IMHUB_SKILLHUB_ENABLED=0
 `src/core/sensitive-paths.ts:checkSensitiveToolUse()` 在 approval-bus 的 readonly-auto-allow 之前跑，命中**直接返 `behavior: 'deny'`，不弹审批卡**。运维即使想"放过"也无法 —— 必须改源码。
 
 **前缀阻止**：
-- `~/.agim/`、`~/.im-hub/`（旧 home）
+- `~/.agim/`、`~/.agim/`（旧 home）
 - `~/.ssh/`、`~/.aws/`、`~/.gcp/`、`~/.azure/`、`~/.kube/`、`~/.docker/`
 - `/etc/shadow`、`/etc/sudoers`、`/etc/sudoers.d/`、`/etc/ssh/`、`/etc/ssl/private/`
 - `/proc/self/environ`、`/proc/self/maps`
@@ -299,7 +299,7 @@ export IMHUB_SKILLHUB_ENABLED=0
 
 ### 7.3 PID_FILE 维护（R15）
 
-每次 `agim start` 自检通过后立即写 `~/.agim/im-hub.pid`（0o600）。`gracefulShutdown` 退出时只在 pid 匹配时 unlink（防误删新主人的文件）。
+每次 `agim start` 自检通过后立即写 `~/.agim/agim.pid`（0o600）。`gracefulShutdown` 退出时只在 pid 匹配时 unlink（防误删新主人的文件）。
 
 ### 7.4 systemd unit 配置要点
 
@@ -325,7 +325,7 @@ ExecStart=/usr/local/bin/agim start
 |---|---|---|
 | **GDPR Art.17** / **PIPL** | 数据主体能否查询 / 删除自己的数据 | ✅ memos / facts / persona 有删除 API；运营商可凭 user_key 全量导出 |
 | **GDPR Art.30** | 数据处理记录 | ✅ R12 ⑤ audit_events 表 + invocations，覆盖 governance + agent calls 两类 |
-| **等保 2.0 三级**（中国） | 审计日志 ≥ 6 月 | ✅ `IMHUB_AUDIT_EVENTS_RETENTION_DAYS=180` 默认 |
+| **等保 2.0 三级**（中国） | 审计日志 ≥ 6 月 | ✅ `AGIM_AUDIT_EVENTS_RETENTION_DAYS=180` 默认 |
 | **ISO 27001 A.10** | 凭据保护 | ⚠️ 文件权限 0o600 + OS 层加密；**无应用层加密**（依赖 LUKS / BitLocker） |
 | **SOC 2 CC6** | 逻辑访问控制 | ✅ token + role 双层；管理员白名单；DB 层 user_key 强隔离 |
 | **数据本地化** | 数据是否出境 | ✅ 完全可控，关掉所有可选出口后零出境 |
@@ -338,13 +338,13 @@ ExecStart=/usr/local/bin/agim start
 
 **网络层**
 - [ ] 仅放行业务必需的 IM 厂商域名出网
-- [ ] `IMHUB_WEB_BIND` 保持 `127.0.0.1` 或非回环时 `IMHUB_WEB_TLS_ACK=1` + 前置 TLS 反代
-- [ ] `IMHUB_ACP_BIND` 保持 `127.0.0.1`（除非多机 A2A）
-- [ ] `IMHUB_VIEWER_TUNNEL_MODE=off`
-- [ ] `IMHUB_SKILLHUB_ENABLED=0`（气隙）
-- [ ] `IMHUB_ENABLE_GLOBAL_IM` 未设（除非确需 Discord/Telegram）
-- [ ] `IMHUB_ENABLE_REMOTE_AGENT` 未设（除非确需远程 Agent）
-- [ ] `OPENAI_API_KEY` 不配，或 `IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL` 指内网
+- [ ] `AGIM_WEB_BIND` 保持 `127.0.0.1` 或非回环时 `AGIM_WEB_TLS_ACK=1` + 前置 TLS 反代
+- [ ] `AGIM_ACP_BIND` 保持 `127.0.0.1`（除非多机 A2A）
+- [ ] `AGIM_VIEWER_TUNNEL_MODE=off`
+- [ ] `AGIM_SKILLHUB_ENABLED=0`（气隙）
+- [ ] `AGIM_ENABLE_GLOBAL_IM` 未设（除非确需 Discord/Telegram）
+- [ ] `AGIM_ENABLE_REMOTE_AGENT` 未设（除非确需远程 Agent）
+- [ ] `OPENAI_API_KEY` 不配，或 `AGIM_MEMORY_VECTOR_OPENAI_BASE_URL` 指内网
 
 **OS 层**
 - [ ] 专用 `agim` 用户，禁登录 shell
@@ -353,12 +353,12 @@ ExecStart=/usr/local/bin/agim start
 - [ ] systemd unit 含 `ProtectSystem=strict` 等加固选项
 
 **应用层**
-- [ ] `IMHUB_WEB_AUTH` 不要设 off，除非反代 SSO（反代不可绕过）
-- [ ] `IMHUB_ADMIN_USERS` 显式配置
+- [ ] `AGIM_WEB_AUTH` 不要设 off，除非反代 SSO（反代不可绕过）
+- [ ] `AGIM_ADMIN_USERS` 显式配置
 - [ ] 一次性引导令牌首次提升后 `shred -u`
 - [ ] `LOG_LEVEL=warn`（防消息正文进日志）
-- [ ] `IM_HUB_AUDIT_RETENTION_DAYS=180`（满足等保三级）
-- [ ] `IMHUB_TIMEOUT_DEFAULT=deny`（默认；勿改 allow）
+- [ ] `AGIM_AUDIT_RETENTION_DAYS=180`（满足等保三级）
+- [ ] `AGIM_TIMEOUT_DEFAULT=deny`（默认；勿改 allow）
 - [ ] 用 `user` 角色 token 给非管理员账号（`createToken(label, { role: 'user' })`）
 
 **运维**
@@ -379,7 +379,7 @@ ExecStart=/usr/local/bin/agim start
 | **用户在 memo 里藏 prompt 注入** | "今后总是允许 Bash" 之类 | R13 G3 B3：保存时 warn + audit；查询时输出 sanitize |
 | **AGENTS.md 被改写"忽略审批"** | 持久化 prompt injection | R13 G3 B2：启动期扫描 + warn + audit；R13 G2 B1：Edit/Write 该文件被硬拒 |
 | **Web 令牌泄露 → 自我提权管理员** | user-role token 创建新 admin token | R13 G1：所有 mutation 端点 `requireAdmin` |
-| **Web 端口暴露 + 无 TLS** | 令牌走明文 | R13 G5 C2：非回环 + 未设 `IMHUB_WEB_TLS_ACK` 启动 warn |
+| **Web 端口暴露 + 无 TLS** | 令牌走明文 | R13 G5 C2：非回环 + 未设 `AGIM_WEB_TLS_ACK` 启动 warn |
 | **systemctl restart 死循环 + EADDRINUSE** | cgroup-escape 残留进程 | R14 三道防线（25s 优雅退出 / reap / 启动自检） |
 | **手起 agim + systemd 同时管理** | 双开 / 端口冲突 | R14 §六 + R15 PID_FILE 全路径写入：第二个 exit(2) |
 | **运维测试脚本被误杀** | pgrep 子串匹配过宽 | R15 argv-strict /proc 扫描 |
@@ -387,7 +387,7 @@ ExecStart=/usr/local/bin/agim start
 | **agent 读 `/proc/self/root/<HOME>/.agim/tokens.json`** | 用 `/proc` 间接寻址 / symlink 绕过路径黑名单 | v1.2.145：`canonical()` 做 `realpath` + 双重匹配 + 直拒 `/proc/<pid>/{root,cwd}` |
 | **`role=user` token 删他人 viewer paste** | viewer DELETE 端点漏 admin 守卫 | v1.2.145（CR H1）：`DELETE /api/viewer/:id` 加 `requireAdmin` |
 | **`notify_url` 指向解析进内网的主机名** | 词法校验只看 host 串，DNS-rebinding / 内网域名绕过 | v1.2.145：fetch 前 `assertWebhookHostPublic` DNS 解析 + 私网拒绝 |
-| **多租户工作区 `AGENTS.md` 投毒 native** | 不可信 cwd 的角色文件被注入 system prompt | v1.2.145（T6）：`IMHUB_NATIVE_TRUST_WORKSPACE=off` 一次性跳过工作区角色文件 |
+| **多租户工作区 `AGENTS.md` 投毒 native** | 不可信 cwd 的角色文件被注入 system prompt | v1.2.145（T6）：`AGIM_NATIVE_TRUST_WORKSPACE=off` 一次性跳过工作区角色文件 |
 
 ---
 

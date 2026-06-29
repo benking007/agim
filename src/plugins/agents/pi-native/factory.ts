@@ -17,9 +17,9 @@ import { assembleToolsForPi } from './tools.js'
 
 const ROLE_CHAIN = ['native-chat', 'cheap']
 
-/** Mirror agim's IMHUB_NATIVE_AGENT_MAX_ITER (default 50, clamp [1,100]). */
+/** Mirror agim's AGIM_NATIVE_AGENT_MAX_ITER (default 50, clamp [1,100]). */
 function resolveMaxIterations(): number {
-  const raw = process.env.IMHUB_NATIVE_AGENT_MAX_ITER
+  const raw = process.env.AGIM_NATIVE_AGENT_MAX_ITER
   if (!raw?.trim()) return 50
   const n = Number.parseInt(raw, 10)
   if (!Number.isFinite(n) || n <= 0) return 50
@@ -37,12 +37,12 @@ function envInt(name: string, def: number): number {
 /** Provider resilience + prompt-cache options, all env-overridable. Defaults:
  *  2 retries, 20s retry-delay cap, 120s/request timeout, 'short' cache. */
 function resolveStreamOptions() {
-  const raw = (process.env.IMHUB_NATIVE_CACHE_RETENTION ?? 'short').trim()
+  const raw = (process.env.AGIM_NATIVE_CACHE_RETENTION ?? 'short').trim()
   const cacheRetention = (['none', 'short', 'long'] as const).find((v) => v === raw) ?? 'short'
   return {
-    maxRetries: envInt('IMHUB_NATIVE_MAX_RETRIES', 2),
-    maxRetryDelayMs: envInt('IMHUB_NATIVE_MAX_RETRY_DELAY_MS', 20_000),
-    timeoutMs: envInt('IMHUB_NATIVE_REQUEST_TIMEOUT_MS', 120_000),
+    maxRetries: envInt('AGIM_NATIVE_MAX_RETRIES', 2),
+    maxRetryDelayMs: envInt('AGIM_NATIVE_MAX_RETRY_DELAY_MS', 20_000),
+    timeoutMs: envInt('AGIM_NATIVE_REQUEST_TIMEOUT_MS', 120_000),
     cacheRetention,
   }
 }
@@ -65,7 +65,7 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
       }
       return resolveAnyPiModel()
     },
-    // Full agim tool surface (builtin / fs / web / exec / todo / imhub / MCP),
+    // Full agim tool surface (builtin / fs / web / exec / todo / agim / MCP),
     // assembled per-turn from native's single source of truth.
     resolveTools: (opts, sessionId) => assembleToolsForPi(opts, sessionId),
     // Same policy gating as the public Agim Agent contract (read-only /
@@ -73,10 +73,10 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
     maxIterations: resolveMaxIterations(),
     // Proactive per-turn compaction (pi never auto-compacts). On by default;
-    // IMHUB_NATIVE_COMPACTION=off disables it.
-    compactionEnabled: process.env.IMHUB_NATIVE_COMPACTION !== 'off',
+    // AGIM_NATIVE_COMPACTION=off disables it.
+    compactionEnabled: process.env.AGIM_NATIVE_COMPACTION !== 'off',
     // Provider retry/backoff/timeout + prompt cache (rides out transient LLM
-    // 429/5xx and cuts repeat token cost). All IMHUB_NATIVE_* env-overridable.
+    // 429/5xx and cuts repeat token cost). All AGIM_NATIVE_* env-overridable.
     streamOptions: resolveStreamOptions(),
     // Reuse native's full system prompt so the model knows its real backend +
     // model + role (fixes "what model are you" → it stops hallucinating claude)

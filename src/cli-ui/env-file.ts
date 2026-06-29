@@ -1,4 +1,4 @@
-// cli-ui/env-file.ts — read / write key=value pairs in ~/.im-hub/env.
+// cli-ui/env-file.ts — read / write key=value pairs in ~/.agim/env.
 //
 // The env file is sourced by the systemd unit (`EnvironmentFile=`) AND by
 // `agim start --bg` via process.env when we re-exec ourselves. It's
@@ -17,7 +17,7 @@ export const ENV_FILE = join(AGIM_HOME, 'env')
 /**
  * Defense-in-depth against the v1.0.14 class of incident: a `bun test` run
  * on a box that doubles as the agim host silently clobbering the operator's
- * real ~/.agim/env — observed as `IMHUB_ADMIN_USERS=telegram:123` (the
+ * real ~/.agim/env — observed as `AGIM_ADMIN_USERS=telegram:123` (the
  * admin-bootstrap test fixture) overwriting the real admin list and locking
  * the operator out of every admin command.
  *
@@ -89,20 +89,20 @@ export function readEnvFile(): Record<string, string> {
  *  via the systemd unit's `Environment=` lines (the install pattern used
  *  before the wizard existed) still appear in the prefill UI. */
 const WIZARD_ENV_KEYS = [
-  'IMHUB_SMTP_HOST',
-  'IMHUB_SMTP_PORT',
-  'IMHUB_SMTP_USER',
-  'IMHUB_SMTP_PASS',
-  'IMHUB_SMTP_FROM',
-  'IMHUB_SMTP_SECURE',
-  'IMHUB_BAIDU_MAP_AK',
+  'AGIM_SMTP_HOST',
+  'AGIM_SMTP_PORT',
+  'AGIM_SMTP_USER',
+  'AGIM_SMTP_PASS',
+  'AGIM_SMTP_FROM',
+  'AGIM_SMTP_SECURE',
+  'AGIM_BAIDU_MAP_AK',
 ] as const
 
-const SYSTEMD_UNIT_PATH = '/etc/systemd/system/im-hub.service'
+const SYSTEMD_UNIT_PATH = '/etc/systemd/system/agim.service'
 
 /** Parse `Environment="KEY=value"` and `Environment=KEY=value` lines out
- *  of the im-hub systemd unit. Used as a fallback for `readEffectiveEnv()`
- *  on machines where the wizard hasn't yet written to ~/.im-hub/env AND
+ *  of the agim systemd unit. Used as a fallback for `readEffectiveEnv()`
+ *  on machines where the wizard hasn't yet written to ~/.agim/env AND
  *  the user's interactive shell doesn't export the keys — the unit file
  *  is world-readable on standard installs, so this works for `agim
  *  config` invoked as the user. Returns {} if the file is missing/unreadable. */
@@ -136,7 +136,7 @@ export function readSystemdUnitEnv(): Record<string, string> {
 }
 
 /** Read priority:
- *    1. ~/.im-hub/env  (canonical, what the wizard writes)
+ *    1. ~/.agim/env  (canonical, what the wizard writes)
  *    2. process.env     (current shell / inherited)
  *    3. systemd unit's Environment= lines (what's actually in effect for
  *       the running service when the wizard is invoked from a shell that

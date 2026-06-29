@@ -45,17 +45,17 @@ const log = rootLogger.child({ component: 'heartbeat' })
  *  fan-out doesn't show up on /api/metrics CPU. */
 const DEFAULT_TICK_INTERVAL_MS = 60_000
 
-/** When `IMHUB_HEARTBEAT_ENABLED` is unset we still **load** the store
+/** When `AGIM_HEARTBEAT_ENABLED` is unset we still **load** the store
  *  (so /heartbeat bind / show works for setup) but DON'T start the
  *  scheduler. That matches the project's "opt-in everywhere" policy
  *  for things that spend LLM budget on the user's behalf. */
 function isSchedulerEnabled(): boolean {
-  const raw = (process.env.IMHUB_HEARTBEAT_ENABLED || '').toLowerCase()
+  const raw = (process.env.AGIM_HEARTBEAT_ENABLED || '').toLowerCase()
   return raw === 'on' || raw === '1' || raw === 'true'
 }
 
 function tickIntervalMs(): number {
-  const raw = process.env.IMHUB_HEARTBEAT_TICK_INTERVAL_MS
+  const raw = process.env.AGIM_HEARTBEAT_TICK_INTERVAL_MS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n >= 5_000 && n <= 600_000) return n
@@ -339,7 +339,7 @@ export function startHeartbeatScheduler(): void {
   if (timer) return
   if (!isSchedulerEnabled()) {
     log.info({ event: 'heartbeat.scheduler.disabled' },
-      'IMHUB_HEARTBEAT_ENABLED unset; /heartbeat bind/show still works but no automatic ticks')
+      'AGIM_HEARTBEAT_ENABLED unset; /heartbeat bind/show still works but no automatic ticks')
     return
   }
   const period = tickIntervalMs()

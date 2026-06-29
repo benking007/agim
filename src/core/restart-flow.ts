@@ -35,8 +35,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export const RESTART_PENDING_FILE = join(AGIM_HOME, 'restart-pending.json')
 export const RESTART_FAILED_LOG = join(AGIM_HOME, 'restart-failed.log')
-const LOG_FILE = join(AGIM_HOME, 'im-hub.log')
-const PID_FILE = join(AGIM_HOME, 'im-hub.pid')
+const LOG_FILE = join(AGIM_HOME, 'agim.log')
+const PID_FILE = join(AGIM_HOME, 'agim.pid')
 
 /** Metadata about who triggered the restart, persisted across the
  *  parent → child boundary so the new daemon can ack the right thread. */
@@ -161,9 +161,7 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
     }
   }
   if (svcState.mode === 'systemd') {
-    const unitName = existsSync('/etc/systemd/system/agim.service')
-      ? 'agim.service'
-      : (existsSync('/etc/systemd/system/im-hub.service') ? 'im-hub.service' : null)
+    const unitName = existsSync('/etc/systemd/system/agim.service') ? 'agim.service' : null
     if (unitName) {
       // v1.1.10: deliver the "🔄 重启中…" ack SYNCHRONOUSLY before issuing
       // systemctl restart. Otherwise the message sits in outbox while the
@@ -298,8 +296,8 @@ async function deliverRestartAck(initiator: RestartInitiator, body: string): Pro
 /**
  * Build the detached helper script. It:
  *   1. Polls for parent PID to die (200ms × up to 150 = 30s).
- *   2. Spawns the new daemon, redirecting stdout/stderr to im-hub.log.
- *   3. Writes new pid to im-hub.pid.
+ *   2. Spawns the new daemon, redirecting stdout/stderr to agim.log.
+ *   3. Writes new pid to agim.pid.
  *   4. On parent-death-timeout, records the failure into restart-failed.log
  *      and exits non-zero (no respawn — manual recovery needed).
  */

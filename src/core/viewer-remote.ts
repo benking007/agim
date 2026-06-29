@@ -23,7 +23,7 @@
 // Wire contract
 // -------------
 // Request:
-//   POST <IMHUB_VIEWER_REMOTE_PASTE_URL>
+//   POST <AGIM_VIEWER_REMOTE_PASTE_URL>
 //   Content-Type: application/json
 //   Authorization: Bearer <token>  (optional; sent only when set)
 //   Body: { "content": "<markdown>", "source": "<thread-key>",

@@ -6,7 +6,7 @@
 //
 // Lifetime: cleanupOldMedia() prunes files older than the configured TTL,
 // invoked hourly + at startup by the adapter. We do not delete on a per-thread
-// basis — same image may be referenced across turns within a 30-min imhub
+// basis — same image may be referenced across turns within a 30-min agim
 // session.
 
 import { spawn } from 'node:child_process'
@@ -21,7 +21,7 @@ const log = rootLogger.child({ component: 'telegram.media' })
  *  `path.startsWith(MEDIA_ROOT)` is robust. Override via env for tests.
  *
  *  Bug fix (2026-05-23): two `.test.ts` files in different platform
- *  adapters each set `process.env.IMHUB_MEDIA_ROOT` to their own tmp dir
+ *  adapters each set `process.env.AGIM_MEDIA_ROOT` to their own tmp dir
  *  before dynamically importing media-download.js. Under bun's shared
  *  test-process module cache the first import wins and the second test
  *  reads the wrong root. Fix: read env at every call site via
@@ -30,7 +30,7 @@ const log = rootLogger.child({ component: 'telegram.media' })
  *  import time — production reads happen post-startup so the env is
  *  stable anyway. */
 export function getMediaRoot(): string {
-  return resolve(process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'))
+  return resolve(process.env.AGIM_MEDIA_ROOT ?? join(AGIM_HOME, 'media'))
 }
 
 export const MEDIA_ROOT: string = getMediaRoot()
@@ -44,7 +44,7 @@ export const MAX_BYTES = 20 * 1024 * 1024
  *  can re-reference an image, short enough that the directory doesn't grow
  *  without bound. Override via env for ops. */
 export const DEFAULT_TTL_MS: number = (() => {
-  const raw = process.env.IMHUB_MEDIA_TTL_MS
+  const raw = process.env.AGIM_MEDIA_TTL_MS
   if (!raw) return 7 * 24 * 60 * 60 * 1000
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : 7 * 24 * 60 * 60 * 1000

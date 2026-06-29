@@ -56,20 +56,20 @@ describe('agim-rpc-server — token registry', () => {
 })
 
 describe('agim-rpc-server — socket path resolution', () => {
-  const savedEnv = process.env.IMHUB_RPC_SOCKET
+  const savedEnv = process.env.AGIM_RPC_SOCKET
 
   afterEach(() => {
-    if (savedEnv === undefined) delete process.env.IMHUB_RPC_SOCKET
-    else process.env.IMHUB_RPC_SOCKET = savedEnv
+    if (savedEnv === undefined) delete process.env.AGIM_RPC_SOCKET
+    else process.env.AGIM_RPC_SOCKET = savedEnv
   })
 
-  it('uses IMHUB_RPC_SOCKET when set', () => {
-    process.env.IMHUB_RPC_SOCKET = '/tmp/custom-agim.sock'
+  it('uses AGIM_RPC_SOCKET when set', () => {
+    process.env.AGIM_RPC_SOCKET = '/tmp/custom-agim.sock'
     expect(resolveSocketPath()).toBe('/tmp/custom-agim.sock')
   })
 
   it('falls back to AGIM_HOME/rpc.sock when env is unset', () => {
-    delete process.env.IMHUB_RPC_SOCKET
+    delete process.env.AGIM_RPC_SOCKET
     expect(resolveSocketPath()).toMatch(/rpc\.sock$/)
   })
 })

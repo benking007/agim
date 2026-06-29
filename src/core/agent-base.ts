@@ -27,14 +27,14 @@ const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
  * approval flow no longer count against the budget; only true silence
  * (no events at all for `idleTimeout` ms) counts as hang.
  *
- * Priority: `${NAME}_IDLE_TIMEOUT_MS` > `IMHUB_AGENT_IDLE_TIMEOUT_MS` > default.
+ * Priority: `${NAME}_IDLE_TIMEOUT_MS` > `AGIM_AGENT_IDLE_TIMEOUT_MS` > default.
  * Setting any of these to `0` disables the watchdog entirely (relies on the
  * agent's internal timeouts plus manual termination).
  */
 function resolveIdleTimeout(perAgentEnvKey: string): number {
   const sources: Array<[string, string | undefined]> = [
     [perAgentEnvKey, process.env[perAgentEnvKey]],
-    ['IMHUB_AGENT_IDLE_TIMEOUT_MS', process.env.IMHUB_AGENT_IDLE_TIMEOUT_MS],
+    ['AGIM_AGENT_IDLE_TIMEOUT_MS', process.env.AGIM_AGENT_IDLE_TIMEOUT_MS],
   ]
   for (const [envKey, raw] of sources) {
     if (raw === undefined) continue
@@ -231,7 +231,7 @@ export abstract class AgentBase implements AgentAdapter {
   }
 
   /** Idle (no-stdout) timeout for the agent child process in ms. Override per
-   *  agent via `${NAME}_IDLE_TIMEOUT_MS`, globally via `IMHUB_AGENT_IDLE_TIMEOUT_MS`,
+   *  agent via `${NAME}_IDLE_TIMEOUT_MS`, globally via `AGIM_AGENT_IDLE_TIMEOUT_MS`,
    *  or set 0 to disable. Default 60 min — long enough to ride out an hour-long
    *  human-in-the-loop pause, short enough to reap a truly hung child. */
   protected get idleTimeoutMs(): number {

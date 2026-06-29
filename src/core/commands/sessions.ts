@@ -1,8 +1,8 @@
 // /sessions — list recent opencode sessions from a separate dashboard
 //
-// Talks to an external (non-im-hub) "dashboard" service that maintains
+// Talks to an external (non-agim) "dashboard" service that maintains
 // the opencode session catalog. The URL is configurable via the
-// IM_HUB_DASHBOARD_URL env var so deployments without the dashboard get
+// AGIM_DASHBOARD_URL env var so deployments without the dashboard get
 // a clear "not configured" message instead of a confusing connection
 // refused.
 
@@ -26,7 +26,7 @@ interface DashboardResponse {
 }
 
 function dashboardUrl(): string {
-  return process.env.IM_HUB_DASHBOARD_URL || DEFAULT_DASHBOARD_URL
+  return process.env.AGIM_DASHBOARD_URL || DEFAULT_DASHBOARD_URL
 }
 
 function fetchJson(url: string): Promise<DashboardResponse> {
@@ -69,7 +69,7 @@ export async function handleSessionsCommand(_args: string, _ctx: RouteContext): 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
-      return `⚠️ 无法连接 dashboard (${base})。\n\n确认 dashboard 服务已启动，或设置 \`IM_HUB_DASHBOARD_URL\` 环境变量指向正确的地址。`
+      return `⚠️ 无法连接 dashboard (${base})。\n\n确认 dashboard 服务已启动，或设置 \`AGIM_DASHBOARD_URL\` 环境变量指向正确的地址。`
     }
     if (msg === 'timeout') {
       return `⚠️ Dashboard 响应超时 (${REQUEST_TIMEOUT_MS}ms): ${base}`

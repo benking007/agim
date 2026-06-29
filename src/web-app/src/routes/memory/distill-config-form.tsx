@@ -8,13 +8,13 @@
  *       auto  → the turn's own agent (zero-config default; nothing else
  *               to set). Recommended for most installs.
  *       agent → a specific, already-enabled agent CLI
- *               (IMHUB_MEMORY_DISTILL_AGENT).
+ *               (AGIM_MEMORY_DISTILL_AGENT).
  *       llm   → a standalone LLM backend bound to the `distill` role,
  *               configured exactly like the native agent's LLM
  *               (PUT /api/llm/roles { distill }). No CLI spawn.
  *
  *  2. SCHEDULE — the cadence knobs (enabled / interval / staleness
- *     floor / batch size / per-user buffer cap), all IMHUB_MEMORY_DISTILL_*
+ *     floor / batch size / per-user buffer cap), all AGIM_MEMORY_DISTILL_*
  *     env keys behind the server allowlist.
  *
  * Save flow mirrors vector-backend-form: diff against the last-loaded
@@ -49,13 +49,13 @@ type DistillSource = 'auto' | 'agent' | 'llm'
 
 interface FormState {
   source: DistillSource
-  agent: string          // IMHUB_MEMORY_DISTILL_AGENT (source=agent)
+  agent: string          // AGIM_MEMORY_DISTILL_AGENT (source=agent)
   llmBackend: string     // llmRoles.distill backend name (source=llm)
-  enabled: boolean       // IMHUB_MEMORY_DISTILL_ENABLED
-  intervalMs: string     // IMHUB_MEMORY_DISTILL_INTERVAL_MS
-  floorMin: string       // IMHUB_MEMORY_DISTILL_FLOOR_MIN
-  batchMax: string       // IMHUB_MEMORY_DISTILL_BATCH_MAX
-  maxPending: string     // IMHUB_MEMORY_DISTILL_MAX_PENDING
+  enabled: boolean       // AGIM_MEMORY_DISTILL_ENABLED
+  intervalMs: string     // AGIM_MEMORY_DISTILL_INTERVAL_MS
+  floorMin: string       // AGIM_MEMORY_DISTILL_FLOOR_MIN
+  batchMax: string       // AGIM_MEMORY_DISTILL_BATCH_MAX
+  maxPending: string     // AGIM_MEMORY_DISTILL_MAX_PENDING
 }
 
 // Mirror of the memory-distiller.ts defaults so placeholders match the
@@ -95,14 +95,14 @@ export function DistillConfigForm({ onSaved }: DistillConfigFormProps): JSX.Elem
   const currentDistillRole = llmQuery.data?.roles?.distill ?? ''
 
   const readForm = useMemo<() => FormState>(() => () => ({
-    source:     readSource(env.IMHUB_MEMORY_DISTILL_SOURCE),
-    agent:      env.IMHUB_MEMORY_DISTILL_AGENT || '',
+    source:     readSource(env.AGIM_MEMORY_DISTILL_SOURCE),
+    agent:      env.AGIM_MEMORY_DISTILL_AGENT || '',
     llmBackend: currentDistillRole,
-    enabled:    readEnabled(env.IMHUB_MEMORY_DISTILL_ENABLED),
-    intervalMs: env.IMHUB_MEMORY_DISTILL_INTERVAL_MS || '',
-    floorMin:   env.IMHUB_MEMORY_DISTILL_FLOOR_MIN   || '',
-    batchMax:   env.IMHUB_MEMORY_DISTILL_BATCH_MAX   || '',
-    maxPending: env.IMHUB_MEMORY_DISTILL_MAX_PENDING || '',
+    enabled:    readEnabled(env.AGIM_MEMORY_DISTILL_ENABLED),
+    intervalMs: env.AGIM_MEMORY_DISTILL_INTERVAL_MS || '',
+    floorMin:   env.AGIM_MEMORY_DISTILL_FLOOR_MIN   || '',
+    batchMax:   env.AGIM_MEMORY_DISTILL_BATCH_MAX   || '',
+    maxPending: env.AGIM_MEMORY_DISTILL_MAX_PENDING || '',
   }), [env, currentDistillRole])
 
   const [form, setForm] = useState<FormState>(readForm)
@@ -168,22 +168,22 @@ export function DistillConfigForm({ onSaved }: DistillConfigFormProps): JSX.Elem
     }
     if (form.source !== initial.source) {
       // 'auto' is the runtime default → store null to keep env tidy.
-      out.IMHUB_MEMORY_DISTILL_SOURCE = form.source === 'auto' ? null : form.source
+      out.AGIM_MEMORY_DISTILL_SOURCE = form.source === 'auto' ? null : form.source
     }
     if (form.enabled !== initial.enabled) {
-      out.IMHUB_MEMORY_DISTILL_ENABLED = form.enabled ? '1' : '0'
+      out.AGIM_MEMORY_DISTILL_ENABLED = form.enabled ? '1' : '0'
     }
     // Only persist the agent name when the chosen source actually uses it,
     // so flipping away from 'agent' doesn't leave a stale key behind.
     if (form.source === 'agent') {
-      diffStr('IMHUB_MEMORY_DISTILL_AGENT', form.agent, initial.agent)
+      diffStr('AGIM_MEMORY_DISTILL_AGENT', form.agent, initial.agent)
     } else if (initial.agent) {
-      out.IMHUB_MEMORY_DISTILL_AGENT = null
+      out.AGIM_MEMORY_DISTILL_AGENT = null
     }
-    diffStr('IMHUB_MEMORY_DISTILL_INTERVAL_MS', form.intervalMs, initial.intervalMs)
-    diffStr('IMHUB_MEMORY_DISTILL_FLOOR_MIN',   form.floorMin,   initial.floorMin)
-    diffStr('IMHUB_MEMORY_DISTILL_BATCH_MAX',   form.batchMax,   initial.batchMax)
-    diffStr('IMHUB_MEMORY_DISTILL_MAX_PENDING', form.maxPending, initial.maxPending)
+    diffStr('AGIM_MEMORY_DISTILL_INTERVAL_MS', form.intervalMs, initial.intervalMs)
+    diffStr('AGIM_MEMORY_DISTILL_FLOOR_MIN',   form.floorMin,   initial.floorMin)
+    diffStr('AGIM_MEMORY_DISTILL_BATCH_MAX',   form.batchMax,   initial.batchMax)
+    diffStr('AGIM_MEMORY_DISTILL_MAX_PENDING', form.maxPending, initial.maxPending)
     return out
   }
 

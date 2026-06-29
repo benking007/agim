@@ -44,11 +44,11 @@ afterAll(() => {
 
 dbDescribe('pruneExpiredFacts', () => {
   beforeEach(() => {
-    delete process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS
+    delete process.env.AGIM_MEMORY_FACT_RETENTION_DAYS
   })
 
   it('does nothing when retention is 0 (permanent)', () => {
-    process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS = '0'
+    process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = '0'
     const u = uniq()
     mem.saveFact({ user_key: u, what: 'ancient fact' })
     const raw = openRaw()
@@ -62,7 +62,7 @@ dbDescribe('pruneExpiredFacts', () => {
   })
 
   it('deletes facts whose last_referenced_at is older than the window', () => {
-    process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS = '7'
+    process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = '7'
     const u = uniq()
     mem.saveFact({ user_key: u, what: 'recent fact' })
     mem.saveFact({ user_key: u, what: 'stale fact' })
@@ -83,7 +83,7 @@ dbDescribe('pruneExpiredFacts', () => {
   })
 
   it('LRU semantics — facts re-referenced inside window survive past creation TTL', () => {
-    process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS = '7'
+    process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = '7'
     const u = uniq()
     const id = mem.saveFact({ user_key: u, what: 'old-but-active fact' })
     expect(id).not.toBeNull()
@@ -102,7 +102,7 @@ dbDescribe('pruneExpiredFacts', () => {
   })
 
   it('removes facts_fts rows in lockstep with facts (no stale index entries)', () => {
-    process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS = '1'
+    process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = '1'
     const u = uniq()
     const marker = 'ftsmarker' + randomUUID().slice(0, 6).replace(/-/g, '')
     mem.saveFact({ user_key: u, what: marker })
@@ -126,18 +126,18 @@ dbDescribe('pruneExpiredFacts', () => {
   })
 
   it('invalid retention env var falls back to default (does not crash)', () => {
-    process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS = 'not-a-number'
+    process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = 'not-a-number'
     expect(() => mem.pruneExpiredFacts()).not.toThrow()
   })
 })
 
 dbDescribe('pruneExpiredPersona', () => {
   beforeEach(() => {
-    delete process.env.IMHUB_PERSONA_RETENTION_DAYS
+    delete process.env.AGIM_PERSONA_RETENTION_DAYS
   })
 
   it('does nothing when retention is 0', () => {
-    process.env.IMHUB_PERSONA_RETENTION_DAYS = '0'
+    process.env.AGIM_PERSONA_RETENTION_DAYS = '0'
     const u = uniq()
     mem.upsertPersona(u, 'summary one')
     const raw = openRaw()
@@ -150,7 +150,7 @@ dbDescribe('pruneExpiredPersona', () => {
   })
 
   it('deletes persona rows older than retention window', () => {
-    process.env.IMHUB_PERSONA_RETENTION_DAYS = '30'
+    process.env.AGIM_PERSONA_RETENTION_DAYS = '30'
     const u = uniq()
     mem.upsertPersona(u, 'old summary')
     const raw = openRaw()
@@ -164,7 +164,7 @@ dbDescribe('pruneExpiredPersona', () => {
   })
 
   it('keeps persona rows updated inside the window', () => {
-    process.env.IMHUB_PERSONA_RETENTION_DAYS = '30'
+    process.env.AGIM_PERSONA_RETENTION_DAYS = '30'
     const u = uniq()
     mem.upsertPersona(u, 'fresh summary')
     mem.pruneExpiredPersona()

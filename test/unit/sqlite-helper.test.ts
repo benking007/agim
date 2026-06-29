@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const tmp = (name: string): string =>
-  join(tmpdir(), `imhub-sqlite-helper-${name}-${Date.now()}.db`)
+  join(tmpdir(), `agim-sqlite-helper-${name}-${Date.now()}.db`)
 
 describe('createSqliteHelper', () => {
   it('returns null on init failure (bun has no better-sqlite3)', () => {

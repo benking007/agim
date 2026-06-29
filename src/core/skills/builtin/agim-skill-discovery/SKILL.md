@@ -16,7 +16,7 @@ The list of currently-available skills is **already injected into your
 system prompt** under the heading `agim skills available`. Read it
 before assuming you need to search externally. Each line shows
 `<name>: <description>`. If the description is empty (`>-`), call
-`mcp__imhub__read_skill(name)` to fetch the full body.
+`mcp__agim__read_skill(name)` to fetch the full body.
 
 If the user asks "what skills do I have?", paraphrase the prompt list
 back. Don't dump it verbatim — group by domain (finance, white-pig,
@@ -26,7 +26,7 @@ descriptions.
 ## Looking up details on a known skill
 
 ```
-mcp__imhub__read_skill({ name: "<skill-name>" })
+mcp__agim__read_skill({ name: "<skill-name>" })
 ```
 
 Returns the full markdown body (frontmatter stripped). Use when the
@@ -66,9 +66,9 @@ For operators (not end users) — skills can land in any of:
 <agim-dist>/core/skills/builtin/<name>/     ← shipped with agim
 ```
 
-`IMHUB_SKILLS_MODE=auto` (default) merges all of them with shadow
+`AGIM_SKILLS_MODE=auto` (default) merges all of them with shadow
 priority workspace > builtin. If the operator wants to test a skill in
-isolation, `IMHUB_SKILLS_MODE=agim-only` restricts to `~/.agim/skills/`.
+isolation, `AGIM_SKILLS_MODE=agim-only` restricts to `~/.agim/skills/`.
 
 ## Skill restart semantics
 
@@ -84,7 +84,7 @@ If the user wants to CREATE a new skill (not install one), point them
 to the **skill-creator** skill:
 
 ```
-mcp__imhub__read_skill({ name: "skill-creator" })
+mcp__agim__read_skill({ name: "skill-creator" })
 ```
 
 ## Don't

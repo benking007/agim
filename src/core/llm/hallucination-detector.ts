@@ -19,7 +19,7 @@
 // Off by default? No — the patterns are conservative (high-precision,
 // not high-recall) and false positives just trigger a recap card that
 // invites the user to retry. False negatives are silent regressions.
-// Operators who want it off can set IMHUB_NATIVE_HALLUCINATION_DETECT=off.
+// Operators who want it off can set AGIM_NATIVE_HALLUCINATION_DETECT=off.
 
 export interface HallucinationInput {
   /** The assistant's final text for this iteration. */
@@ -50,7 +50,7 @@ export interface HallucinationVerdict {
  * Recognized OFF values: 'off' / '0' / 'false' / 'no' / 'disable'.
  */
 export function isHallucinationDetectorOn(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_HALLUCINATION_DETECT ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_HALLUCINATION_DETECT ?? '').toLowerCase().trim()
   if (raw === 'off' || raw === '0' || raw === 'false' || raw === 'no' || raw === 'disable') {
     return false
   }

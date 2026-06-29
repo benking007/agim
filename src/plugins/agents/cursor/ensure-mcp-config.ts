@@ -11,7 +11,7 @@
  *     }
  *   }
  *
- * On adapter init we read-modify-write the global file so the `imhub`
+ * On adapter init we read-modify-write the global file so the `agim`
  * entry always points at the live approval-bus socket (which rotates
  * every agim restart — see core/approval-bus.ts). Other entries the
  * operator already had stay untouched.
@@ -45,12 +45,12 @@ interface McpConfigFile {
 }
 
 /**
- * Ensure `~/.cursor/mcp.json` has the imhub MCP entry pointing at the
+ * Ensure `~/.cursor/mcp.json` has the agim MCP entry pointing at the
  * current approval-bus socket. Idempotent: safe to call on every
  * adapter init or before every spawn. Preserves any other keys /
  * mcpServers entries the operator already configured.
  */
-export async function ensureImhubMcp(spec: McpServerSpec, opts: { path?: string } = {}): Promise<void> {
+export async function ensureAgimMcp(spec: McpServerSpec, opts: { path?: string } = {}): Promise<void> {
   const filePath = opts.path ?? defaultMcpConfigPath()
   let current: McpConfigFile = {}
   try {
@@ -72,28 +72,28 @@ export async function ensureImhubMcp(spec: McpServerSpec, opts: { path?: string 
   if (!current.mcpServers || typeof current.mcpServers !== 'object') {
     current.mcpServers = {}
   }
-  const existing = current.mcpServers.imhub
+  const existing = current.mcpServers.agim
   if (existing
       && existing.command === spec.command
       && JSON.stringify(existing.args ?? []) === JSON.stringify(spec.args ?? [])
       && JSON.stringify(existing.env ?? {}) === JSON.stringify(spec.env ?? {})) {
     return
   }
-  current.mcpServers.imhub = spec
+  current.mcpServers.agim = spec
   try {
     await mkdir(dirname(filePath), { recursive: true })
     await writeFile(filePath, JSON.stringify(current, null, 2), 'utf8')
     log.info({ event: 'cursor.mcp.config_written', filePath },
-      'wrote imhub MCP entry to cursor global config')
+      'wrote agim MCP entry to cursor global config')
   } catch (err) {
     log.warn({ event: 'cursor.mcp.write_failed', filePath, err: String(err) },
-      'could not write cursor mcp.json — cursor will run without imhub MCP')
+      'could not write cursor mcp.json — cursor will run without agim MCP')
     throw err
   }
 }
 
-/** Remove the imhub MCP entry. Used by tests / uninstall flows. */
-export async function removeImhubMcp(opts: { path?: string } = {}): Promise<void> {
+/** Remove the agim MCP entry. Used by tests / uninstall flows. */
+export async function removeAgimMcp(opts: { path?: string } = {}): Promise<void> {
   const filePath = opts.path ?? defaultMcpConfigPath()
   let current: McpConfigFile = {}
   try {
@@ -104,8 +104,8 @@ export async function removeImhubMcp(opts: { path?: string } = {}): Promise<void
     if (e.code === 'ENOENT') return
     throw err
   }
-  if (current.mcpServers && current.mcpServers.imhub) {
-    delete current.mcpServers.imhub
+  if (current.mcpServers && current.mcpServers.agim) {
+    delete current.mcpServers.agim
     await writeFile(filePath, JSON.stringify(current, null, 2), 'utf8')
   }
 }

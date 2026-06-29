@@ -124,7 +124,7 @@ async function handleSave(payload: Record<string, unknown>, ctx: RunContext): Pr
 
   if ((whereLat == null || whereLng == null) && address) {
     if (!isGeocodingAvailable()) {
-      return { ok: false, error: 'geocoding not configured (IMHUB_BAIDU_MAP_AK unset). Pass where_lat/where_lng directly.' }
+      return { ok: false, error: 'geocoding not configured (AGIM_BAIDU_MAP_AK unset). Pass where_lat/where_lng directly.' }
     }
     const geo = await geocodeAddress(address)
     if (!geo.ok) {
@@ -184,7 +184,7 @@ function handleRequestCapture(payload: Record<string, unknown>, ctx: RunContext)
     }
   }
 
-  const baseUrl = (process.env.IMHUB_LOC_BASE_URL || DEFAULT_LOC_BASE_URL).replace(/\/+$/, '')
+  const baseUrl = (process.env.AGIM_LOC_BASE_URL || DEFAULT_LOC_BASE_URL).replace(/\/+$/, '')
   const { token, expiresAt, ttlSeconds } = issueToken(
     {
       platform: ctx.platform,
@@ -269,7 +269,7 @@ async function handleUpdate(payload: Record<string, unknown>, ctx: RunContext): 
   if (typeof payload.address === 'string' && payload.address.trim()) {
     if (u.whereLat === undefined && u.whereLng === undefined) {
       if (!isGeocodingAvailable()) {
-        return { ok: false, error: 'geocoding not configured (IMHUB_BAIDU_MAP_AK unset). Pass where_lat/where_lng directly.' }
+        return { ok: false, error: 'geocoding not configured (AGIM_BAIDU_MAP_AK unset). Pass where_lat/where_lng directly.' }
       }
       const geo = await geocodeAddress(payload.address.trim())
       if (!geo.ok) {

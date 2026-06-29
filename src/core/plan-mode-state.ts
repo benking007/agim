@@ -1,7 +1,7 @@
 // plan-mode-state.ts — per-thread PlanMode override (v1.2.120).
 //
 // Why this file exists:
-//   v1.2.119 shipped PlanMode as a process-global env (IMHUB_NATIVE_PLAN_MODE).
+//   v1.2.119 shipped PlanMode as a process-global env (AGIM_NATIVE_PLAN_MODE).
 //   That's clumsy: every toggle requires a service restart, and there's no
 //   way to plan-mode ONE thread while the rest stay free. User
 //   feedback was direct: "Plan模式下，退出Plan 需要重启Agim，感觉
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS native_plan_mode (
 );
 `
 
-const DB_PATH_FROM_ENV = process.env.IMHUB_PLAN_MODE_DB
+const DB_PATH_FROM_ENV = process.env.AGIM_PLAN_MODE_DB
 const dbPath = DB_PATH_FROM_ENV && DB_PATH_FROM_ENV.length > 0
   ? DB_PATH_FROM_ENV
   : join(AGIM_HOME, 'plan-mode.db')
@@ -111,7 +111,7 @@ export function closePlanModeStateDb(): void {
 // thread?" answer including the env fallback. The native agent calls
 // this from resolvePolicy() + buildSystemPrompt().
 export function readEnvPlanModeDefault(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
   return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
 }
 
@@ -121,7 +121,7 @@ export function readEnvPlanModeDefault(): boolean {
  *   per-thread = true   → on  (regardless of env)
  *   per-thread = false  → off (regardless of env — useful to opt one
  *                              thread out when env=on for the rest)
- *   per-thread = null   → env (whatever IMHUB_NATIVE_PLAN_MODE says)
+ *   per-thread = null   → env (whatever AGIM_NATIVE_PLAN_MODE says)
  *
  * When `threadKey` is omitted or empty (no thread context, e.g. CLI
  * boot banner), we return the env default — matches v1.2.119 behaviour.

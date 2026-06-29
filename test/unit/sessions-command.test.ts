@@ -1,5 +1,5 @@
 // Unit tests for /sessions — verifies graceful handling of dashboard
-// failures (timeout / refused / non-JSON) and IM_HUB_DASHBOARD_URL
+// failures (timeout / refused / non-JSON) and AGIM_DASHBOARD_URL
 // override.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
@@ -18,7 +18,7 @@ const ctx: RouteContext = {
 let server: Server
 let port = 0
 let mode: 'ok' | 'empty' | 'bad-json' | 'slow' | 'refused' = 'ok'
-const ORIG_URL = process.env.IM_HUB_DASHBOARD_URL
+const ORIG_URL = process.env.AGIM_DASHBOARD_URL
 
 beforeAll(async () => {
   server = createServer((_req, res) => {
@@ -49,12 +49,12 @@ beforeAll(async () => {
 
 afterAll(() => {
   server?.close()
-  if (ORIG_URL === undefined) delete process.env.IM_HUB_DASHBOARD_URL
-  else process.env.IM_HUB_DASHBOARD_URL = ORIG_URL
+  if (ORIG_URL === undefined) delete process.env.AGIM_DASHBOARD_URL
+  else process.env.AGIM_DASHBOARD_URL = ORIG_URL
 })
 
 beforeEach(() => {
-  process.env.IM_HUB_DASHBOARD_URL = `http://127.0.0.1:${port}`
+  process.env.AGIM_DASHBOARD_URL = `http://127.0.0.1:${port}`
 })
 
 afterEach(() => {
@@ -76,7 +76,7 @@ describe('/sessions', () => {
   })
 
   it('reports refused when dashboard host is unreachable', async () => {
-    process.env.IM_HUB_DASHBOARD_URL = 'http://127.0.0.1:1'
+    process.env.AGIM_DASHBOARD_URL = 'http://127.0.0.1:1'
     const out = await handleSessionsCommand('', ctx)
     expect(out).toContain('无法连接')
   })
@@ -93,8 +93,8 @@ describe('/sessions', () => {
     expect(out).toContain('非 JSON')
   })
 
-  it('honors IM_HUB_DASHBOARD_URL override', async () => {
-    process.env.IM_HUB_DASHBOARD_URL = 'http://127.0.0.1:1'
+  it('honors AGIM_DASHBOARD_URL override', async () => {
+    process.env.AGIM_DASHBOARD_URL = 'http://127.0.0.1:1'
     const out = await handleSessionsCommand('', ctx)
     expect(out).toContain('http://127.0.0.1:1')
   })

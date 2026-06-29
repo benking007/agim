@@ -21,11 +21,11 @@ if (!existsSync(distMemory)) {
   process.exit(2)
 }
 
-process.env.IMHUB_MEMORY_ENABLED = '1'
+process.env.AGIM_MEMORY_ENABLED = '1'
 const home = mkdtempSync(join(tmpdir(), 'agim-mem-node-'))
 process.env.AGIM_HOME = home
-process.env.IMHUB_HOME = home
-delete process.env.IMHUB_MEMORY_VECTOR_BACKEND // vectors off → FTS5 fallback path
+process.env.AGIM_HOME = home
+delete process.env.AGIM_MEMORY_VECTOR_BACKEND // vectors off → FTS5 fallback path
 
 const memory = await import(distMemory)
 

@@ -5,7 +5,7 @@
 //   - depth-rejection branch in callAgentByName
 //   - agent-not-found branch
 //   - self-call rejection
-//   - disabled branch (IMHUB_A2A_ENABLED=0)
+//   - disabled branch (AGIM_A2A_ENABLED=0)
 //
 // What we can't (and skip the DB suite for):
 //   - jobs.parent_id / call_depth column persistence (bun + better-sqlite3
@@ -25,10 +25,10 @@ const artifacts = await import('../../src/core/artifacts.js')
 
 // Snapshot env state we mutate so afterAll can restore it.
 const ENV_SNAPSHOT: Record<string, string | undefined> = {
-  IMHUB_A2A_ENABLED: process.env.IMHUB_A2A_ENABLED,
-  IMHUB_A2A_MAX_DEPTH: process.env.IMHUB_A2A_MAX_DEPTH,
-  IMHUB_A2A_TIMEOUT_DEFAULT_MS: process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS,
-  IMHUB_A2A_MAX_RESULT_CHARS: process.env.IMHUB_A2A_MAX_RESULT_CHARS,
+  AGIM_A2A_ENABLED: process.env.AGIM_A2A_ENABLED,
+  AGIM_A2A_MAX_DEPTH: process.env.AGIM_A2A_MAX_DEPTH,
+  AGIM_A2A_TIMEOUT_DEFAULT_MS: process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS,
+  AGIM_A2A_MAX_RESULT_CHARS: process.env.AGIM_A2A_MAX_RESULT_CHARS,
 }
 
 function restoreEnv(): void {
@@ -65,50 +65,50 @@ describe('A2A env helpers', () => {
   beforeEach(() => { restoreEnv() })
 
   it('getA2AMaxResultChars: default / 0-disables / override / bad→default', () => {
-    delete process.env.IMHUB_A2A_MAX_RESULT_CHARS
+    delete process.env.AGIM_A2A_MAX_RESULT_CHARS
     expect(a2a.getA2AMaxResultChars()).toBe(a2a.A2A_MAX_RESULT_CHARS_DEFAULT)
-    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '0'
+    process.env.AGIM_A2A_MAX_RESULT_CHARS = '0'
     expect(a2a.getA2AMaxResultChars()).toBe(0)
-    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '1234'
+    process.env.AGIM_A2A_MAX_RESULT_CHARS = '1234'
     expect(a2a.getA2AMaxResultChars()).toBe(1234)
-    process.env.IMHUB_A2A_MAX_RESULT_CHARS = 'abc'
+    process.env.AGIM_A2A_MAX_RESULT_CHARS = 'abc'
     expect(a2a.getA2AMaxResultChars()).toBe(a2a.A2A_MAX_RESULT_CHARS_DEFAULT)
   })
 
-  it('isA2AEnabled defaults true; IMHUB_A2A_ENABLED=0 disables', () => {
-    delete process.env.IMHUB_A2A_ENABLED
+  it('isA2AEnabled defaults true; AGIM_A2A_ENABLED=0 disables', () => {
+    delete process.env.AGIM_A2A_ENABLED
     expect(a2a.isA2AEnabled()).toBe(true)
-    process.env.IMHUB_A2A_ENABLED = '0'
+    process.env.AGIM_A2A_ENABLED = '0'
     expect(a2a.isA2AEnabled()).toBe(false)
-    process.env.IMHUB_A2A_ENABLED = '1'
+    process.env.AGIM_A2A_ENABLED = '1'
     expect(a2a.isA2AEnabled()).toBe(true)
-    process.env.IMHUB_A2A_ENABLED = ''
+    process.env.AGIM_A2A_ENABLED = ''
     // empty string is not '0' → still enabled
     expect(a2a.isA2AEnabled()).toBe(true)
   })
 
   it('getA2AMaxDepth defaults to A2A_MAX_DEPTH_DEFAULT (8); env override applies', () => {
-    delete process.env.IMHUB_A2A_MAX_DEPTH
+    delete process.env.AGIM_A2A_MAX_DEPTH
     expect(a2a.getA2AMaxDepth()).toBe(a2a.A2A_MAX_DEPTH_DEFAULT)
     expect(a2a.getA2AMaxDepth()).toBe(8)
-    process.env.IMHUB_A2A_MAX_DEPTH = '7'
+    process.env.AGIM_A2A_MAX_DEPTH = '7'
     expect(a2a.getA2AMaxDepth()).toBe(7)
-    process.env.IMHUB_A2A_MAX_DEPTH = '0'
+    process.env.AGIM_A2A_MAX_DEPTH = '0'
     expect(a2a.getA2AMaxDepth()).toBe(0)
-    process.env.IMHUB_A2A_MAX_DEPTH = 'garbage'
+    process.env.AGIM_A2A_MAX_DEPTH = 'garbage'
     expect(a2a.getA2AMaxDepth()).toBe(a2a.A2A_MAX_DEPTH_DEFAULT)
   })
 
   it('getA2ATimeoutMs defaults to A2A_TIMEOUT_MS_DEFAULT; env override applies; rejects 0 / negative / NaN', () => {
-    delete process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS
+    delete process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
-    process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS = '5000'
+    process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '5000'
     expect(a2a.getA2ATimeoutMs()).toBe(5000)
-    process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS = '0'
+    process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '0'
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
-    process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS = '-1'
+    process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '-1'
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
-    process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS = 'x'
+    process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = 'x'
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
   })
 })
@@ -116,15 +116,15 @@ describe('A2A env helpers', () => {
 describe('A2A callAgentByName rejection branches', () => {
   beforeEach(() => { restoreEnv() })
 
-  it('returns disabled error when IMHUB_A2A_ENABLED=0', async () => {
-    process.env.IMHUB_A2A_ENABLED = '0'
+  it('returns disabled error when AGIM_A2A_ENABLED=0', async () => {
+    process.env.AGIM_A2A_ENABLED = '0'
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain('A2A disabled')
   })
 
-  it('rejects depth + 1 > IMHUB_A2A_MAX_DEPTH', async () => {
-    process.env.IMHUB_A2A_MAX_DEPTH = '2'
+  it('rejects depth + 1 > AGIM_A2A_MAX_DEPTH', async () => {
+    process.env.AGIM_A2A_MAX_DEPTH = '2'
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), { callerDepth: 5 })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain('call depth exceeded')
@@ -145,7 +145,7 @@ describe('A2A callAgentByName rejection branches', () => {
   })
 
   it('depth check runs BEFORE the self-call check (defense in depth)', async () => {
-    process.env.IMHUB_A2A_MAX_DEPTH = '0'
+    process.env.AGIM_A2A_MAX_DEPTH = '0'
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
       callerAgent: 'claude-code',
       callerDepth: 0,
@@ -157,7 +157,7 @@ describe('A2A callAgentByName rejection branches', () => {
 })
 
 describe('compressA2AResult (sub-output compression)', () => {
-  beforeEach(() => { restoreEnv(); delete process.env.IMHUB_A2A_MAX_RESULT_CHARS })
+  beforeEach(() => { restoreEnv(); delete process.env.AGIM_A2A_MAX_RESULT_CHARS })
 
   it('returns short results unchanged and writes no spill file', async () => {
     const jobId = 770001
@@ -166,7 +166,7 @@ describe('compressA2AResult (sub-output compression)', () => {
   })
 
   it('truncates over-cap results and spills the full text to _agim-output', async () => {
-    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '100'
+    process.env.AGIM_A2A_MAX_RESULT_CHARS = '100'
     const jobId = 770002
     const full = 'x'.repeat(500)
     const out = await a2a.compressA2AResult(jobId, full)
@@ -177,7 +177,7 @@ describe('compressA2AResult (sub-output compression)', () => {
   })
 
   it('cap=0 disables truncation (returns full text)', async () => {
-    process.env.IMHUB_A2A_MAX_RESULT_CHARS = '0'
+    process.env.AGIM_A2A_MAX_RESULT_CHARS = '0'
     const full = 'y'.repeat(9000)
     expect(await a2a.compressA2AResult(770003, full)).toBe(full)
   })

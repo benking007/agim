@@ -6,9 +6,9 @@
 // can flip between them without code changes.
 //
 // Selection order (first hit wins):
-//   1. IMHUB_TRANSCRIBE_PROVIDER=openai|whispercpp|none — explicit override
+//   1. AGIM_TRANSCRIBE_PROVIDER=openai|whispercpp|none — explicit override
 //   2. OPENAI_API_KEY set → openai
-//   3. IMHUB_WHISPERCPP_BIN set → whispercpp
+//   3. AGIM_WHISPERCPP_BIN set → whispercpp
 //   4. else → 'none' (callers should surface a fallback message to the user)
 //
 // Failures throw {@link TranscribeError} with provider + reason; the caller
@@ -52,12 +52,12 @@ export class TranscribeError extends Error {
 /** Resolve which provider to use given current env. Pure / sync so callers
  *  can quickly check "is anything configured" without doing IO. */
 export function detectProvider(): TranscribeProvider {
-  const explicit = process.env.IMHUB_TRANSCRIBE_PROVIDER?.toLowerCase()
+  const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.toLowerCase()
   if (explicit === 'openai' || explicit === 'whispercpp' || explicit === 'none') {
     return explicit
   }
   if (process.env.OPENAI_API_KEY) return 'openai'
-  if (process.env.IMHUB_WHISPERCPP_BIN) return 'whispercpp'
+  if (process.env.AGIM_WHISPERCPP_BIN) return 'whispercpp'
   return 'none'
 }
 
@@ -72,7 +72,7 @@ export async function transcribe(filePath: string, opts: TranscribeOptions = {})
   const provider = opts.provider ?? detectProvider()
   if (provider === 'none') {
     throw new TranscribeError(
-      'no provider configured (set OPENAI_API_KEY or IMHUB_WHISPERCPP_BIN)',
+      'no provider configured (set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN)',
       'none',
     )
   }
@@ -92,7 +92,7 @@ async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): 
   const key = process.env.OPENAI_API_KEY
   if (!key) throw new TranscribeError('OPENAI_API_KEY not set', 'openai')
   const baseURL = process.env.OPENAI_BASE_URL?.replace(/\/$/, '') ?? 'https://api.openai.com/v1'
-  const model = process.env.IMHUB_OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1'
+  const model = process.env.AGIM_OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1'
 
   const fileBuf = await readFile(filePath)
   const form = new FormData()
@@ -133,10 +133,10 @@ async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): 
 }
 
 async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOptions): Promise<string> {
-  const bin = process.env.IMHUB_WHISPERCPP_BIN
-  const model = process.env.IMHUB_WHISPERCPP_MODEL
-  if (!bin) throw new TranscribeError('IMHUB_WHISPERCPP_BIN not set', 'whispercpp')
-  if (!model) throw new TranscribeError('IMHUB_WHISPERCPP_MODEL not set', 'whispercpp')
+  const bin = process.env.AGIM_WHISPERCPP_BIN
+  const model = process.env.AGIM_WHISPERCPP_MODEL
+  if (!bin) throw new TranscribeError('AGIM_WHISPERCPP_BIN not set', 'whispercpp')
+  if (!model) throw new TranscribeError('AGIM_WHISPERCPP_MODEL not set', 'whispercpp')
 
   // whisper.cpp's "native" multi-format support (flac/mp3/ogg) covers Vorbis
   // but NOT Opus, which is what TG voice messages use. Pre-converting to
@@ -144,14 +144,14 @@ async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOption
   // and works for every codec ffmpeg recognizes — strictly more reliable
   // than trusting whisper-cli's reader. Cost: one short ffmpeg invocation
   // per voice message (≈100 ms for a few-second clip).
-  const wavPath = join(tmpdir(), `imhub-whisper-${randomBytes(6).toString('hex')}.wav`)
+  const wavPath = join(tmpdir(), `agim-whisper-${randomBytes(6).toString('hex')}.wav`)
   try {
     await convertToWav(filePath, wavPath)
 
     // Default args target whisper.cpp's `whisper-cli` (newer build) which prints
     // the transcript to stdout when --no-prints + --no-timestamps are set.
-    // Older `main` binary will need IMHUB_WHISPERCPP_ARGS overrides.
-    const extraArgs = (process.env.IMHUB_WHISPERCPP_ARGS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+    // Older `main` binary will need AGIM_WHISPERCPP_ARGS overrides.
+    const extraArgs = (process.env.AGIM_WHISPERCPP_ARGS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const args = ['-m', model, '-f', wavPath, '--no-prints', '--no-timestamps', ...extraArgs]
     if (opts.language) args.push('-l', opts.language)
 

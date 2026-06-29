@@ -34,7 +34,7 @@ import { buildWebDispatcher, getWebTools } from '../../../core/llm/web-dispatche
 import { buildExecDispatcher, getExecTools } from '../../../core/llm/exec-dispatcher.js'
 import { buildTodoDispatcher, getTodoTools } from '../../../core/llm/todo-dispatcher.js'
 import { buildPlanExitDispatcher, getPlanExitTools } from '../../../core/llm/plan-exit-dispatcher.js'
-import { buildImhubDispatcher, getImhubTools } from '../../../core/llm/imhub-dispatcher.js'
+import { buildAgimDispatcher, getAgimTools } from '../../../core/llm/agim-dispatcher.js'
 
 /** One tool source: defs advertised + dispatcher + concurrency-safe names.
  *  `parallelSafe` lists ONLY genuinely read-only / pure / order-independent
@@ -59,8 +59,8 @@ export interface AssembleOpts {
   planExitCtx: Parameters<typeof buildPlanExitDispatcher>[0]
   /** Advertise the plan-exit tool to the model (only when plan mode is on). */
   advertisePlanExit: boolean
-  /** imhub (mcp__imhub__*) dispatcher context. */
-  imhubCtx: Parameters<typeof buildImhubDispatcher>[0]
+  /** agim (mcp__agim__*) dispatcher context. */
+  agimCtx: Parameters<typeof buildAgimDispatcher>[0]
 }
 
 export interface AssembledTools {
@@ -80,9 +80,9 @@ export interface AssembledTools {
 const BUILTIN_SAFE = new Set(['native_echo', 'native_now', 'native_random_uuid'])
 const FS_SAFE = new Set(['native_read_file', 'native_list_dir', 'native_glob', 'native_grep'])
 const WEB_SAFE = new Set(['native_web_fetch', 'native_web_search'])
-const IMHUB_SAFE = new Set([
-  'mcp__imhub__read_skill', 'mcp__imhub__list_skills', 'mcp__imhub__search_memos',
-  'mcp__imhub__memory_list', 'mcp__imhub__memory_query',
+const AGIM_SAFE = new Set([
+  'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
+  'mcp__agim__memory_list', 'mcp__agim__memory_query',
 ])
 const EMPTY: ReadonlySet<string> = new Set()
 
@@ -103,7 +103,7 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
       dispatch: buildPlanExitDispatcher(opts.planExitCtx),
       parallelSafe: EMPTY,
     },
-    { tools: getImhubTools(), dispatch: buildImhubDispatcher(opts.imhubCtx), parallelSafe: IMHUB_SAFE },
+    { tools: getAgimTools(), dispatch: buildAgimDispatcher(opts.agimCtx), parallelSafe: AGIM_SAFE },
   ]
 
   // External MCP — a dynamic partition. Always serial (unknown side effects),

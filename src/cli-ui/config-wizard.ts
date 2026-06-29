@@ -61,7 +61,7 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
   while (true) {
     let picked: Section | typeof BACK
     try {
-      // ACP main-menu entry is gated by IMHUB_ENABLE_REMOTE_AGENT — see
+      // ACP main-menu entry is gated by AGIM_ENABLE_REMOTE_AGENT — see
       // src/core/feature-flags.ts. Resolved fresh on each loop iteration
       // so toggling the env mid-wizard surfaces the option without a
       // restart.
@@ -152,7 +152,7 @@ const ALL_MESSENGER_SPECS: MessengerSpec[] = [
 ]
 
 // Visible subset — compliance gate via feature-flags.ts. Discord +
-// Telegram are filtered out unless IMHUB_ENABLE_GLOBAL_IM=1. Resolved
+// Telegram are filtered out unless AGIM_ENABLE_GLOBAL_IM=1. Resolved
 // fresh each access so an env-file edit during the wizard takes effect
 // on the next iteration of the menu loop.
 function visibleMessengerSpecs(): MessengerSpec[] {
@@ -1018,12 +1018,12 @@ async function sectionSmtp(lang: Lang): Promise<void> {
   // set via the systemd unit's Environment= lines also show up in the
   // prefill — historical installs put them there directly.
   const current = readEffectiveEnv()
-  const hasExisting = Boolean(current.IMHUB_SMTP_HOST && current.IMHUB_SMTP_USER)
+  const hasExisting = Boolean(current.AGIM_SMTP_HOST && current.AGIM_SMTP_USER)
   console.log(hasExisting
     ? t(lang, 'smtp.current_set', {
-        user: current.IMHUB_SMTP_USER ?? '',
-        host: current.IMHUB_SMTP_HOST ?? '',
-        port: current.IMHUB_SMTP_PORT ?? '?',
+        user: current.AGIM_SMTP_USER ?? '',
+        host: current.AGIM_SMTP_HOST ?? '',
+        port: current.AGIM_SMTP_PORT ?? '?',
       })
     : t(lang, 'smtp.current_unset'))
   console.log()
@@ -1039,7 +1039,7 @@ async function sectionSmtp(lang: Lang): Promise<void> {
   })) as 'edit' | 'disable' | typeof BACK
   if (action === BACK) return
   if (action === 'disable') {
-    for (const k of ['IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS', 'IMHUB_SMTP_FROM', 'IMHUB_SMTP_SECURE']) {
+    for (const k of ['AGIM_SMTP_HOST', 'AGIM_SMTP_PORT', 'AGIM_SMTP_USER', 'AGIM_SMTP_PASS', 'AGIM_SMTP_FROM', 'AGIM_SMTP_SECURE']) {
       unsetEnvKey(k)
     }
     console.log(t(lang, 'smtp.cleared', { file: ENV_FILE }))
@@ -1064,32 +1064,32 @@ async function sectionSmtp(lang: Lang): Promise<void> {
   // suggested port/TLS pair.
   const host = await inputText({
     message: t(lang, 'smtp.field.host'),
-    default: current.IMHUB_SMTP_HOST ?? preset.host,
+    default: current.AGIM_SMTP_HOST ?? preset.host,
     required: true,
   })
   const port = await inputText({
     message: t(lang, 'smtp.field.port'),
-    default: String(current.IMHUB_SMTP_PORT ?? preset.port ?? 465),
+    default: String(current.AGIM_SMTP_PORT ?? preset.port ?? 465),
     required: true,
     validate: v => /^\d+$/.test(v) && Number(v) > 0 && Number(v) < 65536 || '1..65535',
   })
   const user = await inputText({
     message: t(lang, 'smtp.field.user'),
-    default: current.IMHUB_SMTP_USER,
+    default: current.AGIM_SMTP_USER,
     required: true,
   })
   // Password: never prefill literally (leaks via scrollback). Empty input
   // means "keep what's stored". When nothing is stored yet, require it.
   const passInput = await inputSecret({
-    message: t(lang, current.IMHUB_SMTP_PASS ? 'smtp.field.pass_keep' : 'smtp.field.pass'),
-    required: !current.IMHUB_SMTP_PASS,
+    message: t(lang, current.AGIM_SMTP_PASS ? 'smtp.field.pass_keep' : 'smtp.field.pass'),
+    required: !current.AGIM_SMTP_PASS,
   })
-  const pass = passInput || current.IMHUB_SMTP_PASS || ''
+  const pass = passInput || current.AGIM_SMTP_PASS || ''
   const from = await inputText({
     message: t(lang, 'smtp.field.from'),
-    default: current.IMHUB_SMTP_FROM || user,
+    default: current.AGIM_SMTP_FROM || user,
   })
-  let secure: 'auto' | 'true' | 'false' = preset.secure ?? (current.IMHUB_SMTP_SECURE as 'auto'|'true'|'false') ?? 'auto'
+  let secure: 'auto' | 'true' | 'false' = preset.secure ?? (current.AGIM_SMTP_SECURE as 'auto'|'true'|'false') ?? 'auto'
   if (presetId === 'custom') {
     secure = (await menu<'auto' | 'true' | 'false'>({
       lang,
@@ -1103,18 +1103,18 @@ async function sectionSmtp(lang: Lang): Promise<void> {
     })) as 'auto' | 'true' | 'false'
   }
   updateEnvFile({
-    IMHUB_SMTP_HOST: host,
-    IMHUB_SMTP_PORT: port,
-    IMHUB_SMTP_USER: user,
-    IMHUB_SMTP_PASS: pass,
-    IMHUB_SMTP_FROM: from,
-    IMHUB_SMTP_SECURE: secure,
+    AGIM_SMTP_HOST: host,
+    AGIM_SMTP_PORT: port,
+    AGIM_SMTP_USER: user,
+    AGIM_SMTP_PASS: pass,
+    AGIM_SMTP_FROM: from,
+    AGIM_SMTP_SECURE: secure,
   })
   console.log(t(lang, 'smtp.saved', { file: ENV_FILE }))
   // Warn if any wizard-managed SMTP key is also set by the running env
   // (most commonly: systemd unit's `Environment=` lines). Writing the
   // env file alone won't change the active value in that case.
-  for (const k of ['IMHUB_SMTP_HOST', 'IMHUB_SMTP_PORT', 'IMHUB_SMTP_USER', 'IMHUB_SMTP_PASS', 'IMHUB_SMTP_FROM']) {
+  for (const k of ['AGIM_SMTP_HOST', 'AGIM_SMTP_PORT', 'AGIM_SMTP_USER', 'AGIM_SMTP_PASS', 'AGIM_SMTP_FROM']) {
     if (hasProcessEnvOverride(k)) {
       console.log(t(lang, 'env.shadowed_warn', { key: k, file: ENV_FILE }))
       break // one warning is enough; user gets the picture
@@ -1133,7 +1133,7 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     console.log()
     // Effective env so a key set via the systemd unit / shell export
     // still shows up here, not just keys written into ~/.agim/env.
-    const current = readEffectiveEnv().IMHUB_BAIDU_MAP_AK
+    const current = readEffectiveEnv().AGIM_BAIDU_MAP_AK
     const status = current ? `${current.slice(0, 6)}…${current.slice(-4)} (set)` : '(unset)'
     const action = (await menu<'set' | 'clear'>({
       lang,
@@ -1146,7 +1146,7 @@ async function sectionBaidu(lang: Lang): Promise<void> {
     })) as 'set' | 'clear' | typeof BACK
     if (action === BACK) return
     if (action === 'clear') {
-      unsetEnvKey('IMHUB_BAIDU_MAP_AK')
+      unsetEnvKey('AGIM_BAIDU_MAP_AK')
       console.log(t(lang, 'baidu.cleared'))
       continue
     }
@@ -1159,10 +1159,10 @@ async function sectionBaidu(lang: Lang): Promise<void> {
         return true
       },
     })
-    updateEnvFile({ IMHUB_BAIDU_MAP_AK: ak })
+    updateEnvFile({ AGIM_BAIDU_MAP_AK: ak })
     console.log(t(lang, 'baidu.saved', { file: ENV_FILE }))
-    if (hasProcessEnvOverride('IMHUB_BAIDU_MAP_AK')) {
-      console.log(t(lang, 'env.shadowed_warn', { key: 'IMHUB_BAIDU_MAP_AK', file: ENV_FILE }))
+    if (hasProcessEnvOverride('AGIM_BAIDU_MAP_AK')) {
+      console.log(t(lang, 'env.shadowed_warn', { key: 'AGIM_BAIDU_MAP_AK', file: ENV_FILE }))
     }
   }
 }

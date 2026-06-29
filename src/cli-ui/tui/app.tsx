@@ -11,7 +11,7 @@
 //   * /export — dump conversation to ./agim-tui-<timestamp>.md
 //   * ctrl+p  — global command palette (slash + actions, fuzzy)
 //   * completion bell — write \x07 on assistant reply finish (off via
-//                       IMHUB_TUI_NO_BELL=1)
+//                       AGIM_TUI_NO_BELL=1)
 //   * markdown rendering for assistant replies (paragraphs, headings,
 //                       lists, code blocks with naive keyword colour,
 //                       inline code, bold/italic, blockquotes)
@@ -1193,7 +1193,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       })
       // Completion bell — visible (well, audible) cue for sshing-into-
       // box-and-waiting users. Suppressible via env.
-      if (process.env.IMHUB_TUI_NO_BELL !== '1') {
+      if (process.env.AGIM_TUI_NO_BELL !== '1') {
         try { process.stdout.write('\x07') } catch { /* ignore */ }
       }
       // Persist after each agent turn so a SIGKILL still preserves

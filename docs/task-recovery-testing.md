@@ -105,7 +105,7 @@ sqlite3 /root/.agim/jobs.db \
 # 临时关停 inline tracking
 sudo systemctl edit agim
 # [Service]
-# Environment="IMHUB_INLINE_JOB_TRACKING=0"
+# Environment="AGIM_INLINE_JOB_TRACKING=0"
 sudo systemctl restart agim
 
 # 再发条消息，jobs 表不应该新增 inline 行

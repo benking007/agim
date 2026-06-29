@@ -9,8 +9,8 @@ import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_DIR = join(tmpdir(), `imhub-memos-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_MEMOS_DB = join(TEST_DIR, 'memos.db')
+const TEST_DIR = join(tmpdir(), `agim-memos-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_MEMOS_DB = join(TEST_DIR, 'memos.db')
 
 const mod = await import('../../src/core/memos.js')
 const {
@@ -185,14 +185,14 @@ describe('TZ helpers (UTC+8 storage shape)', () => {
 })
 
 describe('isGeocodingAvailable', () => {
-  it('reflects IMHUB_BAIDU_MAP_AK', () => {
-    const orig = process.env.IMHUB_BAIDU_MAP_AK
-    delete process.env.IMHUB_BAIDU_MAP_AK
+  it('reflects AGIM_BAIDU_MAP_AK', () => {
+    const orig = process.env.AGIM_BAIDU_MAP_AK
+    delete process.env.AGIM_BAIDU_MAP_AK
     expect(isGeocodingAvailable()).toBe(false)
-    process.env.IMHUB_BAIDU_MAP_AK = 'fake'
+    process.env.AGIM_BAIDU_MAP_AK = 'fake'
     expect(isGeocodingAvailable()).toBe(true)
-    if (orig === undefined) delete process.env.IMHUB_BAIDU_MAP_AK
-    else process.env.IMHUB_BAIDU_MAP_AK = orig
+    if (orig === undefined) delete process.env.AGIM_BAIDU_MAP_AK
+    else process.env.AGIM_BAIDU_MAP_AK = orig
   })
 })
 

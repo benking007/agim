@@ -133,7 +133,7 @@ function searchAction(query: string, ownerOpts: { userId?: string }): string {
 function hereAction(rest: string, ctx: RouteContext): string {
   const what = rest.trim().slice(0, 80)
   if (!ctx.userId) return '❌ 无法识别用户身份，无法发起位置授权请求。'
-  const baseUrl = (process.env.IMHUB_LOC_BASE_URL || DEFAULT_LOC_BASE_URL).replace(/\/+$/, '')
+  const baseUrl = (process.env.AGIM_LOC_BASE_URL || DEFAULT_LOC_BASE_URL).replace(/\/+$/, '')
   const { token, ttlSeconds } = issueToken(
     {
       platform: ctx.platform,

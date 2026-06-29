@@ -6,7 +6,7 @@
 //   (b) non-transient errors (e.g. "AUTH_INVALID") → no retry, throws
 //       immediately
 //   (c) abort errors → no retry (already handled elsewhere)
-//   (d) env IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX=0 disables retry
+//   (d) env AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX=0 disables retry
 //   (e) all retries exhausted → final error surfaces
 //
 // We can't easily test the delay path without flaky time-based
@@ -57,8 +57,8 @@ class FlakyStreamProvider extends LlmProvider {
 
 describe('runAgentLoop — first-token retry (v1.2.138)', () => {
   const KEYS = [
-    'IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX',
-    'IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
+    'AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX',
+    'AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
   ]
   const saved: Record<string, string | undefined> = {}
   beforeEach(() => {
@@ -67,7 +67,7 @@ describe('runAgentLoop — first-token retry (v1.2.138)', () => {
       delete process.env[k]
     }
     // Always force 0ms delay so tests don't waste 1s per case.
-    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS = '0'
+    process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS = '0'
   })
   afterEach(() => {
     for (const k of KEYS) {
@@ -102,8 +102,8 @@ describe('runAgentLoop — first-token retry (v1.2.138)', () => {
     expect(r.error).toMatch(/AUTH_INVALID/)
   })
 
-  it('IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX=0 disables retry', async () => {
-    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX = '0'
+  it('AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX=0 disables retry', async () => {
+    process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX = '0'
     const provider = new FlakyStreamProvider([true, false])
     const r = await runAgentLoop({
       provider,
@@ -114,8 +114,8 @@ describe('runAgentLoop — first-token retry (v1.2.138)', () => {
     expect(r.finishReason).toBe('error')
   })
 
-  it('IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX=2 retries twice before giving up', async () => {
-    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX = '2'
+  it('AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX=2 retries twice before giving up', async () => {
+    process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX = '2'
     // All three throw transient → exhausted budget.
     const provider = new FlakyStreamProvider([true, true, true])
     const r = await runAgentLoop({
@@ -128,8 +128,8 @@ describe('runAgentLoop — first-token retry (v1.2.138)', () => {
     expect(r.finishReason).toBe('error')
   })
 
-  it('IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX=2: succeeds on 2nd retry', async () => {
-    process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX = '2'
+  it('AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX=2: succeeds on 2nd retry', async () => {
+    process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX = '2'
     const provider = new FlakyStreamProvider([true, true, false])
     const r = await runAgentLoop({
       provider,

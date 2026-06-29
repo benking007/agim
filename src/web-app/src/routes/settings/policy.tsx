@@ -4,11 +4,11 @@
  * persists to `~/.agim/.env` via PUT /api/env immediately.
  *
  * Surfaced here:
- *   * IMHUB_DANGEROUSLY_SKIP_PERMISSIONS (safety)
- *   * IMHUB_TIMEOUT_DEFAULT              (approval bus default)
- *   * IMHUB_MEMORY_ENABLED               (memory subsystem)
- *   * IMHUB_VIEWER_ENABLED               (long-message viewer)
- *   * IMHUB_A2A_NOTIFY_MODE              (cross-agent notify verbosity)
+ *   * AGIM_DANGEROUSLY_SKIP_PERMISSIONS (safety)
+ *   * AGIM_TIMEOUT_DEFAULT              (approval bus default)
+ *   * AGIM_MEMORY_ENABLED               (memory subsystem)
+ *   * AGIM_VIEWER_ENABLED               (long-message viewer)
+ *   * AGIM_A2A_NOTIFY_MODE              (cross-agent notify verbosity)
  *
  * All five are still editable in /settings/env. This page exists
  * because:
@@ -60,11 +60,11 @@ export default function SettingsPolicyRoute(): JSX.Element {
   }
 
   const env = envQuery.data?.env ?? {}
-  const skipPerms     = envBool(env.IMHUB_DANGEROUSLY_SKIP_PERMISSIONS)
-  const memEnabled    = envBool(env.IMHUB_MEMORY_ENABLED)
-  const viewerEnabled = envBool(env.IMHUB_VIEWER_ENABLED)
-  const timeoutAllow  = (env.IMHUB_TIMEOUT_DEFAULT ?? '').toLowerCase() === 'allow'
-  const a2aMode       = (env.IMHUB_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
+  const skipPerms     = envBool(env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS)
+  const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
+  const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
+  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? '').toLowerCase() === 'allow'
+  const a2aMode       = (env.AGIM_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
@@ -93,29 +93,29 @@ export default function SettingsPolicyRoute(): JSX.Element {
           <SafetyCard
             value={skipPerms}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('IMHUB_DANGEROUSLY_SKIP_PERMISSIONS', v ? '1' : '0')}
+            onChange={(v) => void setValue('AGIM_DANGEROUSLY_SKIP_PERMISSIONS', v ? '1' : '0')}
           />
           <ApprovalCard
             allowOnTimeout={timeoutAllow}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('IMHUB_TIMEOUT_DEFAULT', v)}
+            onChange={(v) => void setValue('AGIM_TIMEOUT_DEFAULT', v)}
           />
           <ToggleCard
             sectionKey="memory"
             value={memEnabled}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('IMHUB_MEMORY_ENABLED', v ? '1' : '0')}
+            onChange={(v) => void setValue('AGIM_MEMORY_ENABLED', v ? '1' : '0')}
           />
           <ToggleCard
             sectionKey="viewer"
             value={viewerEnabled}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('IMHUB_VIEWER_ENABLED', v ? '1' : '0')}
+            onChange={(v) => void setValue('AGIM_VIEWER_ENABLED', v ? '1' : '0')}
           />
           <A2ANotifyCard
             value={a2aMode}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('IMHUB_A2A_NOTIFY_MODE', v)}
+            onChange={(v) => void setValue('AGIM_A2A_NOTIFY_MODE', v)}
           />
         </div>
       )}

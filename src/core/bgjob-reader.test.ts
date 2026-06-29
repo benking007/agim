@@ -16,7 +16,7 @@ import {
 } from './bgjob-reader.js'
 
 let tmp: string
-const ORIGINAL_ENV = process.env.IMHUB_BGJOB_ROOTS
+const ORIGINAL_ENV = process.env.AGIM_BGJOB_ROOTS
 
 async function writeJob(root: string, id: string, meta: Record<string, unknown>, log?: string): Promise<void> {
   const dir = join(root, id)
@@ -30,34 +30,34 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  if (ORIGINAL_ENV === undefined) delete process.env.IMHUB_BGJOB_ROOTS
-  else process.env.IMHUB_BGJOB_ROOTS = ORIGINAL_ENV
+  if (ORIGINAL_ENV === undefined) delete process.env.AGIM_BGJOB_ROOTS
+  else process.env.AGIM_BGJOB_ROOTS = ORIGINAL_ENV
   await rm(tmp, { recursive: true, force: true })
 })
 
 describe('resolveRoots', () => {
   it('returns defaults when env unset', () => {
-    delete process.env.IMHUB_BGJOB_ROOTS
+    delete process.env.AGIM_BGJOB_ROOTS
     const roots = resolveRoots()
     expect(roots.length).toBe(3)
     expect(roots.map((r) => r.id).sort()).toEqual(['claude', 'codex', 'opencode'])
   })
 
   it('parses comma-separated absolute paths from env, with id= prefix', () => {
-    process.env.IMHUB_BGJOB_ROOTS = `c=${tmp}/a,o=${tmp}/b`
+    process.env.AGIM_BGJOB_ROOTS = `c=${tmp}/a,o=${tmp}/b`
     const roots = resolveRoots()
     expect(roots.map((r) => r.id)).toEqual(['c', 'o'])
     expect(roots[0].path).toBe(join(tmp, 'a'))
   })
 
   it('falls back to default when env contains no valid entries', () => {
-    process.env.IMHUB_BGJOB_ROOTS = 'relative/path'
+    process.env.AGIM_BGJOB_ROOTS = 'relative/path'
     const roots = resolveRoots()
     expect(roots.length).toBe(3) // back to defaults
   })
 
   it('uses basename as id when no id= prefix', () => {
-    process.env.IMHUB_BGJOB_ROOTS = `${tmp}/myroot`
+    process.env.AGIM_BGJOB_ROOTS = `${tmp}/myroot`
     const roots = resolveRoots()
     expect(roots[0].id).toBe('myroot')
   })
@@ -186,7 +186,7 @@ describe('listAllJobs + findRoot', () => {
     await mkdir(b, { recursive: true })
     await writeJob(a, 'jA', { id: 'jA', name: 'a-only', status: 'running' })
     await writeJob(b, 'jB', { id: 'jB', name: 'b-only', status: 'completed' })
-    process.env.IMHUB_BGJOB_ROOTS = `aa=${a},bb=${b}`
+    process.env.AGIM_BGJOB_ROOTS = `aa=${a},bb=${b}`
 
     const all = await listAllJobs()
     expect(all.length).toBe(2)
@@ -197,7 +197,7 @@ describe('listAllJobs + findRoot', () => {
   })
 
   it('findRoot returns null for unknown id', () => {
-    process.env.IMHUB_BGJOB_ROOTS = `aa=${tmp}`
+    process.env.AGIM_BGJOB_ROOTS = `aa=${tmp}`
     expect(findRoot('aa')?.path).toBe(tmp)
     expect(findRoot('zz')).toBeNull()
   })

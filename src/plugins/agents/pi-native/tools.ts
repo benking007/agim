@@ -1,5 +1,5 @@
 // Assembles the Agim Agent tool surface (builtin / fs / web / exec / todo /
-// plan-exit / imhub / external-MCP), then bridges ToolDef[] + dispatcher onto
+// plan-exit / agim / external-MCP), then bridges ToolDef[] + dispatcher onto
 // pi AgentTool[].
 
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
@@ -22,7 +22,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
   const planThreadKey =
     o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
 
-  const imhubCtx = {
+  const agimCtx = {
     platform: o.platform || 'native-agent',
     channelId: o.channelId || 'default',
     threadId: o.threadId || sessionId,
@@ -31,7 +31,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     callerDepth: o.callDepth ?? 0,
     // Link A2A callee rows to the parent turn so the web A2A views can see them.
     ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
-    // Propagate plan-mode to any call_agent the imhub dispatcher fires, so a
+    // Propagate plan-mode to any call_agent the agim dispatcher fires, so a
     // plan-mode parent can't delegate a write task at full access (mirrors the
     // v1.2.154 approval-bus fix on the legacy path).
     callerPlanMode: (planThreadKey ? effectivePlanModeOn(planThreadKey) : false) || o.planMode === true,
@@ -55,7 +55,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
       userId: o.userId,
     },
     advertisePlanExit: !!(planThreadKey && effectivePlanModeOn(planThreadKey)),
-    imhubCtx,
+    agimCtx,
   })
 
   return {

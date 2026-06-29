@@ -34,10 +34,10 @@ the prior behavior exactly.
 
 Resolution order, single source of truth in `core/agent-cwd.ts`:
 
-1. Env override `IMHUB_<AGENT>_CWD` always wins (admin escape hatch / future
+1. Env override `AGIM_<AGENT>_CWD` always wins (admin escape hatch / future
    per-tenant overrides).
 2. If `opts.threadId && opts.platform`, return
-   `<IMHUB_WORKSPACES_ROOT>/<agent>/`.
+   `<AGIM_WORKSPACES_ROOT>/<agent>/`.
 3. Otherwise return `undefined` (web/scheduler path, unchanged).
 
 `SpawnPlan` gains an optional `cwd?: string`, which `spawnStream` forwards to
@@ -64,7 +64,7 @@ seedable `bootstrapAgentWorkspaces()`. Future agents just call
 
 `claude-code/index.ts:prepareCommand` has 4 returns:
 
-1. `IMHUB_APPROVAL_DISABLED=1` → `dontAsk` mode
+1. `AGIM_APPROVAL_DISABLED=1` → `dontAsk` mode
 2. Approval bus not started → fallback `dontAsk`
 3. No IM context (web/scheduler) → fallback `dontAsk`
 4. `mkdtemp` / `writeFile` for mcp-config failed → fallback `dontAsk`

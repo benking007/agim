@@ -7,7 +7,7 @@
 import { describe, it, expect, afterEach } from 'bun:test'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from '../../src/core/feature-flags'
 
-const KEYS = ['IMHUB_ENABLE_GLOBAL_IM', 'IMHUB_ENABLE_REMOTE_AGENT']
+const KEYS = ['AGIM_ENABLE_GLOBAL_IM', 'AGIM_ENABLE_REMOTE_AGENT']
 
 afterEach(() => {
   for (const k of KEYS) delete process.env[k]
@@ -15,18 +15,18 @@ afterEach(() => {
 
 describe('isGlobalImEnabled', () => {
   it('returns false when the env var is unset', () => {
-    delete process.env.IMHUB_ENABLE_GLOBAL_IM
+    delete process.env.AGIM_ENABLE_GLOBAL_IM
     expect(isGlobalImEnabled()).toBe(false)
   })
 
   it('returns true only when set to the exact string "1"', () => {
-    process.env.IMHUB_ENABLE_GLOBAL_IM = '1'
+    process.env.AGIM_ENABLE_GLOBAL_IM = '1'
     expect(isGlobalImEnabled()).toBe(true)
   })
 
   it('does NOT accept truthy-ish values (compliance-strict)', () => {
     for (const v of ['true', 'yes', 'on', 'TRUE', '0', '', '2', ' 1 ']) {
-      process.env.IMHUB_ENABLE_GLOBAL_IM = v
+      process.env.AGIM_ENABLE_GLOBAL_IM = v
       expect(isGlobalImEnabled()).toBe(false)
     }
   })
@@ -34,18 +34,18 @@ describe('isGlobalImEnabled', () => {
 
 describe('isRemoteAgentEnabled', () => {
   it('returns false when the env var is unset', () => {
-    delete process.env.IMHUB_ENABLE_REMOTE_AGENT
+    delete process.env.AGIM_ENABLE_REMOTE_AGENT
     expect(isRemoteAgentEnabled()).toBe(false)
   })
 
   it('returns true only when set to the exact string "1"', () => {
-    process.env.IMHUB_ENABLE_REMOTE_AGENT = '1'
+    process.env.AGIM_ENABLE_REMOTE_AGENT = '1'
     expect(isRemoteAgentEnabled()).toBe(true)
   })
 
   it('does NOT accept truthy-ish values (compliance-strict)', () => {
     for (const v of ['true', 'yes', 'on', '0', '']) {
-      process.env.IMHUB_ENABLE_REMOTE_AGENT = v
+      process.env.AGIM_ENABLE_REMOTE_AGENT = v
       expect(isRemoteAgentEnabled()).toBe(false)
     }
   })
@@ -53,14 +53,14 @@ describe('isRemoteAgentEnabled', () => {
 
 describe('the two flags are independent', () => {
   it('global-IM on does not enable remote-agent', () => {
-    process.env.IMHUB_ENABLE_GLOBAL_IM = '1'
-    delete process.env.IMHUB_ENABLE_REMOTE_AGENT
+    process.env.AGIM_ENABLE_GLOBAL_IM = '1'
+    delete process.env.AGIM_ENABLE_REMOTE_AGENT
     expect(isGlobalImEnabled()).toBe(true)
     expect(isRemoteAgentEnabled()).toBe(false)
   })
   it('remote-agent on does not enable global-IM', () => {
-    delete process.env.IMHUB_ENABLE_GLOBAL_IM
-    process.env.IMHUB_ENABLE_REMOTE_AGENT = '1'
+    delete process.env.AGIM_ENABLE_GLOBAL_IM
+    process.env.AGIM_ENABLE_REMOTE_AGENT = '1'
     expect(isGlobalImEnabled()).toBe(false)
     expect(isRemoteAgentEnabled()).toBe(true)
   })

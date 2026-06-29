@@ -31,7 +31,7 @@ When the user asks to generate / draw / design an image:
    - Send a `sendmail`-skill email with the prompt to a third-party
      service if the operator wired one.
    - Ask the operator to enable image generation
-     (`mcp__imhub__push_message` to the operator-alert thread is
+     (`mcp__agim__push_message` to the operator-alert thread is
      OK if the prompt is "operator hint" framed).
 
 **Don't fabricate output.** Don't claim you generated an image when no
@@ -54,7 +54,7 @@ native_image_gen({
 Returns `{ id, path, mime, prompt, model }` — store these as
 **artifacts** in the per-thread media directory, do NOT inline raw
 base64 in chat. Deliver to the user via the existing media path:
-`mcp__imhub__push_message({ text: "✅ done", media: [path] })`.
+`mcp__agim__push_message({ text: "✅ done", media: [path] })`.
 
 ## Prompt-writing rules (once the tool exists)
 

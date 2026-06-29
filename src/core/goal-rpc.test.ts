@@ -1,4 +1,4 @@
-// IMPORTANT: goals.ts caches the db path via `process.env.IMHUB_GOALS_DB`
+// IMPORTANT: goals.ts caches the db path via `process.env.AGIM_GOALS_DB`
 // at module-load time (a top-level `const`). Set the test path here,
 // BEFORE the import below — otherwise the production AGIM_HOME path is
 // captured and the test pollutes (or fails to open) the operator's
@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const _TMP = mkdtempSync(join(tmpdir(), 'agim-goal-rpc-'))
-process.env.IMHUB_GOALS_DB = join(_TMP, 'goals.db')
+process.env.AGIM_GOALS_DB = join(_TMP, 'goals.db')
 
 import { describe, it, expect, afterAll, beforeEach } from 'bun:test'
 import { handleGoalOp, _activeGoalSnapshot, __resetCompletionCacheForTesting } from './goal-rpc.js'

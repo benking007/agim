@@ -1,4 +1,4 @@
-// ensure-mcp-config.ts — register the imhub MCP sidecar into opencode's
+// ensure-mcp-config.ts — register the agim MCP sidecar into opencode's
 // global config so the reminder tools are visible to opencode runs.
 //
 // Why modify global config:
@@ -9,13 +9,13 @@
 //   such flag. The next-best knob is the global config file.
 //
 // We do an additive update: read the JSON if it exists, set
-// `mcp.imhub.local.{command,enabled}`, write back. Other keys (provider,
+// `mcp.agim.{type,command,enabled}`, write back. Other keys (provider,
 // theme, etc.) are preserved unchanged. Idempotent — repeated calls are
 // no-ops once the desired entry is in place.
 //
 // Per-spawn IM context (which thread / user is calling) flows through
-// process.env: opencode-stdio-adapter sets IMHUB_APPROVAL_SOCK +
-// IMHUB_RUN_ID on each spawn, opencode forwards them to the MCP server
+// process.env: opencode-stdio-adapter sets AGIM_APPROVAL_SOCK +
+// AGIM_RUN_ID on each spawn, opencode forwards them to the MCP server
 // (per opencode/src/mcp/index.ts:384, env: { ...process.env, ... }).
 
 import { homedir } from 'node:os'
@@ -44,7 +44,7 @@ interface OpencodeConfig {
 }
 
 /**
- * Idempotently register the imhub MCP server in opencode's global config.
+ * Idempotently register the agim MCP server in opencode's global config.
  * Returns true when a write actually happened (config changed), false when
  * the config was already in the desired state.
  *
@@ -90,7 +90,7 @@ export async function ensureOpencodeMcpRegistered(): Promise<boolean> {
   }
 
   // Compare existing entry; bail if already correct.
-  const existing = mcp.imhub
+  const existing = mcp.agim
   if (
     existing
     && typeof existing === 'object'
@@ -101,7 +101,7 @@ export async function ensureOpencodeMcpRegistered(): Promise<boolean> {
     return false
   }
 
-  mcp.imhub = desired
+  mcp.agim = desired
 
   try {
     await mkdir(dirname(configPath), { recursive: true })
@@ -109,13 +109,13 @@ export async function ensureOpencodeMcpRegistered(): Promise<boolean> {
     log.info({
       event: 'opencode.mcp.registered',
       configPath, sidecar: SIDECAR_PATH,
-    }, 'imhub MCP server registered in opencode global config')
+    }, 'agim MCP server registered in opencode global config')
     return true
   } catch (err) {
     log.warn({
       event: 'opencode.mcp.write_failed', configPath,
       err: err instanceof Error ? err.message : String(err),
-    }, 'opencode config write failed — opencode will not see imhub MCP tools')
+    }, 'opencode config write failed — opencode will not see agim MCP tools')
     return false
   }
 }

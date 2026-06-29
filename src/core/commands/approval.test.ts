@@ -24,7 +24,7 @@ function makeRouteCtx(): RouteContext {
 }
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-approval-cmd-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-approval-cmd-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))

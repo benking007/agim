@@ -3,11 +3,11 @@
  *
  * Lays out:
  *   • Diagnostics card (read-only) — uid 0? env file perms? bwrap? allowlists configured?
- *   • Sender allowlist (IMHUB_ALLOWED_USERS)
- *   • Native exec (IMHUB_EXEC_SANDBOX, IMHUB_EXEC_SANDBOX_NET, IMHUB_EXEC_TIMEOUT_MS, IMHUB_EXEC_MAX_OUTPUT)
- *   • Native web (IMHUB_NATIVE_WEB_ALLOW_PRIVATE, IMHUB_NATIVE_WEB_SSRF_WHITELIST, IMHUB_NATIVE_WEB_TIMEOUT_MS)
- *   • Native fs  (IMHUB_NATIVE_FS_RESTRICT, IMHUB_NATIVE_FS_TIMEOUT_MS)
- *   • Delegation (IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN)
+ *   • Sender allowlist (AGIM_ALLOWED_USERS)
+ *   • Native exec (AGIM_EXEC_SANDBOX, AGIM_EXEC_SANDBOX_NET, AGIM_EXEC_TIMEOUT_MS, AGIM_EXEC_MAX_OUTPUT)
+ *   • Native web (AGIM_NATIVE_WEB_ALLOW_PRIVATE, AGIM_NATIVE_WEB_SSRF_WHITELIST, AGIM_NATIVE_WEB_TIMEOUT_MS)
+ *   • Native fs  (AGIM_NATIVE_FS_RESTRICT, AGIM_NATIVE_FS_TIMEOUT_MS)
+ *   • Delegation (AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN)
  *
  * All writes go through PUT /api/env (admin-gated). Most knobs are
  * hot-reloaded (read process.env per tool call); the exec sandbox +
@@ -168,14 +168,14 @@ export default function SettingsSecurityRoute(): JSX.Element {
       <ControlCard
         title={t('security.sender.title')}
         description={t('security.sender.description')}
-        envKey="IMHUB_ALLOWED_USERS"
+        envKey="AGIM_ALLOWED_USERS"
       >
         <Input
-          defaultValue={env.IMHUB_ALLOWED_USERS ?? ''}
+          defaultValue={env.AGIM_ALLOWED_USERS ?? ''}
           placeholder={t('security.sender.placeholder')}
           onBlur={(e) => {
             const v = e.target.value.trim()
-            void setValue('IMHUB_ALLOWED_USERS', v === '' ? null : v)
+            void setValue('AGIM_ALLOWED_USERS', v === '' ? null : v)
           }}
         />
       </ControlCard>
@@ -188,8 +188,8 @@ export default function SettingsSecurityRoute(): JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2">
           <LabeledField label={t('security.exec.sandbox')}>
             <Select
-              value={(env.IMHUB_EXEC_SANDBOX ?? '').toLowerCase() === 'bwrap' ? 'bwrap' : '__none__'}
-              onValueChange={(v) => void setValue('IMHUB_EXEC_SANDBOX', v === '__none__' ? null : v)}
+              value={(env.AGIM_EXEC_SANDBOX ?? '').toLowerCase() === 'bwrap' ? 'bwrap' : '__none__'}
+              onValueChange={(v) => void setValue('AGIM_EXEC_SANDBOX', v === '__none__' ? null : v)}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -211,8 +211,8 @@ export default function SettingsSecurityRoute(): JSX.Element {
 
           <LabeledField label={t('security.exec.sandboxNet')}>
             <Select
-              value={(env.IMHUB_EXEC_SANDBOX_NET ?? '').toLowerCase() === 'off' ? 'off' : 'on'}
-              onValueChange={(v) => void setValue('IMHUB_EXEC_SANDBOX_NET', v === 'off' ? 'off' : null)}
+              value={(env.AGIM_EXEC_SANDBOX_NET ?? '').toLowerCase() === 'off' ? 'off' : 'on'}
+              onValueChange={(v) => void setValue('AGIM_EXEC_SANDBOX_NET', v === 'off' ? 'off' : null)}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -225,11 +225,11 @@ export default function SettingsSecurityRoute(): JSX.Element {
           <LabeledField label={t('security.exec.timeoutMs')}>
             <Input
               type="number"
-              defaultValue={env.IMHUB_EXEC_TIMEOUT_MS ?? ''}
+              defaultValue={env.AGIM_EXEC_TIMEOUT_MS ?? ''}
               placeholder="60000"
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                void setValue('IMHUB_EXEC_TIMEOUT_MS', v === '' ? null : v)
+                void setValue('AGIM_EXEC_TIMEOUT_MS', v === '' ? null : v)
               }}
             />
           </LabeledField>
@@ -237,11 +237,11 @@ export default function SettingsSecurityRoute(): JSX.Element {
           <LabeledField label={t('security.exec.maxOutput')}>
             <Input
               type="number"
-              defaultValue={env.IMHUB_EXEC_MAX_OUTPUT ?? ''}
+              defaultValue={env.AGIM_EXEC_MAX_OUTPUT ?? ''}
               placeholder="32768"
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                void setValue('IMHUB_EXEC_MAX_OUTPUT', v === '' ? null : v)
+                void setValue('AGIM_EXEC_MAX_OUTPUT', v === '' ? null : v)
               }}
             />
           </LabeledField>
@@ -256,8 +256,8 @@ export default function SettingsSecurityRoute(): JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2">
           <LabeledField label={t('security.web.allowPrivate')} hint={t('security.web.allowPrivateHelp')}>
             <Select
-              value={envBool(env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE) ? '1' : '0'}
-              onValueChange={(v) => void setValue('IMHUB_NATIVE_WEB_ALLOW_PRIVATE', v === '1' ? '1' : null)}
+              value={envBool(env.AGIM_NATIVE_WEB_ALLOW_PRIVATE) ? '1' : '0'}
+              onValueChange={(v) => void setValue('AGIM_NATIVE_WEB_ALLOW_PRIVATE', v === '1' ? '1' : null)}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -270,11 +270,11 @@ export default function SettingsSecurityRoute(): JSX.Element {
           <LabeledField label={t('security.web.timeoutMs')}>
             <Input
               type="number"
-              defaultValue={env.IMHUB_NATIVE_WEB_TIMEOUT_MS ?? ''}
+              defaultValue={env.AGIM_NATIVE_WEB_TIMEOUT_MS ?? ''}
               placeholder="30000"
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                void setValue('IMHUB_NATIVE_WEB_TIMEOUT_MS', v === '' ? null : v)
+                void setValue('AGIM_NATIVE_WEB_TIMEOUT_MS', v === '' ? null : v)
               }}
             />
           </LabeledField>
@@ -282,11 +282,11 @@ export default function SettingsSecurityRoute(): JSX.Element {
           <div className="sm:col-span-2">
             <LabeledField label={t('security.web.ssrfWhitelist')}>
               <Input
-                defaultValue={env.IMHUB_NATIVE_WEB_SSRF_WHITELIST ?? ''}
+                defaultValue={env.AGIM_NATIVE_WEB_SSRF_WHITELIST ?? ''}
                 placeholder={t('security.web.ssrfWhitelistPlaceholder')}
                 onBlur={(e) => {
                   const v = e.target.value.trim()
-                  void setValue('IMHUB_NATIVE_WEB_SSRF_WHITELIST', v === '' ? null : v)
+                  void setValue('AGIM_NATIVE_WEB_SSRF_WHITELIST', v === '' ? null : v)
                 }}
               />
             </LabeledField>
@@ -302,8 +302,8 @@ export default function SettingsSecurityRoute(): JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2">
           <LabeledField label={t('security.fs.restrict')}>
             <Select
-              value={(env.IMHUB_NATIVE_FS_RESTRICT ?? '0') === '1' ? '1' : '0'}
-              onValueChange={(v) => void setValue('IMHUB_NATIVE_FS_RESTRICT', v === '1' ? '1' : null)}
+              value={(env.AGIM_NATIVE_FS_RESTRICT ?? '0') === '1' ? '1' : '0'}
+              onValueChange={(v) => void setValue('AGIM_NATIVE_FS_RESTRICT', v === '1' ? '1' : null)}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -316,11 +316,11 @@ export default function SettingsSecurityRoute(): JSX.Element {
           <LabeledField label={t('security.fs.timeoutMs')}>
             <Input
               type="number"
-              defaultValue={env.IMHUB_NATIVE_FS_TIMEOUT_MS ?? ''}
+              defaultValue={env.AGIM_NATIVE_FS_TIMEOUT_MS ?? ''}
               placeholder="60000"
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                void setValue('IMHUB_NATIVE_FS_TIMEOUT_MS', v === '' ? null : v)
+                void setValue('AGIM_NATIVE_FS_TIMEOUT_MS', v === '' ? null : v)
               }}
             />
           </LabeledField>
@@ -331,15 +331,15 @@ export default function SettingsSecurityRoute(): JSX.Element {
       <ControlCard
         title={t('security.delegation.title')}
         description={t('security.delegation.description')}
-        envKey="IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN"
+        envKey="AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN"
       >
         <Input
           type="number"
-          defaultValue={env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN ?? ''}
+          defaultValue={env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN ?? ''}
           placeholder="2"
           onBlur={(e) => {
             const v = e.target.value.trim()
-            void setValue('IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN', v === '' ? null : v)
+            void setValue('AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN', v === '' ? null : v)
           }}
         />
       </ControlCard>
@@ -348,14 +348,14 @@ export default function SettingsSecurityRoute(): JSX.Element {
       <ControlCard
         title={t('security.platformBlacklist.title')}
         description={t('security.platformBlacklist.description')}
-        envKey="IMHUB_PLATFORM_BLACKLIST"
+        envKey="AGIM_PLATFORM_BLACKLIST"
       >
         <Input
-          defaultValue={env.IMHUB_PLATFORM_BLACKLIST ?? ''}
+          defaultValue={env.AGIM_PLATFORM_BLACKLIST ?? ''}
           placeholder={t('security.platformBlacklist.placeholder')}
           onBlur={(e) => {
             const v = e.target.value.trim()
-            void setValue('IMHUB_PLATFORM_BLACKLIST', v === '' ? null : v)
+            void setValue('AGIM_PLATFORM_BLACKLIST', v === '' ? null : v)
           }}
         />
         {diagnostics?.platformBlacklist && diagnostics.platformBlacklist.length > 0 && (

@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'bun:test'
 import { validateWebhookUrl, assertWebhookHostPublic } from '../../src/core/schedule'
 
-const ENV_FLAG = 'IMHUB_ALLOW_PRIVATE_WEBHOOKS'
+const ENV_FLAG = 'AGIM_ALLOW_PRIVATE_WEBHOOKS'
 const ORIGINAL = process.env[ENV_FLAG]
 
 afterEach(() => {
@@ -90,13 +90,13 @@ describe('validateWebhookUrl', () => {
   })
 
   describe('opt-in escape hatch', () => {
-    it('IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 lets through 127.0.0.1', () => {
+    it('AGIM_ALLOW_PRIVATE_WEBHOOKS=1 lets through 127.0.0.1', () => {
       process.env[ENV_FLAG] = '1'
       const r = validateWebhookUrl('http://127.0.0.1:9000/hook')
       expect(r.ok).toBe(true)
     })
 
-    it('IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 still rejects file://', () => {
+    it('AGIM_ALLOW_PRIVATE_WEBHOOKS=1 still rejects file://', () => {
       process.env[ENV_FLAG] = '1'
       const r = validateWebhookUrl('file:///etc/passwd')
       expect(r.ok).toBe(false)
@@ -131,7 +131,7 @@ describe('validateWebhookUrl', () => {
       expect((await assertWebhookHostPublic('8.8.8.8')).ok).toBe(true)
     })
 
-    it('IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 bypasses the DNS guard', async () => {
+    it('AGIM_ALLOW_PRIVATE_WEBHOOKS=1 bypasses the DNS guard', async () => {
       process.env[ENV_FLAG] = '1'
       expect((await assertWebhookHostPublic('127.0.0.1')).ok).toBe(true)
     })

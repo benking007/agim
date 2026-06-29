@@ -196,14 +196,14 @@ function renderStatus(): string {
   const info = schedulerInfo()
   return [
     '🫀 **Heartbeat scheduler**',
-    `- 已启用 (env IMHUB_HEARTBEAT_ENABLED)：${info.enabled ? '是' : '否'}`,
+    `- 已启用 (env AGIM_HEARTBEAT_ENABLED)：${info.enabled ? '是' : '否'}`,
     `- 正在运行：${info.running ? '是' : '否'}`,
     `- Tick 间隔：${(info.periodMs / 1000).toFixed(0)}s`,
     `- 每行绑定的实际周期由 \`/heartbeat interval\` 控制（默认 ${defaultIntervalMinutes()} 分钟）`,
     '',
     info.enabled
       ? ''
-      : '提示：调度器未启用。`export IMHUB_HEARTBEAT_ENABLED=on` 然后重启 agim 即可自动 tick；现在仍可手工 `/heartbeat run-now`。',
+      : '提示：调度器未启用。`export AGIM_HEARTBEAT_ENABLED=on` 然后重启 agim 即可自动 tick；现在仍可手工 `/heartbeat run-now`。',
   ].filter(Boolean).join('\n')
 }
 

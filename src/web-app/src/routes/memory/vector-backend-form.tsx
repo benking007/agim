@@ -1,6 +1,6 @@
 /**
  * VectorBackendForm — inline, form-based editor for the seven
- * IMHUB_MEMORY_VECTOR_* keys that drive the embedding backend.
+ * AGIM_MEMORY_VECTOR_* keys that drive the embedding backend.
  *
  * Replaces the older "Edit in env" link path: operators no longer
  * have to know which env var maps to which knob, and the on-the-wire
@@ -60,16 +60,16 @@ const DEFAULTS: FormState = {
 }
 
 function readFormFromEnv(env: Record<string, string>): FormState {
-  const raw = (env.IMHUB_MEMORY_VECTOR_BACKEND || '').toLowerCase()
+  const raw = (env.AGIM_MEMORY_VECTOR_BACKEND || '').toLowerCase()
   const backend: BackendName = raw === 'local' || raw === 'openai' ? raw : 'off'
   return {
     backend,
-    localModel:     env.IMHUB_MEMORY_VECTOR_LOCAL_MODEL      || '',
-    openaiBaseUrl:  env.IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL  || '',
-    openaiModel:    env.IMHUB_MEMORY_VECTOR_OPENAI_MODEL     || '',
+    localModel:     env.AGIM_MEMORY_VECTOR_LOCAL_MODEL      || '',
+    openaiBaseUrl:  env.AGIM_MEMORY_VECTOR_OPENAI_BASE_URL  || '',
+    openaiModel:    env.AGIM_MEMORY_VECTOR_OPENAI_MODEL     || '',
     openaiApiKey:   '',
-    batchSize:      env.IMHUB_MEMORY_VECTOR_BATCH_SIZE       || '',
-    hybridWeight:   env.IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT    || '',
+    batchSize:      env.AGIM_MEMORY_VECTOR_BATCH_SIZE       || '',
+    hybridWeight:   env.AGIM_MEMORY_VECTOR_HYBRID_WEIGHT    || '',
   }
 }
 
@@ -142,7 +142,7 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
       if (!form.openaiBaseUrl.trim()) return t('vector.form.errors.baseUrlRequired')
       try { new URL(form.openaiBaseUrl.trim()) } catch { return t('vector.form.errors.baseUrlInvalid') }
       if (!form.openaiModel.trim()) return t('vector.form.errors.openaiModelRequired')
-      const hasExistingKey = !!env.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY
+      const hasExistingKey = !!env.AGIM_MEMORY_VECTOR_OPENAI_API_KEY
       if (!hasExistingKey && !form.openaiApiKey.trim()) {
         return t('vector.form.errors.apiKeyRequired')
       }
@@ -168,16 +168,16 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
       if (current === prev) return
       out[key] = current.trim() === '' ? null : current.trim()
     }
-    diff('IMHUB_MEMORY_VECTOR_BACKEND',         form.backend,        initial.backend)
-    diff('IMHUB_MEMORY_VECTOR_LOCAL_MODEL',     form.localModel,     initial.localModel)
-    diff('IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL', form.openaiBaseUrl,  initial.openaiBaseUrl)
-    diff('IMHUB_MEMORY_VECTOR_OPENAI_MODEL',    form.openaiModel,    initial.openaiModel)
-    diff('IMHUB_MEMORY_VECTOR_BATCH_SIZE',      form.batchSize,      initial.batchSize)
-    diff('IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT',   form.hybridWeight,   initial.hybridWeight)
+    diff('AGIM_MEMORY_VECTOR_BACKEND',         form.backend,        initial.backend)
+    diff('AGIM_MEMORY_VECTOR_LOCAL_MODEL',     form.localModel,     initial.localModel)
+    diff('AGIM_MEMORY_VECTOR_OPENAI_BASE_URL', form.openaiBaseUrl,  initial.openaiBaseUrl)
+    diff('AGIM_MEMORY_VECTOR_OPENAI_MODEL',    form.openaiModel,    initial.openaiModel)
+    diff('AGIM_MEMORY_VECTOR_BATCH_SIZE',      form.batchSize,      initial.batchSize)
+    diff('AGIM_MEMORY_VECTOR_HYBRID_WEIGHT',   form.hybridWeight,   initial.hybridWeight)
     // API key: only send if the user actually typed a non-empty new value.
     // Empty input = keep current (which is the whole point of the placeholder UX).
     if (form.openaiApiKey.trim()) {
-      out.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY = form.openaiApiKey.trim()
+      out.AGIM_MEMORY_VECTOR_OPENAI_API_KEY = form.openaiApiKey.trim()
     }
     return out
   }
@@ -220,7 +220,7 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
   }
 
   const busy = updateEnv.isPending || test.isPending
-  const hasExistingKey = !!env.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY
+  const hasExistingKey = !!env.AGIM_MEMORY_VECTOR_OPENAI_API_KEY
 
   return (
     <div className="rounded-md border border-border bg-surface p-3">
@@ -310,7 +310,7 @@ export function VectorBackendForm({ onSaved }: VectorBackendFormProps): JSX.Elem
                     type={showApiKey ? 'text' : 'password'}
                     value={form.openaiApiKey}
                     placeholder={hasExistingKey
-                      ? (env.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY || '••••')
+                      ? (env.AGIM_MEMORY_VECTOR_OPENAI_API_KEY || '••••')
                       : 'sk-…'}
                     onChange={(e) => set('openaiApiKey', e.target.value)}
                     className="font-mono text-xs"

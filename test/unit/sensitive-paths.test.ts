@@ -27,8 +27,8 @@ describe('isSensitivePath', () => {
     expect(isSensitivePath(join(HOME, '.agim', 'subdir', 'file')).sensitive).toBe(true)
   })
 
-  it('rejects legacy ~/.im-hub/ paths (upgraded installs)', () => {
-    expect(isSensitivePath(join(HOME, '.im-hub', 'env')).sensitive).toBe(true)
+  it('rejects legacy ~/.agim/ paths (upgraded installs)', () => {
+    expect(isSensitivePath(join(HOME, '.agim', 'env')).sensitive).toBe(true)
   })
 
   it('rejects ~/.ssh/, ~/.aws/, ~/.kube/, ~/.docker/', () => {

@@ -34,7 +34,7 @@ let tickTimer: ReturnType<typeof setInterval> | null = null
  * Validate a user-supplied webhook URL before the scheduler POSTs to it.
  * Defends against accidental misconfig and basic SSRF: no protocols other
  * than http(s); no loopback / RFC1918 / link-local destinations unless the
- * operator explicitly opts in via IMHUB_ALLOW_PRIVATE_WEBHOOKS=1.
+ * operator explicitly opts in via AGIM_ALLOW_PRIVATE_WEBHOOKS=1.
  *
  * Note: this is a lexical check (IP literals + "localhost"). DNS-rebinding
  * mitigation requires an at-fetch-time guard; tracked separately.
@@ -47,7 +47,7 @@ export function validateWebhookUrl(raw: string): { ok: true; url: URL } | { ok: 
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     return { ok: false, reason: `protocol ${u.protocol} not allowed (use http: or https:)` }
   }
-  if (process.env.IMHUB_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true, url: u }
+  if (process.env.AGIM_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true, url: u }
   const host = u.hostname.toLowerCase()
   if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '[::]') {
     return { ok: false, reason: `host ${host} not allowed` }
@@ -87,11 +87,11 @@ export function validateWebhookUrl(raw: string): { ok: true; url: URL } | { ok: 
  * at 169.254.169.254 / 10.x / 127.x) passes it. (Numeric IP literals like
  * `2130706433` are already normalised to dotted-quad by `new URL`, so the
  * lexical check catches those; the residual gap is hostnames.) Honours the
- * same IMHUB_ALLOW_PRIVATE_WEBHOOKS=1 escape hatch. Fail-closed: a DNS
+ * same AGIM_ALLOW_PRIVATE_WEBHOOKS=1 escape hatch. Fail-closed: a DNS
  * failure is treated as not-allowed.
  */
 export async function assertWebhookHostPublic(host: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (process.env.IMHUB_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true }
+  if (process.env.AGIM_ALLOW_PRIVATE_WEBHOOKS === '1') return { ok: true }
   let address: string
   let family: 4 | 6
   try {

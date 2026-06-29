@@ -11,10 +11,10 @@
 // cadence.
 //
 // Tunables (env):
-//   IMHUB_MEMORY_DISTILL_ENABLED       master toggle (default on when memory on)
-//   IMHUB_MEMORY_DISTILL_INTERVAL_MS   tick interval (default 300000 = 5 min)
-//   IMHUB_MEMORY_DISTILL_FLOOR_MIN     force-flush staleness floor (default 30)
-//   IMHUB_MEMORY_DISTILL_BATCH_MAX     turns per extraction call (default 20)
+//   AGIM_MEMORY_DISTILL_ENABLED       master toggle (default on when memory on)
+//   AGIM_MEMORY_DISTILL_INTERVAL_MS   tick interval (default 300000 = 5 min)
+//   AGIM_MEMORY_DISTILL_FLOOR_MIN     force-flush staleness floor (default 30)
+//   AGIM_MEMORY_DISTILL_BATCH_MAX     turns per extraction call (default 20)
 
 import { logger as rootLogger } from './logger.js'
 import { isMemoryEnabled } from './persona.js'
@@ -39,22 +39,22 @@ export function getDistillerStatus(): DistillerStatus & { pendingTotal: number; 
 }
 
 function intervalMs(): number {
-  const n = Number(process.env.IMHUB_MEMORY_DISTILL_INTERVAL_MS)
+  const n = Number(process.env.AGIM_MEMORY_DISTILL_INTERVAL_MS)
   return Number.isFinite(n) && n >= 10_000 ? n : 300_000
 }
 function floorSec(): number {
-  const n = Number(process.env.IMHUB_MEMORY_DISTILL_FLOOR_MIN)
+  const n = Number(process.env.AGIM_MEMORY_DISTILL_FLOOR_MIN)
   return (Number.isFinite(n) && n >= 0 ? n : 30) * 60
 }
 function batchMax(): number {
-  const n = Number(process.env.IMHUB_MEMORY_DISTILL_BATCH_MAX)
+  const n = Number(process.env.AGIM_MEMORY_DISTILL_BATCH_MAX)
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 20
 }
 function isDistillerEnabled(): boolean {
   if (!isMemoryEnabled()) return false
-  const raw = (process.env.IMHUB_MEMORY_DISTILL_ENABLED || '1').toLowerCase()
+  const raw = (process.env.AGIM_MEMORY_DISTILL_ENABLED || '1').toLowerCase()
   // Honor the same opt-out vocabulary as persona.isMemoryEnabled ('off'
-  // included) so IMHUB_MEMORY_DISTILL_ENABLED=off actually stops the pass
+  // included) so AGIM_MEMORY_DISTILL_ENABLED=off actually stops the pass
   // instead of the UI toggle and the runtime disagreeing.
   return raw !== '0' && raw !== 'false' && raw !== 'no' && raw !== 'off'
 }

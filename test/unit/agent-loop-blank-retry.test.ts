@@ -3,7 +3,7 @@
 // Pins:
 //   (a) provider returns finishReason='stop' with empty text AND no
 //       tool_calls → loop pushes a synthetic user nudge and retries.
-//   (b) retry cap is IMHUB_NATIVE_BLANK_RETRY_MAX (default 2).
+//   (b) retry cap is AGIM_NATIVE_BLANK_RETRY_MAX (default 2).
 //   (c) cap=0 disables (back-compat with pre-1.2.119).
 //   (d) does NOT trigger when tool_calls are present (that's the
 //       v1.2.94 post-loop path, not this one).
@@ -42,11 +42,11 @@ class ScriptedProvider extends LlmProvider {
 }
 
 describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
-  const saved = process.env.IMHUB_NATIVE_BLANK_RETRY_MAX
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_BLANK_RETRY_MAX })
+  const saved = process.env.AGIM_NATIVE_BLANK_RETRY_MAX
+  beforeEach(() => { delete process.env.AGIM_NATIVE_BLANK_RETRY_MAX })
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_NATIVE_BLANK_RETRY_MAX
-    else process.env.IMHUB_NATIVE_BLANK_RETRY_MAX = saved
+    if (saved === undefined) delete process.env.AGIM_NATIVE_BLANK_RETRY_MAX
+    else process.env.AGIM_NATIVE_BLANK_RETRY_MAX = saved
   })
 
   it('one blank → nudges → recovers in the next iter', async () => {
@@ -73,7 +73,7 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
   })
 
   it('blank past the cap → returns final blank result + reports', async () => {
-    process.env.IMHUB_NATIVE_BLANK_RETRY_MAX = '2'
+    process.env.AGIM_NATIVE_BLANK_RETRY_MAX = '2'
     const provider = new ScriptedProvider([
       { text: '', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
       { text: '', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
@@ -91,7 +91,7 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
   })
 
   it('cap=0 disables retry entirely (back-compat)', async () => {
-    process.env.IMHUB_NATIVE_BLANK_RETRY_MAX = '0'
+    process.env.AGIM_NATIVE_BLANK_RETRY_MAX = '0'
     const provider = new ScriptedProvider([
       { text: '', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
     ])

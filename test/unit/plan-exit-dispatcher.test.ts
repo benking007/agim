@@ -48,11 +48,11 @@ describe('plan-exit-dispatcher — tool def + name helper', () => {
 })
 
 describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
-  const saved = process.env.IMHUB_NATIVE_PLAN_MODE
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_PLAN_MODE })
+  const saved = process.env.AGIM_NATIVE_PLAN_MODE
+  beforeEach(() => { delete process.env.AGIM_NATIVE_PLAN_MODE })
   afterEach(() => {
-    if (saved === undefined) delete process.env.IMHUB_NATIVE_PLAN_MODE
-    else process.env.IMHUB_NATIVE_PLAN_MODE = saved
+    if (saved === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
+    else process.env.AGIM_NATIVE_PLAN_MODE = saved
   })
 
   function makeDispatcher(opts: Partial<{ threadKey: string; platform: string; threadId: string }> = {}) {
@@ -85,7 +85,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   })
 
   it('refuses missing or non-string plan arg (env=ON so plan-mode-on)', async () => {
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
     const r1 = await d(call('native_exit_plan_mode', {}), SIGNAL)
     expect(r1.isError).toBe(true)
@@ -96,7 +96,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   })
 
   it('refuses empty plan after trim', async () => {
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
     const r = await d(call('native_exit_plan_mode', { plan: '   \n  ' }), SIGNAL)
     expect(r.isError).toBe(true)
@@ -104,7 +104,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   })
 
   it('refuses plan over 4000 chars', async () => {
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
     const r = await d(call('native_exit_plan_mode', { plan: 'x'.repeat(5000) }), SIGNAL)
     expect(r.isError).toBe(true)
@@ -112,7 +112,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   })
 
   it('degrades cleanly when no IM context provided', async () => {
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     // Build with no platform / threadId — simulates CLI / smoke.
     const d = buildPlanExitDispatcher({
       threadKey: 'tg:test:thread1',

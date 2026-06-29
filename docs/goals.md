@@ -102,7 +102,7 @@ CREATE TABLE goals (
 )
 ```
 
-Override path with `IMHUB_GOALS_DB=/path/to/goals.db`.
+Override path with `AGIM_GOALS_DB=/path/to/goals.db`.
 
 ## Failure modes
 

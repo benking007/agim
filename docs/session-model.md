@@ -80,8 +80,8 @@ interface Session {
 
 | TTL | 默认 | env 变量 | 过期时做什么 |
 |---|---|---|---|
-| `MESSAGES_TTL` | 30 min | `IMHUB_SESSION_MESSAGES_TTL_MS` | 清空内存 `messages[]` + 删 `.log` 文件，**保留** `.json` 与 sticky / `claudeSessionId` |
-| `META_TTL` | 7 d | `IMHUB_SESSION_META_TTL_MS` | 完整删除（`.json` + `.log` + 内存 entry） |
+| `MESSAGES_TTL` | 30 min | `AGIM_SESSION_MESSAGES_TTL_MS` | 清空内存 `messages[]` + 删 `.log` 文件，**保留** `.json` 与 sticky / `claudeSessionId` |
+| `META_TTL` | 7 d | `AGIM_SESSION_META_TTL_MS` | 完整删除（`.json` + `.log` + 内存 entry） |
 
 cleanup 定时器每 5 min 跑一次，用同一对 helper 在两个层级独立判定。
 
@@ -167,7 +167,7 @@ OpenCode 与 Codex 会在 JSON 事件流里暴露自己的 session/thread id。a
 建议：
 
 - 在 `~/.agim-workspaces/opencode/PROJECT.md` 写"长期不变的项目档案"，让 opencode 启动时读
-- 把 `IMHUB_SESSION_META_TTL_MS` 调大，以延长 native session id 的可恢复窗口
+- 把 `AGIM_SESSION_META_TTL_MS` 调大，以延长 native session id 的可恢复窗口
 - 重要事实主动让用户复述，或建一个 prompt 前缀模板
 
 ---
@@ -187,8 +187,8 @@ v0.2.30 起，`/test` / `/review` / `/diff` 等 agentCommand 也遵循同一焦�
 ```ini
 # /etc/systemd/system/agim.service.d/override.conf
 [Service]
-Environment="IMHUB_SESSION_MESSAGES_TTL_MS=3600000"   # 1h，opencode 久聊用
-Environment="IMHUB_SESSION_META_TTL_MS=2592000000"    # 30d，长 sticky
+Environment="AGIM_SESSION_MESSAGES_TTL_MS=3600000"   # 1h，opencode 久聊用
+Environment="AGIM_SESSION_META_TTL_MS=2592000000"    # 30d，长 sticky
 ```
 
 ```bash

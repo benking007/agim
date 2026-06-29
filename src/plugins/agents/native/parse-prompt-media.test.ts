@@ -23,11 +23,11 @@ beforeAll(() => {
   writeFileSync(goodFile, 'JFIF-bytes')
   writeFileSync(evilFile, 'JFIF-bytes')
   writeFileSync(traversalTarget, 'JFIF-bytes')
-  process.env.IMHUB_MEDIA_ROOT = goodDir
+  process.env.AGIM_MEDIA_ROOT = goodDir
 })
 
 afterAll(() => {
-  delete process.env.IMHUB_MEDIA_ROOT
+  delete process.env.AGIM_MEDIA_ROOT
   try { rmSync(root, { recursive: true, force: true }) } catch {}
 })
 

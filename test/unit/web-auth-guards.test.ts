@@ -24,13 +24,13 @@ describe('web auth guard hardening', () => {
   beforeEach(() => {
     tmpHome = mkdtempSync(join(tmpdir(), 'agim-web-auth-test-'))
     saved.AGIM_HOME = process.env.AGIM_HOME
-    saved.IMHUB_HOME = process.env.IMHUB_HOME
-    saved.IMHUB_WEB_AUTH = process.env.IMHUB_WEB_AUTH
-    saved.IMHUB_TRUST_LOOPBACK = process.env.IMHUB_TRUST_LOOPBACK
+    saved.AGIM_HOME = process.env.AGIM_HOME
+    saved.AGIM_WEB_AUTH = process.env.AGIM_WEB_AUTH
+    saved.AGIM_TRUST_LOOPBACK = process.env.AGIM_TRUST_LOOPBACK
     process.env.AGIM_HOME = tmpHome
-    delete process.env.IMHUB_HOME
-    delete process.env.IMHUB_WEB_AUTH
-    delete process.env.IMHUB_TRUST_LOOPBACK
+    delete process.env.AGIM_HOME
+    delete process.env.AGIM_WEB_AUTH
+    delete process.env.AGIM_TRUST_LOOPBACK
   })
 
   afterEach(() => {
@@ -52,8 +52,8 @@ describe('web auth guard hardening', () => {
     }))).toBe(false)
   })
 
-  it('honors IMHUB_TRUST_LOOPBACK=off', () => {
-    process.env.IMHUB_TRUST_LOOPBACK = 'off'
+  it('honors AGIM_TRUST_LOOPBACK=off', () => {
+    process.env.AGIM_TRUST_LOOPBACK = 'off'
     expect(__webAuthForTesting.isTrustedLoopbackPeer(req())).toBe(false)
   })
 

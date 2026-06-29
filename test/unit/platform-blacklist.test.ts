@@ -5,11 +5,11 @@ import {
   getPlatformBlacklist,
 } from '../../src/core/registry.js'
 
-const ORIG = process.env.IMHUB_PLATFORM_BLACKLIST
+const ORIG = process.env.AGIM_PLATFORM_BLACKLIST
 
 function setEnv(v: string | undefined): void {
-  if (v === undefined) delete process.env.IMHUB_PLATFORM_BLACKLIST
-  else process.env.IMHUB_PLATFORM_BLACKLIST = v
+  if (v === undefined) delete process.env.AGIM_PLATFORM_BLACKLIST
+  else process.env.AGIM_PLATFORM_BLACKLIST = v
 }
 
 describe('platform blacklist (v1.2.69)', () => {

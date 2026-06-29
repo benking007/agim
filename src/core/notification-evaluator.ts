@@ -10,7 +10,7 @@
 //
 //   1. **Default off**. Most operators ship without this; flipping the
 //      gate on for everyone could silently lose a notification a user
-//      cares about. Opt-in via IMHUB_NOTIFICATION_EVALUATOR=on (and a
+//      cares about. Opt-in via AGIM_NOTIFICATION_EVALUATOR=on (and a
 //      configured 'evaluator' role in llmBackends/llmRoles).
 //
 //   2. **Scope: agent-initiated only**. User asked a question → the
@@ -18,7 +18,7 @@
 //      or scheduled job decides _on its own_ to ping the user are
 //      gated: push_message MCP tool, POST /api/notify, future heartbeat
 //      ticks, etc. Configurable per-source via
-//      IMHUB_NOTIFICATION_EVALUATOR_SOURCES.
+//      AGIM_NOTIFICATION_EVALUATOR_SOURCES.
 //
 //   3. **Fail-open**. LLM call fails → deliver. Verdict parse fails →
 //      deliver. Provider unconfigured → deliver. Dropping a message
@@ -42,11 +42,11 @@ import { logAuditEvent } from './audit-log.js'
 const log = rootLogger.child({ component: 'notification-evaluator' })
 
 /**
- * Sources the evaluator may gate. New sources land in IMHUB_NOTIFICATION_EVALUATOR_SOURCES
+ * Sources the evaluator may gate. New sources land in AGIM_NOTIFICATION_EVALUATOR_SOURCES
  * comma-list (precedence: env > built-in default below).
  */
 export type NotificationSource =
-  | 'push'         // mcp__imhub__push_message (agent-initiated)
+  | 'push'         // mcp__agim__push_message (agent-initiated)
   | 'notify'       // POST /api/notify (external monitoring / CI / cron)
   | 'reminder'     // /remind delivery (LLM-polished reminder)
   | 'heartbeat'    // Stage 1 follow-up: heartbeat tick result (future #1)
@@ -95,7 +95,7 @@ export interface EvaluationDecision {
    *  for every suppression and in the structured log for every call. */
   reason: string
   /** Which code path produced the decision.
-   *   - 'disabled' — IMHUB_NOTIFICATION_EVALUATOR not 'on'
+   *   - 'disabled' — AGIM_NOTIFICATION_EVALUATOR not 'on'
    *   - 'source-excluded' — gate on, but this source isn't in the
    *     gated-sources set
    *   - 'no-backend' — gate on, source gated, but no 'evaluator' role
@@ -216,11 +216,11 @@ export async function evaluateNotification(input: EvaluationInput): Promise<Eval
 // ---------------------------------------------------------------------
 
 function isEvaluatorEnabled(): boolean {
-  return (process.env.IMHUB_NOTIFICATION_EVALUATOR || '').toLowerCase() === 'on'
+  return (process.env.AGIM_NOTIFICATION_EVALUATOR || '').toLowerCase() === 'on'
 }
 
 function gatedSources(): Set<NotificationSource> {
-  const raw = process.env.IMHUB_NOTIFICATION_EVALUATOR_SOURCES
+  const raw = process.env.AGIM_NOTIFICATION_EVALUATOR_SOURCES
   if (!raw) return new Set(DEFAULT_GATED_SOURCES)
   const next = new Set<NotificationSource>()
   for (const item of raw.split(',')) {

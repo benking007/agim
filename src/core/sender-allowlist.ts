@@ -4,9 +4,9 @@
 //   - admin-allowlist:  who can run /restart, /stop, web mutating endpoints
 //   - sender-allowlist: who can SEND ANY MESSAGE to the bot at all
 //
-// Source: IMHUB_ALLOWED_USERS env, comma-separated `platform:userId` pairs.
+// Source: AGIM_ALLOWED_USERS env, comma-separated `platform:userId` pairs.
 // Same `platform:userId` syntax as IM admin registry entries:
-//   IMHUB_ALLOWED_USERS=telegram:8754479311,wechat-ilink:wxid_abc
+//   AGIM_ALLOWED_USERS=telegram:8754479311,wechat-ilink:wxid_abc
 //
 // **Default policy when env is UNSET: OPEN** (no filtering).
 // Rationale: agim is also used by hobbyists / personal bots where the
@@ -15,7 +15,7 @@
 // Instead, when sender-allowlist is empty, the boot path emits a single
 // OPEN_IM_ACCESS warning + a hint about how to lock down.
 //
-// Set `IMHUB_ALLOWED_USERS=*` to explicitly mark "everyone allowed"
+// Set `AGIM_ALLOWED_USERS=*` to explicitly mark "everyone allowed"
 // (suppresses the boot warning while preserving open behaviour).
 //
 // Platform matching is case-insensitive (telegram == Telegram). userId is
@@ -44,7 +44,7 @@ function parse(raw: string): { entries: Entry[]; wildcard: boolean } {
     const idx = trimmed.indexOf(':')
     if (idx <= 0 || idx === trimmed.length - 1) {
       log.warn({ event: 'sender.allowlist.malformed', entry: trimmed },
-        'IMHUB_ALLOWED_USERS entry must be platform:userId or "*" — skipping')
+        'AGIM_ALLOWED_USERS entry must be platform:userId or "*" — skipping')
       continue
     }
     entries.push({
@@ -56,7 +56,7 @@ function parse(raw: string): { entries: Entry[]; wildcard: boolean } {
 }
 
 function load(): { entries: Entry[]; wildcard: boolean } {
-  const raw = process.env.IMHUB_ALLOWED_USERS ?? ''
+  const raw = process.env.AGIM_ALLOWED_USERS ?? ''
   if (raw !== cachedRaw) {
     cachedRaw = raw
     const r = parse(raw)
@@ -109,13 +109,13 @@ export function logStartupResolution(): void {
     log.info({
       event: 'sender.allowlist.loaded',
       mode: 'wildcard',
-    }, 'sender allowlist: IMHUB_ALLOWED_USERS=* (open access, explicit)')
+    }, 'sender allowlist: AGIM_ALLOWED_USERS=* (open access, explicit)')
     return
   }
   if (entries.length === 0) {
     log.warn({
       event: 'sender.allowlist.OPEN_IM_ACCESS',
-      hint: 'set IMHUB_ALLOWED_USERS=platform:userId,... to restrict; set =* to suppress this warning',
+      hint: 'set AGIM_ALLOWED_USERS=platform:userId,... to restrict; set =* to suppress this warning',
     }, '⚠ OPEN_IM_ACCESS: anyone who can reach the IM bot can use it (no sender allowlist configured)')
     return
   }

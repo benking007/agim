@@ -72,13 +72,13 @@ describe('EmailAdapter', () => {
 describe('EmailAdapter — env reading', () => {
   it('readSmtpConfig returns null when env vars missing', async () => {
     const saved = {
-      h: process.env.IMHUB_SMTP_HOST,
-      u: process.env.IMHUB_SMTP_USER,
-      p: process.env.IMHUB_SMTP_PASS,
+      h: process.env.AGIM_SMTP_HOST,
+      u: process.env.AGIM_SMTP_USER,
+      p: process.env.AGIM_SMTP_PASS,
     }
-    delete process.env.IMHUB_SMTP_HOST
-    delete process.env.IMHUB_SMTP_USER
-    delete process.env.IMHUB_SMTP_PASS
+    delete process.env.AGIM_SMTP_HOST
+    delete process.env.AGIM_SMTP_USER
+    delete process.env.AGIM_SMTP_PASS
     try {
       const a = new EmailAdapter()
       await a.start()
@@ -86,9 +86,9 @@ describe('EmailAdapter — env reading', () => {
       // sendMessage should now reject with a clear error
       await expect(a.sendMessage('x@y.com', 'hi')).rejects.toThrow(/not configured/)
     } finally {
-      if (saved.h) process.env.IMHUB_SMTP_HOST = saved.h
-      if (saved.u) process.env.IMHUB_SMTP_USER = saved.u
-      if (saved.p) process.env.IMHUB_SMTP_PASS = saved.p
+      if (saved.h) process.env.AGIM_SMTP_HOST = saved.h
+      if (saved.u) process.env.AGIM_SMTP_USER = saved.u
+      if (saved.p) process.env.AGIM_SMTP_PASS = saved.p
     }
   })
 })

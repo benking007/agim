@@ -130,13 +130,13 @@ function clampConfidence(c: unknown): number {
 
 type DistillSource = 'auto' | 'agent' | 'llm'
 function distillSource(): DistillSource {
-  const v = (process.env.IMHUB_MEMORY_DISTILL_SOURCE || 'auto').toLowerCase()
+  const v = (process.env.AGIM_MEMORY_DISTILL_SOURCE || 'auto').toLowerCase()
   return v === 'agent' || v === 'llm' ? v : 'auto'
 }
 
 // Resolve + run the extraction LLM per the configured source:
 //   auto  → the batch's representative agent (zero-config default)
-//   agent → IMHUB_MEMORY_DISTILL_AGENT (a chosen, already-enabled agent)
+//   agent → AGIM_MEMORY_DISTILL_AGENT (a chosen, already-enabled agent)
 //   llm   → the `distill` LLM role (direct HTTP, no CLI spawn)
 // Returns raw model output + an audit name, or null when no usable LLM is
 // available (caller then keeps the turns buffered to retry next pass).
@@ -149,7 +149,7 @@ async function runExtractionLlm(
     if (!r) { log.warn({ event: 'memory.distill.no_distill_backend' }); return null }
     return { text: r.text, usedName: `llm:${r.backendName}`, costUsd: typeof r.usage.costUsd === 'number' ? r.usage.costUsd : 0 }
   }
-  const agentName = (src === 'agent' ? (process.env.IMHUB_MEMORY_DISTILL_AGENT || '') : representativeAgent).trim()
+  const agentName = (src === 'agent' ? (process.env.AGIM_MEMORY_DISTILL_AGENT || '') : representativeAgent).trim()
   if (!agentName) { log.warn({ event: 'memory.distill.no_agent', src }); return null }
   const agent = registry.getAgent(agentName)
   if (!agent) { log.warn({ event: 'memory.distill.agent_missing', agentName }); return null }
@@ -263,7 +263,7 @@ export async function runDistillation(input: DistillationInput): Promise<number>
 }
 
 function maxPending(): number {
-  const raw = process.env.IMHUB_MEMORY_DISTILL_MAX_PENDING
+  const raw = process.env.AGIM_MEMORY_DISTILL_MAX_PENDING
   const n = raw ? Number(raw) : NaN
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 200
 }

@@ -1,7 +1,7 @@
 /**
  * types/sse.ts — server-sent events on /events.
  *
- * Wire shape source: src/core/event-bus.ts ImhubEvent union. Replicated
+ * Wire shape source: src/core/event-bus.ts AgimEvent union. Replicated
  * here so the SPA has a typed view without importing across the
  * backend/frontend boundary. If the backend's event union grows, add
  * the new type here + a handler slot in useEventStream.

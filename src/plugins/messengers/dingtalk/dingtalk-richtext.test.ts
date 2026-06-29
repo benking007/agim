@@ -1,7 +1,7 @@
 // v1.2.104 — DingTalk richText flattening across payload shapes.
 //
 // The headline case is the REAL Stream-SDK 1:1 payload captured in
-// production (~/.agim/im-hub.log), where the segment array lives at
+// production (~/.agim/agim.log), where the segment array lives at
 // `msg.content.richText` DIRECTLY (segments are `{ text: "…" }`, no
 // `type` field) — not nested under `.msgList`. v1.2.90 only probed
 // `.msgList`-suffixed locations, so this fell through to the

@@ -17,7 +17,7 @@ const AUDIT_DB = join(AGIM_HOME, 'audit.db')
 
 /** Default number of days to keep audit rows. Override via env. */
 function resolveRetentionDays(): number {
-  const raw = process.env.IM_HUB_AUDIT_RETENTION_DAYS
+  const raw = process.env.AGIM_AUDIT_RETENTION_DAYS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -28,7 +28,7 @@ function resolveRetentionDays(): number {
 /** R12 ⑤ — events table retention. Default 180d is GDPR-friendly and
  *  satisfies 等保 2.0 三级 (≥ 6 months). 0 = permanent. */
 function resolveAuditEventsRetentionDays(): number {
-  const raw = process.env.IMHUB_AUDIT_EVENTS_RETENTION_DAYS
+  const raw = process.env.AGIM_AUDIT_EVENTS_RETENTION_DAYS
   if (raw === undefined) return 180
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 180
@@ -263,7 +263,7 @@ export function pruneExpired(d: Database.Database = getDb()!): number {
 //     persists what it's given.
 //   - Schema is fixed (no extra columns) — query by event_type + actor
 //     + time range covers every audit need we have.
-//   - Retention is separate from invocations (IMHUB_AUDIT_EVENTS_RETENTION_DAYS,
+//   - Retention is separate from invocations (AGIM_AUDIT_EVENTS_RETENTION_DAYS,
 //     default 180d). 0 = permanent.
 
 export type AuditEventType =

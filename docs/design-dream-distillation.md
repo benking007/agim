@@ -84,10 +84,10 @@ CREATE INDEX IF NOT EXISTS idx_pending_distill_user ON pending_distill(user_key,
 
 | 旋钮（env） | 建议默认 | 说明 |
 |---|---|---|
-| `IMHUB_MEMORY_DISTILL_INTERVAL_MS` | `300000`（5 分钟） | distiller tick 间隔；安静 bot 实际延迟 ≤5 min |
-| `IMHUB_MEMORY_DISTILL_FLOOR_MIN` | `30` | 最老 pending 超 30 min 强制 flush（忙碌 bot 兜底） |
-| `IMHUB_MEMORY_DISTILL_BATCH_MAX` | `20` | 单次抽取最多 20 轮；超出分块 |
-| `IMHUB_MEMORY_DISTILL_MAX_PENDING` | `200` | 每用户 pending 上限（背压）；超了合并/丢最旧 |
+| `AGIM_MEMORY_DISTILL_INTERVAL_MS` | `300000`（5 分钟） | distiller tick 间隔；安静 bot 实际延迟 ≤5 min |
+| `AGIM_MEMORY_DISTILL_FLOOR_MIN` | `30` | 最老 pending 超 30 min 强制 flush（忙碌 bot 兜底） |
+| `AGIM_MEMORY_DISTILL_BATCH_MAX` | `20` | 单次抽取最多 20 轮；超出分块 |
+| `AGIM_MEMORY_DISTILL_MAX_PENDING` | `200` | 每用户 pending 上限（背压）；超了合并/丢最旧 |
 
 口径：**安静时 ≤5 分钟、最坏（持续忙）≤30 分钟**内学到新事实。可选增强（P1.5）：监听 `activeJobs → 0` 跳变即时 flush，比轮询更跟手。
 
@@ -105,7 +105,7 @@ UI 模板用 `src/web-app/src/routes/memory/vector-backend-form.tsx`。**方案 
 
 - **P1（后端，本设计核心）**：`pending_distill` 表 + `enqueuePendingTurn` + 热路径改 buffer + `startMemoryDistiller`（空闲 + 下限）+ 批量抽取 + `distill` 角色解析链。**附 node 回归测试**（沿用 #107 的 `npm run test:node` 模式，bun 测不了 SQLite）。
 - **P2（配置面）**：Memory Tab"蒸馏"子标签 + `/api/memory/distill[/status]` + 复用 `/api/llm`。
-- **P3（默认开）**：成本被 P1 压平后，把 `IMHUB_MEMORY_ENABLED` 默认翻开（opt-out）。
+- **P3（默认开）**：成本被 P1 压平后，把 `AGIM_MEMORY_ENABLED` 默认翻开（opt-out）。
 
 ## 8. 测试
 

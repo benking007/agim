@@ -2,7 +2,7 @@
 //
 // When the rule-based classifier produces a low-confidence result we
 // ask a configured "judge agent" — itself one of the registered agents
-// — to pick the best agent. Opt-in via env (IM_HUB_LLM_JUDGE_AGENT)
+// — to pick the best agent. Opt-in via env (AGIM_LLM_JUDGE_AGENT)
 // or programmatic configureLLMJudge() so we never silently spend
 // tokens by default.
 //
@@ -89,10 +89,10 @@ export function getLLMJudge(): LLMJudgeConfig | null {
 
 /**
  * True when intent fallback can run — either via the legacy CLI judge
- * (`IM_HUB_LLM_JUDGE_AGENT` env / configureLLMJudge) OR via a native
+ * (`AGIM_LLM_JUDGE_AGENT` env / configureLLMJudge) OR via a native
  * 'cheap' LLM backend from D+ Stage 1. Router uses this to gate the
  * fallback path; previously it could only gate on `getLLMJudge()`,
- * which forced operators to set IM_HUB_LLM_JUDGE_AGENT even when they
+ * which forced operators to set AGIM_LLM_JUDGE_AGENT even when they
  * only had a native backend wired.
  */
 export function hasIntentFallback(): boolean {
@@ -102,9 +102,9 @@ export function hasIntentFallback(): boolean {
 
 /** Probe env on first import so common deployments get auto-config. */
 function autoFromEnv(): void {
-  const name = process.env.IM_HUB_LLM_JUDGE_AGENT
+  const name = process.env.AGIM_LLM_JUDGE_AGENT
   if (name && !config) {
-    const threshold = parseFloat(process.env.IM_HUB_LLM_JUDGE_THRESHOLD || '1.0')
+    const threshold = parseFloat(process.env.AGIM_LLM_JUDGE_THRESHOLD || '1.0')
     config = {
       agentName: name,
       threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : 1.0,

@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_plan_history_resolved
   ON plan_history(resolved_at DESC);
 `
 
-const DB_PATH_FROM_ENV = process.env.IMHUB_PLAN_HISTORY_DB
+const DB_PATH_FROM_ENV = process.env.AGIM_PLAN_HISTORY_DB
 const dbPath = DB_PATH_FROM_ENV && DB_PATH_FROM_ENV.length > 0
   ? DB_PATH_FROM_ENV
   : join(AGIM_HOME, 'plan-history.db')

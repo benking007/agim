@@ -18,7 +18,7 @@ import { registry } from './registry.js'
 import { callHelperAgent } from './agent-helper.js'
 import { sink } from './message-sink.js'
 
-const REMINDERS_DB = process.env.IMHUB_REMINDERS_DB
+const REMINDERS_DB = process.env.AGIM_REMINDERS_DB
   ?? join(AGIM_HOME, 'reminders.db')
 const TICK_INTERVAL_MS = 5 * 1000
 const BATCH_SIZE = 50

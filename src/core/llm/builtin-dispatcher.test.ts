@@ -8,7 +8,7 @@ import {
 } from './builtin-dispatcher.js'
 import type { ToolCallRequest } from './provider-base.js'
 
-const TZ_KEY = 'IMHUB_TZ_OFFSET_HOURS'
+const TZ_KEY = 'AGIM_TZ_OFFSET_HOURS'
 
 afterEach(() => { delete process.env[TZ_KEY] })
 
@@ -68,7 +68,7 @@ describe('builtin-dispatcher — execution', () => {
     expect(parsed.offset).toMatch(/^UTC[+-]\d{2}:\d{2}$/)
   })
 
-  it('native_now respects IMHUB_TZ_OFFSET_HOURS', async () => {
+  it('native_now respects AGIM_TZ_OFFSET_HOURS', async () => {
     process.env[TZ_KEY] = '0'
     const r = await dispatch(call('native_now'), signal)
     const parsed = JSON.parse(r.text) as { offset: string }

@@ -177,7 +177,7 @@ describe('Web REST API', () => {
       // Pre-R9 this case exercised the unreachable-host error mapping
       // (any 200-ok-false or 500). R9 short-circuits before the fetch
       // because 127.0.0.1 is private-addr blocked. The dev escape hatch
-      // IMHUB_ACP_ALLOW_LOOPBACK=1 restores the old behaviour.
+      // AGIM_ACP_ALLOW_LOOPBACK=1 restores the old behaviour.
       const res = await fetch(url('/api/agents/acp/discover'), {
         method: 'POST',
         headers: { ...auth, 'content-type': 'application/json' },
@@ -334,11 +334,11 @@ describe('Web REST API', () => {
   })
 
   describe('/api/bgjobs', () => {
-    // We point IMHUB_BGJOB_ROOTS at temp dirs we lay out ourselves so this
+    // We point AGIM_BGJOB_ROOTS at temp dirs we lay out ourselves so this
     // test never touches the real ~/.claude/bgjobs.
     let bgTmpA: string
     let bgTmpB: string
-    const ORIGINAL = process.env.IMHUB_BGJOB_ROOTS
+    const ORIGINAL = process.env.AGIM_BGJOB_ROOTS
 
     beforeAll(async () => {
       const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
@@ -369,15 +369,15 @@ describe('Web REST API', () => {
         started_at: '2026-05-01T07:00:00+08:00', ended_at: '2026-05-01T07:00:30+08:00',
         exit_code: 1,
       }))
-      process.env.IMHUB_BGJOB_ROOTS = `rootA=${bgTmpA},rootB=${bgTmpB}`
+      process.env.AGIM_BGJOB_ROOTS = `rootA=${bgTmpA},rootB=${bgTmpB}`
     })
 
     afterAll(async () => {
       const { rmSync } = await import('node:fs')
       rmSync(bgTmpA, { recursive: true, force: true })
       rmSync(bgTmpB, { recursive: true, force: true })
-      if (ORIGINAL === undefined) delete process.env.IMHUB_BGJOB_ROOTS
-      else process.env.IMHUB_BGJOB_ROOTS = ORIGINAL
+      if (ORIGINAL === undefined) delete process.env.AGIM_BGJOB_ROOTS
+      else process.env.AGIM_BGJOB_ROOTS = ORIGINAL
     })
 
     it('GET /api/bgjobs returns groups across all roots', async () => {

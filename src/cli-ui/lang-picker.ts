@@ -1,5 +1,5 @@
 // cli-ui/lang-picker.ts — first-line of every interactive entry point.
-// Reads the persisted preference (~/.im-hub/cli-lang) so a returning user
+// Reads the persisted preference (~/.agim/cli-lang) so a returning user
 // just hits Enter. Saves the choice back on every selection so toggling
 // once flips the default for next time.
 

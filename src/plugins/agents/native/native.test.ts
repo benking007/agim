@@ -25,18 +25,18 @@ import { existsSync, unlinkSync } from 'node:fs'
 
 const ORIGINAL_FETCH = globalThis.fetch
 const ENV_KEYS = [
-  'IMHUB_NATIVE_AGENT_ROLE',
-  'IMHUB_NATIVE_AGENT_MODE',
-  'IMHUB_NATIVE_AGENT_AUTOALLOW',
-  'IMHUB_NATIVE_AGENT_DENYLIST',
+  'AGIM_NATIVE_AGENT_ROLE',
+  'AGIM_NATIVE_AGENT_MODE',
+  'AGIM_NATIVE_AGENT_AUTOALLOW',
+  'AGIM_NATIVE_AGENT_DENYLIST',
   // v1.2.119 — keep blank-retry out of these legacy adapter tests
   // so assertions on the recorded messages array stay stable. The
   // blank-retry path is exercised in agent-loop-blank-retry.test.ts.
-  'IMHUB_NATIVE_BLANK_RETRY_MAX',
-  'IMHUB_SKILLS_MODE',
-  'IMHUB_SKILLS_WORKSPACE_DIR',
-  'IMHUB_SKILLS_BUILTIN_DIR',
-  'IMHUB_SKILLS_INJECTION_OVERRIDE_PATH',
+  'AGIM_NATIVE_BLANK_RETRY_MAX',
+  'AGIM_SKILLS_MODE',
+  'AGIM_SKILLS_WORKSPACE_DIR',
+  'AGIM_SKILLS_BUILTIN_DIR',
+  'AGIM_SKILLS_INJECTION_OVERRIDE_PATH',
   envKeyForBackend('native-mock'),
 ]
 
@@ -44,7 +44,7 @@ function clearAll(): void {
   for (const k of ENV_KEYS) delete process.env[k]
   // v1.2.119 — disable intra-loop blank-retry for this suite (see
   // ENV_KEYS comment above).
-  process.env.IMHUB_NATIVE_BLANK_RETRY_MAX = '0'
+  process.env.AGIM_NATIVE_BLANK_RETRY_MAX = '0'
   if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
   _resetRegistry()
   globalThis.fetch = ORIGINAL_FETCH
@@ -108,13 +108,13 @@ describe('nativeAgentAdapter — isAvailable', () => {
     expect(await nativeAgentAdapter.isAvailable()).toBe(true)
   })
 
-  it('IMHUB_NATIVE_AGENT_ROLE env override still works', async () => {
+  it('AGIM_NATIVE_AGENT_ROLE env override still works', async () => {
     saveSecret('native-mock', 'sk-test')
     loadFromConfig({
       llmBackends: [{ name: 'native-mock', provider: 'openai-compat', model: 'gpt' }],
       llmRoles: { 'custom-role': 'native-mock' },
     })
-    process.env.IMHUB_NATIVE_AGENT_ROLE = 'custom-role'
+    process.env.AGIM_NATIVE_AGENT_ROLE = 'custom-role'
     expect(await nativeAgentAdapter.isAvailable()).toBe(true)
   })
 })
@@ -128,16 +128,16 @@ describe('buildSystemPrompt — Agim Skills injection', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'agim-skills-cap-'))
     overridePath = join(dir, 'skill-injection-override.md')
-    process.env.IMHUB_SKILLS_MODE = 'agim-only'
-    process.env.IMHUB_SKILLS_WORKSPACE_DIR = dir
-    process.env.IMHUB_SKILLS_BUILTIN_DIR = join(dir, '__no_builtins__')
-    process.env.IMHUB_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
+    process.env.AGIM_SKILLS_MODE = 'agim-only'
+    process.env.AGIM_SKILLS_WORKSPACE_DIR = dir
+    process.env.AGIM_SKILLS_BUILTIN_DIR = join(dir, '__no_builtins__')
+    process.env.AGIM_SKILLS_INJECTION_OVERRIDE_PATH = overridePath
     invalidateSkillsCache()
   })
   afterEach(() => {
-    delete process.env.IMHUB_SKILLS_MODE
-    delete process.env.IMHUB_SKILLS_WORKSPACE_DIR
-    delete process.env.IMHUB_SKILLS_BUILTIN_DIR
+    delete process.env.AGIM_SKILLS_MODE
+    delete process.env.AGIM_SKILLS_WORKSPACE_DIR
+    delete process.env.AGIM_SKILLS_BUILTIN_DIR
     invalidateSkillsCache()
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
@@ -189,10 +189,10 @@ describe('readOperatorRole — project + local hierarchy (T4, local wins)', () =
   let dir = ''
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'agim-role-hier-'))
-    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+    delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
   })
   afterEach(() => {
-    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+    delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 
@@ -211,12 +211,12 @@ describe('readOperatorRole — project + local hierarchy (T4, local wins)', () =
     expect(readOperatorRole(dir)).toContain('LOCAL ONLY role')
   })
 
-  it('IMHUB_NATIVE_AGENT_ROLE_FILE forces a single file, bypassing the hierarchy', () => {
+  it('AGIM_NATIVE_AGENT_ROLE_FILE forces a single file, bypassing the hierarchy', () => {
     writeFileSync(join(dir, 'AGENTS.md'), 'PROJECT should be ignored')
     writeFileSync(join(dir, 'AGENTS.local.md'), 'LOCAL should be ignored')
     const pinned = join(dir, 'pinned-role.md')
     writeFileSync(pinned, 'PINNED role only')
-    process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = pinned
+    process.env.AGIM_NATIVE_AGENT_ROLE_FILE = pinned
     const role = readOperatorRole(dir)
     expect(role).toContain('PINNED role only')
     expect(role).not.toContain('PROJECT should be ignored')
@@ -228,12 +228,12 @@ describe('readOperatorRole — workspace trust gate (T6)', () => {
   let dir = ''
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'agim-role-trust-'))
-    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
-    delete process.env.IMHUB_NATIVE_TRUST_WORKSPACE
+    delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
+    delete process.env.AGIM_NATIVE_TRUST_WORKSPACE
   })
   afterEach(() => {
-    delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
-    delete process.env.IMHUB_NATIVE_TRUST_WORKSPACE
+    delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
+    delete process.env.AGIM_NATIVE_TRUST_WORKSPACE
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 
@@ -246,7 +246,7 @@ describe('readOperatorRole — workspace trust gate (T6)', () => {
   it('untrusted workspace skips ALL discovered role files', () => {
     writeFileSync(join(dir, 'AGENTS.md'), 'SHOULD NOT LEAK')
     writeFileSync(join(dir, 'AGENTS.local.md'), 'ALSO NOT')
-    process.env.IMHUB_NATIVE_TRUST_WORKSPACE = 'off'
+    process.env.AGIM_NATIVE_TRUST_WORKSPACE = 'off'
     expect(isWorkspaceTrusted()).toBe(false)
     expect(readOperatorRole(dir)).toBe('')
   })
@@ -255,8 +255,8 @@ describe('readOperatorRole — workspace trust gate (T6)', () => {
     writeFileSync(join(dir, 'AGENTS.md'), 'discovered should be skipped')
     const pinned = join(dir, 'pinned.md')
     writeFileSync(pinned, 'OPERATOR PINNED ROLE')
-    process.env.IMHUB_NATIVE_TRUST_WORKSPACE = '0'
-    process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = pinned
+    process.env.AGIM_NATIVE_TRUST_WORKSPACE = '0'
+    process.env.AGIM_NATIVE_AGENT_ROLE_FILE = pinned
     const role = readOperatorRole(dir)
     expect(role).toContain('OPERATOR PINNED ROLE')
     expect(role).not.toContain('discovered should be skipped')
@@ -267,7 +267,7 @@ describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {
   const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
 
   it('injects the framework-level tool-call discipline by default', () => {
-    delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    delete process.env.AGIM_NATIVE_TOOL_DISCIPLINE
     const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
     expect(prompt).toContain('[agim framework rule — tool-call discipline]')
     expect(prompt).toContain('工具调用纪律')
@@ -278,7 +278,7 @@ describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {
   })
 
   it('places discipline BEFORE the operator role so framework rule dominates', () => {
-    delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+    delete process.env.AGIM_NATIVE_TOOL_DISCIPLINE
     const dir = mkdtempSync(join(tmpdir(), 'agim-role-order-'))
     try {
       writeFileSync(join(dir, 'AGENTS.md'), 'You are Persona X. Custom rule: be quirky.')
@@ -292,24 +292,24 @@ describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {
     }
   })
 
-  it('omits discipline block when IMHUB_NATIVE_TOOL_DISCIPLINE=off', () => {
-    process.env.IMHUB_NATIVE_TOOL_DISCIPLINE = 'off'
+  it('omits discipline block when AGIM_NATIVE_TOOL_DISCIPLINE=off', () => {
+    process.env.AGIM_NATIVE_TOOL_DISCIPLINE = 'off'
     try {
       const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
       expect(prompt).not.toContain('[agim framework rule — tool-call discipline]')
       expect(prompt).not.toContain('工具调用纪律')
     } finally {
-      delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+      delete process.env.AGIM_NATIVE_TOOL_DISCIPLINE
     }
   })
 
   it('treats unrecognized env values (e.g. "yes") as ON', () => {
-    process.env.IMHUB_NATIVE_TOOL_DISCIPLINE = 'yes'
+    process.env.AGIM_NATIVE_TOOL_DISCIPLINE = 'yes'
     try {
       const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
       expect(prompt).toContain('[agim framework rule — tool-call discipline]')
     } finally {
-      delete process.env.IMHUB_NATIVE_TOOL_DISCIPLINE
+      delete process.env.AGIM_NATIVE_TOOL_DISCIPLINE
     }
   })
 })

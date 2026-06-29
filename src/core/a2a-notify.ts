@@ -10,11 +10,11 @@
 // Constraints (per the v1 spec in PROJECTS/im-viewer.md / the conversation
 // on 2026-05-16):
 //   - source: 'system'  — never routes through the viewer.
-//   - depth ≤ IMHUB_A2A_NOTIFY_MAX_DEPTH (default 1) — deeper nested calls
+//   - depth ≤ AGIM_A2A_NOTIFY_MAX_DEPTH (default 1) — deeper nested calls
 //     stay silent to avoid spamming.
 //   - mode tri-state: off / essential / verbose.
 //     · essential (default): start + complete/timeout/failed only.
-//     · verbose: also fires heartbeats every IMHUB_A2A_HEARTBEAT_MIN min.
+//     · verbose: also fires heartbeats every AGIM_A2A_HEARTBEAT_MIN min.
 //   - heartbeat trigger: file-change detection in _agim-output/, NOT a
 //     fixed interval ping. If nothing changed since the last check, we
 //     emit a "still thinking" note instead.
@@ -34,13 +34,13 @@ const log = rootLogger.child({ component: 'a2a-notify' })
 export type NotifyMode = 'off' | 'essential' | 'verbose'
 
 function readMode(): NotifyMode {
-  const raw = (process.env.IMHUB_A2A_NOTIFY_MODE || 'essential').toLowerCase()
+  const raw = (process.env.AGIM_A2A_NOTIFY_MODE || 'essential').toLowerCase()
   if (raw === 'off' || raw === 'verbose') return raw
   return 'essential'
 }
 
 function readMaxDepth(): number {
-  const raw = process.env.IMHUB_A2A_NOTIFY_MAX_DEPTH
+  const raw = process.env.AGIM_A2A_NOTIFY_MAX_DEPTH
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n >= 0) return n
@@ -49,7 +49,7 @@ function readMaxDepth(): number {
 }
 
 function readHeartbeatMinutes(): number {
-  const raw = process.env.IMHUB_A2A_HEARTBEAT_MIN
+  const raw = process.env.AGIM_A2A_HEARTBEAT_MIN
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n

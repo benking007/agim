@@ -102,14 +102,14 @@ function migrateVectorColumns(db: import('better-sqlite3').Database): void {
 
 /** Default retention windows. 0 disables → permanent (back-compat). */
 function resolveFactRetentionDays(): number {
-  const raw = process.env.IMHUB_MEMORY_FACT_RETENTION_DAYS
+  const raw = process.env.AGIM_MEMORY_FACT_RETENTION_DAYS
   if (raw === undefined) return 90
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 90
   return n
 }
 function resolvePersonaRetentionDays(): number {
-  const raw = process.env.IMHUB_PERSONA_RETENTION_DAYS
+  const raw = process.env.AGIM_PERSONA_RETENTION_DAYS
   if (raw === undefined) return 180
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 180

@@ -30,6 +30,7 @@ import type { AgentSendOpts } from '../../../core/types.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { approvalBus } from '../../../core/approval-bus.js'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { ensureOpencodeMcpRegistered } from './ensure-mcp-config.js'
 
 const log = rootLogger.child({ component: 'agent.opencode' })
 
@@ -79,15 +80,17 @@ export class OpenCodeAdapter extends AgentBase {
    * (web/scheduler) keep cwd undefined and inherit agim's cwd, preserving
    * the prior behavior. See agent-cwd.ts for full rationale.
    *
-   * MCP context (for the imhub reminder tools): when we have a real IM
+   * MCP context (for the agim reminder tools): when we have a real IM
    * thread + the bus is running, register a unique runId and inject
-   * IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID into the spawn env. opencode forwards
+   * AGIM_APPROVAL_SOCK + AGIM_RUN_ID into the spawn env. opencode forwards
    * its env to MCP server children (per opencode/src/mcp/index.ts:384), so
    * the sidecar inherits these and can route reminder.* RPCs back to the
    * right RunContext. No env injection → sidecar still launches but
    * connects to nothing → reminder tools deny gracefully ("bus unavailable").
    */
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
+    await ensureOpencodeMcpRegistered()
+
     const args = this.buildArgs(prompt, opts)
     const cwd = resolveAgentCwd(this.name, opts)
 
@@ -104,7 +107,7 @@ export class OpenCodeAdapter extends AgentBase {
       userId: opts.userId ?? '',
       channelId: opts.channelId as string,
       callerAgent: this.name,
-      // A2A-L1: forward parent + depth so any mcp__imhub__call_agent
+      // A2A-L1: forward parent + depth so any mcp__agim__call_agent
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
@@ -119,8 +122,8 @@ export class OpenCodeAdapter extends AgentBase {
       args,
       cwd,
       extraEnv: {
-        IMHUB_APPROVAL_SOCK: sockPath,
-        IMHUB_RUN_ID: runId,
+        AGIM_APPROVAL_SOCK: sockPath,
+        AGIM_RUN_ID: runId,
       },
       cleanup: () => {
         approvalBus.unregisterRun(runId)

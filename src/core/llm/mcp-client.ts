@@ -42,7 +42,7 @@ const DEFAULT_TOOL_TIMEOUT_MS = 30_000
 /** v1.2.108 — TTL for the per-server tools-list cache. See
  *  `McpClient.cachedTools` for the policy. */
 export const TOOLS_TTL_MS: number = (() => {
-  const raw = process.env.IMHUB_MCP_TOOLS_TTL_MS
+  const raw = process.env.AGIM_MCP_TOOLS_TTL_MS
   if (raw == null || raw === '') return 5 * 60 * 1000
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 0) return 5 * 60 * 1000
@@ -102,7 +102,7 @@ export class McpClient {
   // v1.2.108 — Cache listTools() with a TTL so the agent loop doesn't
   // pay the round-trip cost on every iteration BUT also picks up server-
   // side tool additions / schema changes within ~5 min without an agim
-  // restart. TTL configurable via IMHUB_MCP_TOOLS_TTL_MS:
+  // restart. TTL configurable via AGIM_MCP_TOOLS_TTL_MS:
   //   - >0   → cache for that many ms (default 5 min)
   //   - 0    → never cache (always re-list; useful for development)
   // Callers that just learned the server changed (e.g. an MCP
@@ -149,7 +149,7 @@ export class McpClient {
   /**
    * Discover the server's tool roster and project into agim ToolDef[].
    * Applies `enabledTools` filter and the namespaced-name policy.
-   * Cache TTL: TOOLS_TTL_MS (env IMHUB_MCP_TOOLS_TTL_MS, default 5 min,
+   * Cache TTL: TOOLS_TTL_MS (env AGIM_MCP_TOOLS_TTL_MS, default 5 min,
    * 0 = no cache). Use `refresh()` to force a re-list immediately.
    */
   async listAvailableTools(): Promise<ToolDef[]> {

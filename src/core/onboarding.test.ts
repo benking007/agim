@@ -37,7 +37,7 @@ describe('checkMessengerConfig', () => {
   })
 
   it('includes correct availableMessengers list (default = no Telegram/Discord)', () => {
-    delete process.env.IMHUB_ENABLE_GLOBAL_IM
+    delete process.env.AGIM_ENABLE_GLOBAL_IM
     const config: Config = {
       messengers: [],
       agents: [],
@@ -54,8 +54,8 @@ describe('checkMessengerConfig', () => {
     expect(ids).not.toContain('discord')
   })
 
-  it('IMHUB_ENABLE_GLOBAL_IM=1 surfaces Telegram + Discord again', () => {
-    process.env.IMHUB_ENABLE_GLOBAL_IM = '1'
+  it('AGIM_ENABLE_GLOBAL_IM=1 surfaces Telegram + Discord again', () => {
+    process.env.AGIM_ENABLE_GLOBAL_IM = '1'
     const config: Config = {
       messengers: [],
       agents: [],
@@ -66,7 +66,7 @@ describe('checkMessengerConfig', () => {
     const ids = result.availableMessengers.map((m) => m.id)
     expect(ids).toContain('telegram')
     expect(ids).toContain('discord')
-    delete process.env.IMHUB_ENABLE_GLOBAL_IM
+    delete process.env.AGIM_ENABLE_GLOBAL_IM
   })
 })
 

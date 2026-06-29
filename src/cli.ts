@@ -1,16 +1,9 @@
 #!/usr/bin/env node
-// Agim (阿吉姆) CLI — rebranded from im-hub-pro at v1.0.0.
+// Agim (阿吉姆) CLI.
 //
-// Brand: "Agim" (English) / "阿吉姆" (Chinese). Binary is `agim`; the
-// legacy `im-hub-pro` bin name is kept as an alias for systemd units +
-// shell aliases users have already wired up.
-//
-// On-disk paths (~/.im-hub/, ~/.im-hub-workspaces/), env vars (IMHUB_*),
-// HTTP headers (X-IM-Hub-Token), and the systemd unit `im-hub.service`
-// keep their legacy "im-hub" identifier for drop-in compatibility with
-// existing installations. Do not "fix" them — millions of bytes of user
-// data + every existing deployment's systemd config depend on those
-// names being stable. The rename is a brand surface only.
+// Brand: "Agim" (English) / "阿吉姆" (Chinese). Public runtime surfaces use
+// the `agim` binary, `~/.agim/` state, `~/.agim-workspaces/` workspaces,
+// `AGIM_*` env vars, `X-Agim-Token` headers, and `agim.service`.
 
 import { program } from 'commander'
 import { dirname, join } from 'node:path'
@@ -213,7 +206,7 @@ program
       const inSystemd = typeof process.env.INVOCATION_ID === 'string' && process.env.INVOCATION_ID.length > 0
       if (!inSystemd) {
         const { existsSync: _exists2 } = await import('node:fs')
-        const hasUnit = _exists2('/etc/systemd/system/agim.service') || _exists2('/etc/systemd/system/im-hub.service')
+        const hasUnit = _exists2('/etc/systemd/system/agim.service')
         if (hasUnit) {
           console.warn()
           console.warn('⚠️  agim is starting OUTSIDE systemd, but a systemd unit exists on this host.')
@@ -287,8 +280,8 @@ program
 
     // Start approval-bus before any agent can spawn — failure here is
     // non-fatal: claude-code falls back to legacy --permission-mode dontAsk.
-    if (process.env.IMHUB_APPROVAL_DISABLED === '1') {
-      console.log('🛑 Approval bus disabled via IMHUB_APPROVAL_DISABLED=1')
+    if (process.env.AGIM_APPROVAL_DISABLED === '1') {
+      console.log('🛑 Approval bus disabled via AGIM_APPROVAL_DISABLED=1')
     } else {
       try {
         const sockPath = await approvalBus.start()
@@ -304,7 +297,7 @@ program
         // `env: process.env`) can connect without per-spawn config.
         // claude-code and opencode stdio still set this per-spawn via
         // extraEnv — that override wins inside their spawn scope.
-        process.env.IMHUB_APPROVAL_SOCK = sockPath
+        process.env.AGIM_APPROVAL_SOCK = sockPath
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.warn(`⚠️ Approval bus failed to start (${msg}); claude-code will fall back to dontAsk mode`)
@@ -374,19 +367,6 @@ program
       const bootLang = resolveCliLang()
       console.warn(`⚠️ ${cliT(bootLang, 'start.workspace_boot_failed', { message: msg })}`)
       console.warn(`   ${cliT(bootLang, 'start.workspace_fallback')}`)
-    }
-
-    // Register the imhub MCP server in opencode's global config so opencode
-    // (stdio mode) can see the reminder tools. Idempotent; quietly skips if
-    // opencode isn't installed / no config dir / write fails. HTTP mode
-    // can't use this — see ensure-mcp-config.ts comments.
-    try {
-      const { ensureOpencodeMcpRegistered } = await import('./plugins/agents/opencode/ensure-mcp-config.js')
-      const wrote = await ensureOpencodeMcpRegistered()
-      if (wrote) console.log('🔧 Registered imhub MCP in opencode global config')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn(`⚠️ opencode MCP registration skipped: ${msg}`)
     }
 
     // Load ACP (remote) agents from config
@@ -622,7 +602,7 @@ program
         }
 
         // v1.2.66 — sender allowlist gate. When configured (env
-        // IMHUB_ALLOWED_USERS set), unknown senders get a short refusal
+        // AGIM_ALLOWED_USERS set), unknown senders get a short refusal
         // and the message is dropped before reaching any agent or
         // tool. When unconfigured, this passes through unchanged
         // (default-open; boot log warns OPEN_IM_ACCESS).
@@ -651,7 +631,7 @@ program
               event: 'sender.allowlist.denied',
               platform: ctx.platform,
               userId: ctx.message.userId,
-            }, 'message dropped — sender not on IMHUB_ALLOWED_USERS')
+            }, 'message dropped — sender not on AGIM_ALLOWED_USERS')
             try {
               await sink.deliver({
                 platform: ctx.platform,
@@ -673,7 +653,7 @@ program
           ctx.logger.error({
             event: 'sender.allowlist.error',
             err: err instanceof Error ? err.message : String(err),
-          }, 'sender allowlist module failed to load; cannot enforce — review IMHUB_ALLOWED_USERS')
+          }, 'sender allowlist module failed to load; cannot enforce — review AGIM_ALLOWED_USERS')
         }
 
         // Phase 3 — interrupted-job recovery reply. If the user has a
@@ -739,7 +719,7 @@ program
         // the user replies with one of the choice tokens (1 / a / 通过 / …),
         // we resolve the pending Promise the calling agent is awaiting.
         // BEFORE this commit, tryHandleAskReply was defined but never
-        // called from anywhere — so an agent's mcp__imhub__ask_user call
+        // called from anywhere — so an agent's mcp__agim__ask_user call
         // would surface the choice card but the user's typed reply went
         // straight to the agent as a fresh prompt, leaving the ask
         // dangling until the configured timeout. Runs BEFORE the approval
@@ -940,13 +920,13 @@ program
     // started. If we started it earlier, every queued row from a prior run
     // would fail "messenger not registered" on the first tick and bounce
     // into backoff — minor but pointless. Worker is single-threaded and
-    // ticks at IMHUB_OUTBOX_TICK_MS (default 1s).
+    // ticks at AGIM_OUTBOX_TICK_MS (default 1s).
     sink.startWorker()
     console.log('✅ Message-sink worker started')
 
     // Phase 3 — startup recovery scan. Look at jobs.db for inline rows
     // that got 'interrupted' on the previous shutdown and are still inside
-    // the recovery window (default 10 min, env IMHUB_RECOVERY_WINDOW_MS).
+    // the recovery window (default 10 min, env AGIM_RECOVERY_WINDOW_MS).
     // For each, send a "回 1 重发 / 2 取消" prompt via sink — outbox will
     // hold the notification until the messenger is fully connected. Older
     // interrupted rows transition to 'abandoned' so we don't ask the user
@@ -1010,7 +990,7 @@ program
     // v1.5 — long-term memory consolidator. Runs periodically (default
     // every 24h) to refresh persona_profile from accumulated facts using
     // the user's most recently active agent. No-op when
-    // IMHUB_MEMORY_ENABLED != 1.
+    // AGIM_MEMORY_ENABLED != 1.
     try {
       const { startMemoryConsolidator } = await import('./core/memory-consolidate.js')
       startMemoryConsolidator()
@@ -1020,7 +1000,7 @@ program
 
     // P1 — dream distillation. Background pass that batch-extracts the turns
     // buffered on the hot path when the system is idle (or past the staleness
-    // floor). No-op when IMHUB_MEMORY_ENABLED != 1.
+    // floor). No-op when AGIM_MEMORY_ENABLED != 1.
     try {
       const { startMemoryDistiller } = await import('./core/memory-distiller.js')
       startMemoryDistiller()
@@ -1329,7 +1309,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
   // Inline-job tracking id (Phase 2). Declared at function scope so the
   // catch block below can mark the row 'failed' on any throw. -1 means
   // "not tracked": either the message didn't reach willInvokeAgent, or
-  // createInlineJob fell back to in-memory (DB locked / IMHUB_INLINE_JOB_TRACKING=0).
+  // createInlineJob fell back to in-memory (DB locked / AGIM_INLINE_JOB_TRACKING=0).
   let inlineJobId = -1
 
   try {
@@ -1425,7 +1405,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     // and the Phase 3 startup scan can offer the user a retry. Built-ins
     // (status/audit/router) return string immediately and never touch the
     // agent — no point tracking them. Inline tracking can be killed wholesale
-    // via env IMHUB_INLINE_JOB_TRACKING=0 (createInlineJob returns -1, every
+    // via env AGIM_INLINE_JOB_TRACKING=0 (createInlineJob returns -1, every
     // mark*Job helper no-ops on id<=0). createInlineJob itself never throws —
     // if the DB is locked or disk-full we get -1 and the user path runs
     // unchanged on the in-memory fast path.
@@ -1455,7 +1435,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       }
       // A2A-L1: stash on routeCtx so callAgentWithHistory can forward it
       // through AgentSendOpts → adapter.registerRun → RunContext. When the
-      // agent fires mcp__imhub__call_agent the bus then knows what
+      // agent fires mcp__agim__call_agent the bus then knows what
       // parent_id to stamp on the callee inline-job row. User-originated
       // runs are call_depth=0; nested runs (A2A callees) reach this same
       // handler with their own ctx.inlineJobId and ctx.callDepth set.
@@ -2312,12 +2292,12 @@ program
   .command('web')
   .description('Print the URL of this host\'s web console')
   .action(async () => {
-    // Pull ~/.agim/env into process.env so IMHUB_VIEWER_* configured via
+    // Pull ~/.agim/env into process.env so AGIM_VIEWER_* configured via
     // the entry menu is visible when this CLI runs in a fresh shell.
     try {
       const { readEnvFile } = await import('./cli-ui/env-file.js')
       const f = readEnvFile()
-      for (const k of ['IMHUB_VIEWER_PUBLIC_BASE_URL', 'IMHUB_VIEWER_TUNNEL_MODE', 'IMHUB_VIEWER_ENABLED']) {
+      for (const k of ['AGIM_VIEWER_PUBLIC_BASE_URL', 'AGIM_VIEWER_TUNNEL_MODE', 'AGIM_VIEWER_ENABLED']) {
         if (f[k] && !process.env[k]) process.env[k] = f[k]
       }
     } catch { /* ignore */ }
@@ -2325,7 +2305,7 @@ program
     const cfg = getViewerConfig()
     const url = getEffectivePublicBaseUrl()
     if (url) {
-      const source = cfg.publicBaseUrl ? 'IMHUB_VIEWER_PUBLIC_BASE_URL' : 'cloudflared tunnel'
+      const source = cfg.publicBaseUrl ? 'AGIM_VIEWER_PUBLIC_BASE_URL' : 'cloudflared tunnel'
       console.log(url)
       console.log(`(来源: ${source})`)
       return
@@ -2337,8 +2317,8 @@ program
     }
     console.log('Web 后台地址未配置。')
     console.log('设置以下任一项后重启服务：')
-    console.log('  IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代 / 自定义域名)')
-    console.log('  IMHUB_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)')
+    console.log('  AGIM_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代 / 自定义域名)')
+    console.log('  AGIM_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)')
     process.exit(2)
   })
 

@@ -195,7 +195,7 @@ v2 之后的 sticky 是**绝对锁**：选定 Claude 后，发再多带"代码/t
 | `command` | 用户发了 `/cc` `/oc` 等显式命令，行为符合预期 |
 | `topic` / `keyword` | ❌ 第一条消息或 sticky 失效，重跑了分类 |
 | `default` | 完全没匹配，回落到 defaultAgent |
-| `llm` | 走了 LLM judge 兜底（仅在配置 `IM_HUB_LLM_JUDGE_AGENT` 时） |
+| `llm` | 走了 LLM judge 兜底（仅在配置 `AGIM_LLM_JUDGE_AGENT` 时） |
 
 ### 5.2 命令行验证
 
@@ -217,8 +217,8 @@ v2 把 TTL 拆成两层：
 
 | TTL | 默认 | env 变量 | 影响 |
 |---|---|---|---|
-| 消息历史 | 30 min | `IMHUB_SESSION_MESSAGES_TTL_MS` | 仅清空 in-memory `messages[]` + 删 `.log` |
-| 元数据 | 7 d | `IMHUB_SESSION_META_TTL_MS` | 完整删除 session（含 sticky agent + claudeSessionId） |
+| 消息历史 | 30 min | `AGIM_SESSION_MESSAGES_TTL_MS` | 仅清空 in-memory `messages[]` + 删 `.log` |
+| 元数据 | 7 d | `AGIM_SESSION_META_TTL_MS` | 完整删除 session（含 sticky agent + claudeSessionId） |
 
 ### 6.1 个人长用户：拉长 META TTL
 
@@ -226,13 +226,13 @@ v2 把 TTL 拆成两层：
 
 ```ini
 # /etc/systemd/system/agim.service
-Environment="IMHUB_SESSION_META_TTL_MS=2592000000"   # 30 天
+Environment="AGIM_SESSION_META_TTL_MS=2592000000"   # 30 天
 ```
 
 ### 6.2 多用户高流量：缩短 META TTL
 
 ```ini
-Environment="IMHUB_SESSION_META_TTL_MS=86400000"   # 1 天
+Environment="AGIM_SESSION_META_TTL_MS=86400000"   # 1 天
 ```
 
 ### 6.3 改完重启
@@ -268,7 +268,7 @@ systemctl status agim --no-pager
 ls -la /root/workspace/agim/dist/core/agent-cwd.js
 ls -la ~/.agim-workspaces/claude-code/CLAUDE.md
 journalctl -u agim --since "10 min ago" | grep -E 'agent-cwd|workspace|spawn'
-systemctl cat agim | grep IMHUB
+systemctl cat agim | grep AGIM
 ```
 
 最常见原因：升级后没重启服务。

@@ -6,11 +6,11 @@ import {
   _resetCache,
 } from '../../src/core/sender-allowlist.js'
 
-const ORIG = process.env.IMHUB_ALLOWED_USERS
+const ORIG = process.env.AGIM_ALLOWED_USERS
 
 function setEnv(v: string | undefined): void {
-  if (v === undefined) delete process.env.IMHUB_ALLOWED_USERS
-  else process.env.IMHUB_ALLOWED_USERS = v
+  if (v === undefined) delete process.env.AGIM_ALLOWED_USERS
+  else process.env.AGIM_ALLOWED_USERS = v
   _resetCache()
 }
 
@@ -86,9 +86,9 @@ describe('sender-allowlist', () => {
       expect(msg).toContain('discord:<unknown>')
     })
     // Don't leak the existing allowlist contents to non-allowed users.
-    it('does not include IMHUB_ALLOWED_USERS literal', () => {
+    it('does not include AGIM_ALLOWED_USERS literal', () => {
       const msg = senderDenialMessage('telegram', '123')
-      expect(msg).not.toContain('IMHUB_ALLOWED_USERS')
+      expect(msg).not.toContain('AGIM_ALLOWED_USERS')
     })
   })
 })

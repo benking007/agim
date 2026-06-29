@@ -21,7 +21,7 @@ import { gcj02ToWgs84 } from '../core/memos.js'
 import { AGIM_HOME } from '../core/agim-paths.js'
 
 const DRY = process.argv.includes('--dry-run')
-const DB_FILE = process.env.IMHUB_MEMOS_DB || join(AGIM_HOME, 'memos.db')
+const DB_FILE = process.env.AGIM_MEMOS_DB || join(AGIM_HOME, 'memos.db')
 
 const db = new Database(DB_FILE)
 const rows = db.prepare(

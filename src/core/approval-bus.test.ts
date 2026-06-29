@@ -26,7 +26,7 @@ const RUN_CTX: RunContext = {
 const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 /** A minimal NDJSON client over unix socket. Tests get one of these per connection. */
@@ -532,7 +532,7 @@ describe('ApprovalBus', () => {
       const client = await connectClient(fastPath)
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-1',
-        toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-foo' }, toolUseId: 'tu-1',
+        toolName: 'Bash', input: { command: 'ls -la /tmp/agim-foo' }, toolUseId: 'tu-1',
       })
       await sleep(20)
       fastBus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
@@ -543,7 +543,7 @@ describe('ApprovalBus', () => {
       // the same `cmd:` fingerprint regardless of path argument.
       client.send({
         v: 1, type: 'approval', runId: 'run-1', reqId: 'r-2',
-        toolName: 'Bash', input: { command: 'ls -la /tmp/imhub-other' }, toolUseId: 'tu-2',
+        toolName: 'Bash', input: { command: 'ls -la /tmp/agim-other' }, toolUseId: 'tu-2',
       })
       await sleep(20)
 

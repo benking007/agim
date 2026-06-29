@@ -1,4 +1,4 @@
-// skills-rpc — agim-side handler for mcp__imhub__read_skill
+// skills-rpc — agim-side handler for mcp__agim__read_skill
 // (Stage 3 / P0 #3 tier-2 fetch).
 //
 // The skills loader's tier-1 (name + description) is auto-injected into

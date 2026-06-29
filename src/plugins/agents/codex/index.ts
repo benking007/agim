@@ -33,11 +33,11 @@
 //     mcp-server` (stdio MCP) and putting our own approval-bus shim
 //     between the MCP client and codex. Tracked as a future iteration.
 //
-// MCP imhub sidecar (v0.4.0):
+// MCP agim sidecar (v0.4.0):
 //   - When IM context is present and approvalBus is up, prepareCommand
-//     injects `-c mcp_servers.imhub.{command,args,env}=...` ahead of the
+//     injects `-c mcp_servers.agim.{command,args,env}=...` ahead of the
 //     `exec` subcommand. codex spawns the sidecar as a stdio MCP child
-//     and the model gets access to the 9 imhub tools (reminder + memo +
+//     and the model gets access to the 9 agim tools (reminder + memo +
 //     request_location_capture). The `request` approval-prompt tool is
 //     exposed too but codex has no `--permission-prompt-tool` knob, so
 //     codex won't auto-invoke it; it's harmless to include.
@@ -265,25 +265,25 @@ export class CodexAdapter extends AgentBase {
     //
     // MCP tool approval: codex's MCP integration auto-cancels every tool
     // call in non-interactive (`exec --json`) mode because there's no TUI
-    // to render the approval prompt. Result: every imhub_save_memo/etc.
+    // to render the approval prompt. Result: every agim_save_memo/etc.
     // call returns `"user cancelled MCP tool call"` and the model gives up.
     // The ONLY way codex 0.130 lets MCP calls through non-interactively is
     // `--dangerously-bypass-approvals-and-sandbox` which also disables the
     // sandbox layer.
     //
-    // Trade-off: IM-spawned codex gains imhub MCP tool access at the cost
+    // Trade-off: IM-spawned codex gains agim MCP tool access at the cost
     // of the workspace-write sandbox. Acceptable for our use because:
     //   - the IM user IS the same trust principal as the host
     //   - codex never had per-tool approval cards in agim anyway (no CLI
     //     hook; it always ran bash/edit autonomously within sandbox)
-    //   - users who want sandbox back can set IMHUB_CODEX_SAFE_MODE=1, at
+    //   - users who want sandbox back can set AGIM_CODEX_SAFE_MODE=1, at
     //     the cost of MCP tools being unusable
     // planMode users similarly fall back to safe-mode (`-s read-only` only,
     // no bypass) because plan runs shouldn't be acting anyway.
     const wantBypass =
-      process.env.IMHUB_CODEX_SAFE_MODE !== '1' &&
+      process.env.AGIM_CODEX_SAFE_MODE !== '1' &&
       !opts.planMode &&
-      process.env.IMHUB_APPROVAL_DISABLED !== '1'
+      process.env.AGIM_APPROVAL_DISABLED !== '1'
     const sandboxMode = opts.planMode ? 'read-only' : 'workspace-write'
     if (opts.agentSessionId && opts.agentSessionResume) {
       // `codex exec resume <UUID> [OPTIONS] [PROMPT]` — SESSION_ID is a
@@ -304,20 +304,20 @@ export class CodexAdapter extends AgentBase {
    * cwd undefined and inherit agim's cwd. See agent-cwd.ts for rationale.
    *
    * MCP sidecar injection: when we have an IM thread + the bus is up, prepend
-   * `-c mcp_servers.imhub.{command,args,env}=...` to register the imhub MCP
+   * `-c mcp_servers.agim.{command,args,env}=...` to register the agim MCP
    * sidecar for this invocation only. The runId env entry is registered on
    * the bus first so reminder.* RPCs from the sidecar route back to the
    * correct RunContext. Cleanup unregisters the runId after the spawn exits.
    *
-   * Fallback path (no IM context, bus down, or IMHUB_APPROVAL_DISABLED=1):
-   * just buildArgs(prompt, opts) — codex still works, just without imhub
+   * Fallback path (no IM context, bus down, or AGIM_APPROVAL_DISABLED=1):
+   * just buildArgs(prompt, opts) — codex still works, just without agim
    * MCP tools. Matches the existing claude-code/opencode fallback shape.
    */
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
     const cwd = resolveAgentCwd(this.name, opts)
     const baseArgs = this.buildArgs(prompt, opts)
 
-    if (process.env.IMHUB_APPROVAL_DISABLED === '1') {
+    if (process.env.AGIM_APPROVAL_DISABLED === '1') {
       return { args: baseArgs, cwd }
     }
 
@@ -336,7 +336,7 @@ export class CodexAdapter extends AgentBase {
     approvalBus.registerRun(runId, {
       threadId, platform, userId: userId ?? '', channelId,
       callerAgent: this.name,
-      // A2A-L1: forward parent + depth so any mcp__imhub__call_agent
+      // A2A-L1: forward parent + depth so any mcp__agim__call_agent
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
       ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
@@ -345,7 +345,7 @@ export class CodexAdapter extends AgentBase {
       ...(opts.planMode ? { callerPlanMode: true } : {}),
     })
     log.info({ event: 'codex.mcp.run_registered', runId, threadId, platform },
-      'Codex run registered with bus for imhub MCP tools')
+      'Codex run registered with bus for agim MCP tools')
 
     return {
       // -c flags belong BEFORE `exec`; baseArgs starts with `exec` so the

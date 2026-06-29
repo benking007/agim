@@ -25,7 +25,7 @@ import { wgs84ToBd09 as coordWgs84ToBd09, outOfChina as coordOutOfChina } from '
 
 const log = rootLogger.child({ component: 'memos' })
 
-const DB_FILE = process.env.IMHUB_MEMOS_DB || join(AGIM_HOME, 'memos.db')
+const DB_FILE = process.env.AGIM_MEMOS_DB || join(AGIM_HOME, 'memos.db')
 
 // ─── Time / timezone ───────────────────────────────────────────────────
 // All timestamps are stored in UTC+8 (Asia/Shanghai) wall-clock format,
@@ -35,7 +35,7 @@ const DB_FILE = process.env.IMHUB_MEMOS_DB || join(AGIM_HOME, 'memos.db')
 // lexicographically comparable. UTC+8 matches the deployment's user base
 // (CN); for other regions, the offset is overridable via env.
 
-const TZ_OFFSET_HOURS = Number(process.env.IMHUB_TZ_OFFSET_HOURS ?? 8)
+const TZ_OFFSET_HOURS = Number(process.env.AGIM_TZ_OFFSET_HOURS ?? 8)
 const TZ_OFFSET_MS = TZ_OFFSET_HOURS * 3600_000
 const TZ_SHIFT_SQL = `'+${TZ_OFFSET_HOURS} hours'`  // for datetime('now', ...)
 
@@ -481,7 +481,7 @@ function classifyStatus(status: number): GeocodeFailReason {
 }
 
 export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
-  const ak = process.env.IMHUB_BAIDU_MAP_AK
+  const ak = process.env.AGIM_BAIDU_MAP_AK
   if (!ak) {
     log.debug({ event: 'memos.geocode.no_key' })
     return { ok: false, reason: 'no_key' }
@@ -511,7 +511,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeOutcome> {
 }
 
 export function isGeocodingAvailable(): boolean {
-  return !!process.env.IMHUB_BAIDU_MAP_AK
+  return !!process.env.AGIM_BAIDU_MAP_AK
 }
 
 // ─── Map URL builders (Baidu / Amap / Google) ───────────────────────────
@@ -618,7 +618,7 @@ function buildBaiduUrl(lat: number, lng: number, label: string, addr: string): s
   if (label) url.searchParams.set('title', label)
   if (addr) url.searchParams.set('content', addr)
   url.searchParams.set('output', 'html')
-  url.searchParams.set('src', 'imhub')
+  url.searchParams.set('src', 'agim')
   return url.toString()
 }
 
@@ -627,7 +627,7 @@ function buildAmapUrl(lat: number, lng: number, label: string): string {
   const url = new URL('https://uri.amap.com/marker')
   url.searchParams.set('position', `${gcj.lng},${gcj.lat}`)
   if (label) url.searchParams.set('name', label)
-  url.searchParams.set('src', 'imhub')
+  url.searchParams.set('src', 'agim')
   url.searchParams.set('coordinate', 'gaode')
   return url.toString()
 }

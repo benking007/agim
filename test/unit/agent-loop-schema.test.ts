@@ -1,7 +1,7 @@
 // v1.2.110 — locks the integration of the JSON-Schema validator with
 // runAgentLoop: bad args are caught BEFORE dispatch (dispatcher never
 // invoked), the role:'tool' message handed back to the model contains
-// a structured "what's wrong + retry" block, and IMHUB_TOOL_SCHEMA_VALIDATE=off
+// a structured "what's wrong + retry" block, and AGIM_TOOL_SCHEMA_VALIDATE=off
 // fully restores the v1.2.109 pass-through behaviour.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
@@ -60,14 +60,14 @@ const readFileTool = {
 describe('runAgentLoop — schema validation (v1.2.110)', () => {
   // Make sure each test starts from a known env state.
   let prevEnv: string | undefined
-  beforeEach(() => { prevEnv = process.env.IMHUB_TOOL_SCHEMA_VALIDATE })
+  beforeEach(() => { prevEnv = process.env.AGIM_TOOL_SCHEMA_VALIDATE })
   afterEach(() => {
-    if (prevEnv === undefined) delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
-    else process.env.IMHUB_TOOL_SCHEMA_VALIDATE = prevEnv
+    if (prevEnv === undefined) delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
+    else process.env.AGIM_TOOL_SCHEMA_VALIDATE = prevEnv
   })
 
   it('missing required field is caught BEFORE dispatch (dispatcher never called)', async () => {
-    delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
+    delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     const provider = new QueuedStubProvider([
       turn([tc('1', 'native_read_file', { limit: 5 })]),  // no `path`
       done(),
@@ -92,7 +92,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   })
 
   it('error fed back as role:tool so the model sees what to fix', async () => {
-    delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
+    delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     let secondTurnMessages: LlmMessage[] = []
     class CapturingStub extends QueuedStubProvider {
       override async chat(messages: LlmMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
@@ -122,7 +122,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   })
 
   it('errorType is stable across same bad args (feeds stuck-loop detector)', async () => {
-    delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
+    delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     // 3 identical bad calls in a single iteration → after the batch
     // emit, stuck-loop detector should fire (same name + argsKey +
     // errorType). Loop returns finishReason='stuck_loop'.
@@ -145,8 +145,8 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
     expect(r.toolCalls.every((c) => c.source === 'schema-validation')).toBe(true)
   })
 
-  it('IMHUB_TOOL_SCHEMA_VALIDATE=off bypasses validation (back to v1.2.109)', async () => {
-    process.env.IMHUB_TOOL_SCHEMA_VALIDATE = 'off'
+  it('AGIM_TOOL_SCHEMA_VALIDATE=off bypasses validation (back to v1.2.109)', async () => {
+    process.env.AGIM_TOOL_SCHEMA_VALIDATE = 'off'
     const provider = new QueuedStubProvider([
       turn([tc('1', 'native_read_file', { limit: 5 })]),  // bad args
       done(),
@@ -167,7 +167,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   })
 
   it('valid args dispatch through untouched', async () => {
-    delete process.env.IMHUB_TOOL_SCHEMA_VALIDATE
+    delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     const provider = new QueuedStubProvider([
       turn([tc('1', 'native_read_file', { path: '/etc/hostname', limit: 100 })]),
       done(),

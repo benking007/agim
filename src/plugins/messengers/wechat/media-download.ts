@@ -17,7 +17,7 @@ import type { ILinkClient } from './ilink-client.js'
 const log = rootLogger.child({ component: 'wechat.media' })
 
 export const MEDIA_ROOT: string = resolve(
-  process.env.IMHUB_MEDIA_ROOT ?? join(AGIM_HOME, 'media'),
+  process.env.AGIM_MEDIA_ROOT ?? join(AGIM_HOME, 'media'),
 )
 
 export const MAX_BYTES = 20 * 1024 * 1024

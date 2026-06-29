@@ -1,4 +1,4 @@
-# `mcp__imhub__ask_user` 结构化用户决策
+# `mcp__agim__ask_user` 结构化用户决策
 
 `ask_user` 用于让 agent 以“结构化选项”向用户提问，并拿到可机器解析的结果。
 

@@ -50,21 +50,21 @@ describe('/stats', () => {
     expect(out).toMatch(/输出: 275/)
   })
 
-  it('honors IM_HUB_USD_TO_CNY env override', async () => {
+  it('honors AGIM_USD_TO_CNY env override', async () => {
     const ctx = makeCtx('stats-fx')
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'opencode')
     await sessionManager.recordUsage(ctx.platform, ctx.channelId, ctx.threadId, {
       costUsd: 1, promptChars: 1, responseChars: 1, durationMs: 1,
     })
 
-    const orig = process.env.IM_HUB_USD_TO_CNY
-    process.env.IM_HUB_USD_TO_CNY = '8.5'
+    const orig = process.env.AGIM_USD_TO_CNY
+    process.env.AGIM_USD_TO_CNY = '8.5'
     try {
       const out = await handleStatsCommand('', ctx)
       expect(out).toContain('¥8.50')
     } finally {
-      if (orig === undefined) delete process.env.IM_HUB_USD_TO_CNY
-      else process.env.IM_HUB_USD_TO_CNY = orig
+      if (orig === undefined) delete process.env.AGIM_USD_TO_CNY
+      else process.env.AGIM_USD_TO_CNY = orig
     }
   })
 })

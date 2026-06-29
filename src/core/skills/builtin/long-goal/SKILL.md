@@ -11,7 +11,7 @@ agim has a built-in goal system distinct from reminders / cron / heartbeats:
 | Primitive | When |
 |---|---|
 | **/remind** | one-shot fire at time T |
-| **/cron** (in `mcp__imhub__create_reminder` with `recurrence:`) | repeating timer, each tick independent |
+| **/cron** (in `mcp__agim__create_reminder` with `recurrence:`) | repeating timer, each tick independent |
 | **/heartbeat** | periodic self-check on what's worth doing now |
 | **/goal** | sustained multi-turn objective whose state agim INJECTS into every prompt |
 
@@ -47,7 +47,7 @@ Per turn:
 2. Do the work the user asked for *this turn*.
 3. If you completed a step toward the goal, log it concisely. Two ways:
    - Append a progress note: tell the user "Logged: <one-liner>" and they can `/goal note <text>` themselves (current minimal flow)
-   - OR drop a `mcp__imhub__save_memo` with `what:"<one-liner>"`, `who:"agent"`, and a tag like `goal:<id>` for retrieval.
+   - OR drop a `mcp__agim__save_memo` with `what:"<one-liner>"`, `who:"agent"`, and a tag like `goal:<id>` for retrieval.
 4. If the goal is **done** or the user cancels, suggest `/goal complete <recap>` — they type it.
 
 ## Writing a good goal title
@@ -68,12 +68,12 @@ Per turn:
 
 You can register / close goals YOURSELF — don't just suggest the user type `/goal set`. Use these tools:
 
-### `mcp__imhub__long_task(goal, summary?)`
+### `mcp__agim__long_task(goal, summary?)`
 
 Register a new active goal. Auto-pauses any prior active goal on this thread.
 
 ```
-mcp__imhub__long_task({
+mcp__agim__long_task({
   goal: "Ship agim v1.3 with native fs/web/exec tools landed + CHANGELOG updated",
   summary: "Acceptance: tools land in dist; v1.3.0 published on npm; CHANGELOG has v1.3.0 entry."
 })
@@ -81,12 +81,12 @@ mcp__imhub__long_task({
 
 Returns `{ goalId, title, status: 'active', previous_active_goal_paused: {...}|null, hint }`. Tell the user something terse: "✅ 已登记目标 #N。我会在之后每轮看到它，到完成或取消时再调 complete_goal。"
 
-### `mcp__imhub__complete_goal(recap?, status?)`
+### `mcp__agim__complete_goal(recap?, status?)`
 
 Close the active goal honestly.
 
 ```
-mcp__imhub__complete_goal({
+mcp__agim__complete_goal({
   recap: "shipped v1.3.0 with all 5 tools + CHANGELOG done",
   status: "completed"          // default; pass "cancelled" if user cancelled / scope changed
 })
@@ -102,7 +102,7 @@ Returns `{ goalId, title, status, recap_recorded }`. Tell the user one line: "�
 | Work is done | `complete_goal` (`status` omitted = "completed") |
 | User cancels mid-stream | `complete_goal` (`status: "cancelled"`, recap states why) |
 | User replaces goal with a different one | `complete_goal` previous → `long_task` new (in that order; don't stack) |
-| Pure progress note, goal continues | append via `mcp__imhub__save_memo` with `tags: ["goal:<id>"]` (no goal RPC needed) |
+| Pure progress note, goal continues | append via `mcp__agim__save_memo` with `tags: ["goal:<id>"]` (no goal RPC needed) |
 
 ## Compatibility with the `/goal` slash command
 

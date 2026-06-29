@@ -136,7 +136,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
   // WeChat QR modal state
   const [qrOpen, setQrOpen] = useState(false)
 
-  // v1.2.71 — IMHUB_PLATFORM_BLACKLIST gate. Backend sends the
+  // v1.2.71 — AGIM_PLATFORM_BLACKLIST gate. Backend sends the
   // alias-expanded set in features.blacklistedPlatforms; we hide the
   // matching PlatformCard so blacklisted IMs disappear from the page
   // entirely (not just have empty data).

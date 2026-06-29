@@ -20,14 +20,14 @@
 // Auth exemptions (the web layer enforces; this module just verifies):
 //   - Trusted loopback peers (127.0.0.1 / ::1) bypass auth entirely for local
 //     CLI / curl / browser-on-the-same-host use. The web layer disables that
-//     shortcut when IMHUB_TRUST_LOOPBACK=off or proxy-forwarded peer headers
+//     shortcut when AGIM_TRUST_LOOPBACK=off or proxy-forwarded peer headers
 //     are present.
 //   - /v/:id viewer pages and their direct JSON endpoint are public (the
 //     uuidv4 URL is the credential; matches /loc + /l/ pattern).
 //   - /api/health is public (liveness probe).
 //
 // Override:
-//   IMHUB_WEB_AUTH=off disables the gate entirely (for operators who do auth
+//   AGIM_WEB_AUTH=off disables the gate entirely (for operators who do auth
 //   at the reverse proxy layer and don't want a second factor).
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -40,7 +40,7 @@ import { AGIM_HOME } from './agim-paths.js'
 // AGIM_HOME at first evaluation; tests that swap $AGIM_HOME after that
 // would otherwise have writes silently land in the wrong directory.
 function currentAgimHome(): string {
-  return process.env.AGIM_HOME || process.env.IMHUB_HOME || AGIM_HOME
+  return process.env.AGIM_HOME || process.env.AGIM_HOME || AGIM_HOME
 }
 function tokensFile(): string { return join(currentAgimHome(), 'tokens.json') }
 function webBootstrapTokenFile(): string { return join(currentAgimHome(), 'web-bootstrap-token') }
@@ -301,7 +301,7 @@ export function retrieveWebBootstrapTokenRaw(): { raw: string; id: string } | nu
 }
 
 /**
- * First-launch helper. If no token exists and IMHUB_WEB_AUTH !== 'off',
+ * First-launch helper. If no token exists and AGIM_WEB_AUTH !== 'off',
  * create a bootstrap token. Idempotent — does nothing if any token
  * already exists. Returns the raw value when generated, null otherwise.
  *
@@ -319,7 +319,7 @@ export function retrieveWebBootstrapTokenRaw(): { raw: string; id: string } | nu
  * behaviour for non-systemd installs is preserved.
  */
 export function bootstrapIfEmpty(): string | null {
-  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') return null
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return null
   if (hasAnyToken()) return null
   const t = createToken('bootstrap', { role: 'admin' })
   _bootstrapRawHolder = { raw: t.raw, id: t.id }
@@ -349,7 +349,7 @@ export function bootstrapIfEmpty(): string | null {
     '   Or rotate to a fresh token:',
     '       agim token create <label>',
     '',
-    '   Disable auth entirely:  IMHUB_WEB_AUTH=off',
+    '   Disable auth entirely:  AGIM_WEB_AUTH=off',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '',
   ].join('\n')
@@ -359,7 +359,7 @@ export function bootstrapIfEmpty(): string | null {
 
 /** True iff token auth is enabled (env opt-out turned off). */
 export function isAuthEnabled(): boolean {
-  return (process.env.IMHUB_WEB_AUTH || '').toLowerCase() !== 'off'
+  return (process.env.AGIM_WEB_AUTH || '').toLowerCase() !== 'off'
 }
 
 /** Path to the tokens file (for diagnostics / external tools). Re-resolves

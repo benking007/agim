@@ -19,7 +19,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
-  delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+  delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
   try { rmSync(root, { recursive: true, force: true }) } catch {}
 })
 
@@ -40,17 +40,17 @@ describe('readOperatorRole', () => {
     expect(readOperatorRole(dir)).toBe('')
   })
 
-  it('honors IMHUB_NATIVE_AGENT_ROLE_FILE env override', () => {
+  it('honors AGIM_NATIVE_AGENT_ROLE_FILE env override', () => {
     const altFile = join(altDir, 'persona.md')
     writeFileSync(altFile, '你是 张三')
-    const prev = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
-    process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = altFile
+    const prev = process.env.AGIM_NATIVE_AGENT_ROLE_FILE
+    process.env.AGIM_NATIVE_AGENT_ROLE_FILE = altFile
     try {
       // cwd is ignored when env override is set
       expect(readOperatorRole(goodDir)).toBe('你是 张三')
     } finally {
-      if (prev === undefined) delete process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
-      else process.env.IMHUB_NATIVE_AGENT_ROLE_FILE = prev
+      if (prev === undefined) delete process.env.AGIM_NATIVE_AGENT_ROLE_FILE
+      else process.env.AGIM_NATIVE_AGENT_ROLE_FILE = prev
     }
   })
 

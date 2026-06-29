@@ -1,7 +1,7 @@
 // SEC regression — plan-mode propagation across the approval-bus A2A path.
 //
 // When a run executes under plan-mode (user did /plan on, parent agent is
-// read-only) and that run fires mcp__imhub__call_agent, bus.handleA2A must
+// read-only) and that run fires mcp__agim__call_agent, bus.handleA2A must
 // forward planMode to callAgentByName so the callee also launches read-only.
 // Without it a plan-mode parent could delegate a write task to another agent
 // that starts with full write access — bypassing the user's intent.
@@ -22,7 +22,7 @@ import * as a2aReal from './a2a.js'
 // the afterAll restore below, the partial stub leaks into every later test
 // file and blanks out the real a2a exports (isA2AEnabled / getA2AMaxDepth /
 // getA2AMaxResultChars / compressA2AResult / the real callAgentByName),
-// which manifested as ~19 spurious failures across a2a / imhub-dispatcher /
+// which manifested as ~19 spurious failures across a2a / agim-dispatcher /
 // call-agent suites in the full `bun test` run.
 const realA2a = { ...a2aReal }
 
@@ -50,7 +50,7 @@ const { ApprovalBus } = await import('./approval-bus.js')
 type RunContext = import('./approval-bus.js').RunContext
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-planmode-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-planmode-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 /** Minimal NDJSON client over the unix socket — resolves the next message. */

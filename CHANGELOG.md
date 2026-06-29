@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-29
+
+### Changed
+
+- Public runtime surfaces now consistently use Agim naming: `agim`, `AGIM_*`, `mcp__agim__*`, `X-Agim-Token`, `~/.agim`, `~/.agim-workspaces`, and `agim.service`.
+- Removed retired command, env, path, MCP, HTTP header, and systemd aliases from code, docs, tests, and release notes.
+- Decoupled opencode from normal startup: Agim now registers the opencode MCP sidecar lazily only when an opencode adapter is actually used.
+- Headless production startup now defaults to `claude-code` when no default agent is configured.
+
+### Fixed
+
+- Non-Linux Agim process detection now validates argv shape via `ps` instead of substring matching, avoiding false positives from shell commands that merely contain `agim start`.
+
 ## [1.3.10] - 2026-06-23
 
 ### Added
@@ -49,7 +62,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added（自 1.3.0 累积）
 
-- `mcp__imhub__ask_user` 扩展为结构化决策模式：单选/多选/自定义输入（`selectionMode`、`minSelections`、`maxSelections`、`allowCustomInput`、`customInputLabel`；结果含 `selectionMode`、`indexes`、`labels`、`customText`，旧字段兼容）。
+- `mcp__agim__ask_user` 扩展为结构化决策模式：单选/多选/自定义输入（`selectionMode`、`minSelections`、`maxSelections`、`allowCustomInput`、`customInputLabel`；结果含 `selectionMode`、`indexes`、`labels`、`customText`，旧字段兼容）。
 - TUI 统一决策交互面板（审批 + `ask_user`：键盘单选 / 多选 Space 勾选 / 自定义输入）；会话管理 `/new` `/sessions`；`/agent` 名称补全；token/cost 状态栏；工具调用审批桥。
 
 ### Documentation
@@ -65,17 +78,17 @@ All notable changes to this project will be documented in this file.
 
 - **pi-native 成为默认 native 引擎**(1.2.155):in-process 循环换成 pi 的
   `AgentHarness` + durable JSONL session(崩溃可恢复);legacy 降级为逃生通道
-  (`IMHUB_NATIVE_ENGINE=legacy`)。含 approval 门 / plan-mode / max-iter /
+  (`AGIM_NATIVE_ENGINE=legacy`)。含 approval 门 / plan-mode / max-iter /
   stuck-loop 护栏 / 真实身份 system prompt。
 - **上下文压缩 + provider 韧性**(1.2.156):每轮按 token 阈值 `harness.compact()`;
-  provider 重试/退避/超时 + prompt 缓存,全 `IMHUB_NATIVE_*` 可覆盖。
-- **A2A 子输出压缩**(1.2.157):子代理回传超 `IMHUB_A2A_MAX_RESULT_CHARS`(默认
+  provider 重试/退避/超时 + prompt 缓存,全 `AGIM_NATIVE_*` 可覆盖。
+- **A2A 子输出压缩**(1.2.157):子代理回传超 `AGIM_A2A_MAX_RESULT_CHARS`(默认
   8000)即截断,全文溢出到 `_agim-output/`,父按需 read。
 - **TUI 体验**(1.2.158):`/agent` 名称补全 + 底部 token/cost 实时状态栏。
 - **模型成本/窗口元数据**(1.2.159):复用 pi-ai MODELS 目录,`LlmProvider`
   在 API 不回成本时按目录回填真实 $(覆盖所有 legacy provider)。
 - **auth 重构 + 手机端**(1.2.160):web-token-only admin 注册表(IM admin 在
-  Settings → Admins 管理,取消 bootstrap token / `IMHUB_ADMIN_USERS` 运行时依赖);
+  Settings → Admins 管理,取消 bootstrap token / `AGIM_ADMIN_USERS` 运行时依赖);
   手机版聊天 UX + run 活动时间线;native 配置弹窗 + role-optional 后端兜底。
 
 详见各 1.2.15x 段。
@@ -83,13 +96,13 @@ All notable changes to this project will be documented in this file.
 ## Native engine (pi-native) overview
 
 > Consolidated from historical pi-native migration notes.
-> Default native engine since `1.2.155`; legacy escape hatch: `IMHUB_NATIVE_ENGINE=legacy`.
+> Default native engine since `1.2.155`; legacy escape hatch: `AGIM_NATIVE_ENGINE=legacy`.
 
 ### Shipped (1.2.155 → 1.2.159)
 
 - **1.2.155**: switched native engine to pi-native (`AgentHarness` + durable JSONL session), added tool bridge, resolver, approval integration, runaway/stuck-loop guards.
-- **1.2.156**: added pre-turn compaction (`IMHUB_NATIVE_COMPACTION`), provider retry/cache tuning (`IMHUB_NATIVE_*`).
-- **1.2.157**: added A2A result compression (`IMHUB_A2A_MAX_RESULT_CHARS`) with overflow to artifact files.
+- **1.2.156**: added pre-turn compaction (`AGIM_NATIVE_COMPACTION`), provider retry/cache tuning (`AGIM_NATIVE_*`).
+- **1.2.157**: added A2A result compression (`AGIM_A2A_MAX_RESULT_CHARS`) with overflow to artifact files.
 - **1.2.158**: improved TUI interaction (`/agent` completion + token/cost status visibility).
 - **1.2.159**: added model catalog-based usage enrichment for cost/window metadata backfill.
 
@@ -254,7 +267,7 @@ workspace 排在 ECC picks 之前。运营者亲装 > 框架预选 > ECC remaind
 运营者可以覆盖自动生成的 skill 块。文件存在且非空时，**全文替换** auto block
 （路由头 + always-on body 保留）。三个 helper：
 `readInjectionOverride / writeInjectionOverride / deleteInjectionOverride`。
-环境变量 `IMHUB_SKILLS_INJECTION_OVERRIDE_PATH` 可改路径（测试用）。
+环境变量 `AGIM_SKILLS_INJECTION_OVERRIDE_PATH` 可改路径（测试用）。
 
 #### Admin API + SPA 页
 
@@ -268,8 +281,8 @@ workspace 排在 ECC picks 之前。运营者亲装 > 框架预选 > ECC remaind
 
 #### 新增 env knob
 
-- `IMHUB_SKILLS_ECC_PICKS=name1,name2,...` 覆盖默认 20 picks（推荐池）
-- `IMHUB_SKILLS_INJECT_ECC_REMAINDER=on|off|name-list`：
+- `AGIM_SKILLS_ECC_PICKS=name1,name2,...` 覆盖默认 20 picks（推荐池）
+- `AGIM_SKILLS_INJECT_ECC_REMAINDER=on|off|name-list`：
   - `on`（默认）：cluster 模式
   - `off`：完全抑制 ECC remainder 块（省 token）
   - 逗号分隔白名单：只保留指定 skill
@@ -343,7 +356,7 @@ LLM 看不到 description → 无法 route。
   / code-tour / coding-standards / content-engine / context-budget / continuous-learning-v2
   / cost-aware-llm-pipeline / prompt-optimizer / security-review / tdd-workflow / verification-loop
 
-## ECC remainder (read full description via mcp__imhub__read_skill) (210)
+## ECC remainder (read full description via mcp__agim__read_skill) (210)
 - django-* (5): django-celery · django-patterns · django-security · django-tdd · django-verification
 - kotlin-* (5): kotlin-coroutines-flows · kotlin-exposed-patterns · kotlin-ktor-patterns
                  · kotlin-patterns · kotlin-testing
@@ -414,7 +427,7 @@ v1.2.148 的 bulk-import 脚本对 YAML 折叠语法（`description: >-\n  text.
 | 3 | 工作区运营者 skill（业务域）+ ECC 余下 210 |
 
 4 + 8 + 20 = 32 正好填满；bucket 3 全部靠 description match + 显式
-`mcp__imhub__read_skill('name')` 触发，不强占系统提示门面。
+`mcp__agim__read_skill('name')` 触发，不强占系统提示门面。
 
 #### ECC 精选清单（20 个）
 
@@ -493,7 +506,7 @@ verification 循环、cost-aware LLM 流水线等。MIT 许可，license 文件�
 
 #### env switch
 
-- `IMHUB_INCLUDE_ECC_SKILLS=off` （或 `0`/`false`/`no`/`disable`）→ loader 跳过
+- `AGIM_INCLUDE_ECC_SKILLS=off` （或 `0`/`false`/`no`/`disable`）→ loader 跳过
   所有 `origin: ECC` 的 skill。默认 ON，保留新装 agim 用户的开箱即用体验。
 - 仅过滤 ECC pack；用户自己写 SKILL.md 时若复用 `origin: ECC` 字段是允许的
   （但显式标记 ECC pack 的 description `[ECC]` 前缀已写死，不影响 user skill）。
@@ -517,7 +530,7 @@ verification 循环、cost-aware LLM 流水线等。MIT 许可，license 文件�
   （部分含 scripts/references/templates 子目录），description 行加 `[ECC]` 前缀
 - 新增 `src/core/skills/builtin/ECC_LICENSE` —— MIT, © Affaan Mustafa
 - 新增 `src/core/skills/builtin/ECC_NOTICE.md` —— 归属说明 + 排除清单
-- `src/core/skills/loader.ts` —— `parseSkill` 加 IMHUB_INCLUDE_ECC_SKILLS 过滤
+- `src/core/skills/loader.ts` —— `parseSkill` 加 AGIM_INCLUDE_ECC_SKILLS 过滤
 - `src/core/skills/loader.test.ts` —— 新增 1 case 覆盖 env switch（默认 ON / off /
   unrecognized 三态）
 
@@ -530,7 +543,7 @@ verification 循环、cost-aware LLM 流水线等。MIT 许可，license 文件�
 #### 注意事项（agim user 视角）
 
 - system prompt 仍只列前 32 个 skill（`MAX_INJECTED_SKILLS=32`），不会爆 context
-- 其余 200+ 个仍可通过 `mcp__imhub__read_skill('name')` 主动调
+- 其余 200+ 个仍可通过 `mcp__agim__read_skill('name')` 主动调
 - 同名 workspace skill 会 shadow builtin（用户自定义优先）
 
 ## [1.2.147] - 2026-06-12
@@ -548,7 +561,7 @@ prompt，命中模式就走复盘卡）。
   push 一段 `[agim framework rule — tool-call discipline]` 块。**默认所有 agim 安装
   生效**，不依赖用户写 AGENTS.md。
 - 段内 5 条硬规则（禁演练、必须真调、不确定走 todo、追问时坦白、副作用工具一次发完整）。
-- env `IMHUB_NATIVE_TOOL_DISCIPLINE`，默认 `on`；`off`/`0`/`false`/`no`/`disable`
+- env `AGIM_NATIVE_TOOL_DISCIPLINE`，默认 `on`；`off`/`0`/`false`/`no`/`disable`
   关掉（escape hatch，给 prompt 调优实验用）。
 
 ### Added (native harness — hallucinated tool-call detector)
@@ -574,7 +587,7 @@ prompt，命中模式就走复盘卡）。
 
 #### Env
 
-- `IMHUB_NATIVE_HALLUCINATION_DETECT` 默认 `on`；`off`/`0`/`false`/`no`/`disable` 关掉
+- `AGIM_NATIVE_HALLUCINATION_DETECT` 默认 `on`；`off`/`0`/`false`/`no`/`disable` 关掉
   （误判 cost 仅是多一张复盘卡，关掉 cost 是放过 silent lies，所以默认开）。
 
 #### Tests
@@ -588,11 +601,11 @@ prompt，命中模式就走复盘卡）。
 
 #### 未做（留续作）
 
-- 自动 retry（`IMHUB_NATIVE_HALLUCINATION_AUTO_RETRY=1` 强制注入纠正 prompt 再跑一轮）
+- 自动 retry（`AGIM_NATIVE_HALLUCINATION_AUTO_RETRY=1` 强制注入纠正 prompt 再跑一轮）
 - web outbox crash-safe delivery（web reply 在 client 重连时丢失）
 - viewer DELETE 加 audit_event
-- `docs/security-hardening.md` §1 env 速查表补 `IMHUB_NATIVE_WEB_ALLOW_PRIVATE`
-  与 `IMHUB_NATIVE_WEB_SSRF_WHITELIST` 两项
+- `docs/security-hardening.md` §1 env 速查表补 `AGIM_NATIVE_WEB_ALLOW_PRIVATE`
+  与 `AGIM_NATIVE_WEB_SSRF_WHITELIST` 两项
 
 ## [1.2.145] - 2026-06-12
 
@@ -601,9 +614,9 @@ prompt，命中模式就走复盘卡）。
 ### Security (CR 修复)
 
 - **viewer 越权删除（H1, #90）**：`DELETE /api/viewer/:id` 之前漏了 `requireAdmin` 且 handler 忽略请求上下文，任意已认证 token（含 `role=user` 移动 QR token）可凭 paste id（经 IM `/v/<uuid>` 链接外泄）删除任意 paste。已补 `requireAdmin`。
-- **notify_url SSRF（H2, #92）**：定时任务 webhook 之前只做词法校验（只看 host 串）。新增 `assertWebhookHostPublic()`，在 fetch 前 DNS 解析 + 拒私网/回环/link-local，堵住"主机名解析进内网 / DNS-rebinding"。新 env `IMHUB_ALLOW_PRIVATE_WEBHOOKS=1` 放行内网调试。
+- **notify_url SSRF（H2, #92）**：定时任务 webhook 之前只做词法校验（只看 host 串）。新增 `assertWebhookHostPublic()`，在 fetch 前 DNS 解析 + 拒私网/回环/link-local，堵住"主机名解析进内网 / DNS-rebinding"。新 env `AGIM_ALLOW_PRIVATE_WEBHOOKS=1` 放行内网调试。
 - **sensitive-paths 绕过（#83）**：denylist 可被 `/proc/<pid>/{root,cwd}/...`（root 是指向进程 `/` 的 symlink）与工作区 symlink 绕过。`canonical()` 现做 best-effort `realpath`，对字面 + 解析后路径双重匹配，并直拒 `/proc` 间接寻址。
-- **工作区信任门（T6, #89）**：新 env `IMHUB_NATIVE_TRUST_WORKSPACE=off` → native 一次性跳过工作区发现的 `AGENTS.md`/`AGENTS.local.md` 注入（多租户 / A2A 防 prompt 投毒）。显式 `IMHUB_NATIVE_AGENT_ROLE_FILE` 不受门控。
+- **工作区信任门（T6, #89）**：新 env `AGIM_NATIVE_TRUST_WORKSPACE=off` → native 一次性跳过工作区发现的 `AGENTS.md`/`AGENTS.local.md` 注入（多租户 / A2A 防 prompt 投毒）。显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控。
 
 ### Fixed (运行时可靠性，CR + #83)
 
@@ -619,7 +632,7 @@ prompt，命中模式就走复盘卡）。
 - **IM 入站非阻塞（M3, #93）**：Feishu / DingTalk 之前在 SDK 回调内 `await` 整轮 agent，阻塞接收循环（一个慢会话拖死其他线程入站）。改 fire-and-forget；钉钉 **先 ack 再派发**（避免超 60s 重投 + handler 挂起时消息被 dedup 丢弃）。
 - **native 上下文预算（T1/T3, #85）**：`readOperatorRole` 按 mtime/size memoize（每轮省一次磁盘读 + 注入扫描）；system-prompt skills 列表封顶 `MAX_INJECTED_SKILLS`（之前未封顶且与 router 注入重复）。
 - **native 单一工具注册表（T2, #86）**：`tools[]` / `combineDispatchers` / 静态 `parallelSafeTools` 三份并行清单合一为 `tool-registry.ts` 的 `assembleNativeTools()`；并发判定改 **逐调用** classifier（`agent-loop` 新增 `parallelSafeClassifier`，fail-closed）；外部 MCP 分区按名排序保证 prompt-cache 稳定。
-- **native 指令分层（T4, #88, local-wins）**：操作员角色从单 `AGENTS.md` → `<cwd>/AGENTS.md`（project）+ `<cwd>/AGENTS.local.md`（local，最后拼接=胜出）。`IMHUB_NATIVE_AGENT_ROLE_FILE` 仍可 pin 单文件。
+- **native 指令分层（T4, #88, local-wins）**：操作员角色从单 `AGENTS.md` → `<cwd>/AGENTS.md`（project）+ `<cwd>/AGENTS.local.md`（local，最后拼接=胜出）。`AGIM_NATIVE_AGENT_ROLE_FILE` 仍可 pin 单文件。
 - **验证子代理 SOP（T5, #89）**：native system prompt 增加"产出实质结果后用全新子代理独立校验 + 自包含 brief + 先综合再委派"指导（纯 prompt，无运行时分支）。
 - **native 审计 traceId 关联（M5, #94）**：native 之前自造 `native-<sid>-<ts>` traceId，审计行无法关联入站消息。`AgentSendOpts.traceId` 由 router 透传、native 优先采用；进程内 A2A 子调用链接 `${parent}/a2a-${id}`（ADR-0002 修复）。
 
@@ -632,7 +645,7 @@ prompt，命中模式就走复盘卡）。
 
 - A2A `call_agent('native')` 进程内快路径绕过 `callAgentByName`，不写 inline job / `intent:'a2a'` 审计行（本轮仅补 trace 链接）。
 - `isAgentEnabled('native')` 恒 true，无视 `config.agents` 禁用开关。
-- ACP 侧 SSRF 仅覆盖 Web test/discover API（该面默认被 `IMHUB_ENABLE_REMOTE_AGENT` 关闭）。
+- ACP 侧 SSRF 仅覆盖 Web test/discover API（该面默认被 `AGIM_ENABLE_REMOTE_AGENT` 关闭）。
 
 ## [1.2.144] - 2026-06-05
 
@@ -649,7 +662,7 @@ prompt，命中模式就走复盘卡）。
 
 **修复**：新增 `isTrustedLoopbackPeer()` 三层检查：
 1. `isLoopbackPeer(req)`（原有）
-2. `IMHUB_TRUST_LOOPBACK !== off`（新增 env kill switch）
+2. `AGIM_TRUST_LOOPBACK !== off`（新增 env kill switch）
 3. **`!hasForwardedPeerHeaders(req)`** — 任一 `Forwarded` / `X-Forwarded-*`
    / `X-Real-IP` / `CF-Connecting-IP` header 出现 → 视为反代后流量，
    走正常 token 路径
@@ -806,7 +819,7 @@ adapter.test.ts 已覆盖 commandName 通路。
   正常收尾。请按三节给阶段性报告——已经做到/没做到/下一步建议。"
 - **失败描述要求人话**：不能写 "`native_web_fetch` ×8 failed"，要写
   "新浪财经页面抓不到（疑似反爬）"。系统消息里 ban 掉 `native_xxx`
-  和 `mcp__imhub__xxx` 字面字符串。
+  和 `mcp__agim__xxx` 字面字符串。
 - **下一步软约束**：1-3 个具体可执行建议（"继续 / 换数据源 / 缩小范
   围 / 终止"），让模型自然挑词，不强制 a/b/c 选项格式。
 - **off_track 模式**：critic 给的 reason / redirect 注入到 prompt 的
@@ -821,7 +834,7 @@ adapter.test.ts 已覆盖 commandName 通路。
 - 把 `result.toolCalls.slice(-20)` 分成 success / failed 两组分别喂
   ——成功的截 300 字预览，失败的截 200 字（错误一般短）
 - 返回的 `costUsd` 累加到 turn 总 cost，audit row 跟着算对
-- env `IMHUB_NATIVE_STAGE_REPORT=off` 全局禁用，回退到老的纯技术
+- env `AGIM_NATIVE_STAGE_REPORT=off` 全局禁用，回退到老的纯技术
   recap，调试用
 
 #### 兼容性
@@ -843,7 +856,7 @@ adapter.test.ts 已覆盖 commandName 通路。
 - off_track reason 注入到 user prompt
 - provider 返回空 → null（caller 走老 recap）
 - provider 抛错 → null（不外抛）
-- `IMHUB_NATIVE_STAGE_REPORT=off` → 不调 provider，直接 null
+- `AGIM_NATIVE_STAGE_REPORT=off` → 不调 provider，直接 null
 
 ### 文件
 
@@ -1000,16 +1013,16 @@ delegate 就绕过了。
   ——所有 adapter 都已经认识 AgentSendOpts.planMode（claude-code 翻
   `--permission-mode plan`，opencode 走 `--agent plan`，native 进
   policy gate 拦写工具）
-- `ImhubDispatcherCtx` 加 `callerPlanMode?: boolean`
+- `AgimDispatcherCtx` 加 `callerPlanMode?: boolean`
 - native/index.ts 通过 `effectivePlanModeOn(planThreadKey)` 求值后
-  注入 imhubCtx
+  注入 agimCtx
 - 派发 call_agent 时（in-process self-spawn 和正式 A2A 两条路）都
   把这个标志透传出去
 
 **P1a — 子代理返回值整段塞回父上下文**（context bloat）
 
 call_agent 返回的文本默认整段进父对话历史，链 2-3 个就把 native 的
-context 撑爆了。新增 `IMHUB_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS`
+context 撑爆了。新增 `AGIM_NATIVE_CALL_AGENT_OUTPUT_MAX_CHARS`
 （默认 8000）：
 
 - 超过阈值 → 70/30 截首尾 + 中间放截断标记
@@ -1041,9 +1054,9 @@ claude-code 子代理调起来时偶发 5xx / socket reset，整次 call_agent
 ### 文件
 
 - `src/core/a2a.ts` — `CallAgentOpts.planMode` + 透传到 sendPrompt
-- `src/core/llm/imhub-dispatcher.ts` — `callerPlanMode` + output cap +
+- `src/core/llm/agim-dispatcher.ts` — `callerPlanMode` + output cap +
   retry + history-aware cap_exceeded
-- `src/plugins/agents/native/index.ts` — imhubCtx 注入 callerPlanMode +
+- `src/plugins/agents/native/index.ts` — agimCtx 注入 callerPlanMode +
   system prompt 加 "when to delegate" 段落
 
 ### 不在范围
@@ -1066,8 +1079,8 @@ v1.2.123 的 graceful-degradation 只处理"有 partial 文本"的场景，零�
 #### 实现
 在 `agent-loop.ts` streamThenBuffer 调用点加重试逻辑：
 - **触发**：抛错 + isAbort(err)=false + isTransientStreamError(err)=true
-- **退避**：固定 1s（IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS 可调，cap 10s）
-- **次数**：默认 1 次（IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX 可调，cap 3）
+- **退避**：固定 1s（AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS 可调，cap 10s）
+- **次数**：默认 1 次（AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX 可调，cap 3）
 - **退出**：成功立刻退；超 cap 抛最后一次的错
 
 #### 模式识别
@@ -1136,7 +1149,7 @@ v1.2.123 的 graceful-degradation 只处理"有 partial 文本"的场景，零�
 Before calling any generic tool (web_fetch / web_search / native_exec /
 shell-style commands), you MUST scan the skill list below. If any entry's
 description matches the user's intent — even loosely — you MUST call
-mcp__imhub__read_skill('<name>') first to load that skill's body. Skill
+mcp__agim__read_skill('<name>') first to load that skill's body. Skill
 bodies contain dedicated tools, endpoints, or queries that produce
 higher-quality, structured results than free-text web pages for the
 same intent. Falling back to the generic tool is only valid when:
@@ -1168,7 +1181,7 @@ prompt 和 dispatcher 里写两次。Prompt 约束是软约束，硬约束应留
 
 两项实战反馈一起打：
 
-#### 1. `IMHUB_NATIVE_AGENT_MAX_ITER` 默认 20 → 50
+#### 1. `AGIM_NATIVE_AGENT_MAX_ITER` 默认 20 → 50
 真实使用观察：CR / 多步重构等任务常需 28-35 次迭代，20 把它们切掉。
 50 给充足缓冲；30 分钟 IM 硬超时仍是更早的天花板（按 20-30s / iter
 算，撞天花板大约 60-80 次），v1.2.122 语义死循环检测也会在 50 之前
@@ -1178,8 +1191,8 @@ agent` 调到 100。
 #### 2. 移除 `先看看` 关键词
 v1.2.135 P3 的默认 phrase 列表里有「先看看」，但 CR 指出这条过宽 ——
 「先看看这个文件」明显是要读文件，不是 plan-only 意图。如果开启了
-`IMHUB_PLAN_INTENT_AUTO`，会把常规读操作误判进 plan 模式。从默认
-列表删除；操作员真需要可通过 `IMHUB_PLAN_INTENT_PHRASES` 自行加
+`AGIM_PLAN_INTENT_AUTO`，会把常规读操作误判进 plan 模式。从默认
+列表删除；操作员真需要可通过 `AGIM_PLAN_INTENT_PHRASES` 自行加
 回（v1.2.135 的覆盖机制）。
 
 ### 文件
@@ -1200,7 +1213,7 @@ v1.2.135 P3 的默认 phrase 列表里有「先看看」，但 CR 指出这条�
 - `detectPlanIntent(text)` —— 子串匹配 + 大小写不敏感 + 中英文 26 个内置短语
 - 中文："先想想 / 先规划 / 先讨论 / 不要直接做 / 只规划 / 先别动手" 等
 - 英文："plan only / don't act yet / let's plan / research first / dry run only" 等
-- `IMHUB_PLAN_INTENT_PHRASES` env 可整体覆盖（逗号分隔），不是合并；
+- `AGIM_PLAN_INTENT_PHRASES` env 可整体覆盖（逗号分隔），不是合并；
   让操作员能收紧或放宽匹配范围而不改代码
 - `shouldAutoEnterPlanMode(prompt)` —— 综合判断：master switch on + 命中
   → 返回命中的短语；否则 null
@@ -1209,7 +1222,7 @@ v1.2.135 P3 的默认 phrase 列表里有「先看看」，但 CR 指出这条�
 `router.ts:callAgentWithHistory` 在确定 `effectivePlanMode` 后立刻做一次
 启发式检查：
 ```
-if (planMode OFF + IMHUB_PLAN_INTENT_AUTO=on + intent matched) {
+if (planMode OFF + AGIM_PLAN_INTENT_AUTO=on + intent matched) {
   effectivePlanMode = true
   log({ event: 'plan-intent.auto-enter', matchedPhrase })
 }
@@ -1218,7 +1231,7 @@ if (planMode OFF + IMHUB_PLAN_INTENT_AUTO=on + intent matched) {
 下一条消息不带这些关键词时自动回到 normal —— 这就是"临时"的语义。
 
 #### 关键设计决策
-- **默认 OFF**：opt-in，env `IMHUB_PLAN_INTENT_AUTO=on` 才启用
+- **默认 OFF**：opt-in，env `AGIM_PLAN_INTENT_AUTO=on` 才启用
 - **绝不自动退出**：一旦进了 plan mode，要么用户 `/plan off`，要么模型
   调 `native_exit_plan_mode`（v1.2.131 的握手）
 - **错检 vs 漏检**：错检（用户想动手→被卡到 plan）代价远高于漏检（不
@@ -1228,8 +1241,8 @@ if (planMode OFF + IMHUB_PLAN_INTENT_AUTO=on + intent matched) {
 
 #### 后台 UI
 `/settings/native-agent` 早停+复盘卡内新增两项：
-- `Plan-intent auto-enter` bool toggle → `IMHUB_PLAN_INTENT_AUTO`
-- `Plan-intent phrase list (optional override)` text → `IMHUB_PLAN_INTENT_PHRASES`
+- `Plan-intent auto-enter` bool toggle → `AGIM_PLAN_INTENT_AUTO`
+- `Plan-intent phrase list (optional override)` text → `AGIM_PLAN_INTENT_PHRASES`
   （开关关闭时输入框 disabled）
 
 env 白名单 (`ENV_EDITABLE_KEYS`) 同步扩展两个键。
@@ -1425,13 +1438,13 @@ P1 推到 v1.2.133。
 - 拒绝场景下模型会自动迭代再次调用 `native_exit_plan_mode`
 
 #### 新增 plan_history 审计表
-- `~/.agim/plan-history.db`（路径可由 `IMHUB_PLAN_HISTORY_DB` 覆盖）
+- `~/.agim/plan-history.db`（路径可由 `AGIM_PLAN_HISTORY_DB` 覆盖）
 - 每次握手写一条不可变记录：thread_key / plan_md / outcome (approved|rejected|edited|expired)
   / detail / pending_ms / resolved_at
 - 为后续 v1.2.133 的 `/tasks/plans` admin 列表查询打底（本版不做 UI）
 
 #### system prompt 改造
-plan mode banner 之前结尾写"操作员清掉 IMHUB_NATIVE_PLAN_MODE 你才能动手"。
+plan mode banner 之前结尾写"操作员清掉 AGIM_NATIVE_PLAN_MODE 你才能动手"。
 现在改为：
 
 > Exit handshake (v1.2.131): when the plan is ready, call
@@ -1601,26 +1614,26 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
 #### 新增 4 张卡
 
 **A. A2A 子 Agent 派生**
-- `IMHUB_A2A_MAX_DEPTH` — 子 Agent 递归深度（默认 1，v1.2.119）
-- `IMHUB_A2A_TIMEOUT_DEFAULT_MS` — 默认超时（默认 30 分钟）
-- `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS` — native→native 同进程 spawn 开关（默认开，v1.2.121）
-- `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN` — 单轮 call_agent 调用上限（默认 2）
+- `AGIM_A2A_MAX_DEPTH` — 子 Agent 递归深度（默认 1，v1.2.119）
+- `AGIM_A2A_TIMEOUT_DEFAULT_MS` — 默认超时（默认 30 分钟）
+- `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` — native→native 同进程 spawn 开关（默认开，v1.2.121）
+- `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` — 单轮 call_agent 调用上限（默认 2）
 
 **B. 早停 + 复盘**
-- `IMHUB_NATIVE_SEMANTIC_STUCK_LOOP` — 语义死循环检测开关（默认开，v1.2.122）
-- `IMHUB_NATIVE_CRITIC` — Goal Critic 复盘开关（默认关）
-- `IMHUB_NATIVE_CRITIC_ROLE` — Critic LLM role override（可选）
-- `IMHUB_NATIVE_PLAN_MODE` — PlanMode 默认状态（不影响 /plan per-thread）
+- `AGIM_NATIVE_SEMANTIC_STUCK_LOOP` — 语义死循环检测开关（默认开，v1.2.122）
+- `AGIM_NATIVE_CRITIC` — Goal Critic 复盘开关（默认关）
+- `AGIM_NATIVE_CRITIC_ROLE` — Critic LLM role override（可选）
+- `AGIM_NATIVE_PLAN_MODE` — PlanMode 默认状态（不影响 /plan per-thread）
 
 **C. Auto-compact**（v1.2.125 完成的 4 滑块）
-- `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS` — 触发阈值（默认 60000）
-- `IMHUB_NATIVE_COMPACT_KEEP_TURNS` — tail 保留 user/assistant 对数（默认 6）
-- `IMHUB_NATIVE_COMPACT_KEEP_FIRST` — head 保留前 N 条 user 消息（默认 1）
-- `IMHUB_NATIVE_COMPACT_SUMMARY_CHARS` — 摘要字符上限（默认 1500）
+- `AGIM_NATIVE_COMPACT_TRIGGER_CHARS` — 触发阈值（默认 60000）
+- `AGIM_NATIVE_COMPACT_KEEP_TURNS` — tail 保留 user/assistant 对数（默认 6）
+- `AGIM_NATIVE_COMPACT_KEEP_FIRST` — head 保留前 N 条 user 消息（默认 1）
+- `AGIM_NATIVE_COMPACT_SUMMARY_CHARS` — 摘要字符上限（默认 1500）
 
 **D. 流式 + 迭代**
-- `IMHUB_NATIVE_STREAM_PARTIAL` — 流式增量回写（默认开，v1.2.112/123）
-- `IMHUB_NATIVE_AGENT_MAX_ITER` — 工具循环上限（默认 20，clamp [1,100]）
+- `AGIM_NATIVE_STREAM_PARTIAL` — 流式增量回写（默认开，v1.2.112/123）
+- `AGIM_NATIVE_AGENT_MAX_ITER` — 工具循环上限（默认 20，clamp [1,100]）
 
 #### 默认值对齐
 所有 boolean 类型的默认开关都按 source 行为镜像（v1.2.119/121/122 的 enable-by-default
@@ -1644,7 +1657,7 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
 #### 安全
 - 全部走 `requireAdmin()` + `ENV_EDITABLE_KEYS` 白名单
 - 不动 SSRF / FS / bwrap 沙箱键（这些已经在 `/settings/security` 与 `/settings/policy`）
-- 不动 `IMHUB_NATIVE_AGENT_ROLE_FILE`（绝对路径敏感，留 env file 配置）
+- 不动 `AGIM_NATIVE_AGENT_ROLE_FILE`（绝对路径敏感，留 env file 配置）
 
 ### 文件
 - 新增 `test/unit/admin-env-allowed-keys.test.ts` (~95 lines)
@@ -1663,7 +1676,7 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
 #### 新增 `/settings/search` 页面
 - 列出 6 个已注册 web_search provider：tavily / brave / serper / exa / duckduckgo / metaso
 - 每行包含：
-  - **启用复选框** + **上移/下移按钮** → 编辑 `IMHUB_WEB_SEARCH_PROVIDERS` CSV 链
+  - **启用复选框** + **上移/下移按钮** → 编辑 `AGIM_WEB_SEARCH_PROVIDERS` CSV 链
   - **API key 输入框**（密文输入；已配置时占位符为"已保存（隐藏）"，可清空）
   - **状态徽章**：configured / missing key / no key needed
   - **测试按钮**：一次性发"agim ping"探针，返回 `{ ok, latencyMs, hits }`
@@ -1671,10 +1684,10 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
 
 #### `/settings/native-agent` 页面新增 Runtime caps 卡片
 覆盖 v1.2.118-119 的 4 个运行上限：
-- `IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS` — 单次工具返回字符上限
-- `IMHUB_NATIVE_TOOL_TIMEOUT_MS` — 单次工具超时
-- `IMHUB_NATIVE_BLANK_RETRY_MAX` — 空响应重试次数
-- `IMHUB_NATIVE_LENGTH_RECOVERY_MAX` — finishReason=length 续写次数
+- `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` — 单次工具返回字符上限
+- `AGIM_NATIVE_TOOL_TIMEOUT_MS` — 单次工具超时
+- `AGIM_NATIVE_BLANK_RETRY_MAX` — 空响应重试次数
+- `AGIM_NATIVE_LENGTH_RECOVERY_MAX` — finishReason=length 续写次数
 
 留空则用默认值；编辑后 Save，下一次调用立即生效。
 
@@ -1684,7 +1697,7 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
 - `server.ts` 新增两个端点：
   - `GET /api/search/providers` — 列出 6 个 provider + 当前 chain
   - `POST /api/search/test` — 单次探针，10 秒硬超时
-- `ENV_EDITABLE_KEYS` 扩展：新增 5 个 `*_API_KEY` + 4 个 `IMHUB_NATIVE_*` 上限键
+- `ENV_EDITABLE_KEYS` 扩展：新增 5 个 `*_API_KEY` + 4 个 `AGIM_NATIVE_*` 上限键
 - `SECRET_KEYS` 扩展：5 个 search API key 全部加入掩码白名单
 
 #### 热生效保证
@@ -1723,7 +1736,7 @@ v1.2.126 把搜索 provider + 4 个运行上限接进 web admin，本版把 v1.2
   用户最初要做什么"
 
 #### v1.2.125 修法
-- 新选项 `keepFirst`（env `IMHUB_NATIVE_COMPACT_KEEP_FIRST`，默认 **1**）：
+- 新选项 `keepFirst`（env `AGIM_NATIVE_COMPACT_KEEP_FIRST`，默认 **1**）：
   保留前 N 个 user 消息**连同**它们的 assistant 回复 + tool 链 verbatim
 - 新 helper `pickHeadEndIndex(messages, N)`：往前走到第 N 个 user，再吃完它之后
   所有非-user 消息（assistant + tool），保证 head 是个完整的回合，不会留 orphan
@@ -1802,8 +1815,8 @@ native agent 现在有一把 in-process 的 plan-tracker 工具：
 
 - `src/core/llm/todo-dispatcher.ts`（新 ~165 行）
 - `src/plugins/agents/native/index.ts`：import + 加入 dispatcher chain
-  （在 imhub 之前）；defaultBuiltins 加 `native_todo_write`；buildSystemPrompt
-  加 Plan tracking 段落；planThreadKey 计算上移到 imhubCtx 之前
+  （在 agim 之前）；defaultBuiltins 加 `native_todo_write`；buildSystemPrompt
+  加 Plan tracking 段落；planThreadKey 计算上移到 agimCtx 之前
 - `test/unit/todo-dispatcher.test.ts`（新 / 12 case）：write / 渲染 / per-thread
   隔离 / 验证 / unknown 工具回退
 
@@ -1880,7 +1893,7 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
 - ≥2 个不同 tool name 才触发，避免与 strict `isStuckLoop` 重叠
 - 触发后走 `finishReason='stuck_loop'` 早停（与现有 stuck_loop 路径一致）
 - 新 log event `agent-loop.semantic_stuck_loop_detected` 便于排查
-- `IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off` 是 kill switch
+- `AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off` 是 kill switch
 
 ### Affected paths
 
@@ -1914,8 +1927,8 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
 本版加入 in-process fast path：
 - 当 target=='native' → 跳过 subprocess，直接在同 JS 堆里 `nativeAgentAdapter.sendPrompt()`
 - 共享 cwd / MCP fleet / 同一 LLM 后端，但开**全新 session id** 避免污染父对话
-- 仍按 `IMHUB_A2A_MAX_DEPTH`（默认 1）做深度检查 + 走 callerDepth+1 入子层
-- `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off` 是 kill switch（强制走 subprocess 老路）
+- 仍按 `AGIM_A2A_MAX_DEPTH`（默认 1）做深度检查 + 走 callerDepth+1 入子层
+- `AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off` 是 kill switch（强制走 subprocess 老路）
 - 子层若再 call_agent 会被 depth 拦下，避免无限递归
 - 完整 trace 链：parent traceId → `a2a-{call.id}` → child native loop 内每个 tool
 
@@ -1925,18 +1938,18 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
 - **Serper** (`SERPER_API_KEY`)：Google SERP 中继，cheap
 - **Exa** (`EXA_API_KEY`)：语义/向量搜索，适合"找类似页"
 - 新默认链：`tavily,brave,serper,exa,duckduckgo,metaso`
-- 缺 key 仍然静默跳过，env override `IMHUB_WEB_SEARCH_PROVIDERS` 不变
+- 缺 key 仍然静默跳过，env override `AGIM_WEB_SEARCH_PROVIDERS` 不变
 
 ### Affected paths
 
 - `src/core/llm/web-dispatcher.ts`：新增 `searchBrave/parseBraveResults` /
   `searchSerper/parseSerperResults` / `searchExa/parseExaResults` + 注册到
   `PROVIDERS`；默认 chain 更新；工具描述更新
-- `src/core/llm/imhub-dispatcher.ts`：`isInProcessSpawnDisabled` helper +
+- `src/core/llm/agim-dispatcher.ts`：`isInProcessSpawnDisabled` helper +
   call_agent 分支检测 `agentName === 'native'` → in-process fast path
 - `test/unit/web-search-providers.test.ts`：新增 3 个 parse 测试 + 1 个默认
   chain 顺序测试 + 1 个三 provider 同时启用测试
-- `src/core/llm/imhub-dispatcher.test.ts`：新增 4 个 case（depth 拒绝 / A2A
+- `src/core/llm/agim-dispatcher.test.ts`：新增 4 个 case（depth 拒绝 / A2A
   disabled / 非 native 不走 in-process / kill switch 强制 subprocess）
 
 ### Test status
@@ -1960,11 +1973,11 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
 
 - 新增 `src/core/plan-mode-state.ts`：sqlite 表 `native_plan_mode(thread_key PK,
   enabled, updated_at)`，per-thread 持久化覆盖；DB 默认 `~/.agim/plan-mode.db`，
-  env `IMHUB_PLAN_MODE_DB` 可指定路径
+  env `AGIM_PLAN_MODE_DB` 可指定路径
 - 三态优先级 `effectivePlanModeOn(threadKey)`：
   1. per-thread = **true** → on（即使 env=off）
   2. per-thread = **false** → off（即使 env=on——一个线程可单独 opt-out）
-  3. per-thread = null（未设置）→ 回退到 env `IMHUB_NATIVE_PLAN_MODE`
+  3. per-thread = null（未设置）→ 回退到 env `AGIM_NATIVE_PLAN_MODE`
 - `/plan on|off` 现在**同时**写 sessionManager.planMode（claude-code / codex /
   opencode 用）和 plan-mode-state.db（native 用），native 加入 PLAN_CAPABLE_AGENTS
   集合，提示文案里移除"native 不读 planMode"的警告
@@ -2008,16 +2021,16 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
 - `src/core/a2a.ts:A2A_MAX_DEPTH_DEFAULT` 从 3 改为 1，对齐 OpenAI Codex CLI 的
   `agents.max_depth=1` 默认。理由：链式委派（A 调 B 调 C …）几乎都是 LLM 失策，
   外层应该用自己的工具收尾，而不是再委派。**Breaking-ish**：依赖 max_depth=3 的
-  环境 `export IMHUB_A2A_MAX_DEPTH=3` 恢复。
-- 配套：`callerDepth` 传播链路（imhub-dispatcher → callAgentByName → 检查 ceil）
+  环境 `export AGIM_A2A_MAX_DEPTH=3` 恢复。
+- 配套：`callerDepth` 传播链路（agim-dispatcher → callAgentByName → 检查 ceil）
   本来就在，所以这一项**主要是默认值收紧**，逻辑没大动
 
-#### Item 5 — PlanMode（`IMHUB_NATIVE_PLAN_MODE=1`）
+#### Item 5 — PlanMode（`AGIM_NATIVE_PLAN_MODE=1`）
 - 对齐 opencode plan-mode UX：env-toggled hard-deny `native_write_file` +
   `native_exec`。读工具（Read/Grep/Glob/web_fetch/web_search）保持可用，agent
   只能产出**只读规划**
 - 实现：`resolvePolicy()` 在 PlanMode on 时把上述写工具追加到 denyList（与用户的
-  `IMHUB_NATIVE_AGENT_DENYLIST` 合并去重）
+  `AGIM_NATIVE_AGENT_DENYLIST` 合并去重）
 - 加上系统 prompt 顶部的 `⚠ Plan mode is ACTIVE` 横幅，明确告诉模型现在不能落地，
   让它产出 plan 后停手而不是反复试探被 deny
 
@@ -2028,7 +2041,7 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
   final answer`"，最多重试 2 次
 - 与 length-recovery 互不冲突：`finishReason=length` 优先走截断续写，因为它有
   partial text；blank-retry 处理的是真正"啥也没说"的失态
-- `IMHUB_NATIVE_BLANK_RETRY_MAX` 控制，默认 2，最大 5，0=禁用
+- `AGIM_NATIVE_BLANK_RETRY_MAX` 控制，默认 2，最大 5，0=禁用
 
 ### Affected paths
 
@@ -2039,7 +2052,7 @@ tool name 不同所以不 fire，agent 会一直耗到 max_iter。
   `resolvePolicy` 加 PlanMode 合并；`buildSystemPrompt` 加 PlanMode 横幅；export
   这三个供测试
 - `src/plugins/agents/native/native.test.ts`：在 clearAll 中显式
-  `IMHUB_NATIVE_BLANK_RETRY_MAX=0` 让 legacy adapter 测试不受 blank-retry 影响
+  `AGIM_NATIVE_BLANK_RETRY_MAX=0` 让 legacy adapter 测试不受 blank-retry 影响
 - `test/unit/agent-loop-blank-retry.test.ts`（新，5 case）：one-shot recover /
   cap=2 / cap=0 disable / tool_calls 不触发 / length 优先
 - `src/plugins/agents/native/plan-mode.test.ts`（新，14 case）：env 解析各形态 +
@@ -2071,20 +2084,20 @@ sst/opencode / Cursor / Continue.dev），按 ROI 排序产出 12 项改进路�
   - 新增 `SearchProvider` 接口（`name` / `available()` / `search()`）
   - 内置 3 个 provider：**Tavily**（新增；行业默认 agent 搜索，`TAVILY_API_KEY`） /
     DuckDuckGo（无 key） / Metaso（`METASO_API_KEY`）
-  - 通过 `IMHUB_WEB_SEARCH_PROVIDERS` 环境变量定义有序链
+  - 通过 `AGIM_WEB_SEARCH_PROVIDERS` 环境变量定义有序链
     （默认 `tavily,duckduckgo,metaso`），首个返回 ≥1 结果的胜出
   - 缺 key 的 provider **静默跳过**（不刷日志）；未知 provider 名 warn 一次后跳过
   - 添加 Tavily provider 后只需 `export TAVILY_API_KEY=tvly-...` 即可启用
 
 #### Item 2 — per-tool-result 字节上限
 - `src/core/llm/agent-loop.ts` 在 dispatch 包装层加 `truncateToolResult()`：
-  - 默认 32 KB 上限（`IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS`），0 = 禁用
+  - 默认 32 KB 上限（`AGIM_NATIVE_TOOL_RESULT_MAX_CHARS`），0 = 禁用
   - 超限文本带明确截断标记返回模型：`…[native_grep output truncated: 5000000 of 5032768 chars omitted]`
   - 防止一条 grep / curl 把 context 喂爆，比 auto-compact 触发更早更安全
 
 #### Item 3 — per-tool 钟摆超时
 - `ToolDef` 新增 `timeoutMs?: number` 字段；新 `dispatchWithTimeout()` helper：
-  - 默认 60 秒（`IMHUB_NATIVE_TOOL_TIMEOUT_MS`），0 = 关闭该工具的超时（如 `long_task`）
+  - 默认 60 秒（`AGIM_NATIVE_TOOL_TIMEOUT_MS`），0 = 关闭该工具的超时（如 `long_task`）
   - 超时后**返回结构化 timeout 工具结果**（不是抛异常），模型看到 tool-level 失败
   - 同步 abort 子调用的 signal，防 wedge
 
@@ -2124,7 +2137,7 @@ sst/opencode / Cursor / Continue.dev），按 ROI 排序产出 12 项改进路�
     任何 partial tool_calls（避免 obot 文档化的"$0.91 烧在 6 次连续 length retry
     执行截断 JSON 上"灾难），注入合成 user 消息：`Your previous response was cut
     off … Continue from exactly where you left off — do not repeat any content`
-  - **per-turn 计数器 cap=3**：与 HKUDS/nanobot 一致；env `IMHUB_NATIVE_LENGTH_
+  - **per-turn 计数器 cap=3**：与 HKUDS/nanobot 一致；env `AGIM_NATIVE_LENGTH_
     RECOVERY_MAX` 可调（0 = 完全关闭走老逻辑，最大 10）
   - **partial text 累积返回**：新增 `lengthRecoveryPrefix` 串，所有终止路径
     （aborted / error / stuck_loop / off_track / max_iterations / 早 terminate）
@@ -2315,8 +2328,8 @@ sst/opencode / Cursor / Continue.dev），按 ROI 排序产出 12 项改进路�
   - `AgentLoopInput` 新增两字段：`streamPartialText?: boolean`（caller 显式
     opt-in；默认 false 保持 v1.2.111 行为不变）+ `onPartialText?: (delta,
     totalSoFar) => void`（流式回调，将来可挂 IM 端 SSE 推送）。
-  - **native 默认开启**：`IMHUB_NATIVE_STREAM_PARTIAL`（默认 'on'；'off' 关闭）+
-    全局 `IMHUB_AGENT_LOOP_STREAM`（默认 'on'；'off' 强制 buffer）双重 kill
+  - **native 默认开启**：`AGIM_NATIVE_STREAM_PARTIAL`（默认 'on'；'off' 关闭）+
+    全局 `AGIM_AGENT_LOOP_STREAM`（默认 'on'；'off' 强制 buffer）双重 kill
     switch，万一某 vendor 流式不稳可立即降级。
 
 ### Tests
@@ -2340,7 +2353,7 @@ v1.2.112（③）。下一步是真实使用观察 + 长尾红测试修复。
 - **每个工具调用单独落 audit 行 + traceId 跨 A2A 贯通。** 之前 agent-loop 只在
   iteration 层落一行 (`intent='native.agent.iter'`)，单工具调用只在内存里；事后
   无法在 audit 表按 traceId 拼出"一个 turn 里跑了哪些工具/sub-agent / 在哪一步
-  失败"。同时 imhub-dispatcher 调 A2A 时自造 `native-a2a-${Date.now()}`，把 turn
+  失败"。同时 agim-dispatcher 调 A2A 时自造 `native-a2a-${Date.now()}`，把 turn
   的 traceId 链断了。本版：
   - agent-loop 在 slot 提交时调用新的 `writeToolCallAudit(audit, report)`，每个
     tool call 一行 `intent='tool.<name>'`，traceId = 父 traceId，agent = 父
@@ -2348,7 +2361,7 @@ v1.2.112（③）。下一步是真实使用观察 + 长尾红测试修复。
     `success = !isError`。deny / schema-validation 失败 / 真正派发都会落行。
   - `ToolDispatcher` 类型新增可选第三参 `ctx?: ToolDispatcherContext { traceId? }`。
     agent-loop 调 dispatch 时把 `input.audit?.traceId` 透传；`combineDispatchers`
-    转发；imhub-dispatcher A2A 路径读 ctx.traceId 构造 `${parent}/a2a-${call.id}`
+    转发；agim-dispatcher A2A 路径读 ctx.traceId 构造 `${parent}/a2a-${call.id}`
     作为子 trace（无父则回退老格式，向后兼容）。其他 dispatcher 因为参数可选
     完全不感知，0 改动。
   - `queryInvocations` 新增 `traceId` / `tracePrefix` 过滤参数，按 trace 反查
@@ -2378,7 +2391,7 @@ v1.2.112（③）。下一步是真实使用观察 + 长尾红测试修复。
   `required`/`enum`/`additionalProperties:false`/对象一层嵌套/数组 `items`。复杂
   schema（$ref/oneOf/format/数值约束）静默通过——失败开 footgun 比假阳性危险。
   对 agim 现有 tool 的扁平 object schema 足够。
-- **Env 关阀**：`IMHUB_TOOL_SCHEMA_VALIDATE=off` 关闭校验，回退到 v1.2.109 行为，
+- **Env 关阀**：`AGIM_TOOL_SCHEMA_VALIDATE=off` 关闭校验，回退到 v1.2.109 行为，
   万一某 vendor schema 触发误报有快速逃生路径。
 
 ### Tests
@@ -2407,7 +2420,7 @@ v1.2.112（③）。下一步是真实使用观察 + 长尾红测试修复。
 - **native 内置声明的 parallel-safe 集合**（`NATIVE_PARALLEL_SAFE_TOOLS`）：
   `native_echo` / `native_now` / `native_random_uuid` / `native_read_file` /
   `native_list_dir` / `native_glob` / `native_grep` / `native_web_fetch` /
-  `native_web_search` / `mcp__imhub__{read_skill,list_skills,search_memos,
+  `native_web_search` / `mcp__agim__{read_skill,list_skills,search_memos,
   memory_list,memory_query}`。`native_exec` / `native_write_file` / 任何写类
   memo / `push_message` / `ask_user` / `call_agent` / `long_task` /
   `complete_goal` / 其他 MCP 均不在内（保持串行 + barrier）。
@@ -2427,7 +2440,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   DeepSeek / Moonshot 等 OpenAI-compat 提供方返回 429 时把服务器要求的几秒等待
   完全无视，250ms 后再撞墙、跳到 fallback provider，吃 cold-start + 模型语义切换。
   现在默认 4 次尝试（base 250ms、cap 30s、jitter ±20%），`Retry-After` 作为硬下限
-  （秒/HTTP-date 两种 RFC 7231 格式都支持）。`IMHUB_LLM_RETRY_MAX` 覆盖默认（clamp
+  （秒/HTTP-date 两种 RFC 7231 格式都支持）。`AGIM_LLM_RETRY_MAX` 覆盖默认（clamp
   [0,10]）。导出 `parseRetryAfter` / `computeBackoffMs` 两个纯函数 + 13 个回归测试。
 - **stuck-loop 早停升级为 `(name, argsKey, errorType)` 三元组。** v1.2.95 用的是
   `(name, isError, preview[0..200])`：模型只要让结果文本带个时间戳/换行/计数器就
@@ -2439,7 +2452,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   成功重置）。** v1.2.96 的 cachedTools 永不刷新——上游 MCP server 加新工具/改
   schema 必须重启 agim 才看得见；重连冷却也是固定 5s，永远 broken 的 server 被
   5s 一次永久敲。现在：`McpClient.cachedTools` 带 `fetchedAt`，
-  `IMHUB_MCP_TOOLS_TTL_MS` 控制 TTL（0=不缓存），新增 `refresh()` 主动清缓存；
+  `AGIM_MCP_TOOLS_TTL_MS` 控制 TTL（0=不缓存），新增 `refresh()` 主动清缓存；
   `mcp-registry.tryReconnect` 按 `state.reconnectFailures` 指数翻倍冷却，成功
   立即 reset 为 0。导出 `computeReconnectCooldownMs` + 8 个回归测试。
 
@@ -2468,7 +2481,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   `bunfig.toml` preload (stray `bun test <file>`, wrong cwd, a different
   runner) leaves `AGIM_HOME` pointed at the real `~/.agim`, so
   `admin-bootstrap.test.ts`'s `promoteAdmin('telegram','123')` →
-  `updateEnvFile()` overwrites the operator's real `IMHUB_ADMIN_USERS`,
+  `updateEnvFile()` overwrites the operator's real `AGIM_ADMIN_USERS`,
   locking them out of every admin command. The preload sandbox was the
   only guard and is a single point of failure. Fix: a second,
   preload-independent guard — `assertEnvWriteAllowed()` in
@@ -2550,7 +2563,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 - **`/long_task` and `/complete_goal` slash commands.** Field observation
   (the goal-critic recap card already hints at them, and users tried them
   after off-track verdicts): both names existed only as MCP tools
-  (`mcp__imhub__long_task` / `mcp__imhub__complete_goal`), so a human
+  (`mcp__agim__long_task` / `mcp__agim__complete_goal`), so a human
   typing `/long_task ship v1.2` in chat got back "Unknown command".
   Added parser branches in `router.ts`:
   - `/long_task <title>` → equivalent to `/goal set <title>`
@@ -2591,7 +2604,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 ### Fixed
 
 - **bwrap sandbox: `/bin/sh` ENOENT, every `native_exec` failed.**
-  Field report: with `IMHUB_EXEC_SANDBOX=bwrap`, every command
+  Field report: with `AGIM_EXEC_SANDBOX=bwrap`, every command
   the model tried to run came back as `ENOENT`. Root cause:
   `buildBwrapInvocation` used `/bin/sh` as the shell, but on
   usrmerge systems (modern Debian / Ubuntu / Fedora — most
@@ -2629,7 +2642,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   story** (CR finding A2). v1.2.98 docs said the critic was off
   by default for daily-driver turns; the code actually defaulted
   on whenever the per-turn prompt was non-empty (which is
-  always). `IMHUB_NATIVE_CRITIC` is now a three-valued knob:
+  always). `AGIM_NATIVE_CRITIC` is now a three-valued knob:
     - `off` (or `0` / `false`) — hard kill switch, never fire.
     - `always` (or `on` / `1` / `true`) — fire whenever an
       anchor exists; previous v1.2.98 default behaviour.
@@ -2668,7 +2681,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   native renders a redirect recap citing the critic's reason
   + suggested new direction.
 
-  Cost gate: disabled if `IMHUB_NATIVE_CRITIC=off`, if no
+  Cost gate: disabled if `AGIM_NATIVE_CRITIC=off`, if no
   `cheap` role provider is configured, or if neither prompt nor
   active goal is available as an anchor. Trigger only after 5+
   tool calls so day-to-day short turns pay nothing. Diagnostic
@@ -2699,16 +2712,16 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   - `core/llm/agim-rpc-server.ts` — Unix-socket HTTP server on
     `AGIM_HOME/rpc.sock` (mode 0600, never bound to a TCP port).
     Per-process token registry. Tool whitelist hard-coded to
-    five read/write-safe imhub MCP tools: `search_memos`,
+    five read/write-safe agim MCP tools: `search_memos`,
     `save_memo`, `read_skill`, `list_skills`, `push_message`.
-    Operators can extend via `IMHUB_RPC_ALLOWED_TOOLS`.
-    Token TTL 24 h, configurable via `IMHUB_RPC_TOKEN_TTL_MS`.
+    Operators can extend via `AGIM_RPC_ALLOWED_TOOLS`.
+    Token TTL 24 h, configurable via `AGIM_RPC_TOKEN_TTL_MS`.
   - `bin/agim_rpc.py` — stdlib-only Python sidecar shipped in
     the npm package. `from agim_rpc import client; rpc =
     client()` reads env + validates, then `rpc.search_memos(...)`
     / `rpc.push_message(...)` are typed wrappers.
   - `exec-dispatcher`: every spawn under a known `rpcCtx` gets
-    `IMHUB_RPC_SOCKET` + `IMHUB_RPC_TOKEN` injected as env (not
+    `AGIM_RPC_SOCKET` + `AGIM_RPC_TOKEN` injected as env (not
     argv — keeps the token out of `ps`). Token is bound to the
     spawning thread; the worker can only drive its OWN IM
     thread's tool surface, never anyone else's.
@@ -2746,7 +2759,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   flagged `!isConnected()` before the call, or (b) `callTool`
   itself throws — and runs `close() → connect() → retry once`.
   Per-server cooldown (default 5 s, configurable via
-  `IMHUB_MCP_RECONNECT_COOLDOWN_MS`) prevents hammering a
+  `AGIM_MCP_RECONNECT_COOLDOWN_MS`) prevents hammering a
   persistently-broken server. Diagnostic events:
   `mcp-registry.reconnect_throttled / reconnected /
   reconnect_failed / tool_call_threw`.
@@ -2757,7 +2770,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   substantive turn for facts worth outliving the chat (personal
   preferences, holdings / portfolio codes, recurring people /
   places, stable identifiers, explicit "记一下" instructions) and
-  call `mcp__imhub__save_memo` itself without waiting for the
+  call `mcp__agim__save_memo` itself without waiting for the
   user to ask. Also tells it what NOT to save (one-off
   questions, transient debug state) and to use small atomic
   memos rather than one large one. Cost is just prompt bytes;
@@ -2840,7 +2853,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
     `bgjob status / tail` for follow-ups and explicitly forbids
     `nohup … &` (those die with the parent shell).
   - **bwrap sandbox carve-out for the bgjob wrapper.** When
-    `IMHUB_EXEC_SANDBOX=bwrap`, bwrap's pid / cgroup namespace
+    `AGIM_EXEC_SANDBOX=bwrap`, bwrap's pid / cgroup namespace
     used to tear down bgjob's `setsid`-detached worker the
     moment `bgjob start` returned — so the model saw success
     while the worker died a second later. `isBgjobInvocation`
@@ -2858,9 +2871,9 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 
 ### Fixed
 
-- **`IMHUB_NATIVE_AGENT_MAX_ITER` was dead documentation.** The
+- **`AGIM_NATIVE_AGENT_MAX_ITER` was dead documentation.** The
   max-iterations banner had been telling operators to "raise
-  IMHUB_NATIVE_AGENT_MAX_ITER" since v1.2.48, but no code path
+  AGIM_NATIVE_AGENT_MAX_ITER" since v1.2.48, but no code path
   ever read the env var — the agent loop quietly used the
   hard-coded default of 20 regardless. `resolveMaxIterations()`
   now reads the env (clamped to [1, 100]) and passes it to
@@ -2874,7 +2887,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   last step's output, name the cause ("model wanted to keep going
   but hit the safety cap at iteration N"), and offer three
   continuation paths — reply 继续 to push forward, split the task
-  into smaller pieces, or raise `IMHUB_NATIVE_AGENT_MAX_ITER` to
+  into smaller pieces, or raise `AGIM_NATIVE_AGENT_MAX_ITER` to
   2× current (capped at 100). Diagnostic
   `native.turn.max_iterations` log added so the audit trail
   records iterations / cap / last tool name.
@@ -2931,7 +2944,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   turn, and notes picture-count in the dispatched text so the
   user knows to re-send images standalone for multimodal
   parsing.
-- **`mcp__imhub__ask_user` typed replies were silently dropped.**
+- **`mcp__agim__ask_user` typed replies were silently dropped.**
   `ask-user-router.tryHandleAskReply` was defined and documented
   to be called from `cli.ts` onMessage, but no caller existed —
   the function was dead code. Result: when an agent invoked
@@ -3002,11 +3015,11 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 - **Long-task: active goal exempts the wall-clock timeout.** Inspired
   by nanobot's "an objective in flight is not a turn", agent-loop +
   A2A now consult `hasActiveGoal(platform, channelId, threadId)` and
-  multiply the base timeout by `IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER`
+  multiply the base timeout by `AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER`
   (default `3`, hard-capped at 6 h). The native 30-minute SIGTERM no
   longer kills a "research-an-entire-day" objective mid-flight; once
   the goal is `complete_goal`'d, the next turn's timeout falls back
-  to the normal base. Opt-out: `IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER=1`.
+  to the normal base. Opt-out: `AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER=1`.
 - **Event-bus emission for goal state changes.** New `GoalEvent` type
   in `event-bus.ts` (`phase: created | status | progress`). `goal-rpc`
   publishes on `long_task` (created + auto-paused prior), on
@@ -3199,7 +3212,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   command; works regardless of input state. Up / Down + Enter to
   pick, Esc to dismiss.
 - **Completion bell**. After each agent reply ends successfully, write
-  `\x07` to stdout. Disable with `IMHUB_TUI_NO_BELL=1`.
+  `\x07` to stdout. Disable with `AGIM_TUI_NO_BELL=1`.
 - **Markdown rendering** for assistant replies. New `Markdown` Ink
   component walks `marked`'s lexer tokens to emit native Ink boxes:
   headings (depth-coloured), paragraphs, bold / italic / strikethrough,
@@ -3264,7 +3277,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 - `tsconfig.json`: `"jsx": "react-jsx"` for tsx files.
 - Root logger is set to `silent` for the TUI session (and restored
   on exit) so pino-pretty doesn't write to fd 1 and scramble Ink's
-  diff renderer. `IMHUB_TUI_VERBOSE=1` keeps logs flowing (helpful
+  diff renderer. `AGIM_TUI_VERBOSE=1` keeps logs flowing (helpful
   when stuck — pair with `2>tui.log`).
 
 ## [1.2.75] - 2026-05-26
@@ -3329,7 +3342,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 
 ### Removed
 
-- **Legacy v1 web admin: gone for good.** The `IMHUB_WEB_V2` env gate
+- **Legacy v1 web admin: gone for good.** The `AGIM_WEB_V2` env gate
   is removed; v2 SPA is the only web admin path now. Multiple
   operators kept hitting "white screen / wrong page" because the
   default env (`unset`) was being misread on some installs, and the
@@ -3342,7 +3355,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   - `src/web/public/_app.js` (248 lines — shared v1 theme / i18n /
     auth-aware fetch; replaced by the v2 SPA's bundle)
 - **Removed routes** in `web/server.ts`:
-  - The `process.env.IMHUB_WEB_V2 !== '0'` env gate is gone — SPA
+  - The `process.env.AGIM_WEB_V2 !== '0'` env gate is gone — SPA
     fallback is now unconditional for GET requests.
   - The legacy `/settings` / `/tasks` / `/reminders` / `/memos`
     direct-HTML routing block deleted.
@@ -3351,13 +3364,13 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 - **No back-out hatch.** Operators who were on v1 (last shipped
   default-ON 1.2.20 → flipped default-v2 1.2.21, knob preserved until
   1.2.71) flipped over automatically when they upgraded. Anyone who
-  still set `IMHUB_WEB_V2=0` in `~/.agim/env` can safely delete the
+  still set `AGIM_WEB_V2=0` in `~/.agim/env` can safely delete the
   line — the value is ignored.
 
 ### Notes
 
-- `IMHUB_ENABLE_GLOBAL_IM` / `IMHUB_ENABLE_REMOTE_AGENT` /
-  `IMHUB_PLATFORM_BLACKLIST` etc. are unaffected — those gate IM
+- `AGIM_ENABLE_GLOBAL_IM` / `AGIM_ENABLE_REMOTE_AGENT` /
+  `AGIM_PLATFORM_BLACKLIST` etc. are unaffected — those gate IM
   platform visibility inside the SPA, not the SPA itself.
 - `/loc` / `/loc.html` SSR pages and `/login.html` stay (they're not
   part of the SPA).
@@ -3366,12 +3379,12 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 
 ### Fixed
 
-- **IMHUB_PLATFORM_BLACKLIST: SPA PlatformCards now hidden.**
+- **AGIM_PLATFORM_BLACKLIST: SPA PlatformCards now hidden.**
   v1.2.69 added 3-layer blacklist enforcement (registry refusal at
   boot, CLI wizard filter, web GET `/api/config` field stripping)
   but left the SPA `messengers.tsx` page hardcoding 5 `PlatformCard`
   components that ignored the blacklist. Operators who set
-  `IMHUB_PLATFORM_BLACKLIST=feishu,discord` still saw the Feishu /
+  `AGIM_PLATFORM_BLACKLIST=feishu,discord` still saw the Feishu /
   Discord cards in /settings/messengers (with the fields blank,
   since the backend correctly returned `null` for those slots).
 - **Backend** (`web/server.ts:1574`): `/api/config` now returns
@@ -3444,14 +3457,14 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 ### Notes
 
 - CR-5 (exec-dispatcher dangerous-pattern regex bypass) and CR-6
-  (`IMHUB_NATIVE_EXEC_SANDBOX` defaults off) deferred to the next
+  (`AGIM_NATIVE_EXEC_SANDBOX` defaults off) deferred to the next
   batch alongside CR-2 (DNS-aware SSRF resolver).
 
 ## [1.2.69] - 2026-05-26
 
 ### Added
 
-- **`IMHUB_PLATFORM_BLACKLIST` env** — comma-separated list of IM
+- **`AGIM_PLATFORM_BLACKLIST` env** — comma-separated list of IM
   platform ids that the bot will REFUSE to enable. Default empty
   (no blocks; backward compatible). Three-layer enforcement:
   1. **Registry** (`core/registry.ts`): `registry.registerMessenger`
@@ -3462,7 +3475,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   2. **CLI wizard** (`core/onboarding.ts`): blacklisted platforms
      vanish from `getAvailableMessengers()` so the wizard never
      prompts for them. Layered on top of the existing
-     `IMHUB_ENABLE_GLOBAL_IM` filter.
+     `AGIM_ENABLE_GLOBAL_IM` filter.
   3. **Web admin** (`/api/messengers` GET): per-platform credential
      blocks (`telegram` / `discord` / `feishu` / `dingtalk` /
      `wechat`) are omitted from the response when their id (or
@@ -3484,7 +3497,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   - New section at the bottom: input field for the blacklist CSV
     + live preview of "currently in force" entries.
 - `ENV_EDITABLE_KEYS` in `web/server.ts` extended with
-  `IMHUB_PLATFORM_BLACKLIST`.
+  `AGIM_PLATFORM_BLACKLIST`.
 - `/api/security/diagnostics` returns `platformBlacklist: string[]`.
 
 ### Internal
@@ -3516,7 +3529,7 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
   1. **Runtime diagnostics** (read-only badges): running-as-root,
      env-file permissions (0600 / lax), bubblewrap availability,
      sender allowlist configured, admin allowlist configured.
-  2. **Sender allowlist** — `IMHUB_ALLOWED_USERS` editor.
+  2. **Sender allowlist** — `AGIM_ALLOWED_USERS` editor.
   3. **Native exec tool** — sandbox backend (none / bwrap, disabled
      when bwrap missing), sandbox-net, timeout, max output.
   4. **Native web tools** — allow-all-private toggle, SSRF CIDR
@@ -3531,12 +3544,12 @@ compat）、完成顺序 ≠ 原始顺序时 history 仍按原始顺序、serial
 ### Changed
 
 - `ENV_EDITABLE_KEYS` in `web/server.ts` extended with the 11 new
-  v1.2.58–v1.2.66 security knobs (`IMHUB_ALLOWED_USERS`,
-  `IMHUB_NATIVE_FS_RESTRICT`, `IMHUB_NATIVE_FS_TIMEOUT_MS`,
-  `IMHUB_NATIVE_WEB_ALLOW_PRIVATE`, `IMHUB_NATIVE_WEB_SSRF_WHITELIST`,
-  `IMHUB_NATIVE_WEB_TIMEOUT_MS`, `IMHUB_EXEC_SANDBOX`,
-  `IMHUB_EXEC_SANDBOX_NET`, `IMHUB_EXEC_TIMEOUT_MS`,
-  `IMHUB_EXEC_MAX_OUTPUT`, `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN`).
+  v1.2.58–v1.2.66 security knobs (`AGIM_ALLOWED_USERS`,
+  `AGIM_NATIVE_FS_RESTRICT`, `AGIM_NATIVE_FS_TIMEOUT_MS`,
+  `AGIM_NATIVE_WEB_ALLOW_PRIVATE`, `AGIM_NATIVE_WEB_SSRF_WHITELIST`,
+  `AGIM_NATIVE_WEB_TIMEOUT_MS`, `AGIM_EXEC_SANDBOX`,
+  `AGIM_EXEC_SANDBOX_NET`, `AGIM_EXEC_TIMEOUT_MS`,
+  `AGIM_EXEC_MAX_OUTPUT`, `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`).
   All editable + persistable via the existing `/api/env` PUT path.
 - Settings sidebar: new "Security" tab between "Policy" and
   "Workspaces". i18n keys `tabs.security` + `security.*` added to
@@ -3563,7 +3576,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 - **Command-embedded SSRF scan** — `native_exec` now regex-extracts
   every `http(s)://…` token in the command string and refuses if any
   resolves through `checkUrlSafety` as private/internal. Honours
-  the shared `IMHUB_NATIVE_WEB_SSRF_WHITELIST`. Closes the
+  the shared `AGIM_NATIVE_WEB_SSRF_WHITELIST`. Closes the
   curl/wget-to-IMDS bypass.
 - **SSRF redirect re-check** (`web-dispatcher.ts`) — `native_web_fetch`
   no longer uses `redirect: 'follow'`. Now does `redirect: 'manual'`
@@ -3574,16 +3587,16 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 - **100.64.0.0/10 carrier-grade NAT** added to default block list
   (matches nanobot). Cloud providers + some ISPs use this for
   internal hosts.
-- **CIDR whitelist** — new `IMHUB_NATIVE_WEB_SSRF_WHITELIST=<csv>`
+- **CIDR whitelist** — new `AGIM_NATIVE_WEB_SSRF_WHITELIST=<csv>`
   env (e.g. `100.64.0.0/10,10.20.0.0/16`) opens specific ranges for
   legitimate Tailscale / VPN / internal-API use cases without
-  binary-flipping `IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1`. IPv4 only;
+  binary-flipping `AGIM_NATIVE_WEB_ALLOW_PRIVATE=1`. IPv4 only;
   invalid entries dropped.
 
 #### Sandbox
 
-- **bwrap tmpfs-mask** — when `IMHUB_EXEC_SANDBOX=bwrap`, the sandbox
-  now `--tmpfs $HOME/.agim` + `$HOME/.im-hub` + the cwd's parent
+- **bwrap tmpfs-mask** — when `AGIM_EXEC_SANDBOX=bwrap`, the sandbox
+  now `--tmpfs $HOME/.agim` + `$HOME/.agim` + the cwd's parent
   directory, then bind-mounts the actual workspace back over the
   masked parent. Even if the agent bypasses `sensitive-paths.ts` at
   the tool-arg layer, an exec'd shell will see an empty
@@ -3595,8 +3608,8 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 - **Sender allowlist** (new `core/sender-allowlist.ts`) — controls
   WHO can talk to the bot (distinct from admin allowlist for
   `/restart`).
-  - `IMHUB_ALLOWED_USERS=platform:userId,…` — same syntax as
-    `IMHUB_ADMIN_USERS`. Set to `*` to explicitly mark "everyone
+  - `AGIM_ALLOWED_USERS=platform:userId,…` — same syntax as
+    `AGIM_ADMIN_USERS`. Set to `*` to explicitly mark "everyone
     allowed" + suppress the boot warning.
   - **Default is OPEN** when unset (no breaking change to existing
     deployments). cli.ts emits a one-shot
@@ -3624,7 +3637,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 ### Changed
 
 - **`long-goal` skill body** — replaced the stale "Future tools
-  (deferred to v1.2.58)" section with the real `mcp__imhub__long_task`
+  (deferred to v1.2.58)" section with the real `mcp__agim__long_task`
   / `complete_goal` usage instructions. Now matches v1.2.63 reality.
 - **`agim-self` skill body** — added the 12 tools shipped in
   v1.2.58–v1.2.63 that were missing: `long_task` / `complete_goal`
@@ -3644,7 +3657,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   generator.
 - **`agim-skill-discovery` skill** — teaches the agent how to answer
   "what skills do I have / install X / search for Y" by referring to
-  the system-prompt list, calling `mcp__imhub__read_skill` for
+  the system-prompt list, calling `mcp__agim__read_skill` for
   details, and pointing the operator at skillhub.cn + web admin's
   Skills page. Documents the multi-root install layout +
   restart-to-pick-up semantics.
@@ -3663,7 +3676,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 - **`buildSkillsSummary` fallback** — if a skill somehow still ends
   up with empty description after parsing, the summary line now
   substitutes `(no description in SKILL.md — read body via
-  mcp__imhub__read_skill)` instead of leaving the slot blank.
+  mcp__agim__read_skill)` instead of leaving the slot blank.
 
 ## [1.2.64] - 2026-05-26
 
@@ -3687,7 +3700,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 
 ### Added
 
-- **`mcp__imhub__long_task` / `mcp__imhub__complete_goal` MCP tools** —
+- **`mcp__agim__long_task` / `mcp__agim__complete_goal` MCP tools** —
   wraps `goals.ts` so every agim agent can self-register a sustained
   multi-turn objective (previously only the `/goal set` slash command
   let the user do this manually).
@@ -3699,7 +3712,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
     `completed` (default) or `cancelled`. `recap` becomes the final
     progress note.
 - **All agents** see these tools — registered in both
-  `imhub-dispatcher.ts` (native side) and
+  `agim-dispatcher.ts` (native side) and
   `mcp-approval-server.ts` (claude-code / cursor / antigravity MCP
   sidecar) with the new `goal` wire envelope handled by
   `approval-bus.ts:handleGoal`. RunContext-resolved identity (no
@@ -3721,16 +3734,16 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 
 - **`native_exec(command, timeout_ms?, cwd?)`** — shell execution
   tool in `src/core/llm/exec-dispatcher.ts`. Default timeout 60s
-  (hard cap 600s via `IMHUB_EXEC_TIMEOUT_MS`), per-stream output
-  capped at 32KB (override via `IMHUB_EXEC_MAX_OUTPUT`). Returns
+  (hard cap 600s via `AGIM_EXEC_TIMEOUT_MS`), per-stream output
+  capped at 32KB (override via `AGIM_EXEC_MAX_OUTPUT`). Returns
   JSON `{ exit_code, signal, timed_out, stdout, stderr,
   stdout_truncated, stderr_truncated }`. SIGTERM at timeout with a
   3s grace before SIGKILL.
-- **Optional bubblewrap sandbox** when `IMHUB_EXEC_SANDBOX=bwrap`
+- **Optional bubblewrap sandbox** when `AGIM_EXEC_SANDBOX=bwrap`
   (Linux + `/usr/bin/bwrap` required). Read-only binds the host's
   `/usr`, `/lib`, `/lib64`, `/etc/ssl`, `/etc/resolv.conf`; rw-binds
   the agent's cwd; tmpfs `/tmp`; isolated proc/dev. Net stays on by
-  default; set `IMHUB_EXEC_SANDBOX_NET=off` to add `--unshare-net`
+  default; set `AGIM_EXEC_SANDBOX_NET=off` to add `--unshare-net`
   for fully offline execution.
 - `native_exec` is **NOT** in the default autoAllow — each invocation
   routes through the v1.2.60 IM approval card. Same-fingerprint
@@ -3753,7 +3766,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   protocols, RFC1918 (10/8, 172.16-31/12, 192.168/16), loopback
   (127/8, ::1, localhost), link-local (169.254/16, fe80::/10), and
   IPv6 ULA (fc00::/7). Operators who genuinely need private targets
-  set `IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1`.
+  set `AGIM_NATIVE_WEB_ALLOW_PRIVATE=1`.
 - Both tools added to native's default autoAllow — they're read-only
   and the SSRF block stays in force regardless.
 
@@ -3781,7 +3794,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
     notifier (CI / smoke-test path), native silently falls back to the
     legacy silent-deny so tests don't hang.
 - **autoAllow lookup happens BEFORE mode resolution**, so adding a tool
-  to `IMHUB_NATIVE_AGENT_AUTOALLOW` always shortcuts the user-prompt
+  to `AGIM_NATIVE_AGENT_AUTOALLOW` always shortcuts the user-prompt
   path regardless of mode.
 
 ## [1.2.59] - 2026-05-25
@@ -3789,14 +3802,14 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 ### Fixed
 
 - **Native runaway delegation loop** — under deepseek-v4 the native agent
-  would chain `mcp__imhub__call_agent('claude-code', …)` repeatedly
+  would chain `mcp__agim__call_agent('claude-code', …)` repeatedly
   inside a single turn (observed: 8 chained delegations across 11
   minutes on one wechat thread before the user had to `/abort`). The
   model picked call_agent over its own native fs tools even after
   v1.2.58 added them. Three changes close it:
-  - **Per-turn cap** in `imhub-dispatcher.ts`: refuses further
+  - **Per-turn cap** in `agim-dispatcher.ts`: refuses further
     `call_agent` after 2 delegations per turn (override with
-    `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN`, set 0 to disable). Refusal
+    `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`, set 0 to disable). Refusal
     message tells the model exactly which native tools to try instead,
     so it self-corrects on the next iteration.
   - **System-prompt HARD RULE** in `native/index.ts`: for read-file /
@@ -3818,7 +3831,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 ### Deferred
 
 - `native_exec` (one-shot shell), `native_web_fetch`, `native_web_search`
-  (duckduckgo → metaso fallback), `mcp__imhub__long_task` /
+  (duckduckgo → metaso fallback), `mcp__agim__long_task` /
   `complete_goal`, and the bwrap sandbox path all move to v1.2.60.
   Scope split: v1.2.59 is a focused hotfix for the user-visible
   delegation loop; v1.2.60 returns to the bigger tool batch.
@@ -3839,20 +3852,20 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
     available; falls back to fs walk with a minimatch-style matcher
   - `native_grep(pattern, path?, glob?, output_mode?, max_matches?,
     case_insensitive?)` — ripgrep wrapper (rg required for now)
-- **Workspace restriction** — default-on via `IMHUB_NATIVE_FS_RESTRICT`
+- **Workspace restriction** — default-on via `AGIM_NATIVE_FS_RESTRICT`
   (`'0'` disables). When on, every fs tool's path must resolve under
   the per-thread native cwd subtree (typically
   `~/.agim-workspaces/native/<thread>/`). Sensitive-path denylist
   (`sensitive-paths.ts`) applies even when restriction is off.
 - **Per-tool wall-clock** — every fs tool races against
-  `IMHUB_NATIVE_FS_TIMEOUT_MS` (default 60_000). Prevents a slow
+  `AGIM_NATIVE_FS_TIMEOUT_MS` (default 60_000). Prevents a slow
   remote-mounted file from hanging the whole agent loop.
 - **Default auto-allow** for the 4 read-only fs tools
   (`native_read_file` / `native_list_dir` / `native_glob` /
   `native_grep`) so native doesn't pop an IM card for every file
   inspection. `native_write_file` stays approval-gated by default —
   operators who trust native can add it via
-  `IMHUB_NATIVE_AGENT_AUTOALLOW`.
+  `AGIM_NATIVE_AGENT_AUTOALLOW`.
 
 ### Deferred
 
@@ -3870,7 +3883,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   packages — they teach the agent procedural knowledge and trigger
   phrases without adding code. Available to every agim agent that
   reads `agim skills available` (native injects into prompt; CLI
-  agents load via `mcp__imhub__read_skill`):
+  agents load via `mcp__agim__read_skill`):
   - `weather` — wttr.in + Open-Meteo, no API key
   - `summarize` — URL / article / YouTube / PDF summarisation flow
   - `github` — `gh` CLI patterns (PR, issue, CI runs, gh api)
@@ -3881,7 +3894,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
     progress logging, and acceptance-criteria rules (adapted from
     nanobot but mapped onto agim's existing goals.ts)
   - `agim-reminders` — replaces nanobot's `cron`; teaches the
-    `mcp__imhub__create_reminder` family with concrete examples
+    `mcp__agim__create_reminder` family with concrete examples
   - `agim-memory` — replaces nanobot's `memory`; teaches the
     `memory_*` + `*_memo` tools and the 5W1H taxonomy
 
@@ -3914,7 +3927,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   v1.2.55 read the operator's real `~/.agim/env` on the dev/CI
   host, breaking 7 tests that expected an empty allowlist after
   `setEnv(undefined)`. Added a test opt-out: setting
-  `IMHUB_ENV_FILE_PATH=''` disables the file read entirely (the
+  `AGIM_ENV_FILE_PATH=''` disables the file read entirely (the
   two admin test files now do this at module load).
 
 ## [1.2.55] - 2026-05-25
@@ -3927,7 +3940,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   vanished from the web/IM admin list. Root cause: systemd's
   `EnvironmentFile=` parser is stricter than agim's `readEnvFile` (it
   silently drops lines containing certain characters), so the
-  `IMHUB_ADMIN_USERS=…,…` line could land in `~/.agim/env` correctly
+  `AGIM_ADMIN_USERS=…,…` line could land in `~/.agim/env` correctly
   but be partially or fully ignored when systemd handed env to the new
   process. `admin-allowlist.getEntries()` now ALSO reads
   `~/.agim/env` directly with agim's own parser and merges entries
@@ -3946,10 +3959,10 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 
 ### Fixed
 
-- Web settings → Viewer: saving **「禁用社区默认」** (`IMHUB_VIEWER_NO_DEFAULT_REMOTE`)
+- Web settings → Viewer: saving **「禁用社区默认」** (`AGIM_VIEWER_NO_DEFAULT_REMOTE`)
   failed with「请求里的 key 均不可编辑」because the env whitelist omitted that
   key. It is now editable via `PUT /api/env`.
-- Long-message viewer master switch (`IMHUB_VIEWER_ENABLED=0`) now hard-blocks
+- Long-message viewer master switch (`AGIM_VIEWER_ENABLED=0`) now hard-blocks
   all viewer routing (truncate/link + remote paste + A2A artifact snapshots).
   Previously only `decideRender` gated on enabled; A2A snapshots could still
   upload when remote mode resolved.
@@ -3963,7 +3976,7 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 - `/models` under cursor returned "未能获取 cursor 的模型列表" on
   systemd-launched agim because the spawned `cursor-agent` couldn't be
   found on the stripped PATH. ModelDriver's listModels now uses the
-  same bin-resolution as the cursor adapter (env `IMHUB_CURSOR_BIN`
+  same bin-resolution as the cursor adapter (env `AGIM_CURSOR_BIN`
   → PATH → `~/.local/bin/cursor-agent` → `/usr/local/bin/...` →
   `/opt/cursor/bin/...`), cached for the process lifetime.
 - Tightened ANSI strip regex from `\[[0-9;]*m` (where the leading `\[`
@@ -4028,9 +4041,9 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
   full `/cc cursor <prompt>` form).
 - **Plan mode**: `/cs plan` or `--plan` flag yields cursor's plan mode
   (read-only / clarifying questions). `--mode ask` similarly.
-- **MCP imhub bridge** — `~/.cursor/mcp.json` gets an `imhub` entry on
+- **MCP agim bridge** — `~/.cursor/mcp.json` gets an `agim` entry on
   first cursor turn, pointing at the same approval-bus sidecar
-  claude-code uses. All `mcp__imhub__*` tool calls inside a cursor run
+  claude-code uses. All `mcp__agim__*` tool calls inside a cursor run
   hop through agim's existing approval-bus + audit pipeline — no
   bypass of agim policy.
 - **Auth inheritance** — defaults to the machine's existing cursor
@@ -4050,11 +4063,11 @@ Nanobot-inspired defense-in-depth pass. 9 hardening items across
 ### Migration
 
 - Existing cursor installs (with `cursor-agent login` already done) are
-  picked up automatically. Set `IMHUB_CURSOR_BIN=/path/to/cursor-agent`
+  picked up automatically. Set `AGIM_CURSOR_BIN=/path/to/cursor-agent`
   to override binary resolution.
 - `~/.cursor/mcp.json` is read-modify-written on first cursor turn;
   pre-existing `mcpServers` entries are preserved.
-- The bin probe order is `IMHUB_CURSOR_BIN` env → PATH lookup →
+- The bin probe order is `AGIM_CURSOR_BIN` env → PATH lookup →
   `~/.local/bin/cursor-agent` → `/usr/local/bin/cursor-agent` →
   `/opt/cursor/bin/cursor-agent`.
 
@@ -4076,19 +4089,19 @@ multi-hop research turn.
   `[operator role definition]`. Edit the seed at
   `~/.agim-workspaces/native/AGENTS.md` to change persona / tone /
   house rules; no restart required. Env override
-  `IMHUB_NATIVE_AGENT_ROLE_FILE=...` for non-default locations.
+  `AGIM_NATIVE_AGENT_ROLE_FILE=...` for non-default locations.
   Prompt-injection guard runs over the content + audit-logs hits.
-- **Skills multi-root scan** — `IMHUB_SKILLS_MODE=auto` (default)
+- **Skills multi-root scan** — `AGIM_SKILLS_MODE=auto` (default)
   merges `~/.agim/skills/` (write target) with `~/.claude/skills/`,
   `~/.config/opencode/skills/`, and `~/.codex/skills/` so a fresh
   install sees every skill the user already has from CLI agents.
   Workspace skills shadow same-named entries from inherited roots.
-  Modes: `auto | agim-only | custom` + `IMHUB_SKILLS_ROOTS=...`
-  / `IMHUB_SKILLS_EXTRA_ROOTS=...`.
+  Modes: `auto | agim-only | custom` + `AGIM_SKILLS_ROOTS=...`
+  / `AGIM_SKILLS_EXTRA_ROOTS=...`.
 - **Auto-compact long histories** — when a native turn's accumulated
-  history crosses `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS` (default
+  history crosses `AGIM_NATIVE_COMPACT_TRIGGER_CHARS` (default
   60_000), a cheap LLM call summarises the older slice and the loop
-  keeps only the last `IMHUB_NATIVE_COMPACT_KEEP_TURNS` (default 6)
+  keeps only the last `AGIM_NATIVE_COMPACT_KEEP_TURNS` (default 6)
   user/assistant pairs verbatim. Tool round-trips kept intact (the
   fix that landed in CR — never start the tail on `role:'tool'`).
 - **Provider fallback chain** — native walks the configured role
@@ -4101,25 +4114,25 @@ multi-hop research turn.
   content blocks when the provider's `vision: true` (or its model
   name matches a known vision family). Anthropic provider remains
   text-only for now. Hard cap 20MB per image. Path-safety:
-  attachments must resolve under `IMHUB_MEDIA_ROOT`.
+  attachments must resolve under `AGIM_MEDIA_ROOT`.
 - **Tool-call heartbeat** — tool dispatches that take longer than
-  `IMHUB_NATIVE_HEARTBEAT_MS` (default 6000) push a "🔧 调用工具 X
+  `AGIM_NATIVE_HEARTBEAT_MS` (default 6000) push a "🔧 调用工具 X
   中…" so users know the bot is still working.
 - **Turn-level heartbeat** — every
-  `IMHUB_NATIVE_TURN_HEARTBEAT_MS` (default 180_000 = 3 min) since
+  `AGIM_NATIVE_TURN_HEARTBEAT_MS` (default 180_000 = 3 min) since
   turn start, push "⏳ 还在处理（已 Nm）…". Survives long
   multi-hop research turns where individual tool calls finish but the
   outer LLM is reasoning.
 - **Cross-channel operator alert** — when outbox delivery fails ≥3
   times on any thread, push a "⚠️ outbox 告警" to
-  `IMHUB_OPERATOR_ALERT_PLATFORM` / `IMHUB_OPERATOR_ALERT_THREAD_ID`
+  `AGIM_OPERATOR_ALERT_PLATFORM` / `AGIM_OPERATOR_ALERT_THREAD_ID`
   (throttled per dead-thread, 10-min cooldown). Self-loop protection.
 - **agim built-in MCP tools default-allowed** — the 9
-  `mcp__imhub__*` tools (read_skill / list_skills / save_memo /
+  `mcp__agim__*` tools (read_skill / list_skills / save_memo /
   search_memos / update_memo / delete_memo / push_message /
   ask_user / call_agent) are now in native's default allow-list,
   matching what claude-code already saw via the MCP sidecar. Override
-  via `IMHUB_NATIVE_AGENT_DENYLIST=...`.
+  via `AGIM_NATIVE_AGENT_DENYLIST=...`.
 - **Per-agent native workspace** — `resolveAgentCwd('native', opts)`
   pins IM turns to `~/.agim-workspaces/native/` (was `/` under
   systemd). AGENTS.md seeded with role-definition cues.
@@ -4138,7 +4151,7 @@ multi-hop research turn.
   — native now passes `timeoutMs: 28 * 60 * 1000` to `runAgentLoop`,
   matching the IM 30-min hard ceiling. Multi-hop `call_agent` chains
   used to abort mid-flight on the 6th minute. Override via
-  `IMHUB_NATIVE_AGENT_TIMEOUT_MS`.
+  `AGIM_NATIVE_AGENT_TIMEOUT_MS`.
 - **wechat-ilink dead-session auto-recovery** — `sendMessage` returning
   `-2` (`INVALID_PARAMS`) now invalidates the cached + persisted
   context-token for that user, so the next inbound message refreshes
@@ -4165,12 +4178,12 @@ multi-hop research turn.
 - Operators who customised `~/.agim-workspaces/native/AGENTS.md` keep
   their file unchanged (`ensureAgentWorkspace` never overwrites).
 - Default skill mode is `auto` — agim now reads `~/.claude/skills/`
-  etc. Set `IMHUB_SKILLS_MODE=agim-only` to opt out of inheritance.
-- The 9 `mcp__imhub__*` tools are auto-allowed under native's
-  default policy. Set `IMHUB_NATIVE_AGENT_DENYLIST=mcp__imhub__call_agent,...`
+  etc. Set `AGIM_SKILLS_MODE=agim-only` to opt out of inheritance.
+- The 9 `mcp__agim__*` tools are auto-allowed under native's
+  default policy. Set `AGIM_NATIVE_AGENT_DENYLIST=mcp__agim__call_agent,...`
   to block individual ones.
 - Auto-compact will make one cheap-role LLM call per compaction.
-  Disable with `IMHUB_NATIVE_COMPACT_TRIGGER_CHARS=0`.
+  Disable with `AGIM_NATIVE_COMPACT_TRIGGER_CHARS=0`.
 
 ## [1.3.0] - 2026-05-23
 
@@ -4233,20 +4246,20 @@ for the architectural stance + anti-patterns.
 - **agim Skills engine (Stage 3 + P0 #3)** — discover `SKILL.md`
   files in `~/.agim/skills/` + bundled `<dist>/skills/builtin/`; 3-tier
   progressive disclosure (name+desc auto-injected; body via
-  `mcp__imhub__read_skill`; scripts/refs via normal file read);
+  `mcp__agim__read_skill`; scripts/refs via normal file read);
   `/skill list|show|refresh` + `/settings/agim-skills` web editor. See
   [`docs/skills.md`](docs/skills.md). PR #68 + #76.
 - **Inline row-age annotations on memory facts (P0 #4)** — every fact
   / persona row gets a `(2d ago)` style annotation in the injected
   context so the agent has temporal context for free. `format-age.ts`
   utility + `persona-age.test.ts`. PR #69.
-- **`mcp__imhub__ask_user` structured choice (P0 #5)** — agent presents
+- **`mcp__agim__ask_user` structured choice (P0 #5)** — agent presents
   N choices (2-9) with optional timeout; user replies via button or
   text; result returns deterministically as a typed choice index +
   free-text. `/tasks/asks` pending-queue admin. See
   [`docs/ask-user.md`](docs/ask-user.md). PR #67.
 - **Notification evaluator for agent-initiated push (P0 #9)** —
-  `mcp__imhub__push_message` and `POST /api/notify` go through an
+  `mcp__agim__push_message` and `POST /api/notify` go through an
   LLM-graded "should we deliver this?" filter before hitting the IM
   thread. Per-thread rate limit; verdict logged to audit. PR #60.
 
@@ -4375,12 +4388,12 @@ for the architectural stance + anti-patterns.
 
 ### R15 — new
 
-- **CLI 向导 "Web 后台 — 监听地址 + 端口" 段** — bind (`IMHUB_WEB_BIND`
+- **CLI 向导 "Web 后台 — 监听地址 + 端口" 段** — bind (`AGIM_WEB_BIND`
   写到 `~/.agim/env`) + port (`webPort` 写到 `config.json`). 选
   `0.0.0.0` 强制 yesNo 二次确认 "你前面有 TLS 反代吗"; port `< 1024`
   拒绝。PR #56.
 - **ACP port gate 闭合** — `GET /api/config` 现透传 `acpPort` 但只在
-  `IMHUB_ENABLE_REMOTE_AGENT=1` 时; `PUT /api/config` 在 gate 关时丢
+  `AGIM_ENABLE_REMOTE_AGENT=1` 时; `PUT /api/config` 在 gate 关时丢
   incoming.acpPort; Web `/settings/service` Ports 卡的 ACP 输入框
   按 `features.remoteAgent` gate (之前一直显示). PR #56.
 
@@ -4469,21 +4482,21 @@ for the architectural stance + anti-patterns.
   `memory_list` 输出对 5W1H 走 `sanitizeForInjection`;
   `ensureAgentWorkspace` 启动期扫 AGENTS.md/CLAUDE.md, 11 英文 + 4
   中文 prompt-injection 模式命中 → warn + audit. PR #48.
-- **G4 `IMHUB_ACP_BIND` env + non-loopback audit** — ACP 服务监听
+- **G4 `AGIM_ACP_BIND` env + non-loopback audit** — ACP 服务监听
   地址可配; 改非回环时启动 warn + 持久 audit-event. PR #48.
-- **G5 advisories** — `IMHUB_TIMEOUT_DEFAULT=allow` 启动横幅 + 每
-  小时 reminder; 按 IP WS 限流 (`IMHUB_WS_MAX_PER_IP=20` +
-  `IMHUB_WS_MAX_NEW_PER_IP_PER_MIN=30`); `?token=` URL 回退首次使用
-  warn + audit; 非回环 Web bind 未设 `IMHUB_WEB_TLS_ACK` 启动横幅.
+- **G5 advisories** — `AGIM_TIMEOUT_DEFAULT=allow` 启动横幅 + 每
+  小时 reminder; 按 IP WS 限流 (`AGIM_WS_MAX_PER_IP=20` +
+  `AGIM_WS_MAX_NEW_PER_IP_PER_MIN=30`); `?token=` URL 回退首次使用
+  warn + audit; 非回环 Web bind 未设 `AGIM_WEB_TLS_ACK` 启动横幅.
   PR #48.
 
 ### R12 — 6 enterprise privacy hardening items + visibility gates
 
 - **① 用户消息日志脱敏** — `sanitizeUserText()` 默认
-  `{len, prefix(6), sha256(12)}`, `IMHUB_LOG_USER_TEXT=1` 显式启用
+  `{len, prefix(6), sha256(12)}`, `AGIM_LOG_USER_TEXT=1` 显式启用
   原文 (120 字符 cap). PR #48.
-- **② Memory / Persona / Paste TTL** — `IMHUB_MEMORY_FACT_RETENTION_
-  DAYS=90`/`IMHUB_PERSONA_RETENTION_DAYS=180`/`IMHUB_PASTE_RETENTION_
+- **② Memory / Persona / Paste TTL** — `AGIM_MEMORY_FACT_RETENTION_
+  DAYS=90`/`AGIM_PERSONA_RETENTION_DAYS=180`/`AGIM_PASTE_RETENTION_
   DAYS=30`. facts 按 last_referenced_at (LRU 友好), 0 = 永久. PR #48.
 - **③ `agim uninstall` 三模式** — 保留 / 清凭据保留历史 / 完全销毁
   (typed "DELETE" + shred + rm -rf). PR #48.
@@ -4492,10 +4505,10 @@ for the architectural stance + anti-patterns.
 - **⑤ `audit_events` 持久审计表** — 10 类事件 (approval / admin /
   config / env / token / workspace) 持久 180 天, details JSON 只放
   字段名 / 长度 / 哈希前缀. `GET /api/audit/events` 暴露. PR #48.
-- **⑥ `IMHUB_SKILLHUB_ENABLED` 出网开关** — `=0` 关 skillhub
+- **⑥ `AGIM_SKILLHUB_ENABLED` 出网开关** — `=0` 关 skillhub
   对外 fetch (气隙部署). PR #48.
-- **Compliance visibility gates** — `IMHUB_ENABLE_GLOBAL_IM` 控
-  Discord+Telegram, `IMHUB_ENABLE_REMOTE_AGENT` 控 ACP. 默认全关,
+- **Compliance visibility gates** — `AGIM_ENABLE_GLOBAL_IM` 控
+  Discord+Telegram, `AGIM_ENABLE_REMOTE_AGENT` 控 ACP. 默认全关,
   三层都 gate (CLI 向导 / Web 设置 / 运行时). PR #48.
 
 ### Build
@@ -4511,12 +4524,12 @@ for the architectural stance + anti-patterns.
 - **Fresh install white-screens on the web console.** `index.html`
   shipped in `dist/web/public/` is the v2 SPA shell since M1 / R10,
   but the static-asset router that serves `/assets/<chunk>.js` was
-  gated behind `IMHUB_WEB_V2=1`. New installs without that env var
+  gated behind `AGIM_WEB_V2=1`. New installs without that env var
   set received the SPA HTML (which references `/assets/index-…js`)
   but every chunk request fell through to the catch-all 404 — the
   browser parsed the shell, failed every module import, and stuck
   on a white screen with no obvious error short of devtools.
-- Default flipped to ON. Set `IMHUB_WEB_V2=0` to drop back to the
+- Default flipped to ON. Set `AGIM_WEB_V2=0` to drop back to the
   legacy v1 page handler (still serves the older
   `tasks.html` / `reminders.html` / `memos.html` / `settings.html`
   for any operator who customised those files; new operators get
@@ -4540,7 +4553,7 @@ parallel; this release bumps to 1.2.22 to stay above it.)
   succeeded if given more time.
 - The prompt POST now uses an undici Agent with `bodyTimeout: 0` and
   `headersTimeout: 0`. Liveness is still bounded by the SSE-side idle
-  watchdog (`OPENCODE_IDLE_TIMEOUT_MS` / `IMHUB_AGENT_IDLE_TIMEOUT_MS`),
+  watchdog (`OPENCODE_IDLE_TIMEOUT_MS` / `AGIM_AGENT_IDLE_TIMEOUT_MS`),
   so an actually-hung opencode is still reported — we just stop
   killing healthy long-running responses.
 - The `opencode.http.prompt_failed` log now captures `error.cause`
@@ -4571,18 +4584,18 @@ parallel; this release bumps to 1.2.22 to stay above it.)
 
 - **opencode MCP sidecar silently exits when probe-reuse picks up a stale
   serve.** `approval-bus` picks a fresh random socket path on every agim
-  start (`/tmp/imhub-approval-<32hex>.sock`); any pre-existing
+  start (`/tmp/agim-approval-<32hex>.sock`); any pre-existing
   `opencode serve` left over from a previous agim run carries the old
   path in its environ snapshot. `OpencodeServeManager` previously reused
   the listener unconditionally, so every new MCP sidecar that the
   serve forked tried to connect to a deleted socket and exited at
-  startup — `mcp__imhub__save_memo`, `mcp__imhub__create_reminder`,
+  startup — `mcp__agim__save_memo`, `mcp__agim__create_reminder`,
   and friends silently dropped out of opencode's tool set.
 - The probe-reuse path now reads `/proc/<listener-pid>/environ`, compares
-  `IMHUB_APPROVAL_SOCK` against the live bus path, and SIGTERMs +
+  `AGIM_APPROVAL_SOCK` against the live bus path, and SIGTERMs +
   respawns when they mismatch (escalates to SIGKILL after 800 ms).
 - Spawn path makes the env injection explicit and warns loudly if
-  `IMHUB_APPROVAL_SOCK` is unset at the moment we launch the serve.
+  `AGIM_APPROVAL_SOCK` is unset at the moment we launch the serve.
 
 (`1.2.3` through `1.2.17` were auto-bumped by the merge-bot but never
 manually published; this is the first npm publish since `1.2.2`.)
@@ -4678,7 +4691,7 @@ and a handful of P0 / P1 hardening fixes uncovered in pre-release CR.
 
 Persistent per-user fact store + auto-distilled "persona" summary that gets
 injected into every agent prompt. Default OFF; opt in via Settings →
-**自动化记忆** toggle (or `IMHUB_MEMORY_ENABLED=1`).
+**自动化记忆** toggle (or `AGIM_MEMORY_ENABLED=1`).
 
 - **Storage**: `~/.agim/memory.db` (SQLite). FTS5 index for keyword recall.
   Per-user partition key `${platform}:${userId}` so the same human across
@@ -4689,7 +4702,7 @@ injected into every agent prompt. Default OFF; opt in via Settings →
 - **Daily consolidation cron**: rebuilds the persona summary from the
   newest 50 facts so the always-on snippet stays small (~150–300 tokens).
 - **4 MCP tools** so agents can introspect / extend memory:
-  `mcp__imhub__memory_query`, `_save`, `_list`, `_delete`.
+  `mcp__agim__memory_query`, `_save`, `_list`, `_delete`.
 - **Web admin tab** (`/tasks#memory`): per-user user selector → persona
   text editor + paginated facts table with FTS5 search + bulk-delete
   filters + JSON export.
@@ -4712,14 +4725,14 @@ ranked list. Backfill button generates embeddings for existing facts.
 Clear button wipes the index when switching backends (different model =
 incompatible vector space).
 
-### Added — Agent-initiated push (`mcp__imhub__push_message`)
+### Added — Agent-initiated push (`mcp__agim__push_message`)
 
 Lets a running agent push a follow-up message back into the IM thread
 without an inbound trigger. Useful for long-running jobs ("CI green") or
 schedule-aware notifications.
 
-- Per-user rate limit (`IMHUB_PUSH_RATE_PER_HOUR`, default 20).
-- Cross-thread push gated by `IMHUB_PUSH_CROSS_THREAD` (default off:
+- Per-user rate limit (`AGIM_PUSH_RATE_PER_HOUR`, default 20).
+- Cross-thread push gated by `AGIM_PUSH_CROSS_THREAD` (default off:
   push must target the same thread the run started in).
 - `POST /api/notify` HTTP endpoint exposes the same primitive for
   webhooks / cron / external tools.
@@ -4754,7 +4767,7 @@ WeChat-iLink / DingTalk where buttons aren't a primitive.
 
 ### Changed — Web auth / env editor
 
-- `IMHUB_MEMORY_VECTOR_OPENAI_API_KEY` joins the SECRET_KEYS allowlist:
+- `AGIM_MEMORY_VECTOR_OPENAI_API_KEY` joins the SECRET_KEYS allowlist:
   masked on GET, click-to-reveal for editing, masked-value writes are
   no-ops (defense in depth so a stale masked echo can't overwrite).
 - `PUT /api/env` rejects masked echoes for any secret key (was only
@@ -4802,7 +4815,7 @@ WeChat-iLink / DingTalk where buttons aren't a primitive.
 
 ### Changed — Telemetry / data
 
-- `IMHUB_MEMORY_*` env keys editable via `PUT /api/env`.
+- `AGIM_MEMORY_*` env keys editable via `PUT /api/env`.
 - `~/.agim/memory.db` is new; safe to delete — recreated on next save.
 - Vector cache: `~/.agim/cache/transformers` (BGE ONNX model files).
 - `audit-log` adds `intent='memory.distill'` rows so distillation cost
@@ -4850,7 +4863,7 @@ adds token-gated login.
   SHA-256; raw token is shown once at create time.
 - **Cookie**: 30-day `agim_token` cookie set on successful login;
   `SameSite=Strict`, `Path=/`. Logout via `POST /api/auth/logout`.
-- **Disable**: `IMHUB_WEB_AUTH=off` reverts to pre-1.1.10 open access
+- **Disable**: `AGIM_WEB_AUTH=off` reverts to pre-1.1.10 open access
   (for ops who do auth at the reverse proxy layer).
 - **Global fetch interceptor** in `_app.js` auto-attaches `Authorization`
   + redirects to `/login` on 401. Existing pages keep working without
@@ -4860,10 +4873,10 @@ adds token-gated login.
 
 The HSTECH / Lens debate sessions surfaced two pain points:
 
-- **Default timeout raised from 10 min → 30 min** (`IMHUB_A2A_TIMEOUT_DEFAULT_MS`).
+- **Default timeout raised from 10 min → 30 min** (`AGIM_A2A_TIMEOUT_DEFAULT_MS`).
   Codex routinely takes 15-25 min for a 4-API-pull + writing-a-report job;
   the old 10 min cutoff killed it mid-flight and left orphan files in
-  `_agim-output/`. New `IMHUB_A2A_MAX_TIMEOUT_MS` (default 1h) caps the
+  `_agim-output/`. New `AGIM_A2A_MAX_TIMEOUT_MS` (default 1h) caps the
   ceiling so an agent can't accidentally write `timeoutMs: 86400000`.
 - **Abort on timeout** — `AgentSendOpts.signal` plumbed through `sendPrompt`
   → `spawnStream` so callees actually get SIGTERM'd when A2A gives up.
@@ -4876,7 +4889,7 @@ The HSTECH / Lens debate sessions surfaced two pain points:
   - `⌛ codex 超时 (10m 未返回) — 子进程已停` — timeout
   - `❌ codex 失败 ... <err>` — failure
 - **Verbose heartbeat mode** detects file changes in `_agim-output/`
-  every `IMHUB_A2A_HEARTBEAT_MIN` minutes (default 5):
+  every `AGIM_A2A_HEARTBEAT_MIN` minutes (default 5):
   - With change: lists new files + links the first new `.md` once.
   - Without change: "still thinking" note.
 - **Notify scope**: source='system' (never routes through viewer);
@@ -4904,7 +4917,7 @@ The HSTECH / Lens debate sessions surfaced two pain points:
   web port publicly. First start auto-creates a bootstrap token — copy
   the value from `journalctl -u agim` or `agim status` output.
 - Existing users on a reverse proxy with their own auth: set
-  `IMHUB_WEB_AUTH=off` if you don't want a second factor.
+  `AGIM_WEB_AUTH=off` if you don't want a second factor.
 - Local-only / loopback users: nothing changes (auth bypassed on
   127.0.0.1).
 
@@ -4942,12 +4955,12 @@ otherwise expose their agim host, the viewer can now auto-launch a
 cloudflared "quick tunnel" so /v/:id links in IM are reachable from
 a phone with zero infrastructure setup.
 
-- **New env var `IMHUB_VIEWER_TUNNEL_MODE`** — `off` (default) or
+- **New env var `AGIM_VIEWER_TUNNEL_MODE`** — `off` (default) or
   `quick`. When `quick`, agim startup forks `cloudflared tunnel --url`
   pointing at the local web port and captures the assigned
   `https://*.trycloudflare.com` URL from its log output. The URL
   becomes the effective base for link building.
-- **Precedence**: `IMHUB_VIEWER_PUBLIC_BASE_URL` always wins when set.
+- **Precedence**: `AGIM_VIEWER_PUBLIC_BASE_URL` always wins when set.
   Tunnel is only used as a fallback. So operators can keep their
   static reverse proxy and only switch to tunnel during travel /
   testing without changing anything else.
@@ -4976,7 +4989,7 @@ Quick-tunnel URLs are ephemeral — they change every time cloudflared
 process (re)starts. Old `/v/:id` links in IM thus become dead after a
 restart. Operators who want permanent links should configure a static
 reverse proxy (cloudflared named tunnel, caddy, tailscale funnel,
-nginx, …) and set `IMHUB_VIEWER_PUBLIC_BASE_URL` instead. The
+nginx, …) and set `AGIM_VIEWER_PUBLIC_BASE_URL` instead. The
 auto-tunnel mode is intentionally a "zero-config fallback", not a
 recommended permanent deployment.
 
@@ -5027,7 +5040,7 @@ chmod +x ~/.agim/bin/cloudflared
 - **`GET /api/viewer{,/:id}`** + **`DELETE /api/viewer/:id`** —
   list / read / delete pastes from the dashboard or via curl.
 - **Permanent storage by default.** No TTL; rows are kept until
-  `IMHUB_VIEWER_MAX_PASTES` (default 10 000) is exceeded, at which
+  `AGIM_VIEWER_MAX_PASTES` (default 10 000) is exceeded, at which
   point oldest rows are LRU-pruned.
 - **Two-section envelope for agents.** Router prepends a small
   `[IM-render hint]` block to every prompt when the viewer is
@@ -5045,18 +5058,18 @@ chmod +x ~/.agim/bin/cloudflared
 
 | Env var | Default | Notes |
 |---|---|---|
-| `IMHUB_VIEWER_ENABLED` | `false` | Master switch. |
-| `IMHUB_VIEWER_PUBLIC_BASE_URL` | _(empty)_ | Your public URL pointing at this agim host, e.g. `https://agim.example.com`. Used to build the link placed in IM. |
-| `IMHUB_VIEWER_CHARS` | `500` | Char-count threshold above which routing to web kicks in. |
-| `IMHUB_VIEWER_LINES` | `12` | Line-count threshold. |
-| `IMHUB_VIEWER_CODE_LINES` | `10` | Single-fence code-block line threshold. |
-| `IMHUB_VIEWER_MAX_PASTES` | `10000` | Local SQLite row cap (LRU prune). |
+| `AGIM_VIEWER_ENABLED` | `false` | Master switch. |
+| `AGIM_VIEWER_PUBLIC_BASE_URL` | _(empty)_ | Your public URL pointing at this agim host, e.g. `https://agim.example.com`. Used to build the link placed in IM. |
+| `AGIM_VIEWER_CHARS` | `500` | Char-count threshold above which routing to web kicks in. |
+| `AGIM_VIEWER_LINES` | `12` | Line-count threshold. |
+| `AGIM_VIEWER_CODE_LINES` | `10` | Single-fence code-block line threshold. |
+| `AGIM_VIEWER_MAX_PASTES` | `10000` | Local SQLite row cap (LRU prune). |
 
 ### Notes
 
 - Reverse-proxy your agim web port (default 3000) to a public
   hostname via cloudflared / caddy / tailscale-funnel etc. Set
-  `IMHUB_VIEWER_PUBLIC_BASE_URL` to that hostname.
+  `AGIM_VIEWER_PUBLIC_BASE_URL` to that hostname.
 - Privacy posture: content is stored locally on your host only.
   The link uses an unguessable uuidv4 — treat it like a private
   share link.
@@ -5146,7 +5159,7 @@ chmod +x ~/.agim/bin/cloudflared
 
 ### Added — Agent-to-Agent Layer 2 (shared artifacts)
 
-- **File exchange between agents.** `mcp__imhub__call_agent` now accepts
+- **File exchange between agents.** `mcp__agim__call_agent` now accepts
   optional `inputs[]` and `expectOutputs[]` so caller and callee can
   hand off files instead of round-tripping bytes through prompts /
   results.
@@ -5166,9 +5179,9 @@ chmod +x ~/.agim/bin/cloudflared
   `fromCallerOutput` use `link(2)` when source and destination share a
   filesystem — near-zero cost for read-only inputs. Falls back to plain
   copy on EXDEV.
-- **Size caps**: `IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_FILE` (default 50 MB),
-  `IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_JOB` (200 MB),
-  `IMHUB_A2A_ARTIFACT_MAX_FILES_PER_JOB` (200). Failed setup fails the
+- **Size caps**: `AGIM_A2A_ARTIFACT_MAX_BYTES_PER_FILE` (default 50 MB),
+  `AGIM_A2A_ARTIFACT_MAX_BYTES_PER_JOB` (200 MB),
+  `AGIM_A2A_ARTIFACT_MAX_FILES_PER_JOB` (200). Failed setup fails the
   job before any tokens are spent.
 - **Retention follows the inline-job row.** When job-board's sweep
   deletes a row, `pruneArtifactsBatch` removes its directory. Fire-and-
@@ -5178,7 +5191,7 @@ chmod +x ~/.agim/bin/cloudflared
 
 ### Changed
 
-- `mcp__imhub__call_agent` description grew a paragraph documenting the
+- `mcp__agim__call_agent` description grew a paragraph documenting the
   L2 fields; existing L1 callers (no `inputs` / `expectOutputs`) keep
   the L1 string-in / string-out behavior unchanged.
 
@@ -5204,7 +5217,7 @@ chmod +x ~/.agim/bin/cloudflared
   - `/outbox failed` rows in `giving_up`.
   - `/outbox retry <id>` resurrect a `giving_up` row.
   - Retention: 24h after `delivered` / `giving_up`. Override with
-    `IMHUB_OUTBOX_RETENTION_HOURS`.
+    `AGIM_OUTBOX_RETENTION_HOURS`.
 - **Inline-job tracking.** Every inbound agent-bound message now creates
   a row in `jobs.db` with `kind='inline'`, going through the full
   lifecycle `pending → running → completed → delivered` (or `failed`).
@@ -5212,8 +5225,8 @@ chmod +x ~/.agim/bin/cloudflared
   recovery and A2A both rely on.
   - Visible in `/job list` and per-row in `/job check <id>`.
   - Retention: 24h (vs 30d for `kind='job'` rows from explicit `/job
-    create`). Override with `IMHUB_INLINE_JOB_RETENTION_HOURS`.
-  - Kill switch: `IMHUB_INLINE_JOB_TRACKING=0` disables creation; the
+    create`). Override with `AGIM_INLINE_JOB_RETENTION_HOURS`.
+  - Kill switch: `AGIM_INLINE_JOB_TRACKING=0` disables creation; the
     user reply path falls back to the unchanged in-memory pipeline.
 - **Crash-recovery flow.** When agim exits (SIGTERM/SIGINT/crash), any
   in-flight inline job is stamped `interrupted`. On startup, jobs
@@ -5224,24 +5237,24 @@ chmod +x ~/.agim/bin/cloudflared
     stamped `replaced_by=<new id>`.
   - Reply `2` → old row marked `cancelled`.
   - No reply → old row swept to `abandoned` by the next startup.
-  - Window override: `IMHUB_RECOVERY_WINDOW_MS` (default 600000).
+  - Window override: `AGIM_RECOVERY_WINDOW_MS` (default 600000).
 
 ### Added — Agent-to-Agent (A2A) Layer 1
 
-- **`mcp__imhub__call_agent` MCP tool.** A running agent (claude-code /
+- **`mcp__agim__call_agent` MCP tool.** A running agent (claude-code /
   opencode / codex / copilot) can now program-call another agent and
   wait for the result inside its own tool loop. The tool description
   uses imperative + Chinese trigger phrases so models invoke it
   naturally when the user says e.g. "用 codex 帮我跑 git status" or
   "ask opencode to run the tests".
 - **Guardrails enforced inside agim, not on the model**:
-  - `IMHUB_A2A_MAX_DEPTH` (default 3) — caps nested call chains.
+  - `AGIM_A2A_MAX_DEPTH` (default 3) — caps nested call chains.
   - Self-call ban — `claude-code` can't recursively call `claude-code`.
   - Workspace whitelist — callee must be in the caller's workspace
     `agents[]`. Caller's `userId` carries through.
-  - `IMHUB_A2A_TIMEOUT_DEFAULT_MS` (default 600_000) — accumulation
+  - `AGIM_A2A_TIMEOUT_DEFAULT_MS` (default 600_000) — accumulation
     timeout. Callee keeps running on timeout; caller stops waiting.
-  - Kill switch: `IMHUB_A2A_ENABLED=0` disables the whole feature.
+  - Kill switch: `AGIM_A2A_ENABLED=0` disables the whole feature.
 - **`/a2a stats | recent [N] | tree <id>`** — observability for A2A
   traffic. Each callee row is linked to its caller via `parent_id`
   + `call_depth`, so `/a2a tree <root>` renders the full chain.
@@ -5295,7 +5308,7 @@ chmod +x ~/.agim/bin/cloudflared
 
 - **Approval timeout default 30 min → 15 min.** Long enough for slow IM
   channels to round-trip a y/n; short enough to unblock downstream tools.
-  Override with `IMHUB_APPROVAL_TIMEOUT_MS`.
+  Override with `AGIM_APPROVAL_TIMEOUT_MS`.
 - **Agent child-process budget switched from 30-min hard total cap →
   60-min idle watchdog.** Every stdout / stderr chunk resets the timer,
   so slow human-in-the-loop approvals no longer eat the budget. A truly
@@ -5321,18 +5334,18 @@ chmod +x ~/.agim/bin/cloudflared
 
 ### Added
 
-- **`IMHUB_TIMEOUT_DEFAULT=allow | deny`** env (default `deny`) — what
+- **`AGIM_TIMEOUT_DEFAULT=allow | deny`** env (default `deny`) — what
   the bus returns when a normal-mode approval times out with no human
   reply. `allow` is "user away" mode. Hot-reloadable from the new Web
   Settings → **Approval Policy** card (no service restart needed).
-- **`IMHUB_AGENT_IDLE_TIMEOUT_MS`** global env + `${NAME}_IDLE_TIMEOUT_MS`
+- **`AGIM_AGENT_IDLE_TIMEOUT_MS`** global env + `${NAME}_IDLE_TIMEOUT_MS`
   per-agent override for the idle watchdog. `0` disables.
 - **`OPENCODE_IDLE_TIMEOUT_MS`** env for the opencode HTTP adapter.
 - **`humanizeFingerprint()`** — `/approval` listing and auto-allow
   receipts now render `命令 git status` / `目录 /tmp` / `主机 api.x.com`
   instead of leaking internal scheme prefixes (`cmd:`, `dir:`, `host:`).
 - Approval card timeout footer reads the live timeout + the effective
-  `IMHUB_TIMEOUT_DEFAULT` setting (e.g. `15min 未回 → 放行 · req XXX`),
+  `AGIM_TIMEOUT_DEFAULT` setting (e.g. `15min 未回 → 放行 · req XXX`),
   instead of hard-coded "5 分钟未回 = 拒绝".
 
 ### Fixed
@@ -5383,8 +5396,8 @@ chmod +x ~/.agim/bin/cloudflared
 ### Changed — debrand user-facing strings + docs to "agim"
 
 CLI help text, IM messenger adapter error messages, web server log
-lines, and command-palette titles now say `agim` instead of `im-hub`
-or `im-hub-pro`. All non-historical docs (README, deployment,
+lines, and command-palette titles now say `agim` instead of `agim`
+or `agim`. All non-historical docs (README, deployment,
 session-model, im-workspaces-guide, etc.) were rewritten accordingly,
 including default state-dir / workspace-dir path references
 (`~/.agim/`, `~/.agim-workspaces/`).
@@ -5392,27 +5405,27 @@ including default state-dir / workspace-dir path references
 ### Breaking — Web UI theme key
 
 The localStorage key for the Web UI dark/light theme preference changed
-from `im-hub-pro-theme` to `agim-theme`. Users will see their theme reset
+from `agim-theme` to `agim-theme`. Users will see their theme reset
 to system default once on first load after upgrade; re-select if desired.
 
 ### Kept for compatibility (intentionally not changed)
 
-The following surfaces still use the legacy `im-hub` / `im-hub-pro`
+The following surfaces still use the legacy `agim` / `agim`
 identifier and will not change without a major-version bump:
 
-- `im-hub-pro` npm bin alias (`/usr/local/bin/im-hub-pro` continues to
+- `agim` npm bin alias (`/usr/local/bin/agim` continues to
   resolve to the same CLI as `agim`).
-- `im-hub.service` systemd unit name — installations from the 0.x line
+- `agim.service` systemd unit name — installations from the 0.x line
   keep their existing unit file; v1.0+ fresh installs write
   `agim.service` and `cli-ui/service.ts` falls back to the legacy name.
-- `X-IM-Hub-Token` HTTP header on the ACP server (`acp-server.ts`).
-- WeChat `client_id: 'im-hub:…'` (IM-platform-side identifier).
-- `~/.im-hub/` data dir + `~/.im-hub-workspaces/` workspace root are
+- `X-Agim-Token` HTTP header on the ACP server (`acp-server.ts`).
+- WeChat `client_id: 'agim:…'` (IM-platform-side identifier).
+- `~/.agim/` data dir + `~/.agim-workspaces/` workspace root are
   still detected by `core/agim-paths.ts` as legacy fallback paths; v1.0+
   fresh installs land at `~/.agim/` and `~/.agim-workspaces/`.
 - `self-protect.ts` process-name regex still matches
-  `(agim|im-hub-pro|im-hub|dist/cli.js)`.
-- `npm uninstall -g agim-cli im-hub-pro im-hub` (in `cli-ui/cmd-handlers.ts`)
+  `(agim|agim|agim|dist/cli.js)`.
+- `npm uninstall -g agim-cli agim agim` (in `cli-ui/cmd-handlers.ts`)
   continues to clean up all three historical package names.
 
 ## [1.0.14] - 2026-05-13
@@ -5499,8 +5512,8 @@ who don't restart from WeChat see no behavioral difference.
 ### Removed — Safety card "Skip permissions" toggle
 
 The web /settings Safety card no longer exposes a toggle for
-`IMHUB_DANGEROUSLY_SKIP_PERMISSIONS`. The toggle was a footgun for the
-typical systemd deployment: im-hub runs as root, but Claude CLI itself
+`AGIM_DANGEROUSLY_SKIP_PERMISSIONS`. The toggle was a footgun for the
+typical systemd deployment: agim runs as root, but Claude CLI itself
 hard-refuses `--dangerously-skip-permissions` for uid=0 with
 
     claude-code failed (exit 1):
@@ -5515,7 +5528,7 @@ The env variable itself is **still honored** by the Claude adapter
 (`src/plugins/agents/claude-code/index.ts`). Non-root deployments that
 genuinely want the bypass can edit `~/.agim/env` manually:
 
-    IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1
+    AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1
 
 The Safety card now contains only the Admin Allowlist editor.
 
@@ -5542,14 +5555,14 @@ service mode BEFORE writing the pending file:
 
     pgrep -af dist/cli.js  # see surviving daemons
     pkill -9 -f dist/cli.js
-    systemctl reset-failed im-hub
-    systemctl restart im-hub
+    systemctl reset-failed agim
+    systemctl restart agim
 
 ## [1.0.10] - 2026-05-13
 
 ### Added — first-run admin onboarding
 
-The v1.0.9 denial message ("set IMHUB_ADMIN_USERS=… and restart") was
+The v1.0.9 denial message ("set AGIM_ADMIN_USERS=… and restart") was
 unfriendly to small / non-technical operators. v1.0.10 replaces it with
 a guided self-onboarding flow:
 
@@ -5565,15 +5578,15 @@ a guided self-onboarding flow:
         · Token regenerates on every restart while no admin is set.
    ```
 
-2. **Operator** sees this in `journalctl -u im-hub` (or `tail
-   ~/.im-hub/im-hub.log`), opens their own IM, and sends
+2. **Operator** sees this in `journalctl -u agim` (or `tail
+   ~/.agim/agim.log`), opens their own IM, and sends
    `/setup admin <token>` to the bot.
 
 3. **Bot** verifies the token, calls `promoteAdmin(platform, userId)`
    which:
    - Adds the entry to the in-memory allowlist (effective immediately,
      no restart required)
-   - Persists `IMHUB_ADMIN_USERS` to `~/.agim/env` so the next restart
+   - Persists `AGIM_ADMIN_USERS` to `~/.agim/env` so the next restart
      keeps it
    - Unlinks the token file (single-use)
    - Replies "✅ 你 (platform:userId) 已设为管理员"
@@ -5583,7 +5596,7 @@ a guided self-onboarding flow:
 
 ### Changed — smarter denial messages
 
-The blanket message in v1.0.9 ("IMHUB_ADMIN_USERS=… 然后重启服务") leaked
+The blanket message in v1.0.9 ("AGIM_ADMIN_USERS=… 然后重启服务") leaked
 internal env-var format to random visitors. v1.0.10 distinguishes:
 
 - **No admin at all** → "这个 bot 还没配置管理员。如果你是部署者：…
@@ -5616,7 +5629,7 @@ denial-message + intent/self-protect coverage from v1.0.9. Full suite:
 
 ### Migration
 
-- Existing deployments with `IMHUB_ADMIN_USERS` already set: nothing
+- Existing deployments with `AGIM_ADMIN_USERS` already set: nothing
   changes. Token file is auto-cleaned at startup since admins exist.
 - New deployments: the bootstrap banner is the entry point. No more
   manual env editing required for the typical operator onboarding.
@@ -5628,7 +5641,7 @@ denial-message + intent/self-protect coverage from v1.0.9. Full suite:
 A new opt-in lets the operator turn off every approval prompt for Claude
 Code, by setting:
 
-    IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1
+    AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1
 
 When set, the Claude Code adapter launches with
 `--dangerously-skip-permissions` and skips both the approval-bus pipeline
@@ -5644,8 +5657,8 @@ respects PreToolUse hooks).
 
 1. `opts.planMode` → `--permission-mode plan` (read-only wins over bypass —
    you explicitly asked for an exploratory pass).
-2. `IMHUB_DANGEROUSLY_SKIP_PERMISSIONS=1` → `--dangerously-skip-permissions`.
-3. `IMHUB_APPROVAL_DISABLED=1` or no IM context or bus down →
+2. `AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1` → `--dangerously-skip-permissions`.
+3. `AGIM_APPROVAL_DISABLED=1` or no IM context or bus down →
    `--permission-mode dontAsk` (unchanged).
 4. Default IM-routed → `--permission-mode default --permission-prompt-tool …`
    (unchanged).
@@ -5819,11 +5832,11 @@ just means "no IM channels," not "secretly start WeChat anyway."
 
 Agim 的 web 控制台（端口 3000）不再有任何内建鉴权机制：
 
-- 删除 `/login` 页面、`POST /api/auth/login` 端点、`imhub_session` cookie
+- 删除 `/login` 页面、`POST /api/auth/login` 端点、`agim_session` cookie
 - 删除 `~/.agim/web-token` 的自动创建（web 端不再读写此文件）
-- 删除 `IMHUB_WEB_REQUIRE_AUTH` 环境变量
+- 删除 `AGIM_WEB_REQUIRE_AUTH` 环境变量
 - 静态页面 / `/api/*` / `/events` / WebSocket 升级都不再做 token / cookie 校验
-- 前端代码删除所有 `X-IM-Hub-Token` header 注入与 `window.IMHUB_TOKEN` 引用
+- 前端代码删除所有 `X-Agim-Token` header 注入与 `window.AGIM_TOKEN` 引用
 
 **访问控制责任完全交给上游**——反向代理、防火墙、SSH 隧道、Tailscale /
 WireGuard 等。把 web 控制台暴露到 `0.0.0.0` 时务必先在 nginx / Caddy 上加一层
@@ -5834,7 +5847,7 @@ Basic Auth 或 OAuth2 Proxy；不要直接 HTTP 暴露公网。
 ACP server 是给第三方 agent 程序化调用的接口，仍走 bearer-token：
 
 - token 文件改为 `~/.agim/acp-token`（自动生成）
-- 0.x 部署的 `~/.agim/web-token` / `~/.im-hub/web-token` 仍被识别为
+- 0.x 部署的 `~/.agim/web-token` / `~/.agim/web-token` 仍被识别为
   legacy 回退路径，已有 ACP 调用方不会断
 - 删除 token 文件 + 重启服务即可轮换
 
@@ -5842,37 +5855,37 @@ ACP server 是给第三方 agent 程序化调用的接口，仍走 bearer-token�
 
 - 0.x → 1.0.2 升级：旧 `web-token` 文件留在那里也没事（web 端忽略它，ACP
   仍读它做 legacy fallback）；可手动删除。
-- 任何 `X-IM-Hub-Token` header 在 web 端会被静默忽略；脚本调用 `/api/*`
+- 任何 `X-Agim-Token` header 在 web 端会被静默忽略；脚本调用 `/api/*`
   现在直接成功，**前提是你已经在反代层加了访问控制**。
 
 ## [1.0.1] - 2026-05-12
 
-### Changed — config / workspace dir auto-detect (~/.agim/ vs ~/.im-hub/)
+### Changed — config / workspace dir auto-detect (~/.agim/ vs ~/.agim/)
 
 Follow-up to the v1.0.0 rebrand: the on-disk root is now resolved at
-startup rather than hard-coded to `~/.im-hub/`. New module
+startup rather than hard-coded to `~/.agim/`. New module
 `src/core/agim-paths.ts` exports `AGIM_HOME` and `AGIM_WORKSPACES`,
 computed once with this priority:
 
-1. `$AGIM_HOME` / `$AGIM_WORKSPACES` env override (legacy `$IMHUB_HOME`
+1. `$AGIM_HOME` / `$AGIM_WORKSPACES` env override (legacy `$AGIM_HOME`
    spelling also honored).
 2. `~/.agim/` (or `~/.agim-workspaces/`) if the directory exists — new
    canonical name in v1.0+.
-3. `~/.im-hub/` (or `~/.im-hub-workspaces/`) if the directory exists —
+3. `~/.agim/` (or `~/.agim-workspaces/`) if the directory exists —
    legacy 0.x layout. Picked up automatically so upgraded users keep
    their data in place with **zero migration**.
 4. Default to `~/.agim/` (or `~/.agim-workspaces/`) for fresh installs.
 
 That means:
-- **Upgraded 0.x user** → `agim` finds the existing `~/.im-hub/`, uses
+- **Upgraded 0.x user** → `agim` finds the existing `~/.agim/`, uses
   it. memos.db / reminders.db / sessions/ / wechat-credentials.json all
   stay where they are; nothing is moved.
 - **Fresh installer on a clean box** → `agim` creates `~/.agim/`.
 - **User who manually moves data** to `~/.agim/` later → `agim` switches
   to it automatically on next start.
 
-Every hard-coded `join(homedir(), '.im-hub', ...)` and
-`'.im-hub-workspaces'` literal across the codebase (22 files,
+Every hard-coded `join(homedir(), '.agim', ...)` and
+`'.agim-workspaces'` literal across the codebase (22 files,
 ~30 call sites) was replaced with the resolved root. Modules touched:
 `cli.ts`, `web/server.ts`, `core/onboarding.ts`, `core/audit-log.ts`,
 `core/job-board.ts`, `core/schedule.ts`, `core/session.ts`,
@@ -5887,14 +5900,14 @@ literal.
 
 ## [1.0.0] - 2026-05-12
 
-### Changed — Brand rename: `im-hub-pro` → **Agim · 阿吉姆**
+### Changed — Brand rename: `agim` → **Agim · 阿吉姆**
 
 Product upgrade to v1.0 ships under a new brand:
 
 - **English name**: `Agim` (Agent + IM, with a hint of "agile")
 - **Chinese name**: `阿吉姆`
-- **CLI command**: `agim` (was `im-hub-pro`)
-- **npm package**: `agim-cli` (was `im-hub-pro`). npm's anti-typosquat
+- **CLI command**: `agim` (was `agim`)
+- **npm package**: `agim-cli` (was `agim`). npm's anti-typosquat
   policy rejected the unscoped name `agim` (too similar to existing
   `ai`/`aegir`/`gm`), so we ship as `agim-cli` and the installed binary
   is still `agim` — the package name only affects the install command
@@ -5906,33 +5919,33 @@ Cross-cutting policy:
 |------------------------------------------------------|--------------------|--------|
 | npm package name                                     | `agim`             | renamed |
 | CLI bin command                                      | `agim`             | renamed |
-| Old CLI bin command                                  | `im-hub-pro`       | **kept as alias** in the same package — existing systemd units, shell aliases, scripts continue to work |
+| Old CLI bin command                                  | `agim`       | **kept as alias** in the same package — existing systemd units, shell aliases, scripts continue to work |
 | Console banner / help text / wizard titles           | `Agim` / `阿吉姆`   | renamed |
-| Config dir                                           | `~/.im-hub/`       | **unchanged** for backwards compat with all 0.x installs |
-| Workspace dir                                        | `~/.im-hub-workspaces/` | **unchanged** |
-| Env vars                                             | `IMHUB_*`          | **unchanged** |
-| HTTP header                                          | `X-IM-Hub-Token`   | **unchanged** |
-| systemd unit name                                    | `agim.service` preferred | **legacy `im-hub.service` is still recognised** by detection / restart / stop / uninstall code paths |
+| Config dir                                           | `~/.agim/`       | **unchanged** for backwards compat with all 0.x installs |
+| Workspace dir                                        | `~/.agim-workspaces/` | **unchanged** |
+| Env vars                                             | `AGIM_*`          | **unchanged** |
+| HTTP header                                          | `X-Agim-Token`   | **unchanged** |
+| systemd unit name                                    | `agim.service` preferred | **legacy `agim.service` is still recognised** by detection / restart / stop / uninstall code paths |
 
 What this means for users:
 - New install: `npm install -g agim` → use `agim …` commands.
 - Existing 0.x install: stays working unchanged. Optional upgrade is just
-  `npm uninstall -g im-hub-pro && npm install -g agim`; everything else
-  (config, env, data) is untouched. The old `im-hub-pro` bin command
+  `npm uninstall -g agim && npm install -g agim`; everything else
+  (config, env, data) is untouched. The old `agim` bin command
   continues to be installed by the new package, so your systemd unit
-  `ExecStart=/usr/local/bin/im-hub-pro start` keeps running.
+  `ExecStart=/usr/local/bin/agim start` keeps running.
 
 Files touched (non-exhaustive):
-- `package.json` — name + bin (with `im-hub-pro` alias) + version 1.0.0 + description + keywords
+- `package.json` — name + bin (with `agim` alias) + version 1.0.0 + description + keywords
 - `src/cli.ts` — banner, program name, help text, comments
 - `src/cli-ui/i18n.ts` — every wizard title / status / uninstall string in
   both EN and 中文
 - `src/cli-ui/service.ts` — accepts either `agim.service` or
-  `im-hub.service`; `pgrep` matches both bin names
+  `agim.service`; `pgrep` matches both bin names
 - `src/cli-ui/cmd-handlers.ts` — restart / uninstall walk both unit paths
 - `README.md` + `README.zh-CN.md` — full top-section rewrite, install
   commands, migration guide, version history
-- imhub-site repo — separate brand rollout for the marketing site
+- agim-site repo — separate brand rollout for the marketing site
 
 ## [0.6.3] - 2026-05-12
 
@@ -5952,13 +5965,13 @@ the per-platform "what coord system did the payload arrive in?" policy:
 
 | Source                                | Default                 | Override |
 |---------------------------------------|-------------------------|----------|
-| Telegram native location              | WGS-84 pass-through     | `IMHUB_TELEGRAM_COORDS_GCJ02=1` (iOS-zh-CN users) |
+| Telegram native location              | WGS-84 pass-through     | `AGIM_TELEGRAM_COORDS_GCJ02=1` (iOS-zh-CN users) |
 | Feishu native location                | GCJ-02 → WGS-84         | (server-mandated, no override) |
 | DingTalk `link` msgtype, amap.com URL | GCJ-02 → WGS-84         | — |
 | DingTalk `link` msgtype, qq.com URL   | GCJ-02 → WGS-84         | — |
 | DingTalk `link` msgtype, baidu.com URL| **BD-09 → WGS-84** (new)| — |
 | DingTalk `link` msgtype, unknown host | WGS-84 pass-through     | — |
-| H5 `/memo here` browser geolocation   | WGS-84 pass-through     | `IMHUB_H5_COORDS_GCJ02=1` (iOS Safari users) |
+| H5 `/memo here` browser geolocation   | WGS-84 pass-through     | `AGIM_H5_COORDS_GCJ02=1` (iOS Safari users) |
 
 Two **default flips** vs. the old behavior:
 1. Telegram: was always GCJ→WGS, now pass-through. Telegram Desktop +
@@ -6016,7 +6029,7 @@ survive multi-minute agent runs. OpenAPI works for any send.
 | msgtype on wire | Payload location | Adapter behavior |
 |---|---|---|
 | `text` | `text.content` | Pass through to agent (no change) |
-| `picture` | `content.downloadCode` | Download via `/v1.0/robot/messageFiles/download` (the `pictureDownloadCode` field looks tempting but returns 500 — reserved for a different endpoint we don't use). Save under `~/.im-hub/media/dingtalk/<thread>/<msgId>.<ext>`. Append `[图片附件：<path>]` to user text. claude-code's Read tool sees the JPG. |
+| `picture` | `content.downloadCode` | Download via `/v1.0/robot/messageFiles/download` (the `pictureDownloadCode` field looks tempting but returns 500 — reserved for a different endpoint we don't use). Save under `~/.agim/media/dingtalk/<thread>/<msgId>.<ext>`. Append `[图片附件：<path>]` to user text. claude-code's Read tool sees the JPG. |
 | `audio` | `content.downloadCode` + `content.recognition` | **Prefer the server-side ASR transcript in `recognition`** (zero latency, better Mandarin accuracy than whisper.cpp base model). Still download the source AMR for archive/replay. Fall back to whisper.cpp only when `recognition` is missing. |
 | `link` | `link.messageUrl` | Try `tryExtractLatLng()` on the URL (handles Amap, Tencent QMap, generic `?lat=&lng=`, `?location=lat,lng`). On hit → stash in `location-context`, next user text gets the GPS prefix injected. |
 | `file` | `content.downloadCode` | Acknowledge only (PDF / Word handling is a separate effort) |
@@ -6029,7 +6042,7 @@ files land at `msgAB2pLyIgOgo6bJXw9mWAtA__.jpg` and the path-injection
 guard in `saveDingTalkMedia()` doesn't reject them.
 
 **Config** — `{ dingtalk: { clientId, clientSecret } }` in
-`~/.im-hub/config.json`. `clientId` doubles as `robotCode` for
+`~/.agim/config.json`. `clientId` doubles as `robotCode` for
 stream-mode internal apps; we also cache the most-recent `robotCode`
 from inbound messages for robustness against multi-bot setups.
 
@@ -6056,7 +6069,7 @@ keep existing" for ClientSecret.
 ## [0.5.2] - 2026-05-11
 
 > 0.5.0 introduced the bilingual wizard but 0.5.1 hands-on showed it had
-> regressed real functionality vs. the old `im-hub-pro config <component>`
+> regressed real functionality vs. the old `agim config <component>`
 > flows — checkbox-only selection couldn't issue WeChat QR codes, prompt
 > for Telegram tokens, probe agent CLI installs, etc. 0.5.2 restores all
 > of that work inside the new arrow-key UI, plus fixes a pile of paper-
@@ -6069,7 +6082,7 @@ with the real configuration work the legacy flow did:
 
 - **WeChat (iLink)** — `Configure` scans QR via
   `ILinkWeChatAdapter.startQRLogin()` + `waitForQRLogin()`; on success the
-  credentials persist to `~/.im-hub/wechat-credentials.json` (existing
+  credentials persist to `~/.agim/wechat-credentials.json` (existing
   adapter path) and `wechat-ilink` is added to `cfg.messengers`. Re-running
   re-issues a fresh QR.
 - **Telegram** — prompts for bot token (hidden) + channel id. On
@@ -6105,25 +6118,25 @@ default exists is auto-promoted to default.
 
 ### Added — env reads now find values wherever they actually live
 
-The wizard previously only read `~/.im-hub/env` for SMTP / Baidu prefill,
+The wizard previously only read `~/.agim/env` for SMTP / Baidu prefill,
 so machines where those keys were set in the systemd unit's
 `Environment=` lines (the common install pattern from before the wizard
 existed) showed `(unset)` even though everything was working at runtime.
 New `readEffectiveEnv()` falls back through three sources for read:
 
-1. `~/.im-hub/env` (canonical, what the wizard writes)
+1. `~/.agim/env` (canonical, what the wizard writes)
 2. `process.env` (shell-exported)
-3. `/etc/systemd/system/im-hub.service` — parsed `Environment=` lines
+3. `/etc/systemd/system/agim.service` — parsed `Environment=` lines
    (file is world-readable on standard installs, so works for the user's
-   shell-invoked `im-hub-pro config`)
+   shell-invoked `agim config`)
 
 Writes still go to the env file only. When `hasProcessEnvOverride(key)`
 detects a wizard-managed key that's set somewhere outside the env file,
 the SMTP / Baidu save path prints a one-line warning:
 
 ```
-⚠️  IMHUB_BAIDU_MAP_AK is also set by the running environment (systemd
-unit / shell export). Saving to ~/.im-hub/env alone will NOT change the
+⚠️  AGIM_BAIDU_MAP_AK is also set by the running environment (systemd
+unit / shell export). Saving to ~/.agim/env alone will NOT change the
 active value — update the unit file or `unset` the shell export first.
 ```
 
@@ -6177,24 +6190,24 @@ this is the actual first published 0.5.x release.
 
 ## [0.5.0] - 2026-05-11
 
-> **核心主题**：`im-hub-pro` CLI 升级成"运维主入口"——双语 + 上下键交互向导 + 完整服务生命周期管理（status / start --bg / restart / stop / uninstall）。SMTP 和百度地图 AK 终于进入 `config` 一站式配置。
+> **核心主题**：`agim` CLI 升级成"运维主入口"——双语 + 上下键交互向导 + 完整服务生命周期管理（status / start --bg / restart / stop / uninstall）。SMTP 和百度地图 AK 终于进入 `config` 一站式配置。
 
 ### Added — 双语交互式 `config` 向导
-之前 `im-hub-pro config` 是 per-component 的命令行参数式配置（`config wechat` / `config telegram` / ...），界面是纯 `readline.question` 文本提示，新用户摸不着头脑。
+之前 `agim config` 是 per-component 的命令行参数式配置（`config wechat` / `config telegram` / ...），界面是纯 `readline.question` 文本提示，新用户摸不着头脑。
 
 新增基于 `@inquirer/prompts` 的交互向导：
-- **语言选择**：首次进入弹出 EN / 中文 选择器，记忆到 `~/.im-hub/cli-lang`，下次进入回车即可
+- **语言选择**：首次进入弹出 EN / 中文 选择器，记忆到 `~/.agim/cli-lang`，下次进入回车即可
 - **5 个分类**（每个分类内部支持 ← Back 回根菜单）：
   1. **IM 渠道** — 多选 checkbox：微信 / Telegram / 飞书 / Discord / 邮件
   2. **AI Agent** — 多选 + 选默认 agent（Claude Code / OpenCode / Codex / Copilot）
   3. **远程 ACP agent** — 列表 + 新增 / 编辑 / 删除，支持 Bearer token 认证（输入隐藏）
-  4. **SMTP**（新增）— 4 个预设（Gmail / Outlook / QQ / 163）+ Custom + Skip；写到 `~/.im-hub/env`（chmod 600）
-  5. **百度地图 AK**（新增）— 输入 / 清除，写到 `~/.im-hub/env`
+  4. **SMTP**（新增）— 4 个预设（Gmail / Outlook / QQ / 163）+ Custom + Skip；写到 `~/.agim/env`（chmod 600）
+  5. **百度地图 AK**（新增）— 输入 / 清除，写到 `~/.agim/env`
 - **Per-spawn 持久化**：SMTP 密码、Baidu AK 一输入就落盘，wizard 半途崩了不丢
-- 旧的 `im-hub-pro config <component>` 路径保留兼容
+- 旧的 `agim config <component>` 路径保留兼容
 
-### Added — bare `im-hub-pro` → 运维入口菜单
-直接敲 `im-hub-pro`（无参）不再 dump help。改成弹出 8 项菜单：
+### Added — bare `agim` → 运维入口菜单
+直接敲 `agim`（无参）不再 dump help。改成弹出 8 项菜单：
 - Configure
 - Show status
 - Start (foreground / background)
@@ -6209,11 +6222,11 @@ this is the actual first published 0.5.x release.
 
 | Command | 行为 |
 |---|---|
-| `im-hub-pro status` | 探测 systemd / background daemon / foreground；显示 pid + uptime + Web URL |
-| `im-hub-pro start --bg` | 后台启动（nohup + setsid + pid 文件 + 日志到 `~/.im-hub/im-hub.log`）；裸 `start` 仍前台 |
-| `im-hub-pro restart` | 自动选 systemctl restart 或 bg daemon 重启 |
-| `im-hub-pro stop` | 自动选 systemctl stop 或 SIGTERM bg pid + cleanup pid 文件 |
-| `im-hub-pro uninstall` | 双重确认后：停服务 → 卸载 npm 包 → 删 config.json + env + pid + systemd 单元；**保留 `~/.im-hub-workspaces/`** |
+| `agim status` | 探测 systemd / background daemon / foreground；显示 pid + uptime + Web URL |
+| `agim start --bg` | 后台启动（nohup + setsid + pid 文件 + 日志到 `~/.agim/agim.log`）；裸 `start` 仍前台 |
+| `agim restart` | 自动选 systemctl restart 或 bg daemon 重启 |
+| `agim stop` | 自动选 systemctl stop 或 SIGTERM bg pid + cleanup pid 文件 |
+| `agim uninstall` | 双重确认后：停服务 → 卸载 npm 包 → 删 config.json + env + pid + systemd 单元；**保留 `~/.agim-workspaces/`** |
 
 **跨平台后台启动**：Linux / macOS / WSL2 都走 `nohup`+detach 路径。macOS 上想真正开机自启仍要自己写 launchd plist（CHANGELOG 后续版本可加）。
 
@@ -6223,7 +6236,7 @@ this is the actual first published 0.5.x release.
 - `src/cli-ui/lang-picker.ts` — 语言选择 + 持久化
 - `src/cli-ui/config-wizard.ts` — 5 个分类的向导主体
 - `src/cli-ui/service.ts` — `detectService()` / `spawnBackground()` / `stopService()` / `formatUptime()`
-- `src/cli-ui/env-file.ts` — 增量更新 `~/.im-hub/env`（merge-update + chmod 600）
+- `src/cli-ui/env-file.ts` — 增量更新 `~/.agim/env`（merge-update + chmod 600）
 - `src/cli-ui/cmd-handlers.ts` — status / start / stop / restart / uninstall 实现
 - `src/cli-ui/entry-menu.ts` — bare invocation 用的入口菜单
 - `src/cli-ui/paths.ts` — 共享路径常量
@@ -6238,15 +6251,15 @@ this is the actual first published 0.5.x release.
 - `@inquirer/prompts ^8.4.3` — modern interactive prompts (上下键 / Space / 输入隐藏)。~80KB 加到 dist。
 
 ### Migration notes
-- 老用户升级：`npm install -g im-hub-pro@0.5.0`。已有 `~/.im-hub/config.json` 全部兼容，新增 SMTP / Baidu 配置可以走新向导补充
-- 想跳过新向导：`im-hub-pro config wechat` / `config telegram` 等老路径仍然能用
-- 后台启动取代了之前文档里推荐的 `nohup im-hub-pro start &` 写法
+- 老用户升级：`npm install -g agim@0.5.0`。已有 `~/.agim/config.json` 全部兼容，新增 SMTP / Baidu 配置可以走新向导补充
+- 想跳过新向导：`agim config wechat` / `config telegram` 等老路径仍然能用
+- 后台启动取代了之前文档里推荐的 `nohup agim start &` 写法
 
 ## [0.4.0] - 2026-05-11
 
 > **核心主题（两条）**：
 >
-> 1. **codex 也接 imhub MCP**——/remind 4 工具 + /memo 5 工具，9 个全部对它开放。三大 agent（claude-code / opencode / codex）功能对等。
+> 1. **codex 也接 agim MCP**——/remind 4 工具 + /memo 5 工具，9 个全部对它开放。三大 agent（claude-code / opencode / codex）功能对等。
 > 2. **位置消息架构统一化**——Telegram / 飞书的原生位置消息原本走「pending-reply + 启发式拆词」决策链，bug 频出。新版改成 agent-driven：adapter 只缓存坐标，cli.ts 注入结构化 annotation 到用户下一条文本，agent 用 LLM 决策。删除 ~400 行启发式代码，4 个 IM 渠道行为完全一致。
 
 ### Refactored — Telegram + 飞书位置消息走 agent-driven 决策（对齐 WeChat H5 流程）
@@ -6271,32 +6284,32 @@ this is the actual first published 0.5.x release.
 - 任何长句、短词、混合表达都不再走启发式：「这是我公司」「记下日料店」「不用记了」「这是哪里」都自然处理
 - 每个 pin 后续消息额外付出一次 agent 调用（旧版是 deterministic 直存）；用稳定性换费用
 
-### Added — codex 也能用 imhub MCP 工具
+### Added — codex 也能用 agim MCP 工具
 （这一段已在 0.4.0-rc1 时落地，下面是 rc1 的内容）
 
 之前 codex 是唯一一个 reminder/memo 工具完全无法触达的 agent，因为 codex CLI 没有 `--mcp-config` flag。验证发现 codex 0.130.0+ 支持通过 `-c mcp_servers.<name>.{command,args,env}=...` 的 TOML 内联 override 在调用层注册 MCP server——per-spawn、不污染全局 `~/.codex/config.toml`。
 
 实现：
 
-- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID`，已经 channel-agnostic）。
-- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`IMHUB_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context 任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
+- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `AGIM_APPROVAL_SOCK + AGIM_RUN_ID`，已经 channel-agnostic）。
+- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`AGIM_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context 任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
 - **`codex exec resume` 不再接 `-s`**（codex 0.130 改的）：resume 路径继承原会话 sandbox，传 `-s` 直接 `unexpected argument` 报错。修复：sandbox flag 仅在 fresh `exec` 加。
-- **`--dangerously-bypass-approvals-and-sandbox`**：codex 在 `exec --json` 非交互模式下默认会 auto-cancel 所有 MCP 工具调用（找不到 TUI 让用户点 approve）。这个 flag 是 codex 0.130 目前唯一让 MCP 工具在非交互模式下能实际运行的方式。代价是 codex 自己的 bash/edit 也失去 sandbox。提供 `IMHUB_CODEX_SAFE_MODE=1` opt-out（代价：MCP 工具不可用）。
-- **AGENTS.md 写明命名差异**：claude-code/opencode 暴露 `mcp__imhub__save_memo`；codex 暴露 bare name `save_memo`。模型按错名调用会静默失败。
+- **`--dangerously-bypass-approvals-and-sandbox`**：codex 在 `exec --json` 非交互模式下默认会 auto-cancel 所有 MCP 工具调用（找不到 TUI 让用户点 approve）。这个 flag 是 codex 0.130 目前唯一让 MCP 工具在非交互模式下能实际运行的方式。代价是 codex 自己的 bash/edit 也失去 sandbox。提供 `AGIM_CODEX_SAFE_MODE=1` opt-out（代价：MCP 工具不可用）。
+- **AGENTS.md 写明命名差异**：claude-code/opencode 暴露 `mcp__agim__save_memo`；codex 暴露 bare name `save_memo`。模型按错名调用会静默失败。
 
 **版本下限**：codex CLI ≥ 0.130.0（`mcp` 子命令 + `-c mcp_servers.*` TOML override 同时存在的最早稳定版）。
 
-**不在范围**：codex 自己的 Read/Edit/Bash 走 approval-bus——需要把 codex 跑成 `codex mcp-server` 让 im-hub 当 MCP client，是 v0.5.x 级别的大重构。
+**不在范围**：codex 自己的 Read/Edit/Bash 走 approval-bus——需要把 codex 跑成 `codex mcp-server` 让 agim 当 MCP client，是 v0.5.x 级别的大重构。
 
 ## [0.3.1] - 2026-05-11
 
-### Added — codex 也能用 imhub MCP 工具
+### Added — codex 也能用 agim MCP 工具
 之前 codex 是唯一一个 reminder/memo 工具完全无法触达的 agent，因为 codex CLI 没有 `--mcp-config` flag。验证发现 codex 0.130.0+ 支持通过 `-c mcp_servers.<name>.{command,args,env}=...` 的 TOML 内联 override 在调用层注册 MCP server——per-spawn、不污染全局 `~/.codex/config.toml`。
 
 实现：
 
-- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `IMHUB_APPROVAL_SOCK + IMHUB_RUN_ID`，已经 channel-agnostic）。
-- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`IMHUB_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context（threadId+platform+channelId）任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
+- **`src/plugins/agents/codex/build-mcp-cli-args.ts`**：纯函数，输入 `{sockPath, runId}`，输出 6 个 argv entries（3 对 `-c key=value`）。TOML 转义走 `JSON.stringify` 兼容 basic-string 语法。共享 claude-code 那个 `mcp-approval-server.js`（同一个二进制读 `AGIM_APPROVAL_SOCK + AGIM_RUN_ID`，已经 channel-agnostic）。
+- **`codex/index.ts` 的 `prepareCommand`**：fallback 三道闸——`AGIM_APPROVAL_DISABLED=1` / `approvalBus.getSocketPath()` 空 / 无 IM context（threadId+platform+channelId）任一不满足就降级到无 MCP 模式，codex 仍能正常调用。命中时生成 UUID runId → `approvalBus.registerRun(runId, ...)` → MCP `-c` 参数前置到 argv 头部（codex 的 clap 要求全局参数在 `exec` 之前）→ `cleanup` 在 spawn 退出后 `unregisterRun`。
 - **测试**：39 个新单测覆盖 builder（argv shape + TOML 双引号/反斜杠/UUID/空格路径 escaping）+ adapter（fallback 三道、happy path、runId 嵌入、cleanup、cwd+planMode+resume 与 MCP -c 共存、并发产生不同 runId）。
 
 **仍然不做**：
@@ -6338,7 +6351,7 @@ this is the actual first published 0.5.x release.
 - 17 单测覆盖 short/heuristic/fallback 各路径 + emoji / 中英混合 / 长句不卷死等 adversarial 输入
 
 ### Fixed — 中国境内坐标双重偏移（影响 Telegram + 飞书 + H5 三条路径）
-**根因**：iOS Core Location（Apple，iOS 7+）和 Android Google Play Services 都会在中国境内**主动**把 WGS-84 偏移成 GCJ-02 才交给应用层（合规要求）。Telegram / 飞书 / 浏览器 `navigator.geolocation` 都吃这个偏移，传给 im-hub 时已经是 GCJ-02。我们当 WGS-84 存入库，构 amap URL 时再做一次 WGS→GCJ-02 = 双重偏移，~500m-1km。
+**根因**：iOS Core Location（Apple，iOS 7+）和 Android Google Play Services 都会在中国境内**主动**把 WGS-84 偏移成 GCJ-02 才交给应用层（合规要求）。Telegram / 飞书 / 浏览器 `navigator.geolocation` 都吃这个偏移，传给 agim 时已经是 GCJ-02。我们当 WGS-84 存入库，构 amap URL 时再做一次 WGS→GCJ-02 = 双重偏移，~500m-1km。
 
 **修复**：
 
@@ -6355,8 +6368,8 @@ this is the actual first published 0.5.x release.
 ### Fixed — Venue title 在 where_label 中保留
 之前 cli.ts pending consumer 写 `where_label` 时是 `venueAddress ?? venueLabel`——`??` 让 venueAddress 优先，title 就被丢了。Telegram venue 通常两者都有（"黄龙国际中心" + "学院路77号"），title 是用户最容易认出的那条。改成 `[venueLabel, venueAddress].filter(Boolean).join(' · ')`，两者都存，搜任一 token 都能命中。回复卡片同步加一行 `📍 <title> · <address>` 让用户看见保留。
 
-### Site (separate repo: imhub-site)
-不直接绑 npm 包，但同期 imhub-site 跑了一波 optimization pass：
+### Site (separate repo: agim-site)
+不直接绑 npm 包，但同期 agim-site 跑了一波 optimization pass：
 
 - 一键安装命令分 Linux / macOS / Windows 三 tab（同一份 install.sh，uname 自检；Windows 走 WSL2）
 - `curl ... | bash` 改 `bash -c "$(curl ...)"`：macOS bash 3.2 + /dev/tty 重连不稳的 pipe 形式换成 Homebrew 同款
@@ -6371,7 +6384,7 @@ this is the actual first published 0.5.x release.
 > **核心主题**：`/location` 升级为通用 `/memo`（5W1H 持久记忆库），地图服务从腾讯切到百度，opencode HTTP driver 修复 SSE-broken 回归。这是个有意义的里程碑——位置只是 5W1H 中的一个轴。
 
 ### Fixed — opencode HTTP driver: SSE 不发事件时从 POST body 拿文本
-opencode 1.14.45+ 在新的 `node-http-server` runtime 下 `/event` SSE 只发首个 `server.connected` 然后再不广播任何 bus 事件（`message.part.updated` / `session.idle` 全丢），导致 im-hub 这边收 0 字节，用户在微信里看到「opencode无回复」。
+opencode 1.14.45+ 在新的 `node-http-server` runtime 下 `/event` SSE 只发首个 `server.connected` 然后再不广播任何 bus 事件（`message.part.updated` / `session.idle` 全丢），导致 agim 这边收 0 字节，用户在微信里看到「opencode无回复」。
 
 直 curl 复现：POST `/session/:id/message` 这个 endpoint 现在改成阻塞直至 LLM 完成，把整条 assistant message 同步以 JSON 还回来。我们就拿这个：
 
@@ -6384,7 +6397,7 @@ opencode 1.14.45+ 在新的 `node-http-server` runtime 下 `/event` SSE 只发�
 新增 3 单测覆盖：drained-only / SSE+POST 同 part 的 dedupe / `drainResponseBody` 的过滤逻辑。35/35 adapter 测试全过。
 
 ### Added — 部署脚本自动重启 opencode
-`/root/.claude/bgjobs/scripts/imhub-deploy.sh` 末尾加一段：im-hub 重启完成后如果检测到 `opencode serve --port 14199` 还在跑，调 `opencode-restart.sh` 把它弹一遍，让新 daemon 继承当前 shell 的 `IMHUB_APPROVAL_SOCK`（im-hub 每次重启会换 socket hash，旧 daemon 还指向旧 socket → MCP 工具调用会回「后台消息服务不可用」）。一行钩子，一劳永逸。
+`/root/.claude/bgjobs/scripts/agim-deploy.sh` 末尾加一段：agim 重启完成后如果检测到 `opencode serve --port 14199` 还在跑，调 `opencode-restart.sh` 把它弹一遍，让新 daemon 继承当前 shell 的 `AGIM_APPROVAL_SOCK`（agim 每次重启会换 socket hash，旧 daemon 还指向旧 socket → MCP 工具调用会回「后台消息服务不可用」）。一行钩子，一劳永逸。
 
 ### Added — 给 place-like memo 主动追问坐标
 agent 落库一条「老孙家」「公司新址」这种**明显是地点但用户没给坐标**的 memo 后，会反问一句「要不要顺带补个坐标？」给三个选项（现在抓 GPS / 告地址解析 / 不用）。`save_memo` tool description 里写死的 PROACTIVE FOLLOW-UP 段。同一段还硬塞一份 TOOL INVENTORY 列表（5 个 memo 工具），并明令「不准跟用户说工具下线了」——之前 agent 在 location→memo 重命名后偶尔会胡说「位置工具已下线」。
@@ -6409,7 +6422,7 @@ agent 落库一条「老孙家」「公司新址」这种**明显是地点但用
    - schema 里 `created_at` / `updated_at` 默认值改为 `datetime('now', '+8 hours')`（兜底，正常路径 JS 会显式设）
    - tool description 里 `when_at` / `when_after` / `when_before` 都说明：**Asia/Shanghai (UTC+8)，"YYYY-MM-DD HH:MM:SS"，不要带 T 也不要 Z**
    - 11 新增单测覆盖：nowSqliteLocal 形状 / toSqliteLocal +8h shift / normalizeWhenAt 各路径（Z / +08:00 / 已 local / null / unparseable）/ created_at 实际写入 UTC+8 / sweep 用 UTC+8 比较
-   - 时区可调：`IMHUB_TZ_OFFSET_HOURS` env，默认 8（其他时区部署只改这一个就行）
+   - 时区可调：`AGIM_TZ_OFFSET_HOURS` env，默认 8（其他时区部署只改这一个就行）
 
 ### Changed — opencode agent 系统提示也加上 memo 工具
 opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提了 reminder 那 4 个工具，现在加上 memo 那 5 个 (`save_memo` / `search_memos` / `update_memo` / `delete_memo` / `request_location_capture`) 一起列出，并补一段 timezone 说明。这样 opencode 通过 HTTP daemon mode 跑时也知道要带 `_im_context` + 用 UTC+8。
@@ -6458,12 +6471,12 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 - 调整三处用户可见输出：
   - `POST /api/loc` 推回的"✅ 已记录" 消息列出 3 条链接
   - `/location show <id>` 命令详情列出 3 条
-  - `mcp__imhub__save_location` 和 `list_locations` 工具返回结构加 `mapUrls: { baidu, amap, google }` 字段；旧 `mapUrl`（百度）保留向后兼容
+  - `mcp__agim__save_location` 和 `list_locations` 工具返回结构加 `mapUrls: { baidu, amap, google }` 字段；旧 `mapUrl`（百度）保留向后兼容
   - MCP 工具描述告诉 agent 优先把三条都展示给用户挑
 
 ### Changed — 地图服务从腾讯切到百度
 - **地理编码**：`apis.map.qq.com/ws/geocoder/v1/` → `api.map.baidu.com/geocoding/v3/`，强制 `ret_coordtype=wgs84ll`（百度默认返 BD-09，必须显式拉 WGS-84 才和浏览器 `navigator.geolocation` 一致——否则存库坐标 vs 浏览器坐标 50–500m 飘移）
-- **凭据 env**：`IMHUB_TENCENT_MAP_KEY` / `IMHUB_TENCENT_MAP_SK` → `IMHUB_BAIDU_MAP_AK`（默认 key 流程不需要 SN 签名；如以后开启 SN 校验，文档说明在 `src/core/locations.ts` 头注释里）
+- **凭据 env**：`AGIM_TENCENT_MAP_KEY` / `AGIM_TENCENT_MAP_SK` → `AGIM_BAIDU_MAP_AK`（默认 key 流程不需要 SN 签名；如以后开启 SN 校验，文档说明在 `src/core/locations.ts` 头注释里）
 - **地图 URI scheme**：默认从 `apis.map.qq.com/uri/v1/marker?...` 改为 `api.map.baidu.com/marker?location=lat,lng&coord_type=wgs84&...`（注意 `coord_type=wgs84` 关键，否则百度按 BD-09 解读飘 50–500m）
 - 错误码分类重写：百度状态码体系不同（200/201/202 = 签名 / Referer / IP；401-405 = 配额；1-4 = 找不到/参数错；5/210/211/220/240 = 各种权限 / 配额家族）
 - **腾讯 SK 签名代码移除**：`signTencent` 函数 + 4 条相关单测删除。Baidu 默认 key 流程不需要签名；如以后开启 SN 校验，算法是 `MD5(URLencode(path?qs+sk))`（与腾讯的 `MD5(path?raw_qs+sk)` 不同 —— 多一步整体 URL 编码），实现可参考头注释
@@ -6483,7 +6496,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
    → bus → location-rpc → 发 token + 返 URL
    → claude 回用户 "好的，点开链接授权: <url>"
    → 用户点 → H5 显示 "正在记录: 车" → 授权 → POST → 写库
-   → im-hub fire-and-forget 推回 "✅ 已记录'车' lat,lng [地图]"
+   → agim fire-and-forget 推回 "✅ 已记录'车' lat,lng [地图]"
   ```
   ```
   用户 "我的车在哪" → claude 调 list_locations({query:'车'})
@@ -6503,11 +6516,11 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 - **架构权衡**：放弃了 `remind-intent.ts` 那种"消息流前置正则探测器"模式。reminder 的 detector 是历史遗留，每条消息都跑一次额外 LLM 调用（就是修过 80s→3s 那个性能问题的祸根）。location 直接让 agent 看工具描述自己判断，零额外 LLM 调用、零误触代价、对话上下文连续。
 
 ### Added — `/location here` 浏览器 GPS 捕获
-- 新子命令 `/location here [备注]` 或 `/location 当前 [备注]`：bot 回一个一次性 HTTPS 链接，用户在 WeChat 内置浏览器点开，授权后 H5 页面调 `navigator.geolocation.getCurrentPosition` 把坐标 POST 回 im-hub，im-hub 写库 + 推回 IM 线程。
+- 新子命令 `/location here [备注]` 或 `/location 当前 [备注]`：bot 回一个一次性 HTTPS 链接，用户在 WeChat 内置浏览器点开，授权后 H5 页面调 `navigator.geolocation.getCurrentPosition` 把坐标 POST 回 agim，agim 写库 + 推回 IM 线程。
 - 数据流：`/location here` → 内存 token store 发 32 hex token (10 min TTL，single-shot) → 用户点 URL → `GET /loc?t=...` 渲 H5 → 用户授权 → `POST /api/loc { t, lat, lng, accuracy }` → 验 token → 写 `location_memos`（source=`browser`）→ messenger.sendMessage 把"✅ 位置已收到 + 地图链接"回推到原线程。
-- **默认 base URL**：`https://agent.iclaw.host`（公共托管入口）。自托管用户可设 `IMHUB_LOC_BASE_URL=https://your-host` 覆盖。OSS 用户没有 HTTPS endpoint 时可继续用坐标输入路径。
+- **默认 base URL**：`https://agent.iclaw.host`（公共托管入口）。自托管用户可设 `AGIM_LOC_BASE_URL=https://your-host` 覆盖。OSS 用户没有 HTTPS endpoint 时可继续用坐标输入路径。
 - 新建 `src/core/location-token.ts`：内存 Map，60s 一次的 sweep timer 清过期；test/diagnostic 钩子 `_pendingCount` `_clearAll` `_stopSweep`。
-- 新建 `src/web/public/loc.html`：单页 H5（无构建依赖、纯内联 CSS+JS），蓝主题与 imhub-site 视觉一致。错误分支覆盖：缺 token / 浏览器不支持 / 用户拒绝授权 / 网络错误。
+- 新建 `src/web/public/loc.html`：单页 H5（无构建依赖、纯内联 CSS+JS），蓝主题与 agim-site 视觉一致。错误分支覆盖：缺 token / 浏览器不支持 / 用户拒绝授权 / 网络错误。
 - 新增 `src/web/server.ts` 公开路由 `GET /loc` + `POST /api/loc`，放在 auth gate 之前（token 即凭证）。`POST /api/loc` 失败时分类回 410（链接过期 / 已使用）/ 400（参数错）；写库/dispatch 是 fail-soft，不阻塞 H5 端 200 响应。
 - **agent.iclaw.host 部署**：路由复用现有 :3000，CDN 必须配路径白名单只放行 `/loc` 与 `/api/loc`，其他路径（`/tasks` `/reminders` `/api/*`）必须在 CDN 层 404，否则操作员控制台会被外网暴露。
 - 7 单测 `location-token.test.ts`：issue/consume 圆环、单次消费、过期回收（Date.now stub）、多 token 独立、跨用户隔离。
@@ -6515,12 +6528,12 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 ### Added — `/location` 位置备忘（基础版）
 - 新 slash 命令 `/location`（别名 `/loc` `/位置`）：记录"在 X 位置干了 Y 事"型备忘。
 - **零依赖坐标输入**：`/location 39.908,116.397 [备注]` —— 支持 `,` `，` 或空格分隔，负数支持。
-- **可选地址解析**：`/location 国贸三期 [备注]`，需配置 `IMHUB_TENCENT_MAP_KEY`（[lbs.qq.com](https://lbs.qq.com) 注册免费 key）。无 key 时给友好错误提示，引导用户用坐标路径。
-- **腾讯地图 SK 签名支持**：开启了"WebServiceAPI 强制签名校验"的 key 配 `IMHUB_TENCENT_MAP_SK`，自动 MD5 签名。算法：参数按 key 字典序排序、用未 URL-encode 的原值拼 `k=v&...`、与 `path?qs+SK` 整体 MD5 → 32 位 lowercase hex。已对照官方 API 实测验证。
+- **可选地址解析**：`/location 国贸三期 [备注]`，需配置 `AGIM_TENCENT_MAP_KEY`（[lbs.qq.com](https://lbs.qq.com) 注册免费 key）。无 key 时给友好错误提示，引导用户用坐标路径。
+- **腾讯地图 SK 签名支持**：开启了"WebServiceAPI 强制签名校验"的 key 配 `AGIM_TENCENT_MAP_SK`，自动 MD5 签名。算法：参数按 key 字典序排序、用未 URL-encode 的原值拼 `k=v&...`、与 `path?qs+SK` 整体 MD5 → 32 位 lowercase hex。已对照官方 API 实测验证。
 - **细分错误反馈**：地理编码失败按状态码分类（`signature`/`quota`/`not_found`/`http`/`unknown`），命令直接告诉用户是配额满了还是签名错了或地址不对。
 - 子命令：`list [N]` / `show <id>` / `delete <id>` / `help`，全部 per-user owner-scoped（同 `/remind` `/cron` 模式）。
 - **地图链接回显**：每条记录附 `https://apis.map.qq.com/uri/v1/marker?...` URI，WeChat 内置浏览器/地图 App 可直接唤起。
-- 数据：`~/.im-hub/locations.db`（路径可通过 `IMHUB_LOCATIONS_DB` 覆盖），fail-soft via 现有 `sqlite-helper`。
+- 数据：`~/.agim/locations.db`（路径可通过 `AGIM_LOCATIONS_DB` 覆盖），fail-soft via 现有 `sqlite-helper`。
 - 18 单测：坐标解析（中文逗号 / 负数 / 范围校验）、地图 URL 构建、地理编码 env 探测、SK 签名（含 reference fixture）、CRUD 全流程 + owner scoping。
 - **不包含**：浏览器 geolocation 链接（Phase 2，要求 HTTPS endpoint），LLM 自然语言识别（Phase 3）。
 
@@ -6533,7 +6546,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 
 ### Added — 只读工具自动放行（默认开启）
 - 新增 `READONLY_TOOLS` 短路：`Read` / `Grep` / `Glob` / `LS` / `NotebookRead` 这 5 个 Claude Code 原生只读工具的审批请求在 `approval-bus._registerPending` 入口被直接放行——不建 pending、不通知、不写 IM 卡片。零 IM 往返，给 LLM 自由探索代码而不打扰用户。
-- 全局开关：`IMHUB_AUTOALLOW_READONLY=0`（默认 1）关闭。
+- 全局开关：`AGIM_AUTOALLOW_READONLY=0`（默认 1）关闭。
 - per-thread 开关：`/approval readonly off|on`（别名 `/approval ro`）。仅本会话内存生效，重启后回到全局默认。
 - 审计：每次短路写一行 `approval.bus.readonly_auto_allow` info log，并在 metrics 新增 `totalReadonlyAutoAllowed` 计数。
 - `/approval`（无参）和 `/approval readonly` 都会显示当前状态行 `🛡 只读自动放行：开启 ...`。
@@ -6597,7 +6610,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 **Agent MCP 工具（提醒兜底创建）**
 - 4 个工具：`create_reminder` / `list_reminders` / `cancel_reminder` / `snooze_reminder`
 - claude-code：复用现有 `--mcp-config` per-spawn 注入
-- opencode (stdio)：`prepareCommand` 注入 `IMHUB_RUN_ID` extraEnv，全局 `mcp.imhub` config 自动注册
+- opencode (stdio)：`prepareCommand` 注入 `AGIM_RUN_ID` extraEnv，全局 `mcp.agim` config 自动注册
 - opencode (http)：常驻 daemon 共享 MCP server，agent-asserted `_im_context` 兜底（**单用户限定**——agent 可伪造身份）
 - codex：未实施（`codex exec` 不支持外部 MCP）
 
@@ -6607,13 +6620,13 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 
 ### Added — 邮件投递通道
 - 注册为 `email` messenger（`threadId` 即邮箱地址）
-- nodemailer + Gmail / QQ / 163 / 任意 SMTP（env：`IMHUB_SMTP_HOST/PORT/USER/PASS/FROM/SECURE`）
+- nodemailer + Gmail / QQ / 163 / 任意 SMTP（env：`AGIM_SMTP_HOST/PORT/USER/PASS/FROM/SECURE`）
 - `/remind email <addr> <time> <text>` 内联 / `/remind bindemail` 绑定默认 / `/remind email <time> <text>` 走默认
 - 邮件 + 循环 + LLM 润色组合自由
 
 ### Added — WeChat context_token 持久化
 - iLink Bot API 30 分钟 context_token TTL 之前只存内存，重启即丢，导致循环提醒在 wechat 端高概率失败
-- 新 SQLite 表（`~/.im-hub/wechat-context.db`），收消息时写穿，启动时 warm 内存 Map，cleanup 同步清 DB
+- 新 SQLite 表（`~/.agim/wechat-context.db`），收消息时写穿，启动时 warm 内存 Map，cleanup 同步清 DB
 
 ### Schema migrations
 新建 / 扩展三张表（在 `reminders.db` 内）：
@@ -6642,7 +6655,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 ### Added — WeChat & Telegram rich media support
 
 - **WeChat 图片 / 文件 / 语音 / 视频接收**：`handleIncomingMessage` 现在处理 iLink `item_list` 的全部 5 种类型（TEXT=1, IMAGE=2, VOICE=3, FILE=4, VIDEO=5），此前只处理 TEXT。
-  - **图片**：通过 iLink CDN 下载到 `~/.im-hub/media/wechat/<userId>/`，转为 `[图片附件：/path]` 标记传递给 Agent
+  - **图片**：通过 iLink CDN 下载到 `~/.agim/media/wechat/<userId>/`，转为 `[图片附件：/path]` 标记传递给 Agent
   - **语音**：优先使用微信自带转写（`voice_item.text`），无转写时下载音频后走 OpenAI Whisper 或 whisper.cpp（复用 `src/core/transcribe.ts`）
   - **文件**：下载并保留原始文件名，显示大小，转为 `[文件附件：/path (name, size)]`
   - **视频**：下载并显示时长和大小，转为 `[视频附件：/path (duration, size)]`
@@ -6671,7 +6684,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 - **审批总线 composite key 测试同步**：P0 #4 把 `ApprovalBus` 的内部 keying 从裸 threadId 改成 `platform:channelId:threadId`，但单元测试仍然按裸 `'thread-A'` 调 `hasPendingFor` / `resolvePending`，导致 `bun test` 红 37 项。所有相关测试（approval-bus、synthetic、router、approval 命令、mcp-approval、opencode-http、discord）改用 `threadKey()` 显式构造 composite，注释中误导性的 "backward compat" 承诺一并删除。
 - **Claude session 标记顺序回归**：P1 #5 把 `markClaudeSessionPrimed` 从 `routeMessage` 之前挪到了之后；如果 claude 已写出 jsonl 但 run 中途出错，下一轮就会用 `--session-id` 而不是 `--resume`，触发 "session already exists"。0.2.33 把 markPrimed 移回 `onAgentResolved` 内部、紧跟 `setClaudeSessionId`，恢复"先 mark 再调 adapter"的语义。
 - **Cookie 加固**：`web.public_bind_warning` 改在 server 启动时打一次（之前每次登录都打）；`Set-Cookie` 在 public bind 或 `X-Forwarded-Proto: https` 时自动附加 `Secure`，纯 localhost dev 不加。
-- **静态页测试改写**：原 `/tasks` 用例还在断言 `IMHUB_TOKEN` 注入到 HTML，改成走真实流程：未登录 302 到 `/login`，POST `/api/auth/login` 拿 cookie 后 200，断言 HTML 中不再含 token。
+- **静态页测试改写**：原 `/tasks` 用例还在断言 `AGIM_TOKEN` 注入到 HTML，改成走真实流程：未登录 302 到 `/login`，POST `/api/auth/login` 拿 cookie 后 200，断言 HTML 中不再含 token。
 - **死代码清理**：`editCardOnThreadResolution` 的 thread-scan fallback 在 composite key 下永远 miss，删掉；签名从 `(threadId, info, decision, by)` 缩为 `(info, decision, by)`。
 - **小项**：`web/server.ts` 删未使用的 `lstat` import；`settings.html` toast 调用末尾被误删的 `;` 补回。
 - **测试 flake 修复**：`test/integration/acp-server.test.ts` 在全套并发下被 `intent.test.ts` 注册的空-yield 子代理污染（router intent fallback 到 opencode → 返回 ''）。ACP 测试在 `beforeAll` 重新注册 4 个 profile 名同名 stub 让其也产出内容。
@@ -6687,8 +6700,8 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 
 ### Release
 
-- 重新发布生产硬化修复到 npm，确保生产环境通过 `npm install -g im-hub-pro@0.2.31` 可以拿到 v0.2.30 严格代码审查后的全部修复。
-- 包含子任务会话隔离、WebSocket 入站串行化、session 元数据写锁、安全默认值加固、release/CI 门禁收紧，以及 `im-hub-pro --version` 跟随 `package.json` 的修复。
+- 重新发布生产硬化修复到 npm，确保生产环境通过 `npm install -g agim@0.2.31` 可以拿到 v0.2.30 严格代码审查后的全部修复。
+- 包含子任务会话隔离、WebSocket 入站串行化、session 元数据写锁、安全默认值加固、release/CI 门禁收紧，以及 `agim --version` 跟随 `package.json` 的修复。
 
 ---
 
@@ -6701,10 +6714,10 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 - **WebSocket 入站串行化**：Web Chat 同一浏览器连接上的多条消息按顺序逐条进入 `routeMessage`，降低快速连发时 Agent 子进程并行、历史乱序和流式回复交错风险。
 - **Session 元数据写锁**：`patchSession`、usage roll-up、Claude/OpenCode/Codex session id setters、subtask counter/update、agent switch/reset 等读改写路径纳入 per-key lock；`nextSubtaskId` 并发调用保持唯一递增。
 - **安全默认值**：
-  - Web 控制台默认监听 `127.0.0.1`；需要对外暴露时显式设置 `IMHUB_WEB_BIND=0.0.0.0`，建议放在 HTTPS 反代后。
-  - `~/.im-hub/config.json` 写入时强制 `0600`，目录创建使用 `0700`。
+  - Web 控制台默认监听 `127.0.0.1`；需要对外暴露时显式设置 `AGIM_WEB_BIND=0.0.0.0`，建议放在 HTTPS 反代后。
+  - `~/.agim/config.json` 写入时强制 `0600`，目录创建使用 `0700`。
   - Telegram 媒体下载的 `curl` 保留 `--location` 但加 `--max-redirs 0`，拒绝跟随重定向到任意主机。
-- **CLI 版本号**：`im-hub-pro --version` 改为读取包内 `package.json`，不再硬编码旧值（之前可能输出 `0.2.18`）。
+- **CLI 版本号**：`agim --version` 改为读取包内 `package.json`，不再硬编码旧值（之前可能输出 `0.2.18`）。
 
 ### Build / release
 
@@ -6720,38 +6733,38 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 
 ## [0.2.26] - 2026-05-08
 
-### Changed — Rebrand to `im-hub-pro`
+### Changed — Rebrand to `agim`
 
-- **npm 包名**：`im-hub` → `im-hub-pro`（产品化分支）。
-- **CLI 命令**：`im-hub` → `im-hub-pro`（`bin` 字段同步更新）。
-- **仓库 URL**：`package.json.repository.url` 从原作者 `ceociocto/im-hub` 切到当前仓库 `benking007/imhub`，新增 `homepage` / `bugs` / `publishConfig{access:public,provenance:true}` 字段。
-- **Web 控制台品牌**：`/`、`/tasks`、`/settings` 三个静态页的浏览器标题、欢迎语、左上角 logo、Settings 卡里的 `im-hub config wechat` 提示文案，全部改为 `im-hub-pro`。
-- **README + README.zh-CN**：`What's new` / 安装命令 / Quick Start / CLI 命令表 / Project Structure ASCII 树标签，全部改为新品牌；新增「Migrating from `im-hub`」回退指引。
+- **npm 包名**：`agim` → `agim`（产品化分支）。
+- **CLI 命令**：`agim` → `agim`（`bin` 字段同步更新）。
+- **仓库 URL**：`package.json.repository.url` 从原作者 `ceociocto/agim` 切到当前仓库 `benking007/agim`，新增 `homepage` / `bugs` / `publishConfig{access:public,provenance:true}` 字段。
+- **Web 控制台品牌**：`/`、`/tasks`、`/settings` 三个静态页的浏览器标题、欢迎语、左上角 logo、Settings 卡里的 `agim config wechat` 提示文案，全部改为 `agim`。
+- **README + README.zh-CN**：`What's new` / 安装命令 / Quick Start / CLI 命令表 / Project Structure ASCII 树标签，全部改为新品牌；新增「Migrating from `agim`」回退指引。
 - **LICENSE 文件**：补齐 MIT 全文（之前 `package.json` 声明 MIT 但根目录无 LICENSE 文件），版权归属保持 `Jerry`。
-- **`THEME_KEY`**：localStorage 主题 key 从 `im-hub-theme` → `im-hub-pro-theme`（用户在升级后第一次访问会丢失主题偏好；其他 localStorage key `im-hub-lang` / `im-hub-history` 保留以保住语言与对话历史）。
+- **`THEME_KEY`**：localStorage 主题 key 从 `agim-theme` → `agim-theme`（用户在升级后第一次访问会丢失主题偏好；其他 localStorage key `agim-lang` / `agim-history` 保留以保住语言与对话历史）。
 
 ### Unchanged — drop-in compat
 
-为了让老用户 `npm uninstall -g im-hub && npm install -g im-hub-pro` 后零迁移成本运行：
-- **配置目录**：`~/.im-hub/`、`~/.im-hub-workspaces/<agent>/` 路径不变
-- **环境变量**：60+ 处 `IMHUB_*` 前缀不变
-- **HTTP 头**：`X-IM-Hub-Token` / `x-im-hub-token` 不变
-- **Window 全局**：`window.IMHUB_TOKEN` 不变
-- **ACP 服务名**：`im-hub-gateway` 不变（线上 ACP 客户端通过这个名字 discover）
-- **MCP 测试 fixture**：`mcpServers.imhub` 不变
-- **内部 client ID**：`im-hub:${ts}` 格式不变
+为了让老用户 `npm uninstall -g agim && npm install -g agim` 后零迁移成本运行：
+- **配置目录**：`~/.agim/`、`~/.agim-workspaces/<agent>/` 路径不变
+- **环境变量**：60+ 处 `AGIM_*` 前缀不变
+- **HTTP 头**：`X-Agim-Token` / `x-agim-token` 不变
+- **Window 全局**：`window.AGIM_TOKEN` 不变
+- **ACP 服务名**：`agim-gateway` 不变（线上 ACP 客户端通过这个名字 discover）
+- **MCP 测试 fixture**：`mcpServers.agim` 不变
+- **内部 client ID**：`agim:${ts}` 格式不变
 
 ### Notes
 
-- 发布走 npm OIDC trusted publishing（`release.yml` 不需要改），首次发布前需在 npmjs.com 上为 `im-hub-pro` 配置 trusted publisher 指向 `benking007/imhub` 仓库 + `release.yml` workflow。
-- 老 `im-hub@0.2.25` 包在 npmjs.com 上保持不动，可继续安装。
+- 发布走 npm OIDC trusted publishing（`release.yml` 不需要改），首次发布前需在 npmjs.com 上为 `agim` 配置 trusted publisher 指向 `benking007/agim` 仓库 + `release.yml` workflow。
+- 老 `agim@0.2.25` 包在 npmjs.com 上保持不动，可继续安装。
 
 ---
 
 ## [0.2.23] - 2026-05-07
 
 ### Added — Web console PR-D
-- **Agent workspace 文件浏览器**：`/tasks` 新增 **Files** tab，只读浏览 `~/.im-hub-workspaces/<agent>/`（CLAUDE.md / AGENTS.md / 临时笔记等）。左侧目录树 + 右侧文件预览，点目录进入、点文件预览，文件 1 MiB 上限 + 二进制（首 8 KB NUL 探测）走 base64。后端 `GET /api/workspace-files?agent=&path=` 双重防 traversal：agent 必须在 `registry.listAgents()` 白名单，路径必须等于或位于 `defaultAgentCwd(agent)` base 之下，否则 400。
+- **Agent workspace 文件浏览器**：`/tasks` 新增 **Files** tab，只读浏览 `~/.agim-workspaces/<agent>/`（CLAUDE.md / AGENTS.md / 临时笔记等）。左侧目录树 + 右侧文件预览，点目录进入、点文件预览，文件 1 MiB 上限 + 二进制（首 8 KB NUL 探测）走 base64。后端 `GET /api/workspace-files?agent=&path=` 双重防 traversal：agent 必须在 `registry.listAgents()` 白名单，路径必须等于或位于 `defaultAgentCwd(agent)` base 之下，否则 400。
 - **Job 批量操作**：Jobs tab 加多选 checkbox + 全选表头 + 隐藏式批量工具栏（Run selected / Cancel selected）；选中态跨刷新保留——按可见行 reconcile，不会被 list mutation 抹掉。后端新 `POST /api/jobs/batch-cancel` / `batch-run` 接受 `{ ids: number[] }`（最多 100），per-id 结果不互相阻断。
 
 ### Changed
@@ -6764,7 +6777,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 - **SSE 实时事件流**：新建 `src/core/event-bus.ts`——进程内 publish/subscribe，4 类事件（`audit` / `approval` / `job` / `metrics`），200 条 ring buffer。新连接 replay 一次避免空白等待。
 - **`GET /events` 端点**：token 走 `?token=...`（EventSource 不支持自定义 header），25s 心跳防 nginx idle close，listener 错误在 `publish()` 内吞掉避免拖坏起源动作。
 - **Dashboard 实时刷新**：`tasks.html` 用 `EventSource('/events?token=...')`，事件触发 `refreshIfVisible(paneId, loader)` 只刷可见 tab；轮询保留作为 fallback。`approval requested` 事件让 Approvals tab 标签闪一下高亮（动态注入的 CSS keyframe）。
-- **Workspace 完整 CRUD UI**：`settings.html` 新增 Workspaces 卡片，列表 + 新增 / 编辑 / 删除表单（id 锁定防误改、default 行不可删）。后端 `GET /api/workspaces?full=1` / `POST` upsert / `PATCH /:id` / `DELETE /:id`，每次 mutation persist 回 `~/.im-hub/config.json`。
+- **Workspace 完整 CRUD UI**：`settings.html` 新增 Workspaces 卡片，列表 + 新增 / 编辑 / 删除表单（id 锁定防误改、default 行不可删）。后端 `GET /api/workspaces?full=1` / `POST` upsert / `PATCH /:id` / `DELETE /:id`，每次 mutation persist 回 `~/.agim/config.json`。
 - `WorkspaceRegistry.remove(id)` 拒绝 `'default'`，`listFull()` 返回完整 `WorkspaceConfig[]`（含 member ids）。
 
 ## [0.2.21] - 2026-05-07
@@ -6778,7 +6791,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 
 ### Added — Web console PR-A
 - **三态主题**：light / dark / system 三档循环切换，按钮在 head 加载完前同步应用 `:root[data-theme]`，避免主题闪烁。`prefers-color-scheme: dark` 仅在 `data-theme` 缺失（system 模式）时生效。语言 + 主题偏好都落在 localStorage。
-- **错误边界**：新建 `src/web/public/_app.js`——`window.imhub` 命名空间提供 `theme` / `i18n` / `api` / `showError`，自动安装 `window.onerror` + `unhandledrejection` 监听，让脚本错误以浮层形式可见，不再静默死掉。
+- **错误边界**：新建 `src/web/public/_app.js`——`window.agim` 命名空间提供 `theme` / `i18n` / `api` / `showError`，自动安装 `window.onerror` + `unhandledrejection` 监听，让脚本错误以浮层形式可见，不再静默死掉。
 - **In-chat 审批卡**：`/` 聊天界面收到工具审批请求时弹出 inline 卡片（Allow / Deny / Allow + Auto），点击通过 WS `approval-action` 走回 `approvalBus.resolvePending()`，跟 Telegram inline-button 同一条路径。
 - `approval-router` 默认 `buttonCallbackPlatforms` 加 `'discord'` / `'web'`；新导出 `bindButtonHandlerForPlatform(platform)` 给延迟注册的 messenger（web 是其中之一）调用，避免 install-before-register 时序问题。
 
@@ -6820,7 +6833,7 @@ opencode http adapter 的 `buildImContextInstruction` system prompt 之前只提
 ### Fixed — P2 web/HTTP hardening
 - **M1** 静态页响应头：`X-Frame-Options: DENY` / `X-Content-Type-Options: nosniff` / `Referrer-Policy: no-referrer` / Content-Type 加 `charset=utf-8` / CSP 锁第三方资源（`script-src` / `style-src` 暂留 `'unsafe-inline'`，nonce 化留 P3）。
 - **M2** Prometheus 标签基数白名单：`KNOWN_INTENTS = {default,explicit,fallback,llm,topic,keyword,sticky}`、`KNOWN_PLATFORMS = {telegram,feishu,wechat,discord,web,acp,acp-server,rest,rest-msg}`，命中外的桶到 `'other'`。
-- **M3** WS 连接上限：默认 100，env `IMHUB_MAX_WS_CLIENTS` 覆盖；超限时 `1013 Try Again Later`。
+- **M3** WS 连接上限：默认 100，env `AGIM_MAX_WS_CLIENTS` 覆盖；超限时 `1013 Try Again Later`。
 - **M4** `/api/health` 改为 token gate 之前公开（k8s liveness 友好）。
 - **M11** ACP 测试入口的 `JSON.parse` 包 `try/catch` + endpoint 类型校验，错误 body 落 400 而非 500。
 
@@ -6863,21 +6876,21 @@ P0 + P1 安全收口，配 `docs/code-review-2026-05-06-main.md`。
 
 ### Fixed — P0 hotfix
 - **H1** Web REST/WS token 比较切到 `crypto.timingSafeEqual`，抽 `src/utils/safe-equal.ts` 与 `acp-server.ts` 共用。
-- **H2** `serveIndexHtml` 用 `JSON.stringify(token)` 注入 `window.IMHUB_TOKEN`，防 token 含 `'` / `</script>` 破坏 JS 字面量。
-- **H3** Schedule `notify_url` SSRF 防护：`validateWebhookUrl` 白名单 `http(s)`、黑名单 RFC1918 / loopback / link-local / CGNAT / IPv6 ULA / fe80::；`IMHUB_ALLOW_PRIVATE_WEBHOOKS=1` 显式 opt-in；fetch 加 10s `AbortSignal` + `redirect: 'manual'` + 64 KiB 响应上限；`createSchedule` 与 `fireSchedule` 双层校验。
+- **H2** `serveIndexHtml` 用 `JSON.stringify(token)` 注入 `window.AGIM_TOKEN`，防 token 含 `'` / `</script>` 破坏 JS 字面量。
+- **H3** Schedule `notify_url` SSRF 防护：`validateWebhookUrl` 白名单 `http(s)`、黑名单 RFC1918 / loopback / link-local / CGNAT / IPv6 ULA / fe80::；`AGIM_ALLOW_PRIVATE_WEBHOOKS=1` 显式 opt-in；fetch 加 10s `AbortSignal` + `redirect: 'manual'` + 64 KiB 响应上限；`createSchedule` 与 `fireSchedule` 双层校验。
 - **H8** `settings.html` ACP 测试按钮：原代码 `const res` 重复声明 + 引用未定义 `endpoint`/`auth`，整页脚本 SyntaxError，功能必坏。改读 `agent.endpoint` / `agent.auth`。
-- **H10** Telegram bot token 不再随错误日志泄露：`logger.ts` 加 `redact.paths`（`*.token` / `*.botToken` / `*.apiKey` / `headers.authorization` / `x-im-hub-token` 等）；图片 / 语音下载 catch 路径用本地 `scrub()` 把 token 字面量替换 `[REDACTED]`，覆盖 curl stderr 带回 URL 的场景。
+- **H10** Telegram bot token 不再随错误日志泄露：`logger.ts` 加 `redact.paths`（`*.token` / `*.botToken` / `*.apiKey` / `headers.authorization` / `x-agim-token` 等）；图片 / 语音下载 catch 路径用本地 `scrub()` 把 token 字面量替换 `[REDACTED]`，覆盖 curl stderr 带回 URL 的场景。
 
 ### Fixed — P1 runtime hardening
 - **H4** `RateLimiter` bucket 无界：`allow()` 内置 `maybeSweep`，每 30 min 机会式触发 cleanup（不引入 `setInterval` timer）；新增 `size()` 诊断访问器。
-- **H6** Job result 大小：`resolveMaxResultBytes()` 默认 1 MiB，env `IMHUB_JOB_RESULT_MAX_BYTES` 覆盖；超过 cap 整 chunk 丢弃（边界落在 UTF-8/JSON 事件分隔上），尾部拼 truncation footer，落 warn `event: 'job.result.truncated'`。
+- **H6** Job result 大小：`resolveMaxResultBytes()` 默认 1 MiB，env `AGIM_JOB_RESULT_MAX_BYTES` 覆盖；超过 cap 整 chunk 丢弃（边界落在 UTF-8/JSON 事件分隔上），尾部拼 truncation footer，落 warn `event: 'job.result.truncated'`。
 - **H9** WeChat 凭证文件权限：`saveCredentials` 用 `mkdir(.., {mode:0o700})` + `writeFile(.., {mode:0o600})`；`loadCredentials` 读时 `stat`，松权落 warn 提示用户 `chmod 600`（不主动改老文件）。
 - **H11** Approval socket 路径熵 + 权限：`defaultSocketPath` 改用 `randomBytes(16).toString('hex')`（128 位熵），listen 后 `chmod 0o600` + `stat` 验证；防同主机非特权用户预占 socket 的 TOCTOU。
 - **H12** `Session.addMessage` 并发：`SessionManager` 加 `writeQueues<key, Promise>` + `withLock<T>(key, fn)`，per-key 串行化 RMW，跨 thread 仍并行。
 
 ### Fixed — P1 multi-tenant ACL
 - **H5** `/job` `/schedule` `/audit` 命令补 owner 隔离：`jobs` / `schedules` 表加 `creator_id` / `workspace_id`（幂等 `ALTER TABLE`，老库无痛升级）；`createJob` / `createSchedule` 接 `{ creatorId, workspaceId }` 由 handler 注入；查询/取消/删/启停加 `OwnerOpts`，`creator_id = ? OR creator_id = ''`（老库 `''` 对所有 owner 可见，避免升级当天列表看似消失）；`/audit user=<other>` 强制 overwrite 到 `ctx.userId`，结果末尾追加忽略提示。
-- **H7** Job 表 retention：`resolveRetentionDays()` 默认 30 天，env `IM_HUB_JOB_RETENTION_DAYS` 覆盖；`pruneOldJobs()` 删 `completed`/`failed`/`cancelled` 超期行，`pending`/`running` 永不修剪；启动跑一次 + 每 6h `setInterval(..unref())`；新增 `idx_jobs_created` / `idx_jobs_creator` / `idx_jobs_status_created` 索引。
+- **H7** Job 表 retention：`resolveRetentionDays()` 默认 30 天，env `AGIM_JOB_RETENTION_DAYS` 覆盖；`pruneOldJobs()` 删 `completed`/`failed`/`cancelled` 超期行，`pending`/`running` 永不修剪；启动跑一次 + 每 6h `setInterval(..unref())`；新增 `idx_jobs_created` / `idx_jobs_creator` / `idx_jobs_status_created` 索引。
 - **M6** Workspace 白名单从路由层下沉到命令层：`/job create <agent>` 与 `/schedule create <agent>` 在 `createJob` / `createSchedule` 之前调 `workspaceRegistry.resolve(ctx.userId).hasAgent(agent.name)`。
 
 ### Tests
@@ -6896,13 +6909,13 @@ P0 + P1 安全收口，配 `docs/code-review-2026-05-06-main.md`。
 
 ### Added
 - **Discord messenger adapter** — full IM bridge for Discord (Gateway WebSocket via `discord.js`)
-  - `im-hub config discord` interactive setup wizard
+  - `agim config discord` interactive setup wizard
   - Typing indicator (10s TTL, 8s refresh)
   - Markdown → Discord-flavored format conversion
   - Guild / Channel whitelist filtering
   - Setup guide: [`docs/discord-setup.md`](docs/discord-setup.md)
 - **Tasks dashboard upgrades** — `/tasks` page now surfaces background work
-  - **Background tab**: lists `~/.claude/bgjobs` + `~/.config/opencode/bgjobs` jobs (override via `IMHUB_BGJOB_ROOTS`); per-root selector, 5s auto-refresh, detail modal with `cmd` / `workdir` / `log_tail`
+  - **Background tab**: lists `~/.claude/bgjobs` + `~/.config/opencode/bgjobs` jobs (override via `AGIM_BGJOB_ROOTS`); per-root selector, 5s auto-refresh, detail modal with `cmd` / `workdir` / `log_tail`
   - **Subtasks tab**: flattens every subtask in every session file, with parent platform / threadId / agent attached
   - Bilingual labels (EN + ZH)
 - **REST endpoints (read-only)**:
@@ -6927,8 +6940,8 @@ P0 + P1 安全收口，配 `docs/code-review-2026-05-06-main.md`。
   - Replaces the legacy `--permission-mode dontAsk + blanket-allow PreToolUse hook` shortcut with a real approval flow over IM.
   - Architecture:
     ```
-    claude --permission-prompt-tool mcp__imhub__request --mcp-config <tmp>
-       └─> MCP sidecar (mcp-approval-server.ts)  ── unix socket ──>  im-hub
+    claude --permission-prompt-tool mcp__agim__request --mcp-config <tmp>
+       └─> MCP sidecar (mcp-approval-server.ts)  ── unix socket ──>  agim
                                                                        └─> approval-bus
                                                                              └─> approval-router → messenger.sendMessage
                                                                                    ↑
@@ -6936,7 +6949,7 @@ P0 + P1 安全收口，配 `docs/code-review-2026-05-06-main.md`。
     ```
   - cli intercepts approval replies *before* the agent router; unrecognized replies during a pending request auto-deny so the sidecar (and Claude) don't hang.
   - Per-spawn state lives in the `SpawnPlan` returned by `AgentBase.prepareCommand` (closure-local, not `this.*`) — fixes a singleton race where parallel IM threads running claude clobbered each other's `mcp-config` and the second run died with *MCP config file not found*.
-  - Graceful fallbacks: `IMHUB_APPROVAL_DISABLED=1`, missing IM context, approval-bus not started, or `mkdtemp/writeFile` failure all degrade to the legacy `--permission-mode dontAsk` path.
+  - Graceful fallbacks: `AGIM_APPROVAL_DISABLED=1`, missing IM context, approval-bus not started, or `mkdtemp/writeFile` failure all degrade to the legacy `--permission-mode dontAsk` path.
 
 ### Notes
 - Approvals are platform-agnostic — the same chain works for WeChat / Telegram / Feishu / Discord with no per-platform changes.
@@ -6954,7 +6967,7 @@ A large multi-phase release: structured logging, observability, multi-tenant rou
 - **Zod config schema validation** at startup and PUT `/api/config` — invalid configs reject with a useful error instead of crashing the bridge mid-run.
 - **`AgentBase` abstraction** for CLI-based adapters (claude-code / codex / copilot / opencode) — shared spawn-stream, abort/timeout, line buffer, error formatting, healthCheck. ADR: [`docs/adr/0001-agent-base-abstraction.md`](docs/adr/0001-agent-base-abstraction.md).
 - **Agent availability TTL cache** on top of `healthCheck` — avoids spawning a probe process on every `/<agent>` switch.
-- **Audit log** with SQLite (`~/.im-hub/audit.db`, 30-day retention) + `/audit [n]` chat command.
+- **Audit log** with SQLite (`~/.agim/audit.db`, 30-day retention) + `/audit [n]` chat command.
 
 #### Fixed
 - P0 batch: WebSocket auth, nested config-mask leaks, timeout coercion, `/api/notify` token validation, agent-name prefix collisions, session path traversal (ADR [`0003`](docs/adr/0003-session-path-safety.md)).
@@ -6975,10 +6988,10 @@ A large multi-phase release: structured logging, observability, multi-tenant rou
 ### Phase 3 — ACP server, workspaces, persistent jobs
 
 #### Added
-- **ACP server mode** — im-hub itself is now an ACP-compatible agent at `POST /tasks` (sync + SSE) with timing-safe auth and a 1 MiB body cap.
+- **ACP server mode** — agim itself is now an ACP-compatible agent at `POST /tasks` (sync + SSE) with timing-safe auth and a 1 MiB body cap.
 - **`/.well-known/acp` discovery** for ACP custom agents (A-1).
 - **Multi-tenant workspace registry** (`src/core/workspace.ts`) with per-workspace agent whitelist + rate limits + member lists.
-- **Persistent Job Board** with SQLite (`~/.im-hub/jobs.db`) and `/job` chat commands — survives restarts; ACP-server tasks become durable jobs.
+- **Persistent Job Board** with SQLite (`~/.agim/jobs.db`) and `/job` chat commands — survives restarts; ACP-server tasks become durable jobs.
 - **Subtask sessions** + `/task` aliases for backward compatibility.
 - **`AbortController` signal** plumbed through job board for real cancellation (Phase 3.5).
 - **Cron scheduler** (`src/core/schedule.ts`) — 30-second tick, fires registered job specs.

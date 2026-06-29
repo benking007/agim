@@ -3,12 +3,12 @@
 // Locks the contract that user-message logging produces only safe
 // fields (length + 6-char prefix + 12-char sha256 hash). Verbatim
 // text only appears when the operator explicitly sets
-// IMHUB_LOG_USER_TEXT=1.
+// AGIM_LOG_USER_TEXT=1.
 
 import { describe, it, expect, afterEach } from 'bun:test'
 import { sanitizeUserText } from '../../src/core/logger'
 
-const ENV_KEY = 'IMHUB_LOG_USER_TEXT'
+const ENV_KEY = 'AGIM_LOG_USER_TEXT'
 
 describe('sanitizeUserText', () => {
   afterEach(() => {
@@ -51,7 +51,7 @@ describe('sanitizeUserText', () => {
     expect(out.prefix).toBe('')
   })
 
-  it('IMHUB_LOG_USER_TEXT=1 escape hatch surfaces verbatim text', () => {
+  it('AGIM_LOG_USER_TEXT=1 escape hatch surfaces verbatim text', () => {
     process.env[ENV_KEY] = '1'
     const out = sanitizeUserText('secret content here')
     expect(out.text).toBe('secret content here')
@@ -64,7 +64,7 @@ describe('sanitizeUserText', () => {
     expect(out.text).toHaveLength(120)
   })
 
-  it('IMHUB_LOG_USER_TEXT not set → no `text` field', () => {
+  it('AGIM_LOG_USER_TEXT not set → no `text` field', () => {
     delete process.env[ENV_KEY]
     const out = sanitizeUserText('whatever')
     expect(out.text).toBeUndefined()

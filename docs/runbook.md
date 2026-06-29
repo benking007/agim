@@ -28,7 +28,7 @@
 
 ```bash
 # ~/.agim/env 加一行
-echo 'IMHUB_ENABLE_GLOBAL_IM=1' >> ~/.agim/env
+echo 'AGIM_ENABLE_GLOBAL_IM=1' >> ~/.agim/env
 chmod 0600 ~/.agim/env
 
 systemctl restart agim
@@ -39,7 +39,7 @@ systemctl restart agim
 ```ini
 # /etc/systemd/system/agim.service.d/override.conf
 [Service]
-Environment="IMHUB_ENABLE_GLOBAL_IM=1"
+Environment="AGIM_ENABLE_GLOBAL_IM=1"
 ```
 
 **验证**：
@@ -55,7 +55,7 @@ Environment="IMHUB_ENABLE_GLOBAL_IM=1"
 **默认隐藏**。同样在 env 加：
 
 ```bash
-echo 'IMHUB_ENABLE_REMOTE_AGENT=1' >> ~/.agim/env
+echo 'AGIM_ENABLE_REMOTE_AGENT=1' >> ~/.agim/env
 systemctl restart agim
 ```
 
@@ -67,7 +67,7 @@ systemctl restart agim
 **网络**：ACP 服务默认绑 `127.0.0.1:9090`。如要跨机器 A2A：
 
 ```bash
-echo 'IMHUB_ACP_BIND=0.0.0.0' >> ~/.agim/env
+echo 'AGIM_ACP_BIND=0.0.0.0' >> ~/.agim/env
 systemctl restart agim
 ```
 
@@ -93,8 +93,8 @@ agim config
 # 编辑 ~/.agim/config.json: "webPort": 8080
 
 # 如需改监听地址（高级场景）
-echo 'IMHUB_WEB_BIND=0.0.0.0' >> ~/.agim/env
-echo 'IMHUB_WEB_TLS_ACK=1' >> ~/.agim/env  # 前置 TLS 反代后再确认
+echo 'AGIM_WEB_BIND=0.0.0.0' >> ~/.agim/env
+echo 'AGIM_WEB_TLS_ACK=1' >> ~/.agim/env  # 前置 TLS 反代后再确认
 
 systemctl restart agim
 ```
@@ -204,18 +204,18 @@ journalctl -u agim --output=cat | jq "select(.traceId == \"$TRACE_ID\")"
 ```bash
 # ~/.agim/env
 cat >> ~/.agim/env <<EOF
-IMHUB_SKILLHUB_ENABLED=0       # /skills 页不调 api.skillhub.cn
-IMHUB_VIEWER_TUNNEL_MODE=off   # 不开 Cloudflare 临时隧道
+AGIM_SKILLHUB_ENABLED=0       # /skills 页不调 api.skillhub.cn
+AGIM_VIEWER_TUNNEL_MODE=off   # 不开 Cloudflare 临时隧道
 EOF
 
 # 清掉可选凭据
 sed -i '/^OPENAI_API_KEY/d' ~/.agim/env
-sed -i '/^IMHUB_BAIDU_MAP_AK/d' ~/.agim/env
-sed -i '/^IMHUB_SMTP_HOST/d' ~/.agim/env
+sed -i '/^AGIM_BAIDU_MAP_AK/d' ~/.agim/env
+sed -i '/^AGIM_SMTP_HOST/d' ~/.agim/env
 
 # IM gate 保持默认（关）
-# 不要设 IMHUB_ENABLE_GLOBAL_IM
-# 不要设 IMHUB_ENABLE_REMOTE_AGENT
+# 不要设 AGIM_ENABLE_GLOBAL_IM
+# 不要设 AGIM_ENABLE_REMOTE_AGENT
 
 systemctl restart agim
 ```
@@ -241,18 +241,18 @@ R12 ② 默认值：
 
 | 数据 | env | 默认 |
 |---|---|---|
-| 长期事实（facts）| `IMHUB_MEMORY_FACT_RETENTION_DAYS` | 90 天（按 `last_referenced_at`，LRU 友好）|
-| 用户画像（persona） | `IMHUB_PERSONA_RETENTION_DAYS` | 180 天 |
-| 长消息暂存（pastes）| `IMHUB_PASTE_RETENTION_DAYS` | 30 天 |
+| 长期事实（facts）| `AGIM_MEMORY_FACT_RETENTION_DAYS` | 90 天（按 `last_referenced_at`，LRU 友好）|
+| 用户画像（persona） | `AGIM_PERSONA_RETENTION_DAYS` | 180 天 |
+| 长消息暂存（pastes）| `AGIM_PASTE_RETENTION_DAYS` | 30 天 |
 
 **升级老部署需要注意**：v1.2.22 之前这三类数据**永久保留**。升级到 v1.2.23+ 后默认开始按上面 TTL 清理。**如果你想保留全部历史**，在升级前先：
 
 ```bash
 # 关闭新 TTL 行为（保持 v1.2.22 之前的"永久"语义）
 cat >> ~/.agim/env <<EOF
-IMHUB_MEMORY_FACT_RETENTION_DAYS=0
-IMHUB_PERSONA_RETENTION_DAYS=0
-IMHUB_PASTE_RETENTION_DAYS=0
+AGIM_MEMORY_FACT_RETENTION_DAYS=0
+AGIM_PERSONA_RETENTION_DAYS=0
+AGIM_PASTE_RETENTION_DAYS=0
 EOF
 ```
 
@@ -374,12 +374,12 @@ kill %1
 ### 11.6 R12 IM gate
 
 ```bash
-# 默认状态: 不设 IMHUB_ENABLE_GLOBAL_IM
+# 默认状态: 不设 AGIM_ENABLE_GLOBAL_IM
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3000/api/config | jq '.telegram, .discord, .features.globalIm'
 # 应输出: null, null, false
 
 # 启用后
-echo IMHUB_ENABLE_GLOBAL_IM=1 >> ~/.agim/env
+echo AGIM_ENABLE_GLOBAL_IM=1 >> ~/.agim/env
 systemctl restart agim
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3000/api/config | jq '.features.globalIm'
 # 应输出: true

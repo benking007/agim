@@ -15,12 +15,12 @@ if (!existsSync(dist('memory-distiller.js'))) {
   process.exit(2)
 }
 
-process.env.IMHUB_MEMORY_ENABLED = '1'
-process.env.IMHUB_MEMORY_DISTILL_SOURCE = 'auto' // zero-config: use the turn's agent
+process.env.AGIM_MEMORY_ENABLED = '1'
+process.env.AGIM_MEMORY_DISTILL_SOURCE = 'auto' // zero-config: use the turn's agent
 const home = mkdtempSync(join(tmpdir(), 'agim-mem-distill-'))
 process.env.AGIM_HOME = home
-process.env.IMHUB_HOME = home
-delete process.env.IMHUB_MEMORY_VECTOR_BACKEND
+process.env.AGIM_HOME = home
+delete process.env.AGIM_MEMORY_VECTOR_BACKEND
 
 const memory = await import(dist('memory.js'))
 const { registry } = await import(dist('registry.js'))
@@ -69,7 +69,7 @@ check('CJK fact recallable (杭州)', memory.queryFacts({ user_key: A, query: '�
 check('facts scoped to A (not B)', memory.queryFacts({ user_key: A, k: 10 }).facts.every((f) => f.user_key === A))
 
 // 5) source=llm with no `distill` backend → ok:false → buffer kept (retry).
-process.env.IMHUB_MEMORY_DISTILL_SOURCE = 'llm'
+process.env.AGIM_MEMORY_DISTILL_SOURCE = 'llm'
 memory.enqueuePendingTurn({ user_key: A, platform: 'tui', user_message: '又一条 我喜欢深色主题', agent_reply: 'r', agent_name: 'stub-distiller' })
 const processed2 = await runDistillerOnce()
 check('source=llm with no backend processes 0 users', processed2 === 0)
@@ -78,21 +78,21 @@ check('buffer kept when no usable LLM (retry next pass)', memory.countPendingTot
 // surface a reason, not stay null.
 check('status surfaces lastError when no usable LLM', /no usable extraction LLM/.test(getDistillerStatus().lastError || ''))
 
-// 5b) opt-out via IMHUB_MEMORY_DISTILL_ENABLED=off must match persona's
+// 5b) opt-out via AGIM_MEMORY_DISTILL_ENABLED=off must match persona's
 // vocabulary ('off'), and a disabled distiller must NOT drain the buffer.
-process.env.IMHUB_MEMORY_DISTILL_ENABLED = 'off'
+process.env.AGIM_MEMORY_DISTILL_ENABLED = 'off'
 check('=off disables the distiller (status.enabled false)', getDistillerStatus().enabled === false)
 check('=off makes runDistillerOnce a no-op', (await runDistillerOnce()) === 0)
 check('=off leaves the buffer untouched', memory.countPendingTotal() === 1)
-delete process.env.IMHUB_MEMORY_DISTILL_ENABLED
+delete process.env.AGIM_MEMORY_DISTILL_ENABLED
 
-// 6) P3 — memory is ON by default (opt-out via IMHUB_MEMORY_ENABLED=0).
+// 6) P3 — memory is ON by default (opt-out via AGIM_MEMORY_ENABLED=0).
 const { isMemoryEnabled } = await import(dist('persona.js'))
-delete process.env.IMHUB_MEMORY_ENABLED
+delete process.env.AGIM_MEMORY_ENABLED
 check('P3: memory ON by default when unset', isMemoryEnabled() === true)
-process.env.IMHUB_MEMORY_ENABLED = '0'
+process.env.AGIM_MEMORY_ENABLED = '0'
 check('P3: opt-out with =0', isMemoryEnabled() === false)
-process.env.IMHUB_MEMORY_ENABLED = '1'
+process.env.AGIM_MEMORY_ENABLED = '1'
 
 try { memory.closeMemoryDb?.() } catch { /* ignore */ }
 try { rmSync(home, { recursive: true, force: true }) } catch { /* ignore */ }

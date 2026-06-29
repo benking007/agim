@@ -11,7 +11,7 @@
 //
 // Permissions model:
 //   - agy reads MCP servers from ~/.gemini/config/mcp_config.json (the
-//     shared Gemini-family location). agim's `imhub` MCP sidecar registers
+//     shared Gemini-family location). agim's `agim` MCP sidecar registers
 //     itself there via ensure-mcp-config; subsequent tool calls hop through
 //     the same approval-bus that claude-code / codex / opencode share.
 //   - For non-IM call paths (web/scheduler/intent-llm) we don't have a
@@ -49,14 +49,14 @@ import { approvalBus } from '../../../core/approval-bus.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
-import { ensureImhubMcp } from './ensure-mcp-config.js'
+import { ensureAgimMcp } from './ensure-mcp-config.js'
 
 const log = rootLogger.child({ component: 'agent.antigravity' })
 
 const DEFAULT_BIN = 'agy'
 const CONVERSATIONS_DIR = join(homedir(), '.gemini', 'antigravity-cli', 'conversations')
 
-/** Returns the path to the imhub MCP sidecar JS file. We reuse the same
+/** Returns the path to the agim MCP sidecar JS file. We reuse the same
  *  sidecar claude-code uses — its protocol surface is messenger-agnostic. */
 function sidecarPath(): string {
   // The compiled sidecar lives next to the compiled claude-code adapter:
@@ -80,7 +80,7 @@ export class AntigravityAdapter extends AgentBase {
 
   protected get commandName(): string {
     // 1. Explicit override always wins.
-    const override = process.env.IMHUB_ANTIGRAVITY_BIN
+    const override = process.env.AGIM_ANTIGRAVITY_BIN
     if (override) return override
 
     // 2. Cached lookup result if we already probed.
@@ -93,7 +93,7 @@ export class AntigravityAdapter extends AgentBase {
     //    that dir to PATH. agim runs under systemd, which doesn't source
     //    user shell rcs, so PATH lookup ('agy') fails on a stock daemon
     //    even when the binary is there. Add the well-known candidates so
-    //    operators don't have to hand-set IMHUB_ANTIGRAVITY_BIN just to
+    //    operators don't have to hand-set AGIM_ANTIGRAVITY_BIN just to
     //    get past isAvailable().
     const candidates = [
       join(homedir(), '.local', 'bin', 'agy'),
@@ -226,15 +226,15 @@ export class AntigravityAdapter extends AgentBase {
     const sockPath = approvalBus.getSocketPath()
     if (sockPath && !this.mcpReady) {
       try {
-        await ensureImhubMcp({
+        await ensureAgimMcp({
           command: process.execPath,
           args: [sidecarPath()],
-          env: { IMHUB_APPROVAL_SOCK: sockPath },
+          env: { AGIM_APPROVAL_SOCK: sockPath },
         })
         this.mcpReady = true
       } catch (err) {
         log.warn({ event: 'antigravity.mcp.disabled', err: String(err) },
-          'imhub MCP not wired into agy this run — tool approvals will block on agy default UI')
+          'agim MCP not wired into agy this run — tool approvals will block on agy default UI')
       }
     }
 
@@ -280,9 +280,9 @@ export class AntigravityAdapter extends AgentBase {
       args: baseArgs,
       cwd,
       extraEnv: {
-        // IMHUB_RUN_ID flows into the imhub MCP sidecar's process env;
+        // AGIM_RUN_ID flows into the agim MCP sidecar's process env;
         // approval-router uses it to look up the registered run.
-        IMHUB_RUN_ID: runId,
+        AGIM_RUN_ID: runId,
         // Force HOME present in the child env (systemd may have stripped it).
         HOME: childHome,
       },

@@ -106,7 +106,7 @@
     "subtitle": "Long-running scripts the agent wrappers (Claude Code / opencode / codex) launched via bgjob.",
     "empty": {
       "title": "No background jobs",
-      "description": "Background jobs show up here once an agent has used its bgjob wrapper. Roots come from ~/.claude/bgjobs/, ~/.config/opencode/bgjobs/, ~/.codex/bgjobs/ (override via IMHUB_BGJOB_ROOTS)."
+      "description": "Background jobs show up here once an agent has used its bgjob wrapper. Roots come from ~/.claude/bgjobs/, ~/.config/opencode/bgjobs/, ~/.codex/bgjobs/ (override via AGIM_BGJOB_ROOTS)."
     },
     "filter": {
       "root": "Root",
@@ -268,7 +268,7 @@
   },
   "asks": {
     "title": "Pending ask_user",
-    "subtitle": "Live list of every mcp__imhub__ask_user waiting on a reply. Cancelling here gives the agent the same response shape as a natural timeout (ok: false, reason: 'cancelled').",
+    "subtitle": "Live list of every mcp__agim__ask_user waiting on a reply. Cancelling here gives the agent the same response shape as a natural timeout (ok: false, reason: 'cancelled').",
     "refresh": "Refresh",
     "empty": "No pending asks. Auto-refreshes every 5s.",
     "col": {

@@ -91,7 +91,6 @@ function canonical(p: string, cwd?: string): string {
 const SENSITIVE_ABS_PREFIXES: string[] = [
   // Operator's agim state — tokens, env, sockets
   `${HOME}/.agim/`,
-  `${HOME}/.im-hub/`,  // legacy AGIM_HOME
   // SSH keys
   `${HOME}/.ssh/`,
   // Cloud / package credentials
@@ -154,7 +153,7 @@ const SENSITIVE_BASENAMES: string[] = [
  *  has to ask the operator out-of-band) — false negatives are not. */
 const SENSITIVE_BASH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /(?:^|\s|\/)\.agim(?:\/|\s|$)/i, reason: 'attempts to access ~/.agim/' },
-  { re: /(?:^|\s|\/)\.im-hub(?:\/|\s|$)/i, reason: 'attempts to access ~/.im-hub/' },
+  { re: /(?:^|\s|\/)\.agim(?:\/|\s|$)/i, reason: 'attempts to access ~/.agim/' },
   { re: /(?:^|\s|\/)tokens?\.json\b/i, reason: 'attempts to access tokens.json' },
   { re: /(?:^|\s|\/)admin-bootstrap-token\b/i, reason: 'attempts to access admin-bootstrap-token' },
   { re: /(?:^|\s|\/)acp-token\b/i, reason: 'attempts to access acp-token' },

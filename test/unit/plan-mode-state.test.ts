@@ -15,42 +15,42 @@ const planMod = await import('../../src/core/plan-mode-state.js')
 const { effectivePlanModeOn, readEnvPlanModeDefault } = planMod
 
 describe('plan-mode-state — env defaults (v1.2.120)', () => {
-  const savedEnv = process.env.IMHUB_NATIVE_PLAN_MODE
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_PLAN_MODE })
+  const savedEnv = process.env.AGIM_NATIVE_PLAN_MODE
+  beforeEach(() => { delete process.env.AGIM_NATIVE_PLAN_MODE })
   afterEach(() => {
-    if (savedEnv === undefined) delete process.env.IMHUB_NATIVE_PLAN_MODE
-    else process.env.IMHUB_NATIVE_PLAN_MODE = savedEnv
+    if (savedEnv === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
+    else process.env.AGIM_NATIVE_PLAN_MODE = savedEnv
   })
 
   it('readEnvPlanModeDefault parses common truthy values', () => {
     for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True']) {
-      process.env.IMHUB_NATIVE_PLAN_MODE = v
+      process.env.AGIM_NATIVE_PLAN_MODE = v
       expect(readEnvPlanModeDefault()).toBe(true)
     }
   })
 
   it('readEnvPlanModeDefault rejects unset / falsy / garbage', () => {
     for (const v of ['', '0', 'off', 'no', 'garbage']) {
-      process.env.IMHUB_NATIVE_PLAN_MODE = v
+      process.env.AGIM_NATIVE_PLAN_MODE = v
       expect(readEnvPlanModeDefault()).toBe(false)
     }
-    delete process.env.IMHUB_NATIVE_PLAN_MODE
+    delete process.env.AGIM_NATIVE_PLAN_MODE
     expect(readEnvPlanModeDefault()).toBe(false)
   })
 
   it('effectivePlanModeOn() with no threadKey ⇒ env-only', () => {
-    delete process.env.IMHUB_NATIVE_PLAN_MODE
+    delete process.env.AGIM_NATIVE_PLAN_MODE
     expect(effectivePlanModeOn()).toBe(false)
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     expect(effectivePlanModeOn()).toBe(true)
   })
 
   it('effectivePlanModeOn(threadKey) falls through to env when no per-thread row', () => {
     // Under bun, per-thread DB is a no-op so there's never a row;
     // the per-thread check returns null and we always reach env.
-    process.env.IMHUB_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
     expect(effectivePlanModeOn('nonexistent-thread')).toBe(true)
-    delete process.env.IMHUB_NATIVE_PLAN_MODE
+    delete process.env.AGIM_NATIVE_PLAN_MODE
     expect(effectivePlanModeOn('nonexistent-thread')).toBe(false)
   })
 })

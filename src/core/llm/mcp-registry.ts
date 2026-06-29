@@ -51,18 +51,18 @@ function freshState(): RegistryState {
 }
 
 /** v1.2.96 / v1.2.108 — base/cap for the reconnect cooldown. Base is
- *  also what `IMHUB_MCP_RECONNECT_COOLDOWN_MS` used to mean (kept as an
+ *  also what `AGIM_MCP_RECONNECT_COOLDOWN_MS` used to mean (kept as an
  *  alias for the env name nobody read the docs on). Cap is the max wait
  *  between attempts after the server has failed repeatedly — beyond ~60s
  *  we'd rather let the operator notice than keep silently retrying. */
 const RECONNECT_BASE_MS = (() => {
-  const raw = process.env.IMHUB_MCP_RECONNECT_BASE_MS ?? process.env.IMHUB_MCP_RECONNECT_COOLDOWN_MS
+  const raw = process.env.AGIM_MCP_RECONNECT_BASE_MS ?? process.env.AGIM_MCP_RECONNECT_COOLDOWN_MS
   if (!raw) return 5_000
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : 5_000
 })()
 const RECONNECT_MAX_MS = (() => {
-  const raw = process.env.IMHUB_MCP_RECONNECT_MAX_MS
+  const raw = process.env.AGIM_MCP_RECONNECT_MAX_MS
   if (!raw) return 60_000
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : 60_000

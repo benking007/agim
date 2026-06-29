@@ -2,7 +2,7 @@
  * AskDock — floating panel for pending ask_user (choice) cards.
  *
  * The visual sibling of ApprovalDock: it renders the agent's structured
- * questions (mcp__imhub__ask_user) right above the chat input so the user
+ * questions (mcp__agim__ask_user) right above the chat input so the user
  * can answer by clicking instead of typing "1". Three modes, driven by
  * `prompt.meta`:
  *   - single  → one button per choice; click submits immediately.

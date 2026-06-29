@@ -112,11 +112,11 @@ Start from: `docs/README.md`
 
 ## Migration notes
 
-Legacy installs remain compatible:
+Current public surfaces use the Agim naming consistently:
 
-- command alias compatibility retained
-- legacy env naming retained
-- old data path autodetected
+- executable: `agim`
+- environment variables: `AGIM_*`
+- data paths: `~/.agim` and `~/.agim-workspaces`
 
 ## Development
 

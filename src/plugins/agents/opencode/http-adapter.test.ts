@@ -2,7 +2,7 @@
 //
 // Coverage layers:
 //   1. Driver-selection contract (factory) — protects the
-//      IMHUB_OPENCODE_DRIVER env toggle.
+//      AGIM_OPENCODE_DRIVER env toggle.
 //   2. Pure event-mapping helpers (inspectHttpEvent / isIdleEvent /
 //      isErrorEvent) — locks in the SSE → adapter-effects contract without
 //      spinning up `opencode serve`.
@@ -29,22 +29,22 @@ describe('OpenCodeHttpAdapter — identity', () => {
   })
 })
 
-describe('opencode driver factory (env IMHUB_OPENCODE_DRIVER)', () => {
+describe('opencode driver factory (env AGIM_OPENCODE_DRIVER)', () => {
   let original: string | undefined
 
-  beforeEach(() => { original = process.env.IMHUB_OPENCODE_DRIVER })
+  beforeEach(() => { original = process.env.AGIM_OPENCODE_DRIVER })
   afterEach(() => {
-    if (original === undefined) delete process.env.IMHUB_OPENCODE_DRIVER
-    else process.env.IMHUB_OPENCODE_DRIVER = original
+    if (original === undefined) delete process.env.AGIM_OPENCODE_DRIVER
+    else process.env.AGIM_OPENCODE_DRIVER = original
   })
 
   // The factory is invoked at module-load time — to test selection without
   // re-importing the module on every case, we re-construct the same factory
   // logic locally. Mirrors index.ts and locks in the contract.
   function pick(envValue: string | undefined): OpenCodeAdapter {
-    if (envValue === undefined) delete process.env.IMHUB_OPENCODE_DRIVER
-    else process.env.IMHUB_OPENCODE_DRIVER = envValue
-    const driver = (process.env.IMHUB_OPENCODE_DRIVER || '').toLowerCase()
+    if (envValue === undefined) delete process.env.AGIM_OPENCODE_DRIVER
+    else process.env.AGIM_OPENCODE_DRIVER = envValue
+    const driver = (process.env.AGIM_OPENCODE_DRIVER || '').toLowerCase()
     return driver === 'http' ? new OpenCodeHttpAdapter() : new OpenCodeAdapter()
   }
 
@@ -372,8 +372,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const ids: string[] = []
     const usage: Array<{ costUsd?: number; tokensInput?: number; tokensOutput?: number }> = []
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    const chunks = await collect(adapter.sendPrompt('imhub-1', 'hi', [], {
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    const chunks = await collect(adapter.sendPrompt('agim-1', 'hi', [], {
       onAgentSessionId: (id) => ids.push(id),
       onUsage: (d) => usage.push(d),
     }))
@@ -404,8 +404,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    const chunks = await collect(adapter.sendPrompt('imhub-1', 'next', [], {
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    const chunks = await collect(adapter.sendPrompt('agim-1', 'next', [], {
       agentSessionId: sid,
       agentSessionResume: true,
     }))
@@ -434,8 +434,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: null })
-    await collect(adapter.sendPrompt('imhub-1', 'go', [], {}))
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: null, ensureMcp: async () => false })
+    await collect(adapter.sendPrompt('agim-1', 'go', [], {}))
 
     const replyHit = hits.find(h => h.url === 'http://test.local/permission/perm_1/reply' && h.method === 'POST')
     expect(replyHit).toBeDefined()
@@ -458,9 +458,9 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus })
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus, ensureMcp: async () => false })
     // No threadId / platform → bridge declines, fallback fires.
-    await collect(adapter.sendPrompt('imhub-1', 'go', [], {}))
+    await collect(adapter.sendPrompt('agim-1', 'go', [], {}))
 
     const replyHit = hits.find(h => h.url === 'http://test.local/permission/perm_x/reply')
     expect(replyHit).toBeDefined()
@@ -493,11 +493,11 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus })
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus, ensureMcp: async () => false })
     // Drive sendPrompt + simulate the user replying "y" once the bus has
     // surfaced the request. We can't easily await mid-stream, so kick the
     // resolve after a tick.
-    const drained = collect(adapter.sendPrompt('imhub-1', 'go', [], {
+    const drained = collect(adapter.sendPrompt('agim-1', 'go', [], {
       threadId: 'thread-X', platform: 'wechat', userId: 'u', channelId: 'c',
     }))
 
@@ -533,8 +533,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus })
-    const drained = collect(adapter.sendPrompt('imhub-1', 'go', [], {
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, approvalBus: bus, ensureMcp: async () => false })
+    const drained = collect(adapter.sendPrompt('agim-1', 'go', [], {
       threadId: 'thread-Y', platform: 'wechat',
     }))
 
@@ -564,8 +564,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    const chunks = await collect(adapter.sendPrompt('imhub-1', 'oops', [], {}))
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    const chunks = await collect(adapter.sendPrompt('agim-1', 'oops', [], {}))
     expect(chunks.some(c => c.includes('rate limited'))).toBe(true)
   })
 })
@@ -584,8 +584,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    await collect(adapter.sendPrompt('imhub-1', 'design X', [], { planMode: true }))
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    await collect(adapter.sendPrompt('agim-1', 'design X', [], { planMode: true }))
 
     const createHit = hits.find(h => h.url === 'http://test.local/session' && h.method === 'POST')
     expect(createHit).toBeDefined()
@@ -615,8 +615,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
     const fetchImpl = makeFakeFetch(events, { hits })
     const serve = makeServeStub('http://test.local')
 
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    await collect(adapter.sendPrompt('imhub-1', 'redo plan', [], {
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    await collect(adapter.sendPrompt('agim-1', 'redo plan', [], {
       agentSessionId: sid,
       agentSessionResume: true,
       planMode: true,
@@ -666,8 +666,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — SSE-broken fallback (opencode 1.14.
     const serve = makeServeStub('http://test.local')
 
     const usage: Array<{ costUsd?: number; tokensInput?: number; tokensOutput?: number }> = []
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    const chunks = await collect(adapter.sendPrompt('imhub-1', 'hi', [], {
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    const chunks = await collect(adapter.sendPrompt('agim-1', 'hi', [], {
       onUsage: (d) => usage.push(d),
     }))
 
@@ -696,8 +696,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — SSE-broken fallback (opencode 1.14.
     }
     const fetchImpl = makeFakeFetch(events, { sessionId: sid, messageResponse })
     const serve = makeServeStub('http://test.local')
-    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl })
-    const chunks = await collect(adapter.sendPrompt('imhub-1', 'hi', [], {}))
+    const adapter = new OpenCodeHttpAdapter({ serve, fetchImpl, ensureMcp: async () => false })
+    const chunks = await collect(adapter.sendPrompt('agim-1', 'hi', [], {}))
 
     expect(chunks).toEqual(['streamed once'])
   })

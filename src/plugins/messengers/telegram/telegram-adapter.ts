@@ -215,7 +215,7 @@ export class TelegramAdapter implements MessengerAdapter {
     // Telegram default: pass-through (WGS-84). Most senders are Telegram
     // Desktop / Android-without-China-GMS / users outside China — all of
     // which deliver raw WGS-84. iOS Core Location in China applies the
-    // GCJ offset; users hitting that case set IMHUB_TELEGRAM_COORDS_GCJ02=1.
+    // GCJ offset; users hitting that case set AGIM_TELEGRAM_COORDS_GCJ02=1.
     this.bot.on('message:location', (botCtx) => {
       if (botCtx.message.from?.is_bot) return
       const loc = botCtx.message.location
@@ -559,7 +559,7 @@ export class TelegramAdapter implements MessengerAdapter {
    *
    * Failures are surfaced as text markers, not silent drops:
    *   - download failure → "[语音附件下载失败：…]"
-   *   - no provider configured → "[语音附件未转写：未配置 OPENAI_API_KEY 或 IMHUB_WHISPERCPP_BIN]"
+   *   - no provider configured → "[语音附件未转写：未配置 OPENAI_API_KEY 或 AGIM_WHISPERCPP_BIN]"
    *   - transcribe error → "[语音转写失败（${provider}）：…]"
    *
    * Since transcription can take 5-30s on a slow CPU + whisper.cpp medium,
@@ -602,7 +602,7 @@ export class TelegramAdapter implements MessengerAdapter {
     if (!savedPath) {
       voiceLine = `[语音附件下载失败：${downloadErr}]`
     } else if (detectProvider() === 'none') {
-      voiceLine = `[语音附件未转写（未配置 OPENAI_API_KEY 或 IMHUB_WHISPERCPP_BIN）：${savedPath}]`
+      voiceLine = `[语音附件未转写（未配置 OPENAI_API_KEY 或 AGIM_WHISPERCPP_BIN）：${savedPath}]`
     } else {
       try {
         const result = await transcribe(savedPath, { language: 'zh' })

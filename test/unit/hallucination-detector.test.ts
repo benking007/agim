@@ -138,25 +138,25 @@ describe('detectHallucinatedToolCall — NEGATIVE / guard cases', () => {
 
 describe('isHallucinationDetectorOn', () => {
   test('default ON when env unset', () => {
-    delete process.env.IMHUB_NATIVE_HALLUCINATION_DETECT
+    delete process.env.AGIM_NATIVE_HALLUCINATION_DETECT
     expect(isHallucinationDetectorOn()).toBe(true)
   })
 
   test('OFF when env=off', () => {
-    process.env.IMHUB_NATIVE_HALLUCINATION_DETECT = 'off'
+    process.env.AGIM_NATIVE_HALLUCINATION_DETECT = 'off'
     expect(isHallucinationDetectorOn()).toBe(false)
-    delete process.env.IMHUB_NATIVE_HALLUCINATION_DETECT
+    delete process.env.AGIM_NATIVE_HALLUCINATION_DETECT
   })
 
   test('OFF when env=0', () => {
-    process.env.IMHUB_NATIVE_HALLUCINATION_DETECT = '0'
+    process.env.AGIM_NATIVE_HALLUCINATION_DETECT = '0'
     expect(isHallucinationDetectorOn()).toBe(false)
-    delete process.env.IMHUB_NATIVE_HALLUCINATION_DETECT
+    delete process.env.AGIM_NATIVE_HALLUCINATION_DETECT
   })
 
   test('ON for unrecognized values (e.g. "yes")', () => {
-    process.env.IMHUB_NATIVE_HALLUCINATION_DETECT = 'yes'
+    process.env.AGIM_NATIVE_HALLUCINATION_DETECT = 'yes'
     expect(isHallucinationDetectorOn()).toBe(true)
-    delete process.env.IMHUB_NATIVE_HALLUCINATION_DETECT
+    delete process.env.AGIM_NATIVE_HALLUCINATION_DETECT
   })
 })

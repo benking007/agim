@@ -101,15 +101,15 @@ export interface GoalEvent {
   ts: string
 }
 
-export type ImhubEvent = AuditEvent | ApprovalEvent | JobEvent | MetricsEvent | GoalEvent
+export type AgimEvent = AuditEvent | ApprovalEvent | JobEvent | MetricsEvent | GoalEvent
 
-class ImhubEventBus extends EventEmitter {
+class AgimEventBus extends EventEmitter {
   /** Bounded recent-event log so a freshly-connected SSE client can
    *  catch up on what happened in the last few seconds without needing
    *  a separate REST poll. Cap at 200 entries — enough for the dashboard
    *  to show a meaningful "what just happened" feed without bloating
    *  process memory. */
-  private recent: ImhubEvent[] = []
+  private recent: AgimEvent[] = []
   private static readonly RECENT_CAP = 200
 
   constructor() {
@@ -125,9 +125,9 @@ class ImhubEventBus extends EventEmitter {
    * EventEmitter.emit; errors thrown from a listener are caught here so
    * a bad subscriber can't break audit-log / approval-bus / job-board.
    */
-  publish(event: ImhubEvent): void {
+  publish(event: AgimEvent): void {
     this.recent.push(event)
-    while (this.recent.length > ImhubEventBus.RECENT_CAP) this.recent.shift()
+    while (this.recent.length > AgimEventBus.RECENT_CAP) this.recent.shift()
     try {
       this.emit('event', event)
     } catch {
@@ -137,9 +137,9 @@ class ImhubEventBus extends EventEmitter {
 
   /** Snapshot of the recent ring buffer. Used by SSE handler on
    *  connection to replay the last N events to a fresh client. */
-  getRecent(): ImhubEvent[] {
+  getRecent(): AgimEvent[] {
     return this.recent.slice()
   }
 }
 
-export const eventBus = new ImhubEventBus()
+export const eventBus = new AgimEventBus()

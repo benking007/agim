@@ -233,7 +233,7 @@ async function applyViewerRouting(text: string, p: SinkPayload, threadKey: strin
   const url = buildPasteUrl(id)
   if (!url) {
     log.warn({ event: 'sink.viewer.no_base_url', threadId: p.threadId },
-      'no public URL available (set IMHUB_VIEWER_PUBLIC_BASE_URL, IMHUB_VIEWER_TUNNEL_MODE=quick, or IMHUB_VIEWER_REMOTE_PASTE_URL); degrading to inline')
+      'no public URL available (set AGIM_VIEWER_PUBLIC_BASE_URL, AGIM_VIEWER_TUNNEL_MODE=quick, or AGIM_VIEWER_REMOTE_PASTE_URL); degrading to inline')
     return summary || fullMd
   }
 
@@ -346,9 +346,9 @@ export async function deliver(p: SinkPayload): Promise<SinkResult> {
 // Worker
 // ---------------------------------------------------------------------------
 
-/** How often the worker pulls pending rows. Override with IMHUB_OUTBOX_TICK_MS. */
+/** How often the worker pulls pending rows. Override with AGIM_OUTBOX_TICK_MS. */
 function resolveTickMs(): number {
-  const raw = process.env.IMHUB_OUTBOX_TICK_MS
+  const raw = process.env.AGIM_OUTBOX_TICK_MS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -366,10 +366,10 @@ function resolveTickMs(): number {
 // doesn't fan out hundreds of alerts.
 //
 // Env:
-//   IMHUB_OPERATOR_ALERT_PLATFORM   target platform (e.g. 'telegram')
-//   IMHUB_OPERATOR_ALERT_THREAD_ID  target threadId on that platform
-//   IMHUB_OPERATOR_ALERT_CHANNEL_ID (optional; default '')
-//   IMHUB_OPERATOR_ALERT_COOLDOWN_MS  (default 600_000 = 10 min)
+//   AGIM_OPERATOR_ALERT_PLATFORM   target platform (e.g. 'telegram')
+//   AGIM_OPERATOR_ALERT_THREAD_ID  target threadId on that platform
+//   AGIM_OPERATOR_ALERT_CHANNEL_ID (optional; default '')
+//   AGIM_OPERATOR_ALERT_COOLDOWN_MS  (default 600_000 = 10 min)
 
 const alertCooldown = new Map<string, number>()  // key = `${platform}:${threadId}`
 
@@ -382,15 +382,15 @@ async function maybeAlertOperator(input: {
   gaveUp: boolean
   outboxId: number
 }): Promise<void> {
-  const altPlatform = (process.env.IMHUB_OPERATOR_ALERT_PLATFORM || '').trim()
-  const altThreadId = (process.env.IMHUB_OPERATOR_ALERT_THREAD_ID || '').trim()
+  const altPlatform = (process.env.AGIM_OPERATOR_ALERT_PLATFORM || '').trim()
+  const altThreadId = (process.env.AGIM_OPERATOR_ALERT_THREAD_ID || '').trim()
   if (!altPlatform || !altThreadId) return
   // Never self-loop: don't push the alert into the same dead channel.
   if (altPlatform === input.platform && altThreadId === input.threadId) return
 
   const key = `${input.platform}:${input.threadId}`
   const cooldownMs = (() => {
-    const raw = parseInt(process.env.IMHUB_OPERATOR_ALERT_COOLDOWN_MS || '600000', 10)
+    const raw = parseInt(process.env.AGIM_OPERATOR_ALERT_COOLDOWN_MS || '600000', 10)
     return Number.isFinite(raw) && raw > 0 ? raw : 600_000
   })()
   const now = Date.now()
@@ -426,7 +426,7 @@ async function maybeAlertOperator(input: {
 /** Max rows pulled per tick. Worker is single-threaded so this caps how
  *  long one tick can take before it self-yields. */
 function resolveBatchSize(): number {
-  const raw = process.env.IMHUB_OUTBOX_BATCH
+  const raw = process.env.AGIM_OUTBOX_BATCH
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -482,8 +482,8 @@ async function workerTick(): Promise<void> {
         // 1-line heads-up to the operator's configured alt channel.
         // Throttled per (platform, threadId) so a backed-up channel
         // doesn't spam the alert chat. Configured via env:
-        //   IMHUB_OPERATOR_ALERT_PLATFORM=telegram
-        //   IMHUB_OPERATOR_ALERT_THREAD_ID=12345
+        //   AGIM_OPERATOR_ALERT_PLATFORM=telegram
+        //   AGIM_OPERATOR_ALERT_THREAD_ID=12345
         if (attempts >= 3 || gaveUp) {
           void maybeAlertOperator({
             platform: row.platform,

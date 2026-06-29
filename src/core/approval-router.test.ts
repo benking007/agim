@@ -35,7 +35,7 @@ const RUN_CTX: RunContext = { threadId: 'thread-A', platform: 'feishu', userId: 
 const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-router-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-router-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 describe('parseApprovalReply', () => {

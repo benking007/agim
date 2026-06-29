@@ -8,9 +8,9 @@
  * since tunnel state is essentially static between operator actions.
  *
  * Env keys covered:
- *   * Viewer: IMHUB_VIEWER_ENABLED / _PUBLIC_BASE_URL / _TUNNEL_MODE /
+ *   * Viewer: AGIM_VIEWER_ENABLED / _PUBLIC_BASE_URL / _TUNNEL_MODE /
  *             _CHARS / _LINES / _CODE_LINES / _MAX_PASTES
- *   * Baidu:  IMHUB_BAIDU_MAP_AK   (in SECRET_KEYS — masked unless
+ *   * Baidu:  AGIM_BAIDU_MAP_AK   (in SECRET_KEYS — masked unless
  *             reveal=1 is passed)
  *
  * AK validation: v1 mentioned "32-char AK starting with non-digit" as
@@ -112,14 +112,14 @@ interface ViewerDraft {
 
 function viewerDraftFromEnv(env: Record<string, string>): ViewerDraft {
   return {
-    enabled:    env.IMHUB_VIEWER_ENABLED === '1' || env.IMHUB_VIEWER_ENABLED?.toLowerCase() === 'true',
-    publicUrl:  env.IMHUB_VIEWER_PUBLIC_BASE_URL ?? '',
-    tunnelMode: env.IMHUB_VIEWER_TUNNEL_MODE === 'quick' ? 'quick' : 'off',
-    noDefaultRemote: env.IMHUB_VIEWER_NO_DEFAULT_REMOTE === '1' || env.IMHUB_VIEWER_NO_DEFAULT_REMOTE?.toLowerCase() === 'true',
-    chars:      env.IMHUB_VIEWER_CHARS ?? '',
-    lines:      env.IMHUB_VIEWER_LINES ?? '',
-    codeLines:  env.IMHUB_VIEWER_CODE_LINES ?? '',
-    maxPastes:  env.IMHUB_VIEWER_MAX_PASTES ?? '',
+    enabled:    env.AGIM_VIEWER_ENABLED === '1' || env.AGIM_VIEWER_ENABLED?.toLowerCase() === 'true',
+    publicUrl:  env.AGIM_VIEWER_PUBLIC_BASE_URL ?? '',
+    tunnelMode: env.AGIM_VIEWER_TUNNEL_MODE === 'quick' ? 'quick' : 'off',
+    noDefaultRemote: env.AGIM_VIEWER_NO_DEFAULT_REMOTE === '1' || env.AGIM_VIEWER_NO_DEFAULT_REMOTE?.toLowerCase() === 'true',
+    chars:      env.AGIM_VIEWER_CHARS ?? '',
+    lines:      env.AGIM_VIEWER_LINES ?? '',
+    codeLines:  env.AGIM_VIEWER_CODE_LINES ?? '',
+    maxPastes:  env.AGIM_VIEWER_MAX_PASTES ?? '',
   }
 }
 
@@ -140,10 +140,10 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
       setSyncedHash(hash)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.IMHUB_VIEWER_ENABLED, env.IMHUB_VIEWER_PUBLIC_BASE_URL,
-      env.IMHUB_VIEWER_TUNNEL_MODE, env.IMHUB_VIEWER_CHARS,
-      env.IMHUB_VIEWER_LINES, env.IMHUB_VIEWER_CODE_LINES,
-      env.IMHUB_VIEWER_MAX_PASTES, env.IMHUB_VIEWER_NO_DEFAULT_REMOTE])
+  }, [env.AGIM_VIEWER_ENABLED, env.AGIM_VIEWER_PUBLIC_BASE_URL,
+      env.AGIM_VIEWER_TUNNEL_MODE, env.AGIM_VIEWER_CHARS,
+      env.AGIM_VIEWER_LINES, env.AGIM_VIEWER_CODE_LINES,
+      env.AGIM_VIEWER_MAX_PASTES, env.AGIM_VIEWER_NO_DEFAULT_REMOTE])
 
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
   const isDirty = useMemo(
@@ -158,28 +158,28 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
   async function onSave(): Promise<void> {
     const updates: Record<string, string | null> = {}
     if (draft.enabled !== current.enabled) {
-      updates.IMHUB_VIEWER_ENABLED = draft.enabled ? '1' : '0'
+      updates.AGIM_VIEWER_ENABLED = draft.enabled ? '1' : '0'
     }
     if (draft.publicUrl !== current.publicUrl) {
-      updates.IMHUB_VIEWER_PUBLIC_BASE_URL = draft.publicUrl.trim() || null
+      updates.AGIM_VIEWER_PUBLIC_BASE_URL = draft.publicUrl.trim() || null
     }
     if (draft.tunnelMode !== current.tunnelMode) {
-      updates.IMHUB_VIEWER_TUNNEL_MODE = draft.tunnelMode
+      updates.AGIM_VIEWER_TUNNEL_MODE = draft.tunnelMode
     }
     if (draft.chars !== current.chars) {
-      updates.IMHUB_VIEWER_CHARS = draft.chars.trim() || null
+      updates.AGIM_VIEWER_CHARS = draft.chars.trim() || null
     }
     if (draft.lines !== current.lines) {
-      updates.IMHUB_VIEWER_LINES = draft.lines.trim() || null
+      updates.AGIM_VIEWER_LINES = draft.lines.trim() || null
     }
     if (draft.codeLines !== current.codeLines) {
-      updates.IMHUB_VIEWER_CODE_LINES = draft.codeLines.trim() || null
+      updates.AGIM_VIEWER_CODE_LINES = draft.codeLines.trim() || null
     }
     if (draft.maxPastes !== current.maxPastes) {
-      updates.IMHUB_VIEWER_MAX_PASTES = draft.maxPastes.trim() || null
+      updates.AGIM_VIEWER_MAX_PASTES = draft.maxPastes.trim() || null
     }
     if (draft.noDefaultRemote !== current.noDefaultRemote) {
-      updates.IMHUB_VIEWER_NO_DEFAULT_REMOTE = draft.noDefaultRemote ? '1' : null
+      updates.AGIM_VIEWER_NO_DEFAULT_REMOTE = draft.noDefaultRemote ? '1' : null
     }
     if (Object.keys(updates).length === 0) return
     try {
@@ -256,7 +256,7 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
             community default endpoint (viewer.iclaw.host) is the
             implicit fallback when neither public base URL nor tunnel
             is set; operators who need to point at a different paste
-            server use the IMHUB_VIEWER_REMOTE_PASTE_URL env var
+            server use the AGIM_VIEWER_REMOTE_PASTE_URL env var
             (documented in docs/viewer-modes.md). */}
         <Field
           label={t('viewerSettings.viewer.noDefaultRemote')}
@@ -408,7 +408,7 @@ function BaiduCard({ env }: { env: Record<string, string> }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const updateEnv = useUpdateEnv()
 
-  const currentAk = env.IMHUB_BAIDU_MAP_AK ?? ''
+  const currentAk = env.AGIM_BAIDU_MAP_AK ?? ''
   const [draftAk, setDraftAk] = useState(currentAk)
   const [syncedHash, setSyncedHash] = useState('')
 
@@ -430,7 +430,7 @@ function BaiduCard({ env }: { env: Record<string, string> }): JSX.Element {
     if (isMasked(draftAk)) return // server would skip anyway; be explicit
     try {
       await updateEnv.mutateAsync({
-        updates: { IMHUB_BAIDU_MAP_AK: draftAk.trim() || null },
+        updates: { AGIM_BAIDU_MAP_AK: draftAk.trim() || null },
       })
       toast.success(t('viewerSettings.baidu.toast.saved'))
     } catch (err) {
@@ -440,7 +440,7 @@ function BaiduCard({ env }: { env: Record<string, string> }): JSX.Element {
 
   async function onClear(): Promise<void> {
     try {
-      await updateEnv.mutateAsync({ updates: { IMHUB_BAIDU_MAP_AK: null } })
+      await updateEnv.mutateAsync({ updates: { AGIM_BAIDU_MAP_AK: null } })
       setDraftAk('')
       toast.success(t('viewerSettings.baidu.toast.cleared'))
     } catch (err) {
@@ -460,7 +460,7 @@ function BaiduCard({ env }: { env: Record<string, string> }): JSX.Element {
       <p className="px-4 pt-2 text-xs text-text-dim">{t('viewerSettings.baidu.subtitle')}</p>
 
       <div className="px-4 py-3">
-        <Label htmlFor="baidu-ak" className="text-xs font-medium">IMHUB_BAIDU_MAP_AK</Label>
+        <Label htmlFor="baidu-ak" className="text-xs font-medium">AGIM_BAIDU_MAP_AK</Label>
         <Input
           id="baidu-ak"
           value={draftAk}

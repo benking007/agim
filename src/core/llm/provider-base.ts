@@ -97,7 +97,7 @@ export interface ToolDef {
    *  races the dispatch promise against this and surfaces a structured
    *  "timed out" tool-result on overrun, so a wedged tool can't eat
    *  the whole turn budget. Leave undefined to use the agent-loop
-   *  default (60s, env IMHUB_NATIVE_TOOL_TIMEOUT_MS). 0 disables for
+   *  default (60s, env AGIM_NATIVE_TOOL_TIMEOUT_MS). 0 disables for
    *  this specific tool (e.g. `long_task` which is explicitly slow). */
   timeoutMs?: number
 }

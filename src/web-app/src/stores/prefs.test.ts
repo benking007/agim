@@ -1,6 +1,6 @@
 /**
  * stores/prefs.test.ts — verifies that the theme + lang setters write
- * to the *legacy* localStorage keys (agim-theme / im-hub-lang) so v1
+ * to the *legacy* localStorage keys (agim-theme / agim-lang) so v1
  * and v2 share one set of preferences without a migration step.
  */
 
@@ -36,10 +36,10 @@ describe('usePrefs', () => {
     expect(usePrefs.getState().theme).toBe('system')
   })
 
-  it('persists lang to im-hub-lang (legacy key)', () => {
+  it('persists lang to agim-lang (legacy key)', () => {
     usePrefs.getState().setLang('zh')
-    expect(localStorage.getItem('im-hub-lang')).toBe('zh')
+    expect(localStorage.getItem('agim-lang')).toBe('zh')
     usePrefs.getState().setLang('en')
-    expect(localStorage.getItem('im-hub-lang')).toBe('en')
+    expect(localStorage.getItem('agim-lang')).toBe('en')
   })
 })

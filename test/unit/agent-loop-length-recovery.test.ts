@@ -7,7 +7,7 @@
 //       continue without repeating;
 //   (b) accumulate partials into the returned `text` so the caller
 //       gets partial1 + partial2 + … + final concatenated;
-//   (c) cap retries at IMHUB_NATIVE_LENGTH_RECOVERY_MAX (default 3)
+//   (c) cap retries at AGIM_NATIVE_LENGTH_RECOVERY_MAX (default 3)
 //       to prevent obot's $0.91 retry-storm scenario;
 //   (d) when length AND partial tool_calls arrive together, DROP the
 //       tool_calls (do not execute a half-emitted JSON arg blob);
@@ -50,11 +50,11 @@ class ScriptedProvider extends LlmProvider {
 describe('runAgentLoop — length-recovery (v1.2.117)', () => {
   // Cap is read from env at loop entry; tests overwrite per-case so
   // we can drive the boundary precisely without polluting other tests.
-  const savedEnv = process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX
-  beforeEach(() => { delete process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX })
+  const savedEnv = process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX
+  beforeEach(() => { delete process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX })
   afterEach(() => {
-    if (savedEnv === undefined) delete process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX
-    else process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = savedEnv
+    if (savedEnv === undefined) delete process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX
+    else process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX = savedEnv
   })
 
   it('single length truncation auto-continues + concatenates partials', async () => {
@@ -97,7 +97,7 @@ describe('runAgentLoop — length-recovery (v1.2.117)', () => {
   it('cap=3: 4th consecutive length surfaces finishReason=length with full prefix', async () => {
     // Force the cap explicitly even though 3 is the default — guard
     // against future default tweaks accidentally invalidating the test.
-    process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = '3'
+    process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX = '3'
     const provider = new ScriptedProvider([
       { text: 'A', finishReason: 'length', usage: {}, modelUsed: 'stub-m' },
       { text: 'B', finishReason: 'length', usage: {}, modelUsed: 'stub-m' },
@@ -117,7 +117,7 @@ describe('runAgentLoop — length-recovery (v1.2.117)', () => {
   })
 
   it('cap=0 disables auto-continue entirely (back-compat escape hatch)', async () => {
-    process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = '0'
+    process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX = '0'
     const provider = new ScriptedProvider([
       { text: 'partial', finishReason: 'length', usage: {}, modelUsed: 'stub-m' },
     ])

@@ -9,8 +9,8 @@ import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_DIR = join(tmpdir(), `imhub-memorpc-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_MEMOS_DB = join(TEST_DIR, 'memos.db')
+const TEST_DIR = join(tmpdir(), `agim-memorpc-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_MEMOS_DB = join(TEST_DIR, 'memos.db')
 
 const rpcMod = await import('../../src/core/memo-rpc.js')
 const tokenMod = await import('../../src/core/location-token.js')

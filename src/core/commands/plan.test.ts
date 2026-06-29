@@ -1,7 +1,7 @@
 // /plan command — toggle plan mode for the active session.
 //
 // Drives sessionManager via the real public API (writes hit
-// ~/.im-hub/sessions disk-backed) but uses a unique platform tag so we can
+// ~/.agim/sessions disk-backed) but uses a unique platform tag so we can
 // scrub our own files in afterEach without colliding with real sessions.
 
 import { describe, it, expect, afterEach } from 'bun:test'
@@ -43,7 +43,7 @@ function makeCtx(channelId: string, threadId: string): RouteContext {
 }
 
 afterEach(async () => {
-  delete process.env.IMHUB_DISABLE_PLAN_MODE
+  delete process.env.AGIM_DISABLE_PLAN_MODE
   await cleanupTestSessions()
 })
 
@@ -118,9 +118,9 @@ describe('handlePlanCommand', () => {
     expect(session?.planMode).toBeUndefined()
   })
 
-  it('IMHUB_DISABLE_PLAN_MODE=1 short-circuits without touching session state', async () => {
+  it('AGIM_DISABLE_PLAN_MODE=1 short-circuits without touching session state', async () => {
     const ctx = makeCtx(uid(), uid())
-    process.env.IMHUB_DISABLE_PLAN_MODE = '1'
+    process.env.AGIM_DISABLE_PLAN_MODE = '1'
     const out = await handlePlanCommand('on', ctx)
     expect(out).toContain('已通过')
     expect(out).toContain('禁用')

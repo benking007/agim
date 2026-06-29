@@ -9,9 +9,9 @@ describe('self-protect', () => {
       expect(r!.deny).toBe(true)
       expect(r!.message).toContain('重启服务')
     })
-    it('blocks systemctl restart im-hub', () => {
-      expect(checkToolUse('Bash', { command: 'systemctl restart im-hub' })).not.toBeNull()
-      expect(checkToolUse('Bash', { command: 'systemctl restart im-hub-pro' })).not.toBeNull()
+    it('blocks systemctl restart agim', () => {
+      expect(checkToolUse('Bash', { command: 'systemctl restart agim' })).not.toBeNull()
+      expect(checkToolUse('Bash', { command: 'systemctl restart agim' })).not.toBeNull()
     })
     it('blocks systemctl stop / reload / disable', () => {
       expect(checkToolUse('Bash', { command: 'systemctl stop agim' })).not.toBeNull()
@@ -30,8 +30,8 @@ describe('self-protect', () => {
   describe('pkill / killall', () => {
     it('blocks pkill agim', () => {
       expect(checkToolUse('Bash', { command: 'pkill agim' })).not.toBeNull()
-      expect(checkToolUse('Bash', { command: 'pkill -9 im-hub-pro' })).not.toBeNull()
-      expect(checkToolUse('Bash', { command: 'killall im-hub' })).not.toBeNull()
+      expect(checkToolUse('Bash', { command: 'pkill -9 agim' })).not.toBeNull()
+      expect(checkToolUse('Bash', { command: 'killall agim' })).not.toBeNull()
     })
     it('does NOT block pkill on unrelated processes', () => {
       expect(checkToolUse('Bash', { command: 'pkill -f chromium' })).toBeNull()
@@ -50,7 +50,7 @@ describe('self-protect', () => {
     })
     it('blocks kill $(pgrep agim)', () => {
       expect(checkToolUse('Bash', { command: 'kill $(pgrep agim)' })).not.toBeNull()
-      expect(checkToolUse('Bash', { command: 'kill -9 $(pgrep im-hub)' })).not.toBeNull()
+      expect(checkToolUse('Bash', { command: 'kill -9 $(pgrep agim)' })).not.toBeNull()
     })
     it('does NOT block kill on an unrelated PID', () => {
       // Use a PID that's NOT ours
@@ -63,7 +63,7 @@ describe('self-protect', () => {
     it('blocks agim restart / stop', () => {
       expect(checkToolUse('Bash', { command: 'agim restart' })).not.toBeNull()
       expect(checkToolUse('Bash', { command: 'agim stop' })).not.toBeNull()
-      expect(checkToolUse('Bash', { command: 'im-hub-pro restart' })).not.toBeNull()
+      expect(checkToolUse('Bash', { command: 'agim restart' })).not.toBeNull()
     })
     it('blocks npm restart / stop', () => {
       expect(checkToolUse('Bash', { command: 'npm restart' })).not.toBeNull()

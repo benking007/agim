@@ -18,7 +18,7 @@ import { logger as rootLogger } from '../../../core/logger.js'
 import { createSqliteHelper } from '../../../core/sqlite-helper.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 
-const STORE_FILE = process.env.IMHUB_WECHAT_CONTEXT_DB
+const STORE_FILE = process.env.AGIM_WECHAT_CONTEXT_DB
   ?? join(AGIM_HOME, 'wechat-context.db')
 
 const helper = createSqliteHelper({

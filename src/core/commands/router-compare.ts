@@ -13,7 +13,7 @@
 //   llm:<role>               native LLM role (cheap, evaluator, native-chat)
 //   backend:<backend-name>   native LLM backend name from config llmBackends
 //
-// When IMHUB_ROUTER_COMPARE_JUDGE_ROLE is set, the configured role
+// When AGIM_ROUTER_COMPARE_JUDGE_ROLE is set, the configured role
 // also gets called as an impartial judge — pick a / b / tie. Cost is
 // reported as a separate line so per-side numbers stay honest.
 
@@ -33,7 +33,7 @@ const HELP = [
   '  `backend:<backend-name>`   native LLM backend name (from `llmBackends`)',
   '',
   '\u73af\u5883\uff1a',
-  '  `IMHUB_ROUTER_COMPARE_JUDGE_ROLE` \u2014 \u8bbe\u4e3a\u67d0\u4e2a native LLM role (\u4f8b\u5982 `evaluator`)',
+  '  `AGIM_ROUTER_COMPARE_JUDGE_ROLE` \u2014 \u8bbe\u4e3a\u67d0\u4e2a native LLM role (\u4f8b\u5982 `evaluator`)',
   '   \u540e\uff0c\u6bcf\u6b21 compare \u90fd\u4f1a\u4e09\u8005\u9009\u4e00\u5224\u5b9a a/b/tie\uff0c\u6210\u672c\u5355\u72ec\u62a5\u51fa\u3002',
   '',
   '\u4f8b\u5b50\uff1a',
@@ -68,7 +68,7 @@ export async function handleRouterCompareCommand(args: string, ctx: RouteContext
   const prompt = m[3].trim()
   if (!prompt) return '❌ prompt \u4e0d\u80fd\u4e3a\u7a7a\u3002'
 
-  const judgeRole = process.env.IMHUB_ROUTER_COMPARE_JUDGE_ROLE?.trim() || undefined
+  const judgeRole = process.env.AGIM_ROUTER_COMPARE_JUDGE_ROLE?.trim() || undefined
 
   const result = await runRouterCompare({
     prompt,

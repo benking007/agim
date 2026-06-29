@@ -5,13 +5,13 @@
 //   - native_web_search(query, n?)     configurable provider chain
 //
 // Both have:
-//   * 30s default per-call timeout (override via IMHUB_NATIVE_WEB_TIMEOUT_MS)
+//   * 30s default per-call timeout (override via AGIM_NATIVE_WEB_TIMEOUT_MS)
 //   * SSRF block — RFC1918 / localhost / link-local are denied unless
-//     IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1
+//     AGIM_NATIVE_WEB_ALLOW_PRIVATE=1
 //   * Body / result size cap to keep the model context manageable
 //
 // v1.2.118 — web_search now drives an ORDERED PROVIDER CHAIN via
-// `IMHUB_WEB_SEARCH_PROVIDERS` (default 'tavily,duckduckgo,metaso').
+// `AGIM_WEB_SEARCH_PROVIDERS` (default 'tavily,duckduckgo,metaso').
 // Each entry implements the SearchProvider interface below; providers
 // whose API key is missing are silently skipped, so adding TAVILY_API_KEY
 // to the env is enough to flip Tavily on. The first provider returning
@@ -60,7 +60,7 @@ export function getWebTools(): ToolDef[] {
         '\n\n' +
         'Default `format="reader"` runs the URL through r.jina.ai for HTML→text extraction; ' +
         '`format="raw"` returns the response body verbatim (use for JSON APIs). 200KB max, ' +
-        '30s timeout. Private IP ranges blocked unless IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1.',
+        '30s timeout. Private IP ranges blocked unless AGIM_NATIVE_WEB_ALLOW_PRIVATE=1.',
       parameters: {
         type: 'object',
         properties: {
@@ -92,7 +92,7 @@ export function getWebTools(): ToolDef[] {
         'DO NOT use native_web_fetch when the user only gave keywords without a URL — ' +
         'always start with native_web_search, then optionally native_web_fetch on a result. ' +
         '\n\n' +
-        'Backend chain configurable via IMHUB_WEB_SEARCH_PROVIDERS '
+        'Backend chain configurable via AGIM_WEB_SEARCH_PROVIDERS '
         + '(default "tavily,brave,serper,exa,duckduckgo,metaso"). Key env vars: '
         + 'TAVILY_API_KEY (agent-tuned, recommended), BRAVE_API_KEY (cheap, free 2K/mo), '
         + 'SERPER_API_KEY (Google SERP relay), EXA_API_KEY (semantic), '
@@ -302,7 +302,7 @@ const PROVIDERS: Record<string, SearchProvider> = {
 }
 
 /**
- * Read `IMHUB_WEB_SEARCH_PROVIDERS` (CSV) and return the active chain.
+ * Read `AGIM_WEB_SEARCH_PROVIDERS` (CSV) and return the active chain.
  * Unknown names are dropped with a one-shot warn (so a typo doesn't
  * silently disable the entire chain). Providers whose `available()`
  * returns false are also dropped — these are NOT logged because the
@@ -312,7 +312,7 @@ export function resolveSearchProviderChain(): SearchProvider[] {
   // Empty string is treated as "unset" — natural for env files where
   // clearing a value yields '' rather than removing the line. Use the
   // default order in that case.
-  const envOrder = process.env.IMHUB_WEB_SEARCH_PROVIDERS
+  const envOrder = process.env.AGIM_WEB_SEARCH_PROVIDERS
   const order = envOrder && envOrder.trim().length > 0 ? envOrder : DEFAULT_PROVIDER_ORDER
   const raw = order.split(',').map((s) => s.trim()).filter(Boolean)
   const chain: SearchProvider[] = []
@@ -374,7 +374,7 @@ async function runWebSearch(args: Record<string, unknown>, signal: AbortSignal):
   const chain = resolveSearchProviderChain()
   if (chain.length === 0) {
     return err(
-      'web_search: no providers configured. Set IMHUB_WEB_SEARCH_PROVIDERS=tavily,duckduckgo,metaso ' +
+      'web_search: no providers configured. Set AGIM_WEB_SEARCH_PROVIDERS=tavily,duckduckgo,metaso ' +
       'and at least one of TAVILY_API_KEY / METASO_API_KEY (duckduckgo needs no key).',
     )
   }
@@ -723,14 +723,14 @@ export function checkUrlSafety(raw: string): SafetyResult {
   if (!/^https?:$/.test(u.protocol)) {
     return { ok: false, reason: `protocol "${u.protocol}" not allowed (only http/https)` }
   }
-  if (process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE === '1') return { ok: true }
+  if (process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE === '1') return { ok: true }
 
   // CIDR whitelist (v1.2.66). Tailscale 100.64.0.0/10 etc.
-  const whitelist = parseSsrfWhitelist(process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST)
+  const whitelist = parseSsrfWhitelist(process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST)
 
   const host = u.hostname.toLowerCase()
   if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) {
-    return { ok: false, reason: 'localhost is private (set IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1 or whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST)' }
+    return { ok: false, reason: 'localhost is private (set AGIM_NATIVE_WEB_ALLOW_PRIVATE=1 or whitelist via AGIM_NATIVE_WEB_SSRF_WHITELIST)' }
   }
 
   // v1.2.70 — normalize hostname to an IP if possible BEFORE pattern
@@ -786,7 +786,7 @@ export async function checkUrlSafetyAsync(
 ): Promise<SafetyResult> {
   const sync = checkUrlSafety(raw)
   if (!sync.ok) return sync
-  if (process.env.IMHUB_NATIVE_WEB_ALLOW_PRIVATE === '1') return sync
+  if (process.env.AGIM_NATIVE_WEB_ALLOW_PRIVATE === '1') return sync
 
   let u: URL
   try { u = new URL(raw) } catch { return { ok: false, reason: `invalid URL: ${raw}` } }
@@ -805,7 +805,7 @@ export async function checkUrlSafetyAsync(
   }
   if (!addrs || addrs.length === 0) return { ok: false, reason: `no DNS records for ${host}` }
 
-  const whitelist = parseSsrfWhitelist(process.env.IMHUB_NATIVE_WEB_SSRF_WHITELIST)
+  const whitelist = parseSsrfWhitelist(process.env.AGIM_NATIVE_WEB_SSRF_WHITELIST)
   for (const a of addrs) {
     if (a.family === 6) {
       const r = checkIpv6Safety(a.address)
@@ -897,7 +897,7 @@ function checkIpv4Safety(octets: [number, number, number, number]): SafetyResult
   if (a === 100 && b >= 64 && b <= 127) {
     return {
       ok: false,
-      reason: '100.64.0.0/10 carrier-grade NAT (whitelist via IMHUB_NATIVE_WEB_SSRF_WHITELIST=100.64.0.0/10 if intentional, e.g. Tailscale)',
+      reason: '100.64.0.0/10 carrier-grade NAT (whitelist via AGIM_NATIVE_WEB_SSRF_WHITELIST=100.64.0.0/10 if intentional, e.g. Tailscale)',
     }
   }
   if (a === 0) return { ok: false, reason: '0.0.0.0/8 invalid' }
@@ -1049,7 +1049,7 @@ async function readCapped(res: Response, cap: number): Promise<{ text: string; t
 }
 
 function resolveTimeoutMs(): number {
-  const raw = process.env.IMHUB_NATIVE_WEB_TIMEOUT_MS
+  const raw = process.env.AGIM_NATIVE_WEB_TIMEOUT_MS
   if (raw) {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0 && n <= 120_000) return n

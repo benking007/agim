@@ -7,7 +7,7 @@
 // link resolves to a row in this SQLite, rendered by the web console.
 //
 // Permanence: rows have NO TTL. They are kept until the operator hits the
-// per-instance cap (`IMHUB_VIEWER_MAX_PASTES`, default 10_000), at which point
+// per-instance cap (`AGIM_VIEWER_MAX_PASTES`, default 10_000), at which point
 // the oldest rows are pruned LRU. Rationale: this is the operator's own data,
 // equivalent to their memos / job history — they should keep it unless they
 // explicitly delete.
@@ -38,10 +38,10 @@ const SCHEMA = `
 const viewerLog = rootLogger.child({ component: 'viewer-local' })
 
 /** Default 30-day TTL. 0 disables → permanent (back-compat for operators who
- *  treat pastes as long-term archive). LRU cap (IMHUB_VIEWER_MAX_PASTES) still
+ *  treat pastes as long-term archive). LRU cap (AGIM_VIEWER_MAX_PASTES) still
  *  applies on top of this. */
 function resolvePasteRetentionDays(): number {
-  const raw = process.env.IMHUB_PASTE_RETENTION_DAYS
+  const raw = process.env.AGIM_PASTE_RETENTION_DAYS
   if (raw === undefined) return 30
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 30
@@ -97,7 +97,7 @@ export interface SavePasteOpts {
 const DEFAULT_MAX_PASTES = 10_000
 
 function maxPastes(): number {
-  const raw = process.env.IMHUB_VIEWER_MAX_PASTES
+  const raw = process.env.AGIM_VIEWER_MAX_PASTES
   if (!raw) return DEFAULT_MAX_PASTES
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_PASTES

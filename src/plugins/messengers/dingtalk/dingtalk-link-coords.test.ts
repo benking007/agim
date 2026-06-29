@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'bun:test'
 // Import from the standalone link-coords module rather than dingtalk-adapter.
 // The adapter pulls in media-store → telegram/media-download which captures
-// IMHUB_MEDIA_ROOT at import time; loading it inside the test runner
+// AGIM_MEDIA_ROOT at import time; loading it inside the test runner
 // polluted the module cache for telegram's own test file. Keep this test
 // light by going straight to the URL helpers.
 import { tryExtractLatLng } from './link-coords.js'

@@ -123,10 +123,10 @@ CREATE TABLE user_aiwatch_settings (
 
 | Tool | 功能 |
 |------|------|
-| `mcp__imhub__create_reminder` | 创建一次性 / 循环提醒 |
-| `mcp__imhub__list_reminders` | 列出 pending |
-| `mcp__imhub__cancel_reminder` | 取消 |
-| `mcp__imhub__snooze_reminder` | 延后 |
+| `mcp__agim__create_reminder` | 创建一次性 / 循环提醒 |
+| `mcp__agim__list_reminders` | 列出 pending |
+| `mcp__agim__cancel_reminder` | 取消 |
+| `mcp__agim__snooze_reminder` | 延后 |
 
 工具描述里写明"CALL THIS PROACTIVELY whenever the user mentions a future commitment"，让 agent 主动调用。
 
@@ -150,9 +150,9 @@ CREATE TABLE user_aiwatch_settings (
 
 | Agent | Driver | MCP Reminder Tools | Context 路由方式 | 说明 |
 |-------|--------|--------------------|----------------|------|
-| **claude-code** | subprocess | ✅ | per-spawn `--mcp-config` + IMHUB_RUN_ID env | 标准路径 |
-| **opencode (stdio)** | subprocess | ✅ | 全局 `mcp.imhub` config + per-spawn `extraEnv` (IMHUB_RUN_ID) | 同 claude 模式，env 通过 SpawnPlan 注入 |
-| **opencode (http)** | shared daemon | ✅ (with caveat) | 全局 `mcp.imhub` config + 共享 `IMHUB_APPROVAL_SOCK` env + **agent-asserted `_im_context`** | 单用户专用；多用户场景 agent 可伪造身份 |
+| **claude-code** | subprocess | ✅ | per-spawn `--mcp-config` + AGIM_RUN_ID env | 标准路径 |
+| **opencode (stdio)** | subprocess | ✅ | 全局 `mcp.agim` config + per-spawn `extraEnv` (AGIM_RUN_ID) | 同 claude 模式，env 通过 SpawnPlan 注入 |
+| **opencode (http)** | shared daemon | ✅ (with caveat) | 全局 `mcp.agim` config + 共享 `AGIM_APPROVAL_SOCK` env + **agent-asserted `_im_context`** | 单用户专用；多用户场景 agent 可伪造身份 |
 | **codex** | subprocess (`exec --json`) | ❌ | — | `codex exec` 不支持外部 MCP；要支持需切到 `codex mcp-server` 模式（重写 adapter） |
 
 ### opencode http 的 single-user 限制
@@ -217,12 +217,12 @@ System prompt 强约束："**不献媚、不过度幽默、不夸大**"，长度
 注册为 `email` messenger，`threadId` 即收件人地址。SMTP 配置走 env：
 
 ```
-IMHUB_SMTP_HOST=smtp.gmail.com
-IMHUB_SMTP_PORT=465
-IMHUB_SMTP_USER=...
-IMHUB_SMTP_PASS=...        # Gmail 用 app-specific password
-IMHUB_SMTP_FROM=...        # 缺省 = USER
-IMHUB_SMTP_SECURE=auto     # 465 自动 secure，587 用 STARTTLS
+AGIM_SMTP_HOST=smtp.gmail.com
+AGIM_SMTP_PORT=465
+AGIM_SMTP_USER=...
+AGIM_SMTP_PASS=...        # Gmail 用 app-specific password
+AGIM_SMTP_FROM=...        # 缺省 = USER
+AGIM_SMTP_SECURE=auto     # 465 自动 secure，587 用 STARTTLS
 ```
 
 环境变量缺失时 adapter 仍注册成功（fail-soft），`sendMessage` 抛 "not configured"，提醒投递记 `failed` 而不是 crash。
@@ -265,7 +265,7 @@ src/core/router.ts                           context snippet 注入 augmentedPro
 src/core/types.ts                            ParsedMessage union 加 'remind'
 src/core/registry.ts                         注册 email adapter
 src/plugins/agents/claude-code/mcp-approval-server.ts   4 reminder tools + _im_context schema
-src/plugins/agents/opencode/opencode-stdio-adapter.ts   per-spawn extraEnv (IMHUB_RUN_ID)
+src/plugins/agents/opencode/opencode-stdio-adapter.ts   per-spawn extraEnv (AGIM_RUN_ID)
 src/plugins/agents/opencode/opencode-http-adapter.ts    buildImContextInstruction prompt prefix
 src/plugins/messengers/wechat/ilink-adapter.ts          context-store 写穿/warm/cleanup
 src/web/server.ts                            /reminders 页面路由 + 3 个 /api/reminders endpoint

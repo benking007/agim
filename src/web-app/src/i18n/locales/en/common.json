@@ -69,7 +69,7 @@
     "tokenLabel": "Access token",
     "submit": "Sign in",
     "adminRequired": "Current token has no admin permission. Please sign in with an admin token.",
-    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with IMHUB_TRUST_LOOPBACK=off."
+    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with AGIM_TRUST_LOOPBACK=off."
   },
   "home": {
     "placeholder": "Signed in. Open Chat from the sidebar.",

@@ -108,8 +108,8 @@ is a valid config. `/cc`, `/cx`, `/oc`, `/agim` all switch sticky session.
 
 ### 5b. A2A (cross-agent calls)
 
-`mcp__imhub__call_agent('native', '...')` works. So does
-`mcp__imhub__call_agent('claude-code', '...')` from inside native.
+`mcp__agim__call_agent('native', '...')` works. So does
+`mcp__agim__call_agent('claude-code', '...')` from inside native.
 You can mix and match freely:
 
 ```
@@ -140,7 +140,7 @@ Cross-thread admin views land under two SPA areas:
   last-tick status + enable/disable. REST `/api/heartbeat/bindings`.
 - `/tasks/goals` — every active goal across threads with lifecycle
   controls (pause / complete / cancel). REST `/api/goals`.
-- `/tasks/asks` — live pending `mcp__imhub__ask_user` queue with
+- `/tasks/asks` — live pending `mcp__agim__ask_user` queue with
   per-row Cancel (5s auto-refresh). REST `/api/asks/pending`.
 
 **`/settings/*`** — configuration:
@@ -188,7 +188,7 @@ exception.
 | Need a model the CLI agents don't support (DeepSeek, GLM, Kimi) | native (or opencode for limited support) |
 | Operator wants the same prompt → 2 backends to pick a winner | `/router compare` |
 | Long-running monitoring loop that pings on actionable updates | `/heartbeat` (uses cheap LLM + evaluator gate) |
-| Disambiguation question from agent to user | `mcp__imhub__ask_user` |
+| Disambiguation question from agent to user | `mcp__agim__ask_user` |
 
 ## 7. Anti-patterns (do NOT do these)
 
@@ -240,9 +240,9 @@ these added a `kind`-based branch in router / approval / audit.
 | Provider | Anthropic usable as a native backend: pseudo-stream now carries complete `toolCalls` (streaming previously dropped every Anthropic tool call); baseURL strips a trailing `/v1` (the wizard preset's `…/v1` 404'd) | `anthropic-provider.ts`, `provider-base.ts` (`ChatStreamChunk.toolCalls`), `agent-loop.ts` |
 | Context budget | `readOperatorRole` memoized by mtime/size; system-prompt skills list capped at `MAX_INJECTED_SKILLS` | `native/index.ts` |
 | Tool registry | one `assembleNativeTools()` produces defs + dispatch + a **per-call** concurrency classifier (was 3 hand-kept lists); external MCP partition name-sorted for prompt-cache stability | `native/tool-registry.ts`, `agent-loop.ts` (`parallelSafeClassifier`) |
-| Instruction layering | operator role = `<cwd>/AGENTS.md` (project) + `<cwd>/AGENTS.local.md` (local, **wins**); `IMHUB_NATIVE_AGENT_ROLE_FILE` still pins one file | `native/index.ts` |
+| Instruction layering | operator role = `<cwd>/AGENTS.md` (project) + `<cwd>/AGENTS.local.md` (local, **wins**); `AGIM_NATIVE_AGENT_ROLE_FILE` still pins one file | `native/index.ts` |
 | Verification subagent | prompt SOP: produce a result → spin a **fresh** subagent to verify it with a self-contained brief; synthesize-before-delegate. Prompt-only — uses the existing `call_agent`, no new code path | `native/index.ts` |
-| Trust gate | `IMHUB_NATIVE_TRUST_WORKSPACE=off` makes native skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | `native/index.ts` (`isWorkspaceTrusted`) |
+| Trust gate | `AGIM_NATIVE_TRUST_WORKSPACE=off` makes native skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | `native/index.ts` (`isWorkspaceTrusted`) |
 | Audit traceId | native now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted `native-<sid>-<ts>` id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, `native/index.ts` |
 
 ### 10.2 Honest deviations from the peer model (not yet closed)
@@ -252,13 +252,13 @@ hardcoded **`agentName === 'native'`** check (not `adapter.kind`), but
 they still break peer symmetry — flagged here so the next contributor
 doesn't mistake them for the intended design:
 
-- **A2A in-process fast path** (`imhub-dispatcher.ts`,
+- **A2A in-process fast path** (`agim-dispatcher.ts`,
   `call_agent('native')`): runs `nativeAgentAdapter.sendPrompt` directly,
   bypassing `callAgentByName`. It therefore does **not** create an inline
   job or write an `intent:'a2a'` audit row, so `/a2a stats|recent|tree`
   and A2A cost don't see these in-process fan-outs. This round only chained
   the trace id (`${parent}/a2a-${id}`); the job/audit parity is still TODO.
-  Toggle off with `IMHUB_NATIVE_CALL_AGENT_IN_PROCESS=off` (falls back to the
+  Toggle off with `AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off` (falls back to the
   standard subprocess path).
 - **`isAgentEnabled('native')` returns true unconditionally**
   (`live-config.ts`): the SPA `config.agents` disable toggle is ignored for
@@ -267,7 +267,7 @@ doesn't mistake them for the intended design:
 - **ACP SSRF** (`assertSafeAcpUrl`) only guards the Web test/discover APIs;
   config-persist, the discovery second-hop `endpoint`, and the runtime
   `ACPClient` are unguarded. The whole ACP surface is gated off by default
-  behind `IMHUB_ENABLE_REMOTE_AGENT`.
+  behind `AGIM_ENABLE_REMOTE_AGENT`.
 
 The fix direction for the first two: push any in-process optimisation **down
 into `callAgentByName` / the `AgentAdapter` layer** so the coordination

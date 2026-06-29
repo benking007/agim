@@ -1,6 +1,6 @@
 // v1.2.106 — regression guard for the v1.0.14 admin-lockout class of bug:
 // a stray `bun test` run clobbering the operator's real ~/.agim/env with the
-// admin-bootstrap fixture (IMHUB_ADMIN_USERS=telegram:123). The fix
+// admin-bootstrap fixture (AGIM_ADMIN_USERS=telegram:123). The fix
 // (assertEnvWriteAllowed) refuses env-file writes outside the OS tmpdir
 // while NODE_ENV=test — independent of the test/setup.ts preload, so it
 // holds even when the preload doesn't run.

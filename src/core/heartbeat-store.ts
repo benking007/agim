@@ -22,12 +22,12 @@ import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
-const HEARTBEAT_DB = process.env.IMHUB_HEARTBEAT_DB
+const HEARTBEAT_DB = process.env.AGIM_HEARTBEAT_DB
   ?? join(AGIM_HOME, 'heartbeat.db')
 
 /** Per-thread tick recurrence, in minutes. The default lines up with
  *  nanobot's 30-min cadence; operators can override per binding with
- *  `/heartbeat interval N` or the IMHUB_HEARTBEAT_DEFAULT_INTERVAL env. */
+ *  `/heartbeat interval N` or the AGIM_HEARTBEAT_DEFAULT_INTERVAL env. */
 export const DEFAULT_INTERVAL_MIN = 30
 
 /** Hard lower bound on the recurrence. 1-minute heartbeats are almost
@@ -155,7 +155,7 @@ function rowFromRaw(r: HeartbeatRowRaw): HeartbeatRow {
 
 /** Read the operator-provided default interval (env override or constant). */
 export function defaultIntervalMinutes(): number {
-  const raw = process.env.IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN
+  const raw = process.env.AGIM_HEARTBEAT_DEFAULT_INTERVAL_MIN
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n >= MIN_INTERVAL_MIN && n <= MAX_INTERVAL_MIN) {

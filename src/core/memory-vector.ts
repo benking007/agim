@@ -14,7 +14,7 @@
 //                      All requests wrapped in AbortSignal.timeout to never
 //                      block the page when the network is bad.
 //
-// The active backend is selected by IMHUB_MEMORY_VECTOR_BACKEND
+// The active backend is selected by AGIM_MEMORY_VECTOR_BACKEND
 // (off | local | openai). Status / download / test endpoints in
 // web/server.ts read from `getActiveBackend()` to drive the UI.
 
@@ -66,7 +66,7 @@ class OffBackend implements EmbeddingBackend {
     return {
       backend: 'off', ready: false, dims: 0, modelId: '',
       lastError: null,
-      detail: { hint: 'set IMHUB_MEMORY_VECTOR_BACKEND=local|openai to enable' },
+      detail: { hint: 'set AGIM_MEMORY_VECTOR_BACKEND=local|openai to enable' },
     }
   }
 }
@@ -336,7 +336,7 @@ let localSingleton: LocalBgeBackend | null = null
 let openaiSingleton: OpenAIBackend | null = null
 
 function readBackendName(): BackendName {
-  const v = (process.env.IMHUB_MEMORY_VECTOR_BACKEND || 'off').toLowerCase()
+  const v = (process.env.AGIM_MEMORY_VECTOR_BACKEND || 'off').toLowerCase()
   return v === 'local' || v === 'openai' ? v : 'off'
 }
 
@@ -344,16 +344,16 @@ export function getActiveBackend(): EmbeddingBackend {
   const which = readBackendName()
   if (which === 'off') return off
   if (which === 'local') {
-    const modelId = process.env.IMHUB_MEMORY_VECTOR_LOCAL_MODEL || 'Xenova/bge-base-zh-v1.5'
+    const modelId = process.env.AGIM_MEMORY_VECTOR_LOCAL_MODEL || 'Xenova/bge-base-zh-v1.5'
     if (!localSingleton || localSingleton.modelId !== modelId) {
       localSingleton = new LocalBgeBackend(modelId)
     }
     return localSingleton
   }
   // openai
-  const baseUrl = process.env.IMHUB_MEMORY_VECTOR_OPENAI_BASE_URL || 'https://api.openai.com/v1'
-  const modelId = process.env.IMHUB_MEMORY_VECTOR_OPENAI_MODEL || 'text-embedding-3-small'
-  const apiKey = process.env.IMHUB_MEMORY_VECTOR_OPENAI_API_KEY || ''
+  const baseUrl = process.env.AGIM_MEMORY_VECTOR_OPENAI_BASE_URL || 'https://api.openai.com/v1'
+  const modelId = process.env.AGIM_MEMORY_VECTOR_OPENAI_MODEL || 'text-embedding-3-small'
+  const apiKey = process.env.AGIM_MEMORY_VECTOR_OPENAI_API_KEY || ''
   if (!openaiSingleton
       || openaiSingleton.baseUrl !== baseUrl.replace(/\/$/, '')
       || openaiSingleton.modelId !== modelId
@@ -370,13 +370,13 @@ export function _resetVectorBackendsForTests(): void {
 }
 
 export function getHybridWeight(): number {
-  const raw = parseFloat(process.env.IMHUB_MEMORY_VECTOR_HYBRID_WEIGHT || '0.5')
+  const raw = parseFloat(process.env.AGIM_MEMORY_VECTOR_HYBRID_WEIGHT || '0.5')
   if (!Number.isFinite(raw)) return 0.5
   return Math.max(0, Math.min(1, raw))
 }
 
 export function getBatchSize(): number {
-  const raw = parseInt(process.env.IMHUB_MEMORY_VECTOR_BATCH_SIZE || '32', 10)
+  const raw = parseInt(process.env.AGIM_MEMORY_VECTOR_BATCH_SIZE || '32', 10)
   if (!Number.isFinite(raw) || raw < 1) return 32
   return Math.min(raw, 128)
 }

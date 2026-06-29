@@ -26,7 +26,7 @@ import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 
-const GOALS_DB = process.env.IMHUB_GOALS_DB ?? join(AGIM_HOME, 'goals.db')
+const GOALS_DB = process.env.AGIM_GOALS_DB ?? join(AGIM_HOME, 'goals.db')
 
 /** Hard caps. Goals are user-typed prose; tight limits keep prompt
  *  injection from blowing the context window on a single thread. */
@@ -323,7 +323,7 @@ export function hasActiveGoal(platform: string, channelId: string, threadId: str
 
 /** v1.2.86 — when an active goal exists on the addressed thread, the
  *  caller may legitimately need much longer to finish (research/coding
- *  marathons). Multiply the base timeout by IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
+ *  marathons). Multiply the base timeout by AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
  *  (default 3×). Returns `base` unchanged when no thread context, no
  *  active goal, or db unavailable.
  *
@@ -336,7 +336,7 @@ export function applyGoalTimeoutBoost(
 ): number {
   if (!ctx || !ctx.platform || !ctx.channelId || !ctx.threadId) return base
   if (!hasActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)) return base
-  const raw = process.env.IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
+  const raw = process.env.AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
   let mult = 3
   if (raw) {
     const n = parseFloat(raw)

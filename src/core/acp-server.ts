@@ -20,7 +20,7 @@ const DEFAULT_ACP_PORT = 9090
 const MAX_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
 
 async function parseAuth(req: IncomingMessage): Promise<{ ok: boolean; status?: number; error?: string }> {
-  if ((process.env.IMHUB_WEB_AUTH || '').toLowerCase() === 'off') {
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') {
     return { ok: true }
   }
   const auth = String(req.headers.authorization || '')
@@ -111,8 +111,8 @@ export async function startACPServer(options: {
     // GET /agent/card
     if (req.method === 'GET' && url.pathname === '/agent/card') {
       sendJson(res, 200, {
-        name: 'im-hub-gateway',
-        description: 'IM Hub — Intelligent multi-agent gateway',
+        name: 'agim-gateway',
+        description: 'Agim — Intelligent multi-agent gateway',
         version: '0.3.0',
         protocols: ['acp/v1'],
         capabilities: {
@@ -253,11 +253,11 @@ export async function startACPServer(options: {
   })
 
   // R13 A2 — bind defaults to 127.0.0.1 (loopback only). Operators
-  // who run A2A across hosts can opt-in with IMHUB_ACP_BIND=<addr>.
+  // who run A2A across hosts can opt-in with AGIM_ACP_BIND=<addr>.
   // We warn loudly when non-loopback so the deployment audit log
   // captures the elevation; the Web admin token gate (parseAuth)
   // remains the only client-facing protection regardless.
-  const bind = (process.env.IMHUB_ACP_BIND || '127.0.0.1').trim()
+  const bind = (process.env.AGIM_ACP_BIND || '127.0.0.1').trim()
   const isLoopback = bind === '127.0.0.1' || bind === '::1' || bind === 'localhost'
   await new Promise<void>((resolve) => {
     server.listen(port, bind, () => resolve())

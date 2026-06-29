@@ -34,7 +34,7 @@ const TOOL_CALL_DISCIPLINE_PROMPT = [
 ].join('\n')
 
 export function isToolDisciplineOn(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_TOOL_DISCIPLINE ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_TOOL_DISCIPLINE ?? '').toLowerCase().trim()
   return !(raw === 'off' || raw === '0' || raw === 'false' || raw === 'no' || raw === 'disable')
 }
 
@@ -91,8 +91,8 @@ export function buildSystemPrompt(
 
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
-    '  - agim built-in MCP tools (mcp__imhub__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal',
-    '  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — full filesystem access by default (set IMHUB_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
+    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal',
+    '  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
     '  - native web tools: native_web_fetch, native_web_search. Private IPs blocked by default.',
     '  - native_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers configured by the operator:',
@@ -103,8 +103,8 @@ export function buildSystemPrompt(
     '',
     'Guidance:',
     '  - Be terse; avoid filler. Prefer tool use over guessing.',
-    '  - When uncertain, call mcp__imhub__ask_user(question, choices[]) instead of free-form back-and-forth.',
-    '  - When the user references something they told the bot before, search memos via mcp__imhub__search_memos.',
+    '  - When uncertain, call mcp__agim__ask_user(question, choices[]) instead of free-form back-and-forth.',
+    '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
     '  - For file/list/search/fetch requests, use native tools first; reserve call_agent for work that genuinely needs another CLI agent.',
     '  - Closure rule: after a tool chain, write a short Chinese summary before stopping.',
     '',
@@ -153,7 +153,7 @@ function readRoleFile(path: string): string {
 }
 
 export function readOperatorRole(cwd: string): string {
-  const override = process.env.IMHUB_NATIVE_AGENT_ROLE_FILE
+  const override = process.env.AGIM_NATIVE_AGENT_ROLE_FILE
   if (override && override.length > 0) return readRoleFile(override)
   if (!isWorkspaceTrusted()) return ''
   const parts: string[] = []
@@ -165,14 +165,14 @@ export function readOperatorRole(cwd: string): string {
 }
 
 export function isWorkspaceTrusted(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_TRUST_WORKSPACE ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_TRUST_WORKSPACE ?? '').toLowerCase().trim()
   return !(raw === 'off' || raw === '0' || raw === 'false' || raw === 'no')
 }
 
 const DEFAULT_ROLE_FALLBACK: string[] = ['native-chat', 'cheap']
 
 function resolveRole(): string[] {
-  const raw = process.env.IMHUB_NATIVE_AGENT_ROLE
+  const raw = process.env.AGIM_NATIVE_AGENT_ROLE
   if (raw?.trim()) return [raw.trim(), ...DEFAULT_ROLE_FALLBACK]
   return DEFAULT_ROLE_FALLBACK.slice()
 }
@@ -195,18 +195,18 @@ function splitEnvList(raw: string | undefined): string[] {
 const PLAN_MODE_DENY_TOOLS = ['native_write_file', 'native_exec'] as const
 
 export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
-  const mode = (process.env.IMHUB_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
-  const autoAllow = splitEnvList(process.env.IMHUB_NATIVE_AGENT_AUTOALLOW)
-  const denyList = splitEnvList(process.env.IMHUB_NATIVE_AGENT_DENYLIST)
+  const mode = (process.env.AGIM_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
+  const autoAllow = splitEnvList(process.env.AGIM_NATIVE_AGENT_AUTOALLOW)
+  const denyList = splitEnvList(process.env.AGIM_NATIVE_AGENT_DENYLIST)
   const defaultBuiltins = [
     'native_echo', 'native_now', 'native_random_uuid',
     'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
     'native_web_fetch', 'native_web_search',
-    'mcp__imhub__read_skill', 'mcp__imhub__list_skills',
-    'mcp__imhub__save_memo', 'mcp__imhub__search_memos',
-    'mcp__imhub__update_memo', 'mcp__imhub__delete_memo',
-    'mcp__imhub__push_message', 'mcp__imhub__ask_user',
-    'mcp__imhub__call_agent', 'mcp__imhub__long_task', 'mcp__imhub__complete_goal',
+    'mcp__agim__read_skill', 'mcp__agim__list_skills',
+    'mcp__agim__save_memo', 'mcp__agim__search_memos',
+    'mcp__agim__update_memo', 'mcp__agim__delete_memo',
+    'mcp__agim__push_message', 'mcp__agim__ask_user',
+    'mcp__agim__call_agent', 'mcp__agim__long_task', 'mcp__agim__complete_goal',
     'native_todo_write', 'native_exit_plan_mode',
   ]
   const effectiveAllow = mode === 'allow-list'
@@ -256,7 +256,7 @@ export function parsePromptMedia(prompt: string): Array<{ path: string; mime?: s
   const re = /\[(?:图片附件|image attachment)[：:]\s*([^\]]+)\]/g
   const out: Array<{ path: string; mime?: string }> = []
   const home = process.env.HOME || '/root'
-  const mediaRootRaw = process.env.IMHUB_MEDIA_ROOT || `${home}/.agim/media`
+  const mediaRootRaw = process.env.AGIM_MEDIA_ROOT || `${home}/.agim/media`
   const mediaRoot = pathResolve(mediaRootRaw)
   const mediaPrefix = mediaRoot.endsWith(pathSep) ? mediaRoot : mediaRoot + pathSep
   for (;;) {

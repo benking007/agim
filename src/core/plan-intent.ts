@@ -10,7 +10,7 @@
 // What it does:
 //   detectPlanIntent(prompt) returns true if the prompt matches one of
 //   the keyword patterns below. The router (router.ts:callAgentWithHistory)
-//   checks this BEFORE invoking the agent; if env IMHUB_PLAN_INTENT_AUTO
+//   checks this BEFORE invoking the agent; if env AGIM_PLAN_INTENT_AUTO
 //   is on AND plan mode is currently off AND intent is detected, the
 //   router temporarily enables plan mode for that one turn (via the
 //   opts.planMode flag passed to the adapter — does NOT mutate
@@ -20,7 +20,7 @@
 // What it does NOT do:
 //   - It NEVER auto-exits plan mode. Once on, only /plan off or
 //     native_exit_plan_mode (v1.2.131) can leave.
-//   - It is OFF by default. Operators must IMHUB_PLAN_INTENT_AUTO=on.
+//   - It is OFF by default. Operators must AGIM_PLAN_INTENT_AUTO=on.
 //   - It does not "guess" — the keyword list is explicit + small. No
 //     LLM round-trip, no semantic vector classification (too costly
 //     for a feature this defensive).
@@ -70,18 +70,18 @@ const PLAN_INTENT_PHRASES_DEFAULT = [
   'dry-run only',
 ] as const
 
-/** Parse IMHUB_PLAN_INTENT_PHRASES — comma-separated overrides. When
+/** Parse AGIM_PLAN_INTENT_PHRASES — comma-separated overrides. When
  *  set, REPLACES the default list (not merged) so operators can tighten
  *  or relax matching without code changes. Empty entries dropped. */
 function resolvePhrases(): string[] {
-  const raw = (process.env.IMHUB_PLAN_INTENT_PHRASES ?? '').trim()
+  const raw = (process.env.AGIM_PLAN_INTENT_PHRASES ?? '').trim()
   if (!raw) return [...PLAN_INTENT_PHRASES_DEFAULT]
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
 /** Master switch. Operators flip via /settings/native-agent or env. */
 export function isPlanIntentAutoEnabled(): boolean {
-  const raw = (process.env.IMHUB_PLAN_INTENT_AUTO ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_PLAN_INTENT_AUTO ?? '').toLowerCase().trim()
   return raw === 'on' || raw === '1' || raw === 'true' || raw === 'yes'
 }
 

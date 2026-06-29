@@ -85,8 +85,8 @@ describe('coord math', () => {
 
 describe('normalizeIncomingCoords — per-source policy', () => {
   beforeEach(() => {
-    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
-    delete process.env.IMHUB_H5_COORDS_GCJ02
+    delete process.env.AGIM_TELEGRAM_COORDS_GCJ02
+    delete process.env.AGIM_H5_COORDS_GCJ02
   })
 
   // ─── feishu-native: always GCJ→WGS (server-mandated, no flag) ──
@@ -101,24 +101,24 @@ describe('normalizeIncomingCoords — per-source policy', () => {
   // ─── telegram-native: Plan C (2026-05-22) default = GCJ→WGS in China,
   //     env=0 forces pass-through. force opt always wins. ──
   it('telegram-native default in-China = GCJ→WGS (Apple iOS Core Location case)', () => {
-    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+    delete process.env.AGIM_TELEGRAM_COORDS_GCJ02
     const gcj = wgs84ToGcj02(HZ_WGS.lat, HZ_WGS.lng)
     const r = normalizeIncomingCoords('telegram-native', gcj.lat, gcj.lng)
     expect(r.applied).toBe('gcj02-to-wgs84')
     expect(Math.abs(r.lat - HZ_WGS.lat)).toBeLessThan(1e-5)
   })
 
-  it('telegram-native with IMHUB_TELEGRAM_COORDS_GCJ02=0 = pass-through (Android / Desktop)', () => {
-    process.env.IMHUB_TELEGRAM_COORDS_GCJ02 = '0'
+  it('telegram-native with AGIM_TELEGRAM_COORDS_GCJ02=0 = pass-through (Android / Desktop)', () => {
+    process.env.AGIM_TELEGRAM_COORDS_GCJ02 = '0'
     const r = normalizeIncomingCoords('telegram-native', HZ_WGS.lat, HZ_WGS.lng)
     expect(r.applied).toBe('none')
     expect(r.lat).toBe(HZ_WGS.lat)
     expect(r.lng).toBe(HZ_WGS.lng)
-    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+    delete process.env.AGIM_TELEGRAM_COORDS_GCJ02
   })
 
   it('force=wgs84 overrides the in-China default (Plan C per-user pref)', () => {
-    delete process.env.IMHUB_TELEGRAM_COORDS_GCJ02
+    delete process.env.AGIM_TELEGRAM_COORDS_GCJ02
     const r = normalizeIncomingCoords('telegram-native', HZ_WGS.lat, HZ_WGS.lng, { force: 'wgs84' })
     expect(r.applied).toBe('none')
     expect(r.lat).toBe(HZ_WGS.lat)
@@ -141,8 +141,8 @@ describe('normalizeIncomingCoords — per-source policy', () => {
     expect(r.lng).toBe(HZ_WGS.lng)
   })
 
-  it('h5 with IMHUB_H5_COORDS_GCJ02=1 applies GCJ→WGS (iOS Safari case)', () => {
-    process.env.IMHUB_H5_COORDS_GCJ02 = '1'
+  it('h5 with AGIM_H5_COORDS_GCJ02=1 applies GCJ→WGS (iOS Safari case)', () => {
+    process.env.AGIM_H5_COORDS_GCJ02 = '1'
     const gcj = wgs84ToGcj02(HZ_WGS.lat, HZ_WGS.lng)
     const r = normalizeIncomingCoords('h5-browser-geolocation', gcj.lat, gcj.lng)
     expect(r.applied).toBe('gcj02-to-wgs84')

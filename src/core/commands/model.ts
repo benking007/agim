@@ -20,7 +20,7 @@ import { sessionManager } from '../session.js'
  *  stripped PATH doesn't break `/models` while the adapter still works. */
 let cachedCursorBin: string | null | undefined = null
 function resolveCursorBin(): string {
-  const override = process.env.IMHUB_CURSOR_BIN
+  const override = process.env.AGIM_CURSOR_BIN
   if (override) return override
   if (cachedCursorBin !== null) return cachedCursorBin ?? 'cursor-agent'
   const candidates = [

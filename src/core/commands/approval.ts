@@ -7,7 +7,7 @@
 // /approval readonly off   — disable readonly auto-allow for this thread
 //
 // Auto-allow "all" rules are scoped per (platform, channelId, threadId).
-// Readonly auto-allow has a global env switch (IMHUB_AUTOALLOW_READONLY) +
+// Readonly auto-allow has a global env switch (AGIM_AUTOALLOW_READONLY) +
 // per-thread opt-out — both also keyed by the same composite.
 
 import type { RouteContext } from '../router.js'
@@ -46,7 +46,7 @@ export async function handleApprovalCommand(
     if (action === 'on' || action === 'enable') {
       const ok = approvalBus.setReadonlyAutoAllowEnabled(tKey, true)
       if (!ok) {
-        return '⚠️ 全局已通过 IMHUB_AUTOALLOW_READONLY=0 关闭只读自动放行；本线程开关已置 on，但需运维同时撤销环境变量后才生效。'
+        return '⚠️ 全局已通过 AGIM_AUTOALLOW_READONLY=0 关闭只读自动放行；本线程开关已置 on，但需运维同时撤销环境变量后才生效。'
       }
       return `✅ 本会话已开启「只读工具自动放行」（${tools}）。`
     }

@@ -85,8 +85,8 @@ function safeStringify(v: unknown, maxLen: number): string {
 }
 
 /**
- * Strip MCP-style prefix from a tool name for display. `mcp__imhub__create_reminder`
- * → `imhub: create_reminder` (the user cares about the namespace, not the
+ * Strip MCP-style prefix from a tool name for display. `mcp__agim__create_reminder`
+ * → `agim: create_reminder` (the user cares about the namespace, not the
  * triple-underscore wire format).
  */
 function displayToolName(name: string): string {

@@ -8,8 +8,8 @@ import { mkdir, readdir, rm, stat, writeFile, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const TEST_ROOT = join(tmpdir(), `imhub-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
-process.env.IMHUB_MEDIA_ROOT = TEST_ROOT
+const TEST_ROOT = join(tmpdir(), `agim-media-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+process.env.AGIM_MEDIA_ROOT = TEST_ROOT
 
 // Import AFTER setting env. Use getMediaRoot() (lazy) for assertions
 // because under bun's shared test-process module cache the first

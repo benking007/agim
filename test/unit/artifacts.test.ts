@@ -91,18 +91,18 @@ describe('copyInputs', () => {
   })
 
   it('enforces per-file size cap', async () => {
-    process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_FILE = '10'
+    process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_FILE = '10'
     try {
       await expect(artifacts.copyInputs(15, [
         { name: 'big.txt', content: 'this is more than 10 bytes' },
       ])).rejects.toThrow(/per-file cap/)
     } finally {
-      delete process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_FILE
+      delete process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_FILE
     }
   })
 
   it('enforces per-job byte cap across multiple inputs', async () => {
-    process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_JOB = '15'
+    process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_JOB = '15'
     try {
       await expect(artifacts.copyInputs(16, [
         { name: 'a.txt', content: 'hello' },          // 5
@@ -110,12 +110,12 @@ describe('copyInputs', () => {
         { name: 'c.txt', content: 'abcdef' },         // 6 (total 16) → over 15
       ])).rejects.toThrow(/per-job byte cap/)
     } finally {
-      delete process.env.IMHUB_A2A_ARTIFACT_MAX_BYTES_PER_JOB
+      delete process.env.AGIM_A2A_ARTIFACT_MAX_BYTES_PER_JOB
     }
   })
 
   it('enforces per-job file count cap', async () => {
-    process.env.IMHUB_A2A_ARTIFACT_MAX_FILES_PER_JOB = '2'
+    process.env.AGIM_A2A_ARTIFACT_MAX_FILES_PER_JOB = '2'
     try {
       await expect(artifacts.copyInputs(17, [
         { name: 'a.txt', content: '1' },
@@ -123,7 +123,7 @@ describe('copyInputs', () => {
         { name: 'c.txt', content: '3' },
       ])).rejects.toThrow(/too many input files/)
     } finally {
-      delete process.env.IMHUB_A2A_ARTIFACT_MAX_FILES_PER_JOB
+      delete process.env.AGIM_A2A_ARTIFACT_MAX_FILES_PER_JOB
     }
   })
 

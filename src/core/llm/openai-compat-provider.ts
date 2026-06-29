@@ -121,7 +121,7 @@ export function computeBackoffMs(
 }
 
 function resolveDefaultRetry(): number {
-  const raw = process.env.IMHUB_LLM_RETRY_MAX
+  const raw = process.env.AGIM_LLM_RETRY_MAX
   if (!raw) return DEFAULT_RETRY
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 0) return DEFAULT_RETRY
@@ -328,7 +328,7 @@ export class OpenAICompatProvider extends LlmProvider {
    * avoid thundering-herd against the upstream's recovery window.
    *
    * Defaults: 3 retries (= 4 attempts), 250ms base, doubling per attempt,
-   * capped at 30s. Override via `IMHUB_LLM_RETRY_MAX` env (clamped [0,10])
+   * capped at 30s. Override via `AGIM_LLM_RETRY_MAX` env (clamped [0,10])
    * or the `retryOnTransient` ctor option. The cap exists because beyond
    * ~30s the worker is better off surrendering so the agent loop can pick
    * a fallback provider.

@@ -1,7 +1,7 @@
 // OpenCodeAdapter — verify session-id capture, --session injection, and
 // usage callbacks. The adapter is the only piece in the v2 chain that turns
 // opencode's `--format json` event stream into the per-agent session row in
-// im-hub, so this is the regression net for the 2026-05-02 wire-up.
+// agim, so this is the regression net for the 2026-05-02 wire-up.
 
 import { describe, it, expect } from 'bun:test'
 import { OpenCodeAdapter } from './index.js'

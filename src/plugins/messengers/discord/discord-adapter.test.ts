@@ -109,7 +109,7 @@ function bootAdapter(opts: {
 }
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-discord-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-discord-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 describe('DiscordAdapter — sendMessage', () => {

@@ -25,15 +25,15 @@ describe('exec-dispatcher', () => {
   })
 
   beforeEach(() => {
-    delete process.env.IMHUB_EXEC_SANDBOX
-    delete process.env.IMHUB_EXEC_TIMEOUT_MS
-    delete process.env.IMHUB_EXEC_MAX_OUTPUT
+    delete process.env.AGIM_EXEC_SANDBOX
+    delete process.env.AGIM_EXEC_TIMEOUT_MS
+    delete process.env.AGIM_EXEC_MAX_OUTPUT
   })
 
   afterEach(() => {
-    delete process.env.IMHUB_EXEC_SANDBOX
-    delete process.env.IMHUB_EXEC_TIMEOUT_MS
-    delete process.env.IMHUB_EXEC_MAX_OUTPUT
+    delete process.env.AGIM_EXEC_SANDBOX
+    delete process.env.AGIM_EXEC_TIMEOUT_MS
+    delete process.env.AGIM_EXEC_MAX_OUTPUT
   })
 
   describe('buildExecEnv — env allow-list (F1)', () => {
@@ -66,8 +66,8 @@ describe('exec-dispatcher', () => {
       expect(env.HOME).toBe('/home/agent')
     })
 
-    it('honours IMHUB_EXEC_ENV_PASS opt-in', () => {
-      touch('IMHUB_EXEC_ENV_PASS', 'FOO,BAR')
+    it('honours AGIM_EXEC_ENV_PASS opt-in', () => {
+      touch('AGIM_EXEC_ENV_PASS', 'FOO,BAR')
       touch('FOO', 'foo-val')
       touch('BAR', 'bar-val')
       touch('OPENAI_API_KEY', 'sk-secret')
@@ -79,9 +79,9 @@ describe('exec-dispatcher', () => {
 
     it('always preserves the per-spawn extraEnv (RPC token injection)', () => {
       touch('OPENAI_API_KEY', 'sk-secret')
-      const env = buildExecEnv({ IMHUB_RPC_TOKEN: 'tok', IMHUB_RPC_SOCKET: '/run/x.sock' })
-      expect(env.IMHUB_RPC_TOKEN).toBe('tok')
-      expect(env.IMHUB_RPC_SOCKET).toBe('/run/x.sock')
+      const env = buildExecEnv({ AGIM_RPC_TOKEN: 'tok', AGIM_RPC_SOCKET: '/run/x.sock' })
+      expect(env.AGIM_RPC_TOKEN).toBe('tok')
+      expect(env.AGIM_RPC_SOCKET).toBe('/run/x.sock')
       expect(env.OPENAI_API_KEY).toBeUndefined()
     })
   })
@@ -184,7 +184,7 @@ describe('exec-dispatcher', () => {
     }, 20000)
 
     it('truncates oversize stdout', async () => {
-      process.env.IMHUB_EXEC_MAX_OUTPUT = '2000'
+      process.env.AGIM_EXEC_MAX_OUTPUT = '2000'
       const d = buildExecDispatcher({ cwd })
       // Deterministic ~8000-byte output, no /dev/urandom dependency.
       const r = await d(

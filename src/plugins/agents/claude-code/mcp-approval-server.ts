@@ -4,8 +4,8 @@
 //
 // 这是个独立进程，由 claude 子进程通过 --mcp-config 启动；与 agim 通信只走 socket。
 // 启动需要两个 env：
-//   IMHUB_APPROVAL_SOCK  unix socket 路径
-//   IMHUB_RUN_ID         本次 claude run 的 ID（与 approvalBus.registerRun 配套）
+//   AGIM_APPROVAL_SOCK  unix socket 路径
+//   AGIM_RUN_ID         本次 claude run 的 ID（与 approvalBus.registerRun 配套）
 //
 // 协议见 src/core/approval-bus.ts。
 //
@@ -17,7 +17,7 @@ import { z } from 'zod'
 import { createConnection, type Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
 
-const SERVER_NAME = 'imhub'
+const SERVER_NAME = 'agim'
 const TOOL_NAME = 'request'
 
 interface DecisionAllow { behavior: 'allow'; updatedInput?: Record<string, unknown> }
@@ -705,7 +705,7 @@ export function buildServer(client: ApprovalClient): McpServer {
       // approve "do you really want this reminder you literally just asked
       // for" is double-confirmation and clutters the chat. The tool body
       // itself runs through bus.handleReminder which validates payloads.
-      if (toolName.startsWith('mcp__imhub__')) {
+      if (toolName.startsWith('mcp__agim__')) {
         return {
           content: [
             {
@@ -1076,7 +1076,7 @@ export function buildServer(client: ApprovalClient): McpServer {
   // monitoring loops, long-task progress updates, scheduled analyses.
   //
   // Default scope = caller's own thread. Cross-thread requires
-  // IMHUB_PUSH_CROSS_THREAD=on. Rate limit IMHUB_PUSH_RATE_PER_MINUTE
+  // AGIM_PUSH_CROSS_THREAD=on. Rate limit AGIM_PUSH_RATE_PER_MINUTE
   // (default 10/min/user).
   // ─── P0 #5 — structured ask_user ─────────────────────────────────
   // The agent presents a structured question with 2-9 choices and waits
@@ -1177,9 +1177,9 @@ export function buildServer(client: ApprovalClient): McpServer {
         '**USE THIS TOOL when you need to send a message to the user without waiting for them to ask first** — ' +
         'monitoring alerts, long task progress, scheduled analysis results. ' +
         'By default the message goes to YOUR OWN current IM thread (the same thread that invoked you). ' +
-        'Cross-thread pushes require the operator to enable IMHUB_PUSH_CROSS_THREAD=on AND must target the ' +
+        'Cross-thread pushes require the operator to enable AGIM_PUSH_CROSS_THREAD=on AND must target the ' +
         'same platform AND same user as the caller — there is no "push to anyone" capability.\n\n' +
-        'Rate limit: 10 pushes/min/user by default (IMHUB_PUSH_RATE_PER_MINUTE). Above cap → returns error.\n\n' +
+        'Rate limit: 10 pushes/min/user by default (AGIM_PUSH_RATE_PER_MINUTE). Above cap → returns error.\n\n' +
         'Returns { ok: true, result: { outboxId, immediate, targetThread } } on success.\n\n' +
         'Triggers (Chinese): 「监控到 X 时通知我」「这个任务跑完时告诉我」「每天 8 点把 X 推给我」 — ' +
         'when you finally HAVE the result, call this tool to push.\n\n' +
@@ -1187,7 +1187,7 @@ export function buildServer(client: ApprovalClient): McpServer {
       inputSchema: {
         text: z.string().min(1).max(4000).describe('Message body. Plain text or markdown. Required.'),
         toThread: z.string().optional().describe(
-          'Optional override: "platform:channelId:threadId". Same-platform same-user only; requires IMHUB_PUSH_CROSS_THREAD=on. Omit for caller\'s own thread.',
+          'Optional override: "platform:channelId:threadId". Same-platform same-user only; requires AGIM_PUSH_CROSS_THREAD=on. Omit for caller\'s own thread.',
         ),
         _im_context: imContextSchema,
       },
@@ -1344,7 +1344,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         ),
         timeoutMs: z.number().int().positive().optional().describe(
           'Optional override for the wait timeout. Defaults to 10 minutes ' +
-          '(IMHUB_A2A_TIMEOUT_DEFAULT_MS). The callee keeps running on timeout, but you stop ' +
+          '(AGIM_A2A_TIMEOUT_DEFAULT_MS). The callee keeps running on timeout, but you stop ' +
           'waiting and get an error.',
         ),
         inputs: z.array(
@@ -1441,12 +1441,12 @@ export function buildServer(client: ApprovalClient): McpServer {
 export { ApprovalClient }
 
 async function main(): Promise<void> {
-  const sockPath = process.env.IMHUB_APPROVAL_SOCK
+  const sockPath = process.env.AGIM_APPROVAL_SOCK
   if (!sockPath) {
-    process.stderr.write('[mcp-approval-server] missing IMHUB_APPROVAL_SOCK\n')
+    process.stderr.write('[mcp-approval-server] missing AGIM_APPROVAL_SOCK\n')
     process.exit(1)
   }
-  // IMHUB_RUN_ID is optional. Per-spawn paths (claude-code --mcp-config,
+  // AGIM_RUN_ID is optional. Per-spawn paths (claude-code --mcp-config,
   // opencode stdio extraEnv) set a unique runId so the bus can look up
   // the IM thread context. Long-lived shared paths (opencode http daemon
   // spawning the MCP server once at startup) leave it unset; reminder.*
@@ -1454,7 +1454,7 @@ async function main(): Promise<void> {
   // Approval tool calls without a runId can't be routed and will be
   // denied by the bus — but those paths don't use this sidecar anyway
   // (opencode http does approvals via SSE, not MCP).
-  const runId = process.env.IMHUB_RUN_ID || ''
+  const runId = process.env.AGIM_RUN_ID || ''
 
   const client = new ApprovalClient(sockPath, runId)
   const server = buildServer(client)

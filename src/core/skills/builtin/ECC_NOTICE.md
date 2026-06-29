@@ -10,7 +10,7 @@ licensed under MIT. Each ECC-origin skill is identifiable by:
 Operators can disable the entire ECC skill pack via:
 
 ```
-IMHUB_INCLUDE_ECC_SKILLS=off
+AGIM_INCLUDE_ECC_SKILLS=off
 ```
 
 Original license: `ECC_LICENSE` (MIT, © affaan-m).

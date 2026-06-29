@@ -27,14 +27,14 @@
 //      scheduler) keep working.
 //   5. Exits cleanly on `session.status: idle` for the right session,
 //      surfaces `session.error`, and is bounded by an idle watchdog
-//      (OPENCODE_IDLE_TIMEOUT_MS / IMHUB_AGENT_IDLE_TIMEOUT_MS, default
+//      (OPENCODE_IDLE_TIMEOUT_MS / AGIM_AGENT_IDLE_TIMEOUT_MS, default
 //      60 min, 0 = disabled) that fires only when the daemon goes
 //      completely silent — slow human approvals don't count.
 //
-// Selection: env IMHUB_OPENCODE_DRIVER=http picks this; anything else (incl
+// Selection: env AGIM_OPENCODE_DRIVER=http picks this; anything else (incl
 // unset) picks the stdio adapter. See ./index.ts factory.
 //
-// Gate policy: env IMHUB_OPENCODE_GATE controls which permissions surface
+// Gate policy: env AGIM_OPENCODE_GATE controls which permissions surface
 // as IM cards. See buildSessionRuleset() for the strict / medium / loose /
 // none levels — medium is the default and gates edit / write / patch.
 //
@@ -49,6 +49,7 @@ import { logger as rootLogger } from '../../../core/logger.js'
 import { type OpencodeServeManager, opencodeServe as defaultServe } from './serve-manager.js'
 import { approvalBus as defaultApprovalBus, type ApprovalBus, type Decision } from '../../../core/approval-bus.js'
 import { Agent as UndiciAgent } from 'undici'
+import { ensureOpencodeMcpRegistered } from './ensure-mcp-config.js'
 
 /**
  * Long-running dispatcher used for the prompt POST.
@@ -74,7 +75,7 @@ const log = rootLogger.child({ component: 'agent.opencode.http' })
 // Idle (no-SSE-event) timeout — matches the semantics in agent-base.ts: the
 // watchdog re-arms on every event the daemon emits, so slow human-in-the-loop
 // approvals don't count against the budget; only true silence does. Override
-// via OPENCODE_IDLE_TIMEOUT_MS or IMHUB_AGENT_IDLE_TIMEOUT_MS; set 0 to disable.
+// via OPENCODE_IDLE_TIMEOUT_MS or AGIM_AGENT_IDLE_TIMEOUT_MS; set 0 to disable.
 const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
 
 /** Shape of an event arriving on opencode's /event SSE stream. Every field
@@ -132,11 +133,15 @@ export interface HttpAdapterOptions {
    *  `null` to disable the bridge entirely (used by tests that want to lock
    *  in the no-bus fallback path). */
   approvalBus?: ApprovalBus | null
+  /** Register Agim's MCP sidecar in opencode's own config before starting
+   *  `opencode serve`. Tests inject a no-op to avoid touching user config. */
+  ensureMcp?: () => Promise<boolean>
 }
 
 export class OpenCodeHttpAdapter extends OpenCodeAdapter {
   private readonly serve: OpencodeServeManager
   private readonly fetchImpl: typeof fetch
+  private readonly ensureMcp: () => Promise<boolean>
   /** null when the bridge is intentionally disabled. */
   private readonly approvalBus: ApprovalBus | null
   /** Set of opencode session ids whose ruleset we've already PATCHed in this
@@ -150,6 +155,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     super()
     this.serve = opts.serve ?? defaultServe
     this.fetchImpl = opts.fetchImpl ?? fetch
+    this.ensureMcp = opts.ensureMcp ?? ensureOpencodeMcpRegistered
     this.approvalBus = opts.approvalBus === null
       ? null
       : (opts.approvalBus ?? defaultApprovalBus)
@@ -249,6 +255,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     opts?: AgentSendOpts,
   ): AsyncGenerator<string> {
     const callOpts = opts ?? {}
+    await this.ensureMcp()
     const baseUrl = await this.serve.ensureRunning()
 
     let sessionID = callOpts.agentSessionId
@@ -299,11 +306,11 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       ? prompt
       : this.buildHttpContextualPrompt(prompt, history)
 
-    // HTTP mode quirk: the imhub MCP server is shared across all opencode
+    // HTTP mode quirk: the agim MCP server is shared across all opencode
     // sessions because `opencode serve` is one daemon. The MCP server's
     // env was set ONCE at daemon startup, so the runId there is stale for
     // any given turn. Workaround: ask the agent to pass `_im_context` in
-    // every imhub-tool call; the bus accepts it as a runId fallback. This
+    // every agim-tool call; the bus accepts it as a runId fallback. This
     // is a single-user-only path (agent could lie in multi-tenant) — see
     // approval-bus.ts:handleReminder for the trust note.
     const imCtxInstruction = buildImContextInstruction(callOpts)
@@ -563,7 +570,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
    * matching opencode's `Permission.Rule` schema.
    */
   private buildSessionRuleset(): Array<{ permission: string; pattern: string; action: 'allow' | 'deny' | 'ask' }> {
-    const gate = (process.env.IMHUB_OPENCODE_GATE || 'medium').toLowerCase()
+    const gate = (process.env.AGIM_OPENCODE_GATE || 'medium').toLowerCase()
     const ask = (permission: string) => ({ permission, pattern: '*', action: 'ask' as const })
     if (gate === 'none') return []
     if (gate === 'strict') return [ask('edit'), ask('write'), ask('patch'), ask('bash')]
@@ -590,7 +597,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
       throw new Error(`opencode session update failed: HTTP ${res.status}`)
     }
     await res.text().catch(() => '')
-    log.info({ event: 'opencode.http.ruleset_applied', sessionID, gate: process.env.IMHUB_OPENCODE_GATE || 'medium' },
+    log.info({ event: 'opencode.http.ruleset_applied', sessionID, gate: process.env.AGIM_OPENCODE_GATE || 'medium' },
       'applied gate ruleset to resumed session')
   }
 
@@ -618,7 +625,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     //     outside the cwd / skill whitelist; we don't need to repeat it
     //     and it would be surprising to override.
     //
-    // Override path: env IMHUB_OPENCODE_GATE=strict|loose|none flips this
+    // Override path: env AGIM_OPENCODE_GATE=strict|loose|none flips this
     // policy without redeploy:
     //   strict → bash also asks
     //   loose  → only write+edit (drop patch)
@@ -816,7 +823,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
  */
 /**
  * Compose the system instruction telling the agent how to identify the
- * IM thread when it calls imhub MCP tools. Empty string when we don't
+ * IM thread when it calls agim MCP tools. Empty string when we don't
  * have full IM context (web/scheduler/intent-llm calls) — those won't
  * have reminder tools wired anyway.
  *
@@ -835,7 +842,7 @@ function buildImContextInstruction(opts: AgentSendOpts): string {
   const ctx = JSON.stringify({ platform, threadId, channelId, userId })
   return [
     '[agim MCP routing — important]',
-    'When you call any imhub tool — reminder family (create_reminder /',
+    'When you call any agim tool — reminder family (create_reminder /',
     'list_reminders / cancel_reminder / snooze_reminder) or memo family',
     '(save_memo / search_memos / update_memo / delete_memo /',
     'request_location_capture) — you MUST include this exact `_im_context`',
@@ -863,7 +870,7 @@ function decisionToOpencodeReply(decision: Decision): { reply: 'once' | 'always'
 function resolveIdleTimeout(): number {
   const sources: Array<[string, string | undefined]> = [
     ['OPENCODE_IDLE_TIMEOUT_MS', process.env.OPENCODE_IDLE_TIMEOUT_MS],
-    ['IMHUB_AGENT_IDLE_TIMEOUT_MS', process.env.IMHUB_AGENT_IDLE_TIMEOUT_MS],
+    ['AGIM_AGENT_IDLE_TIMEOUT_MS', process.env.AGIM_AGENT_IDLE_TIMEOUT_MS],
   ]
   for (const [envKey, raw] of sources) {
     if (raw === undefined) continue

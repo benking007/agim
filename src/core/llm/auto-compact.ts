@@ -3,7 +3,7 @@
 //
 // Why: native uses single-shot 30-minute IM turns. A user who chats
 // back and forth for hours accumulates many user/assistant pairs (plus
-// any tool messages from earlier mcp__imhub__* calls). Past ~15k
+// any tool messages from earlier mcp__agim__* calls). Past ~15k
 // tokens the provider call cost climbs linearly and we get closer to
 // the model's context window. Most older content is "settled" — the
 // agent's earlier conclusions, not the live problem — so a 1-2 paragraph
@@ -36,18 +36,18 @@ const log = rootLogger.child({ component: 'auto-compact' })
 
 export interface CompactOptions {
   /** Total char budget that triggers compaction. Default 60_000
-   *  (~15k tokens for mixed EN/CN). Set via env IMHUB_NATIVE_COMPACT_TRIGGER_CHARS. */
+   *  (~15k tokens for mixed EN/CN). Set via env AGIM_NATIVE_COMPACT_TRIGGER_CHARS. */
   triggerChars?: number
   /** Number of recent user+assistant pairs preserved verbatim.
    *  Default 6 (= 12 messages, plus any tool messages between them).
-   *  Set via env IMHUB_NATIVE_COMPACT_KEEP_TURNS. */
+   *  Set via env AGIM_NATIVE_COMPACT_KEEP_TURNS. */
   keepTurns?: number
   /** v1.2.125 — number of INITIAL user messages preserved verbatim
    *  (head). Each preserved user message also carries its assistant
    *  response + any tool round-trip. Default 1 (the original goal is
    *  never summarized). 0 disables head preservation (legacy
    *  pre-v1.2.125 behaviour: only tail + summary). Set via env
-   *  IMHUB_NATIVE_COMPACT_KEEP_FIRST. */
+   *  AGIM_NATIVE_COMPACT_KEEP_FIRST. */
   keepFirst?: number
   /** Provider to ask for the summary. If omitted, tries evaluator →
    *  cheap → native-chat in that order; the first registered wins. */
@@ -158,10 +158,10 @@ export async function maybeCompactHistory(
   messages: LlmMessage[],
   opts: CompactOptions = {},
 ): Promise<CompactResult> {
-  const triggerChars = opts.triggerChars ?? envInt('IMHUB_NATIVE_COMPACT_TRIGGER_CHARS', 60_000)
-  const keepTurns = opts.keepTurns ?? envInt('IMHUB_NATIVE_COMPACT_KEEP_TURNS', 6)
-  const keepFirst = opts.keepFirst ?? envInt('IMHUB_NATIVE_COMPACT_KEEP_FIRST', 1)
-  const summaryCharCap = opts.summaryCharCap ?? envInt('IMHUB_NATIVE_COMPACT_SUMMARY_CHARS', 1_500)
+  const triggerChars = opts.triggerChars ?? envInt('AGIM_NATIVE_COMPACT_TRIGGER_CHARS', 60_000)
+  const keepTurns = opts.keepTurns ?? envInt('AGIM_NATIVE_COMPACT_KEEP_TURNS', 6)
+  const keepFirst = opts.keepFirst ?? envInt('AGIM_NATIVE_COMPACT_KEEP_FIRST', 1)
+  const summaryCharCap = opts.summaryCharCap ?? envInt('AGIM_NATIVE_COMPACT_SUMMARY_CHARS', 1_500)
 
   const originalChars = totalChars(messages)
   // Disabled when trigger=0 (operator opt-out).

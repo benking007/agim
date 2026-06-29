@@ -16,7 +16,7 @@
 //   - Linkage back to jobs is via outbox.job_id (nullable) — many outbox
 //     rows (reminders, approval-router, restart-completion) have no job.
 //
-// Retention: delivered / giving_up rows older than IMHUB_OUTBOX_RETENTION_HOURS
+// Retention: delivered / giving_up rows older than AGIM_OUTBOX_RETENTION_HOURS
 // (default 24h) are pruned. Sweep runs every hour to keep the table bounded
 // even under heavy traffic.
 
@@ -83,7 +83,7 @@ export const MAX_ATTEMPTS = BACKOFF_SECONDS.length
 
 /** Retention: how long a delivered / giving_up row stays before prune. */
 function resolveRetentionHours(): number {
-  const raw = process.env.IMHUB_OUTBOX_RETENTION_HOURS
+  const raw = process.env.AGIM_OUTBOX_RETENTION_HOURS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n

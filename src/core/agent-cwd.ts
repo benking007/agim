@@ -15,8 +15,8 @@
 // `~/.agim-workspaces/<agent>/`. Non-IM calls (web UI, scheduler,
 // intent-llm judge) keep the inherited cwd, preserving prior behavior.
 //
-// Override path: `IMHUB_<AGENT>_CWD` env var beats everything (e.g.
-// `IMHUB_CLAUDE_CODE_CWD=/srv/foo`). Useful for migration tests and for
+// Override path: `AGIM_<AGENT>_CWD` env var beats everything (e.g.
+// `AGIM_CLAUDE_CODE_CWD=/srv/foo`). Useful for migration tests and for
 // future per-tenant deployments.
 
 import { join } from 'node:path'
@@ -25,29 +25,28 @@ import type { AgentSendOpts } from './types.js'
 import { AGIM_WORKSPACES } from './agim-paths.js'
 
 /** Root for all per-agent IM workspaces. Kept stable so memory persists.
- *  Honors the legacy `IMHUB_WORKSPACES_ROOT` env override; otherwise
- *  resolves via core/agim-paths (which prefers `~/.agim-workspaces/` but
- *  falls back to the legacy `~/.im-hub-workspaces/` on 0.x systems). */
-export function imhubWorkspacesRoot(): string {
-  return process.env.IMHUB_WORKSPACES_ROOT || AGIM_WORKSPACES
+ *  Honors the `AGIM_WORKSPACES_ROOT` env override; otherwise resolves via
+ *  core/agim-paths. */
+export function agimWorkspacesRoot(): string {
+  return process.env.AGIM_WORKSPACES_ROOT || AGIM_WORKSPACES
 }
 
 /** Default cwd for a given agent under the workspaces root. */
 export function defaultAgentCwd(agentName: string): string {
-  return join(imhubWorkspacesRoot(), agentName)
+  return join(agimWorkspacesRoot(), agentName)
 }
 
 /** Env var name for an explicit override on a given agent. */
 function envKeyFor(agentName: string): string {
-  // claude-code -> IMHUB_CLAUDE_CODE_CWD
-  return `IMHUB_${agentName.replace(/-/g, '_').toUpperCase()}_CWD`
+  // claude-code -> AGIM_CLAUDE_CODE_CWD
+  return `AGIM_${agentName.replace(/-/g, '_').toUpperCase()}_CWD`
 }
 
 /**
  * Resolve the cwd to spawn an agent CLI in.
  *
  * Decision order:
- *   1. Env override `IMHUB_<AGENT>_CWD` always wins.
+ *   1. Env override `AGIM_<AGENT>_CWD` always wins.
  *   2. If we're in an IM context (threadId + platform both present), pin to
  *      `~/.agim-workspaces/<agent>/`.
  *   3. Otherwise return undefined → adapter inherits agim's cwd. This
@@ -70,7 +69,7 @@ export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string 
  * to evolve them by hand or have the agent itself rewrite them via
  * auto-memory.
  *
- * Honors IMHUB_<AGENT>_CWD overrides — if set, we bootstrap THAT path
+ * Honors AGIM_<AGENT>_CWD overrides — if set, we bootstrap THAT path
  * instead. Skips bootstrapping when the override is empty / unset and we
  * compute it from defaultAgentCwd; either way the resolved path is what
  * spawnStream will pass as cwd.
@@ -277,7 +276,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 >
 > ⚠️ 本文件整体会被 native 在**每次回话前作为 system prompt 顶部注入**。
 > 编辑本文件可以直接改变 native 的身份 / 语气 / 行为边界 — 一改即生效，
-> 无需重启服务。重定向到其它路径可设 \`IMHUB_NATIVE_AGENT_ROLE_FILE=...\`。
+> 无需重启服务。重定向到其它路径可设 \`AGIM_NATIVE_AGENT_ROLE_FILE=...\`。
 
 ## 你是谁（角色定义）
 
@@ -295,14 +294,14 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 ## 你怎么动手（工具与边界）
 
 - 三个 native 内置工具：\`native_echo\` / \`native_now\` / \`native_random_uuid\`
-- agim 自身的 MCP 工具（\`mcp__imhub__*\`）：技能、备忘录、push、ask_user、call_agent
+- agim 自身的 MCP 工具（\`mcp__agim__*\`）：技能、备忘录、push、ask_user、call_agent
 - 运营方配置的外部 MCP server 工具（\`mcp_<server>_*\`）
 - 涉及钱 / 交易 / 删除：先 dry-run 给用户看，得确认再执行
 
 ## 工作目录
 
 - 本目录目前所有 IM 线程共享，未做 per-thread 隔离
-- 想给某条线程独立 cwd，可设 \`IMHUB_NATIVE_CWD=/some/path\` 覆盖
+- 想给某条线程独立 cwd，可设 \`AGIM_NATIVE_CWD=/some/path\` 覆盖
 
 ## 注意
 
@@ -337,7 +336,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
 - IM 单条消息硬超时 30 分钟，长任务请走 bgjob
-- agim 用 \`--trust --force --approve-mcps\` 启动 cursor，所有 cursor 侧 tool 默认自动放行；agim 自己的 \`mcp__imhub__*\` 仍走 approval-bus
+- agim 用 \`--trust --force --approve-mcps\` 启动 cursor，所有 cursor 侧 tool 默认自动放行；agim 自己的 \`mcp__agim__*\` 仍走 approval-bus
 `
 
   result.push({

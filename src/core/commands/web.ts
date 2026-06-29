@@ -2,8 +2,8 @@
 //
 // Source of truth: Viewer config. Resolution order (see
 // core/viewer-config.ts → getEffectivePublicBaseUrl):
-//   1. IMHUB_VIEWER_PUBLIC_BASE_URL (operator-set reverse proxy / custom domain)
-//   2. Cloudflared quick-tunnel URL (when IMHUB_VIEWER_TUNNEL_MODE=quick)
+//   1. AGIM_VIEWER_PUBLIC_BASE_URL (operator-set reverse proxy / custom domain)
+//   2. Cloudflared quick-tunnel URL (when AGIM_VIEWER_TUNNEL_MODE=quick)
 //   3. (none) → degrade to a localhost hint
 //
 // The same /v/<id> mapping that the long-message render router uses; this
@@ -19,14 +19,14 @@ export async function handleWebCommand(_args: string, _ctx: RouteContext): Promi
   const url = getEffectivePublicBaseUrl()
   if (url) {
     const source = cfg.publicBaseUrl
-      ? 'IMHUB_VIEWER_PUBLIC_BASE_URL'
+      ? 'AGIM_VIEWER_PUBLIC_BASE_URL'
       : 'cloudflared tunnel'
     return `🌐 Web 后台\n   ${url}\n   (来源: ${source})`
   }
   return (
     '🌐 Web 后台地址未配置。\n' +
     '   设置以下任一项后重启服务即可：\n' +
-    '     • IMHUB_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代/自定义域名)\n' +
-    '     • IMHUB_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)'
+    '     • AGIM_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代/自定义域名)\n' +
+    '     • AGIM_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)'
   )
 }

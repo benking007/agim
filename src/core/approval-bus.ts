@@ -29,9 +29,9 @@ const log = rootLogger.child({ component: 'approval-bus' })
 // hours. agent-base.ts now uses an idle-based timer (resets on every stdout
 // chunk) instead of a fixed total-time cap, so this approval timeout is no
 // longer constrained to "outlive the agent process" — the agent only dies
-// after IMHUB_AGENT_IDLE_TIMEOUT_MS of complete silence.
+// after AGIM_AGENT_IDLE_TIMEOUT_MS of complete silence.
 const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
-  process.env.IMHUB_APPROVAL_TIMEOUT_MS,
+  process.env.AGIM_APPROVAL_TIMEOUT_MS,
   15 * 60 * 1000,
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
@@ -42,11 +42,11 @@ const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 // memory. When the cap is hit we evict the OLDEST unresolved request with a
 // deny so the maps stay bounded. Generous default; override via env.
 const MAX_PENDING_APPROVALS = (() => {
-  const n = Number(process.env.IMHUB_APPROVAL_MAX_PENDING)
+  const n = Number(process.env.AGIM_APPROVAL_MAX_PENDING)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// IMHUB_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
+// AGIM_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
 // returns when a normal-mode approval times out without a user response.
 // Auto-allow grace expiry is unaffected — it always resolves to allow.
 // Setting this to 'allow' is "user away" mode: the agent keeps moving even
@@ -59,10 +59,10 @@ const MAX_PENDING_APPROVALS = (() => {
 // process.env after updating ~/.agim/env, and the next timer that expires
 // picks up the new value with no restart.
 export function isTimeoutDefaultAllow(): boolean {
-  return (process.env.IMHUB_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
+  return (process.env.AGIM_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
 }
 
-// R13 C1 — visibility for "user away" mode. When IMHUB_TIMEOUT_DEFAULT is
+// R13 C1 — visibility for "user away" mode. When AGIM_TIMEOUT_DEFAULT is
 // `allow`, every approval that times out without IM response auto-approves
 // — that's a meaningful weakening of the human-in-the-loop guarantee.
 // Operators flip it during long-running automation and forget; the warning
@@ -92,16 +92,16 @@ export function announceTimeoutDefaultIfAllow(): void {
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '⚠️  APPROVAL TIMEOUT POLICY: allow',
     '',
-    '   IMHUB_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
+    '   AGIM_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
     '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: IMHUB_TIMEOUT_DEFAULT=deny (or unset).',
+    '   Revert with: AGIM_TIMEOUT_DEFAULT=deny (or unset).',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '',
   ].join('\n')
   process.stdout.write(banner)
   log.warn({
     event: 'approval.bus.timeout_default_allow',
-    msg: 'IMHUB_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
+    msg: 'AGIM_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
   })
   try {
     void (async () => {
@@ -126,7 +126,7 @@ export function announceTimeoutDefaultIfAllow(): void {
       }
       log.warn({
         event: 'approval.bus.timeout_default_allow.reminder',
-        msg: 'reminder: IMHUB_TIMEOUT_DEFAULT=allow still in effect',
+        msg: 'reminder: AGIM_TIMEOUT_DEFAULT=allow still in effect',
       })
     }, 60 * 60 * 1000)
     if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
@@ -159,7 +159,7 @@ export function stopTimeoutDefaultReminder(): void {
  *  - any `mcp__*` (third-party MCP servers; arbitrary semantics)
  *
  * Per-thread opt-out: `/approval readonly off`. Global opt-out:
- * `IMHUB_AUTOALLOW_READONLY=0`.
+ * `AGIM_AUTOALLOW_READONLY=0`.
  */
 const READONLY_TOOLS = new Set<string>([
   'Read',
@@ -170,7 +170,7 @@ const READONLY_TOOLS = new Set<string>([
 ])
 
 const READONLY_AUTO_ALLOW_GLOBAL_ENABLED =
-  (process.env.IMHUB_AUTOALLOW_READONLY ?? '1') !== '0'
+  (process.env.AGIM_AUTOALLOW_READONLY ?? '1') !== '0'
 
 function parseEnvMs(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback
@@ -201,10 +201,10 @@ export interface RunContext {
   callerAgent?: string
   /** A2A-L1: this run's own call_depth. 0 for user-originated runs;
    *  bumped to caller.callDepth+1 when an A2A invocation spawns a new
-   *  agent run. Used to enforce IMHUB_A2A_MAX_DEPTH. */
+   *  agent run. Used to enforce AGIM_A2A_MAX_DEPTH. */
   callDepth?: number
   /** A2A-L1: id of the inline-jobs row that's tracking this run, when
-   *  the run was spawned from another agent's mcp__imhub__call_agent
+   *  the run was spawned from another agent's mcp__agim__call_agent
    *  call. Optional for top-level runs. */
   parentJobId?: number
   /** SEC: this run is executing under plan-mode (user did /plan on, so the
@@ -212,7 +212,7 @@ export interface RunContext {
    *  whose opts.planMode is true. bus.handleA2A propagates it to the callee
    *  so a plan-mode run can't delegate a write task to another agent that
    *  would launch with full write access — bypassing the user's intent.
-   *  Mirrors a2a.ts / imhub-dispatcher.ts (callerPlanMode) which already do
+   *  Mirrors a2a.ts / agim-dispatcher.ts (callerPlanMode) which already do
    *  this for their own spawn paths. */
   callerPlanMode?: boolean
 }
@@ -1086,7 +1086,7 @@ export class ApprovalBus {
   }
 
   /**
-   * v1.3 — agent-initiated push (`mcp__imhub__push_message`). Wire format:
+   * v1.3 — agent-initiated push (`mcp__agim__push_message`). Wire format:
    *   { v: 1, type: 'push', runId, reqId, payload: { text, toThread?, kind? } }
    * Response: { v: 1, type: 'push.result', reqId, ok, result?, error? }
    *
@@ -1859,7 +1859,7 @@ function defaultSocketPath(): string {
   // multi-tenant containers where pid is often 1 and the timestamp window
   // is small. With 128 bits of entropy a TOCTOU pre-occupy attempt is
   // statistically infeasible.
-  return join(tmpdir(), `imhub-approval-${randomBytes(16).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-approval-${randomBytes(16).toString('hex')}.sock`)
 }
 
 /** 进程级单例。agim 启动时 await approvalBus.start() 一次。 */

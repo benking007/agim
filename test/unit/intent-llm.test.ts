@@ -100,7 +100,7 @@ describe('LLM judge', () => {
     expect(result).toBeNull()
   })
 
-  it('IM_HUB_LLM_JUDGE_AGENT env auto-configures', () => {
+  it('AGIM_LLM_JUDGE_AGENT env auto-configures', () => {
     // The auto-config runs at module load time. We can't unload the
     // module mid-test, but we can verify the configureLLMJudge path
     // works after reset.

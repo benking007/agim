@@ -1,7 +1,7 @@
 // Agent-to-Agent (A2A) — Layer 1.
 //
 // Lets one agent (claude-code / opencode / codex …) call another via the
-// `mcp__imhub__call_agent` tool. This module owns the runtime side of
+// `mcp__agim__call_agent` tool. This module owns the runtime side of
 // that flow:
 //
 //   bus.callAgent(runId, payload)
@@ -61,7 +61,7 @@ const log = rootLogger.child({ component: 'a2a' })
 // allows fairly deep multi-agent delegation out of the box (A→B→C→…, up to
 // 8 levels) rather than the previous shallow cap of 1.
 //
-// Override with IMHUB_A2A_MAX_DEPTH=N. Set N=1 to restrict to a single
+// Override with AGIM_A2A_MAX_DEPTH=N. Set N=1 to restrict to a single
 // delegation hop; set N=0 to disable A2A entirely.
 export const A2A_MAX_DEPTH_DEFAULT = 8
 // v1.1.10: bumped from 10 min to 30 min after the HSTECH debate run revealed
@@ -70,15 +70,15 @@ export const A2A_MAX_DEPTH_DEFAULT = 8
 export const A2A_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000  // 30 min
 /** Hard upper bound — refuse caller-supplied `timeoutMs` larger than this so
  *  an agent can't accidentally write `timeoutMs: 86400000` and block A2A
- *  forever. Override with IMHUB_A2A_MAX_TIMEOUT_MS. */
+ *  forever. Override with AGIM_A2A_MAX_TIMEOUT_MS. */
 export const A2A_TIMEOUT_MS_MAX = 60 * 60 * 1000  // 1 h
 
 export function isA2AEnabled(): boolean {
-  return process.env.IMHUB_A2A_ENABLED !== '0'
+  return process.env.AGIM_A2A_ENABLED !== '0'
 }
 
 export function getA2AMaxDepth(): number {
-  const raw = process.env.IMHUB_A2A_MAX_DEPTH
+  const raw = process.env.AGIM_A2A_MAX_DEPTH
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n >= 0) return n
@@ -94,10 +94,10 @@ export const A2A_MAX_RESULT_CHARS_DEFAULT = 8000
 /** File the over-long result is spilled to, under the callee's _agim-output/. */
 export const A2A_FULL_RESULT_FILE = '__a2a_result_full.md'
 
-/** Caller-visible result cap in chars. `IMHUB_A2A_MAX_RESULT_CHARS=0` disables
+/** Caller-visible result cap in chars. `AGIM_A2A_MAX_RESULT_CHARS=0` disables
  *  truncation (return the full text); unset → default. */
 export function getA2AMaxResultChars(): number {
-  const raw = process.env.IMHUB_A2A_MAX_RESULT_CHARS
+  const raw = process.env.AGIM_A2A_MAX_RESULT_CHARS
   if (raw === undefined || raw.trim() === '') return A2A_MAX_RESULT_CHARS_DEFAULT
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : A2A_MAX_RESULT_CHARS_DEFAULT
@@ -119,7 +119,7 @@ export async function compressA2AResult(jobId: number, result: string): Promise<
 }
 
 export function getA2ATimeoutMs(ctx?: { platform?: string; channelId?: string; threadId?: string }): number {
-  const raw = process.env.IMHUB_A2A_TIMEOUT_DEFAULT_MS
+  const raw = process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS
   let base = A2A_TIMEOUT_MS_DEFAULT
   if (raw) {
     const n = parseInt(raw, 10)
@@ -127,13 +127,13 @@ export function getA2ATimeoutMs(ctx?: { platform?: string; channelId?: string; t
   }
   // v1.2.86 — goal-aware timeout boost. When the addressed thread has
   // an active long-task goal, multiply the default by
-  // IMHUB_GOAL_ACTIVE_TIMEOUT_MULTIPLIER (3× default, 6 h hard cap).
+  // AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER (3× default, 6 h hard cap).
   if (ctx) base = applyGoalTimeoutBoost(base, ctx)
   return base
 }
 
 export function getA2AMaxTimeoutMs(): number {
-  const raw = process.env.IMHUB_A2A_MAX_TIMEOUT_MS
+  const raw = process.env.AGIM_A2A_MAX_TIMEOUT_MS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -195,7 +195,7 @@ export async function callAgentByName(
   opts: CallAgentOpts = {},
 ): Promise<CallAgentResult> {
   if (!isA2AEnabled()) {
-    return { ok: false, error: 'A2A disabled (IMHUB_A2A_ENABLED=0)' }
+    return { ok: false, error: 'A2A disabled (AGIM_A2A_ENABLED=0)' }
   }
 
   const callerDepth = opts.callerDepth ?? 0
@@ -332,7 +332,7 @@ export async function callAgentByName(
       userId: ctx.userId,
       // A2A-L1: forward our own jobId + nextDepth so the callee's adapter
       // stamps RunContext correctly. If the callee then fires
-      // mcp__imhub__call_agent itself, its bus.handleA2A sees
+      // mcp__agim__call_agent itself, its bus.handleA2A sees
       // callDepth = our nextDepth → +1 = grand-callee depth, and
       // parent_id = jobId (our callee row).
       parentJobId: jobId,

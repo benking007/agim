@@ -5,12 +5,12 @@
 // addressed to an email arrive as a one-way notification.
 //
 // SMTP config is read from env at start():
-//   IMHUB_SMTP_HOST       SMTP server (required)
-//   IMHUB_SMTP_PORT       Port (default: 465 if secure else 587)
-//   IMHUB_SMTP_USER       Auth username (required)
-//   IMHUB_SMTP_PASS       Auth password / app-password (required)
-//   IMHUB_SMTP_FROM       From address (default: USER value)
-//   IMHUB_SMTP_SECURE     '1'/'true' for TLS-from-start (port 465); else
+//   AGIM_SMTP_HOST       SMTP server (required)
+//   AGIM_SMTP_PORT       Port (default: 465 if secure else 587)
+//   AGIM_SMTP_USER       Auth username (required)
+//   AGIM_SMTP_PASS       Auth password / app-password (required)
+//   AGIM_SMTP_FROM       From address (default: USER value)
+//   AGIM_SMTP_SECURE     '1'/'true' for TLS-from-start (port 465); else
 //                         STARTTLS on port 587. Default: secure if port 465.
 //
 // If any of HOST/USER/PASS are missing, start() does NOT throw; the adapter
@@ -33,22 +33,22 @@ interface SmtpConfig {
 }
 
 function readSmtpConfig(): SmtpConfig | null {
-  const host = process.env.IMHUB_SMTP_HOST?.trim()
-  const user = process.env.IMHUB_SMTP_USER?.trim()
-  const pass = process.env.IMHUB_SMTP_PASS
+  const host = process.env.AGIM_SMTP_HOST?.trim()
+  const user = process.env.AGIM_SMTP_USER?.trim()
+  const pass = process.env.AGIM_SMTP_PASS
   if (!host || !user || !pass) return null
-  const portRaw = process.env.IMHUB_SMTP_PORT?.trim()
+  const portRaw = process.env.AGIM_SMTP_PORT?.trim()
   const port = portRaw ? Number.parseInt(portRaw, 10) : 465
   if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-    log.warn({ portRaw }, 'IMHUB_SMTP_PORT invalid, falling back to 465')
+    log.warn({ portRaw }, 'AGIM_SMTP_PORT invalid, falling back to 465')
   }
   const validPort = Number.isFinite(port) && port > 0 && port <= 65535 ? port : 465
   // Default secure: yes for 465 (SMTPS), no for 587/25 (STARTTLS).
-  const secureRaw = process.env.IMHUB_SMTP_SECURE?.trim().toLowerCase()
+  const secureRaw = process.env.AGIM_SMTP_SECURE?.trim().toLowerCase()
   const secure = secureRaw !== undefined
     ? (secureRaw === '1' || secureRaw === 'true' || secureRaw === 'yes')
     : validPort === 465
-  const from = process.env.IMHUB_SMTP_FROM?.trim() || user
+  const from = process.env.AGIM_SMTP_FROM?.trim() || user
   return { host, port: validPort, secure, user, pass, from }
 }
 
@@ -65,7 +65,7 @@ export class EmailAdapter implements MessengerAdapter {
     if (!this.config) {
       log.warn({
         event: 'email.disabled',
-        hint: 'set IMHUB_SMTP_HOST / IMHUB_SMTP_USER / IMHUB_SMTP_PASS to enable',
+        hint: 'set AGIM_SMTP_HOST / AGIM_SMTP_USER / AGIM_SMTP_PASS to enable',
       }, 'Email adapter disabled — SMTP env vars not set')
       this.started = true
       return
@@ -123,7 +123,7 @@ export class EmailAdapter implements MessengerAdapter {
   async sendMessage(threadId: string, text: string): Promise<void> {
     if (!this.started) throw new Error('email adapter not started')
     if (!this.transporter || !this.config) {
-      throw new Error('Email adapter not configured (set IMHUB_SMTP_HOST / USER / PASS)')
+      throw new Error('Email adapter not configured (set AGIM_SMTP_HOST / USER / PASS)')
     }
     const to = threadId.trim()
     if (!EMAIL_RE.test(to)) {

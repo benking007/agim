@@ -16,7 +16,7 @@
 //     scoped query (so an upgrade doesn't appear to vanish the user's
 //     prior history).
 //   - pruneOldJobs() walks completed/failed/cancelled rows older than
-//     `IM_HUB_JOB_RETENTION_DAYS` (default 30) and deletes them; runs every
+//     `AGIM_JOB_RETENTION_DAYS` (default 30) and deletes them; runs every
 //     6h via setInterval, mirroring audit-log.
 
 import type Database from 'better-sqlite3'
@@ -34,9 +34,9 @@ const BOARD_DB = join(AGIM_HOME, 'jobs.db')
  * Buffer in {@link runJob} until the host OOMs and rage-stuff the SQLite TEXT
  * column with the same payload. We cap at 1 MiB by default; chunks that would
  * push past the cap are dropped and a truncation footer is appended. Override
- * via env IMHUB_JOB_RESULT_MAX_BYTES. */
+ * via env AGIM_JOB_RESULT_MAX_BYTES. */
 function resolveMaxResultBytes(): number {
-  const raw = process.env.IMHUB_JOB_RESULT_MAX_BYTES
+  const raw = process.env.AGIM_JOB_RESULT_MAX_BYTES
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -46,9 +46,9 @@ function resolveMaxResultBytes(): number {
 
 /** Hard cap on concurrent runJob() invocations. Spawning more than this
  * would let a few /job run X requests OOM the host (each agent process
- * carries hundreds of MB). Override via env IM_HUB_MAX_CONCURRENT_JOBS. */
+ * carries hundreds of MB). Override via env AGIM_MAX_CONCURRENT_JOBS. */
 function resolveMaxConcurrent(): number {
-  const raw = process.env.IM_HUB_MAX_CONCURRENT_JOBS
+  const raw = process.env.AGIM_MAX_CONCURRENT_JOBS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -141,11 +141,11 @@ export interface Job {
    *  link to `outbox.job_id`. */
   last_outbox_id: number | null
   /** A2A-L1: id of the inline job whose agent invoked us via
-   *  mcp__imhub__call_agent. NULL for user-originated rows. */
+   *  mcp__agim__call_agent. NULL for user-originated rows. */
   parent_id: number | null
   /** A2A-L1: how deep in the call chain this row sits. 0 = user;
    *  caller.call_depth + 1 for each A2A hop. Used to enforce
-   *  IMHUB_A2A_MAX_DEPTH. */
+   *  AGIM_A2A_MAX_DEPTH. */
   call_depth: number
 }
 
@@ -170,12 +170,12 @@ type JobRunner = (job: Job, logger: Logger, signal: AbortSignal) => AsyncGenerat
  *   - last_outbox_id             : link to the outbox row that delivered (or is
  *                                   trying to deliver) this job's result.
  *   - parent_id                  : Phase A2A-L1 — when one agent calls another via
- *                                   mcp__imhub__call_agent, the callee's row points
+ *                                   mcp__agim__call_agent, the callee's row points
  *                                   back at the caller's row. NULL on user-originated
  *                                   rows.
  *   - call_depth                 : Phase A2A-L1 — 0 for user-originated rows; +1 per
  *                                   nesting level. Lets us reject runaway chains
- *                                   (IMHUB_A2A_MAX_DEPTH, default 3).
+ *                                   (AGIM_A2A_MAX_DEPTH, default 3).
  */
 function migrateColumns(d: Database.Database): void {
   // [column, type] — type must include any NOT NULL / DEFAULT clauses.
@@ -216,7 +216,7 @@ function migrateColumns(d: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_jobs_thread_key      ON jobs(thread_key)`,
     `CREATE INDEX IF NOT EXISTS idx_jobs_last_outbox     ON jobs(last_outbox_id) WHERE last_outbox_id IS NOT NULL`,
     // A2A-L1 — fast "children of parent_id" lookup for /a2a stats + audit
-    // join. parent_id is sparse (only rows from mcp__imhub__call_agent) so
+    // join. parent_id is sparse (only rows from mcp__agim__call_agent) so
     // the partial index keeps it small.
     `CREATE INDEX IF NOT EXISTS idx_jobs_parent          ON jobs(parent_id) WHERE parent_id IS NOT NULL`,
   ]
@@ -232,7 +232,7 @@ function migrateColumns(d: Database.Database): void {
 
 /** Default retention (days) for terminal explicit /job rows. */
 function resolveRetentionDays(): number {
-  const raw = process.env.IM_HUB_JOB_RETENTION_DAYS
+  const raw = process.env.AGIM_JOB_RETENTION_DAYS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -246,7 +246,7 @@ function resolveRetentionDays(): number {
  *  retention. Phase 3's recovery sweep needs at least the user's "回 1 重发"
  *  window, so don't drop below ~6h in production. */
 function resolveInlineRetentionHours(): number {
-  const raw = process.env.IMHUB_INLINE_JOB_RETENTION_HOURS
+  const raw = process.env.AGIM_INLINE_JOB_RETENTION_HOURS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -338,7 +338,7 @@ export function markRunningInlineJobsInterrupted(reason: string = 'agim shutdown
 }
 
 /** Phase 3 — startup scan. Return interrupted inline jobs that finished
- *  within the recovery window (default 10 min via IMHUB_RECOVERY_WINDOW_MS).
+ *  within the recovery window (default 10 min via AGIM_RECOVERY_WINDOW_MS).
  *  Caller iterates the result, sends a per-thread "retry / cancel" prompt,
  *  and tracks the user's reply via the in-memory pending-retry map.
  *
@@ -436,9 +436,9 @@ export function markInterruptedCancelled(id: number): void {
 }
 
 /** Recovery window in milliseconds. Default 10 minutes. Env override
- *  IMHUB_RECOVERY_WINDOW_MS. */
+ *  AGIM_RECOVERY_WINDOW_MS. */
 function resolveRecoveryWindowMs(): number {
-  const raw = process.env.IMHUB_RECOVERY_WINDOW_MS
+  const raw = process.env.AGIM_RECOVERY_WINDOW_MS
   if (raw) {
     const n = parseInt(raw, 10)
     if (Number.isFinite(n) && n > 0) return n
@@ -549,10 +549,10 @@ export function createJob(agent: string, prompt: string, opts: CreateJobOpts = {
 /** Inline-job convenience: same as createJob but never throws — returns -1
  *  when the board is disabled / locked. Caller is expected to log + carry
  *  on with the in-memory fast path. The whole tracking machinery short-
- *  circuits when env IMHUB_INLINE_JOB_TRACKING=0.
+ *  circuits when env AGIM_INLINE_JOB_TRACKING=0.
  *
  *  parentId/callDepth are A2A-L1 hand-offs: when an agent tool-calls
- *  another agent via mcp__imhub__call_agent, the bus routes through here
+ *  another agent via mcp__agim__call_agent, the bus routes through here
  *  to record the parent/depth relationship. User-originated rows leave
  *  these undefined → NULL parent, depth=0. */
 export function createInlineJob(opts: {
@@ -564,7 +564,7 @@ export function createInlineJob(opts: {
   parentId?: number | null
   callDepth?: number
 }): number {
-  if (process.env.IMHUB_INLINE_JOB_TRACKING === '0') return -1
+  if (process.env.AGIM_INLINE_JOB_TRACKING === '0') return -1
   try {
     return createJob(opts.agent, opts.prompt, {
       kind: 'inline',
@@ -794,7 +794,7 @@ export async function runJob(
       bytes += chunkBytes
     }
     if (truncated) {
-      const note = `\n\n[agim: result truncated — ${droppedBytes} bytes dropped after ${cap}-byte cap; raise IMHUB_JOB_RESULT_MAX_BYTES if needed]`
+      const note = `\n\n[agim: result truncated — ${droppedBytes} bytes dropped after ${cap}-byte cap; raise AGIM_JOB_RESULT_MAX_BYTES if needed]`
       fullText += note
       logger.warn({ event: 'job.result.truncated', jobId: id, droppedBytes, cap })
     }

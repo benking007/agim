@@ -73,7 +73,7 @@ dbDescribe('audit_events schema + writes', () => {
   it('queries filter by event_type (single or multi)', () => {
     audit.logAuditEvent({ eventType: 'admin.elevate', actor: 'system', target: 'feishu:u1' })
     audit.logAuditEvent({ eventType: 'token.revoke', actor: 'web:x', target: 'tk_3' })
-    audit.logAuditEvent({ eventType: 'env.put', actor: 'web:x', details: { keys: ['IMHUB_SMTP_HOST'] } })
+    audit.logAuditEvent({ eventType: 'env.put', actor: 'web:x', details: { keys: ['AGIM_SMTP_HOST'] } })
 
     const onlyAdmin = audit.queryAuditEvents({ types: ['admin.elevate'] })
     expect(onlyAdmin).toHaveLength(1)
@@ -146,11 +146,11 @@ dbDescribe('audit_events details payload — no plaintext credentials', () => {
     audit.logAuditEvent({
       eventType: 'env.put',
       actor: 'web:tk',
-      details: { keys: ['IMHUB_SMTP_HOST', 'IMHUB_SMTP_PASS'] },
+      details: { keys: ['AGIM_SMTP_HOST', 'AGIM_SMTP_PASS'] },
     })
     const rows = audit.queryAuditEvents({ types: ['env.put'] })
     const details = JSON.parse(rows[0].details)
-    expect(details.keys).toContain('IMHUB_SMTP_PASS')
+    expect(details.keys).toContain('AGIM_SMTP_PASS')
     // The actual password value is NOT in the row.
     expect(rows[0].details).not.toContain('secret-password-value-here')
   })
@@ -158,13 +158,13 @@ dbDescribe('audit_events details payload — no plaintext credentials', () => {
 
 dbDescribe('audit_events retention', () => {
   beforeEach(() => {
-    delete process.env.IMHUB_AUDIT_EVENTS_RETENTION_DAYS
+    delete process.env.AGIM_AUDIT_EVENTS_RETENTION_DAYS
     const raw = openRaw()
     try { raw.prepare('DELETE FROM audit_events').run() } finally { raw.close() }
   })
 
   it('pruneExpiredEvents deletes rows older than the retention window', () => {
-    process.env.IMHUB_AUDIT_EVENTS_RETENTION_DAYS = '7'
+    process.env.AGIM_AUDIT_EVENTS_RETENTION_DAYS = '7'
     audit.logAuditEvent({ eventType: 'admin.elevate', actor: 'old', target: 'u1' })
     audit.logAuditEvent({ eventType: 'admin.elevate', actor: 'new', target: 'u2' })
 
@@ -181,7 +181,7 @@ dbDescribe('audit_events retention', () => {
   })
 
   it('retention=0 → no deletes (permanent)', () => {
-    process.env.IMHUB_AUDIT_EVENTS_RETENTION_DAYS = '0'
+    process.env.AGIM_AUDIT_EVENTS_RETENTION_DAYS = '0'
     audit.logAuditEvent({ eventType: 'admin.elevate', actor: 'kept', target: 'u' })
     const raw = openRaw()
     try {

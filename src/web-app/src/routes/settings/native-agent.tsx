@@ -73,36 +73,36 @@ interface Draft {
 
 function draftFromEnv(env: Record<string, string>): Draft {
   return {
-    role:      env.IMHUB_NATIVE_AGENT_ROLE      ?? '',
-    mode:      (env.IMHUB_NATIVE_AGENT_MODE as ApprovalMode | undefined) || 'read-only',
-    autoAllow: env.IMHUB_NATIVE_AGENT_AUTOALLOW ?? '',
-    denyList:  env.IMHUB_NATIVE_AGENT_DENYLIST  ?? '',
-    evalEnabled: isTruthy(env.IMHUB_NOTIFICATION_EVALUATOR),
-    evalSources: env.IMHUB_NOTIFICATION_EVALUATOR_SOURCES ?? '',
-    hbEnabled:   isTruthy(env.IMHUB_HEARTBEAT_ENABLED),
-    hbTickMs:    env.IMHUB_HEARTBEAT_TICK_INTERVAL_MS ?? '',
-    hbDefaultMin: env.IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN ?? '',
-    toolResultCap:     env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS ?? '',
-    toolTimeoutMs:     env.IMHUB_NATIVE_TOOL_TIMEOUT_MS ?? '',
-    blankRetryMax:     env.IMHUB_NATIVE_BLANK_RETRY_MAX ?? '',
-    lengthRecoveryMax: env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX ?? '',
-    a2aMaxDepth:        env.IMHUB_A2A_MAX_DEPTH ?? '',
-    a2aTimeoutMs:       env.IMHUB_A2A_TIMEOUT_DEFAULT_MS ?? '',
+    role:      env.AGIM_NATIVE_AGENT_ROLE      ?? '',
+    mode:      (env.AGIM_NATIVE_AGENT_MODE as ApprovalMode | undefined) || 'read-only',
+    autoAllow: env.AGIM_NATIVE_AGENT_AUTOALLOW ?? '',
+    denyList:  env.AGIM_NATIVE_AGENT_DENYLIST  ?? '',
+    evalEnabled: isTruthy(env.AGIM_NOTIFICATION_EVALUATOR),
+    evalSources: env.AGIM_NOTIFICATION_EVALUATOR_SOURCES ?? '',
+    hbEnabled:   isTruthy(env.AGIM_HEARTBEAT_ENABLED),
+    hbTickMs:    env.AGIM_HEARTBEAT_TICK_INTERVAL_MS ?? '',
+    hbDefaultMin: env.AGIM_HEARTBEAT_DEFAULT_INTERVAL_MIN ?? '',
+    toolResultCap:     env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS ?? '',
+    toolTimeoutMs:     env.AGIM_NATIVE_TOOL_TIMEOUT_MS ?? '',
+    blankRetryMax:     env.AGIM_NATIVE_BLANK_RETRY_MAX ?? '',
+    lengthRecoveryMax: env.AGIM_NATIVE_LENGTH_RECOVERY_MAX ?? '',
+    a2aMaxDepth:        env.AGIM_A2A_MAX_DEPTH ?? '',
+    a2aTimeoutMs:       env.AGIM_A2A_TIMEOUT_DEFAULT_MS ?? '',
     // Default ON: only 'off' / '0' / 'no' / 'false' disable.
-    callAgentInProcess: !isFalsy(env.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS),
-    callAgentMaxPerTurn: env.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN ?? '',
-    semanticStuckLoop:  !isFalsy(env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP),
-    criticEnabled:      isTruthy(env.IMHUB_NATIVE_CRITIC),
-    criticRole:         env.IMHUB_NATIVE_CRITIC_ROLE ?? '',
-    planModeDefault:    isTruthy(env.IMHUB_NATIVE_PLAN_MODE),
-    planIntentAuto:     isTruthy(env.IMHUB_PLAN_INTENT_AUTO),
-    planIntentPhrases:  env.IMHUB_PLAN_INTENT_PHRASES ?? '',
-    compactTriggerChars: env.IMHUB_NATIVE_COMPACT_TRIGGER_CHARS ?? '',
-    compactKeepTurns:    env.IMHUB_NATIVE_COMPACT_KEEP_TURNS ?? '',
-    compactKeepFirst:    env.IMHUB_NATIVE_COMPACT_KEEP_FIRST ?? '',
-    compactSummaryChars: env.IMHUB_NATIVE_COMPACT_SUMMARY_CHARS ?? '',
-    streamPartial:      !isFalsy(env.IMHUB_NATIVE_STREAM_PARTIAL),
-    maxIter:            env.IMHUB_NATIVE_AGENT_MAX_ITER ?? '',
+    callAgentInProcess: !isFalsy(env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS),
+    callAgentMaxPerTurn: env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN ?? '',
+    semanticStuckLoop:  !isFalsy(env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP),
+    criticEnabled:      isTruthy(env.AGIM_NATIVE_CRITIC),
+    criticRole:         env.AGIM_NATIVE_CRITIC_ROLE ?? '',
+    planModeDefault:    isTruthy(env.AGIM_NATIVE_PLAN_MODE),
+    planIntentAuto:     isTruthy(env.AGIM_PLAN_INTENT_AUTO),
+    planIntentPhrases:  env.AGIM_PLAN_INTENT_PHRASES ?? '',
+    compactTriggerChars: env.AGIM_NATIVE_COMPACT_TRIGGER_CHARS ?? '',
+    compactKeepTurns:    env.AGIM_NATIVE_COMPACT_KEEP_TURNS ?? '',
+    compactKeepFirst:    env.AGIM_NATIVE_COMPACT_KEEP_FIRST ?? '',
+    compactSummaryChars: env.AGIM_NATIVE_COMPACT_SUMMARY_CHARS ?? '',
+    streamPartial:      !isFalsy(env.AGIM_NATIVE_STREAM_PARTIAL),
+    maxIter:            env.AGIM_NATIVE_AGENT_MAX_ITER ?? '',
   }
 }
 
@@ -174,96 +174,96 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
   async function onSave(): Promise<void> {
     const updates: Record<string, string | null> = {}
     if (draft.role !== current.role) {
-      updates.IMHUB_NATIVE_AGENT_ROLE = draft.role.trim() || null
+      updates.AGIM_NATIVE_AGENT_ROLE = draft.role.trim() || null
     }
     if (draft.mode !== current.mode) {
-      updates.IMHUB_NATIVE_AGENT_MODE = draft.mode
+      updates.AGIM_NATIVE_AGENT_MODE = draft.mode
     }
     if (draft.autoAllow !== current.autoAllow) {
-      updates.IMHUB_NATIVE_AGENT_AUTOALLOW = draft.autoAllow.trim() || null
+      updates.AGIM_NATIVE_AGENT_AUTOALLOW = draft.autoAllow.trim() || null
     }
     if (draft.denyList !== current.denyList) {
-      updates.IMHUB_NATIVE_AGENT_DENYLIST = draft.denyList.trim() || null
+      updates.AGIM_NATIVE_AGENT_DENYLIST = draft.denyList.trim() || null
     }
     if (draft.evalEnabled !== current.evalEnabled) {
-      updates.IMHUB_NOTIFICATION_EVALUATOR = draft.evalEnabled ? 'on' : null
+      updates.AGIM_NOTIFICATION_EVALUATOR = draft.evalEnabled ? 'on' : null
     }
     if (draft.evalSources !== current.evalSources) {
-      updates.IMHUB_NOTIFICATION_EVALUATOR_SOURCES = draft.evalSources.trim() || null
+      updates.AGIM_NOTIFICATION_EVALUATOR_SOURCES = draft.evalSources.trim() || null
     }
     if (draft.hbEnabled !== current.hbEnabled) {
-      updates.IMHUB_HEARTBEAT_ENABLED = draft.hbEnabled ? 'on' : null
+      updates.AGIM_HEARTBEAT_ENABLED = draft.hbEnabled ? 'on' : null
     }
     if (draft.hbTickMs !== current.hbTickMs) {
-      updates.IMHUB_HEARTBEAT_TICK_INTERVAL_MS = draft.hbTickMs.trim() || null
+      updates.AGIM_HEARTBEAT_TICK_INTERVAL_MS = draft.hbTickMs.trim() || null
     }
     if (draft.hbDefaultMin !== current.hbDefaultMin) {
-      updates.IMHUB_HEARTBEAT_DEFAULT_INTERVAL_MIN = draft.hbDefaultMin.trim() || null
+      updates.AGIM_HEARTBEAT_DEFAULT_INTERVAL_MIN = draft.hbDefaultMin.trim() || null
     }
     if (draft.toolResultCap !== current.toolResultCap) {
-      updates.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS = draft.toolResultCap.trim() || null
+      updates.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = draft.toolResultCap.trim() || null
     }
     if (draft.toolTimeoutMs !== current.toolTimeoutMs) {
-      updates.IMHUB_NATIVE_TOOL_TIMEOUT_MS = draft.toolTimeoutMs.trim() || null
+      updates.AGIM_NATIVE_TOOL_TIMEOUT_MS = draft.toolTimeoutMs.trim() || null
     }
     if (draft.blankRetryMax !== current.blankRetryMax) {
-      updates.IMHUB_NATIVE_BLANK_RETRY_MAX = draft.blankRetryMax.trim() || null
+      updates.AGIM_NATIVE_BLANK_RETRY_MAX = draft.blankRetryMax.trim() || null
     }
     if (draft.lengthRecoveryMax !== current.lengthRecoveryMax) {
-      updates.IMHUB_NATIVE_LENGTH_RECOVERY_MAX = draft.lengthRecoveryMax.trim() || null
+      updates.AGIM_NATIVE_LENGTH_RECOVERY_MAX = draft.lengthRecoveryMax.trim() || null
     }
     // v1.2.127 — A2A
     if (draft.a2aMaxDepth !== current.a2aMaxDepth) {
-      updates.IMHUB_A2A_MAX_DEPTH = draft.a2aMaxDepth.trim() || null
+      updates.AGIM_A2A_MAX_DEPTH = draft.a2aMaxDepth.trim() || null
     }
     if (draft.a2aTimeoutMs !== current.a2aTimeoutMs) {
-      updates.IMHUB_A2A_TIMEOUT_DEFAULT_MS = draft.a2aTimeoutMs.trim() || null
+      updates.AGIM_A2A_TIMEOUT_DEFAULT_MS = draft.a2aTimeoutMs.trim() || null
     }
     if (draft.callAgentInProcess !== current.callAgentInProcess) {
       // Default ON: write only when operator turned OFF; ON = delete the env.
-      updates.IMHUB_NATIVE_CALL_AGENT_IN_PROCESS = draft.callAgentInProcess ? null : 'off'
+      updates.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = draft.callAgentInProcess ? null : 'off'
     }
     if (draft.callAgentMaxPerTurn !== current.callAgentMaxPerTurn) {
-      updates.IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN = draft.callAgentMaxPerTurn.trim() || null
+      updates.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = draft.callAgentMaxPerTurn.trim() || null
     }
     // v1.2.127 — 早停 + 复盘
     if (draft.semanticStuckLoop !== current.semanticStuckLoop) {
-      updates.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP = draft.semanticStuckLoop ? null : 'off'
+      updates.AGIM_NATIVE_SEMANTIC_STUCK_LOOP = draft.semanticStuckLoop ? null : 'off'
     }
     if (draft.criticEnabled !== current.criticEnabled) {
-      updates.IMHUB_NATIVE_CRITIC = draft.criticEnabled ? 'on' : null
+      updates.AGIM_NATIVE_CRITIC = draft.criticEnabled ? 'on' : null
     }
     if (draft.criticRole !== current.criticRole) {
-      updates.IMHUB_NATIVE_CRITIC_ROLE = draft.criticRole.trim() || null
+      updates.AGIM_NATIVE_CRITIC_ROLE = draft.criticRole.trim() || null
     }
     if (draft.planModeDefault !== current.planModeDefault) {
-      updates.IMHUB_NATIVE_PLAN_MODE = draft.planModeDefault ? '1' : null
+      updates.AGIM_NATIVE_PLAN_MODE = draft.planModeDefault ? '1' : null
     }
     if (draft.planIntentAuto !== current.planIntentAuto) {
-      updates.IMHUB_PLAN_INTENT_AUTO = draft.planIntentAuto ? 'on' : null
+      updates.AGIM_PLAN_INTENT_AUTO = draft.planIntentAuto ? 'on' : null
     }
     if (draft.planIntentPhrases !== current.planIntentPhrases) {
-      updates.IMHUB_PLAN_INTENT_PHRASES = draft.planIntentPhrases.trim() || null
+      updates.AGIM_PLAN_INTENT_PHRASES = draft.planIntentPhrases.trim() || null
     }
     // v1.2.127 — Auto-compact
     if (draft.compactTriggerChars !== current.compactTriggerChars) {
-      updates.IMHUB_NATIVE_COMPACT_TRIGGER_CHARS = draft.compactTriggerChars.trim() || null
+      updates.AGIM_NATIVE_COMPACT_TRIGGER_CHARS = draft.compactTriggerChars.trim() || null
     }
     if (draft.compactKeepTurns !== current.compactKeepTurns) {
-      updates.IMHUB_NATIVE_COMPACT_KEEP_TURNS = draft.compactKeepTurns.trim() || null
+      updates.AGIM_NATIVE_COMPACT_KEEP_TURNS = draft.compactKeepTurns.trim() || null
     }
     if (draft.compactKeepFirst !== current.compactKeepFirst) {
-      updates.IMHUB_NATIVE_COMPACT_KEEP_FIRST = draft.compactKeepFirst.trim() || null
+      updates.AGIM_NATIVE_COMPACT_KEEP_FIRST = draft.compactKeepFirst.trim() || null
     }
     if (draft.compactSummaryChars !== current.compactSummaryChars) {
-      updates.IMHUB_NATIVE_COMPACT_SUMMARY_CHARS = draft.compactSummaryChars.trim() || null
+      updates.AGIM_NATIVE_COMPACT_SUMMARY_CHARS = draft.compactSummaryChars.trim() || null
     }
     // v1.2.127 — 流式 + 迭代
     if (draft.streamPartial !== current.streamPartial) {
-      updates.IMHUB_NATIVE_STREAM_PARTIAL = draft.streamPartial ? null : 'off'
+      updates.AGIM_NATIVE_STREAM_PARTIAL = draft.streamPartial ? null : 'off'
     }
     if (draft.maxIter !== current.maxIter) {
-      updates.IMHUB_NATIVE_AGENT_MAX_ITER = draft.maxIter.trim() || null
+      updates.AGIM_NATIVE_AGENT_MAX_ITER = draft.maxIter.trim() || null
     }
     if (Object.keys(updates).length === 0) return
     try {

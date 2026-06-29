@@ -5,7 +5,7 @@
 //   - markJobRunning / markJobCompleted / markJobDelivered / markJobFailed
 //     state machine transitions + guard clauses (no rewriting from terminal)
 //   - linkJobOutbox and updateJobAgent
-//   - createInlineJob honors IMHUB_INLINE_JOB_TRACKING=0
+//   - createInlineJob honors AGIM_INLINE_JOB_TRACKING=0
 //   - createInlineJob never throws — returns -1 on a broken DB
 //   - retention split: inline rows prune at the inline-hours window;
 //     job rows prune at the days window
@@ -148,9 +148,9 @@ skipIfNoDb('inline-job state machine', () => {
 })
 
 skipIfNoDb('retention split by kind', () => {
-  it('inline rows older than IMHUB_INLINE_JOB_RETENTION_HOURS get pruned', () => {
-    const orig = process.env.IMHUB_INLINE_JOB_RETENTION_HOURS
-    process.env.IMHUB_INLINE_JOB_RETENTION_HOURS = '1'
+  it('inline rows older than AGIM_INLINE_JOB_RETENTION_HOURS get pruned', () => {
+    const orig = process.env.AGIM_INLINE_JOB_RETENTION_HOURS
+    process.env.AGIM_INLINE_JOB_RETENTION_HOURS = '1'
     try {
       // Create + finalize a row, then artificially backdate it.
       const id = jb.createInlineJob({
@@ -167,8 +167,8 @@ skipIfNoDb('retention split by kind', () => {
       expect(deleted).toBeGreaterThan(0)
       expect(jb.getJob(id)).toBeNull()
     } finally {
-      if (orig === undefined) delete process.env.IMHUB_INLINE_JOB_RETENTION_HOURS
-      else process.env.IMHUB_INLINE_JOB_RETENTION_HOURS = orig
+      if (orig === undefined) delete process.env.AGIM_INLINE_JOB_RETENTION_HOURS
+      else process.env.AGIM_INLINE_JOB_RETENTION_HOURS = orig
     }
   })
 
@@ -187,17 +187,17 @@ skipIfNoDb('retention split by kind', () => {
 // ─── Env-switch & degraded mode ───────────────────────────────────────
 
 describe('createInlineJob env switch + degraded mode', () => {
-  it('IMHUB_INLINE_JOB_TRACKING=0 short-circuits to -1', () => {
-    const orig = process.env.IMHUB_INLINE_JOB_TRACKING
-    process.env.IMHUB_INLINE_JOB_TRACKING = '0'
+  it('AGIM_INLINE_JOB_TRACKING=0 short-circuits to -1', () => {
+    const orig = process.env.AGIM_INLINE_JOB_TRACKING
+    process.env.AGIM_INLINE_JOB_TRACKING = '0'
     try {
       const id = jb.createInlineJob({
         agent: 'a', prompt: 'p', threadKey: 'off:off:off',
       })
       expect(id).toBe(-1)
     } finally {
-      if (orig === undefined) delete process.env.IMHUB_INLINE_JOB_TRACKING
-      else process.env.IMHUB_INLINE_JOB_TRACKING = orig
+      if (orig === undefined) delete process.env.AGIM_INLINE_JOB_TRACKING
+      else process.env.AGIM_INLINE_JOB_TRACKING = orig
     }
   })
 

@@ -28,7 +28,7 @@ capabilities the user might ask you about.
 
 ## MCP tools you can call
 
-You have access to these `mcp__imhub__*` tools when the operator has the
+You have access to these `mcp__agim__*` tools when the operator has the
 sidecar wired:
 
 - **save_memo / search_memos / update_memo / delete_memo / request_location_capture**
@@ -58,7 +58,7 @@ sidecar wired:
   Use sparingly; per-call cost includes subprocess spawn. **v1.2.59 cap:
   at most 2 call_agent invocations per turn; after that the dispatcher
   hard-refuses and tells you to use your own native tools.** Override
-  with `IMHUB_NATIVE_CALL_AGENT_MAX_PER_TURN` env (0 = unlimited).
+  with `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` env (0 = unlimited).
 
 - **read_skill / list_skills** — fetch / enumerate skill bodies. Use
   read_skill when the user's question matches a description in the
@@ -81,7 +81,7 @@ Bash / WebFetch).
   by default; auto-truncates over cap.
 - **native_write_file(path, content, mode?)** — overwrite or append,
   1MB cap. Approval-gated by default; operators can add to
-  `IMHUB_NATIVE_AGENT_AUTOALLOW` if they trust native more.
+  `AGIM_NATIVE_AGENT_AUTOALLOW` if they trust native more.
 - **native_list_dir(path, max_entries?)** — entries with type + size.
 - **native_glob(pattern, root?, max_results?)** — ripgrep `--files`
   when installed, fallback fs walker otherwise.
@@ -91,18 +91,18 @@ Bash / WebFetch).
   `format="reader"` (default) routes through `r.jina.ai` for text
   extraction; `format="raw"` returns body verbatim. SSRF block on
   RFC1918 / loopback / link-local; lift with
-  `IMHUB_NATIVE_WEB_ALLOW_PRIVATE=1`.
+  `AGIM_NATIVE_WEB_ALLOW_PRIVATE=1`.
 - **native_web_search(query, n?)** — DuckDuckGo HTML → Metaso fallback.
   Use FIRST when the user gave only keywords. Never pair a fabricated
   URL with web_fetch — go through search → pick a result → fetch that.
 - **native_exec(command, timeout_ms?, cwd?)** — `/bin/sh -c <cmd>`.
   **Always approval-gated** (each invocation pops an IM card unless
   previously auto-allowed by fingerprint). Optional bwrap sandbox via
-  `IMHUB_EXEC_SANDBOX=bwrap` (Linux + `/usr/bin/bwrap`); add
-  `IMHUB_EXEC_SANDBOX_NET=off` to also block network.
+  `AGIM_EXEC_SANDBOX=bwrap` (Linux + `/usr/bin/bwrap`); add
+  `AGIM_EXEC_SANDBOX_NET=off` to also block network.
 
 Filesystem tools have full filesystem access by default. Set
-`IMHUB_NATIVE_FS_RESTRICT=1` to confine them to the per-thread workspace
+`AGIM_NATIVE_FS_RESTRICT=1` to confine them to the per-thread workspace
 (`~/.agim-workspaces/native/<thread>/`). Sensitive paths (`~/.agim/`,
 `/etc/shadow`, `AGENTS.md`, etc.) stay denied either way.
 
@@ -122,7 +122,7 @@ an intentional kill switch).
   blocks) auto-route to the viewer URL.
 - Tool calls go through the operator's approval flow on platforms that
   support it; on the others the operator pre-approved the tool set.
-- `/heartbeat` and `mcp__imhub__push_message` go through the optional
+- `/heartbeat` and `mcp__agim__push_message` go through the optional
   notification evaluator — if you produce a "no-news" update, it gets
   silently dropped.
 - The user's IM platform may have a per-minute rate limit; if the cap
@@ -131,5 +131,5 @@ an intentional kill switch).
 ## When in doubt
 
 If the user asks something agim-specific that isn't in this card, call
-`mcp__imhub__read_skill('agim-self')` (you're already reading it!) and
+`mcp__agim__read_skill('agim-self')` (you're already reading it!) and
 answer from what's here, or admit you don't know and suggest `/help`.

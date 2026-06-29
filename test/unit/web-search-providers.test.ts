@@ -19,7 +19,7 @@ import {
 
 describe('web-search provider chain (v1.2.118 + v1.2.121)', () => {
   const KEYS = [
-    'IMHUB_WEB_SEARCH_PROVIDERS',
+    'AGIM_WEB_SEARCH_PROVIDERS',
     'TAVILY_API_KEY', 'BRAVE_API_KEY', 'SERPER_API_KEY', 'EXA_API_KEY', 'METASO_API_KEY',
   ]
   const saved: Record<string, string | undefined> = {}
@@ -73,29 +73,29 @@ describe('web-search provider chain (v1.2.118 + v1.2.121)', () => {
     expect(chain.map((p) => p.name)).toEqual(['duckduckgo', 'metaso'])
   })
 
-  it('custom IMHUB_WEB_SEARCH_PROVIDERS reorders the chain', () => {
-    process.env.IMHUB_WEB_SEARCH_PROVIDERS = 'metaso,duckduckgo'
+  it('custom AGIM_WEB_SEARCH_PROVIDERS reorders the chain', () => {
+    process.env.AGIM_WEB_SEARCH_PROVIDERS = 'metaso,duckduckgo'
     process.env.METASO_API_KEY = 'meta-fake'
     const chain = resolveSearchProviderChain()
     expect(chain.map((p) => p.name)).toEqual(['metaso', 'duckduckgo'])
   })
 
   it('drops unknown provider names without breaking the chain', () => {
-    process.env.IMHUB_WEB_SEARCH_PROVIDERS = 'kagi,duckduckgo,exa'
+    process.env.AGIM_WEB_SEARCH_PROVIDERS = 'kagi,duckduckgo,exa'
     const chain = resolveSearchProviderChain()
     // kagi + exa unknown → dropped; duckduckgo survives.
     expect(chain.map((p) => p.name)).toEqual(['duckduckgo'])
   })
 
   it('empty env ⇒ default order applies', () => {
-    process.env.IMHUB_WEB_SEARCH_PROVIDERS = ''
+    process.env.AGIM_WEB_SEARCH_PROVIDERS = ''
     process.env.TAVILY_API_KEY = 'tvly-fake'
     const chain = resolveSearchProviderChain()
     expect(chain.map((p) => p.name)).toEqual(['tavily', 'duckduckgo'])
   })
 
   it('chain can be deliberately empty (no providers, all unknown)', () => {
-    process.env.IMHUB_WEB_SEARCH_PROVIDERS = 'kagi,brave'
+    process.env.AGIM_WEB_SEARCH_PROVIDERS = 'kagi,brave'
     const chain = resolveSearchProviderChain()
     expect(chain).toEqual([])
   })

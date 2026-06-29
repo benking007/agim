@@ -79,7 +79,7 @@ const CRITIC_MAX_CALLS = 2
  *  validator (e.g. uses $ref / oneOf which we don't implement). The
  *  escape hatch keeps a footgun small. */
 function resolveSchemaValidate(): boolean {
-  const raw = (process.env.IMHUB_TOOL_SCHEMA_VALIDATE ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_TOOL_SCHEMA_VALIDATE ?? '').toLowerCase().trim()
   if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
   return true
 }
@@ -90,7 +90,7 @@ function resolveSchemaValidate(): boolean {
  *  opt-in). Operators flip 'off' if a vendor's streaming endpoint
  *  misbehaves and they don't want to redeploy. */
 function resolveStreamEnabled(): boolean {
-  const raw = (process.env.IMHUB_AGENT_LOOP_STREAM ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_AGENT_LOOP_STREAM ?? '').toLowerCase().trim()
   if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
   return true
 }
@@ -103,7 +103,7 @@ function resolveStreamEnabled(): boolean {
  *  with finishReason='length' as it did pre-1.2.117). */
 const DEFAULT_LENGTH_RECOVERY_MAX = 3
 function resolveLengthRecoveryMax(): number {
-  const raw = (process.env.IMHUB_NATIVE_LENGTH_RECOVERY_MAX ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX ?? '').trim()
   if (!raw) return DEFAULT_LENGTH_RECOVERY_MAX
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return DEFAULT_LENGTH_RECOVERY_MAX
@@ -116,7 +116,7 @@ function resolveLengthRecoveryMax(): number {
  *  32768 chars (~8 KB tokens). Env override or 0 to disable. */
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 32_768
 function resolveToolResultMaxChars(): number {
-  const raw = (process.env.IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS ?? '').trim()
   if (!raw) return DEFAULT_TOOL_RESULT_MAX_CHARS
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_RESULT_MAX_CHARS
@@ -128,7 +128,7 @@ function resolveToolResultMaxChars(): number {
 function truncateToolResult(text: string, cap: number, toolName: string): { text: string; truncated: boolean } {
   if (cap === 0 || text.length <= cap) return { text, truncated: false }
   const dropped = text.length - cap
-  const marker = `\n\n…[${toolName} output truncated: ${dropped} of ${text.length} chars omitted; set IMHUB_NATIVE_TOOL_RESULT_MAX_CHARS to raise the cap]`
+  const marker = `\n\n…[${toolName} output truncated: ${dropped} of ${text.length} chars omitted; set AGIM_NATIVE_TOOL_RESULT_MAX_CHARS to raise the cap]`
   return { text: text.slice(0, cap) + marker, truncated: true }
 }
 
@@ -140,7 +140,7 @@ function truncateToolResult(text: string, cap: number, toolName: string): { text
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000
 function resolveToolTimeoutMs(perToolMs: number | undefined): number {
   if (typeof perToolMs === 'number' && perToolMs >= 0) return perToolMs
-  const raw = (process.env.IMHUB_NATIVE_TOOL_TIMEOUT_MS ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS ?? '').trim()
   if (!raw) return DEFAULT_TOOL_TIMEOUT_MS
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_TIMEOUT_MS
@@ -155,7 +155,7 @@ function resolveToolTimeoutMs(perToolMs: number | undefined): number {
  *  `_MAX_EMPTY_RETRIES`). 0 disables. */
 const DEFAULT_BLANK_RETRY_MAX = 2
 function resolveBlankRetryMax(): number {
-  const raw = (process.env.IMHUB_NATIVE_BLANK_RETRY_MAX ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_BLANK_RETRY_MAX ?? '').trim()
   if (!raw) return DEFAULT_BLANK_RETRY_MAX
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return DEFAULT_BLANK_RETRY_MAX
@@ -415,7 +415,7 @@ function isTransientStreamError(err: unknown): boolean {
 }
 
 function resolveFirstTokenRetryMax(): number {
-  const raw = (process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_MAX ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX ?? '').trim()
   if (!raw) return 1
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 1
@@ -423,7 +423,7 @@ function resolveFirstTokenRetryMax(): number {
 }
 
 function resolveFirstTokenRetryDelayMs(): number {
-  const raw = (process.env.IMHUB_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS ?? '').trim()
+  const raw = (process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS ?? '').trim()
   if (!raw) return 1000
   const n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) return 1000
@@ -556,7 +556,7 @@ export function extractSalientStrings(argsKey: string): Set<string> {
  *  flip 'off' if false positives become a real problem (none observed
  *  in dogfood). */
 function resolveSemanticStuckLoopOn(): boolean {
-  const raw = (process.env.IMHUB_NATIVE_SEMANTIC_STUCK_LOOP ?? '').toLowerCase().trim()
+  const raw = (process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP ?? '').toLowerCase().trim()
   if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
   return true
 }
@@ -588,7 +588,7 @@ export const alwaysAllowGate: ApprovalGate = async () => 'allow'
  *    three iterations in a row — usually means it's stuck re-trying a
  *    failing SQL / fetch / command without changing strategy. Without
  *    this break a stuck model would burn the full
- *    IMHUB_NATIVE_AGENT_MAX_ITER budget; stopping early saves cost AND
+ *    AGIM_NATIVE_AGENT_MAX_ITER budget; stopping early saves cost AND
  *    gives the user a much more actionable recap. */
 /**  - `off_track` (v1.2.98): goal-critic flagged the recent tool chain
  *    as semantically off-target for the user's prompt / active goal.
@@ -653,7 +653,7 @@ export interface AgentLoopInput {
    *  `goalBody` come from goals.getActiveGoal for this thread (caller
    *  fetches once; loop just relays). Either may be empty — critic
    *  refuses to judge if both are. Leaving criticAnchor unset (or
-   *  setting IMHUB_NATIVE_CRITIC=off) disables the critic for this
+   *  setting AGIM_NATIVE_CRITIC=off) disables the critic for this
    *  invocation. */
   criticAnchor?: {
     prompt?: string
@@ -689,7 +689,7 @@ export interface AgentLoopInput {
    *  / tool_calls / reasoning, and on abort returns the partial text
    *  with finishReason='aborted'. Falls back to buffered `chat()` on
    *  any provider that doesn't implement streaming. Default false to
-   *  preserve v1.2.111 behaviour. Env `IMHUB_AGENT_LOOP_STREAM=off`
+   *  preserve v1.2.111 behaviour. Env `AGIM_AGENT_LOOP_STREAM=off`
    *  is a process-wide kill switch even when this is true (so ops can
    *  flip it off without code changes). */
   streamPartialText?: boolean
@@ -1160,7 +1160,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // message INSTEAD of dispatching with garbage args. Without this,
       // the dispatcher had to defensively parse / coerce, and any
       // failure surfaced as an opaque "tool threw: …" the model rarely
-      // self-corrected. Disabled when IMHUB_TOOL_SCHEMA_VALIDATE=off.
+      // self-corrected. Disabled when AGIM_TOOL_SCHEMA_VALIDATE=off.
       const toolSchema = schemaByName.get(call.name)
       if (schemaValidateOn && toolSchema) {
         const verrs = validateAgainstSchema(call.arguments, toolSchema)
@@ -1192,7 +1192,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // hits the correct slot regardless of completion order.
       const dispatchCall = dispatch
       // v1.2.111 — thread the parent trace id to dispatchers (notably
-      // imhub-dispatcher's A2A path) so the whole turn shares one
+      // agim-dispatcher's A2A path) so the whole turn shares one
       // trace prefix instead of each fan-out minting a fresh root.
       const dispatchCtx = { traceId: input.audit?.traceId }
       // v1.2.118 — per-tool wall timeout. We resolve it once per call
@@ -1314,7 +1314,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     // v1.2.122 — semantic stuck-loop: same intent reshuffling across
     // different tool surfaces. Catches the failure mode where the model
     // tries Tavily → DDG → Brave (or read_file → cat → less) with the
-    // same query/path. Disabled via IMHUB_NATIVE_SEMANTIC_STUCK_LOOP=off.
+    // same query/path. Disabled via AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off.
     if (resolveSemanticStuckLoopOn() && isSemanticStuckLoop(toolCalls)) {
       const last3 = toolCalls.slice(-3)
       log.warn({
@@ -1435,7 +1435,7 @@ async function dispatchWithTimeout(
       timedOut = true
       try { ctrl.abort(new Error(`tool ${toolName} timed out after ${timeoutMs}ms`)) } catch { /* ignore */ }
       resolve({
-        text: `tool ${toolName} timed out after ${timeoutMs}ms (set IMHUB_NATIVE_TOOL_TIMEOUT_MS or the tool's timeoutMs to raise the cap)`,
+        text: `tool ${toolName} timed out after ${timeoutMs}ms (set AGIM_NATIVE_TOOL_TIMEOUT_MS or the tool's timeoutMs to raise the cap)`,
         isError: true,
         source: 'timeout',
       })

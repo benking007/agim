@@ -586,7 +586,7 @@ export interface DistillStatusResponse {
   lastError: string | null
   /** Buffered turns awaiting extraction across all users. */
   pendingTotal: number
-  /** Distiller master switch (memory on + IMHUB_MEMORY_DISTILL_ENABLED). */
+  /** Distiller master switch (memory on + AGIM_MEMORY_DISTILL_ENABLED). */
   enabled: boolean
 }
 
@@ -824,7 +824,7 @@ export interface AppConfig {
   features?: {
     globalIm?: boolean
     remoteAgent?: boolean
-    /** v1.2.71 — runtime IMHUB_PLATFORM_BLACKLIST set, alias-expanded
+    /** v1.2.71 — runtime AGIM_PLATFORM_BLACKLIST set, alias-expanded
      *  (e.g. ['wechat', 'wechat-ilink', 'telegram']). SPA hides the
      *  corresponding PlatformCard / nav entries. Empty array when the
      *  env is unset. */
@@ -894,7 +894,7 @@ export interface EmailTestResponse {
 
 /** One row of the search provider table the SPA renders. */
 export interface SearchProviderInfo {
-  /** Stable id used in IMHUB_WEB_SEARCH_PROVIDERS, e.g. `tavily`. */
+  /** Stable id used in AGIM_WEB_SEARCH_PROVIDERS, e.g. `tavily`. */
   name: string
   /** Env key holding this provider's API key, or null if none required. */
   envKey: string | null
@@ -960,11 +960,11 @@ export interface MobileQRResponse {
  *  handleViewerTunnelStatus also folds in (viewer config + computed
  *  effective public URL). */
 export interface ViewerTunnelStatusResponse {
-  /** From IMHUB_VIEWER_ENABLED. */
+  /** From AGIM_VIEWER_ENABLED. */
   enabled: boolean
-  /** From IMHUB_VIEWER_TUNNEL_MODE — `off` or `quick`. */
+  /** From AGIM_VIEWER_TUNNEL_MODE — `off` or `quick`. */
   tunnelMode: 'off' | 'quick'
-  /** From IMHUB_VIEWER_PUBLIC_BASE_URL — operator-set static URL. */
+  /** From AGIM_VIEWER_PUBLIC_BASE_URL — operator-set static URL. */
   staticPublicUrl: string | null
   /** Computed by viewer-config — the live tunnel URL when quick mode is
    *  connected, else the static URL. This is what `/v/<id>` links use. */
@@ -1068,7 +1068,7 @@ export interface ListAuditQuery {
  * ============================================================ */
 
 export interface EnvResponse {
-  /** Editable env-file values keyed by IMHUB_*. Secrets are masked
+  /** Editable env-file values keyed by AGIM_*. Secrets are masked
    *  unless ?reveal=1 was passed (only last 4 chars visible). */
   env: Record<string, string>
   /** Subset of env keys whose values are treated as secrets — the

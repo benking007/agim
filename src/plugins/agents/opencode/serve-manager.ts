@@ -18,7 +18,7 @@
 //   - Probe-reuse path: if the port already answers we'd love to reuse,
 //     but the approval-bus picks a fresh socket path on every agim start
 //     (random 16-byte name), so any serve left over from a previous agim
-//     run carries a STALE IMHUB_APPROVAL_SOCK in its env. The MCP sidecar
+//     run carries a STALE AGIM_APPROVAL_SOCK in its env. The MCP sidecar
 //     it spawns reads that env, finds the socket gone, and exits before
 //     ready — every memo/reminder call fails silently. We defend by
 //     reading /proc/<pid>/environ for the listener and killing+respawning
@@ -35,7 +35,7 @@ const READY_TIMEOUT_MS = 15_000
 const READY_REGEX = /listening on (https?:\/\/[^\s]+)/i
 
 export interface ServeOptions {
-  /** Port to bind. Default: env IMHUB_OPENCODE_PORT or 14199. */
+  /** Port to bind. Default: env AGIM_OPENCODE_PORT or 14199. */
   port?: number
   /** Host to bind. Default: 127.0.0.1. */
   hostname?: string
@@ -52,7 +52,7 @@ export class OpencodeServeManager {
   private readonly opts: Required<Pick<ServeOptions, 'port' | 'hostname'>> & ServeOptions
 
   constructor(opts: ServeOptions = {}) {
-    const envPort = process.env.IMHUB_OPENCODE_PORT
+    const envPort = process.env.AGIM_OPENCODE_PORT
     this.opts = {
       port: opts.port ?? (envPort ? parseInt(envPort, 10) : 14199),
       hostname: opts.hostname ?? '127.0.0.1',
@@ -106,16 +106,16 @@ export class OpencodeServeManager {
     // saw exactly that in audit row 309 on 2026-05-04. If the port answers
     // and the response looks like opencode, reuse it instead.
     //
-    // But: reuse is only safe when the existing serve's IMHUB_APPROVAL_SOCK
+    // But: reuse is only safe when the existing serve's AGIM_APPROVAL_SOCK
     // matches ours. The bus picks a fresh random socket on every agim start,
     // so a serve from a previous run carries a stale path that points at a
     // deleted socket; the MCP sidecar it spawns exits immediately and every
     // memo/reminder call drops on the floor. Validate via /proc/<pid>/environ
     // and kill stale serves before falling through to a clean spawn.
     if (await probeOpencodeServe(candidateUrl)) {
-      const wantSock = process.env.IMHUB_APPROVAL_SOCK ?? ''
+      const wantSock = process.env.AGIM_APPROVAL_SOCK ?? ''
       const listenerPid = await findListeningPid(port)
-      const haveSock = listenerPid ? await readProcessEnvVar(listenerPid, 'IMHUB_APPROVAL_SOCK') : null
+      const haveSock = listenerPid ? await readProcessEnvVar(listenerPid, 'AGIM_APPROVAL_SOCK') : null
       if (wantSock && haveSock !== wantSock) {
         log.warn(
           {
@@ -124,7 +124,7 @@ export class OpencodeServeManager {
             haveSock,
             wantSock,
           },
-          'existing opencode serve has stale IMHUB_APPROVAL_SOCK; killing and respawning',
+          'existing opencode serve has stale AGIM_APPROVAL_SOCK; killing and respawning',
         )
         if (listenerPid) await killAndWait(listenerPid)
         // fall through to spawn fresh
@@ -140,15 +140,15 @@ export class OpencodeServeManager {
 
     log.info({ event: 'opencode.serve.starting', port, hostname }, 'starting opencode serve')
 
-    // Explicit env injection. We rely on IMHUB_APPROVAL_SOCK being on
+    // Explicit env injection. We rely on AGIM_APPROVAL_SOCK being on
     // process.env (cli.ts sets it right after approval-bus.start()), but
     // we surface a loud warning instead of a silent breakage if it's
     // missing — every MCP sidecar would otherwise exit at startup.
     const childEnv: NodeJS.ProcessEnv = { ...process.env }
-    if (!childEnv.IMHUB_APPROVAL_SOCK) {
+    if (!childEnv.AGIM_APPROVAL_SOCK) {
       log.warn(
         { event: 'opencode.serve.no_approval_sock' },
-        'spawning opencode serve without IMHUB_APPROVAL_SOCK — MCP sidecar will exit',
+        'spawning opencode serve without AGIM_APPROVAL_SOCK — MCP sidecar will exit',
       )
     }
 
@@ -325,7 +325,7 @@ async function signalPid(pid: number, signal: 'TERM' | 'KILL' | '0'): Promise<bo
 /**
  * SIGTERM the stale serve, wait briefly, escalate to SIGKILL if still
  * alive. No-op on macOS/Windows where we have no pid to target. Used
- * only when probe-reuse detects a stale IMHUB_APPROVAL_SOCK env on the
+ * only when probe-reuse detects a stale AGIM_APPROVAL_SOCK env on the
  * listening process — i.e. the agim daemon owns the cleanup decision.
  */
 async function killAndWait(pid: number): Promise<void> {

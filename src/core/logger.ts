@@ -40,7 +40,7 @@ const root = pino({
       '*.appSecret', '*.app_secret',
       '*.password', '*.secret',
       'headers.authorization',
-      'headers["x-im-hub-token"]',
+      'headers["x-agim-token"]',
     ],
     censor: '[REDACTED]',
   },
@@ -68,14 +68,14 @@ const root = pino({
  *   `logger.info({ event: 'message.received', ...sanitizeUserText(text) })`
  *
  * Operators who need the verbatim text (e.g. for debugging) can re-enable
- * by setting `IMHUB_LOG_USER_TEXT=1` — that path is intentionally noisy
+ * by setting `AGIM_LOG_USER_TEXT=1` — that path is intentionally noisy
  * (`WARN` level) so it surfaces in default LOG_LEVEL=info deployments.
  */
 export function sanitizeUserText(text: string): {
   len: number
   prefix: string
   hash: string
-  text?: string  // only present when IMHUB_LOG_USER_TEXT=1 (debug)
+  text?: string  // only present when AGIM_LOG_USER_TEXT=1 (debug)
 } {
   const safe = typeof text === 'string' ? text : String(text ?? '')
   const out: { len: number; prefix: string; hash: string; text?: string } = {
@@ -86,7 +86,7 @@ export function sanitizeUserText(text: string): {
   // Opt-in escape hatch — only for live debugging on a controlled host.
   // We keep the 120-char cap as a guardrail against accidental log
   // flooding when this flag is set.
-  if (process.env.IMHUB_LOG_USER_TEXT === '1') {
+  if (process.env.AGIM_LOG_USER_TEXT === '1') {
     out.text = safe.slice(0, 120)
   }
   return out

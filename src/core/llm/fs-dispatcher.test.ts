@@ -8,7 +8,7 @@ const NEVER_ABORT = new AbortController().signal
 
 describe('fs-dispatcher', () => {
   let workspace: string
-  const ORIG_RESTRICT = process.env.IMHUB_NATIVE_FS_RESTRICT
+  const ORIG_RESTRICT = process.env.AGIM_NATIVE_FS_RESTRICT
 
   beforeAll(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'agim-fs-test-'))
@@ -20,12 +20,12 @@ describe('fs-dispatcher', () => {
 
   beforeEach(() => {
     // Default: workspace restriction ON (the production default).
-    delete process.env.IMHUB_NATIVE_FS_RESTRICT
+    delete process.env.AGIM_NATIVE_FS_RESTRICT
   })
 
   afterEach(() => {
-    if (ORIG_RESTRICT === undefined) delete process.env.IMHUB_NATIVE_FS_RESTRICT
-    else process.env.IMHUB_NATIVE_FS_RESTRICT = ORIG_RESTRICT
+    if (ORIG_RESTRICT === undefined) delete process.env.AGIM_NATIVE_FS_RESTRICT
+    else process.env.AGIM_NATIVE_FS_RESTRICT = ORIG_RESTRICT
   })
 
   describe('getFsTools / isFsToolName', () => {
@@ -43,7 +43,7 @@ describe('fs-dispatcher', () => {
         expect(isFsToolName(n)).toBe(true)
       }
       expect(isFsToolName('native_echo')).toBe(false)
-      expect(isFsToolName('mcp__imhub__call_agent')).toBe(false)
+      expect(isFsToolName('mcp__agim__call_agent')).toBe(false)
     })
   })
 
@@ -71,7 +71,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses paths outside workspace when restricted', async () => {
-      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
+      process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '/etc/hostname' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
@@ -79,7 +79,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('by default (unrestricted), reads a non-sensitive file outside the workspace', async () => {
-      // Default = no IMHUB_NATIVE_FS_RESTRICT → native agents have real fs access.
+      // Default = no AGIM_NATIVE_FS_RESTRICT → native agents have real fs access.
       const outside = join(tmpdir(), `agim-fs-default-${Date.now()}.txt`)
       await writeFile(outside, 'outside content')
       try {
@@ -99,8 +99,8 @@ describe('fs-dispatcher', () => {
       expect(r.text).toMatch(/sensitive/i)
     })
 
-    it('refuses sensitive paths even when IMHUB_NATIVE_FS_RESTRICT=0', async () => {
-      process.env.IMHUB_NATIVE_FS_RESTRICT = '0'
+    it('refuses sensitive paths even when AGIM_NATIVE_FS_RESTRICT=0', async () => {
+      process.env.AGIM_NATIVE_FS_RESTRICT = '0'
       const d = buildFsDispatcher({ cwd: workspace })
       // ~/.agim is on the sensitive denylist
       const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
@@ -146,7 +146,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses paths outside workspace when restricted', async () => {
-      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
+      process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
         { id: 't', name: 'native_write_file', arguments: { path: '/tmp/agim-evil', content: 'no' } },
@@ -193,16 +193,16 @@ describe('fs-dispatcher', () => {
   })
 
   describe('timeout wrapper', () => {
-    it('honors IMHUB_NATIVE_FS_TIMEOUT_MS for slow ops', async () => {
+    it('honors AGIM_NATIVE_FS_TIMEOUT_MS for slow ops', async () => {
       // Trick: a non-existent dir errors fast; we just verify the
       // timeout code path is reachable by setting a low timeout and
       // making sure errors still propagate (not the timeout itself
       // necessarily, since most ops complete fast).
-      process.env.IMHUB_NATIVE_FS_TIMEOUT_MS = '5000'
+      process.env.AGIM_NATIVE_FS_TIMEOUT_MS = '5000'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'does-not-exist' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
-      delete process.env.IMHUB_NATIVE_FS_TIMEOUT_MS
+      delete process.env.AGIM_NATIVE_FS_TIMEOUT_MS
     })
   })
 
@@ -227,7 +227,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses to read a symlink whose target is outside workspace', async () => {
-      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
+      process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-outside-'))
       await writeFile(join(otherDir, 'secret.txt'), 'top-secret')
       const link = join(workspace, 'escape')
@@ -241,7 +241,7 @@ describe('fs-dispatcher', () => {
     })
 
     it('refuses to write through a symlinked directory pointing outside', async () => {
-      process.env.IMHUB_NATIVE_FS_RESTRICT = '1'
+      process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const otherDir = await mkdtemp(join(tmpdir(), 'agim-fs-symdir-'))
       const linkDir = join(workspace, 'evil-dir')
       try { await rm(linkDir, { force: true }) } catch { /* ignore */ }

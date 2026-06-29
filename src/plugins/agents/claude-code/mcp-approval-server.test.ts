@@ -20,7 +20,7 @@ const RUN_CTX: RunContext = {
 const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 
 function uniqueSocketPath(): string {
-  return join(tmpdir(), `imhub-mcp-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+  return join(tmpdir(), `agim-mcp-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
 }
 
 interface Harness {
@@ -202,7 +202,7 @@ describe('mcp-approval-server', () => {
 
 describe('ApprovalClient (without MCP layer)', () => {
   it('returns deny synchronously when bus socket does not exist', async () => {
-    const client = new ApprovalClient('/tmp/imhub-nonexistent-socket-xyz', RUN_ID)
+    const client = new ApprovalClient('/tmp/agim-nonexistent-socket-xyz', RUN_ID)
     const decision = await client.request({ toolName: 'Bash', input: {}, toolUseId: 'tu' })
     expect(decision.behavior).toBe('deny')
     expect((decision as { message?: string }).message).toContain('approval bus unavailable')

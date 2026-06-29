@@ -202,7 +202,7 @@ export const configSchema = z.object({
   llmRoles: llmRolesSchema.optional(),
   /** D+ Stage 2 sub-PR #2: external MCP servers to attach. Their tools
    *  are exposed to the native agent loop. Optional — when absent, only
-   *  the built-in agim MCP server's tools (mcp__imhub__*) are available
+   *  the built-in agim MCP server's tools (mcp__agim__*) are available
    *  to the native agent. */
   mcpServers: z.array(mcpServerSchema).optional(),
 }).passthrough().superRefine((cfg, ctx) => {

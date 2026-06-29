@@ -13,8 +13,8 @@ import { existsSync, unlinkSync } from 'node:fs'
 
 const ORIGINAL_FETCH = globalThis.fetch
 const ENV_KEYS = [
-  'IMHUB_NOTIFICATION_EVALUATOR',
-  'IMHUB_NOTIFICATION_EVALUATOR_SOURCES',
+  'AGIM_NOTIFICATION_EVALUATOR',
+  'AGIM_NOTIFICATION_EVALUATOR_SOURCES',
   envKeyForBackend('evaluator-cheap'),
 ]
 
@@ -59,7 +59,7 @@ describe('evaluateNotification — disabled paths', () => {
   })
 
   it('source not in gated set: via=source-excluded', async () => {
-    process.env.IMHUB_NOTIFICATION_EVALUATOR = 'on'
+    process.env.AGIM_NOTIFICATION_EVALUATOR = 'on'
     // Default gated = {push, heartbeat}; 'notify' is excluded.
     const v = await evaluateNotification({
       source: 'notify',
@@ -71,7 +71,7 @@ describe('evaluateNotification — disabled paths', () => {
   })
 
   it('empty text returns via=fail-open (no LLM call)', async () => {
-    process.env.IMHUB_NOTIFICATION_EVALUATOR = 'on'
+    process.env.AGIM_NOTIFICATION_EVALUATOR = 'on'
     let called = false
     globalThis.fetch = (async () => { called = true; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
     const v = await evaluateNotification({
@@ -85,7 +85,7 @@ describe('evaluateNotification — disabled paths', () => {
   })
 
   it('no evaluator backend configured: via=no-backend', async () => {
-    process.env.IMHUB_NOTIFICATION_EVALUATOR = 'on'
+    process.env.AGIM_NOTIFICATION_EVALUATOR = 'on'
     // Registry has no provider for 'evaluator' role.
     loadFromConfig({})
     const v = await evaluateNotification({
@@ -100,7 +100,7 @@ describe('evaluateNotification — disabled paths', () => {
 
 describe('evaluateNotification — verdict paths', () => {
   beforeEach(() => {
-    process.env.IMHUB_NOTIFICATION_EVALUATOR = 'on'
+    process.env.AGIM_NOTIFICATION_EVALUATOR = 'on'
     configureBackend()
   })
 
@@ -163,8 +163,8 @@ describe('evaluateNotification — verdict paths', () => {
     expect(v.via).toBe('no-backend')
   })
 
-  it('custom IMHUB_NOTIFICATION_EVALUATOR_SOURCES extends the set', async () => {
-    process.env.IMHUB_NOTIFICATION_EVALUATOR_SOURCES = 'notify,push'
+  it('custom AGIM_NOTIFICATION_EVALUATOR_SOURCES extends the set', async () => {
+    process.env.AGIM_NOTIFICATION_EVALUATOR_SOURCES = 'notify,push'
     mockChat('{"deliver": false, "reason": "spam"}')
     const v = await evaluateNotification({
       source: 'notify',  // now gated
@@ -175,9 +175,9 @@ describe('evaluateNotification — verdict paths', () => {
     expect(v.via).toBe('evaluator')
   })
 
-  it('IMHUB_NOTIFICATION_EVALUATOR_SOURCES can shrink the set', async () => {
+  it('AGIM_NOTIFICATION_EVALUATOR_SOURCES can shrink the set', async () => {
     // Only 'heartbeat' gated → 'push' becomes excluded.
-    process.env.IMHUB_NOTIFICATION_EVALUATOR_SOURCES = 'heartbeat'
+    process.env.AGIM_NOTIFICATION_EVALUATOR_SOURCES = 'heartbeat'
     let called = false
     globalThis.fetch = (async () => {
       called = true

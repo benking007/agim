@@ -23,6 +23,7 @@ import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
+const WORKSPACE_MEMORY_FILE = 'MEMORY.md'
 
 const TOOL_CALL_DISCIPLINE_PROMPT = [
   '## 工具调用纪律（agim 框架级硬约束）',
@@ -66,6 +67,15 @@ export function buildSystemPrompt(
     lines.push('[operator role definition]')
     lines.push(opRole)
     lines.push('[/operator role definition]')
+    lines.push('')
+  }
+
+  const workspaceMemory = readWorkspaceMemory(cwd)
+  if (workspaceMemory) {
+    lines.push('[workspace memory: MEMORY.md]')
+    lines.push('Operator-maintained long-term notes for this Agim agent. Current user, developer, and system instructions take precedence if they conflict.')
+    lines.push(workspaceMemory)
+    lines.push('[/workspace memory]')
     lines.push('')
   }
 
@@ -162,6 +172,11 @@ export function readOperatorRole(cwd: string): string {
     if (c) parts.push(c)
   }
   return parts.join('\n\n')
+}
+
+export function readWorkspaceMemory(cwd: string): string {
+  if (!isWorkspaceTrusted()) return ''
+  return readRoleFile(pathJoin(cwd, WORKSPACE_MEMORY_FILE))
 }
 
 export function isWorkspaceTrusted(): boolean {

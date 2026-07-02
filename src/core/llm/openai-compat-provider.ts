@@ -7,7 +7,7 @@
 // endpoint, and any custom gateway that exposes `/v1/chat/completions`.
 //
 // Stage 1 scope (intentionally narrow):
-//   - POST /v1/chat/completions with `messages` + `temperature` + `max_tokens`
+//   - POST /v1/chat/completions with `messages` + optional `temperature` + `max_tokens`
 //   - Standard streaming via SSE (`stream: true`)
 //   - Single retry on 429 / 5xx transient errors
 //   - Usage extraction (prompt_tokens / completion_tokens / total_tokens)
@@ -285,9 +285,9 @@ export class OpenAICompatProvider extends LlmProvider {
     const body: Record<string, unknown> = {
       model: opts.model,
       messages: messages.map((m) => serializeMessage(m, { vision: this.vision })),
-      temperature: opts.temperature,
       max_tokens: opts.maxTokens,
     }
+    if (opts.temperature !== undefined) body.temperature = opts.temperature
     if (stream) body.stream = true
     if (opts.tools && opts.tools.length > 0) {
       body.tools = opts.tools.map(serializeToolDef)

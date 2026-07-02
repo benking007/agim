@@ -8,11 +8,11 @@ import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
-import { getAnyProvider, getProvider } from '../../../core/llm/registry.js'
+import { getAnyProvider, getProvider, getProviderByName, listProviders } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
 import { NativeAgentAdapter } from './index.js'
-import { resolveAnyPiModel, resolvePiModelForRole } from './provider-resolver.js'
+import { resolveAnyPiModel, resolvePiModelByBackendName, resolvePiModelForRole } from './provider-resolver.js'
 import { assembleToolsForPi } from './tools.js'
 
 const ROLE_CHAIN = ['native-chat', 'cheap']
@@ -58,13 +58,20 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     name: 'native',
     aliases: ['agim', 'na', 'llm', 'native-llm'],
     sessionsRoot,
-    resolveModel: async () => {
+    resolveModel: async (opts) => {
+      const explicit = resolvePiModelByBackendName(opts?.model)
+      if (explicit) return explicit
       for (const role of ROLE_CHAIN) {
         const binding = resolvePiModelForRole(role)
         if (binding) return binding
       }
       return resolveAnyPiModel()
     },
+    listModels: () => listProviders().map((p) => ({
+      name: p.name,
+      providerType: p.providerType,
+      model: p.model,
+    })),
     // Full agim tool surface (builtin / fs / web / exec / todo / agim / MCP),
     // assembled per-turn from native's single source of truth.
     resolveTools: (opts, sessionId) => assembleToolsForPi(opts, sessionId),
@@ -83,6 +90,15 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     // and gets the operator role + skill routing + tool guides.
     resolveSystemPrompt: (opts) => {
       const o = opts ?? {}
+      if (o.model) {
+        const provider = getProviderByName(o.model)
+        if (provider) {
+          const planThreadKey =
+            o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
+          const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+          return buildSystemPrompt(provider, `backend:${provider.name}`, cwd, planThreadKey)
+        }
+      }
       for (const role of ROLE_CHAIN) {
         const provider = getProvider(role)
         if (!provider) continue

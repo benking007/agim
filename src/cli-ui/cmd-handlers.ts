@@ -3,7 +3,7 @@
 // status / outcomes in that language, and shells out to systemctl / npm /
 // rm where appropriate.
 
-import { execSync, spawn } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { unlinkSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,7 +14,10 @@ import {
   spawnBackground,
   stopService,
   formatUptime,
+  findTcpListenOwner,
+  readAcpEndpoint,
   readWebEndpoint,
+  DEFAULT_WEB_PORT,
   PID_FILE,
   LOG_FILE,
 } from './service.js'
@@ -22,7 +25,141 @@ import { yesNo, menu, inputText, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
 import { readSavedLang, t, type Lang } from './i18n.js'
 import { CONFIG_DIR, CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
-import { ENV_FILE, removeEnvFile } from './env-file.js'
+import { ENV_FILE, readEnvFile, removeEnvFile } from './env-file.js'
+
+function localWebUrl(web: { bind: string; port: number }): string {
+  const bind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
+  return `http://${bind}:${web.port}`
+}
+
+function webConsoleUrl(web: { bind: string; port: number }, opts: { welcome?: boolean } = {}): string {
+  const base = localWebUrl(web)
+  return opts.welcome ? `${base}/?welcome=1` : base
+}
+
+function browserOpenCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } | null {
+  if (platform === 'darwin') return { command: 'open', args: [url] }
+  if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', '', url] }
+  if (platform === 'linux' || platform === 'freebsd' || platform === 'openbsd') {
+    return { command: 'xdg-open', args: [url] }
+  }
+  return null
+}
+
+function openBrowserUrl(url: string): boolean {
+  const cmd = browserOpenCommand(url)
+  if (!cmd) return false
+  try {
+    execFileSync(cmd.command, cmd.args, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function printBrowserOpenResult(lang: Lang, ok: boolean, url: string): void {
+  console.log(ok
+    ? text(lang, `浏览器：已打开 ${url}`, `Browser: opened ${url}`)
+    : text(lang, '浏览器：无法自动打开，请手动复制上面的地址。', 'Browser: could not open automatically; copy the URL above.'))
+}
+
+function printWebConsoleLine(
+  lang: Lang,
+  web: { bind: string; port: number },
+  opts: { welcome?: boolean } = {},
+): void {
+  console.log(text(lang, '   Web 控制台：', '   Web console:') + webConsoleUrl(web, opts))
+}
+
+function text(lang: Lang, zh: string, en: string): string {
+  return lang === 'zh' ? zh : en
+}
+
+function describeRecentStartupFailure(lang: Lang): string | null {
+  if (!existsSync(LOG_FILE)) return null
+  try {
+    const raw = readFileSync(LOG_FILE, 'utf-8')
+    const tail = raw.split(/\r?\n/).slice(-160).join('\n')
+    const match = tail.match(/listen EADDRINUSE: address already in use\s+([^\s:]+):(\d+)/)
+    if (!match) return null
+    const bind = match[1]
+    const port = Number.parseInt(match[2], 10)
+    if (!Number.isFinite(port)) return null
+
+    const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: 3000 }
+    const acp = readAcpEndpoint()
+    const owner = findTcpListenOwner(port)
+    const ownerText = owner
+      ? text(lang, `，当前占用进程：${owner}`, `, current owner: ${owner}`)
+      : ''
+
+    if (port === acp.port) {
+      return text(
+        lang,
+        `启动失败原因：ACP 端口 ${bind}:${port} 已被占用${ownerText}。\n` +
+          '   ACP 不是首次 Web 对话必需；可以关闭占用程序，或在 ~/.agim/config.json 设置 "acpPort" 为其他端口后重试。',
+        `Startup failed because ACP port ${bind}:${port} is already in use${ownerText}.\n` +
+          '   ACP is not required for first Web chat; close the owner process, or set "acpPort" in ~/.agim/config.json and retry.',
+      )
+    }
+
+    if (port === web.port) {
+      return text(
+        lang,
+        `启动失败原因：Web 端口 ${bind}:${port} 已被占用${ownerText}。\n` +
+          '   请关闭占用程序，或运行 agim config 修改 Web 端口后重试。',
+        `Startup failed because Web port ${bind}:${port} is already in use${ownerText}.\n` +
+          '   Close the owner process, or run agim config to change the Web port and retry.',
+      )
+    }
+
+    return text(
+      lang,
+      `启动失败原因：本地端口 ${bind}:${port} 已被占用${ownerText}。`,
+      `Startup failed because local port ${bind}:${port} is already in use${ownerText}.`,
+    )
+  } catch { return null }
+}
+
+function printStartupCheckLog(lang: Lang): void {
+  const diagnosis = describeRecentStartupFailure(lang)
+  if (diagnosis) console.log(diagnosis)
+  console.log(t(lang, 'svc.offer.bg_check_log'))
+  if (existsSync(LOG_FILE)) {
+    console.log(`   tail -n 40 ${LOG_FILE}`)
+  } else {
+    console.log(text(
+      lang,
+      `   日志文件尚未生成；首次后台启动成功后会创建：${LOG_FILE}`,
+      `   Log file has not been created yet; it appears after the first successful background start: ${LOG_FILE}`,
+    ))
+  }
+}
+
+async function startBackgroundDaemon(
+  lang: Lang,
+  opts: { showAccessHint?: boolean; welcome?: boolean } = {},
+): Promise<boolean> {
+  console.log(t(lang, 'svc.start.starting_bg'))
+  const __dirname = dirname(fileURLToPath(import.meta.url))
+  const cliJs = join(__dirname, '..', 'cli.js')
+  const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
+  await new Promise(r => setTimeout(r, 1500))
+  const after = detectService()
+  if (after.mode === 'background' && after.pid === pid) {
+    console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
+    if (opts.showAccessHint !== false) {
+      console.log(t(lang, 'svc.start.bg_hint'))
+      await printWebAccessHint(lang, { welcome: opts.welcome })
+    }
+    return true
+  }
+  printStartupCheckLog(lang)
+  return false
+}
 
 /** Candidate paths for the systemd unit. Resolved at runtime by
  *  `findSystemdUnit()` so we operate on the unit only when it exists. */
@@ -60,6 +197,8 @@ export function cmdStatus(): void {
   console.log(t(lang, 'svc.status.title'))
   console.log('─'.repeat(50))
   const st = detectService()
+  const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: DEFAULT_WEB_PORT }
+  const webBind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
   switch (st.mode) {
     case 'systemd':
       console.log('  ' + t(lang, 'svc.status.systemd_active', { pid: st.pid ?? '?' }))
@@ -75,16 +214,179 @@ export function cmdStatus(): void {
       if (systemdUnitPath()) {
         console.log('  ' + t(lang, 'svc.status.systemd_inactive'))
       }
+      console.log('  ' + t(lang, 'svc.status.web', { bind: webBind, port: web.port }))
+      console.log('  ' + t(lang, 'svc.status.next_not_running'))
+      console.log()
       return
   }
   if (typeof st.uptimeSec === 'number') {
     console.log('  ' + t(lang, 'svc.status.uptime', { duration: formatUptime(st.uptimeSec) }))
   }
-  const web = readWebEndpoint()
-  if (web) {
-    console.log('  ' + t(lang, 'svc.status.web', { bind: web.bind, port: web.port }))
-  }
+  console.log('  ' + t(lang, 'svc.status.web', { bind: webBind, port: web.port }))
+  console.log('  ' + t(lang, 'svc.status.next_running'))
   console.log()
+}
+
+function loadWebRelatedEnv(): void {
+  try {
+    const f = readEnvFile()
+    for (const k of [
+      'AGIM_WEB_BIND',
+      'AGIM_WEB_AUTH',
+      'AGIM_TRUST_LOOPBACK',
+      'AGIM_VIEWER_PUBLIC_BASE_URL',
+      'AGIM_VIEWER_TUNNEL_MODE',
+      'AGIM_VIEWER_ENABLED',
+    ]) {
+      if (f[k] && !process.env[k]) process.env[k] = f[k]
+    }
+  } catch { /* ignore */ }
+}
+
+function isEnvOff(name: string): boolean {
+  const v = (process.env[name] || '').trim().toLowerCase()
+  return v === 'off' || v === '0' || v === 'false' || v === 'no'
+}
+
+function describeServiceState(lang: Lang): string {
+  const st = detectService()
+  switch (st.mode) {
+    case 'systemd':
+      return st.pid
+        ? text(lang, `运行中：systemd，pid ${st.pid}`, `running: systemd, pid ${st.pid}`)
+        : text(lang, `systemd 已接管，状态：${st.active ?? 'unknown'}`, `managed by systemd, state: ${st.active ?? 'unknown'}`)
+    case 'background':
+      return text(lang, `运行中：后台进程，pid ${st.pid ?? '?'}`, `running: background daemon, pid ${st.pid ?? '?'}`)
+    case 'foreground':
+      return text(lang, `运行中：前台进程，pid ${st.pid ?? '?'}`, `running: foreground process, pid ${st.pid ?? '?'}`)
+    case 'none':
+      return text(lang, '未运行', 'not running')
+  }
+}
+
+async function getPublicWebInfo(): Promise<{ url: string; source: string } | null> {
+  const { getEffectivePublicBaseUrl, getViewerConfig } = await import('../core/viewer-config.js')
+  const cfg = getViewerConfig()
+  const url = getEffectivePublicBaseUrl()
+  if (!url) return null
+  return {
+    url,
+    source: cfg.publicBaseUrl ? 'AGIM_VIEWER_PUBLIC_BASE_URL' : 'cloudflared tunnel',
+  }
+}
+
+async function printWebCredentialHint(lang: Lang): Promise<void> {
+  try {
+    const {
+      getWebBootstrapTokenFile,
+      hasAnyToken,
+      isAuthEnabled,
+    } = await import('../core/access-token.js')
+    if (!isAuthEnabled()) {
+      console.log(text(lang, '登录：Web 鉴权已关闭（AGIM_WEB_AUTH=off）。', 'Login: Web auth is disabled (AGIM_WEB_AUTH=off).'))
+      return
+    }
+    const trustLoopback = !isEnvOff('AGIM_TRUST_LOOPBACK')
+    console.log(trustLoopback
+      ? text(lang, '登录：本机浏览器直连通常无需 token；远程/反代访问需要 Web token。', 'Login: local browser access usually needs no token; remote/proxied access needs a Web token.')
+      : text(lang, '登录：本机 loopback 免登录已关闭，也需要 Web token。', 'Login: loopback trust is disabled; local access also needs a Web token.'))
+
+    const bootstrapFile = getWebBootstrapTokenFile()
+    if (existsSync(bootstrapFile)) {
+      console.log(text(lang, '首次 token：运行 `agim token bootstrap` 读取一次性 token。', 'First token: run `agim token bootstrap` to read the one-time token.'))
+      return
+    }
+    if (hasAnyToken()) {
+      console.log(text(lang, '忘记 token：运行 `agim token create <label>` 生成一个新的。', 'Forgot the token: run `agim token create <label>` to create a new one.'))
+      return
+    }
+    console.log(text(lang, '尚无 token：首次启动会生成；也可以运行 `agim token create <label>`。', 'No token yet: first startup will generate one; or run `agim token create <label>`.'))
+  } catch {
+    console.log(text(lang, 'Token 帮助：agim token bootstrap 或 agim token create <label>', 'Token help: agim token bootstrap or agim token create <label>'))
+  }
+}
+
+export async function cmdWeb(opts: {
+  public?: boolean
+  welcome?: boolean
+  open?: boolean
+  start?: boolean
+  openBrowser?: (url: string) => boolean
+} = {}): Promise<number> {
+  const lang = quietLang()
+  loadWebRelatedEnv()
+  const publicInfo = await getPublicWebInfo()
+  const openBrowser = opts.openBrowser ?? openBrowserUrl
+
+  if (opts.public) {
+    if (publicInfo) {
+      console.log(publicInfo.url)
+      console.log(text(lang, `(来源：${publicInfo.source})`, `(source: ${publicInfo.source})`))
+      if (opts.open) printBrowserOpenResult(lang, openBrowser(publicInfo.url), publicInfo.url)
+      return 0
+    }
+    const tunnelMode = (process.env.AGIM_VIEWER_TUNNEL_MODE || '').toLowerCase()
+    if (tunnelMode === 'quick') {
+      console.log(text(
+        lang,
+        '公网地址由 cloudflared 临时隧道提供，但当前 CLI 进程查不到运行中隧道 URL。',
+        'The public URL comes from a cloudflared quick tunnel, but this CLI process cannot see the running tunnel URL.',
+      ))
+      console.log(text(lang, '请在 IM 内发送 /web，或先确认 Agim daemon 正在运行。', 'Send /web in IM, or confirm the Agim daemon is running.'))
+      return 2
+    }
+    console.log(text(lang, '公网地址未配置。需要反代域名时设置 AGIM_VIEWER_PUBLIC_BASE_URL。', 'No public URL configured. Set AGIM_VIEWER_PUBLIC_BASE_URL when using a reverse-proxy domain.'))
+    return 2
+  }
+
+  const endpoint = readWebEndpoint() ?? {
+    bind: (process.env.AGIM_WEB_BIND || '127.0.0.1').trim() || '127.0.0.1',
+    port: DEFAULT_WEB_PORT,
+  }
+  const before = detectService()
+  if (before.mode === 'none' && opts.start) {
+    await startBackgroundDaemon(lang, { showAccessHint: false, welcome: opts.welcome })
+  }
+  const service = detectService()
+  const url = webConsoleUrl(endpoint, { welcome: opts.welcome })
+  console.log()
+  console.log(text(lang, 'Agim Web 控制台', 'Agim Web console'))
+  console.log('='.repeat(34))
+  console.log(text(lang, '服务：', 'Service:') + describeServiceState(lang))
+  console.log(text(lang, '本机地址：', 'Local URL:') + url)
+  if (publicInfo) {
+    console.log(text(lang, '远程地址：', 'Remote URL:') + `${publicInfo.url} (${publicInfo.source})`)
+  }
+  if (service.mode === 'none') {
+    console.log(text(
+      lang,
+      '启动：首次体验用 `agim go`；已配置好则用 `agim start --bg`。',
+      'Start: use `agim go` for first run; use `agim start --bg` after setup.',
+    ))
+    console.log(text(
+      lang,
+      '一键启动并打开：agim web --start --open',
+      'Start and open in one step: agim web --start --open',
+    ))
+  } else {
+    console.log(text(lang, '下一步：打开上面的地址发送第一条消息。', 'Next: open the URL above and send the first message.'))
+    if (!opts.open) {
+      console.log(text(lang, '打开浏览器：agim web --open', 'Open in browser: agim web --open'))
+    }
+  }
+  await printWebCredentialHint(lang)
+  if (opts.open) {
+    if (service.mode === 'none') {
+      console.log(text(
+        lang,
+        '浏览器：服务未运行，未打开；可运行 `agim web --start --open`。',
+        'Browser: service is not running; run `agim web --start --open`.',
+      ))
+    } else {
+      printBrowserOpenResult(lang, openBrowser(url), url)
+    }
+  }
+  return 0
 }
 
 // ─── start ───────────────────────────────────────────────────────────
@@ -106,23 +408,7 @@ export async function cmdStart(bg: boolean, runForegroundStart: () => Promise<vo
     return
   }
   if (bg) {
-    console.log(t(lang, 'svc.start.starting_bg'))
-    // Re-exec self detached. Use the same node + cli.js paths so global vs
-    // local install both work.
-    const __dirname = dirname(fileURLToPath(import.meta.url))
-    const cliJs = join(__dirname, '..', 'cli.js')
-    const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
-    // Tiny wait so the child has a chance to either bind ports or crash;
-    // status check picks up the latter.
-    await new Promise(r => setTimeout(r, 1500))
-    const after = detectService()
-    if (after.mode === 'background' && after.pid === pid) {
-      console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
-      console.log(t(lang, 'svc.start.bg_hint'))
-    } else {
-      console.log('⚠️ Background daemon may have failed to bind ports — check log:')
-      console.log(`   tail -n 40 ${LOG_FILE}`)
-    }
+    await startBackgroundDaemon(lang)
     return
   }
   console.log(t(lang, 'svc.start.starting_fg'))
@@ -161,6 +447,7 @@ export async function cmdRestart(): Promise<void> {
     const unit = findSystemdUnit()
     if (unit) execSync(`systemctl restart ${unit.name}`, { stdio: 'inherit' })
     console.log(t(lang, 'svc.restart.done'))
+    await printWebAccessHint(lang)
     return
   }
   if (st.mode === 'foreground') {
@@ -175,8 +462,14 @@ export async function cmdRestart(): Promise<void> {
     const cliJs = join(__dirname, '..', 'cli.js')
     const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
     await new Promise(r => setTimeout(r, 1500))
-    console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
-    console.log(t(lang, 'svc.restart.done'))
+    const after = detectService()
+    if (after.mode === 'background' && after.pid === pid) {
+      console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
+      console.log(t(lang, 'svc.restart.done'))
+      await printWebAccessHint(lang)
+    } else {
+      printStartupCheckLog(lang)
+    }
   }
 }
 
@@ -407,7 +700,10 @@ export async function cmdUninstall(): Promise<void> {
 // Stays quiet on Ctrl-C (UserAbortError) so an exit doesn't dump a
 // stack on top of a successful wizard run.
 
-export async function offerServiceStart(lang: Lang): Promise<void> {
+export async function offerServiceStart(
+  lang: Lang,
+  opts: { welcome?: boolean } = {},
+): Promise<void> {
   const { yesNo, UserAbortError } = await import('./prompts.js')
   const st = detectService()
   try {
@@ -432,15 +728,11 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
         console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
         const web = readWebEndpoint()
         if (web) {
-          // Localhost binds: show 127.0.0.1 (what the user will actually
-          // open in a browser on this machine). 0.0.0.0 is a server-side
-          // listen address that no browser actually connects to as-is.
-          const bind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
-          console.log(t(lang, 'svc.offer.bg_url', { bind, port: web.port }))
+          printWebConsoleLine(lang, web, { welcome: opts.welcome })
         }
+        await printWebAccessHint(lang, { showUrl: false, welcome: opts.welcome })
       } else {
-        console.log(t(lang, 'svc.offer.bg_check_log'))
-        console.log(`   tail -n 40 ${LOG_FILE}`)
+        printStartupCheckLog(lang)
       }
       return
     }
@@ -449,6 +741,7 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
       console.log()
       console.log(t(lang, 'svc.offer.running_title', { mode: 'foreground', pid: st.pid ?? '?' }))
       console.log(t(lang, 'svc.offer.foreground_hint'))
+      await printWebAccessHint(lang, { welcome: opts.welcome })
       return
     }
 
@@ -462,6 +755,7 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
     })
     if (!wantRestart) {
       console.log(t(lang, 'svc.offer.restart_skipped'))
+      await printWebAccessHint(lang, { welcome: opts.welcome })
       return
     }
 
@@ -471,6 +765,7 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
         try {
           execSync(`systemctl restart ${unit.name}`, { stdio: 'inherit' })
           console.log(t(lang, 'svc.offer.systemd_restarted'))
+          await printWebAccessHint(lang, { welcome: opts.welcome })
         } catch (err) {
           console.warn(`⚠️ ${err instanceof Error ? err.message : String(err)}`)
           console.log(`   sudo systemctl restart ${unit.name}`)
@@ -490,12 +785,11 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
       console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
       const web = readWebEndpoint()
       if (web) {
-        const bind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
-        console.log(t(lang, 'svc.offer.bg_url', { bind, port: web.port }))
+        printWebConsoleLine(lang, web, { welcome: opts.welcome })
       }
+      await printWebAccessHint(lang, { showUrl: false, welcome: opts.welcome })
     } else {
-      console.log(t(lang, 'svc.offer.bg_check_log'))
-      console.log(`   tail -n 40 ${LOG_FILE}`)
+      printStartupCheckLog(lang)
     }
   } catch (err) {
     if (err instanceof UserAbortError) {
@@ -506,8 +800,47 @@ export async function offerServiceStart(lang: Lang): Promise<void> {
   }
 }
 
-// Suppress unused imports linters for now — spawn is referenced via spawnBackground.
-void spawn
+export async function printWebAccessHint(
+  lang: Lang,
+  opts: { showUrl?: boolean; welcome?: boolean } = {},
+): Promise<void> {
+  const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: 3000 }
+  const baseUrl = localWebUrl(web)
+  console.log()
+  if (opts.showUrl !== false) {
+    console.log(text(lang, 'Web 控制台：', 'Web console:') + webConsoleUrl(web, { welcome: opts.welcome }))
+  }
+  try {
+    const {
+      isAuthEnabled,
+      retrieveWebBootstrapTokenRaw,
+      hasAnyToken,
+    } = await import('../core/access-token.js')
+    if (!isAuthEnabled()) {
+      console.log(text(lang, 'Web 鉴权已关闭（AGIM_WEB_AUTH=off）。', 'Web auth is disabled (AGIM_WEB_AUTH=off).'))
+      return
+    }
+    const row = retrieveWebBootstrapTokenRaw()
+    if (row) {
+      console.log(text(lang, '首次访问 token（仅显示这一次）：', 'First access token (shown once):'))
+      console.log(`  ${row.raw}`)
+      console.log(`${text(lang, '登录页：', 'Login page:')}${baseUrl}/login`)
+      return
+    }
+    if (hasAnyToken()) {
+      console.log(text(lang, '已有 Web token；如需新 token：agim token create <label>', 'A Web token already exists; create another with: agim token create <label>'))
+    } else {
+      console.log(text(lang, '首次启动后会生成 Web token；如未看到，请运行：agim token bootstrap', 'First startup creates a Web token; if you did not see it, run: agim token bootstrap'))
+    }
+  } catch {
+    console.log(text(lang, '如需 Web token：agim token bootstrap 或 agim token create <label>', 'For a Web token: agim token bootstrap or agim token create <label>'))
+  }
+}
+
 void readFileSync
 void homedir
 void ENV_FILE
+
+export const _internal = {
+  browserOpenCommand,
+}

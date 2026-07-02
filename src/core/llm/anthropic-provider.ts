@@ -156,9 +156,9 @@ export class AnthropicProvider extends LlmProvider {
     const body: Record<string, unknown> = {
       model: opts.model,
       max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
       messages: msgs.map(serializeMessage),
     }
+    if (opts.temperature !== undefined) body.temperature = opts.temperature
     if (system) body.system = system
     if (opts.tools && opts.tools.length > 0) {
       body.tools = opts.tools.map(serializeToolDef)

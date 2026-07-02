@@ -41,7 +41,7 @@ describe('OpenAICompatProvider', () => {
     globalThis.fetch = originalFetch
   })
 
-  it('builds POST body with model + messages + temperature + max_tokens', async () => {
+  it('builds POST body with model + messages + configured temperature + max_tokens', async () => {
     const fetchSpy = mock(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string) as Record<string, unknown>
       expect(body.model).toBe('gpt-4.1')
@@ -72,6 +72,27 @@ describe('OpenAICompatProvider', () => {
     expect(result.usage.totalTokens).toBe(7)
     expect(result.modelUsed).toBe('gpt-4.1')
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits temperature when neither call nor backend config set it', async () => {
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as Record<string, unknown>
+      expect(body.temperature).toBeUndefined()
+      return makeJsonResponse({
+        model: 'claude-sonnet-4',
+        choices: [{ message: { content: 'pong' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      })
+    }) as unknown as typeof fetch
+
+    const p = new OpenAICompatProvider({
+      name: 'claude-compat',
+      model: 'claude-sonnet-4',
+      apiKey: 'sk-test',
+      defaultMaxTokens: 256,
+    })
+    const result = await p.chat([{ role: 'user', content: 'ping' }])
+    expect(result.text).toBe('pong')
   })
 
   it('falls back to OpenAI base URL when baseUrl unset', async () => {
@@ -427,4 +448,3 @@ describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
     expect(sentBody.tool_choice).toEqual({ type: 'function', function: { name: 'pick' } })
   })
 })
-

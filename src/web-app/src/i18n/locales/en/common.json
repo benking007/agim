@@ -36,6 +36,7 @@
     "zh": "中文"
   },
   "nav": {
+    "dashboard": "Home",
     "chat": "Chat",
     "tasks": "Tasks",
     "approvals": "Approvals",
@@ -75,6 +76,112 @@
     "placeholder": "Signed in. Open Chat from the sidebar.",
     "healthCheck": "Backend reachable"
   },
+  "dashboard": {
+    "title": "Home",
+    "subtitle": "Check the current state and take the next step.",
+    "coreReady": "{{count}}/3 ready",
+    "unknown": "not selected",
+    "actions": {
+      "chat": "Open chat"
+    },
+    "state": {
+      "done": "Ready",
+      "todo": "Next",
+      "warn": "Needs attention",
+      "loading": "Loading"
+    },
+    "cards": {
+      "web": {
+        "title": "Web console",
+        "ready": "Service is running: {{mode}}",
+        "needsStart": "Service is not running.",
+        "open": "Open chat",
+        "action": "Open service"
+      },
+      "agent": {
+        "title": "Agent",
+        "ready": "{{agent}} is online",
+        "offline": "{{agent}} is not ready",
+        "selected": "{{agent}} is selected; waiting for runtime status.",
+        "empty": "No default agent selected.",
+        "default": "default",
+        "action": "Agent settings"
+      },
+      "llm": {
+        "title": "Agim Agent API",
+        "ready": "{{count}} usable API configured.",
+        "required": "Agim Agent needs a model API.",
+        "optional": "No model API yet; external agents can still run.",
+        "core": "required for agim",
+        "meta": "built-in agent",
+        "action": "Configure API"
+      },
+      "im": {
+        "title": "IM bridge",
+        "ready": "Connected: {{platforms}}",
+        "empty": "No IM connected yet.",
+        "metaReady": "{{count}} connected",
+        "action": "Connect IM"
+      }
+    },
+    "next": {
+      "title": "Next step",
+      "ready": "base ready",
+      "pending": "in progress",
+      "items": {
+        "service": {
+          "title": "Start the service",
+          "detail": "Bring Web online before testing chat or IM."
+        },
+        "agent": {
+          "title": "Make one agent available",
+          "detail": "Pick a default agent and confirm it can run."
+        },
+        "llm": {
+          "title": "Configure Agim Agent API",
+          "detail": "Add one usable model API for the built-in agent."
+        },
+        "llmOptional": {
+          "title": "Enable Agim Agent",
+          "detail": "Add a model API when you want to avoid external CLIs."
+        },
+        "chat": {
+          "title": "Send a Web message",
+          "detail": "Verify the basic loop before connecting messengers."
+        },
+        "im": {
+          "title": "Connect one IM",
+          "detail": "Add WeChat, Feishu, DingTalk, Telegram, Discord, or Email."
+        },
+        "operate": {
+          "title": "Review task activity",
+          "detail": "Watch jobs, approvals, reminders, and handoffs."
+        }
+      }
+    },
+    "quick": {
+      "title": "Common",
+      "chat": "Chat",
+      "start": "Setup",
+      "workspace": "Workspace",
+      "service": "Service"
+    },
+    "advanced": {
+      "title": "Advanced",
+      "tasks": "Tasks",
+      "memory": "Memory",
+      "skills": "Skills",
+      "observability": "Observability"
+    },
+    "platform": {
+      "wechat": "WeChat",
+      "telegram": "Telegram",
+      "feishu": "Feishu",
+      "dingtalk": "DingTalk",
+      "discord": "Discord",
+      "email": "Email"
+    }
+  },
   "notFound": {
     "title": "Nothing here.",
     "description": "The page you're looking for doesn't exist."
@@ -108,6 +215,19 @@
     "welcomeTitle": "Start a conversation",
     "welcomeBody": "Type a message to ask the active agent. Use the agent dropdown to switch.",
     "welcomeBodyMobile": "Type a message below. Switch agent or start over from the menu.",
+    "onboarding": {
+      "title": "Get one chat working first",
+      "readyBadge": "Web ready",
+      "body": "Current agent: {{agent}}",
+      "agentPending": "Loading agent…",
+      "stepWeb": "Web console connected",
+      "stepAgent": "Agent selected: {{agent}}",
+      "agentCount": "{{count}} available",
+      "stepMessage": "Send the first message",
+      "stepMessenger": "Connect IM after chat works",
+      "agentSettings": "Agent settings",
+      "messengerSettings": "Connect IM"
+    },
     "inputPlaceholder": "Message… (Enter sends, Shift+Enter newlines)",
     "inputPlaceholderMobile": "Message…",
     "mobileHint": "Enter creates new lines, tap Send to submit.",
@@ -128,7 +248,7 @@
     "nativeSetupSaved": "Model API saved. Retrying agim switch…",
     "pendingApprovals": "Pending approvals",
     "quickPrompt": {
-      "plan": "Draft a plan first",
+      "plan": "Tell me who you are",
       "risks": "List risks and rollback steps",
       "summary": "Write an executive summary"
     },

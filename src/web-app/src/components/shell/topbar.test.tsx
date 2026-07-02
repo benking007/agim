@@ -31,6 +31,7 @@ describe('Topbar', () => {
 
   it('renders only the mounted nav links', () => {
     renderAt('/')
+    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()

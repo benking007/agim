@@ -6,7 +6,7 @@
 // `--model <id>` flag, and (c) lets agim persist the picked model on
 // the session row for the next turn.
 //
-// Drivers shipped today: opencode, cursor. To add a third, fill in
+// Drivers shipped today: opencode, cursor, native. To add another, fill in
 // `listModels()` + `resolveDefault()` and register in MODEL_DRIVERS.
 
 import { spawn } from 'node:child_process'
@@ -15,6 +15,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
+import { getAnyProvider, getProvider, listProviders } from '../llm/registry.js'
 
 /** Resolve cursor-agent the same way the adapter does so systemd's
  *  stripped PATH doesn't break `/models` while the adapter still works. */
@@ -171,12 +172,35 @@ const cursorDriver: ModelDriver = {
   },
 }
 
+// ─── native / Agim Agent driver ─────────────────────────────────────
+
+const nativeDriver: ModelDriver = {
+  label: 'native',
+  namespaced: false,
+  switchHint: '例: /model deepseek-agim',
+
+  async listModels(): Promise<string[]> {
+    return listProviders().map((p) => p.name)
+  },
+
+  async resolveDefault(): Promise<string> {
+    return getProvider('native-chat')?.name
+      ?? getProvider('cheap')?.name
+      ?? getAnyProvider()?.name
+      ?? 'auto'
+  },
+}
+
 const MODEL_DRIVERS: Record<string, ModelDriver> = {
   opencode: opencodeDriver,
   cursor: cursorDriver,
+  native: nativeDriver,
+  agim: nativeDriver,
+  llm: nativeDriver,
+  'native-llm': nativeDriver,
 }
 
-const SUPPORTED_AGENTS = Object.keys(MODEL_DRIVERS)
+const SUPPORTED_AGENTS = ['opencode', 'cursor', 'native']
 
 /** Per-session cache: last /models ordered result, indexed from 1 */
 const sessionModelIndex = new Map<string, string[]>()
@@ -231,6 +255,13 @@ export async function handleModelCommand(args: string, ctx: RouteContext): Promi
     return handleModelCurrent(driver, ctx)
   }
 
+  if (/^(reset|default|auto|默认)$/i.test(args.trim())) {
+    await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, ctx.defaultAgent)
+    await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { model: '' })
+    const fallback = await resolveDefaultModel(driver)
+    return `✅ ${driver.label} 模型已恢复默认：\`${fallback}\``
+  }
+
   return handleModelSwitch(driver, args.trim(), ctx)
 }
 
@@ -279,6 +310,9 @@ async function handleModelList(driver: ModelDriver, filter: string, ctx: RouteCo
     }
   }
   msg += `\n当前: \`${current}\` ⭐\n/model <名称> 或 /model #序号 切换\n/models refresh 强制刷新缓存`
+  if (driver === nativeDriver) {
+    msg += '\n/model reset 恢复 native-chat 角色绑定'
+  }
   return msg
 }
 

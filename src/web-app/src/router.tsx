@@ -60,10 +60,14 @@ const router = createBrowserRouter([
     ),
   },
   {
+    path: '/dashboard',
+    lazy: authedLazy(() => import('@/routes/dashboard')),
+  },
+  {
     path: '/tasks',
     lazy: authedLazy(() => import('@/routes/tasks/layout')),
     children: [
-      { index: true,       element: <Navigate to="jobs" replace /> },
+      { index: true,       lazy: lazy(() => import('@/routes/tasks/overview')) },
       { path: 'jobs',      lazy: lazy(() => import('@/routes/tasks/jobs')) },
       { path: 'subtasks',  lazy: lazy(() => import('@/routes/tasks/subtasks')) },
       { path: 'bgjobs',    lazy: lazy(() => import('@/routes/tasks/bgjobs')) },
@@ -94,24 +98,24 @@ const router = createBrowserRouter([
     path: '/memory',
     lazy: authedLazy(() => import('@/routes/memory/layout')),
     children: [
-      { index: true,     element: <Navigate to="facts" replace /> },
+      { index: true,     lazy: lazy(() => import('@/routes/memory/overview')) },
       { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
       { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
       { path: 'distill', lazy: lazy(() => import('@/routes/memory/distill')) },
       { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
       // Skills moved into Settings → 技能 (2026-05 second pass). Old
-      // /memory/skills + /skills bookmarks redirect to the new combined
-      // Settings home (installed + skillhub 热门).
-      { path: 'skills',  element: <Navigate to="/settings/agim-skills/installed" replace /> },
+      // /memory/skills + /skills bookmarks redirect to the combined
+      // Settings home.
+      { path: 'skills',  element: <Navigate to="/settings/agim-skills" replace /> },
     ],
   },
   {
     // Backward-compat: /skills, /skills/installed, /skills/hot all land
-    // on the new merged Settings → 技能 home. Keep these forever; they're
+    // on the merged Settings → 技能 area. Keep these forever; they're
     // tiny and protect prior bookmarks / IM-pinned links.
     path: '/skills',
     children: [
-      { index: true,        element: <Navigate to="/settings/agim-skills/installed" replace /> },
+      { index: true,        element: <Navigate to="/settings/agim-skills" replace /> },
       { path: 'installed',  element: <Navigate to="/settings/agim-skills/installed" replace /> },
       { path: 'hot',        element: <Navigate to="/settings/agim-skills/hot" replace /> },
     ],
@@ -134,7 +138,8 @@ const router = createBrowserRouter([
     path: '/settings',
     lazy: authedLazy(() => import('@/routes/settings/layout')),
     children: [
-      { index: true,        element: <Navigate to="messengers" replace /> },
+      { index: true,        element: <Navigate to="start" replace /> },
+      { path: 'start',      lazy: lazy(() => import('@/routes/settings/start')) },
       { path: 'messengers', lazy: lazy(() => import('@/routes/settings/messengers')) },
       { path: 'email',      lazy: lazy(() => import('@/routes/settings/email')) },
       { path: 'viewer',     lazy: lazy(() => import('@/routes/settings/viewer')) },
@@ -160,7 +165,7 @@ const router = createBrowserRouter([
         path: 'agim-skills',
         lazy: lazy(() => import('@/routes/settings/agim-skills/layout')),
         children: [
-          { index: true,        element: <Navigate to="installed" replace /> },
+          { index: true,        lazy: lazy(() => import('@/routes/settings/agim-skills/overview')) },
           { path: 'installed',  lazy: lazy(() => import('@/routes/settings/agim-skills/installed')) },
           { path: 'hot',        lazy: lazy(() => import('@/routes/settings/agim-skills/hot')) },
           // v1.2.151 — system-prompt injection block editor. Operators

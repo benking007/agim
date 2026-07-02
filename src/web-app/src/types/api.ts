@@ -1102,6 +1102,16 @@ export interface ServiceStatus {
   bootPhaseTimings: Record<string, number>
 }
 
+export interface ServiceLogTailResponse {
+  path: string
+  exists: boolean
+  content: string
+  lines: number
+  truncated: boolean
+  size: number
+  mtime: string | null
+}
+
 export interface ServiceActionResponse {
   ok: boolean
   mode?: ServiceMode

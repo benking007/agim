@@ -20,7 +20,7 @@
 // future per-tenant deployments.
 
 import { join } from 'node:path'
-import { mkdir, writeFile, access } from 'node:fs/promises'
+import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
 import { AGIM_WORKSPACES } from './agim-paths.js'
 
@@ -40,6 +40,54 @@ export function defaultAgentCwd(agentName: string): string {
 function envKeyFor(agentName: string): string {
   // claude-code -> AGIM_CLAUDE_CODE_CWD
   return `AGIM_${agentName.replace(/-/g, '_').toUpperCase()}_CWD`
+}
+
+export function roleFileForAgent(agentName: string): string {
+  return agentName === 'claude-code' ? 'CLAUDE.md' : 'AGENTS.md'
+}
+
+export const AGIM_MEMORY_LINK_START = '<!-- agim:memory-link:start -->'
+const AGIM_MEMORY_LINK_END = '<!-- agim:memory-link:end -->'
+const AGIM_MEMORY_LINK_BLOCK = `${AGIM_MEMORY_LINK_START}
+## Agim 工作区记忆 / Workspace memory
+
+- 如果本工作区根目录存在 \`MEMORY.md\`，在开始处理 Agim 对话前先读取它。
+- Treat \`MEMORY.md\` as operator-maintained long-term context for this agent.
+- 如果它与本轮用户消息或更高优先级指令冲突，以当前消息和更高优先级指令为准。
+${AGIM_MEMORY_LINK_END}`
+
+function appendSeparator(raw: string): string {
+  if (raw.length === 0) return ''
+  if (raw.endsWith('\n\n')) return ''
+  if (raw.endsWith('\n')) return '\n'
+  return '\n\n'
+}
+
+/**
+ * Migration hook for the Web-created MEMORY.md file. We preserve the user's
+ * CLAUDE.md / AGENTS.md content and append one managed block that teaches
+ * external CLI agents to read MEMORY.md from their pinned Agim workspace.
+ */
+export async function ensureAgentMemoryLink(
+  agentName: string,
+  filename = roleFileForAgent(agentName),
+): Promise<string | null> {
+  const explicit = process.env[envKeyFor(agentName)]
+  const dir = explicit || defaultAgentCwd(agentName)
+  const guidePath = join(dir, filename)
+
+  let raw = ''
+  try {
+    raw = await readFile(guidePath, 'utf8')
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') return null
+    throw err
+  }
+  if (raw.includes(AGIM_MEMORY_LINK_START)) return guidePath
+
+  await appendFile(guidePath, `${appendSeparator(raw)}${AGIM_MEMORY_LINK_BLOCK}\n`, 'utf8')
+  return guidePath
 }
 
 /**
@@ -144,6 +192,15 @@ export async function ensureAgentWorkspace(
 export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string; dir: string }>> {
   const result: Array<{ agent: string; dir: string }> = []
 
+  async function seedAgentWorkspace(
+    agent: string,
+    seed: { filename: string; content: string },
+  ): Promise<string> {
+    const dir = await ensureAgentWorkspace(agent, seed)
+    await ensureAgentMemoryLink(agent, seed.filename)
+    return dir
+  }
+
   const claudeSeed = `# Claude Code — IM 入口工作区
 
 > 这是 agim 通过 IM 唤起 Claude Code 时的专用工作目录。
@@ -170,7 +227,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'claude-code',
-    dir: await ensureAgentWorkspace('claude-code', { filename: 'CLAUDE.md', content: claudeSeed }),
+    dir: await seedAgentWorkspace('claude-code', { filename: 'CLAUDE.md', content: claudeSeed }),
   })
 
   const opencodeSeed = `# OpenCode — IM 入口工作区
@@ -198,7 +255,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'opencode',
-    dir: await ensureAgentWorkspace('opencode', { filename: 'AGENTS.md', content: opencodeSeed }),
+    dir: await seedAgentWorkspace('opencode', { filename: 'AGENTS.md', content: opencodeSeed }),
   })
 
   const codexSeed = `# Codex — IM 入口工作区
@@ -231,7 +288,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'codex',
-    dir: await ensureAgentWorkspace('codex', { filename: 'AGENTS.md', content: codexSeed }),
+    dir: await seedAgentWorkspace('codex', { filename: 'AGENTS.md', content: codexSeed }),
   })
 
   const antigravitySeed = `# Antigravity — IM 入口工作区
@@ -263,7 +320,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'antigravity',
-    dir: await ensureAgentWorkspace('antigravity', { filename: 'AGENTS.md', content: antigravitySeed }),
+    dir: await seedAgentWorkspace('antigravity', { filename: 'AGENTS.md', content: antigravitySeed }),
   })
 
   const nativeSeed = `# agim native — 角色定义 + 工作区说明
@@ -311,7 +368,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'native',
-    dir: await ensureAgentWorkspace('native', { filename: 'AGENTS.md', content: nativeSeed }),
+    dir: await seedAgentWorkspace('native', { filename: 'AGENTS.md', content: nativeSeed }),
   })
 
   const cursorSeed = `# Cursor — IM 入口工作区
@@ -341,7 +398,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
   result.push({
     agent: 'cursor',
-    dir: await ensureAgentWorkspace('cursor', { filename: 'AGENTS.md', content: cursorSeed }),
+    dir: await seedAgentWorkspace('cursor', { filename: 'AGENTS.md', content: cursorSeed }),
   })
 
   return result

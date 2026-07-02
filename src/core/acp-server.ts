@@ -259,8 +259,19 @@ export async function startACPServer(options: {
   // remains the only client-facing protection regardless.
   const bind = (process.env.AGIM_ACP_BIND || '127.0.0.1').trim()
   const isLoopback = bind === '127.0.0.1' || bind === '::1' || bind === 'localhost'
-  await new Promise<void>((resolve) => {
-    server.listen(port, bind, () => resolve())
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: Error): void => {
+      server.off('listening', onListening)
+      try { server.close() } catch { /* not listening yet */ }
+      reject(err)
+    }
+    const onListening = (): void => {
+      server.off('error', onError)
+      resolve()
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, bind)
   })
 
   if (!isLoopback) {

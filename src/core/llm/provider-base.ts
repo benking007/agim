@@ -278,8 +278,8 @@ export interface ProviderConfigBase {
   /** API key — provider implementations look this up via secrets.ts; the
    *  base class only uses it for logging length / fingerprinting. */
   apiKey?: string
-  /** Default temperature; falls back to 0.3 for cheap introspection
-   *  callers (we want deterministic JSON, not creativity). */
+  /** Optional default temperature. When unset we omit the field and let
+   *  the upstream model/provider use its own default. */
   defaultTemperature?: number
   /** Default max output tokens. Tight default so a misconfigured prompt
    *  can't burn 16k tokens worth of "Sure! Let me explain…". */
@@ -301,7 +301,7 @@ export abstract class LlmProvider {
   readonly model: string
   readonly providerType: string
   protected readonly apiKey: string | undefined
-  protected readonly defaultTemperature: number
+  protected readonly defaultTemperature: number | undefined
   protected readonly defaultMaxTokens: number
 
   constructor(cfg: ProviderConfigBase) {
@@ -312,7 +312,7 @@ export abstract class LlmProvider {
     this.model = cfg.model
     this.providerType = cfg.providerType
     this.apiKey = cfg.apiKey
-    this.defaultTemperature = cfg.defaultTemperature ?? 0.3
+    this.defaultTemperature = cfg.defaultTemperature
     this.defaultMaxTokens = cfg.defaultMaxTokens ?? 1024
   }
 
@@ -481,7 +481,7 @@ export abstract class LlmProvider {
  *  defaulting logic. */
 export interface NormalizedOptions {
   model: string
-  temperature: number
+  temperature?: number
   maxTokens: number
   timeoutMs?: number
   providerOptions: Record<string, unknown>

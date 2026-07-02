@@ -8,6 +8,7 @@ import {
   agimWorkspacesRoot,
   ensureAgentWorkspace,
   bootstrapAgentWorkspaces,
+  AGIM_MEMORY_LINK_START,
 } from './agent-cwd.js'
 
 const FULL_IM_OPTS = { threadId: 'thread-A', platform: 'feishu', channelId: 'chan-1', userId: 'u1' }
@@ -151,12 +152,17 @@ describe('bootstrapAgentWorkspaces', () => {
     expect(byAgent.opencode).toBe(join(tmpRoot, 'opencode'))
     expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain('Claude Code')
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain('OpenCode')
+    expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
+    expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
   })
 
-  it('safe to run twice and does not stomp user edits', async () => {
+  it('safe to run twice and preserves user edits while adding the memory link once', async () => {
     await bootstrapAgentWorkspaces()
     await writeFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'USER', 'utf8')
     await bootstrapAgentWorkspaces()
-    expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toBe('USER')
+    const content = await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')
+    expect(content).toContain('USER')
+    expect(content).not.toContain('Claude Code — IM 入口工作区')
+    expect(content.match(/agim:memory-link:start/g)?.length).toBe(1)
   })
 })

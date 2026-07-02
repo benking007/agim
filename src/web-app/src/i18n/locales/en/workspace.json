@@ -11,6 +11,18 @@
     "title": "Pick an agent to browse its workspace",
     "description": "Each registered agent runs from its own CWD. The picker lists every agent the registry knows about; the green dot next to a name means it reports available."
   },
+  "quick": {
+    "title": "Agent notes",
+    "detail": "Keep the agent role and long-term notes here; MEMORY.md is fed into Agim conversations for this agent.",
+    "openRoleFile": "Role file",
+    "openMemory": "Memory",
+    "missingTitle": "This file does not exist yet",
+    "missingDetail": "{{path}} can be created here and edited right away.",
+    "createMemory": "Create memory file",
+    "createFile": "Create file",
+    "memoryTemplate": "# Memory\n\nAdd stable notes this agent should keep in mind when replying from Agim. Agim feeds this file into the agent context before conversations.\n",
+    "fileTemplate": "# Notes\n\n"
+  },
   "tree": {
     "title": "Files",
     "loading": "Loading…",
@@ -33,6 +45,7 @@
     "loadFailed":"Failed to load file"
   },
   "toast": {
-    "saved":     "Saved {{path}}"
+    "saved":     "Saved {{path}}",
+    "created":   "Created {{path}}"
   }
 }

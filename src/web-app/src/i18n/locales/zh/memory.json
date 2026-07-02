@@ -11,12 +11,94 @@
     "title": "选择一个用户查看其记忆",
     "description": "记忆按 user_key（platform:userId）分隔。上方下拉列出每位在库中有任何记忆数据的用户。"
   },
+  "navigation": {
+    "groups": {
+      "overview": "开始",
+      "user": "用户记忆",
+      "processing": "后台处理",
+      "recall": "检索"
+    }
+  },
   "tabs": {
+    "overview": "总览",
     "facts":   "事实",
     "persona": "画像",
     "distill": "蒸馏",
     "vector":  "向量",
     "skills":  "技能"
+  },
+  "overview": {
+    "title": "记忆总览",
+    "subtitle": "查看 Agim 记住了什么、抽取是否健康、检索是否可用。",
+    "refresh": "刷新",
+    "clear": "状态正常",
+    "needsAttention": "{{count}} 项需处理",
+    "cards": {
+      "bank": {
+        "title": "记忆库",
+        "detail": "{{facts}} 条事实 · {{personas}} 个画像",
+        "action": "查看事实"
+      },
+      "selected": {
+        "title": "当前用户",
+        "empty": "先在上方选择一个用户，再查看单用户记忆。",
+        "ready": "{{user}} 已有事实与画像。",
+        "noPersona": "{{user}} 有事实，但还没有画像。",
+        "action": "查看画像"
+      },
+      "distill": {
+        "title": "抽取队列",
+        "running": "蒸馏任务正在运行。",
+        "error": "最近一次蒸馏失败。",
+        "ready": "后台抽取已启用。",
+        "off": "后台抽取已关闭。",
+        "action": "打开蒸馏"
+      },
+      "consolidate": {
+        "title": "用户画像",
+        "detail": "{{count}} 位用户已有画像。",
+        "running": "画像整理正在运行。",
+        "failed": "最近一次画像整理失败。",
+        "action": "查看画像"
+      },
+      "vector": {
+        "title": "记忆检索",
+        "offValue": "关闭",
+        "off": "向量召回已关闭。",
+        "ready": "已嵌入 {{embedded}} / {{total}} 条事实。",
+        "notReady": "向量后端未就绪。",
+        "action": "打开向量"
+      }
+    },
+    "next": {
+      "pickUser": {
+        "title": "选择一个用户",
+        "detail": "在上方选择用户后，可查看事实、画像与召回覆盖率。"
+      },
+      "createMemory": {
+        "title": "生成第一批记忆",
+        "detail": "先开始一段对话，积累上下文后再运行记忆抽取。"
+      },
+      "persona": {
+        "title": "生成或编辑用户画像",
+        "detail": "该用户已有事实，但还没有长篇画像。"
+      },
+      "distill": {
+        "title": "运行记忆抽取",
+        "detail": "还有聊天轮次等待抽取成事实。"
+      },
+      "vector": {
+        "title": "回填检索 embedding",
+        "detail": "部分事实还没有被当前向量后端覆盖。"
+      },
+      "facts": {
+        "title": "检查已记住的事实",
+        "detail": "查看并清理 Agim 为该用户保留的内容。"
+      }
+    },
+    "views": {
+      "title": "详细视图"
+    }
   },
   "facts": {
     "title": "事实",

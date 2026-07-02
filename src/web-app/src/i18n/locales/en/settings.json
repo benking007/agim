@@ -1,7 +1,17 @@
 {
   "pageTitle": "Settings",
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
+  "navigation": {
+    "recommended": "first",
+    "groups": {
+      "start": "Start",
+      "core": "Core setup",
+      "capabilities": "Capabilities",
+      "operations": "Operations"
+    }
+  },
   "tabs": {
+    "start": "Start",
     "messengers": "Messengers",
     "email": "Email (SMTP)",
     "viewer": "Viewer & Maps",
@@ -14,10 +24,58 @@
     "agimSkills": "agim Skills",
     "policy": "Policy",
     "security": "Security",
-    "workspaces": "Workspaces",
+    "workspaces": "Access Rules",
     "admins": "Admins",
     "env": "Env Vars",
     "service": "Service"
+  },
+  "start": {
+    "title": "Start here",
+    "subtitle": "Finish this in order: get Web chat working, settle the agent, then connect IM.",
+    "unknown": "not selected",
+    "actions": {
+      "chat": "Open chat",
+      "refresh": "Refresh"
+    },
+    "state": {
+      "done": "Ready",
+      "todo": "Next",
+      "warn": "Needs attention",
+      "loading": "Loading"
+    },
+    "steps": {
+      "web": {
+        "title": "Web chat",
+        "ready": "Service is running: {{mode}}",
+        "needsStart": "Service is not running yet.",
+        "action": "Open chat"
+      },
+      "agent": {
+        "title": "Current agent",
+        "ready": "{{agent}} is online",
+        "offline": "{{agent}} is not ready",
+        "selected": "{{agent}} is selected; waiting for runtime status.",
+        "empty": "No default agent selected.",
+        "action": "Manage agents"
+      },
+      "llm": {
+        "title": "Agim Agent API",
+        "ready": "{{count}} usable API configured.",
+        "empty": "No model API yet. Add one to use Agim without an external agent CLI.",
+        "action": "Configure API"
+      },
+      "im": {
+        "title": "Connect IM",
+        "ready": "Connected: {{platforms}}",
+        "empty": "No IM connected yet. Connect one after Web chat works.",
+        "action": "Connect IM"
+      }
+    },
+    "deploy": {
+      "title": "Keep it running",
+      "detail": "Before sharing it with others, check ports, restart behavior, and background service status.",
+      "action": "View service"
+    }
   },
   "agents": {
     "title": "Agents",
@@ -123,11 +181,56 @@
   "messengers": {
     "title": "Messengers",
     "subtitle": "Per-IM-platform connection settings. Toggle a platform on, fill in its credentials, and Save. The next service restart picks up the new config.",
+    "quick": {
+      "title": "Connect one messenger",
+      "subtitle": "Pick a path first. WeChat uses QR login; Feishu, DingTalk, and others need app credentials from their developer consoles.",
+      "connectedTitle": "Messenger connected",
+      "connectedBadge": "ready",
+      "nextBadge": "next",
+      "connectedDetail": "Connected: {{platforms}}. Open Web chat to verify it, or add another messenger.",
+      "webChat": "Open chat",
+      "addAnother": "Add another",
+      "scanWechat": "Scan WeChat QR",
+      "configurePlatform": "Configure {{platform}}",
+      "option": {
+        "wechat": {
+          "title": "WeChat QR",
+          "detail": "Fastest path. Scan with WeChat on your phone and confirm the login."
+        },
+        "feishu": {
+          "title": "Feishu app",
+          "detail": "Good for company chats. Requires App ID, App Secret, and message scopes."
+        },
+        "dingtalk": {
+          "title": "DingTalk Stream",
+          "detail": "Good for company chats. Requires Stream API client credentials."
+        },
+        "telegram": {
+          "title": "Telegram bot",
+          "detail": "Good for global groups. Requires a Bot Token from BotFather."
+        },
+        "discord": {
+          "title": "Discord bot",
+          "detail": "Good for community channels. Requires a Bot Token and bot invite."
+        }
+      }
+    },
     "saveAll": "Save all",
     "saving": "Saving…",
     "savedToast": "Configuration saved",
     "discardAll": "Discard changes",
     "dirtyHint": "Unsaved changes",
+    "apply": {
+      "title": "Apply IM changes",
+      "badge": "restart needed",
+      "restartDetail": "Saved. Restart Agim to connect the enabled messengers.",
+      "startDetail": "Saved. Start Agim to connect the enabled messengers.",
+      "restart": "Restart Agim",
+      "start": "Start Agim",
+      "restarting": "Restarting…",
+      "starting": "Starting…",
+      "appliedToast": "IM changes applied."
+    },
     "platform": {
       "wechat": "WeChat",
       "telegram": "Telegram",
@@ -291,11 +394,11 @@
     }
   },
   "workspaces": {
-    "title": "Workspaces",
-    "subtitle": "Multi-tenant workspace registry. Each workspace has its own agent whitelist, rate-limit, and (optionally) member list. The `default` workspace catches every unrouted user.",
+    "title": "Access Scopes",
+    "subtitle": "Partition available Agents and call rates by user, team, or customer. `default` catches every unrouted user.",
     "empty": {
-      "title": "Only the default workspace",
-      "description": "Add a workspace below to partition a team / project / customer. Each one gets its own agent whitelist + rate-limit."
+      "title": "Only the default scope",
+      "description": "Add a scope below to partition available Agents and call rates by team, project, or customer."
     },
     "col": {
       "id": "ID",
@@ -309,25 +412,58 @@
     "membersCount_one": "{{count}} member",
     "membersCount_other": "{{count}} members",
     "edit": "Edit",
+    "remove": {
+      "label": "Delete",
+      "ariaLabel": "Delete {{id}}",
+      "confirm": "Delete scope",
+      "confirmTitle": "Delete scope {{id}}?",
+      "confirmDescription": "After deletion, members of {{name}} fall back to the default scope. This takes effect immediately."
+    },
     "form": {
-      "title": "Add or edit a workspace",
-      "subtitleEdit": "Editing existing workspace — change id to clone, keep to upsert.",
+      "title": "Add or edit access scope",
+      "subtitleEdit": "Editing an existing scope — change id to clone, keep to upsert.",
       "id": "ID",
       "idHint": "Stable identifier; [a-zA-Z0-9_-]+; the special name `default` is reserved.",
       "name": "Display name",
       "agents": "Agent whitelist",
-      "agentsHint": "Comma-separated; empty = allow every registered agent.",
+      "agentsHint": "Leave empty to allow every registered Agent; choose entries to restrict this scope.",
+      "emptyAgents": "All registered Agents allowed",
+      "selectAgents": "Choose Agents",
+      "customAgentPlaceholder": "agent-name",
+      "agentOnline": "online",
+      "agentOffline": "offline",
       "members": "Member user IDs",
-      "membersHint": "Comma-separated `platform:userId`; empty = open workspace.",
+      "membersHint": "Leave empty to open this scope to every user; you can also add `platform:userId` manually.",
+      "emptyMembers": "Open to every user",
+      "selectMembers": "Choose members",
+      "customMemberPlaceholder": "platform:userId",
+      "memberLastSeen": "last seen {{time}}",
+      "memberFromScope": "from scope {{scope}}",
+      "selectedCount": "{{count}} selected",
+      "noChoices": "No candidates yet",
+      "addCustom": "Add",
+      "removeSelected": "Remove {{value}}",
       "rateLimit": "Rate limit (optional)",
+      "ratePresetHint": "Default uses the system rate limit; you can still edit the numbers below.",
+      "ratePresets": {
+        "default": "Default",
+        "strict": "Strict",
+        "busy": "Higher traffic"
+      },
+      "ratePresetDescriptions": {
+        "default": "system default 10/60s · burst 15",
+        "strict": "3/60s · burst 5",
+        "busy": "30/60s · burst 45"
+      },
       "rate": "Calls",
       "intervalSec": "Per (seconds)",
       "burst": "Burst",
-      "submit": "Save workspace",
+      "submit": "Save scope",
       "reset": "Clear form"
     },
     "toast": {
-      "saved": "Workspace saved"
+      "saved": "Access scope saved",
+      "deleted": "Access scope deleted"
     }
   },
   "service": {
@@ -373,13 +509,94 @@
       "toast": {
         "saved": "Ports saved — restart agim to bind the new ports"
       }
+    },
+    "recovery": {
+      "title": "Recovery",
+      "refreshLog": "Refresh log",
+      "state": {
+        "loading": "checking",
+        "running": "running",
+        "booting": "starting",
+        "stopped": "stopped"
+      },
+      "detail": {
+        "loading": "Reading service status and the latest log lines.",
+        "running": "The service is running. If chat, IM, or an agent misbehaves, check the recent log or run the local doctor.",
+        "booting": "The service has started but is still in the {{phase}} phase. Wait briefly; if it stays there, check the recent log.",
+        "stopped": "The service is not running. Click Start above, then watch whether the recent log keeps updating."
+      },
+      "commands": {
+        "doctor": "Local doctor",
+        "status": "Service status",
+        "tail": "View log",
+        "tailPending": "Log not created yet",
+        "tailChecking": "Checking the log file.",
+        "tailPendingDetail": "It is created automatically after the first background service start."
+      },
+      "truncated": "Tail only",
+      "logMissing": "No log file yet. It is created after the first background service start.",
+      "logEmpty": "The log is empty.",
+      "toast": {
+        "copied": "Command copied",
+        "copyFailed": "Copy failed"
+      }
     }
   },
   "security": {
     "title": "Security",
-    "subtitle": "Tool sandbox, SSRF protection, sender allowlist, and runtime diagnostics. Changes are saved to the env file immediately. Most native tools read process.env per call; exec sandbox and sender allowlist still require a service restart.",
+    "subtitle": "Before sharing Agim, confirm who can reach the bot, who can administer it, and which high-risk tools are tightened.",
+    "posture": {
+      "title": "Security posture",
+      "loading": "checking",
+      "ready": "ready for sharing",
+      "needsAction": "{{count}} to review",
+      "detail": "Handle these before connecting public IM channels or a reverse proxy.",
+      "readyDetail": "The main access gates are in place. Advanced controls can still be tuned for your deployment.",
+      "issue": {
+        "skipPermissions": {
+          "title": "Agent permission confirmations are skipped",
+          "detail": "This bypasses tool-use confirmations and should only be used temporarily in isolated environments.",
+          "action": "Turn off"
+        },
+        "senderOpenImplicit": {
+          "title": "IM sender access is open",
+          "detail": "Anyone who can reach the bot can start a conversation. Restrict it before sharing externally.",
+          "action": "Configure"
+        },
+        "senderOpenExplicit": {
+          "title": "IM sender access is explicitly open",
+          "detail": "Everyone is allowed by choice. For public groups or internet-facing access, use a restricted list.",
+          "action": "Configure"
+        },
+        "adminEmpty": {
+          "title": "No IM admin configured",
+          "detail": "Admin-tier IM commands cannot be assigned safely yet. Ask the admin to send one message, then grant access.",
+          "action": "Configure"
+        },
+        "envPerms": {
+          "title": "Env file permissions are too broad",
+          "detail": "Current mode is {{mode}}. Use 600 so other local users cannot read tokens or keys."
+        },
+        "root": {
+          "title": "Service is running as root",
+          "detail": "Tool calls inherit root privileges. Production deployments should run under a dedicated system user."
+        },
+        "privateWeb": {
+          "title": "Native web can reach all private ranges",
+          "detail": "This relaxes SSRF protection. Keep it on only for trusted internal deployments.",
+          "action": "Turn off"
+        },
+        "fsOpen": {
+          "title": "Native filesystem is not confined to the workspace",
+          "detail": "By default it can access non-sensitive paths. Restrict it before external use.",
+          "action": "Restrict"
+        }
+      }
+    },
     "diagnostics": {
       "title": "Runtime diagnostics",
+      "summary": "Open when troubleshooting; use the posture above for daily checks.",
+      "advanced": "Advanced",
       "runningAsRoot": "Running as root",
       "runningAsRootHelp": "Tool calls run with root privileges. Recommend creating a dedicated user + setting User= in the systemd unit.",
       "envFilePerms": "Env file permissions",
@@ -396,9 +613,25 @@
     },
     "sender": {
       "title": "Sender allowlist (who can talk to the bot)",
-      "description": "Comma-separated platform:userId pairs, e.g. telegram:8754479311,wechat-ilink:wxid_abc. Set to * to mark 'everyone explicitly allowed'. Empty = open access (preserves backward compatibility; startup logs OPEN_IM_ACCESS).",
+      "description": "Controls who can message the IM bot. For external use, choose a restricted list from discovered users. For local personal testing, explicitly allow everyone.",
       "envKey": "AGIM_ALLOWED_USERS",
-      "placeholder": "platform:userId,platform:userId"
+      "placeholder": "platform:userId,platform:userId",
+      "modeRestricted": "Restrict to list",
+      "modeOpen": "Everyone can use it",
+      "openExplicit": "explicitly open",
+      "openImplicit": "blank, open by default",
+      "openHint": "Anyone who can reach the IM bot can start a conversation. This is fine for personal testing; switch to a restricted list before public groups, company IM, or internet-facing access.",
+      "emptyMembers": "No allowed senders yet",
+      "chooseMembers": "Choose users",
+      "noChoices": "No discovered users yet",
+      "lastSeen": "last seen {{time}}",
+      "fromCurrentValue": "from current config",
+      "addCustom": "Add",
+      "removeMember": "Remove {{value}}",
+      "save": "Save gate",
+      "saved": "Saved",
+      "unsaved": "Unsaved changes",
+      "emptyRestrictedToast": "Restricted mode needs at least one selected or manual user."
     },
     "exec": {
       "title": "Native exec tool",
@@ -424,7 +657,7 @@
     },
     "fs": {
       "title": "Native filesystem tools",
-      "description": "fs tools default to the native agent's per-thread workspace subtree.",
+      "description": "By default, fs tools can access non-sensitive paths. Turn this on to confine them to the native agent's per-thread workspace subtree.",
       "restrict": "Restrict to workspace",
       "restrictOn": "ON (recommended)",
       "restrictOff": "OFF (allow any path; sensitive-paths denylist still applies)",
@@ -481,8 +714,42 @@
   },
   "llm": {
     "title": "Agim Agent Settings",
-    "subtitle": "Configure Agim Agent by adding model APIs and runtime behavior in one place. API metadata is saved in ~/.agim/config.json; API keys are saved in ~/.agim/llm-secrets.json (0600) or AGIM_LLM_SECRET_<NAME>.",
+    "subtitle": "Add one model API first so Agim Agent can run. Multiple APIs, role bindings, and runtime behavior live under advanced settings. API keys are saved in ~/.agim/llm-secrets.json (0600) or AGIM_LLM_SECRET_<NAME>.",
     "refresh": "Refresh",
+    "next": {
+      "emptyTitle": "Save and test the API above first",
+      "emptyDetail": "After the test passes, Agim binds the default role and makes Agim Agent the default agent.",
+      "title": "Next: send one message",
+      "backendBadge": "using {{backend}}",
+      "detail": "In chat, you can list and switch the model API used by this conversation.",
+      "chat": "Open chat",
+      "im": "Connect IM"
+    },
+    "advanced": {
+      "title": "Advanced settings",
+      "badge": "optional",
+      "subtitle": "Manage multiple APIs, role bindings, tool approvals, context compaction, A2A, notification evaluation, and heartbeat.",
+      "show": "Show advanced settings",
+      "hide": "Hide advanced settings"
+    },
+    "quick": {
+      "title": "Quick-enable Agim Agent",
+      "subtitle": "Pick a provider and paste an API key. Agim saves the API, binds the default role, and runs one connection test.",
+      "readyTitle": "Agim Agent is ready",
+      "readyBadge": "enabled",
+      "enableBadge": "needs enable",
+      "readyDetail": "Currently using {{backend}}. Open Web chat to test it.",
+      "enableDetail": "{{backend}} is usable. Enable it to bind Agim Agent and make it the default agent.",
+      "enableAction": "Enable Agim Agent",
+      "chatAction": "Open chat",
+      "saveAndTest": "Save and test",
+      "saving": "Saving…",
+      "testing": "Testing…",
+      "setupDone": "Agim Agent is enabled and the test passed.",
+      "enabledToast": "Agim Agent enabled.",
+      "testOk": "Connection test passed: {{ms}}ms",
+      "testFailed": "Connection test failed. The API is saved; check the key, model, or Base URL."
+    },
     "backendsTitle": "APIs ({{count}})",
     "backendsEmpty": "No model APIs configured yet. Add one below.",
     "rolesTitle": "Role Bindings (optional, advanced)",
@@ -501,8 +768,14 @@
     "remove": "Remove",
     "pinging": "pinging…",
     "setKeyFirst": "set API key first",
-    "pingHint": "send a tiny chat probe",
-    "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
+  "pingHint": "send a tiny chat probe",
+  "errorDialog": {
+    "title": "Probe failed",
+    "description": "Backend {{backend}} returned an error.",
+    "defaultHint": "Check the API key, Base URL, and model name. Details are below.",
+    "temperatureHint": "This model does not accept the temperature parameter. Agim now sends temperature only when you explicitly configure it; run the probe again."
+  },
+  "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
     "removedToast": "Removed (also cleared {{count}} role binding(s)).",
     "roleUpdated": "Updated role {{role}}",
     "unset": "(unset)",
@@ -752,9 +1025,70 @@
   "agimSkills": {
     "title": "agim Skills",
     "tab": {
+      "overview": "Overview",
       "installed": "Installed",
       "hot": "skillhub Hot",
       "injection": "Prompt Injection"
+    },
+    "overview": {
+      "title": "Skills overview",
+      "subtitle": "Manage the skills the Agent can read, external skill sources, and the summary injected into each turn.",
+      "ready": "Ready",
+      "needsAttention": "{{count}} needs attention",
+      "refresh": "Refresh",
+      "cards": {
+        "installed": {
+          "title": "Installed skills",
+          "detail": "{{workspace}} workspace · {{builtin}} builtin",
+          "action": "Manage"
+        },
+        "availability": {
+          "title": "Dependency check",
+          "ready": "Skill dependencies are ready",
+          "missing": "{{count}} skill(s) missing dependencies",
+          "action": "Review"
+        },
+        "hot": {
+          "title": "Hot skills",
+          "ready": "{{count}} available to browse",
+          "stale": "Showing cached results",
+          "error": "Could not load right now",
+          "action": "Browse"
+        },
+        "injection": {
+          "title": "Agent visibility",
+          "autoValue": "Auto",
+          "overrideValue": "Override",
+          "autoDetail": "{{always}} always-on · {{chars}} chars summary",
+          "overrideDetail": "{{chars}} chars in override",
+          "action": "Tune"
+        }
+      },
+      "next": {
+        "fixUnavailable": {
+          "title": "Fix unavailable skills first",
+          "detail": "Some skills are missing commands or environment variables, so the Agent cannot use them reliably yet."
+        },
+        "browseHot": {
+          "title": "Pick a hot skill to try",
+          "detail": "There are no workspace skills yet; start from common capabilities."
+        },
+        "reviewOverride": {
+          "title": "Review prompt injection override",
+          "detail": "A custom injected block is active; make sure it still matches the current skill library."
+        },
+        "manageInstalled": {
+          "title": "Review installed skills",
+          "detail": "The skill library is healthy; open the list to inspect, edit, or create skills."
+        },
+        "createSkill": {
+          "title": "Create the first skill",
+          "detail": "No skills are available yet; create a workspace skill from the Installed page."
+        }
+      },
+      "views": {
+        "title": "Common entries"
+      }
     },
     "group": {
       "framework": "Framework (agim-*)",

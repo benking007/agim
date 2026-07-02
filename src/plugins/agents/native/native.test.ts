@@ -5,7 +5,7 @@
 // assert on the AsyncGenerator output + describeNativeAgent banner.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { describeNativeAgent, buildSystemPrompt, readOperatorRole, isWorkspaceTrusted } from './index.js'
+import { describeNativeAgent, buildSystemPrompt, readOperatorRole, readWorkspaceMemory, isWorkspaceTrusted } from './index.js'
 import { nativeAgentAdapter } from '../pi-native/factory.js'
 import { invalidateSkillsCache } from '../../../core/skills/loader.js'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -37,6 +37,7 @@ const ENV_KEYS = [
   'AGIM_SKILLS_WORKSPACE_DIR',
   'AGIM_SKILLS_BUILTIN_DIR',
   'AGIM_SKILLS_INJECTION_OVERRIDE_PATH',
+  'AGIM_NATIVE_TRUST_WORKSPACE',
   envKeyForBackend('native-mock'),
 ]
 
@@ -260,6 +261,38 @@ describe('readOperatorRole — workspace trust gate (T6)', () => {
     const role = readOperatorRole(dir)
     expect(role).toContain('OPERATOR PINNED ROLE')
     expect(role).not.toContain('discovered should be skipped')
+  })
+})
+
+describe('readWorkspaceMemory — MEMORY.md consumption', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agim-workspace-memory-'))
+    delete process.env.AGIM_NATIVE_TRUST_WORKSPACE
+  })
+  afterEach(() => {
+    delete process.env.AGIM_NATIVE_TRUST_WORKSPACE
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  it('reads root MEMORY.md as operator-maintained long-term context', () => {
+    writeFileSync(join(dir, 'MEMORY.md'), '# Memory\n\n用户喜欢短句。')
+    expect(readWorkspaceMemory(dir)).toContain('用户喜欢短句')
+  })
+
+  it('injects MEMORY.md into the native system prompt', () => {
+    writeFileSync(join(dir, 'MEMORY.md'), '# Memory\n\n项目叫 Agim。')
+    const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
+    expect(prompt).toContain('[workspace memory: MEMORY.md]')
+    expect(prompt).toContain('项目叫 Agim')
+  })
+
+  it('skips MEMORY.md when the workspace is not trusted', () => {
+    writeFileSync(join(dir, 'MEMORY.md'), 'SHOULD NOT LEAK')
+    process.env.AGIM_NATIVE_TRUST_WORKSPACE = 'off'
+    expect(readWorkspaceMemory(dir)).toBe('')
+    const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
+    expect(prompt).not.toContain('SHOULD NOT LEAK')
   })
 })
 

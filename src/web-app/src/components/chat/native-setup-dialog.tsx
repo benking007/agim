@@ -21,78 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-
-type PresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'openai' | 'anthropic' | 'custom'
-
-interface PresetDef {
-  key: PresetKey
-  provider: 'openai-compat' | 'anthropic'
-  baseUrl: string
-  model: string
-  baseName: string
-}
-
-const PRESETS: PresetDef[] = [
-  {
-    key: 'deepseek',
-    provider: 'openai-compat',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
-    baseName: 'deepseek-agim',
-  },
-  {
-    key: 'moonshot',
-    provider: 'openai-compat',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-    baseName: 'moonshot-agim',
-  },
-  {
-    key: 'zhipu',
-    provider: 'openai-compat',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-air',
-    baseName: 'zhipu-agim',
-  },
-  {
-    key: 'openai',
-    provider: 'openai-compat',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    baseName: 'openai-agim',
-  },
-  {
-    key: 'anthropic',
-    provider: 'anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    model: 'claude-3-5-sonnet-20241022',
-    baseName: 'anthropic-agim',
-  },
-  {
-    key: 'custom',
-    provider: 'openai-compat',
-    baseUrl: '',
-    model: '',
-    baseName: 'agim-api',
-  },
-]
-const DEFAULT_PRESET: PresetDef = PRESETS[0] as PresetDef
+import {
+  DEFAULT_LLM_PRESET,
+  LLM_PRESETS,
+  suggestLlmBackendName,
+  type LlmPresetKey,
+} from '@/lib/llm-presets'
 
 export interface NativeSetupDialogProps {
   open: boolean
   reason?: string
   onOpenChange: (open: boolean) => void
   onConfigured?: () => void
-}
-
-function suggestName(base: string, existing: string[]): string {
-  const used = new Set(existing.map((n) => n.toLowerCase()))
-  if (!used.has(base.toLowerCase())) return base
-  for (let i = 2; i < 200; i += 1) {
-    const candidate = `${base}-${i}`
-    if (!used.has(candidate.toLowerCase())) return candidate
-  }
-  return `${base}-${Date.now()}`
 }
 
 export function NativeSetupDialog({
@@ -105,9 +45,9 @@ export function NativeSetupDialog({
   const addBackend = useLlmAddBackend()
   const llmList = useLlmList()
 
-  const [presetKey, setPresetKey] = useState<PresetKey>('deepseek')
+  const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
   const preset = useMemo(
-    () => PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_PRESET,
+    () => LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET,
     [presetKey],
   )
   const existingNames = useMemo(
@@ -115,17 +55,17 @@ export function NativeSetupDialog({
     [llmList.data],
   )
 
-  const [name, setName] = useState(() => suggestName('deepseek-agim', []))
+  const [name, setName] = useState(() => suggestLlmBackendName('deepseek-agim', []))
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
   const [model, setModel] = useState(preset.model)
   const [apiKey, setApiKey] = useState('')
 
-  function applyPreset(next: PresetKey): void {
-    const p = PRESETS.find((item) => item.key === next) ?? DEFAULT_PRESET
+  function applyPreset(next: LlmPresetKey): void {
+    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
     setPresetKey(next)
     setBaseUrl(p.baseUrl)
     setModel(p.model)
-    setName(suggestName(p.baseName, existingNames))
+    setName(suggestLlmBackendName(p.baseName, existingNames))
   }
 
   async function onSubmit(e: FormEvent): Promise<void> {
@@ -183,10 +123,10 @@ export function NativeSetupDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label className="text-xs font-medium">{t('llm.preset', { ns: 'settings' })}</Label>
-              <Select value={presetKey} onValueChange={(v) => applyPreset(v as PresetKey)}>
+              <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {PRESETS.map((p) => (
+                  {LLM_PRESETS.map((p) => (
                     <SelectItem key={p.key} value={p.key}>
                       {t(`llm.presets.${p.key}`, { ns: 'settings' })}
                     </SelectItem>

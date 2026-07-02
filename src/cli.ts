@@ -15,7 +15,6 @@ import { getDefaultAgent } from './core/live-config.js'
 import { sessionManager } from './core/session.js'
 import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
-import { crossSpawn } from './utils/cross-platform.js'
 import type { MessageContext } from './core/types.js'
 import { generateTraceId, createLogger, sanitizeUserText, logger as rootLogger } from './core/logger.js'
 import { validateConfig } from './core/config-schema.js'
@@ -36,7 +35,6 @@ import {
   checkMessengerConfig,
   checkAgentAvailability,
   runMessengerOnboarding,
-  formatAgentInstallHint,
   formatMessengerStartError,
   loadConfig as loadOnboardingConfig,
   saveConfig as saveOnboardingConfig,
@@ -45,11 +43,6 @@ import {
 import { startWebServer } from './web/server.js'
 import { startACPServer } from './core/acp-server.js'
 import { AGIM_HOME } from './core/agim-paths.js'
-
-// Helper to format agent install hint for missing agents
-function _formatMissingAgentHint(missing: string[]): string {
-  return formatAgentInstallHint(missing)
-}
 
 const CONFIG_DIR = AGIM_HOME
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
@@ -81,10 +74,30 @@ program
   .name('agim')
   .description('Universal messenger-to-agent bridge')
   .version(readPackageVersion())
+  .addHelpText('afterAll', `
+Common path:
+  agim go          First run: choose/configure one agent and start Web
+  agim web         Find the Web console URL, service state, and token hint
+  agim web --open  Open the Web console in your default browser
+  agim web --start --open
+                   Start the background service and open Web
+  agim config      Continue setup: Agent, IM, Web port, admins, SMTP
+  agim doctor      Explain local readiness problems
+
+Service:
+  agim start --bg  Run Agim in the background
+  agim status      Show runtime state
+  agim restart     Restart after config changes
+  agim stop        Stop the service
+
+Advanced:
+  agim setup llm|mcp
+  agim diag llm|mcp
+`)
 
 program
   .command('start')
-  .description('Start the Agim server (foreground by default; --bg for detached daemon)')
+  .description('Start the Agim runtime; use --bg for the normal background service')
   .option('--bg, --background', 'Start as a detached background daemon (writes pid file + log to ~/.agim/)')
   .action(async (opts: { bg?: boolean; background?: boolean }) => {
     // v1.2.85 — load ~/.agim/env into process.env BEFORE any branch
@@ -1598,393 +1611,33 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
 
 program
   .command('config [component]')
-  .description('Interactive config wizard (or `config <component>` for the per-component legacy flow)')
+  .description('Unified config wizard; optional shortcuts jump to a section, e.g. `config wechat`')
   .action(async (component?: string) => {
+    const { pickLang } = await import('./cli-ui/lang-picker.js')
+    const { runConfigWizard, sectionForConfigComponent } = await import('./cli-ui/config-wizard.js')
+    const { t: cliT } = await import('./cli-ui/i18n.js')
+    const lang = await pickLang()
     if (!component) {
-      // New interactive wizard (since v0.5.0). Falls through to the
-      // per-component switch below when an explicit `config wechat` etc.
-      // is passed — keeps scripted setups working.
-      const { pickLang } = await import('./cli-ui/lang-picker.js')
-      const { runConfigWizard } = await import('./cli-ui/config-wizard.js')
-      const lang = await pickLang()
       await runConfigWizard(lang)
       return
     }
-
-    const config = await loadConfig()
-
-    switch (component) {
-      case 'wechat': {
-        console.log('📱 Configuring WeChat adapter...')
-        console.log('Fetching QR code...\n')
-
-        // Import the iLink adapter for QR login
-        const { ILinkWeChatAdapter } = await import('./plugins/messengers/wechat/ilink-adapter.js')
-        const adapter = new ILinkWeChatAdapter()
-
-        try {
-          // Get QR code URL and token
-          const { qrUrl, qrToken } = await adapter.startQRLogin()
-
-          console.log('📱 Scan this QR code with WeChat:\n')
-          console.log(qrUrl)
-          console.log('\n')
-
-          // Poll for login status
-          const credentials = await adapter.waitForQRLogin(qrToken, (status) => {
-            console.log(`[${new Date().toLocaleTimeString()}] ${status}`)
-          })
-
-          if (credentials) {
-            console.log(`\n✅ Logged in as ${credentials.userId}`)
-            console.log(`   Bot ID: ${credentials.accountId}`)
-
-            // Add wechat-ilink to config
-            if (!config.messengers.includes('wechat-ilink')) {
-              config.messengers.push('wechat-ilink')
-            }
-          } else {
-            console.log('\n❌ Login failed or timed out')
-            return
-          }
-        } catch (error) {
-          console.error('\n❌ Failed to configure WeChat:', error)
-          return
-        }
-        break
-      }
-
-      case 'claude': {
-        console.log('🤖 Configuring Claude Code agent...')
-        // Check if claude CLI is available
-        const checkClaude = crossSpawn('claude', ['--version'], { stdio: 'ignore' })
-        checkClaude.on('close', (code) => {
-          if (code === 0) {
-            console.log('✅ Claude Code CLI found!')
-          } else {
-            console.log('❌ Claude Code CLI not found.')
-            console.log('Install with: npm install -g @anthropic-ai/claude-code')
-          }
-        })
-        if (!config.agents.includes('claude-code')) {
-          config.agents.push('claude-code')
-        }
-        config.defaultAgent = 'claude-code'
-        break
-      }
-
-      case 'codex': {
-        console.log('🤖 Configuring Codex agent...')
-        const checkCodex = crossSpawn('codex', ['--version'], { stdio: 'ignore' })
-        checkCodex.on('close', (code) => {
-          if (code === 0) {
-            console.log('✅ Codex CLI found!')
-          } else {
-            console.log('❌ Codex CLI not found.')
-            console.log('Install with: npm install -g @openai/codex')
-          }
-        })
-        if (!config.agents.includes('codex')) {
-          config.agents.push('codex')
-        }
-        config.defaultAgent = 'codex'
-        break
-      }
-
-      case 'telegram': {
-        console.log('📱 Configuring Telegram adapter...')
-        console.log('To get a bot token:')
-        console.log('1. Open Telegram and search for @BotFather')
-        console.log('2. Send /newbot and follow instructions')
-        console.log('3. Copy the bot token\n')
-
-        const { createInterface } = await import('node:readline')
-        const rl = createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        })
-
-        const token = await new Promise<string>((resolve) => {
-          rl.question('Enter your bot token: ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        if (!token) {
-          console.log('❌ Bot token is required')
-          return
-        }
-
-        const channelId = await new Promise<string>((resolve) => {
-          rl.question('Enter channel ID (optional, press Enter for default): ', (answer) => {
-            resolve(answer.trim() || 'default')
-          })
-        })
-
-        rl.close()
-
-        config.telegram = { botToken: token, channelId }
-        if (!config.messengers.includes('telegram')) {
-          config.messengers.push('telegram')
-        }
-
-        console.log('✅ Telegram bot token saved')
-        console.log(`   Channel ID: ${channelId}`)
-        break
-      }
-
-      case 'feishu': {
-        console.log('📱 Configuring Feishu adapter (WebSocket long polling mode)...')
-        console.log('To create a Feishu bot:')
-        console.log('1. Go to https://open.feishu.cn/app')
-        console.log('2. Create a custom bot app')
-        console.log('3. Enable Bot capability')
-        console.log('4. Configure event subscriptions (Subscribe to "im.message.receive_v1" event)')
-        console.log('5. Go to Permissions management and enable: im:message, im:message.p2p_msg:readonly, im:message:send_as_bot')
-        console.log('6. Create a version and publish it')
-        console.log('7. Copy App ID and App Secret\n')
-
-        const { createInterface: createRl } = await import('node:readline')
-        const feishuRl = createRl({
-          input: process.stdin,
-          output: process.stdout,
-        })
-
-        const appId = await new Promise<string>((resolve) => {
-          feishuRl.question('Enter App ID: ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        const appSecret = await new Promise<string>((resolve) => {
-          feishuRl.question('Enter App Secret: ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        feishuRl.close()
-
-        if (!appId || !appSecret) {
-          console.log('❌ App ID and App Secret are required')
-          return
-        }
-
-        config.feishu = {
-          appId,
-          appSecret
-        }
-        if (!config.messengers.includes('feishu')) {
-          config.messengers.push('feishu')
-        }
-
-        console.log('✅ Feishu bot credentials saved')
-        console.log(`\n✅ Using WebSocket long polling mode - no webhook configuration needed!`)
-        console.log(`   The bot will automatically connect to Feishu servers.`)
-        break
-      }
-
-      case 'discord': {
-        console.log('📱 Configuring Discord adapter...')
-        console.log('To create a Discord bot:')
-        console.log('1. Go to https://discord.com/developers/applications')
-        console.log('2. Click "New Application" and give it a name')
-        console.log('3. Go to "Bot" tab and click "Add Bot"')
-        console.log('4. IMPORTANT: Enable "MESSAGE CONTENT INTENT" under Privileged Gateway Intents')
-        console.log('5. Click "Reset Token" to get your bot token')
-        console.log('6. Use OAuth2 URL Generator to invite the bot to your server\n')
-
-        const { createInterface: createDiscordRl } = await import('node:readline')
-        const discordRl = createDiscordRl({
-          input: process.stdin,
-          output: process.stdout,
-        })
-
-        const discordToken = await new Promise<string>((resolve) => {
-          discordRl.question('Enter your bot token: ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        if (!discordToken) {
-          console.log('❌ Bot token is required')
-          discordRl.close()
-          return
-        }
-
-        const discordChannelId = await new Promise<string>((resolve) => {
-          discordRl.question('Enter channel ID (optional, press Enter for default): ', (answer) => {
-            resolve(answer.trim() || 'default')
-          })
-        })
-
-        const allowedGuilds = await new Promise<string>((resolve) => {
-          discordRl.question('Allowed guild IDs (comma-separated, optional): ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        const allowedChannels = await new Promise<string>((resolve) => {
-          discordRl.question('Allowed channel IDs (comma-separated, optional): ', (answer) => {
-            resolve(answer.trim())
-          })
-        })
-
-        discordRl.close()
-
-        config.discord = {
-          botToken: discordToken,
-          channelId: discordChannelId,
-          allowedGuilds: allowedGuilds ? allowedGuilds.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-          allowedChannels: allowedChannels ? allowedChannels.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        }
-        if (!config.messengers.includes('discord')) {
-          config.messengers.push('discord')
-        }
-
-        console.log('✅ Discord bot token saved')
-        console.log(`   Channel ID: ${discordChannelId}`)
-        if (config.discord.allowedGuilds?.length) {
-          console.log(`   Allowed guilds: ${config.discord.allowedGuilds.join(', ')}`)
-        }
-        if (config.discord.allowedChannels?.length) {
-          console.log(`   Allowed channels: ${config.discord.allowedChannels.join(', ')}`)
-        }
-        break
-      }
-
-      case 'cursor': {
-        console.log('🤖 Configuring Cursor agent...')
-        const cursorAvailable = await new Promise<boolean>((resolve) => {
-          const proc = crossSpawn('cursor-agent', ['--version'], { stdio: 'ignore' })
-          proc.on('error', () => resolve(false))
-          proc.on('close', (code) => resolve(code === 0))
-        })
-        if (cursorAvailable) {
-          console.log('✅ Cursor CLI found!')
-          console.log('\nTo authenticate, run: cursor-agent login (OAuth) or set CURSOR_API_KEY')
-        } else {
-          console.log('❌ Cursor CLI not found.')
-          console.log('Install with: curl https://cursor.com/install -fsS | bash')
-        }
-        if (!config.agents.includes('cursor')) {
-          config.agents.push('cursor')
-        }
-        config.defaultAgent = 'cursor'
-        break
-      }
-
-      case 'opencode': {
-        console.log('🤖 Configuring OpenCode agent...')
-        // Check if opencode CLI is available
-        const openCodeAvailable = await new Promise<boolean>((resolve) => {
-          const proc = crossSpawn('opencode', ['--version'], { stdio: 'ignore' })
-          proc.on('error', () => resolve(false))
-          proc.on('close', (code) => resolve(code === 0))
-        })
-        if (openCodeAvailable) {
-          console.log('✅ OpenCode CLI found!')
-          console.log('\nTo authenticate, run: opencode auth login')
-        } else {
-          console.log('❌ OpenCode CLI not found.')
-          console.log('Install with: npm i -g opencode-ai@latest')
-          console.log('Or visit: https://github.com/anomalyco/opencode')
-        }
-        if (!config.agents.includes('opencode')) {
-          config.agents.push('opencode')
-        }
-        config.defaultAgent = 'opencode'
-        break
-      }
-
-      case 'agent': {
-        console.log('🔌 Configuring remote ACP agent...')
-        console.log('This adds a remote agent that speaks the Agent Communication Protocol.')
-        console.log('ACP is an open standard (https://agentcommunicationprotocol.dev)\n')
-
-        const { createInterface: createAgentRl } = await import('node:readline')
-        const agentRl = createAgentRl({ input: process.stdin, output: process.stdout })
-
-        const agentName = await new Promise<string>((resolve) => {
-          agentRl.question('Agent name (e.g. openclaw-dev): ', (answer) => resolve(answer.trim()))
-        })
-        if (!agentName) { console.log('❌ Name is required'); agentRl.close(); return }
-
-        const agentAlias = await new Promise<string>((resolve) => {
-          agentRl.question('Aliases, comma-separated (optional): ', (answer) => resolve(answer.trim()))
-        })
-
-        const endpoint = await new Promise<string>((resolve) => {
-          agentRl.question('ACP endpoint URL (e.g. http://localhost:8080): ', (answer) => resolve(answer.trim()))
-        })
-        if (!endpoint) { console.log('❌ Endpoint is required'); agentRl.close(); return }
-
-        console.log('\nAuthentication type:')
-        console.log('  1. none')
-        console.log('  2. apikey')
-        console.log('  3. bearer')
-        const authTypeInput = await new Promise<string>((resolve) => {
-          agentRl.question('Choose (1-3, default: none): ', (answer) => resolve(answer.trim() || '1'))
-        })
-        const authTypeMap: Record<string, 'none' | 'apikey' | 'bearer'> = { '1': 'none', '2': 'apikey', '3': 'bearer' }
-        const authType = authTypeMap[authTypeInput] || 'none'
-
-        let auth: { type: 'none' | 'apikey' | 'bearer'; token?: string } | undefined
-        if (authType !== 'none') {
-          const token = await new Promise<string>((resolve) => {
-            agentRl.question('Auth token: ', (answer) => resolve(answer.trim()))
-          })
-          if (!token) { console.log('❌ Token is required when auth is enabled'); agentRl.close(); return }
-          auth = { type: authType, token }
-        }
-        agentRl.close()
-
-        // Validate connection
-        console.log('\n🔍 Testing connection...')
-        const { ACPClient } = await import('./plugins/agents/acp/acp-client.js')
-        const testClient = new ACPClient({ name: agentName, endpoint, auth })
-        try {
-          const manifest = await testClient.fetchManifest()
-          console.log(`✅ Connected! Agent: ${manifest.name}`)
-          if (manifest.description) console.log(`   ${manifest.description}`)
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e)
-          console.log(`⚠️  Connection failed: ${msg}`)
-          console.log('   Agent will be saved but may not work until endpoint is available.')
-        }
-
-        // Save
-        if (!config.acpAgents) config.acpAgents = []
-        const existing = config.acpAgents.findIndex(a => a.name === agentName)
-        const agentConfig = {
-          name: agentName,
-          aliases: agentAlias?.split(',').map(s => s.trim()).filter(Boolean) || [],
-          endpoint,
-          auth,
-          enabled: true
-        }
-
-        if (existing >= 0) {
-          config.acpAgents[existing] = agentConfig
-        } else {
-          config.acpAgents.push(agentConfig)
-        }
-        break
-      }
-
-      default:
-        console.log(`Unknown component: ${component}`)
-        console.log('Run "agim config" to see available components.')
-        process.exitCode = 1
-        return
+    const section = sectionForConfigComponent(component)
+    if (!section) {
+      console.log(cliT(lang, 'config.shortcut.unknown', { component }))
+      process.exitCode = 1
+      return
     }
-
-    await saveConfig(config)
-    console.log(`\n✅ Configuration saved to ${CONFIG_FILE}`)
+    await runConfigWizard(lang, {
+      initialSection: section,
+      initialOnly: true,
+      shortcutLabel: component,
+    })
+    return
   })
 
 program
   .command('tui')
-  .description('Open the terminal chat UI (Ink-based). Pick an agent + chat in-process.')
+  .description('Open the terminal chat UI for local agent conversations')
   .option('-a, --agent <name>', 'Pre-select an agent by name (e.g. claude-code, codex, native)')
   .option('-r, --resume [id]', 'Resume a saved session by id; "last" or empty picks the most recent')
   .option('--list-sessions', 'Print saved TUI sessions (latest first) and exit')
@@ -1996,7 +1649,34 @@ program
   })
 
 program
-  .command('agents')
+  .command('go')
+  .description('First run: configure one agent, start Web, then continue in `agim web`')
+  .action(async () => {
+    const { runQuickstart } = await import('./cli-ui/quickstart.js')
+    await runQuickstart()
+  })
+
+program.addCommand(
+  program.createCommand('quickstart')
+    .description('Compatibility alias for `agim go`')
+    .action(async () => {
+      const { runQuickstart } = await import('./cli-ui/quickstart.js')
+      await runQuickstart()
+    }),
+  { hidden: true },
+)
+
+program
+  .command('doctor')
+  .description('Run a local readiness check and suggest the next command')
+  .action(async () => {
+    const { runDoctor } = await import('./cli-ui/doctor.js')
+    const code = await runDoctor()
+    if (code !== 0) process.exit(code)
+  })
+
+program
+  .command('agents', { hidden: true })
   .description('List available agents')
   .action(async () => {
     await registry.loadBuiltInPlugins()
@@ -2046,7 +1726,7 @@ program
   })
 
 program
-  .command('messengers')
+  .command('messengers', { hidden: true })
   .description('List available messengers')
   .action(async () => {
     await registry.loadBuiltInPlugins()
@@ -2071,7 +1751,7 @@ program
 
 const setupCmd = program
   .command('setup')
-  .description('Interactive setup helpers (LLM backends / MCP servers)')
+  .description('Advanced setup helpers for LLM backends and MCP servers')
 
 setupCmd
   .command('llm [args...]')
@@ -2093,7 +1773,7 @@ setupCmd
 
 const diagCmd = program
   .command('diag')
-  .description('Run local diagnostics for LLM/MCP configuration')
+  .description('Advanced diagnostics for configured LLM/MCP backends')
 
 diagCmd
   .command('llm')
@@ -2118,7 +1798,7 @@ diagCmd
 
 program
   .command('status')
-  .description('Show whether the bridge is running (systemd / background / foreground)')
+  .description('Show whether Agim is running and where the Web console is')
   .action(async () => {
     const { cmdStatus } = await import('./cli-ui/cmd-handlers.js')
     cmdStatus()
@@ -2248,7 +1928,7 @@ tokenCmd
 
 // ─── IM admin registry helpers (v2 model) ────────────────────────────
 
-const adminCmd = program.command('admin').description('Inspect IM admin assignments')
+const adminCmd = program.command('admin', { hidden: true }).description('Inspect IM admin assignments')
 
 adminCmd
   .command('list')
@@ -2290,36 +1970,20 @@ adminCmd
 
 program
   .command('web')
-  .description('Print the URL of this host\'s web console')
-  .action(async () => {
-    // Pull ~/.agim/env into process.env so AGIM_VIEWER_* configured via
-    // the entry menu is visible when this CLI runs in a fresh shell.
-    try {
-      const { readEnvFile } = await import('./cli-ui/env-file.js')
-      const f = readEnvFile()
-      for (const k of ['AGIM_VIEWER_PUBLIC_BASE_URL', 'AGIM_VIEWER_TUNNEL_MODE', 'AGIM_VIEWER_ENABLED']) {
-        if (f[k] && !process.env[k]) process.env[k] = f[k]
-      }
-    } catch { /* ignore */ }
-    const { getEffectivePublicBaseUrl, getViewerConfig } = await import('./core/viewer-config.js')
-    const cfg = getViewerConfig()
-    const url = getEffectivePublicBaseUrl()
-    if (url) {
-      const source = cfg.publicBaseUrl ? 'AGIM_VIEWER_PUBLIC_BASE_URL' : 'cloudflared tunnel'
-      console.log(url)
-      console.log(`(来源: ${source})`)
-      return
-    }
-    if (cfg.tunnelMode === 'quick') {
-      console.log('Web 后台地址当前由 cloudflared 临时隧道提供，但本进程查不到隧道 URL。')
-      console.log('请在 IM 内发送 /web 让运行中的 daemon 返回最新地址。')
-      process.exit(2)
-    }
-    console.log('Web 后台地址未配置。')
-    console.log('设置以下任一项后重启服务：')
-    console.log('  AGIM_VIEWER_PUBLIC_BASE_URL=https://your-domain  (反代 / 自定义域名)')
-    console.log('  AGIM_VIEWER_TUNNEL_MODE=quick                    (cloudflared 临时隧道)')
-    process.exit(2)
+  .description('Show the web console URL, service state, and login hint')
+  .option('--public', 'Print the public/reverse-proxy URL only')
+  .option('--welcome', 'Append the first-run welcome flag to the local URL')
+  .option('--open', 'Open the Web console in the default browser')
+  .option('--start', 'Start Agim in the background first when it is not running')
+  .action(async (opts: { public?: boolean; welcome?: boolean; open?: boolean; start?: boolean }) => {
+    const { cmdWeb } = await import('./cli-ui/cmd-handlers.js')
+    const code = await cmdWeb({
+      public: opts.public,
+      welcome: opts.welcome,
+      open: opts.open,
+      start: opts.start,
+    })
+    if (code !== 0) process.exit(code)
   })
 
 // ─── bare `agim` → entry menu (v0.5.0+) ─────────────────────────────
@@ -2335,13 +1999,27 @@ async function maybeRunEntryMenu(): Promise<boolean> {
   if (process.argv.length > 2) return false
   if (!process.stdin.isTTY) return false  // piped / non-interactive — fall back to commander's help
   const { runEntryMenu } = await import('./cli-ui/entry-menu.js')
-  const { cmdStatus, cmdStart, cmdStop, cmdRestart, cmdUninstall } = await import('./cli-ui/cmd-handlers.js')
+  const { cmdStatus, cmdStart, cmdStop, cmdRestart, cmdUninstall, cmdWeb } = await import('./cli-ui/cmd-handlers.js')
   const { action, lang } = await runEntryMenu()
   switch (action.kind) {
     case 'quit':
       return true
+    case 'quickstart': {
+      const { runQuickstart } = await import('./cli-ui/quickstart.js')
+      await runQuickstart(lang)
+      return true
+    }
+    case 'doctor': {
+      const { runDoctor } = await import('./cli-ui/doctor.js')
+      const code = await runDoctor()
+      if (code !== 0) process.exitCode = code
+      return true
+    }
     case 'status':
       cmdStatus()
+      return true
+    case 'web':
+      await cmdWeb({ welcome: true, start: true, open: true })
       return true
     case 'config': {
       // Reuse the lang the user just picked in runEntryMenu — re-prompting

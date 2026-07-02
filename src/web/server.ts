@@ -1,6 +1,7 @@
 // Web chat server — HTTP + WebSocket for browser-based agent interaction
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer as createNetServer } from 'node:net'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
 import { join, dirname, resolve as resolvePath, sep as pathSep, relative as relativePath } from 'node:path'
@@ -337,12 +338,41 @@ export function createSerialQueue(): (fn: () => Promise<void>) => void {
 /**
  * Start the web chat server
  */
+async function assertPortCanListen(port: number, bindHost: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const probe = createNetServer()
+    const cleanup = (): void => {
+      probe.off('error', onError)
+      probe.off('listening', onListening)
+    }
+    const onError = (err: Error): void => {
+      cleanup()
+      try { probe.close() } catch { /* not listening */ }
+      reject(err)
+    }
+    const onListening = (): void => {
+      cleanup()
+      probe.close(() => resolve())
+    }
+    probe.once('error', onError)
+    probe.once('listening', onListening)
+    try {
+      probe.listen(port, bindHost)
+    } catch (err) {
+      cleanup()
+      try { probe.close() } catch { /* not listening */ }
+      reject(err)
+    }
+  })
+}
+
 export async function startWebServer(options: {
   port?: number
   defaultAgent: string
 }): Promise<{ close: () => void; port: number }> {
   const port = options.port || DEFAULT_PORT
   const bindHost = process.env.AGIM_WEB_BIND || '127.0.0.1'
+  await assertPortCanListen(port, bindHost)
   const clients = new Map<string, ClientConnection>()
   // R9: threadId → tokenId ownership. A WS peer claims a threadId on
   // first connection (verifyClient already verified the token); later
@@ -1127,6 +1157,10 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/service/status' && req.method === 'GET') {
       return handleServiceStatus(res)
     }
+    if (url.pathname === '/api/service/log-tail' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleServiceLogTail(res, url)
+    }
     if (url.pathname === '/api/service/start' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return
       return handleServiceStart(res)
@@ -1502,8 +1536,25 @@ export async function startWebServer(options: {
   // Default to loopback; operators can opt into LAN/public exposure with
   // AGIM_WEB_BIND=0.0.0.0 behind their firewall/reverse proxy.
   await new Promise<void>((resolve, reject) => {
-    httpServer.on('error', reject)
-    httpServer.listen(port, bindHost, () => resolve())
+    const onError = (err: Error): void => {
+      httpServer.off('listening', onListening)
+      try { httpServer.close() } catch { /* not listening yet */ }
+      reject(err)
+    }
+    const onListening = (): void => {
+      httpServer.off('error', onError)
+      resolve()
+    }
+    httpServer.once('error', onError)
+    httpServer.once('listening', onListening)
+    try {
+      httpServer.listen(port, bindHost)
+    } catch (err) {
+      httpServer.off('error', onError)
+      httpServer.off('listening', onListening)
+      try { httpServer.close() } catch { /* not listening yet */ }
+      reject(err)
+    }
   })
 
   webLog.info({ port, bindHost }, `Chat UI available at http://${bindHost === '0.0.0.0' ? 'localhost' : bindHost}:${port}`)
@@ -2149,6 +2200,69 @@ async function handleServiceStatus(res: ServerResponse): Promise<void> {
       bootPhase: boot.phase,
       bootMsSinceStart: boot.msSinceStart,
       bootPhaseTimings: boot.phaseTimings,
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handleServiceLogTail(res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const { LOG_FILE } = await import('../cli-ui/service.js')
+    const requestedLines = parseInt(url.searchParams.get('lines') || '120', 10)
+    const lines = Math.min(Math.max(Number.isFinite(requestedLines) ? requestedLines : 120, 20), 500)
+    const maxBytes = 256 * 1024
+
+    let st: Awaited<ReturnType<typeof stat>>
+    try {
+      st = await stat(LOG_FILE)
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === 'ENOENT') {
+        sendJson(res, 200, {
+          path: LOG_FILE,
+          exists: false,
+          content: '',
+          lines: 0,
+          truncated: false,
+          size: 0,
+          mtime: null,
+        })
+        return
+      }
+      throw err
+    }
+
+    if (!st.isFile()) {
+      sendJson(res, 400, { error: 'Service log path is not a regular file' })
+      return
+    }
+
+    const start = Math.max(0, st.size - maxBytes)
+    const len = st.size - start
+    let buf: Buffer
+    const fd = await open(LOG_FILE, 'r')
+    try {
+      buf = Buffer.alloc(len)
+      const { bytesRead } = await fd.read(buf, 0, len, start)
+      buf = buf.subarray(0, bytesRead)
+    } finally {
+      await fd.close()
+    }
+
+    let text = buf.toString('utf8')
+    if (start > 0) text = text.replace(/^[^\n]*(\n|$)/, '')
+    const allLines = text.split(/\r?\n/)
+    const selected = allLines.slice(-lines)
+    const content = selected.join('\n')
+    sendJson(res, 200, {
+      path: LOG_FILE,
+      exists: true,
+      content,
+      lines: content ? selected.length : 0,
+      truncated: start > 0 || allLines.length > lines,
+      size: st.size,
+      mtime: st.mtime.toISOString(),
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -4409,10 +4523,17 @@ async function handleWorkspaceFileWrite(req: IncomingMessage, res: ServerRespons
     }
 
     const finalSt = await stat(target)
+    const savedPath = relativePath(base, target)
+    if (savedPath === 'MEMORY.md') {
+      try {
+        const { ensureAgentMemoryLink } = await import('../core/agent-cwd.js')
+        await ensureAgentMemoryLink(agent)
+      } catch { /* best-effort: memory file itself was saved successfully */ }
+    }
     sendJson(res, 200, {
       ok: true,
       agent,
-      path: relativePath(base, target),
+      path: savedPath,
       size: finalSt.size,
       mtime: finalSt.mtime.toISOString(),
     })

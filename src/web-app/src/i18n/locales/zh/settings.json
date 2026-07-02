@@ -1,7 +1,17 @@
 {
   "pageTitle": "设置",
   "subtitle": "运维配置：环境变量与服务生命周期。",
+  "navigation": {
+    "recommended": "优先",
+    "groups": {
+      "start": "开始",
+      "core": "核心连接",
+      "capabilities": "扩展能力",
+      "operations": "运维安全"
+    }
+  },
   "tabs": {
+    "start": "开始",
     "messengers": "IM 平台",
     "email": "邮件 (SMTP)",
     "viewer": "Viewer & 地图",
@@ -14,10 +24,58 @@
     "agimSkills": "agim Skills",
     "policy": "策略",
     "security": "安全",
-    "workspaces": "工作区",
+    "workspaces": "成员与限流",
     "admins": "管理员",
     "env": "环境变量",
     "service": "服务"
+  },
+  "start": {
+    "title": "开始使用",
+    "subtitle": "按这个顺序完成即可：先确认 Web 对话可用，再整理 Agent，最后接入 IM。",
+    "unknown": "未选择",
+    "actions": {
+      "chat": "打开对话",
+      "refresh": "刷新状态"
+    },
+    "state": {
+      "done": "已就绪",
+      "todo": "待处理",
+      "warn": "需处理",
+      "loading": "读取中"
+    },
+    "steps": {
+      "web": {
+        "title": "Web 对话",
+        "ready": "服务正在运行：{{mode}}",
+        "needsStart": "服务未运行；先启动服务再对话。",
+        "action": "打开对话"
+      },
+      "agent": {
+        "title": "当前 Agent",
+        "ready": "{{agent}} 在线",
+        "offline": "{{agent}} 未就绪",
+        "selected": "已选择 {{agent}}，等待运行状态。",
+        "empty": "尚未选择默认 Agent。",
+        "action": "管理 Agent"
+      },
+      "llm": {
+        "title": "Agim Agent API",
+        "ready": "已有 {{count}} 个可用 API。",
+        "empty": "未配置模型 API；配置后可不依赖外部 Agent CLI。",
+        "action": "配置 API"
+      },
+      "im": {
+        "title": "连接 IM",
+        "ready": "已连接：{{platforms}}",
+        "empty": "还未连接 IM；Web 跑通后再接入。",
+        "action": "连接 IM"
+      }
+    },
+    "deploy": {
+      "title": "长期运行",
+      "detail": "准备对外使用时，再检查端口、重启和后台服务状态。",
+      "action": "查看服务"
+    }
   },
   "agents": {
     "title": "Agents",
@@ -123,11 +181,56 @@
   "messengers": {
     "title": "IM 平台",
     "subtitle": "各 IM 平台的连接配置。打开开关、填写凭据、保存；下次服务重启即生效。",
+    "quick": {
+      "title": "连接一个 IM",
+      "subtitle": "先选一种接入方式。微信走扫码；飞书、钉钉等需要在对应开放平台创建应用并填写凭据。",
+      "connectedTitle": "IM 已连接",
+      "connectedBadge": "已就绪",
+      "nextBadge": "下一步",
+      "connectedDetail": "当前已连接：{{platforms}}。可以回到 Web 对话验证，也可以继续添加其他 IM。",
+      "webChat": "打开对话",
+      "addAnother": "继续添加",
+      "scanWechat": "扫码连接微信",
+      "configurePlatform": "配置 {{platform}}",
+      "option": {
+        "wechat": {
+          "title": "微信扫码",
+          "detail": "最快体验路径。用手机微信扫码确认，适合个人或小团队先跑通。"
+        },
+        "feishu": {
+          "title": "飞书应用",
+          "detail": "适合企业群聊。需要 App ID、App Secret 和消息权限。"
+        },
+        "dingtalk": {
+          "title": "钉钉 Stream",
+          "detail": "适合企业群聊。需要钉钉 Stream API 的客户端凭据。"
+        },
+        "telegram": {
+          "title": "Telegram Bot",
+          "detail": "适合海外或公开群组。需要 BotFather 生成的 Bot Token。"
+        },
+        "discord": {
+          "title": "Discord Bot",
+          "detail": "适合社区频道。需要 Bot Token 并邀请机器人进频道。"
+        }
+      }
+    },
     "saveAll": "全部保存",
     "saving": "保存中…",
     "savedToast": "配置已保存",
     "discardAll": "放弃改动",
     "dirtyHint": "有未保存的改动",
+    "apply": {
+      "title": "让 IM 配置生效",
+      "badge": "需要重启",
+      "restartDetail": "已保存。重启 Agim 后会连接已启用的 IM。",
+      "startDetail": "已保存。启动 Agim 后会连接已启用的 IM。",
+      "restart": "重启 Agim",
+      "start": "启动 Agim",
+      "restarting": "正在重启…",
+      "starting": "正在启动…",
+      "appliedToast": "IM 配置已生效。"
+    },
     "platform": {
       "wechat": "微信",
       "telegram": "Telegram",
@@ -291,11 +394,11 @@
     }
   },
   "workspaces": {
-    "title": "工作区",
-    "subtitle": "多租户工作区注册表。每个工作区有独立的 Agent 白名单、限流配置以及（可选的）成员名单。`default` 工作区承接所有未匹配的用户。",
+    "title": "访问域",
+    "subtitle": "按用户、团队或客户划分可用 Agent 与调用频率。`default` 承接所有未匹配的用户。",
     "empty": {
-      "title": "只有默认工作区",
-      "description": "在下方添加工作区，可按团队 / 项目 / 客户分隔。每个工作区有独立的 Agent 白名单与限流。"
+      "title": "只有默认访问域",
+      "description": "在下方添加访问域，可按团队 / 项目 / 客户分隔可用 Agent 与调用频率。"
     },
     "col": {
       "id": "ID",
@@ -309,25 +412,58 @@
     "membersCount_one": "{{count}} 位成员",
     "membersCount_other": "{{count}} 位成员",
     "edit": "编辑",
+    "remove": {
+      "label": "删除",
+      "ariaLabel": "删除 {{id}}",
+      "confirm": "删除访问域",
+      "confirmTitle": "删除访问域 {{id}}？",
+      "confirmDescription": "删除后，{{name}} 的成员会回到 default 访问域；该操作会立即生效。"
+    },
     "form": {
-      "title": "新增或编辑工作区",
-      "subtitleEdit": "编辑已有工作区 — 改 ID 可克隆，保持原 ID 即 upsert。",
+      "title": "新增或编辑访问域",
+      "subtitleEdit": "编辑已有访问域 — 改 ID 可克隆，保持原 ID 即 upsert。",
       "id": "ID",
       "idHint": "稳定标识符；只允许 [a-zA-Z0-9_-]+；`default` 为保留名。",
       "name": "显示名",
       "agents": "Agent 白名单",
-      "agentsHint": "逗号分隔；为空 = 允许所有已注册 Agent。",
+      "agentsHint": "不选择即允许所有已注册 Agent；选择后仅这些 Agent 可用。",
+      "emptyAgents": "允许所有已注册 Agent",
+      "selectAgents": "选择 Agent",
+      "customAgentPlaceholder": "agent-name",
+      "agentOnline": "在线",
+      "agentOffline": "离线",
       "members": "成员用户 ID",
-      "membersHint": "逗号分隔，形如 `platform:userId`；为空 = 开放工作区。",
+      "membersHint": "不选择即对所有用户开放；也可手动添加 `platform:userId`。",
+      "emptyMembers": "对所有用户开放",
+      "selectMembers": "选择成员",
+      "customMemberPlaceholder": "platform:userId",
+      "memberLastSeen": "最近出现：{{time}}",
+      "memberFromScope": "来自访问域：{{scope}}",
+      "selectedCount": "已选 {{count}}",
+      "noChoices": "暂无可选项",
+      "addCustom": "添加",
+      "removeSelected": "移除 {{value}}",
       "rateLimit": "限流（可选）",
+      "ratePresetHint": "选择「默认」时使用系统默认限流；也可以直接修改下方数字。",
+      "ratePresets": {
+        "default": "默认",
+        "strict": "严格",
+        "busy": "宽松"
+      },
+      "ratePresetDescriptions": {
+        "default": "系统默认 10/60s · 突发 15",
+        "strict": "3/60s · 突发 5",
+        "busy": "30/60s · 突发 45"
+      },
       "rate": "调用数",
       "intervalSec": "周期（秒）",
       "burst": "突发上限",
-      "submit": "保存工作区",
+      "submit": "保存访问域",
       "reset": "清空表单"
     },
     "toast": {
-      "saved": "工作区已保存"
+      "saved": "访问域已保存",
+      "deleted": "访问域已删除"
     }
   },
   "service": {
@@ -373,13 +509,94 @@
       "toast": {
         "saved": "端口已保存 — 重启 agim 以绑定新端口"
       }
+    },
+    "recovery": {
+      "title": "故障恢复",
+      "refreshLog": "刷新日志",
+      "state": {
+        "loading": "检查中",
+        "running": "运行中",
+        "booting": "启动中",
+        "stopped": "未运行"
+      },
+      "detail": {
+        "loading": "正在读取服务状态与最近日志。",
+        "running": "服务正在运行。若对话、IM 或 Agent 异常，先查看最近日志或运行本机体检。",
+        "booting": "服务已启动，但仍处于 {{phase}} 阶段。等待片刻；若持续不变，查看最近日志。",
+        "stopped": "服务未运行。点击上方「启动」后，观察最近日志是否继续刷新。"
+      },
+      "commands": {
+        "doctor": "本机体检",
+        "status": "服务状态",
+        "tail": "查看日志",
+        "tailPending": "日志未生成",
+        "tailChecking": "正在检查日志文件。",
+        "tailPendingDetail": "首次后台启动服务后会自动创建。"
+      },
+      "truncated": "仅显示尾部",
+      "logMissing": "日志文件还不存在；服务首次后台启动后会创建。",
+      "logEmpty": "日志为空。",
+      "toast": {
+        "copied": "已复制命令",
+        "copyFailed": "复制失败"
+      }
     }
   },
   "security": {
     "title": "安全",
-    "subtitle": "工具沙盒、SSRF 拦截、发送方门禁、运行时审计。改动立即写入 env 文件；多数 native 工具读 process.env，下次工具调用即生效；exec 沙盒和发送方门禁需要「重启服务」生效。",
+    "subtitle": "对外使用前，先确认谁能访问 bot、谁能管理，以及高风险工具是否收紧。",
+    "posture": {
+      "title": "安全状态",
+      "loading": "读取中",
+      "ready": "适合对外使用",
+      "needsAction": "{{count}} 项需处理",
+      "detail": "先处理这里的建议，再把服务接到公开 IM 或反向代理。",
+      "readyDetail": "关键门禁已就绪；高级选项可按部署环境继续微调。",
+      "issue": {
+        "skipPermissions": {
+          "title": "Agent 跳过权限确认已开启",
+          "detail": "这会绕过工具调用确认，只建议在隔离环境临时使用。",
+          "action": "关闭"
+        },
+        "senderOpenImplicit": {
+          "title": "IM 发送方当前开放",
+          "detail": "任何能触达 bot 的账号都能发起对话；对外使用前建议限制到可信用户。",
+          "action": "配置门禁"
+        },
+        "senderOpenExplicit": {
+          "title": "IM 发送方显式开放",
+          "detail": "已选择所有人可用；如果准备接入公开群或公网入口，建议改为限制名单。",
+          "action": "配置门禁"
+        },
+        "adminEmpty": {
+          "title": "尚未配置 IM 管理员",
+          "detail": "IM 侧无法安全执行管理员命令；先让管理员发一条消息，再授予权限。",
+          "action": "去配置"
+        },
+        "envPerms": {
+          "title": "env 文件权限过宽",
+          "detail": "当前权限是 {{mode}}，建议改为 600，避免 token 或密钥被其他用户读取。"
+        },
+        "root": {
+          "title": "服务正在以 root 运行",
+          "detail": "工具调用会继承 root 权限；生产环境建议使用独立系统用户运行。"
+        },
+        "privateWeb": {
+          "title": "Native web 允许访问所有私网",
+          "detail": "这会放宽 SSRF 防护；仅内网可信部署才建议打开。",
+          "action": "关闭"
+        },
+        "fsOpen": {
+          "title": "Native 文件系统未限制到 workspace",
+          "detail": "默认可读写非敏感路径；对外使用前建议限制到 Agent 工作区。",
+          "action": "限制到 workspace"
+        }
+      }
+    },
     "diagnostics": {
       "title": "运行时诊断",
+      "summary": "排查问题时展开查看；日常先看上方状态即可。",
+      "advanced": "高级",
       "runningAsRoot": "以 root 运行",
       "runningAsRootHelp": "tool 调用会拿到 root 权限。建议在 systemd unit 设 User=agim 后重启。",
       "envFilePerms": "env 文件权限",
@@ -396,9 +613,25 @@
     },
     "sender": {
       "title": "发送方门禁 (谁能跟 bot 说话)",
-      "description": "允许列表，逗号分隔 platform:userId 对，例如 telegram:8754479311,wechat-ilink:wxid_abc。设为 * 显式表示「所有人都允许」。空值 = 开放访问（保持向后兼容；启动日志 OPEN_IM_ACCESS）。",
+      "description": "决定谁能向 IM bot 发消息。对外使用建议选择「限制到名单」，并从已感知用户里勾选；个人本机体验可显式开放所有人。",
       "envKey": "AGIM_ALLOWED_USERS",
-      "placeholder": "platform:userId,platform:userId"
+      "placeholder": "platform:userId,platform:userId",
+      "modeRestricted": "限制到名单",
+      "modeOpen": "所有人可用",
+      "openExplicit": "已显式开放",
+      "openImplicit": "当前为空，默认开放",
+      "openHint": "所有能触达 IM bot 的用户都可以发起对话。个人体验可以这样用；接入公开群、公司 IM 或公网入口前建议切回限制名单。",
+      "emptyMembers": "还没有允许的发送方",
+      "chooseMembers": "选择用户",
+      "noChoices": "暂无已感知用户",
+      "lastSeen": "最近出现：{{time}}",
+      "fromCurrentValue": "来自当前配置",
+      "addCustom": "添加",
+      "removeMember": "移除 {{value}}",
+      "save": "保存门禁",
+      "saved": "已保存",
+      "unsaved": "有未保存改动",
+      "emptyRestrictedToast": "限制模式下至少选择或添加一个用户。"
     },
     "exec": {
       "title": "Native exec 工具",
@@ -424,7 +657,7 @@
     },
     "fs": {
       "title": "Native filesystem 工具",
-      "description": "fs 工具默认限制在 native 当前线程的 workspace 子树内。",
+      "description": "fs 工具默认可访问非敏感路径；开启后限制在 native 当前线程的 workspace 子树内。",
       "restrict": "限制到 workspace",
       "restrictOn": "ON（推荐）",
       "restrictOff": "OFF（允许任意路径；sensitive-paths 黑名单仍生效）",
@@ -481,8 +714,42 @@
   },
   "llm": {
     "title": "Agim Agent配置",
-    "subtitle": "在一个页面完成 Agim Agent 的大模型 API 添加与运行参数配置。API 元数据保存在 ~/.agim/config.json；API Key 保存在 ~/.agim/llm-secrets.json（0600）或 AGIM_LLM_SECRET_<NAME> 环境变量。",
+    "subtitle": "先配置一个大模型 API，让 Agim Agent 跑起来；多 API、角色绑定与运行参数可在高级设置中调整。API Key 会保存到 ~/.agim/llm-secrets.json（0600）或 AGIM_LLM_SECRET_<NAME> 环境变量。",
     "refresh": "刷新",
+    "next": {
+      "emptyTitle": "先完成上方保存并测试",
+      "emptyDetail": "测试通过后，Agim 会自动绑定默认角色并把 Agim Agent 设为默认 Agent。",
+      "title": "下一步：发一条消息",
+      "backendBadge": "当前 {{backend}}",
+      "detail": "在对话里可以查看和切换本会话使用的模型 API。",
+      "chat": "打开对话",
+      "im": "连接 IM"
+    },
+    "advanced": {
+      "title": "高级设置",
+      "badge": "可选",
+      "subtitle": "管理多个 API、角色绑定、工具审批、上下文压缩、A2A、通知评估器和心跳。",
+      "show": "展开高级设置",
+      "hide": "收起高级设置"
+    },
+    "quick": {
+      "title": "快速启用 Agim Agent",
+      "subtitle": "选择供应商并粘贴 API Key；Agim 会保存 API、绑定默认角色，并做一次连通测试。",
+      "readyTitle": "Agim Agent 已可用",
+      "readyBadge": "已启用",
+      "enableBadge": "待启用",
+      "readyDetail": "当前使用 {{backend}}，可以回到 Web 对话测试。",
+      "enableDetail": "已有可用 API：{{backend}}。点击启用后会绑定 Agim Agent 并设为默认 Agent。",
+      "enableAction": "启用 Agim Agent",
+      "chatAction": "打开对话",
+      "saveAndTest": "保存并测试",
+      "saving": "保存中…",
+      "testing": "测试中…",
+      "setupDone": "Agim Agent 已启用并测试通过。",
+      "enabledToast": "Agim Agent 已启用。",
+      "testOk": "连通测试通过：{{ms}}ms",
+      "testFailed": "连通测试未通过；API 已保存，可检查 Key、模型或 Base URL。"
+    },
     "backendsTitle": "API ({{count}})",
     "backendsEmpty": "尚未配置大模型 API。请先在下方添加 API。",
     "rolesTitle": "角色绑定（可选，高级）",
@@ -501,8 +768,14 @@
     "remove": "删除",
     "pinging": "探测中…",
     "setKeyFirst": "请先设置 API Key",
-    "pingHint": "发送一次小型 chat 探测",
-    "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
+  "pingHint": "发送一次小型 chat 探测",
+  "errorDialog": {
+    "title": "探测失败",
+    "description": "后端 {{backend}} 返回了错误。",
+    "defaultHint": "请检查 API Key、Base URL 与模型名称；错误详情如下。",
+    "temperatureHint": "该模型不接受 temperature 参数。Agim 现在只会在你显式配置 temperature 时发送它；请重新探测一次。"
+  },
+  "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
     "removedToast": "已删除（同时清除 {{count}} 个角色绑定）。",
     "roleUpdated": "已更新角色 {{role}}",
     "unset": "（未设置）",
@@ -752,9 +1025,70 @@
   "agimSkills": {
     "title": "agim Skills",
     "tab": {
+      "overview": "总览",
       "installed": "已安装",
       "hot": "skillhub 热门",
       "injection": "系统提示注入"
+    },
+    "overview": {
+      "title": "Skills 总览",
+      "subtitle": "管理 Agent 可读取的技能库、外部技能来源，以及每轮对话会注入的技能摘要。",
+      "ready": "已就绪",
+      "needsAttention": "{{count}} 项需处理",
+      "refresh": "刷新",
+      "cards": {
+        "installed": {
+          "title": "已安装技能",
+          "detail": "{{workspace}} 个工作区 · {{builtin}} 个内置",
+          "action": "管理"
+        },
+        "availability": {
+          "title": "依赖检查",
+          "ready": "当前技能依赖完整",
+          "missing": "{{count}} 个技能缺少依赖",
+          "action": "查看"
+        },
+        "hot": {
+          "title": "热门技能",
+          "ready": "{{count}} 个可浏览",
+          "stale": "使用缓存结果",
+          "error": "暂时无法加载",
+          "action": "浏览"
+        },
+        "injection": {
+          "title": "Agent 可见范围",
+          "autoValue": "自动",
+          "overrideValue": "覆盖",
+          "autoDetail": "{{always}} 个常驻技能 · {{chars}} 字符摘要",
+          "overrideDetail": "覆盖内容 {{chars}} 字符",
+          "action": "调整"
+        }
+      },
+      "next": {
+        "fixUnavailable": {
+          "title": "先处理不可用技能",
+          "detail": "有技能缺少命令或环境变量，处理后 Agent 才能稳定使用。"
+        },
+        "browseHot": {
+          "title": "从热门技能挑一个试用",
+          "detail": "当前还没有工作区技能，可以先看看常用能力。"
+        },
+        "reviewOverride": {
+          "title": "复核系统提示覆盖",
+          "detail": "当前使用自定义注入内容，确认它仍符合新的技能库状态。"
+        },
+        "manageInstalled": {
+          "title": "查看已安装技能",
+          "detail": "技能库状态正常，可以进入列表查看、编辑或新建。"
+        },
+        "createSkill": {
+          "title": "创建第一个技能",
+          "detail": "当前没有可用技能，先进入已安装页新建一个工作区技能。"
+        }
+      },
+      "views": {
+        "title": "常用入口"
+      }
     },
     "group": {
       "framework": "Framework（agim-*）",

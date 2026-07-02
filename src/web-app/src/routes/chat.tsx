@@ -12,9 +12,19 @@
  * usePrefs store; lib/api/errors.ts handles the toast.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, AlertCircle, MessageSquarePlus } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  MessageSquare,
+  MessageSquarePlus,
+  Plug,
+  Send,
+  Settings,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
@@ -27,6 +37,7 @@ import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { Topbar } from '@/components/shell/topbar'
+import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -44,9 +55,20 @@ export default function ChatRoute(): JSX.Element {
   const [input, setInput] = useState('')
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
+  const [searchParams] = useSearchParams()
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
+  const forceWelcome = searchParams.get('welcome') === '1'
+    || searchParams.get('onboarding') === '1'
+  const quickPrompts = useMemo(
+    () => [
+      t('chat.quickPrompt.plan'),
+      t('chat.quickPrompt.risks'),
+      t('chat.quickPrompt.summary'),
+    ],
+    [t],
+  )
 
   // Auto-scroll to bottom on new messages OR streaming chunk. Use
   // requestAnimationFrame so the layout has settled before we scroll;
@@ -149,21 +171,16 @@ export default function ChatRoute(): JSX.Element {
         className="flex-1 overflow-y-auto"
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-2 px-3 py-3 sm:px-4">
-          {state.messages.length === 0 && state.status === 'open' && (
-            <div className="flex flex-col items-center gap-2 py-16 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-2xl">
-                💬
-              </div>
-              <h2 className="text-base font-semibold">
-                {t('chat.welcomeTitle', { defaultValue: 'Start a conversation' })}
-              </h2>
-              <p className="max-w-md text-sm text-text-dim">
-                {t('chat.welcomeBody', {
-                  defaultValue:
-                    'Type a message to ask the active agent. Use the agent dropdown to switch.',
-                })}
-              </p>
-            </div>
+          {(state.messages.length === 0 || forceWelcome) && state.status === 'open' && (
+            <FirstRunPanel
+              agent={state.agent}
+              agents={state.agents}
+              prompts={quickPrompts}
+              onPickPrompt={(prompt) => {
+                setInput(prompt)
+                requestAnimationFrame(() => inputRef.current?.focus())
+              }}
+            />
           )}
           {state.messages.length === 0 && state.status !== 'open' && (
             <div className="grid place-items-center py-16 text-center">
@@ -248,6 +265,150 @@ export default function ChatRoute(): JSX.Element {
           </div>
         )}
       </form>
+    </div>
+  )
+}
+
+interface FirstRunPanelProps {
+  agent: string
+  agents: string[]
+  prompts: string[]
+  onPickPrompt: (prompt: string) => void
+}
+
+function FirstRunPanel({
+  agent,
+  agents,
+  prompts,
+  onPickPrompt,
+}: FirstRunPanelProps): JSX.Element {
+  const { t } = useTranslation()
+  const activeAgent = agent ? agentDisplayName(agent) : t('chat.onboarding.agentPending', {
+    defaultValue: 'Loading agent…',
+  })
+  const agentCount = agents.length
+
+  return (
+    <section className="mx-auto my-8 w-full max-w-2xl rounded-md border border-border bg-surface px-4 py-4 text-left shadow-sm sm:my-12 sm:px-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-accent">
+          <MessageSquare className="h-6 w-6" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-text">
+              {t('chat.onboarding.title', { defaultValue: 'Get one chat working first' })}
+            </h2>
+            <Badge variant="success">
+              {t('chat.onboarding.readyBadge', { defaultValue: 'Web ready' })}
+            </Badge>
+          </div>
+          <p className="mt-1 text-sm text-text-dim">
+            {t('chat.onboarding.body', {
+              defaultValue: 'Current agent: {{agent}}',
+              agent: activeAgent,
+            })}
+          </p>
+
+          <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+            <OnboardingStep
+              icon={<CheckCircle2 />}
+              label={t('chat.onboarding.stepWeb', { defaultValue: 'Web console connected' })}
+              tone="success"
+            />
+            <OnboardingStep
+              icon={<Bot />}
+              label={t('chat.onboarding.stepAgent', {
+                defaultValue: 'Agent selected: {{agent}}',
+                agent: activeAgent,
+              })}
+              meta={agentCount > 1
+                ? t('chat.onboarding.agentCount', {
+                    defaultValue: '{{count}} available',
+                    count: agentCount,
+                  })
+                : undefined}
+            />
+            <OnboardingStep
+              icon={<Send />}
+              label={t('chat.onboarding.stepMessage', {
+                defaultValue: 'Send the first message',
+              })}
+            />
+            <OnboardingStep
+              icon={<Plug />}
+              label={t('chat.onboarding.stepMessenger', {
+                defaultValue: 'Connect IM after chat works',
+              })}
+            />
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {prompts.map((prompt) => (
+                <Button
+                  key={prompt}
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="max-w-full"
+                  onClick={() => onPickPrompt(prompt)}
+                >
+                  <Send className="h-4 w-4" />
+                  <span className="min-w-0 truncate">{prompt}</span>
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/settings/llm">
+                  <Settings className="h-4 w-4" />
+                  <span>{t('chat.onboarding.agentSettings', { defaultValue: 'Agent settings' })}</span>
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/settings/messengers">
+                  <Plug className="h-4 w-4" />
+                  <span>{t('chat.onboarding.messengerSettings', { defaultValue: 'Connect IM' })}</span>
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface OnboardingStepProps {
+  icon: React.ReactNode
+  label: string
+  meta?: string
+  tone?: 'success' | 'muted'
+}
+
+function OnboardingStep({
+  icon,
+  label,
+  meta,
+  tone = 'muted',
+}: OnboardingStepProps): JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span
+        className={cn(
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2',
+          tone === 'success' ? 'text-success' : 'text-text-dim',
+          '[&_svg]:h-4 [&_svg]:w-4',
+        )}
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm text-text">{label}</span>
+        {meta && <span className="block truncate text-xs text-text-muted">{meta}</span>}
+      </span>
     </div>
   )
 }

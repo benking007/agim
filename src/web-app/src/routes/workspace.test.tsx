@@ -67,6 +67,7 @@ describe('/workspace', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const u = String(input)
       if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({})
       return jsonResponse({})
     })
     renderAt('')
@@ -83,6 +84,7 @@ describe('/workspace', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const u = String(input)
       if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({})
       if (u.startsWith('/api/workspace-files')) return jsonResponse(DIR_PAYLOAD)
       return jsonResponse({})
     })
@@ -109,6 +111,7 @@ describe('/workspace', () => {
     fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const u = String(input)
       if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({})
       if (u.startsWith('/api/workspace-files') && init?.method === 'PUT') {
         const body = init.body ? JSON.parse(String(init.body)) : {}
         expect(body).toMatchObject({ content: expect.stringContaining('EDIT') })
@@ -150,6 +153,7 @@ describe('/workspace', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const u = String(input)
       if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({})
       if (u.startsWith('/api/workspace-files')) return jsonResponse(BIN)
       return jsonResponse({})
     })
@@ -158,6 +162,102 @@ describe('/workspace', () => {
       expect(screen.getByText(/binary/i)).toBeInTheDocument()
     })
     expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('auto-selects the default agent and shows the workspace starter', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const u = String(input)
+      if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({ defaultAgent: 'claude' })
+      if (u.startsWith('/api/workspace-files')) return jsonResponse(DIR_PAYLOAD)
+      return jsonResponse({})
+    })
+    renderAt('')
+
+    await waitFor(() => expect(screen.getByText('Agent notes')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /role file/i })).toBeInTheDocument()
+    expect(
+      fetchSpy.mock.calls.some((c) => String(c[0]).startsWith('/api/workspace-files')),
+    ).toBe(true)
+  })
+
+  it('opens the default role file from the starter card', async () => {
+    const FILE_PAYLOAD = {
+      type: 'file',
+      agent: 'claude-code',
+      path: 'CLAUDE.md',
+      size: 123,
+      mtime: '2026-05-18T08:00:00Z',
+      encoding: 'utf-8',
+      content: '# Claude role',
+      truncated: false,
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const u = String(input)
+      if (u === '/api/agents/status') return jsonResponse({ 'claude-code': true })
+      if (u === '/api/config') return jsonResponse({ defaultAgent: 'claude-code' })
+      if (u.startsWith('/api/workspace-files') && u.includes('CLAUDE.md')) return jsonResponse(FILE_PAYLOAD)
+      if (u.startsWith('/api/workspace-files')) return jsonResponse({
+        ...DIR_PAYLOAD,
+        agent: 'claude-code',
+      })
+      return jsonResponse({})
+    })
+    renderAt('')
+
+    await waitFor(() => expect(screen.getByText('Agent notes')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /role file/i }))
+    await waitFor(() => {
+      const ta = document.querySelector('textarea') as HTMLTextAreaElement | null
+      expect(ta?.value).toContain('# Claude role')
+    })
+  })
+
+  it('memory shortcut creates MEMORY.md when it does not exist yet', async () => {
+    let created = false
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(input)
+      if (u === '/api/agents/status') return jsonResponse({ claude: true })
+      if (u === '/api/config') return jsonResponse({ defaultAgent: 'claude' })
+      if (u.startsWith('/api/workspace-files') && init?.method === 'PUT') {
+        const body = init.body ? JSON.parse(String(init.body)) : {}
+        expect(body.content).toContain('# Memory')
+        created = true
+        return jsonResponse({ ok: true, agent: 'claude', path: 'MEMORY.md', size: 20, mtime: '2026-05-18T09:00:00Z' })
+      }
+      if (u.startsWith('/api/workspace-files') && u.includes('MEMORY.md')) {
+        if (!created) return jsonResponse({ error: 'Not found' }, 404)
+        return jsonResponse({
+          type: 'file',
+          agent: 'claude',
+          path: 'MEMORY.md',
+          size: 20,
+          mtime: '2026-05-18T09:00:00Z',
+          encoding: 'utf-8',
+          content: '# Memory\n\nSaved note.',
+          truncated: false,
+        })
+      }
+      if (u.startsWith('/api/workspace-files')) return jsonResponse(DIR_PAYLOAD)
+      return jsonResponse({})
+    })
+    renderAt('')
+
+    await waitFor(() => expect(screen.getByText('Agent notes')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /memory/i }))
+    await waitFor(() => expect(screen.getByText('This file does not exist yet')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /create memory file/i }))
+
+    await waitFor(() => {
+      const ta = document.querySelector('textarea') as HTMLTextAreaElement | null
+      expect(ta?.value).toContain('Saved note.')
+    })
+    expect(
+      fetchSpy.mock.calls.some(
+        (c) => String(c[0]).startsWith('/api/workspace-files') && (c[1] as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(true)
   })
 
   // Sanity: keep `within` reachable for ts-strict; the helper is

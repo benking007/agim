@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-02
+
+### Added
+
+- Added a first-run Web dashboard path with clear next actions for Web chat, Agim Agent API setup, and IM connection.
+- Added `agim go`, `agim web`, service recovery hints, local doctor checks, and safer background-start diagnostics for new users.
+- Added Web settings overviews for Start, Memory, Tasks, agim Skills, Workspace, Service recovery, Security posture, and Agim Agent API setup.
+- Added native Agim Agent `/models` and `/model` support, including backend switching by name or list index.
+
+### Changed
+
+- Made Agim Agent API setup progressive: quick setup is shown first; multi-API management, role bindings, and runtime knobs now live behind Advanced settings.
+- Simplified IM, workspace, memory, tasks, and settings navigation so advanced features remain available without overwhelming first-time users.
+- Improved security settings visual hierarchy with explicit surfaces for status, controls, diagnostics, and warning items.
+- Native/OpenAI-compatible model probes now omit `temperature` unless explicitly configured, avoiding providers that reject deprecated temperature parameters.
+
+### Fixed
+
+- Fixed Web service log handling when the log file has not been created yet.
+- Ensured workspace-created memory files are linked into the Agent workspace so Agim Agent can consume them.
+- Fixed undefined Web theme utility classes that made some settings blocks visually blend into the page background.
+
 ## [1.5.0] - 2026-06-29
 
 ### Changed

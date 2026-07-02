@@ -19,9 +19,22 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Loader2, QrCode, RefreshCcw, Save, X } from 'lucide-react'
+import {
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  MessageSquare,
+  Play,
+  Plug,
+  QrCode,
+  RefreshCcw,
+  RotateCcw,
+  Save,
+  X,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,12 +49,16 @@ import {
 } from '@/components/ui/dialog'
 import {
   useConfig,
+  useRestartService,
+  useServiceStatus,
+  useStartService,
   useUpdateConfig,
   useStartWechatQr,
   useWechatQrStatus,
 } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
 import type { AppConfig } from '@/types/api'
+import { cn } from '@/lib/utils'
 
 /** Slot names match what `config.messengers[]` contains.
  *  WeChat uses 'wechat-ilink' (the iLink adapter ID). */
@@ -115,6 +132,9 @@ export default function SettingsMessengersRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const cfgQuery = useConfig()
   const updateCfg = useUpdateConfig()
+  const serviceQuery = useServiceStatus()
+  const startService = useStartService()
+  const restartService = useRestartService()
 
   const [draft, setDraft] = useState<Draft>(() => buildDraft(cfgQuery.data))
   // Sync the draft once cfg lands. We don't re-sync on every cfg
@@ -135,6 +155,8 @@ export default function SettingsMessengersRoute(): JSX.Element {
 
   // WeChat QR modal state
   const [qrOpen, setQrOpen] = useState(false)
+  const [focusedSlot, setFocusedSlot] = useState<Slot | null>(null)
+  const [needsApply, setNeedsApply] = useState(false)
 
   // v1.2.71 — AGIM_PLATFORM_BLACKLIST gate. Backend sends the
   // alias-expanded set in features.blacklistedPlatforms; we hide the
@@ -147,11 +169,23 @@ export default function SettingsMessengersRoute(): JSX.Element {
     setDraft((prev) => ({ ...prev, [slot]: { ...prev[slot], ...partial } }))
   }
 
+  function pickPlatform(slot: Slot): void {
+    patchSlot(slot, { enabled: true })
+    setFocusedSlot(slot)
+    requestAnimationFrame(() => {
+      document.getElementById(`messenger-${slot}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }
+
   async function onSave(): Promise<void> {
     if (!cfg) return
     try {
       await updateCfg.mutateAsync(buildPatch(draft, cfg))
       toast.success(t('messengers.savedToast'))
+      setNeedsApply(true)
       setSynced(false)  // rebuild draft from refreshed cfg on next paint
     } catch (err) {
       toast.error(describeError(err, t).message)
@@ -160,6 +194,22 @@ export default function SettingsMessengersRoute(): JSX.Element {
 
   function onDiscard(): void {
     if (cfg) setDraft(buildDraft(cfg))
+  }
+
+  async function onApplyChanges(): Promise<void> {
+    const service = serviceQuery.data
+    const isRunning = Boolean(service && service.mode !== 'none')
+    try {
+      if (isRunning) {
+        await restartService.mutateAsync()
+      } else {
+        await startService.mutateAsync()
+      }
+      toast.success(t('messengers.apply.appliedToast'))
+      setNeedsApply(false)
+    } catch (err) {
+      toast.error(describeError(err, t).message)
+    }
   }
 
   return (
@@ -181,6 +231,15 @@ export default function SettingsMessengersRoute(): JSX.Element {
         </div>
         <p className="text-sm text-text-dim">{t('messengers.subtitle')}</p>
       </header>
+
+      {cfgQuery.isLoading ? null : cfg ? (
+        <MessengerQuickStartCard
+          cfg={cfg}
+          isBlocked={isBlocked}
+          onScanWechat={() => setQrOpen(true)}
+          onPickPlatform={pickPlatform}
+        />
+      ) : null}
 
       {/* Save bar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -212,6 +271,15 @@ export default function SettingsMessengersRoute(): JSX.Element {
         )}
       </div>
 
+      {needsApply ? (
+        <ApplyChangesCard
+          serviceMode={serviceQuery.data?.mode}
+          isLoading={serviceQuery.isLoading}
+          isPending={startService.isPending || restartService.isPending}
+          onApply={() => void onApplyChanges()}
+        />
+      ) : null}
+
       {cfgQuery.isLoading ? (
         <div className="h-96 rounded-md bg-surface-2 animate-pulse" />
       ) : !cfg ? null : (
@@ -223,6 +291,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
               hint={t('messengers.hint.wechat')}
               enabled={draft['wechat-ilink'].enabled}
               onToggle={(v) => patchSlot('wechat-ilink', { enabled: v })}
+              focused={focusedSlot === 'wechat-ilink'}
             >
               <Button
                 type="button"
@@ -243,6 +312,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
               hint={t('messengers.hint.telegram')}
               enabled={draft.telegram.enabled}
               onToggle={(v) => patchSlot('telegram', { enabled: v })}
+              focused={focusedSlot === 'telegram'}
             >
               <FieldRow
                 id="tg-token"  label={t('messengers.fields.botToken')}
@@ -265,6 +335,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
             hint={t('messengers.hint.feishu')}
             enabled={draft.feishu.enabled}
             onToggle={(v) => patchSlot('feishu', { enabled: v })}
+            focused={focusedSlot === 'feishu'}
           >
             <FieldRow
               id="fs-appid" label={t('messengers.fields.appId')}
@@ -292,6 +363,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
             hint={t('messengers.hint.dingtalk')}
             enabled={draft.dingtalk.enabled}
             onToggle={(v) => patchSlot('dingtalk', { enabled: v })}
+            focused={focusedSlot === 'dingtalk'}
           >
             <FieldRow
               id="dt-cid" label={t('messengers.fields.clientId')}
@@ -377,6 +449,7 @@ export default function SettingsMessengersRoute(): JSX.Element {
               hint={t('messengers.hint.discord')}
               enabled={draft.discord.enabled}
               onToggle={(v) => patchSlot('discord', { enabled: v })}
+              focused={focusedSlot === 'discord'}
             >
               <FieldRow
                 id="dc-token" label={t('messengers.fields.botToken')}
@@ -397,9 +470,228 @@ export default function SettingsMessengersRoute(): JSX.Element {
       <WechatQrDialog
         open={qrOpen}
         onOpenChange={setQrOpen}
-        onConfirmed={() => { void cfgQuery.refetch(); setSynced(false) }}
+        onConfirmed={() => {
+          void cfgQuery.refetch()
+          setSynced(false)
+          setNeedsApply(true)
+        }}
       />
     </div>
+  )
+}
+
+interface ApplyChangesCardProps {
+  serviceMode: string | undefined
+  isLoading: boolean
+  isPending: boolean
+  onApply: () => void
+}
+
+function ApplyChangesCard({
+  serviceMode,
+  isLoading,
+  isPending,
+  onApply,
+}: ApplyChangesCardProps): JSX.Element {
+  const { t } = useTranslation('settings')
+  const isRunning = serviceMode != null && serviceMode !== 'none'
+  return (
+    <section className="rounded-md border border-warning/40 bg-warning-bg p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-warning">
+          {isRunning ? <RotateCcw className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">{t('messengers.apply.title')}</h2>
+            <Badge variant="warning">{t('messengers.apply.badge')}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-text-dim">
+            {isRunning ? t('messengers.apply.restartDetail') : t('messengers.apply.startDetail')}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={isLoading || isPending}
+          onClick={onApply}
+        >
+          {isPending
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : isRunning
+              ? <RotateCcw className="h-4 w-4" />
+              : <Play className="h-4 w-4" />}
+          <span>
+            {isPending
+              ? isRunning
+                ? t('messengers.apply.restarting')
+                : t('messengers.apply.starting')
+              : isRunning
+                ? t('messengers.apply.restart')
+                : t('messengers.apply.start')}
+          </span>
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+interface MessengerQuickStartCardProps {
+  cfg: AppConfig
+  isBlocked: (slot: Slot) => boolean
+  onScanWechat: () => void
+  onPickPlatform: (slot: Slot) => void
+}
+
+function MessengerQuickStartCard({
+  cfg,
+  isBlocked,
+  onScanWechat,
+  onPickPlatform,
+}: MessengerQuickStartCardProps): JSX.Element {
+  const { t } = useTranslation('settings')
+  const connected = cfg.messengers ?? []
+  const hasConnected = connected.length > 0
+  const showGlobalIm = cfg.features?.globalIm === true
+  const options: Array<{
+    slot: Slot
+    label: string
+    title: string
+    detail: string
+    kind: 'qr' | 'config'
+  }> = []
+  if (!isBlocked('wechat-ilink')) {
+    options.push({
+      slot: 'wechat-ilink',
+      label: t('messengers.platform.wechat'),
+      title: t('messengers.quick.option.wechat.title'),
+      detail: t('messengers.quick.option.wechat.detail'),
+      kind: 'qr',
+    })
+  }
+  if (!isBlocked('feishu')) {
+    options.push({
+      slot: 'feishu',
+      label: t('messengers.platform.feishu'),
+      title: t('messengers.quick.option.feishu.title'),
+      detail: t('messengers.quick.option.feishu.detail'),
+      kind: 'config',
+    })
+  }
+  if (!isBlocked('dingtalk')) {
+    options.push({
+      slot: 'dingtalk',
+      label: t('messengers.platform.dingtalk'),
+      title: t('messengers.quick.option.dingtalk.title'),
+      detail: t('messengers.quick.option.dingtalk.detail'),
+      kind: 'config',
+    })
+  }
+  if (showGlobalIm && !isBlocked('telegram')) {
+    options.push({
+      slot: 'telegram',
+      label: t('messengers.platform.telegram'),
+      title: t('messengers.quick.option.telegram.title'),
+      detail: t('messengers.quick.option.telegram.detail'),
+      kind: 'config',
+    })
+  }
+  if (showGlobalIm && !isBlocked('discord')) {
+    options.push({
+      slot: 'discord',
+      label: t('messengers.platform.discord'),
+      title: t('messengers.quick.option.discord.title'),
+      detail: t('messengers.quick.option.discord.detail'),
+      kind: 'config',
+    })
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <span className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+          hasConnected ? 'bg-success-bg text-success' : 'bg-accent-bg text-accent',
+        )}>
+          {hasConnected ? <CheckCircle2 className="h-5 w-5" /> : <Plug className="h-5 w-5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">
+              {hasConnected ? t('messengers.quick.connectedTitle') : t('messengers.quick.title')}
+            </h2>
+            <Badge variant={hasConnected ? 'success' : 'info'}>
+              {hasConnected ? t('messengers.quick.connectedBadge') : t('messengers.quick.nextBadge')}
+            </Badge>
+          </div>
+          <p className="mt-1 text-sm text-text-dim">
+            {hasConnected
+              ? t('messengers.quick.connectedDetail', {
+                  platforms: connected.map((p) => platformLabel(p, t)).join(', '),
+                })
+              : t('messengers.quick.subtitle')}
+          </p>
+
+          {hasConnected ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button asChild size="sm">
+                <Link to="/?welcome=1">
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{t('messengers.quick.webChat')}</span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const first = options.find((option) => !connected.includes(option.slot)) ?? options[0]
+                  if (!first) return
+                  if (first.kind === 'qr') onScanWechat()
+                  else onPickPlatform(first.slot)
+                }}
+              >
+                <Plug className="h-4 w-4" />
+                <span>{t('messengers.quick.addAnother')}</span>
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {options.map((option) => (
+                <div key={option.slot} className="rounded-md border border-border bg-surface-2 p-3">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-text-dim">
+                      {option.kind === 'qr' ? <QrCode className="h-4 w-4" /> : <Plug className="h-4 w-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-medium">{option.title}</h3>
+                      <p className="mt-1 text-xs text-text-dim">{option.detail}</p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={option.kind === 'qr' ? 'default' : 'secondary'}
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => {
+                      if (option.kind === 'qr') onScanWechat()
+                      else onPickPlatform(option.slot)
+                    }}
+                  >
+                    <span>
+                      {option.kind === 'qr'
+                        ? t('messengers.quick.scanWechat')
+                        : t('messengers.quick.configurePlatform', { platform: option.label })}
+                    </span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -410,12 +702,27 @@ interface PlatformCardProps {
   enabled: boolean
   onToggle: (v: boolean) => void
   children?: React.ReactNode
+  focused?: boolean
 }
 
-function PlatformCard({ label, hint, enabled, onToggle, children }: PlatformCardProps): JSX.Element {
+function PlatformCard({
+  slot,
+  label,
+  hint,
+  enabled,
+  onToggle,
+  children,
+  focused = false,
+}: PlatformCardProps): JSX.Element {
   const { t } = useTranslation('settings')
   return (
-    <div className="rounded-md border border-border bg-surface p-4">
+    <div
+      id={`messenger-${slot}`}
+      className={cn(
+        'scroll-mt-20 rounded-md border border-border bg-surface p-4',
+        focused && 'border-accent ring-2 ring-accent/30',
+      )}
+    >
       <div className="flex items-start gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2">
@@ -442,6 +749,17 @@ function PlatformCard({ label, hint, enabled, onToggle, children }: PlatformCard
       )}
     </div>
   )
+}
+
+function platformLabel(id: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const labels: Record<string, string> = {
+    'wechat-ilink': t('messengers.platform.wechat'),
+    telegram:       t('messengers.platform.telegram'),
+    feishu:         t('messengers.platform.feishu'),
+    dingtalk:       t('messengers.platform.dingtalk'),
+    discord:        t('messengers.platform.discord'),
+  }
+  return labels[id] ?? id
 }
 
 interface FieldRowProps {
@@ -484,7 +802,7 @@ function SelectRow<T extends string>({ id, label, value, onChange, options }: Se
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
-        className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+        className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-text"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -637,7 +955,7 @@ function DingTalkAccountsEditor({ accounts, onChange }: DingTalkAccountsEditorPr
   }
 
   return (
-    <div className="mt-3 border-t border-input pt-3">
+    <div className="mt-3 border-t border-border pt-3">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs font-semibold text-text-dim">
           {t('messengers.dingtalk.accountsTitle')}
@@ -654,7 +972,7 @@ function DingTalkAccountsEditor({ accounts, onChange }: DingTalkAccountsEditorPr
       ) : (
         <div className="space-y-3">
           {entries.map(([id, acct]) => (
-            <div key={id} className="rounded-md border border-input p-2">
+            <div key={id} className="rounded-md border border-border bg-surface-2/45 p-2">
               <div className="mb-2 flex items-center gap-2">
                 <Input
                   id={`acct-id-${id}`}

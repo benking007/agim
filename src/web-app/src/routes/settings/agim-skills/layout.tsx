@@ -21,9 +21,11 @@ import { cn } from '@/lib/utils'
 interface SubTab {
   to: string
   i18nKey: string
+  end?: boolean
 }
 
 const SUB_TABS: SubTab[] = [
+  { to: '.', i18nKey: 'agimSkills.tab.overview', end: true },
   { to: 'installed', i18nKey: 'agimSkills.tab.installed' },
   { to: 'hot',       i18nKey: 'agimSkills.tab.hot' },
   // v1.2.151 — system-prompt skill block editor (operator override).
@@ -47,6 +49,7 @@ export default function SettingsAgimSkillsLayout(): JSX.Element {
           <NavLink
             key={tab.to}
             to={tab.to}
+            end={tab.end}
             className={({ isActive }) =>
               cn(
                 'shrink-0 rounded-md px-3 py-1.5 text-sm no-underline',

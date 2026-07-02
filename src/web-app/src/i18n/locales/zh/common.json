@@ -36,6 +36,7 @@
     "zh": "中文"
   },
   "nav": {
+    "dashboard": "首页",
     "chat": "对话",
     "tasks": "任务",
     "approvals": "审批",
@@ -75,6 +76,112 @@
     "placeholder": "已登录，请从侧栏进入对话。",
     "healthCheck": "后端可达"
   },
+  "dashboard": {
+    "title": "首页",
+    "subtitle": "查看当前状态，直接进入下一步。",
+    "coreReady": "{{count}}/3 就绪",
+    "unknown": "未选择",
+    "actions": {
+      "chat": "打开对话"
+    },
+    "state": {
+      "done": "已就绪",
+      "todo": "待处理",
+      "warn": "需处理",
+      "loading": "读取中"
+    },
+    "cards": {
+      "web": {
+        "title": "Web 控制台",
+        "ready": "服务正在运行：{{mode}}",
+        "needsStart": "服务未运行。",
+        "open": "打开对话",
+        "action": "打开服务"
+      },
+      "agent": {
+        "title": "Agent",
+        "ready": "{{agent}} 在线",
+        "offline": "{{agent}} 未就绪",
+        "selected": "已选择 {{agent}}，等待运行状态。",
+        "empty": "尚未选择默认 Agent。",
+        "default": "默认",
+        "action": "Agent 设置"
+      },
+      "llm": {
+        "title": "Agim Agent API",
+        "ready": "已有 {{count}} 个可用 API。",
+        "required": "Agim Agent 需要配置模型 API。",
+        "optional": "未配置模型 API；外部 Agent 仍可运行。",
+        "core": "agim 必需",
+        "meta": "内置 Agent",
+        "action": "配置 API"
+      },
+      "im": {
+        "title": "IM 桥接",
+        "ready": "已连接：{{platforms}}",
+        "empty": "还未连接 IM。",
+        "metaReady": "{{count}} 个接入",
+        "action": "连接 IM"
+      }
+    },
+    "next": {
+      "title": "下一步",
+      "ready": "基础就绪",
+      "pending": "进行中",
+      "items": {
+        "service": {
+          "title": "启动服务",
+          "detail": "先让 Web 在线，再测试对话和 IM。"
+        },
+        "agent": {
+          "title": "准备一个可用 Agent",
+          "detail": "选择默认 Agent，并确认它能运行。"
+        },
+        "llm": {
+          "title": "配置 Agim Agent API",
+          "detail": "为内置 Agent 添加一个可用模型 API。"
+        },
+        "llmOptional": {
+          "title": "启用 Agim Agent",
+          "detail": "想摆脱外部 CLI 时，再添加模型 API。"
+        },
+        "chat": {
+          "title": "发送一条 Web 消息",
+          "detail": "先验证基础闭环，再接入 IM。"
+        },
+        "im": {
+          "title": "连接一个 IM",
+          "detail": "接入微信、飞书、钉钉、Telegram、Discord 或邮件。"
+        },
+        "operate": {
+          "title": "查看任务动态",
+          "detail": "观察任务、审批、提醒与 Agent 协作。"
+        }
+      }
+    },
+    "quick": {
+      "title": "常用入口",
+      "chat": "对话",
+      "start": "开始配置",
+      "workspace": "工作区",
+      "service": "服务"
+    },
+    "advanced": {
+      "title": "高级能力",
+      "tasks": "任务",
+      "memory": "记忆",
+      "skills": "技能",
+      "observability": "观测"
+    },
+    "platform": {
+      "wechat": "微信",
+      "telegram": "Telegram",
+      "feishu": "飞书",
+      "dingtalk": "钉钉",
+      "discord": "Discord",
+      "email": "邮件"
+    }
+  },
   "notFound": {
     "title": "什么也没找到。",
     "description": "你要找的页面不存在。"
@@ -108,6 +215,19 @@
     "welcomeTitle": "开始对话",
     "welcomeBody": "输入消息向当前 Agent 提问。点上方下拉可切换 Agent。",
     "welcomeBodyMobile": "在下方输入消息，或从菜单切换 Agent、开启新对话。",
+    "onboarding": {
+      "title": "先跑通一次对话",
+      "readyBadge": "Web 已就绪",
+      "body": "当前 Agent：{{agent}}",
+      "agentPending": "正在读取 Agent…",
+      "stepWeb": "Web 控制台已连接",
+      "stepAgent": "Agent 已选择：{{agent}}",
+      "agentCount": "{{count}} 个可用",
+      "stepMessage": "发送第一条消息",
+      "stepMessenger": "对话跑通后再接 IM",
+      "agentSettings": "Agent 设置",
+      "messengerSettings": "连接 IM"
+    },
     "inputPlaceholder": "输入消息……（Enter 发送，Shift+Enter 换行）",
     "inputPlaceholderMobile": "输入消息…",
     "mobileHint": "Enter 换行，点击发送提交。",
@@ -128,7 +248,7 @@
     "nativeSetupSaved": "大模型 API 配置已保存，正在重试切换 agim…",
     "pendingApprovals": "待审批数",
     "quickPrompt": {
-      "plan": "先帮我拆解这个任务",
+      "plan": "告诉我你是谁",
       "risks": "列出风险与回滚方案",
       "summary": "给我一版汇报摘要"
     },

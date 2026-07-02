@@ -15,17 +15,52 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 
 ## 快速开始
 
+先不用配置 IM，也不用理解 systemd / token / 工作区。先把 Web 控制台跑起来，确认能和一个 Agent 对话：
+
 ```bash
 npm install -g agim-cli
-agim                        # 交互式向导
-agim start
+agim go
 ```
 
-Web 控制台：`http://localhost:3000`
+`agim go` 会做三件事：
+
+1. 检测本机可用的 Agent（Claude Code / Codex / Cursor / Agim Agent 等）。
+2. 如果没有可用 Agent，引导你配置 Agim Agent 的大模型 API。
+3. 后台启动 Agim，并打印 Web 控制台地址和首次访问 token。
+
+默认 Web 控制台：`http://localhost:3000`
 
 - 对话：`/`
 - 任务：`/tasks`
 - 设置：`/settings`
+
+忘记入口或 token 时：
+
+```bash
+agim web
+```
+
+本机体检：
+
+```bash
+agim doctor
+```
+
+跑通 Web 对话后，再到设置里连接微信 / 飞书 / 钉钉等 IM 渠道。
+`agim quickstart` 会作为兼容别名保留。
+
+常用 CLI 入口：
+
+| 命令 | 什么时候用 |
+|---|---|
+| `agim` | 不确定该运行哪个命令时，打开引导入口菜单 |
+| `agim go` | 第一次安装后，先跑通 Agent + Web |
+| `agim web` | 忘记控制台地址、服务状态或 token 路径 |
+| `agim web --open` | 用默认浏览器打开 Web 控制台 |
+| `agim web --start --open` | 后台启动服务并一步打开 Web |
+| `agim config` | 继续配置 Agent、IM、Web、管理员 |
+| `agim doctor` | 不知道卡在哪里时做本机体检 |
+| `agim start --bg` / `status` / `restart` / `stop` | 已配置后的服务运维 |
 
 ## 如何选择 Agent 后端
 
@@ -112,11 +147,11 @@ native 配置详见：`docs/llm-backends.md`
 
 ## 迁移说明
 
-历史安装保持兼容：
+当前公开入口统一使用 Agim 命名：
 
-- 旧命令别名可继续使用
-- 旧环境变量命名继续兼容
-- 旧数据目录会自动识别
+- 命令：`agim`
+- 环境变量：`AGIM_*`
+- 数据目录：`~/.agim` 与 `~/.agim-workspaces`
 
 ## 开发
 

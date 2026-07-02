@@ -56,12 +56,31 @@ const STOPPED_STATUS = {
   mode: 'none', pid: null, uptimeSec: null, uptime: null,
   web: null, bootPhase: 'not-started', bootMsSinceStart: 0, bootPhaseTimings: {},
 }
+const LOG_TAIL = {
+  path: '/Users/a/.agim/agim.log',
+  exists: true,
+  content: 'boot: starting\nChat UI available at http://127.0.0.1:3000',
+  lines: 2,
+  truncated: false,
+  size: 128,
+  mtime: '2026-06-30T12:00:00Z',
+}
+const MISSING_LOG = {
+  path: '/Users/a/.agim/agim.log',
+  exists: false,
+  content: '',
+  lines: 0,
+  truncated: false,
+  size: 0,
+  mtime: null,
+}
 
 describe('/settings/service', () => {
   it('renders status when running; Start disabled, Stop+Restart enabled', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const u = String(input)
       if (u === '/api/service/status') return jsonResponse(RUNNING_STATUS)
+      if (u.startsWith('/api/service/log-tail')) return jsonResponse(LOG_TAIL)
       if (u === '/api/config')         return jsonResponse({})
       return jsonResponse({})
     })
@@ -85,6 +104,7 @@ describe('/settings/service', () => {
         return jsonResponse({ ok: true })
       }
       if (u === '/api/service/status') return jsonResponse(RUNNING_STATUS)
+      if (u.startsWith('/api/service/log-tail')) return jsonResponse(LOG_TAIL)
       if (u === '/api/config')         return jsonResponse({})
       return jsonResponse({})
     })
@@ -114,6 +134,7 @@ describe('/settings/service', () => {
         return jsonResponse({ ok: true, mode: 'background', pid: 9999 })
       }
       if (u === '/api/service/status') return jsonResponse(STOPPED_STATUS)
+      if (u.startsWith('/api/service/log-tail')) return jsonResponse(LOG_TAIL)
       if (u === '/api/config')         return jsonResponse({})
       return jsonResponse({})
     })
@@ -129,6 +150,41 @@ describe('/settings/service', () => {
           (c) => String(c[0]) === '/api/service/start' && (c[1] as RequestInit | undefined)?.method === 'POST',
         ),
       ).toBe(true)
+    })
+  })
+
+  it('shows the recovery card with recent logs and copyable commands', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = String(input)
+      if (u === '/api/service/status') return jsonResponse(RUNNING_STATUS)
+      if (u.startsWith('/api/service/log-tail')) return jsonResponse(LOG_TAIL)
+      if (u === '/api/config')         return jsonResponse({})
+      return jsonResponse({})
+    })
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Recovery')).toBeInTheDocument())
+    expect(screen.getByText('Local doctor')).toBeInTheDocument()
+    expect(screen.getByText('Service status')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('View log')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Chat UI available/)).toBeInTheDocument())
+    expect(screen.getByText('/Users/a/.agim/agim.log')).toBeInTheDocument()
+  })
+
+  it('does not offer a tail command before the service log exists', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = String(input)
+      if (u === '/api/service/status') return jsonResponse(STOPPED_STATUS)
+      if (u.startsWith('/api/service/log-tail')) return jsonResponse(MISSING_LOG)
+      if (u === '/api/config')         return jsonResponse({})
+      return jsonResponse({})
+    })
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Log not created yet')).toBeInTheDocument())
+    expect(screen.queryByText('View log')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('No log file yet. It is created after the first background service start.')).toBeInTheDocument()
     })
   })
 })

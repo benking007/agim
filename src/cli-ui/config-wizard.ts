@@ -50,13 +50,117 @@ function cliAvailable(cmd: string): Promise<boolean> {
 }
 
 type Section = 'messengers' | 'agents' | 'agim' | 'admins' | 'acp' | 'web' | 'smtp' | 'baidu' | 'done'
+export type ConfigSection = Exclude<Section, 'done'>
 
-export async function runConfigWizard(lang: Lang): Promise<void> {
+export interface ConfigWizardOptions {
+  /** Jump directly into one section; used by legacy `agim config <name>` shortcuts. */
+  initialSection?: ConfigSection
+  /** Return after the initial section instead of showing the full menu. */
+  initialOnly?: boolean
+  /** The original shortcut the user typed, for a short compatibility note. */
+  shortcutLabel?: string
+}
+
+const CONFIG_COMPONENT_SECTIONS: Record<string, ConfigSection> = {
+  messengers: 'messengers',
+  messenger: 'messengers',
+  im: 'messengers',
+  wechat: 'messengers',
+  'wechat-ilink': 'messengers',
+  feishu: 'messengers',
+  lark: 'messengers',
+  dingtalk: 'messengers',
+  telegram: 'messengers',
+  discord: 'messengers',
+  email: 'messengers',
+
+  agents: 'agents',
+  agentcli: 'agents',
+  claude: 'agents',
+  'claude-code': 'agents',
+  codex: 'agents',
+  opencode: 'agents',
+  cursor: 'agents',
+
+  agim: 'agim',
+  native: 'agim',
+  llm: 'agim',
+  'agim-agent': 'agim',
+
+  admins: 'admins',
+  admin: 'admins',
+
+  acp: 'acp',
+  agent: 'acp',
+  remote: 'acp',
+  'remote-agent': 'acp',
+
+  web: 'web',
+  smtp: 'smtp',
+  baidu: 'baidu',
+}
+
+export function sectionForConfigComponent(component: string): ConfigSection | null {
+  const key = component.trim().toLowerCase().replace(/_/g, '-')
+  return CONFIG_COMPONENT_SECTIONS[key] ?? null
+}
+
+async function runConfigSection(lang: Lang, picked: ConfigSection, config: Config): Promise<Config> {
+  if (picked === 'messengers') return sectionMessengers(lang, config)
+  if (picked === 'agents') return sectionAgents(lang, config)
+  if (picked === 'agim') {
+    await sectionAgimAgent(lang)
+    // setup-llm mutates ~/.agim/config.json directly; reload so the
+    // final wizard save never clobbers those updates.
+    return loadConfig()
+  }
+  if (picked === 'admins') {
+    await sectionAdmins(lang)
+    return config
+  }
+  if (picked === 'acp') return sectionAcp(lang, config)
+  if (picked === 'web') return sectionWeb(lang, config)
+  if (picked === 'smtp') {
+    await sectionSmtp(lang)
+    return config
+  }
+  if (picked === 'baidu') {
+    await sectionBaidu(lang)
+    return config
+  }
+  return config
+}
+
+export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}): Promise<void> {
   let config = await loadConfig()
   console.log()
   console.log(t(lang, 'config.title'))
   console.log(t(lang, 'config.subtitle'))
   console.log()
+
+  if (opts.initialSection) {
+    if (opts.shortcutLabel) {
+      console.log(t(lang, 'config.shortcut.redirect', {
+        shortcut: `agim config ${opts.shortcutLabel}`,
+        section: t(lang, (`config.section.${opts.initialSection}`) as Key),
+      }))
+      console.log()
+    }
+    try {
+      config = await runConfigSection(lang, opts.initialSection, config)
+    } catch (err) {
+      if (err instanceof UserAbortError) return
+      throw err
+    }
+    if (opts.initialOnly) {
+      await saveConfig(config)
+      console.log()
+      console.log(t(lang, 'config.saved', { file: `${CONFIG_DIR}/config.json` }))
+      const { offerServiceStart } = await import('./cmd-handlers.js')
+      await offerServiceStart(lang)
+      return
+    }
+  }
 
   while (true) {
     let picked: Section | typeof BACK
@@ -92,19 +196,7 @@ export async function runConfigWizard(lang: Lang): Promise<void> {
     if (picked === BACK || picked === 'done') break
 
     try {
-      if (picked === 'messengers') config = await sectionMessengers(lang, config)
-      else if (picked === 'agents') config = await sectionAgents(lang, config)
-      else if (picked === 'agim') {
-        await sectionAgimAgent(lang)
-        // setup-llm mutates ~/.agim/config.json directly; reload so the
-        // final wizard save never clobbers those updates.
-        config = await loadConfig()
-      }
-      else if (picked === 'admins') await sectionAdmins(lang)
-      else if (picked === 'acp') config = await sectionAcp(lang, config)
-      else if (picked === 'web') config = await sectionWeb(lang, config)
-      else if (picked === 'smtp') await sectionSmtp(lang)
-      else if (picked === 'baidu') await sectionBaidu(lang)
+      config = await runConfigSection(lang, picked, config)
     } catch (err) {
       if (err instanceof UserAbortError) continue // Ctrl-C inside a section → bounce back to the top menu
       throw err

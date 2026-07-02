@@ -40,6 +40,12 @@ export interface NativeModelBinding {
   getApiKeyAndHeaders: () => Promise<{ apiKey: string; headers: Record<string, string> }>
 }
 
+export interface NativeModelChoice {
+  name: string
+  providerType?: string
+  model?: string
+}
+
 export interface NativeAgentDeps {
   /** Adapter name to register under. Defaults to 'native'. */
   name?: string
@@ -50,6 +56,10 @@ export interface NativeAgentDeps {
   /** agim BackendConfig → pi-ai Model + auth. Returns null when no backend is
    *  configured (adapter then reports unavailable / fails the turn cleanly). */
   resolveModel: (opts?: AgentSendOpts) => Promise<NativeModelBinding | null>
+  /** Optional model roster for direct adapter slash-command fallback. The
+   *  normal web/IM path handles `/models` in the router; this keeps REST/job
+   *  style direct calls from sending the command to the LLM as plain text. */
+  listModels?: () => NativeModelChoice[]
   /** The agim tool surface (schemas + dispatcher) to expose this turn. Receives
    *  the session id so per-thread tool state (todo tracker, plan-exit) keys
    *  correctly. */
@@ -195,6 +205,7 @@ export class NativeAgentAdapter implements AgentAdapter {
   // every session file's header) on every turn; bounds it to one scan per
   // session per process lifetime.
   private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
+  private readonly sessionModelOverrides = new Map<string, string>()
 
   constructor(private deps: NativeAgentDeps) {
     this.name = deps.name ?? 'native'
@@ -233,7 +244,15 @@ export class NativeAgentAdapter implements AgentAdapter {
     history: ChatMessage[] | undefined,
     opts: AgentSendOpts | undefined,
   ): AsyncGenerator<string> {
-    const binding = await this.deps.resolveModel(opts)
+    const slashResult = this.tryHandleModelSlash(prompt, sessionId, opts)
+    if (slashResult) {
+      yield slashResult
+      return
+    }
+
+    const overrideModel = opts?.model || this.sessionModelOverrides.get(sessionId)
+    const effectiveOpts = overrideModel ? { ...(opts ?? {}), model: overrideModel } : opts
+    const binding = await this.deps.resolveModel(effectiveOpts)
     if (!binding) {
       yield '⚠️ Agim Agent：未配置可用的大模型 API（请在 /settings/llm 添加 API + API Key；角色绑定可选）'
       return
@@ -270,7 +289,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
       : []
 
-    const systemPrompt = this.deps.resolveSystemPrompt?.(opts, sessionId)
+    const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
     const harness = new AgentHarness({
       env,
       session,
@@ -386,5 +405,61 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
     yield text
+  }
+
+  private tryHandleModelSlash(
+    prompt: string,
+    sessionId: string,
+    opts: AgentSendOpts | undefined,
+  ): string | null {
+    const trimmed = prompt.trim()
+    const match = trimmed.match(/^\/(models?|模型)(?:\s+(.+))?$/i)
+    if (!match) return null
+
+    const choices = this.deps.listModels?.() ?? []
+    const current = opts?.model || this.sessionModelOverrides.get(sessionId) || choices[0]?.name || 'auto'
+    const cmd = match[1].toLowerCase()
+    const arg = (match[2] ?? '').trim()
+
+    if (arg && /^(reset|default|auto|默认)$/i.test(arg)) {
+      this.sessionModelOverrides.delete(sessionId)
+      return '✅ Agim Agent 模型已恢复默认角色绑定。'
+    }
+
+    if (cmd === 'model' && !arg) {
+      return `🧠 当前 Agim Agent 模型后端：\`${current}\`\n\n使用 /models 查看可用后端；使用 /model <后端名称> 切换。`
+    }
+
+    if (arg && /^refresh$/i.test(arg)) {
+      return '✅ Agim Agent 模型列表无需刷新；它直接读取当前 LLM 配置。'
+    }
+
+    if (arg) {
+      let picked = choices.find((c) => c.name === arg || c.model === arg)
+      const indexMatch = arg.match(/^#?(\d+)$/)
+      if (!picked && indexMatch) {
+        const idx = Number.parseInt(indexMatch[1], 10) - 1
+        if (idx >= 0 && idx < choices.length) picked = choices[idx]
+      }
+      if (!picked) {
+        const hint = choices.length > 0 ? `\n\n可用：${choices.map((c) => `\`${c.name}\``).join('、')}` : ''
+        return `⚠️ 找不到模型后端 \`${arg}\`。${hint}`
+      }
+      this.sessionModelOverrides.set(sessionId, picked.name)
+      return `✅ Agim Agent 模型已切换：\`${picked.name}\`${picked.model ? `（${picked.model}）` : ''}`
+    }
+
+    if (choices.length === 0) {
+      return '⚠️ 当前没有可用的大模型 API。请先到 /settings/llm 添加 API 和 API Key。'
+    }
+
+    const lines = [`📋 Agim Agent 可用模型后端 (${choices.length})`, '']
+    choices.forEach((c, i) => {
+      const detail = [c.providerType, c.model].filter(Boolean).join(':')
+      const tag = c.name === current ? ' ⭐' : ''
+      lines.push(`${String(i + 1).padStart(3, ' ')}. \`${c.name}\`${detail ? ` — ${detail}` : ''}${tag}`)
+    })
+    lines.push('', `当前：\`${current}\` ⭐`, '使用 /model <后端名称> 或 /model #序号 切换；使用 /model reset 恢复默认。')
+    return lines.join('\n')
   }
 }

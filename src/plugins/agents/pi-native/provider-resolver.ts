@@ -14,6 +14,7 @@
 import type { Model } from '@earendil-works/pi-ai'
 import {
   getAnyBackendBinding,
+  getBackendBindingByName,
   getBackendBindingForRole,
   type LlmBackendBinding,
   type LlmRole,
@@ -63,5 +64,13 @@ export function resolvePiModelForRole(role: LlmRole): NativeModelBinding | null 
 /** Resolve a pi model binding from the first configured backend, ignoring roles. */
 export function resolveAnyPiModel(): NativeModelBinding | null {
   const binding = getAnyBackendBinding()
+  return binding ? bindingToPiModel(binding) : null
+}
+
+/** Resolve a pi model binding from an explicit agim backend name. */
+export function resolvePiModelByBackendName(name: string | undefined): NativeModelBinding | null {
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  const binding = getBackendBindingByName(trimmed)
   return binding ? bindingToPiModel(binding) : null
 }

@@ -31,6 +31,7 @@ import type {
   SearchTestBody,
   SearchTestResponse,
   ServiceActionResponse,
+  ServiceLogTailResponse,
   ServiceStatus,
   UpdateEnvBody,
   WechatQrStartResponse,
@@ -42,6 +43,7 @@ export const settingsKeys = {
   all:        ['settings'] as const,
   env:        (reveal: boolean) => ['settings', 'env', reveal] as const,
   service:    ['settings', 'service'] as const,
+  serviceLog: (lines: number) => ['settings', 'service', 'log-tail', lines] as const,
   admins:     ['settings', 'admins'] as const,
   config:     ['settings', 'config'] as const,
   workspaces: ['settings', 'workspaces'] as const,
@@ -67,6 +69,15 @@ export function useServiceStatus() {
   return useQuery<ServiceStatus>({
     queryKey: settingsKeys.service,
     queryFn: () => api.getServiceStatus(),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+export function useServiceLogTail(lines = 120) {
+  return useQuery<ServiceLogTailResponse>({
+    queryKey: settingsKeys.serviceLog(lines),
+    queryFn: () => api.getServiceLogTail({ lines }),
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
   })
@@ -156,6 +167,14 @@ export function useUpsertWorkspace() {
     WorkspaceConfig
   >({
     mutationFn: (body) => api.upsertWorkspace(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.workspaces }),
+  })
+}
+
+export function useDeleteWorkspace() {
+  const qc = useQueryClient()
+  return useMutation<{ ok: boolean }, Error, string>({
+    mutationFn: (id) => api.deleteWorkspace(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.workspaces }),
   })
 }

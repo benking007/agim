@@ -32,6 +32,7 @@ interface NavEntry {
  *  don't click a "Reminders" link that 404s mid-M2. As each follow-up
  *  PR lands its route, the `mounted` flag flips. */
 const NAV: Array<NavEntry & { mounted: boolean }> = [
+  { to: '/dashboard',      i18nKey: 'nav.dashboard',     mounted: true  },
   { to: '/',              i18nKey: 'nav.chat',          mounted: true  },
   { to: '/tasks',         i18nKey: 'nav.tasks',         mounted: true  },
   { to: '/approvals',     i18nKey: 'nav.approvals',     mounted: true  },
@@ -117,9 +118,8 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
         )}
       >
         <NavLink
-          to="/"
+          to="/dashboard"
           className="flex shrink-0 items-center gap-1 text-md font-semibold no-underline"
-          end
         >
           <span aria-hidden="true">🤖</span>
           <span className="hidden sm:inline">{t('appName')}</span>

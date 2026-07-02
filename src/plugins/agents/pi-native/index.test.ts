@@ -227,6 +227,57 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(seen?.cacheRetention).toBe('long')
   })
 
+  it('handles /models and /model directly without sending them to the LLM', async () => {
+    const reg = faux()
+    let seenModel: string | undefined
+    reg.setResponses([
+      (_ctx) => fauxAssistantMessage('after switch'),
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async (opts) => {
+        seenModel = opts?.model
+        return bindingFrom(reg.getModel()!)
+      },
+      listModels: () => [
+        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-chat' },
+        { name: 'qwen-agim', providerType: 'openai-compat', model: 'qwen-max' },
+      ],
+    })
+    const list = await collect(adapter.sendPrompt('slash', '/models'))
+    expect(list).toContain('deepseek-agim')
+    expect(list).toContain('qwen-agim')
+
+    const switched = await collect(adapter.sendPrompt('slash', '/model qwen-agim'))
+    expect(switched).toContain('模型已切换')
+    expect(await collect(adapter.sendPrompt('slash', 'hi'))).toBe('after switch')
+    expect(seenModel).toBe('qwen-agim')
+  })
+
+  it('switches direct /model by list index', async () => {
+    const reg = faux()
+    let seenModel: string | undefined
+    reg.setResponses([
+      (_ctx) => fauxAssistantMessage('indexed switch'),
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async (opts) => {
+        seenModel = opts?.model
+        return bindingFrom(reg.getModel()!)
+      },
+      listModels: () => [
+        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-chat' },
+        { name: 'qwen-agim', providerType: 'openai-compat', model: 'qwen-max' },
+      ],
+    })
+
+    const switched = await collect(adapter.sendPrompt('slash-index', '/model #2'))
+    expect(switched).toContain('qwen-agim')
+    expect(await collect(adapter.sendPrompt('slash-index', 'hi'))).toBe('indexed switch')
+    expect(seenModel).toBe('qwen-agim')
+  })
+
   it('compacts an over-budget durable session before the next turn', async () => {
     // Tiny context window → turn-1 usage trips shouldCompact at the start of turn 2.
     const reg = registerFauxProvider({ models: [{ id: 'tiny', contextWindow: 200 }] })

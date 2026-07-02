@@ -15,17 +15,53 @@ It is designed for production use: persistent delivery, session continuity, huma
 
 ## Quick start
 
+You do not need to configure IM, systemd, tokens, or workspaces first.
+Start with the smallest loop: Web console + one working agent.
+
 ```bash
 npm install -g agim-cli
-agim                         # interactive setup wizard
-agim start
+agim go
 ```
 
-Web console: `http://localhost:3000`
+`agim go` will:
+
+1. Detect usable local agents such as Claude Code, Codex, Cursor, or Agim Agent.
+2. Help configure an Agim Agent model API if no agent is ready yet.
+3. Start Agim in the background and print the Web console URL plus the first access token.
+
+Default Web console: `http://localhost:3000`
 
 - Chat: `/`
 - Tasks: `/tasks`
 - Settings: `/settings`
+
+If you forget the URL or token path:
+
+```bash
+agim web
+```
+
+Local health check:
+
+```bash
+agim doctor
+```
+
+After the Web chat works, connect WeChat / Feishu / DingTalk from Settings.
+`agim quickstart` is kept as a compatibility alias.
+
+Common CLI entries:
+
+| Command | When to use |
+|---|---|
+| `agim` | Open the guided entry menu when you are unsure what to run |
+| `agim go` | First install: get one agent + Web working |
+| `agim web` | Recover the console URL, service state, or token path |
+| `agim web --open` | Open the Web console in your default browser |
+| `agim web --start --open` | Start the background service and open Web in one step |
+| `agim config` | Continue setup: Agent, IM, Web, admins |
+| `agim doctor` | Explain what is not ready locally |
+| `agim start --bg` / `status` / `restart` / `stop` | Service operations after setup |
 
 ## Choose your AI backend
 

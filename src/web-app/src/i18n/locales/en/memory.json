@@ -11,12 +11,94 @@
     "title": "Pick a user to view their memory",
     "description": "Memory is partitioned per user_key (platform:userId). The dropdown above lists every user whose memory has any rows in the bank."
   },
+  "navigation": {
+    "groups": {
+      "overview": "Start",
+      "user": "User memory",
+      "processing": "Processing",
+      "recall": "Recall"
+    }
+  },
   "tabs": {
+    "overview": "Overview",
     "facts":   "Facts",
     "persona": "Persona",
     "distill": "Distillation",
     "vector":  "Vector",
     "skills":  "Skills"
+  },
+  "overview": {
+    "title": "Memory overview",
+    "subtitle": "See what Agim remembers, whether extraction is healthy, and whether recall is ready.",
+    "refresh": "Refresh",
+    "clear": "Healthy",
+    "needsAttention": "{{count}} need attention",
+    "cards": {
+      "bank": {
+        "title": "Memory bank",
+        "detail": "{{facts}} facts · {{personas}} personas",
+        "action": "Open facts"
+      },
+      "selected": {
+        "title": "Selected user",
+        "empty": "Pick a user above to inspect one memory bank.",
+        "ready": "{{user}} has facts and a persona.",
+        "noPersona": "{{user}} has facts but no persona yet.",
+        "action": "Open persona"
+      },
+      "distill": {
+        "title": "Extraction queue",
+        "running": "A distillation pass is running.",
+        "error": "The last distillation pass failed.",
+        "ready": "Background extraction is enabled.",
+        "off": "Background extraction is off.",
+        "action": "Open distillation"
+      },
+      "consolidate": {
+        "title": "Personas",
+        "detail": "{{count}} users have personas.",
+        "running": "Consolidation is running.",
+        "failed": "A recent consolidation failed.",
+        "action": "Open persona"
+      },
+      "vector": {
+        "title": "Recall",
+        "offValue": "Off",
+        "off": "Vector recall is disabled.",
+        "ready": "{{embedded}}/{{total}} facts embedded.",
+        "notReady": "Vector backend is not ready.",
+        "action": "Open vector"
+      }
+    },
+    "next": {
+      "pickUser": {
+        "title": "Pick a user",
+        "detail": "Choose a user above to inspect facts, persona, and recall coverage."
+      },
+      "createMemory": {
+        "title": "Create the first memory",
+        "detail": "Start a conversation, then run memory extraction after useful context accumulates."
+      },
+      "persona": {
+        "title": "Generate or edit the persona",
+        "detail": "This user has facts but no long-form summary yet."
+      },
+      "distill": {
+        "title": "Run memory extraction",
+        "detail": "Buffered chat turns are waiting to become facts."
+      },
+      "vector": {
+        "title": "Backfill recall embeddings",
+        "detail": "Some facts are not covered by the active vector backend."
+      },
+      "facts": {
+        "title": "Review remembered facts",
+        "detail": "Inspect and clean up what Agim has retained for this user."
+      }
+    },
+    "views": {
+      "title": "Detailed views"
+    }
   },
   "facts": {
     "title": "Facts",

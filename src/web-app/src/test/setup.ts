@@ -25,13 +25,78 @@ afterEach(() => {
 })
 
 // Make sure private-mode style storage exceptions don't bubble into
-// tests as uncaught errors. Tests that want to assert the catch
-// behavior should spy on the specific call.
-const _origRemoveItem = window.localStorage.removeItem.bind(window.localStorage)
-window.localStorage.removeItem = (key: string) => {
+// tests as uncaught errors. Some Node/jsdom combinations also expose a
+// partial read-only localStorage when NODE_OPTIONS contains
+// --localstorage-file without a usable path; install a tiny in-memory
+// Storage shim in that case so route tests can keep using
+// localStorage.setItem('agim_token', 'tok').
+function createStorageShim(): Storage {
+  const data = new Map<string, string>()
+  return {
+    get length() {
+      return data.size
+    },
+    clear() {
+      data.clear()
+    },
+    getItem(key: string) {
+      return data.has(key) ? data.get(key)! : null
+    },
+    key(index: number) {
+      return Array.from(data.keys())[index] ?? null
+    },
+    removeItem(key: string) {
+      data.delete(key)
+    },
+    setItem(key: string, value: string) {
+      data.set(key, String(value))
+    },
+  }
+}
+
+function ensureLocalStorage(): Storage {
+  const current = window.localStorage
+  const complete = current
+    && typeof current.getItem === 'function'
+    && typeof current.setItem === 'function'
+    && typeof current.removeItem === 'function'
+    && typeof current.clear === 'function'
+  if (complete) return current
+
+  const shim = createStorageShim()
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: shim,
+    })
+  } catch {
+    // Ignore read-only globals; tests that need storage will still use
+    // globalThis.localStorage below when the window override is blocked.
+  }
+  try {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: shim,
+    })
+  } catch {
+    // Same read-only proxy guard as above.
+  }
+  return shim
+}
+
+const localStorageRef = ensureLocalStorage()
+const _origRemoveItem = typeof localStorageRef.removeItem === 'function'
+  ? localStorageRef.removeItem.bind(localStorageRef)
+  : (_key: string): void => {}
+function safeRemoveItem(key: string): void {
   try {
     return _origRemoveItem(key)
   } catch {
     // swallow — matches our production fallback behavior
   }
+}
+try {
+  localStorageRef.removeItem = safeRemoveItem
+} catch {
+  // Some runtimes expose localStorage through a read-only proxy.
 }

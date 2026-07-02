@@ -11,6 +11,18 @@
     "title": "选择一个 Agent 来浏览其工作区",
     "description": "每个已注册的 Agent 都有自己的 CWD。下拉列出注册表中所有已知的 Agent；名字旁的绿点表示该 Agent 当前可用。"
   },
+  "quick": {
+    "title": "Agent 笔记",
+    "detail": "在这里维护 Agent 的角色说明和长期笔记；MEMORY.md 会随 Agim 对话进入 Agent 上下文。",
+    "openRoleFile": "角色文件",
+    "openMemory": "记忆",
+    "missingTitle": "这个文件还不存在",
+    "missingDetail": "可以在这里创建 {{path}}，创建后立即编辑。",
+    "createMemory": "创建记忆文件",
+    "createFile": "创建文件",
+    "memoryTemplate": "# 记忆\n\n写下希望这个 Agent 在 Agim 对话中长期参考的稳定信息。Agim 会在对话前把本文件接入 Agent 上下文。\n",
+    "fileTemplate": "# 笔记\n\n"
+  },
   "tree": {
     "title": "文件",
     "loading": "加载中…",
@@ -33,6 +45,7 @@
     "loadFailed":"加载文件失败"
   },
   "toast": {
-    "saved":     "已保存 {{path}}"
+    "saved":     "已保存 {{path}}",
+    "created":   "已创建 {{path}}"
   }
 }

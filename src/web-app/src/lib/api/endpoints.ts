@@ -32,6 +32,7 @@ import type {
   WechatQrStatusResponse,
   WorkspaceConfig,
   ServiceActionResponse,
+  ServiceLogTailResponse,
   ServiceStatus,
   UpdateEnvBody,
   CreateJobBody,
@@ -202,6 +203,10 @@ export const api = {
   upsertWorkspace: (body: WorkspaceConfig) =>
     client.post<{ ok: boolean; workspace: WorkspaceConfig }>('/api/workspaces', { body }),
 
+  /** DELETE /api/workspaces/:id — remove a non-default workspace. */
+  deleteWorkspace: (id: string) =>
+    client.delete<{ ok: boolean }>(`/api/workspaces/${encodeURIComponent(id)}`),
+
   /** POST /api/messengers/wechat/qr-start — start the WeChat
    *  login QR session. Returns a PNG data: URL of the QR + a
    *  token to poll status with. */
@@ -232,6 +237,10 @@ export const api = {
   /** GET /api/health/topn */
   getHealthTopN: (query: { dim: TopNDim; by: TopNMetric; days?: number; limit?: number }) =>
     client.get<TopNResponse>('/api/health/topn', { query }),
+
+  /** GET /api/service/log-tail */
+  getServiceLogTail: (query?: { lines?: number }) =>
+    client.get<ServiceLogTailResponse>('/api/service/log-tail', { query }),
 
   /** POST /api/invoke */
   invoke: (opts?: { body?: unknown }) =>

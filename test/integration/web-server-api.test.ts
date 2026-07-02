@@ -8,6 +8,8 @@
 //   POST /api/invoke            third-party agent invocation
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
 import { startWebServer } from '../../src/web/server'
 import { registry } from '../../src/core/registry'
 import { recordInvocation, reset as resetMetrics } from '../../src/core/metrics'
@@ -50,6 +52,23 @@ const url = (path: string): string => `http://127.0.0.1:${port}${path}`
 const auth: Record<string, string> = {}
 
 describe('Web REST API', () => {
+  it('rejects when the listen port is already occupied', async () => {
+    const blocker = createServer()
+    await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve))
+    const occupied = (blocker.address() as AddressInfo).port
+    try {
+      let err: unknown
+      try {
+        await startWebServer({ port: occupied, defaultAgent: 'rest-stub' })
+      } catch (caught) {
+        err = caught
+      }
+      expect(String(err instanceof Error ? err.message : err)).toMatch(/EADDRINUSE|address already in use|port .*in use|failed to listen/i)
+    } finally {
+      blocker.close()
+    }
+  })
+
   describe('/api/metrics', () => {
     it('returns Prometheus format by default', async () => {
       resetMetrics()
@@ -80,6 +99,28 @@ describe('Web REST API', () => {
       const body = await res.json() as { agents: Record<string, boolean>; uptimeSec: number }
       expect(typeof body.uptimeSec).toBe('number')
       expect(typeof body.agents).toBe('object')
+    })
+  })
+
+  describe('/api/service/log-tail', () => {
+    it('returns a bounded service-log shape', async () => {
+      const res = await fetch(url('/api/service/log-tail?lines=20'), { headers: auth })
+      expect(res.status).toBe(200)
+      const body = await res.json() as {
+        path: string
+        exists: boolean
+        content: string
+        lines: number
+        truncated: boolean
+        size: number
+        mtime: string | null
+      }
+      expect(body.path).toContain('agim.log')
+      expect(typeof body.exists).toBe('boolean')
+      expect(typeof body.content).toBe('string')
+      expect(typeof body.lines).toBe('number')
+      expect(typeof body.truncated).toBe('boolean')
+      expect(typeof body.size).toBe('number')
     })
   })
 
@@ -267,6 +308,7 @@ describe('Web REST API', () => {
         '/api/outbox',
         '/api/outbox/stats',
         '/api/env?reveal=1',
+        '/api/service/log-tail',
       ]
 
       for (const path of paths) {

@@ -17,7 +17,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { ChevronUp, File, Folder, FolderTree, Loader2, RefreshCcw } from 'lucide-react'
+import {
+  BookOpen,
+  ChevronUp,
+  File,
+  FileText,
+  Folder,
+  FolderTree,
+  Loader2,
+  RefreshCcw,
+} from 'lucide-react'
 
 import { Topbar } from '@/components/shell/topbar'
 import { EmptyState } from '@/components/common/empty-state'
@@ -36,6 +45,7 @@ import {
   useWorkspaceFiles,
   useWriteWorkspaceFile,
 } from '@/hooks/use-workspace'
+import { useConfig } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
 import { agentDisplayName } from '@/lib/agent-label'
 import type {
@@ -51,8 +61,11 @@ export default function WorkspaceRoute(): JSX.Element {
   const path  = params.get('path')  ?? ''
 
   const agentsQuery = useAgentsStatus()
+  const cfgQuery = useConfig()
   const agents = agentsQuery.data ?? {}
   const agentNames = useMemo(() => Object.keys(agents).sort(), [agents])
+  const agentKey = agentNames.join('\0')
+  const defaultAgent = cfgQuery.data?.defaultAgent
 
   /** Query may resolve to either a dir listing or file content — we
    *  branch on `data.type` in the render. */
@@ -69,6 +82,20 @@ export default function WorkspaceRoute(): JSX.Element {
     }
     setParams(next, { replace: false })
   }
+
+  useEffect(() => {
+    if (agent || agentsQuery.isLoading) return
+    const preferred = defaultAgent && agentNames.includes(defaultAgent)
+      ? defaultAgent
+      : agentNames.length === 1
+        ? agentNames[0]
+        : ''
+    if (!preferred) return
+    const next = new URLSearchParams(params)
+    next.set('agent', preferred)
+    next.delete('path')
+    setParams(next, { replace: true })
+  }, [agent, agentKey, agentNames, agentsQuery.isLoading, defaultAgent, params, setParams])
 
   function setAgent(next: string): void {
     // Switching agent always resets the path so we don't drag a
@@ -149,6 +176,11 @@ export default function WorkspaceRoute(): JSX.Element {
           />
         ) : (
           <>
+            <WorkspaceStartCard
+              agent={agent}
+              onNavigate={navigateTo}
+            />
+
             {/* Breadcrumb + Up */}
             <Breadcrumb
               path={path}
@@ -171,6 +203,12 @@ export default function WorkspaceRoute(): JSX.Element {
                 agent={agent}
                 onBack={navigateUp}
               />
+            ) : path && filesQuery.isError && canCreateMissingFile(path, filesQuery.error) ? (
+              <MissingFilePanel
+                agent={agent}
+                path={path}
+                onCreated={() => { void filesQuery.refetch() }}
+              />
             ) : (
               <EmptyState
                 icon={<FolderTree />}
@@ -183,6 +221,104 @@ export default function WorkspaceRoute(): JSX.Element {
       </main>
     </div>
   )
+}
+
+interface WorkspaceStartCardProps {
+  agent: string
+  onNavigate: (path: string) => void
+}
+
+function WorkspaceStartCard({ agent, onNavigate }: WorkspaceStartCardProps): JSX.Element {
+  const { t } = useTranslation('workspace')
+  const roleFile = roleFileForAgent(agent)
+  return (
+    <section className="rounded-md border border-border bg-surface p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-bg text-accent">
+          <BookOpen className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">{t('quick.title')}</h2>
+            <Badge variant="info">{agentDisplayName(agent)}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-text-dim">{t('quick.detail')}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={() => onNavigate(roleFile)}>
+            <FileText className="h-4 w-4" />
+            <span>{t('quick.openRoleFile')}</span>
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => onNavigate('MEMORY.md')}>
+            <FileText className="h-4 w-4" />
+            <span>{t('quick.openMemory')}</span>
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function roleFileForAgent(agent: string): string {
+  return agent === 'claude-code' ? 'CLAUDE.md' : 'AGENTS.md'
+}
+
+interface MissingFilePanelProps {
+  agent: string
+  path: string
+  onCreated: () => void
+}
+
+function MissingFilePanel({ agent, path, onCreated }: MissingFilePanelProps): JSX.Element {
+  const { t } = useTranslation('workspace')
+  const write = useWriteWorkspaceFile()
+  const isMemory = path === 'MEMORY.md'
+
+  async function onCreate(): Promise<void> {
+    try {
+      await write.mutateAsync({
+        agent,
+        path,
+        body: { content: t(isMemory ? 'quick.memoryTemplate' : 'quick.fileTemplate') },
+      })
+      toast.success(t('toast.created', { path }))
+      onCreated()
+    } catch (err) {
+      toast.error(describeError(err, t).message)
+    }
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-dim">
+          <FileText className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold">{t('quick.missingTitle')}</h2>
+          <p className="mt-1 text-sm text-text-dim">{t('quick.missingDetail', { path })}</p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void onCreate()}
+          disabled={write.isPending}
+        >
+          {write.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          <span>{t(isMemory ? 'quick.createMemory' : 'quick.createFile')}</span>
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function canCreateMissingFile(path: string, error: unknown): boolean {
+  if (path.includes('/')) return false
+  if (!path.endsWith('.md')) return false
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return message.includes('not found')
+    || message.includes('enoent')
+    || message.includes('no such file')
 }
 
 interface BreadcrumbProps {

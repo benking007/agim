@@ -15,14 +15,18 @@
 // pid file, or a pgrep mismatch produces "not running" rather than an
 // error, so the caller can decide what to ack.
 
-import { execSync, spawn } from 'node:child_process'
+import { execFileSync, execSync, spawn } from 'node:child_process'
 import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, readdirSync } from 'node:fs'
+import { createServer as createNetServer } from 'node:net'
 import { join, dirname, basename } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
+import { readEnvFile } from './env-file.js'
 
 // Pid + log files live inside AGIM_HOME.
 export const PID_FILE = join(AGIM_HOME, 'agim.pid')
 export const LOG_FILE = join(AGIM_HOME, 'agim.log')
+export const DEFAULT_WEB_PORT = 3000
+export const DEFAULT_ACP_PORT = 9090
 
 /** Systemd unit candidates, checked in order. */
 const SYSTEMD_UNIT_CANDIDATES = [
@@ -52,6 +56,33 @@ export interface ServiceState {
    *  care about the difference can inspect this field. Undefined for
    *  other modes. */
   active?: string
+}
+
+export interface TcpEndpoint {
+  bind: string
+  port: number
+}
+
+export interface TcpPortCheck extends TcpEndpoint {
+  available: boolean
+  code?: string
+  owner?: string
+}
+
+let detectServiceOverride: (() => ServiceState) | null = null
+
+export const _internal = {
+  setDetectServiceOverride(fn: (() => ServiceState) | null): void {
+    detectServiceOverride = fn
+  },
+}
+
+function readConfigObject(): Record<string, unknown> | null {
+  try {
+    const raw = readFileSync(join(AGIM_HOME, 'config.json'), 'utf-8')
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+  } catch { return null }
 }
 
 /** Check if a unix pid is alive. */
@@ -94,6 +125,8 @@ export function formatUptime(sec: number): string {
  *  pid-file, then a foreground pgrep match. Returns `{mode:'none', pid:null}`
  *  when nothing is running. */
 export function detectService(): ServiceState {
+  if (detectServiceOverride) return detectServiceOverride()
+
   // 1. systemd — R14: authority test is "unit file exists AND is
   //    enabled", NOT "currently active". The old check returned
   //    mode='background' during the activating-auto-restart loop or
@@ -228,12 +261,92 @@ export async function stopService(): Promise<{ mode: ServiceMode; pid: number | 
  *  absent / unparseable. */
 export function readWebEndpoint(): { bind: string; port: number } | null {
   try {
-    const raw = readFileSync(join(AGIM_HOME, 'config.json'), 'utf-8')
-    const cfg = JSON.parse(raw) as { web?: { bind?: string; port?: number } }
-    const bind = typeof cfg.web?.bind === 'string' ? cfg.web.bind : '127.0.0.1'
-    const port = typeof cfg.web?.port === 'number' ? cfg.web.port : 3000
+    const cfg = readConfigObject() as { web?: { bind?: string; port?: number }; webPort?: number } | null
+    if (!cfg) return null
+    let envBind = ''
+    try {
+      const envFile = readEnvFile()
+      envBind = (process.env.AGIM_WEB_BIND || envFile.AGIM_WEB_BIND || '').trim()
+    } catch { /* keep config/default bind */ }
+    const bind = envBind || (typeof cfg.web?.bind === 'string' ? cfg.web.bind : '127.0.0.1')
+    const port = typeof cfg.web?.port === 'number'
+      ? cfg.web.port
+      : typeof cfg.webPort === 'number'
+        ? cfg.webPort
+        : DEFAULT_WEB_PORT
     return { bind, port }
   } catch { return null }
+}
+
+/** Get the configured ACP bind+port. ACP is optional for first-run Web
+ *  chat, but its default 9090 collides with common local proxy tools, so
+ *  quickstart/doctor need to make that conflict visible. */
+export function readAcpEndpoint(): TcpEndpoint {
+  const cfg = readConfigObject() as { acpPort?: number } | null
+  let bind = '127.0.0.1'
+  try {
+    const envFile = readEnvFile()
+    bind = (process.env.AGIM_ACP_BIND || envFile.AGIM_ACP_BIND || bind).trim() || bind
+  } catch { /* keep safe default */ }
+  return {
+    bind,
+    port: typeof cfg?.acpPort === 'number' ? cfg.acpPort : DEFAULT_ACP_PORT,
+  }
+}
+
+/** Best-effort owner for a listening TCP port. Used only for human-facing
+ *  diagnostics; absence of lsof (or permission limits) simply means the
+ *  owner is omitted. */
+export function findTcpListenOwner(port: number): string | undefined {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return undefined
+  try {
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    const row = out.split(/\r?\n/).slice(1).find(Boolean)
+    if (!row) return undefined
+    const cols = row.trim().split(/\s+/)
+    if (cols.length < 2) return undefined
+    return `${cols[0]} pid=${cols[1]}`
+  } catch { return undefined }
+}
+
+export async function checkTcpListenAvailable(endpoint: TcpEndpoint): Promise<TcpPortCheck> {
+  const { bind, port } = endpoint
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    return { bind, port, available: false, code: 'EINVAL' }
+  }
+
+  return new Promise<TcpPortCheck>((resolve) => {
+    const server = createNetServer()
+    let settled = false
+    const done = (result: TcpPortCheck): void => {
+      if (settled) return
+      settled = true
+      server.removeAllListeners()
+      resolve(result)
+    }
+
+    server.once('error', (err: Error & { code?: string }) => {
+      done({
+        bind,
+        port,
+        available: false,
+        code: err.code,
+        owner: findTcpListenOwner(port),
+      })
+    })
+    server.once('listening', () => {
+      server.close(() => done({ bind, port, available: true }))
+    })
+    try {
+      server.listen(port, bind)
+    } catch (err) {
+      const e = err as Error & { code?: string }
+      done({ bind, port, available: false, code: e.code ?? e.name })
+    }
+  })
 }
 
 /** R14 — find every Agim process running on this host.
@@ -310,6 +423,7 @@ function findAgimProcessesViaPs(): number[] {
   try {
     const out = execSync('ps -axo pid=,command=', {
       encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
     const lines = out.split('\n').filter(Boolean)
     const pids: number[] = []

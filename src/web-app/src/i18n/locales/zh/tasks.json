@@ -1,6 +1,15 @@
 {
   "pageTitle": "任务",
+  "navigation": {
+    "groups": {
+      "overview": "开始",
+      "work": "任务",
+      "automation": "自动化",
+      "review": "审计"
+    }
+  },
   "subnav": {
+    "overview": "总览",
     "jobs": "作业",
     "subtasks": "子任务",
     "bgjobs": "后台脚本",
@@ -11,6 +20,74 @@
     "goals": "目标",
     "asks": "待回答",
     "plans": "计划审计"
+  },
+  "overview": {
+    "title": "任务总览",
+    "subtitle": "查看哪些任务在运行、哪些需要你处理、细节该去哪里看。",
+    "refresh": "刷新",
+    "clear": "暂无需处理",
+    "needsAttention": "{{count}} 项需处理",
+    "cards": {
+      "work": {
+        "title": "Agent 作业",
+        "detail": "{{running}} 运行中 · {{pending}} 等待中",
+        "action": "查看作业"
+      },
+      "asks": {
+        "title": "等待你回答",
+        "waiting": "{{count}} 个 ask_user 待处理",
+        "clear": "暂无待回答问题",
+        "action": "查看待回答"
+      },
+      "outbox": {
+        "title": "IM 投递",
+        "detail": "{{pending}} 条待发送",
+        "stuck": "{{count}} 条卡住",
+        "action": "查看队列"
+      },
+      "automation": {
+        "title": "自动化",
+        "detail": "{{schedules}} 个定时 · {{heartbeats}} 个心跳 · {{goals}} 个目标",
+        "action": "查看定时"
+      },
+      "a2a": {
+        "title": "Agent 协作",
+        "detail": "近 24 小时 Agent 互调次数",
+        "action": "查看互调"
+      }
+    },
+    "next": {
+      "asks": {
+        "title": "先回答待处理问题",
+        "detail": "Agent 正在等待人工输入，处理后才能继续。"
+      },
+      "outboxStuck": {
+        "title": "重试卡住的投递",
+        "detail": "有 IM 消息已停止重试，需要检查原因。"
+      },
+      "jobs": {
+        "title": "查看运行中的作业",
+        "detail": "当前有作业正在等待或运行。"
+      },
+      "outbox": {
+        "title": "查看消息投递",
+        "detail": "仍有 IM 消息在队列中等待投递。"
+      },
+      "automation": {
+        "title": "检查自动化任务",
+        "detail": "定时、心跳或目标正在后台运行。"
+      },
+      "idle": {
+        "title": "当前没有任务压力",
+        "detail": "需要排查历史运行时，可打开作业列表。"
+      }
+    },
+    "groups": {
+      "title": "详细视图",
+      "work": "任务",
+      "automation": "自动化",
+      "review": "审计"
+    }
   },
   "jobs": {
     "title": "作业",

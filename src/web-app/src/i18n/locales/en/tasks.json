@@ -1,6 +1,15 @@
 {
   "pageTitle": "Tasks",
+  "navigation": {
+    "groups": {
+      "overview": "Start",
+      "work": "Work",
+      "automation": "Automation",
+      "review": "Review"
+    }
+  },
   "subnav": {
+    "overview": "Overview",
     "jobs": "Jobs",
     "subtasks": "Subtasks",
     "bgjobs": "Background",
@@ -11,6 +20,74 @@
     "goals": "Goals",
     "asks": "Ask User",
     "plans": "Plans"
+  },
+  "overview": {
+    "title": "Tasks overview",
+    "subtitle": "See what is running, what needs you, and where to inspect details.",
+    "refresh": "Refresh",
+    "clear": "All clear",
+    "needsAttention": "{{count}} need attention",
+    "cards": {
+      "work": {
+        "title": "Agent work",
+        "detail": "{{running}} running · {{pending}} pending",
+        "action": "Open jobs"
+      },
+      "asks": {
+        "title": "Waiting on you",
+        "waiting": "{{count}} ask_user pending",
+        "clear": "No pending questions",
+        "action": "Open asks"
+      },
+      "outbox": {
+        "title": "IM delivery",
+        "detail": "{{pending}} pending",
+        "stuck": "{{count}} stuck",
+        "action": "Open outbox"
+      },
+      "automation": {
+        "title": "Automation",
+        "detail": "{{schedules}} schedules · {{heartbeats}} heartbeats · {{goals}} goals",
+        "action": "Open schedules"
+      },
+      "a2a": {
+        "title": "Agent handoffs",
+        "detail": "Agent-to-agent calls in the last 24h",
+        "action": "Open handoffs"
+      }
+    },
+    "next": {
+      "asks": {
+        "title": "Answer pending questions",
+        "detail": "Agents are waiting for human input before they continue."
+      },
+      "outboxStuck": {
+        "title": "Retry stuck deliveries",
+        "detail": "One or more IM messages stopped retrying and need inspection."
+      },
+      "jobs": {
+        "title": "Watch running work",
+        "detail": "Jobs are currently pending or running."
+      },
+      "outbox": {
+        "title": "Watch message delivery",
+        "detail": "Outbound IM messages are still moving through the queue."
+      },
+      "automation": {
+        "title": "Review automation",
+        "detail": "Schedules, heartbeats, or active goals are running in the background."
+      },
+      "idle": {
+        "title": "No active task pressure",
+        "detail": "Open Jobs when you want to inspect recent agent runs."
+      }
+    },
+    "groups": {
+      "title": "Detailed views",
+      "work": "Work",
+      "automation": "Automation",
+      "review": "Review"
+    }
   },
   "jobs": {
     "title": "Jobs",

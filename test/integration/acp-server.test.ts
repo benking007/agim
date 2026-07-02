@@ -7,6 +7,8 @@
 // the suite run under bun (better-sqlite3 unavailable).
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
 import { startACPServer } from '../../src/core/acp-server'
 import { registry } from '../../src/core/registry'
 import type { AgentAdapter } from '../../src/core/types'
@@ -67,6 +69,17 @@ afterAll(() => {
 const url = (path: string): string => `http://127.0.0.1:${port}${path}`
 
 describe('ACP Server', () => {
+  it('rejects when the listen port is already occupied', async () => {
+    const blocker = createServer()
+    await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve))
+    const occupied = (blocker.address() as AddressInfo).port
+    try {
+      await expect(startACPServer({ port: occupied, defaultAgent: 'acp-stub' })).rejects.toThrow(/EADDRINUSE|address already in use|port .*in use/i)
+    } finally {
+      blocker.close()
+    }
+  })
+
   it('rejects unauthenticated requests with 401', async () => {
     const res = await fetch(url('/agent/card'))
     expect(res.status).toBe(401)

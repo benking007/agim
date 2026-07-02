@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Loader2, Network, Play, RefreshCcw, RotateCcw, Save, Square, X,
+  Copy, FileText, Loader2, Network, Play, RefreshCcw, RotateCcw, Save, Square, Terminal, X,
 } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   useConfig,
+  useServiceLogTail,
   useRestartService,
   useServiceStatus,
   useStartService,
@@ -34,7 +35,7 @@ import {
   useUpdateConfig,
 } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
-import type { ServiceMode } from '@/types/api'
+import type { ServiceMode, ServiceStatus } from '@/types/api'
 import { cn } from '@/lib/utils'
 
 const MODE_VARIANT: Record<ServiceMode, 'success' | 'info' | 'warning' | 'default'> = {
@@ -180,6 +181,8 @@ export default function SettingsServiceRoute(): JSX.Element {
         </div>
       ) : null}
 
+      <ServiceRecoveryCard service={data} />
+
       <ConfirmDialog
         open={confirmStop}
         onOpenChange={setConfirmStop}
@@ -200,6 +203,172 @@ export default function SettingsServiceRoute(): JSX.Element {
       />
     </div>
   )
+}
+
+function ServiceRecoveryCard({ service }: { service?: ServiceStatus }): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  const logQuery = useServiceLogTail(120)
+  const logPath = logQuery.data?.path ?? '~/.agim/agim.log'
+  const isRunning = Boolean(service && service.mode !== 'none')
+  const isBooting = Boolean(isRunning && service?.bootPhase && service.bootPhase !== 'ready')
+  const state = !service ? 'loading' : !isRunning ? 'stopped' : isBooting ? 'booting' : 'running'
+  const logExists = logQuery.data?.exists === true
+
+  async function copy(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(t('service.recovery.toast.copied'))
+    } catch {
+      toast.error(t('service.recovery.toast.copyFailed'))
+    }
+  }
+
+  const tailCommand = `tail -n 120 ${shellQuote(logPath)}`
+
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Terminal className="h-4 w-4 text-text-dim" />
+          <h2 className="text-sm font-semibold">{t('service.recovery.title')}</h2>
+          <Badge variant={state === 'running' ? 'success' : state === 'stopped' ? 'warning' : 'info'}>
+            {t(`service.recovery.state.${state}`)}
+          </Badge>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={logQuery.isFetching}
+          onClick={() => void logQuery.refetch()}
+        >
+          <RefreshCcw className={cn('h-4 w-4', logQuery.isFetching && 'animate-spin')} />
+          <span>{t('service.recovery.refreshLog')}</span>
+        </Button>
+      </header>
+
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-text-dim">
+            {state === 'running'
+              ? t('service.recovery.detail.running')
+              : state === 'booting'
+                ? t('service.recovery.detail.booting', { phase: service?.bootPhase ?? '' })
+                : state === 'stopped'
+                  ? t('service.recovery.detail.stopped')
+                  : t('service.recovery.detail.loading')}
+          </p>
+
+          <div className="grid gap-2">
+            <RecoveryCommand
+              icon={<Terminal className="h-4 w-4" />}
+              label={t('service.recovery.commands.doctor')}
+              command="agim doctor"
+              onCopy={copy}
+            />
+            <RecoveryCommand
+              icon={<FileText className="h-4 w-4" />}
+              label={t('service.recovery.commands.status')}
+              command="agim status"
+              onCopy={copy}
+            />
+            {logExists ? (
+              <RecoveryCommand
+                icon={<FileText className="h-4 w-4" />}
+                label={t('service.recovery.commands.tail')}
+                command={tailCommand}
+                onCopy={copy}
+              />
+            ) : (
+              <RecoveryInfo
+                icon={<FileText className="h-4 w-4" />}
+                label={t('service.recovery.commands.tailPending')}
+                detail={logQuery.isLoading
+                  ? t('service.recovery.commands.tailChecking')
+                  : t('service.recovery.commands.tailPendingDetail')}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-md border border-border bg-surface-2">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <FileText className="h-4 w-4 text-text-dim" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{logPath}</span>
+            {logQuery.data?.truncated && (
+              <Badge variant="warning">{t('service.recovery.truncated')}</Badge>
+            )}
+          </div>
+          {logQuery.isLoading ? (
+            <div className="h-40 animate-pulse" />
+          ) : logQuery.isError ? (
+            <p className="p-3 text-sm text-danger">{describeError(logQuery.error, t).message}</p>
+          ) : !logQuery.data?.exists ? (
+            <p className="p-3 text-sm text-text-dim">{t('service.recovery.logMissing')}</p>
+          ) : (
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-5 text-text-dim">
+              {logQuery.data.content || t('service.recovery.logEmpty')}
+            </pre>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function RecoveryInfo({
+  icon,
+  label,
+  detail,
+}: {
+  icon: JSX.Element
+  label: string
+  detail: string
+}): JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2">
+      <span className="text-text-dim" aria-hidden="true">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium">{label}</div>
+        <p className="text-[11px] text-text-dim">{detail}</p>
+      </div>
+    </div>
+  )
+}
+
+function RecoveryCommand({
+  icon,
+  label,
+  command,
+  onCopy,
+}: {
+  icon: JSX.Element
+  label: string
+  command: string
+  onCopy: (text: string) => Promise<void>
+}): JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2">
+      <span className="text-text-dim" aria-hidden="true">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium">{label}</div>
+        <code className="block truncate text-[11px] text-text-dim">{command}</code>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => void onCopy(command)}
+        aria-label={label}
+      >
+        <Copy className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 /* ─────────────── Ports card (webPort + acpPort) ─────────────── */

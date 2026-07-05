@@ -20,6 +20,23 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+  }
+
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+
+  html .right-scroll-bar-position {
+    right: 0 !important;
+  }
+
+  html .width-before-scroll-bar {
+    margin-right: 0 !important;
+  }
+
   html, body, #root {
     height: 100%;
   }
@@ -27,6 +44,8 @@
     @apply bg-bg text-text antialiased;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
       "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+    background-color: hsl(var(--ag-bg));
+    transition: background-color 0.3s ease, color 0.3s ease;
     /* Mobile: disable double-tap-zoom on text and tone down the tap
        highlight color. We still keep focus-visible outlines for keyboard
        users via Tailwind's preflight + shadcn defaults. */
@@ -41,21 +60,21 @@
     -webkit-tap-highlight-color: hsl(var(--ag-accent) / 0.15);
   }
 
-  /* Scrollbar styling: subtle on desktop, hidden on mobile. */
+  /* Scrollbar styling: mirrors the Agim 2.0 workbench reference. */
   @media (pointer: fine) {
     *::-webkit-scrollbar {
-      width: 10px;
-      height: 10px;
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
     }
     *::-webkit-scrollbar-thumb {
-      background: hsl(var(--ag-border-strong));
-      border-radius: 999px;
-      border: 2px solid transparent;
-      background-clip: content-box;
+      background: #cbd5e1;
+      border-radius: 4px;
     }
     *::-webkit-scrollbar-thumb:hover {
-      background: hsl(var(--ag-text-muted));
-      background-clip: content-box;
+      background: #94a3b8;
     }
   }
 }
@@ -99,5 +118,13 @@
   .tap-target {
     min-height: 32px;
     min-width: 32px;
+  }
+
+  .glow-success {
+    box-shadow: 0 0 15px rgb(16 185 129 / 0.2);
+  }
+
+  .glow-primary {
+    box-shadow: 0 4px 20px -2px rgb(99 102 241 / 0.15);
   }
 }

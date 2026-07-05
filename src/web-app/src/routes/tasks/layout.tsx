@@ -8,7 +8,7 @@
 
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Topbar } from '@/components/shell/topbar'
+import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { cn } from '@/lib/utils'
 
 interface SubTab {
@@ -67,15 +67,10 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
 export default function TasksLayout(): JSX.Element {
   const { t } = useTranslation('tasks')
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <Topbar />
-
+    <WorkbenchFrame contentClassName="space-y-4">
       <nav
         className={cn(
-          'sticky top-[var(--topbar-h,0)] z-10',
-          'flex items-center gap-4',
-          'border-b border-border bg-surface',
-          'px-3 sm:px-4 py-2',
+          'flex items-center gap-4 rounded-xl border border-border bg-surface px-3 py-2 shadow-sm',
           'overflow-x-auto',
         )}
         aria-label={t('pageTitle')}
@@ -92,7 +87,7 @@ export default function TasksLayout(): JSX.Element {
                     'shrink-0 rounded-md px-3 py-1.5 text-sm no-underline',
                     'transition-colors tap-target',
                     isActive
-                      ? 'bg-accent-bg text-accent font-medium'
+                      ? 'bg-brand-50 text-brand-600 font-medium shadow-sm dark:bg-accent-bg dark:text-accent'
                       : 'text-text-dim hover:bg-surface-hover hover:text-text',
                   )
                 }
@@ -104,9 +99,9 @@ export default function TasksLayout(): JSX.Element {
         ))}
       </nav>
 
-      <main className="flex-1 px-3 sm:px-4 py-4 pb-safe">
+      <section className="pb-safe">
         <Outlet />
-      </main>
-    </div>
+      </section>
+    </WorkbenchFrame>
   )
 }

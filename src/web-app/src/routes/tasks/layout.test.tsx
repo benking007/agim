@@ -1,20 +1,43 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import TasksLayout from './layout'
 import '@/i18n'
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function renderAt(path: string): ReturnType<typeof render> {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === '/api/config') {
+      return jsonResponse({ messengers: [], agents: ['claude-code'], defaultAgent: 'claude-code' })
+    }
+    return jsonResponse({})
+  })
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/tasks" element={<TasksLayout />}>
-          <Route index element={<div data-testid="tasks-child">overview</div>} />
-          <Route path="*" element={<div data-testid="tasks-child">child</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/tasks" element={<TasksLayout />}>
+            <Route index element={<div data-testid="tasks-child">overview</div>} />
+            <Route path="*" element={<div data-testid="tasks-child">child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -36,7 +59,7 @@ describe('/tasks layout', () => {
     renderAt('/tasks/a2a')
 
     const a2a = screen.getByRole('link', { name: 'Agent ↔ Agent' })
-    expect(a2a.className).toContain('text-accent')
-    expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('text-accent')
+    expect(a2a.className).toContain('text-brand-600')
+    expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('text-brand-600')
   })
 })

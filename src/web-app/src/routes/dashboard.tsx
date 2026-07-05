@@ -8,11 +8,15 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   Bot,
+  BrainCircuit,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
+  Code2,
   Database,
   Loader2,
   MessageSquare,
@@ -21,9 +25,10 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react'
 
-import { Topbar } from '@/components/shell/topbar'
+import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useLlmList } from '@/hooks/use-llm-admin'
@@ -44,6 +49,7 @@ interface StatusCard {
   meta?: string
   action: string
   to: string
+  tone: 'success' | 'accent' | 'info' | 'warning'
 }
 
 interface DashboardAction {
@@ -52,6 +58,13 @@ interface DashboardAction {
   detail: string
   to: string
   primary?: boolean
+}
+
+interface DashboardLinkItem {
+  to: string
+  icon: JSX.Element
+  title: string
+  detail: string
 }
 
 const STATE_BADGE: Record<StatusState, BadgeVariant> = {
@@ -110,6 +123,7 @@ export default function DashboardRoute(): JSX.Element {
       id: 'web',
       state: webState,
       icon: <MessageSquare />,
+      tone: 'success',
       title: t('dashboard.cards.web.title'),
       detail: serviceRunning
         ? t('dashboard.cards.web.ready', { mode: service?.mode ?? '' })
@@ -124,6 +138,7 @@ export default function DashboardRoute(): JSX.Element {
       id: 'agent',
       state: agentState,
       icon: <Bot />,
+      tone: 'accent',
       title: t('dashboard.cards.agent.title'),
       detail: agentStatus === true
         ? t('dashboard.cards.agent.ready', { agent: agentName })
@@ -139,7 +154,8 @@ export default function DashboardRoute(): JSX.Element {
     {
       id: 'llm',
       state: llmState,
-      icon: <Bot />,
+      icon: <Code2 />,
+      tone: 'info',
       title: t('dashboard.cards.llm.title'),
       detail: llmReady
         ? t('dashboard.cards.llm.ready', { count: usableBackends.length })
@@ -156,6 +172,7 @@ export default function DashboardRoute(): JSX.Element {
       id: 'im',
       state: imState,
       icon: <Plug />,
+      tone: 'warning',
       title: t('dashboard.cards.im.title'),
       detail: imReady
         ? t('dashboard.cards.im.ready', { platforms: messengers.map((m) => platformLabel(m, t)).join(', ') })
@@ -175,131 +192,190 @@ export default function DashboardRoute(): JSX.Element {
     nativeAgentSelected,
   })
 
-  const quickLinks = [
-    { to: '/?welcome=1', icon: <MessageSquare />, title: t('dashboard.quick.chat') },
-    { to: '/settings/start', icon: <Settings />, title: t('dashboard.quick.start') },
-    { to: '/workspace', icon: <Database />, title: t('dashboard.quick.workspace') },
-    { to: '/settings/service', icon: <Server />, title: t('dashboard.quick.service') },
+  const quickLinks: DashboardLinkItem[] = [
+    {
+      to: '/?welcome=1',
+      icon: <MessageSquare />,
+      title: t('dashboard.quick.chat'),
+      detail: t('dashboard.quick.chatDetail'),
+    },
+    {
+      to: '/settings/start',
+      icon: <Settings />,
+      title: t('dashboard.quick.start'),
+      detail: t('dashboard.quick.startDetail'),
+    },
+    {
+      to: '/workspace',
+      icon: <Database />,
+      title: t('dashboard.quick.workspace'),
+      detail: t('dashboard.quick.workspaceDetail'),
+    },
+    {
+      to: '/settings/service',
+      icon: <Server />,
+      title: t('dashboard.quick.service'),
+      detail: t('dashboard.quick.serviceDetail'),
+    },
   ]
-  const advancedLinks = [
-    { to: '/tasks', icon: <ClipboardList />, title: t('dashboard.advanced.tasks') },
-    { to: '/memory', icon: <Database />, title: t('dashboard.advanced.memory') },
-    { to: '/settings/agim-skills/installed', icon: <ShieldCheck />, title: t('dashboard.advanced.skills') },
-    { to: '/observability', icon: <Server />, title: t('dashboard.advanced.observability') },
+  const advancedLinks: DashboardLinkItem[] = [
+    {
+      to: '/tasks',
+      icon: <ClipboardList />,
+      title: t('dashboard.advanced.tasks'),
+      detail: t('dashboard.advanced.tasksDetail'),
+    },
+    {
+      to: '/memory',
+      icon: <BrainCircuit />,
+      title: t('dashboard.advanced.memory'),
+      detail: t('dashboard.advanced.memoryDetail'),
+    },
+    {
+      to: '/settings/agim-skills/installed',
+      icon: <ShieldCheck />,
+      title: t('dashboard.advanced.skills'),
+      detail: t('dashboard.advanced.skillsDetail'),
+    },
+    {
+      to: '/observability',
+      icon: <Activity />,
+      title: t('dashboard.advanced.observability'),
+      detail: t('dashboard.advanced.observabilityDetail'),
+    },
   ]
 
   return (
-    <div className="min-h-dvh bg-bg">
-      <Topbar />
-      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6">
-        <header className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold">{t('dashboard.title')}</h1>
-              <Badge variant={coreReadyCount >= 3 ? 'success' : 'info'}>
-                {t('dashboard.coreReady', { count: coreReadyCount })}
-              </Badge>
-            </div>
-            <p className="mt-1 max-w-2xl text-sm text-text-dim">{t('dashboard.subtitle')}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm">
-              <Link to="/?welcome=1">
-                <MessageSquare className="h-4 w-4" />
-                <span>{t('dashboard.actions.chat')}</span>
-              </Link>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={anyFetching}
-              onClick={() => {
-                void cfgQuery.refetch()
-                void serviceQuery.refetch()
-                void agentsQuery.refetch()
-                void llmQuery.refetch()
-              }}
-            >
-              <RefreshCcw className={cn('h-4 w-4', anyFetching && 'animate-spin')} />
-              <span>{t('actions.refresh')}</span>
-            </Button>
-          </div>
-        </header>
-
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {cards.map((card) => (
-            <StatusCardItem key={card.id} card={card} />
-          ))}
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-          <section className="rounded-md border border-border bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">{t('dashboard.next.title')}</h2>
-              <Badge variant={coreReadyCount >= 3 ? 'success' : 'secondary'}>
-                {t(coreReadyCount >= 3 ? 'dashboard.next.ready' : 'dashboard.next.pending')}
-              </Badge>
-            </div>
-            <div className="grid gap-2">
-              {nextActions.map((action) => (
-                <Link
-                  key={action.id}
-                  to={action.to}
-                  className={cn(
-                    'group flex min-h-16 items-center gap-3 rounded-md border border-border p-3 no-underline',
-                    'hover:border-border-strong hover:bg-surface-hover',
-                    action.primary && 'border-accent bg-accent-bg/45',
-                  )}
+    <WorkbenchFrame contentClassName="space-y-5">
+          <header className="flex flex-col gap-4 border-b border-border pb-5 xl:flex-row xl:items-end">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                <span>{t('dashboard.eyebrow')}</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+                <span className="font-medium text-text-dim">{t('dashboard.scope')}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-normal text-text">{t('dashboard.title')}</h1>
+                <Badge
+                  variant={coreReadyCount >= 3 ? 'success' : 'info'}
+                  className="normal-case"
                 >
                   <span
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-dim',
-                      action.primary && 'bg-accent text-accent-fg',
+                      'h-1.5 w-1.5 rounded-full',
+                      coreReadyCount >= 3 ? 'bg-success' : 'bg-info',
                     )}
-                    aria-hidden="true"
-                  >
-                    <ArrowRight className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-text">{action.title}</span>
-                    <span className="mt-0.5 block text-sm text-text-dim">{action.detail}</span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-text-dim transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              ))}
+                  />
+                  {t('dashboard.coreReady', { count: coreReadyCount })}
+                </Badge>
+              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">{t('dashboard.subtitle')}</p>
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" className="shadow-[var(--ag-shadow-sm)]">
+                <Link to="/?welcome=1">
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{t('dashboard.actions.chat')}</span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={anyFetching}
+                onClick={() => {
+                  void cfgQuery.refetch()
+                  void serviceQuery.refetch()
+                  void agentsQuery.refetch()
+                  void llmQuery.refetch()
+                }}
+              >
+                <RefreshCcw className={cn('h-4 w-4', anyFetching && 'animate-spin')} />
+                <span>{t('actions.refresh')}</span>
+              </Button>
+            </div>
+          </header>
+
+          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            {cards.map((card) => (
+              <StatusCardItem key={card.id} card={card} />
+            ))}
           </section>
 
-          <section className="rounded-md border border-border bg-surface p-4">
-            <h2 className="text-sm font-semibold">{t('dashboard.quick.title')}</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {quickLinks.map((link) => (
-                <DashboardLink key={link.to} {...link} />
-              ))}
-            </div>
-            <h2 className="mt-4 text-sm font-semibold">{t('dashboard.advanced.title')}</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {advancedLinks.map((link) => (
-                <DashboardLink key={link.to} {...link} />
-              ))}
-            </div>
+          <section className="grid gap-5 xl:grid-cols-12">
+            <section className="xl:col-span-7 rounded-xl border border-border bg-surface p-6 shadow-sm">
+              <div className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-base font-bold text-text">
+                    <Sparkles className="h-4 w-4 text-brand-600" />
+                    {t('dashboard.next.title')}
+                  </h2>
+                  <p className="mt-1 text-sm text-text-muted">{t('dashboard.next.subtitle')}</p>
+                </div>
+                <Badge variant={coreReadyCount >= 3 ? 'success' : 'secondary'} className="normal-case">
+                  {t(coreReadyCount >= 3 ? 'dashboard.next.ready' : 'dashboard.next.pending')}
+                </Badge>
+              </div>
+              <div className="space-y-3">
+                {nextActions.map((action, index) => (
+                  <NextActionItem
+                    key={action.id}
+                    action={action}
+                    index={index}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="xl:col-span-5 grid gap-5">
+              <section className="rounded-xl border border-border bg-surface p-6 shadow-sm">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-text">
+                  <span className="h-3 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
+                  {t('dashboard.quick.title')}
+                </h2>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {quickLinks.map((link) => (
+                    <DashboardLink key={link.to} {...link} />
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border bg-surface p-6 shadow-sm">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-text">
+                  <span className="h-3 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
+                  {t('dashboard.advanced.title')}
+                </h2>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {advancedLinks.map((link) => (
+                    <DashboardLink key={link.to} {...link} />
+                  ))}
+                </div>
+              </section>
+            </section>
           </section>
-        </section>
-      </main>
-    </div>
+
+    </WorkbenchFrame>
   )
 }
 
 function StatusCardItem({ card }: { card: StatusCard }): JSX.Element {
   const { t } = useTranslation()
   const done = card.state === 'done'
+  const tone = statusTone(card.tone)
   return (
-    <article className="rounded-md border border-border bg-surface p-4">
-      <div className="flex items-start gap-3">
+    <article
+      className={cn(
+        'group relative overflow-hidden rounded-xl border border-border bg-surface p-5',
+        'transition-all duration-300 hover:-translate-y-1 hover:border-brand-500/50 hover:shadow-xl',
+      )}
+    >
+      <div className={cn('absolute inset-x-0 top-0 h-1', tone.bar)} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors',
+            done ? tone.iconReady : tone.iconIdle,
             card.state === 'done' && 'text-success',
             card.state === 'warn' && 'text-warning',
             card.state === 'todo' && 'text-text-dim',
@@ -316,22 +392,69 @@ function StatusCardItem({ card }: { card: StatusCard }): JSX.Element {
                 ? <Loader2 className="animate-spin" />
                 : card.icon}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">{card.title}</h2>
-            <Badge variant={STATE_BADGE[card.state]}>{t(`dashboard.state.${card.state}`)}</Badge>
-          </div>
-          <p className="mt-1 text-sm text-text-dim">{card.detail}</p>
-          {card.meta && <p className="mt-1 truncate text-xs text-text-muted">{card.meta}</p>}
-          <Button asChild variant={done ? 'ghost' : 'secondary'} size="sm" className="mt-3">
-            <Link to={card.to}>
-              <span>{card.action}</span>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
+        <Badge variant={STATE_BADGE[card.state]} className="normal-case">
+          {t(`dashboard.state.${card.state}`)}
+        </Badge>
+      </div>
+      <div className="mt-4 min-w-0">
+        <h2 className="text-sm font-semibold text-text transition-colors group-hover:text-brand-600">{card.title}</h2>
+        <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-text-muted">{card.detail}</p>
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
+          <span className="min-w-0 truncate text-xs font-mono text-text-muted">{card.meta ?? '—'}</span>
+          <Link
+            to={card.to}
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-600 no-underline hover:text-brand-700 hover:underline"
+          >
+            <span>{card.action}</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </article>
+  )
+}
+
+function NextActionItem({
+  action,
+  index,
+}: {
+  action: DashboardAction
+  index: number
+}): JSX.Element {
+  return (
+    <Link
+      to={action.to}
+      className={cn(
+        'group relative flex min-h-20 items-start gap-3 rounded-lg border p-4 pl-5 no-underline',
+        'transition-all hover:bg-surface-hover hover:shadow-md',
+        action.primary
+          ? 'border-2 border-brand-500/80 bg-accent-bg/40'
+          : 'border-border bg-surface hover:border-border-strong',
+      )}
+    >
+      <span
+        className={cn(
+          'absolute -left-2.5 -top-2.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow-[var(--ag-shadow-sm)]',
+          action.primary ? 'bg-brand-600 text-white' : 'bg-surface-2 text-text-dim',
+        )}
+        aria-hidden="true"
+      >
+        {index + 1}
+      </span>
+      <span className="min-w-0 flex-1 pl-2">
+        <span className="block text-sm font-semibold text-text group-hover:text-brand-600">{action.title}</span>
+        <span className="mt-1 block text-sm leading-5 text-text-muted">{action.detail}</span>
+      </span>
+      <span
+        className={cn(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105',
+          action.primary ? 'bg-brand-100 text-brand-600 dark:bg-accent-bg dark:text-accent' : 'bg-surface-2 text-text-muted',
+        )}
+        aria-hidden="true"
+      >
+        <ArrowRight className="h-4 w-4" />
+      </span>
+    </Link>
   )
 }
 
@@ -339,24 +462,64 @@ function DashboardLink({
   to,
   icon,
   title,
+  detail,
 }: {
   to: string
   icon: JSX.Element
   title: string
+  detail: string
 }): JSX.Element {
   return (
     <Link
       to={to}
       className={cn(
-        'flex min-h-12 items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 no-underline',
-        'text-sm font-medium text-text hover:bg-surface-hover',
+        'group flex min-h-16 items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3 no-underline',
+        'transition-all hover:border-brand-100 hover:bg-accent-bg/50',
         '[&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
       )}
     >
-      {icon}
-      <span className="min-w-0 truncate">{title}</span>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface text-text-dim group-hover:text-brand-600">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-bold text-text group-hover:text-brand-600">{title}</span>
+        <span className="mt-0.5 block truncate text-[10px] text-text-muted">{detail}</span>
+      </span>
     </Link>
   )
+}
+
+function statusTone(tone: StatusCard['tone']): {
+  bar: string
+  iconReady: string
+  iconIdle: string
+} {
+  switch (tone) {
+    case 'success':
+      return {
+        bar: 'bg-success',
+        iconReady: 'bg-success-bg text-success',
+        iconIdle: 'bg-success-bg/60 text-success',
+      }
+    case 'info':
+      return {
+        bar: 'bg-info',
+        iconReady: 'bg-info-bg text-info',
+        iconIdle: 'bg-info-bg/60 text-info',
+      }
+    case 'warning':
+      return {
+        bar: 'bg-warning',
+        iconReady: 'bg-warning-bg text-warning',
+        iconIdle: 'bg-warning-bg/60 text-warning',
+      }
+    default:
+      return {
+        bar: 'bg-accent',
+        iconReady: 'bg-accent-bg text-accent',
+        iconIdle: 'bg-accent-bg/60 text-accent',
+      }
+  }
 }
 
 function makeNextActions(opts: {

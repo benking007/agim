@@ -81,8 +81,11 @@ describe('/dashboard', () => {
     mockFetch()
     renderPage()
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Home workbench' })).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText((_text, el) => el?.textContent === '2/3 ready')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText((_text, el) => el?.textContent === 'Default agent：claude-code')).toBeInTheDocument()
+    })
     expect(screen.getByText('claude-code is online')).toBeInTheDocument()
     expect(screen.getByText('No model API yet; external agents can still run.')).toBeInTheDocument()
     expect(screen.getByText('No IM connected yet.')).toBeInTheDocument()
@@ -134,5 +137,41 @@ describe('/dashboard', () => {
     expect(screen.getByText('agim is online')).toBeInTheDocument()
     expect(screen.getByText('Connected: WeChat')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Review task activity/i })).toHaveAttribute('href', '/tasks')
+  })
+
+  it('keeps collapsed workbench links styled after tooltip wrapping', async () => {
+    localStorage.setItem('agim-workbench-sidebar-collapsed', '1')
+    mockFetch()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Home workbench' })).toBeInTheDocument())
+
+    const overview = screen.getByRole('link', { name: 'Global overview' })
+    expect(overview.className).toContain('h-11')
+    expect(overview.className).toContain('text-brand-600')
+    expect(overview.className).not.toContain('({')
+  })
+
+  it('defaults the workbench sidebar to collapsed for new users', async () => {
+    mockFetch()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Home workbench' })).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument()
+    expect(screen.queryByText('Navigation panel')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Global overview' }).className).toContain('h-11')
+  })
+
+  it('keeps an explicit expanded workbench sidebar preference', async () => {
+    localStorage.setItem('agim-workbench-sidebar-collapsed', '0')
+    mockFetch()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Home workbench' })).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument()
+    expect(screen.getByText('Navigation panel')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Global overview' }).className).not.toContain('h-11')
   })
 })

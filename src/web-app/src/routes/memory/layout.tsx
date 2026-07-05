@@ -8,7 +8,7 @@
 
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Topbar } from '@/components/shell/topbar'
+import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { MemoryUserPicker } from '@/components/memory/user-picker'
 import { cn } from '@/lib/utils'
 
@@ -71,12 +71,10 @@ export default function MemoryLayout(): JSX.Element {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <Topbar />
-
+    <WorkbenchFrame contentClassName="space-y-4">
       {/* User picker — the primary navigation control for this page */}
-      <div className="border-b border-border bg-surface px-3 sm:px-4 py-2">
-        <div className="mx-auto flex max-w-7xl items-center gap-3">
+      <div className="rounded-xl border border-border bg-surface px-3 py-3 shadow-sm sm:px-4">
+        <div className="flex items-center gap-3">
           <span className="text-sm text-text-dim shrink-0">{t('userPicker.label')}</span>
           <MemoryUserPicker value={userKey} onChange={setUserKey} />
         </div>
@@ -85,10 +83,8 @@ export default function MemoryLayout(): JSX.Element {
       {/* Sub-tab nav */}
       <nav
         className={cn(
-          'sticky top-0 z-10',
           'flex items-center gap-4',
-          'border-b border-border bg-surface',
-          'px-3 sm:px-4 py-2',
+          'rounded-xl border border-border bg-surface px-3 py-2 shadow-sm',
           'overflow-x-auto',
         )}
         aria-label={t('pageTitle')}
@@ -108,7 +104,7 @@ export default function MemoryLayout(): JSX.Element {
                     'shrink-0 rounded-md px-3 py-1.5 text-sm no-underline',
                     'transition-colors tap-target',
                     isActive
-                      ? 'bg-accent-bg text-accent font-medium'
+                      ? 'bg-brand-50 text-brand-600 font-medium shadow-sm dark:bg-accent-bg dark:text-accent'
                       : 'text-text-dim hover:bg-surface-hover hover:text-text',
                   )
                 }
@@ -120,9 +116,9 @@ export default function MemoryLayout(): JSX.Element {
         ))}
       </nav>
 
-      <main className="flex-1 px-3 sm:px-4 py-4 pb-safe">
+      <section className="pb-safe">
         <Outlet />
-      </main>
-    </div>
+      </section>
+    </WorkbenchFrame>
   )
 }

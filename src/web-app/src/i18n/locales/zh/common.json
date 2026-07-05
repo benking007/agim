@@ -77,12 +77,29 @@
     "healthCheck": "后端可达"
   },
   "dashboard": {
-    "title": "首页",
-    "subtitle": "查看当前状态，直接进入下一步。",
+    "title": "首页工作台",
+    "eyebrow": "空间主控台",
+    "scope": "全局概览",
+    "subtitle": "全局调度实时大盘，监控当前系统生命周期、Agent 状态与 IM 接入，引导你快速跑通基础闭环。",
     "coreReady": "{{count}}/3 就绪",
     "unknown": "未选择",
     "actions": {
       "chat": "打开对话"
+    },
+    "shell": {
+      "operator": "智能调度官",
+      "adaptive": "系统自适应"
+    },
+    "side": {
+      "title": "导航面板",
+      "control": "控制中心",
+      "setup": "接口与通道",
+      "operate": "运行观测",
+      "overview": "全局概览",
+      "overviewDetail": "服务与接入状态",
+      "collapse": "折叠导航",
+      "expand": "展开导航",
+      "heartbeat": "节点心跳：OK"
     },
     "state": {
       "done": "已就绪",
@@ -125,7 +142,8 @@
       }
     },
     "next": {
-      "title": "下一步",
+      "title": "引导式下一步行动",
+      "subtitle": "推荐执行的任务，帮助你快速熟悉系统生态闭环。",
       "ready": "基础就绪",
       "pending": "进行中",
       "items": {
@@ -160,18 +178,34 @@
       }
     },
     "quick": {
-      "title": "常用入口",
-      "chat": "对话",
-      "start": "开始配置",
-      "workspace": "工作区",
-      "service": "服务"
+      "title": "常用核心通道",
+      "chat": "对话调试",
+      "chatDetail": "Web 沙盒验证",
+      "start": "快速配置",
+      "startDetail": "一键集成引导",
+      "workspace": "工作区间",
+      "workspaceDetail": "Agent 文件与记忆",
+      "service": "服务矩阵",
+      "serviceDetail": "后台与端口状态"
     },
     "advanced": {
-      "title": "高级能力",
-      "tasks": "任务",
-      "memory": "记忆",
-      "skills": "技能",
-      "observability": "观测"
+      "title": "专家级高级能力",
+      "tasks": "任务编排",
+      "tasksDetail": "任务、审批与提醒",
+      "memory": "长效记忆",
+      "memoryDetail": "事实、画像与向量",
+      "skills": "能力扩展包",
+      "skillsDetail": "技能安装与注入",
+      "observability": "全维观测",
+      "observabilityDetail": "健康、日志与指标"
+    },
+    "footer": {
+      "core": "系统核心",
+      "online": "Online",
+      "attention": "需处理",
+      "agent": "默认 Agent",
+      "im": "IM 通道",
+      "safe": "所有服务连接点均在监控范围内"
     },
     "platform": {
       "wechat": "微信",

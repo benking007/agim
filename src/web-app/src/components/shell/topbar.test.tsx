@@ -2,7 +2,7 @@
  * Topbar — verify:
  *   * Brand link always renders
  *   * Only mounted nav entries appear (no /reminders link until PR-12)
- *   * Active route gets the accent style
+ *   * Active route gets the brand workbench style
  *   * children slot renders between nav and theme controls
  */
 
@@ -23,10 +23,12 @@ function renderAt(path: string, children?: React.ReactNode): ReturnType<typeof r
 }
 
 describe('Topbar', () => {
-  it('renders brand emoji + app name', () => {
+  it('renders brand mark + app name', () => {
     renderAt('/')
-    expect(screen.getByText('🤖')).toBeInTheDocument()
     expect(screen.getByText('Agim')).toBeInTheDocument()
+    expect(screen.queryByText('Workbench')).not.toBeInTheDocument()
+    expect(screen.queryByText('Operator')).not.toBeInTheDocument()
+    expect(screen.queryByText('System adaptive')).not.toBeInTheDocument()
   })
 
   it('renders only the mounted nav links', () => {
@@ -46,9 +48,9 @@ describe('Topbar', () => {
   it('marks the active route with the accent style', () => {
     renderAt('/tasks')
     const tasks = screen.getByRole('link', { name: 'Tasks' })
-    expect(tasks.className).toContain('text-accent')
+    expect(tasks.className).toContain('text-brand-600')
     const chat = screen.getByRole('link', { name: 'Chat' })
-    expect(chat.className).not.toContain('text-accent')
+    expect(chat.className).not.toContain('text-brand-600')
   })
 
   it('renders the children slot', () => {

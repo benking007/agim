@@ -26,7 +26,10 @@ export function ThemeAndLangControls(): JSX.Element {
   return (
     <>
       <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
-        <SelectTrigger className="h-7 w-16 sm:w-20 text-xs" aria-label={t('lang.label')}>
+        <SelectTrigger
+          className="h-7 w-16 whitespace-nowrap text-xs sm:w-20 [&>span]:whitespace-nowrap [&>svg]:shrink-0"
+          aria-label={t('lang.label')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -35,23 +38,26 @@ export function ThemeAndLangControls(): JSX.Element {
         </SelectContent>
       </Select>
       <Select value={theme} onValueChange={(v) => setTheme(v as ThemeMode)}>
-        <SelectTrigger className="h-7 w-16 text-xs sm:w-28" aria-label={t('theme.label')}>
+        <SelectTrigger
+          className="h-7 w-32 whitespace-nowrap text-xs [&>span]:whitespace-nowrap [&>svg]:shrink-0"
+          aria-label={t('theme.label')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="system">
-            <span className="inline-flex items-center gap-2">
-              <Laptop className="h-4 w-4" /> {t('theme.system')}
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              <Laptop className="h-4 w-4 shrink-0" /> {t('theme.system')}
             </span>
           </SelectItem>
           <SelectItem value="light">
-            <span className="inline-flex items-center gap-2">
-              <SunMedium className="h-4 w-4" /> {t('theme.light')}
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              <SunMedium className="h-4 w-4 shrink-0" /> {t('theme.light')}
             </span>
           </SelectItem>
           <SelectItem value="dark">
-            <span className="inline-flex items-center gap-2">
-              <Moon className="h-4 w-4" /> {t('theme.dark')}
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              <Moon className="h-4 w-4 shrink-0" /> {t('theme.dark')}
             </span>
           </SelectItem>
         </SelectContent>

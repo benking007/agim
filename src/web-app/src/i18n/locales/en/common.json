@@ -77,12 +77,29 @@
     "healthCheck": "Backend reachable"
   },
   "dashboard": {
-    "title": "Home",
-    "subtitle": "Check the current state and take the next step.",
+    "title": "Home workbench",
+    "eyebrow": "Control space",
+    "scope": "Global overview",
+    "subtitle": "A live operations surface for service lifecycle, agent readiness, and IM access, with the next step kept close at hand.",
     "coreReady": "{{count}}/3 ready",
     "unknown": "not selected",
     "actions": {
       "chat": "Open chat"
+    },
+    "shell": {
+      "operator": "Operator",
+      "adaptive": "System adaptive"
+    },
+    "side": {
+      "title": "Navigation panel",
+      "control": "Control center",
+      "setup": "APIs and channels",
+      "operate": "Operations",
+      "overview": "Global overview",
+      "overviewDetail": "Services and access",
+      "collapse": "Collapse navigation",
+      "expand": "Expand navigation",
+      "heartbeat": "Node heartbeat: OK"
     },
     "state": {
       "done": "Ready",
@@ -125,7 +142,8 @@
       }
     },
     "next": {
-      "title": "Next step",
+      "title": "Guided next action",
+      "subtitle": "Recommended tasks that help you understand and complete the system loop.",
       "ready": "base ready",
       "pending": "in progress",
       "items": {
@@ -160,18 +178,34 @@
       }
     },
     "quick": {
-      "title": "Common",
-      "chat": "Chat",
-      "start": "Setup",
+      "title": "Core channels",
+      "chat": "Chat debug",
+      "chatDetail": "Web sandbox check",
+      "start": "Quick setup",
+      "startDetail": "Guided integration",
       "workspace": "Workspace",
-      "service": "Service"
+      "workspaceDetail": "Agent files and memory",
+      "service": "Service matrix",
+      "serviceDetail": "Daemon and port state"
     },
     "advanced": {
-      "title": "Advanced",
-      "tasks": "Tasks",
-      "memory": "Memory",
-      "skills": "Skills",
-      "observability": "Observability"
+      "title": "Expert capabilities",
+      "tasks": "Task orchestration",
+      "tasksDetail": "Jobs, approvals, reminders",
+      "memory": "Long-term memory",
+      "memoryDetail": "Facts, persona, vectors",
+      "skills": "Skill packs",
+      "skillsDetail": "Install and injection",
+      "observability": "Full observability",
+      "observabilityDetail": "Health, logs, metrics"
+    },
+    "footer": {
+      "core": "System core",
+      "online": "Online",
+      "attention": "Needs attention",
+      "agent": "Default agent",
+      "im": "IM channels",
+      "safe": "All service connection points are within the monitoring range"
     },
     "platform": {
       "wechat": "WeChat",

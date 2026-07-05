@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { MapPin, NotebookText, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
-import { Topbar } from '@/components/shell/topbar'
+import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { EmptyState } from '@/components/common/empty-state'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -194,10 +194,8 @@ export default function MemosRoute(): JSX.Element {
   )
 
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <Topbar />
-
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-3 py-4 sm:px-4 pb-safe">
+    <WorkbenchFrame contentClassName="pb-safe">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
         <header className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold">{t('pageTitle')}</h1>
@@ -298,8 +296,8 @@ export default function MemosRoute(): JSX.Element {
           confirmLabel={t('action.delete')}
           onConfirm={onConfirmDelete}
         />
-      </main>
-    </div>
+      </div>
+    </WorkbenchFrame>
   )
 }
 

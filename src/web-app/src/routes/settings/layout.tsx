@@ -8,7 +8,7 @@
 
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Topbar } from '@/components/shell/topbar'
+import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
@@ -76,24 +76,22 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
 export default function SettingsLayout(): JSX.Element {
   const { t } = useTranslation('settings')
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <Topbar />
-
-      <div className="flex flex-1 flex-col md:flex-row">
-        <aside className="border-b border-border bg-surface md:w-64 md:shrink-0 md:border-b-0 md:border-r">
+    <WorkbenchFrame contentClassName="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="rounded-xl border border-border bg-surface shadow-sm">
           <nav
             className={cn(
               'flex gap-4 overflow-x-auto px-3 py-3',
-              'md:sticky md:top-0 md:flex-col md:gap-3 md:overflow-visible md:px-4',
+              'xl:sticky xl:top-24 xl:flex-col xl:gap-3 xl:overflow-visible xl:px-4',
             )}
             aria-label={t('pageTitle')}
           >
             {SUB_TAB_GROUPS.map((group) => (
-              <section key={group.id} className="min-w-max md:min-w-0">
+              <section key={group.id} className="min-w-max xl:min-w-0">
                 <h2 className="px-2 text-[11px] font-semibold uppercase leading-5 text-text-muted">
                   {t(group.i18nKey)}
                 </h2>
-                <div className="mt-1 flex gap-1 md:flex-col">
+                <div className="mt-1 flex gap-1 xl:flex-col">
                   {group.tabs.filter((tab) => tab.mounted).map((tab) => (
                     <SettingsNavLink key={tab.to} tab={tab} />
                   ))}
@@ -103,11 +101,11 @@ export default function SettingsLayout(): JSX.Element {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 px-3 py-4 pb-safe sm:px-4">
+        <section className="min-w-0 pb-safe">
           <Outlet />
-        </main>
+        </section>
       </div>
-    </div>
+    </WorkbenchFrame>
   )
 }
 
@@ -120,16 +118,16 @@ function SettingsNavLink({ tab }: { tab: SubTab }): JSX.Element {
         cn(
           'flex min-h-9 items-center gap-2 rounded-md px-3 py-1.5 text-sm no-underline',
           'transition-colors tap-target',
-          'md:w-full md:justify-between',
+          'xl:w-full xl:justify-between',
           isActive
-            ? 'bg-accent-bg text-accent font-medium'
+            ? 'bg-indigo-50/80 text-brand-600 font-medium shadow-sm dark:bg-accent-bg dark:text-accent'
             : 'text-text-dim hover:bg-surface-hover hover:text-text',
         )
       }
     >
       <span className="min-w-0 truncate">{t(tab.i18nKey)}</span>
       {tab.recommended && (
-        <Badge variant="accent" className="hidden md:inline-flex">
+        <Badge variant="accent" className="hidden xl:inline-flex">
           {t('navigation.recommended')}
         </Badge>
       )}

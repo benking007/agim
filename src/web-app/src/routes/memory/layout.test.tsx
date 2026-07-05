@@ -78,7 +78,7 @@ describe('/memory layout', () => {
     renderAt('/memory/vector?user=wechat%3Au1')
 
     const vector = screen.getByRole('link', { name: 'Vector' })
-    expect(vector.className).toContain('text-accent')
-    expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('text-accent')
+    expect(vector.className).toContain('text-brand-600')
+    expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('text-brand-600')
   })
 })

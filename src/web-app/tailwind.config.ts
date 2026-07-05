@@ -26,6 +26,7 @@ export default {
         bg:        'hsl(var(--ag-bg))',
         surface:   'hsl(var(--ag-surface))',
         'surface-2': 'hsl(var(--ag-surface-2))',
+        'surface-hover': 'hsl(var(--ag-surface-hover))',
         // Borders
         border:    'hsl(var(--ag-border))',
         'border-strong': 'hsl(var(--ag-border-strong))',
@@ -36,6 +37,14 @@ export default {
           muted:   'hsl(var(--ag-text-muted))',
         },
         // Brand / semantic
+        brand: {
+          50: '#f5f3ff',
+          100: '#ede9fe',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+          900: '#312e81',
+        },
         accent: {
           DEFAULT: 'hsl(var(--ag-accent))',
           fg:      'hsl(var(--ag-accent-fg))',

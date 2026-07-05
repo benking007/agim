@@ -6,7 +6,7 @@
  * Mobile (< sm):
  *   * Brand stays on the left
  *   * Nav collapses into a horizontal scroll strip (no hamburger
- *     yet — we have ≤ 9 nav items so a horizontal scroller is more
+ *     yet — the nav is short enough that a horizontal scroller is more
  *     thumb-friendly than a drawer for now)
  *   * Theme+lang stay on the right, condensed
  *
@@ -18,6 +18,7 @@
 
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { Zap } from 'lucide-react'
 import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
@@ -66,7 +67,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
   const navLinks = (
     <nav
       className={cn(
-        'flex flex-1 min-w-0 items-center gap-1',
+        'flex min-w-0 flex-1 items-center gap-1',
         'overflow-x-auto scrollbar-thin',
         '[&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:bg-border',
       )}
@@ -79,11 +80,11 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
           end={n.to === '/'}
           className={({ isActive }) =>
             cn(
-              'shrink-0 rounded-md px-2.5 py-1.5 text-sm no-underline',
-              'transition-colors tap-target',
+              'shrink-0 rounded-lg border px-4 py-2 text-sm font-medium no-underline',
+              'transition-all tap-target',
               isActive
-                ? 'bg-accent-bg text-accent font-medium'
-                : 'text-text-dim hover:bg-surface-hover hover:text-text',
+                ? 'border-brand-100/30 bg-brand-50 text-brand-600 shadow-sm dark:border-accent/20 dark:bg-accent-bg dark:text-accent'
+                : 'border-transparent text-text-dim hover:bg-surface-hover hover:text-text',
             )
           }
         >
@@ -96,49 +97,41 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
   return (
     <header
       className={cn(
-        'sticky top-0 z-20',
-        // Mobile (<sm): two-row layout — brand + widgets on row 1, nav
-        // links on row 2 (horizontally scrollable). Desktop (≥sm): single
-        // row, nav inline. Avoids the "brand + 4 widgets squeeze nav off-
-        // screen" issue on /chat where children = AgentPicker pushes the
-        // nav width below the threshold to even show the active item.
-        'flex flex-col sm:flex-row sm:items-center sm:gap-3',
-        'border-b border-border bg-surface',
-        'pt-safe',
-        'shadow-sm',
+        'sticky top-0 z-50',
+        'flex flex-col border-b border-border bg-surface/95 text-text backdrop-blur-md',
+        'pt-safe shadow-sm',
       )}
     >
-      {/* Row 1 (mobile) / left half (desktop) — brand + widgets */}
+      {/* Agim 2.0 style top navigation bar. */}
       <div
         className={cn(
-          'flex items-center gap-2 sm:gap-3',
-          'overflow-x-hidden',
-          'px-3 sm:px-4 py-2 sm:py-2',
-          'sm:flex-1 sm:min-w-0',
+          'flex min-w-0 items-center justify-between gap-4',
+          'px-3 py-3 sm:px-6',
         )}
       >
         <NavLink
           to="/dashboard"
-          className="flex shrink-0 items-center gap-1 text-md font-semibold no-underline"
+          className="flex shrink-0 items-center gap-2.5 no-underline"
         >
-          <span aria-hidden="true">🤖</span>
-          <span className="hidden sm:inline">{t('appName')}</span>
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-400 text-white shadow-sm shadow-brand-500/10">
+            <Zap className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="hidden items-center gap-2 sm:flex">
+            <span className="text-lg font-bold tracking-normal text-text">{t('appName')}</span>
+          </span>
         </NavLink>
 
-        {/* Desktop nav lives inline on row 1; the mobile copy is on
-            row 2 below. Render only one based on the viewport. */}
-        {isDesktop && <div className="flex flex-1 min-w-0">{navLinks}</div>}
+        {isDesktop && <div className="flex min-w-0 flex-1">{navLinks}</div>}
 
-        {children && <div className="flex items-center gap-2">{children}</div>}
+        <div className="flex shrink-0 items-center gap-3">
+          {children && <div className="hidden items-center gap-2 lg:flex">{children}</div>}
 
-        <div className="flex shrink-0 items-center gap-2">
           <ThemeAndLangControls />
         </div>
       </div>
 
-      {/* Row 2 (mobile only) — scrollable nav strip */}
       {!isDesktop && (
-        <div className="border-t border-border px-3 py-1">{navLinks}</div>
+        <div className="border-t border-border px-3 py-2">{navLinks}</div>
       )}
     </header>
   )

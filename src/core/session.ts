@@ -282,6 +282,12 @@ class SessionManager {
         claudeSessionPrimed: existing?.claudeSessionPrimed,
         opencodeSessionId: existing?.opencodeSessionId,
         codexSessionId: existing?.codexSessionId,
+        antigravitySessionId: existing?.antigravitySessionId,
+        kimiSessionId: existing?.kimiSessionId,
+        qoderSessionId: existing?.qoderSessionId,
+        piSessionId: existing?.piSessionId,
+        mimoSessionId: existing?.mimoSessionId,
+        copilotSessionId: existing?.copilotSessionId,
         planMode: existing?.planMode,
       }
 
@@ -476,6 +482,111 @@ class SessionManager {
   }
 
   /**
+   * Persist Kimi Code's session id after the first run creates or reports it.
+   * Subsequent turns pass it back via `kimi -p --session <id>`.
+   */
+  async setKimiSessionId(
+    platform: string, channelId: string, threadId: string,
+    kimiSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.kimiSessionId === kimiSessionId) return session
+      session.kimiSessionId = kimiSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
+   * Persist Qoder's stream-json session id after the first run reports it.
+   * Subsequent turns pass it back via `qodercli --resume <id>`.
+   */
+  async setQoderSessionId(
+    platform: string, channelId: string, threadId: string,
+    qoderSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.qoderSessionId === qoderSessionId) return session
+      session.qoderSessionId = qoderSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
+   * Persist PI's JSON-mode session id after the first run reports it.
+   * Subsequent turns pass it back via `pi --session <id>`.
+   */
+  async setPiSessionId(
+    platform: string, channelId: string, threadId: string,
+    piSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.piSessionId === piSessionId) return session
+      session.piSessionId = piSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
+   * Persist MiMo Code's JSON-mode session id after the first run reports it.
+   * Subsequent turns pass it back via `mimo run --session <id>`.
+   */
+  async setMimoSessionId(
+    platform: string, channelId: string, threadId: string,
+    mimoSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.mimoSessionId === mimoSessionId) return session
+      session.mimoSessionId = mimoSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
+   * Persist GitHub Copilot CLI's Agim-allocated session UUID.
+   * Subsequent turns pass it back via `copilot --session-id <uuid>`.
+   */
+  async setCopilotSessionId(
+    platform: string, channelId: string, threadId: string,
+    copilotSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.copilotSessionId === copilotSessionId) return session
+      session.copilotSessionId = copilotSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
    * Increment the per-session usage roll-up after a successful agent
    * invocation. Used by router.callAgentWithHistory to power /stats.
    */
@@ -531,6 +642,11 @@ class SessionManager {
         delete session.opencodeSessionId
         delete session.codexSessionId
         delete session.antigravitySessionId
+        delete session.kimiSessionId
+        delete session.qoderSessionId
+        delete session.piSessionId
+        delete session.mimoSessionId
+        delete session.copilotSessionId
         // Plan mode is per-conversation intent ("先规划再动手") — a fresh
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
@@ -771,6 +887,12 @@ class SessionManager {
         claudeSessionPrimed: session.claudeSessionPrimed,
         opencodeSessionId: session.opencodeSessionId,
         codexSessionId: session.codexSessionId,
+        antigravitySessionId: session.antigravitySessionId,
+        kimiSessionId: session.kimiSessionId,
+        qoderSessionId: session.qoderSessionId,
+        piSessionId: session.piSessionId,
+        mimoSessionId: session.mimoSessionId,
+        copilotSessionId: session.copilotSessionId,
         planMode: session.planMode,
         messageCount: session.messages.length,
       }
@@ -836,6 +958,12 @@ class SessionManager {
         claudeSessionPrimed: parsed.claudeSessionPrimed,
         opencodeSessionId: parsed.opencodeSessionId,
         codexSessionId: parsed.codexSessionId,
+        antigravitySessionId: parsed.antigravitySessionId,
+        kimiSessionId: parsed.kimiSessionId,
+        qoderSessionId: parsed.qoderSessionId,
+        piSessionId: parsed.piSessionId,
+        mimoSessionId: parsed.mimoSessionId,
+        copilotSessionId: parsed.copilotSessionId,
         planMode: parsed.planMode,
       }
       // Convert message timestamps from legacy format if present

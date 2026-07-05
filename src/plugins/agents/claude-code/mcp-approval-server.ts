@@ -108,6 +108,12 @@ interface PendingAskRpc { resolve: (r: AskResult) => void }
 type SkillResult = ReminderResult
 type PendingSkillRpc = PendingReminderRpc
 
+// Native tool bridge (web/search plus approval-gated bash/write/edit). Same
+// wire result shape as reminder/memo; separate pending map keeps channels
+// independent when a tool call and a memo write happen concurrently.
+type NativeToolResult = ReminderResult
+type PendingNativeToolRpc = PendingReminderRpc
+
 class ApprovalClient {
   private socket: Socket | null = null
   private buf = ''
@@ -120,6 +126,7 @@ class ApprovalClient {
   private pendingAsk = new Map<string, PendingAskRpc>()
   private pendingSkill = new Map<string, PendingSkillRpc>()
   private pendingGoal = new Map<string, PendingGoalRpc>()
+  private pendingNativeTools = new Map<string, PendingNativeToolRpc>()
   private connectErr: Error | null = null
   private closed = false
   private connectPromise: Promise<void>
@@ -316,6 +323,22 @@ class ApprovalClient {
       return
     }
 
+    if (m.type === 'native_tool.result') {
+      const reqId = typeof m.reqId === 'string' ? m.reqId : null
+      if (!reqId) return
+      const p = this.pendingNativeTools.get(reqId)
+      if (!p) return
+      this.pendingNativeTools.delete(reqId)
+      const ok = m.ok === true
+      if (ok) {
+        p.resolve({ ok: true, result: m.result })
+      } else {
+        const error = typeof m.error === 'string' ? m.error : 'unknown error'
+        p.resolve({ ok: false, error })
+      }
+      return
+    }
+
     if (m.type === 'a2a.result') {
       const reqId = typeof m.reqId === 'string' ? m.reqId : null
       if (!reqId) return
@@ -398,6 +421,10 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingGoal.clear()
+    for (const [, p] of this.pendingNativeTools) {
+      p.resolve({ ok: false, error: 'approval bus disconnected' })
+    }
+    this.pendingNativeTools.clear()
   }
 
   // request(): see below — request → register pending → write payload
@@ -482,6 +509,38 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingSkill.delete(reqId)
+          resolve({ ok: false, error: `write failed: ${err.message}` })
+        }
+      })
+    })
+  }
+
+  /**
+   * Native tool bridge for MCP-only agents. The bus resolves runId → IM
+   * context, asks the user to approve mutation tools, then dispatches the
+   * native implementation inside Agim.
+   */
+  async requestNativeTool(name: string, args: Record<string, unknown>): Promise<NativeToolResult> {
+    await this.connectPromise
+    if (this.connectErr || this.closed || !this.socket) {
+      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
+    }
+    if (!this.runId) {
+      return { ok: false, error: 'AGIM_RUN_ID is not set; native tools require a live run context' }
+    }
+    const reqId = randomUUID()
+    const wire = `${JSON.stringify({
+      v: 1,
+      type: 'native_tool',
+      runId: this.runId,
+      reqId,
+      payload: { name, arguments: args },
+    })}\n`
+    return new Promise<NativeToolResult>((resolve) => {
+      this.pendingNativeTools.set(reqId, { resolve })
+      this.socket?.write(wire, (err) => {
+        if (err) {
+          this.pendingNativeTools.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -758,6 +817,64 @@ export function buildServer(client: ApprovalClient): McpServer {
     const result = await client.requestMemo(op, args)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
   }
+  const wrapNativeTool = (name: string) => async (args: Record<string, unknown>) => {
+    const result = await client.requestNativeTool(name, args)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+  }
+
+  // ─── Native tools via Agim approval ───────────────────────────────
+  // MCP-only agents (Kimi/Qoder/PI-style integrations) do not expose their
+  // own permission prompts through Agim. These tools provide the Agim-owned
+  // path instead: mutation calls create an IM approval card first, and only
+  // execute after the user allows them.
+  server.registerTool(
+    'agim_bash',
+    {
+      title: 'Run a shell command after Agim approval',
+      description:
+        'Run a shell command through Agim. This requires user approval before execution. ' +
+        'Use this instead of native Bash / terminal tools when operating from IM.',
+      inputSchema: {
+        command: z.string().min(1).describe('Shell command to execute.'),
+        timeout_ms: z.number().int().positive().optional().describe('Optional timeout in milliseconds.'),
+        cwd: z.string().optional().describe('Optional working directory. Defaults to the agent workspace.'),
+      },
+    },
+    wrapNativeTool('agim_bash'),
+  )
+
+  server.registerTool(
+    'agim_write',
+    {
+      title: 'Write a file after Agim approval',
+      description:
+        'Write or append a UTF-8 file through Agim. This requires user approval before execution. ' +
+        'Use this instead of native Write / edit tools when operating from IM.',
+      inputSchema: {
+        path: z.string().min(1).describe('File path to write. Relative paths resolve in the agent workspace.'),
+        content: z.string().describe('UTF-8 content to write.'),
+        mode: z.enum(['overwrite', 'append']).optional().describe('Default overwrite; append adds to the end.'),
+      },
+    },
+    wrapNativeTool('agim_write'),
+  )
+
+  server.registerTool(
+    'agim_edit',
+    {
+      title: 'Edit a file after Agim approval',
+      description:
+        'Perform an exact string replacement through Agim. This requires user approval before execution. ' +
+        'Use this instead of native Edit / write tools when operating from IM.',
+      inputSchema: {
+        path: z.string().min(1).describe('File path to edit. Relative paths resolve in the agent workspace.'),
+        old_string: z.string().min(1).describe('Exact text to replace.'),
+        new_string: z.string().describe('Replacement text.'),
+        replace_all: z.boolean().optional().describe('Replace all occurrences. Default false.'),
+      },
+    },
+    wrapNativeTool('agim_edit'),
+  )
 
   server.registerTool(
     'create_reminder',
@@ -1286,9 +1403,8 @@ export function buildServer(client: ApprovalClient): McpServer {
   )
 
   // ─── A2A — agent-to-agent call ────────────────────────────────────
-  // Lets the running agent program-call another agent (claude-code /
-  // opencode / codex) and wait for the result inside its own tool
-  // loop. Bus enforces depth + self-call rejection + workspace
+  // Lets the running agent program-call another registered agent and wait
+  // for the result inside its own tool loop. Bus enforces depth + self-call rejection + workspace
   // whitelist; the callee runs in a fresh inline-job row with
   // parent_id pointing back at this run.
   server.registerTool(
@@ -1301,14 +1417,15 @@ export function buildServer(client: ApprovalClient): McpServer {
         'Do NOT respond "I can\'t call X" — this tool is exactly that capability. ' +
         '\n\n' +
         '**Trigger phrases (Chinese)** — call this tool, do not refuse: ' +
-        '「用 codex 帮我 …」「让 opencode 跑 …」「叫 codex 看一下 …」' +
-        '「把这个交给 opencode」「让 codex 总结 …」「codex / opencode 帮我处理 …」. ' +
+        '「用 codex 帮我 …」「让 copilot 看一下 …」「让 opencode 跑 …」「叫 qoder 看一下 …」' +
+        '「把这个交给 kimi」「让 mimo 总结 …」「codex / copilot / opencode / pi 帮我处理 …」. ' +
         '\n\n' +
         '**Trigger phrases (English)**: "ask codex to …", "have opencode run …", ' +
-        '"use codex for …", "let opencode handle …". ' +
+        '"use kimi for …", "let copilot handle …", "let mimo handle …". ' +
         '\n\n' +
-        '**Decision rule**: if the user explicitly names a callee agent (claude-code / opencode / ' +
-        'codex) and asks for an action — call this tool. Don\'t second-guess "I could ' +
+        '**Decision rule**: if the user explicitly names a registered callee agent or alias ' +
+        '(for example claude-code / codex / copilot / opencode / kimi-code / qoder / pi / mimo) ' +
+        'and asks for an action — call this tool. Don\'t second-guess "I could ' +
         'do it myself" — the user picked that other agent on purpose. ' +
         '\n\n' +
         '**Good fits when the user did NOT name an agent**: ' +
@@ -1334,7 +1451,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'success or {ok: false, error}.',
       inputSchema: {
         agent: z.string().describe(
-          'Target agent name. One of: claude-code, opencode, codex. ' +
+          'Target agent name or alias, for example claude-code, codex, copilot, opencode, kimi-code, qoder, pi, mimo, native, or a remote ACP agent. ' +
           'Must not be the calling agent itself.',
         ),
         prompt: z.string().describe(

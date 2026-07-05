@@ -8,7 +8,7 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 ## 项目重点
 
 - **桥接优先**：微信 / 飞书 / 钉钉 / 邮件接入多类 Agent。
-- **后端灵活**：Claude Code、Codex、OpenCode、Cursor、Antigravity、native LLM、ACP 远端 Agent。
+- **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、native LLM、ACP 远端 Agent。
 - **AI 能力成套**：记忆、技能、长目标、心跳、提醒、备忘、结构化提问。
 - **运行可靠**：SQLite outbox、重启恢复、任务看板、审计日志。
 - **安全默认开启**：token 鉴权、工具审批、敏感路径拦截。
@@ -24,7 +24,7 @@ agim go
 
 `agim go` 会做三件事：
 
-1. 检测本机可用的 Agent（Claude Code / Codex / Cursor / Agim Agent 等）。
+1. 检测本机可用的 Agent（Claude Code / Codex / GitHub Copilot CLI / Cursor / Kimi Code / Qoder / PI / MiMo Code / Agim Agent 等）。
 2. 如果没有可用 Agent，引导你配置 Agim Agent 的大模型 API。
 3. 后台启动 Agim，并打印 Web 控制台地址和首次访问 token。
 
@@ -66,11 +66,13 @@ agim doctor
 
 | 场景 | 推荐路径 |
 |---|---|
-| 编码与复杂任务 | `claude-code` / `codex` / `opencode` / `cursor` |
+| 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
 | 低成本 API 直连 | `native` + `llmBackends` |
 | 自定义远端执行器 | ACP (`acpAgents`) |
 
 native 配置详见：`docs/llm-backends.md`
+
+内置 Agent 清单与能力说明：`docs/agents.md`
 
 ## 核心 AI 能力
 
@@ -98,7 +100,7 @@ native 配置详见：`docs/llm-backends.md`
 
 | 命令 | 用途 |
 |---|---|
-| `/cc ...` `/oc ...` `/cx ...` `/cs ...` `/na ...` | 切换/指定 agent |
+| `/cc ...` `/oc ...` `/cx ...` `/co ...` `/cs ...` `/kimi ...` `/qd ...` `/pi ...` `/mimo ...` `/na ...` | 切换/指定 agent |
 | `/new` | 新会话 |
 | `/model` `/models` | 查看/切换模型 |
 | `/goal ...` | 管理长目标 |

@@ -1,6 +1,6 @@
 /**
  * /settings/agents smoke — R13. Covers:
- *   * 4 built-in agents render with online/offline badges driven by
+ *   * built-in agents render with online/offline badges driven by
  *     /api/agents/status
  *   * Toggling an agent opens the Save bar
  *   * Default-agent picker only lists agents that are BOTH enabled
@@ -72,7 +72,14 @@ const CONFIG = {
 const STATUS = {
   'claude-code': true,
   'codex': false, // installed but circuit-open
+  'copilot': true,
   'opencode': true,
+  'antigravity': false,
+  'cursor': true,
+  'kimi-code': true,
+  'qoder': true,
+  'pi': true,
+  'mimo': true,
 }
 
 function mockStandardFetch(extraConfig?: Record<string, unknown>) {
@@ -91,12 +98,18 @@ function mockStandardFetch(extraConfig?: Record<string, unknown>) {
 }
 
 describe('/settings/agents — built-in adapters', () => {
-  it('renders the 3 built-in agent rows with online/offline badges', async () => {
+  it('renders the built-in agent rows with online/offline badges', async () => {
     mockStandardFetch()
     renderPage()
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     expect(screen.getByText('codex')).toBeInTheDocument()
     expect(screen.getByText('opencode')).toBeInTheDocument()
+    expect(screen.getByText('Antigravity')).toBeInTheDocument()
+    expect(screen.getByText('cursor')).toBeInTheDocument()
+    expect(screen.getByText('Kimi Code')).toBeInTheDocument()
+    expect(screen.getByText('Qoder')).toBeInTheDocument()
+    expect(screen.getByText('PI')).toBeInTheDocument()
+    expect(screen.getByText('MiMo Code')).toBeInTheDocument()
     // Note: claude-code appears twice (row + default picker trigger).
     expect(screen.getAllByText('claude-code').length).toBe(2)
     // claude-code is online (true) — but at least one row should have
@@ -118,6 +131,7 @@ describe('/settings/agents — built-in adapters', () => {
     const defaultAgentTrigger = document.getElementById('default-agent')
     expect(defaultAgentTrigger).not.toBeNull()
     fireEvent.click(defaultAgentTrigger!)
+    expect(screen.getByRole('listbox')).toHaveClass('overflow-y-auto')
     await waitFor(() => {
       const options = screen.queryAllByRole('option')
       const optionTexts = options.map((o) => o.textContent || '')
@@ -134,7 +148,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Find the claude-code row's checkbox and uncheck it.
     const checkboxes = screen.getAllByRole('checkbox')
-    // Order = AGENT_NAMES = ['claude-code','codex','opencode']
+    // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode','antigravity','cursor','kimi-code','qoder','pi','mimo','native']
     fireEvent.click(checkboxes[0]!) // uncheck claude-code
     // Now claude-code is no longer enabled. The picker should show the
     // "no eligible" placeholder text or be disabled.
@@ -150,7 +164,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Enable opencode (currently disabled in CONFIG.agents)
     const checkboxes = screen.getAllByRole('checkbox')
-    fireEvent.click(checkboxes[2]!) // opencode (index 2 in AGENT_NAMES: claude-code, codex, opencode)
+    fireEvent.click(checkboxes[3]!) // opencode (index 3 in AGENT_NAMES)
     await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() => {

@@ -38,7 +38,7 @@
 |---|---|
 | 用户级（`~/.claude/CLAUDE.md` / `~/.config/opencode/AGENTS.md`） | **IM 入口与直连终端共享。** Claude / opencode 仍会按各自惯例加载用户级配置。这里写"无论从哪进来都希望生效"的全局规则。 |
 | 项目级（`<cwd>/CLAUDE.md`、`<cwd>/AGENTS.md`、`<cwd>/memory/`） | **隔离。** IM 入口 cwd = `~/.agim-workspaces/<agent>/`，直连终端 cwd = 当前 shell 目录。两边互不读。这里写"只在 IM 入口想要的人格 / 项目档案"。 |
-| Claude vs opencode vs codex | 互不可见。Claude 只读 `claude-code/`，opencode 只读 `opencode/`，codex 只读 `codex/`。三边可分别给不同人格。`AGENTS.md` 在 opencode/codex 目录里同名但因 cwd 隔离，互不读取。 |
+| Claude vs opencode vs codex vs cursor vs kimi vs qoder vs pi vs mimo | 互不可见。每个 agent 只读自己的 `~/.agim-workspaces/<agent>/`。各边可分别给不同人格。`AGENTS.md` 在多个目录里同名也没关系，因为 cwd 隔离，互不读取。 |
 
 ---
 

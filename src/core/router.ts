@@ -243,6 +243,14 @@ export function parseMessage(text: string): ParsedMessage {
   if (agent) {
     return { type: 'agent', agent: agent.name, prompt: rest }
   }
+  const disabledAgent = registry.findRegisteredAgent(cmd)
+  if (disabledAgent) {
+    return {
+      type: 'error',
+      prompt: trimmed,
+      error: `Agent "${displayAgentName(disabledAgent.name)}" is disabled. Enable it in Web → Agent 设置, or add "${disabledAgent.name}" to config.agents.`,
+    }
+  }
 
   // Agent built-in commands (only if no registered agent matches)
   if (AGENT_COMMANDS.has(cmd)) {
@@ -623,6 +631,21 @@ export async function callAgentWithHistory(
     } else if (name === 'antigravity') {
       void sessionManager.setAntigravitySessionId(ctx.platform, ctx.channelId, storageThreadId, id)
         .catch((err) => ctx.logger.debug({ err: String(err) }, 'setAntigravitySessionId failed'))
+    } else if (name === 'kimi-code') {
+      void sessionManager.setKimiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setKimiSessionId failed'))
+    } else if (name === 'qoder') {
+      void sessionManager.setQoderSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setQoderSessionId failed'))
+    } else if (name === 'pi') {
+      void sessionManager.setPiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setPiSessionId failed'))
+    } else if (name === 'mimo') {
+      void sessionManager.setMimoSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setMimoSessionId failed'))
+    } else if (name === 'copilot') {
+      void sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
+        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCopilotSessionId failed'))
     }
     // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
   }
@@ -819,7 +842,7 @@ export async function prepareSubtaskAgentCallOptions(
   agentName: string,
   ctx: RouteContext,
   storageThreadId: string,
-  subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId'>,
+  subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId' | 'antigravitySessionId' | 'kimiSessionId' | 'qoderSessionId' | 'piSessionId' | 'mimoSessionId' | 'copilotSessionId'>,
 ): Promise<AgentCallOptions> {
   if (agentName === 'claude-code') {
     let claudeId = subSession.claudeSessionId
@@ -847,6 +870,59 @@ export async function prepareSubtaskAgentCallOptions(
       storageThreadId,
       agentSessionId: subSession.codexSessionId,
       agentSessionResume: !!subSession.codexSessionId,
+    }
+  }
+
+  if (agentName === 'antigravity') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.antigravitySessionId,
+      agentSessionResume: !!subSession.antigravitySessionId,
+    }
+  }
+
+  if (agentName === 'kimi-code') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.kimiSessionId,
+      agentSessionResume: !!subSession.kimiSessionId,
+    }
+  }
+
+  if (agentName === 'qoder') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.qoderSessionId,
+      agentSessionResume: !!subSession.qoderSessionId,
+    }
+  }
+
+  if (agentName === 'pi') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.piSessionId,
+      agentSessionResume: !!subSession.piSessionId,
+    }
+  }
+
+  if (agentName === 'mimo') {
+    return {
+      storageThreadId,
+      agentSessionId: subSession.mimoSessionId,
+      agentSessionResume: !!subSession.mimoSessionId,
+    }
+  }
+
+  if (agentName === 'copilot') {
+    let copilotId = subSession.copilotSessionId
+    if (!copilotId) {
+      copilotId = randomUUID()
+      await sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, copilotId)
+    }
+    return {
+      storageThreadId,
+      agentSessionId: copilotId,
+      agentSessionResume: !!subSession.copilotSessionId,
     }
   }
 

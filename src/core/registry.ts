@@ -84,6 +84,17 @@ class PluginRegistry {
     return undefined
   }
 
+  /** Resolve an agent by name or alias without applying the enabled-agent
+   *  filter. Use this only for diagnostics/user-facing hints; routing and
+   *  intent classification should continue to call findAgent(). */
+  findRegisteredAgent(nameOrAlias: string): AgentAdapter | undefined {
+    const agent = this.agents.get(nameOrAlias)
+    if (agent) return agent
+
+    const realName = this.agentAliases.get(nameOrAlias)
+    return realName ? this.agents.get(realName) : undefined
+  }
+
   listMessengers(): string[] {
     return Array.from(this.messengers.keys())
   }
@@ -211,10 +222,8 @@ class PluginRegistry {
     const { codexAdapter } = await import('../plugins/agents/codex/index.js')
     this.registerAgent(codexAdapter)
 
-    // copilot agent removed (low-usage cleanup; see R15 follow-up).
-    // If the operator still has `copilot` in config.agents the registry
-    // simply won't have a matching name and the existing "agent not
-    // available" fallback path takes over.
+    const { copilotAdapter } = await import('../plugins/agents/copilot/index.js')
+    this.registerAgent(copilotAdapter)
 
     const { opencodeAdapter } = await import('../plugins/agents/opencode/index.js')
     this.registerAgent(opencodeAdapter)
@@ -222,7 +231,19 @@ class PluginRegistry {
     const { antigravityAdapter } = await import('../plugins/agents/antigravity/index.js')
     this.registerAgent(antigravityAdapter)
 
-    // Cursor (`cursor-agent`) — fifth CLI agent. isAvailable() probes the
+    const { kimiCodeAdapter } = await import('../plugins/agents/kimi-code/index.js')
+    this.registerAgent(kimiCodeAdapter)
+
+    const { qoderAdapter } = await import('../plugins/agents/qoder/index.js')
+    this.registerAgent(qoderAdapter)
+
+    const { piAdapter } = await import('../plugins/agents/pi/index.js')
+    this.registerAgent(piAdapter)
+
+    const { mimoAdapter } = await import('../plugins/agents/mimo/index.js')
+    this.registerAgent(mimoAdapter)
+
+    // Cursor (`cursor-agent`) — isAvailable() probes the
     // bin; on boxes without cursor installed the agent shows as unavailable
     // and `/cs` returns the install hint.
     const { cursorAdapter } = await import('../plugins/agents/cursor/index.js')

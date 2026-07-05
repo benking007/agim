@@ -249,7 +249,7 @@ program
     try {
       const { PID_FILE: _pidFile } = await import('./cli-ui/service.js')
       const { writeFileSync: _writePid, chmodSync: _chmodPid } = await import('node:fs')
-      _writePid(_pidFile, String(process.pid) + '\n', { mode: 0o600 })
+      _writePid(_pidFile, `${process.pid}\n`, { mode: 0o600 })
       try { _chmodPid(_pidFile, 0o600) } catch { /* non-POSIX */ }
     } catch (err) {
       // Failing to write the pidfile is non-fatal — self-check next
@@ -1409,6 +1409,59 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           await sessionManager.getOrCreateSession(
             platform, ctx.channelId, message.threadId, resolvedAgent,
           )
+        } else if (resolvedAgent === 'kimi-code') {
+          const kimiId = stickySession?.kimiSessionId
+          if (kimiId) {
+            routeCtx.agentSessionId = kimiId
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
+          )
+        } else if (resolvedAgent === 'qoder') {
+          const qoderId = stickySession?.qoderSessionId
+          if (qoderId) {
+            routeCtx.agentSessionId = qoderId
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
+          )
+        } else if (resolvedAgent === 'pi') {
+          const piId = stickySession?.piSessionId
+          if (piId) {
+            routeCtx.agentSessionId = piId
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
+          )
+        } else if (resolvedAgent === 'mimo') {
+          const mimoId = stickySession?.mimoSessionId
+          if (mimoId) {
+            routeCtx.agentSessionId = mimoId
+            routeCtx.agentSessionResume = true
+          }
+          await sessionManager.getOrCreateSession(
+            platform, ctx.channelId, message.threadId, resolvedAgent,
+          )
+        } else if (resolvedAgent === 'copilot') {
+          let copilotId = stickySession?.copilotSessionId
+          if (!copilotId) {
+            copilotId = randomUUID()
+            await sessionManager.getOrCreateSession(
+              platform, ctx.channelId, message.threadId, resolvedAgent,
+            )
+            await sessionManager.setCopilotSessionId(
+              platform, ctx.channelId, message.threadId, copilotId,
+            )
+          } else {
+            await sessionManager.getOrCreateSession(
+              platform, ctx.channelId, message.threadId, resolvedAgent,
+            )
+          }
+          routeCtx.agentSessionId = copilotId
+          routeCtx.agentSessionResume = !!stickySession?.copilotSessionId
         }
       }
     }
@@ -1638,7 +1691,7 @@ program
 program
   .command('tui')
   .description('Open the terminal chat UI for local agent conversations')
-  .option('-a, --agent <name>', 'Pre-select an agent by name (e.g. claude-code, codex, native)')
+  .option('-a, --agent <name>', 'Pre-select an agent by name (e.g. claude-code, codex, qoder, pi, native)')
   .option('-r, --resume [id]', 'Resume a saved session by id; "last" or empty picks the most recent')
   .option('--list-sessions', 'Print saved TUI sessions (latest first) and exit')
   .action(async (opts: { agent?: string; resume?: string | true; listSessions?: boolean }) => {

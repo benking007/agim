@@ -2,7 +2,7 @@
  * /settings/agents — built-in adapters + remote (ACP) agents.
  *
  * Two cards on one page:
- *   1. Built-in adapters (claude-code / codex / opencode):
+ *   1. Built-in adapters (claude-code / codex / copilot / opencode):
  *      enable/disable + default-agent picker. Mirrors v1's "Agents".
  *   2. Remote (ACP) agents: name/endpoint/auth-type table + manual
  *      add form. Mirrors v1's "Remote Agents (ACP)" card. Discover
@@ -20,11 +20,11 @@
  * add form or "edit" inline) flow through verbatim.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bot, Loader2, Network, Plus, RefreshCcw, Save, Search, Trash2, X,
+  Bot, Check, ChevronDown, Loader2, Network, Plus, RefreshCcw, Save, Search, Trash2, X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -70,8 +70,14 @@ const BUILTIN_AGENTS: Record<string, {
 }> = {
   'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli', scope: 'bridged' },
   'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli', scope: 'bridged' },
+  'copilot':     { aliases: ['co', 'gh-copilot', 'github-copilot'], pkg: '@github/copilot', kind: 'cli', scope: 'bridged' },
   'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai',               kind: 'cli', scope: 'bridged' },
+  'antigravity': { aliases: ['agy', 'gemini', 'ag'], pkg: 'agy (curl https://antigravity.google/cli/install.sh)', kind: 'cli', scope: 'bridged' },
   'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)', kind: 'cli', scope: 'bridged' },
+  'kimi-code':   { aliases: ['kimi', 'km'],      pkg: '@moonshot-ai/kimi-code',    kind: 'cli', scope: 'bridged' },
+  'qoder':       { aliases: ['qd', 'qodercli'],  pkg: 'qodercli (curl https://qoder.com/install)', kind: 'cli', scope: 'bridged' },
+  'pi':          { aliases: ['pi-agent'],        pkg: '@earendil-works/pi-coding-agent', kind: 'cli', scope: 'bridged' },
+  'mimo':        { aliases: ['mo', 'mimo-code'], pkg: '@mimo-ai/cli',              kind: 'cli', scope: 'bridged' },
   // v1.2.140 — surface the in-process `native` agent in the admin list.
   // Previously the agent was registered + always-enabled at runtime but
   // hidden from this page, so operators could only reach it via the CLI.
@@ -242,24 +248,12 @@ export default function SettingsAgentsRoute(): JSX.Element {
               {t('agents.defaultAgent')}
             </Label>
             <p className="mt-1 text-xs text-text-dim">{t('agents.defaultAgentHint')}</p>
-            <Select
-              value={defaultAgent || '__none__'}
-              onValueChange={(v) => setDraftDefault(v === '__none__' ? '' : v)}
-              disabled={eligibleDefaults.length === 0}
-            >
-              <SelectTrigger id="default-agent" className="mt-2 w-64">
-                <SelectValue placeholder={t('agents.noEligible')} />
-              </SelectTrigger>
-              <SelectContent>
-                {eligibleDefaults.length === 0 ? (
-                  <SelectItem value="__none__" disabled>{t('agents.noEligible')}</SelectItem>
-                ) : (
-                  eligibleDefaults.map((a) => (
-                    <SelectItem key={a} value={a}>{agentDisplayName(a)}</SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <DefaultAgentPicker
+              value={defaultAgent}
+              options={eligibleDefaults}
+              placeholder={t('agents.noEligible')}
+              onChange={setDraftDefault}
+            />
           </section>
 
           {/* Remote (ACP) agents — gated by features.remoteAgent
@@ -302,6 +296,103 @@ export default function SettingsAgentsRoute(): JSX.Element {
 }
 
 /* ─────────────── Row ─────────────── */
+
+interface DefaultAgentPickerProps {
+  value: string
+  options: string[]
+  placeholder: string
+  onChange: (value: string) => void
+}
+
+function DefaultAgentPicker({
+  value,
+  options,
+  placeholder,
+  onChange,
+}: DefaultAgentPickerProps): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const disabled = options.length === 0
+  const selectedLabel = value ? agentDisplayName(value) : placeholder
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onPointerDown = (event: MouseEvent): void => {
+      const target = event.target
+      if (target instanceof Node && rootRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  return (
+    <div ref={rootRef} className="relative mt-2 w-64 max-w-full">
+      <button
+        id="default-agent"
+        type="button"
+        className={cn(
+          'flex h-10 w-full items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 text-left text-sm text-text',
+          'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 focus:ring-offset-bg',
+          disabled && 'cursor-not-allowed opacity-55',
+        )}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="min-w-0 truncate">{selectedLabel}</span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className={cn(
+            'absolute bottom-[calc(100%+0.25rem)] left-0 z-50 w-full',
+            'max-h-72 overflow-y-auto overscroll-contain rounded-md border border-border bg-surface p-1 text-text shadow-lg',
+          )}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          {options.map((agent) => {
+            const selected = agent === value
+            return (
+              <button
+                key={agent}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={cn(
+                  'flex min-h-8 w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm',
+                  'hover:bg-surface-hover focus:bg-surface-hover focus:outline-none',
+                  selected && 'font-medium text-accent',
+                )}
+                onClick={() => {
+                  onChange(agent)
+                  setOpen(false)
+                }}
+              >
+                <span className="min-w-0 truncate">{agentDisplayName(agent)}</span>
+                {selected && <Check className="h-4 w-4 shrink-0" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface AgentRowProps {
   displayName: string

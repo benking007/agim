@@ -54,7 +54,20 @@ import { ensureAgimMcp } from './ensure-mcp-config.js'
 const log = rootLogger.child({ component: 'agent.antigravity' })
 
 const DEFAULT_BIN = 'agy'
-const CONVERSATIONS_DIR = join(homedir(), '.gemini', 'antigravity-cli', 'conversations')
+
+function userHome(): string {
+  return process.env.HOME || homedir()
+}
+
+function conversationsDir(): string {
+  return join(userHome(), '.gemini', 'antigravity-cli', 'conversations')
+}
+
+function mcpConfigPathOverride(): { path?: string } {
+  return process.env.AGIM_ANTIGRAVITY_MCP_CONFIG
+    ? { path: process.env.AGIM_ANTIGRAVITY_MCP_CONFIG }
+    : {}
+}
 
 /** Returns the path to the agim MCP sidecar JS file. We reuse the same
  *  sidecar claude-code uses — its protocol surface is messenger-agnostic. */
@@ -96,7 +109,7 @@ export class AntigravityAdapter extends AgentBase {
     //    operators don't have to hand-set AGIM_ANTIGRAVITY_BIN just to
     //    get past isAvailable().
     const candidates = [
-      join(homedir(), '.local', 'bin', 'agy'),
+      join(userHome(), '.local', 'bin', 'agy'),
       '/usr/local/bin/agy',
       '/opt/antigravity/bin/agy',
     ]
@@ -132,11 +145,11 @@ export class AntigravityAdapter extends AgentBase {
   private async snapshotConversationMtimes(): Promise<Map<string, number>> {
     const m = new Map<string, number>()
     try {
-      const entries = await readdir(CONVERSATIONS_DIR)
+      const entries = await readdir(conversationsDir())
       for (const name of entries) {
         if (!name.endsWith('.pb')) continue
         try {
-          const s = await stat(join(CONVERSATIONS_DIR, name))
+          const s = await stat(join(conversationsDir(), name))
           m.set(name, s.mtimeMs)
         } catch {
           /* gone between readdir and stat — fine */
@@ -153,14 +166,14 @@ export class AntigravityAdapter extends AgentBase {
    *  than the snapshot, prioritising the freshest one. */
   private async detectNewConversation(before: Map<string, number>): Promise<string | null> {
     try {
-      const after = await readdir(CONVERSATIONS_DIR)
+      const after = await readdir(conversationsDir())
       let bestId: string | null = null
       let bestMtime = -Infinity
       for (const name of after) {
         if (!name.endsWith('.pb')) continue
         let mtime: number
         try {
-          mtime = (await stat(join(CONVERSATIONS_DIR, name))).mtimeMs
+          mtime = (await stat(join(conversationsDir(), name))).mtimeMs
         } catch {
           continue
         }
@@ -230,7 +243,7 @@ export class AntigravityAdapter extends AgentBase {
           command: process.execPath,
           args: [sidecarPath()],
           env: { AGIM_APPROVAL_SOCK: sockPath },
-        })
+        }, mcpConfigPathOverride())
         this.mcpReady = true
       } catch (err) {
         log.warn({ event: 'antigravity.mcp.disabled', err: String(err) },
@@ -248,6 +261,7 @@ export class AntigravityAdapter extends AgentBase {
         userId: userId ?? '',
         channelId,
         callerAgent: this.name,
+        ...(cwd ? { cwd } : {}),
         ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
         ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
         // SEC: forward plan-mode so a call_agent from inside this run can't
@@ -274,7 +288,7 @@ export class AntigravityAdapter extends AgentBase {
     // os.homedir() which falls back to /etc/passwd; agy doesn't.
     // homedir() does that fallback for us when env HOME is absent, so we
     // resolve once and pass it through.
-    const childHome = process.env.HOME || homedir()
+    const childHome = userHome()
 
     return {
       args: baseArgs,
@@ -327,6 +341,16 @@ export class AntigravityAdapter extends AgentBase {
       ].join('\n')
     }
     return null
+  }
+
+  protected emptyOutputMessage(stderr: string, errorMessage: string): string | null {
+    const friendly = this.handleError(0, stderr, errorMessage)
+    if (friendly !== null) return friendly
+    return [
+      '⚠️ Antigravity (agy) 没有返回可显示内容。',
+      '请在终端运行 `agy --print "请只回复 OK"` 验证登录与网络。',
+      '如果终端可正常回复，请重启 Agim 后再试 `/agy 你好`。',
+    ].join('\n')
   }
 
   protected notAvailableMessage(): string {

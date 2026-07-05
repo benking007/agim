@@ -214,6 +214,7 @@ export class CursorAdapter extends AgentBase {
         userId: userId ?? '',
         channelId,
         callerAgent: this.name,
+        ...(cwd ? { cwd } : {}),
         ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
         ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
         // SEC: forward plan-mode so a call_agent from inside this run can't

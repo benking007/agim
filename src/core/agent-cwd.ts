@@ -181,13 +181,8 @@ export async function ensureAgentWorkspace(
 }
 
 /**
- * Bootstrap the workspaces for the two built-in CLI agents we ship by
- * default. Safe to call multiple times. Returns a summary suitable for
- * logging.
- *
- * Other agents (codex, ACP-imported) don't need cwd isolation
- * either because they don't have per-cwd memory, or because they're
- * remote — they'll pass through with cwd undefined like before.
+ * Bootstrap the workspaces for the built-in agents we ship by default.
+ * Safe to call multiple times. Returns a summary suitable for logging.
  */
 export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string; dir: string }>> {
   const result: Array<{ agent: string; dir: string }> = []
@@ -321,6 +316,189 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
   result.push({
     agent: 'antigravity',
     dir: await seedAgentWorkspace('antigravity', { filename: 'AGENTS.md', content: antigravitySeed }),
+  })
+
+  const kimiSeed = `# Kimi Code — IM 入口工作区
+
+> 这是 agim 通过 IM 唤起 Kimi Code CLI (\`/kimi\` / \`/km\`) 时的专用工作目录。
+> 与你直接在终端跑 \`kimi\` 时使用的全局配置 (\`~/.kimi-code/\`) 隔离。
+>
+> 文件位置：${defaultAgentCwd('kimi-code')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）唤起的 Kimi Code。
+回复发到 IM 聊天里，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity / cursor 工作区互不干扰
+- kimi 自己的 session 历史由 ~/.kimi-code/session_index.jsonl 索引，agim 通过 \`--session <id>\` 续接，无需手工管理
+
+## 工具与审批
+
+- agim 会通过 \`~/.kimi-code/mcp.json\` 注入 \`mcp__agim__*\` 工具，包括 memory、memo、reminder、ask_user、call_agent、read_skill 等
+- 需要执行命令或改文件时，优先使用 \`mcp__agim__agim_bash\` / \`mcp__agim__agim_write\` / \`mcp__agim__agim_edit\`，用户审批后才会真正执行
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- Kimi Code 的 \`-p\` 非交互模式当前不能和 \`--plan\` 同用；agim 会提供独立 workspace 和审批版 \`mcp__agim__*\` 工具，但 Kimi 内置写文件 / shell 权限仍按 Kimi 自身权限规则处理
+`
+
+  result.push({
+    agent: 'kimi-code',
+    dir: await seedAgentWorkspace('kimi-code', { filename: 'AGENTS.md', content: kimiSeed }),
+  })
+
+  const qoderSeed = `# Qoder — IM 入口工作区
+
+> 这是 agim 通过 IM 唤起 Qoder CLI (\`/qoder\` / \`/qd\`) 时的专用工作目录。
+> 与你直接在终端跑 \`qodercli\` 时使用的全局配置 (\`~/.qoder/\`) 隔离。
+>
+> 文件位置：${defaultAgentCwd('qoder')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）唤起的 Qoder。
+回复发到 IM 聊天里，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity / cursor / kimi 工作区互不干扰
+- qoder 自己的 session 历史由 Qoder CLI 管理；agim 会捕获 stream-json 里的 \`session_id\` 并用 \`--resume <id>\` 续接
+
+## 工具与审批
+
+- agim 会通过 \`--mcp-config\` 临时注入 \`mcp__agim__*\` 工具，包括 memory、memo、reminder、ask_user、call_agent、read_skill 等
+- 这些工具会带着当前 IM thread 的 \`AGIM_RUN_ID\` 回到 agim approval bus
+- Web / IM 是非交互入口；agim 会默认允许 Qoder 调用 WebSearch、WebFetch 与 \`mcp__agim__*\` 工具，避免因无法弹授权而卡住
+- Qoder 内置 Bash / Edit / Write / NotebookEdit / Cron* 等变更型工具由 agim 禁用；需要执行命令或改文件时，使用 \`mcp__agim__agim_bash\` / \`mcp__agim__agim_write\` / \`mcp__agim__agim_edit\`，用户审批后才会真正执行
+- 管理员可用 \`AGIM_QODER_PERMISSION_MODE\` 覆盖 Qoder 权限模式（default / accept_edits / bypass_permissions / dont_ask / auto）
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- 计划模式下 agim 继续传递 planMode 给 A2A 子任务
+`
+
+  result.push({
+    agent: 'qoder',
+    dir: await seedAgentWorkspace('qoder', { filename: 'AGENTS.md', content: qoderSeed }),
+  })
+
+  const piSeed = `# PI — IM 入口工作区
+
+> 这是 agim 通过 IM / Web 唤起 PI CLI (\`/pi\` / \`/pi-agent\`) 时的专用工作目录。
+> 与你直接在终端跑 \`pi\` 时使用的项目上下文隔离。
+>
+> 文件位置：${defaultAgentCwd('pi')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）或 Web 控制台唤起的 PI。
+回复会发回聊天窗口，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity / cursor / kimi / qoder 工作区互不干扰
+- PI 自己的 session 存在本目录的 \`.pi-sessions/\` 下；agim 会捕获 JSON stream 的 \`session.id\` 并用 \`--session <id>\` 续接
+
+## 工具与审批
+
+- agim 会通过 PI extension 临时注入 \`mcp__agim__*\` 工具，包括 memory、memo、reminder、ask_user、call_agent、read_skill 等
+- 这些工具会带着当前 IM thread 的 \`AGIM_RUN_ID\` 回到 agim approval bus，按当前用户与会话隔离
+- Web / IM 默认启用 PI 的 read / grep / find / ls 以及 \`mcp__agim__*\` 工具
+- PI 内置 bash / edit / write 不开放；需要执行命令或改文件时，使用 \`agim_bash\` / \`agim_write\` / \`agim_edit\`，用户审批后才会真正执行
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- 计划模式下 agim 会保持 PI 只读工具集，并继续传递 planMode 给 A2A 子任务
+`
+
+  result.push({
+    agent: 'pi',
+    dir: await seedAgentWorkspace('pi', { filename: 'AGENTS.md', content: piSeed }),
+  })
+
+  const mimoSeed = `# MiMo Code — IM 入口工作区
+
+> 这是 agim 通过 IM / Web 唤起 MiMo Code CLI (\`/mimo\` / \`/mo\`) 时的专用工作目录。
+> 与你直接在终端跑 \`mimo\` 时使用的项目上下文隔离。
+>
+> 文件位置：${defaultAgentCwd('mimo')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）或 Web 控制台唤起的 MiMo Code。
+回复会发回聊天窗口，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity / cursor / kimi / qoder / pi 工作区互不干扰
+- MiMo 自己的 session 历史由 MiMo CLI 管理；agim 会捕获 JSON stream 里的 session id 并用 \`--session <id>\` 续接
+
+## 工具与审批
+
+- agim 会通过 \`MIMOCODE_CONFIG_CONTENT\` 临时注入 \`mcp__agim__*\` 工具，包括 memory、memo、reminder、ask_user、call_agent、read_skill 等
+- 这些工具会带着当前 IM thread 的 \`AGIM_RUN_ID\` 回到 agim approval bus，按当前用户与会话隔离
+- MiMo 自带的 websearch / webfetch 在 IM 场景默认允许，用于获取当前公开信息
+- MiMo 原生 bash / edit / task / external_directory 由 agim 禁用；需要执行命令或改文件时，使用 \`mcp__agim__agim_bash\` / \`mcp__agim__agim_write\` / \`mcp__agim__agim_edit\`，用户审批后才会真正执行
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- 模型切换使用 \`provider/model\`，例如 \`/model kimi/kimi-k2-0711-preview\`
+`
+
+  result.push({
+    agent: 'mimo',
+    dir: await seedAgentWorkspace('mimo', { filename: 'AGENTS.md', content: mimoSeed }),
+  })
+
+  const copilotSeed = `# GitHub Copilot CLI — IM 入口工作区
+
+> 这是 agim 通过 IM / Web 唤起 GitHub Copilot CLI (\`/copilot\` / \`/co\`) 时的专用工作目录。
+> 与你直接在终端跑 \`copilot\` 时使用的项目上下文隔离。
+>
+> 文件位置：${defaultAgentCwd('copilot')}/AGENTS.md
+
+## 角色
+
+你是被 IM 入口（微信 / Telegram / Feishu / Discord 等）或 Web 控制台唤起的 GitHub Copilot CLI。
+回复会发回聊天窗口，保持简洁；不要长 code block 除非用户明确要求代码。
+
+## 长期项目记忆
+
+- 长期项目档案手写在本目录下（PROJECT.md 或自定义文件名）
+- 本目录下的 \`memory/\` 目录用于手写笔记，与 Claude / opencode / codex / antigravity / cursor / kimi / qoder / pi / mimo 工作区互不干扰
+- Copilot 自己的 session 由 agim 预分配 UUID，并用 \`--session-id <uuid>\` 续接
+
+## 工具与审批
+
+- agim 会通过 \`--additional-mcp-config\` 临时注入 \`mcp__agim__*\` 工具，包括 memory、memo、reminder、ask_user、call_agent、read_skill 等
+- 这些工具会带着当前 IM thread 的 \`AGIM_RUN_ID\` 回到 agim approval bus，按当前用户与会话隔离
+- Copilot 原生 shell / write / edit / delete / move 等 mutation 类工具会被 agim deny；需要执行命令或改文件时，使用 \`mcp__agim__agim_bash\` / \`mcp__agim__agim_write\` / \`mcp__agim__agim_edit\`，用户审批后才会真正执行
+
+## 注意
+
+- 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
+- IM 单条消息硬超时 30 分钟，长任务请走 bgjob
+- 模型切换使用 GitHub Copilot CLI 支持的模型 id，例如 \`/model gpt-5-mini\`
+`
+
+  result.push({
+    agent: 'copilot',
+    dir: await seedAgentWorkspace('copilot', { filename: 'AGENTS.md', content: copilotSeed }),
   })
 
   const nativeSeed = `# agim native — 角色定义 + 工作区说明

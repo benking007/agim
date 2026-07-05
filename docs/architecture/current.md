@@ -36,6 +36,9 @@ Agent invocation layer (AgentAdapter)
   - codex
   - opencode
   - cursor
+  - kimi-code
+  - qoder
+  - pi
   - antigravity
   - native
   - acp

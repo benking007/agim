@@ -3,26 +3,42 @@
 // test box), so we hit the pure helpers + verify event-parsing logic
 // against fixtures captured from a real run.
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { randomBytes } from 'node:crypto'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { CursorAdapter } from './index.js'
+import { ApprovalBus, approvalBus, type RunContext } from '../../../core/approval-bus.js'
+import type { AgentSendOpts } from '../../../core/types.js'
 
 // extractText / inspectEvent are protected — narrow the type for tests.
 class CursorAdapterTestable extends CursorAdapter {
   exposeExtractText(event: unknown): string {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this as any).extractText(event)
+    return this.extractText(event)
   }
-  exposeInspectEvent(event: unknown, opts: Record<string, unknown>): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this as any).inspectEvent(event, opts)
+  exposeInspectEvent(event: unknown, opts: AgentSendOpts): void {
+    this.inspectEvent(event, opts)
   }
-  exposeBuildArgs(prompt: string, opts: Record<string, unknown>): string[] {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this as any).buildArgs(prompt, opts)
+  exposeBuildArgs(prompt: string, opts: AgentSendOpts): string[] {
+    return this.buildArgs(prompt, opts)
+  }
+  exposePrepareCommand(prompt: string, opts: AgentSendOpts) {
+    return this.prepareCommand(prompt, opts)
   }
 }
 
 const adapter = new CursorAdapterTestable()
+const FULL_OPTS = {
+  threadId: 'thread-A',
+  platform: 'feishu',
+  channelId: 'chan-1',
+  userId: 'u1',
+}
+
+function uniqueSocketPath(): string {
+  return join(tmpdir(), `agim-cursor-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+}
 
 describe('CursorAdapter — identity', () => {
   it('exposes name + aliases + kind', () => {
@@ -138,5 +154,63 @@ describe('CursorAdapter — inspectEvent', () => {
       { onUsage: () => { called = true } },
     )
     expect(called).toBe(false)
+  })
+})
+
+describe('CursorAdapter — approval routed context', () => {
+  let bus: ApprovalBus
+  let routedAdapter: CursorAdapterTestable
+  let registered: Array<{ runId: string; ctx: RunContext }>
+  let unregistered: string[]
+  let originalGetSocketPath: () => string | null
+  let originalRegisterRun: typeof approvalBus.registerRun
+  let originalUnregisterRun: typeof approvalBus.unregisterRun
+  let oldWorkspaceRoot: string | undefined
+
+  beforeEach(async () => {
+    bus = new ApprovalBus({ approvalTimeoutMs: 500 })
+    await bus.start(uniqueSocketPath())
+    registered = []
+    unregistered = []
+    originalGetSocketPath = approvalBus.getSocketPath.bind(approvalBus)
+    originalRegisterRun = approvalBus.registerRun.bind(approvalBus)
+    originalUnregisterRun = approvalBus.unregisterRun.bind(approvalBus)
+    approvalBus.getSocketPath = () => bus.getSocketPath()
+    approvalBus.registerRun = (runId, ctx) => {
+      registered.push({ runId, ctx })
+      bus.registerRun(runId, ctx)
+    }
+    approvalBus.unregisterRun = (runId) => {
+      unregistered.push(runId)
+      bus.unregisterRun(runId)
+    }
+
+    oldWorkspaceRoot = process.env.AGIM_WORKSPACES_ROOT
+    process.env.AGIM_WORKSPACES_ROOT = await mkdtemp(join(tmpdir(), 'agim-cursor-workspaces-'))
+    routedAdapter = new CursorAdapterTestable()
+    ;(routedAdapter as unknown as { mcpReady: boolean }).mcpReady = true
+  })
+
+  afterEach(async () => {
+    await bus.stop()
+    approvalBus.getSocketPath = originalGetSocketPath
+    approvalBus.registerRun = originalRegisterRun
+    approvalBus.unregisterRun = originalUnregisterRun
+    if (oldWorkspaceRoot === undefined) {
+      delete process.env.AGIM_WORKSPACES_ROOT
+    } else {
+      process.env.AGIM_WORKSPACES_ROOT = oldWorkspaceRoot
+    }
+  })
+
+  it('registers the same cwd that cursor-agent is spawned with', async () => {
+    const plan = await routedAdapter.exposePrepareCommand('hi', FULL_OPTS)
+    const runId = plan.extraEnv?.AGIM_RUN_ID
+    expect(runId).toBeTruthy()
+    expect(plan.cwd).toBe(join(process.env.AGIM_WORKSPACES_ROOT as string, 'cursor'))
+    expect(registered[0]).toMatchObject({ runId, ctx: { cwd: plan.cwd, callerAgent: 'cursor' } })
+
+    await plan.cleanup?.()
+    expect(unregistered).toContain(runId as string)
   })
 })

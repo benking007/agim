@@ -43,6 +43,79 @@ function resolveCursorBin(): string {
   return 'cursor-agent'
 }
 
+let cachedQoderBin: string | null | undefined = null
+function resolveQoderBin(): string {
+  const override = process.env.AGIM_QODER_BIN
+  if (override) return override
+  if (cachedQoderBin !== null) return cachedQoderBin ?? 'qodercli'
+  const candidates = [
+    join(homedir(), '.local', 'bin', 'qodercli'),
+    '/usr/local/bin/qodercli',
+    '/opt/homebrew/bin/qodercli',
+    '/opt/qoder/bin/qodercli',
+  ]
+  for (const p of candidates) {
+    try {
+      const s = statSync(p)
+      if (s.isFile() && (s.mode & 0o111) !== 0) {
+        cachedQoderBin = p
+        return p
+      }
+    } catch { /* not here */ }
+  }
+  cachedQoderBin = undefined
+  return 'qodercli'
+}
+
+let cachedPiBin: string | null | undefined = null
+function resolvePiBin(): string {
+  const override = process.env.AGIM_PI_BIN
+  if (override) return override
+  if (cachedPiBin !== null) return cachedPiBin ?? 'pi'
+  const candidates = [
+    join(homedir(), '.local', 'bin', 'pi'),
+    '/usr/local/bin/pi',
+    '/opt/homebrew/bin/pi',
+  ]
+  for (const p of candidates) {
+    try {
+      const s = statSync(p)
+      if (s.isFile() && (s.mode & 0o111) !== 0) {
+        cachedPiBin = p
+        return p
+      }
+    } catch { /* not here */ }
+  }
+  cachedPiBin = undefined
+  return 'pi'
+}
+
+let cachedMimoBin: string | null | undefined = null
+function resolveMimoBin(): string {
+  const override = process.env.AGIM_MIMO_BIN
+  if (override) return override
+  if (cachedMimoBin !== null) return cachedMimoBin ?? 'mimo'
+  const candidates = [
+    join(homedir(), '.mimocode', 'bin', 'mimo'),
+    join(homedir(), '.local', 'bin', 'mimo'),
+    join(homedir(), '.mimo', 'bin', 'mimo'),
+    '/usr/local/bin/mimo',
+    '/opt/homebrew/bin/mimo',
+    '/opt/mimo/bin/mimo',
+  ]
+  for (const p of candidates) {
+    try {
+      const s = statSync(p)
+      if (s.isFile() && (s.mode & 0o111) !== 0) {
+        cachedMimoBin = p
+        return p
+      }
+    } catch { /* not here */ }
+  }
+  cachedMimoBin = undefined
+  return 'mimo'
+}
+
 const MODEL_LIST_TTL_MS = 5 * 60 * 1000  // 5 minutes — picks up newly-added models
 
 function sessionKey(ctx: RouteContext): string {
@@ -191,6 +264,143 @@ const nativeDriver: ModelDriver = {
   },
 }
 
+// ─── Kimi Code driver ────────────────────────────────────────────────
+
+const KIMI_BUILTIN_MODELS = ['kimi-k2-0905', 'kimi-k2-thinking']
+
+const kimiDriver: ModelDriver = {
+  label: 'kimi-code',
+  namespaced: false,
+  switchHint: '例: /model kimi-k2-thinking',
+
+  async listModels(): Promise<string[]> {
+    // Kimi Code's public CLI surface documents --model but does not expose
+    // a machine-readable `models` subcommand. Keep the list to documented
+    // Kimi models; operators with custom providers can extend this driver
+    // once the CLI exposes a stable discovery surface.
+    return KIMI_BUILTIN_MODELS
+  },
+
+  async resolveDefault(): Promise<string> {
+    return KIMI_BUILTIN_MODELS[0]
+  },
+}
+
+// ─── GitHub Copilot CLI driver ───────────────────────────────────────
+
+const copilotDriver: ModelDriver = {
+  label: 'copilot',
+  namespaced: false,
+  switchHint: '例: /model gpt-5-mini',
+
+  async listModels(): Promise<string[]> {
+    // Copilot CLI supports `--model`, but current public docs do not expose
+    // a stable machine-readable models subcommand. Let `/model <id>` pass
+    // through instead of fabricating a list that would drift.
+    return []
+  },
+
+  async resolveDefault(): Promise<string> {
+    return 'auto'
+  },
+}
+
+// ─── Qoder driver ────────────────────────────────────────────────────
+
+const qoderDriver: ModelDriver = {
+  label: 'qoder',
+  namespaced: false,
+  switchHint: '例: /model auto / claude-sonnet-4-5',
+
+  listModels: () => new Promise((resolve) => {
+    const proc = spawn(resolveQoderBin(), ['--list-models'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    proc.stdout?.on('data', d => out += d.toString())
+    proc.on('close', () => {
+      const ids: string[] = []
+      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, 'g')
+      for (const raw of out.split('\n')) {
+        const line = raw.replace(ansi, '').trim()
+        if (!line) continue
+        if (/^(available|models|model\s+name)/i.test(line)) continue
+        const first = line.split(/\s+/)[0]
+        if (first && /^[A-Za-z0-9._:/-]+$/.test(first)) ids.push(first)
+      }
+      resolve(ids)
+    })
+    proc.on('error', () => resolve([]))
+  }),
+
+  async resolveDefault(): Promise<string> {
+    const models = await qoderDriver.listModels()
+    return models[0] || 'auto'
+  },
+}
+
+// ─── PI driver ───────────────────────────────────────────────────────
+
+const piDriver: ModelDriver = {
+  label: 'pi',
+  namespaced: true,
+  switchHint: '例: /model anthropic/claude-sonnet-4-5 / openai/gpt-4o',
+
+  listModels: () => new Promise((resolve) => {
+    const proc = spawn(resolvePiBin(), ['--list-models'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    proc.stdout?.on('data', d => out += d.toString())
+    proc.on('close', () => {
+      const ids: string[] = []
+      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, 'g')
+      for (const raw of out.split('\n')) {
+        const line = raw.replace(ansi, '').trim()
+        if (!line) continue
+        if (/^(no models available|use \/login|model\s+id|available models)/i.test(line)) continue
+        const first = line.split(/\s+/)[0]
+        if (first && /^[A-Za-z0-9._:/-]+$/.test(first)) ids.push(first)
+      }
+      resolve(ids)
+    })
+    proc.on('error', () => resolve([]))
+  }),
+
+  async resolveDefault(): Promise<string> {
+    const models = await piDriver.listModels()
+    return models[0] || 'auto'
+  },
+}
+
+// ─── MiMo Code driver ────────────────────────────────────────────────
+
+const mimoDriver: ModelDriver = {
+  label: 'mimo',
+  namespaced: true,
+  switchHint: '例: /model kimi/kimi-k2-0711-preview',
+
+  listModels: () => new Promise((resolve) => {
+    const proc = spawn(resolveMimoBin(), ['models'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    proc.stdout?.on('data', d => out += d.toString())
+    proc.on('close', () => {
+      const ids: string[] = []
+      const ansi = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, 'g')
+      for (const raw of out.split('\n')) {
+        const line = raw.replace(ansi, '').trim()
+        if (!line) continue
+        if (/^(available models|model\s+id|name|provider|models)$/i.test(line)) continue
+        const first = line.split(/\s+/)[0]
+        if (first && /^[A-Za-z0-9._:/-]+$/.test(first)) ids.push(first)
+      }
+      resolve(ids)
+    })
+    proc.on('error', () => resolve([]))
+  }),
+
+  async resolveDefault(): Promise<string> {
+    const models = await mimoDriver.listModels()
+    return models[0] || 'kimi/kimi-k2-0711-preview'
+  },
+}
+
 const MODEL_DRIVERS: Record<string, ModelDriver> = {
   opencode: opencodeDriver,
   cursor: cursorDriver,
@@ -198,9 +408,24 @@ const MODEL_DRIVERS: Record<string, ModelDriver> = {
   agim: nativeDriver,
   llm: nativeDriver,
   'native-llm': nativeDriver,
+  'kimi-code': kimiDriver,
+  kimi: kimiDriver,
+  km: kimiDriver,
+  copilot: copilotDriver,
+  co: copilotDriver,
+  'gh-copilot': copilotDriver,
+  'github-copilot': copilotDriver,
+  qoder: qoderDriver,
+  qd: qoderDriver,
+  qodercli: qoderDriver,
+  pi: piDriver,
+  'pi-agent': piDriver,
+  mimo: mimoDriver,
+  mo: mimoDriver,
+  'mimo-code': mimoDriver,
 }
 
-const SUPPORTED_AGENTS = ['opencode', 'cursor', 'native']
+const SUPPORTED_AGENTS = ['opencode', 'cursor', 'native', 'kimi-code', 'copilot', 'qoder', 'pi', 'mimo']
 
 /** Per-session cache: last /models ordered result, indexed from 1 */
 const sessionModelIndex = new Map<string, string[]>()

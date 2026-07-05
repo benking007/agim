@@ -77,12 +77,12 @@ export default function SettingsLayout(): JSX.Element {
   const { t } = useTranslation('settings')
   return (
     <WorkbenchFrame contentClassName="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-border bg-surface shadow-sm">
+      <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="rounded-xl border border-border bg-surface shadow-sm xl:sticky xl:top-0 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto">
           <nav
             className={cn(
               'flex gap-4 overflow-x-auto px-3 py-3',
-              'xl:sticky xl:top-24 xl:flex-col xl:gap-3 xl:overflow-visible xl:px-4',
+              'xl:flex-col xl:gap-3 xl:overflow-visible xl:px-4',
             )}
             aria-label={t('pageTitle')}
           >

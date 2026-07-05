@@ -1,11 +1,12 @@
 // Unit tests for message router
 
 import { describe, it, expect, beforeEach, vi } from 'bun:test'
-import { parseMessage, routeMessage, type RouteContext } from '../../src/core/router'
+import { parseMessage, prepareSubtaskAgentCallOptions, routeMessage, type RouteContext } from '../../src/core/router'
 import { registry } from '../../src/core/registry'
 import { workspaceRegistry } from '../../src/core/workspace'
 import { sessionManager } from '../../src/core/session'
-import type { AgentAdapter } from '../../src/core/types'
+import { __resetLiveConfigForTest, setLiveConfig } from '../../src/core/live-config'
+import type { AgentAdapter, Config } from '../../src/core/types'
 import type { Logger } from 'pino'
 
 // Mock agent for testing
@@ -287,6 +288,27 @@ describe('parseMessage', () => {
         expect(result.error).toContain('Unknown command')
       }
     })
+
+    it('explains when a registered agent alias is disabled by config.agents', () => {
+      const disabledAgent: AgentAdapter = {
+        name: 'disabled-agent',
+        aliases: ['da'],
+        isAvailable: vi.fn().mockResolvedValue(true),
+        sendPrompt: vi.fn().mockImplementation(() => mockGenerator()),
+      }
+      registry.registerAgent(disabledAgent)
+      setLiveConfig({ agents: ['test-agent'], defaultAgent: 'test-agent' } as Config)
+      try {
+        const result = parseMessage('/da hello')
+        expect(result.type).toBe('error')
+        if (result.type === 'error') {
+          expect(result.error).toContain('Agent "disabled-agent" is disabled')
+          expect(result.error).toContain('config.agents')
+        }
+      } finally {
+        __resetLiveConfigForTest()
+      }
+    })
   })
 
   describe('Phase 2/3 commands', () => {
@@ -486,6 +508,25 @@ describe('routeMessage', () => {
       // Drain the generator without asserting the body — different test
       // ordering may register additional stub agents.
       for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
+    })
+  })
+
+  describe('subtask agent session options', () => {
+    it('passes antigravity conversation id into A2A subtask calls', async () => {
+      const callOptions = await prepareSubtaskAgentCallOptions(
+        'antigravity',
+        makeCtx(),
+        'thread-1:sub:42',
+        {
+          antigravitySessionId: 'agy-conv-1',
+        },
+      )
+
+      expect(callOptions).toEqual({
+        storageThreadId: 'thread-1:sub:42',
+        agentSessionId: 'agy-conv-1',
+        agentSessionResume: true,
+      })
     })
   })
 

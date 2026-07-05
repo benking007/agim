@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-07-05
+
+### Added
+
+- Added built-in local agent integrations for GitHub Copilot CLI, Kimi Code, Qoder, PI, and MiMo Code, with setup/readiness metadata across CLI and Web.
+- Added `docs/agents.md` and `docs/agent-integration-sop.md` to document supported backends and the implementation checklist for future agent integrations.
+- Added model-driver support for the newly integrated agents where their CLIs expose model listing or per-call model selection.
+
+### Changed
+
+- Improved agent workspace isolation and memory handoff so IM-launched agents consistently operate under `~/.agim-workspaces/<agent>/`.
+- Strengthened Agim MCP/RPC tool injection so Skills, Memory, Memo, Reminder, Ask, Push, A2A, and approval-gated native tools are exposed consistently across more agent backends.
+- Updated Web agent settings and onboarding/readiness copy to make local agent setup easier to discover.
+
+### Fixed
+
+- Fixed MiMo and GitHub Copilot session continuity in the IM main route.
+- Fixed Antigravity session continuity for A2A subtask calls.
+- Fixed older CLI adapters so approval-gated `agim_bash`, `agim_write`, and `agim_edit` receive the same workspace cwd used by the spawned agent process.
+- Tightened GitHub Copilot native mutation-deny patterns so mutating work is routed through Agim approval tools.
+
 ## [1.5.1] - 2026-07-02
 
 ### Added

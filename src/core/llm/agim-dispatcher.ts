@@ -327,7 +327,7 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__call_agent',
       description:
-        'Hand off a prompt to another registered agent (claude-code, codex, opencode, antigravity, native, or any remote ACP). Subject to A2A guardrails: depth limit, self-call ban, workspace ACL, per-user budget. Returns the callee\'s final text.',
+        'Hand off a prompt to another registered agent (claude-code, codex, copilot, opencode, antigravity, kimi-code, qoder, pi, mimo, native, or any remote ACP). Subject to A2A guardrails: depth limit, self-call ban, workspace ACL, per-user budget. Returns the callee\'s final text.',
       parameters: {
         type: 'object',
         properties: {
@@ -574,8 +574,8 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn ` +
               `(cap=${callAgentMaxPerTurn}). Prior delegations:\n${summary}\n\n` +
               `Use your own tools (native_read_file, native_grep, native_list_dir, mcp__agim__* …) to ` +
-              `finish the task with the information you already gathered. If you genuinely need a CLI ` +
-              `agent for the rest, tell the user to /cc, /oc, or /cs to switch — don't keep chaining call_agent.`,
+              `finish the task with the information you already gathered. If you genuinely need another ` +
+              `agent for the rest, tell the user to switch explicitly (for example /cc, /oc, /co, /qd, /pi, or /mimo) — don't keep chaining call_agent.`,
             )
           }
           const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')

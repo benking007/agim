@@ -107,6 +107,7 @@ export class OpenCodeAdapter extends AgentBase {
       userId: opts.userId ?? '',
       channelId: opts.channelId as string,
       callerAgent: this.name,
+      ...(cwd ? { cwd } : {}),
       // A2A-L1: forward parent + depth so any mcp__agim__call_agent
       // invocation from inside this run can be linked + depth-checked.
       ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),

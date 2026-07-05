@@ -5,7 +5,7 @@
 
 **No.** agim is, and continues to be, a **messenger-to-agent bridge**.
 The Agim Agent (internal id: `native`) is just another `AgentAdapter` in the registry —
-peer-equal to `claude-code`, `codex`, `opencode`, and `antigravity`.
+peer-equal to `claude-code`, `codex`, `copilot`, `opencode`, `kimi-code`, `qoder`, `pi`, `mimo`, and `antigravity`.
 The only thing that's "special" about it is **where it runs**
 (in-process LLM loop, no subprocess spawn).
 
@@ -79,7 +79,12 @@ The current registry:
 |---|---|---|---|
 | `claude-code` | `/cc`, `/claude`, `/claudecode` | `cli` | `claude-code` CLI subprocess + JSONL stdio |
 | `codex` | `/cx`, `/openai`, `/codexcli` | `cli` | `codex exec` subprocess |
+| `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `cli` | GitHub Copilot CLI (`copilot -p --output-format json`) |
 | `opencode` | `/oc`, `/opencodeai` | `cli` | opencode CLI (stdio or HTTP daemon) |
+| `kimi-code` | `/kimi`, `/km` | `cli` | Kimi Code CLI (`kimi -p --output-format stream-json`) |
+| `qoder` | `/qd`, `/qodercli` | `cli` | Qoder CLI (`qodercli --print --output-format stream-json`) |
+| `pi` | `/pi`, `/pi-agent` | `cli` | PI CLI (`pi --mode json -p`) |
+| `mimo` | `/mo`, `/mimo-code` | `cli` | MiMo Code CLI (`mimo run --format json`) |
 | `antigravity` | `/agy`, `/gemini`, `/ag` | `cli` | Google Antigravity CLI |
 | `native` | `/agim`, `/na`, `/llm`, `/native-llm` | `in-process` | LLM client + agent loop (no subprocess) |
 | (per-config) | per-config | `remote` | ACP endpoint over HTTP |
@@ -92,7 +97,12 @@ The current registry:
 
 • /claude-code [cli] (/cc, /claude, /claudecode)
 • /codex       [cli] (/cx, /openai, /codexcli)
+• /copilot     [cli] (/co, /gh-copilot, /github-copilot)
 • /opencode    [cli] (/oc, /opencodeai)
+• /kimi-code   [cli] (/kimi, /km)
+• /qoder       [cli] (/qd, /qodercli)
+• /pi          [cli] (/pi-agent)
+• /mimo        [cli] (/mo, /mimo-code)
 • /agim        [in-process] (/agim, /na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-chat
 ```
 

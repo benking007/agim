@@ -17,7 +17,7 @@ import { createServer, type Server, type Socket } from 'node:net'
 import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
 
@@ -215,6 +215,11 @@ export interface RunContext {
    *  Mirrors a2a.ts / agim-dispatcher.ts (callerPlanMode) which already do
    *  this for their own spawn paths. */
   callerPlanMode?: boolean
+  /** Filesystem cwd used by the running agent subprocess. Extension-based
+   *  agents (PI, future custom-tool CLIs) use it when Agim proxies native
+   *  write/exec tools on their behalf, so approved filesystem operations land
+   *  in the same workspace the agent is reasoning about. */
+  cwd?: string
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -775,6 +780,10 @@ export class ApprovalBus {
       await this.handleSkill(m, socket)
       return
     }
+    if (m.type === 'native_tool') {
+      await this.handleNativeTool(m, socket)
+      return
+    }
     if (m.type === 'memory') {
       await this.handleMemory(m, socket)
       return
@@ -1210,6 +1219,77 @@ export class ApprovalBus {
     else wire.error = result.error
     socket.write(`${JSON.stringify(wire)}\n`, (err) => {
       if (err) log.warn({ event: 'skill.bus.write_failed', reqId, err: String(err) })
+    })
+  }
+
+  /**
+   * Read-only Agim native tool bridge for extension-based agents such as PI.
+   *
+   * This is intentionally a small whitelist, not a generic "call any native
+   * tool" escape hatch. The payload name is resolved in native-tool-rpc.ts
+   * (currently web_search/web_fetch aliases only), and the call must be tied
+   * to a live runId so a stray process cannot reuse the socket after cleanup.
+   */
+  private async handleNativeTool(m: Record<string, unknown>, socket: Socket): Promise<void> {
+    const reqId = typeof m.reqId === 'string' ? m.reqId : null
+    const runId = typeof m.runId === 'string' ? m.runId : null
+    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
+      ? m.payload as Record<string, unknown>
+      : {}
+    if (!reqId) { log.warn({ event: 'native_tool.bus.missing_reqId' }); return }
+    if (payload._im_context) delete payload._im_context
+    if (!runId) {
+      this.sendNativeToolResult(socket, reqId, {
+        ok: false,
+        error: 'unknown runId: null — native_tool requires a live runContext',
+      })
+      return
+    }
+    const ctx: RunContext | null = this.runContexts.get(runId) ?? null
+    if (!ctx) {
+      this.sendNativeToolResult(socket, reqId, {
+        ok: false,
+        error: `unknown runId: ${runId} — native_tool requires a live runContext`,
+      })
+      return
+    }
+
+    const { handleNativeToolOp } = await import('./native-tool-rpc.js')
+    try {
+      const result = await handleNativeToolOp(payload, {
+        reqId,
+        runContext: ctx,
+        requestApproval: ({ toolName, input }) => new Promise((resolve, reject) => {
+          const approvalReqId = `${reqId}:native:${randomUUID()}`
+          void this.registerSyntheticPending({
+            runId,
+            reqId: approvalReqId,
+            toolName,
+            input,
+            ctx,
+            dispatch: (decision) => resolve(decision),
+          }).catch((err) => reject(err))
+        }),
+      })
+      this.sendNativeToolResult(socket, reqId, result)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.sendNativeToolResult(socket, reqId, { ok: false, error: `native_tool failed: ${msg}` })
+    }
+  }
+
+  private sendNativeToolResult(
+    socket: Socket,
+    reqId: string,
+    result: import('./native-tool-rpc.js').NativeToolRpcResult,
+  ): void {
+    if (!socket.writable) return
+    const wire: Record<string, unknown> = { v: 1, type: 'native_tool.result', reqId, ok: result.ok }
+    if (result.source) wire.source = result.source
+    if (result.ok) wire.result = result.result
+    else wire.error = result.error
+    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
+      if (err) log.warn({ event: 'native_tool.bus.write_failed', reqId, err: String(err) })
     })
   }
 

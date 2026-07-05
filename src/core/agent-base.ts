@@ -7,7 +7,7 @@
 //   buildContextualPrompt / buildArgs / extractText — subclass hooks
 //
 // Subclasses must implement: buildArgs(), extractText().
-// Optional override: handleError(), notAvailableMessage(), commandName.
+// Optional override: handleError(), emptyOutputMessage(), notAvailableMessage(), commandName.
 
 import { StringDecoder } from 'node:string_decoder'
 import type { AgentAdapter, AgentSendOpts, ChatMessage } from './types.js'
@@ -282,6 +282,7 @@ export abstract class AgentBase implements AgentAdapter {
     let spawnError: Error | null = null
     let timedOut = false
     let aborted = false
+    let yieldedText = false
 
     // Each `notify` resolves the current poll cycle; the consumer awaits a
     // promise that flips whenever new state is available.
@@ -341,6 +342,10 @@ export abstract class AgentBase implements AgentAdapter {
         if (!line.trim()) continue
         try {
           const event = JSON.parse(line)
+          if (event && typeof event === 'object') {
+            const e = event as Record<string, unknown>
+            if (typeof e.error === 'string') errorMessage = e.error
+          }
           if (event && typeof event === 'object' && (event as Record<string, unknown>).type === 'error') {
             const e = event as Record<string, unknown>
             errorMessage = (e.error as string) || (e.message as string) || 'error event'
@@ -427,7 +432,10 @@ export abstract class AgentBase implements AgentAdapter {
         // Drain whatever has accumulated this cycle
         const out = pendingChunks
         pendingChunks = []
-        for (const c of out) yield c
+        for (const c of out) {
+          yieldedText = true
+          yield c
+        }
       }
 
       if (timedOut) {
@@ -467,6 +475,9 @@ export abstract class AgentBase implements AgentAdapter {
           detail = stderrAccum.trim()
         }
         yield `${this.name} failed (exit ${exitCode})${detail ? `: ${detail}` : ''}`
+      } else if (!yieldedText) {
+        const empty = this.emptyOutputMessage(stderrAccum, errorMessage)
+        if (empty !== null) yield empty
       }
     } finally {
       if (idleTimer) clearTimeout(idleTimer)
@@ -483,5 +494,9 @@ export abstract class AgentBase implements AgentAdapter {
         }
       }
     }
+  }
+
+  protected emptyOutputMessage(_stderr: string, _errorMessage: string): string | null {
+    return null
   }
 }

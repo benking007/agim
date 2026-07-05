@@ -155,12 +155,14 @@ describe('ApprovalBus', () => {
 
     // Wait for notifier to fire (it's async via handleApproval)
     for (let i = 0; i < 50 && !notified; i++) await sleep(10)
-    expect(notified).not.toBeNull()
-    expect(notified!.runId).toBe('run-1')
-    expect(notified!.reqId).toBe('req-1')
-    expect(notified!.toolName).toBe('Bash')
-    expect(notified!.input).toEqual({ command: 'git push' })
-    expect(notified!.ctx.threadId).toBe('thread-A')
+    const delivered = notified as ApprovalNotification | null
+    expect(delivered).not.toBeNull()
+    if (!delivered) throw new Error('notifier did not fire')
+    expect(delivered.runId).toBe('run-1')
+    expect(delivered.reqId).toBe('req-1')
+    expect(delivered.toolName).toBe('Bash')
+    expect(delivered.input).toEqual({ command: 'git push' })
+    expect(delivered.ctx.threadId).toBe('thread-A')
     expect(bus.hasPendingFor(KEY)).toBe(true)
 
     const resolved = bus.resolvePending(KEY, { behavior: 'allow' })
@@ -250,6 +252,74 @@ describe('ApprovalBus', () => {
     expect(decision.behavior).toBe('deny')
     expect(decision.message).toContain('unknown runId')
     expect(notifierCalls).toBe(0)
+
+    await client.close()
+  })
+
+  it('native_tool refuses unknown runId', async () => {
+    const client = await connectClient(path)
+    client.send({
+      v: 1, type: 'native_tool', runId: 'missing-run', reqId: 'nt-1',
+      payload: { name: 'web_search', arguments: { query: 'agim' } },
+    })
+
+    const res = await client.next()
+    expect(res).toEqual({
+      v: 1,
+      type: 'native_tool.result',
+      reqId: 'nt-1',
+      ok: false,
+      error: 'unknown runId: missing-run — native_tool requires a live runContext',
+    })
+
+    await client.close()
+  })
+
+  it('native_tool bridges PI web_fetch alias through native web dispatcher', async () => {
+    bus.registerRun('run-1', RUN_CTX)
+
+    const client = await connectClient(path)
+    client.send({
+      v: 1, type: 'native_tool', runId: 'run-1', reqId: 'nt-2',
+      payload: { name: 'web_fetch', arguments: { url: 'http://192.168.1.1/' } },
+    })
+
+    const res = await client.next()
+    expect(res.type).toBe('native_tool.result')
+    expect(res.reqId).toBe('nt-2')
+    expect(res.ok).toBe(false)
+    expect(res.source).toBe('web')
+    expect(res.error).toMatch(/RFC1918|private/i)
+
+    await client.close()
+  })
+
+  it('native_tool gates PI agim_bash through approval before execution', async () => {
+    bus.registerRun('run-1', { ...RUN_CTX, cwd: tmpdir() })
+    let notified: ApprovalNotification | null = null
+    bus.setNotifier(async (n) => { notified = n })
+
+    const client = await connectClient(path)
+    client.send({
+      v: 1, type: 'native_tool', runId: 'run-1', reqId: 'nt-3',
+      payload: { name: 'agim_bash', arguments: { command: 'printf hi' } },
+    })
+
+    for (let i = 0; i < 50 && !notified; i++) await sleep(10)
+    const delivered = notified as ApprovalNotification | null
+    expect(delivered).not.toBeNull()
+    if (!delivered) throw new Error('native_tool approval did not fire')
+    expect(delivered.toolName).toBe('Bash')
+    expect(delivered.input.command).toBe('printf hi')
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+
+    bus.resolvePending(KEY, { behavior: 'allow' })
+    const res = await client.next()
+    expect(res.type).toBe('native_tool.result')
+    expect(res.reqId).toBe('nt-3')
+    expect(res.ok).toBe(true)
+    expect(res.source).toBe('exec')
+    expect(res.result).toContain('hi')
 
     await client.close()
   })

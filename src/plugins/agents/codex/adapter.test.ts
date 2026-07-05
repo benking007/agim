@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { ApprovalBus, approvalBus } from '../../../core/approval-bus.js'
+import { ApprovalBus, approvalBus, type RunContext } from '../../../core/approval-bus.js'
 import { CodexAdapter, _testInternals } from './index.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 
@@ -20,6 +20,12 @@ const { buildArgs, extractText, inspectEvent } = _testInternals
 
 function uniqueSocketPath(): string {
   return join(tmpdir(), `agim-codex-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+}
+
+function runIdFromEnvArg(envArg: string): string {
+  const match = envArg.match(/AGIM_RUN_ID="([^"]+)"/)
+  if (!match?.[1]) throw new Error('missing AGIM_RUN_ID')
+  return match[1]
 }
 
 const FULL_OPTS = {
@@ -315,7 +321,7 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
 
   let bus: ApprovalBus
   let adapter: CodexAdapter
-  let registered: string[]
+  let registered: Array<{ runId: string; ctx: RunContext }>
   let unregistered: string[]
   let originalGetSocketPath: () => string | null
   let originalRegisterRun: typeof approvalBus.registerRun
@@ -331,7 +337,7 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
     originalUnregisterRun = approvalBus.unregisterRun.bind(approvalBus)
     approvalBus.getSocketPath = () => bus.getSocketPath()
     approvalBus.registerRun = (runId, ctx) => {
-      registered.push(runId)
+      registered.push({ runId, ctx })
       bus.registerRun(runId, ctx)
     }
     approvalBus.unregisterRun = (runId) => {
@@ -369,17 +375,15 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
     const envArg = plan.args.find((a) => a.startsWith('mcp_servers.agim.env=')) as string
     expect(envArg).toContain(`AGIM_APPROVAL_SOCK=${JSON.stringify(bus.getSocketPath() as string)}`)
     // runId is a UUID; assert minimally — has the expected shape.
-    const m = envArg.match(/AGIM_RUN_ID="([^"]+)"/)
-    expect(m).toBeTruthy()
-    expect(m![1].length).toBeGreaterThan(8)
+    expect(runIdFromEnvArg(envArg).length).toBeGreaterThan(8)
   })
 
   it('cleanup unregisters the run from the bus', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
     expect(plan.cleanup).toBeDefined()
     const envArg = plan.args.find((a) => a.startsWith('mcp_servers.agim.env=')) as string
-    const runId = envArg.match(/AGIM_RUN_ID="([^"]+)"/)![1]
-    expect(registered).toContain(runId)
+    const runId = runIdFromEnvArg(envArg)
+    expect(registered.map((r) => r.runId)).toContain(runId)
     expect(unregistered).not.toContain(runId)
     await plan.cleanup?.()
     expect(unregistered).toContain(runId)
@@ -388,6 +392,7 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
   it('still pins cwd alongside MCP routing', async () => {
     const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)
     expect(plan.cwd?.endsWith('/codex')).toBe(true)
+    expect(registered[0].ctx.cwd).toBe(plan.cwd)
   })
 
   it('preserves planMode → -s read-only when MCP-routed (no bypass)', async () => {
@@ -419,10 +424,8 @@ describe('CodexAdapter prepareCommand — MCP-routed', () => {
       _testInternals.prepareCommand(adapter, 'p1', FULL_OPTS),
       _testInternals.prepareCommand(adapter, 'p2', FULL_OPTS),
     ])
-    const ridA = (a.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
-      .match(/AGIM_RUN_ID="([^"]+)"/)![1]
-    const ridB = (b.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
-      .match(/AGIM_RUN_ID="([^"]+)"/)![1]
+    const ridA = runIdFromEnvArg(a.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
+    const ridB = runIdFromEnvArg(b.args.find((x) => x.startsWith('mcp_servers.agim.env=')) as string)
     expect(ridA).not.toBe(ridB)
     await a.cleanup?.()
     await b.cleanup?.()

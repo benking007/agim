@@ -134,6 +134,25 @@ export interface Session {
    *  after the first turn. Subsequent calls pass `--conversation <uuid>`
    *  so we continue the same session and history. Cleared by /new. */
   antigravitySessionId?: string
+  /** Kimi Code session id discovered from ~/.kimi-code/session_index.jsonl
+   *  after the first `kimi -p` run (or surfaced in stream events when the CLI
+   *  includes it). Subsequent calls pass `--session <id>`. Cleared by /new. */
+  kimiSessionId?: string
+  /** Qoder CLI session id surfaced in stream-json events. Subsequent turns
+   *  pass `--resume <id>` so Qoder continues the same conversation from its
+   *  own session store. Cleared by /new. */
+  qoderSessionId?: string
+  /** PI session id surfaced in JSON mode's first `session` event. Subsequent
+   *  turns pass `--session <id>` so PI resumes the same session from its
+   *  own session store. Cleared by /new. */
+  piSessionId?: string
+  /** MiMo Code session id surfaced in JSON events. Subsequent turns pass
+   *  `--session <id>` so MiMo resumes the same session from its own store.
+   *  Cleared by /new. */
+  mimoSessionId?: string
+  /** GitHub Copilot CLI session UUID preallocated by Agim and passed via
+   *  `--session-id <uuid>`. Cleared by /new. */
+  copilotSessionId?: string
   /** Plan mode flag — toggled by /plan on / /plan off. When true:
    *    • claude-code adapter spawns with `--permission-mode plan` and bypasses
    *      the IM approval bus (plan mode is read-only, no mutations to gate).

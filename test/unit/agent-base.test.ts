@@ -16,7 +16,12 @@ class ScriptAgent extends AgentBase {
   readonly aliases: string[] = []
   protected get commandName(): string { return 'node' }
 
-  constructor(name: string, private readonly script: string, private readonly perAgentTimeoutMs?: number) {
+  constructor(
+    name: string,
+    private readonly script: string,
+    private readonly perAgentTimeoutMs?: number,
+    private readonly emptyMessage?: string,
+  ) {
     super()
     this.name = name
   }
@@ -40,6 +45,10 @@ class ScriptAgent extends AgentBase {
   protected handleError(code: number, _stderr: string, errorMessage: string): string | null {
     if (errorMessage.includes('quota')) return `❌ ${this.name} quota exceeded (exit ${code})`
     return null
+  }
+
+  protected emptyOutputMessage(): string | null {
+    return this.emptyMessage ?? null
   }
 
   // Public test hook — exposes the protected spawnStream so tests can drive
@@ -107,6 +116,13 @@ describe('AgentBase streaming', () => {
     const agent = new ScriptAgent('script-fail', script)
     const chunks = await collect(agent.testSpawnStream('p'))
     expect(chunks.join('')).toContain('exit 7')
+  })
+
+  it('can surface an agent-specific message when a successful process emits no output', async () => {
+    const script = `process.exit(0);`
+    const agent = new ScriptAgent('script-empty', script, undefined, 'empty output fallback')
+    const chunks = await collect(agent.testSpawnStream('p'))
+    expect(chunks.join('')).toBe('empty output fallback')
   })
 
   it('honors AbortSignal mid-stream', async () => {

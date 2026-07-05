@@ -145,15 +145,21 @@ describe('bootstrapAgentWorkspaces', () => {
     await rm(tmpRoot, { recursive: true, force: true })
   })
 
-  it('creates both built-in agent workspaces with their canonical seed files', async () => {
+  it('creates built-in agent workspaces with their canonical seed files', async () => {
     const result = await bootstrapAgentWorkspaces()
     const byAgent = Object.fromEntries(result.map((r) => [r.agent, r.dir]))
     expect(byAgent['claude-code']).toBe(join(tmpRoot, 'claude-code'))
     expect(byAgent.opencode).toBe(join(tmpRoot, 'opencode'))
+    expect(byAgent.mimo).toBe(join(tmpRoot, 'mimo'))
+    expect(byAgent.copilot).toBe(join(tmpRoot, 'copilot'))
     expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain('Claude Code')
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain('OpenCode')
+    expect(await readFile(join(tmpRoot, 'mimo', 'AGENTS.md'), 'utf8')).toContain('MiMo Code')
+    expect(await readFile(join(tmpRoot, 'copilot', 'AGENTS.md'), 'utf8')).toContain('GitHub Copilot CLI')
     expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
+    expect(await readFile(join(tmpRoot, 'mimo', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
+    expect(await readFile(join(tmpRoot, 'copilot', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
   })
 
   it('safe to run twice and preserves user edits while adding the memory link once', async () => {

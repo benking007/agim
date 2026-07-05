@@ -37,13 +37,13 @@ import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOv
 import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
 import { listAdmins, listKnownImUsers, promoteAdmin, revokeAdmin } from '../core/admin-allowlist.js'
 
-/** Probe whether a CLI command exists on PATH. Mirrors the `--version`
+/** Probe whether a CLI command exists on PATH. Defaults to the `--version`
  *  spawn check the legacy `config <agent>` flow used. Resolves quickly:
  *  most install probes finish in <200ms, missing binaries return
  *  ENOENT immediately. */
-function cliAvailable(cmd: string): Promise<boolean> {
+function cliAvailable(cmd: string, args: string[] = ['--version']): Promise<boolean> {
   return new Promise((resolve) => {
-    const proc = crossSpawn(cmd, ['--version'], { stdio: 'ignore' })
+    const proc = crossSpawn(cmd, args, { stdio: 'ignore' })
     proc.on('close', (code) => resolve(code === 0))
     proc.on('error', () => resolve(false))
   })
@@ -79,8 +79,26 @@ const CONFIG_COMPONENT_SECTIONS: Record<string, ConfigSection> = {
   claude: 'agents',
   'claude-code': 'agents',
   codex: 'agents',
+  copilot: 'agents',
+  co: 'agents',
+  'gh-copilot': 'agents',
+  'github-copilot': 'agents',
   opencode: 'agents',
+  antigravity: 'agents',
+  agy: 'agents',
+  gemini: 'agents',
+  ag: 'agents',
   cursor: 'agents',
+  kimi: 'agents',
+  'kimi-code': 'agents',
+  qoder: 'agents',
+  qd: 'agents',
+  qodercli: 'agents',
+  pi: 'agents',
+  'pi-agent': 'agents',
+  mimo: 'agents',
+  mo: 'agents',
+  'mimo-code': 'agents',
 
   agim: 'agim',
   native: 'agim',
@@ -606,12 +624,14 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex' | 'cursor'
+type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex' | 'copilot' | 'antigravity' | 'cursor' | 'kimi-code' | 'qoder' | 'pi' | 'mimo'
 
 interface AgentSpec {
   id: AgentId
-  /** CLI binary to probe with `--version`. */
+  /** CLI binary to probe. */
   cmd: string
+  /** Some CLIs do not expose --version; override with a cheap success path. */
+  probeArgs?: string[]
   /** Whether this agent needs a separate `<cmd> auth login` step we
    *  should hint at. (claude-code uses claude.ai login flow inside the
    *  CLI itself.) */
@@ -623,7 +643,13 @@ const AGENT_SPECS: AgentSpec[] = [
   { id: 'claude-code', cmd: 'claude' },
   { id: 'opencode',    cmd: 'opencode',     authHintKey: 'agents.auth_hint.opencode' },
   { id: 'codex',       cmd: 'codex',        authHintKey: 'agents.auth_hint.codex' },
+  { id: 'copilot',     cmd: 'copilot',      authHintKey: 'agents.auth_hint.copilot' },
+  { id: 'antigravity', cmd: 'agy',          probeArgs: ['help'], authHintKey: 'agents.auth_hint.antigravity' },
   { id: 'cursor',      cmd: 'cursor-agent', authHintKey: 'agents.auth_hint.cursor' },
+  { id: 'kimi-code',   cmd: 'kimi',         authHintKey: 'agents.auth_hint.kimi-code' },
+  { id: 'qoder',       cmd: 'qodercli',     authHintKey: 'agents.auth_hint.qoder' },
+  { id: 'pi',          cmd: 'pi',           authHintKey: 'agents.auth_hint.pi' },
+  { id: 'mimo',        cmd: 'mimo',         authHintKey: 'agents.auth_hint.mimo' },
 ]
 
 async function nativeLlmConfigured(): Promise<boolean> {
@@ -653,7 +679,7 @@ async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
       out.set(spec.id, await nativeLlmConfigured())
       return
     }
-    out.set(spec.id, await cliAvailable(spec.cmd))
+    out.set(spec.id, await cliAvailable(spec.cmd, spec.probeArgs))
   }))
   return out
 }

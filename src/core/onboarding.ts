@@ -120,6 +120,7 @@ const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime us
 const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
   'claude-code': { agent: 'claude-code', npmPackage: '@anthropic-ai/claude-code', command: 'claude' },
   'codex': { agent: 'codex', npmPackage: '@openai/codex', command: 'codex' },
+  'copilot': { agent: 'copilot', npmPackage: '@github/copilot', command: 'copilot' },
   'opencode': { agent: 'opencode', npmPackage: 'opencode-ai', command: 'opencode' },
   'antigravity': {
     agent: 'antigravity',
@@ -130,6 +131,30 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
     // doesn't tell people to `npm i -g antigravity` (which would 404
     // or install some unrelated package).
     installCmd: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+  },
+  'kimi-code': {
+    agent: 'kimi-code',
+    npmPackage: '@moonshot-ai/kimi-code',
+    command: 'kimi',
+    installCmd: 'curl -fsSL https://www.kimi.com/install.sh | sh  # or: npm install -g @moonshot-ai/kimi-code',
+  },
+  'qoder': {
+    agent: 'qoder',
+    npmPackage: '',
+    command: 'qodercli',
+    installCmd: 'curl -fsSL https://qoder.com/install | sh',
+  },
+  'pi': {
+    agent: 'pi',
+    npmPackage: '@earendil-works/pi-coding-agent',
+    command: 'pi',
+    installCmd: 'npm install -g @earendil-works/pi-coding-agent',
+  },
+  'mimo': {
+    agent: 'mimo',
+    npmPackage: '@mimo-ai/cli',
+    command: 'mimo',
+    installCmd: 'curl -fsSL https://mimo.xiaomi.com/install | bash  # or: npm install -g @mimo-ai/cli',
   },
   // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. No CLI to
   // install; "availability" means an LLM backend with role native-chat
@@ -344,7 +369,7 @@ export function formatAgentNotAvailableError(agentName: string): string {
     else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
   }
 
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /oc - OpenCode\n  /agy - Antigravity`
+  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
 }
 
 // ============================================

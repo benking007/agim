@@ -8,7 +8,7 @@ It is designed for production use: persistent delivery, session continuity, huma
 ## What matters
 
 - **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
-- **Agent flexibility**: Claude Code, Codex, OpenCode, Cursor, Antigravity, native LLM, and ACP remote agents.
+- **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, native LLM, and ACP remote agents.
 - **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
 - **Reliable runtime**: SQLite outbox, restart recovery, job board, structured audit.
 - **Safety by default**: token auth, approval gate, sensitive-path denylist, optional global-IM disable.
@@ -25,7 +25,7 @@ agim go
 
 `agim go` will:
 
-1. Detect usable local agents such as Claude Code, Codex, Cursor, or Agim Agent.
+1. Detect usable local agents such as Claude Code, Codex, GitHub Copilot CLI, Cursor, Kimi Code, Qoder, PI, MiMo Code, or Agim Agent.
 2. Help configure an Agim Agent model API if no agent is ready yet.
 3. Start Agim in the background and print the Web console URL plus the first access token.
 
@@ -67,11 +67,13 @@ Common CLI entries:
 
 | Scenario | Recommended path |
 |---|---|
-| Strong coding agent loop | `claude-code` / `codex` / `opencode` / `cursor` |
+| Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
 | API-only, low-cost native mode | `native` + `llmBackends` |
 | Bring your own remote agent | ACP (`acpAgents`) |
 
 Native setup details: `docs/llm-backends.md`
+
+Supported agent details: `docs/agents.md`
 
 ## Core AI workflows
 
@@ -99,7 +101,7 @@ Security reference: `docs/security-hardening.md`
 
 | Command | Purpose |
 |---|---|
-| `/cc ...` `/oc ...` `/cx ...` `/cs ...` `/na ...` | Route to a target agent |
+| `/cc ...` `/oc ...` `/cx ...` `/co ...` `/cs ...` `/kimi ...` `/qd ...` `/pi ...` `/mimo ...` `/na ...` | Route to a target agent |
 | `/new` | Start a new conversation session |
 | `/model` `/models` | Inspect/switch model (where supported) |
 | `/goal ...` | Manage per-thread long goal |

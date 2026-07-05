@@ -12,7 +12,7 @@ import { readFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { ApprovalBus, approvalBus } from '../../../core/approval-bus.js'
+import { ApprovalBus, approvalBus, type RunContext } from '../../../core/approval-bus.js'
 import { ClaudeCodeAdapter, _testInternals } from './index.js'
 import type { SpawnPlan } from '../../../core/agent-base.js'
 
@@ -120,6 +120,7 @@ describe('ClaudeCodeAdapter prepareCommand — fallback paths', () => {
 describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
   let bus: ApprovalBus
   let adapter: ClaudeCodeAdapter
+  let registered: Array<{ runId: string; ctx: RunContext }>
   let originalGetSocketPath: () => string | null
   let originalRegisterRun: typeof approvalBus.registerRun
   let originalUnregisterRun: typeof approvalBus.unregisterRun
@@ -127,11 +128,15 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
   beforeEach(async () => {
     bus = new ApprovalBus({ approvalTimeoutMs: 500 })
     await bus.start(uniqueSocketPath())
+    registered = []
     originalGetSocketPath = approvalBus.getSocketPath.bind(approvalBus)
     originalRegisterRun = approvalBus.registerRun.bind(approvalBus)
     originalUnregisterRun = approvalBus.unregisterRun.bind(approvalBus)
     approvalBus.getSocketPath = () => bus.getSocketPath()
-    approvalBus.registerRun = bus.registerRun.bind(bus)
+    approvalBus.registerRun = (runId, ctx) => {
+      registered.push({ runId, ctx })
+      bus.registerRun(runId, ctx)
+    }
     approvalBus.unregisterRun = bus.unregisterRun.bind(bus)
 
     adapter = new ClaudeCodeAdapter()
@@ -165,6 +170,7 @@ describe('ClaudeCodeAdapter prepareCommand — approval-routed', () => {
     expect(plan.args[plan.args.indexOf('--permission-mode') + 1]).toBe('default')
     expect(plan.args[plan.args.indexOf('--permission-prompt-tool') + 1]).toBe('mcp__agim__request')
     expect(plan.args[plan.args.length - 1]).toBe('hi')
+    expect(registered[0].ctx.cwd).toBe(plan.cwd)
 
     // mcp-config must come BEFORE the next `-X` flag so its variadic
     // <configs...> doesn't swallow the prompt as a second config path.

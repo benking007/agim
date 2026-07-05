@@ -6,6 +6,7 @@
 ## 新用户（先读）
 
 - `README.md` / `README.zh-CN.md`：项目概览与快速开始
+- `agents.md`：支持的 Agent 后端、安装入口、模型切换与工具能力
 - `deployment.md`：部署与上线
 - `architecture-bridge-and-native.md`：桥接 + native 的核心架构立场
 - `llm-backends.md`：native LLM 配置与排障
@@ -28,6 +29,8 @@
 
 ## 适配与集成
 
+- `agent-integration-sop.md`：新增 agent 接入 SOP（adapter、工具注入、Skills、Memory、Web/CLI 验收）
+- `agents.md`：当前内置 Agent 后端清单与使用说明
 - `discord-setup.md`：Discord 接入
 - `im-workspaces-guide.md`：IM 工作区使用指南
 - `keyring-integration.md`：keyring/dbus 集成

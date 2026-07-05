@@ -3,8 +3,13 @@
 // opencode's `--format json` event stream into the per-agent session row in
 // agim, so this is the regression net for the 2026-05-02 wire-up.
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { randomBytes } from 'node:crypto'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { OpenCodeAdapter } from './index.js'
+import { ApprovalBus, approvalBus, type RunContext } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 
 // Reach past the protected modifier to drive the adapter directly without
@@ -17,6 +22,23 @@ function inspect(adapter: OpenCodeAdapter, event: unknown, opts: AgentSendOpts):
 function buildArgs(adapter: OpenCodeAdapter, prompt: string, opts: AgentSendOpts): string[] {
   // @ts-expect-error — protected
   return adapter.buildArgs(prompt, opts)
+}
+
+class OpenCodeAdapterTestable extends OpenCodeAdapter {
+  exposePrepareCommand(prompt: string, opts: AgentSendOpts) {
+    return this.prepareCommand(prompt, opts)
+  }
+}
+
+function uniqueSocketPath(): string {
+  return join(tmpdir(), `agim-opencode-test-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
+}
+
+const FULL_OPTS = {
+  threadId: 'thread-A',
+  platform: 'feishu',
+  channelId: 'chan-1',
+  userId: 'u1',
 }
 
 describe('OpenCodeAdapter buildArgs', () => {
@@ -154,5 +176,71 @@ describe('OpenCodeAdapter inspectEvent — usage capture', () => {
     inspect(adapter, { type: 'step_finish', sessionID: 'ses_x' },
       { onUsage: (d) => deltas.push(d) })
     expect(deltas.length).toBe(0)
+  })
+})
+
+describe('OpenCodeAdapter prepareCommand — approval routed context', () => {
+  let bus: ApprovalBus
+  let adapter: OpenCodeAdapterTestable
+  let registered: Array<{ runId: string; ctx: RunContext }>
+  let unregistered: string[]
+  let originalGetSocketPath: () => string | null
+  let originalRegisterRun: typeof approvalBus.registerRun
+  let originalUnregisterRun: typeof approvalBus.unregisterRun
+  let oldWorkspaceRoot: string | undefined
+  let oldOpencodeConfigPath: string | undefined
+
+  beforeEach(async () => {
+    bus = new ApprovalBus({ approvalTimeoutMs: 500 })
+    await bus.start(uniqueSocketPath())
+    registered = []
+    unregistered = []
+    originalGetSocketPath = approvalBus.getSocketPath.bind(approvalBus)
+    originalRegisterRun = approvalBus.registerRun.bind(approvalBus)
+    originalUnregisterRun = approvalBus.unregisterRun.bind(approvalBus)
+    approvalBus.getSocketPath = () => bus.getSocketPath()
+    approvalBus.registerRun = (runId, ctx) => {
+      registered.push({ runId, ctx })
+      bus.registerRun(runId, ctx)
+    }
+    approvalBus.unregisterRun = (runId) => {
+      unregistered.push(runId)
+      bus.unregisterRun(runId)
+    }
+
+    const tmp = await mkdtemp(join(tmpdir(), 'agim-opencode-'))
+    oldWorkspaceRoot = process.env.AGIM_WORKSPACES_ROOT
+    oldOpencodeConfigPath = process.env.OPENCODE_CONFIG_PATH
+    process.env.AGIM_WORKSPACES_ROOT = join(tmp, 'workspaces')
+    process.env.OPENCODE_CONFIG_PATH = join(tmp, 'opencode.json')
+    adapter = new OpenCodeAdapterTestable()
+  })
+
+  afterEach(async () => {
+    await bus.stop()
+    approvalBus.getSocketPath = originalGetSocketPath
+    approvalBus.registerRun = originalRegisterRun
+    approvalBus.unregisterRun = originalUnregisterRun
+    if (oldWorkspaceRoot === undefined) {
+      delete process.env.AGIM_WORKSPACES_ROOT
+    } else {
+      process.env.AGIM_WORKSPACES_ROOT = oldWorkspaceRoot
+    }
+    if (oldOpencodeConfigPath === undefined) {
+      delete process.env.OPENCODE_CONFIG_PATH
+    } else {
+      process.env.OPENCODE_CONFIG_PATH = oldOpencodeConfigPath
+    }
+  })
+
+  it('registers the same cwd that opencode is spawned with', async () => {
+    const plan = await adapter.exposePrepareCommand('hi', FULL_OPTS)
+    const runId = plan.extraEnv?.AGIM_RUN_ID
+    expect(runId).toBeTruthy()
+    expect(plan.cwd).toBe(join(process.env.AGIM_WORKSPACES_ROOT as string, 'opencode'))
+    expect(registered[0]).toMatchObject({ runId, ctx: { cwd: plan.cwd, callerAgent: 'opencode' } })
+
+    await plan.cleanup?.()
+    expect(unregistered).toContain(runId as string)
   })
 })

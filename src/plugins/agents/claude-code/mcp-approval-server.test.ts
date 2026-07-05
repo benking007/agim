@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { mkdtemp } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ApprovalBus, threadKey, type RunContext } from '../../../core/approval-bus.js'
@@ -70,6 +71,14 @@ describe('mcp-approval-server', () => {
     expect(names).toContain('request')
   })
 
+  it('exposes approval-gated native mutation tools', async () => {
+    const tools = await h.mcpClient.listTools()
+    const names = tools.tools.map((t) => t.name)
+    expect(names).toContain('agim_bash')
+    expect(names).toContain('agim_write')
+    expect(names).toContain('agim_edit')
+  })
+
   it('round-trip: tools/call → bus notifier → resolvePending(allow) → MCP result', async () => {
     let captured: { toolName: string; input: Record<string, unknown> } | null = null
     h.bus.setNotifier(async (n) => {
@@ -89,9 +98,11 @@ describe('mcp-approval-server', () => {
       },
     })
 
-    expect(captured).not.toBeNull()
-    expect(captured!.toolName).toBe('Bash')
-    expect(captured!.input).toEqual({ command: 'git status' })
+    const capturedRequest = captured as { toolName: string; input: Record<string, unknown> } | null
+    expect(capturedRequest).not.toBeNull()
+    if (!capturedRequest) throw new Error('approval request was not captured')
+    expect(capturedRequest.toolName).toBe('Bash')
+    expect(capturedRequest.input).toEqual({ command: 'git status' })
 
     const content = result.content as Array<{ type: string; text: string }>
     expect(content[0].type).toBe('text')
@@ -169,13 +180,42 @@ describe('mcp-approval-server', () => {
       name: 'request',
       arguments: { toolName: 'Edit', input: { file_path: '/etc/hosts' }, toolUseId: 'tu' },
     })
-    expect(captured).not.toBeNull()
-    expect(captured!).toBe('Edit')
+    const capturedTool = captured as string | null
+    expect(capturedTool).not.toBeNull()
+    expect(capturedTool).toBe('Edit')
+  })
+
+  it('agim_bash routes through the bus approval gate before executing', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'agim-mcp-native-'))
+    h.bus.registerRun(RUN_ID, { ...RUN_CTX, cwd })
+    let captured: { toolName: string; input: Record<string, unknown> } | null = null
+    h.bus.setNotifier(async (n) => {
+      captured = { toolName: n.toolName, input: n.input }
+      queueMicrotask(() => {
+        h.bus.resolvePending(KEY, { behavior: 'allow' })
+      })
+    })
+
+    const result = await h.mcpClient.callTool({
+      name: 'agim_bash',
+      arguments: { command: 'printf agim-ok' },
+    })
+
+    const capturedRequest = captured as { toolName: string; input: Record<string, unknown> } | null
+    expect(capturedRequest).not.toBeNull()
+    if (!capturedRequest) throw new Error('native tool approval was not captured')
+    expect(capturedRequest.toolName).toBe('Bash')
+    expect(capturedRequest.input).toEqual({ command: 'printf agim-ok' })
+    const content = result.content as Array<{ type: string; text: string }>
+    const payload = JSON.parse(content[0].text)
+    expect(payload.ok).toBe(true)
+    expect(String(payload.result)).toContain('agim-ok')
   })
 
   it('unknown runId is denied immediately', async () => {
     // Build a fresh client whose runId is never registered with the bus
-    const sockPath = h.bus.getSocketPath()!
+    const sockPath = h.bus.getSocketPath()
+    if (!sockPath) throw new Error('bus socket path missing')
     const orphanClient = new ApprovalClient(sockPath, 'never-registered')
     const orphanServer = buildServer(orphanClient)
     const [ct, st] = InMemoryTransport.createLinkedPair()

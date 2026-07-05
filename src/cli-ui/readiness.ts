@@ -12,7 +12,12 @@ export const AGENT_PRIORITY = [
   'native',
   'claude-code',
   'codex',
+  'copilot',
   'cursor',
+  'kimi-code',
+  'qoder',
+  'pi',
+  'mimo',
   'opencode',
   'antigravity',
 ] as const

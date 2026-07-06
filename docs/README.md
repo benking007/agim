@@ -22,6 +22,7 @@
 ## 运维与稳定性
 
 - `runbook.md`：高频运维操作
+- `release.md`：npm 发版流程（main push 触发、版本号、Actions、npm 验证）
 - `security-hardening.md`：安全基线与防护项
 - `session-model.md`：会话模型与恢复
 - `task-recovery-testing.md`：恢复链路测试记录

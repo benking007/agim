@@ -33,6 +33,15 @@ import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { agimToolsToPi } from './tool-bridge.js'
+import {
+  createReliabilityState,
+  deriveReliabilityDelivery,
+  formatReliabilityOutput,
+  recordReliabilityToolResult,
+  resolveReliabilityMode,
+  type ReliabilityGoal,
+  type ReliabilityState,
+} from './reliability.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -179,6 +188,19 @@ function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableTool
 
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
+async function loadActiveGoalForReliability(opts: AgentSendOpts | undefined): Promise<ReliabilityGoal | null> {
+  if (!opts?.platform || !opts.threadId) return null
+  if (resolveReliabilityMode() === 'off') return null
+  try {
+    const { getActiveGoal } = await import('../../../core/goals.js')
+    const goal = getActiveGoal(opts.platform, opts.channelId ?? '', opts.threadId)
+    if (!goal) return null
+    return { title: goal.title, body: goal.body }
+  } catch {
+    return null
+  }
+}
+
 function seedUserMessage(text: string) {
   return { role: 'user' as const, content: [{ type: 'text' as const, text }], timestamp: Date.now() }
 }
@@ -232,7 +254,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       // Never fail silently: a thrown turn would otherwise reach the IM layer
       // as "no response". Surface the error so it's visible + diagnosable.
       const msg = err instanceof Error ? `${err.message}` : String(err)
-      // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
       console.error('[native] turn failed:', err instanceof Error ? err.stack : err)
       yield `⚠️ Agim Agent 本轮出错：${msg}`
     }
@@ -289,6 +310,13 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
       : []
 
+    const activeGoal = await loadActiveGoalForReliability(effectiveOpts)
+    let reliability: ReliabilityState | null = createReliabilityState({
+      prompt,
+      opts: effectiveOpts,
+      activeGoal,
+    })
+
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
     const harness = new AgentHarness({
       env,
@@ -334,6 +362,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const toolRuns: NativeToolRun[] = []
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
       toolRounds += 1
+      reliability = recordReliabilityToolResult(reliability, ev)
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
@@ -375,7 +404,6 @@ export class NativeAgentAdapter implements AgentAdapter {
           await harness.compact()
         }
       } catch (err) {
-        // biome-ignore lint/suspicious/noConsole: stderr is the only reliable sink here
         console.error('[native] compaction skipped:', err instanceof Error ? err.message : err)
       }
     }
@@ -394,6 +422,11 @@ export class NativeAgentAdapter implements AgentAdapter {
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map((c) => c.text)
       .join('')
+    if (reliability) {
+      const delivery = deriveReliabilityDelivery(reliability, { finalText: text, stopReason, maxIterations: maxIter })
+      yield formatReliabilityOutput(delivery, text)
+      return
+    }
     if (stopReason && !text.trim()) {
       yield stopReason === 'stuck_loop'
         ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'

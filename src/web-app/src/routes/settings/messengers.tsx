@@ -48,6 +48,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   useConfig,
   useRestartService,
   useServiceStatus,
@@ -798,16 +805,21 @@ function SelectRow<T extends string>({ id, label, value, onChange, options }: Se
   return (
     <div className="grid grid-cols-1 gap-1 sm:grid-cols-[180px_1fr] sm:items-center sm:gap-2">
       <Label htmlFor={id} className="text-xs text-text-dim">{label}</Label>
-      <select
-        id={id}
+      <Select
         value={value}
-        onChange={(e) => onChange(e.target.value as T)}
-        className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-text"
+        onValueChange={(v) => onChange(v as T)}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+        <SelectTrigger id={id} className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }
@@ -843,8 +855,7 @@ function WechatQrDialog({ open, onOpenChange, onConfirmed }: WechatQrDialogProps
       setStartError(err instanceof Error ? err.message : String(err))
     })
     return () => { active = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, start.mutateAsync])
 
   const statusQuery = useWechatQrStatus(open ? token : null)
   const status = statusQuery.data?.status
@@ -858,8 +869,7 @@ function WechatQrDialog({ open, onOpenChange, onConfirmed }: WechatQrDialogProps
     if (status === 'expired') {
       toast.error(t('messengers.qr.expired'))
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status])
+  }, [onConfirmed, onOpenChange, status, t])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

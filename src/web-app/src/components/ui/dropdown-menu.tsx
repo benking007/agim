@@ -16,6 +16,8 @@ const DropdownMenuGroup = DropdownMenuPrimitive.Group
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal
 const DropdownMenuSub = DropdownMenuPrimitive.Sub
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+const DROPDOWN_CONTENT_MAX_HEIGHT = 'min(24rem, calc(100vh - 2rem))'
+const FLOATING_MAX_WIDTH = 'calc(100vw - 2rem)'
 
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
@@ -42,16 +44,25 @@ DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayNam
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
->(({ className, ...props }, ref) => (
+>(({ className, collisionPadding = 12, sticky = 'always', style, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
+    collisionPadding={collisionPadding}
+    sticky={sticky}
     className={cn(
-      'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-surface p-1 shadow-md',
+      'z-[100] min-w-[8rem] overflow-y-auto overscroll-contain',
+      'rounded-md border border-border bg-surface p-1 shadow-md',
       'data-[state=open]:animate-in data-[state=closed]:animate-out',
       'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
       className,
     )}
+    style={{
+      ...style,
+      maxHeight: DROPDOWN_CONTENT_MAX_HEIGHT,
+      maxWidth: FLOATING_MAX_WIDTH,
+      zIndex: 100,
+    }}
     {...props}
   />
 ))
@@ -60,18 +71,28 @@ DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayNam
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, side = 'top', sideOffset = 4, collisionPadding = 12, sticky = 'always', style, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
+      side={side}
       sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
+      sticky={sticky}
       className={cn(
-        'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-surface p-1 shadow-md',
+        'z-[100] min-w-[8rem] overflow-y-auto overscroll-contain',
+        'rounded-md border border-border bg-surface p-1 shadow-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}
+      style={{
+        ...style,
+        maxHeight: DROPDOWN_CONTENT_MAX_HEIGHT,
+        maxWidth: FLOATING_MAX_WIDTH,
+        zIndex: 100,
+      }}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>

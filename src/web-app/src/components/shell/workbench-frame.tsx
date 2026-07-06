@@ -64,7 +64,6 @@ const WORKBENCH_NAV: WorkbenchNavGroup[] = [
     items: [
       { to: '/settings/llm', labelKey: 'dashboard.cards.llm.action', icon: <Code2 /> },
       { to: '/settings/messengers', labelKey: 'dashboard.cards.im.action', icon: <Plug /> },
-      { to: '/settings/start', labelKey: 'dashboard.quick.start', icon: <Settings /> },
     ],
   },
   {
@@ -118,13 +117,13 @@ export function WorkbenchFrame({
 
   return (
     <TooltipProvider delayDuration={180}>
-      <div className="flex min-h-dvh flex-col bg-bg text-text antialiased">
+      <div className="flex h-dvh flex-col bg-bg text-text antialiased">
       <Topbar />
 
-      <div className="flex flex-1">
+      <div className="flex min-h-0 flex-1">
         <aside
           className={cn(
-            'hidden shrink-0 flex-col border-r border-border bg-surface transition-all duration-300 lg:flex',
+            'hidden min-h-0 shrink-0 flex-col border-r border-border bg-surface transition-all duration-300 lg:flex',
             collapsed ? 'w-[4.5rem]' : 'w-64',
           )}
         >
@@ -221,7 +220,10 @@ export function WorkbenchFrame({
           )}
         </aside>
 
-        <main className={cn('min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 xl:px-8 xl:py-6', contentClassName)}>
+        <main
+          data-agim-scroll-root
+          className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 xl:px-8 xl:py-6', contentClassName)}
+        >
           {children}
         </main>
       </div>

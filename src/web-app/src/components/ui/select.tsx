@@ -15,6 +15,9 @@ import { cn } from '@/lib/utils'
 const Select = SelectPrimitive.Root
 const SelectGroup = SelectPrimitive.Group
 const SelectValue = SelectPrimitive.Value
+const SELECT_CONTENT_MAX_HEIGHT = 'min(24rem, calc(100vh - 2rem))'
+const SELECT_VIEWPORT_MAX_HEIGHT = 'min(22rem, calc(100vh - 4rem))'
+const FLOATING_MAX_WIDTH = 'calc(100vw - 2rem)'
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -72,13 +75,28 @@ SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayNam
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = 'popper', ...props }, ref) => (
+>(({
+  className,
+  children,
+  position = 'popper',
+  side = 'top',
+  sideOffset = 4,
+  collisionPadding = 12,
+  sticky = 'always',
+  style,
+  ...props
+}, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
       position={position}
+      side={side}
+      sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
+      sticky={sticky}
       className={cn(
-        'relative z-50 max-h-[var(--radix-select-content-available-height)] min-w-[8rem] overflow-hidden',
+        'relative z-[100] min-w-[8rem] overflow-y-auto',
+        'overscroll-contain',
         'rounded-md border border-border bg-surface text-text shadow-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -91,15 +109,22 @@ const SelectContent = React.forwardRef<
         ],
         className,
       )}
+      style={{
+        ...style,
+        maxHeight: SELECT_CONTENT_MAX_HEIGHT,
+        maxWidth: FLOATING_MAX_WIDTH,
+        zIndex: 100,
+      }}
       {...props}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
         className={cn(
-          'max-h-[calc(var(--radix-select-content-available-height)-2rem)] overflow-y-auto p-1',
+          'overflow-y-auto overscroll-contain p-1',
           position === 'popper' &&
             'w-full min-w-[var(--radix-select-trigger-width)]',
         )}
+        style={{ maxHeight: SELECT_VIEWPORT_MAX_HEIGHT }}
       >
         {children}
       </SelectPrimitive.Viewport>

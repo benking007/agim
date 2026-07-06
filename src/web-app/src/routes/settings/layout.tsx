@@ -78,7 +78,7 @@ export default function SettingsLayout(): JSX.Element {
   return (
     <WorkbenchFrame contentClassName="space-y-4">
       <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-border bg-surface shadow-sm xl:sticky xl:top-0 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto">
+        <aside className="rounded-xl border border-border bg-surface shadow-sm xl:sticky xl:top-0 xl:max-h-[calc(100dvh_-_3rem)] xl:overflow-y-auto">
           <nav
             className={cn(
               'flex gap-4 overflow-x-auto px-3 py-3',

@@ -37,6 +37,10 @@
     margin-right: 0 !important;
   }
 
+  html [data-radix-popper-content-wrapper] {
+    z-index: 100;
+  }
+
   html, body, #root {
     height: 100%;
   }

@@ -14,7 +14,7 @@
  * sender allowlist apply at boot — service restart required.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -108,7 +108,7 @@ export default function SettingsSecurityRoute(): JSX.Element {
   const [senderMode, setSenderMode] = useState<SenderMode>('open')
   const [senderMembers, setSenderMembers] = useState<string[]>([])
 
-  async function loadDiagnostics(): Promise<void> {
+  const loadDiagnostics = useCallback(async (): Promise<void> => {
     setDiagLoading(true)
     try {
       const res = await client.get<{ diagnostics: Diagnostics }>('/api/security/diagnostics')
@@ -118,9 +118,9 @@ export default function SettingsSecurityRoute(): JSX.Element {
     } finally {
       setDiagLoading(false)
     }
-  }
+  }, [t])
 
-  useEffect(() => { void loadDiagnostics() }, [])
+  useEffect(() => { void loadDiagnostics() }, [loadDiagnostics])
 
   async function setValue(key: string, value: string | null): Promise<void> {
     try {
@@ -877,7 +877,7 @@ function LabeledField({
 }: { label: string; hint?: string; children: React.ReactNode }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-text-dim">{label}</label>
+      <div className="text-xs font-medium text-text-dim">{label}</div>
       {children}
       {hint && <p className="text-[10px] text-text-muted">{hint}</p>}
     </div>

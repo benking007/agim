@@ -35,18 +35,6 @@ async function collect(gen: AsyncGenerator<string>): Promise<string> {
   return out
 }
 
-async function withReliabilityEnv<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
-  const prev = process.env.AGIM_RELIABILITY_LOOP
-  if (value === undefined) delete process.env.AGIM_RELIABILITY_LOOP
-  else process.env.AGIM_RELIABILITY_LOOP = value
-  try {
-    return await fn()
-  } finally {
-    if (prev === undefined) delete process.env.AGIM_RELIABILITY_LOOP
-    else process.env.AGIM_RELIABILITY_LOOP = prev
-  }
-}
-
 describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('yields final assistant text', async () => {
     const reg = faux()
@@ -295,31 +283,31 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(seenModel).toBe('qwen-agim')
   })
 
-  it('keeps trivial chat out of the reliability layer by default', async () => {
+  it('keeps normal answers unwrapped', async () => {
     const reg = faux()
     reg.setResponses([fauxAssistantMessage('plain hello')])
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFromFaux(reg),
     })
-    const out = await withReliabilityEnv(undefined, () => collect(adapter.sendPrompt('plain-chat', 'hi')))
+    const out = await collect(adapter.sendPrompt('plain-chat', 'hi'))
     expect(out).toBe('plain hello')
   })
 
-  it('marks coding work UNVERIFIED when no verifier evidence exists', async () => {
+  it('does not inject reliability status into coding answers without verifier evidence', async () => {
     const reg = faux()
     reg.setResponses([fauxAssistantMessage('已修复这个 bug。')])
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFromFaux(reg),
     })
-    const out = await withReliabilityEnv(undefined, () => collect(adapter.sendPrompt('code-unverified', '修复这个 bug')))
-    expect(out).toContain('Status: UNVERIFIED')
-    expect(out).toContain('没有看到测试')
-    expect(out).toContain('已修复这个 bug')
+    const out = await collect(adapter.sendPrompt('code-no-verifier', '修复这个 bug'))
+    expect(out).toBe('已修复这个 bug。')
+    expect(out).not.toContain('Status:')
+    expect(out).not.toContain('没有看到测试')
   })
 
-  it('marks coding work SUCCESS when a verifier-like tool passes', async () => {
+  it('keeps successful tool-backed answers unwrapped', async () => {
     const reg = faux()
     reg.setResponses([
       fauxAssistantMessage(fauxToolCall('native_exec', { command: 'npm test' }, { id: 'test1' }), { stopReason: 'toolUse' }),
@@ -336,44 +324,33 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveModel: async () => bindingFromFaux(reg),
       resolveTools: () => ({ tools: [tool], dispatch }),
     })
-    const out = await withReliabilityEnv(undefined, () => collect(adapter.sendPrompt('code-success', '修复 bug 并运行测试')))
-    expect(out).toContain('Status: SUCCESS')
-    expect(out).toContain('verifier +1')
-    expect(out).toContain('测试通过，已完成')
+    const out = await collect(adapter.sendPrompt('tool-success', '修复 bug 并运行测试'))
+    expect(out).toBe('测试通过，已完成。')
+    expect(out).not.toContain('Status:')
   })
 
-  it('generalizes to research with source evidence', async () => {
+  it('appends diagnostics when tools fail but the model still returns text', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_web_search', { query: 'market size' }, { id: 's1' }), { stopReason: 'toolUse' }),
-      fauxAssistantMessage('基于检索结果，市场正在增长。'),
+      fauxAssistantMessage(fauxToolCall('flaky_lookup', { query: 'x' }, { id: 'f1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('我根据已有信息继续。'),
     ])
     const tool: ToolDef = {
-      name: 'native_web_search',
-      description: 'search',
+      name: 'flaky_lookup',
+      description: 'lookup',
       parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     }
-    const dispatch: ToolDispatcher = async () => ({ text: 'source: market report result', isError: false })
+    const dispatch: ToolDispatcher = async () => ({ text: 'upstream 503', isError: true })
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFromFaux(reg),
       resolveTools: () => ({ tools: [tool], dispatch }),
     })
-    const out = await withReliabilityEnv(undefined, () => collect(adapter.sendPrompt('research-success', '做一个市场调研报告')))
-    expect(out).toContain('Status: SUCCESS')
-    expect(out).toContain('source +1')
-  })
-
-  it('treats investment plans without source evidence as UNVERIFIED drafts', async () => {
-    const reg = faux()
-    reg.setResponses([fauxAssistantMessage('投资计划：分散配置。风险：市场波动会造成回撤。')])
-    const adapter = new NativeAgentAdapter({
-      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
-      resolveModel: async () => bindingFromFaux(reg),
-    })
-    const out = await withReliabilityEnv(undefined, () => collect(adapter.sendPrompt('invest-unverified', '帮我做一个投资计划')))
-    expect(out).toContain('Status: UNVERIFIED')
-    expect(out).toContain('缺少来源证据')
+    const out = await collect(adapter.sendPrompt('partial-diagnostic', '查一下'))
+    expect(out).toContain('我根据已有信息继续。')
+    expect(out).toContain('诊断')
+    expect(out).toContain('flaky_lookup')
+    expect(out).not.toContain('Status:')
   })
 
   it('compacts an over-budget durable session before the next turn', async () => {

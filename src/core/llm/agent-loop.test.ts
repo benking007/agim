@@ -91,6 +91,62 @@ describe('runAgentLoop — basics', () => {
   })
 })
 
+describe('runAgentLoop — turn policies', () => {
+  it('prepareNextTurn can inject per-run steering before the provider call', async () => {
+    const p = new FakeProvider([
+      { text: 'ok', finishReason: 'stop', usage: {}, modelUsed: 'fake-1' },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'original' }],
+      loopPolicy: {
+        prepareNextTurn: (ctx) => {
+          expect(ctx.iter).toBe(0)
+          expect(ctx.history).toHaveLength(1)
+          return { role: 'user', content: 'steering: answer tersely' }
+        },
+      },
+    })
+    expect(r.finishReason).toBe('stop')
+    expect(p.seenMessages[0].map((m) => m.content)).toEqual([
+      'original',
+      'steering: answer tersely',
+    ])
+  })
+
+  it('shouldStopAfterTurn can stop before tool dispatch without wrapping the answer', async () => {
+    let dispatched = false
+    const p = new FakeProvider([
+      {
+        text: 'I would use a tool',
+        toolCalls: [toolCall('c1', 'mcp_x_run', {})],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      dispatch: async () => {
+        dispatched = true
+        return { text: 'should not run', isError: false }
+      },
+      loopPolicy: {
+        shouldStopAfterTurn: (ctx) => {
+          expect(ctx.result.finishReason).toBe('tool_use')
+          return { finishReason: 'off_track', text: ctx.result.text, error: 'policy stop' }
+        },
+      },
+    })
+    expect(dispatched).toBe(false)
+    expect(r.finishReason).toBe('off_track')
+    expect(r.text).toBe('I would use a tool')
+    expect(r.error).toBe('policy stop')
+  })
+})
+
 describe('runAgentLoop — multi-iteration tool dispatch', () => {
   it('dispatches a tool call, appends tool result, continues, then returns final text', async () => {
     const calls: string[] = []
@@ -316,6 +372,74 @@ describe('runAgentLoop — approval gate', () => {
   it('exported alwaysAllowGate is allow', async () => {
     const r = await alwaysAllowGate(toolCall('c', 'n', {}), 0)
     expect(r).toBe('allow')
+  })
+})
+
+describe('runAgentLoop — tool policy', () => {
+  it('canRunTool denies before approval or dispatch', async () => {
+    let approved = false
+    let dispatched = false
+    const p = new FakeProvider([
+      {
+        text: '',
+        toolCalls: [toolCall('c1', 'mcp_x_run', {})],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      },
+      { text: 'skipped', finishReason: 'stop', usage: {}, modelUsed: 'fake-1' },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      approve: async () => {
+        approved = true
+        return 'allow'
+      },
+      toolPolicy: {
+        canRunTool: () => ({ decision: 'deny', reason: 'write access disabled' }),
+      },
+      dispatch: async () => {
+        dispatched = true
+        return { text: 'should not run', isError: false }
+      },
+    })
+    expect(approved).toBe(false)
+    expect(dispatched).toBe(false)
+    expect(r.toolCalls[0].decision).toBe('deny')
+    expect(r.toolCalls[0].preview).toContain('denied by policy')
+    expect(r.toolCalls[0].preview).toContain('write access disabled')
+  })
+
+  it('approveToolRun can replace the legacy approve gate per run', async () => {
+    let dispatched = false
+    const p = new FakeProvider([
+      {
+        text: '',
+        toolCalls: [toolCall('c1', 'mcp_x_run', {})],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      },
+      { text: 'done', finishReason: 'stop', usage: {}, modelUsed: 'fake-1' },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      approve: async () => 'deny',
+      toolPolicy: {
+        approveToolRun: () => 'allow',
+      },
+      dispatch: async () => {
+        dispatched = true
+        return { text: 'ran', isError: false }
+      },
+    })
+    expect(dispatched).toBe(true)
+    expect(r.toolCalls[0].decision).toBe('allow')
+    expect(r.toolCalls[0].preview).toBe('ran')
   })
 })
 

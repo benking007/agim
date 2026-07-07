@@ -561,6 +561,8 @@ function resolveSemanticStuckLoopOn(): boolean {
   return true
 }
 
+type MaybePromise<T> = T | Promise<T>
+
 /**
  * Per-tool-call gate. Return 'allow' to dispatch, 'deny' to inject a
  * "user denied" tool result (so the model can react) without running
@@ -580,6 +582,32 @@ export type ApprovalGate = (
  *  should pass a real gate. */
 export const alwaysAllowGate: ApprovalGate = async () => 'allow'
 
+export type ToolPolicyDecision =
+  | 'allow'
+  | 'deny'
+  | { decision: 'allow' | 'deny'; reason?: string }
+
+export interface AgentToolPolicyContext {
+  call: ToolCallRequest
+  attempt: number
+  history: readonly LlmMessage[]
+  toolCalls: readonly ToolCallReport[]
+  traceId?: string
+  platform?: string
+  userId?: string
+}
+
+/**
+ * Policy layer inspired by PI's env/per-run tool policy hooks, but kept
+ * Agim-native. `canRunTool` is a fast allow/deny guard before any HITL
+ * approval prompt. `approveToolRun` can replace the legacy `approve`
+ * callback for callers that want a richer per-run approval object.
+ */
+export interface AgentToolPolicy {
+  canRunTool?: (ctx: AgentToolPolicyContext) => MaybePromise<ToolPolicyDecision | undefined>
+  approveToolRun?: (ctx: AgentToolPolicyContext) => MaybePromise<ToolPolicyDecision>
+}
+
 /** Auxiliary finish reasons the agent loop adds on top of the provider's
  *  finishReason vocabulary.
  *
@@ -595,6 +623,42 @@ export const alwaysAllowGate: ApprovalGate = async () => 'allow'
  *    Different from stuck_loop (mechanical repeat) — this catches the
  *    "different calls but still pointless" failure mode. */
 export type LoopFinishReason = FinishReason | 'max_iterations' | 'aborted' | 'stuck_loop' | 'off_track' | 'hallucinated_tools'
+
+export interface AgentLoopPrepareNextTurnContext {
+  iter: number
+  history: readonly LlmMessage[]
+  toolCalls: readonly ToolCallReport[]
+  usage: Readonly<LlmUsage>
+  providerName: string
+  signal: AbortSignal
+}
+
+export interface AgentLoopStopAfterTurnContext extends AgentLoopPrepareNextTurnContext {
+  result: Readonly<ChatResult>
+  toolsEnabled: boolean
+  lengthRecoveryPrefix: string
+}
+
+export interface AgentLoopStopDecision {
+  finishReason: LoopFinishReason
+  text?: string
+  error?: string
+}
+
+/**
+ * Turn-level policy hooks. These are deliberately small: policies may
+ * inject messages before the next model call, or stop after a model
+ * turn. They do not replace Agim's built-in recovery/stuck-loop logic;
+ * they give future reliability behaviours a composable place to live.
+ */
+export interface AgentLoopPolicy {
+  prepareNextTurn?: (
+    ctx: AgentLoopPrepareNextTurnContext,
+  ) => MaybePromise<LlmMessage | LlmMessage[] | undefined>
+  shouldStopAfterTurn?: (
+    ctx: AgentLoopStopAfterTurnContext,
+  ) => MaybePromise<AgentLoopStopDecision | undefined>
+}
 
 export interface AgentLoopInput {
   provider: LlmProvider
@@ -626,6 +690,14 @@ export interface AgentLoopInput {
   dispatch?: ToolDispatcher
   /** Pre-tool gate. Defaults to alwaysAllowGate. */
   approve?: ApprovalGate
+
+  /** Agim-native per-run/env tool policy. Runs before the legacy
+   *  approval gate and can also supply a richer approval hook. */
+  toolPolicy?: AgentToolPolicy
+
+  /** Optional turn policies, used for future loop steering/reliability
+   *  without wrapping or post-processing the final answer. */
+  loopPolicy?: AgentLoopPolicy | readonly AgentLoopPolicy[]
 
   /** Audit context — written into per-iteration invocations rows. The
    *  agent name should distinguish native vs cli (e.g. 'llm:native-chat'). */
@@ -777,6 +849,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const approve = input.approve ?? alwaysAllowGate
   const dispatch = input.dispatch
   const signal = mergeSignal(input.signal, timeoutMs)
+  const loopPolicies = normalizeLoopPolicies(input.loopPolicy)
 
   // v1.2.110 — build a name → schema map once so the per-iteration
   // tool-args validator (just before dispatch) can look up the declared
@@ -832,6 +905,16 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         finishReason: 'aborted',
       }
     }
+
+    const prepared = await prepareNextTurn(loopPolicies, {
+      iter,
+      history: history.slice(),
+      toolCalls: toolCalls.slice(),
+      usage: { ...usageAcc },
+      providerName: input.provider.name,
+      signal: signal.signal,
+    })
+    if (prepared.length > 0) history.push(...prepared)
 
     let result: ChatResult
     const t0 = Date.now()
@@ -922,6 +1005,29 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       undefined,
       result.usage.costUsd,
     )
+
+    const stopDecision = await shouldStopAfterTurn(loopPolicies, {
+      iter,
+      history: history.slice(),
+      toolCalls: toolCalls.slice(),
+      usage: { ...usageAcc },
+      providerName: input.provider.name,
+      signal: signal.signal,
+      result,
+      toolsEnabled: !!tools?.length,
+      lengthRecoveryPrefix,
+    })
+    if (stopDecision) {
+      signal.cleanup()
+      return {
+        text: stopDecision.text ?? (lengthRecoveryPrefix + result.text),
+        iterations: iter + 1,
+        toolCalls,
+        usage: usageAcc,
+        finishReason: stopDecision.finishReason,
+        error: stopDecision.error,
+      }
+    }
 
     // v1.2.117 — auto-continue on length truncation.
     // OpenAI-style `finish_reason: 'length'` means the model hit
@@ -1119,12 +1225,22 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         errorType: '',
       }
 
-      // Approval is ALWAYS serial — it may block on user input, and we
-      // don't want to ask for N approvals simultaneously (the IM UI
-      // would get spammed).
-      const decision = await safeApprove(approve, call, iter)
-      if (decision === 'deny') {
-        const denyText = `tool call denied by user: ${call.name}`
+      // Approval/policy is ALWAYS serial — it may block on user input,
+      // and asking for N approvals at once would spam the IM UI.
+      const decision = await decideToolAccess(input.toolPolicy, approve, {
+        call,
+        attempt: iter,
+        history: history.slice(),
+        toolCalls: toolCalls.slice(),
+        traceId: input.audit?.traceId,
+        platform: input.audit?.platform,
+        userId: input.audit?.userId,
+      })
+      if (decision.decision === 'deny') {
+        const reason = decision.reason ? `: ${decision.reason}` : ''
+        const denyText = decision.source === 'policy'
+          ? `tool call denied by policy: ${call.name}${reason}`
+          : `tool call denied by user: ${call.name}${reason}`
         historySlots[idx] = { role: 'tool', toolCallId: call.id, content: denyText }
         reportSlots[idx] = {
           ...reportBase,
@@ -1406,6 +1522,119 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────
+
+function normalizeLoopPolicies(
+  policy: AgentLoopInput['loopPolicy'],
+): readonly AgentLoopPolicy[] {
+  if (!policy) return []
+  if (Array.isArray(policy)) return policy as readonly AgentLoopPolicy[]
+  return [policy as AgentLoopPolicy]
+}
+
+async function prepareNextTurn(
+  policies: readonly AgentLoopPolicy[],
+  ctx: AgentLoopPrepareNextTurnContext,
+): Promise<LlmMessage[]> {
+  if (policies.length === 0) return []
+  const out: LlmMessage[] = []
+  for (const policy of policies) {
+    if (!policy.prepareNextTurn) continue
+    try {
+      const next = await policy.prepareNextTurn(ctx)
+      if (!next) continue
+      if (Array.isArray(next)) out.push(...next)
+      else out.push(next)
+    } catch (err) {
+      log.warn({
+        event: 'agent-loop.prepare_next_turn_threw',
+        err: err instanceof Error ? err.message : String(err),
+        iter: ctx.iter,
+      })
+    }
+  }
+  return out
+}
+
+async function shouldStopAfterTurn(
+  policies: readonly AgentLoopPolicy[],
+  ctx: AgentLoopStopAfterTurnContext,
+): Promise<AgentLoopStopDecision | undefined> {
+  if (policies.length === 0) return undefined
+  for (const policy of policies) {
+    if (!policy.shouldStopAfterTurn) continue
+    try {
+      const decision = await policy.shouldStopAfterTurn(ctx)
+      if (decision) return decision
+    } catch (err) {
+      log.warn({
+        event: 'agent-loop.should_stop_after_turn_threw',
+        err: err instanceof Error ? err.message : String(err),
+        iter: ctx.iter,
+      })
+    }
+  }
+  return undefined
+}
+
+type ResolvedToolAccess = {
+  decision: 'allow' | 'deny'
+  source: 'policy' | 'approval'
+  reason?: string
+}
+
+function normalizeToolPolicyDecision(
+  decision: ToolPolicyDecision | undefined,
+  source: ResolvedToolAccess['source'],
+): ResolvedToolAccess | undefined {
+  if (!decision) return undefined
+  if (decision === 'allow' || decision === 'deny') return { decision, source }
+  return {
+    decision: decision.decision,
+    source,
+    reason: decision.reason,
+  }
+}
+
+async function decideToolAccess(
+  policy: AgentToolPolicy | undefined,
+  approve: ApprovalGate,
+  ctx: AgentToolPolicyContext,
+): Promise<ResolvedToolAccess> {
+  if (policy?.canRunTool) {
+    try {
+      const gate = normalizeToolPolicyDecision(await policy.canRunTool(ctx), 'policy')
+      if (gate?.decision === 'deny') return gate
+    } catch (err) {
+      log.warn({
+        event: 'agent-loop.tool_policy_threw',
+        hook: 'canRunTool',
+        tool: ctx.call.name,
+        err: err instanceof Error ? err.message : String(err),
+      })
+      return { decision: 'deny', source: 'policy', reason: 'policy hook threw' }
+    }
+  }
+
+  if (policy?.approveToolRun) {
+    try {
+      const decision = normalizeToolPolicyDecision(await policy.approveToolRun(ctx), 'approval')
+      return decision ?? { decision: 'deny', source: 'approval', reason: 'approval hook returned no decision' }
+    } catch (err) {
+      log.warn({
+        event: 'agent-loop.tool_policy_threw',
+        hook: 'approveToolRun',
+        tool: ctx.call.name,
+        err: err instanceof Error ? err.message : String(err),
+      })
+      return { decision: 'deny', source: 'approval', reason: 'approval hook threw' }
+    }
+  }
+
+  return {
+    decision: await safeApprove(approve, ctx.call, ctx.attempt),
+    source: 'approval',
+  }
+}
 
 /**
  * v1.2.118 — race a dispatcher against a per-tool wall timeout. The

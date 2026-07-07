@@ -33,15 +33,6 @@ import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { agimToolsToPi } from './tool-bridge.js'
-import {
-  createReliabilityState,
-  deriveReliabilityDelivery,
-  formatReliabilityOutput,
-  recordReliabilityToolResult,
-  resolveReliabilityMode,
-  type ReliabilityGoal,
-  type ReliabilityState,
-} from './reliability.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -186,20 +177,25 @@ function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableTool
   return lines.join('\n')
 }
 
-const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
-
-async function loadActiveGoalForReliability(opts: AgentSendOpts | undefined): Promise<ReliabilityGoal | null> {
-  if (!opts?.platform || !opts.threadId) return null
-  if (resolveReliabilityMode() === 'off') return null
-  try {
-    const { getActiveGoal } = await import('../../../core/goals.js')
-    const goal = getActiveGoal(opts.platform, opts.channelId ?? '', opts.threadId)
-    if (!goal) return null
-    return { title: goal.title, body: goal.body }
-  } catch {
-    return null
+function appendPartialToolDiagnostics(text: string, toolRuns: readonly NativeToolRun[], stopReason: 'max_iter' | 'stuck_loop' | null, maxIter: number): string {
+  const diagnostics: string[] = []
+  if (stopReason === 'stuck_loop') {
+    diagnostics.push('检测到工具反复以相同参数失败，已提前停止；以上内容可能只覆盖已取得的信息。')
+  } else if (stopReason === 'max_iter') {
+    diagnostics.push(`已达到最大迭代步数 ${maxIter}，已提前停止；以上内容可能不完整。`)
   }
+
+  const failed = toolRuns.filter((t) => t.isError)
+  if (failed.length > 0) {
+    const names = [...new Set(failed.map((t) => t.name))].slice(0, 4)
+    diagnostics.push(`本轮有 ${failed.length} 次工具调用失败或被阻断（${names.join('、')}），回复基于已成功取得的信息。`)
+  }
+
+  if (diagnostics.length === 0) return text
+  return `${text.trimEnd()}\n\n（诊断：${diagnostics.join(' ')}）`
 }
+
+const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
 function seedUserMessage(text: string) {
   return { role: 'user' as const, content: [{ type: 'text' as const, text }], timestamp: Date.now() }
@@ -310,13 +306,6 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
       : []
 
-    const activeGoal = await loadActiveGoalForReliability(effectiveOpts)
-    let reliability: ReliabilityState | null = createReliabilityState({
-      prompt,
-      opts: effectiveOpts,
-      activeGoal,
-    })
-
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
     const harness = new AgentHarness({
       env,
@@ -362,7 +351,6 @@ export class NativeAgentAdapter implements AgentAdapter {
     const toolRuns: NativeToolRun[] = []
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
       toolRounds += 1
-      reliability = recordReliabilityToolResult(reliability, ev)
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
@@ -422,11 +410,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map((c) => c.text)
       .join('')
-    if (reliability) {
-      const delivery = deriveReliabilityDelivery(reliability, { finalText: text, stopReason, maxIterations: maxIter })
-      yield formatReliabilityOutput(delivery, text)
-      return
-    }
     if (stopReason && !text.trim()) {
       yield stopReason === 'stuck_loop'
         ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
@@ -437,7 +420,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
-    yield text
+    yield appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)
   }
 
   private tryHandleModelSlash(

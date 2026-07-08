@@ -61,9 +61,23 @@ async function setup(): Promise<Harness> {
 
 describe('mcp-approval-server', () => {
   let h: Harness
+  let savedAutoApprove: string | undefined
+  let savedTimeoutDefault: string | undefined
 
-  beforeEach(async () => { h = await setup() })
-  afterEach(async () => { await h.cleanup() })
+  beforeEach(async () => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    savedTimeoutDefault = process.env.AGIM_TIMEOUT_DEFAULT
+    process.env.AGIM_AUTO_APPROVE = '0'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
+    h = await setup()
+  })
+  afterEach(async () => {
+    await h.cleanup()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
+    if (savedTimeoutDefault === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
+    else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeoutDefault
+  })
 
   it('exposes a `request` tool', async () => {
     const tools = await h.mcpClient.listTools()
@@ -241,6 +255,16 @@ describe('mcp-approval-server', () => {
 })
 
 describe('ApprovalClient (without MCP layer)', () => {
+  let savedAutoApprove2: string | undefined
+  beforeEach(() => {
+    savedAutoApprove2 = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+  afterEach(() => {
+    if (savedAutoApprove2 === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove2
+  })
+
   it('returns deny synchronously when bus socket does not exist', async () => {
     const client = new ApprovalClient('/tmp/agim-nonexistent-socket-xyz', RUN_ID)
     const decision = await client.request({ toolName: 'Bash', input: {}, toolUseId: 'tu' })

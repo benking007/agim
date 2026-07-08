@@ -213,20 +213,11 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const mode = (process.env.AGIM_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
   const autoAllow = splitEnvList(process.env.AGIM_NATIVE_AGENT_AUTOALLOW)
   const denyList = splitEnvList(process.env.AGIM_NATIVE_AGENT_DENYLIST)
-  const defaultBuiltins = [
-    'native_echo', 'native_now', 'native_random_uuid',
-    'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
-    'native_web_fetch', 'native_web_search',
-    'mcp__agim__read_skill', 'mcp__agim__list_skills',
-    'mcp__agim__save_memo', 'mcp__agim__search_memos',
-    'mcp__agim__update_memo', 'mcp__agim__delete_memo',
-    'mcp__agim__push_message', 'mcp__agim__ask_user',
-    'mcp__agim__call_agent', 'mcp__agim__long_task', 'mcp__agim__complete_goal',
-    'native_todo_write', 'native_exit_plan_mode',
-  ]
-  const effectiveAllow = mode === 'allow-list'
-    ? Array.from(new Set([...autoAllow, ...defaultBuiltins]))
-    : autoAllow
+  // Default autoAllow list is empty — when AGIM_AUTO_APPROVE=1 (default),
+  // the approval bus handles auto-approval for all tools after safety
+  // checks. Operators can still populate AGIM_NATIVE_AGENT_AUTOALLOW to
+  // pre-approve specific tools even when auto-approve is off.
+  const effectiveAllow = autoAllow
   const effectiveDeny = isPlanModeOn(threadKey)
     ? Array.from(new Set([...denyList, ...PLAN_MODE_DENY_TOOLS]))
     : denyList

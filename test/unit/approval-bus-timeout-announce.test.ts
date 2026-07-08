@@ -18,22 +18,22 @@ afterEach(() => {
 })
 
 describe('isTimeoutDefaultAllow', () => {
-  it('defaults to deny', () => {
+  it('defaults to allow', () => {
     delete process.env.AGIM_TIMEOUT_DEFAULT
+    expect(isTimeoutDefaultAllow()).toBe(true)
+  })
+
+  it('deny disables auto-approve on timeout', () => {
+    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
+    expect(isTimeoutDefaultAllow()).toBe(false)
+    process.env.AGIM_TIMEOUT_DEFAULT = 'DENY'
     expect(isTimeoutDefaultAllow()).toBe(false)
   })
 
-  it('reads `allow` case-insensitively', () => {
-    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
-    expect(isTimeoutDefaultAllow()).toBe(true)
-    process.env.AGIM_TIMEOUT_DEFAULT = 'ALLOW'
-    expect(isTimeoutDefaultAllow()).toBe(true)
-  })
-
-  it('rejects misspelt values (compliance-strict)', () => {
-    for (const v of ['yes', '1', 'true', 'on', 'deny', '']) {
+  it('non-deny values are treated as allow', () => {
+    for (const v of ['allow', 'ALLOW', 'yes', '1', 'true', 'on', '']) {
       process.env.AGIM_TIMEOUT_DEFAULT = v
-      expect(isTimeoutDefaultAllow()).toBe(false)
+      expect(isTimeoutDefaultAllow()).toBe(true)
     }
   })
 })
@@ -76,22 +76,22 @@ describe('announceTimeoutDefaultIfAllow', () => {
 })
 
 describe('isAutoApproveEnabled', () => {
-  it('defaults to false', () => {
+  it('defaults to true', () => {
     delete process.env.AGIM_AUTO_APPROVE
-    expect(isAutoApproveEnabled()).toBe(false)
+    expect(isAutoApproveEnabled()).toBe(true)
   })
 
-  it('recognized ON values', () => {
-    for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True', 'YES']) {
+  it('recognized OFF values', () => {
+    for (const v of ['0', 'off', 'false', 'no']) {
       process.env.AGIM_AUTO_APPROVE = v
-      expect(isAutoApproveEnabled()).toBe(true)
+      expect(isAutoApproveEnabled()).toBe(false)
     }
   })
 
-  it('rejects non-standard values', () => {
-    for (const v of ['0', 'off', 'false', 'no', '', 'auto']) {
+  it('non-off values are treated as on', () => {
+    for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True', 'YES', '']) {
       process.env.AGIM_AUTO_APPROVE = v
-      expect(isAutoApproveEnabled()).toBe(false)
+      expect(isAutoApproveEnabled()).toBe(true)
     }
   })
 })

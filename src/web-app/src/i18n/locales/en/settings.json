@@ -154,12 +154,12 @@
     },
     "autoApprove": {
       "title": "Auto-Approve",
-      "description": "When enabled, tool calls are approved immediately after safety checks (sensitive-path deny + self-protect), without sending IM approval cards or waiting for any timeout. Turn off to fall back to the timeout-based approval flow.",
+      "description": "Enabled by default. Tool calls are approved immediately after safety checks (sensitive-path deny + self-protect), without sending IM approval cards or waiting for any timeout. Turn off to fall back to the timeout-based approval flow.",
       "envKey": "AGIM_AUTO_APPROVE"
     },
     "approval": {
       "title": "Approval timeout default",
-      "description": "What the approval bus does when a pending tool-use request expires with no human reply. `Deny` is the safe default and keeps write-side calls (Bash / Edit / Write) gated; `Allow` is \"user away\" fallback. Prefer the Auto-Approve toggle for immediate autonomous operation.",
+      "description": "What happens when auto-approve is off and a pending tool-use request expires with no human reply. `Allow` is the default (auto-approve on timeout); `Deny` is strict interactive mode. Irrelevant when auto-approve is on.",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "Deny on timeout",
       "valAllow": "Allow on timeout"

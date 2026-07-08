@@ -43,29 +43,31 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_AUTO_APPROVE — first-class auto-approve switch. When enabled,
-// tool calls are approved immediately after safety checks (sensitive-path
+// AGIM_AUTO_APPROVE — first-class auto-approve switch (default ON).
+// Tool calls are approved immediately after safety checks (sensitive-path
 // hard-deny + self-protect), without sending an IM approval card or
 // waiting for any timeout. The approval bus still runs so audit trail,
-// metrics, and safety checks all remain active.
+// metrics, and safety checks all remain active. Set '0'/'off'/'false'
+// to disable and fall back to the IM-card + timeout flow.
 //
 // Read per call (not cached at module load) so the Web Settings panel
 // can hot-toggle it via handlePutEnv.
 export function isAutoApproveEnabled(): boolean {
-  const raw = (process.env.AGIM_AUTO_APPROVE ?? '').toLowerCase().trim()
-  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
+  const raw = (process.env.AGIM_AUTO_APPROVE ?? '1').toLowerCase().trim()
+  return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no'
 }
 
-// AGIM_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
+// AGIM_TIMEOUT_DEFAULT=allow | deny (default allow). Decides what the bus
 // returns when a pending approval times out without a human response.
 // Only relevant when AGIM_AUTO_APPROVE is off (otherwise tools never
-// reach the timeout path). Default 'deny' keeps mutating tools gated;
-// set 'allow' for "user away" fallback mode.
+// reach the timeout path). Default 'allow' auto-approves on timeout;
+// set 'deny' for strict interactive mode.
 //
 // Read at every timer fire (not captured at module load) so the Web
 // Settings card can hot-toggle it.
 export function isTimeoutDefaultAllow(): boolean {
-  return (process.env.AGIM_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
+  const raw = (process.env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase()
+  return raw !== 'deny'
 }
 
 // R13 C1 — visibility for "user away" mode. When AGIM_TIMEOUT_DEFAULT is

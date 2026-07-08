@@ -64,7 +64,7 @@ export default function SettingsPolicyRoute(): JSX.Element {
   const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
   const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
   const autoApprove   = envBool(env.AGIM_AUTO_APPROVE)
-  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? '').toLowerCase() === 'allow'
+  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase() !== 'deny'
   const a2aMode       = (env.AGIM_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
 
   return (

@@ -5,12 +5,14 @@
  *
  * Surfaced here:
  *   * AGIM_DANGEROUSLY_SKIP_PERMISSIONS (safety)
+ *   * AGIM_AUTO_APPROVE                 (approval bus immediate allow)
  *   * AGIM_TIMEOUT_DEFAULT              (approval bus default)
+ *   * AGIM_APPROVAL_TIMEOUT_MS          (approval wait budget)
  *   * AGIM_MEMORY_ENABLED               (memory subsystem)
  *   * AGIM_VIEWER_ENABLED               (long-message viewer)
  *   * AGIM_A2A_NOTIFY_MODE              (cross-agent notify verbosity)
  *
- * All five are still editable in /settings/env. This page exists
+ * These values are still editable in /settings/env. This page exists
  * because:
  *   1. They're the ones operators flip most often
  *   2. The env editor's table doesn't communicate "this is a
@@ -19,12 +21,15 @@
  *   3. Safety toggle deserves a visible warning + danger color
  */
 
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AlertTriangle, Loader2, RefreshCcw } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -39,10 +44,18 @@ import { cn } from '@/lib/utils'
 /** Treat the env value as a boolean — '1' / 'true' / 'yes' / 'on'
  *  → true; everything else → false. Matches the backend's casual
  *  truthy parsing in core/* modules. */
-function envBool(v: string | undefined): boolean {
-  if (v == null) return false
+function envBool(v: string | undefined, defaultValue = false): boolean {
+  if (v == null) return defaultValue
   const t = v.toLowerCase()
   return t === '1' || t === 'true' || t === 'yes' || t === 'on'
+}
+
+const DEFAULT_APPROVAL_TIMEOUT_MS = 15 * 60 * 1000
+
+function approvalTimeoutSeconds(v: string | undefined): number {
+  const n = Number(v)
+  const ms = Number.isFinite(n) && n > 0 ? n : DEFAULT_APPROVAL_TIMEOUT_MS
+  return Math.max(1, Math.round(ms / 1000))
 }
 
 export default function SettingsPolicyRoute(): JSX.Element {
@@ -63,8 +76,9 @@ export default function SettingsPolicyRoute(): JSX.Element {
   const skipPerms     = envBool(env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS)
   const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
   const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
-  const autoApprove   = envBool(env.AGIM_AUTO_APPROVE)
+  const autoApprove   = envBool(env.AGIM_AUTO_APPROVE, true)
   const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase() !== 'deny'
+  const approvalTimeoutSec = approvalTimeoutSeconds(env.AGIM_APPROVAL_TIMEOUT_MS)
   const a2aMode       = (env.AGIM_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
 
   return (
@@ -104,8 +118,10 @@ export default function SettingsPolicyRoute(): JSX.Element {
           />
           <ApprovalCard
             allowOnTimeout={timeoutAllow}
+            timeoutSeconds={approvalTimeoutSec}
             disabled={updateEnv.isPending}
             onChange={(v) => void setValue('AGIM_TIMEOUT_DEFAULT', v)}
+            onTimeoutChange={(v) => void setValue('AGIM_APPROVAL_TIMEOUT_MS', v)}
           />
           <ToggleCard
             sectionKey="memory"
@@ -174,12 +190,30 @@ function SafetyCard({ value, disabled, onChange }: SafetyCardProps): JSX.Element
 
 interface ApprovalCardProps {
   allowOnTimeout: boolean
+  timeoutSeconds: number
   disabled: boolean
   onChange: (value: 'allow' | 'deny') => void
+  onTimeoutChange: (value: string | null) => void
 }
 
-function ApprovalCard({ allowOnTimeout, disabled, onChange }: ApprovalCardProps): JSX.Element {
+function ApprovalCard({ allowOnTimeout, timeoutSeconds, disabled, onChange, onTimeoutChange }: ApprovalCardProps): JSX.Element {
   const { t } = useTranslation('settings')
+  const [draftSeconds, setDraftSeconds] = useState(String(timeoutSeconds))
+  useEffect(() => {
+    setDraftSeconds(String(timeoutSeconds))
+  }, [timeoutSeconds])
+
+  const parsedSeconds = Number.parseInt(draftSeconds, 10)
+  const secondsValid = Number.isFinite(parsedSeconds) && parsedSeconds > 0
+  const normalizedSeconds = secondsValid ? Math.min(Math.floor(parsedSeconds), 86_400) : timeoutSeconds
+  const canSaveTimeout = secondsValid && normalizedSeconds !== timeoutSeconds
+
+  function saveTimeout(): void {
+    if (!secondsValid) return
+    setDraftSeconds(String(normalizedSeconds))
+    onTimeoutChange(String(normalizedSeconds * 1000))
+  }
+
   return (
     <section className="rounded-md border border-border bg-surface p-4">
       <div className="flex flex-col gap-2">
@@ -208,13 +242,63 @@ function ApprovalCard({ allowOnTimeout, disabled, onChange }: ApprovalCardProps)
             {t('policy.approval.valAllow')}
           </Button>
         </div>
+        <div className="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="approval-timeout-sec">{t('policy.approval.timeoutLabel')}</Label>
+            <p className="text-sm text-text-dim">{t('policy.approval.timeoutDescription')}</p>
+            <div className="flex max-w-xs items-center gap-2">
+              <Input
+                id="approval-timeout-sec"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={86400}
+                step={30}
+                value={draftSeconds}
+                disabled={disabled}
+                aria-label={t('policy.approval.timeoutAria')}
+                onChange={(e) => setDraftSeconds(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveTimeout()
+                }}
+              />
+              <span className="text-sm text-text-dim">{t('policy.approval.timeoutUnit')}</span>
+            </div>
+            {!secondsValid && (
+              <p className="text-xs text-danger">{t('policy.approval.timeoutInvalid')}</p>
+            )}
+            <code className="self-start rounded bg-surface-2 px-1.5 py-0.5 text-xs text-text-muted">
+              {t('policy.approval.timeoutEnvKey')}
+            </code>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled || !canSaveTimeout}
+              onClick={saveTimeout}
+            >
+              {t('policy.approval.timeoutSave')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={() => onTimeoutChange(null)}
+            >
+              {t('policy.approval.timeoutReset')}
+            </Button>
+          </div>
+        </div>
       </div>
     </section>
   )
 }
 
 interface ToggleCardProps {
-  sectionKey: 'memory' | 'viewer'
+  sectionKey: 'autoApprove' | 'memory' | 'viewer'
   value: boolean
   disabled: boolean
   onChange: (v: boolean) => void

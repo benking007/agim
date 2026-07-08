@@ -162,7 +162,15 @@
       "description": "What happens when auto-approve is off and a pending tool-use request expires with no human reply. `Allow` is the default (auto-approve on timeout); `Deny` is strict interactive mode. Irrelevant when auto-approve is on.",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "Deny on timeout",
-      "valAllow": "Allow on timeout"
+      "valAllow": "Allow on timeout",
+      "timeoutLabel": "Approval wait time",
+      "timeoutDescription": "Seconds an IM approval card waits for a user response when auto-approve is off. Saving writes the env value; the running approval bus needs a service restart to adopt a new duration.",
+      "timeoutAria": "Approval wait time in seconds",
+      "timeoutUnit": "sec",
+      "timeoutInvalid": "Enter a number greater than 0.",
+      "timeoutEnvKey": "AGIM_APPROVAL_TIMEOUT_MS",
+      "timeoutSave": "Save time",
+      "timeoutReset": "Reset default"
     },
     "memory": {
       "title": "Long-term memory",

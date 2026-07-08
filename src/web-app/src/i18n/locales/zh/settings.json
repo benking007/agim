@@ -162,7 +162,15 @@
       "description": "当自动审批关闭且工具调用无人响应超时时的行为。`放行` 是默认值，超时后自动通过；`拒绝` 是严格交互模式，写入调用保持阻断。自动审批开启时此项不生效。",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "超时拒绝",
-      "valAllow": "超时放行"
+      "valAllow": "超时放行",
+      "timeoutLabel": "审批等待时长",
+      "timeoutDescription": "自动审批关闭时，IM 审批卡等待用户响应的秒数。保存后写入 env；已有运行中的 approval-bus 需要重启服务才会采用新时长。",
+      "timeoutAria": "审批等待时长（秒）",
+      "timeoutUnit": "秒",
+      "timeoutInvalid": "请输入大于 0 的秒数。",
+      "timeoutEnvKey": "AGIM_APPROVAL_TIMEOUT_MS",
+      "timeoutSave": "保存时长",
+      "timeoutReset": "恢复默认"
     },
     "memory": {
       "title": "长期记忆",

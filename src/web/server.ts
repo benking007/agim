@@ -2878,12 +2878,13 @@ const ENV_EDITABLE_KEYS = [
   // Safety card toggle — drives the Claude --dangerously-skip-permissions
   // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
   'AGIM_DANGEROUSLY_SKIP_PERMISSIONS',
-  // Approval Policy card — 'allow' | 'deny' (default deny). Decides what the
-  // approval bus does when a tool-use prompt times out with no human reply.
-  // Hot-reload: handlePutEnv mutates process.env so approval-bus picks up the
-  // new value on the next timer fire, no restart needed.
+  // Approval Policy card. AGIM_AUTO_APPROVE defaults ON; AGIM_TIMEOUT_DEFAULT
+  // defaults allow and only matters when auto-approve is off. Timeout-default
+  // hot-reloads because approval-bus reads process.env on timer fire; the
+  // timeout duration itself is captured by the singleton bus and needs restart.
   'AGIM_TIMEOUT_DEFAULT',
   'AGIM_AUTO_APPROVE',
+  'AGIM_APPROVAL_TIMEOUT_MS',
   // v1.2 — IM long-message viewer. Operator sets the public URL pointing at
   // their reverse-proxied agim web port; thresholds tune when routing kicks
   // in. Hot-reload works because viewer-config reads process.env every call.
@@ -3064,6 +3065,7 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
           AGIM_NATIVE_FS_RESTRICT: process.env.AGIM_NATIVE_FS_RESTRICT ?? null,
           AGIM_TIMEOUT_DEFAULT: process.env.AGIM_TIMEOUT_DEFAULT ?? null,
           AGIM_AUTO_APPROVE: process.env.AGIM_AUTO_APPROVE ?? null,
+          AGIM_APPROVAL_TIMEOUT_MS: process.env.AGIM_APPROVAL_TIMEOUT_MS ?? null,
           AGIM_DANGEROUSLY_SKIP_PERMISSIONS: process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS ?? null,
         },
       },

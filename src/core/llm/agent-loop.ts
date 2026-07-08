@@ -731,8 +731,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 
     const prepared = await prepareNextTurn(loopPolicies, {
       iter,
-      history,
-      toolCalls,
+      history: history.slice(),
+      toolCalls: toolCalls.slice(),
       usage: { ...usageAcc },
       providerName: input.provider.name,
       signal: signal.signal,
@@ -831,8 +831,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 
     const stopDecision = await shouldStopAfterTurn(loopPolicies, {
       iter,
-      history,
-      toolCalls,
+      history: history.slice(),
+      toolCalls: toolCalls.slice(),
       usage: { ...usageAcc },
       providerName: input.provider.name,
       signal: signal.signal,
@@ -1053,8 +1053,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       const decision = await decideToolAccess(input.toolPolicy, approve, {
         call,
         attempt: iter,
-        history,
-        toolCalls,
+        history: history.slice(),
+        toolCalls: toolCalls.slice(),
         traceId: input.audit?.traceId,
         platform: input.audit?.platform,
         userId: input.audit?.userId,

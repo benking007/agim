@@ -8,7 +8,7 @@
 // the messages the loop fed back to the provider on each turn.
 
 import { describe, it, expect } from 'bun:test'
-import { runAgentLoop, alwaysAllowGate, type ApprovalGate } from './agent-loop.js'
+import { runAgentLoop, alwaysAllowGate, type ApprovalGate, type ToolCallReport } from './agent-loop.js'
 import {
   LlmProvider,
   type ChatResult,
@@ -51,6 +51,19 @@ class FakeProvider extends LlmProvider {
 
 function toolCall(id: string, name: string, args: Record<string, unknown>): ToolCallRequest {
   return { id, name, arguments: args }
+}
+
+function toolReport(name = 'mcp_mutated_report'): ToolCallReport {
+  return {
+    name,
+    decision: 'allow',
+    isError: false,
+    source: 'test',
+    durationMs: 0,
+    preview: 'mutated',
+    argsKey: '{}',
+    errorType: '',
+  }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -111,6 +124,38 @@ describe('runAgentLoop — turn policies', () => {
     expect(p.seenMessages[0].map((m) => m.content)).toEqual([
       'original',
       'steering: answer tersely',
+    ])
+  })
+
+  it('turn policy context mutations do not alter loop history or reports', async () => {
+    const p = new FakeProvider([
+      { text: 'ok', finishReason: 'stop', usage: {}, modelUsed: 'fake-1' },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'original' }],
+      loopPolicy: {
+        prepareNextTurn: (ctx) => {
+          const mutableHistory = ctx.history as LlmMessage[]
+          const mutableToolCalls = ctx.toolCalls as ToolCallReport[]
+          mutableHistory.push({ role: 'user', content: 'mutated history' })
+          mutableToolCalls.push(toolReport())
+          return { role: 'user', content: 'intended steering' }
+        },
+        shouldStopAfterTurn: (ctx) => {
+          const mutableHistory = ctx.history as LlmMessage[]
+          const mutableToolCalls = ctx.toolCalls as ToolCallReport[]
+          mutableHistory.push({ role: 'user', content: 'mutated stop history' })
+          mutableToolCalls.push(toolReport('mcp_mutated_stop_report'))
+          return undefined
+        },
+      },
+    })
+
+    expect(r.toolCalls).toHaveLength(0)
+    expect(p.seenMessages[0].map((m) => m.content)).toEqual([
+      'original',
+      'intended steering',
     ])
   })
 
@@ -440,6 +485,37 @@ describe('runAgentLoop — tool policy', () => {
     expect(dispatched).toBe(true)
     expect(r.toolCalls[0].decision).toBe('allow')
     expect(r.toolCalls[0].preview).toBe('ran')
+  })
+
+  it('tool policy context mutations do not leak into the next provider turn', async () => {
+    const p = new FakeProvider([
+      {
+        text: '',
+        toolCalls: [toolCall('c1', 'mcp_x_run', {})],
+        finishReason: 'tool_use',
+        usage: {},
+        modelUsed: 'fake-1',
+      },
+      { text: 'done', finishReason: 'stop', usage: {}, modelUsed: 'fake-1' },
+    ])
+    const r = await runAgentLoop({
+      provider: p,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'mcp_x_run', description: '', parameters: {} }],
+      toolPolicy: {
+        canRunTool: (ctx) => {
+          const mutableHistory = ctx.history as LlmMessage[]
+          const mutableToolCalls = ctx.toolCalls as ToolCallReport[]
+          mutableHistory.push({ role: 'user', content: 'mutated policy history' })
+          mutableToolCalls.push(toolReport('mcp_mutated_policy_report'))
+          return 'allow'
+        },
+      },
+      dispatch: async () => ({ text: 'ran', isError: false, source: 'mcp:x' }),
+    })
+
+    expect(r.toolCalls).toHaveLength(1)
+    expect(p.seenMessages[1].map((m) => m.content)).not.toContain('mutated policy history')
   })
 })
 

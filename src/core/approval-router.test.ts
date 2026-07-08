@@ -135,11 +135,14 @@ describe('tryHandleApprovalReply', () => {
   let bus: ApprovalBus
   let path: string
   let connectedSock: Socket
+  let savedAutoApprove: string | undefined
 
   // Use the singleton's setNotifier API (what install() touches under the
   // hood). Tests here drive approvalBus directly; the real install() flow is
   // exercised in the integration block below.
   beforeEach(async () => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     path = uniqueSocketPath()
     bus = new ApprovalBus({ approvalTimeoutMs: 1000 })
     await bus.start(path)
@@ -165,6 +168,8 @@ describe('tryHandleApprovalReply', () => {
     connectedSock.end()
     await bus.stop()
     uninstall()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('returns false when no pending exists for the thread', () => {
@@ -220,6 +225,18 @@ describe('tryHandleApprovalReply', () => {
 })
 
 describe('install / uninstall — full loop with fake messenger', () => {
+  let savedAutoApprove: string | undefined
+
+  beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+
+  afterEach(() => {
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
+  })
+
   it('end-to-end: sidecar approval → notifier sendMessage → user reply → decision back', async () => {
     const path = uniqueSocketPath()
     // Install on the singleton (what cli.ts does in production)
@@ -423,13 +440,19 @@ describe('install / uninstall — full loop with fake messenger', () => {
 // — the card just sat there and the user gave up. This test pins the
 // "register late, then bind" pattern that web/server.ts now uses.
 describe('bindButtonHandlerForPlatform — late-registered messenger', () => {
+  let savedAutoApprove: string | undefined
+
   beforeEach(async () => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     await approvalBus.start(uniqueSocketPath())
     approvalBus.registerRun('run-late', { threadId: 'thread-late', platform: 'web', userId: 'u', channelId: 'c' })
   })
   afterEach(async () => {
     uninstall()
     await approvalBus.stop()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('binds the click handler when the messenger appears post-install', async () => {
@@ -476,9 +499,18 @@ describe('bindButtonHandlerForPlatform — late-registered messenger', () => {
 })
 
 describe('button callback dispatch — ask_user cards', () => {
+  let savedAutoApprove: string | undefined
+
+  beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+
   afterEach(() => {
     uninstall()
     _resetAskBusForTests()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('routes ask:* callback data to ask-user resolver without touching approval pending', async () => {
@@ -540,12 +572,18 @@ describe('button callback dispatch — ask_user cards', () => {
 // cb.messageId from the live click event (both trustworthy — the
 // platform passed them).
 describe('handleButtonCallback — orphan click (v1.2.113 regression)', () => {
+  let savedAutoApprove: string | undefined
+
   beforeEach(async () => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     await approvalBus.start(uniqueSocketPath())
   })
   afterEach(async () => {
     uninstall()
     await approvalBus.stop()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('fires editApprovalCard with decision=expired when reqId is not in bus or activeCards', async () => {

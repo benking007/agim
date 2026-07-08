@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
 import { TuiApprovalBridge } from '../../src/cli-ui/tui/approval-bridge'
 import { approvalBus, type Decision } from '../../src/core/approval-bus'
@@ -10,10 +10,19 @@ import {
 } from '../../src/core/approval-router'
 
 describe('TuiApprovalBridge', () => {
+  let savedAutoApprove: string | undefined
+
+  beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+
   afterEach(async () => {
     uninstallApprovalRouter()
     await approvalBus.stop()
     _resetAskBusForTests()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('surfaces approval cards and resolves y as allow', async () => {

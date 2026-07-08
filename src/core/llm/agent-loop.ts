@@ -60,6 +60,15 @@ import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { runGoalCritic, resolveCriticMode } from './goal-critic.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from './hallucination-detector.js'
 import { validateAgainstSchema, formatValidationErrors } from './schema-validate.js'
+import {
+  stableStringify as _stableStringify,
+  extractErrorType as _extractErrorType,
+  isStuckLoop as _isStuckLoop,
+  isSemanticStuckLoop as _isSemanticStuckLoop,
+  extractSalientStrings as _extractSalientStrings,
+  resolveEnvBool as _resolveEnvBool,
+  resolveEnvInt as _resolveEnvInt,
+} from './loop-guards.js'
 
 const log = rootLogger.child({ component: 'agent-loop' })
 
@@ -74,57 +83,8 @@ const CRITIC_MIN_TOOL_CALLS = 5
 const CRITIC_EVERY_N = 5
 const CRITIC_MAX_CALLS = 2
 
-/** v1.2.110 — gate the tool-args schema validator. Default ON; ops can
- *  flip OFF via env if a vendor schema confuses the lightweight
- *  validator (e.g. uses $ref / oneOf which we don't implement). The
- *  escape hatch keeps a footgun small. */
-function resolveSchemaValidate(): boolean {
-  const raw = (process.env.AGIM_TOOL_SCHEMA_VALIDATE ?? '').toLowerCase().trim()
-  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
-  return true
-}
+// ─── env-based config (thin wrappers; callers hoist to turn scope) ───
 
-/** v1.2.112 — process-wide kill switch for the streaming code path.
- *  When 'off', `streamPartialText: true` requests are silently
- *  downgraded to buffered `chat()`. Default 'on' (i.e. honour caller
- *  opt-in). Operators flip 'off' if a vendor's streaming endpoint
- *  misbehaves and they don't want to redeploy. */
-function resolveStreamEnabled(): boolean {
-  const raw = (process.env.AGIM_AGENT_LOOP_STREAM ?? '').toLowerCase().trim()
-  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
-  return true
-}
-
-/** v1.2.117 — max times the loop will auto-continue on
- *  `finish_reason === 'length'` within a single user turn. Capped at 3
- *  to mirror HKUDS/nanobot's runner.py and prevent obot's documented
- *  "$0.91 burned on 6 consecutive length retries" disaster. Set 0 to
- *  disable auto-continue entirely (loop will just return partial text
- *  with finishReason='length' as it did pre-1.2.117). */
-const DEFAULT_LENGTH_RECOVERY_MAX = 3
-function resolveLengthRecoveryMax(): number {
-  const raw = (process.env.AGIM_NATIVE_LENGTH_RECOVERY_MAX ?? '').trim()
-  if (!raw) return DEFAULT_LENGTH_RECOVERY_MAX
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_LENGTH_RECOVERY_MAX
-  return Math.min(n, 10)
-}
-
-/** v1.2.118 — cap each tool's result text length. A single 5 MB grep /
- *  curl can poison context for the rest of the turn (and silently
- *  reach the model's input limit before auto-compact kicks in). Default
- *  32768 chars (~8 KB tokens). Env override or 0 to disable. */
-const DEFAULT_TOOL_RESULT_MAX_CHARS = 32_768
-function resolveToolResultMaxChars(): number {
-  const raw = (process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS ?? '').trim()
-  if (!raw) return DEFAULT_TOOL_RESULT_MAX_CHARS
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_RESULT_MAX_CHARS
-  return n
-}
-
-/** Truncate tool-result text with a clear marker so the model knows
- *  bytes were dropped. Single-pass over text; cap === 0 disables. */
 function truncateToolResult(text: string, cap: number, toolName: string): { text: string; truncated: boolean } {
   if (cap === 0 || text.length <= cap) return { text, truncated: false }
   const dropped = text.length - cap
@@ -132,34 +92,36 @@ function truncateToolResult(text: string, cap: number, toolName: string): { text
   return { text: text.slice(0, cap) + marker, truncated: true }
 }
 
-/** v1.2.118 — per-tool wall timeout. Independent from the loop's overall
- *  timeoutMs (which covers the whole turn) and from web-dispatcher's
- *  own internal timeout (which covers only HTTP calls). This catches a
- *  runaway tool that doesn't respect its own signal — e.g. a wedged
- *  `native_exec` subprocess on a corner case. Default 60s; 0 disables. */
-const DEFAULT_TOOL_TIMEOUT_MS = 60_000
-function resolveToolTimeoutMs(perToolMs: number | undefined): number {
+function resolveToolTimeoutMs(perToolMs: number | undefined, defaultMs: number): number {
   if (typeof perToolMs === 'number' && perToolMs >= 0) return perToolMs
-  const raw = (process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS ?? '').trim()
-  if (!raw) return DEFAULT_TOOL_TIMEOUT_MS
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_TIMEOUT_MS
-  return n
+  return defaultMs
 }
 
-/** v1.2.119 — intra-loop blank-response retry cap. Complements v1.2.94's
- *  POST-loop auto-summary (which only fires when tools ran). This handles
- *  the case where the provider returns `finishReason: 'stop'` with
- *  empty text AND no tool_calls *inside* the loop — usually a transient
- *  brain-fart that resolves with a single nudge. Default 2 (nanobot's
- *  `_MAX_EMPTY_RETRIES`). 0 disables. */
-const DEFAULT_BLANK_RETRY_MAX = 2
-function resolveBlankRetryMax(): number {
-  const raw = (process.env.AGIM_NATIVE_BLANK_RETRY_MAX ?? '').trim()
-  if (!raw) return DEFAULT_BLANK_RETRY_MAX
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_BLANK_RETRY_MAX
-  return Math.min(n, 5)
+/** Snapshot all env-driven knobs once per runAgentLoop invocation so
+ *  the hot per-tool-call path never re-reads process.env. */
+interface LoopEnvConfig {
+  schemaValidateOn: boolean
+  streamEnabled: boolean
+  lengthRecoveryMax: number
+  toolResultMaxChars: number
+  defaultToolTimeoutMs: number
+  blankRetryMax: number
+  semanticStuckLoopOn: boolean
+  firstTokenRetryMax: number
+  firstTokenRetryDelayMs: number
+}
+function snapshotEnvConfig(): LoopEnvConfig {
+  return {
+    schemaValidateOn: _resolveEnvBool('AGIM_TOOL_SCHEMA_VALIDATE', true),
+    streamEnabled: _resolveEnvBool('AGIM_AGENT_LOOP_STREAM', true),
+    lengthRecoveryMax: _resolveEnvInt('AGIM_NATIVE_LENGTH_RECOVERY_MAX', 3, { max: 10 }),
+    toolResultMaxChars: _resolveEnvInt('AGIM_NATIVE_TOOL_RESULT_MAX_CHARS', 32_768),
+    defaultToolTimeoutMs: _resolveEnvInt('AGIM_NATIVE_TOOL_TIMEOUT_MS', 60_000),
+    blankRetryMax: _resolveEnvInt('AGIM_NATIVE_BLANK_RETRY_MAX', 2, { max: 5 }),
+    semanticStuckLoopOn: _resolveEnvBool('AGIM_NATIVE_SEMANTIC_STUCK_LOOP', true),
+    firstTokenRetryMax: _resolveEnvInt('AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX', 1, { max: 3 }),
+    firstTokenRetryDelayMs: _resolveEnvInt('AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS', 1000, { max: 10000 }),
+  }
 }
 
 /** Synthetic user nudge for the blank-response branch. Short + explicit
@@ -361,8 +323,8 @@ async function streamWithFirstTokenRetry(
     onPartialText?: (delta: string, totalSoFar: string) => void
   },
 ): Promise<ChatResult> {
-  const retryMax = resolveFirstTokenRetryMax()
-  const retryDelayMs = resolveFirstTokenRetryDelayMs()
+  const retryMax = _resolveEnvInt('AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX', 1, { max: 3 })
+  const retryDelayMs = _resolveEnvInt('AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS', 1000, { max: 10000 })
   let lastErr: unknown
   for (let attempt = 0; attempt <= retryMax; attempt++) {
     try {
@@ -414,152 +376,13 @@ function isTransientStreamError(err: unknown): boolean {
   return TRANSIENT_STREAM_ERROR_PATTERNS.some((p) => p.test(combined))
 }
 
-function resolveFirstTokenRetryMax(): number {
-  const raw = (process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX ?? '').trim()
-  if (!raw) return 1
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return 1
-  return Math.min(n, 3)  // hard cap — operators don't usually want >3 retries
-}
+// Re-export guard primitives from loop-guards for backward compat.
+export const stableStringify = _stableStringify
+export const extractErrorType = _extractErrorType
+export const isStuckLoop = _isStuckLoop
 
-function resolveFirstTokenRetryDelayMs(): number {
-  const raw = (process.env.AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS ?? '').trim()
-  if (!raw) return 1000
-  const n = parseInt(raw, 10)
-  if (!Number.isFinite(n) || n < 0) return 1000
-  return Math.min(n, 10000)  // cap at 10s — beyond that IM 30-min budget hurts
-}
-
-/**
- * Deterministic JSON.stringify with sorted object keys at every level.
- * Used by the stuck-loop detector to derive a stable identity key for
- * tool-call arguments: identical calls hash to identical strings
- * regardless of key insertion order. Tolerates circular references and
- * non-JSON-able values by collapsing them to a placeholder.
- */
-export function stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
-  if (value === null) return 'null'
-  if (typeof value === 'undefined') return 'null'
-  if (typeof value === 'function') return '"[fn]"'
-  if (typeof value !== 'object') return JSON.stringify(value)
-  if (seen.has(value as object)) return '"[circular]"'
-  seen.add(value as object)
-  if (Array.isArray(value)) {
-    return '[' + value.map((v) => stableStringify(v, seen)).join(',') + ']'
-  }
-  const obj = value as Record<string, unknown>
-  const keys = Object.keys(obj).sort()
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k], seen)).join(',') + '}'
-}
-
-/**
- * Stable error-type fingerprint of a dispatcher's result text. Returns
- * the first non-empty line trimmed and truncated to 80 chars when
- * isError; empty string otherwise. Used by the stuck-loop detector so
- * "fs_read failed with ENOENT three times" → stuck, but "fs_read
- * returned different bytes three times" → not stuck.
- */
-export function extractErrorType(isError: boolean, text: string): string {
-  if (!isError) return ''
-  const firstNonEmpty = text.split('\n').find((line) => line.trim().length > 0) ?? ''
-  return firstNonEmpty.trim().slice(0, 80)
-}
-
-/** True iff the last 3 entries are the same tool called with identical
- *  args resulting in the identical outcome — the stuck-loop signal. */
-export function isStuckLoop(
-  reports: Array<Pick<ToolCallReport, 'name' | 'argsKey' | 'errorType'>>,
-): boolean {
-  if (reports.length < 3) return false
-  const a = reports[reports.length - 1]!
-  const b = reports[reports.length - 2]!
-  const c = reports[reports.length - 3]!
-  return a.name === b.name && b.name === c.name
-    && a.argsKey === b.argsKey && b.argsKey === c.argsKey
-    && a.errorType === b.errorType && b.errorType === c.errorType
-}
-
-/**
- * v1.2.122 — semantic stuck-loop: 3× DIFFERENT tool names but the same
- * salient argument value (query / URL / path / command substring).
- *
- * Catches the failure mode `isStuckLoop` misses by design:
- *   1. native_web_search(query="aapl Q3 earnings call transcript")
- *      → "0 results from duckduckgo"
- *   2. mcp__tavily(query="aapl Q3 earnings call transcript")
- *      → "0 results"
- *   3. native_exec(command="curl … aapl Q3 earnings call transcript …")
- *      → "404"
- *
- * Same intent, three different tool surfaces, all failing. The strict
- * `isStuckLoop` doesn't fire because tool NAMES differ. Without this
- * check the model keeps reshuffling tool roulette until max_iter.
- *
- * Heuristic: extract every string ≥ 8 chars from each call's argsKey
- * (a stable JSON of the call.arguments). If the SAME string appears in
- * all three recent calls AND all three tool names differ → return true.
- *
- * The ≥ 8 char floor filters out short enum-like values ("json",
- * "stop", "auto") that would false-positive across unrelated calls.
- */
-export function isSemanticStuckLoop(
-  reports: Array<Pick<ToolCallReport, 'name' | 'argsKey'>>,
-): boolean {
-  if (reports.length < 3) return false
-  const a = reports[reports.length - 1]!
-  const b = reports[reports.length - 2]!
-  const c = reports[reports.length - 3]!
-  // Need at least 2 distinct tool names; if all three are identical
-  // `isStuckLoop` already covers it.
-  const names = new Set([a.name, b.name, c.name])
-  if (names.size < 2) return false
-  // Build a candidate pool from all three calls; a candidate triggers
-  // if its string appears as a substring of all three raw argsKeys.
-  // Using each call's argsKey directly (not just the candidate's own
-  // set) lets the matcher catch the case where the model embeds the
-  // shared query inside a larger string in one of the calls — e.g.
-  // {"query":"foo"} in two calls and {"command":"curl ...foo..."} in
-  // the third.
-  const sa = extractSalientStrings(a.argsKey)
-  const sb = extractSalientStrings(b.argsKey)
-  const sc = extractSalientStrings(c.argsKey)
-  const candidates = new Set<string>()
-  for (const s of [sa, sb, sc]) for (const v of s) candidates.add(v)
-  for (const v of candidates) {
-    if (a.argsKey.includes(v) && b.argsKey.includes(v) && c.argsKey.includes(v)) {
-      return true
-    }
-  }
-  return false
-}
-
-const SALIENT_MIN_LEN = 8
-/** Pull every string ≥ SALIENT_MIN_LEN out of a stable-JSON arg blob.
- *  Doesn't try to be clever about which JSON path the string came
- *  from — three calls passing the same long string anywhere in their
- *  args is already strong evidence of repeated intent. */
-export function extractSalientStrings(argsKey: string): Set<string> {
-  // Match any double-quoted JSON string token whose body is ≥ 8 chars
-  // (post-unescape simple approximation: the matched run between
-  // quotes, without escape processing). Good enough for the heuristic
-  // — we only need a stable identity, not the exact decoded value.
-  const out = new Set<string>()
-  // Non-greedy capture, skip embedded escaped quotes via [^"\\]|\\.
-  const re = /"((?:[^"\\]|\\.){8,}?)"/g
-  for (let m = re.exec(argsKey); m !== null; m = re.exec(argsKey)) {
-    out.add(m[1]!)
-  }
-  return out
-}
-
-/** v1.2.122 — kill switch for the semantic stuck-loop check. Default ON;
- *  flip 'off' if false positives become a real problem (none observed
- *  in dogfood). */
-function resolveSemanticStuckLoopOn(): boolean {
-  const raw = (process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP ?? '').toLowerCase().trim()
-  if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
-  return true
-}
+export const isSemanticStuckLoop = _isSemanticStuckLoop
+export const extractSalientStrings = _extractSalientStrings
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -851,19 +674,19 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const signal = mergeSignal(input.signal, timeoutMs)
   const loopPolicies = normalizeLoopPolicies(input.loopPolicy)
 
-  // v1.2.110 — build a name → schema map once so the per-iteration
-  // tool-args validator (just before dispatch) can look up the declared
-  // shape in O(1). When the validator is disabled or a tool isn't in
-  // the map (caller didn't declare it; defensive), validation is a no-op.
-  const schemaValidateOn = resolveSchemaValidate()
+  // Snapshot env-driven knobs once per turn (not per tool call).
+  const envCfg = snapshotEnvConfig()
+
+  // Build name→schema and name→ToolDef maps once for O(1) lookups
+  // during per-tool-call processing (schema validation + timeout).
   const schemaByName = new Map<string, unknown>(
     (tools ?? []).map((t) => [t.name, t.parameters]),
   )
+  const toolDefByName = new Map<string, ToolDef>(
+    (tools ?? []).map((t) => [t.name, t]),
+  )
 
-  // v1.2.112 — streaming is the caller opt-in (input.streamPartialText)
-  // AND the env kill switch must allow it. Off by default for backward
-  // compatibility — callers that want partial-on-abort opt in.
-  const streamEnabled = !!input.streamPartialText && resolveStreamEnabled()
+  const streamEnabled = !!input.streamPartialText && envCfg.streamEnabled
 
   // Local copy so we don't mutate the caller's array.
   const history: LlmMessage[] = input.messages.slice()
@@ -883,13 +706,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   // Without this the caller would only see the last continuation
   // chunk, not the long-form answer they were actually waiting on.
   let lengthRecoveryCount = 0
-  const lengthRecoveryMax = resolveLengthRecoveryMax()
+  const lengthRecoveryMax = envCfg.lengthRecoveryMax
   let lengthRecoveryPrefix = ''
   // v1.2.119 — intra-loop blank-response retry counter. Independent
   // from length-recovery (which fires when text *is* present but cut);
   // this fires when text + tool_calls are BOTH empty mid-loop.
   let blankRetryCount = 0
-  const blankRetryMax = resolveBlankRetryMax()
+  const blankRetryMax = envCfg.blankRetryMax
 
   let iter = 0
   for (; iter < maxIter; iter++) {
@@ -908,8 +731,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 
     const prepared = await prepareNextTurn(loopPolicies, {
       iter,
-      history: history.slice(),
-      toolCalls: toolCalls.slice(),
+      history,
+      toolCalls,
       usage: { ...usageAcc },
       providerName: input.provider.name,
       signal: signal.signal,
@@ -1008,8 +831,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
 
     const stopDecision = await shouldStopAfterTurn(loopPolicies, {
       iter,
-      history: history.slice(),
-      toolCalls: toolCalls.slice(),
+      history,
+      toolCalls,
       usage: { ...usageAcc },
       providerName: input.provider.name,
       signal: signal.signal,
@@ -1230,8 +1053,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       const decision = await decideToolAccess(input.toolPolicy, approve, {
         call,
         attempt: iter,
-        history: history.slice(),
-        toolCalls: toolCalls.slice(),
+        history,
+        toolCalls,
         traceId: input.audit?.traceId,
         platform: input.audit?.platform,
         userId: input.audit?.userId,
@@ -1278,7 +1101,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // failure surfaced as an opaque "tool threw: …" the model rarely
       // self-corrected. Disabled when AGIM_TOOL_SCHEMA_VALIDATE=off.
       const toolSchema = schemaByName.get(call.name)
-      if (schemaValidateOn && toolSchema) {
+      if (envCfg.schemaValidateOn && toolSchema) {
         const verrs = validateAgainstSchema(call.arguments, toolSchema)
         if (verrs.length > 0) {
           const msg = formatValidationErrors(call.name, verrs)
@@ -1311,12 +1134,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // agim-dispatcher's A2A path) so the whole turn shares one
       // trace prefix instead of each fan-out minting a fresh root.
       const dispatchCtx = { traceId: input.audit?.traceId }
-      // v1.2.118 — per-tool wall timeout. We resolve it once per call
-      // and merge a per-call AbortController with the loop's outer
-      // signal so cancelling either trips the underlying dispatcher.
-      const toolDef = tools?.find((t) => t.name === call.name)
-      const perToolTimeoutMs = resolveToolTimeoutMs(toolDef?.timeoutMs)
-      const toolResultMaxChars = resolveToolResultMaxChars()
+      const toolDef = toolDefByName.get(call.name)
+      const perToolTimeoutMs = resolveToolTimeoutMs(toolDef?.timeoutMs, envCfg.defaultToolTimeoutMs)
       const runDispatch = async (): Promise<void> => {
         try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
         const t0 = Date.now()
@@ -1339,13 +1158,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         const durationMs = Date.now() - t0
         // v1.2.118 — apply per-tool-result byte cap so one chatty tool
         // can't poison the rest of the turn's context window.
-        const truncated = truncateToolResult(dispatched.text, toolResultMaxChars, call.name)
+        const truncated = truncateToolResult(dispatched.text, envCfg.toolResultMaxChars, call.name)
         if (truncated.truncated) {
           log.info({
             event: 'agent-loop.tool_result_truncated',
             tool: call.name,
             originalLen: dispatched.text.length,
-            capped: toolResultMaxChars,
+            capped: envCfg.toolResultMaxChars,
           })
         }
         try { input.hooks?.onToolEnd?.(call, { isError: !!dispatched.isError, durationMs }) } catch { /* observer must not break loop */ }
@@ -1431,7 +1250,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     // different tool surfaces. Catches the failure mode where the model
     // tries Tavily → DDG → Brave (or read_file → cat → less) with the
     // same query/path. Disabled via AGIM_NATIVE_SEMANTIC_STUCK_LOOP=off.
-    if (resolveSemanticStuckLoopOn() && isSemanticStuckLoop(toolCalls)) {
+    if (envCfg.semanticStuckLoopOn && isSemanticStuckLoop(toolCalls)) {
       const last3 = toolCalls.slice(-3)
       log.warn({
         event: 'agent-loop.semantic_stuck_loop_detected',

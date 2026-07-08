@@ -154,7 +154,7 @@
     },
     "approval": {
       "title": "Approval timeout default",
-      "description": "What the approval bus does when a pending tool-use request expires with no human reply. `Deny` is the safe default and keeps write-side calls (Bash / Edit / Write) gated; `Allow` is \"user away\" mode and lets the agent keep moving.",
+      "description": "What the approval bus does when a pending tool-use request expires with no human reply. `Allow` is the default and lets the agent work autonomously (IM approval cards are still sent — you can deny within the timeout window). `Deny` is strict interactive mode where write-side calls block until confirmed.",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "Deny on timeout",
       "valAllow": "Allow on timeout"

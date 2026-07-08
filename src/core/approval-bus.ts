@@ -23,16 +23,15 @@ import { eventBus } from './event-bus.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
-// Default 15 min — long enough for slower IM channels (Telegram, where
-// notifications can land minutes after bot.api.sendMessage logs success) to
-// round-trip a y/n reply, short enough not to block downstream tools for
-// hours. agent-base.ts now uses an idle-based timer (resets on every stdout
-// chunk) instead of a fixed total-time cap, so this approval timeout is no
-// longer constrained to "outlive the agent process" — the agent only dies
-// after AGIM_AGENT_IDLE_TIMEOUT_MS of complete silence.
+// Default 5s — short enough for autonomous agent operation (the default
+// timeout policy is 'allow', so tools auto-approve after this window).
+// The IM approval card is still sent so the user CAN deny within the
+// window. Set AGIM_APPROVAL_TIMEOUT_MS=900000 (15 min) to restore the
+// legacy interactive-approval cadence where the user has minutes to
+// respond.
 const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
   process.env.AGIM_APPROVAL_TIMEOUT_MS,
-  15 * 60 * 1000,
+  5 * 1000,
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 
@@ -46,12 +45,12 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
+// AGIM_TIMEOUT_DEFAULT=allow | deny (default allow). Decides what the bus
 // returns when a normal-mode approval times out without a user response.
 // Auto-allow grace expiry is unaffected — it always resolves to allow.
-// Setting this to 'allow' is "user away" mode: the agent keeps moving even
-// when nobody's at the IM, at the cost of weaker human oversight on
-// write-side tool calls (Bash/Edit/Write/etc). Default deny preserves the
+// Default 'allow' lets agents run autonomously — the IM approval card is
+// still sent so the user CAN deny within the timeout window, but
+// unattended operations auto-approve rather than stalling. Set 'deny' to
 // original strict behavior.
 //
 // Read at every timer fire (not captured at module load) so the Web Settings
@@ -59,50 +58,31 @@ const MAX_PENDING_APPROVALS = (() => {
 // process.env after updating ~/.agim/env, and the next timer that expires
 // picks up the new value with no restart.
 export function isTimeoutDefaultAllow(): boolean {
-  return (process.env.AGIM_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
+  const raw = (process.env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase()
+  return raw !== 'deny'
 }
 
-// R13 C1 — visibility for "user away" mode. When AGIM_TIMEOUT_DEFAULT is
-// `allow`, every approval that times out without IM response auto-approves
-// — that's a meaningful weakening of the human-in-the-loop guarantee.
-// Operators flip it during long-running automation and forget; the warning
-// trail makes the elevated risk surface in journals + persistent audit so
-// post-incident review can correlate "this batch ran without supervision"
-// with the policy state.
+// Visibility for timeout policy state. 'allow' is the default since
+// v1.5.7 — log at info level. When the operator explicitly sets 'deny'
+// (stricter interactive mode), log at info so the change is auditable.
+// The old R13 C1 warning banner + hourly reminder are removed: they were
+// designed for an era where 'allow' was an opt-in exception; now it's
+// the baseline.
 let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
 
-/** Print a prominent stdout banner + emit a structured warn log + write
- *  an audit-event row when the timeout-default policy is `allow` at
- *  startup. Idempotent — subsequent calls log only the structured warn,
- *  not the banner (to keep the journal readable on restarts). Also
- *  starts an hourly reminder timer so a long-running deployment that
- *  forgot to revert sees the warning re-surface in `journalctl --since
- *  '-1h'`. */
+/** Log the effective timeout-default policy at startup. When 'deny' is
+ *  explicitly set, emit an info log noting the stricter policy. Always
+ *  writes an audit row for traceability. */
 export function announceTimeoutDefaultIfAllow(): void {
-  if (!isTimeoutDefaultAllow()) {
-    // Operator flipped back to deny — stop reminding.
-    if (_timeoutAllowHourlyTimer) {
-      clearInterval(_timeoutAllowHourlyTimer)
-      _timeoutAllowHourlyTimer = null
-    }
-    return
+  if (_timeoutAllowHourlyTimer) {
+    clearInterval(_timeoutAllowHourlyTimer)
+    _timeoutAllowHourlyTimer = null
   }
-  const banner = [
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '⚠️  APPROVAL TIMEOUT POLICY: allow',
-    '',
-    '   AGIM_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
-    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: AGIM_TIMEOUT_DEFAULT=deny (or unset).',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '',
-  ].join('\n')
-  process.stdout.write(banner)
-  log.warn({
-    event: 'approval.bus.timeout_default_allow',
-    msg: 'AGIM_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
-  })
+  const policy = isTimeoutDefaultAllow() ? 'allow' : 'deny'
+  log.info({
+    event: 'approval.bus.timeout_policy',
+    policy,
+  }, `approval timeout policy: ${policy}`)
   try {
     void (async () => {
       const { logAuditEvent } = await import('./audit-log.js')
@@ -111,29 +91,10 @@ export function announceTimeoutDefaultIfAllow(): void {
         actor: 'system',
         target: 'approval.timeout_default',
         outcome: 'ok',
-        details: { value: 'allow', startup: true },
+        details: { value: policy, startup: true },
       })
     })()
   } catch { /* best-effort */ }
-  if (_timeoutAllowHourlyTimer === null) {
-    _timeoutAllowHourlyTimer = setInterval(() => {
-      if (!isTimeoutDefaultAllow()) {
-        if (_timeoutAllowHourlyTimer) {
-          clearInterval(_timeoutAllowHourlyTimer)
-          _timeoutAllowHourlyTimer = null
-        }
-        return
-      }
-      log.warn({
-        event: 'approval.bus.timeout_default_allow.reminder',
-        msg: 'reminder: AGIM_TIMEOUT_DEFAULT=allow still in effect',
-      })
-    }, 60 * 60 * 1000)
-    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
-        && 'unref' in _timeoutAllowHourlyTimer) {
-      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
-    }
-  }
 }
 
 /** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */

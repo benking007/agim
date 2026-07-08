@@ -216,6 +216,7 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const defaultBuiltins = [
     'native_echo', 'native_now', 'native_random_uuid',
     'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
+    'native_write_file', 'native_edit_file', 'native_exec',
     'native_web_fetch', 'native_web_search',
     'mcp__agim__read_skill', 'mcp__agim__list_skills',
     'mcp__agim__save_memo', 'mcp__agim__search_memos',

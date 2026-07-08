@@ -43,7 +43,7 @@ agim **默认状态**就是合规友好的：
 | `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
 | `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
-| (已有) `AGIM_TIMEOUT_DEFAULT` | `deny` | 审批超时策略；设 `allow` 时启动 + 每小时 reminder | R13 G5 C1 |
+| (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略；默认 `allow`（自主运行，IM 卡仍发出可手动拒绝）；设 `deny` 启用严格交互模式 | R13 G5 C1 |
 | `AGIM_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
 | `AGIM_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
 
@@ -358,7 +358,7 @@ ExecStart=/usr/local/bin/agim start
 - [ ] 一次性引导令牌首次提升后 `shred -u`
 - [ ] `LOG_LEVEL=warn`（防消息正文进日志）
 - [ ] `AGIM_AUDIT_RETENTION_DAYS=180`（满足等保三级）
-- [ ] `AGIM_TIMEOUT_DEFAULT=deny`（默认；勿改 allow）
+- [ ] `AGIM_TIMEOUT_DEFAULT=deny`（严格交互模式；默认 allow 自主运行）
 - [ ] 用 `user` 角色 token 给非管理员账号（`createToken(label, { role: 'user' })`）
 
 **运维**

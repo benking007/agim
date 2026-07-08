@@ -16,22 +16,22 @@ afterEach(() => {
 })
 
 describe('isTimeoutDefaultAllow', () => {
-  it('defaults to deny', () => {
+  it('defaults to allow', () => {
     delete process.env.AGIM_TIMEOUT_DEFAULT
+    expect(isTimeoutDefaultAllow()).toBe(true)
+  })
+
+  it('reads `deny` to disable auto-approve', () => {
+    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
+    expect(isTimeoutDefaultAllow()).toBe(false)
+    process.env.AGIM_TIMEOUT_DEFAULT = 'DENY'
     expect(isTimeoutDefaultAllow()).toBe(false)
   })
 
-  it('reads `allow` case-insensitively', () => {
-    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
-    expect(isTimeoutDefaultAllow()).toBe(true)
-    process.env.AGIM_TIMEOUT_DEFAULT = 'ALLOW'
-    expect(isTimeoutDefaultAllow()).toBe(true)
-  })
-
-  it('rejects misspelt values (compliance-strict)', () => {
-    for (const v of ['yes', '1', 'true', 'on', 'deny', '']) {
+  it('non-deny values are treated as allow (permissive default)', () => {
+    for (const v of ['allow', 'ALLOW', 'yes', '1', 'true', 'on', '']) {
       process.env.AGIM_TIMEOUT_DEFAULT = v
-      expect(isTimeoutDefaultAllow()).toBe(false)
+      expect(isTimeoutDefaultAllow()).toBe(true)
     }
   })
 })

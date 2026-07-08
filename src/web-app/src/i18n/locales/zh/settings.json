@@ -154,7 +154,7 @@
     },
     "approval": {
       "title": "审批超时默认行为",
-      "description": "当 pending 的工具调用无人响应而超时时审批 bus 的行为。`拒绝` 是安全默认值，会让 Bash / Edit / Write 等写入调用保持阻断；`放行` 是\"用户离开\"模式，让 Agent 继续运行。",
+      "description": "当 pending 的工具调用无人响应而超时时审批 bus 的行为。`放行` 是默认值，让 Agent 自主运行（IM 审批卡仍会发出，可在超时前手动拒绝）；`拒绝` 是严格交互模式，写入调用会阻塞直到用户确认。",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "超时拒绝",
       "valAllow": "超时放行"

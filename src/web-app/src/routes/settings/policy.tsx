@@ -63,7 +63,8 @@ export default function SettingsPolicyRoute(): JSX.Element {
   const skipPerms     = envBool(env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS)
   const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
   const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
-  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? '').toLowerCase() === 'allow'
+  const autoApprove   = envBool(env.AGIM_AUTO_APPROVE)
+  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase() !== 'deny'
   const a2aMode       = (env.AGIM_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
 
   return (
@@ -94,6 +95,12 @@ export default function SettingsPolicyRoute(): JSX.Element {
             value={skipPerms}
             disabled={updateEnv.isPending}
             onChange={(v) => void setValue('AGIM_DANGEROUSLY_SKIP_PERMISSIONS', v ? '1' : '0')}
+          />
+          <ToggleCard
+            sectionKey="autoApprove"
+            value={autoApprove}
+            disabled={updateEnv.isPending}
+            onChange={(v) => void setValue('AGIM_AUTO_APPROVE', v ? '1' : '0')}
           />
           <ApprovalCard
             allowOnTimeout={timeoutAllow}

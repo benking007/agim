@@ -98,17 +98,19 @@ sudo systemctl enable --now agim
 sudo systemctl status agim
 ```
 
-## 5. 端口与鉴权
+## 5. 端口、鉴权与审批
 
 - Web 控制台默认 `127.0.0.1:3000`
 - ACP 默认 `127.0.0.1:9090`
 - Web token 鉴权默认开启
+- 工具调用自动审批默认开启（`AGIM_AUTO_APPROVE=1`）
 
 建议：
 
 1. 优先通过反向代理暴露 HTTPS（nginx/caddy/tailscale）。
 2. 只对白名单来源开放。
 3. 不需要时不要开放 ACP 端口。
+4. 需要人工审批时设 `AGIM_AUTO_APPROVE=0`；超时策略用 `AGIM_TIMEOUT_DEFAULT=deny`。
 
 ## 6. 常用运维命令
 
@@ -184,5 +186,6 @@ curl -fsS http://127.0.0.1:3000/api/health
 - [ ] 至少一个 IM 通道可收发
 - [ ] 至少一个 agent 可执行
 - [ ] token 鉴权已启用
+- [ ] 审批策略已确认（默认自动放行；需人工审批设 `AGIM_AUTO_APPROVE=0`）
 - [ ] 已配置备份
 - [ ] 已记录升级回滚流程

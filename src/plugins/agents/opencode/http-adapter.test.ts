@@ -350,6 +350,18 @@ async function collect(gen: AsyncGenerator<string>): Promise<string[]> {
 }
 
 describe('OpenCodeHttpAdapter.sendPrompt — happy path', () => {
+  let savedAutoApprove: string | undefined
+
+  beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+
+  afterEach(() => {
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
+  })
+
   it('creates a session, captures sessionID, yields finished text, breaks on idle', async () => {
     const sid = 'ses_happy'
     const events: OpencodeEvent[] = [

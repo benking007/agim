@@ -16,12 +16,22 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 describe('ApprovalBus.registerSyntheticPending', () => {
   let bus: ApprovalBus
+  let savedAutoApprove: string | undefined
+  let savedTimeoutDefault: string | undefined
 
   beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    savedTimeoutDefault = process.env.AGIM_TIMEOUT_DEFAULT
+    process.env.AGIM_AUTO_APPROVE = '0'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
     bus = new ApprovalBus({ approvalTimeoutMs: 200, autoAllowGraceMs: 80 })
-    // start() listens on a socket path even for synthetic-only use; that's
-    // fine — synthetic path doesn't touch the socket. Skip start() so we
-    // don't open file handles for tests that don't need it.
+  })
+
+  afterEach(() => {
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
+    if (savedTimeoutDefault === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
+    else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeoutDefault
   })
 
   afterEach(async () => {

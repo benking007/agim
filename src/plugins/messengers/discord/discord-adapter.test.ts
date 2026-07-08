@@ -253,14 +253,19 @@ describe('platformToMessengerName + DiscordAdapter — name match', () => {
 
 describe('Discord × ApprovalBus × approval-router — end-to-end (offline)', () => {
   let socketPath: string
+  let savedAutoApprove: string | undefined
 
   beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     socketPath = uniqueSocketPath()
   })
 
   afterEach(async () => {
     try { uninstallApprovalRouter() } catch {}
     try { await approvalBus.stop() } catch {}
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('Discord user → approval prompt sent to Discord channel → reply "y" → sidecar gets allow', async () => {

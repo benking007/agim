@@ -48,8 +48,11 @@ async function seedRule(socketPath: string, runId: string, reqId: string, toolNa
 
 describe('handleApprovalCommand', () => {
   let path: string
+  let savedAutoApprove: string | undefined
 
   beforeEach(async () => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     path = uniqueSocketPath()
     await approvalBus.start(path)
     approvalBus.registerRun('run-X', RUN_CTX)
@@ -59,6 +62,8 @@ describe('handleApprovalCommand', () => {
   afterEach(async () => {
     approvalBus.clearAutoAllowForThread(KEY)
     await approvalBus.stop()
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   it('reports an empty list when no rules exist', async () => {

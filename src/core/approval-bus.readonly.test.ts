@@ -22,8 +22,11 @@ const KEY = threadKey(RUN_CTX.platform, RUN_CTX.channelId, RUN_CTX.threadId)
 describe('ApprovalBus readonly auto-allow', () => {
   let bus: ApprovalBus
   let notifierCalls: ApprovalNotification[]
+  let savedAutoApprove: string | undefined
 
   beforeEach(() => {
+    savedAutoApprove = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
     bus = new ApprovalBus({ approvalTimeoutMs: 200, autoAllowGraceMs: 80 })
     notifierCalls = []
     bus.setNotifier(async (n) => { notifierCalls.push(n) })
@@ -31,6 +34,8 @@ describe('ApprovalBus readonly auto-allow', () => {
 
   afterEach(async () => {
     await bus.stop().catch(() => {})
+    if (savedAutoApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAutoApprove
   })
 
   for (const tool of ['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']) {

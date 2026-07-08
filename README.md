@@ -91,8 +91,9 @@ Supported agent details: `docs/agents.md`
 ## Security defaults
 
 - Web token auth enabled by default.
-- Approval gate enabled by default.
-- Sensitive files/paths are denied by policy.
+- Auto-approve enabled by default (`AGIM_AUTO_APPROVE=1`): tool calls auto-approved after safety checks (sensitive-path deny + self-protect). Set `AGIM_AUTO_APPROVE=0` for manual IM approval flow.
+- Sensitive files/paths are denied by policy (hard-deny, cannot be overridden).
+- Self-protect prevents agents from killing/restarting agim.
 - Global IM connectors can stay disabled in domestic deployments.
 
 Security reference: `docs/security-hardening.md`

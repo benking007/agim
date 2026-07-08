@@ -17,7 +17,9 @@ agim **默认状态**就是合规友好的：
 | Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 |
 | Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）|
 | 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）|
-| 长期记忆 / 备忘 | 默认关 |
+| 工具审批 | **自动放行**（`AGIM_AUTO_APPROVE=1`）；安全检查（敏感路径硬拒 + 自保护）仍在 auto-approve 之前执行；设 `=0` 回退到 IM 审批卡 + 超时流程 |
+| 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 |
+| 长期记忆 | 默认开（P3 opt-out，`AGIM_MEMORY_ENABLED=0` 关闭）；向量检索默认关 |
 | 出网 | 唯一必需：与 IM 厂商通信；其他全部可关 |
 | 用户消息进日志 | 默认只有 `len` / `prefix(6)` / `sha256(12)`，无原文 |
 | 凭据存储 | `0o600` 文件 + sha256 哈希；Web 令牌支持 admin / user 双角色 |

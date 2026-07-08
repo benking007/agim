@@ -124,11 +124,7 @@ describe('ApprovalBus', () => {
   let bus: ApprovalBus
   let path: string
 
-  let savedTimeoutDefault: string | undefined
-
   beforeEach(async () => {
-    savedTimeoutDefault = process.env.AGIM_TIMEOUT_DEFAULT
-    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
     bus = new ApprovalBus({ approvalTimeoutMs: 200 })
     path = uniqueSocketPath()
     await bus.start(path)
@@ -136,8 +132,6 @@ describe('ApprovalBus', () => {
 
   afterEach(async () => {
     await bus.stop()
-    if (savedTimeoutDefault === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
-    else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeoutDefault
   })
 
   it('start() listens on the given socket path', async () => {

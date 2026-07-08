@@ -2883,6 +2883,7 @@ const ENV_EDITABLE_KEYS = [
   // Hot-reload: handlePutEnv mutates process.env so approval-bus picks up the
   // new value on the next timer fire, no restart needed.
   'AGIM_TIMEOUT_DEFAULT',
+  'AGIM_AUTO_APPROVE',
   // v1.2 — IM long-message viewer. Operator sets the public URL pointing at
   // their reverse-proxied agim web port; thresholds tune when routing kicks
   // in. Hot-reload works because viewer-config reads process.env every call.
@@ -3062,6 +3063,7 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
           AGIM_EXEC_SANDBOX: process.env.AGIM_EXEC_SANDBOX ?? null,
           AGIM_NATIVE_FS_RESTRICT: process.env.AGIM_NATIVE_FS_RESTRICT ?? null,
           AGIM_TIMEOUT_DEFAULT: process.env.AGIM_TIMEOUT_DEFAULT ?? null,
+          AGIM_AUTO_APPROVE: process.env.AGIM_AUTO_APPROVE ?? null,
           AGIM_DANGEROUSLY_SKIP_PERMISSIONS: process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS ?? null,
         },
       },

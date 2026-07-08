@@ -16,17 +16,9 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 describe('ApprovalBus.registerSyntheticPending', () => {
   let bus: ApprovalBus
-  let savedTimeoutDefault: string | undefined
 
   beforeEach(() => {
-    savedTimeoutDefault = process.env.AGIM_TIMEOUT_DEFAULT
-    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
     bus = new ApprovalBus({ approvalTimeoutMs: 200, autoAllowGraceMs: 80 })
-  })
-
-  afterEach(() => {
-    if (savedTimeoutDefault === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
-    else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeoutDefault
   })
 
   afterEach(async () => {

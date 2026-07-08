@@ -23,15 +23,13 @@ import { eventBus } from './event-bus.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
-// Default 5s — short enough for autonomous agent operation (the default
-// timeout policy is 'allow', so tools auto-approve after this window).
-// The IM approval card is still sent so the user CAN deny within the
-// window. Set AGIM_APPROVAL_TIMEOUT_MS=900000 (15 min) to restore the
-// legacy interactive-approval cadence where the user has minutes to
-// respond.
+// Default 15 min — long enough for slower IM channels to round-trip
+// a y/n reply. When AGIM_AUTO_APPROVE is on, this timeout is irrelevant
+// (tools are approved immediately without waiting). This value only
+// matters when auto-approve is off and a human is expected to respond.
 const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
   process.env.AGIM_APPROVAL_TIMEOUT_MS,
-  5 * 1000,
+  15 * 60 * 1000,
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 
@@ -45,44 +43,73 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_TIMEOUT_DEFAULT=allow | deny (default allow). Decides what the bus
-// returns when a normal-mode approval times out without a user response.
-// Auto-allow grace expiry is unaffected — it always resolves to allow.
-// Default 'allow' lets agents run autonomously — the IM approval card is
-// still sent so the user CAN deny within the timeout window, but
-// unattended operations auto-approve rather than stalling. Set 'deny' to
-// original strict behavior.
+// AGIM_AUTO_APPROVE — first-class auto-approve switch. When enabled,
+// tool calls are approved immediately after safety checks (sensitive-path
+// hard-deny + self-protect), without sending an IM approval card or
+// waiting for any timeout. The approval bus still runs so audit trail,
+// metrics, and safety checks all remain active.
 //
-// Read at every timer fire (not captured at module load) so the Web Settings
-// "Approval Policy" card can hot-toggle the value — handlePutEnv mutates
-// process.env after updating ~/.agim/env, and the next timer that expires
-// picks up the new value with no restart.
-export function isTimeoutDefaultAllow(): boolean {
-  const raw = (process.env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase()
-  return raw !== 'deny'
+// Read per call (not cached at module load) so the Web Settings panel
+// can hot-toggle it via handlePutEnv.
+export function isAutoApproveEnabled(): boolean {
+  const raw = (process.env.AGIM_AUTO_APPROVE ?? '').toLowerCase().trim()
+  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
 }
 
-// Visibility for timeout policy state. 'allow' is the default since
-// v1.5.7 — log at info level. When the operator explicitly sets 'deny'
-// (stricter interactive mode), log at info so the change is auditable.
-// The old R13 C1 warning banner + hourly reminder are removed: they were
-// designed for an era where 'allow' was an opt-in exception; now it's
-// the baseline.
+// AGIM_TIMEOUT_DEFAULT=allow | deny (default deny). Decides what the bus
+// returns when a pending approval times out without a human response.
+// Only relevant when AGIM_AUTO_APPROVE is off (otherwise tools never
+// reach the timeout path). Default 'deny' keeps mutating tools gated;
+// set 'allow' for "user away" fallback mode.
+//
+// Read at every timer fire (not captured at module load) so the Web
+// Settings card can hot-toggle it.
+export function isTimeoutDefaultAllow(): boolean {
+  return (process.env.AGIM_TIMEOUT_DEFAULT ?? 'deny').toLowerCase() === 'allow'
+}
+
+// R13 C1 — visibility for "user away" mode. When AGIM_TIMEOUT_DEFAULT is
+// `allow`, every approval that times out without IM response auto-approves
+// — that's a meaningful weakening of the human-in-the-loop guarantee.
 let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
 
-/** Log the effective timeout-default policy at startup. When 'deny' is
- *  explicitly set, emit an info log noting the stricter policy. Always
- *  writes an audit row for traceability. */
 export function announceTimeoutDefaultIfAllow(): void {
-  if (_timeoutAllowHourlyTimer) {
-    clearInterval(_timeoutAllowHourlyTimer)
-    _timeoutAllowHourlyTimer = null
+  // Log auto-approve status at startup.
+  if (isAutoApproveEnabled()) {
+    log.info({
+      event: 'approval.bus.auto_approve_enabled',
+    }, 'AGIM_AUTO_APPROVE=on — tool calls auto-approved after safety checks')
+    if (_timeoutAllowHourlyTimer) {
+      clearInterval(_timeoutAllowHourlyTimer)
+      _timeoutAllowHourlyTimer = null
+    }
+    return
   }
-  const policy = isTimeoutDefaultAllow() ? 'allow' : 'deny'
-  log.info({
-    event: 'approval.bus.timeout_policy',
-    policy,
-  }, `approval timeout policy: ${policy}`)
+
+  if (!isTimeoutDefaultAllow()) {
+    if (_timeoutAllowHourlyTimer) {
+      clearInterval(_timeoutAllowHourlyTimer)
+      _timeoutAllowHourlyTimer = null
+    }
+    return
+  }
+  const banner = [
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '⚠️  APPROVAL TIMEOUT POLICY: allow',
+    '',
+    '   AGIM_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
+    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
+    '   Revert with: AGIM_TIMEOUT_DEFAULT=deny (or unset).',
+    '   Prefer: AGIM_AUTO_APPROVE=1 for immediate auto-approve.',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '',
+  ].join('\n')
+  process.stdout.write(banner)
+  log.warn({
+    event: 'approval.bus.timeout_default_allow',
+    msg: 'AGIM_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
+  })
   try {
     void (async () => {
       const { logAuditEvent } = await import('./audit-log.js')
@@ -91,10 +118,29 @@ export function announceTimeoutDefaultIfAllow(): void {
         actor: 'system',
         target: 'approval.timeout_default',
         outcome: 'ok',
-        details: { value: policy, startup: true },
+        details: { value: 'allow', startup: true },
       })
     })()
   } catch { /* best-effort */ }
+  if (_timeoutAllowHourlyTimer === null) {
+    _timeoutAllowHourlyTimer = setInterval(() => {
+      if (!isTimeoutDefaultAllow()) {
+        if (_timeoutAllowHourlyTimer) {
+          clearInterval(_timeoutAllowHourlyTimer)
+          _timeoutAllowHourlyTimer = null
+        }
+        return
+      }
+      log.warn({
+        event: 'approval.bus.timeout_default_allow.reminder',
+        msg: 'reminder: AGIM_TIMEOUT_DEFAULT=allow still in effect',
+      })
+    }, 60 * 60 * 1000)
+    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
+        && 'unref' in _timeoutAllowHourlyTimer) {
+      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
+    }
+  }
 }
 
 /** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */
@@ -1526,6 +1572,50 @@ export class ApprovalBus {
       this.metricsSnapshot.totalReadonlyAutoAllowed++
       log.info({
         event: 'approval.bus.readonly_auto_allow',
+        toolName: args.toolName,
+        reqId: args.reqId,
+        runId: args.runId,
+        compositeKey: cKey,
+      })
+      const decision: Decision = { behavior: 'allow' }
+      if ('socket' in args.transport) {
+        this.sendDecision(args.transport.socket, args.reqId, decision)
+      } else {
+        try { args.transport.dispatch(decision) } catch (err) {
+          log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(err) })
+        }
+      }
+      return
+    }
+
+    // AGIM_AUTO_APPROVE — immediate allow without IM card or timeout.
+    // Fires after sensitive-path hard-deny (above) and self-protect
+    // (inline below). Skips the notifier entirely so we must run
+    // self-protect here rather than relying on approval-router.
+    if (isAutoApproveEnabled()) {
+      try {
+        const { checkToolUse } = await import('./self-protect.js')
+        const selfGuard = checkToolUse(args.toolName, args.input)
+        if (selfGuard) {
+          this.metricsSnapshot.totalRequests++
+          this.metricsSnapshot.totalResolved++
+          this.metricsSnapshot.totalDenied++
+          const decision: Decision = { behavior: 'deny', message: selfGuard.message }
+          if ('socket' in args.transport) {
+            this.sendDecision(args.transport.socket, args.reqId, decision)
+          } else {
+            try { args.transport.dispatch(decision) } catch (e) {
+              log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(e) })
+            }
+          }
+          return
+        }
+      } catch { /* self-protect best-effort; allow if import fails */ }
+      this.metricsSnapshot.totalRequests++
+      this.metricsSnapshot.totalResolved++
+      this.metricsSnapshot.totalAllowed++
+      log.info({
+        event: 'approval.bus.auto_approve',
         toolName: args.toolName,
         reqId: args.reqId,
         runId: args.runId,

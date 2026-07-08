@@ -152,9 +152,14 @@
       "envKey": "AGIM_DANGEROUSLY_SKIP_PERMISSIONS",
       "tagWarn": "生产部署建议保持关闭"
     },
+    "autoApprove": {
+      "title": "自动审批",
+      "description": "开启后，工具调用在通过安全检查（敏感路径拒绝 + 自保护）后立即自动放行，不发送 IM 审批卡、不等超时。关闭后回退到审批超时逻辑。",
+      "envKey": "AGIM_AUTO_APPROVE"
+    },
     "approval": {
       "title": "审批超时默认行为",
-      "description": "当 pending 的工具调用无人响应而超时时审批 bus 的行为。`放行` 是默认值，让 Agent 自主运行（IM 审批卡仍会发出，可在超时前手动拒绝）；`拒绝` 是严格交互模式，写入调用会阻塞直到用户确认。",
+      "description": "当 pending 的工具调用无人响应而超时时审批 bus 的行为。`拒绝` 是默认值（安全），写入调用保持阻断直到人工确认；`放行` 是\"无人值守\"模式。建议使用 `自动审批` 开关替代超时放行。",
       "envKey": "AGIM_TIMEOUT_DEFAULT",
       "valDeny": "超时拒绝",
       "valAllow": "超时放行"

@@ -61,18 +61,9 @@ async function setup(): Promise<Harness> {
 
 describe('mcp-approval-server', () => {
   let h: Harness
-  let savedTimeoutDefault: string | undefined
 
-  beforeEach(async () => {
-    savedTimeoutDefault = process.env.AGIM_TIMEOUT_DEFAULT
-    process.env.AGIM_TIMEOUT_DEFAULT = 'deny'
-    h = await setup()
-  })
-  afterEach(async () => {
-    await h.cleanup()
-    if (savedTimeoutDefault === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
-    else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeoutDefault
-  })
+  beforeEach(async () => { h = await setup() })
+  afterEach(async () => { await h.cleanup() })
 
   it('exposes a `request` tool', async () => {
     const tools = await h.mcpClient.listTools()

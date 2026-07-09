@@ -120,8 +120,8 @@ Security reference: `docs/security-hardening.md`
 ```json
 {
   "messengers": ["wechat-ilink"],
-  "agents": ["claude-code", "native"],
-  "defaultAgent": "claude-code",
+  "agents": ["native", "claude-code"],
+  "defaultAgent": "native",
   "llmBackends": [
     {
       "name": "default-native",

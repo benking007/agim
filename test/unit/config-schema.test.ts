@@ -10,7 +10,7 @@ describe('validateConfig', () => {
     if (result.ok) {
       expect(result.config.messengers).toEqual([])
       expect(result.config.agents).toEqual([])
-      expect(result.config.defaultAgent).toBe('claude-code')
+      expect(result.config.defaultAgent).toBe('native')
     }
   })
 

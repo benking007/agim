@@ -412,7 +412,7 @@ async function readConfig(): Promise<RawConfig> {
     return parsed
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messengers: [], agents: [], defaultAgent: 'claude-code' }
+      return { messengers: [], agents: [], defaultAgent: 'native' }
     }
     throw err
   }

@@ -31,8 +31,8 @@ describe('live-config singleton', () => {
     expect(getLiveConfig()).toBeNull()
   })
 
-  it('getDefaultAgent() falls back to "claude-code" when unset', () => {
-    expect(getDefaultAgent()).toBe('claude-code')
+  it('getDefaultAgent() falls back to "native" when unset', () => {
+    expect(getDefaultAgent()).toBe('native')
   })
 
   it('getDefaultAgent(fallback) honours the caller fallback', () => {

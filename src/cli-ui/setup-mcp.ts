@@ -293,7 +293,7 @@ async function readConfig(): Promise<RawConfig> {
     return JSON.parse(await readFile(CONFIG_FILE, 'utf-8')) as RawConfig
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messengers: [], agents: [], defaultAgent: 'claude-code' }
+      return { messengers: [], agents: [], defaultAgent: 'native' }
     }
     throw err
   }

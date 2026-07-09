@@ -174,7 +174,7 @@ const discordLooseSchema = z.object({
 export const configSchema = z.object({
   messengers: z.array(z.string()).default([]),
   agents: z.array(z.string()).default([]),
-  defaultAgent: z.string().default('claude-code'),
+  defaultAgent: z.string().default('native'),
   telegram: telegramLooseSchema,
   feishu: feishuLooseSchema,
   discord: discordLooseSchema,

@@ -185,7 +185,7 @@ export async function loadConfig(): Promise<Config> {
     return {
       messengers: [],
       agents: [],
-      defaultAgent: 'claude-code',
+      defaultAgent: 'native',
     }
   }
 }

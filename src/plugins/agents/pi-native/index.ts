@@ -32,9 +32,6 @@ import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from 
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
-import { LoopGuard } from '../../../core/llm/loop-guards.js'
-import { validateAgainstSchema, formatValidationErrors } from '../../../core/llm/schema-validate.js'
-import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
 import { agimToolsToPi } from './tool-bridge.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
@@ -302,19 +299,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
-    const agimToolDefs = toolSurface?.tools ?? []
     const tools = toolSurface
-      ? agimToolsToPi(agimToolDefs, toolSurface.dispatch, {
+      ? agimToolsToPi(toolSurface.tools, toolSurface.dispatch, {
           traceId: opts?.traceId,
           parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
         })
       : []
-
-    // Pre-build name→schema map for O(1) schema validation in the
-    // tool_call hook (shared with agent-loop.ts via loop-guards).
-    const schemaByName = new Map<string, unknown>(
-      agimToolDefs.map((t) => [t.name, t.parameters]),
-    )
 
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
     const harness = new AgentHarness({
@@ -329,49 +319,41 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
     const planDeny = this.deps.planModeMutatingTools ?? DEFAULT_PLAN_DENY
-    harness.on(
-      'tool_call',
-      async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
-        if (opts?.planMode && planDeny.has(ev.toolName)) {
-          return { block: true, reason: 'plan-mode: mutating tools are denied' }
-        }
-        if (gate) {
-          const decision = await gate(
-            { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
-            0,
-          )
-          if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
-        }
-        // Schema validation (shared with agent-loop.ts). Catches "model
-        // sent wrong shape" before dispatch so the model gets a structured
-        // "fix and retry" instead of an opaque tool error.
-        const schema = schemaByName.get(ev.toolName)
-        if (schema) {
-          const verrs = validateAgainstSchema(ev.input, schema)
-          if (verrs.length > 0) {
-            return { block: true, reason: formatValidationErrors(ev.toolName, verrs) }
+    if (opts?.planMode || gate) {
+      harness.on(
+        'tool_call',
+        async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
+          // Plan-mode hard deny (covers A2A-propagated plan-mode even without
+          // an IM thread for the policy gate to read).
+          if (opts?.planMode && planDeny.has(ev.toolName)) {
+            return { block: true, reason: 'plan-mode: mutating tools are denied' }
           }
-        }
-        return undefined
-      },
-    )
+          // agim policy gate: read-only / allow-list / deny-all, escalating to
+          // an IM approval card when configured.
+          if (gate) {
+            const decision = await gate(
+              { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
+              0,
+            )
+            if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
+          }
+          return undefined
+        },
+      )
+    }
 
     // Runaway guards: pi's loop has no iteration cap and no stuck-loop
     // detection, so we enforce both via the tool_result terminate hint.
-    // Uses the shared LoopGuard (stableStringify + semantic detection)
-    // so detection quality matches agent-loop.ts.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
     let toolRounds = 0
     let stopReason: 'max_iter' | 'stuck_loop' | null = null
-    const loopGuard = new LoopGuard()
+    const recentSigs: string[] = []
     const toolRuns: NativeToolRun[] = []
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
       toolRounds += 1
-      const toolName = ev.toolName ?? 'unknown_tool'
-      const isError = ev.isError === true
       toolRuns.push({
-        name: toolName,
-        isError,
+        name: ev.toolName ?? 'unknown_tool',
+        isError: ev.isError === true,
         preview: previewToolResult(ev),
       })
       if (toolRuns.length > 30) toolRuns.shift()
@@ -379,11 +361,13 @@ export class NativeAgentAdapter implements AgentAdapter {
         stopReason = 'max_iter'
         return { terminate: true }
       }
-      const resultText = previewToolResult(ev) ?? ''
-      const verdict = loopGuard.record(
-        LoopGuard.buildReport(toolName, ev.input, isError, resultText),
-      )
-      if (verdict.stuck || verdict.semantic) {
+      // Stuck-loop: the same tool + same args erroring 3× in a row (mirrors
+      // agim's exact stuck-loop detector — catches a model wedged on one
+      // failing call well before it burns the whole iteration budget).
+      const sig = `${ev.toolName}|${safeJson(ev.input)}|${ev.isError ? 'E' : 'ok'}`
+      recentSigs.push(sig)
+      if (recentSigs.length > 3) recentSigs.shift()
+      if (ev.isError && recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
         stopReason = 'stuck_loop'
         return { terminate: true }
       }
@@ -396,6 +380,11 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
     }
 
+    // Proactive compaction (pi never auto-compacts): if the durable session has
+    // grown past the model window minus reserve, summarize old history BEFORE
+    // this turn so it neither overflows the context nor re-pays for the full
+    // backlog every turn. Best-effort — a failed compaction must not block the
+    // turn (it just runs with the larger context). Off via AGIM_NATIVE_COMPACTION=off.
     if (this.deps.compactionEnabled !== false && Number.isFinite(binding.model.contextWindow)) {
       try {
         const usage = getLastAssistantUsage(await session.getEntries())
@@ -421,27 +410,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map((c) => c.text)
       .join('')
-
-    // Hallucination detection (shared with agent-loop.ts): flag turns
-    // where the model narrates a tool call but never emitted one.
-    if (
-      !stopReason
-      && text.trim()
-      && toolRounds === 0
-      && agimToolDefs.length > 0
-      && isHallucinationDetectorOn()
-    ) {
-      const det = detectHallucinatedToolCall({
-        text,
-        toolNames: agimToolDefs.map((t) => t.name),
-        emittedToolCallCount: 0,
-      })
-      if (det.hallucinated) {
-        yield composeEmptyTurnRecap(toolRuns, agimToolDefs.map((t) => t.name))
-        return
-      }
-    }
-
     if (stopReason && !text.trim()) {
       yield stopReason === 'stuck_loop'
         ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
@@ -449,7 +417,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
     if (!text.trim()) {
-      yield composeEmptyTurnRecap(toolRuns, agimToolDefs.map((t) => t.name))
+      yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
     yield appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)

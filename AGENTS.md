@@ -38,8 +38,8 @@ The committed root `package-lock.json` has ~107 entries whose `resolved` URLs po
 ```json
 {
   "messengers": ["telegram"],
-  "agents": ["claude-code"],
-  "defaultAgent": "claude-code",
+  "agents": ["native", "claude-code"],
+  "defaultAgent": "native",
   "telegram": { "botToken": "placeholder" }
 }
 ```

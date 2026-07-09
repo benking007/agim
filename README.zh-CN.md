@@ -118,8 +118,8 @@ native 配置详见：`docs/llm-backends.md`
 ```json
 {
   "messengers": ["wechat-ilink"],
-  "agents": ["claude-code", "native"],
-  "defaultAgent": "claude-code",
+  "agents": ["native", "claude-code"],
+  "defaultAgent": "native",
   "llmBackends": [
     {
       "name": "default-native",

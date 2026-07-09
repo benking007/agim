@@ -47,7 +47,7 @@ export function getLiveConfig(): Config | null {
 
 /** The Config's `defaultAgent` field, with a fallback for very early
  *  callers (e.g. a tool fires before cli.ts has finished boot). */
-export function getDefaultAgent(fallback = 'claude-code'): string {
+export function getDefaultAgent(fallback = 'native'): string {
   return current?.defaultAgent || fallback
 }
 

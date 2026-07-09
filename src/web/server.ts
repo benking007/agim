@@ -2954,14 +2954,11 @@ const ENV_EDITABLE_KEYS = [
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
-  // v1.2.126 — native runtime caps (per-tool result chars / per-tool
-  // timeout / blank-response retry / length-recovery retry). Hot-
-  // reload: each subsystem re-reads process.env on every call, so
-  // editing these takes effect without a restart.
+  // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
+  // enforced in the pi tool bridge for the native path. Re-read per
+  // call, so editing takes effect without a restart.
   'AGIM_NATIVE_TOOL_RESULT_MAX_CHARS',
   'AGIM_NATIVE_TOOL_TIMEOUT_MS',
-  'AGIM_NATIVE_BLANK_RETRY_MAX',
-  'AGIM_NATIVE_LENGTH_RECOVERY_MAX',
   // v1.2.127 — A2A sub-agent spawn (depth / timeout / in-process /
   // per-turn cap). All hot-read; flipping in-process to 'off' makes
   // the next call_agent('native', …) reboot via the subprocess CLI
@@ -2970,30 +2967,13 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_A2A_TIMEOUT_DEFAULT_MS',
   'AGIM_NATIVE_CALL_AGENT_IN_PROCESS',
   'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
-  // v1.2.127 — early-stop + critic. Semantic stuck-loop default ON
-  // catches the v1.2.122 case (3 different tools, same salient arg).
-  // Critic default OFF — opt-in goal-divergence detector.
-  'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
-  'AGIM_NATIVE_CRITIC',
-  'AGIM_NATIVE_CRITIC_ROLE',
+  // Plan mode default state.
   'AGIM_NATIVE_PLAN_MODE',
   // v1.2.135 — auto-enter heuristic + custom phrase list.
   'AGIM_PLAN_INTENT_AUTO',
   'AGIM_PLAN_INTENT_PHRASES',
-  // v1.2.127 — auto-compact 4 sliders (OpenHands Condenser pattern).
-  // KEEP_FIRST defaults to 1 since v1.2.125 (original user goal at idx 0).
-  'AGIM_NATIVE_COMPACT_TRIGGER_CHARS',
-  'AGIM_NATIVE_COMPACT_KEEP_TURNS',
-  'AGIM_NATIVE_COMPACT_KEEP_FIRST',
-  'AGIM_NATIVE_COMPACT_SUMMARY_CHARS',
-  // v1.2.127 — streaming + iteration cap. STREAM_PARTIAL default ON
-  // preserves partial assistant text on IM's 30-min hard timeout.
-  'AGIM_NATIVE_STREAM_PARTIAL',
+  // Per-turn iteration cap.
   'AGIM_NATIVE_AGENT_MAX_ITER',
-  // v1.2.138 — first-token retry on transient stream errors (terminated /
-  // ECONNRESET / fetch failed / socket hang up). Default retries once.
-  'AGIM_NATIVE_FIRSTTOKEN_RETRY_MAX',
-  'AGIM_NATIVE_FIRSTTOKEN_RETRY_DELAY_MS',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'AGIM_SMTP_PASS',

@@ -78,4 +78,58 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
     expect(JSON.stringify(final.content)).toContain('recovered') // loop survives the error
     expect(tools[0]!.executionMode).toBe('sequential') // default when no parallelSafe
   })
+
+  it('truncates an oversized tool result (AGIM_NATIVE_TOOL_RESULT_MAX_CHARS)', async () => {
+    const prev = process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '50'
+    try {
+      const big = 'x'.repeat(5000)
+      const dispatch: ToolDispatcher = async () => ({ text: big, isError: false })
+      const [tool] = agimToolsToPi([QUOTE_TOOL], dispatch)
+      const out = await tool!.execute('c1', { symbol: 'x' }, new AbortController().signal)
+      const text = (out.content[0] as { text: string }).text
+      expect(text.length).toBeLessThan(big.length)
+      expect(text).toContain('输出已截断')
+      expect(text).toContain('AGIM_NATIVE_TOOL_RESULT_MAX_CHARS')
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+      else process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = prev
+    }
+  })
+
+  it('times out a hung tool (AGIM_NATIVE_TOOL_TIMEOUT_MS) and surfaces an error', async () => {
+    const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+    process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '20'
+    try {
+      // Never resolves on its own; resolves only when the timeout aborts it
+      // (so the test doesn't leak a pending promise).
+      const dispatch: ToolDispatcher = (_call, sig) =>
+        new Promise((resolve) => {
+          sig.addEventListener('abort', () => resolve({ text: 'aborted', isError: true }), { once: true })
+        })
+      const [tool] = agimToolsToPi([QUOTE_TOOL], dispatch)
+      await expect(tool!.execute('c1', { symbol: 'x' }, new AbortController().signal)).rejects.toThrow(/超时/)
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+      else process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = prev
+    }
+  })
+
+  it('honors a per-tool timeoutMs=0 opt-out (no cap even with a tiny env timeout)', async () => {
+    const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+    process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '10'
+    try {
+      const slowTool: ToolDef = { ...QUOTE_TOOL, timeoutMs: 0 }
+      const dispatch: ToolDispatcher = async () => {
+        await new Promise((r) => setTimeout(r, 40)) // longer than the env cap
+        return { text: 'slow ok', isError: false }
+      }
+      const [tool] = agimToolsToPi([slowTool], dispatch)
+      const out = await tool!.execute('c1', { symbol: 'x' }, new AbortController().signal)
+      expect((out.content[0] as { text: string }).text).toBe('slow ok')
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+      else process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = prev
+    }
+  })
 })

@@ -9,14 +9,97 @@
 //     THROWING. agim's DispatcherResult returns { isError }. The bridge
 //     translates an isError result into a throw so pi marks the tool result as
 //     an error and the dispatcher's text still reaches the model.
+//
+// The bridge is also where two agent-loop.ts reliability caps are enforced for
+// the pi (AgentHarness) path, since pi's loop has neither:
+//   - per-tool result truncation (AGIM_NATIVE_TOOL_RESULT_MAX_CHARS): a single
+//     5 MB grep / curl would otherwise poison the context for the rest of the
+//     turn and silently blow the model input limit;
+//   - per-tool wall timeout (AGIM_NATIVE_TOOL_TIMEOUT_MS / ToolDef.timeoutMs):
+//     a wedged native_exec / MCP call would otherwise hang the whole turn.
 
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
-import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
+import type { DispatcherResult, ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 
 /** A never-aborted signal for when pi invokes execute without one. The agim
  *  ToolDispatcher contract requires a non-optional AbortSignal. */
 const NEVER_ABORT = new AbortController().signal
+
+/** Mirror agent-loop.ts: cap each tool's result text. Default 32768 chars
+ *  (~8 KB tokens). Env override; 0 disables. Re-read per call so the Web
+ *  settings toggle takes effect without a restart. */
+const DEFAULT_TOOL_RESULT_MAX_CHARS = 32_768
+function resolveToolResultMaxChars(): number {
+  const raw = (process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS ?? '').trim()
+  if (!raw) return DEFAULT_TOOL_RESULT_MAX_CHARS
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_RESULT_MAX_CHARS
+  return n
+}
+
+/** Mirror agent-loop.ts: per-tool wall timeout. A ToolDef may pin its own
+ *  (e.g. an explicitly slow long_task sets timeoutMs: 0 to opt out). Default
+ *  60s; env override; 0 disables. */
+const DEFAULT_TOOL_TIMEOUT_MS = 60_000
+function resolveToolTimeoutMs(perToolMs: number | undefined): number {
+  if (typeof perToolMs === 'number' && perToolMs >= 0) return perToolMs
+  const raw = (process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS ?? '').trim()
+  if (!raw) return DEFAULT_TOOL_TIMEOUT_MS
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_TIMEOUT_MS
+  return n
+}
+
+/** Truncate tool-result text with a clear marker so the model knows bytes were
+ *  dropped. cap === 0 disables. */
+function truncateToolResult(text: string, cap: number, toolName: string): string {
+  if (cap === 0 || text.length <= cap) return text
+  const dropped = text.length - cap
+  return `${text.slice(0, cap)}\n\n…[${toolName} 输出已截断：省略 ${dropped}/${text.length} 字符；调高 AGIM_NATIVE_TOOL_RESULT_MAX_CHARS 可放宽]`
+}
+
+/** Run the dispatch with a per-tool wall timeout. Merges pi's signal with a
+ *  timeout controller so cancelling either aborts the underlying dispatcher;
+ *  a race guarantees execute() returns promptly even if a misbehaving tool
+ *  ignores the abort (the dangling promise is best-effort cancelled + its
+ *  rejection swallowed to avoid an unhandled rejection). timeoutMs === 0
+ *  disables the cap entirely. */
+async function dispatchWithTimeout(
+  run: (signal: AbortSignal) => Promise<DispatcherResult>,
+  outer: AbortSignal,
+  timeoutMs: number,
+  toolName: string,
+): Promise<DispatcherResult> {
+  if (timeoutMs === 0) return run(outer)
+
+  const ctrl = new AbortController()
+  const onOuterAbort = () => ctrl.abort()
+  if (outer.aborted) ctrl.abort()
+  else outer.addEventListener('abort', onOuterAbort, { once: true })
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      // Reject BEFORE aborting so the "timed out" message wins the race even
+      // when a well-behaved dispatcher resolves-on-abort in the same tick.
+      reject(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
+      ctrl.abort()
+    }, timeoutMs)
+  })
+
+  const runP = run(ctrl.signal)
+  // If the timeout wins the race, runP may still reject later — swallow it so
+  // it doesn't surface as an unhandled rejection. This does not affect the
+  // race result when runP wins (await below observes the original settlement).
+  runP.catch(() => {})
+  try {
+    return await Promise.race([runP, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+    outer.removeEventListener('abort', onOuterAbort)
+  }
+}
 
 export interface ToolBridgeOptions {
   /** Forwarded into ToolDispatcherContext so dispatchers can correlate audit
@@ -38,14 +121,22 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
     parameters: def.parameters as AgentTool['parameters'],
     executionMode: opts.parallelSafe?.(def.name) ? 'parallel' : 'sequential',
     execute: async (toolCallId, args, signal) => {
-      const result = await dispatch(
-        { id: toolCallId, name: def.name, arguments: (args ?? {}) as Record<string, unknown> },
+      const cap = resolveToolResultMaxChars()
+      const timeoutMs = resolveToolTimeoutMs(def.timeoutMs)
+      const result = await dispatchWithTimeout(
+        (sig) => dispatch(
+          { id: toolCallId, name: def.name, arguments: (args ?? {}) as Record<string, unknown> },
+          sig,
+          opts.traceId ? { traceId: opts.traceId } : undefined,
+        ),
         signal ?? NEVER_ABORT,
-        opts.traceId ? { traceId: opts.traceId } : undefined,
+        timeoutMs,
+        def.name,
       )
+      const text = truncateToolResult(result.text, cap, def.name)
       // pi marks errors via throw (no isError field on its result shape).
-      if (result.isError) throw new Error(result.text)
-      return { content: [{ type: 'text', text: result.text }], details: undefined }
+      if (result.isError) throw new Error(text)
+      return { content: [{ type: 'text', text }], details: undefined }
     },
   }
 }

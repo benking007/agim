@@ -114,6 +114,41 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('boom-provider-down')
   })
 
+  it('surfaces a provider error (stopReason=error) as a friendly retry notice, not an empty-content recap', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'socket hang up' }),
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const out = await collect(adapter.sendPrompt('perr', 'hi'))
+    expect(out).toContain('网络或模型服务中断')
+    expect(out).toContain('socket hang up') // the real cause is surfaced
+    expect(out).toContain('重试')
+    // must NOT be misreported as the model returning empty content
+    expect(out).not.toContain('没有产出可见回复')
+    expect(out).not.toContain('模型返回了空内容')
+  })
+
+  it('surfaces a mid-stream provider throw (undici "terminated") as a retry notice', async () => {
+    const reg = faux()
+    reg.setResponses([
+      () => {
+        throw new Error('terminated')
+      },
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const out = await collect(adapter.sendPrompt('perr2', 'hi'))
+    expect(out).toContain('网络或模型服务中断')
+    expect(out).toContain('terminated')
+    expect(out).not.toContain('没有产出可见回复')
+  })
+
   it('consults the approval gate and blocks a denied tool', async () => {
     const reg = faux()
     reg.setResponses([

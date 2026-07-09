@@ -195,6 +195,36 @@ function appendPartialToolDiagnostics(text: string, toolRuns: readonly NativeToo
   return `${text.trimEnd()}\n\n（诊断：${diagnostics.join(' ')}）`
 }
 
+/** Cap for the provider error detail surfaced to the user — enough to
+ *  identify the failure ("terminated", "socket hang up", a 5xx snippet)
+ *  without dumping a whole stack trace into the chat. */
+const PROVIDER_ERROR_DETAIL_MAX = 200
+
+/**
+ * Friendly notice for a provider-level failure (network drop / timeout / 5xx)
+ * or an aborted turn. pi does NOT throw these — it returns an assistant
+ * message with stopReason 'error' | 'aborted', an `errorMessage`, and an empty
+ * text block (see AgentHarness.emitRunFailure → createFailureMessage). Without
+ * special-casing it, such a turn would be misreported as "the model returned
+ * empty content". Instead we name the real cause and steer the user to retry —
+ * a retry is a brand-new turn, so there is no partial state to unwind.
+ */
+function composeProviderErrorNotice(kind: 'error' | 'aborted', errorMessage?: string): string {
+  if (kind === 'aborted') {
+    return '🛑 本轮已被取消（未完成）。可回「重试」重新发起。'
+  }
+  const raw = errorMessage?.trim() ?? ''
+  const clipped = raw.length > PROVIDER_ERROR_DETAIL_MAX ? `${raw.slice(0, PROVIDER_ERROR_DETAIL_MAX)}…` : raw
+  const detail = clipped ? `：${clipped}` : ''
+  return [
+    `⚠️ 本轮因网络或模型服务中断而未完成${detail}`,
+    '这类问题通常是临时的（连接被重置 / 请求超时 / 服务 5xx）。',
+    '你可以：',
+    '  · 回「重试」让我重新跑一遍',
+    '  · 稍后再试，或在 /settings/llm 切换大模型后端',
+  ].join('\n')
+}
+
 const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
 
 function seedUserMessage(text: string) {
@@ -406,21 +436,46 @@ export class NativeAgentAdapter implements AgentAdapter {
       })
     }
 
-    const text = result.content
-      .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+    // Defensive: pi always returns a content array, but guard against a
+    // malformed/empty shape so a provider hiccup degrades to a friendly notice
+    // instead of throwing out of the turn.
+    const text = (result.content ?? [])
+      .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
       .map((c) => c.text)
       .join('')
-    if (stopReason && !text.trim()) {
-      yield stopReason === 'stuck_loop'
-        ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
-        : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
-      return
-    }
-    if (!text.trim()) {
+    const hasText = text.trim().length > 0
+
+    // Provider-level failure / abort. pi surfaces these as an assistant message
+    // with stopReason 'error' | 'aborted' + errorMessage and (usually) empty
+    // text — NOT as a thrown error. Detect it explicitly so a network drop is
+    // reported as such (with a retry hint) instead of being misread as "the
+    // model returned empty content".
+    const providerFailed = result.stopReason === 'error'
+    const providerAborted = result.stopReason === 'aborted'
+
+    if (!hasText) {
+      if (providerFailed || providerAborted) {
+        yield composeProviderErrorNotice(providerFailed ? 'error' : 'aborted', result.errorMessage)
+        return
+      }
+      if (stopReason) {
+        yield stopReason === 'stuck_loop'
+          ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
+          : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
+        return
+      }
       yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
-    yield appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)
+
+    // Non-empty answer. Append tool diagnostics; if the turn ALSO hit a
+    // provider error after producing partial text, flag that the reply may be
+    // incomplete and can be retried.
+    let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)
+    if (providerFailed) {
+      out = `${out.trimEnd()}\n\n（注意：本轮因网络/服务中断提前结束，回复可能不完整，可回「重试」。）`
+    }
+    yield out
   }
 
   private tryHandleModelSlash(

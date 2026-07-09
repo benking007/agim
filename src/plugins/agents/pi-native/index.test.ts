@@ -149,6 +149,53 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).not.toContain('没有产出可见回复')
   })
 
+  it('serializes concurrent turns on the same session id (no interleaved harness writes)', async () => {
+    const reg = faux()
+    let active = 0
+    let maxActive = 0
+    const slow = (text: string) => async () => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await new Promise((r) => setTimeout(r, 30))
+      active -= 1
+      return fauxAssistantMessage(text)
+    }
+    reg.setResponses([slow('a'), slow('b')])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const [o1, o2] = await Promise.all([
+      collect(adapter.sendPrompt('dup', 'q1')),
+      collect(adapter.sendPrompt('dup', 'q2')),
+    ])
+    expect(maxActive).toBe(1) // same session never ran two provider calls at once
+    expect([o1, o2].sort()).toEqual(['a', 'b'])
+  })
+
+  it('does not serialize across different session ids (per-key lock, not global)', async () => {
+    const reg = faux()
+    let active = 0
+    let maxActive = 0
+    const slow = (text: string) => async () => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await new Promise((r) => setTimeout(r, 30))
+      active -= 1
+      return fauxAssistantMessage(text)
+    }
+    reg.setResponses([slow('a'), slow('b')])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    await Promise.all([
+      collect(adapter.sendPrompt('k1', 'q')),
+      collect(adapter.sendPrompt('k2', 'q')),
+    ])
+    expect(maxActive).toBe(2) // different sessions still run in parallel
+  })
+
   it('consults the approval gate and blocks a denied tool', async () => {
     const reg = faux()
     reg.setResponses([

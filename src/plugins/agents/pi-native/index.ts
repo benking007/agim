@@ -255,6 +255,16 @@ export class NativeAgentAdapter implements AgentAdapter {
   private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
   private readonly sessionModelOverrides = new Map<string, string>()
 
+  // Per-sessionId serial lock. IM threads reuse one session id across
+  // messages (session.ts getOrCreateSession), and that id maps to a single
+  // pi JSONL session file. Two concurrent turns would each open their own
+  // AgentHarness over the SAME file and interleave appendFile writes →
+  // corrupted history / lost leaf. pi's own busy-guard doesn't help because
+  // we build a fresh harness per turn. Each turn chains behind the previous
+  // one for the same id; unique-id callers (A2A / web jobs) get a length-1
+  // chain, so there is no contention for them.
+  private readonly sessionLocks = new Map<string, Promise<void>>()
+
   constructor(private deps: NativeAgentDeps) {
     this.name = deps.name ?? 'native'
     this.aliases = deps.aliases ?? ['agim', 'na', 'llm', 'native-llm']
@@ -274,7 +284,15 @@ export class NativeAgentAdapter implements AgentAdapter {
     history?: ChatMessage[],
     opts?: AgentSendOpts,
   ): AsyncGenerator<string> {
+    // Serialize turns that share a session id (see sessionLocks). Chain this
+    // turn behind whatever is already queued for the same id, and release the
+    // slot when the turn (or an early consumer abandon) settles.
+    const prev = this.sessionLocks.get(sessionId) ?? Promise.resolve()
+    let release!: () => void
+    const mine = prev.then(() => new Promise<void>((resolve) => { release = resolve }))
+    this.sessionLocks.set(sessionId, mine)
     try {
+      await prev
       yield* this.runTurn(sessionId, prompt, history, opts)
     } catch (err) {
       // Never fail silently: a thrown turn would otherwise reach the IM layer
@@ -282,6 +300,10 @@ export class NativeAgentAdapter implements AgentAdapter {
       const msg = err instanceof Error ? `${err.message}` : String(err)
       console.error('[native] turn failed:', err instanceof Error ? err.stack : err)
       yield `⚠️ Agim Agent 本轮出错：${msg}`
+    } finally {
+      release()
+      // Drop our slot only if nobody queued behind us, so a waiter keeps its ref.
+      if (this.sessionLocks.get(sessionId) === mine) this.sessionLocks.delete(sessionId)
     }
   }
 

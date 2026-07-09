@@ -102,15 +102,16 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        # NOTE: `--provenance` is intentionally omitted. npm requires the
-        # source repo to be public for sigstore provenance verification —
-        # re-add `--provenance` once npm trusted publishing / provenance
-        # has been verified for this repository. Until then, publish with
-        # the OIDC / NPM_TOKEN auth path but no sigstore
-        # attestation. (Older 0.2.x / 0.3.x releases shipped the same way.)
+        # `--provenance` is intentionally omitted (repo not public). BUT npm
+        # also AUTO-enables provenance under GitHub Actions OIDC (this job has
+        # `id-token: write`), and on the runner's upgraded npm that path throws
+        # "Cannot find module 'sigstore'" and aborts the publish. Explicitly
+        # disable provenance so `npm publish` never loads the sigstore path.
+        # Re-enable once the repo is public and provenance is verified.
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'false'
 
       - name: Summary
         if: steps.version.outputs.changed == 'true'

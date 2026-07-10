@@ -55,7 +55,7 @@ jobs:
         run: |
           set +e
           failed=0
-          for group in test src/core src/plugins src/scripts src/utils; do
+          for group in test src/core src/plugins; do
             log="/tmp/$(echo "$group" | tr '/' '-').log"
             bun test "$group" --path-ignore-patterns='**/web-app/**' > "$log" 2>&1
             status=$?

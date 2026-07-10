@@ -1,4 +1,5 @@
-// Catalog-driven adapter-native session state with legacy metadata migration.
+// Adapter-native session state. The catalog owns resume policy and legacy
+// metadata mapping; this module owns migration and state mutation.
 
 import { BUILT_IN_AGENT_CATALOG, getAgentNativeSessionPolicy } from './agent-catalog.js'
 import type { AgentSessionState, Session } from './types.js'

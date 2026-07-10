@@ -118,17 +118,10 @@ export default function SettingsEmailRoute(): JSX.Element {
   // Sync draft from server whenever a fresh env arrives (initial load
   // + reveal toggle + post-save refetch). Local edits that diverge stay
   // until the user Saves or Discards.
-  const [syncedHash, setSyncedHash] = useState<string>('')
   useEffect(() => {
     if (!envQuery.data) return
-    const next = draftFromEnv(env)
-    const hash = JSON.stringify(next)
-    if (hash !== syncedHash) {
-      setDraft(next)
-      setSyncedHash(hash)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envQuery.dataUpdatedAt])
+    setDraft(draftFromEnv(envQuery.data.env))
+  }, [envQuery.data])
 
   const isConfigured = !!(env.AGIM_SMTP_HOST && env.AGIM_SMTP_USER && env.AGIM_SMTP_PASS)
 

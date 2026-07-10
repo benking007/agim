@@ -5,8 +5,7 @@ on:
     branches: [refactor/web-hook-stability]
 
 permissions:
-  contents: read
-  pull-requests: write
+  contents: write
 
 concurrency:
   group: stacked-agent-catalog-${{ github.ref }}
@@ -21,6 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: refactor/agent-catalog-session
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,26 +58,16 @@ jobs:
         env:
           LOG_LEVEL: error
 
-      - name: Report backend test diagnostics
+      - name: Persist backend test diagnostics
         if: steps.backend-test.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
-          {
-            echo '<!-- agim-agent-catalog-backend-test -->'
-            echo '### Agent catalog backend test failure'
-            echo
-            echo '```text'
-            grep -nE 'fail|error:|Error:|expected:|Received:|panic|Test Files|tests? failed' /tmp/backend-test.log | tail -n 120 || true
-            echo
-            echo '--- final log lines ---'
-            tail -n 100 /tmp/backend-test.log
-            echo '```'
-          } > /tmp/comment.md
-          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932962650" \
-            --raw-field "body=$(cat /tmp/comment.md)"
+          cp /tmp/backend-test.log backend-test-diagnostic.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f backend-test-diagnostic.txt
+          git commit -m 'chore: record agent catalog test failure'
+          git push origin HEAD:refactor/agent-catalog-session
 
       - name: Enforce backend tests
         if: steps.backend-test.outcome == 'failure'

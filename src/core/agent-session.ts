@@ -1,4 +1,4 @@
-// Generic adapter-native session state with legacy metadata migration.
+// Catalog-driven adapter-native session state with legacy metadata migration.
 
 import { BUILT_IN_AGENT_CATALOG, getAgentNativeSessionPolicy } from './agent-catalog.js'
 import type { AgentSessionState, Session } from './types.js'

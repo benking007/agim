@@ -1,27 +1,24 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  web-hook-stability:
-    if: github.head_ref == 'refactor/web-hook-stability'
+  build-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR head
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,25 +26,32 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Apply remaining hook fixes
-        if: github.actor != 'github-actions[bot]'
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Install root dependencies
         shell: bash
         run: |
-          python3 scripts/hook-stability-codemod.py
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/web-app/src/routes/chat.tsx \
-            src/web-app/src/routes/m/chat.tsx \
-            src/web-app/src/routes/memory/facts.tsx \
-            src/web-app/src/routes/workspace.tsx
-          if ! git diff --cached --quiet; then
-            git commit -m 'refactor(web): make effect triggers explicit'
-            git push origin HEAD:refactor/web-hook-stability
-          fi
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
+          test -f node_modules/@biomejs/cli-linux-x64/biome
 
       - name: Install web-app dependencies
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend lint
+        run: npm run lint:ci
+
+      - name: Backend test
+        run: npm test
+        env:
+          LOG_LEVEL: error
 
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck
@@ -55,7 +59,24 @@ jobs:
       - name: Web-app lint
         run: npm --prefix src/web-app run lint:ci
 
+      - name: Web-app i18n parity
+        run: npm --prefix src/web-app run check-i18n
+
+      - name: Web-app endpoint manifest
+        run: npm --prefix src/web-app run check-endpoints
+
       - name: Web-app test
         run: npm --prefix src/web-app test -- --run
         env:
           CI: 'true'
+
+      - name: Full build
+        run: npm run build
+
+      # The SQLite memory layer needs the Node better-sqlite3 runtime rather
+      # than Bun's disabled fallback, so run these regressions after dist exists.
+      - name: Node-only memory regressions
+        run: npm run test:node
+
+      - name: Package contents smoke test
+        run: npm pack --dry-run

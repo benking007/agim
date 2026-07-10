@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,6 +45,20 @@ jobs:
 
       - name: Install web-app dependencies
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
+
+      - name: Refresh endpoint manifest once
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          node src/web-app/tools/extract-endpoints.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/web-app/tools/endpoints.json
+          if ! git diff --cached --quiet; then
+            git diff --cached --check
+            git commit -m 'build(web): refresh endpoint manifest'
+            git push origin HEAD:codex/agim-development
+          fi
 
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck

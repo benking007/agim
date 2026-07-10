@@ -47,18 +47,45 @@ jobs:
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
       - name: Apply one-time Web lint fixes
+        id: web-autofix
+        continue-on-error: true
         if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
         shell: bash
         run: |
-          npm --prefix src/web-app exec -- biome lint src tools vite.config.ts --write --unsafe || true
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/web-app
-          if ! git diff --cached --quiet; then
-            git commit -m 'style(web): apply biome lint fixes'
-            git push origin HEAD:codex/agim-development
-          fi
+          set +e
+          (
+            set -euxo pipefail
+            npm --prefix src/web-app exec -- biome lint src tools vite.config.ts --write --unsafe || true
+            git status --short
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -u src/web-app
+            if ! git diff --cached --quiet; then
+              git diff --cached --check
+              git commit -m 'style(web): apply biome lint fixes'
+              git push origin HEAD:codex/agim-development
+            fi
+          ) > /tmp/web-autofix.log 2>&1
+          status=$?
+          cat /tmp/web-autofix.log
+          exit "$status"
+
+      - name: Report Web autofix failure
+        if: steps.web-autofix.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-ci-web-autofix -->'
+            echo '### One-time Web autofix failed'
+            echo
+            echo '```text'
+            tail -n 120 /tmp/web-autofix.log
+            echo '```'
+          } > /tmp/web-autofix-comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/web-autofix-comment.md
 
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck

@@ -1,6 +1,6 @@
 {
   "generatedFrom": "src/web/server.ts",
-  "count": 74,
+  "count": 75,
   "endpoints": [
     {
       "method": "GET",
@@ -56,6 +56,13 @@
       "path": "/api/agents/acp/test",
       "isPrefix": false,
       "name": "testAcpAgent",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/catalog",
+      "isPrefix": false,
+      "name": "listAgentsCatalog",
       "authRequired": true
     },
     {

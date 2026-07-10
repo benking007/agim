@@ -83,10 +83,8 @@ export function useServiceLogTail(lines = 120) {
   })
 }
 
-function makeServiceMutation(
-  fn: () => Promise<ServiceActionResponse>,
-  qc: ReturnType<typeof useQueryClient>,
-) {
+function useServiceMutation(fn: () => Promise<ServiceActionResponse>) {
+  const qc = useQueryClient()
   return useMutation<ServiceActionResponse, Error, void>({
     mutationFn: fn,
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.service }),
@@ -94,18 +92,15 @@ function makeServiceMutation(
 }
 
 export function useStartService() {
-  const qc = useQueryClient()
-  return makeServiceMutation(() => api.startService(), qc)
+  return useServiceMutation(() => api.startService())
 }
 
 export function useStopService() {
-  const qc = useQueryClient()
-  return makeServiceMutation(() => api.stopService(), qc)
+  return useServiceMutation(() => api.stopService())
 }
 
 export function useRestartService() {
-  const qc = useQueryClient()
-  return makeServiceMutation(() => api.restartService(), qc)
+  return useServiceMutation(() => api.restartService())
 }
 
 /* ─────────────── Admin allowlist ─────────────── */

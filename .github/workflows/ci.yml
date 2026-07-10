@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -31,6 +34,20 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.14'
+
+      - name: Refresh web lockfile once
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          npm --prefix src/web-app install --package-lock-only --ignore-scripts --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f src/web-app/package-lock.json
+          if ! git diff --cached --quiet; then
+            git diff --cached --check
+            git commit -m 'build(web): lock testing-library DOM peer'
+            git push origin HEAD:codex/agim-development
+          fi
 
       - name: Install root dependencies
         shell: bash

@@ -36,6 +36,7 @@ import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
 import { listAdmins, listKnownImUsers, promoteAdmin, revokeAdmin } from '../core/admin-allowlist.js'
+import { BUILT_IN_AGENT_CATALOG, getAgentInstallCommand } from '../core/agent-catalog.js'
 
 /** Probe whether a CLI command exists on PATH. Defaults to the `--version`
  *  spawn check the legacy `config <agent>` flow used. Resolves quickly:
@@ -76,34 +77,6 @@ const CONFIG_COMPONENT_SECTIONS: Record<string, ConfigSection> = {
 
   agents: 'agents',
   agentcli: 'agents',
-  claude: 'agents',
-  'claude-code': 'agents',
-  codex: 'agents',
-  copilot: 'agents',
-  co: 'agents',
-  'gh-copilot': 'agents',
-  'github-copilot': 'agents',
-  opencode: 'agents',
-  antigravity: 'agents',
-  agy: 'agents',
-  gemini: 'agents',
-  ag: 'agents',
-  cursor: 'agents',
-  kimi: 'agents',
-  'kimi-code': 'agents',
-  qoder: 'agents',
-  qd: 'agents',
-  qodercli: 'agents',
-  pi: 'agents',
-  'pi-agent': 'agents',
-  mimo: 'agents',
-  mo: 'agents',
-  'mimo-code': 'agents',
-
-  agim: 'agim',
-  native: 'agim',
-  llm: 'agim',
-  'agim-agent': 'agim',
 
   admins: 'admins',
   admin: 'admins',
@@ -117,6 +90,13 @@ const CONFIG_COMPONENT_SECTIONS: Record<string, ConfigSection> = {
   smtp: 'smtp',
   baidu: 'baidu',
 }
+
+for (const entry of BUILT_IN_AGENT_CATALOG) {
+  for (const name of [entry.id, ...entry.aliases, ...(entry.configAliases ?? [])]) {
+    CONFIG_COMPONENT_SECTIONS[name] = entry.configSection
+  }
+}
+
 
 export function sectionForConfigComponent(component: string): ConfigSection | null {
   const key = component.trim().toLowerCase().replace(/_/g, '-')
@@ -624,33 +604,31 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex' | 'copilot' | 'antigravity' | 'cursor' | 'kimi-code' | 'qoder' | 'pi' | 'mimo'
+type AgentId = string
 
 interface AgentSpec {
   id: AgentId
-  /** CLI binary to probe. */
+  /** CLI binary to probe; `__native__` delegates to the LLM config probe. */
   cmd: string
   /** Some CLIs do not expose --version; override with a cheap success path. */
   probeArgs?: string[]
-  /** Whether this agent needs a separate `<cmd> auth login` step we
-   *  should hint at. (claude-code uses claude.ai login flow inside the
-   *  CLI itself.) */
+  /** Localized auth guidance stays in CLI i18n, while presence is catalog-driven. */
   authHintKey?: Key
+  /** Canonical install command/guidance from the catalog. */
+  installHint: string
 }
 
-const AGENT_SPECS: AgentSpec[] = [
-  { id: 'native',      cmd: '__native__' },
-  { id: 'claude-code', cmd: 'claude' },
-  { id: 'opencode',    cmd: 'opencode',     authHintKey: 'agents.auth_hint.opencode' },
-  { id: 'codex',       cmd: 'codex',        authHintKey: 'agents.auth_hint.codex' },
-  { id: 'copilot',     cmd: 'copilot',      authHintKey: 'agents.auth_hint.copilot' },
-  { id: 'antigravity', cmd: 'agy',          probeArgs: ['help'], authHintKey: 'agents.auth_hint.antigravity' },
-  { id: 'cursor',      cmd: 'cursor-agent', authHintKey: 'agents.auth_hint.cursor' },
-  { id: 'kimi-code',   cmd: 'kimi',         authHintKey: 'agents.auth_hint.kimi-code' },
-  { id: 'qoder',       cmd: 'qodercli',     authHintKey: 'agents.auth_hint.qoder' },
-  { id: 'pi',          cmd: 'pi',           authHintKey: 'agents.auth_hint.pi' },
-  { id: 'mimo',        cmd: 'mimo',         authHintKey: 'agents.auth_hint.mimo' },
-]
+const AGENT_SPECS: AgentSpec[] = BUILT_IN_AGENT_CATALOG.map((entry) => ({
+  id: entry.id,
+  cmd: entry.kind === 'in-process' ? '__native__' : entry.install.command,
+  probeArgs: entry.install.probeArgs ? [...entry.install.probeArgs] : undefined,
+  authHintKey: entry.install.requiresAuthHint
+    ? (`agents.auth_hint.${entry.id}` as Key)
+    : undefined,
+  installHint: getAgentInstallCommand(entry.id)
+    ?? `Install the ${entry.displayName} adapter and ensure its CLI is on PATH.`,
+}))
+
 
 async function nativeLlmConfigured(): Promise<boolean> {
   try {
@@ -850,7 +828,7 @@ async function agentSubMenu(
       console.log(t(lang, 'agents.default_set', { label }))
     } else if (action === 'install_hint') {
       console.log()
-      console.log(t(lang, ('agents.install_hint.' + spec.id) as Key))
+      console.log(spec.installHint)
       if (spec.authHintKey) console.log(t(lang, spec.authHintKey))
       console.log()
     } else if (action === 'recheck') {

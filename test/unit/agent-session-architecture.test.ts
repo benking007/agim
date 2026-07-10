@@ -5,8 +5,10 @@ import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
+  AGENT_READINESS_PRIORITY,
   BUILT_IN_AGENT_CATALOG,
   getAgentNativeSessionPolicy,
+  getBuiltInAgentSurfaces,
 } from '../../src/core/agent-catalog'
 import { AGIM_HOME } from '../../src/core/agim-paths'
 import {
@@ -47,12 +49,20 @@ async function cleanupKey(key: { platform: string; channelId: string; threadId: 
 }
 
 describe('agent catalog', () => {
-  it('has unique canonical ids and legacy migration fields', () => {
+  it('has unique canonical ids, aliases, priorities, and legacy migration fields', () => {
     const ids = BUILT_IN_AGENT_CATALOG.map((entry) => entry.id)
     expect(new Set(ids).size).toBe(ids.length)
 
     const routingNames = BUILT_IN_AGENT_CATALOG.flatMap((entry) => [entry.id, ...entry.aliases])
     expect(new Set(routingNames).size).toBe(routingNames.length)
+
+    const priorities = BUILT_IN_AGENT_CATALOG.map((entry) => entry.readinessPriority)
+    expect(new Set(priorities).size).toBe(priorities.length)
+    expect(AGENT_READINESS_PRIORITY).toEqual(
+      [...BUILT_IN_AGENT_CATALOG]
+        .sort((a, b) => a.readinessPriority - b.readinessPriority)
+        .map((entry) => entry.id),
+    )
 
     const legacyFields = BUILT_IN_AGENT_CATALOG.flatMap((entry) => {
       if (!entry.nativeSession) return []
@@ -70,12 +80,31 @@ describe('agent catalog', () => {
     expect(BUILT_IN_AGENT_CATALOG.every((entry) => entry.install.command !== undefined)).toBe(true)
   })
 
-  it('loads adapters whose runtime names match the catalog ids', async () => {
+  it('loads adapters whose runtime metadata matches the catalog', async () => {
     for (const entry of BUILT_IN_AGENT_CATALOG) {
       const adapter = await entry.load()
       expect(adapter.name).toBe(entry.id)
       expect([...adapter.aliases].sort()).toEqual([...entry.aliases].sort())
+      expect(adapter.kind ?? 'cli').toBe(entry.kind)
     }
+  })
+
+  it('exposes a JSON-safe surface projection without runtime loaders or migration fields', () => {
+    const surfaces = getBuiltInAgentSurfaces()
+    expect(surfaces.map((entry) => entry.id)).toEqual(
+      BUILT_IN_AGENT_CATALOG.map((entry) => entry.id),
+    )
+    expect(surfaces.find((entry) => entry.id === 'native')).toMatchObject({
+      kind: 'in-process',
+      scope: 'agim',
+      configSection: 'agim',
+      install: { command: '', requiresAuthHint: false },
+    })
+    expect(surfaces.find((entry) => entry.id === 'antigravity')?.install.probeArgs).toEqual(['help'])
+    const encoded = JSON.stringify(surfaces)
+    expect(encoded).not.toContain('legacyIdField')
+    expect(encoded).not.toContain('nativeSession')
+    expect(encoded).not.toContain('load')
   })
 
   it('derives install guidance and command alternatives from the catalog', () => {

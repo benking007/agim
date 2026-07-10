@@ -20,6 +20,7 @@ import { handleLlmApi } from './llm-api.js'
 import { handleMcpApi } from './mcp-api.js'
 import { handleBackgroundTasksApi } from './background-tasks-api.js'
 import { handleAgimSkillsApi } from './agim-skills-api.js'
+import { handleAgentCatalog } from './agent-catalog-api.js'
 import { consumeToken, peekToken } from '../core/location-token.js'
 import { createMemo, updateMemo, getMemo, mapUrls } from '../core/memos.js'
 import { normalizeIncomingCoords } from '../core/coord-systems.js'
@@ -721,6 +722,9 @@ export async function startWebServer(options: {
     }
     if (url.pathname === '/api/agents/status' && req.method === 'GET') {
       return handleAgentsStatus(req, res)
+    }
+    if (url.pathname === '/api/agents/catalog' && req.method === 'GET') {
+      return handleAgentCatalog(res)
     }
     if (url.pathname === '/api/agents/acp/test' && req.method === 'POST') {
       if (!requireAdmin(req, res)) return

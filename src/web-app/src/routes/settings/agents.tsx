@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { EmptyState } from '@/components/common/empty-state'
-import { useAgentsStatus } from '@/hooks/use-workspace'
+import { useAgentCatalog, useAgentsStatus } from '@/hooks/use-workspace'
 import {
   useConfig,
   useDiscoverAcp,
@@ -47,54 +47,31 @@ import {
   useUpdateConfig,
 } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
-import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
+import type { BuiltInAgentSurface } from '@/types/agent-catalog'
 
-/** Mirror of v1 settings.html:BUILTIN_AGENTS. Hardcoded because
- *  backend doesn't expose this metadata yet; the table changes
- *  rarely enough that copying it here is fine.
- *
- *  `kind` distinguishes spawn flavor:
- *    - 'cli'        → external CLI subprocess, needs `npm install -g <pkg>`
- *    - 'in-process' → runs inside agim, no install needed; `pkg` carries
- *                     a one-liner hint instead of an install command. The
- *                     runtime always exposes it via `isAgentEnabled`
- *                     regardless of config.agents, so default-picker
- *                     eligibility ignores the enabled-list constraint. */
-const BUILTIN_AGENTS: Record<string, {
-  aliases: string[]
-  pkg: string
-  kind: 'cli' | 'in-process'
-  scope: 'bridged' | 'agim'
-}> = {
-  'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli', scope: 'bridged' },
-  'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli', scope: 'bridged' },
-  'copilot':     { aliases: ['co', 'gh-copilot', 'github-copilot'], pkg: '@github/copilot', kind: 'cli', scope: 'bridged' },
-  'opencode':    { aliases: ['oc'],              pkg: 'opencode-ai',               kind: 'cli', scope: 'bridged' },
-  'antigravity': { aliases: ['agy', 'gemini', 'ag'], pkg: 'agy (curl https://antigravity.google/cli/install.sh)', kind: 'cli', scope: 'bridged' },
-  'cursor':      { aliases: ['cs', 'cur'],       pkg: 'cursor-agent (curl https://cursor.com/install)', kind: 'cli', scope: 'bridged' },
-  'kimi-code':   { aliases: ['kimi', 'km'],      pkg: '@moonshot-ai/kimi-code',    kind: 'cli', scope: 'bridged' },
-  'qoder':       { aliases: ['qd', 'qodercli'],  pkg: 'qodercli (curl https://qoder.com/install)', kind: 'cli', scope: 'bridged' },
-  'pi':          { aliases: ['pi-agent'],        pkg: '@earendil-works/pi-coding-agent', kind: 'cli', scope: 'bridged' },
-  'mimo':        { aliases: ['mo', 'mimo-code'], pkg: '@mimo-ai/cli',              kind: 'cli', scope: 'bridged' },
-  // v1.2.140 — surface the in-process `native` agent in the admin list.
-  // Previously the agent was registered + always-enabled at runtime but
-  // hidden from this page, so operators could only reach it via the CLI.
-  'native':      { aliases: ['agim', 'na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process', scope: 'agim' },
+function installLabel(info: BuiltInAgentSurface): string {
+  if (info.kind === 'in-process') return 'in-process'
+  return info.install.npmPackage
+    ?? info.install.installCommand
+    ?? info.install.command
+    ?? info.id
 }
 
-const AGENT_NAMES = Object.keys(BUILTIN_AGENTS)
-const BRIDGED_AGENT_NAMES = AGENT_NAMES.filter((name) => BUILTIN_AGENTS[name]?.scope === 'bridged')
 
 export default function SettingsAgentsRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const cfgQuery = useConfig()
   const statusQuery = useAgentsStatus()
+  const catalogQuery = useAgentCatalog()
   const updateCfg = useUpdateConfig()
 
   const cfg = cfgQuery.data
   const status = statusQuery.data ?? {}
+  const catalog = catalogQuery.data?.agents ?? []
+  const agentNames = catalog.map((entry) => entry.id)
+  const bridgedAgents = catalog.filter((entry) => entry.scope === 'bridged')
 
   /** Local draft so toggles + default-picker + ACP edits can stage
    *  changes before a single Save. `null` means "sync from cfg on
@@ -123,22 +100,18 @@ export default function SettingsAgentsRoute(): JSX.Element {
     return !enabledSame || !defaultSame || !acpSame
   }, [cfg, enabled, defaultAgent, acpAgents])
 
-  /** Eligible defaults = installed + enabled. Picker disables when
-   *  empty (no agent is both).
-   *
-   *  v1.2.140 — in-process agents (e.g. `native`) are exempt from the
-   *  enabled-list check. Runtime `isAgentEnabled('native')` always
-   *  returns true regardless of config.agents (see live-config.ts), so
-   *  the picker should mirror that and not require the user to flip the
-   *  toggle on first. */
+  /** Eligible defaults = installed + enabled. In-process backends are
+   * always runtime-enabled and therefore do not require a toggle. */
   const eligibleDefaults = useMemo(
-    () => AGENT_NAMES.filter((a) => {
-      const info = BUILTIN_AGENTS[a]!
-      const enabledOrInProcess = info.kind === 'in-process' ? true : enabled.includes(a)
-      return enabledOrInProcess && status[a]
+    () => agentNames.filter((name) => {
+      const info = catalog.find((entry) => entry.id === name)
+      if (!info) return false
+      const enabledOrInProcess = info.kind === 'in-process' || enabled.includes(name)
+      return enabledOrInProcess && status[name]
     }),
-    [enabled, status],
+    [agentNames, catalog, enabled, status],
   )
+
 
   function toggleAgent(name: string, on: boolean): void {
     const next = on
@@ -191,11 +164,12 @@ export default function SettingsAgentsRoute(): JSX.Element {
             onClick={() => {
               void cfgQuery.refetch()
               void statusQuery.refetch()
+              void catalogQuery.refetch()
             }}
-            disabled={cfgQuery.isFetching || statusQuery.isFetching}
+            disabled={cfgQuery.isFetching || statusQuery.isFetching || catalogQuery.isFetching}
             aria-label={t('actions.refresh', { ns: 'common' })}
           >
-            {(cfgQuery.isFetching || statusQuery.isFetching)
+            {(cfgQuery.isFetching || statusQuery.isFetching || catalogQuery.isFetching)
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <RefreshCcw className="h-4 w-4" />}
             <span className="hidden sm:inline">{t('actions.refresh', { ns: 'common' })}</span>
@@ -204,22 +178,22 @@ export default function SettingsAgentsRoute(): JSX.Element {
         <p className="text-sm text-text-dim">{t('agents.subtitle')}</p>
       </header>
 
-      {cfgQuery.isLoading ? (
+      {(cfgQuery.isLoading || catalogQuery.isLoading) ? (
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
       ) : (
         <>
           {/* Agent rows */}
           <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
-            {BRIDGED_AGENT_NAMES.map((name) => {
-              const info = BUILTIN_AGENTS[name]!
+            {bridgedAgents.map((info) => {
+              const name = info.id
               const installed = !!status[name]
               const isEnabled = enabled.includes(name)
               return (
                 <AgentRow
                   key={name}
-                  displayName={agentDisplayName(name)}
+                  displayName={info.displayName}
                   aliases={info.aliases}
-                  pkg={info.pkg}
+                  pkg={installLabel(info)}
                   kind={info.kind}
                   installed={installed}
                   enabled={isEnabled}

@@ -82,6 +82,36 @@ const STATUS = {
   'mimo': true,
 }
 
+const CATALOG = {
+  agents: [
+    ['claude-code', 'Claude Code', ['cc', 'claude'], '@anthropic-ai/claude-code'],
+    ['codex', 'Codex', ['cx'], '@openai/codex'],
+    ['copilot', 'GitHub Copilot', ['co', 'gh-copilot', 'github-copilot'], '@github/copilot'],
+    ['opencode', 'OpenCode', ['oc'], 'opencode-ai'],
+    ['antigravity', 'Antigravity', ['agy', 'gemini', 'ag'], 'agy'],
+    ['kimi-code', 'Kimi Code', ['kimi', 'km'], '@moonshot-ai/kimi-code'],
+    ['qoder', 'Qoder', ['qd', 'qodercli'], 'qodercli'],
+    ['pi', 'PI', ['pi-agent'], '@earendil-works/pi-coding-agent'],
+    ['mimo', 'MiMo Code', ['mo', 'mimo-code'], '@mimo-ai/cli'],
+    ['cursor', 'Cursor', ['cs', 'cur'], 'cursor-agent'],
+  ].map(([id, displayName, aliases, npmPackage]) => ({
+    id,
+    displayName,
+    aliases,
+    configAliases: [],
+    kind: 'cli',
+    scope: 'bridged',
+    configSection: 'agents',
+    readinessPriority: 10,
+    install: {
+      command: String(id),
+      probeArgs: ['--version'],
+      npmPackage,
+      requiresAuthHint: false,
+    },
+  })),
+}
+
 function mockStandardFetch(extraConfig?: Record<string, unknown>) {
   const cfg = { ...CONFIG, ...(extraConfig ?? {}) }
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -93,6 +123,7 @@ function mockStandardFetch(extraConfig?: Record<string, unknown>) {
       return jsonResponse(cfg)
     }
     if (u === '/api/agents/status') return jsonResponse(STATUS)
+    if (u === '/api/agents/catalog') return jsonResponse(CATALOG)
     return jsonResponse({})
   })
 }
@@ -148,7 +179,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Find the claude-code row's checkbox and uncheck it.
     const checkboxes = screen.getAllByRole('checkbox')
-    // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode','antigravity','cursor','kimi-code','qoder','pi','mimo','native']
+    // Catalog order starts claude-code, codex, copilot, opencode.
     fireEvent.click(checkboxes[0]!) // uncheck claude-code
     // Now claude-code is no longer enabled. The picker should show the
     // "no eligible" placeholder text or be disabled.

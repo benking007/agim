@@ -3,24 +3,14 @@
 // onboarding module's 2-minute cache so first-run flows reflect changes the
 // user just made in the same terminal session.
 
+import { AGENT_READINESS_PRIORITY } from '../core/agent-catalog.js'
 import { registry } from '../core/registry.js'
 import { setLiveConfig } from '../core/live-config.js'
 import type { Config } from '../core/onboarding.js'
 import type { Config as CoreConfig } from '../core/types.js'
 
-export const AGENT_PRIORITY = [
-  'native',
-  'claude-code',
-  'codex',
-  'copilot',
-  'cursor',
-  'kimi-code',
-  'qoder',
-  'pi',
-  'mimo',
-  'opencode',
-  'antigravity',
-] as const
+/** Catalog-derived preference order used by quickstart default selection. */
+export const AGENT_PRIORITY = AGENT_READINESS_PRIORITY
 
 export interface AgentReadiness {
   available: string[]

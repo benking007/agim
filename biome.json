@@ -13,5 +13,12 @@
     "parser": {
       "tailwindDirectives": true
     }
+  },
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noArrayIndexKey": "warn"
+      }
+    }
   }
 }

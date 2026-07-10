@@ -53,8 +53,20 @@ jobs:
         env:
           LOG_LEVEL: error
 
-      - name: Web-app verify
-        run: npm --prefix src/web-app run verify
+      - name: Web-app typecheck
+        run: npm --prefix src/web-app run typecheck
+
+      - name: Web-app lint
+        run: npm --prefix src/web-app run lint:ci
+
+      - name: Web-app i18n parity
+        run: npm --prefix src/web-app run check-i18n
+
+      - name: Web-app endpoint contract
+        run: npm --prefix src/web-app run check-endpoints
+
+      - name: Web-app test
+        run: npm --prefix src/web-app test -- --run
         env:
           CI: 'true'
 

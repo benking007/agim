@@ -1,0 +1,87 @@
+name: Stacked agent catalog bootstrap
+
+on:
+  pull_request:
+    branches: [refactor/web-hook-stability]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stacked-agent-catalog-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    if: github.head_ref == 'refactor/agent-catalog-session'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/agent-catalog-session
+          fetch-depth: 0
+
+      - name: Apply catalog metadata migration
+        shell: bash
+        run: |
+          python3 scripts/agent-catalog-metadata.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/registry.ts src/core/onboarding.ts \
+            src/plugins/agents/antigravity/index.ts \
+            src/plugins/agents/codex/index.ts \
+            src/plugins/agents/opencode/adapter.test.ts \
+            src/plugins/agents/opencode/opencode-http-adapter.ts \
+            src/plugins/agents/cursor/index.ts \
+            test/unit/agent-session-architecture.test.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'refactor(core): consume agent catalog metadata'
+            git push origin HEAD:refactor/agent-catalog-session
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Install root dependencies
+        shell: bash
+        run: |
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
+          test -f node_modules/@biomejs/cli-linux-x64/biome
+
+      - name: Install web-app dependencies
+        run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend lint
+        run: npm run lint:ci
+
+      - name: Backend test
+        run: npm test
+        env:
+          LOG_LEVEL: error
+
+      - name: Web-app verify
+        run: npm --prefix src/web-app run verify
+
+      - name: Full build
+        run: npm run build
+
+      - name: Node-only memory regressions
+        run: npm run test:node
+
+      - name: Package contents smoke test
+        run: npm pack --dry-run

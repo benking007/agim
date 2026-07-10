@@ -47,8 +47,8 @@ if 'const messageScrollKey =' not in text:
     )
     text = replace_once(
         text,
-        "  useEffect(() => {\n    const el = listRef.current\n    if (!el) return\n",
-        "  useEffect(() => {\n    const el = listRef.current\n    if (messageScrollKey === '0:0' || !el) return\n",
+        "  useEffect(() => {\n    const el = listRef.current\n    if (!el) return\n    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight",
+        "  useEffect(() => {\n    const el = listRef.current\n    if (messageScrollKey === '0:0' || !el) return\n    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight",
         'mobile chat scroll guard',
     )
     text = replace_once(

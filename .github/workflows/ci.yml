@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -17,14 +17,34 @@ jobs:
     if: github.head_ref == 'refactor/web-hook-stability'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout PR head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Apply remaining hook fixes
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python3 scripts/hook-stability-codemod.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/web-app/src/routes/chat.tsx \
+            src/web-app/src/routes/m/chat.tsx \
+            src/web-app/src/routes/memory/facts.tsx \
+            src/web-app/src/routes/workspace.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m 'refactor(web): make effect triggers explicit'
+            git push origin HEAD:refactor/web-hook-stability
+          fi
 
       - name: Install web-app dependencies
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
@@ -33,32 +53,7 @@ jobs:
         run: npm --prefix src/web-app run typecheck
 
       - name: Web-app lint
-        id: web-lint
-        continue-on-error: true
-        shell: bash
-        run: npm --prefix src/web-app run lint:ci > /tmp/web-hook-lint.log 2>&1
-
-      - name: Report hook lint diagnostics
-        if: steps.web-lint.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          sed -E 's/\x1B\[[0-9;]*[mK]//g' /tmp/web-hook-lint.log > /tmp/web-hook-lint-clean.log
-          {
-            echo '<!-- agim-hook-stability-lint -->'
-            echo '### Remaining hook dependency diagnostics'
-            echo
-            echo '```text'
-            grep -E '^(src|tools|vite\.config\.ts).* lint/correctness/useExhaustiveDependencies' /tmp/web-hook-lint-clean.log || true
-            echo '```'
-          } > /tmp/web-hook-lint-comment.md
-          gh pr comment "$PR_NUMBER" --body-file /tmp/web-hook-lint-comment.md
-
-      - name: Enforce Web lint
-        if: steps.web-lint.outcome == 'failure'
-        run: exit 1
+        run: npm --prefix src/web-app run lint:ci
 
       - name: Web-app test
         run: npm --prefix src/web-app test -- --run

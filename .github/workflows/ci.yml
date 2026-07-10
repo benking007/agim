@@ -38,10 +38,15 @@ jobs:
       # One-time bootstrap for this refactoring branch. The next human commit
       # removes this step after the generated files land.
       - name: Bootstrap lockfiles and lint fix
+        id: bootstrap
+        continue-on-error: true
         if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
         shell: bash
         run: |
-          python3 - <<'PY'
+          set +e
+          (
+            set -euo pipefail
+            python3 - <<'PY'
           from pathlib import Path
 
           test_path = Path('src/plugins/agents/opencode/http-adapter.test.ts')
@@ -62,20 +67,45 @@ jobs:
           ))
           PY
 
-          npm --prefix src/web-app install --package-lock-only --ignore-scripts --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org
-          node -e "JSON.parse(require('node:fs').readFileSync('package-lock.json', 'utf8')); JSON.parse(require('node:fs').readFileSync('src/web-app/package-lock.json', 'utf8'))"
-          if grep -R "mirrors.tencentyun.com" package-lock.json src/web-app/package-lock.json; then
-            echo 'internal mirror URL remains in a lockfile' >&2
-            exit 1
-          fi
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json src/web-app/package-lock.json src/plugins/agents/opencode/http-adapter.test.ts
-          if ! git diff --cached --quiet; then
-            git commit -m 'build: normalize lockfiles and fix lint regression'
-            git push origin HEAD:codex/agim-development
-          fi
+            npm --prefix src/web-app install --package-lock-only --ignore-scripts --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org
+            node -e "JSON.parse(require('node:fs').readFileSync('package-lock.json', 'utf8')); JSON.parse(require('node:fs').readFileSync('src/web-app/package-lock.json', 'utf8'))"
+            if grep -R "mirrors.tencentyun.com" package-lock.json src/web-app/package-lock.json; then
+              echo 'internal mirror URL remains in a lockfile' >&2
+              exit 1
+            fi
+            git diff --check
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add package-lock.json src/web-app/package-lock.json src/plugins/agents/opencode/http-adapter.test.ts
+            if ! git diff --cached --quiet; then
+              git commit -m 'build: normalize lockfiles and fix lint regression'
+              git push origin HEAD:codex/agim-development
+            fi
+          ) > /tmp/bootstrap.log 2>&1
+          status=$?
+          cat /tmp/bootstrap.log
+          exit "$status"
+
+      - name: Report bootstrap diagnostics
+        if: steps.bootstrap.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-ci-bootstrap -->'
+            echo '### One-time bootstrap failed'
+            echo
+            echo '```text'
+            tail -n 120 /tmp/bootstrap.log
+            echo '```'
+          } > /tmp/bootstrap-comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/bootstrap-comment.md
+
+      - name: Enforce bootstrap
+        if: steps.bootstrap.outcome == 'failure'
+        run: exit 1
 
       # The old lockfile is normalized by the one-time bootstrap above. Until
       # that generated commit lands, keep the non-locking install path for this

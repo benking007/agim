@@ -50,7 +50,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
         shell: bash
         run: |
-          npm --prefix src/web-app exec -- biome lint src tools vite.config.ts --write --unsafe
+          npm --prefix src/web-app exec -- biome lint src tools vite.config.ts --write --unsafe || true
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

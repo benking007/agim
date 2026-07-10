@@ -1,2 +1,0 @@
-agent catalog metadata refactor applied
-exit_status=0

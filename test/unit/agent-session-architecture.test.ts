@@ -103,7 +103,6 @@ describe('generic adapter-native sessions', () => {
     const key = uniqueKey('discovered')
     try {
       expect(getAgentNativeSessionPolicy('opencode')?.idMode).toBe('discovered')
-      expect(getAgentNativeSessionPolicy('cursor')?.idMode).toBe('discovered')
       const first = await sessionManager.prepareAgentSession(
         key.platform, key.channelId, key.threadId, 'opencode',
       )
@@ -119,6 +118,33 @@ describe('generic adapter-native sessions', () => {
         agentSessionId: 'ses_arch_test',
         agentSessionResume: true,
       })
+    } finally {
+      await cleanupKey(key)
+    }
+  })
+
+  it('persists and resumes Cursor session ids reported by the adapter', async () => {
+    const key = uniqueKey('cursor-discovered')
+    try {
+      expect(getAgentNativeSessionPolicy('cursor')?.idMode).toBe('discovered')
+      expect(await sessionManager.prepareAgentSession(
+        key.platform, key.channelId, key.threadId, 'cursor',
+      )).toEqual({})
+
+      await sessionManager.setAgentSessionId(
+        key.platform, key.channelId, key.threadId, 'cursor', 'cursor-chat-1',
+      )
+      expect(await sessionManager.prepareAgentSession(
+        key.platform, key.channelId, key.threadId, 'cursor',
+      )).toEqual({
+        agentSessionId: 'cursor-chat-1',
+        agentSessionResume: true,
+      })
+
+      const session = await sessionManager.getExistingSession(
+        key.platform, key.channelId, key.threadId,
+      )
+      expect(session?.agentSessions?.cursor).toEqual({ id: 'cursor-chat-1' })
     } finally {
       await cleanupKey(key)
     }

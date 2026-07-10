@@ -33,7 +33,9 @@ export function getAgentSessionState(
   const policy = getAgentNativeSessionPolicy(agentName)
   if (!policy) return undefined
 
-  const id = legacySource[policy.legacyIdField]
+  const id = policy.legacyIdField
+    ? legacySource[policy.legacyIdField]
+    : undefined
   const primed = policy.legacyPrimedField
     ? legacySource[policy.legacyPrimedField]
     : undefined

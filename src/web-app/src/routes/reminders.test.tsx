@@ -60,9 +60,16 @@ const PENDING_PAYLOAD = {
   ],
 }
 
+function mockReminders(payload: unknown) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input).startsWith('/api/reminders')) return jsonResponse(payload)
+    return jsonResponse({})
+  })
+}
+
 describe('/reminders', () => {
   it('renders pending list with text + action buttons', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(PENDING_PAYLOAD))
+    mockReminders(PENDING_PAYLOAD)
     renderPage()
     await waitFor(() => {
       const table = screen.getByRole('table')
@@ -87,19 +94,13 @@ describe('/reminders', () => {
     })
     renderPage()
     await waitFor(() => {
-      // Both desktop table and mobile card render in jsdom; assert
-      // presence via getAllByText since both are mounted.
       expect(screen.getAllByText('water plants').length).toBeGreaterThan(0)
     })
-    // Click the row's Cancel button → opens the confirm dialog
     const rowCancel = within(screen.getByRole('table')).getByRole('button', { name: 'Cancel' })
     fireEvent.click(rowCancel)
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
-    // Both dialog buttons read "Cancel" (the secondary close + the
-    // destructive confirm whose label we overrode). The destructive
-    // one is identified by its border-danger class.
     const dialog = screen.getByRole('dialog')
     const candidates = within(dialog).getAllByRole('button', { name: 'Cancel' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
@@ -130,8 +131,6 @@ describe('/reminders', () => {
     })
     renderPage()
     await waitFor(() => {
-      // Both desktop table and mobile card render in jsdom; assert
-      // presence via getAllByText since both are mounted.
       expect(screen.getAllByText('water plants').length).toBeGreaterThan(0)
     })
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Snooze' }))
@@ -150,7 +149,7 @@ describe('/reminders', () => {
   })
 
   it('empty result → friendly empty-state', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ reminders: [] }))
+    mockReminders({ reminders: [] })
     renderPage()
     await waitFor(() => {
       expect(screen.getAllByText('Nothing scheduled').length).toBeGreaterThan(0)

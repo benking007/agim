@@ -73,6 +73,8 @@ jobs:
       - name: Full build
         run: npm run build
 
+      # The SQLite memory layer needs the Node better-sqlite3 runtime rather
+      # than Bun's disabled fallback, so run these regressions after dist exists.
       - name: Node-only memory regressions
         run: npm run test:node
 

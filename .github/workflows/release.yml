@@ -46,19 +46,18 @@ jobs:
             echo "npm already has v$CURR_VERSION."
           fi
 
-      # Keep the temporary public-registry install workaround aligned with CI.
-      # The next dependency-hardening step will regenerate both lockfiles and
-      # switch these commands to npm ci.
       - name: Install root dependencies
         if: steps.version.outputs.changed == 'true'
+        shell: bash
         run: |
-          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps
-          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps @biomejs/cli-linux-x64 || true
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
           test -f node_modules/@biomejs/cli-linux-x64/biome
 
       - name: Install web-app dependencies
         if: steps.version.outputs.changed == 'true'
-        run: npm --prefix src/web-app install --no-package-lock --no-audit --no-fund --legacy-peer-deps
+        run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
       - name: Verify release candidate
         if: steps.version.outputs.changed == 'true'

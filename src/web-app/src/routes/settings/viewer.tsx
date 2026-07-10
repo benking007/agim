@@ -130,11 +130,13 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
 
   const [draft, setDraft] = useState<ViewerDraft>(() => viewerDraftFromEnv(env))
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
+  const currentJson = JSON.stringify(current)
 
-  // Sync draft when env changes (initial load + post-save refetch).
+  // Sync only when derived server values change, not when an equivalent env
+  // object is recreated during an unrelated render or refetch.
   useEffect(() => {
-    setDraft(current)
-  }, [current])
+    setDraft(JSON.parse(currentJson) as ViewerDraft)
+  }, [currentJson])
   const isDirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(current),
     [draft, current],

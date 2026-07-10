@@ -48,10 +48,26 @@ jobs:
       - name: Backend lint
         run: npm run lint:ci
 
-      - name: Backend test
-        run: bun test test/unit/session-real.test.ts test/unit/router.test.ts test/unit/onboarding.test.ts src/core/registry.test.ts
+      - name: Backend test groups
+        shell: bash
         env:
           LOG_LEVEL: error
+        run: |
+          set +e
+          failed=0
+          for group in test src/core src/plugins src/scripts src/utils; do
+            log="/tmp/$(echo "$group" | tr '/' '-').log"
+            bun test "$group" --path-ignore-patterns='**/web-app/**' > "$log" 2>&1
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "=== FAILED GROUP: $group ==="
+              tail -n 120 "$log"
+              failed=1
+            else
+              echo "PASS $group"
+            fi
+          done
+          exit "$failed"
 
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck

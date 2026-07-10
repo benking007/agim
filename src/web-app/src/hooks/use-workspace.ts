@@ -2,18 +2,18 @@
  * useWorkspace — agent picker source + per-agent file browser +
  * write mutation.
  *
- *   useAgentsStatus()                      — populate the picker
- *   useWorkspaceFiles(agent, path)         — dir listing or file
- *                                            content (discriminated
- *                                            by `type`)
+ *   useAgentsStatus()                      — online state by agent id
+ *   useAgentCatalog()                      — built-in display/install metadata
+ *   useWorkspaceFiles(agent, path)         — dir listing or file content
  *   useWriteWorkspaceFile()                — PUT a file
  *
- * Both reads stay cached at the default 30s staleTime; the write
- * invalidates so the saved size/mtime re-paint immediately.
+ * Reads stay cached at the default 30s staleTime; writes invalidate so the
+ * saved size/mtime re-paints immediately.
  */
 
-import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api/endpoints'
+import { getAgentCatalog } from '@/lib/api/agent-catalog'
 import type {
   WorkspaceFilesResponse,
   WriteWorkspaceFileBody,
@@ -21,7 +21,7 @@ import type {
 } from '@/types/api'
 
 export const workspaceKeys = {
-  all:   ['workspace'] as const,
+  all: ['workspace'] as const,
   files: (agent: string, path: string) =>
     ['workspace', 'files', agent, path] as const,
 }
@@ -30,6 +30,14 @@ export function useAgentsStatus() {
   return useQuery<Record<string, boolean>>({
     queryKey: ['agents', 'status'],
     queryFn: () => api.getAgentsStatus(),
+  })
+}
+
+export function useAgentCatalog() {
+  return useQuery({
+    queryKey: ['agents', 'catalog'],
+    queryFn: getAgentCatalog,
+    staleTime: Number.POSITIVE_INFINITY,
   })
 }
 

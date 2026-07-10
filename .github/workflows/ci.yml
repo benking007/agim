@@ -36,18 +36,36 @@ jobs:
         shell: bash
         run: |
           set +e
-          python3 scripts/hook-stability-codemod.py > .github/hook-stability-bootstrap.log 2>&1
+          python3 scripts/hook-stability-codemod.py > /tmp/hook-codemod.log 2>&1
           status=$?
           if [ "$status" -eq 0 ]; then
-            git diff --check >> .github/hook-stability-bootstrap.log 2>&1
+            git diff --check >> /tmp/hook-codemod.log 2>&1
             status=$?
           fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
+          cat /tmp/hook-codemod.log
           exit 0
+
+      - name: Report codemod failure
+        if: github.actor != 'github-actions[bot]' && steps.codemod.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-hook-stability-codemod -->'
+            echo '### Hook stability codemod failed'
+            echo
+            echo '```text'
+            tail -n 120 /tmp/hook-codemod.log
+            echo '```'
+          } > /tmp/hook-codemod-comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/hook-codemod-comment.md
 
       - name: Commit codemod result
         id: commit-result
-        if: github.actor != 'github-actions[bot]'
+        if: github.actor != 'github-actions[bot]' && steps.codemod.outputs.status == '0'
         continue-on-error: true
         shell: bash
         run: |
@@ -56,29 +74,15 @@ jobs:
             set -euxo pipefail
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            if [ "${{ steps.codemod.outputs.status }}" = "0" ]; then
-              rm -f .github/hook-stability-bootstrap.log
-              git add src/web-app/src/hooks/use-chat.ts \
-                src/web-app/src/routes/memory/facts.tsx \
-                src/web-app/src/routes/memos.tsx \
-                src/web-app/src/routes/observability/audit.tsx \
-                src/web-app/src/routes/settings/email.tsx \
-                src/web-app/src/routes/settings/viewer.tsx \
-                biome.json
-              if ! git diff --cached --quiet; then
-                git commit -m 'refactor(web): stabilize effect dependencies'
-                git push --force-with-lease origin HEAD:refactor/web-hook-stability
-              fi
-            else
-              git restore src/web-app/src/hooks/use-chat.ts \
-                src/web-app/src/routes/memory/facts.tsx \
-                src/web-app/src/routes/memos.tsx \
-                src/web-app/src/routes/observability/audit.tsx \
-                src/web-app/src/routes/settings/email.tsx \
-                src/web-app/src/routes/settings/viewer.tsx \
-                biome.json
-              git add .github/hook-stability-bootstrap.log
-              git commit -m 'chore: record hook codemod failure'
+            git add src/web-app/src/hooks/use-chat.ts \
+              src/web-app/src/routes/memory/facts.tsx \
+              src/web-app/src/routes/memos.tsx \
+              src/web-app/src/routes/observability/audit.tsx \
+              src/web-app/src/routes/settings/email.tsx \
+              src/web-app/src/routes/settings/viewer.tsx \
+              biome.json
+            if ! git diff --cached --quiet; then
+              git commit -m 'refactor(web): stabilize effect dependencies'
               git push --force-with-lease origin HEAD:refactor/web-hook-stability
             fi
           ) > /tmp/hook-commit.log 2>&1

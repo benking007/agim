@@ -111,8 +111,13 @@
   /* Dynamic viewport height — honors the actual visible viewport on
      mobile (excluding URL bar + soft keyboard) where supported, with a
      desktop fallback. Used by full-bleed routes like /chat and /loc. */
-  .h-dvh   { height: 100vh; height: 100dvh; }
-  .min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+  .h-dvh { height: 100vh; }
+  .min-h-dvh { min-height: 100vh; }
+
+  @supports (height: 100dvh) {
+    .h-dvh { height: 100dvh; }
+    .min-h-dvh { min-height: 100dvh; }
+  }
 
   /* Per-operator request (2026-05-19): uniform 32px compact rhythm
      across the whole console. Was 44×44 (mobile touch ideal) but

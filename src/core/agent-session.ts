@@ -3,7 +3,7 @@
 import { BUILT_IN_AGENT_CATALOG, getAgentNativeSessionPolicy } from './agent-catalog.js'
 import type { AgentSessionState, Session } from './types.js'
 
-interface LegacyAgentSessionMetadata {
+export interface LegacyAgentSessionMetadata {
   claudeSessionId?: string
   claudeSessionPrimed?: boolean
   opencodeSessionId?: string
@@ -16,8 +16,6 @@ interface LegacyAgentSessionMetadata {
   copilotSessionId?: string
 }
 
-type SessionWithLegacyMetadata = Session & LegacyAgentSessionMetadata
-
 /**
  * Return an adapter's native-session state, lazily importing metadata written
  * by releases that stored one top-level field per adapter. The migrated value
@@ -27,6 +25,7 @@ type SessionWithLegacyMetadata = Session & LegacyAgentSessionMetadata
 export function getAgentSessionState(
   session: Session,
   agentName: string,
+  legacySource: LegacyAgentSessionMetadata = session as Session & LegacyAgentSessionMetadata,
 ): AgentSessionState | undefined {
   const existing = session.agentSessions?.[agentName]
   if (existing) return existing
@@ -34,10 +33,9 @@ export function getAgentSessionState(
   const policy = getAgentNativeSessionPolicy(agentName)
   if (!policy) return undefined
 
-  const legacy = session as SessionWithLegacyMetadata
-  const id = legacy[policy.legacyIdField]
+  const id = legacySource[policy.legacyIdField]
   const primed = policy.legacyPrimedField
-    ? legacy[policy.legacyPrimedField]
+    ? legacySource[policy.legacyPrimedField]
     : undefined
   if (!id && !primed) return undefined
 
@@ -71,8 +69,11 @@ export function clearAllAgentSessionStates(session: Session): void {
 }
 
 /** Import every known legacy field in one pass while loading session JSON. */
-export function migrateLegacyAgentSessionStates(session: Session): void {
+export function migrateLegacyAgentSessionStates(
+  session: Session,
+  legacySource: LegacyAgentSessionMetadata = session as Session & LegacyAgentSessionMetadata,
+): void {
   for (const entry of BUILT_IN_AGENT_CATALOG) {
-    if (entry.nativeSession) getAgentSessionState(session, entry.id)
+    if (entry.nativeSession) getAgentSessionState(session, entry.id, legacySource)
   }
 }

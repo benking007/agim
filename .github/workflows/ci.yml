@@ -56,7 +56,7 @@ jobs:
         if: steps.web-lint.outcome == 'failure' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           grep -E '^(src|tools|vite\.config\.ts).* lint/' /tmp/web-lint.log > /tmp/web-lint-compact.log || true
@@ -68,7 +68,8 @@ jobs:
             cat /tmp/web-lint-compact.log
             echo '```'
           } > /tmp/web-lint-comment.md
-          gh pr comment "$PR_NUMBER" --body-file /tmp/web-lint-comment.md
+          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932061405" \
+            --raw-field "body=$(cat /tmp/web-lint-comment.md)"
 
       - name: Enforce web-app lint
         if: steps.web-lint.outcome == 'failure'

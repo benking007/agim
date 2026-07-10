@@ -6,7 +6,9 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel any prior run on the same ref to save CI minutes.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -22,81 +24,59 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: '1.3.14'
 
-      # ───── Backend (agim-cli) ─────
-      # Install WITHOUT the committed lockfile. package-lock.json pins
-      # ~107 `resolved` URLs to an internal mirror (mirrors.tencentyun.com)
-      # that GitHub's runners can't reach, so a lockfile-honouring
-      # `npm install` hangs on those fetches and dies with npm's
-      # "Exit handler never called!" after ~70s. --no-package-lock makes
-      # npm ignore the baked-in URLs and resolve from the public registry
-      # — the same fix release.yml already uses (see also AGENTS.md).
-      # --omit=optional additionally skips the heavy @xenova/transformers
-      # ONNX binary, which CI doesn't exercise (end users still get it via
-      # `npm install -g agim-cli`).
-      #
-      # --omit=optional also skips biome's platform CLI
-      # (@biomejs/cli-linux-x64), which `biome` needs to run, so we
-      # re-install just that package explicitly. `|| true` + the `test -f`
-      # guard keep the essential-binary check authoritative.
       - name: Install root dependencies
+        shell: bash
         run: |
-          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps
-          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps @biomejs/cli-linux-x64 || true
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
           test -f node_modules/@biomejs/cli-linux-x64/biome
+
+      - name: Install web-app dependencies
+        run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
       - name: Backend typecheck
         run: npm run typecheck
 
       - name: Backend lint
-        run: npm run lint
+        run: npm run lint:ci
 
       - name: Backend test
         run: npm test
         env:
           LOG_LEVEL: error
 
-      # ───── Frontend (src/web-app) ─────
-      # M1 web rewrite stack — see /root/.claude/plans/web-web-web-web-ui-bug-...md.
-      # The web-app project lives in its own Vite workspace with its own
-      # deps + tsconfig. CI runs it as a separate npm root so the backend
-      # build pipeline stays decoupled from the SPA build pipeline.
-      - name: Install web-app dependencies
-        run: npm --prefix src/web-app install --no-audit --no-fund
-
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck
 
-      # i18n parity gate — fails fast if any en/zh dictionary drifts
-      # so a forgotten translation can't land alongside a feature.
-      - name: Web-app i18n parity (en ⇄ zh)
+      - name: Web-app lint
+        run: npm --prefix src/web-app run lint:ci
+
+      - name: Web-app i18n parity
         run: npm --prefix src/web-app run check-i18n
 
-      - name: Web-app test (vitest)
+      - name: Web-app endpoint manifest
+        run: npm --prefix src/web-app run check-endpoints
+
+      - name: Web-app test
         run: npm --prefix src/web-app test -- --run
         env:
           CI: 'true'
 
-      - name: Web-app build
-        run: npm --prefix src/web-app run build
-
-      # ───── Backend full build (with web-app dist in place) ─────
-      # Backend build copies frontend dist/* into dist/web/public/ in M5
-      # (PR with the build-script wiring). Until then this is just the
-      # backend's own `tsc + cp src/web/public`, kept on its own line so
-      # the CI still validates it independently.
-      - name: Backend build
+      - name: Full build
         run: npm run build
 
-      # ───── Node-only memory recall regression ─────
-      # The SQLite memory layer uses better-sqlite3, which bun can't load, so
-      # `bun test` runs it against a disabled DB and can't catch query bugs
-      # (e.g. the contentless-FTS user_key recall bug). This runs the real
-      # store under node against the freshly-built dist.
-      - name: Memory recall regression (node)
+      # The SQLite memory layer needs the Node better-sqlite3 runtime rather
+      # than Bun's disabled fallback, so run these regressions after dist exists.
+      - name: Node-only memory regressions
         run: npm run test:node
+
+      - name: Package contents smoke test
+        run: npm pack --dry-run

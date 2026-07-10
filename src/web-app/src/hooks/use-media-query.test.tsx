@@ -27,7 +27,9 @@ function installMatchMedia(initial: boolean): MockMediaQueryList {
     fire: (matches) => {
       mql.matches = matches
       const e = { matches, media: mql.media } as MediaQueryListEvent
-      listeners.forEach((cb) => cb(e))
+      listeners.forEach((cb) => {
+        cb(e)
+      })
     },
   }
   Object.defineProperty(window, 'matchMedia', {
@@ -77,8 +79,6 @@ describe('useMediaQuery', () => {
   })
 
   it('unsubscribes on unmount (no listener leak across remounts)', () => {
-    // We don't need a real fire path here — just verify removeEventListener
-    // is called on unmount. Use a spy installed onto the mql.
     const remove = vi.fn()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,

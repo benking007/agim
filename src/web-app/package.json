@@ -3,16 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "agim Web 后台 v2 — React 18 + Vite SPA。详见 /root/.claude/plans/web-web-web-web-ui-bug-web-agile-muffin.md。",
+  "description": "agim Web 后台 v2 — React 18 + Vite SPA。",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:checked": "npm run typecheck && npm run build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint not yet configured for web-app — landed in a follow-up PR'",
+    "lint": "biome lint src tools vite.config.ts",
+    "lint:ci": "npm run lint -- --diagnostic-level=error --max-diagnostics=100",
     "test": "vitest",
     "check-i18n": "node tools/check-i18n.mjs",
-    "check-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check"
+    "check-endpoints": "node tools/extract-endpoints.mjs && git diff --exit-code -- tools/endpoints.json",
+    "check-generated-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check",
+    "verify": "npm run typecheck && npm run lint:ci && npm run check-i18n && npm run check-endpoints && npm test -- --run"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
@@ -41,6 +45,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",

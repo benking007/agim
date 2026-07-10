@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build:spa": "cd src/web-app && npm run build && cd ../.. && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg",
+    "build:spa": "npm --prefix src/web-app run build:checked && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg",
     "build": "npm run build:spa && rm -rf dist && tsc && cp -r src/web/public dist/web/public && mkdir -p dist/core/skills && cp -r src/core/skills/builtin dist/core/skills/builtin && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
@@ -26,8 +26,10 @@
     "test:coverage": "bun test --coverage --path-ignore-patterns='**/web-app/**'",
     "test:node": "node test/node/memory-recall.mjs && node test/node/memory-distill.mjs",
     "lint": "biome lint src/cli.ts src/index.ts src/cli-ui src/core src/plugins src/scripts src/utils src/web/server.ts src/web/viewer-render.ts test",
+    "lint:ci": "npm run lint -- --diagnostic-level=error --max-diagnostics=100",
     "format": "biome format . --write",
-    "prepublishOnly": "npm run build"
+    "verify": "npm run typecheck && npm run lint:ci && npm test && npm --prefix src/web-app run verify && npm run build && npm run test:node",
+    "prepublishOnly": "npm run verify"
   },
   "keywords": [
     "agim",

@@ -31,9 +31,7 @@ describe('NotFoundRoute', () => {
 
   it('renders the Topbar so app-level nav is reachable', () => {
     renderAt('/nope')
-    // Brand link is the dead-give-away of the topbar
-    expect(screen.getByText('🤖')).toBeInTheDocument()
-    // Chat nav link
+    expect(screen.getByText('Agim')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
   })
 

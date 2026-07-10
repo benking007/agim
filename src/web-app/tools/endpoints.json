@@ -1,6 +1,6 @@
 {
   "generatedFrom": "src/web/server.ts",
-  "count": 64,
+  "count": 74,
   "endpoints": [
     {
       "method": "GET",
@@ -77,6 +77,13 @@
       "path": "/api/audit",
       "isPrefix": false,
       "name": "getAudit",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/audit/events",
+      "isPrefix": false,
+      "name": "listAuditEvents",
       "authRequired": true
     },
     {
@@ -213,6 +220,20 @@
       "authRequired": true
     },
     {
+      "method": "POST",
+      "path": "/api/memory/distill",
+      "isPrefix": false,
+      "name": "createMemoryDistill",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/distill/status",
+      "isPrefix": false,
+      "name": "listMemoryDistillStatus",
+      "authRequired": true
+    },
+    {
       "method": "GET",
       "path": "/api/memory/export",
       "isPrefix": false,
@@ -305,6 +326,13 @@
     },
     {
       "method": "POST",
+      "path": "/api/messengers/email/test",
+      "isPrefix": false,
+      "name": "createMessengersEmailTest",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
       "path": "/api/messengers/wechat/qr-start",
       "isPrefix": false,
       "name": "startWechatQr",
@@ -322,6 +350,13 @@
       "path": "/api/metrics",
       "isPrefix": false,
       "name": "getMetrics",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/mobile/qr",
+      "isPrefix": false,
+      "name": "createMobileQr",
       "authRequired": true
     },
     {
@@ -347,6 +382,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/plans",
+      "isPrefix": false,
+      "name": "listPlans",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/reminders",
       "isPrefix": false,
       "name": "listReminders",
@@ -357,6 +399,34 @@
       "path": "/api/schedules",
       "isPrefix": false,
       "name": "listSchedules",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/search/providers",
+      "isPrefix": false,
+      "name": "listSearchProviders",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/search/test",
+      "isPrefix": false,
+      "name": "createSearchTest",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/diagnostics",
+      "isPrefix": false,
+      "name": "listSecurityDiagnostics",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/service/log-tail",
+      "isPrefix": false,
+      "name": "listServiceLogTail",
       "authRequired": true
     },
     {

@@ -75,15 +75,21 @@ const PENDING_PAYLOAD = {
   },
 }
 
+function mockApprovals(payload: unknown) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === '/api/approvals') return jsonResponse(payload)
+    return jsonResponse({})
+  })
+}
+
 describe('/approvals', () => {
   it('renders the pending list + KPI strip', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(PENDING_PAYLOAD))
+    mockApprovals(PENDING_PAYLOAD)
     renderPage()
     await waitFor(() => {
       expect(screen.getByText('Bash')).toBeInTheDocument()
     })
     expect(screen.getByText('wechat:room:foo')).toBeInTheDocument()
-    // Page header + at least one KPI label
     expect(screen.getByRole('heading', { name: 'Approvals' })).toBeInTheDocument()
     expect(screen.getByText('Total allowed')).toBeInTheDocument()
   })
@@ -115,12 +121,10 @@ describe('/approvals', () => {
   })
 
   it('empty pending → friendly empty-state shows', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      jsonResponse({
-        pending: [],
-        metrics: { pending: 0, totalRequests: 0, totalResolved: 0, totalAllowed: 0, totalDenied: 0, totalTimedOut: 0, totalReadonlyAutoAllowed: 0 },
-      }),
-    )
+    mockApprovals({
+      pending: [],
+      metrics: { pending: 0, totalRequests: 0, totalResolved: 0, totalAllowed: 0, totalDenied: 0, totalTimedOut: 0, totalReadonlyAutoAllowed: 0 },
+    })
     renderPage()
     await waitFor(() => {
       expect(screen.getByText('No approvals waiting')).toBeInTheDocument()
@@ -128,5 +132,4 @@ describe('/approvals', () => {
   })
 })
 
-// Quieten import — keep `within` reachable for ts-strict
 void within

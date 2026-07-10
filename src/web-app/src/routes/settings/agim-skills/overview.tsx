@@ -17,6 +17,7 @@ import {
   Puzzle,
   RefreshCcw,
   Wand2,
+  type LucideIcon,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -144,6 +145,12 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
     },
   ]
 
+  const views: Array<[string, string, LucideIcon]> = [
+    ['installed', `${ROOT}/installed`, BookOpen],
+    ['hot', `${ROOT}/hot`, Flame],
+    ['injection', `${ROOT}/injection`, Puzzle],
+  ]
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4">
       <header className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end">
@@ -201,14 +208,10 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
         <section className="rounded-md border border-border bg-surface p-4">
           <h2 className="text-sm font-semibold">{t('agimSkills.overview.views.title')}</h2>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1">
-            {([
-              ['installed', `${ROOT}/installed`, <BookOpen className="h-4 w-4" />],
-              ['hot', `${ROOT}/hot`, <Flame className="h-4 w-4" />],
-              ['injection', `${ROOT}/injection`, <Puzzle className="h-4 w-4" />],
-            ] satisfies Array<[string, string, JSX.Element]>).map(([id, to, icon]) => (
+            {views.map(([id, to, Icon]) => (
               <Button key={id} asChild variant="secondary" size="sm">
                 <Link to={to}>
-                  {icon}
+                  <Icon className="h-4 w-4" />
                   <span>{t(`agimSkills.tab.${id}`)}</span>
                 </Link>
               </Button>

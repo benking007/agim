@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -66,9 +67,34 @@ jobs:
         run: npm --prefix src/web-app run check-endpoints
 
       - name: Web-app test
-        run: npm --prefix src/web-app test -- --run
+        id: web-test
+        continue-on-error: true
+        shell: bash
+        run: npm --prefix src/web-app test -- --run --reporter=verbose > /tmp/web-test.log 2>&1
         env:
           CI: 'true'
+
+      - name: Report web-app test diagnostics
+        if: steps.web-test.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-ci-web-test -->'
+            echo '### Web-app test failure'
+            echo
+            echo '```text'
+            tail -n 180 /tmp/web-test.log
+            echo '```'
+          } > /tmp/web-test-comment.md
+          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932093006" \
+            --raw-field "body=$(cat /tmp/web-test-comment.md)"
+
+      - name: Enforce web-app tests
+        if: steps.web-test.outcome == 'failure'
+        run: exit 1
 
       - name: Full build
         run: npm run build

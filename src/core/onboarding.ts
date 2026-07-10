@@ -111,7 +111,6 @@ function getAvailableMessengers(): MessengerInfo[] {
 const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime uses getAvailableMessengers()
 
 // ============================================
-// ============================================
 // Agent availability cache (TTL-based)
 // ============================================
 
@@ -304,8 +303,7 @@ export function formatAgentNotAvailableError(agentName: string): string {
       const command = candidate.aliases.find((alias) => alias.length <= 4) ?? candidate.id
       return `  /${command} - ${candidate.displayName}`
     })
-    .join('
-')
+    .join('\n')
 
   return `❌ ${agentName} is not installed or not available.
 

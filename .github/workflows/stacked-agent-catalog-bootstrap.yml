@@ -22,6 +22,34 @@ jobs:
           ref: refactor/agent-catalog-session
           fetch-depth: 0
 
+      - name: Repair legacy session terminology
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/core/session.ts')
+          text = path.read_text()
+          old = """   *   - claudeSessionId   (Claude UUID survives /oc → /cc round-trips so the
+   *                        underlying ~/.claude/projects jsonl keeps continuing
+   *                        when the user comes back to claude)
+"""
+          new = """   *   - agentSessions     (adapter-native resume state survives switches so
+   *                        returning to a backend continues its conversation)
+"""
+          if old not in text:
+              raise SystemExit('legacy session comment not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/session.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(core): remove legacy session field terminology'
+            git push origin HEAD:refactor/agent-catalog-session
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

@@ -81,12 +81,16 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
+          sed -E 's/\x1B\[[0-9;]*[mK]//g' /tmp/web-test.log > /tmp/web-test-clean.log
           {
             echo '<!-- agim-ci-web-test -->'
-            echo '### Web-app test failure'
+            echo '### Web-app test root cause'
             echo
             echo '```text'
-            tail -n 180 /tmp/web-test.log
+            grep -nE 'Error:|ReferenceError:|TypeError:|SyntaxError:|Failed to|Cannot find|Caused by|Test Files|Tests ' /tmp/web-test-clean.log | tail -n 100
+            echo
+            echo '--- final log lines ---'
+            tail -n 50 /tmp/web-test-clean.log
             echo '```'
           } > /tmp/web-test-comment.md
           gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932093006" \

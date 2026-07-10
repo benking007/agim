@@ -76,7 +76,8 @@ jobs:
             git diff --check
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add package-lock.json src/web-app/package-lock.json src/plugins/agents/opencode/http-adapter.test.ts
+            git add package-lock.json src/plugins/agents/opencode/http-adapter.test.ts
+            git add -f src/web-app/package-lock.json
             if ! git diff --cached --quiet; then
               git commit -m 'build: normalize lockfiles and fix lint regression'
               git push origin HEAD:codex/agim-development

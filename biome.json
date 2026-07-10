@@ -16,6 +16,9 @@
   },
   "linter": {
     "rules": {
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
       "suspicious": {
         "noArrayIndexKey": "warn"
       }

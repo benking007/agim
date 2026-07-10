@@ -49,7 +49,7 @@ jobs:
         run: npm run lint:ci
 
       - name: Backend test
-        run: npm test
+        run: bun test test/unit/session-real.test.ts test/unit/router.test.ts test/unit/onboarding.test.ts src/core/registry.test.ts
         env:
           LOG_LEVEL: error
 

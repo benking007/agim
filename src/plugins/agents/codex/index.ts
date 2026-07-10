@@ -5,7 +5,7 @@
 //   First turn  — no opts.agentSessionId yet. Spawn `codex exec --json …`.
 //                 The adapter watches for `thread.started.thread_id` and
 //                 reports it back via opts.onAgentSessionId so cli persists
-//                 it on the agim Session row (codexSessionId).
+//                 it under the generic agim Session.agentSessions map.
 //   Later turns — opts.agentSessionId is the captured UUID. We spawn
 //                 `codex exec resume <id> --json …` so codex continues from
 //                 its own ~/.codex/sessions store. router.callAgentWithHistory

@@ -40,14 +40,14 @@ class PluginRegistry {
     this.messengers.set(adapter.name, adapter)
   }
 
-  registerAgent(adapter: AgentAdapter): void {
+  registerAgent(adapter: AgentAdapter, aliases: readonly string[] = adapter.aliases): void {
     if (this.agents.has(adapter.name)) {
       log.warn({ agent: adapter.name }, `Agent "${adapter.name}" already registered, overwriting`)
     }
     this.agents.set(adapter.name, adapter)
 
     // Register aliases
-    for (const alias of adapter.aliases) {
+    for (const alias of aliases) {
       if (this.agentAliases.has(alias)) {
         log.warn({ alias, agent: adapter.name }, `Agent alias "${alias}" already registered, overwriting`)
       }
@@ -223,7 +223,15 @@ class PluginRegistry {
       if (adapter.name !== entry.id) {
         throw new Error(`Agent catalog mismatch: expected ${entry.id}, loaded ${adapter.name}`)
       }
-      this.registerAgent(adapter)
+      const adapterAliases = [...adapter.aliases].sort()
+      const catalogAliases = [...entry.aliases].sort()
+      if (JSON.stringify(adapterAliases) !== JSON.stringify(catalogAliases)) {
+        throw new Error(
+          `Agent catalog alias mismatch for ${entry.id}: ` +
+          `catalog=${catalogAliases.join(',')} adapter=${adapterAliases.join(',')}`,
+        )
+      }
+      this.registerAgent(adapter, entry.aliases)
       if (entry.id === 'native') {
         log.info({ event: 'registry.native_engine', engine: 'agim-agent' },
           'native engine: agim-agent')

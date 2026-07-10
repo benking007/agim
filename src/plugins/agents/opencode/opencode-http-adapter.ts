@@ -177,7 +177,7 @@ export class OpenCodeHttpAdapter extends OpenCodeAdapter {
     const part = props.part
 
     // sessionID can appear on the event root, on properties, on properties.info
-    // or inside part. Bubble up the first one we see — setOpencodeSessionId
+    // or inside part. Bubble up the first one we see — setAgentSessionId
     // (the receiver) is idempotent.
     const sid = props.sessionID || part?.sessionID || props.info?.sessionID
     if (sid && opts.onAgentSessionId) {

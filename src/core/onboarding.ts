@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { registry, isPlatformBlacklisted } from './registry.js'
 import { AGIM_HOME } from './agim-paths.js'
+import {
+  BUILT_IN_AGENT_CATALOG,
+  getAgentInstallCommand,
+  getBuiltInAgentCatalogEntry,
+} from './agent-catalog.js'
 
 const CONFIG_DIR = AGIM_HOME
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
@@ -30,18 +35,6 @@ export interface AgentCheckResult {
   available: string[]
   missing: string[]
   allMissing: boolean
-}
-
-export interface AgentInstallHint {
-  agent: string
-  /** Default install path = `npm i -g <npmPackage>`. Empty when the agent
-   *  ships outside the npm registry (e.g. Antigravity's curl install) — in
-   *  that case set `installCmd` to the canonical one-liner. */
-  npmPackage: string
-  command: string
-  /** Optional override for the install hint string. When set, formatters
-   *  use this verbatim instead of synthesising `npm i -g <npmPackage>`. */
-  installCmd?: string
 }
 
 export interface Config {
@@ -116,57 +109,6 @@ function getAvailableMessengers(): MessengerInfo[] {
 }
 
 const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime uses getAvailableMessengers()
-
-const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
-  'claude-code': { agent: 'claude-code', npmPackage: '@anthropic-ai/claude-code', command: 'claude' },
-  'codex': { agent: 'codex', npmPackage: '@openai/codex', command: 'codex' },
-  'copilot': { agent: 'copilot', npmPackage: '@github/copilot', command: 'copilot' },
-  'opencode': { agent: 'opencode', npmPackage: 'opencode-ai', command: 'opencode' },
-  'antigravity': {
-    agent: 'antigravity',
-    npmPackage: '',
-    command: 'agy',
-    // Google's official Antigravity CLI is distributed via an install
-    // script, not npm. Surface that one-liner so the user-facing hint
-    // doesn't tell people to `npm i -g antigravity` (which would 404
-    // or install some unrelated package).
-    installCmd: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
-  },
-  'kimi-code': {
-    agent: 'kimi-code',
-    npmPackage: '@moonshot-ai/kimi-code',
-    command: 'kimi',
-    installCmd: 'curl -fsSL https://www.kimi.com/install.sh | sh  # or: npm install -g @moonshot-ai/kimi-code',
-  },
-  'qoder': {
-    agent: 'qoder',
-    npmPackage: '',
-    command: 'qodercli',
-    installCmd: 'curl -fsSL https://qoder.com/install | sh',
-  },
-  'pi': {
-    agent: 'pi',
-    npmPackage: '@earendil-works/pi-coding-agent',
-    command: 'pi',
-    installCmd: 'npm install -g @earendil-works/pi-coding-agent',
-  },
-  'mimo': {
-    agent: 'mimo',
-    npmPackage: '@mimo-ai/cli',
-    command: 'mimo',
-    installCmd: 'curl -fsSL https://mimo.xiaomi.com/install | bash  # or: npm install -g @mimo-ai/cli',
-  },
-  // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. No CLI to
-  // install; "availability" means an LLM backend with role native-chat
-  // (or cheap fallback) is configured. The hint string steers operators
-  // at the right docs page instead of suggesting an npm install.
-  'native': {
-    agent: 'native',
-    npmPackage: '',
-    command: '',
-    installCmd: 'Run `agim config` → Agim Agent model APIs (or edit ~/.agim/config.json llmBackends + API key) — see docs/llm-backends.md',
-  },
-}
 
 // ============================================
 // ============================================
@@ -338,12 +280,8 @@ export function clearAgentCache(): void {
 export function formatAgentInstallHint(missing: string[]): string {
   if (missing.length === 0) return ''
 
-  const getInstallHint = (name: string): string => {
-    const hint = AGENT_PACKAGES[name]
-    if (!hint) return `npm i -g ${name}`
-    if (hint.installCmd) return hint.installCmd
-    return `npm i -g ${hint.npmPackage}`
-  }
+  const getInstallHint = (name: string): string =>
+    getAgentInstallCommand(name) ?? `Install the ${name} adapter and ensure its CLI is on PATH.`
 
   if (missing.length === 1) {
     return `Install ${missing[0]}: ${getInstallHint(missing[0])}`
@@ -357,19 +295,24 @@ export function formatAgentInstallHint(missing: string[]): string {
  * Format error message when agent is not available
  */
 export function formatAgentNotAvailableError(agentName: string): string {
-  let installHint: string
+  const entry = getBuiltInAgentCatalogEntry(agentName)
+  const installHint = entry?.install.unavailableHint
+    ?? getAgentInstallCommand(agentName)
+    ?? `Install the ${agentName} adapter and ensure its CLI is on PATH.`
+  const alternatives = BUILT_IN_AGENT_CATALOG
+    .map((candidate) => {
+      const command = candidate.aliases.find((alias) => alias.length <= 4) ?? candidate.id
+      return `  /${command} - ${candidate.displayName}`
+    })
+    .join('
+')
 
-  if (agentName === 'antigravity') {
-    installHint = `安装方式:
-  curl -fsSL https://antigravity.google/cli/install.sh | bash
-然后跑一次 \`agy\` 走 Google 账号 OAuth 完成首次登录。`
-  } else {
-    const hint = AGENT_PACKAGES[agentName]
-    if (hint?.installCmd) installHint = hint.installCmd
-    else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
-  }
+  return `❌ ${agentName} is not installed or not available.
 
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
+${installHint}
+
+Or try another agent:
+${alternatives}`
 }
 
 // ============================================

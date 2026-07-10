@@ -41,22 +41,30 @@ describe('agent catalog', () => {
     const ids = BUILT_IN_AGENT_CATALOG.map((entry) => entry.id)
     expect(new Set(ids).size).toBe(ids.length)
 
+    const routingNames = BUILT_IN_AGENT_CATALOG.flatMap((entry) => [entry.id, ...entry.aliases])
+    expect(new Set(routingNames).size).toBe(routingNames.length)
+
     const legacyFields = BUILT_IN_AGENT_CATALOG.flatMap((entry) => {
       if (!entry.nativeSession) return []
       return [
-        entry.nativeSession.legacyIdField,
+        ...(entry.nativeSession.legacyIdField
+          ? [entry.nativeSession.legacyIdField]
+          : []),
         ...(entry.nativeSession.legacyPrimedField
           ? [entry.nativeSession.legacyPrimedField]
           : []),
       ]
     })
     expect(new Set(legacyFields).size).toBe(legacyFields.length)
+    expect(BUILT_IN_AGENT_CATALOG.every((entry) => entry.displayName.length > 0)).toBe(true)
+    expect(BUILT_IN_AGENT_CATALOG.every((entry) => entry.install.command !== undefined)).toBe(true)
   })
 
   it('loads adapters whose runtime names match the catalog ids', async () => {
     for (const entry of BUILT_IN_AGENT_CATALOG) {
       const adapter = await entry.load()
       expect(adapter.name).toBe(entry.id)
+      expect([...adapter.aliases].sort()).toEqual([...entry.aliases].sort())
     }
   })
 })
@@ -95,6 +103,7 @@ describe('generic adapter-native sessions', () => {
     const key = uniqueKey('discovered')
     try {
       expect(getAgentNativeSessionPolicy('opencode')?.idMode).toBe('discovered')
+      expect(getAgentNativeSessionPolicy('cursor')?.idMode).toBe('discovered')
       const first = await sessionManager.prepareAgentSession(
         key.platform, key.channelId, key.threadId, 'opencode',
       )

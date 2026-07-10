@@ -33,11 +33,11 @@
 // Session lifecycle:
 //   - First call: spawn without `--resume`. The first event we see on
 //     stdout is `system.init` which carries `session_id`. inspectEvent
-//     calls `opts.onAgentSessionId(id)` so cli persists it on the agim
-//     Session row.
+//     calls `opts.onAgentSessionId(id)` so the router persists it in the
+//     generic agentSessions map.
 //   - Subsequent calls: spawn with `--resume <session_id>`. cursor
 //     reopens the chat and appends the new turn.
-//   - `/new` clears the agim session row's cursor id; next run starts
+//   - `/new` clears the stored Cursor session state; the next run starts
 //     fresh.
 //
 // Authentication:

@@ -43,17 +43,6 @@ jobs:
       - name: Install web-app dependencies
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
-      - name: Backend typecheck
-        run: npm run typecheck
-
-      - name: Backend lint
-        run: npm run lint:ci
-
-      - name: Backend test
-        run: npm test
-        env:
-          LOG_LEVEL: error
-
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck
 
@@ -70,12 +59,13 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
+          grep -E '^(src|tools|vite\.config\.ts).* lint/' /tmp/web-lint.log > /tmp/web-lint-compact.log || true
           {
-            echo '<!-- agim-ci-web-lint -->'
-            echo '### Web-app lint failed'
+            echo '<!-- agim-ci-web-lint-compact -->'
+            echo '### Web-app blocking lint diagnostics'
             echo
             echo '```text'
-            cat /tmp/web-lint.log
+            cat /tmp/web-lint-compact.log
             echo '```'
           } > /tmp/web-lint-comment.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/web-lint-comment.md
@@ -83,6 +73,17 @@ jobs:
       - name: Enforce web-app lint
         if: steps.web-lint.outcome == 'failure'
         run: exit 1
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend lint
+        run: npm run lint:ci
+
+      - name: Backend test
+        run: npm test
+        env:
+          LOG_LEVEL: error
 
       - name: Web-app i18n parity
         run: npm --prefix src/web-app run check-i18n

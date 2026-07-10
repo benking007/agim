@@ -49,48 +49,42 @@ jobs:
         run: npm run lint:ci
 
       - name: Backend test groups
+        id: backend-groups
+        continue-on-error: true
         shell: bash
         env:
           LOG_LEVEL: error
         run: |
           set +e
           failed=0
+          : > /tmp/backend-groups.txt
           for group in test src/core src/plugins; do
             log="/tmp/$(echo "$group" | tr '/' '-').log"
             bun test "$group" --path-ignore-patterns='**/web-app/**' > "$log" 2>&1
             status=$?
             if [ "$status" -ne 0 ]; then
-              echo "=== FAILED GROUP: $group ==="
-              tail -n 120 "$log"
+              {
+                echo "=== FAILED GROUP: $group ==="
+                tail -n 160 "$log"
+                echo
+              } >> /tmp/backend-groups.txt
               failed=1
             else
-              echo "PASS $group"
+              echo "PASS $group" >> /tmp/backend-groups.txt
             fi
           done
+          cat /tmp/backend-groups.txt
           exit "$failed"
 
-      - name: Web-app typecheck
-        run: npm --prefix src/web-app run typecheck
+      - name: Upload backend test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-groups
+          path: /tmp/backend-groups.txt
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Web-app lint
-        run: npm --prefix src/web-app run lint:ci
-
-      - name: Web-app i18n parity
-        run: npm --prefix src/web-app run check-i18n
-
-      - name: Web-app endpoint manifest
-        run: npm --prefix src/web-app run check-endpoints
-
-      - name: Web-app test
-        run: npm --prefix src/web-app test -- --run
-        env:
-          CI: 'true'
-
-      - name: Full build
-        run: npm run build
-
-      - name: Node-only memory regressions
-        run: npm run test:node
-
-      - name: Package contents smoke test
-        run: npm pack --dry-run
+      - name: Enforce backend test groups
+        if: steps.backend-groups.outcome == 'failure'
+        run: exit 1

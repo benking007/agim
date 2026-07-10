@@ -1,0 +1,57 @@
+name: Agent session scan
+
+on:
+  pull_request:
+    branches: [refactor/web-hook-stability]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    if: github.head_ref == 'refactor/agent-catalog-session'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan legacy session coupling
+        shell: bash
+        run: |
+          python3 - <<'PY' > /tmp/agent-session-scan.txt
+          from pathlib import Path
+          import re
+
+          pattern = re.compile(r'(?:claude|opencode|codex|antigravity|kimi|qoder|pi|mimo|copilot)Session(?:Id|Primed)|set(?:Claude|Opencode|Codex|Antigravity|Kimi|Qoder|Pi|Mimo|Copilot)Session')
+          for root in ('src', 'test', 'tests'):
+              base = Path(root)
+              if not base.exists():
+                  continue
+              for path in sorted(base.rglob('*')):
+                  if path.suffix not in {'.ts', '.tsx', '.js', '.mjs'}:
+                      continue
+                  try:
+                      lines = path.read_text().splitlines()
+                  except UnicodeDecodeError:
+                      continue
+                  hits = [(i, line.strip()) for i, line in enumerate(lines, 1) if pattern.search(line)]
+                  if hits:
+                      print(f'## {path}')
+                      for line_no, line in hits:
+                          print(f'{line_no}: {line}')
+          PY
+          cat /tmp/agent-session-scan.txt
+      - name: Publish scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-agent-session-scan -->'
+            echo '### Legacy agent-session coupling scan'
+            echo
+            echo '```text'
+            cat /tmp/agent-session-scan.txt
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/comment.md

@@ -28,6 +28,12 @@ function sanitize(raw: string): string {
     createHash('sha256').update(char).digest('hex').slice(0, 8))
 }
 
+function stripTypeScriptComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+}
+
 async function cleanupKey(key: { platform: string; channelId: string; threadId: string }): Promise<void> {
   const cacheKey = `${key.platform}:${key.channelId}:${key.threadId}`
   // @ts-expect-error — white-box cleanup of the singleton cache for isolation.
@@ -176,7 +182,7 @@ describe('agent-session architecture boundary', () => {
       'src/core/types.ts',
     ]
     for (const path of paths) {
-      const source = await readFile(path, 'utf-8')
+      const source = stripTypeScriptComments(await readFile(path, 'utf-8'))
       expect(source.match(LEGACY_RUNTIME_PATTERN), `${path} reintroduced legacy session coupling`).toBeNull()
     }
   })

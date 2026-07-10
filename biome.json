@@ -20,7 +20,8 @@
         "useExhaustiveDependencies": "warn"
       },
       "suspicious": {
-        "noArrayIndexKey": "warn"
+        "noArrayIndexKey": "warn",
+        "noUnknownAtRules": "warn"
       }
     }
   }

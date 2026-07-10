@@ -9,6 +9,10 @@ import {
   getAgentNativeSessionPolicy,
 } from '../../src/core/agent-catalog'
 import { AGIM_HOME } from '../../src/core/agim-paths'
+import {
+  formatAgentInstallHint,
+  formatAgentNotAvailableError,
+} from '../../src/core/onboarding'
 import { sessionManager } from '../../src/core/session'
 
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
@@ -66,6 +70,18 @@ describe('agent catalog', () => {
       expect(adapter.name).toBe(entry.id)
       expect([...adapter.aliases].sort()).toEqual([...entry.aliases].sort())
     }
+  })
+
+  it('derives install guidance and command alternatives from the catalog', () => {
+    expect(formatAgentInstallHint(['codex'])).toBe(
+      'Install codex: npm i -g @openai/codex',
+    )
+    const cursorError = formatAgentNotAvailableError('cursor')
+    expect(cursorError).toContain('Install Cursor CLI')
+    expect(cursorError).toContain('/cs - Cursor')
+    expect(formatAgentNotAvailableError('antigravity')).toContain(
+      'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+    )
   })
 })
 

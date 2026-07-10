@@ -276,27 +276,13 @@ function DataTable<T>({
                 const isSelected = selectable && selection.has(id)
                 const titleCol = columns.find((c) => c.asCardTitle) ?? columns[0]
                 const fieldCols = columns.filter((c) => !c.asCardTitle && !c.hideOnMobile && c.id !== titleCol?.id)
-                return (
-                  <div
-                    key={id}
-                    data-state={isSelected ? 'selected' : undefined}
-                    role={onRowClick ? 'button' : undefined}
-                    tabIndex={onRowClick ? 0 : undefined}
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    onKeyDown={onRowClick
-                      ? (event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                            onRowClick(row)
-                          }
-                        }
-                      : undefined}
-                    className={cn(
-                      'rounded-md border bg-surface p-3',
-                      isSelected ? 'border-accent' : 'border-border',
-                      onRowClick && 'cursor-pointer active:bg-surface-hover',
-                    )}
-                  >
+                const cardClassName = cn(
+                  'rounded-md border bg-surface p-3 text-left',
+                  isSelected ? 'border-accent' : 'border-border',
+                  onRowClick && 'cursor-pointer active:bg-surface-hover',
+                )
+                const cardBody = (
+                  <>
                     <div className="flex items-start justify-between gap-2">
                       {titleCol && (
                         <div className="font-medium text-text">{titleCol.cell(row, i)}</div>
@@ -322,6 +308,37 @@ function DataTable<T>({
                         ))}
                       </dl>
                     )}
+                  </>
+                )
+
+                if (onRowClick) {
+                  return (
+                    <div
+                      key={id}
+                      data-state={isSelected ? 'selected' : undefined}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onRowClick(row)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onRowClick(row)
+                        }
+                      }}
+                      className={cardClassName}
+                    >
+                      {cardBody}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    key={id}
+                    data-state={isSelected ? 'selected' : undefined}
+                    className={cardClassName}
+                  >
+                    {cardBody}
                   </div>
                 )
               })}

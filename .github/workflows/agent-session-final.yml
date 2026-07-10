@@ -1,0 +1,122 @@
+name: Agent session final validation
+
+on:
+  pull_request:
+    branches: [refactor/web-hook-stability]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: agent-session-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.head_ref == 'refactor/agent-catalog-session'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Architecture audit
+        shell: bash
+        run: |
+          python3 - <<'PY' > /tmp/agent-architecture-audit.txt
+          from pathlib import Path
+          import re
+
+          legacy = re.compile(r'(?:claude|opencode|codex|antigravity|kimi|qoder|pi|mimo|copilot)Session(?:Id|Primed)|set(?:Claude|Opencode|Codex|Antigravity|Kimi|Qoder|Pi|Mimo|Copilot)Session')
+          allowed = {
+              Path('src/core/agent-catalog.ts'),
+              Path('src/core/agent-session.ts'),
+              Path('test/unit/session-real.test.ts'),
+              Path('test/unit/agent-session-architecture.test.ts'),
+          }
+          print('LEGACY REFERENCES OUTSIDE MIGRATION BOUNDARY')
+          found = False
+          for root in (Path('src'), Path('test')):
+              for path in sorted(root.rglob('*')):
+                  if path in allowed or path.suffix not in {'.ts', '.tsx', '.js', '.mjs'}:
+                      continue
+                  lines = path.read_text(errors='ignore').splitlines()
+                  for number, line in enumerate(lines, 1):
+                      if legacy.search(line):
+                          found = True
+                          print(f'{path}:{number}: {line.strip()}')
+          if not found:
+              print('(none)')
+
+          ids = ['claude-code', 'codex', 'copilot', 'opencode', 'antigravity', 'kimi-code', 'qoder', 'pi', 'mimo', 'cursor', 'native']
+          print('\nFILES WITH MANY BUILT-IN AGENT IDS (catalog candidates)')
+          rows = []
+          for root in (Path('src'),):
+              for path in sorted(root.rglob('*')):
+                  if path.suffix not in {'.ts', '.tsx', '.js', '.mjs', '.json'} or path == Path('src/core/agent-catalog.ts'):
+                      continue
+                  text = path.read_text(errors='ignore')
+                  present = [agent_id for agent_id in ids if agent_id in text]
+                  if len(present) >= 4:
+                      rows.append((len(present), str(path), ', '.join(present)))
+          for count, path, present in sorted(rows, reverse=True):
+              print(f'{count:2d} {path}: {present}')
+          PY
+          cat /tmp/agent-architecture-audit.txt
+
+      - name: Publish architecture audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-agent-architecture-audit -->'
+            echo '### Agent architecture audit'
+            echo
+            echo '```text'
+            cat /tmp/agent-architecture-audit.txt
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/comment.md
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Install root dependencies
+        shell: bash
+        run: |
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
+
+      - name: Install web-app dependencies
+        run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend lint
+        run: npm run lint:ci
+
+      - name: Backend test
+        run: npm test
+        env:
+          LOG_LEVEL: error
+
+      - name: Web-app verify
+        run: npm --prefix src/web-app run verify
+
+      - name: Full build
+        run: npm run build
+
+      - name: Node-only memory regressions
+        run: npm run test:node
+
+      - name: Package contents smoke test
+        run: npm pack --dry-run

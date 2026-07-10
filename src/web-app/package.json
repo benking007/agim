@@ -11,10 +11,11 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src tools vite.config.ts",
+    "lint:ci": "npm run lint -- --diagnostic-level=error --max-diagnostics=100",
     "test": "vitest",
     "check-i18n": "node tools/check-i18n.mjs",
     "check-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check",
-    "verify": "npm run typecheck && npm run lint && npm run check-i18n && npm run check-endpoints && npm test -- --run"
+    "verify": "npm run typecheck && npm run lint:ci && npm run check-i18n && npm run check-endpoints && npm test -- --run"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

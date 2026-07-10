@@ -109,6 +109,14 @@ function DataTable<T>({
 }: DataTableProps<T>): JSX.Element {
   const { t } = useTranslation('common')
   const selectable = selection !== undefined && onSelectionChange !== undefined
+  const desktopSkeletonIds = Array.from(
+    { length: loadingRows },
+    (_, index) => `desktop-skeleton-${index + 1}`,
+  )
+  const mobileSkeletonIds = Array.from(
+    { length: Math.min(3, loadingRows) },
+    (_, index) => `mobile-skeleton-${index + 1}`,
+  )
 
   const allChecked = selectable && rows.length > 0 && rows.every((r) => selection.has(getRowId(r)))
   const someChecked = selectable && rows.some((r) => selection.has(getRowId(r))) && !allChecked
@@ -154,7 +162,6 @@ function DataTable<T>({
                 <TableHead className="w-10">
                   <input
                     type="checkbox"
-                    role="checkbox"
                     aria-label={t('table.selectAll')}
                     aria-checked={someChecked ? 'mixed' : allChecked}
                     checked={allChecked}
@@ -195,8 +202,8 @@ function DataTable<T>({
           </TableHeader>
           <TableBody>
             {loading
-              ? Array.from({ length: loadingRows }).map((_, i) => (
-                  <TableRow key={`skeleton-${i}`}>
+              ? desktopSkeletonIds.map((skeletonId) => (
+                  <TableRow key={skeletonId}>
                     {selectable && <TableCell />}
                     {columns.map((c) => (
                       <TableCell key={c.id} className={c.cellClassName}>
@@ -230,7 +237,6 @@ function DataTable<T>({
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
-                              role="checkbox"
                               aria-label={t('table.selectRow')}
                               checked={isSelected}
                               onChange={() => toggleRow(id)}
@@ -253,9 +259,9 @@ function DataTable<T>({
       {/* Mobile — card view */}
       <div className="md:hidden flex flex-col gap-2">
         {loading
-          ? Array.from({ length: Math.min(3, loadingRows) }).map((_, i) => (
+          ? mobileSkeletonIds.map((skeletonId) => (
               <div
-                key={`mskel-${i}`}
+                key={skeletonId}
                 className="rounded-md border border-border bg-surface p-3 space-y-2"
               >
                 <div className="h-4 w-1/2 rounded bg-surface-2 animate-pulse" />
@@ -274,7 +280,17 @@ function DataTable<T>({
                   <div
                     key={id}
                     data-state={isSelected ? 'selected' : undefined}
+                    role={onRowClick ? 'button' : undefined}
+                    tabIndex={onRowClick ? 0 : undefined}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    onKeyDown={onRowClick
+                      ? (event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onRowClick(row)
+                          }
+                        }
+                      : undefined}
                     className={cn(
                       'rounded-md border bg-surface p-3',
                       isSelected ? 'border-accent' : 'border-border',
@@ -288,7 +304,6 @@ function DataTable<T>({
                       {selectable && (
                         <input
                           type="checkbox"
-                          role="checkbox"
                           aria-label={t('table.selectRow')}
                           checked={!!isSelected}
                           onChange={() => toggleRow(id)}

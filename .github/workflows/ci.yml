@@ -7,8 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -20,9 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref }}
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,20 +30,6 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.14'
-
-      - name: Refresh web lockfile once
-        if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
-        shell: bash
-        run: |
-          npm --prefix src/web-app install --package-lock-only --ignore-scripts --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f src/web-app/package-lock.json
-          if ! git diff --cached --quiet; then
-            git diff --cached --check
-            git commit -m 'build(web): lock testing-library DOM peer'
-            git push origin HEAD:codex/agim-development
-          fi
 
       - name: Install root dependencies
         shell: bash
@@ -84,38 +66,9 @@ jobs:
         run: npm --prefix src/web-app run check-endpoints
 
       - name: Web-app test
-        id: web-test
-        continue-on-error: true
-        shell: bash
-        run: npm --prefix src/web-app test -- --run --reporter=verbose > /tmp/web-test.log 2>&1
+        run: npm --prefix src/web-app test -- --run
         env:
           CI: 'true'
-
-      - name: Report web-app test diagnostics
-        if: steps.web-test.outcome == 'failure' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          sed -E 's/\x1B\[[0-9;]*[mK]//g' /tmp/web-test.log > /tmp/web-test-clean.log
-          {
-            echo '<!-- agim-ci-web-test -->'
-            echo '### Web-app test root cause'
-            echo
-            echo '```text'
-            grep -nE 'Error:|ReferenceError:|TypeError:|SyntaxError:|Failed to|Cannot find|Caused by|Test Files|Tests ' /tmp/web-test-clean.log | tail -n 100
-            echo
-            echo '--- final log lines ---'
-            tail -n 50 /tmp/web-test-clean.log
-            echo '```'
-          } > /tmp/web-test-comment.md
-          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932093006" \
-            --raw-field "body=$(cat /tmp/web-test-comment.md)"
-
-      - name: Enforce web-app tests
-        if: steps.web-test.outcome == 'failure'
-        run: exit 1
 
       - name: Full build
         run: npm run build

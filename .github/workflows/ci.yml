@@ -34,18 +34,24 @@ jobs:
       # is itself optional.
       - name: Install root dependencies
         run: |
-          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps
-          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps @biomejs/cli-linux-x64 || true
+          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error @biomejs/cli-linux-x64 || true
           test -f node_modules/@biomejs/cli-linux-x64/biome
 
       - name: Install web-app dependencies
-        run: npm --prefix src/web-app install --no-package-lock --no-audit --no-fund --legacy-peer-deps
+        run: npm --prefix src/web-app install --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
       - name: Backend typecheck
         run: npm run typecheck
 
       - name: Backend lint
-        run: npm run lint
+        shell: bash
+        run: |
+          set +e
+          npm run lint > /tmp/backend-lint.log 2>&1
+          status=$?
+          tail -n 120 /tmp/backend-lint.log
+          exit "$status"
 
       - name: Backend test
         run: npm test

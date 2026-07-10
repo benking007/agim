@@ -1,0 +1,10 @@
+/home/runner/work/agim/agim/scripts/agent-catalog-metadata.py:94: SyntaxWarning: invalid escape sequence '\`'
+  old_not_available = """  let installHint: string
+Traceback (most recent call last):
+  File "/home/runner/work/agim/agim/scripts/agent-catalog-metadata.py", line 121, in <module>
+    text = replace_once(text, old_not_available, new_not_available, 'not available formatter')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/agim/agim/scripts/agent-catalog-metadata.py", line 7, in replace_once
+    raise RuntimeError(f'{label}: expected one match, found {count}')
+RuntimeError: not available formatter: expected one match, found 0
+exit_status=1

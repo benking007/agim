@@ -1,0 +1,40 @@
+name: Agent catalog migration diagnostics
+
+on:
+  pull_request:
+    branches: [refactor/web-hook-stability]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'refactor/agent-catalog-session'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: Run migration and update fixed diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/agent-catalog-metadata.py > /tmp/catalog-metadata.log 2>&1
+          status=$?
+          {
+            echo '<!-- agim-agent-catalog-diagnostic -->'
+            echo '### Catalog metadata migration diagnostic'
+            echo
+            echo "Exit status: $status"
+            echo
+            echo '```text'
+            tail -n 120 /tmp/catalog-metadata.log
+            echo '```'
+          } > /tmp/comment.md
+          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932853050" \
+            --raw-field "body=$(cat /tmp/comment.md)"
+          exit "$status"

@@ -63,8 +63,10 @@ export default function WorkspaceRoute(): JSX.Element {
   const agentsQuery = useAgentsStatus()
   const cfgQuery = useConfig()
   const agents = agentsQuery.data ?? {}
-  const agentNames = useMemo(() => Object.keys(agents).sort(), [agents])
-  const agentKey = agentNames.join('\0')
+  const agentNames = useMemo(
+    () => Object.keys(agentsQuery.data ?? {}).sort(),
+    [agentsQuery.data],
+  )
   const defaultAgent = cfgQuery.data?.defaultAgent
 
   /** Query may resolve to either a dir listing or file content — we
@@ -95,7 +97,7 @@ export default function WorkspaceRoute(): JSX.Element {
     next.set('agent', preferred)
     next.delete('path')
     setParams(next, { replace: true })
-  }, [agent, agentKey, agentNames, agentsQuery.isLoading, defaultAgent, params, setParams])
+  }, [agent, agentNames, agentsQuery.isLoading, defaultAgent, params, setParams])
 
   function setAgent(next: string): void {
     // Switching agent always resets the path so we don't drag a

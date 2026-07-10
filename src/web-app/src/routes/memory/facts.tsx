@@ -95,8 +95,13 @@ export default function MemoryFactsRoute(): JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / perPage))
 
   // Selection state for the bulk delete bar.
+  const selectionScope = JSON.stringify([userKey, q, cat, page, perPage])
   const [selection, setSelection] = useState<Set<string>>(new Set())
-  useEffect(() => { setSelection(new Set()) }, [userKey, q, cat, page, perPage])
+  useEffect(() => {
+    // The scope value is the reset signal when URL-driven list identity changes.
+    void selectionScope
+    setSelection(new Set())
+  }, [selectionScope])
 
   const deleteOne = useDeleteFactById()
   const bulkDelete = useBulkDeleteFacts()

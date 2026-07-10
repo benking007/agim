@@ -147,15 +147,17 @@ export default function MobileChatRoute(): JSX.Element {
     [state.activeRunId, state.runActivities],
   )
 
+  const messageScrollKey = `${state.messages.length}:${state.messages.at(-1)?.content.length ?? 0}`
+
   // Auto-scroll to bottom on new messages OR streaming chunk. Same
   // pinch-tolerance as desktop: hold position when user is reading up.
   useEffect(() => {
     const el = listRef.current
-    if (!el) return
+    if (messageScrollKey === '0:0' || !el) return
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     if (distFromBottom > 200 && state.currentReplyId == null) return
     requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-  }, [state.messages, state.currentReplyId])
+  }, [messageScrollKey, state.currentReplyId])
 
   // Floating "scroll to bottom" pill.
   useEffect(() => {
@@ -184,6 +186,8 @@ export default function MobileChatRoute(): JSX.Element {
 
   // Auto-grow textarea up to 6 lines.
   useEffect(() => {
+    // `input` is the resize trigger; dimensions are read from the DOM after render.
+    void input
     const ta = inputRef.current
     if (!ta) return
     ta.style.height = 'auto'

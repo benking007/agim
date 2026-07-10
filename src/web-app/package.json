@@ -14,7 +14,8 @@
     "lint:ci": "npm run lint -- --diagnostic-level=error --max-diagnostics=100",
     "test": "vitest",
     "check-i18n": "node tools/check-i18n.mjs",
-    "check-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check",
+    "check-endpoints": "node tools/extract-endpoints.mjs && git diff --exit-code -- tools/endpoints.json",
+    "check-generated-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check",
     "verify": "npm run typecheck && npm run lint:ci && npm run check-i18n && npm run check-endpoints && npm test -- --run"
   },
   "dependencies": {

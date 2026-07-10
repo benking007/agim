@@ -8,34 +8,94 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-viewer_path = Path('src/web-app/src/routes/settings/viewer.tsx')
-viewer = viewer_path.read_text()
-start = viewer.index('function ViewerCard')
-end = viewer.index('/* ─────────────── Baidu Maps card', start)
-viewer_card = viewer[start:end]
-if "const [syncedHash, setSyncedHash]" in viewer_card:
-    viewer_card = replace_once(
-        viewer_card,
-        "  const [syncedHash, setSyncedHash] = useState('')\n\n",
-        '',
-        'ViewerCard synced hash',
+# Desktop chat: message updates intentionally trigger scrolling, so represent
+# that trigger as a value actually consumed by the effect.
+path = Path('src/web-app/src/routes/chat.tsx')
+text = path.read_text()
+if 'const messageScrollKey =' not in text:
+    text = replace_once(
+        text,
+        "  // Auto-scroll to bottom on new messages OR streaming chunk. Use\n",
+        "  const messageScrollKey = `${state.messages.length}:${state.messages.at(-1)?.content.length ?? 0}`\n\n  // Auto-scroll to bottom on new messages OR streaming chunk. Use\n",
+        'desktop chat scroll key',
     )
-    viewer_card = replace_once(
-        viewer_card,
-        "  // Sync draft when env changes (initial load + post-save refetch).\n  useEffect(() => {\n    const next = viewerDraftFromEnv(env)\n    const hash = JSON.stringify(next)\n    if (hash !== syncedHash) {\n      setDraft(next)\n      setSyncedHash(hash)\n    }\n    // eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [env.AGIM_VIEWER_ENABLED, env.AGIM_VIEWER_PUBLIC_BASE_URL,\n      env.AGIM_VIEWER_TUNNEL_MODE, env.AGIM_VIEWER_CHARS,\n      env.AGIM_VIEWER_LINES, env.AGIM_VIEWER_CODE_LINES,\n      env.AGIM_VIEWER_MAX_PASTES, env.AGIM_VIEWER_NO_DEFAULT_REMOTE])\n\n  const current = useMemo(() => viewerDraftFromEnv(env), [env])",
-        "  const current = useMemo(() => viewerDraftFromEnv(env), [env])\n\n  // Sync draft when env changes (initial load + post-save refetch).\n  useEffect(() => {\n    setDraft(current)\n  }, [current])",
-        'ViewerCard sync effect',
+    text = replace_once(
+        text,
+        "  useEffect(() => {\n    if (!listRef.current) return\n",
+        "  useEffect(() => {\n    if (messageScrollKey === '0:0' || !listRef.current) return\n",
+        'desktop chat scroll guard',
     )
-    viewer = viewer[:start] + viewer_card + viewer[end:]
-    viewer_path.write_text(viewer)
+    text = replace_once(
+        text,
+        "  }, [state.messages, state.currentReplyId])",
+        "  }, [messageScrollKey, state.currentReplyId])",
+        'desktop chat scroll deps',
+    )
+    path.write_text(text)
 
-biome_path = Path('biome.json')
-biome = biome_path.read_text()
-if '"useExhaustiveDependencies": "warn"' in biome:
-    biome = replace_once(
-        biome,
-        '"useExhaustiveDependencies": "warn"',
-        '"useExhaustiveDependencies": "error"',
-        'Biome dependency rule',
+
+# Mobile chat: same scroll signal, plus make the textarea input dependency
+# explicit because the DOM measurement happens after that value renders.
+path = Path('src/web-app/src/routes/m/chat.tsx')
+text = path.read_text()
+if 'const messageScrollKey =' not in text:
+    text = replace_once(
+        text,
+        "  // Auto-scroll to bottom on new messages OR streaming chunk. Same\n",
+        "  const messageScrollKey = `${state.messages.length}:${state.messages.at(-1)?.content.length ?? 0}`\n\n  // Auto-scroll to bottom on new messages OR streaming chunk. Same\n",
+        'mobile chat scroll key',
     )
-    biome_path.write_text(biome)
+    text = replace_once(
+        text,
+        "  useEffect(() => {\n    const el = listRef.current\n    if (!el) return\n",
+        "  useEffect(() => {\n    const el = listRef.current\n    if (messageScrollKey === '0:0' || !el) return\n",
+        'mobile chat scroll guard',
+    )
+    text = replace_once(
+        text,
+        "  }, [state.messages, state.currentReplyId])",
+        "  }, [messageScrollKey, state.currentReplyId])",
+        'mobile chat scroll deps',
+    )
+if '// `input` is the resize trigger' not in text:
+    text = replace_once(
+        text,
+        "  useEffect(() => {\n    const ta = inputRef.current\n    if (!ta) return\n    ta.style.height = 'auto'",
+        "  useEffect(() => {\n    // `input` is the resize trigger; dimensions are read from the DOM after render.\n    void input\n    const ta = inputRef.current\n    if (!ta) return\n    ta.style.height = 'auto'",
+        'mobile input resize trigger',
+    )
+path.write_text(text)
+
+
+# Facts selection is scoped to the current user/filter/page tuple. The scope is
+# deliberately consumed as the reset signal rather than listing unused values.
+path = Path('src/web-app/src/routes/memory/facts.tsx')
+text = path.read_text()
+if 'const selectionScope =' not in text:
+    text = replace_once(
+        text,
+        "  // Selection state for the bulk delete bar.\n  const [selection, setSelection] = useState<Set<string>>(new Set())\n  useEffect(() => { setSelection(new Set()) }, [userKey, q, cat, page, perPage])",
+        "  // Selection state for the bulk delete bar.\n  const selectionScope = JSON.stringify([userKey, q, cat, page, perPage])\n  const [selection, setSelection] = useState<Set<string>>(new Set())\n  useEffect(() => {\n    // The scope value is the reset signal when URL-driven list identity changes.\n    void selectionScope\n    setSelection(new Set())\n  }, [selectionScope])",
+        'facts selection scope',
+    )
+    path.write_text(text)
+
+
+# Memoize the workspace agent-name list directly from query data. This removes
+# the unstable fallback object and the redundant string key dependency.
+path = Path('src/web-app/src/routes/workspace.tsx')
+text = path.read_text()
+if 'const agentKey =' in text:
+    text = replace_once(
+        text,
+        "  const agents = agentsQuery.data ?? {}\n  const agentNames = useMemo(() => Object.keys(agents).sort(), [agents])\n  const agentKey = agentNames.join('\\0')",
+        "  const agents = agentsQuery.data ?? {}\n  const agentNames = useMemo(\n    () => Object.keys(agentsQuery.data ?? {}).sort(),\n    [agentsQuery.data],\n  )",
+        'workspace agent names',
+    )
+    text = replace_once(
+        text,
+        "  }, [agent, agentKey, agentNames, agentsQuery.isLoading, defaultAgent, params, setParams])",
+        "  }, [agent, agentNames, agentsQuery.isLoading, defaultAgent, params, setParams])",
+        'workspace effect deps',
+    )
+    path.write_text(text)

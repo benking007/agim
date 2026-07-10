@@ -513,17 +513,23 @@ describe('routeMessage', () => {
 
   describe('subtask agent session options', () => {
     it('passes antigravity conversation id into A2A subtask calls', async () => {
+      const ctx = makeCtx()
+      const storageThreadId = `thread-sub-antigravity-${Date.now()}`
+      await sessionManager.getOrCreateSession(
+        ctx.platform, ctx.channelId, storageThreadId, 'antigravity',
+      )
+      await sessionManager.setAgentSessionId(
+        ctx.platform, ctx.channelId, storageThreadId, 'antigravity', 'agy-conv-1',
+      )
+      const subSession = await sessionManager.getExistingSession(
+        ctx.platform, ctx.channelId, storageThreadId,
+      )
       const callOptions = await prepareSubtaskAgentCallOptions(
-        'antigravity',
-        makeCtx(),
-        'thread-1:sub:42',
-        {
-          antigravitySessionId: 'agy-conv-1',
-        },
+        'antigravity', ctx, storageThreadId, subSession!,
       )
 
       expect(callOptions).toEqual({
-        storageThreadId: 'thread-1:sub:42',
+        storageThreadId,
         agentSessionId: 'agy-conv-1',
         agentSessionResume: true,
       })

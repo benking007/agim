@@ -1,6 +1,6 @@
 // Tests for onboarding module
 
-import { describe, it, expect, } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import {
   checkMessengerConfig,
   formatAgentInstallHint,
@@ -86,11 +86,12 @@ describe('formatAgentInstallHint', () => {
     expect(hint).toContain('@openai/codex')
   })
 
-  it('handles unknown agents', () => {
+  it('uses generic guidance for unknown agents', () => {
     const hint = formatAgentInstallHint(['unknown-agent'])
 
     expect(hint).toContain('unknown-agent')
-    expect(hint).toContain('npm i -g unknown-agent')
+    expect(hint).toContain('Install the unknown-agent adapter')
+    expect(hint).toContain('CLI is on PATH')
   })
 
   it('returns empty string for empty array', () => {
@@ -125,11 +126,12 @@ describe('formatAgentNotAvailableError', () => {
     expect(error).toContain('/oc')
   })
 
-  it('handles unknown agents', () => {
+  it('uses generic guidance for unknown agents', () => {
     const error = formatAgentNotAvailableError('unknown-agent')
 
     expect(error).toContain('unknown-agent')
-    expect(error).toContain('npm i -g unknown-agent')
+    expect(error).toContain('Install the unknown-agent adapter')
+    expect(error).toContain('CLI is on PATH')
   })
 })
 

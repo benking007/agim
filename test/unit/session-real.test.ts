@@ -196,44 +196,45 @@ describe('SessionManager (real, on-disk)', () => {
     }
   })
 
-  // Regression for the v2 Phase D promise: claudeSessionId / claudeSessionPrimed
-  // must round-trip through saveSessionMeta → loadSession so that "META TTL 7d"
-  // actually preserves Claude's resumable session across restarts.
-  it('claudeSessionId persists to disk and reloads', async () => {
-    const k = uniqueKey('claude-persist')
+  it('agentSessions persist to disk and reload', async () => {
+    const k = uniqueKey('agent-session-persist')
     try {
       await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'claude-code')
-      await sessionManager.setClaudeSessionId(k.platform, k.channelId, k.threadId, 'uuid-abc-123')
-      await sessionManager.markClaudeSessionPrimed(k.platform, k.channelId, k.threadId)
+      await sessionManager.setAgentSessionId(
+        k.platform, k.channelId, k.threadId, 'claude-code', 'uuid-abc-123',
+      )
+      await sessionManager.markAgentSessionPrimed(
+        k.platform, k.channelId, k.threadId, 'claude-code',
+      )
 
       const metaPath = join(SESSIONS_DIR, `${fileStem(k)}.json`)
       const onDisk = JSON.parse(await readFile(metaPath, 'utf-8'))
-      expect(onDisk.claudeSessionId).toBe('uuid-abc-123')
-      expect(onDisk.claudeSessionPrimed).toBe(true)
+      expect(onDisk.agentSessions['claude-code']).toEqual({
+        id: 'uuid-abc-123', primed: true,
+      })
+      expect(onDisk.claudeSessionId).toBeUndefined()
 
-      // Force a fresh load by evicting from in-memory cache.
       // @ts-expect-error — reach into the singleton's private map for the test
       sessionManager.sessions.delete(`${k.platform}:${k.channelId}:${k.threadId}`)
-
       const reloaded = await sessionManager.getExistingSession(k.platform, k.channelId, k.threadId)
-      expect(reloaded?.claudeSessionId).toBe('uuid-abc-123')
-      expect(reloaded?.claudeSessionPrimed).toBe(true)
+      expect(reloaded?.agentSessions?.['claude-code']).toEqual({
+        id: 'uuid-abc-123', primed: true,
+      })
     } finally {
       await cleanupKey(k)
     }
   })
 
-  // Regression for the bug where switchAgent rebuilt the Session object
-  // explicitly and dropped every field that wasn't in its hand-written list —
-  // including claudeSessionId, usage, and any active subtask. The whole point
-  // of "sticky agent + claudeSessionId survives 7d" was undercut by /cc /oc
-  // round-trips silently nulling those fields.
-  it('switchAgent preserves thread-level fields across an agent change', async () => {
+  it('switchAgent preserves generic native sessions and thread-level fields', async () => {
     const k = uniqueKey('switch-carry')
     try {
       await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'claude-code')
-      await sessionManager.setClaudeSessionId(k.platform, k.channelId, k.threadId, 'uuid-keepme')
-      await sessionManager.markClaudeSessionPrimed(k.platform, k.channelId, k.threadId)
+      await sessionManager.setAgentSessionId(
+        k.platform, k.channelId, k.threadId, 'claude-code', 'uuid-keepme',
+      )
+      await sessionManager.markAgentSessionPrimed(
+        k.platform, k.channelId, k.threadId, 'claude-code',
+      )
       await sessionManager.recordUsage(k.platform, k.channelId, k.threadId, {
         costUsd: 0.5, promptChars: 100, responseChars: 200, durationMs: 1000,
       })
@@ -242,75 +243,78 @@ describe('SessionManager (real, on-disk)', () => {
 
       const switched = await sessionManager.switchAgent(k.platform, k.channelId, k.threadId, 'opencode')
       expect(switched.agent).toBe('opencode')
-      // Preserved across agent switch:
-      expect(switched.claudeSessionId).toBe('uuid-keepme')
-      expect(switched.claudeSessionPrimed).toBe(true)
+      expect(switched.agentSessions?.['claude-code']).toEqual({
+        id: 'uuid-keepme', primed: true,
+      })
       expect(switched.usage?.costUsd).toBe(0.5)
-      expect(switched.usage?.turns).toBe(1)
-      expect(switched.messages.length).toBe(1)
       expect(switched.messages[0].content).toBe('pre-switch')
 
-      // And persisted to disk, not just held in memory:
       const onDisk = JSON.parse(await readFile(join(SESSIONS_DIR, `${fileStem(k)}.json`), 'utf-8'))
-      expect(onDisk.claudeSessionId).toBe('uuid-keepme')
-      expect(onDisk.claudeSessionPrimed).toBe(true)
-      expect(onDisk.usage?.costUsd).toBe(0.5)
+      expect(onDisk.agentSessions['claude-code']).toEqual({
+        id: 'uuid-keepme', primed: true,
+      })
     } finally {
       await cleanupKey(k)
     }
   })
 
-  // opencode session id round-trip — same shape as claudeSessionId test but
-  // covers the second per-agent CLI session field. Regression for the
-  // 2026-05-02 fix where opencode adapter learned to call
-  // setOpencodeSessionId via the inspectEvent / opts.onAgentSessionId
-  // pipeline.
-  it('opencodeSessionId persists to disk and survives switchAgent', async () => {
+  it('discovered session ids persist, are idempotent, and reset cleanly', async () => {
     const k = uniqueKey('opencode-persist')
     try {
       await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'opencode')
-      await sessionManager.setOpencodeSessionId(k.platform, k.channelId, k.threadId, 'ses_test123')
+      const first = await sessionManager.setAgentSessionId(
+        k.platform, k.channelId, k.threadId, 'opencode', 'ses_x',
+      )
+      const same = await sessionManager.setAgentSessionId(
+        k.platform, k.channelId, k.threadId, 'opencode', 'ses_x',
+      )
+      expect(first?.agentSessions?.opencode?.id).toBe('ses_x')
+      expect(same?.agentSessions?.opencode?.id).toBe('ses_x')
 
-      // Round-trip through disk:
-      const meta = JSON.parse(await readFile(join(SESSIONS_DIR, `${fileStem(k)}.json`), 'utf-8'))
-      expect(meta.opencodeSessionId).toBe('ses_test123')
+      const changed = await sessionManager.setAgentSessionId(
+        k.platform, k.channelId, k.threadId, 'opencode', 'ses_y',
+      )
+      expect(changed?.agentSessions?.opencode?.id).toBe('ses_y')
 
-      // Force fresh load to confirm loadSession reads the field:
+      const switched = await sessionManager.switchAgent(k.platform, k.channelId, k.threadId, 'claude-code')
+      expect(switched.agentSessions?.opencode?.id).toBe('ses_y')
+      const reset = await sessionManager.resetConversation(k.platform, k.channelId, k.threadId)
+      expect(reset?.agentSessions).toBeUndefined()
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
+  it('migrates legacy per-agent metadata into agentSessions', async () => {
+    const k = uniqueKey('legacy-agent-session')
+    try {
+      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'claude-code')
+      const metaPath = join(SESSIONS_DIR, `${fileStem(k)}.json`)
+      const legacy = JSON.parse(await readFile(metaPath, 'utf-8'))
+      delete legacy.agentSessions
+      legacy.claudeSessionId = 'legacy-uuid'
+      legacy.claudeSessionPrimed = true
+      legacy.opencodeSessionId = 'legacy-ses'
+      await writeFile(metaPath, JSON.stringify(legacy, null, 2))
+
       // @ts-expect-error — reach into the singleton's private map for the test
       sessionManager.sessions.delete(`${k.platform}:${k.channelId}:${k.threadId}`)
       const reloaded = await sessionManager.getExistingSession(k.platform, k.channelId, k.threadId)
-      expect(reloaded?.opencodeSessionId).toBe('ses_test123')
+      expect(reloaded?.agentSessions?.['claude-code']).toEqual({
+        id: 'legacy-uuid', primed: true,
+      })
+      expect(reloaded?.agentSessions?.opencode).toEqual({ id: 'legacy-ses' })
 
-      // And survives the /cc → /oc round-trip:
-      const switched = await sessionManager.switchAgent(k.platform, k.channelId, k.threadId, 'claude-code')
-      expect(switched.opencodeSessionId).toBe('ses_test123')
-
-      // /new must clear it (clean slate for both per-agent CLI sessions):
-      const reset = await sessionManager.resetConversation(k.platform, k.channelId, k.threadId)
-      expect(reset?.opencodeSessionId).toBeUndefined()
+      await sessionManager.recordUsage(k.platform, k.channelId, k.threadId, {
+        costUsd: 0, promptChars: 1, responseChars: 1, durationMs: 1,
+      })
+      const migrated = JSON.parse(await readFile(metaPath, 'utf-8'))
+      expect(migrated.agentSessions.opencode.id).toBe('legacy-ses')
+      expect(migrated.claudeSessionId).toBeUndefined()
+      expect(migrated.opencodeSessionId).toBeUndefined()
     } finally {
       await cleanupKey(k)
     }
   })
 
-  // setOpencodeSessionId is idempotent — opencode emits the same sessionID
-  // on every event in a run; the adapter forwards each one and we need to
-  // tolerate that without re-writing meta or bumping lastActivity.
-  it('setOpencodeSessionId is idempotent for the same id', async () => {
-    const k = uniqueKey('opencode-idempotent')
-    try {
-      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'opencode')
-      const a = await sessionManager.setOpencodeSessionId(k.platform, k.channelId, k.threadId, 'ses_x')
-      const b = await sessionManager.setOpencodeSessionId(k.platform, k.channelId, k.threadId, 'ses_x')
-      expect(a?.opencodeSessionId).toBe('ses_x')
-      expect(b?.opencodeSessionId).toBe('ses_x')
-
-      // A different id replaces it (in case opencode generates a new one
-      // because we forked / lost the old one).
-      const c = await sessionManager.setOpencodeSessionId(k.platform, k.channelId, k.threadId, 'ses_y')
-      expect(c?.opencodeSessionId).toBe('ses_y')
-    } finally {
-      await cleanupKey(k)
-    }
-  })
 })

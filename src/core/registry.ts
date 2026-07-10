@@ -5,6 +5,7 @@ import type { ACPAgentConfig } from '../plugins/agents/acp/types.js'
 import { logger as rootLogger } from './logger.js'
 import { isGlobalImEnabled, isRemoteAgentEnabled } from './feature-flags.js'
 import { isAgentEnabled } from './live-config.js'
+import { BUILT_IN_AGENT_CATALOG } from './agent-catalog.js'
 
 const log = rootLogger.child({ component: 'registry' })
 
@@ -39,14 +40,14 @@ class PluginRegistry {
     this.messengers.set(adapter.name, adapter)
   }
 
-  registerAgent(adapter: AgentAdapter): void {
+  registerAgent(adapter: AgentAdapter, aliases: readonly string[] = adapter.aliases): void {
     if (this.agents.has(adapter.name)) {
       log.warn({ agent: adapter.name }, `Agent "${adapter.name}" already registered, overwriting`)
     }
     this.agents.set(adapter.name, adapter)
 
     // Register aliases
-    for (const alias of adapter.aliases) {
+    for (const alias of aliases) {
       if (this.agentAliases.has(alias)) {
         log.warn({ alias, agent: adapter.name }, `Agent alias "${alias}" already registered, overwriting`)
       }
@@ -215,46 +216,27 @@ class PluginRegistry {
     const { emailAdapter } = await import('../plugins/messengers/email/email-adapter.js')
     this.registerMessenger(emailAdapter)
 
-    // Load built-in agents
-    const { claudeCodeAdapter } = await import('../plugins/agents/claude-code/index.js')
-    this.registerAgent(claudeCodeAdapter)
-
-    const { codexAdapter } = await import('../plugins/agents/codex/index.js')
-    this.registerAgent(codexAdapter)
-
-    const { copilotAdapter } = await import('../plugins/agents/copilot/index.js')
-    this.registerAgent(copilotAdapter)
-
-    const { opencodeAdapter } = await import('../plugins/agents/opencode/index.js')
-    this.registerAgent(opencodeAdapter)
-
-    const { antigravityAdapter } = await import('../plugins/agents/antigravity/index.js')
-    this.registerAgent(antigravityAdapter)
-
-    const { kimiCodeAdapter } = await import('../plugins/agents/kimi-code/index.js')
-    this.registerAgent(kimiCodeAdapter)
-
-    const { qoderAdapter } = await import('../plugins/agents/qoder/index.js')
-    this.registerAgent(qoderAdapter)
-
-    const { piAdapter } = await import('../plugins/agents/pi/index.js')
-    this.registerAgent(piAdapter)
-
-    const { mimoAdapter } = await import('../plugins/agents/mimo/index.js')
-    this.registerAgent(mimoAdapter)
-
-    // Cursor (`cursor-agent`) — isAvailable() probes the
-    // bin; on boxes without cursor installed the agent shows as unavailable
-    // and `/cs` returns the install hint.
-    const { cursorAdapter } = await import('../plugins/agents/cursor/index.js')
-    this.registerAgent(cursorAdapter)
-
-    // Agim Agent (public name: native/agim). Single in-process implementation
-    // backed by pi-agent-core; the old legacy native loop has been retired.
-    const { nativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
-    this.registerAgent(nativeAgentAdapter)
-    log.info({ event: 'registry.native_engine', engine: 'agim-agent' },
-      'native engine: agim-agent')
+    // Load built-in agents from the catalog so adding a backend no longer
+    // requires another hand-written import/register branch in the registry.
+    for (const entry of BUILT_IN_AGENT_CATALOG) {
+      const adapter = await entry.load()
+      if (adapter.name !== entry.id) {
+        throw new Error(`Agent catalog mismatch: expected ${entry.id}, loaded ${adapter.name}`)
+      }
+      const adapterAliases = [...adapter.aliases].sort()
+      const catalogAliases = [...entry.aliases].sort()
+      if (JSON.stringify(adapterAliases) !== JSON.stringify(catalogAliases)) {
+        throw new Error(
+          `Agent catalog alias mismatch for ${entry.id}: ` +
+          `catalog=${catalogAliases.join(',')} adapter=${adapterAliases.join(',')}`,
+        )
+      }
+      this.registerAgent(adapter, entry.aliases)
+      if (entry.id === 'native') {
+        log.info({ event: 'registry.native_engine', engine: 'agim-agent' },
+          'native engine: agim-agent')
+      }
+    }
 
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')

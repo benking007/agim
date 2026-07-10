@@ -101,7 +101,7 @@ describe('OpenCodeAdapter inspectEvent — session id capture', () => {
     inspect(adapter, { type: 'step_start', sessionID: 'ses_x' }, opts)
     inspect(adapter, { type: 'text', sessionID: 'ses_x', part: { type: 'text', text: 'hi' } }, opts)
     inspect(adapter, { type: 'step_finish', sessionID: 'ses_x' }, opts)
-    // 3 events, all carry ses_x. Adapter forwards each — setOpencodeSessionId
+    // 3 events, all carry ses_x. Adapter forwards each — setAgentSessionId
     // is itself idempotent so this is safe.
     expect(ids.length).toBe(3)
     expect(new Set(ids).size).toBe(1)

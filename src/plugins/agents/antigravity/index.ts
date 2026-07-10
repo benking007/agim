@@ -26,10 +26,10 @@
 //     and prints its reply to stdout. We don't see the UUID in stdout —
 //     instead we read it from disk by listing that directory and picking the
 //     most recently-modified .pb file (the one we just created). Then stash
-//     it on Session.antigravitySessionId.
+//     it under Session.agentSessions.antigravity.
 //   - Subsequent calls: launch `agy --print --conversation <uuid> "<prompt>"`.
 //     agy reopens the .pb and appends turns.
-//   - `/new` clears antigravitySessionId; the next run starts fresh.
+//   - `/new` clears the stored Antigravity session state; the next run starts fresh.
 //
 // Output format:
 //   agy prints plain text to stdout (not JSON stream). The AgentBase

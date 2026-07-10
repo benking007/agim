@@ -2,7 +2,6 @@
 
 import type { ParsedMessage, ChatMessage, Session } from './types.js'
 import type { Logger } from 'pino'
-import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
@@ -618,36 +617,12 @@ export async function callAgentWithHistory(
   // race each other.
   let usageAcc = 0
   const onAgentSessionId = (id: string): void => {
-    // Persist the adapter-reported id on first sighting so the next turn can
-    // pass it back via --session / exec resume. Setters are idempotent.
-    // Routed by agent name so each adapter writes to its own session column.
-    const name = agent.name
-    if (name === 'opencode') {
-      void sessionManager.setOpencodeSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setOpencodeSessionId failed'))
-    } else if (name === 'codex') {
-      void sessionManager.setCodexSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCodexSessionId failed'))
-    } else if (name === 'antigravity') {
-      void sessionManager.setAntigravitySessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setAntigravitySessionId failed'))
-    } else if (name === 'kimi-code') {
-      void sessionManager.setKimiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setKimiSessionId failed'))
-    } else if (name === 'qoder') {
-      void sessionManager.setQoderSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setQoderSessionId failed'))
-    } else if (name === 'pi') {
-      void sessionManager.setPiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setPiSessionId failed'))
-    } else if (name === 'mimo') {
-      void sessionManager.setMimoSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setMimoSessionId failed'))
-    } else if (name === 'copilot') {
-      void sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCopilotSessionId failed'))
-    }
-    // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
+    void sessionManager.setAgentSessionId(
+      ctx.platform, ctx.channelId, storageThreadId, agent.name, id,
+    ).catch((err) => ctx.logger.debug({
+      err: String(err),
+      agent: agent.name,
+    }, 'setAgentSessionId failed'))
   }
   const onUsage = (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
@@ -842,89 +817,13 @@ export async function prepareSubtaskAgentCallOptions(
   agentName: string,
   ctx: RouteContext,
   storageThreadId: string,
-  subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId' | 'antigravitySessionId' | 'kimiSessionId' | 'qoderSessionId' | 'piSessionId' | 'mimoSessionId' | 'copilotSessionId'>,
+  subSession: Pick<Session, 'agentSessions'>,
 ): Promise<AgentCallOptions> {
-  if (agentName === 'claude-code') {
-    let claudeId = subSession.claudeSessionId
-    if (!claudeId) {
-      claudeId = randomUUID()
-      await sessionManager.setClaudeSessionId(ctx.platform, ctx.channelId, storageThreadId, claudeId)
-    }
-    const resume = !!subSession.claudeSessionPrimed
-    if (!resume) {
-      await sessionManager.markClaudeSessionPrimed(ctx.platform, ctx.channelId, storageThreadId)
-    }
-    return { storageThreadId, agentSessionId: claudeId, agentSessionResume: resume }
-  }
-
-  if (agentName === 'opencode') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.opencodeSessionId,
-      agentSessionResume: !!subSession.opencodeSessionId,
-    }
-  }
-
-  if (agentName === 'codex') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.codexSessionId,
-      agentSessionResume: !!subSession.codexSessionId,
-    }
-  }
-
-  if (agentName === 'antigravity') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.antigravitySessionId,
-      agentSessionResume: !!subSession.antigravitySessionId,
-    }
-  }
-
-  if (agentName === 'kimi-code') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.kimiSessionId,
-      agentSessionResume: !!subSession.kimiSessionId,
-    }
-  }
-
-  if (agentName === 'qoder') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.qoderSessionId,
-      agentSessionResume: !!subSession.qoderSessionId,
-    }
-  }
-
-  if (agentName === 'pi') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.piSessionId,
-      agentSessionResume: !!subSession.piSessionId,
-    }
-  }
-
-  if (agentName === 'mimo') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.mimoSessionId,
-      agentSessionResume: !!subSession.mimoSessionId,
-    }
-  }
-
-  if (agentName === 'copilot') {
-    let copilotId = subSession.copilotSessionId
-    if (!copilotId) {
-      copilotId = randomUUID()
-      await sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, copilotId)
-    }
-    return {
-      storageThreadId,
-      agentSessionId: copilotId,
-      agentSessionResume: !!subSession.copilotSessionId,
-    }
-  }
-
-  return { storageThreadId }
+  // The persisted session manager is authoritative; retain this parameter for
+  // call-site compatibility while the subtask API is migrated independently.
+  void subSession
+  const prepared = await sessionManager.prepareAgentSession(
+    ctx.platform, ctx.channelId, storageThreadId, agentName,
+  )
+  return { storageThreadId, ...prepared }
 }

@@ -8,13 +8,21 @@
 // entire history on every chat turn (the old behavior was an O(N) write
 // per message). All metadata writes are atomic via writeFile→rename.
 
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { getAgentNativeSessionPolicy } from './agent-catalog.js'
+import {
+  clearAllAgentSessionStates,
+  getAgentSessionState,
+  migrateLegacyAgentSessionStates,
+  setAgentSessionState,
+  type LegacyAgentSessionMetadata,
+} from './agent-session.js'
 
 const log = rootLogger.child({ component: 'session' })
 
@@ -44,7 +52,7 @@ function sessionLogPath(key: string): string {
 //                   the agent just bloats the prompt.
 //
 //   META_TTL      — how long the *session metadata* (agent, model, variant,
-//                   claudeSessionId, claudeSessionPrimed, usage stats) lives
+//                   agentSessions and usage stats) lives
 //                   on disk. Long by default (7 days) so the thread's "sticky
 //                   agent" and resumable claude-code session id survive
 //                   overnight / weekend gaps. Without this, a 30-minute
@@ -214,7 +222,7 @@ class SessionManager {
       }
       if (messagesStale(session, now.getTime()) && session.messages.length > 0) {
         // Drop stale chat history but preserve metadata (sticky agent,
-        // claudeSessionId etc.) — that's the whole point of META_TTL.
+        // agentSessions etc.) — that's the whole point of META_TTL.
         session.messages = []
         try { await unlink(sessionLogPath(key)) } catch { /* ignore */ }
       }
@@ -278,16 +286,7 @@ class SessionManager {
         activeSubtaskId: existing?.activeSubtaskId,
         subtasks: existing?.subtasks,
         subtaskCounter: existing?.subtaskCounter,
-        claudeSessionId: existing?.claudeSessionId,
-        claudeSessionPrimed: existing?.claudeSessionPrimed,
-        opencodeSessionId: existing?.opencodeSessionId,
-        codexSessionId: existing?.codexSessionId,
-        antigravitySessionId: existing?.antigravitySessionId,
-        kimiSessionId: existing?.kimiSessionId,
-        qoderSessionId: existing?.qoderSessionId,
-        piSessionId: existing?.piSessionId,
-        mimoSessionId: existing?.mimoSessionId,
-        copilotSessionId: existing?.copilotSessionId,
+        agentSessions: existing?.agentSessions,
         planMode: existing?.planMode,
       }
 
@@ -377,20 +376,17 @@ class SessionManager {
     })
   }
 
-  /**
-   * Persist claude-code resumable session bookkeeping (UUID + primed flag).
-   * Returns the updated session, or undefined if no session exists yet for
-   * this thread. Caller is expected to ensure the session exists first.
-   */
-  async setClaudeSessionId(
+  /** Persist an adapter-native session id. Idempotent for repeated events. */
+  async setAgentSessionId(
     platform: string, channelId: string, threadId: string,
-    claudeSessionId: string,
+    agentName: string, agentSessionId: string,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
       const session = this.sessions.get(key) || await this.loadSession(key)
       if (!session) return undefined
-      session.claudeSessionId = claudeSessionId
+      if (getAgentSessionState(session, agentName)?.id === agentSessionId) return session
+      setAgentSessionState(session, agentName, { id: agentSessionId })
       session.lastActivity = new Date()
       this.sessions.set(key, session)
       await this.saveSessionMeta(key, session)
@@ -398,14 +394,15 @@ class SessionManager {
     })
   }
 
-  async markClaudeSessionPrimed(
-    platform: string, channelId: string, threadId: string,
+  /** Mark a preallocated native session as started before invoking the CLI. */
+  async markAgentSessionPrimed(
+    platform: string, channelId: string, threadId: string, agentName: string,
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
       const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session || session.claudeSessionPrimed) return
-      session.claudeSessionPrimed = true
+      if (!session || getAgentSessionState(session, agentName)?.primed) return
+      setAgentSessionState(session, agentName, { primed: true })
       session.lastActivity = new Date()
       this.sessions.set(key, session)
       await this.saveSessionMeta(key, session)
@@ -413,177 +410,38 @@ class SessionManager {
   }
 
   /**
-   * Persist opencode's native session id (`ses_…`) once we've seen it in the
-   * adapter's stream. Idempotent — calling with the same id is a no-op so
-   * the per-event callback can fire as many times as opencode sends events.
+   * Prepare one adapter-native conversation for invocation. The catalog decides
+   * whether Agim preallocates an id or waits for the adapter to report one.
    */
-  async setOpencodeSessionId(
-    platform: string, channelId: string, threadId: string,
-    opencodeSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.opencodeSessionId === opencodeSessionId) return session
-      session.opencodeSessionId = opencodeSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
+  async prepareAgentSession(
+    platform: string, channelId: string, threadId: string, agentName: string,
+  ): Promise<{ agentSessionId?: string; agentSessionResume?: boolean }> {
+    const policy = getAgentNativeSessionPolicy(agentName)
+    if (!policy) return {}
 
-  /**
-   * Persist codex's native thread id (UUID) once we've seen it in the
-   * adapter's `thread.started` event. Idempotent — same id may fire multiple
-   * times per spawn. Mirrors setOpencodeSessionId.
-   */
-  async setCodexSessionId(
-    platform: string, channelId: string, threadId: string,
-    codexSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.codexSessionId === codexSessionId) return session
-      session.codexSessionId = codexSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
+    let session = await this.getOrCreateSession(platform, channelId, threadId, agentName)
+    const current = getAgentSessionState(session, agentName)
+    const hadId = Boolean(current?.id)
+    let id = current?.id
 
-  /**
-   * Persist Antigravity's (`agy`) conversation UUID after the first run
-   * creates `~/.gemini/antigravity-cli/conversations/<uuid>.pb`. The
-   * adapter detects the file via a before/after readdir snapshot and
-   * calls back via `opts.onAgentSessionId(id)`; this setter persists
-   * it so the next turn passes `--conversation <id>`. Mirrors
-   * setOpencodeSessionId / setCodexSessionId. Cleared by /new.
-   */
-  async setAntigravitySessionId(
-    platform: string, channelId: string, threadId: string,
-    antigravitySessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.antigravitySessionId === antigravitySessionId) return session
-      session.antigravitySessionId = antigravitySessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
+    if (!id && policy.idMode === 'preallocated') {
+      id = randomUUID()
+      session = await this.setAgentSessionId(
+        platform, channelId, threadId, agentName, id,
+      ) ?? session
+    }
 
-  /**
-   * Persist Kimi Code's session id after the first run creates or reports it.
-   * Subsequent turns pass it back via `kimi -p --session <id>`.
-   */
-  async setKimiSessionId(
-    platform: string, channelId: string, threadId: string,
-    kimiSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.kimiSessionId === kimiSessionId) return session
-      session.kimiSessionId = kimiSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
+    const resume = policy.legacyPrimedField
+      ? getAgentSessionState(session, agentName)?.primed === true
+      : hadId
 
-  /**
-   * Persist Qoder's stream-json session id after the first run reports it.
-   * Subsequent turns pass it back via `qodercli --resume <id>`.
-   */
-  async setQoderSessionId(
-    platform: string, channelId: string, threadId: string,
-    qoderSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.qoderSessionId === qoderSessionId) return session
-      session.qoderSessionId = qoderSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
+    if (policy.legacyPrimedField && !resume) {
+      await this.markAgentSessionPrimed(platform, channelId, threadId, agentName)
+    }
 
-  /**
-   * Persist PI's JSON-mode session id after the first run reports it.
-   * Subsequent turns pass it back via `pi --session <id>`.
-   */
-  async setPiSessionId(
-    platform: string, channelId: string, threadId: string,
-    piSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.piSessionId === piSessionId) return session
-      session.piSessionId = piSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
-
-  /**
-   * Persist MiMo Code's JSON-mode session id after the first run reports it.
-   * Subsequent turns pass it back via `mimo run --session <id>`.
-   */
-  async setMimoSessionId(
-    platform: string, channelId: string, threadId: string,
-    mimoSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.mimoSessionId === mimoSessionId) return session
-      session.mimoSessionId = mimoSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
-  }
-
-  /**
-   * Persist GitHub Copilot CLI's Agim-allocated session UUID.
-   * Subsequent turns pass it back via `copilot --session-id <uuid>`.
-   */
-  async setCopilotSessionId(
-    platform: string, channelId: string, threadId: string,
-    copilotSessionId: string,
-  ): Promise<Session | undefined> {
-    const key = `${platform}:${channelId}:${threadId}`
-    return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session) return undefined
-      if (session.copilotSessionId === copilotSessionId) return session
-      session.copilotSessionId = copilotSessionId
-      session.lastActivity = new Date()
-      this.sessions.set(key, session)
-      await this.saveSessionMeta(key, session)
-      return session
-    })
+    return {
+      ...(id ? { agentSessionId: id, agentSessionResume: resume } : {}),
+    }
   }
 
   /**
@@ -635,18 +493,8 @@ class SessionManager {
         session.messages = []
         session.lastActivity = new Date()
         session.id = `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}` // New session ID
-        // Forget the old per-agent CLI sessions — /new should give a clean slate
-        // for both Claude (`--resume`) and opencode (`--session`).
-        delete session.claudeSessionId
-        delete session.claudeSessionPrimed
-        delete session.opencodeSessionId
-        delete session.codexSessionId
-        delete session.antigravitySessionId
-        delete session.kimiSessionId
-        delete session.qoderSessionId
-        delete session.piSessionId
-        delete session.mimoSessionId
-        delete session.copilotSessionId
+        // Forget every adapter-native session — /new is a clean slate.
+        clearAllAgentSessionStates(session)
         // Plan mode is per-conversation intent ("先规划再动手") — a fresh
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
@@ -883,16 +731,7 @@ class SessionManager {
         activeSubtaskId: session.activeSubtaskId,
         subtasks: session.subtasks,
         subtaskCounter: session.subtaskCounter,
-        claudeSessionId: session.claudeSessionId,
-        claudeSessionPrimed: session.claudeSessionPrimed,
-        opencodeSessionId: session.opencodeSessionId,
-        codexSessionId: session.codexSessionId,
-        antigravitySessionId: session.antigravitySessionId,
-        kimiSessionId: session.kimiSessionId,
-        qoderSessionId: session.qoderSessionId,
-        piSessionId: session.piSessionId,
-        mimoSessionId: session.mimoSessionId,
-        copilotSessionId: session.copilotSessionId,
+        agentSessions: session.agentSessions,
         planMode: session.planMode,
         messageCount: session.messages.length,
       }
@@ -937,7 +776,7 @@ class SessionManager {
     const filePath = sessionFilePath(key)
     try {
       const data = await readFile(filePath, 'utf-8')
-      const parsed = JSON.parse(data) as Partial<Session> & { messageCount?: number }
+      const parsed = JSON.parse(data) as Partial<Session> & LegacyAgentSessionMetadata & { messageCount?: number }
       const session: Session = {
         id: parsed.id!,
         channelId: parsed.channelId!,
@@ -954,18 +793,10 @@ class SessionManager {
         activeSubtaskId: parsed.activeSubtaskId,
         subtasks: parsed.subtasks,
         subtaskCounter: parsed.subtaskCounter,
-        claudeSessionId: parsed.claudeSessionId,
-        claudeSessionPrimed: parsed.claudeSessionPrimed,
-        opencodeSessionId: parsed.opencodeSessionId,
-        codexSessionId: parsed.codexSessionId,
-        antigravitySessionId: parsed.antigravitySessionId,
-        kimiSessionId: parsed.kimiSessionId,
-        qoderSessionId: parsed.qoderSessionId,
-        piSessionId: parsed.piSessionId,
-        mimoSessionId: parsed.mimoSessionId,
-        copilotSessionId: parsed.copilotSessionId,
+        agentSessions: parsed.agentSessions,
         planMode: parsed.planMode,
       }
+      migrateLegacyAgentSessionStates(session, parsed)
       // Convert message timestamps from legacy format if present
       session.messages = session.messages.map((msg) => ({
         ...msg,
@@ -1009,7 +840,7 @@ class SessionManager {
         try { await unlink(filePath) } catch { /* ignore */ }
         try { await unlink(logPath) } catch { /* ignore */ }
       } else if (idle > MESSAGES_TTL && session.messages.length > 0) {
-        // Messages-only eviction: keep sticky agent / claudeSessionId on disk
+        // Messages-only eviction: keep sticky agent / agentSessions on disk
         // (meta file untouched), drop chat log + in-memory messages so the
         // next turn starts with a fresh history but the same routing.
         session.messages = []

@@ -85,6 +85,16 @@ export interface MessageContext {
   inlineJobId?: number
 }
 
+/** Adapter-native resumable conversation state. */
+export interface AgentSessionState {
+  /** Native CLI / remote backend conversation id. */
+  id?: string
+  /** True after a preallocated session has been started at least once. */
+  primed?: boolean
+  /** Reserved for adapter-specific resume metadata that should survive restart. */
+  metadata?: Record<string, unknown>
+}
+
 /**
  * Session state for a conversation
  * Keyed by `${platform}:${channelId}:${threadId}` for uniqueness
@@ -111,48 +121,8 @@ export interface Session {
   activeSubtaskId?: number | null
   subtasks?: SubtaskMeta[]
   subtaskCounter?: number
-  /** UUID we pre-allocate for the claude-code adapter so multiple turns in
-   *  the same agim conversation share one resumable claude session
-   *  (`claude --resume <uuid>`). Persists across restarts. */
-  claudeSessionId?: string
-  /** Set to true after the first successful claude-code run on this session.
-   *  cli uses it to decide between `--session-id` (fresh, allowed once) and
-   *  `--resume` (subsequent turns). Cleared by /new. */
-  claudeSessionPrimed?: boolean
-  /** opencode session id (`ses_…`) discovered from opencode's first JSON event
-   *  on a fresh run. Subsequent turns pass `--session <id>` so opencode
-   *  resumes the same conversation from its own DB and agim no longer needs
-   *  to stitch the history into the prompt. Cleared by /new. */
-  opencodeSessionId?: string
-  /** codex thread id (UUID) discovered from codex's `thread.started` event on
-   *  a fresh run. Subsequent turns spawn `codex exec resume <id> …` so codex
-   *  continues the same session from its own ~/.codex/sessions store. Cleared
-   *  by /new. */
-  codexSessionId?: string
-  /** Antigravity (Google `agy`) conversation UUID discovered from
-   *  ~/.gemini/antigravity-cli/conversations/<uuid>.pb the CLI writes
-   *  after the first turn. Subsequent calls pass `--conversation <uuid>`
-   *  so we continue the same session and history. Cleared by /new. */
-  antigravitySessionId?: string
-  /** Kimi Code session id discovered from ~/.kimi-code/session_index.jsonl
-   *  after the first `kimi -p` run (or surfaced in stream events when the CLI
-   *  includes it). Subsequent calls pass `--session <id>`. Cleared by /new. */
-  kimiSessionId?: string
-  /** Qoder CLI session id surfaced in stream-json events. Subsequent turns
-   *  pass `--resume <id>` so Qoder continues the same conversation from its
-   *  own session store. Cleared by /new. */
-  qoderSessionId?: string
-  /** PI session id surfaced in JSON mode's first `session` event. Subsequent
-   *  turns pass `--session <id>` so PI resumes the same session from its
-   *  own session store. Cleared by /new. */
-  piSessionId?: string
-  /** MiMo Code session id surfaced in JSON events. Subsequent turns pass
-   *  `--session <id>` so MiMo resumes the same session from its own store.
-   *  Cleared by /new. */
-  mimoSessionId?: string
-  /** GitHub Copilot CLI session UUID preallocated by Agim and passed via
-   *  `--session-id <uuid>`. Cleared by /new. */
-  copilotSessionId?: string
+  /** Adapter-native resumable conversations keyed by canonical agent name. */
+  agentSessions?: Record<string, AgentSessionState>
   /** Plan mode flag — toggled by /plan on / /plan off. When true:
    *    • claude-code adapter spawns with `--permission-mode plan` and bypasses
    *      the IM approval bus (plan mode is read-only, no mutations to gate).

@@ -71,20 +71,25 @@ const TWO_MEMOS = {
   ],
 }
 
+function mockMemos(payload: unknown) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input).startsWith('/api/memos')) return jsonResponse(payload)
+    return jsonResponse({})
+  })
+}
+
 describe('/memos', () => {
   it('renders search results with memo + map cell', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(TWO_MEMOS))
+    mockMemos(TWO_MEMOS)
     renderPage()
     await waitFor(() => {
-      // Two memos visible (jsdom renders both desktop + mobile views)
       expect(screen.getAllByText('pick up tax docs from accountant').length).toBeGreaterThan(0)
     })
-    // Location label appears as the map cell button text
     expect(screen.getAllByText('Pudong cafe').length).toBeGreaterThan(0)
   })
 
   it('empty results → friendly empty-state', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ memos: [] }))
+    mockMemos({ memos: [] })
     renderPage()
     await waitFor(() => {
       expect(screen.getAllByText('No memos match').length).toBeGreaterThan(0)
@@ -107,7 +112,6 @@ describe('/memos', () => {
     await waitFor(() => {
       expect(screen.getAllByText('pick up tax docs from accountant').length).toBeGreaterThan(0)
     })
-    // The desktop table has explicit Delete buttons (one per row).
     const table = screen.getByRole('table')
     const deleteBtns = within(table).getAllByRole('button', { name: 'Delete' })
     expect(deleteBtns.length).toBeGreaterThanOrEqual(1)
@@ -115,8 +119,6 @@ describe('/memos', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
-    // Inside dialog: two buttons share text "Delete" — the cancel
-    // secondary + the destructive confirm. We want destructive.
     const dialog = screen.getByRole('dialog')
     const candidates = within(dialog).getAllByRole('button', { name: 'Delete' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))

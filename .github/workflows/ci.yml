@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -45,13 +49,32 @@ jobs:
         run: npm run typecheck
 
       - name: Backend lint
+        id: backend-lint
+        continue-on-error: true
         shell: bash
         run: |
-          set +e
           npm run lint > /tmp/backend-lint.log 2>&1
-          status=$?
-          tail -n 120 /tmp/backend-lint.log
-          exit "$status"
+
+      - name: Report backend lint diagnostics
+        if: steps.backend-lint.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- agim-ci-backend-lint -->'
+            echo '### Backend lint failed'
+            echo
+            echo '```text'
+            tail -n 120 /tmp/backend-lint.log
+            echo '```'
+          } > /tmp/backend-lint-comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/backend-lint-comment.md
+
+      - name: Enforce backend lint
+        if: steps.backend-lint.outcome == 'failure'
+        run: exit 1
 
       - name: Backend test
         run: npm test

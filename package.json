@@ -26,8 +26,9 @@
     "test:coverage": "bun test --coverage --path-ignore-patterns='**/web-app/**'",
     "test:node": "node test/node/memory-recall.mjs && node test/node/memory-distill.mjs",
     "lint": "biome lint src/cli.ts src/index.ts src/cli-ui src/core src/plugins src/scripts src/utils src/web/server.ts src/web/viewer-render.ts test",
+    "lint:ci": "npm run lint -- --diagnostic-level=error --max-diagnostics=100",
     "format": "biome format . --write",
-    "verify": "npm run typecheck && npm run lint && npm test && npm --prefix src/web-app run verify && npm run build && npm run test:node",
+    "verify": "npm run typecheck && npm run lint:ci && npm test && npm --prefix src/web-app run verify && npm run build && npm run test:node",
     "prepublishOnly": "npm run verify"
   },
   "keywords": [

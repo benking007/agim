@@ -113,22 +113,18 @@ export default function SettingsEmailRoute(): JSX.Element {
   const testMut = useTestEmail()
 
   const env = envQuery.data?.env ?? {}
+  const serverDraftJson = useMemo(
+    () => envQuery.data ? JSON.stringify(draftFromEnv(envQuery.data.env)) : null,
+    [envQuery.data],
+  )
 
   const [draft, setDraft] = useState<Draft>(emptyDraft)
-  // Sync draft from server whenever a fresh env arrives (initial load
-  // + reveal toggle + post-save refetch). Local edits that diverge stay
-  // until the user Saves or Discards.
-  const [syncedHash, setSyncedHash] = useState<string>('')
+  // Sync only when server values change. A same-value query refetch must not
+  // overwrite local edits merely because React Query returned a new object.
   useEffect(() => {
-    if (!envQuery.data) return
-    const next = draftFromEnv(env)
-    const hash = JSON.stringify(next)
-    if (hash !== syncedHash) {
-      setDraft(next)
-      setSyncedHash(hash)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envQuery.dataUpdatedAt])
+    if (!serverDraftJson) return
+    setDraft(JSON.parse(serverDraftJson) as Draft)
+  }, [serverDraftJson])
 
   const isConfigured = !!(env.AGIM_SMTP_HOST && env.AGIM_SMTP_USER && env.AGIM_SMTP_PASS)
 

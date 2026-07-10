@@ -70,18 +70,20 @@ export default function ChatRoute(): JSX.Element {
     [t],
   )
 
+  const messageScrollKey = `${state.messages.length}:${state.messages.at(-1)?.content.length ?? 0}`
+
   // Auto-scroll to bottom on new messages OR streaming chunk. Use
   // requestAnimationFrame so the layout has settled before we scroll;
   // also tolerate the case where the user scrolled up intentionally.
   useEffect(() => {
-    if (!listRef.current) return
+    if (messageScrollKey === '0:0' || !listRef.current) return
     const el = listRef.current
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200
     if (!nearBottom && state.currentReplyId == null) return
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight
     })
-  }, [state.messages, state.currentReplyId])
+  }, [messageScrollKey, state.currentReplyId])
 
   // Surface WS errors as toasts (and clear so they don't re-fire on
   // every render).

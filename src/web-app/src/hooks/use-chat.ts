@@ -15,7 +15,7 @@
  * text. If the WS isn't OPEN we surface an error toast (caller).
  */
 
-import { useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming, ChoiceCardPrompt } from '@/types/ws'
@@ -420,9 +420,13 @@ export function useChat(): UseChat {
   // the assistant bubble stays stuck on "…" until React re-renders for
   // an unrelated reason (e.g. tab switch).
   const currentReplyIdRef = useRef<string | null>(null)
+  const onIncomingRef = useRef<(msg: ChatIncoming) => void>(() => {})
   useEffect(() => {
     currentReplyIdRef.current = state.currentReplyId
   }, [state.currentReplyId])
+  useEffect(() => {
+    onIncomingRef.current = onIncoming
+  })
 
   useEffect(() => {
     const ws = wsRef.current
@@ -432,7 +436,7 @@ export function useChat(): UseChat {
     })
     const off2 = ws.subscribe({
       type: 'message',
-      fn: (msg: ChatIncoming) => onIncoming(msg),
+      fn: (msg: ChatIncoming) => onIncomingRef.current(msg),
     })
     // 2026-05-19: persist a per-browser threadId so refresh / re-open
     // resumes the same server-side session. Generated once on first
@@ -634,7 +638,7 @@ export function useChat(): UseChat {
     chunkBuf.current.clear()
   }
 
-  function send(text: string): void {
+  const send = useCallback((text: string): void => {
     const trimmed = text.trim()
     if (!trimmed) return
     const ws = wsRef.current
@@ -658,13 +662,13 @@ export function useChat(): UseChat {
         message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
       })
     }
-  }
+  }, [state.agent])
 
-  function switchAgent(name: string): void {
+  const switchAgent = useCallback((name: string): void => {
     wsRef.current.send({ type: 'switch-agent', agent: name })
-  }
+  }, [])
 
-  function approvalClick(messageId: string, reqId: string, choice: ApprovalChoice): boolean {
+  const approvalClick = useCallback((messageId: string, reqId: string, choice: ApprovalChoice): boolean => {
     // approval-router parses `apv:<reqId>:<y|n|a>`. v1 composed this
     // client-side too; we route through unchanged because the router
     // is the canonical sink and ignores any other prefix.
@@ -691,7 +695,7 @@ export function useChat(): UseChat {
       })
     }
     return ok
-  }
+  }, [])
 
   /**
    * Submit an ask_user answer. `data` is the fully-formed `ask:<reqId>:…`
@@ -707,7 +711,7 @@ export function useChat(): UseChat {
    * on a successful send we optimistically flip the dock row to a receipt
    * and dismiss it, otherwise it would sit "submitting" forever.
    */
-  function choiceSubmit(messageId: string, data: string): boolean {
+  const choiceSubmit = useCallback((messageId: string, data: string): boolean => {
     const ok = wsRef.current.send({ type: 'choice-action', data, messageId })
     if (!ok) {
       dispatch({
@@ -728,14 +732,18 @@ export function useChat(): UseChat {
       dispatch({ kind: 'CHOICE_DISMISS', messageId })
     }, APPROVAL_DISMISS_AFTER_MS)
     return ok
-  }
+  }, [])
 
-  function newConversation(): void {
+  const newConversation = useCallback((): void => {
     // Optimistic clear so the UI repaints empty immediately; the server's
     // follow-up `history` message with messages=[] reconfirms the state.
     dispatch({ kind: 'RESET_CONVERSATION' })
     wsRef.current.send({ type: 'new-conversation' })
-  }
+  }, [])
+
+  const clearError = useCallback((): void => {
+    dispatch({ kind: 'CLEAR_ERROR' })
+  }, [])
 
   return {
     state,
@@ -744,6 +752,6 @@ export function useChat(): UseChat {
     approvalClick,
     choiceSubmit,
     newConversation,
-    clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
+    clearError,
   }
 }

@@ -17,7 +17,7 @@
   "linter": {
     "rules": {
       "correctness": {
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": "error"
       },
       "suspicious": {
         "noArrayIndexKey": "warn",

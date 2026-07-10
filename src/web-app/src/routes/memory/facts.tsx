@@ -15,7 +15,7 @@
  * through ConfirmDialog.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -59,13 +59,24 @@ export default function MemoryFactsRoute(): JSX.Element {
   const page    = Math.max(1, Number(params.get('page')) || 1)
   const perPage = Number(params.get('per_page')) || DEFAULT_PER_PAGE
 
+  const patchParams = useCallback((patch: Record<string, string | null>): void => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const [key, value] of Object.entries(patch)) {
+        if (value == null || value === '') next.delete(key)
+        else next.set(key, value)
+      }
+      if (Object.keys(patch).some((key) => key !== 'page')) next.delete('page')
+      return next
+    }, { replace: false })
+  }, [setParams])
+
   const [qDraft, setQDraft] = useState(q)
   useEffect(() => {
     if (qDraft === q) return
     const timer = window.setTimeout(() => patchParams({ q: qDraft || null }), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qDraft])
+  }, [patchParams, q, qDraft])
 
   const query: ListMemoryFactsQuery = useMemo(
     () => ({
@@ -84,25 +95,19 @@ export default function MemoryFactsRoute(): JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / perPage))
 
   // Selection state for the bulk delete bar.
+  const selectionScope = JSON.stringify([userKey, q, cat, page, perPage])
   const [selection, setSelection] = useState<Set<string>>(new Set())
-  useEffect(() => { setSelection(new Set()) }, [userKey, q, cat, page, perPage])
+  useEffect(() => {
+    // The scope value is the reset signal when URL-driven list identity changes.
+    void selectionScope
+    setSelection(new Set())
+  }, [selectionScope])
 
   const deleteOne = useDeleteFactById()
   const bulkDelete = useBulkDeleteFacts()
 
   const [confirmOneId, setConfirmOneId] = useState<number | null>(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
-
-  function patchParams(patch: Record<string, string | null>): void {
-    const next = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(patch)) {
-      if (v == null || v === '') next.delete(k)
-      else next.set(k, v)
-    }
-    // Reset to page 1 on any filter mutation.
-    if (Object.keys(patch).some((k) => k !== 'page')) next.delete('page')
-    setParams(next, { replace: false })
-  }
 
   async function onConfirmDeleteOne(): Promise<void> {
     if (confirmOneId == null || !userKey) return

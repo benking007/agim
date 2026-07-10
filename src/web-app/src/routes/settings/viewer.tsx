@@ -129,23 +129,14 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
   const tunnelQuery = useViewerTunnel()
 
   const [draft, setDraft] = useState<ViewerDraft>(() => viewerDraftFromEnv(env))
-  const [syncedHash, setSyncedHash] = useState('')
-
-  // Sync draft when env changes (initial load + post-save refetch).
-  useEffect(() => {
-    const next = viewerDraftFromEnv(env)
-    const hash = JSON.stringify(next)
-    if (hash !== syncedHash) {
-      setDraft(next)
-      setSyncedHash(hash)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.AGIM_VIEWER_ENABLED, env.AGIM_VIEWER_PUBLIC_BASE_URL,
-      env.AGIM_VIEWER_TUNNEL_MODE, env.AGIM_VIEWER_CHARS,
-      env.AGIM_VIEWER_LINES, env.AGIM_VIEWER_CODE_LINES,
-      env.AGIM_VIEWER_MAX_PASTES, env.AGIM_VIEWER_NO_DEFAULT_REMOTE])
-
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
+  const currentJson = JSON.stringify(current)
+
+  // Sync only when derived server values change, not when an equivalent env
+  // object is recreated during an unrelated render or refetch.
+  useEffect(() => {
+    setDraft(JSON.parse(currentJson) as ViewerDraft)
+  }, [currentJson])
   const isDirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(current),
     [draft, current],

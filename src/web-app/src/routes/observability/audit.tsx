@@ -4,7 +4,7 @@
  * linking works; layout's ?days= window applies too.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Activity, Loader2, RefreshCcw } from 'lucide-react'
@@ -31,6 +31,17 @@ export default function ObservabilityAuditRoute(): JSX.Element {
   const user     = params.get('user') ?? ''
   const intent   = params.get('intent') ?? ''
 
+  const patchParams = useCallback((patch: Record<string, string | null>): void => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const [key, value] of Object.entries(patch)) {
+        if (value == null || value === '') next.delete(key)
+        else next.set(key, value)
+      }
+      return next
+    }, { replace: true })
+  }, [setParams])
+
   // Local drafts for the four free-text filter inputs — debounce so
   // typing doesn't fire one /api/audit per keystroke.
   const [agentDraft, setAgentDraft]       = useState(agent)
@@ -53,8 +64,7 @@ export default function ObservabilityAuditRoute(): JSX.Element {
       })
     }, SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentDraft, platformDraft, userDraft, intentDraft])
+  }, [agentDraft, intentDraft, patchParams, platformDraft, userDraft])
 
   const query: ListAuditQuery = useMemo(
     () => ({
@@ -71,15 +81,6 @@ export default function ObservabilityAuditRoute(): JSX.Element {
   const { data, isLoading, isFetching, refetch } = useAudit(query)
   const rows = data?.invocations ?? []
   const stats = data?.stats
-
-  function patchParams(patch: Record<string, string | null>): void {
-    const next = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(patch)) {
-      if (v == null || v === '') next.delete(k)
-      else next.set(k, v)
-    }
-    setParams(next, { replace: true })
-  }
 
   const columns: DataTableColumn<InvocationRow>[] = useMemo(
     () => [

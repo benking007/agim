@@ -180,8 +180,10 @@ const seen = new Set()
 const endpoints = []
 
 for (const re of PATTERNS) {
-  let m
-  while ((m = re.exec(text)) !== null) {
+  while (true) {
+    const m = re.exec(text)
+    if (m === null) break
+
     // Pattern variants put method/path in different capture groups.
     // Normalize by detecting which capture looks like a method.
     let methodCap, pathCap

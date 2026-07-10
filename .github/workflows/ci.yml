@@ -55,7 +55,7 @@ jobs:
           set +e
           (
             set -euxo pipefail
-            npm --prefix src/web-app exec -- biome lint src tools vite.config.ts --write --unsafe || true
+            npm --prefix src/web-app run lint -- --write --unsafe || true
             git status --short
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

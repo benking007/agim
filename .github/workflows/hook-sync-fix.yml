@@ -1,0 +1,122 @@
+name: Settings draft sync validation
+
+on:
+  pull_request:
+    branches: [codex/agim-development]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: settings-draft-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Stabilize settings draft sync
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          path = Path('src/web-app/src/routes/settings/email.tsx')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "  const env = envQuery.data?.env ?? {}\n\n  const [draft, setDraft] = useState<Draft>(emptyDraft)\n  // Sync draft from server whenever a fresh env arrives (initial load\n  // + reveal toggle + post-save refetch). Local edits that diverge stay\n  // until the user Saves or Discards.\n  useEffect(() => {\n    if (!envQuery.data) return\n    setDraft(draftFromEnv(envQuery.data.env))\n  }, [envQuery.data])",
+              "  const env = envQuery.data?.env ?? {}\n  const serverDraftJson = useMemo(\n    () => envQuery.data ? JSON.stringify(draftFromEnv(envQuery.data.env)) : null,\n    [envQuery.data],\n  )\n\n  const [draft, setDraft] = useState<Draft>(emptyDraft)\n  // Sync only when server values change. A same-value query refetch must not\n  // overwrite local edits merely because React Query returned a new object.\n  useEffect(() => {\n    if (!serverDraftJson) return\n    setDraft(JSON.parse(serverDraftJson) as Draft)\n  }, [serverDraftJson])",
+              'email draft sync',
+          )
+          path.write_text(text)
+
+          path = Path('src/web-app/src/routes/settings/viewer.tsx')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "  const current = useMemo(() => viewerDraftFromEnv(env), [env])\n\n  // Sync draft when env changes (initial load + post-save refetch).\n  useEffect(() => {\n    setDraft(current)\n  }, [current])",
+              "  const current = useMemo(() => viewerDraftFromEnv(env), [env])\n  const currentJson = JSON.stringify(current)\n\n  // Sync only when derived server values change, not when an equivalent env\n  // object is recreated during an unrelated render or refetch.\n  useEffect(() => {\n    setDraft(JSON.parse(currentJson) as ViewerDraft)\n  }, [currentJson])",
+              'viewer draft sync',
+          )
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/web-app/src/routes/settings/email.tsx src/web-app/src/routes/settings/viewer.tsx
+          git commit -m 'fix(web): preserve drafts across equivalent refetches'
+          git push origin HEAD:refactor/web-hook-stability
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Install root dependencies
+        shell: bash
+        run: |
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps --loglevel=error
+          BIOME_VERSION=$(node -p "require('./node_modules/@biomejs/biome/package.json').version")
+          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps --loglevel=error "@biomejs/cli-linux-x64@$BIOME_VERSION"
+          test -f node_modules/@biomejs/cli-linux-x64/biome
+
+      - name: Install web-app dependencies
+        run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend lint
+        run: npm run lint:ci
+
+      - name: Backend test
+        run: npm test
+        env:
+          LOG_LEVEL: error
+
+      - name: Web-app typecheck
+        run: npm --prefix src/web-app run typecheck
+
+      - name: Web-app lint
+        run: npm --prefix src/web-app run lint:ci
+
+      - name: Web-app i18n parity
+        run: npm --prefix src/web-app run check-i18n
+
+      - name: Web-app endpoint manifest
+        run: npm --prefix src/web-app run check-endpoints
+
+      - name: Web-app test
+        run: npm --prefix src/web-app test -- --run
+        env:
+          CI: 'true'
+
+      - name: Full build
+        run: npm run build
+
+      - name: Node-only memory regressions
+        run: npm run test:node
+
+      - name: Package contents smoke test
+        run: npm pack --dry-run

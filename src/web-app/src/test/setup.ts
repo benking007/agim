@@ -90,7 +90,7 @@ const _origRemoveItem = typeof localStorageRef.removeItem === 'function'
   : (_key: string): void => {}
 function safeRemoveItem(key: string): void {
   try {
-    return _origRemoveItem(key)
+    _origRemoveItem(key)
   } catch {
     // swallow — matches our production fallback behavior
   }

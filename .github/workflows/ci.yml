@@ -7,8 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -20,9 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref }}
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,52 +42,6 @@ jobs:
       - name: Install web-app dependencies
         run: npm --prefix src/web-app ci --no-audit --no-fund --legacy-peer-deps --loglevel=error
 
-      - name: Refresh endpoint manifest once
-        if: github.event_name == 'pull_request' && github.head_ref == 'codex/agim-development' && github.actor != 'github-actions[bot]'
-        shell: bash
-        run: |
-          node src/web-app/tools/extract-endpoints.mjs
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/web-app/tools/endpoints.json
-          if ! git diff --cached --quiet; then
-            git diff --cached --check
-            git commit -m 'build(web): refresh endpoint manifest'
-            git push origin HEAD:codex/agim-development
-          fi
-
-      - name: Web-app typecheck
-        run: npm --prefix src/web-app run typecheck
-
-      - name: Web-app lint
-        id: web-lint
-        continue-on-error: true
-        shell: bash
-        run: npm --prefix src/web-app run lint:ci > /tmp/web-lint.log 2>&1
-
-      - name: Report web-app lint diagnostics
-        if: steps.web-lint.outcome == 'failure' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          grep -E '^(src|tools|vite\.config\.ts).* lint/' /tmp/web-lint.log > /tmp/web-lint-compact.log || true
-          {
-            echo '<!-- agim-ci-web-lint-compact -->'
-            echo '### Web-app blocking lint diagnostics'
-            echo
-            echo '```text'
-            cat /tmp/web-lint-compact.log
-            echo '```'
-          } > /tmp/web-lint-comment.md
-          gh api --method PATCH "repos/$REPOSITORY/issues/comments/4932061405" \
-            --raw-field "body=$(cat /tmp/web-lint-comment.md)"
-
-      - name: Enforce web-app lint
-        if: steps.web-lint.outcome == 'failure'
-        run: exit 1
-
       - name: Backend typecheck
         run: npm run typecheck
 
@@ -103,10 +53,16 @@ jobs:
         env:
           LOG_LEVEL: error
 
+      - name: Web-app typecheck
+        run: npm --prefix src/web-app run typecheck
+
+      - name: Web-app lint
+        run: npm --prefix src/web-app run lint:ci
+
       - name: Web-app i18n parity
         run: npm --prefix src/web-app run check-i18n
 
-      - name: Web-app endpoint contract
+      - name: Web-app endpoint manifest
         run: npm --prefix src/web-app run check-endpoints
 
       - name: Web-app test

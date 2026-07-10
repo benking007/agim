@@ -8,5 +8,10 @@
       "!**/dist/**",
       "!src/web/public/**"
     ]
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   }
 }

@@ -69,7 +69,7 @@ if 'export interface AgentInstallHint {' in text:
         text,
         'export interface AgentInstallHint {\n',
         'export interface Config {\n',
-        'export interface Config {\n',
+        '',
         'remove AgentInstallHint',
     )
 if 'const AGENT_PACKAGES:' in text:
@@ -77,7 +77,7 @@ if 'const AGENT_PACKAGES:' in text:
         text,
         'const AGENT_PACKAGES: Record<string, AgentInstallHint> = {\n',
         '// ============================================\n// ============================================\n// Agent availability cache',
-        '// ============================================\n// Agent availability cache',
+        '',
         'remove AGENT_PACKAGES',
     )
 old_get_hint = """  const getInstallHint = (name: string): string => {
@@ -91,21 +91,8 @@ new_get_hint = """  const getInstallHint = (name: string): string =>
     getAgentInstallCommand(name) ?? `Install the ${name} adapter and ensure its CLI is on PATH.`
 """
 text = replace_once(text, old_get_hint, new_get_hint, 'format install helper')
-old_not_available = """  let installHint: string
-
-  if (agentName === 'antigravity') {
-    installHint = `安装方式:
-  curl -fsSL https://antigravity.google/cli/install.sh | bash
-然后跑一次 \`agy\` 走 Google 账号 OAuth 完成首次登录。`
-  } else {
-    const hint = AGENT_PACKAGES[agentName]
-    if (hint?.installCmd) installHint = hint.installCmd
-    else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
-  }
-
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
-"""
-new_not_available = """  const entry = getBuiltInAgentCatalogEntry(agentName)
+not_available_function = """export function formatAgentNotAvailableError(agentName: string): string {
+  const entry = getBuiltInAgentCatalogEntry(agentName)
   const installHint = entry?.install.unavailableHint
     ?? getAgentInstallCommand(agentName)
     ?? `Install the ${agentName} adapter and ensure its CLI is on PATH.`
@@ -117,8 +104,16 @@ new_not_available = """  const entry = getBuiltInAgentCatalogEntry(agentName)
     .join('\n')
 
   return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n${alternatives}`
+}
+
 """
-text = replace_once(text, old_not_available, new_not_available, 'not available formatter')
+text = replace_between(
+    text,
+    'export function formatAgentNotAvailableError(agentName: string): string {\n',
+    '// ============================================\n// 4. runMessengerOnboarding',
+    not_available_function,
+    'not available formatter',
+)
 path.write_text(text)
 
 

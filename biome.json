@@ -24,5 +24,17 @@
         "noUnknownAtRules": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/web-app/src/components/common/data-table.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    }
+  ]
 }

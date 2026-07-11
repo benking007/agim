@@ -192,7 +192,7 @@ export function resolveMessenger(platform: string): MessengerAdapter | undefined
   const direct = registry.getMessenger(platform)
   if (direct) return direct
 
-  const prefix = platform + '-'
+  const prefix = `${platform}-`
   for (const name of registry.listMessengers()) {
     if (name === platform || name.startsWith(prefix)) {
       return registry.getMessenger(name)

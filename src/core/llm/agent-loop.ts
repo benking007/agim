@@ -306,7 +306,8 @@ async function streamThenBuffer(
   const toolCalls: ToolCallRequest[] = []
   const indices = Array.from(toolAcc.keys()).sort((a, b) => a - b)
   for (const idx of indices) {
-    const acc = toolAcc.get(idx)!
+    const acc = toolAcc.get(idx)
+    if (!acc) continue
     if (!acc.name) continue
     let args: Record<string, unknown> = {}
     if (acc.argsConcat) {
@@ -445,11 +446,11 @@ export function stableStringify(value: unknown, seen: WeakSet<object> = new Weak
   if (seen.has(value as object)) return '"[circular]"'
   seen.add(value as object)
   if (Array.isArray(value)) {
-    return '[' + value.map((v) => stableStringify(v, seen)).join(',') + ']'
+    return `[${value.map((v) => stableStringify(v, seen)).join(',')}]`
   }
   const obj = value as Record<string, unknown>
   const keys = Object.keys(obj).sort()
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k], seen)).join(',') + '}'
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`).join(',')}}`
 }
 
 /**
@@ -465,15 +466,21 @@ export function extractErrorType(isError: boolean, text: string): string {
   return firstNonEmpty.trim().slice(0, 80)
 }
 
+function lastThree<T>(items: ReadonlyArray<T>): [T, T, T] | null {
+  const a = items.at(-1)
+  const b = items.at(-2)
+  const c = items.at(-3)
+  return a === undefined || b === undefined || c === undefined ? null : [a, b, c]
+}
+
 /** True iff the last 3 entries are the same tool called with identical
  *  args resulting in the identical outcome — the stuck-loop signal. */
 export function isStuckLoop(
   reports: Array<Pick<ToolCallReport, 'name' | 'argsKey' | 'errorType'>>,
 ): boolean {
-  if (reports.length < 3) return false
-  const a = reports[reports.length - 1]!
-  const b = reports[reports.length - 2]!
-  const c = reports[reports.length - 3]!
+  const recent = lastThree(reports)
+  if (!recent) return false
+  const [a, b, c] = recent
   return a.name === b.name && b.name === c.name
     && a.argsKey === b.argsKey && b.argsKey === c.argsKey
     && a.errorType === b.errorType && b.errorType === c.errorType
@@ -505,10 +512,9 @@ export function isStuckLoop(
 export function isSemanticStuckLoop(
   reports: Array<Pick<ToolCallReport, 'name' | 'argsKey'>>,
 ): boolean {
-  if (reports.length < 3) return false
-  const a = reports[reports.length - 1]!
-  const b = reports[reports.length - 2]!
-  const c = reports[reports.length - 3]!
+  const recent = lastThree(reports)
+  if (!recent) return false
+  const [a, b, c] = recent
   // Need at least 2 distinct tool names; if all three are identical
   // `isStuckLoop` already covers it.
   const names = new Set([a.name, b.name, c.name])
@@ -533,8 +539,7 @@ export function isSemanticStuckLoop(
   return false
 }
 
-const SALIENT_MIN_LEN = 8
-/** Pull every string ≥ SALIENT_MIN_LEN out of a stable-JSON arg blob.
+/** Pull every string at least 8 characters long out of a stable-JSON arg blob.
  *  Doesn't try to be clever about which JSON path the string came
  *  from — three calls passing the same long string anywhere in their
  *  args is already strong evidence of repeated intent. */
@@ -547,7 +552,8 @@ export function extractSalientStrings(argsKey: string): Set<string> {
   // Non-greedy capture, skip embedded escaped quotes via [^"\\]|\\.
   const re = /"((?:[^"\\]|\\.){8,}?)"/g
   for (let m = re.exec(argsKey); m !== null; m = re.exec(argsKey)) {
-    out.add(m[1]!)
+    const value = m[1]
+    if (value) out.add(value)
   }
   return out
 }
@@ -1209,9 +1215,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     const reportSlots: Array<ToolCallReport | null> = new Array(result.toolCalls.length).fill(null)
     const pendingTasks: Promise<void>[] = []
 
-    for (let idx = 0; idx < result.toolCalls.length; idx++) {
+    for (const [idx, call] of result.toolCalls.entries()) {
       if (signal.signal.aborted) break
-      const call = result.toolCalls[idx]!
 
       // Stable arg key precomputed once per call so all three slot
       // writers (deny / no-dispatcher / dispatched) share the same
@@ -1405,8 +1410,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     // (name, argsKey, errorType) of the last 3 entries; with parallel
     // batching this still fires correctly when 3 identical calls land
     // in a row (whether in one batch or across batches).
-    if (isStuckLoop(toolCalls)) {
-      const a = toolCalls[toolCalls.length - 1]!
+    const latestToolCall = toolCalls.at(-1)
+    if (latestToolCall && isStuckLoop(toolCalls)) {
+      const a = latestToolCall
       log.warn({
         event: 'agent-loop.stuck_loop_detected',
         tool: a.name,

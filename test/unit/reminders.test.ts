@@ -6,6 +6,7 @@
 // drive the engine via the exported `tick()`.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, mock } from 'bun:test'
+import Database from 'better-sqlite3'
 import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,6 +17,8 @@ process.env.AGIM_REMINDERS_DB = TEST_DB
 
 const remindersMod = await import('../../src/core/reminders.js')
 const registryMod = await import('../../src/core/registry.js')
+const sinkMod = await import('../../src/core/message-sink.js')
+const outboxMod = await import('../../src/core/outbox.js')
 const {
   parseDuration, parseClock, parseISO, parseWhen, parseWhenPrefix,
   parseRecurrencePrefix, computeNext, isValidRecurrence, describeRecurrence,
@@ -358,17 +361,19 @@ skipIfNoDb('Reminders DB / engine', () => {
     await mkdir(TEST_DIR, { recursive: true })
   })
   afterAll(async () => {
+    sinkMod.stopWorker()
+    outboxMod.closeOutboxDb()
     closeReminderDb()
     await rm(TEST_DIR, { recursive: true, force: true }).catch(() => {})
   })
   beforeEach(() => {
-    // Wipe between tests — we want a clean slate.
-    const helper = (remindersMod as unknown as { _helper?: unknown })
-    void helper // keep reference so TS doesn't complain
-    // Use the public API to clear: there's no truncate, so cancel all + DELETE.
-    // Easier: just delete the file? But the helper holds an open handle. We
-    // reuse the logical contract — fresh test DB per process is fine; per-test
-    // isolation via different user_id values.
+    const db = new Database(TEST_DB)
+    try {
+      db.exec('DELETE FROM reminders')
+    } finally {
+      db.close()
+    }
+    outboxMod._resetOutboxForTests()
   })
 
   it('createReminder + getReminder roundtrip', () => {
@@ -472,7 +477,7 @@ skipIfNoDb('Reminders DB / engine', () => {
     expect(fresh.parent_id).toBe(origId)
   })
 
-  it('tick fires due reminders and calls messenger.sendMessage', async () => {
+  it('tick queues due reminders and the outbox worker delivers them', async () => {
     // Mock messenger registered for platform 'mock-platform'
     const sent: { threadId: string; text: string }[] = []
     const mockMessenger = {
@@ -491,20 +496,29 @@ skipIfNoDb('Reminders DB / engine', () => {
       fireAt, text: '喝水',
       platform: 'mock-platform', channelId: 'c', threadId: 'thread-X',
       userId: 'tick-user',
+      promptMode: 'literal',
     })
 
     const fired = await tick(new Date(fireAt.getTime() + 1000))
     expect(fired).toBeGreaterThan(0)
+    expect(sent.length).toBe(0)
+    const queued = outboxMod.listOutbox({
+      status: 'pending',
+      threadKey: 'mock-platform:c:thread-X',
+    })
+    expect(queued).toHaveLength(1)
+    expect(queued[0].payload).toContain('喝水')
+
+    await sinkMod._tickWorkerForTests()
     expect(sent.length).toBe(1)
     expect(sent[0].threadId).toBe('thread-X')
     expect(sent[0].text).toContain('喝水')
     expect(sent[0].text).toContain('🔔 提醒：')
-    void id
-
+    expect(outboxMod.getOutbox(queued[0].id)?.status).toBe('delivered')
     expect(getReminder(id)?.status).toBe('fired')
   })
 
-  it('failed delivery → status=failed + error captured', async () => {
+  it('failed worker delivery stays queued for retry after the reminder fires', async () => {
     const failingMessenger = {
       name: 'failing-platform',
       start: async () => {},
@@ -519,12 +533,16 @@ skipIfNoDb('Reminders DB / engine', () => {
       fireAt, text: '失败用例',
       platform: 'failing-platform', channelId: 'c', threadId: 't',
       userId: 'failure-user',
+      promptMode: 'literal',
     })
 
     await tick(new Date(fireAt.getTime() + 1000))
-    const r = getReminder(id)
-    expect(r?.status).toBe('failed')
-    expect(r?.error).toContain('synthetic delivery failure')
+    expect(getReminder(id)?.status).toBe('fired')
+    await sinkMod._tickWorkerForTests()
+    const [queued] = outboxMod.listOutbox({ threadKey: 'failing-platform:c:t' })
+    expect(queued.status).toBe('pending')
+    expect(queued.attempts).toBe(1)
+    expect(queued.last_error).toContain('synthetic delivery failure')
   })
 
   it('missing messenger → status=failed (no crash)', async () => {
@@ -557,11 +575,13 @@ skipIfNoDb('Reminders DB / engine', () => {
       platform: 'recur-platform', channelId: 'c', threadId: 't',
       userId: 'recur-user',
       recurrence: 'every:5m',
+      promptMode: 'literal',
     })
 
     // First tick → fires + reschedules to fireAt + 5m
     const advance1 = new Date(fireAt.getTime() + 1000)
     await tick(advance1)
+    await sinkMod._tickWorkerForTests()
     const after1 = getReminder(id)!
     expect(after1.status).toBe('pending') // still pending — recurring rolls forward
     expect(after1.last_fired_at).not.toBeNull()
@@ -574,6 +594,7 @@ skipIfNoDb('Reminders DB / engine', () => {
     // Second tick at the new fire_at → fires again, reschedules again
     const advance2 = new Date(newFire1 + 1000)
     await tick(advance2)
+    await sinkMod._tickWorkerForTests()
     const after2 = getReminder(id)!
     expect(after2.status).toBe('pending')
     expect(new Date(after2.fire_at).getTime()).toBeGreaterThan(newFire1)

@@ -242,7 +242,7 @@ describe('checkSensitiveToolUse — native_exec', () => {
 
 describe('scrubOutboundText', () => {
   it('redacts an agim token in chat', () => {
-    const r = scrubOutboundText('your token is agim_' + 'a'.repeat(40))
+    const r = scrubOutboundText(`your token is agim_${'a'.repeat(40)}`)
     expect(r.text).toContain('[REDACTED-agim_token]')
     expect(r.text).not.toContain('agim_aaaa')
     expect(r.redactedKinds).toContain('agim_token')
@@ -276,7 +276,7 @@ describe('scrubOutboundText', () => {
 
   it('redacts PEM private keys', () => {
     const pem = '-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n-----END RSA PRIVATE KEY-----'
-    const r = scrubOutboundText('attaching: ' + pem)
+    const r = scrubOutboundText(`attaching: ${pem}`)
     expect(r.text).toContain('[REDACTED-pem_private_key]')
     expect(r.text).not.toContain('MIIEpAIBAAKCAQEA')
   })
@@ -285,12 +285,12 @@ describe('scrubOutboundText', () => {
     // Realistic JWT — three base64url segments. Header + payload >= 10
     // chars after eyJ; signature >= 20 chars.
     const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
-    const r = scrubOutboundText('token=' + jwt)
+    const r = scrubOutboundText(`token=${jwt}`)
     expect(r.text).toContain('[REDACTED-jwt]')
   })
 
   it('idempotent — running twice produces same output', () => {
-    const a = scrubOutboundText('agim_' + 'b'.repeat(40))
+    const a = scrubOutboundText(`agim_${'b'.repeat(40)}`)
     const b = scrubOutboundText(a.text)
     expect(b.text).toBe(a.text)
     expect(b.redactedKinds).toEqual([])
@@ -308,12 +308,12 @@ describe('scrubOutboundText', () => {
   })
 
   it('deduplicates kinds when multiple instances of same type appear', () => {
-    const r = scrubOutboundText('one agim_' + 'a'.repeat(40) + ' and agim_' + 'b'.repeat(40))
+    const r = scrubOutboundText(`one agim_${'a'.repeat(40)} and agim_${'b'.repeat(40)}`)
     expect(r.redactedKinds).toEqual(['agim_token'])
   })
 
   it('sorts kinds for stable audit-event payloads', () => {
-    const r = scrubOutboundText('gh: ghp_' + 'a'.repeat(36) + ' agim: agim_' + 'b'.repeat(40))
+    const r = scrubOutboundText(`gh: ghp_${'a'.repeat(36)} agim: agim_${'b'.repeat(40)}`)
     expect(r.redactedKinds).toEqual(['agim_token', 'github_token'])
   })
 })

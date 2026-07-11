@@ -30,7 +30,7 @@ export interface AskDockProps {
   asks: PendingAsk[]
   /** Submit a fully-formed `ask:<reqId>:…` callback. Returns whether the
    *  WS send went out, so the row can revert its optimistic state. */
-  onSubmit: (messageId: string, data: string) => boolean | void
+  onSubmit: (messageId: string, data: string) => boolean | undefined
 }
 
 export function AskDock({ asks, onSubmit }: AskDockProps): JSX.Element | null {
@@ -68,7 +68,7 @@ function choiceIndex(data: string): number {
 
 interface AskRowProps {
   entry: PendingAsk
-  onSubmit: (messageId: string, data: string) => boolean | void
+  onSubmit: (messageId: string, data: string) => boolean | undefined
 }
 
 function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {

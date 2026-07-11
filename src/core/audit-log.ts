@@ -205,7 +205,7 @@ export function queryInvocations(opts: QueryOpts = {}): InvocationRow[] {
   if (opts.userId) { conditions.push('user_id = ?'); params.push(opts.userId) }
   if (opts.intent) { conditions.push('intent = ?'); params.push(opts.intent) }
   if (opts.traceId) { conditions.push('trace_id = ?'); params.push(opts.traceId) }
-  if (opts.tracePrefix) { conditions.push('trace_id LIKE ?'); params.push(opts.tracePrefix + '%') }
+  if (opts.tracePrefix) { conditions.push('trace_id LIKE ?'); params.push(`${opts.tracePrefix}%`) }
   if (opts.days && Number.isFinite(opts.days) && opts.days > 0) {
     conditions.push("ts >= datetime('now', ?)")
     params.push(`-${Math.floor(opts.days)} days`)
@@ -213,7 +213,9 @@ export function queryInvocations(opts: QueryOpts = {}): InvocationRow[] {
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const rawLimit = opts.limit
-  const limit = Number.isFinite(rawLimit) && rawLimit! > 0 ? Math.min(Math.floor(rawLimit!), 1000) : 20
+  const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.min(Math.floor(rawLimit), 1000)
+    : 20
 
   try {
     return d.prepare(`SELECT * FROM invocations ${where} ORDER BY ts DESC LIMIT ?`)
@@ -227,7 +229,7 @@ export function queryInvocations(opts: QueryOpts = {}): InvocationRow[] {
  * Delete rows older than the retention window. Returns number of deleted
  * rows so callers / tests can assert behavior.
  */
-export function pruneExpired(d: Database.Database = getDb()!): number {
+export function pruneExpired(d: Database.Database | null = getDb()): number {
   if (!d) return 0
   const days = resolveRetentionDays()
   try {
@@ -349,7 +351,9 @@ export function queryAuditEvents(opts: AuditEventQueryOpts = {}): AuditEventRow[
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const rawLimit = opts.limit
-  const limit = Number.isFinite(rawLimit) && rawLimit! > 0 ? Math.min(Math.floor(rawLimit!), 1000) : 100
+  const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.min(Math.floor(rawLimit), 1000)
+    : 100
   try {
     return d.prepare(`SELECT * FROM audit_events ${where} ORDER BY ts DESC LIMIT ?`)
       .all(...params, limit) as AuditEventRow[]
@@ -358,7 +362,7 @@ export function queryAuditEvents(opts: AuditEventQueryOpts = {}): AuditEventRow[
   }
 }
 
-export function pruneExpiredEvents(d: Database.Database = getDb()!): number {
+export function pruneExpiredEvents(d: Database.Database | null = getDb()): number {
   if (!d) return 0
   const days = resolveAuditEventsRetentionDays()
   if (days <= 0) return 0

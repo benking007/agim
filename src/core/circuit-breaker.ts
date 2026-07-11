@@ -122,7 +122,7 @@ class CircuitBreaker {
    */
   acquireProbe(agent: string): void {
     const s = this.states.get(agent)
-    if (!s || s.phase !== 'open') return
+    if (s?.phase !== 'open') return
     if (s.openedAt !== null && Date.now() - s.openedAt > s.cooldownMs) {
       s.phase = 'half-open'
     }

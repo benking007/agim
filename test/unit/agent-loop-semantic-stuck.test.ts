@@ -19,7 +19,6 @@ import {
   type NormalizedOptions,
 } from '../../src/core/llm/provider-base.js'
 import { runAgentLoop } from '../../src/core/llm/agent-loop.js'
-import type { DispatcherResult } from '../../src/core/llm/tool-dispatcher.js'
 
 describe('extractSalientStrings (v1.2.122)', () => {
   it('pulls out strings ≥ 8 chars from a JSON-stable argsKey', () => {

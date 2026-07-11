@@ -222,7 +222,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
   }
   // v1.2.70 — CR-1: realpath guard against symlink escape. Lexical
   // checks alone don't see symlinks that point outside the workspace
-  // or at sensitive paths (e.g. a symlink "evil" → "/etc/passwd"
+  // or at sensitive paths (e.g. a symlink "evil" → "/etc/shadow"
   // dropped inside the agent cwd). Re-run sensitive + workspace
   // checks against the resolved real path. Non-existent paths have
   // no symlink to follow yet, so realpath ENOENT falls back to
@@ -515,7 +515,8 @@ async function walkAndMatch(root: string, pattern: string, max: number, signal: 
   const queue: string[] = [root]
   while (queue.length > 0 && out.length < max) {
     if (signal.aborted) break
-    const dir = queue.shift()!
+    const dir = queue.shift()
+    if (!dir) break
     let entries: import('node:fs').Dirent[] = []
     try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { continue }
     for (const e of entries) {

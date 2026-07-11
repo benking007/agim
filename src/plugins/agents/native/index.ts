@@ -269,7 +269,7 @@ export function parsePromptMedia(prompt: string): Array<{ path: string; mime?: s
     const m = re.exec(prompt)
     if (m === null) break
     const rawPath = (m[1] || '').trim()
-    if (!rawPath || !rawPath.startsWith('/')) continue
+    if (!rawPath?.startsWith('/')) continue
     const normalised = pathResolve(rawPath)
     if (normalised !== mediaRoot && !normalised.startsWith(mediaPrefix)) continue
     try {

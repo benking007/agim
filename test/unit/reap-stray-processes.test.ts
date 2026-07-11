@@ -140,7 +140,7 @@ describe('reapStrayAgimProcesses', () => {
     const child = spawnFakeAgim({ trapTerm: true })
     await sleep(300)
     expect(pidAlive(child.pid!)).toBe(true)
-    const r = await reapStrayAgimProcesses({ sigtermTimeoutMs: 800 })
+    await reapStrayAgimProcesses({ sigtermTimeoutMs: 800 })
     // Whether listed under reaped (we ended up killing it via SIGKILL)
     // or survived (kernel still shows it briefly), the function had
     // to escalate. Final state: dead.

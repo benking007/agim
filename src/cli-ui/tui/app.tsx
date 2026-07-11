@@ -112,7 +112,8 @@ function scanFiles(root: string, max = 2000): FileEntry[] {
   const stack: string[] = ['.']
   const SKIP = new Set(['node_modules', '.git', 'dist', '.next', '.cache', 'target', 'venv', '__pycache__'])
   while (stack.length > 0 && out.length < max) {
-    const cur = stack.pop()!
+    const cur = stack.pop()
+    if (cur === undefined) break
     const abs = join(root, cur)
     let entries: import('node:fs').Dirent[] = []
     try { entries = readdirSync(abs, { withFileTypes: true }) } catch { continue }
@@ -426,7 +427,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   const cwd = useMemo(() => {
     const home = process.env.HOME
     const c = process.cwd()
-    return home && c.startsWith(home) ? '~' + c.slice(home.length) : c
+    return home && c.startsWith(home) ? `~${c.slice(home.length)}` : c
   }, [])
 
   // ── Terminal viewport size (drives the fixed-height frame) ─────────
@@ -742,7 +743,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           if (pick.action === 'help') {
             setHelpOpen(true)
           } else if (pick.takesArg) {
-            setInput(pick.name + ' ')
+            setInput(`${pick.name} `)
           } else {
             void executeSlashCommand(pick.name)
           }
@@ -825,7 +826,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       setMessages((m) => {
         const last = m[m.length - 1]
         if (last && last.role === 'assistant' && last.pending) {
-          return [...m.slice(0, -1), { ...last, pending: false, content: last.content + '\n[已取消]' }]
+          return [...m.slice(0, -1), { ...last, pending: false, content: `${last.content}\n[已取消]` }]
         }
         return m
       })
@@ -866,7 +867,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   }, [])
 
   async function runBash(cmd: string): Promise<void> {
-    setMessages((m) => [...m, withMessageId({ role: 'user', content: '!' + cmd })])
+    setMessages((m) => [...m, withMessageId({ role: 'user', content: `!${cmd}` })])
     const startMs = Date.now()
     pushSystem(`▶ shell: ${cmd}`)
     await new Promise<void>((resolve) => {
@@ -874,7 +875,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         const ms = Date.now() - startMs
         let body = ''
         if (stdout) body += stdout
-        if (stderr) body += (body ? '\n' : '') + '[stderr]\n' + stderr
+        if (stderr) body += `${body ? '\n' : ''}[stderr]\n${stderr}`
         if (!body && err) body = `[error] ${err.message}`
         if (!body) body = '(空输出)'
         pushSystem(`\`\`\`\n${body.trim()}\n\`\`\`\n— ${(ms / 1000).toFixed(2)}s · 退出 ${err ? (err.code ?? 1) : 0}`)
@@ -887,7 +888,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     const editor = process.env.EDITOR || 'vi'
     let dir: string
     try { dir = mkdtempSync(join(tmpdir(), 'agim-tui-')) } catch (err) {
-      setError('无法创建临时文件: ' + (err instanceof Error ? err.message : String(err)))
+      setError(`无法创建临时文件: ${err instanceof Error ? err.message : String(err)}`)
       return
     }
     const file = join(dir, 'PROMPT.md')
@@ -907,7 +908,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     }
     let body = ''
     try { body = readFileSync(file, 'utf-8') } catch (err) {
-      setError('读不到编辑后的内容: ' + (err instanceof Error ? err.message : String(err)))
+      setError(`读不到编辑后的内容: ${err instanceof Error ? err.message : String(err)}`)
       return
     } finally {
       try { unlinkSync(file) } catch { /* ignore */ }
@@ -933,7 +934,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       writeFileSync(file, `# agim TUI transcript — ${ts}\n\nagent: \`${agent ?? 'none'}\` · cwd: \`${cwd}\`\n\n---\n\n${body}\n`)
       pushSystem(`已导出到 \`${file}\``)
     } catch (err) {
-      setError('导出失败: ' + (err instanceof Error ? err.message : String(err)))
+      setError(`导出失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -965,9 +966,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       })) {
         summary += chunk
       }
-      setMessages([withMessageId({ role: 'system', content: '【对话已折叠，以下是摘要】\n\n' + summary.trim() })])
+      setMessages([withMessageId({ role: 'system', content: `【对话已折叠，以下是摘要】\n\n${summary.trim()}` })])
     } catch (err) {
-      setError('折叠失败: ' + (err instanceof Error ? err.message : String(err)))
+      setError(`折叠失败: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setBusy(false)
       abortRef.current = null
@@ -982,7 +983,8 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       const arr = [...m]
       // Walk from the end, drop until we cut at least one user message.
       while (arr.length > 0) {
-        const last = arr.pop()!
+        const last = arr.pop()
+        if (!last) break
         if (last.role === 'user') break
       }
       return arr
@@ -1130,7 +1132,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     const applyReveal = (): void => {
       setMessages((m) => {
         const last = m[m.length - 1]
-        if (!last || last.role !== 'assistant' || !last.pending) return m
+        if (last?.role !== 'assistant' || !last.pending) return m
         const content = full.slice(0, reveal)
         if (content === last.content) return m
         return [...m.slice(0, -1), { ...last, content }]
@@ -1188,7 +1190,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       const elapsed = Date.now() - startMs
       setMessages((m) => {
         const last = m[m.length - 1]
-        if (!last || last.role !== 'assistant' || !last.pending) return m
+        if (last?.role !== 'assistant' || !last.pending) return m
         return [...m.slice(0, -1), { ...last, content: full, pending: false, elapsedMs: elapsed }]
       })
       // Completion bell — visible (well, audible) cue for sshing-into-
@@ -1209,7 +1211,7 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       // abort/error), then append the error.
       setMessages((m) => {
         const last = m[m.length - 1]
-        if (!last || last.role !== 'assistant' || !last.pending) return m
+        if (last?.role !== 'assistant' || !last.pending) return m
         const base = full || last.content || ''
         return [
           ...m.slice(0, -1),

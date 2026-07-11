@@ -24,7 +24,7 @@ function stubProvider(summary: string, opts: { failing?: boolean } = {}): LlmPro
 }
 
 function bigMsg(role: 'user' | 'assistant', i: number, chars: number): LlmMessage {
-  return { role, content: `[${role} #${i}] ` + 'x'.repeat(chars) }
+  return { role, content: `[${role} #${i}] ${'x'.repeat(chars)}` }
 }
 
 describe('maybeCompactHistory', () => {
@@ -142,13 +142,13 @@ describe('maybeCompactHistory', () => {
     // the request with HTTP 400.
     const messages: LlmMessage[] = []
     for (let i = 0; i < 8; i++) {
-      messages.push({ role: 'user', content: `[user #${i}] ` + 'x'.repeat(1200) })
+      messages.push({ role: 'user', content: `[user #${i}] ${'x'.repeat(1200)}` })
       messages.push({
         role: 'assistant',
         content: '',
         toolCalls: [{ id: `call_${i}`, name: 'foo', arguments: {} }],
       })
-      messages.push({ role: 'tool', toolCallId: `call_${i}`, content: 'result ' + i })
+      messages.push({ role: 'tool', toolCallId: `call_${i}`, content: `result ${i}` })
       messages.push({ role: 'assistant', content: `[ans #${i}]` })
     }
     const r = await maybeCompactHistory(messages, {

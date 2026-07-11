@@ -12,7 +12,8 @@
 bun src/cli.ts start          # 或 node dist/cli.js start
 
 # 终端 2：前端 dev server (port 5173) + 自动代理 /api /ws /events
-npm --prefix src/web-app install   # 一次性
+npm ci                             # 根依赖，提供统一 Biome
+npm --prefix src/web-app ci        # 前端依赖
 npm --prefix src/web-app run dev
 ```
 
@@ -22,6 +23,17 @@ npm --prefix src/web-app run dev
 
 根目录 `npm run build` 会调用 `npm --prefix src/web-app run build`，把
 `src/web-app/dist/*` 拷到 `dist/web/public/`，最终随 `agim-cli` npm 包发布。
+构建完成后会自动检查包体积：入口不得超过 350 KiB，任意 JavaScript
+chunk 不得超过 400 KiB。Markdown 与各类运行时依赖采用独立 chunk。
+
+提交前至少运行：
+
+```bash
+npm run lint:web
+npm --prefix src/web-app run typecheck
+npm --prefix src/web-app test -- --run
+npm --prefix src/web-app run build
+```
 
 ## 目录结构（设计目标）
 
@@ -52,6 +64,6 @@ src/web-app/
 - `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`
 - iOS / Android safe-area utilities：`pt-safe`/`pb-safe`/`px-safe`
 - `100dvh` 高度（兼 100vh fallback）：`h-dvh` / `min-h-dvh` 工具类
-- 触屏 hit target ≥ 44×44：`.tap-target` 工具类
+- 控制台紧凑触屏基线 32×32：`.tap-target` 工具类
 - `touch-action: manipulation` + tap highlight 调淡（preflight）
 - PWA `manifest.webmanifest` + theme-color + apple-mobile-web-app-* meta

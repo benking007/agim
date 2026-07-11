@@ -14,6 +14,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import WorkspaceRoute from './workspace'
 import '@/i18n'
 
@@ -39,7 +40,7 @@ function renderAt(search: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/workspace${search}`]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[`/workspace${search}`]}>
         <Routes>
           <Route path="/workspace" element={<WorkspaceRoute />} />
         </Routes>
@@ -125,12 +126,12 @@ describe('/workspace', () => {
     const ta = await waitFor(() => {
       const t = document.querySelector('textarea') as HTMLTextAreaElement | null
       expect(t).not.toBeNull()
-      expect(t!.value).toContain('Hello world.')
-      return t!
+      expect(t?.value).toContain('Hello world.')
+      return requireValue(t, 'workspace editor')
     })
     // Save disabled on clean
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-    fireEvent.change(ta, { target: { value: ta.value + '\n\nEDIT' } })
+    fireEvent.change(ta, { target: { value: `${ta.value}\n\nEDIT` } })
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
     })

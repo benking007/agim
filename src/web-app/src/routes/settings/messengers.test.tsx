@@ -37,7 +37,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/messengers']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/messengers']}>
         <Routes>
           <Route path="/settings/messengers" element={<SettingsMessengersRoute />} />
         </Routes>

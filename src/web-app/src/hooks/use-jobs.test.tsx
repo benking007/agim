@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { requireValue } from '@/test/assert'
 import {
   useJobs,
   useInvalidateJobs,
@@ -57,7 +58,7 @@ describe('useJobs', () => {
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data?.jobs).toHaveLength(1)
-    const url = (fetchSpy.mock.calls[0]![0] as string).split('?')
+    const url = String(requireValue(fetchSpy.mock.calls[0]?.[0], 'jobs request URL')).split('?')
     expect(url[0]).toBe('/api/jobs')
     expect(url[1]).toContain('status=running')
     expect(url[1]).toContain('limit=20')

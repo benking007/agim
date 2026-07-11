@@ -44,6 +44,9 @@ async function dbAvailable(): Promise<boolean> {
     __resetCompletionCacheForTesting()
     return true
   }
+  if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
+    throw new Error(`SQLite is required by the Node persistence suite: ${r.error}`)
+  }
   return false
 }
 

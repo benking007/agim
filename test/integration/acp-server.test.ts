@@ -54,9 +54,8 @@ beforeAll(async () => {
   const user = createToken('acp-test-user', { role: 'user' })
   userToken = user.raw
   userTokenId = user.id
-  // Use a random ephemeral port to avoid collisions in CI.
-  port = 9000 + Math.floor(Math.random() * 1000)
-  const server = await startACPServer({ port, defaultAgent: 'acp-stub' })
+  const server = await startACPServer({ port: 0, defaultAgent: 'acp-stub' })
+  port = server.port
   close = server.close
 })
 
@@ -125,14 +124,21 @@ describe('ACP Server', () => {
   })
 
   it('rejects oversized request body with 413', async () => {
-    // 2 MiB of JSON — exceeds 1 MiB cap
-    const big = 'x'.repeat(2 * 1024 * 1024)
-    const res = await fetch(url('/tasks'), {
-      method: 'POST',
-      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ input: { prompt: big } }),
-    })
-    expect(res.status).toBe(413)
+    // Keep the intentionally poisoned upload on its own origin. Bun's fetch
+    // pool can otherwise reuse a connection while the server is still
+    // closing it, making the next unrelated request intermittently hang.
+    const isolated = await startACPServer({ port: 0, defaultAgent: 'acp-stub' })
+    try {
+      const big = 'x'.repeat(2 * 1024 * 1024)
+      const res = await fetch(`http://127.0.0.1:${isolated.port}/tasks`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ input: { prompt: big } }),
+      })
+      expect(res.status).toBe(413)
+    } finally {
+      isolated.close()
+    }
   })
 
   it('returns 404 for unknown task id', async () => {

@@ -2,6 +2,34 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
+const VENDOR_CHUNKS = {
+  react: ['react', 'react-dom', 'scheduler'],
+  router: ['@remix-run/router', 'react-router', 'react-router-dom'],
+  query: ['@tanstack/query-core', '@tanstack/react-query'],
+  i18n: [
+    'i18next',
+    'i18next-browser-languagedetector',
+    'i18next-http-backend',
+    'react-i18next',
+  ],
+  'ui-runtime': [
+    '@floating-ui/core',
+    '@floating-ui/dom',
+    '@radix-ui',
+    'aria-hidden',
+    'react-remove-scroll',
+    'sonner',
+  ],
+} as const
+
+function vendorChunk(id: string): string | undefined {
+  const normalized = id.replaceAll('\\', '/')
+  for (const [chunk, packages] of Object.entries(VENDOR_CHUNKS)) {
+    if (packages.some((pkg) => normalized.includes(`/node_modules/${pkg}/`))) return chunk
+  }
+  return undefined
+}
+
 /**
  * Vite config for the agim web v2 SPA.
  *
@@ -33,9 +61,7 @@ export default defineConfig({
       // Stable chunk names so the agim backend's static-file cache stays
       // hot across releases (only the hashed asset chunks change).
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom'],
-        },
+        manualChunks: vendorChunk,
       },
     },
   },

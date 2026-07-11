@@ -191,7 +191,8 @@ export function recordSeenImUser(
   const now = new Date().toISOString()
   const idx = store.knownUsers.findIndex((u) => u.platform === norm.platform && u.userId === norm.userId)
   if (idx >= 0) {
-    const row = store.knownUsers[idx]!
+    const row = store.knownUsers[idx]
+    if (!row) return false
     const changed = row.lastSeenAt !== now
       || row.lastChannelId !== meta?.channelId
       || row.lastThreadId !== meta?.threadId

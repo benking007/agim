@@ -9,13 +9,9 @@
 //
 // Invoked as `agim setup mcp [<subcommand>] [<name>]`.
 
-import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises'
-import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { AGIM_HOME } from '../core/agim-paths.js'
 import { configSchema } from '../core/config-schema.js'
-
-const CONFIG_FILE = join(AGIM_HOME, 'config.json')
+import { readConfigObject, updateConfigObject } from '../core/config-store.js'
 
 /** Common MCP server presets so the operator doesn't have to remember
  *  the full @modelcontextprotocol/server-* package names. Add new
@@ -28,6 +24,8 @@ interface ServerPreset {
   url?: string
   hint?: string
 }
+
+class SetupMcpConfigError extends Error {}
 
 const PRESETS: ServerPreset[] = [
   {
@@ -201,19 +199,30 @@ async function addAction(): Promise<number> {
       }
     }
 
-    const cfg = await readConfig()
-    const existing = cfg.mcpServers ?? []
-    if (existing.some((s) => s.name === name)) {
-      return cancel(`server "${name}" already exists — use \`agim setup mcp remove ${name}\` first`)
+    try {
+      await updateConfigObject((current) => {
+        const cfg = current as RawConfig
+        const existing = cfg.mcpServers ?? []
+        if (existing.some((s) => s.name === name)) {
+          throw new SetupMcpConfigError(
+            `server "${name}" already exists — use \`agim setup mcp remove ${name}\` first`,
+          )
+        }
+        const next = { ...cfg, mcpServers: [...existing, server] }
+        const result = configSchema.safeParse(next)
+        if (!result.success) {
+          throw new SetupMcpConfigError(
+            `config validation failed: ${result.error.issues.map((i) => i.message).join('; ')}`,
+          )
+        }
+        return { config: next, result: undefined }
+      }, {
+        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      })
+    } catch (err) {
+      if (err instanceof SetupMcpConfigError) return cancel(err.message)
+      throw err
     }
-    cfg.mcpServers = [...existing, server]
-
-    const result = configSchema.safeParse(cfg)
-    if (!result.success) {
-      return cancel(`config validation failed: ${result.error.issues.map((i) => i.message).join('; ')}`)
-    }
-
-    await writeConfig(cfg)
     process.stdout.write(`\n✅ Added MCP server "${name}".\n`)
     process.stdout.write(`(restart agim, or run \`agim setup mcp health ${name}\` to probe live connection)\n`)
     return 0
@@ -241,10 +250,22 @@ async function removeAction(maybeName?: string): Promise<number> {
       name = servers[idx].name
     } finally { rl.close() }
   }
-  const next = servers.filter((s) => s.name !== name)
-  if (next.length === servers.length) return cancel(`no server named "${name}"`)
-  cfg.mcpServers = next
-  await writeConfig(cfg)
+  try {
+    await updateConfigObject((current) => {
+      const latest = current as RawConfig
+      const latestServers = latest.mcpServers ?? []
+      const next = latestServers.filter((s) => s.name !== name)
+      if (next.length === latestServers.length) {
+        throw new SetupMcpConfigError(`no server named "${name}"`)
+      }
+      return { config: { ...latest, mcpServers: next }, result: undefined }
+    }, {
+      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    })
+  } catch (err) {
+    if (err instanceof SetupMcpConfigError) return cancel(err.message)
+    throw err
+  }
   process.stdout.write(`✅ Removed MCP server "${name}".\n`)
   return 0
 }
@@ -289,20 +310,9 @@ async function healthAction(maybeName?: string): Promise<number> {
 // ─── helpers ────────────────────────────────────────────────────────
 
 async function readConfig(): Promise<RawConfig> {
-  try {
-    return JSON.parse(await readFile(CONFIG_FILE, 'utf-8')) as RawConfig
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messengers: [], agents: [], defaultAgent: 'native' }
-    }
-    throw err
-  }
-}
-
-async function writeConfig(cfg: RawConfig): Promise<void> {
-  await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-  try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore on Windows */ }
+  return await readConfigObject<RawConfig>({
+    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+  })
 }
 
 function suggestServerName(preset: ServerPreset): string {

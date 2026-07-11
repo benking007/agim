@@ -141,7 +141,9 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
     //    and tests run without a notifier; in that case we degrade
     //    deterministically with a "no UI to ask" message and stay in
     //    plan mode so the model can recover.
-    if (!ctx.platform || !ctx.threadId || !approvalBus.hasNotifier()) {
+    const platform = ctx.platform
+    const threadId = ctx.threadId
+    if (!platform || !threadId || !approvalBus.hasNotifier()) {
       recordPlanHistory({
         threadKey: ctx.threadKey,
         planMd,
@@ -171,9 +173,9 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         toolName: PLAN_EXIT_TOOL_NAME,
         input: { plan: planMd },
         ctx: {
-          platform: ctx.platform!,
+          platform,
           channelId: ctx.channelId ?? 'default',
-          threadId: ctx.threadId!,
+          threadId,
           userId: ctx.userId ?? 'unknown',
           callerAgent: 'native',
         },

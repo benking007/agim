@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { requireValue } from '@/test/assert'
 
 import SettingsLlmRoute from './llm'
 import '@/i18n'
@@ -28,7 +29,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/llm']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/llm']}>
         <Routes>
           <Route path="/settings/llm" element={<SettingsLlmRoute />} />
         </Routes>
@@ -111,7 +112,7 @@ describe('/settings/llm quick setup', () => {
     renderPage()
 
     await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
-    fireEvent.change(screen.getAllByPlaceholderText('sk-...')[0]!, {
+    fireEvent.change(requireValue(screen.getAllByPlaceholderText('sk-...')[0], 'API key input'), {
       target: { value: 'sk-test' },
     })
     fireEvent.click(screen.getByRole('button', { name: /save and test/i }))
@@ -123,7 +124,8 @@ describe('/settings/llm quick setup', () => {
       (c) => String(c[0]) === '/api/llm/backends' && (c[1] as RequestInit | undefined)?.method === 'POST',
     )
     expect(addCall).toBeDefined()
-    expect(JSON.parse(String((addCall![1] as RequestInit).body))).toMatchObject({
+    const addRequest = requireValue(addCall?.[1] as RequestInit | undefined, 'LLM backend request')
+    expect(JSON.parse(String(addRequest.body))).toMatchObject({
       name: 'deepseek-agim',
       provider: 'openai-compat',
       baseUrl: 'https://api.deepseek.com/v1',
@@ -225,7 +227,7 @@ describe('/settings/llm quick setup', () => {
     renderPage()
 
     await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
-    fireEvent.change(screen.getAllByPlaceholderText('sk-...')[0]!, {
+    fireEvent.change(requireValue(screen.getAllByPlaceholderText('sk-...')[0], 'API key input'), {
       target: { value: 'sk-test' },
     })
     fireEvent.click(screen.getByRole('button', { name: /save and test/i }))

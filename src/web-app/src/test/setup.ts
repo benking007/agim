@@ -40,7 +40,7 @@ function createStorageShim(): Storage {
       data.clear()
     },
     getItem(key: string) {
-      return data.has(key) ? data.get(key)! : null
+      return data.get(key) ?? null
     },
     key(index: number) {
       return Array.from(data.keys())[index] ?? null
@@ -90,7 +90,7 @@ const _origRemoveItem = typeof localStorageRef.removeItem === 'function'
   : (_key: string): void => {}
 function safeRemoveItem(key: string): void {
   try {
-    return _origRemoveItem(key)
+    _origRemoveItem(key)
   } catch {
     // swallow — matches our production fallback behavior
   }

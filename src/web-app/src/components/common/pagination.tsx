@@ -65,12 +65,11 @@ function Pagination({
     : null
 
   return (
-    <div
+    <nav
       className={cn(
         'flex flex-wrap items-center justify-between gap-3 py-2',
         className,
       )}
-      role="navigation"
       aria-label={t('pagination.label')}
     >
       <div className="flex items-center gap-2 text-sm text-text-dim">
@@ -150,7 +149,7 @@ function Pagination({
           <ChevronLast />
         </Button>
       </div>
-    </div>
+    </nav>
   )
 }
 Pagination.displayName = 'Pagination'

@@ -14,6 +14,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import MemoryFactsRoute from './facts'
 import '@/i18n'
 
@@ -39,7 +40,7 @@ function renderAt(search: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/memory/facts${search}`]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[`/memory/facts${search}`]}>
         <Routes>
           <Route path="/memory/facts" element={<MemoryFactsRoute />} />
         </Routes>
@@ -88,7 +89,7 @@ describe('/memory/facts', () => {
       const table = screen.getByRole('table')
       expect(within(table).getByText('prefers tea over coffee')).toBeInTheDocument()
     })
-    const url = String(fetchSpy.mock.calls[0]![0])
+    const url = String(fetchSpy.mock.calls[0]?.[0])
     expect(url).toContain('/api/memory/facts')
     expect(url).toContain('user_key=wechat%3Au1')
     // Category badge renders the i18n label, not the raw key.
@@ -114,13 +115,13 @@ describe('/memory/facts', () => {
     const table = screen.getByRole('table')
     const rowDeletes = within(table).getAllByRole('button', { name: 'Delete' })
     expect(rowDeletes.length).toBeGreaterThanOrEqual(1)
-    fireEvent.click(rowDeletes[0]!)
+    fireEvent.click(requireValue(rowDeletes[0], 'first fact delete button'))
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     const dialog = screen.getByRole('dialog')
     const candidates = within(dialog).getAllByRole('button', { name: 'Delete' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
     expect(destructive).toBeDefined()
-    fireEvent.click(destructive!)
+    fireEvent.click(requireValue(destructive, 'fact delete confirmation'))
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(
@@ -160,7 +161,7 @@ describe('/memory/facts', () => {
     const candidates = within(dialog).getAllByRole('button', { name: 'Delete selected' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
     expect(destructive).toBeDefined()
-    fireEvent.click(destructive!)
+    fireEvent.click(requireValue(destructive, 'bulk delete confirmation'))
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(

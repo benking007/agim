@@ -180,6 +180,35 @@ describe('SessionManager (real, on-disk)', () => {
     }
   })
 
+  it('recovers from malformed persisted metadata instead of loading an invalid session', async () => {
+    const k = uniqueKey('malformed')
+    try {
+      await writeFile(join(SESSIONS_DIR, `${fileStem(k)}.json`), JSON.stringify({
+        id: 'broken-session',
+        channelId: k.channelId,
+        threadId: k.threadId,
+        // platform is intentionally missing and the timestamps are invalid.
+        agent: 'opencode',
+        createdAt: 'not-a-date',
+        lastActivity: 'not-a-date',
+        ttl: 60_000,
+      }))
+
+      const recovered = await sessionManager.getOrCreateSession(
+        k.platform,
+        k.channelId,
+        k.threadId,
+        'claude-code',
+      )
+      expect(recovered.id).not.toBe('broken-session')
+      expect(recovered.platform).toBe(k.platform)
+      expect(recovered.agent).toBe('claude-code')
+      expect(Number.isNaN(recovered.createdAt.getTime())).toBe(false)
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
   it('resetConversation clears messages and assigns new id', async () => {
     const k = uniqueKey('reset')
     try {

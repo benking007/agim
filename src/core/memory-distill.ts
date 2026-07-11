@@ -63,8 +63,8 @@ function buildBatchExtractionPrompt(turns: TurnPair[]): string {
   const convo: string[] = []
   turns.forEach((t, i) => {
     convo.push(`### 第 ${i + 1} 轮`)
-    convo.push('用户：' + t.user_message.slice(0, 2000))
-    convo.push('Agent：' + t.agent_reply.slice(0, 2000))
+    convo.push(`用户：${t.user_message.slice(0, 2000)}`)
+    convo.push(`Agent：${t.agent_reply.slice(0, 2000)}`)
     convo.push('')
   })
   return [

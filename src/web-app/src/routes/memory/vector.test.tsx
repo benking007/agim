@@ -12,6 +12,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import MemoryVectorRoute from './vector'
 import '@/i18n'
 
@@ -37,7 +38,7 @@ function renderAt(search: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/memory/vector${search}`]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[`/memory/vector${search}`]}>
         <Routes>
           <Route path="/memory/vector" element={<MemoryVectorRoute />} />
         </Routes>
@@ -112,7 +113,7 @@ describe('/memory/vector', () => {
     const candidates = within(dialog).getAllByRole('button', { name: 'Clear embeddings' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
     expect(destructive).toBeDefined()
-    fireEvent.click(destructive!)
+    fireEvent.click(requireValue(destructive, 'vector clear confirmation'))
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(

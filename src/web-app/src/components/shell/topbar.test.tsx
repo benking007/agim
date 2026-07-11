@@ -14,7 +14,7 @@ import '@/i18n'
 
 function renderAt(path: string, children?: React.ReactNode): ReturnType<typeof render> {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
       <Routes>
         <Route path="*" element={<Topbar>{children}</Topbar>} />
       </Routes>

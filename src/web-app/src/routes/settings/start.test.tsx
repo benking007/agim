@@ -28,7 +28,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/start']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/start']}>
         <Routes>
           <Route path="/settings/start" element={<SettingsStartRoute />} />
         </Routes>

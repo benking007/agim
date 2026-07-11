@@ -22,11 +22,19 @@ function reset(): void {
   try { _truncateForTests() } catch { /* ignore */ }
 }
 
+function hasSqliteRow<T>(row: T | null): row is T {
+  if (row !== null) return true
+  if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
+    throw new Error('SQLite is required by the Node persistence suite')
+  }
+  return false
+}
+
 describe('goals store', () => {
   it('setActiveGoal then getActiveGoal round-trips title + body', () => {
     reset()
     const row = setActiveGoal({ ...T, title: 'ship v1.3.0', body: '* CHANGELOG\n* release notes' })
-    if (!row) return  // DB unavailable; skip the substantive assertion
+    if (!hasSqliteRow(row)) return
     expect(row.title).toBe('ship v1.3.0')
     expect(row.status).toBe('active')
     expect(row.body).toContain('CHANGELOG')
@@ -37,7 +45,7 @@ describe('goals store', () => {
   it('setting a new active goal auto-pauses the previous one', () => {
     reset()
     const a = setActiveGoal({ ...T, title: 'first' })
-    if (!a) return
+    if (!hasSqliteRow(a)) return
     const b = setActiveGoal({ ...T, title: 'second' })
     expect(b).not.toBeNull()
     const after = getActiveGoal(T.platform, T.channelId, T.threadId)
@@ -49,7 +57,7 @@ describe('goals store', () => {
   it('appendProgress accumulates notes (most recent last)', () => {
     reset()
     const g = setActiveGoal({ ...T, title: 'gather notes' })
-    if (!g) return
+    if (!hasSqliteRow(g)) return
     expect(appendProgress(g.id, 'user', 'note 1')).toBe(true)
     expect(appendProgress(g.id, 'agent', 'note 2')).toBe(true)
     const after = getGoalById(g.id)
@@ -62,7 +70,7 @@ describe('goals store', () => {
   it('updateStatus to completed sets closedAt and stops injection', () => {
     reset()
     const g = setActiveGoal({ ...T, title: 'finish me' })
-    if (!g) return
+    if (!hasSqliteRow(g)) return
     updateStatus(g.id, 'completed')
     const after = getGoalById(g.id)
     expect(after?.status).toBe('completed')
@@ -73,9 +81,9 @@ describe('goals store', () => {
   it('resumeGoal makes a paused row active and pauses the predecessor', () => {
     reset()
     const a = setActiveGoal({ ...T, title: 'a' })
-    if (!a) return
+    if (!hasSqliteRow(a)) return
     const b = setActiveGoal({ ...T, title: 'b' })
-    if (!b) return
+    if (!hasSqliteRow(b)) return
     expect(getActiveGoal(T.platform, T.channelId, T.threadId)?.id).toBe(b.id)
 
     expect(resumeGoal(a.id)).toBe(true)
@@ -87,7 +95,7 @@ describe('goals store', () => {
   it('resumeGoal refuses to resume completed / cancelled rows', () => {
     reset()
     const g = setActiveGoal({ ...T, title: 'closed' })
-    if (!g) return
+    if (!hasSqliteRow(g)) return
     updateStatus(g.id, 'completed')
     expect(resumeGoal(g.id)).toBe(false)
   })
@@ -96,7 +104,7 @@ describe('goals store', () => {
     reset()
     const a = setActiveGoal({ ...T, title: 'thread1' })
     const b = setActiveGoal({ ...T2, title: 'thread2' })
-    if (!a || !b) return
+    if (!hasSqliteRow(a) || !hasSqliteRow(b)) return
     const list = listGoalsForThread(T.platform, T.channelId, T.threadId)
     expect(list.find((r) => r.id === a.id)).toBeDefined()
     expect(list.find((r) => r.id === b.id)).toBeUndefined()
@@ -106,7 +114,7 @@ describe('goals store', () => {
     reset()
     const a = setActiveGoal({ ...T, title: 't1' })
     const b = setActiveGoal({ ...T2, title: 't2' })
-    if (!a || !b) return
+    if (!hasSqliteRow(a) || !hasSqliteRow(b)) return
     const list = listAllActiveGoals()
     expect(list.length).toBe(2)
     expect(list.every((r) => r.status === 'active')).toBe(true)
@@ -116,7 +124,7 @@ describe('goals store', () => {
     reset()
     const long = 'x'.repeat(MAX_TITLE_CHARS + 50)
     const row = setActiveGoal({ ...T, title: long })
-    if (!row) return
+    if (!hasSqliteRow(row)) return
     expect(row.title.length).toBe(MAX_TITLE_CHARS)
   })
 
@@ -124,7 +132,7 @@ describe('goals store', () => {
     reset()
     const long = 'y'.repeat(MAX_BODY_CHARS + 200)
     const row = setActiveGoal({ ...T, title: 't', body: long })
-    if (!row) return
+    if (!hasSqliteRow(row)) return
     expect(row.body.length).toBe(MAX_BODY_CHARS)
   })
 
@@ -146,7 +154,7 @@ describe('buildGoalSnippet', () => {
     const r = setActiveGoal({
       ...T, title: 'Ship v1.3.0', body: 'CHANGELOG + npm publish',
     })
-    if (!r) return
+    if (!hasSqliteRow(r)) return
     const snippet = buildGoalSnippet(T.platform, T.channelId, T.threadId)
     expect(snippet).toContain(`#${r.id}`)
     expect(snippet).toContain('Ship v1.3.0')
@@ -157,7 +165,7 @@ describe('buildGoalSnippet', () => {
   it('only includes the most recent N progress notes (bounded)', () => {
     reset()
     const r = setActiveGoal({ ...T, title: 'many notes' })
-    if (!r) return
+    if (!hasSqliteRow(r)) return
     for (let i = 0; i < 12; i++) appendProgress(r.id, 'user', `note ${i}`)
     const snippet = buildGoalSnippet(T.platform, T.channelId, T.threadId)
     // Default MAX_PROGRESS_NOTES_INJECTED = 5; the snippet should
@@ -173,10 +181,10 @@ describe('formatGoalShow', () => {
   it('renders status flag + body + recent progress', () => {
     reset()
     const r = setActiveGoal({ ...T, title: 'demo', body: 'one liner' })
-    if (!r) return
+    if (!hasSqliteRow(r)) return
     appendProgress(r.id, 'user', 'note A')
     const fresh = getGoalById(r.id)
-    if (!fresh) return
+    if (!hasSqliteRow(fresh)) return
     const out = formatGoalShow(fresh)
     expect(out).toContain('🎯')
     expect(out).toContain('active')

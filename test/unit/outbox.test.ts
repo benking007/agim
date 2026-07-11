@@ -7,7 +7,7 @@
 // bun + better-sqlite3 native binding sometimes can't load. We probe via
 // enqueue() and skip the DB-backed suite if it returns -1.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
+import { describe, it, expect, afterAll, beforeEach } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

@@ -313,7 +313,7 @@ export default function SettingsWorkspacesRoute(): JSX.Element {
                     <span className="text-text-muted text-xs">{t('workspaces.membersOpen')}</span>
                   ) : (
                     <span className="text-text-dim text-xs">
-                      {t('workspaces.membersCount', { count: ws.members!.length })}
+                      {t('workspaces.membersCount', { count: (ws.members ?? []).length })}
                     </span>
                   )}
                 </TableCell>

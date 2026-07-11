@@ -45,9 +45,10 @@ export async function runOnThread<T>(
   const ahead = depths.get(key) ?? 0
 
   if (ahead > 0 && opts.onQueued) {
+    const onQueued = opts.onQueued
     // Don't await — the notify should not block joining the queue.
     Promise.resolve()
-      .then(() => opts.onQueued!(ahead))
+      .then(() => onQueued(ahead))
       .catch(() => { /* swallow */ })
   }
 

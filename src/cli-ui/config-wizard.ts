@@ -30,7 +30,7 @@ import {
   UserAbortError,
 } from './prompts.js'
 import { t, type Lang, type Key } from './i18n.js'
-import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
+import { loadConfig, saveConfigChanges, type Config } from '../core/onboarding.js'
 import { describeSecretSource } from '../core/llm/secrets.js'
 import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
@@ -151,6 +151,7 @@ async function runConfigSection(lang: Lang, picked: ConfigSection, config: Confi
 
 export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}): Promise<void> {
   let config = await loadConfig()
+  const initialConfig = structuredClone(config)
   console.log()
   console.log(t(lang, 'config.title'))
   console.log(t(lang, 'config.subtitle'))
@@ -171,7 +172,7 @@ export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}
       throw err
     }
     if (opts.initialOnly) {
-      await saveConfig(config)
+      config = await saveConfigChanges(initialConfig, config)
       console.log()
       console.log(t(lang, 'config.saved', { file: `${CONFIG_DIR}/config.json` }))
       const { offerServiceStart } = await import('./cmd-handlers.js')
@@ -221,7 +222,7 @@ export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}
     }
   }
 
-  await saveConfig(config)
+  config = await saveConfigChanges(initialConfig, config)
   console.log()
   console.log(t(lang, 'config.saved', { file: `${CONFIG_DIR}/config.json` }))
 
@@ -312,7 +313,8 @@ async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
       back: 'messengers.action.back',
     })
     if (picked === BACK) return config
-    const spec = specs.find(s => s.id === picked)!
+    const spec = specs.find(s => s.id === picked)
+    if (!spec) continue
     config = await messengerSubMenu(lang, config, spec)
   }
 }
@@ -326,7 +328,7 @@ async function messengerSubMenu(lang: Lang, cfg: Config, spec: MessengerSpec): P
   while (true) {
     const enabled = (config.messengers || []).includes(spec.id)
     console.log()
-    console.log(t(lang, spec.labelKey) + ' — ' + messengerStatus(lang, spec, config))
+    console.log(`${t(lang, spec.labelKey)} — ${messengerStatus(lang, spec, config)}`)
     console.log()
 
     const choices: Array<{ value: string; name: string }> = []
@@ -684,7 +686,7 @@ async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
   return out
 }
 
-function agentStatus(lang: Lang, id: AgentId, enabled: boolean, installed: boolean): string {
+function agentStatus(lang: Lang, enabled: boolean, installed: boolean): string {
   if (enabled && installed)  return t(lang, 'agents.status.enabled_installed')
   if (enabled && !installed) return t(lang, 'agents.status.enabled_missing')
   if (!enabled && installed) return t(lang, 'agents.status.disabled_installed')
@@ -716,8 +718,8 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
       choices.push({
         value: spec.id,
         name: t(lang, 'agents.row', {
-          label: t(lang, ('agents.label.' + spec.id) as Key),
-          status: agentStatus(lang, spec.id, enabled, installed),
+          label: t(lang, (`agents.label.${spec.id}`) as Key),
+          status: agentStatus(lang, enabled, installed),
         }),
       })
     }
@@ -754,7 +756,7 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
         message: t(lang, 'agents.default_picker'),
         choices: enabledIds.map(id => ({
           value: id,
-          name: t(lang, ('agents.label.' + id) as Key),
+          name: t(lang, (`agents.label.${id}`) as Key),
         })),
         default: enabledIds.includes(config.defaultAgent) ? config.defaultAgent : enabledIds[0],
         back: 'agents.action.back',
@@ -765,11 +767,12 @@ async function sectionAgents(lang: Lang, cfg: Config): Promise<Config> {
       const agents = new Set(config.agents || [])
       agents.add(def as string)
       config = { ...config, agents: Array.from(agents), defaultAgent: def as string }
-      console.log(t(lang, 'agents.default_set', { label: t(lang, ('agents.label.' + def) as Key) }))
+      console.log(t(lang, 'agents.default_set', { label: t(lang, (`agents.label.${def}`) as Key) }))
       continue
     }
 
-    const spec = AGENT_SPECS.find(s => s.id === picked)!
+    const spec = AGENT_SPECS.find(s => s.id === picked)
+    if (!spec) continue
     try {
       config = await agentSubMenu(lang, config, spec, installs, effective.has(spec.id))
     } catch (err) {
@@ -790,9 +793,9 @@ async function agentSubMenu(
   let isEnabled = enabled
   while (true) {
     const installed = installs.get(spec.id) ?? false
-    const label = t(lang, ('agents.label.' + spec.id) as Key)
+    const label = t(lang, (`agents.label.${spec.id}`) as Key)
     console.log()
-    console.log(label + ' — ' + agentStatus(lang, spec.id, isEnabled, installed))
+    console.log(`${label} — ${agentStatus(lang, isEnabled, installed)}`)
     console.log(installed
       ? t(lang, 'agents.installed_msg', { label })
       : t(lang, 'agents.missing_msg',   { label }))
@@ -850,7 +853,7 @@ async function agentSubMenu(
       console.log(t(lang, 'agents.default_set', { label }))
     } else if (action === 'install_hint') {
       console.log()
-      console.log(t(lang, ('agents.install_hint.' + spec.id) as Key))
+      console.log(t(lang, (`agents.install_hint.${spec.id}`) as Key))
       if (spec.authHintKey) console.log(t(lang, spec.authHintKey))
       console.log()
     } else if (action === 'recheck') {
@@ -1174,7 +1177,8 @@ async function sectionSmtp(lang: Lang): Promise<void> {
     back: 'smtp.action.back',
   })) as SmtpPreset['id'] | typeof BACK
   if (presetId === BACK) return
-  const preset = SMTP_PRESETS.find(p => p.id === presetId)!
+  const preset = SMTP_PRESETS.find(p => p.id === presetId)
+  if (!preset) return
 
   // Prefill priority: existing user value first, then preset default.
   // Picking a known preset (gmail/qq/etc) while already-configured shouldn't

@@ -59,6 +59,8 @@ export default function ChatRoute(): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
+  const messageCount = state.messages.length
+  const latestMessageContent = state.messages.at(-1)?.content ?? ''
   const forceWelcome = searchParams.get('welcome') === '1'
     || searchParams.get('onboarding') === '1'
   const quickPrompts = useMemo(
@@ -74,6 +76,7 @@ export default function ChatRoute(): JSX.Element {
   // requestAnimationFrame so the layout has settled before we scroll;
   // also tolerate the case where the user scrolled up intentionally.
   useEffect(() => {
+    if (messageCount === 0 && !latestMessageContent && state.currentReplyId == null) return
     if (!listRef.current) return
     const el = listRef.current
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200
@@ -81,7 +84,7 @@ export default function ChatRoute(): JSX.Element {
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight
     })
-  }, [state.messages, state.currentReplyId])
+  }, [latestMessageContent, messageCount, state.currentReplyId])
 
   // Surface WS errors as toasts (and clear so they don't re-fire on
   // every render).

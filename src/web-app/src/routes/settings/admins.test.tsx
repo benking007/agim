@@ -11,6 +11,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import SettingsAdminsRoute from './admins'
 import '@/i18n'
 
@@ -36,7 +37,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/admins']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/admins']}>
         <Routes>
           <Route path="/settings/admins" element={<SettingsAdminsRoute />} />
         </Routes>
@@ -120,7 +121,7 @@ describe('/settings/admins', () => {
     renderPage()
     await waitFor(() => expect(screen.getAllByText('wxid_alice').length).toBeGreaterThan(0))
     const rowRemoves = screen.getAllByRole('button', { name: 'Remove' })
-    fireEvent.click(rowRemoves[0]!)
+    fireEvent.click(requireValue(rowRemoves[0], 'first admin remove button'))
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     const dialog = screen.getByRole('dialog')
     const candidates = within(dialog).getAllByRole('button', { name: 'Remove' })

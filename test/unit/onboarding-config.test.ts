@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { saveConfig } from '../../src/core/onboarding'
+import { saveConfig, saveConfigChanges } from '../../src/core/onboarding'
 import { AGIM_HOME } from '../../src/core/agim-paths'
 
 const CONFIG_FILE = join(AGIM_HOME, 'config.json')
@@ -28,6 +28,32 @@ describe('onboarding config persistence', () => {
       } else {
         await rm(CONFIG_FILE, { force: true })
       }
+    }
+  })
+
+  it('persists wizard changes without overwriting unrelated concurrent updates', async () => {
+    const hadOriginal = existsSync(CONFIG_FILE)
+    const original = hadOriginal ? await readFile(CONFIG_FILE) : undefined
+    const base = {
+      messengers: [],
+      agents: ['claude-code', 'codex'],
+      defaultAgent: 'claude-code',
+    }
+
+    try {
+      await saveConfig({
+        ...base,
+        mcpServers: [{ name: 'added-while-wizard-open', command: '/bin/echo' }],
+      })
+      const stored = await saveConfigChanges(base, { ...base, defaultAgent: 'codex' })
+
+      expect(stored.defaultAgent).toBe('codex')
+      expect(stored.mcpServers).toEqual([
+        { name: 'added-while-wizard-open', command: '/bin/echo' },
+      ])
+    } finally {
+      if (hadOriginal && original) await writeFile(CONFIG_FILE, original, { mode: 0o600 })
+      else await rm(CONFIG_FILE, { force: true })
     }
   })
 })

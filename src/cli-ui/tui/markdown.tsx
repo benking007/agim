@@ -15,7 +15,7 @@
 //
 // Returns a JSX fragment safe to drop inside any Ink <Box>.
 
-import React from 'react'
+import type React from 'react'
 import { Box, Text } from 'ink'
 import { marked, type Tokens } from 'marked'
 
@@ -391,7 +391,6 @@ function renderTable(tok: Token, key: string, width: number): React.ReactNode {
       <Box key={key} flexDirection="column" marginBottom={1}>
         {gridRow(headerCells, `${key}-h`, true)}
         <Text dimColor>{sep}</Text>
-        {/* biome-ignore lint/suspicious/noArrayIndexKey: table rows have no stable id; position is the key */}
         {rowCells.map((r, ri) => gridRow(r, `${key}-r${ri}`, false))}
       </Box>
     )
@@ -471,7 +470,7 @@ function renderBlock(tok: Token, key: string, width: number): React.ReactNode {
   switch (tok.type) {
     case 'heading': {
       const depth = Math.min((tok.depth ?? 1) - 1, HEADING_COLORS.length - 1)
-      const prefix = '#'.repeat(tok.depth ?? 1) + ' '
+      const prefix = `${'#'.repeat(tok.depth ?? 1)} `
       return (
         <Box key={key} marginBottom={1}>
           <Text bold color={HEADING_COLORS[depth]}>{prefix}</Text>

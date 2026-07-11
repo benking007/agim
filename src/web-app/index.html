@@ -26,13 +26,13 @@
     upgrade.
   -->
   <script>
-    (function () {
+    (() => {
       try {
-        var m = localStorage.getItem('agim-theme')
+        const m = localStorage.getItem('agim-theme')
         if (m === 'light' || m === 'dark') {
           document.documentElement.setAttribute('data-theme', m)
         }
-      } catch (e) { /* private-mode storage exceptions: noop */ }
+      } catch { /* private-mode storage exceptions: noop */ }
     })()
   </script>
 </head>

@@ -39,6 +39,8 @@ export interface AssertSafeOptions {
   forwardsCredentials: boolean
 }
 
+type LookupHost = (hostname: string) => Promise<{ address: string; family: number }>
+
 export class UnsafeAcpUrlError extends Error {
   constructor(message: string, public readonly reason: string) {
     super(message)
@@ -46,7 +48,11 @@ export class UnsafeAcpUrlError extends Error {
   }
 }
 
-export async function assertSafeAcpUrl(raw: string, opts: AssertSafeOptions): Promise<URL> {
+export async function assertSafeAcpUrl(
+  raw: string,
+  opts: AssertSafeOptions,
+  lookupHost: LookupHost = lookup,
+): Promise<URL> {
   let u: URL
   try {
     u = new URL(raw)
@@ -79,7 +85,7 @@ export async function assertSafeAcpUrl(raw: string, opts: AssertSafeOptions): Pr
   let address: string
   let family: 4 | 6
   try {
-    const r = await lookup(u.hostname)
+    const r = await lookupHost(u.hostname)
     address = r.address
     family = (r.family === 6 ? 6 : 4) as 4 | 6
   } catch (err) {

@@ -95,7 +95,7 @@ describe('self-protect', () => {
       const dangerous = ['systemctl', 'restart', 'agim'].join(' ')
       expect(checkToolUse('Edit', {
         file_path: '/tmp/x.md',
-        old_string: 'Run ' + dangerous + ' to apply',
+        old_string: `Run ${dangerous} to apply`,
         new_string: 'Restart the service to apply',
       })).toBeNull()
     })
@@ -162,7 +162,7 @@ describe('self-protect', () => {
       expect(checkToolUse('Grep', { pattern: sh, path: '/tmp' })).toBeNull()
     })
     it('WebFetch / WebSearch are not scanned', () => {
-      expect(checkToolUse('WebFetch', { url: 'https://example.com/' + sh })).toBeNull()
+      expect(checkToolUse('WebFetch', { url: `https://example.com/${sh}` })).toBeNull()
       expect(checkToolUse('WebSearch', { query: sh })).toBeNull()
     })
     it('arbitrary MCP tool is not scanned', () => {

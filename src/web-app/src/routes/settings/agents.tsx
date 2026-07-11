@@ -62,12 +62,14 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
  *                     runtime always exposes it via `isAgentEnabled`
  *                     regardless of config.agents, so default-picker
  *                     eligibility ignores the enabled-list constraint. */
-const BUILTIN_AGENTS: Record<string, {
+interface BuiltinAgentInfo {
   aliases: string[]
   pkg: string
   kind: 'cli' | 'in-process'
   scope: 'bridged' | 'agim'
-}> = {
+}
+
+const BUILTIN_AGENTS = {
   'claude-code': { aliases: ['cc', 'claude'],    pkg: '@anthropic-ai/claude-code', kind: 'cli', scope: 'bridged' },
   'codex':       { aliases: ['cx'],              pkg: '@openai/codex',             kind: 'cli', scope: 'bridged' },
   'copilot':     { aliases: ['co', 'gh-copilot', 'github-copilot'], pkg: '@github/copilot', kind: 'cli', scope: 'bridged' },
@@ -82,9 +84,10 @@ const BUILTIN_AGENTS: Record<string, {
   // Previously the agent was registered + always-enabled at runtime but
   // hidden from this page, so operators could only reach it via the CLI.
   'native':      { aliases: ['agim', 'na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process', scope: 'agim' },
-}
+} satisfies Record<string, BuiltinAgentInfo>
 
-const AGENT_NAMES = Object.keys(BUILTIN_AGENTS)
+type BuiltinAgentName = keyof typeof BUILTIN_AGENTS
+const AGENT_NAMES = Object.keys(BUILTIN_AGENTS) as BuiltinAgentName[]
 const BRIDGED_AGENT_NAMES = AGENT_NAMES.filter((name) => BUILTIN_AGENTS[name]?.scope === 'bridged')
 
 export default function SettingsAgentsRoute(): JSX.Element {
@@ -133,7 +136,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
    *  toggle on first. */
   const eligibleDefaults = useMemo(
     () => AGENT_NAMES.filter((a) => {
-      const info = BUILTIN_AGENTS[a]!
+      const info = BUILTIN_AGENTS[a]
       const enabledOrInProcess = info.kind === 'in-process' ? true : enabled.includes(a)
       return enabledOrInProcess && status[a]
     }),
@@ -211,7 +214,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
           {/* Agent rows */}
           <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
             {BRIDGED_AGENT_NAMES.map((name) => {
-              const info = BUILTIN_AGENTS[name]!
+              const info = BUILTIN_AGENTS[name]
               const installed = !!status[name]
               const isEnabled = enabled.includes(name)
               return (
@@ -406,8 +409,9 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 function acpEqual(a: ACPAgentConfig[], b: ACPAgentConfig[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
-    const x = a[i]!
-    const y = b[i]!
+    const x = a[i]
+    const y = b[i]
+    if (!x || !y) return false
     if (x.name !== y.name) return false
     if (x.endpoint !== y.endpoint) return false
     if ((x.enabled ?? true) !== (y.enabled ?? true)) return false

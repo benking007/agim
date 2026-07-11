@@ -13,7 +13,7 @@
 // The bun runtime can't load better-sqlite3, so the DB-backed suite gets
 // skipped via the same probe pattern used by reminders / outbox tests.
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'bun:test'
+import { describe, it, expect, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

@@ -46,7 +46,7 @@ function renderAt(path: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <Routes>
           <Route path="/memory" element={<MemoryLayout />}>
             <Route index element={<div data-testid="memory-child">overview</div>} />

@@ -114,7 +114,7 @@ export function computeBackoffMs(
   const base = opts.base ?? BASE_BACKOFF_MS
   const cap = opts.cap ?? MAX_BACKOFF_MS
   const jitter = opts.jitter ?? (() => 0.8 + Math.random() * 0.4)
-  const exp = Math.min(cap, base * Math.pow(2, Math.max(0, attempt - 1)))
+  const exp = Math.min(cap, base * 2 ** Math.max(0, attempt - 1))
   const withJitter = Math.floor(exp * jitter())
   const floor = Math.max(0, retryAfterMs ?? 0)
   return Math.min(cap, Math.max(floor, withJitter))

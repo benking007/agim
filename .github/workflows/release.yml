@@ -62,35 +62,64 @@ jobs:
         # dep is missing, so `npm publish` aborted with
         # "Cannot find module 'sigstore'" (v1.5.9 / v1.5.10 push failures).
         # Node 24's bundled npm (11.x) has sigstore vendored AND predates the
-        # arborist stall; `--no-package-lock` already short-circuits the
-        # arborist tree-comparison path that was the actual stall point, so we
-        # no longer need the global upgrade.
+        # arborist stall. The repaired public-registry lockfile now lets the
+        # release use npm ci without a global npm upgrade.
         run: |
           npm --version
-          npm install --omit=optional --no-audit --no-fund --legacy-peer-deps --no-package-lock
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps
+          BIOME_VERSION="$(node -p "require('./node_modules/@biomejs/biome/package.json').version")"
+          BIOME_DIR="$RUNNER_TEMP/agim-biome"
+          npm install --prefix "$BIOME_DIR" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org "@biomejs/cli-linux-x64@$BIOME_VERSION"
+          test -f "$BIOME_DIR/node_modules/@biomejs/cli-linux-x64/biome"
+          echo "BIOME_BINARY=$BIOME_DIR/node_modules/@biomejs/cli-linux-x64/biome" >> "$GITHUB_ENV"
 
       - name: Install web-app dependencies
         if: steps.version.outputs.changed == 'true'
-        # src/web-app is a separate package (not a workspace), so the
-        # root install doesn't reach it. Required since v1.2.26 wired
-        # build:spa (cd src/web-app && tsc --noEmit && vite build)
-        # into the main build script — without this step tsc fails
-        # with TS2688: "Cannot find type definition file for 'vite/client'".
-        # Mirror the root-install workarounds (npm latest + soft flags).
+        # src/web-app is a separate package (not a workspace), so the root
+        # install doesn't reach it. The explicit typecheck below validates
+        # TypeScript; the root build later runs Vite and packages its output.
         working-directory: src/web-app
-        run: npm install --no-audit --no-fund --legacy-peer-deps --no-package-lock
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: Backend typecheck
+        if: steps.version.outputs.changed == 'true'
+        run: npm run typecheck
+
+      - name: Repository lint
+        if: steps.version.outputs.changed == 'true'
+        run: npm run lint
+
+      - name: Backend tests
+        if: steps.version.outputs.changed == 'true'
+        run: npm test
+        env:
+          LOG_LEVEL: error
+
+      - name: Web-app typecheck
+        if: steps.version.outputs.changed == 'true'
+        run: npm --prefix src/web-app run typecheck
+
+      - name: Web-app i18n parity
+        if: steps.version.outputs.changed == 'true'
+        run: npm --prefix src/web-app run check-i18n
+
+      - name: Web-app endpoint contracts
+        if: steps.version.outputs.changed == 'true'
+        run: npm run check:contracts
+
+      - name: Web-app tests
+        if: steps.version.outputs.changed == 'true'
+        run: npm --prefix src/web-app test -- --run
+        env:
+          CI: 'true'
 
       - name: Build
         if: steps.version.outputs.changed == 'true'
         run: npm run build
 
-      - name: Run tests
+      - name: SQLite persistence regressions
         if: steps.version.outputs.changed == 'true'
-        # 暂时非阻塞：全量套件有历史遗留红（AgentBase streaming 等），
-        # 排在 publish 之前会把发布整个卡死。Build 步骤的 tsc 已提供编译门禁；
-        # 运行时测试在此保持可见但不阻塞发布。待把红测试修绿后移除本行。
-        continue-on-error: true
-        run: npm test
+        run: npm run test:node
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'

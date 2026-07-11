@@ -116,7 +116,7 @@ export async function removeAgimMcp(opts: { path?: string } = {}): Promise<void>
     if (e.code === 'ENOENT') return
     throw err
   }
-  if (current.mcpServers && current.mcpServers.agim) {
+  if (current.mcpServers?.agim) {
     delete current.mcpServers.agim
     await writeFile(filePath, JSON.stringify(current, null, 2), 'utf8')
   }

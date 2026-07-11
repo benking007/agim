@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, renderHook } from '@testing-library/react'
+import { requireValue } from '@/test/assert'
 import { useEventStream } from './use-event-stream'
 
 type Listener = (event: MessageEvent) => void
@@ -92,13 +93,13 @@ describe('useEventStream', () => {
   it('opens an EventSource against /events with withCredentials', () => {
     renderHook(() => useEventStream({}))
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(MockEventSource.instances[0]!.url).toBe('/events')
-    expect(MockEventSource.instances[0]!.withCredentials).toBe(true)
+    expect(MockEventSource.instances[0]?.url).toBe('/events')
+    expect(MockEventSource.instances[0]?.withCredentials).toBe(true)
   })
 
   it('respects a custom url option', () => {
     renderHook(() => useEventStream({}, { url: '/api/events?token=t' }))
-    expect(MockEventSource.instances[0]!.url).toBe('/api/events?token=t')
+    expect(MockEventSource.instances[0]?.url).toBe('/api/events?token=t')
   })
 
   it('does not connect when enabled=false', () => {
@@ -112,7 +113,7 @@ describe('useEventStream', () => {
     const approval = vi.fn()
     renderHook(() => useEventStream({ job, approval }))
 
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     act(() => {
       es.fire('job', { type: 'job', phase: 'created', jobId: 7, agent: 'claude' })
     })
@@ -129,13 +130,13 @@ describe('useEventStream', () => {
       })
     })
     expect(approval).toHaveBeenCalledTimes(1)
-    expect(approval.mock.calls[0]![0]).toMatchObject({ reqId: 'r1', toolName: 'bash' })
+    expect(approval.mock.calls[0]?.[0]).toMatchObject({ reqId: 'r1', toolName: 'bash' })
   })
 
   it('ignores events without a matching handler', () => {
     const audit = vi.fn()
     renderHook(() => useEventStream({ audit }))
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     act(() => {
       es.fire('job', { type: 'job', phase: 'started', jobId: 1, agent: 'x' })
     })
@@ -145,7 +146,7 @@ describe('useEventStream', () => {
   it('swallows malformed JSON', () => {
     const job = vi.fn()
     renderHook(() => useEventStream({ job }))
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     act(() => {
       es.fire('job', 'not-json{')
     })
@@ -156,7 +157,7 @@ describe('useEventStream', () => {
     const { result } = renderHook(() => useEventStream({}))
     expect(result.current).toBe('connecting')
 
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     act(() => { es.open() })
     expect(result.current).toBe('connected')
 
@@ -166,7 +167,7 @@ describe('useEventStream', () => {
 
   it('closes the EventSource on unmount', () => {
     const { unmount } = renderHook(() => useEventStream({}))
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     expect(es.closed).toBe(false)
     unmount()
     expect(es.closed).toBe(true)
@@ -174,7 +175,7 @@ describe('useEventStream', () => {
 
   it('reopens on visibilitychange when readyState is not OPEN', () => {
     renderHook(() => useEventStream({}))
-    const first = MockEventSource.instances[0]!
+    const first = requireValue(MockEventSource.instances[0], 'first EventSource instance')
     // Simulate the socket dying without firing close (e.g. iOS suspend).
     first.readyState = MockEventSource.CLOSED
 
@@ -208,7 +209,7 @@ describe('useEventStream', () => {
     // Still the same socket — handler ref tracks via useRef.
     expect(MockEventSource.instances).toHaveLength(1)
 
-    const es = MockEventSource.instances[0]!
+    const es = requireValue(MockEventSource.instances[0], 'EventSource instance')
     act(() => {
       es.fire('job', { type: 'job', phase: 'created', jobId: 99, agent: 'a' })
     })

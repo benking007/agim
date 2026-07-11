@@ -77,6 +77,12 @@ IM delivery + web views
 - `*.db`（审计、任务、记忆、投递等）
 - `sessions/`（会话数据）
 
+主配置统一由 `core/config-store.ts` 持久化：同进程请求先排队，不同进程通过
+`config.json.lock` 协调完整的读改写事务，最终使用同目录临时文件、`fsync` 与原子
+`rename` 替换，并保持 `0600` 权限。新增 Web/CLI 配置入口不得直接调用
+`writeFile(config.json, ...)`；字段级修改应使用 `updateConfigObject()`，避免覆盖其他入口
+刚写入的配置。
+
 ## 5. Agent 抽象
 
 所有 agent 后端都通过统一 `AgentAdapter` 接口接入：

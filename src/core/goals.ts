@@ -334,7 +334,7 @@ export function applyGoalTimeoutBoost(
   base: number,
   ctx?: { platform?: string; channelId?: string; threadId?: string },
 ): number {
-  if (!ctx || !ctx.platform || !ctx.channelId || !ctx.threadId) return base
+  if (!ctx?.platform || !ctx.channelId || !ctx.threadId) return base
   if (!hasActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)) return base
   const raw = process.env.AGIM_GOAL_ACTIVE_TIMEOUT_MULTIPLIER
   let mult = 3

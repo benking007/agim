@@ -100,9 +100,52 @@ describe('validateConfig', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('preserves unrelated config when a nested field is invalid', () => {
+    const result = validateConfig({
+      messengers: ['dingtalk'],
+      agents: ['claude-code'],
+      defaultAgent: 'claude-code',
+      dingtalk: { clientId: 'id', clientSecret: 'secret' },
+      workspaces: [{
+        id: 'team', agents: ['claude-code'],
+        rateLimit: { rate: 0, intervalSec: 60, burst: 10 },
+      }],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.config.messengers).toEqual(['dingtalk'])
+    expect(result.config.agents).toEqual(['claude-code'])
+    expect(result.config.defaultAgent).toBe('claude-code')
+    expect(result.config.workspaces).toBeUndefined()
+    expect((result.config as Record<string, unknown>).dingtalk).toEqual({
+      clientId: 'id', clientSecret: 'secret',
+    })
+  })
+
+  it('disables only the messenger whose required credentials are invalid', () => {
+    const result = validateConfig({
+      messengers: ['telegram', 'dingtalk'],
+      agents: ['codex'],
+      defaultAgent: 'codex',
+      telegram: { channelId: 'missing-token' },
+      dingtalk: { clientId: 'id', clientSecret: 'secret' },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.config.messengers).toEqual(['dingtalk'])
+    expect(result.config.agents).toEqual(['codex'])
+    expect(result.config.defaultAgent).toBe('codex')
+    expect(result.config.telegram).toBeUndefined()
+  })
+
   it('rejects non-integer port numbers', () => {
     const result = validateConfig({ webPort: -10 })
     expect(result.ok).toBe(false)
+  })
+
+  it('rejects ports outside the TCP range', () => {
+    expect(validateConfig({ webPort: 65_536 }).ok).toBe(false)
+    expect(validateConfig({ acpPort: 99_999 }).ok).toBe(false)
   })
 
   it('returns structured error paths', () => {

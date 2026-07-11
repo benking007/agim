@@ -2,7 +2,7 @@
 // expose every knob; it gets a user to "Web console can talk to an agent"
 // and leaves IM / systemd / workspaces for progressive discovery.
 
-import { loadConfig, saveConfig, type Config } from '../core/onboarding.js'
+import { loadConfig, saveConfigChanges, type Config } from '../core/onboarding.js'
 import { menu, BACK, UserAbortError } from './prompts.js'
 import { t, resolveCliLang, formatAgentInstallHint, type Lang } from './i18n.js'
 import { checkAgentsFresh, pickPreferredAgent } from './readiness.js'
@@ -105,8 +105,7 @@ export async function runQuickstart(lang: Lang = resolveCliLang()): Promise<void
 
   const next = ensureAgentSelected(config, preferred)
   if (JSON.stringify(next) !== JSON.stringify(config)) {
-    await saveConfig(next)
-    config = next
+    config = await saveConfigChanges(config, next)
   }
 
   console.log()

@@ -170,8 +170,7 @@ function handleWrite(args: Record<string, unknown>, threadKey: string): Dispatch
 function renderMarkdownChecklist(items: TodoItem[]): string {
   if (items.length === 0) return '(plan cleared — no items)'
   const lines: string[] = []
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i]!
+  for (const [i, it] of items.entries()) {
     const icon = it.status === 'completed' ? '☑'
       : it.status === 'in_progress' ? '▶' : '☐'
     lines.push(`${i + 1}. ${icon} ${it.content}`)

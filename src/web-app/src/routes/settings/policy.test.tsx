@@ -46,7 +46,7 @@ function renderPage(env: Record<string, string> = {
   })
   const view = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/policy']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/policy']}>
         <Routes>
           <Route path="/settings/policy" element={<SettingsPolicyRoute />} />
         </Routes>

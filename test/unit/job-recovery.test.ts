@@ -21,7 +21,9 @@ const recovery = await import('../../src/core/job-recovery.js')
 const dbAvailable = (() => {
   try {
     const id = jb.createInlineJob({ agent: 'probe', prompt: 'probe', threadKey: 'p:p:p' })
-    return id > 0
+    if (id <= 0) return false
+    jb.cancelJob(id)
+    return true
   } catch { return false }
 })()
 const skipIfNoDb = dbAvailable ? describe : describe.skip

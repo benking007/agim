@@ -840,7 +840,7 @@ export function readSavedLang(): Lang | null {
 export function saveLang(lang: Lang): void {
   try {
     mkdirSync(dirname(PREF_FILE), { recursive: true })
-    writeFileSync(PREF_FILE, lang + '\n', { mode: 0o644 })
+    writeFileSync(PREF_FILE, `${lang}\n`, { mode: 0o644 })
   } catch (err) {
     console.warn(`⚠️ Could not save language preference: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -868,7 +868,8 @@ export function formatAgentInstallHint(lang: Lang, missing: string[]): string {
     return pkg[name] ?? `npm i -g ${name}`
   }
   if (missing.length === 1) {
-    const agent = missing[0]!
+    const agent = missing[0]
+    if (!agent) return ''
     return t(lang, 'start.agents_install_one', { agent, hint: hintFor(agent) })
   }
   const lines = missing.map((agent) => t(lang, 'start.agents_install_line', { agent, hint: hintFor(agent) }))

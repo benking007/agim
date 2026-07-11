@@ -30,7 +30,7 @@ function renderPage(): ReturnType<typeof render> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/observability/audit']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/observability/audit']}>
         <Routes>
           <Route path="/observability/audit" element={<ObservabilityAuditRoute />} />
         </Routes>

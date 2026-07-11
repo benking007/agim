@@ -183,12 +183,14 @@ const router = createBrowserRouter([
     lazy: authedLazy(() => import('@/routes/m/chat')),
   },
   { path: '*', element: <NotFoundRoute /> },
-])
+], {
+  future: { v7_relativeSplatPath: true },
+})
 
 export function AppRouter(): JSX.Element {
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} future={{ v7_startTransition: true }} />
     </ErrorBoundary>
   )
 }

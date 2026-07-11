@@ -37,7 +37,7 @@
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { chmod, mkdir, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
@@ -164,8 +164,9 @@ export async function startRpcServer(): Promise<Server | null> {
 /** Graceful shutdown — called on SIGTERM. */
 export async function stopRpcServer(): Promise<void> {
   if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null }
-  if (!server) return
-  await new Promise<void>((resolve) => server!.close(() => resolve()))
+  const activeServer = server
+  if (!activeServer) return
+  await new Promise<void>((resolve) => activeServer.close(() => resolve()))
   server = null
   try { await unlink(resolveSocketPath()) } catch { /* best-effort */ }
   tokens.clear()

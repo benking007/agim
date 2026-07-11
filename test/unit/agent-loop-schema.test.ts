@@ -17,7 +17,7 @@ import { runAgentLoop } from '../../src/core/llm/agent-loop.js'
 import type { DispatcherResult } from '../../src/core/llm/tool-dispatcher.js'
 
 class QueuedStubProvider extends LlmProvider {
-  private readonly queue: ChatResult[]
+  protected readonly queue: ChatResult[]
   constructor(queue: ChatResult[]) {
     super({ name: 'stub', model: 'stub-m', providerType: 'stub' })
     this.queue = queue
@@ -96,7 +96,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
     let secondTurnMessages: LlmMessage[] = []
     class CapturingStub extends QueuedStubProvider {
       override async chat(messages: LlmMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
-        if (this['queue'].length === 1) secondTurnMessages = messages.slice()
+        if (this.queue.length === 1) secondTurnMessages = messages.slice()
         return super.chat(messages, opts)
       }
     }

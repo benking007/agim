@@ -4,26 +4,26 @@
 
 ### Overview
 
-Agim is a universal messenger-to-agent bridge (Node.js/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000, ACP server on port 9090.
+Agim is a universal messenger-to-agent bridge (Node.js >= 22.19/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000, ACP server on port 9090.
 
 ### Commands
 
 | Task | Command |
 |------|---------|
-| Install deps | `npm install --no-package-lock` (see note below) + `npm --prefix src/web-app install` |
+| Install deps | `npm ci` + `npm --prefix src/web-app ci` |
 | Build | `npm run build` |
 | Dev (watch) | `npm run dev` |
-| Lint | `npx biome lint src test` |
+| Lint | `npm run lint` |
 | Typecheck (src) | `npx tsc --noEmit` |
-| Test | `bun test` |
+| Test | `npm test` |
 | Start | `node dist/cli.js start` |
 
-### Dependency install caveat (important)
+### Dependency installation
 
-The committed root `package-lock.json` has ~107 entries whose `resolved` URLs point at an internal mirror (`mirrors.tencentyun.com`) that is **not reachable** from the Cursor Cloud VM. A plain `npm install` therefore crashes (`Exit handler never called` / `ENOTFOUND`). Install with `npm install --no-package-lock` so npm ignores those baked-in URLs and resolves everything (including optional deps like the Biome platform binary) from the configured public registry (`registry.npmjs.org`). The startup update script already does this — fresh sessions need no manual step.
+Both the root project and `src/web-app` commit npm v3 lockfiles whose tarballs resolve from the public npm registry. Use `npm ci` so local, CI, and release installs use the same dependency graph.
 
-- Building the web UI (`npm run build` → `build:spa`) compiles the Vite SPA in `src/web-app`, which has its own `package.json` (no lockfile). Its deps are installed by `npm --prefix src/web-app install`.
-- The optional `@xenova/transformers` dep (local vector embeddings, default OFF) is heavy; it installs fine with `--no-package-lock` but is not required to run, lint, build, or test the app.
+- Building the web UI (`npm run build` → `build:spa`) compiles the Vite SPA in `src/web-app`, which has its own `package.json` and `package-lock.json`.
+- The optional `@huggingface/transformers` dependency powers local vector embeddings and is relatively large. CI may use `npm ci --omit=optional`; a normal local or end-user install includes it.
 
 ### Release / publish notes
 
@@ -50,10 +50,11 @@ The committed root `package-lock.json` has ~107 entries whose `resolved` URLs po
 
 ### Testing notes
 
-- Tests use **bun** as the test runner (`npm test` → `bun test`). Bun is pinned as a devDependency, so `npm install` provides `node_modules/.bin/bun` even when `~/.bun/bin` is not on PATH.
+- Tests use **bun** as the test runner (`npm test` → `bun test --isolate`). Isolation is required because many files mutate process env, registries, and socket listeners. Bun is pinned as a devDependency, so `npm ci` provides `node_modules/.bin/bun` even when `~/.bun/bin` is not on PATH.
 - `npm run typecheck` runs two passes: src (via `tsconfig.json`) and test (via `tsconfig.test.json`). Both passes are expected to exit 0.
-- `npm run lint` is expected to exit 0. Biome may still print warnings / infos; those are not blocking unless promoted to errors by config.
-- A small number of tests (~9) fail in the **full** `bun test` run on the Cursor Cloud VM but pass in isolation. They are not dependency/setup problems: the `findAgimProcesses` / `reapStrayAgimProcesses` cases (`test/unit/reap-stray-processes.test.ts`) depend on spawning real processes and matching them via `/proc` argv, which the sandboxed container does not reproduce; the `nativeAgentAdapter` / `registry.listAgents` / `runAgentLoop` cases pass when their file is run alone (cross-test global-state pollution in the full run). The other ~2038 tests pass.
+- `npm run lint` covers both backend and SPA sources. It is expected to exit 0; the SPA scope should remain free of warnings as well as errors.
+- The SPA `postbuild` enforces bundle budgets (350 KiB entry, 400 KiB per JavaScript chunk). Do not raise them to hide a regression; split the dependency or route instead.
+- Bun cannot load `better-sqlite3`, so DB-backed Bun cases skip intentionally. `npm run test:sqlite` reuses those backend test files through Vitest's Node pool and exercises the real native addon. `npm run test:node` runs the built-memory smoke tests plus that full SQLite suite and is the CI/release gate.
 
 ### Native addon
 

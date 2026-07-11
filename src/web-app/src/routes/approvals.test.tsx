@@ -9,8 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { createWorkbenchQueryClient } from '@/test/query-client'
 import ApprovalsRoute from './approvals'
 import '@/i18n'
 
@@ -43,12 +44,10 @@ function jsonResponse(body: unknown): Response {
 }
 
 function renderPage(): ReturnType<typeof render> {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const qc = createWorkbenchQueryClient()
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/approvals']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/approvals']}>
         <Routes>
           <Route path="/approvals" element={<ApprovalsRoute />} />
         </Routes>

@@ -11,6 +11,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { requireValue } from '@/test/assert'
 import { DataTable, type DataTableColumn } from './data-table'
 import '@/i18n'
 
@@ -77,9 +78,12 @@ describe('DataTable', () => {
         onRowClick={onRowClick}
       />,
     )
-    const row = within(getDesktopTable()).getByText('Alpha').closest('tr')!
+    const row = requireValue(
+      within(getDesktopTable()).getByText('Alpha').closest('tr'),
+      'desktop data row',
+    )
     fireEvent.click(row)
-    expect(onRowClick).toHaveBeenCalledWith(rows[0]!)
+    expect(onRowClick).toHaveBeenCalledWith(requireValue(rows[0], 'first fixture row'))
   })
 
   it('select-all checkbox toggles all rows in the page', () => {
@@ -95,7 +99,10 @@ describe('DataTable', () => {
     )
     const allCb = within(getDesktopTable()).getByRole('checkbox', { name: 'Select all rows' })
     fireEvent.click(allCb)
-    const next: Set<string> = onSelectionChange.mock.calls[0]![0]
+    const next = requireValue<Set<string>>(
+      onSelectionChange.mock.calls[0]?.[0],
+      'select-all callback value',
+    )
     expect(Array.from(next).sort()).toEqual(['a', 'b', 'c'])
   })
 
@@ -111,7 +118,7 @@ describe('DataTable', () => {
       />,
     )
     const rowCbs = within(getDesktopTable()).getAllByRole('checkbox', { name: 'Select row' })
-    fireEvent.click(rowCbs[0]!)
+    fireEvent.click(requireValue(rowCbs[0], 'first row checkbox'))
     expect(onSelectionChange).toHaveBeenCalledWith(new Set(['a']))
   })
 
@@ -129,7 +136,7 @@ describe('DataTable', () => {
       />,
     )
     const rowCbs = within(getDesktopTable()).getAllByRole('checkbox', { name: 'Select row' })
-    fireEvent.click(rowCbs[0]!)
+    fireEvent.click(requireValue(rowCbs[0], 'first row checkbox'))
     expect(onSelectionChange).toHaveBeenCalledTimes(1)
     expect(onRowClick).not.toHaveBeenCalled()
   })

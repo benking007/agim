@@ -60,6 +60,7 @@ describe('isPrivateAddr (IPv6)', () => {
 
 describe('assertSafeAcpUrl', () => {
   const ALLOW = 'AGIM_ACP_ALLOW_LOOPBACK'
+  const publicLookup = async () => ({ address: '93.184.216.34', family: 4 })
   const orig = process.env[ALLOW]
   beforeEach(() => { delete process.env[ALLOW] })
   afterEach(() => {
@@ -131,13 +132,35 @@ describe('assertSafeAcpUrl', () => {
   })
 
   it('accepts a public https URL without credentials', async () => {
-    const u = await assertSafeAcpUrl('https://example.com/.well-known/acp', { forwardsCredentials: false })
+    const u = await assertSafeAcpUrl(
+      'https://example.com/.well-known/acp',
+      { forwardsCredentials: false },
+      publicLookup,
+    )
     expect(u.hostname).toBe('example.com')
   })
 
   it('accepts a public https URL when credentials are forwarded', async () => {
-    const u = await assertSafeAcpUrl('https://example.com/agent/card', { forwardsCredentials: true })
+    const u = await assertSafeAcpUrl(
+      'https://example.com/agent/card',
+      { forwardsCredentials: true },
+      publicLookup,
+    )
     expect(u.protocol).toBe('https:')
+  })
+
+  it('fails closed when DNS resolution fails', async () => {
+    try {
+      await assertSafeAcpUrl(
+        'https://example.com/agent/card',
+        { forwardsCredentials: false },
+        async () => { throw new Error('resolver offline') },
+      )
+      throw new Error('should have rejected')
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
+      expect((err as UnsafeAcpUrlError).reason).toBe('dns_failed')
+    }
   })
 
   it('garbage input throws url_parse', async () => {

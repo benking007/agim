@@ -43,7 +43,7 @@ function renderPage(initialPath = '/tasks/subtasks'): ReturnType<typeof render> 
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[initialPath]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[initialPath]}>
         <Routes>
           <Route path="/tasks/subtasks" element={<SubtasksRoute />} />
         </Routes>
@@ -93,7 +93,7 @@ describe('/tasks/subtasks', () => {
     const input = screen.getByPlaceholderText('Any agent')
     fireEvent.change(input, { target: { value: 'claude' } })
     await waitFor(() => {
-      const last = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1]![0] as string
+      const last = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1]?.[0] as string
       expect(last).toContain('agent=claude')
     })
   })

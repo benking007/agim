@@ -269,7 +269,7 @@ function consumeChineseDuration(s: string): { ms: number; rest: string } | null 
 function consumeChineseClock(s: string, now: Date): { fireAt: Date; rest: string } | null {
   const re = /^(早上|上午|中午|下午|晚上|凌晨)?\s*(\d{1,2})\s*(?:点|时)\s*(?:(\d{1,2})\s*(?:分钟|分)?|半)?\s*/
   const m = re.exec(s)
-  if (!m || !m[2]) return null
+  if (!m?.[2]) return null
   // Reject if no period word AND no 点/时 actually consumed beyond just digits
   // (the regex requires 点|时 so this is implicit).
   let h = Number.parseInt(m[2], 10)

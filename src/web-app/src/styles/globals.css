@@ -15,8 +15,11 @@
 
 @import './tokens.css';
 
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind CSS v3 build directive */
 @tailwind base;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind CSS v3 build directive */
 @tailwind components;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind CSS v3 build directive */
 @tailwind utilities;
 
 @layer base {
@@ -26,14 +29,17 @@
   }
 
   html body[data-scroll-locked] {
+    /* biome-ignore lint/complexity/noImportantStyles: override Radix's inline scroll-lock compensation */
     margin-right: 0 !important;
   }
 
   html .right-scroll-bar-position {
+    /* biome-ignore lint/complexity/noImportantStyles: override Radix's inline popper compensation */
     right: 0 !important;
   }
 
   html .width-before-scroll-bar {
+    /* biome-ignore lint/complexity/noImportantStyles: override Radix's inline scroll-lock compensation */
     margin-right: 0 !important;
   }
 
@@ -111,8 +117,13 @@
   /* Dynamic viewport height — honors the actual visible viewport on
      mobile (excluding URL bar + soft keyboard) where supported, with a
      desktop fallback. Used by full-bleed routes like /chat and /loc. */
-  .h-dvh   { height: 100vh; height: 100dvh; }
-  .min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+  .h-dvh { height: 100vh; }
+  .min-h-dvh { min-height: 100vh; }
+
+  @supports (height: 100dvh) {
+    .h-dvh { height: 100dvh; }
+    .min-h-dvh { min-height: 100dvh; }
+  }
 
   /* Per-operator request (2026-05-19): uniform 32px compact rhythm
      across the whole console. Was 44×44 (mobile touch ideal) but

@@ -37,7 +37,7 @@ import {
   runMessengerOnboarding,
   formatMessengerStartError,
   loadConfig as loadOnboardingConfig,
-  saveConfig as saveOnboardingConfig,
+  saveConfigChanges as saveOnboardingConfigChanges,
   type Config as OnboardingConfig,
 } from './core/onboarding.js'
 import { startWebServer } from './web/server.js'
@@ -54,8 +54,8 @@ async function loadConfig(): Promise<Config> {
   return loadOnboardingConfig()
 }
 
-async function saveConfig(config: Config): Promise<void> {
-  return saveOnboardingConfig(config)
+async function saveConfigChanges(base: Config, next: Config): Promise<Config> {
+  return saveOnboardingConfigChanges(base, next)
 }
 
 function readPackageVersion(): string {
@@ -474,8 +474,7 @@ program
           console.log('Run "agim config <messenger>" to configure manually.')
           process.exit(1)
         }
-        config = newConfig
-        await saveConfig(config)
+        config = await saveConfigChanges(config, newConfig)
       } else {
         // Non-interactive (systemd / launchctl / docker / bgjob). Don't try
         // to prompt and don't exit — web-console-only deployments are a

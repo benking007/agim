@@ -4,8 +4,8 @@
 // Three backends, all behind one tiny interface:
 //
 //   OffBackend       — default. `ready=false`, every call no-ops. Zero
-//                      import cost; @xenova/transformers stays unloaded.
-//   LocalBgeBackend  — lazy-loads @xenova/transformers + a Hugging Face
+//                      import cost; Transformers.js stays unloaded.
+//   LocalBgeBackend  — lazy-loads @huggingface/transformers + a Hugging Face
 //                      model (default Xenova/bge-base-zh-v1.5). First use
 //                      triggers a ~250MB CDN download; afterwards stays in
 //                      memory + CPU inference (~50ms/batch).
@@ -130,7 +130,7 @@ class LocalBgeBackend implements EmbeddingBackend {
 
   /**
    * Idempotent: returns the same promise on concurrent calls. Triggers the
-   * @xenova/transformers dynamic import + model download (CDN) + pipeline
+   * Transformers.js dynamic import + model download (CDN) + pipeline
    * load. UI calls /api/memory/vector/download which calls this with
    * forceDownload=true on the very first run.
    */
@@ -156,11 +156,11 @@ class LocalBgeBackend implements EmbeddingBackend {
     this.progress.error = null
 
     // Dynamic import so the runtime cost is only paid when the backend is on.
-    // @xenova/transformers is in optionalDependencies (skipped on CI install
-    // to avoid a large ONNX postinstall hang); ts-ignore needed so tsc
-    // doesn't error when the module isn't on disk at build time.
-    // @ts-ignore -- optional dep, may not be installed at build time
-    const tf = await import('@xenova/transformers') as {
+    // @huggingface/transformers is optional and may be absent in slim CI
+    // installs. Keeping the module name runtime-resolved lets TypeScript build
+    // without requiring the optional package to exist on disk.
+    const transformersModule = '@huggingface/transformers'
+    const tf = await import(transformersModule) as {
       pipeline: (task: string, model: string, opts?: Record<string, unknown>) => Promise<unknown>
       env: { allowLocalModels: boolean; cacheDir?: string }
     }
@@ -187,7 +187,7 @@ class LocalBgeBackend implements EmbeddingBackend {
       } catch { /* noop */ }
     }
     const extractor = await tf.pipeline('feature-extraction', this.modelId, {
-      quantized: true,
+      dtype: 'q8',
       progress_callback: progressCallback,
     }) as (text: string | string[], opts: unknown) => Promise<unknown>
 
@@ -203,7 +203,8 @@ class LocalBgeBackend implements EmbeddingBackend {
   }
 
   async embed(texts: string[]): Promise<Float32Array[]> {
-    if (!this.ready) {
+    const extractor = this.extractor
+    if (!extractor || this.dims <= 0) {
       // Don't auto-trigger download from embed() — user has to opt in via
       // /api/memory/vector/download. Silent no-op keeps writes fast.
       return texts.map(() => new Float32Array(0))
@@ -211,7 +212,7 @@ class LocalBgeBackend implements EmbeddingBackend {
     const out: Float32Array[] = []
     for (const t of texts) {
       const trimmed = t.length > 4000 ? t.slice(0, 4000) : t
-      const result = await this.extractor!(trimmed, { pooling: 'mean', normalize: true }) as { data: Float32Array }
+      const result = await extractor(trimmed, { pooling: 'mean', normalize: true }) as { data: Float32Array }
       out.push(new Float32Array(result.data))
     }
     return out

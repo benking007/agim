@@ -13,7 +13,7 @@ import '@/i18n'
 
 function renderAt(path: string): ReturnType<typeof render> {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
       <Routes>
         <Route path="*" element={<NotFoundRoute />} />
       </Routes>
@@ -31,8 +31,7 @@ describe('NotFoundRoute', () => {
 
   it('renders the Topbar so app-level nav is reachable', () => {
     renderAt('/nope')
-    // Brand link is the dead-give-away of the topbar
-    expect(screen.getByText('🤖')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Agim' })).toBeInTheDocument()
     // Chat nav link
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
   })

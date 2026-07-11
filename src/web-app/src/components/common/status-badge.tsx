@@ -17,7 +17,7 @@
  * so a backend that introduces a new state doesn't crash the page.
  */
 
-import * as React from 'react'
+import type * as React from 'react'
 import { Badge, type BadgeProps } from '@/components/ui/badge'
 
 /**

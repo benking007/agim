@@ -63,7 +63,7 @@ describe('web access-token bootstrap file', () => {
 
     const t = createToken('bootstrap')
     const path = getWebBootstrapTokenFile()
-    writeFileSync(path, t.raw + '\n')
+    writeFileSync(path, `${t.raw}\n`)
 
     const row = retrieveWebBootstrapTokenRaw()
     expect(row?.raw).toBe(t.raw)

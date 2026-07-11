@@ -39,7 +39,7 @@ function renderAt(search: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/memory/persona${search}`]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[`/memory/persona${search}`]}>
         <Routes>
           <Route path="/memory/persona" element={<MemoryPersonaRoute />} />
         </Routes>

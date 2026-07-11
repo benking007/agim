@@ -73,6 +73,67 @@ function messagesStale(s: { lastActivity: Date }, now: number = Date.now()): boo
   return now - s.lastActivity.getTime() > MESSAGES_TTL
 }
 
+type PersistedSession = Omit<Partial<Session>, 'createdAt' | 'lastActivity'> & {
+  createdAt?: unknown
+  lastActivity?: unknown
+  messageCount?: number
+}
+
+function parsePersistedDate(value: unknown): Date | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function deserializeSession(value: unknown): Session | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const parsed = value as PersistedSession
+  const { id, channelId, threadId, platform, agent, ttl } = parsed
+  if (
+    typeof id !== 'string'
+    || typeof channelId !== 'string'
+    || typeof threadId !== 'string'
+    || typeof platform !== 'string'
+    || typeof agent !== 'string'
+    || typeof ttl !== 'number'
+    || !Number.isFinite(ttl)
+    || ttl <= 0
+  ) return null
+
+  const createdAt = parsePersistedDate(parsed.createdAt)
+  const lastActivity = parsePersistedDate(parsed.lastActivity)
+  if (!createdAt || !lastActivity) return null
+
+  return {
+    id,
+    channelId,
+    threadId,
+    platform,
+    agent,
+    model: parsed.model,
+    variant: parsed.variant,
+    usage: parsed.usage,
+    createdAt,
+    lastActivity,
+    ttl,
+    messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+    activeSubtaskId: parsed.activeSubtaskId,
+    subtasks: parsed.subtasks,
+    subtaskCounter: parsed.subtaskCounter,
+    claudeSessionId: parsed.claudeSessionId,
+    claudeSessionPrimed: parsed.claudeSessionPrimed,
+    opencodeSessionId: parsed.opencodeSessionId,
+    codexSessionId: parsed.codexSessionId,
+    antigravitySessionId: parsed.antigravitySessionId,
+    kimiSessionId: parsed.kimiSessionId,
+    qoderSessionId: parsed.qoderSessionId,
+    piSessionId: parsed.piSessionId,
+    mimoSessionId: parsed.mimoSessionId,
+    copilotSessionId: parsed.copilotSessionId,
+    planMode: parsed.planMode,
+  }
+}
+
 class SessionManager {
   private sessions = new Map<string, Session>()
   private cleanupTimer?: ReturnType<typeof setInterval>
@@ -937,35 +998,8 @@ class SessionManager {
     const filePath = sessionFilePath(key)
     try {
       const data = await readFile(filePath, 'utf-8')
-      const parsed = JSON.parse(data) as Partial<Session> & { messageCount?: number }
-      const session: Session = {
-        id: parsed.id!,
-        channelId: parsed.channelId!,
-        threadId: parsed.threadId!,
-        platform: parsed.platform!,
-        agent: parsed.agent!,
-        model: parsed.model,
-        variant: parsed.variant,
-        usage: parsed.usage,
-        createdAt: new Date(parsed.createdAt!),
-        lastActivity: new Date(parsed.lastActivity!),
-        ttl: parsed.ttl!,
-        messages: parsed.messages || [],  // legacy one-file format
-        activeSubtaskId: parsed.activeSubtaskId,
-        subtasks: parsed.subtasks,
-        subtaskCounter: parsed.subtaskCounter,
-        claudeSessionId: parsed.claudeSessionId,
-        claudeSessionPrimed: parsed.claudeSessionPrimed,
-        opencodeSessionId: parsed.opencodeSessionId,
-        codexSessionId: parsed.codexSessionId,
-        antigravitySessionId: parsed.antigravitySessionId,
-        kimiSessionId: parsed.kimiSessionId,
-        qoderSessionId: parsed.qoderSessionId,
-        piSessionId: parsed.piSessionId,
-        mimoSessionId: parsed.mimoSessionId,
-        copilotSessionId: parsed.copilotSessionId,
-        planMode: parsed.planMode,
-      }
+      const session = deserializeSession(JSON.parse(data))
+      if (!session) return undefined
       // Convert message timestamps from legacy format if present
       session.messages = session.messages.map((msg) => ({
         ...msg,

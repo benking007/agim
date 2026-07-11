@@ -21,7 +21,7 @@ import {
   PID_FILE,
   LOG_FILE,
 } from './service.js'
-import { yesNo, menu, inputText, UserAbortError } from './prompts.js'
+import { menu, inputText, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
 import { readSavedLang, t, type Lang } from './i18n.js'
 import { CONFIG_DIR, CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
@@ -201,29 +201,29 @@ export function cmdStatus(): void {
   const webBind = web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind
   switch (st.mode) {
     case 'systemd':
-      console.log('  ' + t(lang, 'svc.status.systemd_active', { pid: st.pid ?? '?' }))
+      console.log(`  ${t(lang, 'svc.status.systemd_active', { pid: st.pid ?? '?' })}`)
       break
     case 'background':
-      console.log('  ' + t(lang, 'svc.status.bg_running', { pid: st.pid ?? '?', log: LOG_FILE }))
+      console.log(`  ${t(lang, 'svc.status.bg_running', { pid: st.pid ?? '?', log: LOG_FILE })}`)
       break
     case 'foreground':
-      console.log('  ' + t(lang, 'svc.status.fg_running', { pid: st.pid ?? '?' }))
+      console.log(`  ${t(lang, 'svc.status.fg_running', { pid: st.pid ?? '?' })}`)
       break
     case 'none':
-      console.log('  ' + t(lang, 'svc.status.not_running'))
+      console.log(`  ${t(lang, 'svc.status.not_running')}`)
       if (systemdUnitPath()) {
-        console.log('  ' + t(lang, 'svc.status.systemd_inactive'))
+        console.log(`  ${t(lang, 'svc.status.systemd_inactive')}`)
       }
-      console.log('  ' + t(lang, 'svc.status.web', { bind: webBind, port: web.port }))
-      console.log('  ' + t(lang, 'svc.status.next_not_running'))
+      console.log(`  ${t(lang, 'svc.status.web', { bind: webBind, port: web.port })}`)
+      console.log(`  ${t(lang, 'svc.status.next_not_running')}`)
       console.log()
       return
   }
   if (typeof st.uptimeSec === 'number') {
-    console.log('  ' + t(lang, 'svc.status.uptime', { duration: formatUptime(st.uptimeSec) }))
+    console.log(`  ${t(lang, 'svc.status.uptime', { duration: formatUptime(st.uptimeSec) })}`)
   }
-  console.log('  ' + t(lang, 'svc.status.web', { bind: webBind, port: web.port }))
-  console.log('  ' + t(lang, 'svc.status.next_running'))
+  console.log(`  ${t(lang, 'svc.status.web', { bind: webBind, port: web.port })}`)
+  console.log(`  ${t(lang, 'svc.status.next_running')}`)
   console.log()
 }
 
@@ -355,7 +355,7 @@ export async function cmdWeb(opts: {
   console.log(text(lang, '服务：', 'Service:') + describeServiceState(lang))
   console.log(text(lang, '本机地址：', 'Local URL:') + url)
   if (publicInfo) {
-    console.log(text(lang, '远程地址：', 'Remote URL:') + `${publicInfo.url} (${publicInfo.source})`)
+    console.log(`${text(lang, '远程地址：', 'Remote URL:')}${publicInfo.url} (${publicInfo.source})`)
   }
   if (service.mode === 'none') {
     console.log(text(
@@ -429,9 +429,9 @@ export async function cmdStop(): Promise<void> {
   } else if (st.mode === 'background') {
     console.log(t(lang, 'svc.stop.stopping_bg', { pid: st.pid ?? '?' }))
   } else if (st.mode === 'foreground') {
-    console.log('⚠️ ' + (lang === 'zh'
+    console.log(`⚠️ ${lang === 'zh'
       ? '检测到前台进程在跑。会发 SIGTERM，但建议你回那个 shell 里 Ctrl-C。'
-      : 'Foreground process detected. Sending SIGTERM — but Ctrl-C in the owning shell is cleaner.'))
+      : 'Foreground process detected. Sending SIGTERM — but Ctrl-C in the owning shell is cleaner.'}`)
   }
   await stopService()
   console.log(t(lang, 'svc.stop.stopped'))
@@ -501,7 +501,7 @@ function hasShred(): boolean {
 
 /** Best-effort secure delete: shred -u when available, else unlink + warn.
  *  Returns whether the file no longer exists at end. */
-function secureDelete(path: string, lang: Lang, shredAvailable: boolean): void {
+function secureDelete(path: string, shredAvailable: boolean): void {
   if (!existsSync(path)) return
   if (shredAvailable) {
     try {
@@ -669,7 +669,7 @@ export async function cmdUninstall(): Promise<void> {
   // already unlinked in the common step — explicitly cover them in case
   // a future refactor changes ordering.
   const sensitive = [ENV_FILE, CONFIG_FILE, ...credentialFiles()]
-  for (const f of sensitive) secureDelete(f, lang, shredAvailable)
+  for (const f of sensitive) secureDelete(f, shredAvailable)
 
   console.log(t(lang, 'svc.uninstall.removing_all', pathVars))
   for (const dir of [CONFIG_DIR, WORKSPACES_DIR]) {
@@ -686,7 +686,7 @@ export async function cmdUninstall(): Promise<void> {
 
 // ─── post-config: offer to start the service ────────────────────────
 //
-// Called by runConfigWizard right after saveConfig(). Drops the "what
+// Called by runConfigWizard right after its transactional config save. Drops the "what
 // next?" cliff users used to fall off after the wizard ended. Behaviour
 // depends on the current service state:
 //

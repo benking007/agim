@@ -18,17 +18,13 @@
 // touching disk — same safety net as `/api/llm/*`.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises'
-import { join } from 'node:path'
-import { AGIM_HOME } from '../core/agim-paths.js'
 import { configSchema } from '../core/config-schema.js'
+import { readConfigObject, updateConfigObject } from '../core/config-store.js'
 import {
   loadFromConfig as loadMcpFromConfig,
   connectAll as connectAllMcp,
   describeRegistry as describeMcpRegistry,
 } from '../core/llm/mcp-registry.js'
-
-const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 interface RawMcpServer {
   name: string
@@ -46,6 +42,13 @@ interface RawMcpServer {
 interface RawConfig {
   mcpServers?: RawMcpServer[]
   [k: string]: unknown
+}
+
+class McpConfigError extends Error {
+  constructor(readonly status: number, message: string, readonly issues?: string[]) {
+    super(message)
+    this.name = 'McpConfigError'
+  }
 }
 
 // ─── HTTP helpers (tiny, no shared mock-friendly base needed) ────────
@@ -115,38 +118,53 @@ async function handleAddServer(req: IncomingMessage, res: ServerResponse): Promi
     send(res, 400, { error: 'request body must be a JSON object' })
     return
   }
-  const cfg = await readConfig()
-  const existing = cfg.mcpServers ?? []
-  if (existing.some((s) => s.name === body.name)) {
-    send(res, 409, { error: `mcp server "${body.name}" already exists` })
-    return
-  }
-  cfg.mcpServers = [...existing, body]
-  // Validate via configSchema before writing — same gate the CLI uses.
-  // mcpServerSchema's superRefine catches the "neither command nor url"
-  // and "both set" cases with a readable issue string.
-  const parsed = configSchema.safeParse(cfg)
-  if (!parsed.success) {
-    send(res, 400, {
-      error: 'config validation failed',
-      issues: parsed.error.issues.map((i) => i.message),
+  try {
+    await updateConfigObject((current) => {
+      const cfg = current as RawConfig
+      const existing = cfg.mcpServers ?? []
+      if (existing.some((s) => s.name === body.name)) {
+        throw new McpConfigError(409, `mcp server "${body.name}" already exists`)
+      }
+      const next = { ...cfg, mcpServers: [...existing, body] }
+      // mcpServerSchema's superRefine catches the "neither command nor url"
+      // and "both set" cases before the atomic replacement.
+      const parsed = configSchema.safeParse(next)
+      if (!parsed.success) {
+        throw new McpConfigError(
+          400,
+          'config validation failed',
+          parsed.error.issues.map((i) => i.message),
+        )
+      }
+      return { config: next, result: undefined }
+    })
+  } catch (err) {
+    if (!(err instanceof McpConfigError)) throw err
+    send(res, err.status, {
+      error: err.message,
+      ...(err.issues ? { issues: err.issues } : {}),
     })
     return
   }
-  await writeConfig(cfg)
   send(res, 201, { name: body.name })
 }
 
 async function handleRemoveServer(res: ServerResponse, name: string): Promise<void> {
-  const cfg = await readConfig()
-  const servers = cfg.mcpServers ?? []
-  const next = servers.filter((s) => s.name !== name)
-  if (next.length === servers.length) {
-    send(res, 404, { error: `no mcp server named "${name}"` })
+  try {
+    await updateConfigObject((current) => {
+      const cfg = current as RawConfig
+      const servers = cfg.mcpServers ?? []
+      const next = servers.filter((s) => s.name !== name)
+      if (next.length === servers.length) {
+        throw new McpConfigError(404, `no mcp server named "${name}"`)
+      }
+      return { config: { ...cfg, mcpServers: next }, result: undefined }
+    })
+  } catch (err) {
+    if (!(err instanceof McpConfigError)) throw err
+    send(res, err.status, { error: err.message })
     return
   }
-  cfg.mcpServers = next
-  await writeConfig(cfg)
   send(res, 200, { name })
 }
 
@@ -210,17 +228,5 @@ function sanitizeServer(s: RawMcpServer): RawMcpServer {
 }
 
 async function readConfig(): Promise<RawConfig> {
-  try {
-    const raw = await readFile(CONFIG_FILE, 'utf-8')
-    return JSON.parse(raw) as RawConfig
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw err
-  }
-}
-
-async function writeConfig(cfg: RawConfig): Promise<void> {
-  await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-  try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore on Windows */ }
+  return await readConfigObject<RawConfig>()
 }

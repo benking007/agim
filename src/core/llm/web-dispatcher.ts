@@ -956,7 +956,7 @@ export function expandIpv6(addr: string): number[] | null {
     if (!v4) return null
     const hex1 = ((v4[0] << 8) | v4[1]).toString(16)
     const hex2 = ((v4[2] << 8) | v4[3]).toString(16)
-    working = lower.slice(0, v4Tail.index) + hex1 + ':' + hex2
+    working = `${lower.slice(0, v4Tail.index) + hex1}:${hex2}`
   }
   const [head, tail] = working.split('::')
   const headGroups = head ? head.split(':') : []

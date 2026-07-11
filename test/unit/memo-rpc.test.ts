@@ -16,7 +16,7 @@ const rpcMod = await import('../../src/core/memo-rpc.js')
 const tokenMod = await import('../../src/core/location-token.js')
 const memosMod = await import('../../src/core/memos.js')
 const { handleMemoOp } = rpcMod
-const { _clearAll, _stopSweep, peekToken, consumeToken } = tokenMod
+const { _clearAll, _stopSweep, peekToken } = tokenMod
 const { closeMemosDb, createMemo } = memosMod
 
 const CTX = { platform: 'wechat', channelId: 'c1', threadId: 't1', userId: 'u1' }

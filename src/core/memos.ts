@@ -61,7 +61,7 @@ export function normalizeWhenAt(s: string | null | undefined): string | null {
   const trimmed = s.trim()
   if (!trimmed) return null
   // Has explicit TZ marker → parse + convert.
-  if (/Z$|[+\-]\d{2}:\d{2}$/.test(trimmed)) {
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(trimmed)) {
     const ms = Date.parse(trimmed)
     if (!Number.isFinite(ms)) return trimmed
     return toSqliteLocal(ms)
@@ -190,7 +190,7 @@ export interface CreateMemoInput {
 }
 
 export function createMemo(input: CreateMemoInput): number {
-  if (!input.what || !input.what.trim()) throw new Error('what is required')
+  if (!input.what?.trim()) throw new Error('what is required')
   assertCoords(input.whereLat, input.whereLng)
   const d = helper.get()
   if (!d) throw new Error('memos DB unavailable (sqlite disabled?)')
@@ -249,7 +249,7 @@ export interface UpdateMemoInput {
 /** Patch-style update — only fields explicitly present in the input are
  *  written. Pass `null` to clear a field (vs `undefined` = leave alone). */
 export function updateMemo(id: number, input: UpdateMemoInput, opts: OwnerOpts = {}): boolean {
-  if (input.what !== undefined && (!input.what || !input.what.trim())) {
+  if (input.what !== undefined && !input.what.trim()) {
     throw new Error('what cannot be empty when updating')
   }
   if (input.whereLat !== undefined || input.whereLng !== undefined) {
@@ -389,7 +389,7 @@ export function searchMemos(opts: SearchOpts = {}): Memo[] {
     if (v) { wheres.push(`COALESCE(when_at, created_at) <= ?`); args.push(v) }
   }
 
-  const sql = `SELECT * FROM memos${wheres.length ? ' WHERE ' + wheres.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`
+  const sql = `SELECT * FROM memos${wheres.length ? ` WHERE ${wheres.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`
   args.push(limit)
   return helper.safe((d) => d.prepare(sql).all(...args) as Memo[], [])
 }

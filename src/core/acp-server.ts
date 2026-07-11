@@ -46,8 +46,9 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 /**
  * Read POST body with a hard cap. When the limit is exceeded we write a
  * 413 response, drain (and discard) the remainder of the request, and
- * reject — letting the caller `return` early. We do NOT destroy the
- * socket because that races with the response flush.
+ * reject — letting the caller `return` early. The response disables
+ * keep-alive so clients cannot reuse a connection while its oversized
+ * upload is still being discarded.
  */
 async function readBody(req: IncomingMessage, res: ServerResponse): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -60,6 +61,8 @@ async function readBody(req: IncomingMessage, res: ServerResponse): Promise<stri
       if (total > MAX_BODY_BYTES) {
         aborted = true
         if (!res.headersSent) {
+          res.shouldKeepAlive = false
+          res.setHeader('Connection', 'close')
           sendJson(res, 413, { error: 'Request body too large' })
         }
         const err = new Error('Request body too large') as Error & { statusCode?: number; handled?: boolean }
@@ -90,11 +93,11 @@ export async function startACPServer(options: {
   port?: number
   defaultAgent: string
 }): Promise<{ close: () => void; port: number }> {
-  const port = options.port || DEFAULT_ACP_PORT
+  const requestedPort = options.port ?? DEFAULT_ACP_PORT
   const agents = registry.listAgents()
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url || '/', `http://localhost:${port}`)
+    const url = new URL(req.url || '/', `http://localhost:${requestedPort}`)
 
     // CORS for browser-based ACP clients
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -271,8 +274,11 @@ export async function startACPServer(options: {
     }
     server.once('error', onError)
     server.once('listening', onListening)
-    server.listen(port, bind)
+    server.listen(requestedPort, bind)
   })
+
+  const address = server.address()
+  const port = typeof address === 'object' && address ? address.port : requestedPort
 
   if (!isLoopback) {
     rootLogger.warn({

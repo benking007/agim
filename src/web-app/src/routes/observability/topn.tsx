@@ -122,7 +122,7 @@ export default function ObservabilityTopNRoute(): JSX.Element {
           </TableHeader>
           <TableBody>
             {items.map((row, i) => (
-              <TableRow key={`${row.key}-${i}`}>
+              <TableRow key={row.key}>
                 <TableCell className="tabular-nums text-text-dim">{i + 1}</TableCell>
                 <TableCell className="font-medium">{row.key}</TableCell>
                 <TableCell className="tabular-nums">{row.calls}</TableCell>

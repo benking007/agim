@@ -32,7 +32,7 @@ function Bomb({ when }: { when: boolean }): JSX.Element {
 describe('ErrorBoundary', () => {
   it('renders children when no error', () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ErrorBoundary>
           <Bomb when={false} />
         </ErrorBoundary>
@@ -43,7 +43,7 @@ describe('ErrorBoundary', () => {
 
   it('catches a synchronous render error and renders the fallback', () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ErrorBoundary>
           <Bomb when={true} />
         </ErrorBoundary>

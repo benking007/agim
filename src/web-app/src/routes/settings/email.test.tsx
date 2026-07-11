@@ -18,6 +18,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import SettingsEmailRoute, { normalizeSecure } from './email'
 import '@/i18n'
 
@@ -39,7 +40,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/email']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/email']}>
         <Routes>
           <Route path="/settings/email" element={<SettingsEmailRoute />} />
         </Routes>
@@ -163,7 +164,8 @@ describe('/settings/email', () => {
         (c) => isEnvPut(String(c[0]), (c[1] as RequestInit | undefined)?.method),
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'SMTP disable request')
+      const body = JSON.parse(String(request.body)) as {
         updates: Record<string, string | null>
       }
       for (const key of [
@@ -216,7 +218,8 @@ describe('/settings/email', () => {
         (c) => isEnvPut(String(c[0]), (c[1] as RequestInit | undefined)?.method),
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'SMTP save request')
+      const body = JSON.parse(String(request.body)) as {
         updates: Record<string, string | null>
       }
       // Host change sent.

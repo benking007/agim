@@ -18,7 +18,7 @@ const MEMORY_DB = join(AGIM_HOME, 'memory.db')
 
 const dbAvailable = (() => {
   try {
-    const id = mem.saveFact({ user_key: 'probe-' + randomUUID(), what: 'probe' })
+    const id = mem.saveFact({ user_key: `probe-${randomUUID()}`, what: 'probe' })
     return id !== null
   } catch {
     return false
@@ -26,7 +26,7 @@ const dbAvailable = (() => {
 })()
 const dbDescribe = dbAvailable ? describe : describe.skip
 
-function uniq(): string { return 'test-dedup-' + randomUUID().slice(0, 8) }
+function uniq(): string { return `test-dedup-${randomUUID().slice(0, 8)}` }
 
 afterAll(() => {
   try { mem.stopMemoryRetentionSweep() } catch { /* ignore */ }

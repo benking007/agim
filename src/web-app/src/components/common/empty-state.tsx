@@ -17,7 +17,7 @@
  * description so wrapping looks intentional on wide screens.
  */
 
-import * as React from 'react'
+import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
 export interface EmptyStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {

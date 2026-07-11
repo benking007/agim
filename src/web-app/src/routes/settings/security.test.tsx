@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 
 import SettingsSecurityRoute from './security'
 import '@/i18n'
@@ -73,7 +74,7 @@ function renderPage(opts: {
   })
   const view = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/security']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/security']}>
         <Routes>
           <Route path="/settings/security" element={<SettingsSecurityRoute />} />
         </Routes>
@@ -119,7 +120,8 @@ describe('/settings/security', () => {
     await waitFor(() => {
       const call = fetchSpy.mock.calls.find((c) => String(c[0]) === '/api/env' && (c[1] as RequestInit | undefined)?.method === 'PUT')
       expect(call).toBeTruthy()
-      const body = JSON.parse(String((call![1] as RequestInit).body))
+      const request = requireValue(call?.[1] as RequestInit | undefined, 'security env request')
+      const body = JSON.parse(String(request.body))
       expect(body).toEqual({ updates: { AGIM_ALLOWED_USERS: 'wechat:u1' } })
     })
   })

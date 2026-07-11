@@ -49,15 +49,41 @@ node -p "require('./package-lock.json').version"
 
 ### 3. 本地验证
 
+先用锁文件安装根项目与 Web 依赖：
+
+```bash
+npm ci
+npm --prefix src/web-app ci
+```
+
 发布前至少跑：
 
 ```bash
+npm run lint
 npm run typecheck
+npm test
+npm --prefix src/web-app run typecheck
 npm run build
+npm --prefix src/web-app run check-i18n
+npm --prefix src/web-app test -- --run
+npm run test:node
 git diff --check
 ```
 
-如果本次改动集中在 Web 后台，建议补充跑相关 web 测试：
+`npm run test:node` 包含两层 Node 回归：先验证构建产物中的 memory recall / distill，
+再通过 `npm run test:sqlite` 复用后端数据库测试，在真实 `better-sqlite3` 原生模块上覆盖
+提醒、备忘录、outbox、任务恢复、审计与保留策略。Bun 中这些数据库用例会有意跳过，
+因此发布前不能只执行 `npm test`。
+
+`npm run build` 完成后会自动执行 `npm run check:dist`。该门禁会拒绝
+`dist` 中的 `.test.*`、`.spec.*` 和 `__tests__` 产物，避免测试代码进入正式 npm 包。
+需要检查最终 tarball 清单与体积时，可额外执行：
+
+```bash
+npm pack --dry-run
+```
+
+开发过程中若改动集中在 Web 后台，可以先跑相关用例快速回归；发布前仍需跑完上方全量 Web 测试：
 
 ```bash
 npm --prefix src/web-app test -- --run \
@@ -70,9 +96,7 @@ npm --prefix src/web-app test -- --run \
   src/routes/settings/workspaces.test.tsx
 ```
 
-全量 `bun test` 可以运行，但历史上有少量依赖运行环境或全局状态的用例可能在完整套件中失败。不要把这些失败误判为依赖安装问题；若与本次改动无关，需要在发布记录里说明。
-
-全量 `npx biome lint src test` 目前可能受历史 lint/CSS 问题影响。若要作为发布前检查，需区分新增问题和既有问题。
+发布门禁不接受 Lint、类型检查、测试或 Web 包体积预算失败；若本机环境因 UNIX socket、DNS 或进程探测限制出现失败，应先在标准 Linux / GitHub Actions 环境确认原因，不能用“历史红”直接放行。`npm run lint` 已覆盖后端和 SPA 源码、样式与测试文件。
 
 ### 4. 提交版本
 
@@ -143,7 +167,7 @@ CURR_VERSION=$(jq -r '.version' package.json)
 PUBLISHED_VERSION=$(npm view agim-cli version 2>/dev/null || echo "none")
 ```
 
-只有 npm 上的版本与 `package.json` 不一致时才会安装依赖、构建、测试并发布。若 npm 已经有同版本，workflow 会跳过 publish。
+只有 npm 上的版本与 `package.json` 不一致时才会安装依赖、构建、执行后端 Lint、类型检查与测试、Web i18n 与测试、Node SQLite 回归，然后发布。任何一项失败都会阻止 `npm publish`；若 npm 已经有同版本，workflow 会跳过 publish。
 
 ## 发布后验证
 
@@ -216,4 +240,3 @@ npm version <new-version> --no-git-tag-version
 - [ ] `origin/main` 指向本次 release commit。
 - [ ] GitHub Actions `Publish to npm` 运行成功。
 - [ ] `npm view agim-cli version` 返回新版本。
-

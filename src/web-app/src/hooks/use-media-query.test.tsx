@@ -27,7 +27,7 @@ function installMatchMedia(initial: boolean): MockMediaQueryList {
     fire: (matches) => {
       mql.matches = matches
       const e = { matches, media: mql.media } as MediaQueryListEvent
-      listeners.forEach((cb) => cb(e))
+      listeners.forEach((cb) => { cb(e) })
     },
   }
   Object.defineProperty(window, 'matchMedia', {

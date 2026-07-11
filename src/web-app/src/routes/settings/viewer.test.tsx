@@ -16,6 +16,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import SettingsViewerRoute from './viewer'
 import '@/i18n'
 
@@ -43,7 +44,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/viewer']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/viewer']}>
         <Routes>
           <Route path="/settings/viewer" element={<SettingsViewerRoute />} />
         </Routes>
@@ -69,7 +70,7 @@ const VIEWER_QUICK_ENV = {
     AGIM_VIEWER_TUNNEL_MODE: 'quick',
     AGIM_VIEWER_CHARS: '500',
     AGIM_VIEWER_LINES: '12',
-    AGIM_BAIDU_MAP_AK: 'abcd' + '*'.repeat(24) + 'wxyz', // masked 32-char
+    AGIM_BAIDU_MAP_AK: `abcd${'*'.repeat(24)}wxyz`, // masked 32-char
   },
   secretKeys: ['AGIM_BAIDU_MAP_AK'],
 }
@@ -182,7 +183,7 @@ describe('/settings/viewer', () => {
     // refresh action label and pick the panel one (the second).
     const refreshButtons = screen.getAllByRole('button', { name: /refresh|刷新/i })
     expect(refreshButtons.length).toBeGreaterThan(1)
-    fireEvent.click(refreshButtons[refreshButtons.length - 1]!)
+    fireEvent.click(requireValue(refreshButtons.at(-1), 'viewer refresh button'))
     await waitFor(() => {
       const after = fetchSpy.mock.calls.filter((c) => String(c[0]) === '/api/viewer/tunnel').length
       expect(after).toBeGreaterThan(before)
@@ -239,7 +240,7 @@ describe('/settings/viewer', () => {
       if (boxes.length < 2) throw new Error('expected enable + noDefaultRemote checkboxes')
       return boxes
     })
-    fireEvent.click(checkboxes[1]!)
+    fireEvent.click(requireValue(checkboxes[1], 'viewer enabled checkbox'))
     const saveBtn = await waitFor(() => {
       const btn = screen.getByRole('button', { name: /^save$|^保存$/i })
       if (btn.hasAttribute('disabled')) throw new Error('save not enabled yet')
@@ -251,7 +252,8 @@ describe('/settings/viewer', () => {
         (c) => isEnvPut(String(c[0]), (c[1] as RequestInit | undefined)?.method),
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'viewer save request')
+      const body = JSON.parse(String(request.body)) as {
         updates: Record<string, string | null>
       }
       expect(body.updates.AGIM_VIEWER_NO_DEFAULT_REMOTE).toBe('1')
@@ -283,7 +285,8 @@ describe('/settings/viewer', () => {
         (c) => isEnvPut(String(c[0]), (c[1] as RequestInit | undefined)?.method),
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'Baidu AK clear request')
+      const body = JSON.parse(String(request.body)) as {
         updates: Record<string, string | null>
       }
       expect(body.updates.AGIM_BAIDU_MAP_AK).toBeNull()

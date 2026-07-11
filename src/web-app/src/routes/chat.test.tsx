@@ -63,7 +63,7 @@ function renderChat(
   }
   mocks.useChat.mockReturnValue(hook)
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
       <Routes>
         <Route path="/" element={<ChatRoute />} />
       </Routes>

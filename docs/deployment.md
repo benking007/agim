@@ -4,7 +4,7 @@
 
 ## 1. 依赖
 
-- Node.js >= 18（推荐 22 LTS）
+- Node.js >= 22.19（推荐 24 LTS）
 - npm
 - 至少一个可用 Agent 后端（CLI 或 ACP）
 - 如果本机编译 `better-sqlite3`，需要 `gcc/g++/make/python3`
@@ -31,8 +31,8 @@ agim --version
 ```bash
 git clone https://github.com/benking007/agim.git /opt/agim
 cd /opt/agim
-npm install --no-package-lock
-npm --prefix src/web-app install
+npm ci
+npm --prefix src/web-app ci
 npm run build
 npm link
 ```
@@ -53,6 +53,10 @@ agim
 
 - `~/.agim/config.json`
 - `~/.agim/llm-secrets.json`（密钥）
+
+Web 后台与 `agim config`/`agim setup` 会通过带跨进程锁的原子事务保存主配置，
+可以并行使用而不会产生半截 JSON 或覆盖无关字段。手工编辑器不会参与该锁协议；
+需要直接修改 `config.json` 时，建议先执行 `agim stop`，保存后再执行 `agim start --bg`。
 
 ## 4. 启动方式
 

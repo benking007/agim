@@ -168,9 +168,9 @@ function StatCard({ label, value, tone }: StatCardProps): JSX.Element {
 function SkeletonList(): JSX.Element {
   return (
     <div className="flex flex-col gap-3">
-      {Array.from({ length: 2 }).map((_, i) => (
+      {['primary', 'secondary'].map((key) => (
         <div
-          key={`skel-${i}`}
+          key={key}
           className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4"
         >
           <div className="h-4 w-1/3 rounded bg-surface-2 animate-pulse" />

@@ -91,7 +91,7 @@ skipIfNoDb('reminder-rpc — DB-backed paths', () => {
 
   it('create + list + cancel happy path', async () => {
     // Create
-    const fireAt = new Date(Date.now() + 60_000).toISOString().replace(/\..+Z$/, '')
+    const fireAt = new Date(Date.now() + 60_000).toISOString()
     const created = await handleReminderOp('create', { fireAt, text: 'rpc test' }, CTX)
     expect(created.ok).toBe(true)
     const id = created.ok && (created.result as { id: number }).id
@@ -112,7 +112,7 @@ skipIfNoDb('reminder-rpc — DB-backed paths', () => {
 
   it('cancel returns error when not owned', async () => {
     const otherCtx: RunContext = { ...CTX, userId: 'other-user' }
-    const fireAt = new Date(Date.now() + 60_000).toISOString().replace(/\..+Z$/, '')
+    const fireAt = new Date(Date.now() + 60_000).toISOString()
     const created = await handleReminderOp('create', { fireAt, text: 'owned' }, CTX)
     expect(created.ok).toBe(true)
     const id = created.ok && (created.result as { id: number }).id
@@ -125,7 +125,7 @@ skipIfNoDb('reminder-rpc — DB-backed paths', () => {
     let captured: { ctx: RunContext; message: string } | null = null
     setReminderConfirmNotifier(async (ctx, message) => { captured = { ctx, message } })
 
-    const fireAt = new Date(Date.now() + 60_000).toISOString().replace(/\..+Z$/, '')
+    const fireAt = new Date(Date.now() + 60_000).toISOString()
     const r = await handleReminderOp('create', {
       fireAt, text: '看屏幕外', recurrence: 'every:5m', // promptMode default 'llm'
     }, CTX)
@@ -140,7 +140,7 @@ skipIfNoDb('reminder-rpc — DB-backed paths', () => {
   })
 
   it('high-freq + literal goes through directly (no confirmation)', async () => {
-    const fireAt = new Date(Date.now() + 60_000).toISOString().replace(/\..+Z$/, '')
+    const fireAt = new Date(Date.now() + 60_000).toISOString()
     const r = await handleReminderOp('create', {
       fireAt, text: '看屏幕外', recurrence: 'every:5m', promptMode: 'literal',
     }, CTX)

@@ -39,8 +39,8 @@ describe('ApprovalCard', () => {
     render(<ApprovalCard approval={baseApproval} onResolve={() => {}} />)
     const pre = document.querySelector('pre')
     expect(pre).not.toBeNull()
-    expect(pre!.textContent).toContain('"command"')
-    expect(pre!.textContent).toContain('ls -la /tmp')
+    expect(pre?.textContent).toContain('"command"')
+    expect(pre?.textContent).toContain('ls -la /tmp')
   })
 
   it('Allow → onResolve("allow"); Deny → onResolve("deny")', () => {
@@ -78,6 +78,6 @@ describe('ApprovalCard', () => {
     render(<ApprovalCard approval={{ ...baseApproval, input: bigInput }} onResolve={() => {}} />)
     const pre = document.querySelector('pre')
     expect(pre).not.toBeNull()
-    expect(pre!.textContent).toMatch(/… \+\d+ more$/)
+    expect(pre?.textContent).toMatch(/… \+\d+ more$/)
   })
 })

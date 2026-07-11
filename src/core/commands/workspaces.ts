@@ -35,17 +35,18 @@ export async function handleWorkspacesCommand(
       if (!id) return '用法: /workspaces show <id>'
       const ws = workspaceRegistry.get(id)
       if (!ws) return `❌ Workspace "${id}" not found.`
-      const summary = workspaceRegistry.list().find((w) => w.id === id)!
-      const whitelist = summary.agents.length === 0 ? 'unrestricted' : summary.agents.join(', ')
-      const members = summary.members === null ? 'open (no member list)' : `${summary.members} explicit member(s)`
-      return `🏢 **Workspace: ${ws.id}** (${ws.name})\n\nagents: ${whitelist}\nmembers: ${members}\nrateLimit: ${summary.rateLimit.rate} req / ${summary.rateLimit.intervalSec}s, burst=${summary.rateLimit.burst}`
+      const agents = Array.from(ws.agentWhitelist)
+      const whitelist = agents.length === 0 ? 'unrestricted' : agents.join(', ')
+      const members = ws.memberSet === null ? 'open (no member list)' : `${ws.memberSet.size} explicit member(s)`
+      const rateLimit = ws.limiter.config()
+      return `🏢 **Workspace: ${ws.id}** (${ws.name})\n\nagents: ${whitelist}\nmembers: ${members}\nrateLimit: ${rateLimit.rate} req / ${rateLimit.intervalSec}s, burst=${rateLimit.burst}`
     }
 
     case 'whoami': {
       const userId = ctx.userId || 'unknown'
       const ws = workspaceRegistry.resolve(userId)
-      const cfg = workspaceRegistry.list().find((w) => w.id === ws.id)!
-      return `👤 userId: \`${userId}\`\n🏢 workspace: **${ws.id}** (${ws.name})\nallowed agents: ${cfg.agents.length === 0 ? 'unrestricted' : cfg.agents.join(', ')}`
+      const agents = Array.from(ws.agentWhitelist)
+      return `👤 userId: \`${userId}\`\n🏢 workspace: **${ws.id}** (${ws.name})\nallowed agents: ${agents.length === 0 ? 'unrestricted' : agents.join(', ')}`
     }
 
     default:

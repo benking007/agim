@@ -52,7 +52,6 @@ function parseThreadId(threadId: string): RoutingTarget | null {
 
 export class DingTalkClient {
   private dw: DWClient
-  private config: DingTalkConfig
   private messageHandler?: MessageHandler
   /** Cached robotCode from the most recent inbound (== clientId for
    *  stream-mode internal apps, but we read it from messages so we're
@@ -60,7 +59,6 @@ export class DingTalkClient {
   private lastSeenRobotCode: string
 
   constructor(config: DingTalkConfig) {
-    this.config = config
     this.lastSeenRobotCode = config.clientId  // sensible default
     this.dw = new DWClient({
       clientId: config.clientId,

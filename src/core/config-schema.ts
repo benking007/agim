@@ -181,8 +181,8 @@ export const configSchema = z.object({
   acpAgents: z.array(acpAgentSchema).optional(),
   /** Base URLs to probe for `.well-known/acp` at startup. */
   acpDiscoveryUrls: z.array(z.string().url()).optional(),
-  webPort: z.number().int().positive().optional(),
-  acpPort: z.number().int().positive().optional(),
+  webPort: z.number().int().min(1).max(65_535).optional(),
+  acpPort: z.number().int().min(1).max(65_535).optional(),
   workspaces: z.array(z.object({
     id: z.string().min(1),
     name: z.string().default(''),
@@ -247,16 +247,43 @@ export function validateConfig(data: unknown):
     const path = issue.path.join('.') || '(root)'
     return `${path}: ${issue.message}`
   })
-  // Best-effort: strip invalid fields and re-parse with defaults so the
-  // caller always gets a structurally valid config. If even that fails,
-  // fall back to schema defaults (empty config).
-  const sanitized = { ...(data && typeof data === 'object' ? data : {}) }
-  for (const issue of result.error.issues) {
-    if (issue.path.length === 1) {
-      delete (sanitized as Record<string, unknown>)[String(issue.path[0])]
-    }
+  // Best-effort recovery works at top-level ownership boundaries. A broken
+  // workspace entry should disable the workspace config, not erase unrelated
+  // agents, messengers, and defaults. Credential errors also remove the
+  // affected messenger from the enabled list so the sanitized config can be
+  // parsed without repeatedly failing the cross-field refinement.
+  const sanitized: Record<string, unknown> = {
+    ...(data && typeof data === 'object' && !Array.isArray(data)
+      ? data as Record<string, unknown>
+      : {}),
   }
+  const invalidRoots = new Set<string>()
+  for (const issue of result.error.issues) {
+    if (issue.path.length > 0) invalidRoots.add(String(issue.path[0]))
+  }
+  for (const root of invalidRoots) delete sanitized[root]
+
+  const credentialRoots = new Set(['telegram', 'feishu', 'discord'])
+  if (Array.isArray(sanitized.messengers)) {
+    sanitized.messengers = sanitized.messengers.filter(
+      (name): name is string => typeof name === 'string'
+        && !(credentialRoots.has(name) && invalidRoots.has(name)),
+    )
+  }
+
   const retry = configSchema.safeParse(sanitized)
-  const config = retry.success ? retry.data : configSchema.parse({})
+  // Root-level corruption is rare, but still preserve the two routing fields
+  // that can be validated independently instead of taking the entire runtime
+  // back to a fresh-install shape.
+  const config = retry.success
+    ? retry.data
+    : configSchema.parse({
+      agents: Array.isArray(sanitized.agents)
+        ? sanitized.agents.filter((name): name is string => typeof name === 'string')
+        : [],
+      defaultAgent: typeof sanitized.defaultAgent === 'string'
+        ? sanitized.defaultAgent
+        : 'native',
+    })
   return { ok: false, config, errors }
 }

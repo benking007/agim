@@ -19,17 +19,13 @@
 // safety net as the CLI wizard.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises'
-import { join } from 'node:path'
-import { AGIM_HOME } from '../core/agim-paths.js'
 import { configSchema } from '../core/config-schema.js'
+import { readConfigObject, updateConfigObject } from '../core/config-store.js'
 import {
   saveSecret, removeSecret, describeSecretSource,
 } from '../core/llm/secrets.js'
 import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
-
-const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 interface RawBackend {
   name: string
@@ -47,6 +43,13 @@ interface RawConfig {
   llmBackends?: RawBackend[]
   llmRoles?: Record<string, string>
   [k: string]: unknown
+}
+
+class LlmConfigError extends Error {
+  constructor(readonly status: number, message: string, readonly issues?: string[]) {
+    super(message)
+    this.name = 'LlmConfigError'
+  }
 }
 
 // ─── HTTP helpers (deliberately tiny — server.ts has its own JSON
@@ -173,48 +176,70 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'apiKey is required (non-empty string)' })
     return
   }
-  const cfg = await readConfig()
-  const existing = cfg.llmBackends ?? []
-  if (existing.some((b) => b.name === name)) {
-    send(res, 409, { error: `backend "${name}" already exists` })
-    return
-  }
   const next: RawBackend = { name, provider, baseUrl, model }
-  cfg.llmBackends = [...existing, next]
-  const parsed = configSchema.safeParse(cfg)
-  if (!parsed.success) {
-    send(res, 400, {
-      error: 'config validation failed',
-      issues: parsed.error.issues.map((i) => i.message),
+  let savedConfig: RawConfig
+  try {
+    const update = await updateConfigObject((current) => {
+      const cfg = current as RawConfig
+      const existing = cfg.llmBackends ?? []
+      if (existing.some((b) => b.name === name)) {
+        throw new LlmConfigError(409, `backend "${name}" already exists`)
+      }
+      const config = { ...cfg, llmBackends: [...existing, next] }
+      const parsed = configSchema.safeParse(config)
+      if (!parsed.success) {
+        throw new LlmConfigError(
+          400,
+          'config validation failed',
+          parsed.error.issues.map((i) => i.message),
+        )
+      }
+      return { config, result: undefined }
+    })
+    savedConfig = update.config as RawConfig
+  } catch (err) {
+    if (!(err instanceof LlmConfigError)) throw err
+    send(res, err.status, {
+      error: err.message,
+      ...(err.issues ? { issues: err.issues } : {}),
     })
     return
   }
-  await writeConfig(cfg)
   saveSecret(name, apiKey)
-  refreshLlmRuntime(cfg)
+  refreshLlmRuntime(savedConfig)
   send(res, 201, { name, secretStored: true })
 }
 
 async function handleRemoveBackend(res: ServerResponse, name: string): Promise<void> {
-  const cfg = await readConfig()
-  const backends = cfg.llmBackends ?? []
-  const next = backends.filter((b) => b.name !== name)
-  if (next.length === backends.length) {
-    send(res, 404, { error: `no backend named "${name}"` })
+  let savedConfig: RawConfig
+  let removedRoles = 0
+  try {
+    const update = await updateConfigObject((current) => {
+      const cfg = current as RawConfig
+      const backends = cfg.llmBackends ?? []
+      const next = backends.filter((b) => b.name !== name)
+      if (next.length === backends.length) {
+        throw new LlmConfigError(404, `no backend named "${name}"`)
+      }
+      const cleaned: Record<string, string> = {}
+      removedRoles = 0
+      for (const [role, backend] of Object.entries(cfg.llmRoles ?? {})) {
+        if (backend === name) { removedRoles++; continue }
+        cleaned[role] = backend
+      }
+      return {
+        config: { ...cfg, llmBackends: next, llmRoles: cleaned },
+        result: undefined,
+      }
+    })
+    savedConfig = update.config as RawConfig
+  } catch (err) {
+    if (!(err instanceof LlmConfigError)) throw err
+    send(res, err.status, { error: err.message })
     return
   }
-  cfg.llmBackends = next
-  const roles = cfg.llmRoles ?? {}
-  const cleaned: Record<string, string> = {}
-  let removedRoles = 0
-  for (const [r, b] of Object.entries(roles)) {
-    if (b === name) { removedRoles++; continue }
-    cleaned[r] = b
-  }
-  cfg.llmRoles = cleaned
-  await writeConfig(cfg)
   removeSecret(name)
-  refreshLlmRuntime(cfg)
+  refreshLlmRuntime(savedConfig)
   send(res, 200, { removedRoles })
 }
 
@@ -224,40 +249,51 @@ async function handlePutRoles(req: IncomingMessage, res: ServerResponse): Promis
     send(res, 400, { error: 'request body must be a JSON object' })
     return
   }
-  const cfg = await readConfig()
-  const backendNames = new Set((cfg.llmBackends ?? []).map((b) => b.name))
-  const current = cfg.llmRoles ?? {}
-  const next: Record<string, string> = { ...current }
-  for (const [rawRole, rawValue] of Object.entries(body)) {
-    const role = rawRole.trim()
-    if (!role) continue
-    if (rawValue === null || rawValue === '' || rawValue === undefined) {
-      delete next[role]
-      continue
-    }
-    if (typeof rawValue !== 'string') {
-      send(res, 400, { error: `role "${role}" must be a string (backend name) or null/empty to unbind` })
-      return
-    }
-    const target = rawValue.trim()
-    if (!backendNames.has(target)) {
-      send(res, 400, { error: `role "${role}" references unknown backend "${target}"` })
-      return
-    }
-    next[role] = target
-  }
-  cfg.llmRoles = next
-  const parsed = configSchema.safeParse(cfg)
-  if (!parsed.success) {
-    send(res, 400, {
-      error: 'config validation failed',
-      issues: parsed.error.issues.map((i) => i.message),
+  let savedConfig: RawConfig
+  let nextRoles: Record<string, string> = {}
+  try {
+    const update = await updateConfigObject((stored) => {
+      const cfg = stored as RawConfig
+      const backendNames = new Set((cfg.llmBackends ?? []).map((b) => b.name))
+      nextRoles = { ...(cfg.llmRoles ?? {}) }
+      for (const [rawRole, rawValue] of Object.entries(body)) {
+        const role = rawRole.trim()
+        if (!role) continue
+        if (rawValue === null || rawValue === '' || rawValue === undefined) {
+          delete nextRoles[role]
+          continue
+        }
+        if (typeof rawValue !== 'string') {
+          throw new LlmConfigError(400, `role "${role}" must be a string (backend name) or null/empty to unbind`)
+        }
+        const target = rawValue.trim()
+        if (!backendNames.has(target)) {
+          throw new LlmConfigError(400, `role "${role}" references unknown backend "${target}"`)
+        }
+        nextRoles[role] = target
+      }
+      const config = { ...cfg, llmRoles: nextRoles }
+      const parsed = configSchema.safeParse(config)
+      if (!parsed.success) {
+        throw new LlmConfigError(
+          400,
+          'config validation failed',
+          parsed.error.issues.map((i) => i.message),
+        )
+      }
+      return { config, result: undefined }
+    })
+    savedConfig = update.config as RawConfig
+  } catch (err) {
+    if (!(err instanceof LlmConfigError)) throw err
+    send(res, err.status, {
+      error: err.message,
+      ...(err.issues ? { issues: err.issues } : {}),
     })
     return
   }
-  await writeConfig(cfg)
-  refreshLlmRuntime(cfg)
-  send(res, 200, { roles: next })
+  refreshLlmRuntime(savedConfig)
+  send(res, 200, { roles: nextRoles })
 }
 
 async function handleSetSecret(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
@@ -329,19 +365,7 @@ async function handlePing(res: ServerResponse, name: string): Promise<void> {
 // ─── disk helpers ───────────────────────────────────────────────────
 
 async function readConfig(): Promise<RawConfig> {
-  try {
-    const raw = await readFile(CONFIG_FILE, 'utf-8')
-    return JSON.parse(raw) as RawConfig
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw err
-  }
-}
-
-async function writeConfig(cfg: RawConfig): Promise<void> {
-  await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-  try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore on Windows */ }
+  return await readConfigObject<RawConfig>()
 }
 
 function refreshLlmRuntime(cfg: RawConfig): void {

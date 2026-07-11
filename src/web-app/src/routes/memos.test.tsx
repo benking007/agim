@@ -9,8 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { createWorkbenchQueryClient } from '@/test/query-client'
 import MemosRoute from './memos'
 import '@/i18n'
 
@@ -31,12 +32,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function renderPage(): ReturnType<typeof render> {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const qc = createWorkbenchQueryClient()
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/memos']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/memos']}>
         <Routes>
           <Route path="/memos" element={<MemosRoute />} />
         </Routes>
@@ -111,7 +110,9 @@ describe('/memos', () => {
     const table = screen.getByRole('table')
     const deleteBtns = within(table).getAllByRole('button', { name: 'Delete' })
     expect(deleteBtns.length).toBeGreaterThanOrEqual(1)
-    fireEvent.click(deleteBtns[0]!)
+    const firstDelete = deleteBtns[0]
+    if (!firstDelete) throw new Error('memo row Delete button must exist')
+    fireEvent.click(firstDelete)
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
@@ -121,7 +122,8 @@ describe('/memos', () => {
     const candidates = within(dialog).getAllByRole('button', { name: 'Delete' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
     expect(destructive, 'destructive Delete button must exist').toBeDefined()
-    fireEvent.click(destructive!)
+    if (!destructive) throw new Error('destructive Delete button must exist')
+    fireEvent.click(destructive)
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(

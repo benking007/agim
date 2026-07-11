@@ -16,23 +16,20 @@ import { join } from 'node:path'
 
 describe('v1.2.129 — mobile-via-qr tokens', () => {
   let tmpHome = ''
-  const saved: Record<string, string | undefined> = {}
+  let savedAgimHome: string | undefined
 
   beforeAll(() => {
-    // access-token.ts reads ~/.agim/tokens.json (or whatever
-    // resolveAgimHome() picks). We redirect HOME to a tmp dir so the
-    // test doesn't touch the real user.
+    // access-token resolves AGIM_HOME at call time. Set the explicit
+    // override so module isolation or import order can never redirect this
+    // test to the real user's ~/.agim directory.
     tmpHome = mkdtempSync(join(tmpdir(), 'agim-mobile-qr-test-'))
-    saved.HOME = process.env.HOME
-    saved.AGIM_HOME = process.env.AGIM_HOME
-    process.env.HOME = tmpHome
-    delete process.env.AGIM_HOME
+    savedAgimHome = process.env.AGIM_HOME
+    process.env.AGIM_HOME = tmpHome
   })
 
   afterAll(() => {
-    if (saved.HOME === undefined) delete process.env.HOME
-    else process.env.HOME = saved.HOME
-    if (saved.AGIM_HOME !== undefined) process.env.AGIM_HOME = saved.AGIM_HOME
+    if (savedAgimHome === undefined) delete process.env.AGIM_HOME
+    else process.env.AGIM_HOME = savedAgimHome
     try { rmSync(tmpHome, { recursive: true, force: true }) } catch { /* noop */ }
   })
 

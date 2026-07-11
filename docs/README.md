@@ -40,6 +40,7 @@
 
 - `architecture/current.md`：当前实现结构图、模块说明与决策交互链路
 - `architecture/agent-cwd-and-memory.md`：工作目录与记忆隔离
+- `endpoint-contracts.md`：Web 服务端路由清单与 SPA API 合同维护
 - `adr/`：架构决策记录（ADR）
 
 ## 归档文档（历史背景）

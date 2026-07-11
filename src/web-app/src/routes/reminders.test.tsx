@@ -10,8 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { createWorkbenchQueryClient } from '@/test/query-client'
 import RemindersRoute from './reminders'
 import '@/i18n'
 
@@ -32,12 +33,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function renderPage(): ReturnType<typeof render> {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const qc = createWorkbenchQueryClient()
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/reminders']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/reminders']}>
         <Routes>
           <Route path="/reminders" element={<RemindersRoute />} />
         </Routes>
@@ -104,7 +103,8 @@ describe('/reminders', () => {
     const candidates = within(dialog).getAllByRole('button', { name: 'Cancel' })
     const destructive = candidates.find((b) => b.className.includes('border-danger'))
     expect(destructive, 'destructive Cancel button must be present').toBeDefined()
-    fireEvent.click(destructive!)
+    if (!destructive) throw new Error('destructive Cancel button must be present')
+    fireEvent.click(destructive)
     await waitFor(() => {
       expect(
         fetchSpy.mock.calls.some(

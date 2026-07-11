@@ -70,7 +70,7 @@ function looseEqual(a: unknown, b: unknown): boolean {
     const bk = Object.keys(b as object)
     if (ak.length !== bk.length) return false
     return ak.every((k) =>
-      Object.prototype.hasOwnProperty.call(b, k)
+      Object.hasOwn(b, k)
       && looseEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
     )
   }
@@ -121,7 +121,7 @@ export function validateAgainstSchema(
     const obj = value as Record<string, unknown>
     const required = Array.isArray(s.required) ? (s.required as string[]) : []
     for (const key of required) {
-      if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+      if (!Object.hasOwn(obj, key)) {
         errors.push({ path: path ? `${path}.${key}` : key, message: 'required field missing' })
       }
     }

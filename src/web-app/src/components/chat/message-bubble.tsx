@@ -15,27 +15,31 @@
  *   * Once resolved, the buttons are replaced with a coloured outcome
  *     line that reflects all 5 decision states with optional byUser
  *
- * No markdown for now — plain text + preserved whitespace is correct
- * enough for agim's debugging-focused chat surface.
+ * Assistant markdown is loaded on demand. Until that chunk arrives the
+ * raw text remains visible, so the first reply never waits on the parser.
  */
 
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { MarkdownView } from '@/components/chat/markdown-view'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ApprovalChoice } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
+
+const MarkdownView = lazy(async () => {
+  const module = await import('@/components/chat/markdown-view')
+  return { default: module.MarkdownView }
+})
 
 export interface MessageBubbleProps {
   msg: ChatMessage
   /** Returns whether the WS click was actually transmitted. The
    *  approval card uses this to revert its optimistic "submitting"
    *  state when the socket is disconnected. */
-  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
+  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
 }
 
 export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Element {
@@ -68,7 +72,15 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
             their typed `**foo**` survives verbatim. Empty assistant
             content during streaming startup shows the … placeholder. */}
         {!isUser && msg.content ? (
-          <MarkdownView content={msg.content} className="break-words" />
+          <Suspense
+            fallback={(
+              <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {msg.content}
+              </div>
+            )}
+          >
+            <MarkdownView content={msg.content} className="break-words" />
+          </Suspense>
         ) : (
           <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
             {msg.content || (msg.role === 'assistant' && (
@@ -114,7 +126,7 @@ function CopyButton({ text }: { text: string }): JSX.Element {
 
 interface ApprovalViewProps {
   approval: NonNullable<ChatMessage['approval']>
-  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
+  onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
 }
 
 function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {

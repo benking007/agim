@@ -139,11 +139,7 @@ function ViewerCard({ env }: { env: Record<string, string> }): JSX.Element {
       setDraft(next)
       setSyncedHash(hash)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.AGIM_VIEWER_ENABLED, env.AGIM_VIEWER_PUBLIC_BASE_URL,
-      env.AGIM_VIEWER_TUNNEL_MODE, env.AGIM_VIEWER_CHARS,
-      env.AGIM_VIEWER_LINES, env.AGIM_VIEWER_CODE_LINES,
-      env.AGIM_VIEWER_MAX_PASTES, env.AGIM_VIEWER_NO_DEFAULT_REMOTE])
+  }, [env, syncedHash])
 
   const current = useMemo(() => viewerDraftFromEnv(env), [env])
   const isDirty = useMemo(

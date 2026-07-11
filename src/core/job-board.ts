@@ -861,7 +861,7 @@ export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
  * a stalled-but-resumable job is the operator's call. Returns the row
  * count so callers / tests can assert.
  */
-export function pruneOldJobs(d: Database.Database = getDb()!, daysRetention: number = resolveRetentionDays()): number {
+export function pruneOldJobs(d: Database.Database | null = getDb(), daysRetention: number = resolveRetentionDays()): number {
   if (!d) return 0
   const inlineHours = resolveInlineRetentionHours()
   // Terminal statuses across both kinds. 'delivered' is inline-only.

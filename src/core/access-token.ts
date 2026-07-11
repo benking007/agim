@@ -40,7 +40,7 @@ import { AGIM_HOME } from './agim-paths.js'
 // AGIM_HOME at first evaluation; tests that swap $AGIM_HOME after that
 // would otherwise have writes silently land in the wrong directory.
 function currentAgimHome(): string {
-  return process.env.AGIM_HOME || process.env.AGIM_HOME || AGIM_HOME
+  return process.env.AGIM_HOME || AGIM_HOME
 }
 function tokensFile(): string { return join(currentAgimHome(), 'tokens.json') }
 function webBootstrapTokenFile(): string { return join(currentAgimHome(), 'web-bootstrap-token') }
@@ -96,11 +96,11 @@ const LAST_USED_THROTTLE_S = 30
 
 /** Raw token format: `agim_` + 40 hex chars. Easy to identify in logs. */
 export function generateRawToken(): string {
-  return 'agim_' + randomBytes(20).toString('hex')
+  return `agim_${randomBytes(20).toString('hex')}`
 }
 
 function newId(): string {
-  return 'tk_' + randomBytes(4).toString('hex')
+  return `tk_${randomBytes(4).toString('hex')}`
 }
 
 /** Create + persist a new token. Returns the raw value (caller must
@@ -267,7 +267,7 @@ export function consumeBootstrapTokenRaw(): { raw: string; id: string } | null {
 function writeWebBootstrapTokenFile(raw: string): void {
   const path = webBootstrapTokenFile()
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, raw + '\n', 'utf-8')
+  writeFileSync(path, `${raw}\n`, 'utf-8')
   try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
 }
 

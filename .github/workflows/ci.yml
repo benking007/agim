@@ -21,7 +21,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Exercise the lowest Node version declared in package.json.
+          node-version: '22.19.0'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -29,31 +30,27 @@ jobs:
           bun-version: latest
 
       # ───── Backend (agim-cli) ─────
-      # Install WITHOUT the committed lockfile. package-lock.json pins
-      # ~107 `resolved` URLs to an internal mirror (mirrors.tencentyun.com)
-      # that GitHub's runners can't reach, so a lockfile-honouring
-      # `npm install` hangs on those fetches and dies with npm's
-      # "Exit handler never called!" after ~70s. --no-package-lock makes
-      # npm ignore the baked-in URLs and resolve from the public registry
-      # — the same fix release.yml already uses (see also AGENTS.md).
-      # --omit=optional additionally skips the heavy @xenova/transformers
-      # ONNX binary, which CI doesn't exercise (end users still get it via
-      # `npm install -g agim-cli`).
+      # The committed lockfile resolves from registry.npmjs.org. Keep CI on
+      # `npm ci` so dependency drift cannot change a passing build.
+      # --omit=optional skips the heavy Transformers.js ONNX runtime, which
+      # these tests don't exercise (end users still get it by default).
       #
-      # --omit=optional also skips biome's platform CLI
-      # (@biomejs/cli-linux-x64), which `biome` needs to run, so we
-      # re-install just that package explicitly. `|| true` + the `test -f`
-      # guard keep the essential-binary check authoritative.
+      # --omit=optional also skips biome's platform CLI. Install that one
+      # binary into an isolated prefix: running `npm install` in the project
+      # root would make Arborist recalculate the whole dependency tree.
       - name: Install root dependencies
         run: |
-          npm install --omit=optional --no-package-lock --no-audit --no-fund --legacy-peer-deps
-          npm install --no-save --no-package-lock --no-audit --no-fund --legacy-peer-deps @biomejs/cli-linux-x64 || true
-          test -f node_modules/@biomejs/cli-linux-x64/biome
+          npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps
+          BIOME_VERSION="$(node -p "require('./node_modules/@biomejs/biome/package.json').version")"
+          BIOME_DIR="$RUNNER_TEMP/agim-biome"
+          npm install --prefix "$BIOME_DIR" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org "@biomejs/cli-linux-x64@$BIOME_VERSION"
+          test -f "$BIOME_DIR/node_modules/@biomejs/cli-linux-x64/biome"
+          echo "BIOME_BINARY=$BIOME_DIR/node_modules/@biomejs/cli-linux-x64/biome" >> "$GITHUB_ENV"
 
       - name: Backend typecheck
         run: npm run typecheck
 
-      - name: Backend lint
+      - name: Repository lint
         run: npm run lint
 
       - name: Backend test
@@ -67,7 +64,7 @@ jobs:
       # deps + tsconfig. CI runs it as a separate npm root so the backend
       # build pipeline stays decoupled from the SPA build pipeline.
       - name: Install web-app dependencies
-        run: npm --prefix src/web-app install --no-audit --no-fund
+        run: npm --prefix src/web-app ci --no-audit --no-fund
 
       - name: Web-app typecheck
         run: npm --prefix src/web-app run typecheck
@@ -76,6 +73,9 @@ jobs:
       # so a forgotten translation can't land alongside a feature.
       - name: Web-app i18n parity (en ⇄ zh)
         run: npm --prefix src/web-app run check-i18n
+
+      - name: Web-app endpoint contracts
+        run: npm run check:contracts
 
       - name: Web-app test (vitest)
         run: npm --prefix src/web-app test -- --run
@@ -93,10 +93,9 @@ jobs:
       - name: Backend build
         run: npm run build
 
-      # ───── Node-only memory recall regression ─────
-      # The SQLite memory layer uses better-sqlite3, which bun can't load, so
-      # `bun test` runs it against a disabled DB and can't catch query bugs
-      # (e.g. the contentless-FTS user_key recall bug). This runs the real
-      # store under node against the freshly-built dist.
-      - name: Memory recall regression (node)
+      # ───── Node-only SQLite regressions ─────
+      # Bun can't load better-sqlite3 in this project, so DB-backed Bun cases
+      # skip intentionally. This gate runs both the built-memory smoke tests
+      # and the shared persistence suites against the real native addon.
+      - name: SQLite persistence regressions (node)
         run: npm run test:node

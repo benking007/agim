@@ -94,13 +94,14 @@ export function useEventStream(
     function open(): void {
       if (cancelled) return
       setStatus((prev) => (prev === 'closed' ? 'connecting' : prev))
-      es = new EventSource(url, { withCredentials: true })
+      const source = new EventSource(url, { withCredentials: true })
+      es = source
 
-      es.addEventListener('open', () => {
+      source.addEventListener('open', () => {
         setStatus('connected')
       })
 
-      es.addEventListener('error', () => {
+      source.addEventListener('error', () => {
         // EventSource auto-reconnects (its readyState flips to
         // CONNECTING). Surface 'reconnecting' so the UI can show a
         // pill. If the socket is permanently dead, the next iOS
@@ -110,7 +111,7 @@ export function useEventStream(
 
       const onTyped = <T extends SseEvent>(type: T['type'], cb?: (e: T) => void): void => {
         if (!cb) return
-        es!.addEventListener(type, (raw: MessageEvent) => {
+        source.addEventListener(type, (raw: MessageEvent) => {
           let parsed: T
           try {
             parsed = JSON.parse(raw.data) as T

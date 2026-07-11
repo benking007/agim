@@ -641,7 +641,8 @@ describe('OpenCodeHttpAdapter.sendPrompt — plan mode', () => {
     const messageHit = hits.find(
       h => h.url === `http://test.local/session/${sid}/message` && h.method === 'POST',
     )
-    expect((messageHit?.body as Record<string, unknown>).agent).toBe('plan')
+    if (!messageHit) throw new Error('expected plan-mode message request')
+    expect((messageHit.body as Record<string, unknown>).agent).toBe('plan')
   })
 })
 

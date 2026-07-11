@@ -55,7 +55,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
       return
     }
     console.log(`找到 ${sessions.length} 个 TUI 会话（最新在前）：\n`)
-    for (const s of sessions) console.log('  ' + formatSessionLine(s))
+    for (const s of sessions) console.log(`  ${formatSessionLine(s)}`)
     console.log('\n用法：agim tui --resume <id>')
     return
   }
@@ -276,7 +276,7 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
     // no way to know they can pick up where they left off.
     process.stdout.write('\n')
     if (resumeWarning) {
-      console.warn('⚠ ' + resumeWarning)
+      console.warn(`⚠ ${resumeWarning}`)
     }
     console.log(`会话 ID：${finalSessionId}`)
     console.log(`恢复命令：agim tui --resume ${finalSessionId}`)

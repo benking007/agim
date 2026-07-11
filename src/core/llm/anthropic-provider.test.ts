@@ -113,7 +113,7 @@ describe('AnthropicProvider — basics', () => {
       }) as unknown as typeof fetch
       const p = new AnthropicProvider({ name: 'c', model: 'm', apiKey: 'k', baseUrl: base })
       await p.chat([{ role: 'user', content: 'x' }])
-      const expected = base.replace(/\/+$/, '').replace(/\/v1$/, '') + '/v1/messages'
+      const expected = `${base.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/messages`
       expect(sentUrl).toBe(expected)
       expect(sentUrl).not.toContain('/v1/v1/')
     }

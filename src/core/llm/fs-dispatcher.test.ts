@@ -213,17 +213,22 @@ describe('fs-dispatcher', () => {
   // destination.
   describe('symlink escape guard (CR-1)', () => {
     it('refuses to read a symlink whose target is sensitive', async () => {
-      // /etc/shadow is on the sensitive denylist, so this is denied even
-      // under the default (unrestricted) workspace policy — the realpath
-      // guard collapses the symlink and the sensitive check fires. The OLD
-      // lexical check returned ok and happily read the target.
-      const link = join(workspace, 'evil-shadow')
-      try { await rm(link, { force: true }) } catch { /* ignore */ }
-      await symlink('/etc/shadow', link)
-      const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-shadow' } }, NEVER_ABORT)
-      expect(r.isError).toBe(true)
-      expect(r.text).toMatch(/sensitive/i)
+      // A .env file is denied on every platform. The realpath guard must
+      // inspect the target basename, not only the harmless link name.
+      const targetDir = await mkdtemp(join(tmpdir(), 'agim-fs-sensitive-'))
+      const target = join(targetDir, '.env')
+      const link = join(workspace, 'evil-env')
+      try {
+        await writeFile(target, 'TOKEN=secret')
+        try { await rm(link, { force: true }) } catch { /* ignore */ }
+        await symlink(target, link)
+        const d = buildFsDispatcher({ cwd: workspace })
+        const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-env' } }, NEVER_ABORT)
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/sensitive/i)
+      } finally {
+        await rm(targetDir, { recursive: true, force: true })
+      }
     })
 
     it('refuses to read a symlink whose target is outside workspace', async () => {

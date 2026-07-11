@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { requireValue } from '@/test/assert'
 
 import SettingsWorkspacesRoute from './workspaces'
 import '@/i18n'
@@ -70,7 +71,7 @@ function renderPage(opts: {
   })
   const view = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/workspaces']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/workspaces']}>
         <Routes>
           <Route path="/settings/workspaces" element={<SettingsWorkspacesRoute />} />
         </Routes>
@@ -98,21 +99,26 @@ describe('/settings/workspaces', () => {
 
     await user.type(screen.getByLabelText('ID'), 'team-a')
     await user.type(screen.getByLabelText('Display name'), 'Team A')
+    // Stabilize focus before Radix moves it into the portalled menu.
+    await user.click(document.body)
 
     await user.click(screen.getByRole('button', { name: /Choose Agents/i }))
     await user.click(await screen.findByRole('menuitemcheckbox', { name: /claude-code/i }))
     await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: /Choose members/i }))
     await user.click(await screen.findByRole('menuitemcheckbox', { name: /wechat:u1/i }))
     await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: /Save scope/i }))
 
     await waitFor(() => {
       const call = fetchSpy.mock.calls.find((c) => String(c[0]) === '/api/workspaces' && (c[1] as RequestInit | undefined)?.method === 'POST')
       expect(call).toBeTruthy()
-      const body = JSON.parse(String((call![1] as RequestInit).body))
+      const request = requireValue(call?.[1] as RequestInit | undefined, 'workspace create request')
+      const body = JSON.parse(String(request.body))
       expect(body).toMatchObject({
         id: 'team-a',
         name: 'Team A',
@@ -136,7 +142,8 @@ describe('/settings/workspaces', () => {
     await waitFor(() => {
       const call = fetchSpy.mock.calls.find((c) => String(c[0]) === '/api/workspaces' && (c[1] as RequestInit | undefined)?.method === 'POST')
       expect(call).toBeTruthy()
-      const body = JSON.parse(String((call![1] as RequestInit).body))
+      const request = requireValue(call?.[1] as RequestInit | undefined, 'workspace update request')
+      const body = JSON.parse(String(request.body))
       expect(body.rateLimit).toEqual({ rate: 3, intervalSec: 60, burst: 5 })
     })
   })

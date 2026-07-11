@@ -161,7 +161,7 @@ export async function tryDetectReminderIntent(opts: {
     maxOutputChars: DETECTOR_MAX_OUTPUT,
   })
 
-  if (!det || !det.is_reminder) {
+  if (!det?.is_reminder) {
     log.debug({ event: 'remind-intent.skip', reason: det ? 'is_reminder=false' : 'llm_null' })
     return NON_HANDLED
   }

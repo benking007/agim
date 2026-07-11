@@ -424,6 +424,7 @@ export function useChat(): UseChat {
     currentReplyIdRef.current = state.currentReplyId
   }, [state.currentReplyId])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the module-level socket subscription is intentionally mount-scoped; message handling reads mutable stream state through refs
   useEffect(() => {
     const ws = wsRef.current
     const off1 = ws.subscribe({
@@ -483,7 +484,6 @@ export function useChat(): UseChat {
       })
     }
     return () => { off1(); off2(); off3() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ws is module-singleton
   }, [])
 
   function onIncoming(msg: ChatIncoming): void {

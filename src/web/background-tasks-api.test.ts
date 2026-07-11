@@ -129,7 +129,12 @@ describe('handleBackgroundTasksApi — goals', () => {
       platform: 'wechat', channelId: 'rest', threadId: 'unit-1',
       userId: 'u', title: 'demo',
     })
-    if (!created) return  // sqlite unavailable — skip the substantive assertion
+    if (!created) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
+        throw new Error('SQLite is required by the Node persistence suite')
+      }
+      return
+    }
     const res = makeRes()
     await handleBackgroundTasksApi(makeReq('PUT', { status: 'paused' }), asRes(res),
       url(`/api/goals/${created.id}/status`))

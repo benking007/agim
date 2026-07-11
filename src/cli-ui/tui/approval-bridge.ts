@@ -167,7 +167,7 @@ export class TuiApprovalBridge implements MessengerAdapter {
   }
 
   async submitAskMulti(indexes: number[]): Promise<boolean> {
-    if (!this.currentAsk || this.currentAsk.selectionMode !== 'multi') return false
+    if (this.currentAsk?.selectionMode !== 'multi') return false
     const normalized = Array.from(new Set(indexes.filter((n) => Number.isInteger(n) && n >= 1))).sort((a, b) => a - b)
     const invalid = normalized.some((index) => {
       const choice = this.currentAsk?.prompt.choices[index - 1]
@@ -179,7 +179,7 @@ export class TuiApprovalBridge implements MessengerAdapter {
   }
 
   async submitAskCustom(text: string): Promise<boolean> {
-    if (!this.currentAsk || !this.currentAsk.allowCustomInput) return false
+    if (!this.currentAsk?.allowCustomInput) return false
     const trimmed = text.trim()
     if (!trimmed) return false
     const encoded = Buffer.from(trimmed, 'utf8')

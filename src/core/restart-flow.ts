@@ -156,7 +156,7 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
     return {
       ok: false,
       message:
-        '🚫 重启取消：检测到前台运行的 agim（pid ' + (svcState.pid ?? '?') + '）。它由另一个 shell 持有 stdio，请回那个终端 Ctrl-C 后重启，或改用 systemd / `agim start --bg`。',
+        `🚫 重启取消：检测到前台运行的 agim（pid ${svcState.pid ?? '?'}）。它由另一个 shell 持有 stdio，请回那个终端 Ctrl-C 后重启，或改用 systemd / \`agim start --bg\`。`,
       errors: ['foreground service cannot be safely restarted from a separate context'],
     }
   }

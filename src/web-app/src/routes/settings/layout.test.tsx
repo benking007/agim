@@ -29,7 +29,7 @@ function renderAt(path: string): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <Routes>
           <Route path="/settings" element={<SettingsLayout />}>
             <Route path="*" element={<div data-testid="settings-child">child</div>} />

@@ -50,7 +50,7 @@ function renderPage(): ReturnType<typeof render> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/tasks/jobs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/tasks/jobs']}>
         <Routes>
           <Route path="/tasks/jobs" element={<JobsRoute />} />
         </Routes>

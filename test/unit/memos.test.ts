@@ -14,7 +14,7 @@ process.env.AGIM_MEMOS_DB = join(TEST_DIR, 'memos.db')
 
 const mod = await import('../../src/core/memos.js')
 const {
-  createMemo, updateMemo, getMemo, deleteMemo, listMemos, searchMemos,
+  createMemo, updateMemo, getMemo, listMemos, searchMemos,
   parseCoordPair, stripCoordPrefix, mapUrl, mapUrls, wgs84ToGcj02, gcj02ToWgs84,
   isGeocodingAvailable, sweepExpired, closeMemosDb,
   nowSqliteLocal, toSqliteLocal, normalizeWhenAt,
@@ -322,7 +322,7 @@ describeIfSqlite('memo CRUD', () => {
     expect(m.updated_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
     // The stored value should be roughly NOW in UTC+8 — within 60s.
     const localNow = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
-    const drift = Math.abs(Date.parse(m.created_at.replace(' ', 'T') + 'Z') - Date.parse(localNow.replace(' ', 'T') + 'Z'))
+    const drift = Math.abs(Date.parse(`${m.created_at.replace(' ', 'T')}Z`) - Date.parse(`${localNow.replace(' ', 'T')}Z`))
     expect(drift).toBeLessThan(60_000)
   })
 

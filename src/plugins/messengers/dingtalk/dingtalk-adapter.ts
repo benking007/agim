@@ -796,8 +796,10 @@ export class DingTalkAdapter implements MessengerAdapter {
       platform: 'dingtalk',
       channelId,
     }
+    const messageHandler = this.messageHandler
+    if (!messageHandler) return
     try {
-      await this.messageHandler!(ctx)
+      await messageHandler(ctx)
     } catch (err) {
       log.error({
         err: err instanceof Error ? err.message : String(err),

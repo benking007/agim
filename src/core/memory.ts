@@ -533,8 +533,10 @@ export async function queryFactsHybrid(opts: QueryOpts): Promise<QueryResult> {
   const ranked = Array.from(scores.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, k)
-    .map(([id]) => idToFact.get(id)!)
-    .filter(Boolean)
+    .flatMap(([id]) => {
+      const fact = idToFact.get(id)
+      return fact ? [fact] : []
+    })
 
   // Bump last_referenced_at for the merged result set.
   const db = helper.get()

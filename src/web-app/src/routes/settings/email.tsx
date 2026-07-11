@@ -127,8 +127,7 @@ export default function SettingsEmailRoute(): JSX.Element {
       setDraft(next)
       setSyncedHash(hash)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envQuery.dataUpdatedAt])
+  }, [envQuery.data, env, syncedHash])
 
   const isConfigured = !!(env.AGIM_SMTP_HOST && env.AGIM_SMTP_USER && env.AGIM_SMTP_PASS)
 

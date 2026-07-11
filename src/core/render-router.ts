@@ -40,7 +40,7 @@ export interface RenderDecision {
 
 const SUMMARY_RE = /<im-summary>([\s\S]*?)<\/im-summary>\s*<full-md>([\s\S]*?)<\/full-md>/
 const TABLE_RE = /(^|\n)\s*\|[^\n]+\|[^\n]*\n\s*\|?\s*[-:]+\s*\|/  // header + separator row
-const FENCE_RE = /```[a-zA-Z0-9_+\-]*\n([\s\S]*?)\n```/g
+const FENCE_RE = /```[a-zA-Z0-9_+-]*\n([\s\S]*?)\n```/g
 
 /** Strip any stray envelope tag fragments — happens when the LLM
  *  emits multiple `<im-summary>` blocks back-to-back; non-greedy
@@ -127,7 +127,7 @@ export function firstNonEmpty(text: string, maxChars: number): string {
   if (paras.length === 0) return text.slice(0, maxChars)
   const head = paras[0]
   if (head.length <= maxChars) return head
-  return head.slice(0, maxChars - 1).trimEnd() + '…'
+  return `${head.slice(0, maxChars - 1).trimEnd()}…`
 }
 
 /**

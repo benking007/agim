@@ -15,7 +15,7 @@
  * through ConfirmDialog.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -59,13 +59,24 @@ export default function MemoryFactsRoute(): JSX.Element {
   const page    = Math.max(1, Number(params.get('page')) || 1)
   const perPage = Number(params.get('per_page')) || DEFAULT_PER_PAGE
 
+  const patchParams = useCallback((patch: Record<string, string | null>): void => {
+    const next = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === '') next.delete(k)
+      else next.set(k, v)
+    }
+    // Reset to page 1 on any filter mutation.
+    if (Object.keys(patch).some((k) => k !== 'page')) next.delete('page')
+    setParams(next, { replace: false })
+  }, [params, setParams])
+
   const [qDraft, setQDraft] = useState(q)
+  useEffect(() => { setQDraft(q) }, [q])
   useEffect(() => {
     if (qDraft === q) return
     const timer = window.setTimeout(() => patchParams({ q: qDraft || null }), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qDraft])
+  }, [patchParams, q, qDraft])
 
   const query: ListMemoryFactsQuery = useMemo(
     () => ({
@@ -85,6 +96,7 @@ export default function MemoryFactsRoute(): JSX.Element {
 
   // Selection state for the bulk delete bar.
   const [selection, setSelection] = useState<Set<string>>(new Set())
+  // biome-ignore lint/correctness/useExhaustiveDependencies: every query-scope change invalidates row ids selected in the previous result set
   useEffect(() => { setSelection(new Set()) }, [userKey, q, cat, page, perPage])
 
   const deleteOne = useDeleteFactById()
@@ -92,17 +104,6 @@ export default function MemoryFactsRoute(): JSX.Element {
 
   const [confirmOneId, setConfirmOneId] = useState<number | null>(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
-
-  function patchParams(patch: Record<string, string | null>): void {
-    const next = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(patch)) {
-      if (v == null || v === '') next.delete(k)
-      else next.set(k, v)
-    }
-    // Reset to page 1 on any filter mutation.
-    if (Object.keys(patch).some((k) => k !== 'page')) next.delete('page')
-    setParams(next, { replace: false })
-  }
 
   async function onConfirmDeleteOne(): Promise<void> {
     if (confirmOneId == null || !userKey) return

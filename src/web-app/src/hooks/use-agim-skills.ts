@@ -54,7 +54,10 @@ export function useAgimSkillsList() {
 export function useAgimSkill(name: string | null) {
   return useQuery<AgimSkillDetailResponse>({
     queryKey: name ? skillKeys.one(name) : ['agim-skills', 'one', '__none__'],
-    queryFn: () => client.get<AgimSkillDetailResponse>(`/api/agim-skills/${encodeURIComponent(name!)}`),
+    queryFn: () => {
+      if (!name) throw new Error('Skill name is required')
+      return client.get<AgimSkillDetailResponse>(`/api/agim-skills/${encodeURIComponent(name)}`)
+    },
     enabled: !!name,
   })
 }

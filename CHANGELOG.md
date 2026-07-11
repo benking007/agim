@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.12] - 2026-07-11
+
+### Added
+
+- Added a shared atomic `config.json` store with same-process queues, cross-process locking, crash-safe replacement, owner-only permissions, and concurrent Web/CLI regression coverage.
+- Added Web endpoint contract checks, JavaScript bundle budgets, dist-package hygiene checks, and Node-backed SQLite persistence suites to the CI and npm release gates.
+
+### Changed
+
+- Raised the supported runtime baseline to Node.js 22.19 and restored reproducible `npm ci` installs from public-registry lockfiles for local development, CI, and releases.
+- Expanded repository linting, typechecking, and isolated test coverage across the backend and Web workbench; npm publication now stops on any failed quality gate.
+- Updated supported messenger, mail, WebSocket, vector-embedding, and transitive HTTP dependencies, including security overrides for Axios and Undici.
+
+### Fixed
+
+- Prevented concurrent settings, LLM backend, MCP server, onboarding, and workspace updates from overwriting unrelated configuration fields.
+- Fixed a cross-process lock race where a waiter could remove a newly acquired lock and lose a concurrent configuration update.
+- Hardened session, URL, filesystem, memory, reminder, job, token, and Web event-stream edge cases uncovered by the full regression pass.
+
 ## [1.5.3] - 2026-07-05
 
 ### Added

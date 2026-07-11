@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils'
 
 export interface ApprovalDockProps {
   approvals: PendingApproval[]
-  onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
+  onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
 }
 
 export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.Element | null {
@@ -56,7 +56,7 @@ export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.E
 
 interface DockRowProps {
   entry: PendingApproval
-  onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | void
+  onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
 }
 
 function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {

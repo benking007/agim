@@ -7,7 +7,7 @@ import '@/i18n'
 
 function renderAt(path: string): ReturnType<typeof render> {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
       <Routes>
         <Route path="/settings/agim-skills" element={<SettingsAgimSkillsLayout />}>
           <Route index element={<div data-testid="skills-child">overview</div>} />

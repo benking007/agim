@@ -7,12 +7,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "node tools/check-bundle-size.mjs",
+    "check-bundle": "node tools/check-bundle-size.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint not yet configured for web-app — landed in a follow-up PR'",
+    "lint": "../../node_modules/.bin/biome lint index.html public/favicon.svg src tools vite.config.ts vitest.config.ts vitest.sqlite.config.ts tailwind.config.ts",
     "test": "vitest",
+    "test:sqlite": "vitest --config vitest.sqlite.config.ts --run",
     "check-i18n": "node tools/check-i18n.mjs",
-    "check-endpoints": "node tools/extract-endpoints.mjs && node tools/gen-endpoints.mjs --check"
+    "update-endpoints": "node tools/extract-endpoints.mjs",
+    "check-endpoints": "node tools/extract-endpoints.mjs --check && node tools/check-endpoints.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

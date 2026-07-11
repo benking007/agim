@@ -2,13 +2,8 @@
 // Handles messenger config checks, agent availability, and interactive setup
 
 import { createInterface } from 'node:readline'
-import { join } from 'node:path'
-import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { registry, isPlatformBlacklisted } from './registry.js'
-import { AGIM_HOME } from './agim-paths.js'
-
-const CONFIG_DIR = AGIM_HOME
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
+import { readConfigObject, updateConfigObject, writeConfigObject } from './config-store.js'
 
 // ============================================
 // Types
@@ -115,8 +110,6 @@ function getAvailableMessengers(): MessengerInfo[] {
   return base.filter((m) => !isPlatformBlacklisted(m.id))
 }
 
-const AVAILABLE_MESSENGERS = ALL_MESSENGERS // re-exported for tests; runtime uses getAvailableMessengers()
-
 const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
   'claude-code': { agent: 'claude-code', npmPackage: '@anthropic-ai/claude-code', command: 'claude' },
   'codex': { agent: 'codex', npmPackage: '@openai/codex', command: 'codex' },
@@ -178,22 +171,46 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
 // ============================================
 
 export async function loadConfig(): Promise<Config> {
-  try {
-    const data = await readFile(CONFIG_FILE, 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return {
+  return await readConfigObject<Config>({
+    fallback: {
       messengers: [],
       agents: [],
       defaultAgent: 'native',
-    }
-  }
+    },
+  })
 }
 
 export async function saveConfig(config: Config): Promise<void> {
-  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 })
-  await chmod(CONFIG_FILE, 0o600)
+  await writeConfigObject(config)
+}
+
+/**
+ * Persist only the top-level fields changed between two wizard snapshots.
+ * The latest on-disk object is read while holding the cross-process lock, so
+ * unrelated Web/CLI updates made while the user was inside a prompt survive.
+ */
+export async function saveConfigChanges(base: Config, next: Config): Promise<Config> {
+  const keys = new Set([...Object.keys(base), ...Object.keys(next)])
+  const changed = [...keys].filter((key) =>
+    JSON.stringify(base[key]) !== JSON.stringify(next[key]))
+  if (changed.length === 0) return next
+
+  const update = await updateConfigObject((current) => {
+    const merged: Record<string, unknown> = {
+      messengers: [],
+      agents: [],
+      defaultAgent: 'native',
+      ...current,
+    }
+    for (const key of changed) {
+      if (Object.hasOwn(next, key) && next[key] !== undefined) merged[key] = next[key]
+      else delete merged[key]
+    }
+    return { config: merged, result: undefined }
+  }, {
+    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+  })
+  return update.config as Config
 }
 
 // ============================================

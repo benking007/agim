@@ -30,10 +30,8 @@
   },
   "include": ["src", "vite.config.ts"],
   // v1.2.82 — exclude test files from build's tsc --noEmit. The
-  // build step shouldn't fail when test types drift (CI's
-  // --no-package-lock can resolve @testing-library/react to a
-  // different patch version than local, exposing test-only type
-  // errors that don't reach prod). Tests are still type-checked via
+  // build step shouldn't fail on test-only type errors that don't reach
+  // production. Tests are still type-checked via
   // their own vitest run (`npm run test`), which uses tsconfig.test.json
   // / vite/vitest's own resolver.
   "exclude": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"]

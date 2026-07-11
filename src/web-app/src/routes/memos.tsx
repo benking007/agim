@@ -14,7 +14,7 @@
  * — keeps the backend's FTS5 from running on every keypress.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -51,9 +51,19 @@ export default function MemosRoute(): JSX.Element {
   const hasLoc     = params.get('has_location') === '1'
   const incExpired = params.get('include_expired') === '1'
 
+  const patchParams = useCallback((patch: Record<string, string | null>): void => {
+    const next = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === '') next.delete(k)
+      else next.set(k, v)
+    }
+    setParams(next, { replace: true })
+  }, [params, setParams])
+
   // Local-only echo of the text input. Effects below sync the URL
   // after the debounce so each keypress doesn't kick a fetch.
   const [qDraft, setQDraft] = useState(q)
+  useEffect(() => { setQDraft(q) }, [q])
 
   useEffect(() => {
     if (qDraft === q) return
@@ -61,8 +71,7 @@ export default function MemosRoute(): JSX.Element {
       patchParams({ q: qDraft || null })
     }, SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qDraft])
+  }, [patchParams, q, qDraft])
 
   const query: ListMemosQuery = useMemo(
     () => ({
@@ -81,15 +90,6 @@ export default function MemosRoute(): JSX.Element {
 
   const del = useDeleteMemo()
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
-
-  function patchParams(patch: Record<string, string | null>): void {
-    const next = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(patch)) {
-      if (v == null || v === '') next.delete(k)
-      else next.set(k, v)
-    }
-    setParams(next, { replace: true })
-  }
 
   async function onConfirmDelete(): Promise<void> {
     if (confirmDeleteId == null) return

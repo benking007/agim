@@ -177,18 +177,22 @@ export function classifyIntent(
 
   // 4. Sticky session bias
   if (stickyAgent && scores.has(stickyAgent)) {
-    const s = scores.get(stickyAgent)!
-    s.score += 3
-    s.reasons.push('sticky: last used agent')
+    const score = scores.get(stickyAgent)
+    if (score) {
+      score.score += 3
+      score.reasons.push('sticky: last used agent')
+    }
   }
 
   // 4b. Default-agent bias. Smaller than topic (+2) and keyword (+1*weight,
   // typically 0.8-1.0), so explicit signal still wins. Larger than base
   // weight (0.4-0.5) so it breaks ties on generic messages.
   if (defaultAgent && defaultAgent !== stickyAgent && scores.has(defaultAgent)) {
-    const s = scores.get(defaultAgent)!
-    s.score += 1
-    s.reasons.push('default agent')
+    const score = scores.get(defaultAgent)
+    if (score) {
+      score.score += 1
+      score.reasons.push('default agent')
+    }
   }
 
   // Tie-break order:

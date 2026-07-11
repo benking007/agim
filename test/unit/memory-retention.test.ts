@@ -24,7 +24,7 @@ const MEMORY_DB = join(AGIM_HOME, 'memory.db')
 // fail-soft mode (no native binding).
 const dbAvailable = (() => {
   try {
-    const id = mem.saveFact({ user_key: 'probe-' + randomUUID(), what: 'probe' })
+    const id = mem.saveFact({ user_key: `probe-${randomUUID()}`, what: 'probe' })
     return id !== null
   } catch {
     return false
@@ -36,7 +36,7 @@ function openRaw(): Database.Database {
   return new Database(MEMORY_DB)
 }
 
-function uniq(): string { return 'test-ret-' + randomUUID().slice(0, 8) }
+function uniq(): string { return `test-ret-${randomUUID().slice(0, 8)}` }
 
 afterAll(() => {
   mem.stopMemoryRetentionSweep()
@@ -104,7 +104,7 @@ dbDescribe('pruneExpiredFacts', () => {
   it('removes facts_fts rows in lockstep with facts (no stale index entries)', () => {
     process.env.AGIM_MEMORY_FACT_RETENTION_DAYS = '1'
     const u = uniq()
-    const marker = 'ftsmarker' + randomUUID().slice(0, 6).replace(/-/g, '')
+    const marker = `ftsmarker${randomUUID().slice(0, 6).replace(/-/g, '')}`
     mem.saveFact({ user_key: u, what: marker })
 
     const raw = openRaw()

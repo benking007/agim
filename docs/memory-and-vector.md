@@ -105,7 +105,7 @@ Web UI 「本地模型」下拉选「自定义…」→ 填 `Xenova/<your-repo>`
 AGIM_MEMORY_VECTOR_LOCAL_MODEL=Xenova/your-model
 ```
 
-要求模型有 ONNX 导出 + Xenova/transformers.js 支持。
+要求模型有 ONNX 导出，并受 Hugging Face Transformers.js 3.x 支持。
 
 ---
 

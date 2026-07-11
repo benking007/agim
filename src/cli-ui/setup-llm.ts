@@ -19,19 +19,18 @@
 // Invoked as `agim setup llm` (or `agim setup llm add`, `agim setup
 // llm role`, etc. — subcommands documented in cli.ts).
 
-import { readFile, writeFile, mkdir, chmod, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { stat } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
-import { AGIM_HOME } from '../core/agim-paths.js'
 import { configSchema } from '../core/config-schema.js'
+import { CONFIG_FILE, readConfigObject, updateConfigObject } from '../core/config-store.js'
 import { saveSecret, removeSecret, listConfiguredBackends, describeSecretSource } from '../core/llm/secrets.js'
-
-const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 /** All roles we currently inject into. New roles can be invented
  *  ad-hoc (the schema allows any string), but the wizard surfaces the
  *  blessed three by default. */
 const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
+
+class SetupLlmConfigError extends Error {}
 
 /** Curated provider quick-picks. Operators can still type
  *  "openai-compat" or "anthropic" manually for anything else. */
@@ -199,22 +198,34 @@ async function addAction(): Promise<number> {
       return cancel('API key is required')
     }
 
-    const cfg = await readConfig()
-    const backends = cfg.llmBackends ?? []
-    if (backends.some((b) => b.name === name)) {
-      return cancel(`backend "${name}" already exists — use \`agim setup llm remove ${name}\` first`)
+    try {
+      await updateConfigObject((current) => {
+        const cfg = current as RawConfig
+        const backends = cfg.llmBackends ?? []
+        if (backends.some((b) => b.name === name)) {
+          throw new SetupLlmConfigError(
+            `backend "${name}" already exists — use \`agim setup llm remove ${name}\` first`,
+          )
+        }
+        const next = {
+          ...cfg,
+          llmBackends: [...backends, { name, provider, baseUrl, model }],
+        }
+        const result = configSchema.safeParse(next)
+        if (!result.success) {
+          throw new SetupLlmConfigError(
+            `config validation failed: ${result.error.issues.map((i) => i.message).join('; ')}`,
+          )
+        }
+        return { config: next, result: undefined }
+      }, {
+        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      })
+    } catch (err) {
+      if (err instanceof SetupLlmConfigError) return cancel(err.message)
+      throw err
     }
-    backends.push({ name, provider, baseUrl, model })
-    cfg.llmBackends = backends
-
-    // Validate via Zod so a typo in the wizard input shape is caught
-    // BEFORE we write to disk and BEFORE we stash the secret.
-    const result = configSchema.safeParse(cfg)
-    if (!result.success) {
-      return cancel(`config validation failed: ${result.error.issues.map((i) => i.message).join('; ')}`)
-    }
-
-    await writeConfig(cfg)
+    await reportConfigWrite()
     saveSecret(name, apiKey)
 
     process.stdout.write(`\n✅ Saved backend "${name}" (${provider} / ${model}).\n`)
@@ -224,9 +235,23 @@ async function addAction(): Promise<number> {
     const roleAns = (await ask(rl, 'Roles: ')).trim()
     if (roleAns) {
       const roles = roleAns.split(/[,\s]+/).map((r) => r.trim()).filter(Boolean)
-      cfg.llmRoles = cfg.llmRoles ?? {}
-      for (const r of roles) cfg.llmRoles[r] = name
-      await writeConfig(cfg)
+      try {
+        await updateConfigObject((current) => {
+          const cfg = current as RawConfig
+          if (!(cfg.llmBackends ?? []).some((backend) => backend.name === name)) {
+            throw new SetupLlmConfigError(`backend "${name}" was removed before roles were saved`)
+          }
+          const llmRoles = { ...(cfg.llmRoles ?? {}) }
+          for (const role of roles) llmRoles[role] = name
+          return { config: { ...cfg, llmRoles }, result: undefined }
+        }, {
+          fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+        })
+      } catch (err) {
+        if (err instanceof SetupLlmConfigError) return cancel(err.message)
+        throw err
+      }
+      await reportConfigWrite()
       process.stdout.write(`✅ Bound roles: ${roles.join(', ')} → ${name}\n`)
     }
     return 0
@@ -254,21 +279,33 @@ async function removeAction(maybeName?: string): Promise<number> {
       name = backends[idx].name
     } finally { rl.close() }
   }
-  const next = backends.filter((b) => b.name !== name)
-  if (next.length === backends.length) {
-    return cancel(`no backend named "${name}"`)
-  }
-  cfg.llmBackends = next
-  // Drop any role binding still pointing at it.
-  const roles = cfg.llmRoles ?? {}
-  const cleanedRoles: Record<string, string> = {}
   let droppedRoles = 0
-  for (const [r, b] of Object.entries(roles)) {
-    if (b === name) { droppedRoles++; continue }
-    cleanedRoles[r] = b
+  try {
+    await updateConfigObject((current) => {
+      const latest = current as RawConfig
+      const latestBackends = latest.llmBackends ?? []
+      const next = latestBackends.filter((backend) => backend.name !== name)
+      if (next.length === latestBackends.length) {
+        throw new SetupLlmConfigError(`no backend named "${name}"`)
+      }
+      const cleanedRoles: Record<string, string> = {}
+      droppedRoles = 0
+      for (const [role, backend] of Object.entries(latest.llmRoles ?? {})) {
+        if (backend === name) { droppedRoles++; continue }
+        cleanedRoles[role] = backend
+      }
+      return {
+        config: { ...latest, llmBackends: next, llmRoles: cleanedRoles },
+        result: undefined,
+      }
+    }, {
+      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    })
+  } catch (err) {
+    if (err instanceof SetupLlmConfigError) return cancel(err.message)
+    throw err
   }
-  cfg.llmRoles = cleanedRoles
-  await writeConfig(cfg)
+  await reportConfigWrite()
   removeSecret(name)
   process.stdout.write(`✅ Removed backend "${name}" (cleared ${droppedRoles} role binding(s) and the on-disk API key).\n`)
   return 0
@@ -286,14 +323,15 @@ async function roleAction(): Promise<number> {
     backends.forEach((b, i) => { process.stdout.write(`  ${i + 1}. ${b.name}\n`) })
     process.stdout.write('  0. (unbind)\n\n')
 
-    cfg.llmRoles = cfg.llmRoles ?? {}
+    const roleChanges: Record<string, string | null> = {}
+    const configuredRoles = cfg.llmRoles ?? {}
     for (const role of KNOWN_ROLES) {
-      const current = cfg.llmRoles[role] ?? '(unset)'
+      const current = configuredRoles[role] ?? '(unset)'
       const ans = (await ask(rl, `${role} [current: ${current}] → backend # (Enter = keep): `)).trim()
       if (!ans) continue
       const n = parseInt(ans, 10)
       if (n === 0) {
-        delete cfg.llmRoles[role]
+        roleChanges[role] = null
         continue
       }
       const idx = n - 1
@@ -301,9 +339,32 @@ async function roleAction(): Promise<number> {
         process.stdout.write(`  ⚠ skipped "${role}" (invalid choice)\n`)
         continue
       }
-      cfg.llmRoles[role] = backends[idx].name
+      roleChanges[role] = backends[idx].name
     }
-    await writeConfig(cfg)
+    try {
+      await updateConfigObject((current) => {
+        const latest = current as RawConfig
+        const latestBackends = new Set((latest.llmBackends ?? []).map((backend) => backend.name))
+        const llmRoles = { ...(latest.llmRoles ?? {}) }
+        for (const [role, backend] of Object.entries(roleChanges)) {
+          if (backend === null) {
+            delete llmRoles[role]
+            continue
+          }
+          if (!latestBackends.has(backend)) {
+            throw new SetupLlmConfigError(`backend "${backend}" was removed before roles were saved`)
+          }
+          llmRoles[role] = backend
+        }
+        return { config: { ...latest, llmRoles }, result: undefined }
+      }, {
+        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      })
+    } catch (err) {
+      if (err instanceof SetupLlmConfigError) return cancel(err.message)
+      throw err
+    }
+    await reportConfigWrite()
     process.stdout.write('\n✅ Role bindings updated.\n')
     return 0
   } finally { rl.close() }
@@ -362,36 +423,58 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
     return cancel(`no backend named "${name}"`)
   }
 
-  // Mutate config: bind role + set defaultAgent. Always validate
-  // through configSchema before writing.
-  cfg.llmRoles = cfg.llmRoles ?? {}
-  cfg.llmRoles['native-chat'] = name
-
+  let bindCheapSelected = false
+  let setDefaultSelected = false
   const rl = readline()
   try {
     const bindCheap = (await ask(rl, `Also bind cheap role to "${name}"? [Y/n]: `)).trim().toLowerCase()
     if (bindCheap === '' || bindCheap === 'y' || bindCheap === 'yes') {
-      cfg.llmRoles['cheap'] = name
+      bindCheapSelected = true
     }
     const setDefault = (await ask(rl, `Set defaultAgent: "native" (in-process agent handles unrouted IM)? [Y/n]: `))
       .trim().toLowerCase()
     if (setDefault === '' || setDefault === 'y' || setDefault === 'yes') {
-      (cfg as Record<string, unknown>).defaultAgent = 'native'
+      setDefaultSelected = true
     }
   } finally { rl.close() }
 
-  const parsed = configSchema.safeParse(cfg)
-  if (!parsed.success) {
-    return cancel(`config validation failed: ${parsed.error.issues.map((i) => i.message).join('; ')}`)
+  let savedConfig: RawConfig
+  try {
+    const update = await updateConfigObject((current) => {
+      const latest = current as RawConfig
+      if (!(latest.llmBackends ?? []).some((backend) => backend.name === name)) {
+        throw new SetupLlmConfigError(`backend "${name}" was removed before native setup was saved`)
+      }
+      const llmRoles: Record<string, string> = { ...(latest.llmRoles ?? {}), 'native-chat': name }
+      if (bindCheapSelected) llmRoles.cheap = name
+      const next = {
+        ...latest,
+        llmRoles,
+        ...(setDefaultSelected ? { defaultAgent: 'native' } : {}),
+      }
+      const parsed = configSchema.safeParse(next)
+      if (!parsed.success) {
+        throw new SetupLlmConfigError(
+          `config validation failed: ${parsed.error.issues.map((i) => i.message).join('; ')}`,
+        )
+      }
+      return { config: next, result: undefined }
+    }, {
+      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    })
+    savedConfig = update.config as RawConfig
+  } catch (err) {
+    if (err instanceof SetupLlmConfigError) return cancel(err.message)
+    throw err
   }
-  await writeConfig(cfg)
+  await reportConfigWrite()
 
   process.stdout.write(`\n✅ Native agent enabled.\n`)
-  process.stdout.write(`   native-chat -> ${cfg.llmRoles['native-chat']}\n`)
-  if (cfg.llmRoles['cheap']) {
-    process.stdout.write(`   cheap       -> ${cfg.llmRoles['cheap']}\n`)
+  process.stdout.write(`   native-chat -> ${savedConfig.llmRoles?.['native-chat']}\n`)
+  if (savedConfig.llmRoles?.cheap) {
+    process.stdout.write(`   cheap       -> ${savedConfig.llmRoles.cheap}\n`)
   }
-  const def = (cfg as Record<string, unknown>).defaultAgent
+  const def = savedConfig.defaultAgent
   if (typeof def === 'string') {
     process.stdout.write(`   defaultAgent: ${def}\n`)
   }
@@ -406,23 +489,12 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
 // ─── helpers ────────────────────────────────────────────────────────
 
 async function readConfig(): Promise<RawConfig> {
-  try {
-    const raw = await readFile(CONFIG_FILE, 'utf-8')
-    const parsed = JSON.parse(raw) as RawConfig
-    return parsed
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { messengers: [], agents: [], defaultAgent: 'native' }
-    }
-    throw err
-  }
+  return await readConfigObject<RawConfig>({
+    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+  })
 }
 
-async function writeConfig(cfg: RawConfig): Promise<void> {
-  await mkdir(AGIM_HOME, { recursive: true, mode: 0o700 })
-  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-  // Best-effort chmod; on Windows it's a no-op.
-  try { await chmod(CONFIG_FILE, 0o600) } catch { /* ignore */ }
+async function reportConfigWrite(): Promise<void> {
   // Surface the path so testers see exactly what got written.
   try {
     const s = await stat(CONFIG_FILE)

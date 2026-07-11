@@ -25,6 +25,8 @@ interface DashboardResponse {
   sessions?: DashboardSession[]
 }
 
+type DashboardFetcher = (url: string) => Promise<DashboardResponse>
+
 function dashboardUrl(): string {
   return process.env.AGIM_DASHBOARD_URL || DEFAULT_DASHBOARD_URL
 }
@@ -60,12 +62,16 @@ function fetchJson(url: string): Promise<DashboardResponse> {
   })
 }
 
-export async function handleSessionsCommand(_args: string, _ctx: RouteContext): Promise<string> {
+export async function handleSessionsCommand(
+  _args: string,
+  _ctx: RouteContext,
+  fetchDashboard: DashboardFetcher = fetchJson,
+): Promise<string> {
   const base = dashboardUrl().replace(/\/+$/, '')
   const url = `${base}/api/sessions/list?limit=10`
   let data: DashboardResponse
   try {
-    data = await fetchJson(url)
+    data = await fetchDashboard(url)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {

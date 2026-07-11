@@ -77,7 +77,7 @@ export function computeReconnectCooldownMs(
   cap = RECONNECT_MAX_MS,
 ): number {
   if (failures <= 0) return base
-  return Math.min(cap, base * Math.pow(2, failures))
+  return Math.min(cap, base * 2 ** failures)
 }
 
 async function tryReconnect(server: string, client: McpClient): Promise<boolean> {

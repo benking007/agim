@@ -30,7 +30,7 @@ function renderAt(search: string): ReturnType<typeof render> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/observability/topn${search}`]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[`/observability/topn${search}`]}>
         <Routes>
           <Route path="/observability/topn" element={<ObservabilityTopNRoute />} />
         </Routes>
@@ -53,7 +53,7 @@ describe('/observability/topn', () => {
       expect(screen.getByText('wechat:userA')).toBeInTheDocument()
     })
     expect(screen.getByText('wechat:userB')).toBeInTheDocument()
-    const url = String(fetchSpy.mock.calls[0]![0])
+    const url = String(fetchSpy.mock.calls[0]?.[0])
     expect(url).toContain('dim=user')
     expect(url).toContain('by=calls')
   })

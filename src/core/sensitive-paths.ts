@@ -263,7 +263,7 @@ const SECRET_PATTERNS: Array<{ re: RegExp; name: string }> = [
   // agim's own tokens
   { re: /agim_[a-f0-9]{40}/g,                                           name: 'agim_token' },
   // OpenAI / Anthropic / xAI etc.
-  { re: /\bsk-[A-Za-z0-9_\-]{20,}/g,                                    name: 'openai_or_anthropic' },
+  { re: /\bsk-[A-Za-z0-9_-]{20,}/g,                                    name: 'openai_or_anthropic' },
   // GitHub PATs / fine-grained tokens
   { re: /\bgh[pousr]_[A-Za-z0-9_]{30,}/g,                               name: 'github_token' },
   // Slack
@@ -273,7 +273,7 @@ const SECRET_PATTERNS: Array<{ re: RegExp; name: string }> = [
   // AWS access key id
   { re: /\b(?:AKIA|ASIA|AIDA|AGPA|ANPA|ANVA|AROA|AIPA)[0-9A-Z]{16}\b/g, name: 'aws_access_key_id' },
   // Telegram bot token: <bot-id>:<35-char>
-  { re: /\b\d{6,12}:[A-Za-z0-9_\-]{30,}\b/g,                            name: 'telegram_bot_token' },
+  { re: /\b\d{6,12}:[A-Za-z0-9_-]{30,}\b/g,                            name: 'telegram_bot_token' },
   // Discord bot token (3 dotted base64-ish segments)
   { re: /\b[A-Za-z0-9_-]{24,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b/g, name: 'discord_token' },
   // Generic PEM private keys

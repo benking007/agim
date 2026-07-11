@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -17,7 +17,7 @@ describe('exec-dispatcher', () => {
   let cwd: string
 
   beforeAll(async () => {
-    cwd = await mkdtemp(join(tmpdir(), 'agim-exec-test-'))
+    cwd = await realpath(await mkdtemp(join(tmpdir(), 'agim-exec-test-')))
   })
 
   afterAll(async () => {

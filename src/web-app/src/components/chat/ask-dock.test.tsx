@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AskDock } from './ask-dock'
+import '@/i18n'
 import type { PendingAsk } from '@/hooks/use-chat'
 import type { ChoiceCardPrompt } from '@/types/ws'
 

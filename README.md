@@ -162,8 +162,8 @@ Current public surfaces use the Agim naming consistently:
 ```bash
 git clone https://github.com/benking007/agim.git
 cd agim
-npm install --no-package-lock
-npm --prefix src/web-app install
+npm ci
+npm --prefix src/web-app ci
 npm run build
 npm run lint
 npm run typecheck

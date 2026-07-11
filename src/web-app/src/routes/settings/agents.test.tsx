@@ -20,6 +20,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { requireValue } from '@/test/assert'
 import SettingsAgentsRoute from './agents'
 import '@/i18n'
 
@@ -47,7 +48,7 @@ function renderPage(): ReturnType<typeof render> {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/settings/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/agents']}>
         <Routes>
           <Route path="/settings/agents" element={<SettingsAgentsRoute />} />
         </Routes>
@@ -130,7 +131,7 @@ describe('/settings/agents — built-in adapters', () => {
     // input id.
     const defaultAgentTrigger = document.getElementById('default-agent')
     expect(defaultAgentTrigger).not.toBeNull()
-    fireEvent.click(defaultAgentTrigger!)
+    fireEvent.click(requireValue(defaultAgentTrigger, 'default agent trigger'))
     expect(screen.getByRole('listbox')).toHaveClass('overflow-y-auto')
     await waitFor(() => {
       const options = screen.queryAllByRole('option')
@@ -149,7 +150,7 @@ describe('/settings/agents — built-in adapters', () => {
     // Find the claude-code row's checkbox and uncheck it.
     const checkboxes = screen.getAllByRole('checkbox')
     // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode','antigravity','cursor','kimi-code','qoder','pi','mimo','native']
-    fireEvent.click(checkboxes[0]!) // uncheck claude-code
+    fireEvent.click(requireValue(checkboxes[0], 'claude-code checkbox'))
     // Now claude-code is no longer enabled. The picker should show the
     // "no eligible" placeholder text or be disabled.
     await waitFor(() => {
@@ -164,7 +165,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Enable opencode (currently disabled in CONFIG.agents)
     const checkboxes = screen.getAllByRole('checkbox')
-    fireEvent.click(checkboxes[3]!) // opencode (index 3 in AGENT_NAMES)
+    fireEvent.click(requireValue(checkboxes[3], 'opencode checkbox'))
     await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() => {
@@ -172,7 +173,8 @@ describe('/settings/agents — built-in adapters', () => {
         (c) => String(c[0]) === '/api/config' && (c[1] as RequestInit | undefined)?.method === 'PUT',
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'agent config request')
+      const body = JSON.parse(String(request.body)) as {
         agents: string[]
         defaultAgent: string
         acpAgents: unknown[]
@@ -236,7 +238,8 @@ describe('/settings/agents — ACP card', () => {
         (c) => String(c[0]) === '/api/config' && (c[1] as RequestInit | undefined)?.method === 'PUT',
       )
       expect(putCall).toBeDefined()
-      const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'ACP config request')
+      const body = JSON.parse(String(request.body)) as {
         acpAgents: Array<{ name: string; endpoint: string }>
       }
       const staged = body.acpAgents.find((a) => a.name === 'new-agent')

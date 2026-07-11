@@ -202,13 +202,13 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
           <h2 className="text-sm font-semibold">{t('agimSkills.overview.views.title')}</h2>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1">
             {([
-              ['installed', `${ROOT}/installed`, <BookOpen className="h-4 w-4" />],
-              ['hot', `${ROOT}/hot`, <Flame className="h-4 w-4" />],
-              ['injection', `${ROOT}/injection`, <Puzzle className="h-4 w-4" />],
-            ] satisfies Array<[string, string, JSX.Element]>).map(([id, to, icon]) => (
+              { id: 'installed', to: `${ROOT}/installed`, Icon: BookOpen },
+              { id: 'hot', to: `${ROOT}/hot`, Icon: Flame },
+              { id: 'injection', to: `${ROOT}/injection`, Icon: Puzzle },
+            ] as const).map(({ id, to, Icon }) => (
               <Button key={id} asChild variant="secondary" size="sm">
                 <Link to={to}>
-                  {icon}
+                  <Icon className="h-4 w-4" />
                   <span>{t(`agimSkills.tab.${id}`)}</span>
                 </Link>
               </Button>

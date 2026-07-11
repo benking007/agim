@@ -30,7 +30,7 @@ describe('maskSecret', () => {
   it('shows first-4 + asterisks + last-4 for inputs > 10 chars', () => {
     expect(maskSecret('elevenCharS')).toBe('elev' + '***' + 'harS')
     expect(maskSecret('the-quick-brown-fox')).toBe('the-***********-fox')
-    expect(maskSecret('x'.repeat(32))).toBe('xxxx' + '*'.repeat(24) + 'xxxx')
+    expect(maskSecret('x'.repeat(32))).toBe(`xxxx${'*'.repeat(24)}xxxx`)
   })
 })
 
@@ -53,7 +53,7 @@ describe('isMasked', () => {
     ['********'],          // pure-asterisks mask for ≤8 char secret
     ['ab****yz'],          // canonical form
     ['abcd***wxyz'],
-    ['abcd' + '*'.repeat(24) + 'wxyz'],
+    [`abcd${'*'.repeat(24)}wxyz`],
   ])('accepts %j', (v) => {
     expect(isMasked(v)).toBe(true)
   })

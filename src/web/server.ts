@@ -15,6 +15,7 @@ import { getDefaultAgent } from '../core/live-config.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
 import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
+import { updateConfigObject } from '../core/config-store.js'
 import { isMasked, maskSecret } from './env-mask.js'
 import { handleLlmApi } from './llm-api.js'
 import { handleMcpApi } from './mcp-api.js'
@@ -43,7 +44,6 @@ import {
   formatAgentNotAvailableError,
   isAgentAvailableCached,
   loadConfig,
-  saveConfig,
   type Config,
 } from '../core/onboarding.js'
 
@@ -149,13 +149,13 @@ let _queryTokenWarned = false
 
 function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
-  const auth = req.headers['authorization']
+  const auth = req.headers.authorization
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
     const v = auth.slice(7).trim()
     if (v) return v
   }
   // 2. Cookie agim_token=<token>
-  const cookie = req.headers['cookie']
+  const cookie = req.headers.cookie
   if (typeof cookie === 'string') {
     for (const part of cookie.split(';')) {
       const [k, ...rest] = part.trim().split('=')
@@ -924,7 +924,7 @@ export async function startWebServer(options: {
     if (artifactsListMatch && req.method === 'GET') {
       return handleArtifactsList(req, res, parseInt(artifactsListMatch[1], 10))
     }
-    const artifactsFileMatch = url.pathname.match(/^\/api\/artifacts\/(\d+)\/file\/([\w.+\-]+)$/)
+    const artifactsFileMatch = url.pathname.match(/^\/api\/artifacts\/(\d+)\/file\/([\w.+-]+)$/)
     if (artifactsFileMatch && req.method === 'GET') {
       return handleArtifactsFile(req, res, parseInt(artifactsFileMatch[1], 10), artifactsFileMatch[2])
     }
@@ -1808,12 +1808,17 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
   }
 }
 
+class ConfigValidationError extends Error {
+  constructor(readonly details: string[]) {
+    super('Config validation failed')
+    this.name = 'ConfigValidationError'
+  }
+}
+
 async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const body = await readBody(req, res)
     const incoming = JSON.parse(body) as Record<string, unknown>
-    const existing = await loadConfig()
-
     // Compliance gates — silently drop keys the operator's deployment
     // is not allowed to surface. We don't 4xx here because the SPA may
     // round-trip a stale snapshot that happens to include these keys;
@@ -1838,7 +1843,14 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
       delete incoming.acpPort
     }
 
-    const merged: Record<string, unknown> = { ...existing }
+    const { config: storedConfig } = await updateConfigObject((current) => {
+      const existing = {
+        messengers: [],
+        agents: [],
+        defaultAgent: 'native',
+        ...current,
+      } as Config
+      const merged: Record<string, unknown> = { ...existing }
 
     for (const key of Object.keys(incoming)) {
       const val = incoming[key]
@@ -1914,16 +1926,15 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
       merged[key] = val
     }
 
-    const result = validateConfig(merged)
-    if (!result.ok) {
-      sendError(res, 400, 'CONFIG_INVALID', {
-        message: 'Config validation failed',
-        extra: { details: result.errors },
-      })
-      return
-    }
-
-    await saveConfig(result.config as unknown as Config)
+      const result = validateConfig(merged)
+      if (!result.ok) throw new ConfigValidationError(result.errors)
+      return {
+        config: result.config as unknown as Record<string, unknown>,
+        result: undefined,
+      }
+    }, {
+      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    })
     // v1.2.103 — propagate the new config to the live-config singleton.
     // Without this, the SPA's "enabled agents" / "default agent" toggles
     // were persisted to disk but the running process kept its boot-time
@@ -1931,7 +1942,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     // pick up the change on the very next request.
     try {
       const { setLiveConfig } = await import('../core/live-config.js')
-      setLiveConfig(result.config as unknown as Config)
+      setLiveConfig(storedConfig as unknown as Config)
     } catch { /* best-effort — old configs without live-config still work */ }
     // R12 ⑤ — persistent audit. `details.keys` is the list of top-level
     // config keys touched (e.g. ['feishu', 'discord']) — never the raw
@@ -1948,6 +1959,13 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     } catch { /* best-effort */ }
     sendJson(res, 200, { ok: true })
   } catch (err) {
+    if (err instanceof ConfigValidationError) {
+      sendError(res, 400, 'CONFIG_INVALID', {
+        message: err.message,
+        extra: { details: err.details },
+      })
+      return
+    }
     const msg = err instanceof Error ? err.message : String(err)
     sendError(res, 400, 'CONFIG_SAVE_FAILED', { detail: msg })
   }
@@ -2022,9 +2040,12 @@ function validateWorkspacePayload(raw: unknown, expectedId?: string): { ok: true
  * change is live until the next process boot.
  */
 async function persistWorkspacesToConfig(workspaces: import('../core/workspace.js').WorkspaceConfig[]): Promise<void> {
-  const config = await loadConfig()
-  ;(config as Record<string, unknown>).workspaces = workspaces
-  await saveConfig(config)
+  await updateConfigObject((current) => ({
+    config: { ...current, workspaces },
+    result: undefined,
+  }), {
+    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+  })
 }
 
 async function handleCreateOrUpdateWorkspace(req: IncomingMessage, res: ServerResponse, expectedId?: string): Promise<void> {
@@ -2153,14 +2174,19 @@ async function handleWechatQrStatus(res: ServerResponse, url: URL): Promise<void
       // the service brings the channel up. The credentials file was
       // already written by adapter.pollQRLogin().
       try {
-        const cfg = await loadConfig()
-        if (!(cfg.messengers || []).includes('wechat-ilink')) {
-          const next: Config = {
-            ...cfg,
-            messengers: [...(cfg.messengers || []), 'wechat-ilink'],
+        await updateConfigObject((current) => {
+          const messengers = Array.isArray(current.messengers)
+            ? current.messengers.filter((item): item is string => typeof item === 'string')
+            : []
+          return {
+            config: messengers.includes('wechat-ilink')
+              ? current
+              : { ...current, messengers: [...messengers, 'wechat-ilink'] },
+            result: undefined,
           }
-          await saveConfig(next)
-        }
+        }, {
+          fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+        })
       } catch (err) {
         webLog.warn({ event: 'wechat.qr.config_persist_failed', err: String(err) })
       }
@@ -3514,7 +3540,7 @@ async function handleHealthTopN(_req: IncomingMessage, res: ServerResponse, url:
 
 function readUserKey(url: URL): string | null {
   const k = url.searchParams.get('user_key')
-  if (!k || !k.includes(':')) return null
+  if (!k?.includes(':')) return null
   return k
 }
 

@@ -592,17 +592,16 @@ export function clusterSkills(
       sub.set(key, arr)
     }
     // Count how many sub-keys reach minSize.
-    const qualified: string[] = []
-    for (const [k, v] of sub) if (v.length >= minSize) qualified.push(k)
+    const qualified = Array.from(sub.entries()).filter(([, entries]) => entries.length >= minSize)
     if (qualified.length >= 2) {
-      for (const k of qualified) refine(sub.get(k)!, segDepth + 1)
+      for (const [, entries] of qualified) refine(entries, segDepth + 1)
       // Leftover (sub-keys with < minSize) become singletons unless they
       // collectively form a fallback cluster.
       const leftover: SkillMeta[] = []
-      for (const [k, v] of sub) if (v.length < minSize) leftover.push(...v)
+      for (const entries of sub.values()) if (entries.length < minSize) leftover.push(...entries)
       if (leftover.length >= minSize) {
         // Emit as `<segDepth-1>-*` fallback.
-        const fallbackPrefix = group[0].name.split('-').slice(0, segDepth - 1).join('-') + '-*'
+        const fallbackPrefix = `${group[0].name.split('-').slice(0, segDepth - 1).join('-')}-*`
         leftover.sort((a, b) => a.name.localeCompare(b.name))
         clusters.push({
           prefix: fallbackPrefix,
@@ -617,7 +616,8 @@ export function clusterSkills(
       // instead of collapsing into a single coarse `fin-data-*` group.
       // Without this fix, 69 fin-data skills land in one cluster and
       // the LLM can't tell aspd / stock / fund families apart by name.
-      refine(sub.get(qualified[0])!, segDepth + 1)
+      const onlyQualified = qualified[0]
+      if (onlyQualified) refine(onlyQualified[1], segDepth + 1)
     } else {
       emitCluster(group, segDepth - 1)
     }
@@ -657,8 +657,8 @@ export function clusterSkills(
     byHead.set(head, arr)
   }
   // Iterate in deterministic order.
-  const heads = Array.from(byHead.keys()).sort()
-  for (const head of heads) refine(byHead.get(head)!, 2)
+  const headGroups = Array.from(byHead.entries()).sort(([a], [b]) => a.localeCompare(b))
+  for (const [, group] of headGroups) refine(group, 2)
 
   const singletons = skills.filter((s) => !used.has(s.name))
   return { clusters, singletons }

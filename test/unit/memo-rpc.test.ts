@@ -133,7 +133,11 @@ describeIfSqlite('handleMemoOp — DB CRUD', () => {
       const res = r.result as { expiresAt?: string }
       expect(res.expiresAt).toBeDefined()
       if (res.expiresAt) {
-        const ms = new Date(res.expiresAt).getTime() - Date.now()
+        // Storage values are UTC+8 wall-clock strings without a timezone
+        // suffix. Parse the contract explicitly so this assertion behaves
+        // identically on UTC CI runners and Asia/Shanghai developer machines.
+        const expiresAtMs = Date.parse(`${res.expiresAt.replace(' ', 'T')}+08:00`)
+        const ms = expiresAtMs - Date.now()
         // Should be ~24h. Allow 2-min slack for clock + write latency.
         expect(ms).toBeGreaterThan(23.9 * 3600_000)
         expect(ms).toBeLessThan(24.1 * 3600_000)

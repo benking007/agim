@@ -37,6 +37,7 @@ import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
+import { getActiveGoal } from '../../../core/goals.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature } from './loop-fingerprint.js'
@@ -559,10 +560,20 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
+    const activeGoal = opts?.platform && opts.channelId && opts.threadId
+      ? getActiveGoal(opts.platform, opts.channelId, opts.threadId)
+      : null
     const tools = toolSurface
       ? agimToolsToPi(toolSurface.tools, toolSurface.dispatch, {
           traceId: opts?.traceId,
           parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
+          ...(activeGoal ? {
+            goalEvidence: {
+              goalId: activeGoal.id,
+              goalVersion: activeGoal.version,
+              traceId: opts?.traceId,
+            },
+          } : {}),
         })
       : []
 

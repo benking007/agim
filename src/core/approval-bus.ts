@@ -229,6 +229,8 @@ export interface RunContext {
    *  write/exec tools on their behalf, so approved filesystem operations land
    *  in the same workspace the agent is reasoning about. */
   cwd?: string
+  /** Root invocation trace used to bind goal evidence lineage. */
+  traceId?: string
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -1410,6 +1412,7 @@ export class ApprovalBus {
       threadId: ctx.threadId,
       userId: ctx.userId,
       callerAgent: ctx.callerAgent,
+      traceId: ctx.traceId,
     })
     this.sendGoalResult(socket, reqId, result)
   }

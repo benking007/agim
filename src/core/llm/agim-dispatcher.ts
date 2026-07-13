@@ -371,16 +371,24 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__complete_goal',
       description:
-        'Mark the thread\'s currently-active goal as done (or cancelled). Use when the work is ' +
-        'finished, when the user cancels, or when the user replaces the goal with a different ' +
-        'objective. Without `status` defaults to "completed". `recap` is appended as a final ' +
-        'progress note so the historical log makes sense.',
+        'Complete exactly the active goal identified by the Completion token in context. Copy its ' +
+        '`goalId` and `goalVersion` verbatim. Native completed goals also require current server-issued ' +
+        '`evidenceIds` from successful tool results; cancelled goals do not. Stale tokens fail closed.',
       parameters: {
         type: 'object',
         properties: {
+          goalId: { type: 'number', description: 'Exact positive goalId from the active-goal Completion token.' },
+          goalVersion: { type: 'number', description: 'Exact positive goalVersion from the Completion token.' },
+          evidenceIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Current `[agim evidence ...]` capability IDs supporting completion.',
+          },
           recap: { type: 'string', description: 'One-line honest summary of how the goal ended.' },
           status: { type: 'string', enum: ['completed', 'cancelled'] },
         },
+        required: ['goalId', 'goalVersion', 'recap'],
+        additionalProperties: false,
       },
     },
     {
@@ -759,6 +767,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             threadId: ctx.threadId,
             userId: ctx.userId,
             callerAgent: ctx.callerAgent,
+            traceId: toolCtx?.traceId,
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
           return ok(safeJson(r.result))

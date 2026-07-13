@@ -19,6 +19,12 @@
 //     a wedged native_exec / MCP call would otherwise hang the whole turn.
 
 import type { AgentTool } from '@earendil-works/pi-agent-core'
+import {
+  beginGoalToolOperation,
+  classifyGoalEvidence,
+  finishGoalToolOperation,
+  type GoalEvidenceContext,
+} from '../../../core/goal-evidence.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 
@@ -128,6 +134,8 @@ export interface ToolBridgeOptions {
    *  concurrently). Defaults to sequential — the safe choice for mutating /
    *  stateful tools. */
   parallelSafe?: (toolName: string) => boolean
+  /** Active goal snapshot captured for this turn. */
+  goalEvidence?: GoalEvidenceContext
 }
 
 /** Wrap one agim ToolDef + the shared dispatcher into a pi AgentTool. */
@@ -143,21 +151,77 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
     execute: async (toolCallId, args, signal) => {
       const cap = resolveToolResultMaxChars()
       const timeoutMs = resolveToolTimeoutMs(def.timeoutMs)
-      const result = await dispatchWithTimeout(
-        (sig) => dispatch(
-          { id: toolCallId, name: def.name, arguments: (args ?? {}) as Record<string, unknown> },
-          sig,
-          opts.traceId ? { traceId: opts.traceId } : undefined,
-        ),
-        signal ?? NEVER_ABORT,
-        timeoutMs,
-        def.name,
-        parallelSafe,
-      )
+      const parsedArgs = (args ?? {}) as Record<string, unknown>
+      const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
+      let operation: ReturnType<typeof beginGoalToolOperation> = null
+      if (opts.goalEvidence) {
+        try {
+          operation = beginGoalToolOperation({
+            context: opts.goalEvidence,
+            toolCallId,
+            toolName: def.name,
+            args: parsedArgs,
+            kind: evidenceKind,
+          })
+        } catch (err) {
+          console.error('[native] goal evidence begin failed:', err instanceof Error ? err.message : err)
+        }
+        if (
+          !operation
+          && (evidenceKind === 'mutation' || evidenceKind === 'mutation_verification')
+        ) {
+          throw new Error('goal evidence ledger unavailable; mutating tool blocked')
+        }
+      }
+      let result: DispatcherResult
+      try {
+        result = await dispatchWithTimeout(
+          (sig) => dispatch(
+            { id: toolCallId, name: def.name, arguments: parsedArgs },
+            sig,
+            opts.traceId ? { traceId: opts.traceId } : undefined,
+          ),
+          signal ?? NEVER_ABORT,
+          timeoutMs,
+          def.name,
+          parallelSafe,
+        )
+      } catch (err) {
+        try {
+          const message = err instanceof Error ? err.message : String(err)
+          const uncertain = (
+            evidenceKind === 'mutation' || evidenceKind === 'mutation_verification'
+          ) && (
+            (err instanceof Error && err.name === 'AbortError')
+            || /timed out|超时|已取消/i.test(message)
+          )
+          finishGoalToolOperation(operation, {
+            ok: false,
+            output: message,
+            uncertain,
+          })
+        } catch { /* evidence failure must not hide the original tool error */ }
+        throw err
+      }
+      let evidence: ReturnType<typeof finishGoalToolOperation> = null
+      try {
+        evidence = finishGoalToolOperation(operation, {
+          ok: !result.isError,
+          output: result.text,
+          uncertain: result.isError
+            && (evidenceKind === 'mutation' || evidenceKind === 'mutation_verification'),
+          metadata: { source: result.source ?? 'unknown' },
+        })
+      } catch (err) {
+        console.error('[native] goal evidence finish failed:', err instanceof Error ? err.message : err)
+      }
       const text = truncateToolResult(result.text, cap, def.name)
       // pi marks errors via throw (no isError field on its result shape).
       if (result.isError) throw new Error(text)
-      return { content: [{ type: 'text', text }], details: undefined }
+      const evidenceMarker = evidence
+        ? `\n\n[agim evidence ${evidence.kind}: ${evidence.id} · epoch ${evidence.epoch}]`
+        : ''
+      return { content: [{ type: 'text', text: text + evidenceMarker }], details: undefined }
     },
   }
 }

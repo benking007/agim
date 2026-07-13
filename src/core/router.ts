@@ -1,11 +1,10 @@
 // Message router — parses commands and routes to agents
 
-import type { ParsedMessage, ChatMessage, Session, AgentTurnOutcome } from './types.js'
+import type { ParsedMessage, ChatMessage, AgentTurnOutcome } from './types.js'
 import type { Logger } from 'pino'
-import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
-import { AGENT_SESSION_PERSIST, SUBTASK_AGENT_SESSION } from './agent-session-bindings.js'
+import { AGENT_SESSION_PERSIST, bindTurnAgentSession, TURN_AGENT_SESSION, type SessionStickyFields } from './agent-session-bindings.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
 import { handleBuiltInCommand } from './commands/builtin.js'
 import { handleAgentCommand } from './commands/agent.js'
@@ -897,41 +896,13 @@ export async function prepareSubtaskAgentCallOptions(
   agentName: string,
   ctx: RouteContext,
   storageThreadId: string,
-  subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId' | 'antigravitySessionId' | 'kimiSessionId' | 'qoderSessionId' | 'piSessionId' | 'mimoSessionId' | 'copilotSessionId'>,
+  subSession: SessionStickyFields,
 ): Promise<AgentCallOptions> {
-  const strategy = SUBTASK_AGENT_SESSION[agentName]
-  if (!strategy) return { storageThreadId }
-
-  if (strategy.kind === 'claude-preallocate') {
-    let claudeId = subSession.claudeSessionId
-    if (!claudeId) {
-      claudeId = randomUUID()
-      await sessionManager.setClaudeSessionId(ctx.platform, ctx.channelId, storageThreadId, claudeId)
-    }
-    const resume = !!subSession.claudeSessionPrimed
-    if (!resume) {
-      await sessionManager.markClaudeSessionPrimed(ctx.platform, ctx.channelId, storageThreadId)
-    }
-    return { storageThreadId, agentSessionId: claudeId, agentSessionResume: resume }
-  }
-
-  if (strategy.kind === 'copilot-preallocate') {
-    let copilotId = subSession.copilotSessionId
-    if (!copilotId) {
-      copilotId = randomUUID()
-      await sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, copilotId)
-    }
-    return {
-      storageThreadId,
-      agentSessionId: copilotId,
-      agentSessionResume: !!subSession.copilotSessionId,
-    }
-  }
-
-  const sid = subSession[strategy.field]
-  return {
-    storageThreadId,
-    agentSessionId: sid,
-    agentSessionResume: !!sid,
-  }
+  if (!TURN_AGENT_SESSION[agentName]) return { storageThreadId }
+  const bound = await bindTurnAgentSession(agentName, subSession, {
+    platform: ctx.platform,
+    channelId: ctx.channelId,
+    threadId: storageThreadId,
+  })
+  return { storageThreadId, ...bound }
 }

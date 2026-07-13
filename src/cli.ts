@@ -9,10 +9,10 @@ import { program } from 'commander'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { registry } from './core/registry.js'
 import { getDefaultAgent } from './core/live-config.js'
 import { sessionManager } from './core/session.js'
+import { bindTurnAgentSession } from './core/agent-session-bindings.js'
 import { runOnThread } from './core/thread-queue.js'
 import { parseMessage, routeMessage, type RouteContext } from './core/router.js'
 import type { MessageContext } from './core/types.js'
@@ -272,6 +272,27 @@ program
     }
     const validatedConfig = validation.config
     config = validatedConfig as unknown as Config
+
+    // One-shot: add `native` to legacy non-empty agents[] so SPA disable
+    // can become a real routing kill-switch without breaking old installs.
+    {
+      const { migrateNativeAgentToggle } = await import('./core/config-migrate.js')
+      const { saveConfig: persistConfig } = await import('./core/onboarding.js')
+      const migrated = migrateNativeAgentToggle(config)
+      if (migrated.changed) {
+        config = migrated.config
+        try {
+          await persistConfig(config)
+          console.log('Config migration: native agent toggle now honours agents[]')
+        } catch (err) {
+          console.warn(
+            `⚠️  Could not persist native-agent toggle migration: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          )
+        }
+      }
+    }
 
     // v1.2.103 — publish the in-memory config to the live-config singleton
     // so registry filters + routeCtx + Web/ACP defaultAgent all see the same
@@ -1355,118 +1376,23 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     // claude refuses with "session already exists". We therefore mark
     // primed inside onAgentResolved (right after we wire agentSessionId)
     // rather than after routeMessage returns.
+    //
+    // Table-driven via bindTurnAgentSession — adding a CLI agent = one
+    // row in agent-session-bindings.ts (no cli if-chain growth).
     if (willInvokeAgent) {
       routeCtx.onAgentResolved = async (resolvedAgent: string) => {
         const stickySession = await sessionManager.getExistingSession(
           platform, ctx.channelId, message.threadId,
         )
-        if (resolvedAgent === 'claude-code') {
-          let claudeId = stickySession?.claudeSessionId
-          if (!claudeId) {
-            claudeId = randomUUID()
-            await sessionManager.getOrCreateSession(
-              platform, ctx.channelId, message.threadId, resolvedAgent,
-            )
-            await sessionManager.setClaudeSessionId(
-              platform, ctx.channelId, message.threadId, claudeId,
-            )
-          }
-          routeCtx.agentSessionId = claudeId
-          const willResume = !!stickySession?.claudeSessionPrimed
-          routeCtx.agentSessionResume = willResume
-          if (!willResume) {
-            try {
-              await sessionManager.markClaudeSessionPrimed(
-                platform, ctx.channelId, message.threadId,
-              )
-            } catch (err) {
-              logger.debug({ err: String(err) }, 'markClaudeSessionPrimed failed')
-            }
-          }
-        } else if (resolvedAgent === 'opencode') {
-          const ocId = stickySession?.opencodeSessionId
-          if (ocId) {
-            routeCtx.agentSessionId = ocId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'codex') {
-          const cxId = stickySession?.codexSessionId
-          if (cxId) {
-            routeCtx.agentSessionId = cxId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'antigravity') {
-          const agId = stickySession?.antigravitySessionId
-          if (agId) {
-            routeCtx.agentSessionId = agId
-            // agy: pass via --conversation; "resume" is the only relevant
-            // mode (no separate "create-with-this-id" form like claude).
-            // The adapter ignores agentSessionResume for now; left true for
-            // semantic consistency with the other adapters.
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'kimi-code') {
-          const kimiId = stickySession?.kimiSessionId
-          if (kimiId) {
-            routeCtx.agentSessionId = kimiId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'qoder') {
-          const qoderId = stickySession?.qoderSessionId
-          if (qoderId) {
-            routeCtx.agentSessionId = qoderId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'pi') {
-          const piId = stickySession?.piSessionId
-          if (piId) {
-            routeCtx.agentSessionId = piId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'mimo') {
-          const mimoId = stickySession?.mimoSessionId
-          if (mimoId) {
-            routeCtx.agentSessionId = mimoId
-            routeCtx.agentSessionResume = true
-          }
-          await sessionManager.getOrCreateSession(
-            platform, ctx.channelId, message.threadId, resolvedAgent,
-          )
-        } else if (resolvedAgent === 'copilot') {
-          let copilotId = stickySession?.copilotSessionId
-          if (!copilotId) {
-            copilotId = randomUUID()
-            await sessionManager.getOrCreateSession(
-              platform, ctx.channelId, message.threadId, resolvedAgent,
-            )
-            await sessionManager.setCopilotSessionId(
-              platform, ctx.channelId, message.threadId, copilotId,
-            )
-          } else {
-            await sessionManager.getOrCreateSession(
-              platform, ctx.channelId, message.threadId, resolvedAgent,
-            )
-          }
-          routeCtx.agentSessionId = copilotId
-          routeCtx.agentSessionResume = !!stickySession?.copilotSessionId
+        const bound = await bindTurnAgentSession(
+          resolvedAgent,
+          stickySession,
+          { platform, channelId: ctx.channelId, threadId: message.threadId },
+          { ensureSession: true },
+        )
+        if (bound.agentSessionId) routeCtx.agentSessionId = bound.agentSessionId
+        if (bound.agentSessionResume !== undefined) {
+          routeCtx.agentSessionResume = bound.agentSessionResume
         }
       }
     }

@@ -31,21 +31,26 @@ describe('/stats', () => {
     expect(out).toContain('尚未产生 AI 调用')
   })
 
-  it('rolls up costUsd / turns / chars across multiple recordUsage calls', async () => {
+  it('rolls up cost, tokens, turns, and chars across recordUsage calls', async () => {
     const ctx = makeCtx('stats-roll')
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'opencode')
 
     await sessionManager.recordUsage(ctx.platform, ctx.channelId, ctx.threadId, {
-      costUsd: 0.0123, promptChars: 100, responseChars: 200, durationMs: 1500,
+      costUsd: 0.0123, tokensInput: 10, tokensOutput: 20,
+      promptChars: 100, responseChars: 200, durationMs: 1500,
     })
     await sessionManager.recordUsage(ctx.platform, ctx.channelId, ctx.threadId, {
-      costUsd: 0.0077, promptChars: 50, responseChars: 75, durationMs: 800,
+      costUsd: 0.0077, tokensInput: 5, tokensOutput: 7,
+      promptChars: 50, responseChars: 75, durationMs: 800,
     })
 
     const out = await handleStatsCommand('', ctx)
     // turns=2, cost = 0.02
     expect(out).toContain('轮次**: 2')
     expect(out).toContain('$0.0200')
+    expect(out).toContain('Token 用量')
+    expect(out).toMatch(/Token 用量[\s\S]*输入: 15/)
+    expect(out).toMatch(/Token 用量[\s\S]*输出: 27/)
     expect(out).toMatch(/输入: 150/)
     expect(out).toMatch(/输出: 275/)
   })

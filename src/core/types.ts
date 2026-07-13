@@ -166,6 +166,8 @@ export interface Session {
 export interface SessionUsage {
   turns: number
   costUsd: number
+  tokensInput?: number
+  tokensOutput?: number
   promptChars: number
   responseChars: number
   durationMsTotal: number
@@ -398,6 +400,10 @@ export interface AgentSendOpts {
   platform?: string
   userId?: string
   channelId?: string
+  /** Request-only context (goal/persona/reminders/viewer hints). Adapters that
+   *  support it inject this at provider context time without persisting it as
+   *  part of the user's durable message. */
+  ephemeralContext?: string
   /** Optional UUID to bind to the agent's own resumable-session concept.
    *  Currently honoured by the claude-code adapter (passed as
    *  `--session-id` for first call, `--resume` for subsequent calls) so
@@ -485,6 +491,9 @@ export interface AgentAdapter {
   /** True when the adapter injects Agim Skills via its own system prompt.
    *  Router-level prompt prefix injection is skipped to avoid duplicates. */
   readonly handlesAgimSkillsPrompt?: boolean
+  /** True when the adapter consumes AgentSendOpts.ephemeralContext without
+   *  requiring router-level prompt concatenation. */
+  readonly handlesEphemeralContext?: boolean
   sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], opts?: AgentSendOpts): AsyncGenerator<string>
   isAvailable(): Promise<boolean>
   /** Optional short hint for `/agents` UI ('model: deepseek-chat',

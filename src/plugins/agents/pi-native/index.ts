@@ -27,7 +27,7 @@ import {
   shouldCompact,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
-import type { AgentHarnessStreamOptions } from '@earendil-works/pi-agent-core'
+import type { AgentHarnessStreamOptions, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
 import { chmod } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -38,6 +38,7 @@ import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
+import { failureSignature } from './loop-fingerprint.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -294,11 +295,30 @@ function seedAssistantMessage(text: string) {
   }
 }
 
+function injectEphemeralContext(messages: AgentMessage[], context: string): AgentMessage[] {
+  const trimmed = context.trim()
+  if (!trimmed) return messages
+  const idx = messages.findLastIndex((message) => message.role === 'user')
+  if (idx < 0) return messages
+  const current = messages[idx]
+  if (!current || current.role !== 'user') return messages
+  const content = typeof current.content === 'string'
+    ? `${trimmed}\n${current.content}`
+    : [
+        { type: 'text' as const, text: `${trimmed}\n` },
+        ...current.content,
+      ]
+  const next = messages.slice()
+  next[idx] = { ...current, content }
+  return next
+}
+
 export class NativeAgentAdapter implements AgentAdapter {
   readonly name: string
   readonly aliases: string[]
   readonly kind: AgentAdapterKind = 'in-process'
   readonly handlesAgimSkillsPrompt = true
+  readonly handlesEphemeralContext = true
 
   // sessionId → JSONL metadata. Avoids a full repo.list() scan (which reads
   // every session file's header) on every turn; bounds it to one scan per
@@ -426,7 +446,22 @@ export class NativeAgentAdapter implements AgentAdapter {
     let session: Awaited<ReturnType<typeof repo.open>>
     const cachedMeta = this.sessionMeta.get(sessionId)
     if (cachedMeta) {
-      session = await repo.open(cachedMeta)
+      try {
+        session = await repo.open(cachedMeta)
+      } catch (err) {
+        // Retention, /new cleanup, or external repair may remove a cached
+        // JSONL path. Invalidate once and rebuild from the repository view
+        // instead of permanently failing every future turn for this id.
+        this.sessionMeta.delete(sessionId)
+        console.warn('[native] stale pi session metadata; reopening:', err instanceof Error ? err.message : err)
+        const found = (await repo.list()).find((m) => m.id === sessionId)
+        if (found) {
+          session = await repo.open(found)
+        } else {
+          session = await repo.create({ cwd: this.deps.sessionsRoot, id: sessionId })
+          fresh = true
+        }
+      }
     } else {
       const found = (await repo.list()).find((m) => m.id === sessionId)
       if (found) {
@@ -473,6 +508,12 @@ export class NativeAgentAdapter implements AgentAdapter {
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
+    const ephemeralContext = opts?.ephemeralContext?.trim()
+    if (ephemeralContext) {
+      harness.on('context', (event) => ({
+        messages: injectEphemeralContext(event.messages, ephemeralContext),
+      }))
+    }
 
     // Keep the turn-local flag mutable: native_exit_plan_mode can explicitly
     // clear persistent Plan Mode mid-run, after which this same harness must
@@ -513,6 +554,10 @@ export class NativeAgentAdapter implements AgentAdapter {
     const maxToolCalls = Math.max(1, this.deps.maxToolCalls ?? maxIter)
     let providerRequests = 0
     let declaredToolCalls = 0
+    let usageInput = 0
+    let usageOutput = 0
+    let usageCost = 0
+    let sawUsage = false
     let stopReason: NativeStopReason | null = null
     let requestLoopStop = () => {}
     const recentSigs: string[] = []
@@ -530,6 +575,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     })
     const unsubscribeBudget = harness.subscribe((event) => {
       if (event.type !== 'message_end' || event.message.role !== 'assistant') return
+      if (event.message.usage) {
+        sawUsage = true
+        usageInput += event.message.usage.input
+        usageOutput += event.message.usage.output
+        usageCost += event.message.usage.cost?.total ?? 0
+      }
       const batchCalls = (event.message.content ?? []).filter((c) => c.type === 'toolCall').length
       if (batchCalls === 0) return
       if (declaredToolCalls + batchCalls > maxToolCalls) {
@@ -549,13 +600,20 @@ export class NativeAgentAdapter implements AgentAdapter {
         preview: previewToolResult(ev),
       })
       if (toolRuns.length > 30) toolRuns.shift()
-      // Stuck-loop: the same tool + same args erroring 3× in a row (mirrors
-      // agim's exact stuck-loop detector — catches a model wedged on one
-      // failing call well before it burns the whole iteration budget).
-      const sig = `${ev.toolName}|${safeJson(ev.input)}|${ev.isError ? 'E' : 'ok'}`
+      if (!ev.isError) {
+        recentSigs.length = 0
+        return undefined
+      }
+      // Stuck-loop: same tool + key-order-stable args + normalized error class
+      // failing 3× in a row. A success resets the window.
+      const sig = failureSignature(
+        ev.toolName ?? 'unknown_tool',
+        ev.input,
+        previewToolResult(ev) ?? '',
+      )
       recentSigs.push(sig)
       if (recentSigs.length > 3) recentSigs.shift()
-      if (ev.isError && recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
+      if (recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
         stopReason = 'stuck_loop'
         requestLoopStop()
         return { terminate: true }
@@ -672,11 +730,11 @@ export class NativeAgentAdapter implements AgentAdapter {
       unsubscribeBudget()
     }
 
-    if (opts?.onUsage && result.usage) {
+    if (opts?.onUsage && sawUsage) {
       opts.onUsage({
-        tokensInput: result.usage.input,
-        tokensOutput: result.usage.output,
-        costUsd: result.usage.cost?.total,
+        tokensInput: usageInput,
+        tokensOutput: usageOutput,
+        costUsd: usageCost,
       })
     }
 

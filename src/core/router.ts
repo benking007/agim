@@ -618,6 +618,8 @@ export async function callAgentWithHistory(
   // inline (currently opencode). Closure-bound so concurrent runs can't
   // race each other.
   let usageAcc = 0
+  let tokensInputAcc = 0
+  let tokensOutputAcc = 0
   let adapterOutcome: AgentTurnOutcome | undefined
   const onAgentSessionId = (id: string): void => {
     // Persist the adapter-reported id on first sighting so the next turn can
@@ -653,6 +655,8 @@ export async function callAgentWithHistory(
   }
   const onUsage = (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
+    if (typeof delta.tokensInput === 'number' && Number.isFinite(delta.tokensInput)) tokensInputAcc += delta.tokensInput
+    if (typeof delta.tokensOutput === 'number' && Number.isFinite(delta.tokensOutput)) tokensOutputAcc += delta.tokensOutput
   }
   const onOutcome = (outcome: AgentTurnOutcome): void => {
     adapterOutcome = outcome
@@ -719,7 +723,10 @@ export async function callAgentWithHistory(
   // installed; filter(Boolean) below drops it cleanly.
   const skillsSnippet = agent.handlesAgimSkillsPrompt ? '' : buildSkillsSummary()
   const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
-  const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
+  const ephemeralContext = headerBlocks.join('\n\n')
+  const wirePrompt = agent.handlesEphemeralContext || !ephemeralContext
+    ? prompt
+    : `${ephemeralContext}\n${prompt}`
 
   // A2A coverage: ensure EVERY top-level agent turn has a parent inline job,
   // regardless of entry point. The IM inbound path (cli.ts) pre-creates one
@@ -740,13 +747,14 @@ export async function callAgentWithHistory(
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
 
-  const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
+  const generator = agent.sendPrompt(sessionId, wirePrompt, effectiveHistory, {
     model,
     variant,
     threadId: ctx.threadId,
     platform: ctx.platform,
     userId: ctx.userId,
     channelId: ctx.channelId,
+    ...(agent.handlesEphemeralContext && ephemeralContext ? { ephemeralContext } : {}),
     agentSessionId,
     agentSessionResume,
     onAgentSessionId,
@@ -866,6 +874,8 @@ export async function callAgentWithHistory(
         // Roll up into the session-level usage so /stats reflects reality.
         await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,
+          tokensInput: tokensInputAcc,
+          tokensOutput: tokensOutputAcc,
           promptChars: prompt.length,
           responseChars: fullResponse.length,
           durationMs,

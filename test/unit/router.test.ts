@@ -372,13 +372,19 @@ describe('routeMessage', () => {
     const name = `history-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     let seenHistory: string[] | undefined
     let seenSignal: AbortSignal | undefined
+    let seenPrompt: string | undefined
+    let seenEphemeralContext: string | undefined
     const historyAgent: AgentAdapter = {
       name,
       aliases: [],
+      handlesAgimSkillsPrompt: true,
+      handlesEphemeralContext: true,
       isAvailable: async () => true,
-      sendPrompt: (_sessionId, _prompt, history, opts) => {
+      sendPrompt: (_sessionId, prompt, history, opts) => {
         seenHistory = (history ?? []).map((m) => m.content)
         seenSignal = opts?.signal
+        seenPrompt = prompt
+        seenEphemeralContext = opts?.ephemeralContext
         return mockGenerator()
       },
     }
@@ -386,21 +392,29 @@ describe('routeMessage', () => {
     const threadId = `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const controller = new AbortController()
     const historyCtx = makeCtx({ threadId, userId: `user-${threadId}`, signal: controller.signal })
+    const savedViewer = process.env.AGIM_VIEWER_ENABLED
+    process.env.AGIM_VIEWER_ENABLED = '1'
+    try {
+      const result = await routeMessage(
+        { type: 'agent', agent: name, prompt: 'current prompt' },
+        historyCtx,
+      )
+      for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
 
-    const result = await routeMessage(
-      { type: 'agent', agent: name, prompt: 'current prompt' },
-      historyCtx,
-    )
-    for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
-
-    expect(seenHistory).toEqual([])
-    expect(seenSignal).toBe(controller.signal)
-    const stored = await sessionManager.getExistingSession(
-      historyCtx.platform,
-      historyCtx.channelId,
-      historyCtx.threadId,
-    )
-    expect(stored?.messages.map((m) => m.content)).toEqual(['current prompt', 'test response'])
+      expect(seenHistory).toEqual([])
+      expect(seenSignal).toBe(controller.signal)
+      expect(seenPrompt).toBe('current prompt')
+      expect(seenEphemeralContext).toContain('im-summary')
+      const stored = await sessionManager.getExistingSession(
+        historyCtx.platform,
+        historyCtx.channelId,
+        historyCtx.threadId,
+      )
+      expect(stored?.messages.map((m) => m.content)).toEqual(['current prompt', 'test response'])
+    } finally {
+      if (savedViewer === undefined) delete process.env.AGIM_VIEWER_ENABLED
+      else process.env.AGIM_VIEWER_ENABLED = savedViewer
+    }
   })
 
   it('does not persist user or partial assistant text when a turn is aborted', async () => {

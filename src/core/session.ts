@@ -683,7 +683,14 @@ class SessionManager {
    */
   async recordUsage(
     platform: string, channelId: string, threadId: string,
-    delta: { costUsd: number; promptChars: number; responseChars: number; durationMs: number },
+    delta: {
+      costUsd: number
+      tokensInput?: number
+      tokensOutput?: number
+      promptChars: number
+      responseChars: number
+      durationMs: number
+    },
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -693,6 +700,8 @@ class SessionManager {
         session.usage = {
           turns: 0,
           costUsd: 0,
+          tokensInput: 0,
+          tokensOutput: 0,
           promptChars: 0,
           responseChars: 0,
           durationMsTotal: 0,
@@ -701,6 +710,10 @@ class SessionManager {
       }
       session.usage.turns += 1
       session.usage.costUsd += Number.isFinite(delta.costUsd) ? delta.costUsd : 0
+      session.usage.tokensInput = (session.usage.tokensInput ?? 0)
+        + (Number.isFinite(delta.tokensInput) ? (delta.tokensInput ?? 0) : 0)
+      session.usage.tokensOutput = (session.usage.tokensOutput ?? 0)
+        + (Number.isFinite(delta.tokensOutput) ? (delta.tokensOutput ?? 0) : 0)
       session.usage.promptChars += Number.isFinite(delta.promptChars) ? delta.promptChars : 0
       session.usage.responseChars += Number.isFinite(delta.responseChars) ? delta.responseChars : 0
       session.usage.durationMsTotal += Number.isFinite(delta.durationMs) ? delta.durationMs : 0

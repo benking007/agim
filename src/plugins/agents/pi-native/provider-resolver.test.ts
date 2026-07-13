@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { LlmBackendBinding } from '../../../core/llm/registry.js'
+import { lookupModelMeta } from '../../../core/llm/model-catalog.js'
 import { bindingToPiModel } from './provider-resolver.js'
 
 describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
@@ -30,6 +31,10 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     })!
     expect(binding.model.api).toBe('anthropic-messages')
     expect(binding.model.baseUrl).toBe('https://api.anthropic.com') // default when unset
+    const catalog = lookupModelMeta('anthropic', 'claude-sonnet-4-5')
+    expect(catalog).not.toBeNull()
+    expect(binding.model.contextWindow).toBe(catalog?.contextWindow)
+    expect(binding.model.maxTokens).toBe(catalog?.maxTokens)
   })
 
   it('returns null for an unsupported provider type', () => {

@@ -5,7 +5,7 @@ import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, type Model, registerFauxProvider } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, statSync } from 'node:fs'
+import { mkdtempSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
@@ -85,6 +85,59 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     await collect(adapter.sendPrompt('same', 'q1'))
     await collect(adapter.sendPrompt('same', 'q2'))
     expect(userCounts).toEqual([1, 2])
+  })
+
+  it('injects ephemeral context into provider requests without persisting it', async () => {
+    const reg = faux()
+    let providerUserText = ''
+    reg.setResponses([
+      (ctx) => {
+        const user = [...ctx.messages].reverse().find((message) => message.role === 'user')
+        providerUserText = typeof user?.content === 'string'
+          ? user.content
+          : (user?.content ?? []).map((block) => block.type === 'text' ? block.text : '').join('')
+        return fauxAssistantMessage('ok')
+      },
+    ])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ephemeral-'))
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    await collect(adapter.sendPrompt('ephemeral', 'raw user prompt', undefined, {
+      ephemeralContext: '[active goal]\nShip the release',
+    }))
+
+    expect(providerUserText).toContain('[active goal]')
+    expect(providerUserText).toContain('raw user prompt')
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const meta = (await repo.list()).find((item) => item.id === 'ephemeral')
+    if (!meta) throw new Error('missing ephemeral session')
+    const entries = await (await repo.open(meta)).getEntries()
+    const persistedUsers = entries
+      .filter((entry) => entry.type === 'message' && entry.message.role === 'user')
+      .map((entry) => entry.message.content)
+    expect(JSON.stringify(persistedUsers)).toContain('raw user prompt')
+    expect(JSON.stringify(persistedUsers)).not.toContain('[active goal]')
+  })
+
+  it('invalidates stale cached metadata when the JSONL file was removed', async () => {
+    const reg = faux()
+    reg.setResponses([fauxAssistantMessage('first'), fauxAssistantMessage('recovered')])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-stale-meta-'))
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    expect(await collect(adapter.sendPrompt('stale-meta', 'q1'))).toBe('first')
+
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const meta = (await repo.list()).find((item) => item.id === 'stale-meta')
+    if (!meta) throw new Error('missing stale-meta session')
+    unlinkSync(meta.path)
+
+    expect(await collect(adapter.sendPrompt('stale-meta', 'q2'))).toBe('recovered')
+    expect((await repo.list()).some((item) => item.id === 'stale-meta')).toBe(true)
   })
 
   it('honors opts.planMode by blocking a mutating tool', async () => {
@@ -585,14 +638,25 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const reg = faux()
     reg.setResponses(
       Array.from({ length: 8 }, (_v, i) =>
-        fauxAssistantMessage(fauxToolCall('flaky', {}, { id: `s${i}` }), { stopReason: 'toolUse' }),
+        fauxAssistantMessage(
+          fauxToolCall('flaky', i % 2 === 0 ? { a: 1, b: 2 } : { b: 2, a: 1 }, { id: `s${i}` }),
+          { stopReason: 'toolUse' },
+        ),
       ),
     )
     let calls = 0
-    const tool: ToolDef = { name: 'flaky', description: 'always fails', parameters: { type: 'object', properties: {}, required: [] } }
+    const tool: ToolDef = {
+      name: 'flaky',
+      description: 'always fails',
+      parameters: {
+        type: 'object',
+        properties: { a: { type: 'number' }, b: { type: 'number' } },
+        required: ['a', 'b'],
+      },
+    }
     const dispatch: ToolDispatcher = async () => {
       calls += 1
-      return { text: 'upstream 503', isError: true } // same error every time
+      return { text: `upstream 503 request ${100000 + calls}`, isError: true }
     }
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
@@ -624,6 +688,43 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(seen?.maxRetryDelayMs).toBe(12345)
     expect(seen?.timeoutMs).toBe(67890)
     expect(seen?.cacheRetention).toBe('long')
+  })
+
+  it('reports aggregate usage across every assistant turn in the tool loop', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('step', {}, { id: 'usage-step' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('final answer'),
+    ])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-usage-'))
+    const tool: ToolDef = {
+      name: 'step',
+      description: 'step',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    let reported: { tokensInput?: number; tokensOutput?: number } | undefined
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => ({ text: 'tool result', isError: false }),
+      }),
+    })
+    await collect(adapter.sendPrompt('usage-all-turns', 'run', undefined, {
+      onUsage: (usage) => { reported = usage },
+    }))
+
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const meta = (await repo.list()).find((item) => item.id === 'usage-all-turns')
+    if (!meta) throw new Error('missing usage session')
+    const entries = await (await repo.open(meta)).getEntries()
+    const usages = entries
+      .filter((entry) => entry.type === 'message' && entry.message.role === 'assistant')
+      .map((entry) => entry.message.usage)
+    expect(usages).toHaveLength(2)
+    expect(reported?.tokensInput).toBe(usages.reduce((sum, usage) => sum + usage.input, 0))
+    expect(reported?.tokensOutput).toBe(usages.reduce((sum, usage) => sum + usage.output, 0))
   })
 
   it('handles /models and /model directly without sending them to the LLM', async () => {

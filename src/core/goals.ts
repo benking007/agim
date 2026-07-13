@@ -393,18 +393,26 @@ export function getGoalById(id: number): GoalRow | null {
 
 /** The single active goal for a thread (or null if none). */
 export function getActiveGoal(platform: string, channelId: string, threadId: string): GoalRow | null {
+  return getActiveGoalState(platform, channelId, threadId).goal
+}
+
+export function getActiveGoalState(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): { available: boolean; goal: GoalRow | null } {
   const d = getDb()
-  if (!d) return null
+  if (!d) return { available: false, goal: null }
   try {
     const row = d.prepare(`
       SELECT * FROM goals
       WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
       ORDER BY id DESC LIMIT 1
     `).get(platform, channelId, threadId) as GoalRowRaw | undefined
-    return row ? rowFromRaw(row) : null
+    return { available: true, goal: row ? rowFromRaw(row) : null }
   } catch (err) {
     rootLogger.warn({ event: 'goals.get_active_failed', err: String(err) })
-    return null
+    return { available: false, goal: null }
   }
 }
 

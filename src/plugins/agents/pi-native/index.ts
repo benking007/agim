@@ -37,7 +37,7 @@ import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
-import { getActiveGoal, getGoalsDatabaseForLedger } from '../../../core/goals.js'
+import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature } from './loop-fingerprint.js'
@@ -570,7 +570,9 @@ export class NativeAgentAdapter implements AgentAdapter {
           ...(goalScope ? {
             goalLedgerAvailable: () => getGoalsDatabaseForLedger() !== null,
             resolveGoalEvidence: () => {
-              const active = getActiveGoal(goalScope.platform, goalScope.channelId, goalScope.threadId)
+              const state = getActiveGoalState(goalScope.platform, goalScope.channelId, goalScope.threadId)
+              if (!state.available) throw new Error('goal state unavailable')
+              const active = state.goal
               return active
                 ? { goalId: active.id, goalVersion: active.version, traceId: opts?.traceId }
                 : null

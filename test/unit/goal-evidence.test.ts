@@ -19,6 +19,7 @@ const {
   classifyGoalEvidence,
   completeGoalCas,
   finishGoalToolOperation,
+  isDetachedGoalCommand,
   reconcileInterruptedGoalOperations,
 } = await import('../../src/core/goal-evidence.js')
 const { agimToolToPi } = await import('../../src/plugins/agents/pi-native/tool-bridge.js')
@@ -101,6 +102,47 @@ describeSqlite('goal evidence ledger', () => {
     await expect(tool.execute('same-call', {}, new AbortController().signal)).rejects.toThrow(/ledger unavailable/)
     expect(dispatches).toBe(1)
     expect(getGoalById(goal.id)?.mutationEpoch).toBe(1)
+  })
+
+  it('tool bridge blocks detached exec while a versioned goal is active', async () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'detached',
+      userId: 'u',
+      title: 'no detached writes',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    let dispatches = 0
+    const tool = agimToolToPi(
+      {
+        name: 'native_exec',
+        description: 'exec',
+        parameters: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      },
+      async () => {
+        dispatches += 1
+        return { text: 'started', isError: false }
+      },
+      {
+        goalEvidence: {
+          goalId: goal.id,
+          goalVersion: goal.version,
+          traceId: 'trace-detached',
+        },
+      },
+    )
+    await expect(tool.execute(
+      'detached-call',
+      { command: 'nohup worker &' },
+      new AbortController().signal,
+    )).rejects.toThrow(/detached/)
+    expect(dispatches).toBe(0)
   })
 
   it('invalidates old evidence after mutation and accepts current verification', () => {
@@ -367,5 +409,7 @@ describe('goal evidence classification', () => {
     expect(classifyGoalEvidence('native_exec', { command: 'npm test && rm -rf out' }, false)).toBe('mutation')
     expect(classifyGoalEvidence('native_exec', { command: 'npm test\ntrue' }, false)).toBe('mutation')
     expect(classifyGoalEvidence('mcp__external__read', {}, true)).toBe('mutation')
+    expect(isDetachedGoalCommand({ command: 'nohup worker &' })).toBe(true)
+    expect(isDetachedGoalCommand({ command: 'npm test' })).toBe(false)
   })
 })

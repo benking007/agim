@@ -458,6 +458,9 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       if (settled) return
       settled = true
       clearTimeout(timer)
+      // The shell leader may exit while background descendants in its process
+      // group remain alive. Reap that group before reporting settlement.
+      if (process.platform !== 'win32') killTree('SIGKILL')
       if (killTimer) clearTimeout(killTimer)
       opts.signal.removeEventListener('abort', onAbort)
       const exitCode = code ?? -1

@@ -29,7 +29,6 @@ export interface IssuedEvidence {
 const KEY_FILE = join(AGIM_HOME, 'goal-evidence.key')
 let cachedKey: Buffer | null = null
 const PROCESS_OWNER_ID = `${process.pid}:${Date.now()}:${randomUUID()}`
-let reconciledOwners = false
 
 function secretKey(): Buffer {
   if (cachedKey) return cachedKey
@@ -73,7 +72,6 @@ function isPidAlive(pid: number): boolean {
  * Live foreign owners remain blocking, so concurrent agents cannot mistake
  * each other's in-flight writes for crash debris. */
 export function reconcileInterruptedGoalOperations(): number {
-  if (reconciledOwners) return 0
   const d = getGoalsDatabaseForLedger()
   if (!d) return 0
   const owners = d.prepare(`
@@ -82,10 +80,7 @@ export function reconcileInterruptedGoalOperations(): number {
   `).all() as Array<{ owner_id: string; owner_pid: number }>
   const stale = owners.filter((owner) =>
     owner.owner_id !== PROCESS_OWNER_ID && !isPidAlive(owner.owner_pid))
-  if (stale.length === 0) {
-    reconciledOwners = true
-    return 0
-  }
+  if (stale.length === 0) return 0
   const tx = d.transaction(() => {
     d.prepare(`
       UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
@@ -101,7 +96,6 @@ export function reconcileInterruptedGoalOperations(): number {
     return changed
   })
   const changed = tx.immediate()
-  reconciledOwners = true
   return changed
 }
 
@@ -146,6 +140,13 @@ function isVerificationCommand(input: unknown): boolean {
     : ''
   if (!command || /[\r\n;&|><`$()]/.test(command)) return false
   return /^(?:npm\s+(?:test|run\s+(?:test(?::[\w-]+)?|lint|typecheck|build))(?:\s+--?[\w./:=@-]+)*|bun\s+test(?:\s+[\w./:=@*-]+)*|npx\s+tsc\s+--noEmit(?:\s+-p\s+[\w./-]+)?|cargo\s+test(?:\s+[\w:=@-]+)*|go\s+test(?:\s+[\w./-]+)*|pytest(?:\s+[\w./:=@*-]+)*|git\s+diff\s+--check(?:\s+[\w./-]+)?)$/i.test(command)
+}
+
+export function isDetachedGoalCommand(input: unknown): boolean {
+  const command = typeof (input as { command?: unknown })?.command === 'string'
+    ? (input as { command: string }).command
+    : ''
+  return /(?:^|[\s/])(?:setsid|nohup|disown|systemd-run|bgjob)(?:\s|$)|docker\s+run\b[^;\n]*\s-d(?:\s|$)|&\s*$/i.test(command)
 }
 
 export function classifyGoalEvidence(
@@ -474,5 +475,4 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
 
 export function __resetGoalEvidenceKeyForTesting(): void {
   cachedKey = null
-  reconciledOwners = false
 }

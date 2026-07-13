@@ -373,7 +373,7 @@ export function getAgimTools(): ToolDef[] {
       description:
         'Complete exactly the active goal identified by the Completion token in context. Copy its ' +
         '`goalId` and `goalVersion` verbatim. Native completed goals also require current server-issued ' +
-        '`evidenceIds` from successful tool results; cancelled goals do not. Stale tokens fail closed.',
+        '`evidenceIds` from successful tool results and final user confirmation; cancelled goals do not. Stale tokens fail closed.',
       parameters: {
         type: 'object',
         properties: {
@@ -768,6 +768,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             userId: ctx.userId,
             callerAgent: ctx.callerAgent,
             traceId: toolCtx?.traceId,
+            signal,
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
           return ok(safeJson(r.result))

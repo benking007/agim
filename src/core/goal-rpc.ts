@@ -18,6 +18,7 @@
 import {
   setActiveGoal,
   getActiveGoal,
+  getGoalById,
   appendProgress,
   type GoalRow,
 } from './goals.js'
@@ -27,6 +28,8 @@ import { runGoalCompletionCritic } from './llm/goal-critic.js'
 import type { CompletionCriticInput, CompletionCriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
+import { approvalBus } from './approval-bus.js'
+import { randomUUID } from 'node:crypto'
 
 function emitGoalEvent(
   phase: 'created' | 'status' | 'progress',
@@ -68,6 +71,13 @@ export interface GoalRpcCtx {
   skipSemanticReview?: boolean
   /** Test seam for deterministic semantic verdicts. Never populated from RPC payloads. */
   reviewGoalCompletion?: (input: CompletionCriticInput) => Promise<CompletionCriticVerdict>
+  skipUserConfirmation?: boolean
+  confirmGoalCompletion?: (input: {
+    goalId: number
+    goalVersion: number
+    recap: string
+  }) => Promise<boolean>
+  signal?: AbortSignal
 }
 
 export type GoalOp = 'long_task' | 'complete_goal'
@@ -177,6 +187,60 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
   }
 }
 
+async function confirmGoalCompletion(
+  ctx: GoalRpcCtx,
+  input: { goalId: number; goalVersion: number; recap: string },
+): Promise<boolean> {
+  if (ctx.skipUserConfirmation) return true
+  if (ctx.confirmGoalCompletion) return await ctx.confirmGoalCompletion(input)
+  if (!approvalBus.hasNotifier() || !ctx.platform || !ctx.threadId) return false
+  if (ctx.signal?.aborted) return false
+  const reqId = randomUUID()
+  const runId = ctx.traceId || `goal-completion-${input.goalId}`
+  return await new Promise<boolean>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => ctx.signal?.removeEventListener('abort', onAbort)
+    const finish = (allowed: boolean) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(allowed)
+    }
+    const onAbort = () => {
+      approvalBus.cancelPendingByReqId(reqId, 'goal completion cancelled: turn aborted')
+      finish(false)
+    }
+    ctx.signal?.addEventListener('abort', onAbort, { once: true })
+    void approvalBus.registerSyntheticPending({
+      runId,
+      reqId,
+      toolName: 'mcp__agim__complete_goal',
+      input: {
+        goalId: input.goalId,
+        goalVersion: input.goalVersion,
+        recap: input.recap,
+      },
+      requiresExplicitDecision: true,
+      ctx: {
+        platform: ctx.platform,
+        channelId: ctx.channelId,
+        threadId: ctx.threadId,
+        userId: ctx.userId,
+        callerAgent: ctx.callerAgent,
+        traceId: ctx.traceId,
+      },
+      dispatch: (decision) => finish(decision.behavior === 'allow'),
+    }).then(() => {
+      if (ctx.signal?.aborted) onAbort()
+    }).catch((err) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    })
+  })
+}
+
 async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Promise<GoalRpcResult> {
   const goalId = typeof p.goalId === 'number' ? p.goalId : Number.NaN
   const goalVersion = typeof p.goalVersion === 'number' ? p.goalVersion : Number.NaN
@@ -214,10 +278,17 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
       }
     }
   }
-  const active = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
+  const tokenGoal = getGoalById(goalId)
+  const tokenIsCurrent = !!tokenGoal
+    && tokenGoal.platform === ctx.platform
+    && tokenGoal.channelId === ctx.channelId
+    && tokenGoal.threadId === ctx.threadId
+    && tokenGoal.status === 'active'
+    && tokenGoal.version === goalVersion
   if (
     status === 'completed'
-    && active?.evidenceRequired
+    && tokenIsCurrent
+    && tokenGoal?.evidenceRequired
     && !ctx.skipSemanticReview
   ) {
     const review = getGoalEvidenceReview({
@@ -251,6 +322,19 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
         ok: false,
         error: `GOAL_INCOMPLETE: ${verdict.reason}`,
       }
+    }
+  }
+  if (
+    status === 'completed'
+    && tokenIsCurrent
+    && tokenGoal?.evidenceRequired
+    && !await confirmGoalCompletion(ctx, { goalId, goalVersion, recap })
+  ) {
+    return {
+      ok: false,
+      error: approvalBus.hasNotifier()
+        ? 'GOAL_CONFIRMATION_DENIED: user did not approve completion'
+        : 'USER_CONFIRMATION_REQUIRED: ask the user to run /goal complete',
     }
   }
   const completed = completeGoalCas({

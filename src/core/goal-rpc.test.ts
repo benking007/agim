@@ -27,6 +27,7 @@ const CTX = {
   callerAgent: 'native',
   traceId: 'trace-goal-rpc',
   skipSemanticReview: true,
+  skipUserConfirmation: true,
 }
 
 let evidenceSeq = 0
@@ -338,6 +339,20 @@ describe('goal-rpc', () => {
     expect(reviewed.ok).toBe(false)
     if (!reviewed.ok) expect(reviewed.error).toContain('GOAL_INCOMPLETE')
     expect(_activeGoalSnapshot(CTX)?.title).toBe('Implement semantic review')
+  })
+
+  it('native completion remains active when the user denies final confirmation', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Implement confirmed completion' }, CTX)
+    const payload = completionPayload('verified but awaiting user')
+    const denied = await handleGoalOp('complete_goal', payload, {
+      ...CTX,
+      skipUserConfirmation: false,
+      confirmGoalCompletion: async () => false,
+    })
+    expect(denied.ok).toBe(false)
+    if (!denied.ok) expect(denied.error).toMatch(/CONFIRMATION|USER_CONFIRMATION/)
+    expect(_activeGoalSnapshot(CTX)?.title).toBe('Implement confirmed completion')
   })
 
   it('preserves CAS-only completion for goals created by non-native agents', async () => {

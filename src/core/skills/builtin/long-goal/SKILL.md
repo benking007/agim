@@ -83,7 +83,7 @@ Returns `{ goalId, goalVersion, mutationEpoch, title, status: 'active', ... }`. 
 
 ### `mcp__agim__complete_goal(goalId, goalVersion, recap, evidenceIds?, status?)`
 
-Close exactly the versioned active goal. Successful tool results expose opaque `[agim evidence ...: ev1_...]` IDs. Completed goals require current evidence; cancelled goals do not.
+Close exactly the versioned active goal. Successful tool results expose opaque `[agim evidence ...: ev1_...]` IDs. Native completed goals require current evidence, strict semantic review, and a final one-time user confirmation; cancelled goals do not.
 
 ```
 mcp__agim__complete_goal({

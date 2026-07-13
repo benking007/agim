@@ -46,6 +46,7 @@ import { dirname } from 'node:path'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 import { checkUrlSafety } from './web-dispatcher.js'
 
 const log = rootLogger.child({ component: 'exec-dispatcher' })
@@ -55,15 +56,15 @@ const HARD_TIMEOUT_CAP_MS = 600_000
 const MIN_TIMEOUT_MS = 100  // F10 — floor so timeout_ms=1 can't self-DoS
 const DEFAULT_MAX_OUTPUT = 32 * 1024
 
-const EXEC_TOOL_NAMES = ['native_exec'] as const
+const EXEC_TOOL_NAMES = ['agim_exec'] as const
 export function isExecToolName(name: string): boolean {
-  return (EXEC_TOOL_NAMES as readonly string[]).includes(name)
+  return (EXEC_TOOL_NAMES as readonly string[]).includes(canonicalizeToolName(name))
 }
 
 export function getExecTools(): ToolDef[] {
   return [
     {
-      name: 'native_exec',
+      name: 'agim_exec',
       description:
         'Execute a shell command in the agent\'s workspace. cwd defaults to the agent workspace; ' +
         'optional timeout_ms (default 60000, max 600000). Returns stdout, stderr, exit_code. ' +
@@ -108,7 +109,7 @@ export function buildExecDispatcher(ctx: ExecContext): ToolDispatcher {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn({ event: 'exec.tool.error', err: msg })
-      return { text: `native_exec failed: ${msg}`, isError: true, source: 'exec' }
+      return { text: `agim_exec failed: ${msg}`, isError: true, source: 'exec' }
     }
   }
 }
@@ -125,7 +126,7 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   if (danger) {
     log.warn({ event: 'exec.refused.dangerous_pattern', reason: danger, commandPreview: command.slice(0, 120) })
     return {
-      text: `native_exec refused: command matches a dangerous-pattern denylist (${danger}). If you legitimately need to run this, do it directly on the host — not via the agent. To override, the operator must edit src/core/llm/exec-dispatcher.ts:DANGEROUS_PATTERNS.`,
+      text: `agim_exec refused: command matches a dangerous-pattern denylist (${danger}). If you legitimately need to run this, do it directly on the host — not via the agent. To override, the operator must edit src/core/llm/exec-dispatcher.ts:DANGEROUS_PATTERNS.`,
       isError: true,
       source: 'exec',
     }
@@ -140,7 +141,7 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   if (internalUrlReason) {
     log.warn({ event: 'exec.refused.internal_url', reason: internalUrlReason, commandPreview: command.slice(0, 120) })
     return {
-      text: `native_exec refused: command contains a URL targeting a private/internal address (${internalUrlReason}). ` +
+      text: `agim_exec refused: command contains a URL targeting a private/internal address (${internalUrlReason}). ` +
         `If this is intentional, set AGIM_NATIVE_WEB_SSRF_WHITELIST or AGIM_NATIVE_WEB_ALLOW_PRIVATE=1.`,
       isError: true,
       source: 'exec',

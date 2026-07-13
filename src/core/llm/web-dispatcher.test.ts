@@ -22,14 +22,14 @@ describe('web-dispatcher', () => {
   describe('getWebTools / isWebToolName', () => {
     it('exposes the 2 expected tool names', () => {
       const names = getWebTools().map((t) => t.name).sort()
-      expect(names).toEqual(['native_web_fetch', 'native_web_search'])
+      expect(names).toEqual(['agim_web_fetch', 'agim_web_search'])
     })
 
     it('isWebToolName matches only the 2 web tools', () => {
-      expect(isWebToolName('native_web_fetch')).toBe(true)
-      expect(isWebToolName('native_web_search')).toBe(true)
-      expect(isWebToolName('native_read_file')).toBe(false)
-      expect(isWebToolName('native_echo')).toBe(false)
+      expect(isWebToolName('agim_web_fetch')).toBe(true)
+      expect(isWebToolName('agim_web_search')).toBe(true)
+      expect(isWebToolName('agim_read_file')).toBe(false)
+      expect(isWebToolName('agim_echo')).toBe(false)
     })
   })
 
@@ -351,14 +351,14 @@ describe('web-dispatcher', () => {
   describe('buildWebDispatcher', () => {
     it('non-web tool name returns source="unknown" so combineDispatchers falls through', async () => {
       const d = buildWebDispatcher()
-      const r = await d({ id: 't', name: 'native_echo', arguments: { text: 'x' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_echo', arguments: { text: 'x' } }, NEVER_ABORT)
       expect(r.source).toBe('unknown')
       expect(r.isError).toBe(true)
     })
 
     it('web_fetch refuses missing url', async () => {
       const d = buildWebDispatcher()
-      const r = await d({ id: 't', name: 'native_web_fetch', arguments: {} }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_web_fetch', arguments: {} }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/url required/)
     })
@@ -366,7 +366,7 @@ describe('web-dispatcher', () => {
     it('web_fetch refuses private URL by default', async () => {
       const d = buildWebDispatcher()
       const r = await d(
-        { id: 't', name: 'native_web_fetch', arguments: { url: 'http://192.168.1.1/' } },
+        { id: 't', name: 'agim_web_fetch', arguments: { url: 'http://192.168.1.1/' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -375,7 +375,7 @@ describe('web-dispatcher', () => {
 
     it('web_search refuses empty query', async () => {
       const d = buildWebDispatcher()
-      const r = await d({ id: 't', name: 'native_web_search', arguments: { query: '' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_web_search', arguments: { query: '' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/query required/)
     })

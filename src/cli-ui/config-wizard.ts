@@ -626,7 +626,7 @@ async function configureDiscord(lang: Lang, cfg: Config): Promise<Config> {
 // instructions, set as default, or re-check after they installed
 // something in another terminal.
 
-type AgentId = 'native' | 'claude-code' | 'opencode' | 'codex' | 'copilot' | 'antigravity' | 'cursor' | 'kimi-code' | 'qoder' | 'pi' | 'mimo'
+type AgentId = 'agim' | 'native' | 'claude-code' | 'opencode' | 'codex' | 'copilot' | 'antigravity' | 'cursor' | 'kimi-code' | 'qoder' | 'pi' | 'mimo'
 
 interface AgentSpec {
   id: AgentId
@@ -641,6 +641,7 @@ interface AgentSpec {
 }
 
 const AGENT_SPECS: AgentSpec[] = [
+  { id: 'agim',        cmd: '__native__' },
   { id: 'native',      cmd: '__native__' },
   { id: 'claude-code', cmd: 'claude' },
   { id: 'opencode',    cmd: 'opencode',     authHintKey: 'agents.auth_hint.opencode' },
@@ -677,7 +678,7 @@ async function nativeLlmConfigured(): Promise<boolean> {
 async function detectAgentInstalls(): Promise<Map<AgentId, boolean>> {
   const out = new Map<AgentId, boolean>()
   await Promise.all(AGENT_SPECS.map(async spec => {
-    if (spec.id === 'native') {
+    if (spec.id === 'agim' || spec.id === 'native') {
       out.set(spec.id, await nativeLlmConfigured())
       return
     }

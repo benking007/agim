@@ -11,7 +11,7 @@ const baseCtx = {
   platform: 'test',
   channelId: 'c',
   threadId: 't',
-  defaultAgent: 'native',
+  defaultAgent: 'agim',
   userId: 'u',
 }
 

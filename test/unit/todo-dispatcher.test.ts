@@ -1,4 +1,4 @@
-// v1.2.124 — native_todo_write tool:
+// v1.2.124 — agim_todo_write tool:
 //   - items validated (object array, content non-empty, status enum)
 //   - tool result is a markdown checklist (☐/▶/☑)
 //   - per-thread isolation: writes to thread A don't leak to thread B
@@ -25,16 +25,16 @@ describe('todo-dispatcher (v1.2.124)', () => {
   })
 
   describe('getTodoTools / isTodoToolName', () => {
-    it('exposes native_todo_write with timeoutMs', () => {
+    it('exposes agim_todo_write with timeoutMs', () => {
       const tools = getTodoTools()
       expect(tools).toHaveLength(1)
-      expect(tools[0]!.name).toBe('native_todo_write')
+      expect(tools[0]!.name).toBe('agim_todo_write')
       expect(tools[0]!.timeoutMs).toBe(5000)
     })
 
     it('isTodoToolName recognises the tool', () => {
-      expect(isTodoToolName('native_todo_write')).toBe(true)
-      expect(isTodoToolName('native_echo')).toBe(false)
+      expect(isTodoToolName('agim_todo_write')).toBe(true)
+      expect(isTodoToolName('agim_echo')).toBe(false)
     })
   })
 
@@ -43,7 +43,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't1',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: {
           items: [
             { content: 'Fetch data', status: 'in_progress' },
@@ -63,7 +63,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't2',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'Done step', status: 'completed' }] },
       }, SIG)
       expect(r.text).toContain('☑ Done step')
@@ -73,7 +73,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       await d({
         id: 't3',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'Step 1', status: 'completed' }] },
       }, SIG)
       const list = getTodoForThread('thread-a')
@@ -88,12 +88,12 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       await d({
         id: 't4a',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'X', status: 'pending' }] },
       }, SIG)
       const r = await d({
         id: 't4b',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [] },
       }, SIG)
       expect(r.isError).toBe(false)
@@ -108,12 +108,12 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const db = buildTodoDispatcher('thread-b')
       await da({
         id: 't5a',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'A only', status: 'pending' }] },
       }, SIG)
       await db({
         id: 't5b',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'B only', status: 'pending' }] },
       }, SIG)
       expect(getTodoForThread('thread-a')).toEqual([{ content: 'A only', status: 'pending' }])
@@ -126,7 +126,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't6',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: 'not an array' },
       }, SIG)
       expect(r.isError).toBe(true)
@@ -137,7 +137,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't7',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: '   ', status: 'pending' }] },
       }, SIG)
       expect(r.isError).toBe(true)
@@ -148,7 +148,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't8',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'X', status: 'done' }] },
       }, SIG)
       expect(r.isError).toBe(true)
@@ -159,7 +159,7 @@ describe('todo-dispatcher (v1.2.124)', () => {
       const d = buildTodoDispatcher('thread-a')
       const r = await d({
         id: 't9',
-        name: 'native_todo_write',
+        name: 'agim_todo_write',
         arguments: { items: [{ content: 'x'.repeat(501), status: 'pending' }] },
       }, SIG)
       expect(r.isError).toBe(true)

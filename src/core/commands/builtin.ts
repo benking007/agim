@@ -6,6 +6,7 @@
 // Topic aliases (`/help tasks` → job, `/help auto` → approval, etc.) are resolved
 // via TOPIC_ALIAS before delegation/dict lookup.
 
+import { isAgimAgentId } from '../naming-migrate.js'
 import type { RouteContext } from '../router.js'
 import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
@@ -342,9 +343,9 @@ export async function handleBuiltInCommand(
         if (!adapter) return `• ${name}`
         const kind = adapter.kind ?? 'cli'
         const flag = ({ cli: '[cli]', 'in-process': '[in-process]', remote: '[remote]' })[kind] ?? `[${kind}]`
-        const displayName = name === 'native' ? 'Agim Agent' : name
+        const displayName = isAgimAgentId(name) ? 'Agim Agent' : name
         const aliasSet = new Set<string>()
-        if (name === 'native') aliasSet.add('native')
+        if (isAgimAgentId(name)) { aliasSet.add('agim'); aliasSet.add('native') }
         for (const a of adapter.aliases) {
           if (a !== displayName) aliasSet.add(a)
         }
@@ -359,7 +360,7 @@ export async function handleBuiltInCommand(
     case 'new': {
       const session = await sessionManager.resetConversation(ctx.platform, ctx.channelId, ctx.threadId)
       if (session) {
-        const displayAgent = session.agent === 'native' ? 'Agim Agent' : session.agent
+        const displayAgent = isAgimAgentId(session.agent) ? 'Agim Agent' : session.agent
         return `🆕 New conversation started with ${displayAgent}.\n\nPrevious context has been cleared.`
       }
       return `🆕 Ready to start a new conversation.\n\nSend a message to begin.`

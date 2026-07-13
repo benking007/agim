@@ -209,34 +209,34 @@ describe('checkSensitiveToolUse — Bash', () => {
   })
 })
 
-describe('checkSensitiveToolUse — native_exec', () => {
-  // v1.2.101 — native_exec gets the same command-string scan as Bash,
+describe('checkSensitiveToolUse — agim_exec', () => {
+  // v1.2.101 — agim_exec gets the same command-string scan as Bash,
   // closing the bypass seen in field testing where an agent ran
   // `cat .../fin_data/.env; env | grep DB_` through auto-allow without
   // hitting the Bash branch.
-  it('blocks .env access via native_exec command chain', () => {
+  it('blocks .env access via agim_exec command chain', () => {
     const cmd = 'cat /root/workspace/ai-agent-platform/services/fin_data/.env 2>/dev/null; echo "===ENV==="; env | grep -i DB_ 2>/dev/null'
-    const r = checkSensitiveToolUse('native_exec', { command: cmd })
+    const r = checkSensitiveToolUse('agim_exec', { command: cmd })
     expect(r.deny).toBe(true)
-    expect(r.reason).toContain('tool=native_exec')
+    expect(r.reason).toContain('tool=agim_exec')
   })
 
-  it('blocks ssh private key reads via native_exec', () => {
-    expect(checkSensitiveToolUse('native_exec', { command: 'cat ~/.ssh/id_rsa' }).deny).toBe(true)
+  it('blocks ssh private key reads via agim_exec', () => {
+    expect(checkSensitiveToolUse('agim_exec', { command: 'cat ~/.ssh/id_rsa' }).deny).toBe(true)
   })
 
-  it('blocks env dump via native_exec', () => {
-    expect(checkSensitiveToolUse('native_exec', { command: 'env' }).deny).toBe(true)
-    expect(checkSensitiveToolUse('native_exec', { command: 'printenv | sort' }).deny).toBe(true)
+  it('blocks env dump via agim_exec', () => {
+    expect(checkSensitiveToolUse('agim_exec', { command: 'env' }).deny).toBe(true)
+    expect(checkSensitiveToolUse('agim_exec', { command: 'printenv | sort' }).deny).toBe(true)
   })
 
-  it('blocks credentials.* via native_exec', () => {
-    expect(checkSensitiveToolUse('native_exec', { command: 'cat /etc/gcloud/credentials.json' }).deny).toBe(true)
+  it('blocks credentials.* via agim_exec', () => {
+    expect(checkSensitiveToolUse('agim_exec', { command: 'cat /etc/gcloud/credentials.json' }).deny).toBe(true)
   })
 
-  it('allows ordinary native_exec commands', () => {
-    expect(checkSensitiveToolUse('native_exec', { command: 'ls -la /tmp' }).deny).toBe(false)
-    expect(checkSensitiveToolUse('native_exec', { command: 'curl -s https://example.com' }).deny).toBe(false)
+  it('allows ordinary agim_exec commands', () => {
+    expect(checkSensitiveToolUse('agim_exec', { command: 'ls -la /tmp' }).deny).toBe(false)
+    expect(checkSensitiveToolUse('agim_exec', { command: 'curl -s https://example.com' }).deny).toBe(false)
   })
 })
 

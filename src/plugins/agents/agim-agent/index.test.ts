@@ -183,12 +183,12 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('honors opts.planMode by blocking a mutating tool', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage('blocked'),
     ])
     const sink: string[] = []
     const tool: ToolDef = {
-      name: 'native_write_file',
+      name: 'agim_write_file',
       description: 'write',
       parameters: {
         type: 'object',
@@ -246,15 +246,15 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('applies an approved plan exit within the same harness turn', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_exit_plan_mode', { plan: '- write /x' }, { id: 'p1' }), { stopReason: 'toolUse' }),
-      fauxAssistantMessage(fauxToolCall('native_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_exit_plan_mode', { plan: '- write /x' }, { id: 'p1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage('implemented'),
     ])
     let planActive = true
     const dispatched: string[] = []
     const tools: ToolDef[] = [
       {
-        name: 'native_exit_plan_mode',
+        name: 'agim_exit_plan_mode',
         description: 'exit plan',
         parameters: {
           type: 'object',
@@ -263,7 +263,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         },
       },
       {
-        name: 'native_write_file',
+        name: 'agim_write_file',
         description: 'write',
         parameters: {
           type: 'object',
@@ -274,19 +274,19 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     ]
     const dispatch: ToolDispatcher = async (call) => {
       dispatched.push(call.name)
-      if (call.name === 'native_exit_plan_mode') planActive = false
-      return { text: call.name === 'native_exit_plan_mode' ? 'approved' : 'wrote', isError: false }
+      if (call.name === 'agim_exit_plan_mode') planActive = false
+      return { text: call.name === 'agim_exit_plan_mode' ? 'approved' : 'wrote', isError: false }
     }
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-plan-exit-')),
       resolveModel: async () => bindingFromFaux(reg),
       resolveTools: () => ({ tools, dispatch }),
       resolveApprovalGate: () => async (call) =>
-        call.name === 'native_exit_plan_mode' || !planActive ? 'allow' : 'deny',
+        call.name === 'agim_exit_plan_mode' || !planActive ? 'allow' : 'deny',
     })
 
     const out = await collect(adapter.sendPrompt('plan-exit', 'plan then implement', undefined, { planMode: true }))
-    expect(dispatched).toEqual(['native_exit_plan_mode', 'native_write_file'])
+    expect(dispatched).toEqual(['agim_exit_plan_mode', 'agim_write_file'])
     expect(out).toBe('implemented')
   })
 
@@ -532,11 +532,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('consults the approval gate and blocks a denied tool', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_exec', { cmd: 'rm -rf /' }, { id: 'x1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_exec', { cmd: 'rm -rf /' }, { id: 'x1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage('denied, did nothing'),
     ])
     const ran: string[] = []
-    const tool: ToolDef = { name: 'native_exec', description: 'exec', parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } }
+    const tool: ToolDef = { name: 'agim_exec', description: 'exec', parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } }
     const dispatch: ToolDispatcher = async (call) => {
       ran.push(String(call.arguments.cmd))
       return { text: 'ran', isError: false }
@@ -660,10 +660,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('flags narrated tool calls that never emitted a real toolCall', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage('我现在调用 native_write_file 把结果写进去：\n```python\nprint(1)\n```'),
+      fauxAssistantMessage('我现在调用 agim_write_file 把结果写进去：\n```python\nprint(1)\n```'),
     ])
     const tool: ToolDef = {
-      name: 'native_write_file',
+      name: 'agim_write_file',
       description: 'write',
       parameters: { type: 'object', properties: {}, required: [] },
     }
@@ -1028,11 +1028,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('keeps successful tool-backed answers unwrapped', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_exec', { command: 'npm test' }, { id: 'test1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_exec', { command: 'npm test' }, { id: 'test1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage('测试通过，已完成。'),
     ])
     const tool: ToolDef = {
-      name: 'native_exec',
+      name: 'agim_exec',
       description: 'exec',
       parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
     }

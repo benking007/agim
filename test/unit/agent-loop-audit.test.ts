@@ -66,7 +66,7 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
   it('publishes one audit event per tool call with intent=tool.<name> + parent traceId', async () => {
     const traceId = `audit-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const provider = new QueuedStub([
-      turn([tc('1', 'native_now', {}), tc('2', 'native_echo', { text: 'hi' })]),
+      turn([tc('1', 'agim_now', {}), tc('2', 'agim_echo', { text: 'hi' })]),
       done(),
     ])
     const dispatch = async (call: ToolCallRequest): Promise<DispatcherResult> => ({
@@ -76,8 +76,8 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
       provider,
       messages: [{ role: 'user', content: 'go' }],
       tools: [
-        { name: 'native_now', description: '', parameters: { type: 'object', properties: {} } },
-        { name: 'native_echo', description: '', parameters: { type: 'object', properties: {} } },
+        { name: 'agim_now', description: '', parameters: { type: 'object', properties: {} } },
+        { name: 'agim_echo', description: '', parameters: { type: 'object', properties: {} } },
       ],
       dispatch,
       audit: { agent: 'native-test', userId: 'u1', platform: 'unit-test', traceId },
@@ -85,7 +85,7 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
     const mine = captured.filter((e) => e.traceId === traceId)
     const toolEvents = mine.filter((e) => e.intent.startsWith('tool.'))
     const intents = toolEvents.map((e) => e.intent).sort()
-    expect(intents).toEqual(['tool.native_echo', 'tool.native_now'])
+    expect(intents).toEqual(['tool.agim_echo', 'tool.agim_now'])
     for (const e of toolEvents) {
       expect(e.agent).toBe('native-test')
       expect(e.platform).toBe('unit-test')
@@ -97,7 +97,7 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
   it('tool error → audit event marks success=false', async () => {
     const traceId = `audit-err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const provider = new QueuedStub([
-      turn([tc('1', 'native_read_file', { path: '/x' })]),
+      turn([tc('1', 'agim_read_file', { path: '/x' })]),
       done(),
     ])
     const dispatch = async (): Promise<DispatcherResult> => ({
@@ -108,11 +108,11 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       audit: { agent: 'native-test', userId: 'u2', platform: 'unit-test', traceId },
     })
-    const toolEv = captured.find((e) => e.traceId === traceId && e.intent === 'tool.native_read_file')
+    const toolEv = captured.find((e) => e.traceId === traceId && e.intent === 'tool.agim_read_file')
     expect(toolEv).toBeDefined()
     expect(toolEv!.success).toBe(false)
   })
@@ -142,13 +142,13 @@ describe('runAgentLoop — per-tool audit + traceId propagation (v1.2.111)', () 
   })
 
   it('no audit ctx → no tool audit events published (no crash)', async () => {
-    const provider = new QueuedStub([turn([tc('1', 'native_now', {})]), done()])
+    const provider = new QueuedStub([turn([tc('1', 'agim_now', {})]), done()])
     const dispatch = async (): Promise<DispatcherResult> => ({ text: 'ok', isError: false })
     const before = captured.length
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_now', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_now', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       // No `audit` field — writeToolCallAudit short-circuits.
     })

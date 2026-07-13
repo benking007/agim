@@ -65,9 +65,9 @@ beforeEach(clearAll)
 afterEach(clearAll)
 
 describe('nativeAgentAdapter — identity', () => {
-  it('exposes name=native + sensible aliases', () => {
-    expect(nativeAgentAdapter.name).toBe('native')
-    expect(nativeAgentAdapter.aliases).toContain('agim')
+  it('exposes name=agim + sensible aliases (incl. legacy native)', () => {
+    expect(nativeAgentAdapter.name).toBe('agim')
+    expect(nativeAgentAdapter.aliases).toContain('native')
     expect(nativeAgentAdapter.aliases).toContain('llm')
     expect(nativeAgentAdapter.aliases).toContain('na')
   })

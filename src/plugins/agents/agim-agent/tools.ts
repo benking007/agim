@@ -27,7 +27,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     channelId: o.channelId || 'default',
     threadId: o.threadId || sessionId,
     userId: o.userId || 'unknown',
-    callerAgent: 'native',
+    callerAgent: 'agim',
     callerDepth: o.callDepth ?? 0,
     // Link A2A callee rows to the parent turn so the web A2A views can see them.
     ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
@@ -37,7 +37,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     callerPlanMode: (planThreadKey ? effectivePlanModeOn(planThreadKey) : false) || o.planMode === true,
   }
 
-  const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+  const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
 
   const assembled = assembleNativeTools({
     cwd,
@@ -45,9 +45,9 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
       o.platform && o.threadId
         ? { platform: o.platform, channelId: o.channelId ?? '', threadId: o.threadId, userId: o.userId ?? '' }
         : undefined,
-    todoThreadKey: planThreadKey ?? `native:${sessionId}`,
+    todoThreadKey: planThreadKey ?? `agim:${sessionId}`,
     planExitCtx: {
-      threadKey: planThreadKey ?? `native:${sessionId}`,
+      threadKey: planThreadKey ?? `agim:${sessionId}`,
       runId: sessionId,
       platform: o.platform,
       channelId: o.channelId,

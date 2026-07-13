@@ -33,7 +33,9 @@ export function agimWorkspacesRoot(): string {
 
 /** Default cwd for a given agent under the workspaces root. */
 export function defaultAgentCwd(agentName: string): string {
-  return join(agimWorkspacesRoot(), agentName)
+  // Naming v2: registry id `agim` (legacy `native` maps to the same tree).
+  const id = (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
+  return join(agimWorkspacesRoot(), id)
 }
 
 /** Env var name for an explicit override on a given agent. */
@@ -507,10 +509,10 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 > 不同于 claude-code / opencode / codex，native 没有外部 CLI 进程；它把
 > 这里当作"自己的家"。
 >
-> 文件位置：${defaultAgentCwd('native')}/AGENTS.md
+> 文件位置：${defaultAgentCwd('agim')}/AGENTS.md
 >
-> ⚠️ 本文件整体会被 native 在**每次回话前作为 system prompt 顶部注入**。
-> 编辑本文件可以直接改变 native 的身份 / 语气 / 行为边界 — 一改即生效，
+> ⚠️ 本文件整体会被 Agim Agent 在**每次回话前作为 system prompt 顶部注入**。
+> 编辑本文件可以直接改变身份 / 语气 / 行为边界 — 一改即生效，
 > 无需重启服务。重定向到其它路径可设 \`AGIM_NATIVE_AGENT_ROLE_FILE=...\`。
 
 ## 你是谁（角色定义）
@@ -528,7 +530,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 ## 你怎么动手（工具与边界）
 
-- 三个 native 内置工具：\`native_echo\` / \`native_now\` / \`native_random_uuid\`
+- 内置工具：\`agim_echo\` / \`agim_now\` / \`agim_random_uuid\`（旧名 \`native_*\` 仍可用）
 - agim 自身的 MCP 工具（\`mcp__agim__*\`）：技能、备忘录、push、ask_user、call_agent
 - 运营方配置的外部 MCP server 工具（\`mcp_<server>_*\`）
 - 涉及钱 / 交易 / 删除：先 dry-run 给用户看，得确认再执行
@@ -545,8 +547,8 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 `
 
   result.push({
-    agent: 'native',
-    dir: await seedAgentWorkspace('native', { filename: 'AGENTS.md', content: nativeSeed }),
+    agent: 'agim',
+    dir: await seedAgentWorkspace('agim', { filename: 'AGENTS.md', content: nativeSeed }),
   })
 
   const cursorSeed = `# Cursor — IM 入口工作区

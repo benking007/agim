@@ -153,8 +153,8 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
   // install; "availability" means an LLM backend with role native-chat
   // (or cheap fallback) is configured. The hint string steers operators
   // at the right docs page instead of suggesting an npm install.
-  'native': {
-    agent: 'native',
+  'agim': {
+    agent: 'agim',
     npmPackage: '',
     command: '',
     installCmd: 'Run `agim config` → Agim Agent model APIs (or edit ~/.agim/config.json llmBackends + API key) — see docs/llm-backends.md',
@@ -175,7 +175,7 @@ export async function loadConfig(): Promise<Config> {
     fallback: {
       messengers: [],
       agents: [],
-      defaultAgent: 'native',
+      defaultAgent: 'agim',
     },
   })
 }
@@ -199,7 +199,7 @@ export async function saveConfigChanges(base: Config, next: Config): Promise<Con
     const merged: Record<string, unknown> = {
       messengers: [],
       agents: [],
-      defaultAgent: 'native',
+      defaultAgent: 'agim',
       ...current,
     }
     for (const key of changed) {
@@ -208,7 +208,7 @@ export async function saveConfigChanges(base: Config, next: Config): Promise<Con
     }
     return { config: merged, result: undefined }
   }, {
-    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
   })
   return update.config as Config
 }

@@ -47,7 +47,8 @@ import {
   resolveSemanticStuckLoopOn,
 } from '../../../core/llm/agent-loop.js'
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
-import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
+import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
+import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 
@@ -66,7 +67,7 @@ export interface NativeModelChoice {
 }
 
 export interface NativeAgentDeps {
-  /** Adapter name to register under. Defaults to 'native'. */
+  /** Adapter name to register under. Defaults to 'agim'. */
   name?: string
   /** Adapter aliases. Defaults to the public Agim Agent aliases. */
   aliases?: string[]
@@ -447,7 +448,7 @@ export class NativeAgentAdapter implements AgentAdapter {
   private readonly sessionLocks = new Map<string, Promise<void>>()
 
   constructor(private deps: NativeAgentDeps) {
-    this.name = deps.name ?? 'native'
+    this.name = deps.name ?? 'agim'
     this.aliases = deps.aliases ?? ['agim', 'na', 'llm', 'native-llm']
   }
 
@@ -507,7 +508,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       // Never fail silently: a thrown turn would otherwise reach the IM layer
       // as "no response". Surface the error so it's visible + diagnosable.
       const msg = err instanceof Error ? `${err.message}` : String(err)
-      console.error('[native] turn failed:', err instanceof Error ? err.stack : err)
+      console.error('[agim-agent] turn failed:', err instanceof Error ? err.stack : err)
       reportOutcome({ status: 'error', providerFailure: true, error: msg })
       yield `⚠️ Agim Agent 本轮出错：${msg}`
     } finally {
@@ -563,7 +564,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         // JSONL path. Invalidate once and rebuild from the repository view
         // instead of permanently failing every future turn for this id.
         this.sessionMeta.delete(sessionId)
-        console.warn('[native] stale pi session metadata; reopening:', err instanceof Error ? err.message : err)
+        console.warn('[agim-agent] stale pi session metadata; reopening:', err instanceof Error ? err.message : err)
         const found = (await repo.list()).find((m) => m.id === sessionId)
         if (found) {
           session = await repo.open(found)
@@ -616,7 +617,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               if (!state.available) throw new Error('goal state unavailable')
               const active = state.goal
               if (!active) return null
-              const cwd = resolveAgentCwd('native', opts ?? {}) || defaultAgentCwd('native')
+              const cwd = resolveAgentCwd('agim', opts ?? {}) || defaultAgentCwd('agim')
               return {
                 goalId: active.id,
                 goalVersion: active.version,
@@ -648,12 +649,14 @@ export class NativeAgentAdapter implements AgentAdapter {
       return { messages: injectEphemeralContext(event.messages, combined) }
     })
 
-    // Keep the turn-local flag mutable: native_exit_plan_mode can explicitly
+    // Keep the turn-local flag mutable: agim_exit_plan_mode can explicitly
     // clear persistent Plan Mode mid-run, after which this same harness must
     // be able to execute the user-approved plan.
     let turnPlanMode = opts?.planMode === true
     let turnSignal = opts?.signal
-    const planAllowed = this.deps.planModeAllowedTools ?? NATIVE_PLAN_MODE_ALLOWED_TOOLS
+    const planAllowed = expandToolNameList(
+      this.deps.planModeAllowedTools ?? AGIM_PLAN_MODE_ALLOWED_TOOLS,
+    )
 
     // Runaway guards. Declared early so tool_call preflight can share them.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
@@ -969,7 +972,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           }
         }
       } catch (err) {
-        console.error('[native] compaction skipped:', err instanceof Error ? err.message : err)
+        console.error('[agim-agent] compaction skipped:', err instanceof Error ? err.message : err)
       } finally {
         clearTimeout(compactionTimer)
         externalSignal?.removeEventListener('abort', forwardCompactionAbort)
@@ -1015,7 +1018,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     })
     const onRunAbort = () => {
       void harness.abort().catch((err) => {
-        console.error('[native] harness abort failed:', err instanceof Error ? err.message : err)
+        console.error('[agim-agent] harness abort failed:', err instanceof Error ? err.message : err)
       })
     }
     turnSignal.addEventListener('abort', onRunAbort, { once: true })

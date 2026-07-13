@@ -15,28 +15,32 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `AGIM_TIMEOUT_DEFAULT` meaning | Canonical `AGIM_APPROVAL_ON_TIMEOUT` (+ legacy read) |
 | Dual plan-mode kill switches | Canonical `AGIM_PLAN_MODE=on\|off\|disabled` (+ legacy) |
 | SPA nav “Workspace” vs Access Rules | Nav → **Agent Files** / **Agent 文件** |
+| Registry id `native` → `agim` | Boot migrate + alias; see [`migration-naming-v2.md`](./migration-naming-v2.md) |
+| Tools `native_*` → `agim_*` | Advertise `agim_*`; dispatch accepts both |
+| `pi-sessions` → `agim-sessions` | Boot rename when target absent |
+| Config `workspaces[]` → `tenants[]` | Prefer `tenants`; dual-write on SPA save |
 
 ## Intentionally keep (ops / compat)
 
 | Item | Why |
 |------|-----|
-| Registry id `native` | Config/session/cron wired; aliases cover chat |
+| Alias id `native` | One-release routing / config read compat |
 | `AGIM_NATIVE_*` env prefix | Historical; future `AGIM_AGENT_*` aliases deferred |
-| Tool names `native_*` | Prompt/policy break risk |
+| Dispatch accept `native_*` | Prompt/policy migration window |
+| Config read `workspaces[]` + API `/api/workspaces` | SPA URL churn deferred |
 | `AGIM_ENABLE_GLOBAL_IM` / `AGIM_ENABLE_REMOTE_AGENT` | Compliance gates |
 | `config.agents: []` = allow-all | Back-compat |
 | Session legacy single-file JSON | Back-compat loader |
 | `/setup`, `/schedule`, `?token=` | Soft deprecation |
 | `autonomous-loops` skill shim | Until advertised v1.8 window |
+| SQLite table `native_todos` | On-disk schema; unrelated to tool rename |
 
-## Follow-up (high break cost — deferred)
+## Follow-up
 
 | Item | Notes |
 |------|-------|
-| Registry `native` → `agim` | Needs config + session migration |
-| Tools `native_*` → `agim_*` | Prompt + deny-list migration |
-| `pi-sessions` → `agim-sessions` | On-disk migration |
-| Config `workspaces[]` → `tenants[]` | API + SPA |
+| Drop `native` / `native_*` / `workspaces` read aliases | After compat window |
+| Rename SPA `/api/workspaces` → `/api/tenants` | Optional; keep redirect |
 | Shrink `agent-loop.ts` | Extract shared helpers; delete retired loop body |
 
 ## Dead env knobs (must stay off SPA allowlist)

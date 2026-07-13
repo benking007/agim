@@ -4,9 +4,9 @@
 // (and unit-testable with injected deps).
 
 import { chmodSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
+import { migratePiSessionsDir } from '../../../core/naming-migrate.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { applyGoalTimeoutBoost } from '../../../core/goals.js'
 import type { AgentSendOpts } from '../../../core/types.js'
@@ -72,20 +72,16 @@ function resolveStreamOptions() {
 }
 
 export function createNativeAgentAdapter(): NativeAgentAdapter {
-  const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
+  const sessionsRoot = migratePiSessionsDir(AGIM_HOME)
   try {
     mkdirSync(sessionsRoot, { recursive: true, mode: 0o700 })
-    // mkdir's mode does not tighten an existing directory. Enforce the
-    // private-state boundary on every startup (best-effort on non-POSIX).
     chmodSync(sessionsRoot, 0o700)
   } catch (err) {
-    // Do not hide a weakened state-directory boundary. sendPrompt will still
-    // surface an error if the path is unusable.
-    console.error('[native] failed to secure pi session root:', err instanceof Error ? err.message : err)
+    console.error('[agim-agent] failed to secure session root:', err instanceof Error ? err.message : err)
   }
   return new NativeAgentAdapter({
-    name: 'native',
-    aliases: ['agim', 'na', 'llm', 'native-llm'],
+    name: 'agim',
+    aliases: ['native', 'na', 'llm', 'native-llm', 'agim-agent'],
     sessionsRoot,
     resolveModel: async (opts) => {
       const explicit = resolvePiModelByBackendName(opts?.model)
@@ -126,7 +122,7 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
         if (provider) {
           const planThreadKey =
             o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
-          const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+          const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
           return buildSystemPrompt(provider, `backend:${provider.name}`, cwd, planThreadKey)
         }
       }
@@ -135,14 +131,14 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
         if (!provider) continue
         const planThreadKey =
           o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
-        const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+        const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
         return buildSystemPrompt(provider, role, cwd, planThreadKey)
       }
       const fallback = getAnyProvider()
       if (fallback) {
         const planThreadKey =
           o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
-        const cwd = resolveAgentCwd('native', o) || defaultAgentCwd('native')
+        const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
         return buildSystemPrompt(fallback, 'auto', cwd, planThreadKey)
       }
       return undefined

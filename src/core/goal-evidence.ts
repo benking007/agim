@@ -1,3 +1,4 @@
+import { canonicalizeToolName } from './llm/tool-names.js'
 import {
   createCipheriv,
   createHash,
@@ -211,23 +212,23 @@ function stableJson(value: unknown): string {
 }
 
 const CONTROL_TOOLS = new Set([
-  'native_echo',
-  'native_now',
-  'native_sleep_ms',
-  'native_random_uuid',
-  'native_todo_write',
-  'native_exit_plan_mode',
+  'agim_echo',
+  'agim_now',
+  'agim_sleep_ms',
+  'agim_random_uuid',
+  'agim_todo_write',
+  'agim_exit_plan_mode',
   'mcp__agim__long_task',
   'mcp__agim__complete_goal',
 ])
 
 const OBSERVATION_TOOLS = new Set([
-  'native_read_file',
-  'native_list_dir',
-  'native_glob',
-  'native_grep',
-  'native_web_fetch',
-  'native_web_search',
+  'agim_read_file',
+  'agim_list_dir',
+  'agim_glob',
+  'agim_grep',
+  'agim_web_fetch',
+  'agim_web_search',
   'mcp__agim__read_skill',
   'mcp__agim__list_skills',
   'mcp__agim__search_memos',
@@ -262,9 +263,9 @@ export function classifyGoalEvidence(
   input: unknown,
   _parallelSafe: boolean,
 ): GoalEvidenceKind {
-  if (CONTROL_TOOLS.has(toolName)) return 'control'
-  if (toolName === 'native_exec' && isVerificationCommand(input)) return 'mutation_verification'
-  if (OBSERVATION_TOOLS.has(toolName)) return 'observation'
+  if (CONTROL_TOOLS.has(canonicalizeToolName(toolName))) return 'control'
+  if (canonicalizeToolName(toolName) === 'agim_exec' && isVerificationCommand(input)) return 'mutation_verification'
+  if (OBSERVATION_TOOLS.has(canonicalizeToolName(toolName))) return 'observation'
   return 'mutation'
 }
 

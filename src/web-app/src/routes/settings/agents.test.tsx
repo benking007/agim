@@ -149,7 +149,7 @@ describe('/settings/agents — built-in adapters', () => {
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // Find the claude-code row's checkbox and uncheck it.
     const checkboxes = screen.getAllByRole('checkbox')
-    // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode','antigravity','cursor','kimi-code','qoder','pi','mimo','native']
+    // Order = AGENT_NAMES = ['claude-code','codex','copilot','opencode','antigravity','cursor','kimi-code','qoder','pi','mimo','agim']
     fireEvent.click(requireValue(checkboxes[0], 'claude-code checkbox'))
     // Now claude-code is no longer enabled. The picker should show the
     // "no eligible" placeholder text or be disabled.

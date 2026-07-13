@@ -31,8 +31,8 @@ describe('live-config singleton', () => {
     expect(getLiveConfig()).toBeNull()
   })
 
-  it('getDefaultAgent() falls back to "native" when unset', () => {
-    expect(getDefaultAgent()).toBe('native')
+  it('getDefaultAgent() falls back to "agim" when unset', () => {
+    expect(getDefaultAgent()).toBe('agim')
   })
 
   it('getDefaultAgent(fallback) honours the caller fallback', () => {
@@ -61,12 +61,16 @@ describe('live-config singleton', () => {
     expect(isAgentEnabled('cursor')).toBe(false)
   })
 
-  it('isAgentEnabled() — native honours the enabled list like other agents', () => {
+  it('isAgentEnabled() — agim/native honour the enabled list (either id)', () => {
     setLiveConfig(cfg({ agents: ['codex'], defaultAgent: 'codex' }))
     expect(isAgentEnabled('native')).toBe(false)
-    expect(isAgentEnabled('claude-code')).toBe(false)
+    expect(isAgentEnabled('agim')).toBe(false)
     setLiveConfig(cfg({ agents: ['codex', 'native'], defaultAgent: 'codex' }))
     expect(isAgentEnabled('native')).toBe(true)
+    expect(isAgentEnabled('agim')).toBe(true)
+    setLiveConfig(cfg({ agents: ['codex', 'agim'], defaultAgent: 'codex' }))
+    expect(isAgentEnabled('native')).toBe(true)
+    expect(isAgentEnabled('agim')).toBe(true)
   })
 
   it('isAgentEnabled() — the default agent is always allowed even if not listed', () => {

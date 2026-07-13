@@ -30,7 +30,7 @@ function baseState(overrides: Partial<ChatState> = {}): ChatState {
     pendingAsks: [],
     runActivities: [],
     activeRunId: null,
-    agents: ['claude-code', 'native'],
+    agents: ['claude-code', 'agim'],
     agent: 'claude-code',
     status: 'open',
     currentReplyId: null,

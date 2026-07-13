@@ -93,8 +93,8 @@ describe('/settings/start', () => {
     mockFetch({
       config: {
         messengers: ['wechat-ilink'],
-        agents: ['native'],
-        defaultAgent: 'native',
+        agents: ['agim'],
+        defaultAgent: 'agim',
         features: { globalIm: true, remoteAgent: true },
       },
       agents: { native: true },

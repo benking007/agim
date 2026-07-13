@@ -27,7 +27,21 @@ const { logger } = await import(join(here, 'dist/core/logger.js'))
 
 const log = logger.child({ component: 'start-prod' })
 
-const config = await loadConfig()
+const { migrateNamingV2, getTenantsFromConfig, migratePiSessionsDir, migrateSessionAgentIds, migrateAgentWorkspaceDir } = await import(join(here, 'dist/core/naming-migrate.js'))
+const { saveConfig } = await import(join(here, 'dist/core/onboarding.js'))
+
+let config = await loadConfig()
+{
+  const step = migrateNamingV2(config)
+  if (step.changed) {
+    await saveConfig(step.config)
+    config = step.config
+  }
+}
+migratePiSessionsDir()
+migrateSessionAgentIds()
+migrateAgentWorkspaceDir()
+
 const defaultAgent = config.defaultAgent || 'claude-code'
 const webPort = config.webPort || 3000
 const acpPort = config.acpPort || 9090
@@ -35,8 +49,9 @@ const acpPort = config.acpPort || 9090
 await sessionManager.start()
 await registry.loadBuiltInPlugins()
 
-if (Array.isArray(config.workspaces) && config.workspaces.length > 0) {
-  workspaceRegistry.load({ workspaces: config.workspaces })
+const tenants = getTenantsFromConfig(config)
+if (tenants.length > 0) {
+  workspaceRegistry.load({ workspaces: tenants })
 } else {
   workspaceRegistry.load({})
 }

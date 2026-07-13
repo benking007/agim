@@ -42,7 +42,7 @@ const OFF_TOKENS = new Set(['off', 'exit', 'stop', 'disable', '关', '关闭'])
  *                 a PlanMode banner */
 // v1.2.134 — added 'cursor' which has had --plan since v1.2.49 but was
 // missing from this set (so the warning incorrectly fired for cursor).
-const PLAN_CAPABLE_AGENTS = new Set(['claude-code', 'opencode', 'codex', 'cursor', 'native'])
+const PLAN_CAPABLE_AGENTS = new Set(['claude-code', 'opencode', 'codex', 'cursor', 'agim', 'native'])
 
 export async function handlePlanCommand(args: string, ctx: RouteContext): Promise<string> {
   if (resolvePlanModeEnvPolicy() === 'disabled') {
@@ -63,7 +63,8 @@ export async function handlePlanCommand(args: string, ctx: RouteContext): Promis
       'codex':       '`-s read-only` 沙盒（OS 层只读，非 approval 闸门）',
       'cursor':      '`--plan` 旗标（cursor-agent 自带的 plan 模式）',
       'opencode':    '`--agent plan`（切到 opencode 内置 plan agent）',
-      'native':      'policy denyList 拒绝 native_write_file / native_exec + `native_exit_plan_mode` 握手出 plan 模式',
+      'agim':        'policy denyList 拒绝 agim_write_file / agim_exec + `agim_exit_plan_mode` 握手出 plan 模式',
+      'native':      'alias of agim — same plan-mode handshake (legacy id)',
     }
     const activeMech = PLAN_MECH[agent] ?? '（该 agent 未对接 plan 模式）'
     const others = Object.entries(PLAN_MECH)

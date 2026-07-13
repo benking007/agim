@@ -15,7 +15,7 @@
 // blocked.
 //
 // Tools shipped here:
-//   * native_read_file(path, max_bytes?)
+//   * agim_read_file(path, max_bytes?)
 //   * native_write_file(path, content, mode?)
 //   * native_list_dir(path, max_entries?)
 //   * native_glob(pattern, root?, max_results?)
@@ -32,6 +32,7 @@ import { logger as rootLogger } from '../logger.js'
 import { isSensitivePath } from '../sensitive-paths.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 
 const log = rootLogger.child({ component: 'fs-dispatcher' })
 
@@ -43,21 +44,21 @@ const DEFAULT_GLOB_MAX_RESULTS = 500
 const DEFAULT_GREP_MAX_MATCHES = 200
 
 const FS_TOOL_NAMES = [
-  'native_read_file',
-  'native_write_file',
-  'native_list_dir',
-  'native_glob',
-  'native_grep',
+  'agim_read_file',
+  'agim_write_file',
+  'agim_list_dir',
+  'agim_glob',
+  'agim_grep',
 ] as const
 
 export function isFsToolName(name: string): boolean {
-  return (FS_TOOL_NAMES as readonly string[]).includes(name)
+  return (FS_TOOL_NAMES as readonly string[]).includes(canonicalizeToolName(name))
 }
 
 export function getFsTools(): ToolDef[] {
   return [
     {
-      name: 'native_read_file',
+      name: 'agim_read_file',
       description:
         'Read a UTF-8 text file by path. Default max 256KB. Paths resolve against the agent cwd; ' +
         'absolute paths are allowed by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to the ' +
@@ -73,10 +74,10 @@ export function getFsTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_write_file',
+      name: 'agim_write_file',
       description:
         'Write or overwrite a UTF-8 text file. Default max 1MB. Same path-safety rules as ' +
-        'native_read_file. Creates parent directories as needed.',
+        'agim_read_file. Creates parent directories as needed.',
       parameters: {
         type: 'object',
         properties: {
@@ -89,7 +90,7 @@ export function getFsTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_list_dir',
+      name: 'agim_list_dir',
       description:
         'List entries in a directory. Returns up to 500 entries with type (file|dir|symlink|other) ' +
         'and byte size. Hidden entries (starting with .) included.',
@@ -104,7 +105,7 @@ export function getFsTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_glob',
+      name: 'agim_glob',
       description:
         'Find files matching a glob pattern. Pattern syntax matches "**/*.ts", "src/**/*.{js,ts}", etc. ' +
         'Returned paths are relative to root (default: agent cwd).',
@@ -120,7 +121,7 @@ export function getFsTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_grep',
+      name: 'agim_grep',
       description:
         'Search file contents with a regex. Uses ripgrep when available, falls back to a fs walk. ' +
         'output_mode: "content" returns matching lines, "files" returns matching file paths, ' +
@@ -151,17 +152,18 @@ export function buildFsDispatcher(ctx: FsContext): ToolDispatcher {
     if (!isFsToolName(call.name)) {
       return { text: `not handled: ${call.name}`, isError: true, source: 'unknown' }
     }
+    const toolName = canonicalizeToolName(call.name)
     const timeoutMs = resolveTimeoutMs()
     try {
       return await raceTimeout(
-        runOne(call.name, call.arguments, ctx, signal),
+        runOne(toolName, call.arguments, ctx, signal),
         timeoutMs,
-        call.name,
+        toolName,
       )
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log.warn({ event: 'fs.tool.error', tool: call.name, err: msg })
-      return { text: `${call.name} failed: ${msg}`, isError: true, source: 'fs' }
+      log.warn({ event: 'fs.tool.error', tool: toolName, err: msg })
+      return { text: `${toolName} failed: ${msg}`, isError: true, source: 'fs' }
     }
   }
 }
@@ -173,11 +175,11 @@ async function runOne(
   signal: AbortSignal,
 ): Promise<DispatcherResult> {
   switch (name) {
-    case 'native_read_file': return runReadFile(args, ctx)
-    case 'native_write_file': return runWriteFile(args, ctx)
-    case 'native_list_dir': return runListDir(args, ctx)
-    case 'native_glob': return runGlob(args, ctx, signal)
-    case 'native_grep': return runGrep(args, ctx, signal)
+    case 'agim_read_file': return runReadFile(args, ctx)
+    case 'agim_write_file': return runWriteFile(args, ctx)
+    case 'agim_list_dir': return runListDir(args, ctx)
+    case 'agim_glob': return runGlob(args, ctx, signal)
+    case 'agim_grep': return runGrep(args, ctx, signal)
     default:
       return { text: `unknown fs tool: ${name}`, isError: true, source: 'fs' }
   }

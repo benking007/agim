@@ -648,7 +648,7 @@
     },
     "exec": {
       "title": "Native exec tool",
-      "description": "Sandbox + timeout controls for native_exec. Each invocation also goes through an IM approval card (unless previously auto-allowed by fingerprint).",
+      "description": "Sandbox + timeout controls for agim_exec. Each invocation also goes through an IM approval card (unless previously auto-allowed by fingerprint).",
       "sandbox": "Sandbox backend",
       "sandboxNone": "None (plain spawn)",
       "sandboxBwrap": "bubblewrap (Linux only)",
@@ -930,7 +930,7 @@
     "planModeDefault": "PlanMode default state",
     "planModeDefaultHint": "AGIM_NATIVE_PLAN_MODE. Default off; `/plan on` toggles per-thread regardless.",
     "planIntentAuto": "Auto-enter plan mode",
-    "planIntentAutoHint": "AGIM_PLAN_INTENT_AUTO. When on, a prompt containing 先想想 / plan only / don't act yet temporarily enables plan mode for THAT turn only. Never auto-exits — user must /plan off or model must call native_exit_plan_mode.",
+    "planIntentAutoHint": "AGIM_PLAN_INTENT_AUTO. When on, a prompt containing 先想想 / plan only / don't act yet temporarily enables plan mode for THAT turn only. Never auto-exits — user must /plan off or model must call agim_exit_plan_mode.",
     "planIntentPhrases": "Plan-intent phrase list (optional override)",
     "planIntentPhrasesHint": "AGIM_PLAN_INTENT_PHRASES. Comma-separated. Empty = use built-in CN/EN defaults. Matching is case-insensitive substring.",
     "iterationCard": "Iteration cap",
@@ -940,7 +940,7 @@
   },
   "search": {
     "title": "Web search providers",
-    "subtitle": "Provider chain for native_web_search. On errors, requests fall through to the next provider. Clear a key to remove it; type to overwrite. Changes apply immediately.",
+    "subtitle": "Provider chain for agim_web_search. On errors, requests fall through to the next provider. Clear a key to remove it; type to overwrite. Changes apply immediately.",
     "refresh": "Refresh",
     "save": "Save",
     "discard": "Discard",

@@ -35,7 +35,11 @@ export class Workspace {
   hasAgent(agent: string): boolean {
     // Empty whitelist = unrestricted. Named whitelist enforces membership.
     if (this.agentWhitelist.size === 0) return true
-    return this.agentWhitelist.has(agent)
+    if (this.agentWhitelist.has(agent)) return true
+    // Naming v2: agim ↔ native are the same agent during migration.
+    if (agent === 'agim' && this.agentWhitelist.has('native')) return true
+    if (agent === 'native' && this.agentWhitelist.has('agim')) return true
+    return false
   }
 
   hasMember(userId: string): boolean {

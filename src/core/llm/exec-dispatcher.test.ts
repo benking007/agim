@@ -107,29 +107,29 @@ describe('exec-dispatcher', () => {
   })
 
   describe('getExecTools / isExecToolName', () => {
-    it('exposes native_exec', () => {
+    it('exposes agim_exec', () => {
       const names = getExecTools().map((t) => t.name)
-      expect(names).toEqual(['native_exec'])
+      expect(names).toEqual(['agim_exec'])
     })
 
-    it('isExecToolName matches only native_exec', () => {
-      expect(isExecToolName('native_exec')).toBe(true)
-      expect(isExecToolName('native_read_file')).toBe(false)
-      expect(isExecToolName('native_echo')).toBe(false)
+    it('isExecToolName matches only agim_exec', () => {
+      expect(isExecToolName('agim_exec')).toBe(true)
+      expect(isExecToolName('agim_read_file')).toBe(false)
+      expect(isExecToolName('agim_echo')).toBe(false)
     })
   })
 
   describe('buildExecDispatcher', () => {
     it('non-exec tool returns source="unknown"', async () => {
       const d = buildExecDispatcher({ cwd })
-      const r = await d({ id: 't', name: 'native_echo', arguments: {} }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_echo', arguments: {} }, NEVER_ABORT)
       expect(r.source).toBe('unknown')
       expect(r.isError).toBe(true)
     })
 
     it('rejects empty command', async () => {
       const d = buildExecDispatcher({ cwd })
-      const r = await d({ id: 't', name: 'native_exec', arguments: { command: '' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_exec', arguments: { command: '' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/command required/)
     })
@@ -137,7 +137,7 @@ describe('exec-dispatcher', () => {
     it('runs a simple command and captures stdout + exit_code', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'echo hello' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'echo hello' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
@@ -151,7 +151,7 @@ describe('exec-dispatcher', () => {
     it('non-zero exit is surfaced as isError', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'exit 7' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'exit 7' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -162,7 +162,7 @@ describe('exec-dispatcher', () => {
     it('respects cwd argument', async () => {
       const d = buildExecDispatcher({ cwd: '/tmp' })  // dispatcher default
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'pwd', cwd } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'pwd', cwd } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
@@ -174,7 +174,7 @@ describe('exec-dispatcher', () => {
     it('timeout kills the process', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'sleep 10', timeout_ms: 200 } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'sleep 10', timeout_ms: 200 } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -187,7 +187,7 @@ describe('exec-dispatcher', () => {
       const d = buildExecDispatcher({ cwd })
       const ctrl = new AbortController()
       const run = d(
-        { id: 't', name: 'native_exec', arguments: { command: 'sleep 10' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'sleep 10' } },
         ctrl.signal,
       )
       setTimeout(() => ctrl.abort(), 50)
@@ -201,7 +201,7 @@ describe('exec-dispatcher', () => {
       const d = buildExecDispatcher({ cwd })
       // Deterministic ~8000-byte output, no /dev/urandom dependency.
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: "yes abcd | head -n 1000" } },
+        { id: 't', name: 'agim_exec', arguments: { command: "yes abcd | head -n 1000" } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
@@ -234,7 +234,7 @@ describe('exec-dispatcher', () => {
     for (const [label, cmd, _hint] of cases) {
       it(`blocks: ${label}`, async () => {
         const d = buildExecDispatcher({ cwd })
-        const r = await d({ id: 't', name: 'native_exec', arguments: { command: cmd } }, NEVER_ABORT)
+        const r = await d({ id: 't', name: 'agim_exec', arguments: { command: cmd } }, NEVER_ABORT)
         expect(r.isError).toBe(true)
         expect(r.text).toMatch(/dangerous-pattern/i)
       })
@@ -245,7 +245,7 @@ describe('exec-dispatcher', () => {
       // rm -rf with a relative path is fine
       const ok = ['rm -rf ./build', 'rm -rf subdir', 'chmod 755 ./bin/agim']
       for (const cmd of ok) {
-        const r = await d({ id: 't', name: 'native_exec', arguments: { command: cmd } }, NEVER_ABORT)
+        const r = await d({ id: 't', name: 'agim_exec', arguments: { command: cmd } }, NEVER_ABORT)
         // Either succeeded or failed at the exec layer (not the pre-flight)
         expect(r.text).not.toMatch(/dangerous-pattern/i)
       }
@@ -256,7 +256,7 @@ describe('exec-dispatcher', () => {
     it('refuses curl to RFC1918', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'curl -sSL http://192.168.1.1/admin' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'curl -sSL http://192.168.1.1/admin' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -266,7 +266,7 @@ describe('exec-dispatcher', () => {
     it('refuses wget to AWS metadata endpoint', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'wget http://169.254.169.254/latest/meta-data/' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'wget http://169.254.169.254/latest/meta-data/' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -276,7 +276,7 @@ describe('exec-dispatcher', () => {
     it('allows curl to public URLs', async () => {
       const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'native_exec', arguments: { command: 'echo https://example.com' } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'echo https://example.com' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)

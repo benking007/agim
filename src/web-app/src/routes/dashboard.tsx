@@ -84,7 +84,7 @@ export default function DashboardRoute(): JSX.Element {
   const cfg = cfgQuery.data
   const defaultAgent = cfg?.defaultAgent || cfg?.agents?.[0] || ''
   const agentName = defaultAgent ? agentDisplayName(defaultAgent) : t('dashboard.unknown')
-  const nativeAgentSelected = defaultAgent === 'native'
+  const nativeAgentSelected = defaultAgent === 'agim' || defaultAgent === 'native'
   const agentStatus = defaultAgent ? agentsQuery.data?.[defaultAgent] : undefined
   const agentLoading = cfgQuery.isLoading || agentsQuery.isLoading
   const service = serviceQuery.data

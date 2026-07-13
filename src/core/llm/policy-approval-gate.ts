@@ -25,6 +25,7 @@
 import { logger as rootLogger } from '../logger.js'
 import type { ToolCallRequest } from './provider-base.js'
 import type { ApprovalGate } from './agent-loop.js'
+import { expandToolNameList, canonicalizeToolName } from './tool-names.js'
 
 const log = rootLogger.child({ component: 'policy-approval-gate' })
 
@@ -97,14 +98,14 @@ function looksReadOnly(toolName: string): boolean {
  */
 export function buildPolicyApprovalGate(cfg: PolicyApprovalGateConfig = {}): ApprovalGate {
   const mode: ApprovalMode = cfg.mode ?? 'allow-list'
-  const autoAllow = new Set(cfg.autoAllow ?? [])
-  const denyList = new Set(cfg.denyList ?? [])
+  const autoAllow = expandToolNameList(cfg.autoAllow ?? [])
+  const denyList = expandToolNameList(cfg.denyList ?? [])
   const askUser = cfg.askUser
   return async (call: ToolCallRequest, _attempt: number, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     // denylist is non-negotiable — never escalate to user.
-    if (denyList.has(call.name)) return 'deny'
+    if (denyList.has(call.name) || denyList.has(canonicalizeToolName(call.name))) return 'deny'
     // autoAllow short-circuit — never bother the user.
-    if (autoAllow.has(call.name)) return 'allow'
+    if (autoAllow.has(call.name) || autoAllow.has(canonicalizeToolName(call.name))) return 'allow'
     // Compute the "would-be" decision from the mode rule.
     let modeDecision: 'allow' | 'deny'
     switch (mode) {

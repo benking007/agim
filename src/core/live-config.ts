@@ -47,7 +47,7 @@ export function getLiveConfig(): Config | null {
 
 /** The Config's `defaultAgent` field, with a fallback for very early
  *  callers (e.g. a tool fires before cli.ts has finished boot). */
-export function getDefaultAgent(fallback = 'native'): string {
+export function getDefaultAgent(fallback = 'agim'): string {
   return current?.defaultAgent || fallback
 }
 
@@ -55,17 +55,20 @@ export function getDefaultAgent(fallback = 'native'): string {
  *  or no-config-loaded → "allow all" for back-compat with installs that
  *  never configured the list explicitly.
  *
- *  `native` is filtered like every other agent once
- *  `migrateNativeAgentToggle` has run (boot adds `native` to pre-existing
- *  non-empty lists once). SPA disable then truly unroutes `/na`. */
+ *  `agim` / legacy `native` are treated as the same agent id. */
 export function isAgentEnabled(name: string): boolean {
   if (!current) return true
   const list = current.agents
   if (!list || list.length === 0) return true
-  // The configured default agent must always be reachable — otherwise an
-  // enabled list that doesn't explicitly include the default would make
-  // unrouted messages fail. Exempt it from the filter.
-  if (name === (current.defaultAgent || '')) return true
+  const defaultId = current.defaultAgent || ''
+  if (name === defaultId) return true
+  // Agim Agent: accept either registry id while configs migrate.
+  if ((name === 'agim' || name === 'native')
+    && (list.includes('agim') || list.includes('native') || defaultId === 'agim' || defaultId === 'native')) {
+    return true
+  }
+  if (name === 'agim' && list.includes('native')) return true
+  if (name === 'native' && list.includes('agim')) return true
   return list.includes(name)
 }
 

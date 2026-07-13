@@ -143,7 +143,7 @@ describe('/settings/llm quick setup', () => {
       fetchSpy.mock.calls.some(
         (c) => String(c[0]) === '/api/config'
           && (c[1] as RequestInit | undefined)?.method === 'PUT'
-          && JSON.parse(String((c[1] as RequestInit).body)).defaultAgent === 'native',
+          && JSON.parse(String((c[1] as RequestInit).body)).defaultAgent === 'agim',
       ),
     ).toBe(true)
     expect(
@@ -184,7 +184,7 @@ describe('/settings/llm quick setup', () => {
       fetchSpy.mock.calls.some(
         (c) => String(c[0]) === '/api/config'
           && (c[1] as RequestInit | undefined)?.method === 'PUT'
-          && JSON.parse(String((c[1] as RequestInit).body)).defaultAgent === 'native',
+          && JSON.parse(String((c[1] as RequestInit).body)).defaultAgent === 'agim',
       ),
     ).toBe(true)
   })
@@ -201,7 +201,7 @@ describe('/settings/llm quick setup', () => {
         },
       ],
       roles: { 'native-chat': 'deepseek-agim' },
-      config: { defaultAgent: 'native' },
+      config: { defaultAgent: 'agim' },
     })
     renderPage()
 

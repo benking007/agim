@@ -276,7 +276,7 @@ body
 
   // v1.2.137 — skills-first routing discipline. The block now prefixes
   // the list with a MUST rule telling every agent to scan skills before
-  // generic tools (web_fetch / web_search / native_exec). One injection
+  // generic tools (web_fetch / web_search / agim_exec). One injection
   // point, applies to native + all CLI adapters because router.ts wraps
   // this string into every turn's prompt.
   describe('v1.2.137 routing rule', () => {

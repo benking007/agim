@@ -15,6 +15,7 @@
 // surface (commands/goal.ts). The MCP tools are the model's first-
 // person path: "register this goal" / "this goal is done".
 
+import { isAgimAgentId } from './naming-migrate.js'
 import {
   setActiveGoal,
   getActiveGoal,
@@ -163,7 +164,7 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
     title: goal,
     body: summary,
     replaceActive: force,
-    evidenceRequired: ctx.callerAgent === 'native',
+    evidenceRequired: isAgimAgentId(ctx.callerAgent),
     workspaceScope: ctx.workspaceScope,
   })
   if (!row) {
@@ -291,7 +292,7 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
   const evidenceIds = Array.isArray(p.evidenceIds)
     ? p.evidenceIds.filter((value): value is string => typeof value === 'string').slice(0, 16)
     : []
-  if (status === 'completed' && ctx.callerAgent === 'native') {
+  if (status === 'completed' && isAgimAgentId(ctx.callerAgent)) {
     const todoGate = evaluateTodoCompletionGate(
       `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
     )

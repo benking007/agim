@@ -1,4 +1,4 @@
-// v1.2.131 P0b — native_exit_plan_mode dispatcher.
+// v1.2.131 P0b — agim_exit_plan_mode dispatcher.
 //
 // Pins:
 //   (a) refuses calls when plan mode is NOT on for the thread
@@ -31,7 +31,7 @@ const SIGNAL = new AbortController().signal
 describe('plan-exit-dispatcher — tool def + name helper', () => {
   it('PLAN_EXIT_TOOL_NAME matches isPlanExitToolName', () => {
     expect(isPlanExitToolName(PLAN_EXIT_TOOL_NAME)).toBe(true)
-    expect(isPlanExitToolName('native_todo_write')).toBe(false)
+    expect(isPlanExitToolName('agim_todo_write')).toBe(false)
     expect(isPlanExitToolName('')).toBe(false)
   })
 
@@ -39,7 +39,7 @@ describe('plan-exit-dispatcher — tool def + name helper', () => {
     const defs = getPlanExitTools()
     expect(defs).toHaveLength(1)
     const t = defs[0]
-    expect(t.name).toBe('native_exit_plan_mode')
+    expect(t.name).toBe('agim_exit_plan_mode')
     expect(t.parameters.type).toBe('object')
     expect(t.parameters.required).toEqual(['plan'])
     const planProp = (t.parameters.properties as Record<string, { type: string }>).plan
@@ -74,14 +74,14 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
 
   it('refuses when called outside plan mode', async () => {
     const d = makeDispatcher()
-    const r = await d(call('native_exit_plan_mode', { plan: 'some plan' }), SIGNAL)
+    const r = await d(call('agim_exit_plan_mode', { plan: 'some plan' }), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/can only be called while Plan Mode is active/i)
   })
 
   it('returns unknown for a different tool name', async () => {
     const d = makeDispatcher()
-    const r = await d(call('native_todo_write', {}), SIGNAL)
+    const r = await d(call('agim_todo_write', {}), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.source).toBe('unknown')
   })
@@ -89,10 +89,10 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   it('refuses missing or non-string plan arg (env=ON so plan-mode-on)', async () => {
     process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
-    const r1 = await d(call('native_exit_plan_mode', {}), SIGNAL)
+    const r1 = await d(call('agim_exit_plan_mode', {}), SIGNAL)
     expect(r1.isError).toBe(true)
     expect(r1.text).toMatch(/plan/i)
-    const r2 = await d(call('native_exit_plan_mode', { plan: 42 }), SIGNAL)
+    const r2 = await d(call('agim_exit_plan_mode', { plan: 42 }), SIGNAL)
     expect(r2.isError).toBe(true)
     expect(r2.text).toMatch(/must be a string/i)
   })
@@ -100,7 +100,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   it('refuses empty plan after trim', async () => {
     process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
-    const r = await d(call('native_exit_plan_mode', { plan: '   \n  ' }), SIGNAL)
+    const r = await d(call('agim_exit_plan_mode', { plan: '   \n  ' }), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/empty/i)
   })
@@ -108,7 +108,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
   it('refuses plan over 4000 chars', async () => {
     process.env.AGIM_NATIVE_PLAN_MODE = '1'
     const d = makeDispatcher()
-    const r = await d(call('native_exit_plan_mode', { plan: 'x'.repeat(5000) }), SIGNAL)
+    const r = await d(call('agim_exit_plan_mode', { plan: 'x'.repeat(5000) }), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/too long/i)
   })
@@ -120,7 +120,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
       threadKey: 'tg:test:thread1',
       runId: 'run-headless',
     })
-    const r = await d(call('native_exit_plan_mode', { plan: '- step 1\n- step 2' }), SIGNAL)
+    const r = await d(call('agim_exit_plan_mode', { plan: '- step 1\n- step 2' }), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/no interactive ui/i)
   })
@@ -148,7 +148,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
       })
       let settled = false
       const resultPromise = d(
-        call('native_exit_plan_mode', { plan: '- implement only after approval' }),
+        call('agim_exit_plan_mode', { plan: '- implement only after approval' }),
         SIGNAL,
       ).then((result) => {
         settled = true
@@ -193,7 +193,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
         userId: 'u1',
       })
       const resultPromise = d(
-        call('native_exit_plan_mode', { plan: '- only after approval' }),
+        call('agim_exit_plan_mode', { plan: '- only after approval' }),
         ctrl.signal,
       )
       for (let i = 0; i < 20 && !approvalBus.hasPendingFor(key); i++) {

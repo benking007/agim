@@ -16,8 +16,9 @@
 //     5 MB grep / curl would otherwise poison the context for the rest of the
 //     turn and silently blow the model input limit;
 //   - per-tool wall timeout (AGIM_NATIVE_TOOL_TIMEOUT_MS / ToolDef.timeoutMs):
-//     a wedged native_exec / MCP call would otherwise hang the whole turn.
+//     a wedged agim_exec / MCP call would otherwise hang the whole turn.
 
+import { toolNameMatches } from '../../../core/llm/tool-names.js'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
   beginGoalToolOperation,
@@ -170,9 +171,9 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
       const parsedArgs = (args ?? {}) as Record<string, unknown>
       const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
       const goalEvidence = opts.resolveGoalEvidence?.() ?? opts.goalEvidence ?? null
-      if (goalEvidence && def.name === 'native_exec') {
+      if (goalEvidence && toolNameMatches(def.name, 'agim_exec')) {
         if (!isGoalExecContainmentAvailable()) {
-          throw new Error('native_exec requires bwrap process containment while a versioned goal is active')
+          throw new Error('agim_exec requires bwrap process containment while a versioned goal is active')
         }
         if (isDetachedGoalCommand(parsedArgs)) {
           throw new Error('detached/background exec is not allowed while a versioned goal is active')

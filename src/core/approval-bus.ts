@@ -1435,7 +1435,7 @@ export class ApprovalBus {
     const { handleGoalOp } = await import('./goal-rpc.js')
     const { hashWorkspaceScope } = await import('./goal-evidence.js')
     const { defaultAgentCwd, resolveAgentCwd } = await import('./agent-cwd.js')
-    const agentName = ctx.callerAgent || 'native'
+    const agentName = ctx.callerAgent || 'agim'
     const result = await handleGoalOp(op, payload, {
       platform: ctx.platform,
       channelId: ctx.channelId,

@@ -44,7 +44,7 @@ describe('PlanMode (v1.2.119)', () => {
       process.env.AGIM_NATIVE_PLAN_MODE = '1'
       process.env.AGIM_DISABLE_PLAN_MODE = '1'
       expect(isPlanModeOn()).toBe(false)
-      expect(resolvePolicy().denyList).not.toContain('native_write_file')
+      expect(resolvePolicy().denyList).not.toContain('agim_write_file')
     })
   })
 
@@ -60,20 +60,20 @@ describe('PlanMode (v1.2.119)', () => {
       }
     })
 
-    it('plan mode ON: native_write_file + native_exec appended to denyList', () => {
+    it('plan mode ON: agim_write_file + agim_exec appended to denyList', () => {
       process.env.AGIM_NATIVE_PLAN_MODE = '1'
       const p = resolvePolicy()
-      expect(p.denyList).toContain('native_write_file')
-      expect(p.denyList).toContain('native_exec')
+      expect(p.denyList).toContain('agim_write_file')
+      expect(p.denyList).toContain('agim_exec')
     })
 
     it('plan mode ON + user denylist: union (no duplicates)', () => {
       process.env.AGIM_NATIVE_PLAN_MODE = 'true'
-      process.env.AGIM_NATIVE_AGENT_DENYLIST = 'native_write_file,my_custom_tool'
+      process.env.AGIM_NATIVE_AGENT_DENYLIST = 'agim_write_file,my_custom_tool'
       try {
         const p = resolvePolicy()
-        expect(p.denyList).toContain('native_write_file')
-        expect(p.denyList).toContain('native_exec')
+        expect(p.denyList).toContain('agim_write_file')
+        expect(p.denyList).toContain('agim_exec')
         expect(p.denyList).toContain('my_custom_tool')
         // No duplicates
         const denyList = p.denyList ?? []

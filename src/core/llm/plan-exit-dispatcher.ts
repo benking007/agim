@@ -1,8 +1,8 @@
-// plan-exit-dispatcher — native_exit_plan_mode tool (v1.2.131 P0b).
+// plan-exit-dispatcher — agim_exit_plan_mode tool (v1.2.131 P0b).
 //
 // Mirrors Claude Code's ExitPlanMode handshake:
 //   1. Model is in PlanMode (write tools denied at policy gate).
-//   2. Model thinks through the plan, then calls `native_exit_plan_mode`
+//   2. Model thinks through the plan, then calls `agim_exit_plan_mode`
 //      with the plan markdown.
 //   3. Dispatcher routes the call through the approval-bus so the user
 //      sees an IM approval card carrying the plan content.
@@ -34,14 +34,15 @@ import {
 } from '../plan-mode-state.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 import { randomUUID } from 'node:crypto'
 
 const log = rootLogger.child({ component: 'plan-exit-dispatcher' })
 
-export const PLAN_EXIT_TOOL_NAME = 'native_exit_plan_mode'
+export const PLAN_EXIT_TOOL_NAME = 'agim_exit_plan_mode'
 
 export function isPlanExitToolName(name: string): boolean {
-  return name === PLAN_EXIT_TOOL_NAME
+  return canonicalizeToolName(name) === PLAN_EXIT_TOOL_NAME
 }
 
 export interface PlanExitCtx {
@@ -114,7 +115,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
     if (!ctx.threadKey || !effectivePlanModeOn(ctx.threadKey)) {
       return {
         text:
-          'native_exit_plan_mode can only be called while Plan Mode is active. ' +
+          'agim_exit_plan_mode can only be called while Plan Mode is active. ' +
           'This thread is not in Plan Mode — proceed with normal tool calls.',
         isError: true,
         source: 'plan-exit',
@@ -198,7 +199,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
           channelId: ctx.channelId ?? 'default',
           threadId,
           userId: ctx.userId ?? 'unknown',
-          callerAgent: 'native',
+          callerAgent: 'agim',
         },
         // `message` is only present on the deny branch (Decision is a
         // discriminated union); we narrow defensively so the approve
@@ -298,7 +299,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         'Plan REJECTED by user. You remain in Plan Mode. Revise the plan to ' +
         'address this feedback:\n\n' +
         (reason ? `> ${reason}` : '> (no reason provided)') +
-        '\n\nWhen ready, call native_exit_plan_mode again with the revised plan.',
+        '\n\nWhen ready, call agim_exit_plan_mode again with the revised plan.',
       isError: true,
       source: 'plan-exit',
     }

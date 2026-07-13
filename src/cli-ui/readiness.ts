@@ -9,6 +9,7 @@ import type { Config } from '../core/onboarding.js'
 import type { Config as CoreConfig } from '../core/types.js'
 
 export const AGENT_PRIORITY = [
+  'agim',
   'native',
   'claude-code',
   'codex',

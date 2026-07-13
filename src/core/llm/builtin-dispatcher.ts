@@ -7,16 +7,16 @@
 //   - bounded execution time so a model loop can't burn budget here
 //
 // Concrete tools shipped in this initial cut:
-//   * native_echo(text)               → return the text verbatim. Useful
+//   * agim_echo (alias: native_echo)(text)               → return the text verbatim. Useful
 //                                       for the model to confirm it heard
 //                                       a piece of input, and for tests.
-//   * native_now()                    → ISO timestamp + Asia/Shanghai
+//   * agim_now (alias: native_now)()                    → ISO timestamp + Asia/Shanghai
 //                                       offset. Honors AGIM_TZ_OFFSET_HOURS.
-//   * native_sleep_ms(ms, ≤ 5000)     → pause for the requested ms; lets
+//   * agim_sleep_ms (alias: native_sleep_ms)(ms, ≤ 5000)     → pause for the requested ms; lets
 //                                       the model deliberately yield in
 //                                       tests / rate-limit shimming. Hard
 //                                       capped to 5s.
-//   * native_random_uuid()            → fresh v4 UUID. Trivial but the
+//   * agim_random_uuid (alias: native_random_uuid)()            → fresh v4 UUID. Trivial but the
 //                                       agent occasionally needs a stable
 //                                       id without inventing one.
 //
@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 
 const log = rootLogger.child({ component: 'builtin-dispatcher' })
 
@@ -40,7 +41,7 @@ const MAX_SLEEP_MS = 5_000
 export function getBuiltinTools(): ToolDef[] {
   return [
     {
-      name: 'native_echo',
+      name: 'agim_echo',
       description: 'Return the text argument verbatim. Useful when the model needs to confirm what it received, or to log a checkpoint.',
       parameters: {
         type: 'object',
@@ -52,7 +53,7 @@ export function getBuiltinTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_now',
+      name: 'agim_now',
       description: 'Return the current local time as ISO 8601 plus the agim-configured timezone offset (default Asia/Shanghai, override via AGIM_TZ_OFFSET_HOURS).',
       parameters: {
         type: 'object',
@@ -61,7 +62,7 @@ export function getBuiltinTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_sleep_ms',
+      name: 'agim_sleep_ms',
       description: 'Pause for the requested number of milliseconds (max 5000). Useful for deliberate yielding; never use to "wait for data" — call the right tool instead.',
       parameters: {
         type: 'object',
@@ -73,7 +74,7 @@ export function getBuiltinTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_random_uuid',
+      name: 'agim_random_uuid',
       description: 'Generate a fresh random v4 UUID.',
       parameters: {
         type: 'object',
@@ -87,11 +88,11 @@ export function getBuiltinTools(): ToolDef[] {
 /** True iff `name` is one of the builtin tool names. Cheap O(1) check
  *  the dispatcher uses to decide whether to handle vs pass through. */
 export function isBuiltinToolName(name: string): boolean {
-  switch (name) {
-    case 'native_echo':
-    case 'native_now':
-    case 'native_sleep_ms':
-    case 'native_random_uuid':
+  switch (canonicalizeToolName(name)) {
+    case 'agim_echo':
+    case 'agim_now':
+    case 'agim_sleep_ms':
+    case 'agim_random_uuid':
       return true
     default:
       return false
@@ -111,14 +112,14 @@ export function isBuiltinToolName(name: string): boolean {
  */
 export function buildBuiltinDispatcher(): ToolDispatcher {
   return async (call, signal) => {
-    switch (call.name) {
-      case 'native_echo':
+    switch (canonicalizeToolName(call.name)) {
+      case 'agim_echo':
         return runEcho(call.arguments)
-      case 'native_now':
+      case 'agim_now':
         return runNow()
-      case 'native_sleep_ms':
+      case 'agim_sleep_ms':
         return runSleep(call.arguments, signal)
-      case 'native_random_uuid':
+      case 'agim_random_uuid':
         return runRandomUuid()
       default:
         return {

@@ -235,7 +235,7 @@ function QuickAgentSetupCard({
   const usableBackends = (data?.backends ?? []).filter((b) => b.secret.source !== 'none')
   const nativeRole = data?.roles?.['native-chat']
   const activeBackend = usableBackends.find((b) => b.name === nativeRole) ?? usableBackends[0]
-  const defaultIsNative = cfgQuery.data?.defaultAgent === 'native'
+  const defaultIsNative = cfgQuery.data?.defaultAgent === 'agim' || cfgQuery.data?.defaultAgent === 'native'
   const alreadyReady = Boolean(activeBackend && nativeRole && defaultIsNative)
 
   const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
@@ -264,7 +264,7 @@ function QuickAgentSetupCard({
   async function enableExistingBackend(backendName: string): Promise<void> {
     try {
       await putRoles.mutateAsync({ 'native-chat': backendName })
-      await updateConfig.mutateAsync({ defaultAgent: 'native' })
+      await updateConfig.mutateAsync({ defaultAgent: 'agim' })
       await cfgQuery.refetch()
       onRefresh()
       toast.success(t('llm.quick.enabledToast'))
@@ -293,7 +293,7 @@ function QuickAgentSetupCard({
         apiKey: apiKey.trim(),
       })
       await putRoles.mutateAsync({ 'native-chat': backendName })
-      await updateConfig.mutateAsync({ defaultAgent: 'native' })
+      await updateConfig.mutateAsync({ defaultAgent: 'agim' })
       await cfgQuery.refetch()
       onRefresh()
 

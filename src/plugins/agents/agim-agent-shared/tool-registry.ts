@@ -22,6 +22,7 @@
 //     registered safe-marker (or a classifier that throws) runs serially.
 
 import type { ToolCallRequest, ToolDef } from '../../../core/llm/provider-base.js'
+import { canonicalizeToolName, toolNameVariants } from '../../../core/llm/tool-names.js'
 import {
   buildMcpDispatcher,
   combineDispatchers,
@@ -77,9 +78,9 @@ export interface AssembledTools {
 // Concurrency-safe names per source. These reproduce exactly the membership
 // of the former static NATIVE_PARALLEL_SAFE_TOOLS set, now scoped to the
 // source that owns each name (so adding a tool can't forget to classify it).
-const BUILTIN_SAFE = new Set(['native_echo', 'native_now', 'native_random_uuid'])
-const FS_SAFE = new Set(['native_read_file', 'native_list_dir', 'native_glob', 'native_grep'])
-const WEB_SAFE = new Set(['native_web_fetch', 'native_web_search'])
+const BUILTIN_SAFE = new Set(['agim_echo', 'agim_now', 'agim_random_uuid'])
+const FS_SAFE = new Set(['agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep'])
+const WEB_SAFE = new Set(['agim_web_fetch', 'agim_web_search'])
 const AGIM_SAFE = new Set([
   'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
   'mcp__agim__memory_list', 'mcp__agim__memory_query',
@@ -89,15 +90,18 @@ const EMPTY: ReadonlySet<string> = new Set()
 /** Explicit Plan Mode capability allowlist. Unknown/external tools fail closed;
  * side-effecting Agim tools (memo/reminder/goal/push/A2A) are intentionally
  * absent. Plan-exit is the one approval-only state transition allowed. */
-export const NATIVE_PLAN_MODE_ALLOWED_TOOLS: ReadonlySet<string> = new Set([
+export const AGIM_PLAN_MODE_ALLOWED_TOOLS: ReadonlySet<string> = new Set([
   ...BUILTIN_SAFE,
-  'native_sleep_ms',
+  'agim_sleep_ms',
   ...FS_SAFE,
   ...WEB_SAFE,
   ...AGIM_SAFE,
-  'native_todo_write',
-  'native_exit_plan_mode',
+  'agim_todo_write',
+  'agim_exit_plan_mode',
 ])
+
+/** @deprecated Prefer AGIM_PLAN_MODE_ALLOWED_TOOLS */
+export const NATIVE_PLAN_MODE_ALLOWED_TOOLS = AGIM_PLAN_MODE_ALLOWED_TOOLS
 
 export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
   // Source order == dispatch precedence. Built-ins first so a stray MCP tool
@@ -129,11 +133,15 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
   // Build the per-call safe-name lookup once. External MCP names are absent →
   // they classify as serial (fail-closed) without an explicit entry.
   const safeNames = new Set<string>()
-  for (const s of sources) for (const n of s.parallelSafe) safeNames.add(n)
+  for (const s of sources) {
+    for (const n of s.parallelSafe) {
+      for (const v of toolNameVariants(n)) safeNames.add(v)
+    }
+  }
 
   const isParallelSafe = (call: ToolCallRequest): boolean => {
     try {
-      return safeNames.has(call.name)
+      return safeNames.has(call.name) || safeNames.has(canonicalizeToolName(call.name))
     } catch {
       return false
     }

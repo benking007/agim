@@ -42,7 +42,7 @@ function completionPayload(
     const op = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
       toolCallId: `evidence-${++evidenceSeq}`,
-      toolName: 'native_exec',
+      toolName: 'agim_exec',
       args: { command: 'npm test' },
       kind: 'mutation_verification',
     })
@@ -249,7 +249,7 @@ describe('goal-rpc', () => {
     const oldOp = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
       toolCallId: 'old-observation',
-      toolName: 'native_read_file',
+      toolName: 'agim_read_file',
       args: { path: 'before.txt' },
       kind: 'observation',
     })
@@ -262,7 +262,7 @@ describe('goal-rpc', () => {
     const mutation = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
       toolCallId: 'mutation',
-      toolName: 'native_write_file',
+      toolName: 'agim_write_file',
       args: { path: 'after.txt' },
       kind: 'mutation',
     })
@@ -280,7 +280,7 @@ describe('goal-rpc', () => {
     const verify = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
       toolCallId: 'verification',
-      toolName: 'native_exec',
+      toolName: 'agim_exec',
       args: { command: 'npm test' },
       kind: 'mutation_verification',
     })
@@ -300,7 +300,7 @@ describe('goal-rpc', () => {
     const dispatcher = buildTodoDispatcher(`${CTX.platform}:${CTX.channelId}:${CTX.threadId}`)
     await dispatcher({
       id: 'todo1',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: { items: [{ content: 'run tests', status: 'in_progress' }] },
     }, new AbortController().signal)
     const payload = completionPayload('cannot finish with pending todo')

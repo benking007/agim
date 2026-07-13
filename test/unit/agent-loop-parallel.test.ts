@@ -69,9 +69,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
   it('declared-safe calls in one iteration run concurrently (~max, not sum)', async () => {
-    const calls = [tc('1', 'native_read_file', { path: 'a' }),
-                   tc('2', 'native_read_file', { path: 'b' }),
-                   tc('3', 'native_read_file', { path: 'c' })]
+    const calls = [tc('1', 'agim_read_file', { path: 'a' }),
+                   tc('2', 'agim_read_file', { path: 'b' }),
+                   tc('3', 'agim_read_file', { path: 'c' })]
     const provider = new QueuedStubProvider([turn(calls), done()])
     const each = 80  // ms per tool
     const dispatch = async (_call: ToolCallRequest): Promise<DispatcherResult> => {
@@ -83,9 +83,9 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
-      parallelSafeTools: new Set(['native_read_file']),
+      parallelSafeTools: new Set(['agim_read_file']),
     })
     const elapsed = Date.now() - t0
 
@@ -98,9 +98,9 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
   }, 5000)
 
   it('without parallelSafeTools the loop stays fully serial (backward-compat)', async () => {
-    const calls = [tc('1', 'native_read_file', { path: 'a' }),
-                   tc('2', 'native_read_file', { path: 'b' }),
-                   tc('3', 'native_read_file', { path: 'c' })]
+    const calls = [tc('1', 'agim_read_file', { path: 'a' }),
+                   tc('2', 'agim_read_file', { path: 'b' }),
+                   tc('3', 'agim_read_file', { path: 'c' })]
     const provider = new QueuedStubProvider([turn(calls), done()])
     const each = 60
     const dispatch = async (): Promise<DispatcherResult> => {
@@ -112,7 +112,7 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
     await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       // parallelSafeTools omitted → all serial
     })
@@ -123,9 +123,9 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
   }, 5000)
 
   it('preserves original call order in history + reports regardless of completion order', async () => {
-    const calls = [tc('1', 'native_read_file', { path: 'slow' }),
-                   tc('2', 'native_read_file', { path: 'fast' }),
-                   tc('3', 'native_read_file', { path: 'mid' })]
+    const calls = [tc('1', 'agim_read_file', { path: 'slow' }),
+                   tc('2', 'agim_read_file', { path: 'fast' }),
+                   tc('3', 'agim_read_file', { path: 'mid' })]
     const provider = new QueuedStubProvider([turn(calls), done()])
     // call 1 takes longest, 2 fastest, 3 middle → completion order: 2, 3, 1
     const latency: Record<string, number> = { slow: 120, fast: 20, mid: 60 }
@@ -138,9 +138,9 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
-      parallelSafeTools: new Set(['native_read_file']),
+      parallelSafeTools: new Set(['agim_read_file']),
     })
 
     // reports preserve original order (slow, fast, mid)
@@ -190,11 +190,11 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
     // have finished (drain), and the trailing parallels to start AFTER
     // the serial completes.
     const calls = [
-      tc('1', 'native_read_file', { path: 'p1' }),
-      tc('2', 'native_read_file', { path: 'p2' }),
-      tc('3', 'native_write_file', { path: 'serial' }), // not in parallel set
-      tc('4', 'native_read_file', { path: 'p3' }),
-      tc('5', 'native_read_file', { path: 'p4' }),
+      tc('1', 'agim_read_file', { path: 'p1' }),
+      tc('2', 'agim_read_file', { path: 'p2' }),
+      tc('3', 'agim_write_file', { path: 'serial' }), // not in parallel set
+      tc('4', 'agim_read_file', { path: 'p3' }),
+      tc('5', 'agim_read_file', { path: 'p4' }),
     ]
     const provider = new QueuedStubProvider([turn(calls), done()])
     const events: Array<{ id: string; phase: 'start' | 'end'; t: number }> = []
@@ -209,11 +209,11 @@ describe('runAgentLoop — parallel tool-call batching (v1.2.109)', () => {
       provider,
       messages: [{ role: 'user', content: 'go' }],
       tools: [
-        { name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } },
-        { name: 'native_write_file', description: '', parameters: { type: 'object', properties: {} } },
+        { name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } },
+        { name: 'agim_write_file', description: '', parameters: { type: 'object', properties: {} } },
       ],
       dispatch,
-      parallelSafeTools: new Set(['native_read_file']),
+      parallelSafeTools: new Set(['agim_read_file']),
     })
     const startOf = (id: string) => events.find((e) => e.id === id && e.phase === 'start')!.t
     const endOf = (id: string) => events.find((e) => e.id === id && e.phase === 'end')!.t

@@ -49,11 +49,11 @@ afterAll(() => {
 
 describe('config-store', () => {
   it('atomically writes owner-only JSON without temporary files', async () => {
-    await writeConfigObject({ agents: ['native'], defaultAgent: 'native' }, { filePath: FILE })
+    await writeConfigObject({ agents: ['native'], defaultAgent: 'agim' }, { filePath: FILE })
 
     expect(await readConfigObject({ filePath: FILE })).toEqual({
       agents: ['native'],
-      defaultAgent: 'native',
+      defaultAgent: 'agim',
     })
     expect(statSync(FILE).mode & 0o777).toBe(0o600)
     expect(readdirSync(DIR)).toEqual(['config.json'])

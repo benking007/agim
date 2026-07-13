@@ -329,15 +329,14 @@ describe('goal-rpc', () => {
     const reviewed = await handleGoalOp('complete_goal', payload, {
       ...CTX,
       skipSemanticReview: false,
-      reviewGoalEvidence: async () => ({
-        onTrack: false,
+      reviewGoalCompletion: async () => ({
+        completed: false,
         reason: 'evidence does not satisfy acceptance criteria',
-        redirect: 'run the required verifier',
         modelUsed: 'test-critic',
       }),
     })
     expect(reviewed.ok).toBe(false)
-    if (!reviewed.ok) expect(reviewed.error).toContain('GOAL_OFF_TRACK')
+    if (!reviewed.ok) expect(reviewed.error).toContain('GOAL_INCOMPLETE')
     expect(_activeGoalSnapshot(CTX)?.title).toBe('Implement semantic review')
   })
 

@@ -23,8 +23,8 @@ import {
 } from './goals.js'
 import { completeGoalCas, getGoalEvidenceReview } from './goal-evidence.js'
 import { getTodoForThread } from './llm/todo-dispatcher.js'
-import { runGoalCritic } from './llm/goal-critic.js'
-import type { CriticInput, CriticVerdict } from './llm/goal-critic.js'
+import { runGoalCompletionCritic } from './llm/goal-critic.js'
+import type { CompletionCriticInput, CompletionCriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
 
@@ -67,7 +67,7 @@ export interface GoalRpcCtx {
   /** Tests can bypass the external semantic model while exercising CAS. */
   skipSemanticReview?: boolean
   /** Test seam for deterministic semantic verdicts. Never populated from RPC payloads. */
-  reviewGoalEvidence?: (input: CriticInput) => Promise<CriticVerdict>
+  reviewGoalCompletion?: (input: CompletionCriticInput) => Promise<CompletionCriticVerdict>
 }
 
 export type GoalOp = 'long_task' | 'complete_goal'
@@ -232,25 +232,25 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
     if (!review) {
       return { ok: false, error: 'SEMANTIC_REVIEW_UNAVAILABLE: evidence could not be prepared' }
     }
-    const criticInput: CriticInput = {
-      prompt: `Completion claim: ${recap}`,
+    const criticInput: CompletionCriticInput = {
+      recap,
       goalTitle: review.goalTitle,
       goalBody: review.goalBody,
-      recentToolCalls: review.recentToolCalls,
+      evidence: review.recentToolCalls.map((item) => ({
+        name: item.name,
+        preview: item.preview,
+      })),
     }
-    const verdict = ctx.reviewGoalEvidence
-      ? await ctx.reviewGoalEvidence(criticInput)
-      : await runGoalCritic(criticInput, { force: true })
-    if (
-      !verdict.modelUsed
-      || /disabled|unparseable|empty|threw|no prompt/i.test(verdict.reason)
-    ) {
+    const verdict = ctx.reviewGoalCompletion
+      ? await ctx.reviewGoalCompletion(criticInput)
+      : await runGoalCompletionCritic(criticInput)
+    if (!ctx.reviewGoalCompletion && !verdict.modelUsed) {
       return { ok: false, error: `SEMANTIC_REVIEW_UNAVAILABLE: ${verdict.reason}` }
     }
-    if (!verdict.onTrack) {
+    if (!verdict.completed) {
       return {
         ok: false,
-        error: `GOAL_OFF_TRACK: ${verdict.reason}${verdict.redirect ? `; ${verdict.redirect}` : ''}`,
+        error: `GOAL_INCOMPLETE: ${verdict.reason}`,
       }
     }
   }

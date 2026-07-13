@@ -1,6 +1,5 @@
 import {
   createCipheriv,
-  createDecipheriv,
   createHash,
   createHmac,
   randomBytes,
@@ -81,25 +80,6 @@ function sealPreview(value: string): string {
   const cipher = createCipheriv('aes-256-gcm', secretKey().subarray(0, 32), iv)
   const encrypted = Buffer.concat([cipher.update(value.slice(0, 4000), 'utf8'), cipher.final()])
   return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString('base64url')).join('.')
-}
-
-function openPreview(value: string): string {
-  const [ivRaw, tagRaw, encryptedRaw] = value.split('.')
-  if (!ivRaw || !tagRaw || !encryptedRaw) return ''
-  try {
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      secretKey().subarray(0, 32),
-      Buffer.from(ivRaw, 'base64url'),
-    )
-    decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'))
-    return Buffer.concat([
-      decipher.update(Buffer.from(encryptedRaw, 'base64url')),
-      decipher.final(),
-    ]).toString('utf8')
-  } catch {
-    return ''
-  }
 }
 
 function traceRoot(traceId?: string): string {
@@ -489,7 +469,7 @@ export function getGoalEvidenceReview(input: {
   const calls: GoalEvidenceReview['recentToolCalls'] = []
   for (const token of input.evidenceIds.slice(0, 16)) {
     const row = d.prepare(`
-      SELECT tool_name, state, trace_hash, sealed_preview FROM goal_ledger
+      SELECT tool_name, kind, state, trace_hash, metadata_json FROM goal_ledger
       WHERE evidence_hash = ? AND goal_id = ? AND goal_version = ? AND epoch = ?
     `).get(
       tokenHash(token),
@@ -497,12 +477,25 @@ export function getGoalEvidenceReview(input: {
       input.goalVersion,
       goal.mutation_epoch,
     ) as
-      | { tool_name: string; state: string; trace_hash: string; sealed_preview: string }
+      | {
+          tool_name: string
+          kind: string
+          state: string
+          trace_hash: string
+          metadata_json: string
+        }
       | undefined
     if (row?.state !== 'succeeded' || row.trace_hash !== expectedTrace) return null
-    const preview = openPreview(row.sealed_preview)
-    if (!preview) return null
-    calls.push({ name: row.tool_name, isError: false, preview })
+    let metadata: { outputChars?: number; semanticBound?: boolean } = {}
+    try { metadata = JSON.parse(row.metadata_json) as typeof metadata } catch { /* invalid → fail below */ }
+    if (metadata.semanticBound !== true) return null
+    // Never expose tool arguments/output to the semantic model. It receives
+    // only server-generated attestations, eliminating evidence prompt injection.
+    calls.push({
+      name: row.tool_name,
+      isError: false,
+      preview: `server-attested kind=${row.kind}; semanticBound=true; outputChars=${metadata.outputChars ?? 0}`,
+    })
   }
   return { goalTitle: goal.title, goalBody: goal.body, recentToolCalls: calls }
 }

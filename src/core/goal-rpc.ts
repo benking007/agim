@@ -233,7 +233,6 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
       return { ok: false, error: 'SEMANTIC_REVIEW_UNAVAILABLE: evidence could not be prepared' }
     }
     const criticInput: CompletionCriticInput = {
-      recap,
       goalTitle: review.goalTitle,
       goalBody: review.goalBody,
       evidence: review.recentToolCalls.map((item) => ({

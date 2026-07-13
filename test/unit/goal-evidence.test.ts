@@ -19,6 +19,7 @@ const {
   classifyGoalEvidence,
   completeGoalCas,
   finishGoalToolOperation,
+  getGoalEvidenceReview,
   isDetachedGoalCommand,
   reconcileInterruptedGoalOperations,
 } = await import('../../src/core/goal-evidence.js')
@@ -351,6 +352,17 @@ describeSqlite('goal evidence ledger', () => {
       ok: true,
       output: 'private evidence secret-output-value',
     })
+    const review = getGoalEvidenceReview({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'privacy',
+      goalId: goal.id,
+      goalVersion: goal.version,
+      evidenceIds: [evidence!.id],
+      traceId: 'trace-private',
+    })
+    expect(review?.recentToolCalls[0]?.preview).toContain('server-attested')
+    expect(review?.recentToolCalls[0]?.preview).not.toContain('secret-output-value')
     const dbBytes = readFileSync(process.env.AGIM_GOALS_DB!)
     expect(dbBytes.includes(Buffer.from(evidence!.id))).toBe(false)
     expect(dbBytes.includes(Buffer.from('/secret/private.txt'))).toBe(false)

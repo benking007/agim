@@ -242,7 +242,7 @@ describe('goal-rpc', () => {
 
   it('mutation invalidates prior evidence until a current verification succeeds', async () => {
     if (!(await dbAvailable())) return
-    await handleGoalOp('long_task', { goal: 'Evidence objective' }, CTX)
+    await handleGoalOp('long_task', { goal: 'Implement evidence objective' }, CTX)
     const active = _activeGoalSnapshot(CTX)!
     const oldOp = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
@@ -251,7 +251,10 @@ describe('goal-rpc', () => {
       args: { path: 'before.txt' },
       kind: 'observation',
     })
-    const oldEvidence = finishGoalToolOperation(oldOp, { ok: true, output: 'before' })
+    const oldEvidence = finishGoalToolOperation(oldOp, {
+      ok: true,
+      output: 'Implement evidence objective before',
+    })
     expect(oldEvidence).not.toBeNull()
 
     const mutation = beginGoalToolOperation({

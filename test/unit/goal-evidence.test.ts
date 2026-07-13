@@ -347,7 +347,10 @@ describeSqlite('goal evidence ledger', () => {
       args: { path: '/secret/private.txt' },
       kind: 'observation',
     })
-    const evidence = finishGoalToolOperation(op, { ok: true, output: 'secret-output-value' })
+    const evidence = finishGoalToolOperation(op, {
+      ok: true,
+      output: 'private evidence secret-output-value',
+    })
     const dbBytes = readFileSync(process.env.AGIM_GOALS_DB!)
     expect(dbBytes.includes(Buffer.from(evidence!.id))).toBe(false)
     expect(dbBytes.includes(Buffer.from('/secret/private.txt'))).toBe(false)

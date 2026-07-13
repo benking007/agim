@@ -70,6 +70,8 @@ function validateEntry(raw: unknown): ACPAgentConfig | null {
  */
 export async function discoverAgents(baseUrl: string): Promise<DiscoveryResult> {
   const cleaned = baseUrl.replace(/\/+$/, '')
+  const { assertSafeAcpUrl } = await import('./url-guard.js')
+  await assertSafeAcpUrl(cleaned, { forwardsCredentials: false })
   const url = `${cleaned}/.well-known/acp`
   log.info({ url }, 'Discovering ACP agents')
 
@@ -94,7 +96,17 @@ export async function discoverAgents(baseUrl: string): Promise<DiscoveryResult> 
   for (const raw of body.agents) {
     const entry = validateEntry(raw)
     if (entry) {
-      agents.push(entry)
+      try {
+        await assertSafeAcpUrl(entry.endpoint, {
+          forwardsCredentials: !!(entry.auth?.token && entry.auth.type !== 'none'),
+        })
+        agents.push(entry)
+      } catch (err) {
+        log.warn({
+          endpoint: entry.endpoint,
+          error: err instanceof Error ? err.message : String(err),
+        }, 'Skipping discovered agent with unsafe endpoint')
+      }
     } else {
       log.warn({ raw }, 'Skipping malformed agent entry')
     }

@@ -922,7 +922,7 @@
     "a2aTimeoutMs": "默认超时（毫秒）",
     "a2aTimeoutMsHint": "AGIM_A2A_TIMEOUT_DEFAULT_MS。默认 1800000（30 分钟）。",
     "callAgentInProcess": "agim→agim 内置快速路径",
-    "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS。关闭则回退到子进程 CLI。默认开。",
+    "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS。开启后走进程内快路径；默认关，走完整 A2A（任务/审计对等）。",
     "callAgentMaxPerTurn": "单轮调用上限",
     "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN。0 = 不限。默认 2。",
     "planModeCard": "Plan 模式",

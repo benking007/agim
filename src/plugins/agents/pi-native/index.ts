@@ -572,8 +572,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     // text — NOT as a thrown error. Detect it explicitly so a network drop is
     // reported as such (with a retry hint) instead of being misread as "the
     // model returned empty content".
-    const providerFailed = result.stopReason === 'error'
-    const providerAborted = result.stopReason === 'aborted'
+    const providerAborted = result.stopReason === 'aborted' || opts?.signal?.aborted === true
+    const providerFailed = result.stopReason === 'error' && !providerAborted
 
     if (!hasText) {
       if (providerFailed || providerAborted) {

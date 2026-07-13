@@ -511,21 +511,24 @@ export class NativeAgentAdapter implements AgentAdapter {
     // cannot bypass a tool_result-only counter.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
     const maxToolCalls = Math.max(1, this.deps.maxToolCalls ?? maxIter)
-    let modelTurns = 0
+    let providerRequests = 0
     let declaredToolCalls = 0
     let stopReason: NativeStopReason | null = null
     let requestLoopStop = () => {}
     const recentSigs: string[] = []
     const toolRuns: NativeToolRun[] = []
-    const unsubscribeBudget = harness.subscribe((event) => {
-      if (event.type === 'turn_start') {
-        modelTurns += 1
-        if (modelTurns > maxIter && !stopReason) {
-          stopReason = 'max_iter'
-          requestLoopStop()
-        }
-        return
+    harness.on('before_provider_request', () => {
+      // This hook runs before pi calls the transport, unlike turn_start. Throw
+      // here so an over-budget iteration does not consume one extra request.
+      if (stopReason) throw new Error(`native loop stopped: ${stopReason}`)
+      if (providerRequests >= maxIter) {
+        stopReason = 'max_iter'
+        throw new Error(`native model-turn budget reached: ${maxIter}`)
       }
+      providerRequests += 1
+      return undefined
+    })
+    const unsubscribeBudget = harness.subscribe((event) => {
       if (event.type !== 'message_end' || event.message.role !== 'assistant') return
       const batchCalls = (event.message.content ?? []).filter((c) => c.type === 'toolCall').length
       if (batchCalls === 0) return

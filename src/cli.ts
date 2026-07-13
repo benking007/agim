@@ -1584,13 +1584,6 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await dismiss()
         return
       }
-      if (routeCtx.agentOutcome?.status === 'aborted') {
-        cancelJob(inlineJobId)
-        await stopTyping()
-        await dismiss()
-        return
-      }
-
       // Handle response (string or async generator)
       if (typeof result === 'string') {
         await stopTyping()

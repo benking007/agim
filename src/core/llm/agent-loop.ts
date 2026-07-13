@@ -561,7 +561,7 @@ export function extractSalientStrings(argsKey: string): Set<string> {
 /** v1.2.122 — kill switch for the semantic stuck-loop check. Default ON;
  *  flip 'off' if false positives become a real problem (none observed
  *  in dogfood). */
-function resolveSemanticStuckLoopOn(): boolean {
+export function resolveSemanticStuckLoopOn(): boolean {
   const raw = (process.env.AGIM_NATIVE_SEMANTIC_STUCK_LOOP ?? '').toLowerCase().trim()
   if (raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false
   return true

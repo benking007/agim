@@ -42,9 +42,14 @@ import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
 import { resolveCriticMode, runGoalCritic } from '../../../core/llm/goal-critic.js'
+import {
+  isSemanticStuckLoop,
+  resolveSemanticStuckLoopOn,
+} from '../../../core/llm/agent-loop.js'
+import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
-import { failureSignature } from './loop-fingerprint.js'
+import { failureSignature, stableStringify } from './loop-fingerprint.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -210,6 +215,8 @@ interface NativeToolRun {
   name: string
   isError: boolean
   preview?: string
+  /** Stable JSON of tool args — used by the semantic stuck-loop guard. */
+  argsKey?: string
 }
 
 interface NativeToolResultEvent {
@@ -664,9 +671,26 @@ export class NativeAgentAdapter implements AgentAdapter {
     let lastCriticAtToolCalls = 0
     let offTrackSoftSteerUsed = false
     let offTrackDetail = ''
+    let semanticStuckSoftSteerUsed = false
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
+    const mergeProviderUsage = (usage: {
+      promptTokens?: number
+      completionTokens?: number
+      costUsd?: number
+    } | undefined) => {
+      if (!usage) return
+      const input = usage.promptTokens ?? 0
+      const output = usage.completionTokens ?? 0
+      if (input <= 0 && output <= 0 && !(usage.costUsd && usage.costUsd > 0)) return
+      sawUsage = true
+      usageInput += input
+      usageOutput += output
+      if (typeof usage.costUsd === 'number' && Number.isFinite(usage.costUsd)) {
+        usageCost += usage.costUsd
+      }
+    }
 
     harness.on(
       'tool_call',
@@ -770,6 +794,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               goalBody: activeGoal?.body,
               recentToolCalls: toolRuns.slice(-10),
             }, { signal: turnSignal })
+            mergeProviderUsage(verdict.usage)
             if (!verdict.onTrack) {
               offTrackDetail = verdict.redirect
                 ? `${verdict.reason} || redirect: ${verdict.redirect}`
@@ -786,6 +811,29 @@ export class NativeAgentAdapter implements AgentAdapter {
                 stopReason = 'off_track'
                 requestLoopStop()
               }
+            }
+          }
+        }
+        // Cross-tool semantic stuck loop: different tools, same long arg.
+        if (
+          !stopReason
+          && resolveSemanticStuckLoopOn()
+          && toolRuns.length >= 3
+        ) {
+          const reports = toolRuns.flatMap((run) =>
+            run.argsKey ? [{ name: run.name, argsKey: run.argsKey }] : [])
+          if (isSemanticStuckLoop(reports)) {
+            if (!semanticStuckSoftSteerUsed) {
+              semanticStuckSoftSteerUsed = true
+              ephemeralSteer = [
+                ephemeralSteer,
+                '[loop steer — semantic stuck]',
+                'Recent tools repeated the same long argument while failing.',
+                'Change approach: new query/path, or stop and summarize blockers.',
+              ].filter(Boolean).join('\n')
+            } else {
+              stopReason = 'stuck_loop'
+              requestLoopStop()
             }
           }
         }
@@ -818,6 +866,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
         preview: previewToolResult(ev),
+        argsKey: stableStringify(ev.input ?? {}),
       })
       if (toolRuns.length > 30) toolRuns.shift()
       // Stuck-loop: same tool + key-order-stable args + normalized error class
@@ -874,7 +923,22 @@ export class NativeAgentAdapter implements AgentAdapter {
       try {
         const usage = getLastAssistantUsage(await session.getEntries())
         if (usage && shouldCompact(calculateContextTokens(usage), binding.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
-          await harness.compact()
+          const compacted = await harness.compact()
+          // Compaction summarization does not append an assistant usage
+          // row — estimate from tokensBefore + summary length so /stats
+          // still accounts for the auxiliary call.
+          const approxOut = Math.max(1, Math.ceil(compacted.summary.length / 4))
+          const approxIn = Math.max(approxOut, Math.min(compacted.tokensBefore, binding.model.contextWindow))
+          sawUsage = true
+          usageInput += approxIn
+          usageOutput += approxOut
+          if (binding.costKnown) {
+            const estimated = estimateCostUsd(undefined, binding.model.id, {
+              input: approxIn,
+              output: approxOut,
+            })
+            if (estimated != null) usageCost += estimated
+          }
         }
       } catch (err) {
         console.error('[native] compaction skipped:', err instanceof Error ? err.message : err)
@@ -943,10 +1007,18 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     if (opts?.onUsage && sawUsage) {
+      let costUsd = usageCost
+      if (binding.costKnown === true && !(costUsd > 0) && (usageInput > 0 || usageOutput > 0)) {
+        const estimated = estimateCostUsd(undefined, binding.model.id, {
+          input: usageInput,
+          output: usageOutput,
+        })
+        if (estimated != null) costUsd = estimated
+      }
       opts.onUsage({
         tokensInput: usageInput,
         tokensOutput: usageOutput,
-        costUsd: usageCost,
+        costUsd,
       })
     }
     opts?.onCostMetadata?.({ known: binding.costKnown === true })

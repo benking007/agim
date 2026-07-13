@@ -45,7 +45,7 @@
 
 import { logger as rootLogger } from '../logger.js'
 import { getAnyProvider, getProvider } from './registry.js'
-import type { LlmProvider, LlmMessage } from './provider-base.js'
+import type { LlmProvider, LlmMessage, LlmUsage } from './provider-base.js'
 
 const log = rootLogger.child({ component: 'goal-critic' })
 
@@ -77,6 +77,8 @@ export interface CriticVerdict {
   redirect?: string
   /** Provider/model used for the critic call, for audit. */
   modelUsed?: string
+  /** Token/cost usage from the critic provider call, when reported. */
+  usage?: LlmUsage
 }
 
 export interface CompletionCriticInput {
@@ -200,18 +202,19 @@ export async function runGoalCritic(
     })
     const text = (r.text ?? '').trim()
     if (!text) {
-      return { onTrack: true, reason: 'critic returned empty text', modelUsed: r.modelUsed }
+      return { onTrack: true, reason: 'critic returned empty text', modelUsed: r.modelUsed, usage: r.usage }
     }
     const parsed = tryParseJson(text)
     if (!parsed) {
       log.warn({ event: 'goal-critic.parse_failed', raw: text.slice(0, 200) })
-      return { onTrack: true, reason: 'critic JSON unparseable', modelUsed: r.modelUsed }
+      return { onTrack: true, reason: 'critic JSON unparseable', modelUsed: r.modelUsed, usage: r.usage }
     }
     return {
       onTrack: parsed.onTrack !== false,  // default true on weird type
       reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 120) : '',
       redirect: typeof parsed.redirect === 'string' ? parsed.redirect.slice(0, 120) : undefined,
       modelUsed: r.modelUsed,
+      usage: r.usage,
     }
   } catch (err) {
     log.warn({

@@ -822,6 +822,57 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('死循环')
   })
 
+  it('soft-steers then hard-stops a cross-tool semantic stuck loop', async () => {
+    const shared = 'aapl Q3 earnings call transcript'
+    const reg = faux()
+    const batch = (names: string[], offset: number) => fauxAssistantMessage(
+      names.map((name, i) => fauxToolCall(name, { query: shared }, { id: `${name}${offset + i}` })),
+      { stopReason: 'toolUse' },
+    )
+    let calls = 0
+    let sawSteer = false
+    const tools: ToolDef[] = ['search_a', 'search_b', 'search_c', 'search_d', 'search_e', 'search_f'].map((name) => ({
+      name,
+      description: name,
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query'],
+      },
+    }))
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-semantic-stuck-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools,
+        dispatch: async (call) => {
+          calls += 1
+          return { text: `0 results for ${String(call.arguments.query ?? '')}`, isError: true }
+        },
+      }),
+      maxIterations: 20,
+      maxToolCalls: 20,
+    })
+    // Soft steer keeps the turn alive; the next identical-intent batch hard-stops.
+    // Ephemeral steer must appear on the second provider call (never as durable JSONL).
+    reg.setResponses([
+      batch(['search_a', 'search_b', 'search_c'], 0),
+      (ctx) => {
+        const user = [...ctx.messages].reverse().find((message) => message.role === 'user')
+        const text = typeof user?.content === 'string'
+          ? user.content
+          : (user?.content ?? []).map((block) => block.type === 'text' ? block.text : '').join('')
+        if (text.includes('semantic stuck')) sawSteer = true
+        return batch(['search_d', 'search_e', 'search_f'], 10)
+      },
+      fauxAssistantMessage('unreachable after hard stop'),
+    ])
+    const out = await collect(adapter.sendPrompt('semantic-stuck', 'find the earnings call'))
+    expect(sawSteer).toBe(true)
+    expect(calls).toBe(6)
+    expect(out).toContain('死循环')
+  })
+
   it('forwards provider stream options (retries / timeout / cache) to the provider', async () => {
     const reg = faux()
     let seen: { maxRetries?: number; maxRetryDelayMs?: number; timeoutMs?: number; cacheRetention?: string } | undefined
@@ -1019,7 +1070,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     await collect(adapter.sendPrompt('cmp', 'q1'))
     // Turn 2 is over budget → an extra summary call fires before the turn itself.
     reg.appendResponses([fauxAssistantMessage('history summary'), fauxAssistantMessage('t2')])
-    expect(await collect(adapter.sendPrompt('cmp', 'q2'))).toBe('t2')
+    let reported: { tokensInput?: number; tokensOutput?: number } | undefined
+    expect(await collect(adapter.sendPrompt('cmp', 'q2', undefined, {
+      onUsage: (usage) => { reported = usage },
+    }))).toBe('t2')
     // The durable session now carries a compaction entry.
     const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
     const meta = (await repo.list()).find((m) => m.id === 'cmp')
@@ -1027,6 +1081,8 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     if (!meta) throw new Error('missing cmp session metadata')
     const entries = await (await repo.open(meta)).getEntries()
     expect(entries.some((e) => e.type === 'compaction')).toBe(true)
+    // Compaction has no assistant usage row — estimated tokens still reach onUsage.
+    expect((reported?.tokensInput ?? 0) + (reported?.tokensOutput ?? 0)).toBeGreaterThan(0)
   })
 
   it('skips compaction when disabled (no extra summary call)', async () => {

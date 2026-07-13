@@ -38,16 +38,21 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
   const api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
   const catalogModel = findCatalogModel(b.providerType, b.model)
+  const unknownContextWindow = resolveUnknownContextWindow()
   const model = {
     id: b.model,
     name: b.model,
     api,
     provider: b.name,
     baseUrl: b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1',
-    reasoning: false,
-    input: ['text'] as ('text' | 'image')[],
+    reasoning: catalogModel?.reasoning === true,
+    input: (catalogModel?.input?.length
+      ? [...catalogModel.input]
+      : ['text']) as ('text' | 'image')[],
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: catalogModel?.contextWindow ?? 128000,
+    // Uncatalogued / private endpoints must not inherit a 128k assumption —
+    // that delays compaction until the provider already overflows.
+    contextWindow: catalogModel?.contextWindow ?? unknownContextWindow,
     maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? 8192,
   } as Model<string>
   return {
@@ -55,6 +60,17 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     costKnown: catalogModel !== null,
     getApiKeyAndHeaders: async () => ({ apiKey: b.apiKey ?? '', headers: b.extraHeaders ?? {} }),
   }
+}
+
+/** Conservative context window for models missing from the pi catalog.
+ *  Override with AGIM_NATIVE_UNKNOWN_CONTEXT_WINDOW (positive integer). */
+export function resolveUnknownContextWindow(): number {
+  const raw = (process.env.AGIM_NATIVE_UNKNOWN_CONTEXT_WINDOW ?? '').trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= 4_096 && n <= 1_000_000) return n
+  }
+  return 32_000
 }
 
 /** Resolve a pi model binding for an agim LLM role, or null when no usable

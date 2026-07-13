@@ -287,6 +287,7 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
     && tokenGoal.platform === ctx.platform
     && tokenGoal.channelId === ctx.channelId
     && tokenGoal.threadId === ctx.threadId
+    && tokenGoal.userId === ctx.userId
     && tokenGoal.status === 'active'
     && tokenGoal.version === goalVersion
   if (
@@ -299,6 +300,7 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
       platform: ctx.platform,
       channelId: ctx.channelId,
       threadId: ctx.threadId,
+      userId: ctx.userId,
       goalId,
       goalVersion,
       evidenceIds,
@@ -345,6 +347,7 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
     platform: ctx.platform,
     channelId: ctx.channelId,
     threadId: ctx.threadId,
+    userId: ctx.userId,
     goalId,
     goalVersion,
     evidenceIds,

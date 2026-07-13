@@ -323,6 +323,19 @@ describe('goal-rpc', () => {
     if (!delegated.ok) expect(delegated.error).toContain('EVIDENCE_REQUIRED')
   })
 
+  it('rejects completion from another user in the same thread', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Owner-bound objective' }, CTX)
+    const payload = completionPayload('other user must not close this')
+    const result = await handleGoalOp('complete_goal', payload, {
+      ...CTX,
+      userId: 'different-user',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('STALE_GOAL')
+    expect(_activeGoalSnapshot(CTX)?.title).toBe('Owner-bound objective')
+  })
+
   it('semantic completion review rejects evidence unrelated to the claim', async () => {
     if (!(await dbAvailable())) return
     await handleGoalOp('long_task', { goal: 'Implement semantic review' }, CTX)

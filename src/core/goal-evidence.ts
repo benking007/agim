@@ -427,6 +427,7 @@ export interface CompleteGoalCasInput {
   platform: string
   channelId: string
   threadId: string
+  userId: string
   goalId: number
   goalVersion: number
   evidenceIds: string[]
@@ -445,6 +446,7 @@ export function getGoalEvidenceReview(input: {
   platform: string
   channelId: string
   threadId: string
+  userId: string
   goalId: number
   goalVersion: number
   evidenceIds: string[]
@@ -456,13 +458,14 @@ export function getGoalEvidenceReview(input: {
   const goal = d.prepare(`
     SELECT title, body, mutation_epoch FROM goals
     WHERE id = ? AND version = ? AND status = 'active'
-      AND platform = ? AND channel_id = ? AND thread_id = ?
+      AND platform = ? AND channel_id = ? AND thread_id = ? AND user_id = ?
   `).get(
     input.goalId,
     input.goalVersion,
     input.platform,
     input.channelId,
     input.threadId,
+    input.userId,
   ) as { title: string; body: string; mutation_epoch: number } | undefined
   if (!goal) return null
   const expectedTrace = hmac(traceRoot(input.traceId))
@@ -511,8 +514,8 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
   const tx = d.transaction((): CompleteGoalCasResult => {
     const goal = d.prepare(`
       SELECT id, title, status, version, mutation_epoch, evidence_required, progress_log
-      FROM goals WHERE id = ? AND platform = ? AND channel_id = ? AND thread_id = ?
-    `).get(input.goalId, input.platform, input.channelId, input.threadId) as
+      FROM goals WHERE id = ? AND platform = ? AND channel_id = ? AND thread_id = ? AND user_id = ?
+    `).get(input.goalId, input.platform, input.channelId, input.threadId, input.userId) as
       | {
           id: number
           title: string

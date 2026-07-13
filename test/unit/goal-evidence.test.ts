@@ -153,6 +153,7 @@ describeSqlite('goal evidence ledger', () => {
       channelId: 'c',
       threadId: 't',
       userId: 'u',
+      userId: 'u',
       title: 'ship verified change',
     })
     if (!goal) throw new Error('goal unavailable')
@@ -184,6 +185,7 @@ describeSqlite('goal evidence ledger', () => {
       platform: 'test',
       channelId: 'c',
       threadId: 't',
+      userId: 'u',
       goalId: goal.id,
       goalVersion: goal.version,
       evidenceIds: [oldEvidence!.id],
@@ -225,6 +227,7 @@ describeSqlite('goal evidence ledger', () => {
       platform: 'test',
       channelId: 'c',
       threadId: 'research',
+      userId: 'u',
       userId: 'u',
       title: 'research with corroboration',
     })
@@ -285,6 +288,7 @@ describeSqlite('goal evidence ledger', () => {
       channelId: 'c',
       threadId: 'forged',
       userId: 'u',
+      userId: 'u',
       title: 'reject forged evidence',
     })
     if (!goal) throw new Error('goal unavailable')
@@ -292,6 +296,7 @@ describeSqlite('goal evidence ledger', () => {
       platform: 'test',
       channelId: 'c',
       threadId: 'forged',
+      userId: 'u',
       goalId: goal.id,
       goalVersion: goal.version,
       evidenceIds: [`ev1_${'a'.repeat(43)}`],

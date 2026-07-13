@@ -278,7 +278,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       signal: ctrl.signal,
       onOutcome: (value) => { outcomes.push(value.status) },
     }))
-    expect(out).toContain('partial text')
+    expect(out).toContain('本轮已被取消')
     expect(outcomes.at(-1)).toBe('aborted')
   })
 

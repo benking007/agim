@@ -52,6 +52,10 @@ export interface ProgressNote {
 
 export interface GoalRow {
   id: number
+  /** Monotonic logical revision used by agent-side compare-and-set. */
+  version: number
+  /** Increments after every successful mutating tool operation. */
+  mutationEpoch: number
   platform: string
   channelId: string
   threadId: string
@@ -69,6 +73,8 @@ export interface GoalRow {
 
 interface GoalRowRaw {
   id: number
+  version: number
+  mutation_epoch: number
   platform: string
   channel_id: string
   thread_id: string
@@ -89,6 +95,8 @@ const helper = createSqliteHelper({
   schema: `
     CREATE TABLE IF NOT EXISTS goals (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      version       INTEGER NOT NULL DEFAULT 1,
+      mutation_epoch INTEGER NOT NULL DEFAULT 0,
       platform      TEXT    NOT NULL,
       channel_id    TEXT    NOT NULL,
       thread_id     TEXT    NOT NULL,
@@ -104,11 +112,79 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_goals_thread   ON goals(platform, channel_id, thread_id, status);
     CREATE INDEX IF NOT EXISTS idx_goals_status   ON goals(status, updated_at);
     CREATE INDEX IF NOT EXISTS idx_goals_owner    ON goals(platform, user_id, status);
+    CREATE TABLE IF NOT EXISTS goal_ledger (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      op_hash           TEXT NOT NULL,
+      evidence_hash     TEXT UNIQUE,
+      goal_id           INTEGER NOT NULL,
+      goal_version      INTEGER NOT NULL,
+      epoch             INTEGER NOT NULL,
+      kind              TEXT NOT NULL,
+      state             TEXT NOT NULL,
+      trace_hash        TEXT NOT NULL DEFAULT '',
+      tool_call_hash    TEXT NOT NULL DEFAULT '',
+      tool_name         TEXT NOT NULL,
+      input_hash        TEXT NOT NULL,
+      output_hash       TEXT NOT NULL DEFAULT '',
+      metadata_json     TEXT NOT NULL DEFAULT '{}',
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      finished_at       TEXT,
+      UNIQUE(op_hash, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_goal_ledger_goal
+      ON goal_ledger(goal_id, goal_version, epoch, state);
   `,
+  init: (d) => {
+    const columns = d.pragma('table_info(goals)') as Array<{ name: string }>
+    if (!columns.some((column) => column.name === 'version')) {
+      d.exec('ALTER TABLE goals ADD COLUMN version INTEGER NOT NULL DEFAULT 1')
+    }
+    if (!columns.some((column) => column.name === 'mutation_epoch')) {
+      d.exec('ALTER TABLE goals ADD COLUMN mutation_epoch INTEGER NOT NULL DEFAULT 0')
+    }
+    const recover = d.transaction(() => {
+      // Keep only the newest active row in legacy databases before adding the
+      // partial unique index.
+      const duplicates = d.prepare(`
+        SELECT platform, channel_id, thread_id, MAX(id) AS keep_id
+        FROM goals WHERE status = 'active'
+        GROUP BY platform, channel_id, thread_id HAVING COUNT(*) > 1
+      `).all() as Array<{ platform: string; channel_id: string; thread_id: string; keep_id: number }>
+      for (const row of duplicates) {
+        d.prepare(`
+          UPDATE goals SET status = 'paused', version = version + 1, updated_at = datetime('now')
+          WHERE platform = ? AND channel_id = ? AND thread_id = ?
+            AND status = 'active' AND id <> ?
+        `).run(row.platform, row.channel_id, row.thread_id, row.keep_id)
+      }
+      // A process crash during a mutation makes every prior evidence stale.
+      const interrupted = d.prepare(`
+        SELECT DISTINCT goal_id FROM goal_ledger WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+      `).all() as Array<{ goal_id: number }>
+      for (const row of interrupted) {
+        d.prepare('UPDATE goals SET mutation_epoch = mutation_epoch + 1 WHERE id = ?').run(row.goal_id)
+      }
+      d.prepare(`
+        UPDATE goal_ledger SET state = 'unknown', finished_at = datetime('now')
+        WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+      `).run()
+    })
+    recover()
+    d.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_one_active_thread
+      ON goals(platform, channel_id, thread_id) WHERE status = 'active'
+    `)
+  },
 })
 
 function getDb(): Database.Database | null {
   return helper.get()
+}
+
+/** Internal authority shared with goal-evidence.ts so completion CAS and
+ * evidence validation use the same SQLite connection/transaction. */
+export function getGoalsDatabaseForLedger(): Database.Database | null {
+  return getDb()
 }
 
 function rowFromRaw(r: GoalRowRaw): GoalRow {
@@ -127,6 +203,8 @@ function rowFromRaw(r: GoalRowRaw): GoalRow {
   } catch { /* malformed JSON; fall back to empty list */ }
   return {
     id: r.id,
+    version: r.version ?? 1,
+    mutationEpoch: r.mutation_epoch ?? 0,
     platform: r.platform,
     channelId: r.channel_id,
     threadId: r.thread_id,
@@ -163,24 +241,28 @@ export function setActiveGoal(input: {
   const body = (input.body ?? '').trim().slice(0, MAX_BODY_CHARS)
   if (!title) return null
   try {
-    // Auto-pause any existing ACTIVE goal in this thread so there's
-    // never more than one row to inject. Older paused/completed
-    // rows are untouched.
-    d.prepare(`
-      UPDATE goals SET
-        status = 'paused',
-        updated_at = datetime('now')
-      WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
-    `).run(input.platform, input.channelId, input.threadId)
+    const tx = d.transaction((): number => {
+      d.prepare(`
+        UPDATE goals SET
+          status = 'paused',
+          version = version + 1,
+          updated_at = datetime('now')
+        WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
+      `).run(input.platform, input.channelId, input.threadId)
 
-    const info = d.prepare(`
-      INSERT INTO goals (platform, channel_id, thread_id, user_id, title, body, status, progress_log)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', '[]')
-    `).run(
-      input.platform, input.channelId, input.threadId,
-      input.userId, title, body,
-    )
-    return getGoalById(Number(info.lastInsertRowid))
+      const info = d.prepare(`
+        INSERT INTO goals (
+          platform, channel_id, thread_id, user_id, title, body,
+          status, progress_log, version, mutation_epoch
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', 1, 0)
+      `).run(
+        input.platform, input.channelId, input.threadId,
+        input.userId, title, body,
+      )
+      return Number(info.lastInsertRowid)
+    })
+    return getGoalById(tx())
   } catch (err) {
     rootLogger.warn({ event: 'goals.set_active_failed', err: String(err) })
     return null
@@ -212,7 +294,10 @@ export function appendProgress(goalId: number, by: ProgressNote['by'], text: str
       } catch { list = [] }
       list.push(note)
       d.prepare(`
-        UPDATE goals SET progress_log = ?, updated_at = datetime('now')
+        UPDATE goals SET
+          progress_log = ?,
+          version = version + 1,
+          updated_at = datetime('now')
         WHERE id = ?
       `).run(JSON.stringify(list), goalId)
       return true
@@ -232,6 +317,7 @@ export function updateStatus(goalId: number, status: GoalStatus): boolean {
     const info = d.prepare(`
       UPDATE goals SET
         status = ?,
+        version = version + 1,
         updated_at = datetime('now'),
         closed_at = CASE WHEN ? THEN datetime('now') ELSE closed_at END
       WHERE id = ?
@@ -253,13 +339,21 @@ export function resumeGoal(goalId: number): boolean {
       .get(goalId) as { platform: string; channel_id: string; thread_id: string; status: string } | undefined
     if (!row) return false
     if (row.status === 'completed' || row.status === 'cancelled') return false
+    if (row.status === 'active') return true
     const tx = d.transaction((): void => {
       d.prepare(`
-        UPDATE goals SET status = 'paused', updated_at = datetime('now')
-        WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
-      `).run(row.platform, row.channel_id, row.thread_id)
+        UPDATE goals SET
+          status = 'paused',
+          version = version + 1,
+          updated_at = datetime('now')
+        WHERE platform = ? AND channel_id = ? AND thread_id = ?
+          AND status = 'active' AND id <> ?
+      `).run(row.platform, row.channel_id, row.thread_id, goalId)
       d.prepare(`
-        UPDATE goals SET status = 'active', updated_at = datetime('now')
+        UPDATE goals SET
+          status = 'active',
+          version = version + 1,
+          updated_at = datetime('now')
         WHERE id = ?
       `).run(goalId)
     })
@@ -393,6 +487,8 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
   if (!goal) return ''
   const lines: string[] = []
   lines.push(`[agim context — active goal #${goal.id} for this thread]`)
+  lines.push(`Completion token: {"goalId":${goal.id},"goalVersion":${goal.version}}`)
+  lines.push(`Mutation epoch: ${goal.mutationEpoch}`)
   lines.push(`Title: ${goal.title}`)
   if (goal.body) {
     const truncated = goal.body.length > 800 ? `${goal.body.slice(0, 800)}…` : goal.body
@@ -408,7 +504,7 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
       lines.push(`  - ${t} (${note.by}) ${note.text}`)
     }
   }
-  lines.push('Use this goal to keep replies on-mission. Ignore if the user explicitly changes topic.')
+  lines.push('Use this goal to keep replies on-mission. To complete it, pass this exact goalId/goalVersion plus current server-issued evidence IDs to complete_goal. Ignore if the user explicitly changes topic.')
   lines.push('')
   return lines.join('\n')
 }
@@ -425,6 +521,7 @@ export function formatGoalShow(goal: GoalRow): string {
     cancelled: '✖ cancelled',
   })[goal.status]
   out.push(`🎯 Goal #${goal.id} — ${statusFlag}`)
+  out.push(`Revision: v${goal.version} · mutation epoch ${goal.mutationEpoch}`)
   out.push(`Title: ${goal.title}`)
   out.push(`Updated: ${goal.updatedAt} UTC`)
   if (goal.closedAt) out.push(`Closed:  ${goal.closedAt} UTC`)
@@ -450,5 +547,9 @@ export function formatGoalShow(goal: GoalRow): string {
 export function _truncateForTests(): void {
   const d = getDb()
   if (!d) return
-  d.exec('DELETE FROM goals')
+  d.exec('DELETE FROM goal_ledger; DELETE FROM goals')
+}
+
+export function closeGoalsDbForTesting(): void {
+  helper.close()
 }

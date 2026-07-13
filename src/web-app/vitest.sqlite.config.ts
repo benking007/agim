@@ -36,6 +36,8 @@ export default defineConfig({
       'src/core/goals.test.ts',
       'src/web/background-tasks-api.test.ts',
       'test/unit/audit-events.test.ts',
+      'test/unit/goal-evidence.test.ts',
+      'test/unit/goals-migration.test.ts',
       'test/unit/job-board-inline.test.ts',
       'test/unit/job-recovery.test.ts',
       'test/unit/memo-rpc.test.ts',

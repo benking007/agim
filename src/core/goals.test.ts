@@ -37,6 +37,8 @@ describe('goals store', () => {
     if (!hasSqliteRow(row)) return
     expect(row.title).toBe('ship v1.3.0')
     expect(row.status).toBe('active')
+    expect(row.version).toBe(1)
+    expect(row.mutationEpoch).toBe(0)
     expect(row.body).toContain('CHANGELOG')
     const active = getActiveGoal(T.platform, T.channelId, T.threadId)
     expect(active?.id).toBe(row.id)
@@ -65,6 +67,7 @@ describe('goals store', () => {
     expect(after?.progressLog[0].text).toBe('note 1')
     expect(after?.progressLog[1].text).toBe('note 2')
     expect(after?.progressLog[1].by).toBe('agent')
+    expect(after?.version).toBe(g.version + 2)
   })
 
   it('updateStatus to completed sets closedAt and stops injection', () => {
@@ -88,6 +91,7 @@ describe('goals store', () => {
 
     expect(resumeGoal(a.id)).toBe(true)
     expect(getActiveGoal(T.platform, T.channelId, T.threadId)?.id).toBe(a.id)
+    expect(getActiveGoal(T.platform, T.channelId, T.threadId)?.version).toBeGreaterThan(a.version)
     const bAfter = getGoalById(b.id)
     expect(bAfter?.status).toBe('paused')
   })
@@ -157,6 +161,8 @@ describe('buildGoalSnippet', () => {
     if (!hasSqliteRow(r)) return
     const snippet = buildGoalSnippet(T.platform, T.channelId, T.threadId)
     expect(snippet).toContain(`#${r.id}`)
+    expect(snippet).toContain(`"goalId":${r.id}`)
+    expect(snippet).toContain('"goalVersion":')
     expect(snippet).toContain('Ship v1.3.0')
     expect(snippet).toContain('CHANGELOG')
     expect(snippet).toContain('agim context')

@@ -78,13 +78,18 @@ export {
 } from './mcp-registry.js'
 
 export {
-  runAgentLoop,
   alwaysAllowGate,
+  isSemanticStuckLoop,
+  resolveSemanticStuckLoopOn,
   type AgentLoopInput,
   type AgentLoopResult,
   type ApprovalGate,
   type LoopFinishReason,
   type ToolCallReport,
+  // `runAgentLoop` is intentionally NOT re-exported: production Agim Agent
+  // uses pi-native AgentHarness. The function remains in agent-loop.ts for
+  // shared helpers + historical unit tests; import it from there only if
+  // you need the retired in-process loop in a test.
 } from './agent-loop.js'
 
 export {

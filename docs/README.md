@@ -25,6 +25,7 @@
 - `release.md`：npm 发版流程（main push 触发、版本号、Actions、npm 验证）
 - `security-hardening.md`：安全基线与防护项（含非受信 IM 加固清单）
 - `messenger-capability-matrix.md`：各 IM 的 HITL / 附件 / 网关能力差异
+- `tech-debt.md`：历史债 / 死开关 / 孤儿代码盘点与跟进
 - `session-model.md`：会话模型与恢复
 - `task-recovery-testing.md`：恢复链路测试记录
 - `viewer-modes.md`：长内容 viewer 模式

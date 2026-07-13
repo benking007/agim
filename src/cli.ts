@@ -755,7 +755,11 @@ program
         // reply, we resolve the approval and stop. Anything else routes
         // normally (with the side effect of auto-denying any stale pending —
         // see approval-router.ts).
-        if (tryHandleApprovalReply(threadKey(ctx.platform, ctx.channelId, ctx.message.threadId), ctx.message.text)) {
+        if (tryHandleApprovalReply(
+          threadKey(ctx.platform, ctx.channelId, ctx.message.threadId),
+          ctx.message.text,
+          ctx.message.userId,
+        )) {
           ctx.logger.info({ event: 'message.consumed_by_approval' })
           return
         }

@@ -388,14 +388,18 @@ export function resumeGoal(goalId: number): boolean {
 }
 
 export function getGoalById(id: number): GoalRow | null {
+  return getGoalByIdState(id).goal
+}
+
+export function getGoalByIdState(id: number): { available: boolean; goal: GoalRow | null } {
   const d = getDb()
-  if (!d) return null
+  if (!d) return { available: false, goal: null }
   try {
     const row = d.prepare(`SELECT * FROM goals WHERE id = ?`).get(id) as GoalRowRaw | undefined
-    return row ? rowFromRaw(row) : null
+    return { available: true, goal: row ? rowFromRaw(row) : null }
   } catch (err) {
     rootLogger.warn({ event: 'goals.get_by_id_failed', err: String(err) })
-    return null
+    return { available: false, goal: null }
   }
 }
 

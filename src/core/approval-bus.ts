@@ -325,6 +325,8 @@ interface PendingApproval {
    *  a valid platform even when the underlying runContext has already been
    *  cleared (e.g. unregisterRun deletes the context BEFORE cancelling). */
   platform: string
+  /** Only this user may resolve an explicit-decision request. */
+  approverUserId: string
   /** Truncated input fingerprint used for auto-allow lookups + revocation. */
   fingerprint: string
   /** Original tool input — kept verbatim so dashboard / `listPending` can
@@ -545,11 +547,11 @@ export class ApprovalBus {
    *  composite produced by `threadKey(platform, channelId, threadId)`. The
    *  text-reply path (cli's tryHandleApprovalReply) is the canonical caller;
    *  button callbacks should use `resolvePendingByReqId` instead. */
-  resolvePending(key: string, decision: Decision): ResolvedInfo | null {
+  resolvePending(key: string, decision: Decision, actorUserId?: string): ResolvedInfo | null {
     const q = this.pendingByThread.get(key)
     const head = q?.[0]
     if (!head) return null
-    return this._resolveTarget(head, decision)
+    return this._resolveTarget(head, decision, actorUserId)
   }
 
   /**
@@ -557,10 +559,10 @@ export class ApprovalBus {
    * callbacks and the dashboard where the UI element carries the exact reqId,
    * avoiding the FIFO head-of-thread ambiguity of resolvePending().
    */
-  resolvePendingByReqId(reqId: string, decision: Decision): ResolvedInfo | null {
+  resolvePendingByReqId(reqId: string, decision: Decision, actorUserId?: string): ResolvedInfo | null {
     const target = this.pendingById.get(reqId)
     if (!target || target.resolved) return null
-    return this._resolveTarget(target, decision)
+    return this._resolveTarget(target, decision, actorUserId)
   }
 
   /** Cancel a specific request from a non-user lifecycle event. Unlike
@@ -577,7 +579,23 @@ export class ApprovalBus {
     return true
   }
 
-  private _resolveTarget(target: PendingApproval, decision: Decision): ResolvedInfo {
+  private _resolveTarget(
+    target: PendingApproval,
+    decision: Decision,
+    actorUserId?: string,
+  ): ResolvedInfo | null {
+    if (
+      target.requiresExplicitDecision
+      && (!actorUserId || actorUserId !== target.approverUserId)
+    ) {
+      log.warn({
+        event: 'approval.bus.explicit_actor_mismatch',
+        reqId: target.reqId,
+        expectedUserId: target.approverUserId,
+        actorUserId: actorUserId ?? '',
+      })
+      return null
+    }
     if (target.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
       // Mutate the caller-visible decision too: approval-router uses the same
       // object for receipts/card outcomes after resolvePending returns.
@@ -1680,6 +1698,7 @@ export class ApprovalBus {
       threadId: args.ctx.threadId,
       compositeKey: cKey,
       platform: args.ctx.platform,
+      approverUserId: args.ctx.userId,
       fingerprint,
       input: args.input,
       registeredAt: Date.now(),

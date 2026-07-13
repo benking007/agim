@@ -520,11 +520,11 @@ function onBusResolution(e: ResolutionEvent): void {
  * — same value the bus stored under at registerRun/registerSyntheticPending
  * time. A bare threadId will miss in multi-platform deployments.
  */
-export function tryHandleApprovalReply(key: string, text: string): boolean {
+export function tryHandleApprovalReply(key: string, text: string, userId?: string): boolean {
   if (!approvalBus.hasPendingFor(key)) return false
   const decision = parseApprovalReply(text)
   if (decision) {
-    const info = approvalBus.resolvePending(key, decision)
+    const info = approvalBus.resolvePending(key, decision, userId)
     log.info({ event: 'approval.router.resolved', key, behavior: decision.behavior })
     // R12 ⑤ — persistent audit. ResolvedInfo has platform + threadId +
     // toolName but no user_id (the IM reply identifies a thread, not a
@@ -553,7 +553,7 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
     behavior: 'deny',
     message: '用户在 IM 中改换话题，未给出审批回复',
   }
-  const info = approvalBus.resolvePending(key, redirectDecision)
+  const info = approvalBus.resolvePending(key, redirectDecision, userId)
   if (info) editCardOnThreadResolution(info, redirectDecision, undefined)
   log.info({ event: 'approval.router.redirected', key })
   return false
@@ -606,7 +606,7 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
     return
   }
   const decision = decisionFromButton(parsed.choice)
-  const info = approvalBus.resolvePendingByReqId(parsed.reqId, decision)
+  const info = approvalBus.resolvePendingByReqId(parsed.reqId, decision, cb.userId)
 
   if (!info) {
     await cb.ack('请求已过期或已被处理')

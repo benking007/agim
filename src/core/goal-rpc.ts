@@ -18,7 +18,7 @@
 import {
   setActiveGoal,
   getActiveGoal,
-  getGoalById,
+  getGoalByIdState,
   appendProgress,
   type GoalRow,
 } from './goals.js'
@@ -278,7 +278,11 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
       }
     }
   }
-  const tokenGoal = getGoalById(goalId)
+  const tokenGoalState = getGoalByIdState(goalId)
+  if (!tokenGoalState.available) {
+    return { ok: false, error: 'goal database unavailable; completion blocked' }
+  }
+  const tokenGoal = tokenGoalState.goal
   const tokenIsCurrent = !!tokenGoal
     && tokenGoal.platform === ctx.platform
     && tokenGoal.channelId === ctx.channelId

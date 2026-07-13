@@ -85,7 +85,9 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(decisions).toEqual([])
     expect(bus.hasPendingFor(KEY)).toBe(true)
 
-    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
+    expect(bus.resolvePending(KEY, { behavior: 'allow' }, 'other-user')).toBeNull()
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true }, RUN_CTX.userId)
     expect(decisions).toEqual([{ behavior: 'allow' }])
     expect(bus.getAutoAllowKeys(KEY)).toEqual([])
   })

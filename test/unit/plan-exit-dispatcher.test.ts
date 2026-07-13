@@ -160,7 +160,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
       }
       expect(settled).toBe(false)
       expect(notification?.requiresExplicitDecision).toBe(true)
-      approvalBus.resolvePending(key, { behavior: 'allow' })
+      approvalBus.resolvePending(key, { behavior: 'allow' }, 'u1')
       const result = await resultPromise
       expect(result.isError).toBe(false)
       expect(result.text).toContain('approved by user')

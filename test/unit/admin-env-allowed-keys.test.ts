@@ -72,6 +72,11 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
     // Plan mode
     'AGIM_NATIVE_PLAN_MODE',
+    'AGIM_PLAN_MODE',
+    'AGIM_DISABLE_PLAN_MODE',
+    // Approval timeout policy (canonical + legacy)
+    'AGIM_APPROVAL_ON_TIMEOUT',
+    'AGIM_TIMEOUT_DEFAULT',
     // Iteration cap
     'AGIM_NATIVE_AGENT_MAX_ITER',
     'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',

@@ -15,7 +15,8 @@
 // adapter can apply the override even when the conversation hasn't yet
 // rebuilt its in-memory session row (e.g. after a process restart).
 //
-// Emergency kill switch: `AGIM_DISABLE_PLAN_MODE=1` makes /plan return a
+// Emergency kill switch: `AGIM_PLAN_MODE=disabled` (legacy
+// `AGIM_DISABLE_PLAN_MODE=1`) makes /plan return a static notice.
 // "disabled" message without touching session state. Useful for ops to roll
 // back the feature without redeploying.
 
@@ -25,6 +26,7 @@ import { threadKey as makeThreadKey } from '../approval-bus.js'
 import {
   setPlanModeForThread,
   clearPlanModeForThread,
+  resolvePlanModeEnvPolicy,
 } from '../plan-mode-state.js'
 
 const ON_TOKENS = new Set(['on', 'enter', 'start', 'enable', '开', '开启'])
@@ -43,8 +45,8 @@ const OFF_TOKENS = new Set(['off', 'exit', 'stop', 'disable', '关', '关闭'])
 const PLAN_CAPABLE_AGENTS = new Set(['claude-code', 'opencode', 'codex', 'cursor', 'native'])
 
 export async function handlePlanCommand(args: string, ctx: RouteContext): Promise<string> {
-  if (process.env.AGIM_DISABLE_PLAN_MODE === '1') {
-    return '🚫 Plan 模式已通过 AGIM_DISABLE_PLAN_MODE 全局禁用，请联系运维。'
+  if (resolvePlanModeEnvPolicy() === 'disabled') {
+    return '🚫 Plan 模式已通过 AGIM_PLAN_MODE=disabled（或旧键 AGIM_DISABLE_PLAN_MODE）全局禁用，请联系运维。'
   }
 
   const token = args.trim().toLowerCase()

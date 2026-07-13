@@ -108,30 +108,63 @@ export function closePlanModeStateDb(): void {
 }
 
 // Re-export for callers that want a single "is plan mode on for this
-// thread?" answer including the env fallback. The native agent calls
+// thread?" answer including the env fallback. The Agim Agent calls
 // this from resolvePolicy() + buildSystemPrompt().
+
+/** Process-level plan-mode policy.
+ *  - `on`       — default on for threads without a per-thread override
+ *  - `off`      — default off (per-thread /plan on still works)
+ *  - `disabled` — emergency kill: every consumer must treat plan as off
+ */
+export type PlanModeEnvPolicy = 'on' | 'off' | 'disabled'
+
+/**
+ * Resolve the process-level plan-mode policy.
+ *
+ * Canonical: `AGIM_PLAN_MODE=on|off|disabled`.
+ * Legacy aliases (still honored):
+ *   - `AGIM_DISABLE_PLAN_MODE=1` → disabled
+ *   - `AGIM_NATIVE_PLAN_MODE` truthy (`1`/`on`/`true`/`yes`) → on
+ * Canonical wins when set.
+ */
+export function resolvePlanModeEnvPolicy(): PlanModeEnvPolicy {
+  const unified = (process.env.AGIM_PLAN_MODE ?? '').toLowerCase().trim()
+  if (unified === 'disabled' || unified === 'kill' || unified === 'off-force') {
+    return 'disabled'
+  }
+  if (unified === 'on' || unified === '1' || unified === 'true' || unified === 'yes') {
+    return 'on'
+  }
+  if (unified === 'off' || unified === '0' || unified === 'false' || unified === 'no') {
+    return 'off'
+  }
+  // Legacy kill switch
+  if (process.env.AGIM_DISABLE_PLAN_MODE === '1') return 'disabled'
+  // Legacy default-on
+  const legacy = (process.env.AGIM_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
+  if (legacy === '1' || legacy === 'on' || legacy === 'true' || legacy === 'yes') {
+    return 'on'
+  }
+  return 'off'
+}
+
 export function readEnvPlanModeDefault(): boolean {
-  const raw = (process.env.AGIM_NATIVE_PLAN_MODE ?? '').toLowerCase().trim()
-  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes'
+  return resolvePlanModeEnvPolicy() === 'on'
 }
 
 /**
  * Resolve effective PlanMode for a thread, layering per-thread → env.
  *
- *   per-thread = true   → on  (regardless of env)
- *   per-thread = false  → off (regardless of env — useful to opt one
- *                              thread out when env=on for the rest)
- *   per-thread = null   → env (whatever AGIM_NATIVE_PLAN_MODE says)
+ *   policy disabled     → off always
+ *   per-thread = true   → on
+ *   per-thread = false  → off
+ *   per-thread = null   → env default (`AGIM_PLAN_MODE` / legacy)
  *
  * When `threadKey` is omitted or empty (no thread context, e.g. CLI
  * boot banner), we return the env default — matches v1.2.119 behaviour.
  */
 export function effectivePlanModeOn(threadKey?: string): boolean {
-  // Global emergency kill switch must be authoritative for every consumer
-  // (router, system prompt, policy gate, and tool roster). Previously only
-  // router.ts honored it, so native could still advertise Plan Mode and deny
-  // tools from stale per-thread state after operators disabled the feature.
-  if (process.env.AGIM_DISABLE_PLAN_MODE === '1') return false
+  if (resolvePlanModeEnvPolicy() === 'disabled') return false
   if (threadKey) {
     const explicit = getPlanModeForThread(threadKey)
     if (explicit !== null) {

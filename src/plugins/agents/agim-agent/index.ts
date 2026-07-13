@@ -47,7 +47,7 @@ import {
   resolveSemanticStuckLoopOn,
 } from '../../../core/llm/agent-loop.js'
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
-import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
+import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 

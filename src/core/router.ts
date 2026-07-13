@@ -109,7 +109,7 @@ function formatRateLimitError(ws: ReturnType<typeof workspaceRegistry.resolve>, 
 }
 
 function displayAgentName(name: string): string {
-  return name === 'native' ? 'agim' : name
+  return name === 'native' ? 'Agim Agent' : name
 }
 
 /**
@@ -648,10 +648,17 @@ export async function callAgentWithHistory(
     ctx.agentOutcome = outcome
   }
 
-  // Plan mode kill-switch: ops can flip AGIM_DISABLE_PLAN_MODE=1 to ignore
-  // every session's planMode flag without redeploying. Matches the same env
-  // var that short-circuits the /plan command itself.
-  let effectivePlanMode = planMode === true && process.env.AGIM_DISABLE_PLAN_MODE !== '1'
+  // Plan mode kill-switch: AGIM_PLAN_MODE=disabled (legacy
+  // AGIM_DISABLE_PLAN_MODE=1) ignores every session's planMode flag
+  // and blocks heuristic auto-enter.
+  let planKillDisabled = false
+  try {
+    const { resolvePlanModeEnvPolicy } = await import('./plan-mode-state.js')
+    planKillDisabled = resolvePlanModeEnvPolicy() === 'disabled'
+  } catch {
+    planKillDisabled = process.env.AGIM_DISABLE_PLAN_MODE === '1'
+  }
+  let effectivePlanMode = planMode === true && !planKillDisabled
 
   // v1.2.135 — heuristic auto-enter. When the operator has opted into
   // AGIM_PLAN_INTENT_AUTO and plan mode is currently OFF, a prompt
@@ -660,7 +667,7 @@ export async function callAgentWithHistory(
   // off, so the next message goes back to normal unless the user
   // explicitly /plan on or the model itself calls
   // native_exit_plan_mode (v1.2.131). The override never auto-exits.
-  if (!effectivePlanMode && process.env.AGIM_DISABLE_PLAN_MODE !== '1') {
+  if (!effectivePlanMode && !planKillDisabled) {
     try {
       const { shouldAutoEnterPlanMode } = await import('./plan-intent.js')
       const matched = shouldAutoEnterPlanMode(prompt)

@@ -2907,11 +2907,13 @@ const ENV_EDITABLE_KEYS = [
   // Safety card toggle — drives the Claude --dangerously-skip-permissions
   // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
   'AGIM_DANGEROUSLY_SKIP_PERMISSIONS',
-  // Approval Policy card. AGIM_AUTO_APPROVE defaults ON; AGIM_TIMEOUT_DEFAULT
-  // defaults allow and only matters when auto-approve is off. Timeout-default
-  // hot-reloads because approval-bus reads process.env on timer fire; the
-  // timeout duration itself is captured by the singleton bus and needs restart.
+  // Approval Policy card. AGIM_AUTO_APPROVE defaults ON; AGIM_APPROVAL_ON_TIMEOUT
+  // (legacy AGIM_TIMEOUT_DEFAULT) defaults allow and only matters when
+  // auto-approve is off. Timeout-default hot-reloads because approval-bus
+  // reads process.env on timer fire; the timeout duration itself is captured
+  // by the singleton bus and needs restart.
   'AGIM_TIMEOUT_DEFAULT',
+  'AGIM_APPROVAL_ON_TIMEOUT',
   'AGIM_AUTO_APPROVE',
   'AGIM_APPROVAL_TIMEOUT_MS',
   // v1.2 — IM long-message viewer. Operator sets the public URL pointing at
@@ -2996,8 +2998,11 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_A2A_TIMEOUT_DEFAULT_MS',
   'AGIM_NATIVE_CALL_AGENT_IN_PROCESS',
   'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
-  // Plan mode default state.
+  // Plan mode default state. Canonical AGIM_PLAN_MODE=on|off|disabled;
+  // legacy AGIM_NATIVE_PLAN_MODE / AGIM_DISABLE_PLAN_MODE still read.
   'AGIM_NATIVE_PLAN_MODE',
+  'AGIM_PLAN_MODE',
+  'AGIM_DISABLE_PLAN_MODE',
   // v1.2.135 — auto-enter heuristic + custom phrase list.
   'AGIM_PLAN_INTENT_AUTO',
   'AGIM_PLAN_INTENT_PHRASES',
@@ -3095,7 +3100,12 @@ async function handleSecurityDiagnostics(_req: IncomingMessage, res: ServerRespo
         liveEnv: {
           AGIM_EXEC_SANDBOX: process.env.AGIM_EXEC_SANDBOX ?? null,
           AGIM_NATIVE_FS_RESTRICT: process.env.AGIM_NATIVE_FS_RESTRICT ?? null,
-          AGIM_TIMEOUT_DEFAULT: process.env.AGIM_TIMEOUT_DEFAULT ?? null,
+          AGIM_TIMEOUT_DEFAULT: process.env.AGIM_APPROVAL_ON_TIMEOUT
+            ?? process.env.AGIM_TIMEOUT_DEFAULT
+            ?? null,
+          AGIM_APPROVAL_ON_TIMEOUT: process.env.AGIM_APPROVAL_ON_TIMEOUT
+            ?? process.env.AGIM_TIMEOUT_DEFAULT
+            ?? null,
           AGIM_AUTO_APPROVE: process.env.AGIM_AUTO_APPROVE ?? null,
           AGIM_APPROVAL_TIMEOUT_MS: process.env.AGIM_APPROVAL_TIMEOUT_MS ?? null,
           AGIM_DANGEROUSLY_SKIP_PERMISSIONS: process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS ?? null,

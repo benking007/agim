@@ -186,8 +186,8 @@ Plan/read-only：
 Native 走内部工具注册表：
 
 ```text
-src/plugins/agents/native/tool-registry.ts
-src/plugins/agents/pi-native/tool-bridge.ts
+src/plugins/agents/agim-agent-shared/tool-registry.ts
+src/plugins/agents/agim-agent/tool-bridge.ts
 src/core/llm/agim-dispatcher.ts
 ```
 

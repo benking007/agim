@@ -266,12 +266,12 @@ class PluginRegistry {
     const { cursorAdapter } = await import('../plugins/agents/cursor/index.js')
     this.registerAgent(cursorAdapter)
 
-    // Agim Agent (public name: native/agim). Single in-process implementation
-    // backed by pi-agent-core; the old legacy native loop has been retired.
-    const { nativeAgentAdapter } = await import('../plugins/agents/pi-native/factory.js')
+    // Agim Agent (registry id `native`, UI "Agim Agent"). Implementation:
+    // plugins/agents/agim-agent (shared helpers in agim-agent-shared).
+    const { nativeAgentAdapter } = await import('../plugins/agents/agim-agent/factory.js')
     this.registerAgent(nativeAgentAdapter)
     log.info({ event: 'registry.native_engine', engine: 'agim-agent' },
-      'native engine: agim-agent')
+      'Agim Agent engine: agim-agent')
 
     log.info({ messengers: this.messengers.size, agents: this.agents.size },
       'Plugin registry initialized')

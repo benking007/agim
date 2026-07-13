@@ -44,7 +44,7 @@
     "memos": "备忘",
     "memory": "记忆",
     "skills": "技能",
-    "workspace": "工作区",
+    "workspace": "Agent 文件",
     "observability": "观测",
     "settings": "设置"
   },
@@ -183,8 +183,8 @@
       "chatDetail": "Web 沙盒验证",
       "start": "快速配置",
       "startDetail": "一键集成引导",
-      "workspace": "工作区间",
-      "workspaceDetail": "Agent 文件与记忆",
+      "workspace": "Agent 文件",
+      "workspaceDetail": "各 Agent 工作目录、AGENTS.md、记忆文件",
       "service": "服务矩阵",
       "serviceDetail": "后台与端口状态"
     },

@@ -40,7 +40,7 @@ describe('Topbar', () => {
     expect(screen.getByRole('link', { name: 'Reminders' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Memos' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Workspace' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Agent Files' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Observability' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
   })

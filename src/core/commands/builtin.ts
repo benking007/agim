@@ -342,7 +342,7 @@ export async function handleBuiltInCommand(
         if (!adapter) return `• ${name}`
         const kind = adapter.kind ?? 'cli'
         const flag = ({ cli: '[cli]', 'in-process': '[in-process]', remote: '[remote]' })[kind] ?? `[${kind}]`
-        const displayName = name === 'native' ? 'agim' : name
+        const displayName = name === 'native' ? 'Agim Agent' : name
         const aliasSet = new Set<string>()
         if (name === 'native') aliasSet.add('native')
         for (const a of adapter.aliases) {
@@ -359,7 +359,7 @@ export async function handleBuiltInCommand(
     case 'new': {
       const session = await sessionManager.resetConversation(ctx.platform, ctx.channelId, ctx.threadId)
       if (session) {
-        const displayAgent = session.agent === 'native' ? 'agim' : session.agent
+        const displayAgent = session.agent === 'native' ? 'Agim Agent' : session.agent
         return `🆕 New conversation started with ${displayAgent}.\n\nPrevious context has been cleared.`
       }
       return `🆕 Ready to start a new conversation.\n\nSend a message to begin.`

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { describeNativeAgent, buildSystemPrompt, readOperatorRole, readWorkspaceMemory, isWorkspaceTrusted } from './index.js'
-import { nativeAgentAdapter } from '../pi-native/factory.js'
+import { nativeAgentAdapter } from '../agim-agent/factory.js'
 import { invalidateSkillsCache } from '../../../core/skills/loader.js'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

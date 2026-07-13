@@ -8,7 +8,7 @@ import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { effectivePlanModeOn } from '../../../core/plan-mode-state.js'
 import type { AgentSendOpts } from '../../../core/types.js'
-import { assembleNativeTools } from '../native/tool-registry.js'
+import { assembleNativeTools } from '../agim-agent-shared/tool-registry.js'
 
 export interface NativeToolSurface {
   tools: ToolDef[]

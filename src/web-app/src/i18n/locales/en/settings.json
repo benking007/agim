@@ -160,7 +160,7 @@
     "approval": {
       "title": "Approval timeout default",
       "description": "What happens when auto-approve is off and a pending tool-use request expires with no human reply. `Allow` is the default (auto-approve on timeout); `Deny` is strict interactive mode. Irrelevant when auto-approve is on.",
-      "envKey": "AGIM_TIMEOUT_DEFAULT",
+      "envKey": "AGIM_APPROVAL_ON_TIMEOUT",
       "valDeny": "Deny on timeout",
       "valAllow": "Allow on timeout",
       "timeoutLabel": "Approval wait time",

@@ -9,15 +9,19 @@ import { isPlanModeOn, resolvePolicy } from './index.js'
 describe('PlanMode (v1.2.119)', () => {
   const saved = process.env.AGIM_NATIVE_PLAN_MODE
   const savedDisable = process.env.AGIM_DISABLE_PLAN_MODE
+  const savedUnified = process.env.AGIM_PLAN_MODE
   beforeEach(() => {
     delete process.env.AGIM_NATIVE_PLAN_MODE
     delete process.env.AGIM_DISABLE_PLAN_MODE
+    delete process.env.AGIM_PLAN_MODE
   })
   afterEach(() => {
     if (saved === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
     else process.env.AGIM_NATIVE_PLAN_MODE = saved
     if (savedDisable === undefined) delete process.env.AGIM_DISABLE_PLAN_MODE
     else process.env.AGIM_DISABLE_PLAN_MODE = savedDisable
+    if (savedUnified === undefined) delete process.env.AGIM_PLAN_MODE
+    else process.env.AGIM_PLAN_MODE = savedUnified
   })
 
   describe('isPlanModeOn', () => {

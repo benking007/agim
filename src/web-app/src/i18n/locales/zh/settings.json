@@ -160,7 +160,7 @@
     "approval": {
       "title": "审批超时默认行为",
       "description": "当自动审批关闭且工具调用无人响应超时时的行为。`放行` 是默认值，超时后自动通过；`拒绝` 是严格交互模式，写入调用保持阻断。自动审批开启时此项不生效。",
-      "envKey": "AGIM_TIMEOUT_DEFAULT",
+      "envKey": "AGIM_APPROVAL_ON_TIMEOUT",
       "valDeny": "超时拒绝",
       "valAllow": "超时放行",
       "timeoutLabel": "审批等待时长",

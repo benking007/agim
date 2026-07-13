@@ -298,7 +298,13 @@ function seedAssistantMessage(text: string) {
 function injectEphemeralContext(messages: AgentMessage[], context: string): AgentMessage[] {
   const trimmed = context.trim()
   if (!trimmed) return messages
-  const idx = messages.findLastIndex((message) => message.role === 'user')
+  let idx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') {
+      idx = i
+      break
+    }
+  }
   if (idx < 0) return messages
   const current = messages[idx]
   if (!current || current.role !== 'user') return messages

@@ -3,15 +3,15 @@
 [中文说明](README.zh-CN.md)
 
 Agim connects IM channels to AI agents with one Node.js process.
-It is designed for production use: persistent delivery, session continuity, human approval, and observable operations.
+It is designed for production use: at-least-once persistent delivery, session continuity, human approval, and observable operations.
 
 ## What matters
 
 - **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
 - **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, native LLM, and ACP remote agents.
 - **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
-- **Reliable runtime**: SQLite outbox, restart recovery, job board, structured audit.
-- **Safety by default**: token auth, approval gate, sensitive-path denylist, optional global-IM disable.
+- **Reliable runtime**: SQLite outbox (at-least-once delivery), restart recovery, job board, structured audit. Production requires native `better-sqlite3`; without it the outbox is unavailable.
+- **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is on by default (single-operator); tighten for untrusted IM using the hardening checklist.
 
 ## Quick start
 

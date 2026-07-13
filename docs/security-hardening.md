@@ -10,22 +10,52 @@
 
 ## 0. 一页摘要
 
-agim **默认状态**就是合规友好的：
+agim **默认状态**偏「单人本机助手」合规友好，但**不是**面向开放/半受信 IM 的零信任网关：
 
-| 维度 | 默认 |
-|---|---|
-| Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 |
-| Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）|
-| 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）|
-| 工具审批 | **自动放行**（`AGIM_AUTO_APPROVE=1`）；安全检查（敏感路径硬拒 + 自保护）仍在 auto-approve 之前执行；设 `=0` 回退到 IM 审批卡 + 超时流程 |
-| 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 |
-| 长期记忆 | 默认开（P3 opt-out，`AGIM_MEMORY_ENABLED=0` 关闭）；向量检索默认关 |
-| 出网 | 唯一必需：与 IM 厂商通信；其他全部可关 |
-| 用户消息进日志 | 默认只有 `len` / `prefix(6)` / `sha256(12)`，无原文 |
-| 凭据存储 | `0o600` 文件 + sha256 哈希；Web 令牌支持 admin / user 双角色 |
-| 凭据出口防护 | 输出消息走脱敏扫描，10 类 token 模式自动 `[REDACTED]` |
-| 敏感路径读取 | 硬拒（不弹审批卡，无法运维"放过"） |
-| 审计 | `audit_events` 表 + 30/180 天保留；10 类事件可查 |
+| 维度 | 默认 | 含义 |
+|---|---|---|
+| Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 | 公网暴露需运维主动确认 |
+| Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）| 全球 IM 默认不开 |
+| 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）| 远端执行默认不开 |
+| 工具审批 | **自动放行**（`AGIM_AUTO_APPROVE=1`）；安全检查（敏感路径硬拒 + 自保护）仍在 auto-approve 之前执行；设 `=0` 回退到 IM 审批卡 + 超时流程 | **单人自用友好；非受信 IM 必须关掉** |
+| 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 | HITL 严格模式需显式改 |
+| IM 发送者 | 默认开放（未设 `AGIM_ALLOWED_USERS`）| 谁能私聊 bot 谁就能驱 agent |
+| 长期记忆 | 默认开（P3 opt-out，`AGIM_MEMORY_ENABLED=0` 关闭）；向量检索默认关 | — |
+| 出网 | 唯一必需：与 IM 厂商通信；其他全部可关 | — |
+| 用户消息进日志 | 默认只有 `len` / `prefix(6)` / `sha256(12)`，无原文 | — |
+| 凭据存储 | `0o600` 文件 + sha256 哈希；Web 令牌支持 admin / user 双角色 | 磁盘明文，无应用层加密 |
+| 凭据出口防护 | 输出消息走脱敏扫描，10 类 token 模式自动 `[REDACTED]` | — |
+| 敏感路径读取 | 硬拒（不弹审批卡，无法运维"放过"） | MCP 工具不走同一路径扫描 |
+| 审计 | `audit_events` 表 + 30/180 天保留；10 类事件可查 | — |
+| 出站投递 | SQLite outbox，**at-least-once**（崩溃可重复投递） | 不是 exactly-once |
+
+### 0.1 非受信 IM 加固清单（官方）
+
+当 bot 可能被群成员、陌生人或其他半受信用户触达时，至少应用：
+
+```bash
+# HITL：突变工具必须等人点批准；超时拒绝而非放行
+export AGIM_AUTO_APPROVE=0
+export AGIM_TIMEOUT_DEFAULT=deny
+
+# 只允许已知用户驱动 agent
+export AGIM_ALLOWED_USERS='tg:123456789,feishu:ou_xxx'
+
+# 保持控制面本机；反代后关闭 loopback 旁路信任
+export AGIM_WEB_BIND=127.0.0.1
+export AGIM_ACP_BIND=127.0.0.1
+export AGIM_TRUST_LOOPBACK=off
+# 切勿 AGIM_WEB_AUTH=off
+
+# 可选：收紧 native 文件系统与 Claude 旁路
+export AGIM_NATIVE_FS_RESTRICT=1
+# 切勿 AGIM_DANGEROUSLY_SKIP_PERMISSIONS=1
+
+# 日志不带用户原文
+# 切勿 AGIM_LOG_USER_TEXT=1
+```
+
+Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。详见下文环境变量表与 [`messenger-capability-matrix.md`](./messenger-capability-matrix.md)。
 
 ---
 

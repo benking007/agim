@@ -137,6 +137,23 @@ class PluginRegistry {
     const results = await Promise.allSettled(
       enabled.map(async (cfg) => {
         const { ACPAdapter } = await import('../plugins/agents/acp/acp-adapter.js')
+        const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+        try {
+          await assertSafeAcpUrl(cfg.endpoint, {
+            forwardsCredentials: !!(cfg.auth?.token && cfg.auth.type !== 'none'),
+          })
+        } catch (err) {
+          if (err instanceof UnsafeAcpUrlError) {
+            log.warn({
+              event: 'registry.acp.url_blocked',
+              acpAgent: cfg.name,
+              endpoint: cfg.endpoint,
+              reason: err.reason,
+            }, `ACP agent "${cfg.name}" blocked by URL guard: ${err.message}`)
+            return
+          }
+          throw err
+        }
         const adapter = new ACPAdapter(cfg)
 
         const available = await adapter.isAvailable().catch(() => false)

@@ -22,6 +22,15 @@ export function buildAuthHeaders(config: { auth?: ACPAgentConfig['auth'] }): Rec
   return undefined
 }
 
+/** Merge caller abort with the hard timeout. Node 22+ provides AbortSignal.any. */
+export function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
+  const list = signals.filter((s): s is AbortSignal => !!s)
+  if (list.length === 0) return AbortSignal.timeout(300_000)
+  const first = list[0]
+  if (list.length === 1 && first) return first
+  return AbortSignal.any(list)
+}
+
 export class ACPClient {
   private baseUrl: string
   private authHeaders?: Record<string, string>
@@ -70,8 +79,14 @@ export class ACPClient {
    *
    * `sessionId` is forwarded as `session_id` in the request body so the
    * remote agent can persist context across turns (P2-C).
+   * `signal` aborts the underlying fetch (merged with the 5min hard timeout).
    */
-  async *streamPrompt(prompt: string, history?: ChatMessage[], sessionId?: string): AsyncGenerator<string> {
+  async *streamPrompt(
+    prompt: string,
+    history?: ChatMessage[],
+    sessionId?: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<string> {
     const body: ACPCreateTaskRequest = {
       input: {
         prompt,
@@ -88,7 +103,7 @@ export class ACPClient {
         ...this.authHeaders,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(300000), // 5min timeout for long tasks
+      signal: mergeAbortSignals(AbortSignal.timeout(300000), signal),
       redirect: 'manual',
     })
 
@@ -105,64 +120,79 @@ export class ACPClient {
     let buffer = ''
     let eventDataLines: string[] = []
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-
-      // Process complete lines
+    try {
       while (true) {
-        const newlineIdx = buffer.indexOf('\n')
-        if (newlineIdx === -1) break
-        const line = buffer.slice(0, newlineIdx).replace(/\r$/, '')
-        buffer = buffer.slice(newlineIdx + 1)
+        if (signal?.aborted) {
+          await reader.cancel().catch(() => {})
+          throw signal.reason instanceof Error
+            ? signal.reason
+            : new DOMException('This operation was aborted', 'AbortError')
+        }
+        const { done, value } = await reader.read()
+        if (done) break
 
-        if (line === '') {
-          // Empty line = end of event. Process accumulated data.
-          if (eventDataLines.length > 0) {
-            const data = eventDataLines.join('\n')
-            eventDataLines = []
+        buffer += decoder.decode(value, { stream: true })
 
-            if (data === '[DONE]') return
+        // Process complete lines
+        while (true) {
+          const newlineIdx = buffer.indexOf('\n')
+          if (newlineIdx === -1) break
+          const line = buffer.slice(0, newlineIdx).replace(/\r$/, '')
+          buffer = buffer.slice(newlineIdx + 1)
 
-            try {
-              const event = JSON.parse(data)
-              if (event.output?.content) {
-                yield event.output.content
-              } else if (event.error) {
-                throw new Error(`ACP error: ${event.error.message}`)
+          if (line === '') {
+            // Empty line = end of event. Process accumulated data.
+            if (eventDataLines.length > 0) {
+              const data = eventDataLines.join('\n')
+              eventDataLines = []
+
+              if (data === '[DONE]') return
+
+              try {
+                const event = JSON.parse(data)
+                if (event.output?.content) {
+                  yield event.output.content
+                } else if (event.error) {
+                  throw new Error(`ACP error: ${event.error.message}`)
+                }
+              } catch (e) {
+                if (e instanceof SyntaxError) continue
+                throw e
               }
-            } catch (e) {
-              if (e instanceof SyntaxError) continue
-              throw e
             }
+          } else if (line.startsWith('data: ')) {
+            eventDataLines.push(line.slice(6))
+          } else if (line.startsWith('data:')) {
+            eventDataLines.push(line.slice(5).trimStart())
           }
-        } else if (line.startsWith('data: ')) {
-          eventDataLines.push(line.slice(6))
-        } else if (line.startsWith('data:')) {
-          eventDataLines.push(line.slice(5).trimStart())
+          // Ignore comment lines (starting with ':') and other SSE fields
         }
-        // Ignore comment lines (starting with ':') and other SSE fields
       }
-    }
 
-    // Process any remaining data in buffer
-    if (eventDataLines.length > 0) {
-      const data = eventDataLines.join('\n')
-      if (data !== '[DONE]') {
-        try {
-          const event = JSON.parse(data)
-          if (event.output?.content) yield event.output.content
-        } catch {
-          /* ignore trailing malformed data */
+      // Process any remaining data in buffer
+      if (eventDataLines.length > 0) {
+        const data = eventDataLines.join('\n')
+        if (data !== '[DONE]') {
+          try {
+            const event = JSON.parse(data)
+            if (event.output?.content) yield event.output.content
+          } catch {
+            /* ignore trailing malformed data */
+          }
         }
       }
+    } finally {
+      try { reader.releaseLock() } catch { /* already released */ }
     }
   }
 
   /** Send prompt and wait for complete response (non-streaming fallback) */
-  async sendPromptSync(prompt: string, history?: ChatMessage[], sessionId?: string): Promise<string> {
+  async sendPromptSync(
+    prompt: string,
+    history?: ChatMessage[],
+    sessionId?: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const body: ACPCreateTaskRequest = {
       input: {
         prompt,
@@ -179,7 +209,7 @@ export class ACPClient {
         ...this.authHeaders,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(300000),
+      signal: mergeAbortSignals(AbortSignal.timeout(300000), signal),
       redirect: 'manual',
     })
 

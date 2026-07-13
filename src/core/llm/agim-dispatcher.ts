@@ -60,13 +60,12 @@ import type { RouteContext } from '../router.js'
 
 const log = rootLogger.child({ component: 'agim-dispatcher' })
 
-/** v1.2.121 — kill switch for in-process native self-spawn. When set to
- *  'off' (or '0' / 'no'), call_agent('native', …) falls back to the
- *  subprocess CLI boot path. Default is ON (in-process) because
- *  fan-out latency is the main reason this feature exists. */
-function isInProcessSpawnDisabled(): boolean {
+/** v1.2.121 — opt-in in-process native self-spawn. Default OFF so
+ *  call_agent('native') uses callAgentByName (full A2A job/audit parity).
+ *  Set AGIM_NATIVE_CALL_AGENT_IN_PROCESS=on to re-enable the latency fast path. */
+export function isInProcessSpawnEnabled(): boolean {
   const raw = (process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS ?? '').toLowerCase().trim()
-  return raw === 'off' || raw === '0' || raw === 'no' || raw === 'false'
+  return raw === 'on' || raw === '1' || raw === 'true' || raw === 'yes'
 }
 
 /** Per-turn caller identity. Matches the subset of `RunContext` the
@@ -604,19 +603,14 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }, `delegating to ${agentName} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
               `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
-          // v1.2.121 — in-process self-spawn fast path.
+          // v1.2.121 — opt-in in-process self-spawn fast path.
           //
-          // When the target is `native` (i.e. caller wants to fan-out
-          // research using more native turns), skip the subprocess
-          // boot and run another native agent loop in the SAME JS
-          // heap. Saves the ~5s claude-code-style boot per fan-out;
-          // matches the pattern Claude Code uses for in-process Task
-          // agents.
-          //
-          // Disabled via AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off
-          // (falls back to subprocess via callAgentByName).
+          // When enabled AND the target is `native`, skip subprocess boot and
+          // run another native loop in-process. Default OFF: callAgentByName
+          // keeps A2A job/audit/notify parity (architecture-bridge §10.2).
+          // Enable with AGIM_NATIVE_CALL_AGENT_IN_PROCESS=on for latency.
           // Depth + A2A_ENABLED checks still apply.
-          if (agentName === 'native' && !isInProcessSpawnDisabled()) {
+          if (agentName === 'native' && isInProcessSpawnEnabled()) {
             const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
             if (!isA2AEnabled()) {
               callAgentHistory.push({ agent: agentName, promptHead, ok: false })

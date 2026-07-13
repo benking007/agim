@@ -255,31 +255,33 @@ these added a `kind`-based branch in router / approval / audit.
 | Trust gate | `AGIM_NATIVE_TRUST_WORKSPACE=off` makes native skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | `native/index.ts` (`isWorkspaceTrusted`) |
 | Audit traceId | native now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted `native-<sid>-<ts>` id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, `native/index.ts` |
 
-### 10.2 Honest deviations from the peer model (not yet closed)
+### 10.2 Honest deviations from the peer model
 
-These predate this round and were confirmed by the CR. They use a
-hardcoded **`agentName === 'native'`** check (not `adapter.kind`), but
-they still break peer symmetry — flagged here so the next contributor
-doesn't mistake them for the intended design:
+These use a hardcoded **`agentName === 'native'`** check (not
+`adapter.kind`), but they still break peer symmetry unless operators
+opt in / accept the documented semantics:
 
 - **A2A in-process fast path** (`agim-dispatcher.ts`,
-  `call_agent('native')`): runs `nativeAgentAdapter.sendPrompt` directly,
-  bypassing `callAgentByName`. It therefore does **not** create an inline
-  job or write an `intent:'a2a'` audit row, so `/a2a stats|recent|tree`
-  and A2A cost don't see these in-process fan-outs. This round only chained
-  the trace id (`${parent}/a2a-${id}`); the job/audit parity is still TODO.
-  Toggle off with `AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off` (falls back to the
-  standard subprocess path).
+  `call_agent('native')`): **default OFF**. Unset /
+  `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` empty → `callAgentByName` (full
+  inline job + `intent:'a2a'` audit). Opt in with `=on` for the
+  latency fast path (no A2A job row).
 - **`isAgentEnabled('native')` returns true unconditionally**
-  (`live-config.ts`): the SPA `config.agents` disable toggle is ignored for
-  native. Either document the toggle's "preference-only" semantics or honour
-  it like any other backend.
-- **ACP SSRF** (`assertSafeAcpUrl`) only guards the Web test/discover APIs;
-  config-persist, the discovery second-hop `endpoint`, and the runtime
-  `ACPClient` are unguarded. The whole ACP surface is gated off by default
-  behind `AGIM_ENABLE_REMOTE_AGENT`.
+  (`live-config.ts`): the SPA `config.agents` disable toggle is a
+  preference / default-picker signal, **not** a routing kill-switch —
+  `/na` stays reachable. Intentional for installs whose enabled list
+  predates native; changing it needs a config migration.
+- **ACP SSRF**: `assertSafeAcpUrl` now guards Web discover/test,
+  discovery `.well-known` + advertised endpoints, and
+  `registry.loadACPAgents` before adapter construction. Runtime fetch
+  still uses `redirect: 'manual'`. Escape hatch:
+  `AGIM_ACP_ALLOW_LOOPBACK=1`.
+- **ACP abort/outcome**: `ACPAdapter` forwards `opts.signal` and reports
+  exactly-once `onOutcome`. Token `onUsage` awaits ACP wire support.
+- **Session id persistence**: router uses
+  `agent-session-bindings.ts` tables instead of per-agent if-chains
+  (`onAgentSessionId` + `prepareSubtaskAgentCallOptions`).
 
-The fix direction for the first two: push any in-process optimisation **down
-into `callAgentByName` / the `AgentAdapter` layer** so the coordination
-(job-board + audit + notify) stays uniform — never special-case by name in
+The fix direction for remaining name special-cases: push behaviour
+into `AgentAdapter` / shared tables — never special-case by name in
 the dispatcher. See § 7 anti-patterns.

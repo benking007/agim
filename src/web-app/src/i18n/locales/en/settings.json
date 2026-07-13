@@ -922,7 +922,7 @@
     "a2aTimeoutMs": "Default timeout (ms)",
     "a2aTimeoutMsHint": "AGIM_A2A_TIMEOUT_DEFAULT_MS. Default 1800000 (30 min).",
     "callAgentInProcess": "Agim→Agim built-in path",
-    "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS. Off falls back to the CLI subprocess. Default on.",
+    "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS. On enables the in-process fast path; default off uses full A2A (job/audit parity).",
     "callAgentMaxPerTurn": "Calls per turn cap",
     "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN. 0 = unlimited. Default 2.",
     "planModeCard": "Plan mode",

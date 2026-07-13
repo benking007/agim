@@ -5,6 +5,7 @@ import type { Logger } from 'pino'
 import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
+import { AGENT_SESSION_PERSIST, SUBTASK_AGENT_SESSION } from './agent-session-bindings.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
 import { handleBuiltInCommand } from './commands/builtin.js'
 import { handleAgentCommand } from './commands/agent.js'
@@ -625,34 +626,11 @@ export async function callAgentWithHistory(
   const onAgentSessionId = (id: string): void => {
     // Persist the adapter-reported id on first sighting so the next turn can
     // pass it back via --session / exec resume. Setters are idempotent.
-    // Routed by agent name so each adapter writes to its own session column.
-    const name = agent.name
-    if (name === 'opencode') {
-      void sessionManager.setOpencodeSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setOpencodeSessionId failed'))
-    } else if (name === 'codex') {
-      void sessionManager.setCodexSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCodexSessionId failed'))
-    } else if (name === 'antigravity') {
-      void sessionManager.setAntigravitySessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setAntigravitySessionId failed'))
-    } else if (name === 'kimi-code') {
-      void sessionManager.setKimiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setKimiSessionId failed'))
-    } else if (name === 'qoder') {
-      void sessionManager.setQoderSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setQoderSessionId failed'))
-    } else if (name === 'pi') {
-      void sessionManager.setPiSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setPiSessionId failed'))
-    } else if (name === 'mimo') {
-      void sessionManager.setMimoSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setMimoSessionId failed'))
-    } else if (name === 'copilot') {
-      void sessionManager.setCopilotSessionId(ctx.platform, ctx.channelId, storageThreadId, id)
-        .catch((err) => ctx.logger.debug({ err: String(err) }, 'setCopilotSessionId failed'))
-    }
-    // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
+    // Table-driven (see agent-session-bindings.ts) — no per-agent if-chain.
+    const binding = AGENT_SESSION_PERSIST[agent.name]
+    if (!binding) return
+    void binding.persist(ctx.platform, ctx.channelId, storageThreadId, id)
+      .catch((err) => ctx.logger.debug({ err: String(err) }, `${binding.logLabel} failed`))
   }
   const onUsage = (delta: {
     costUsd?: number
@@ -921,7 +899,10 @@ export async function prepareSubtaskAgentCallOptions(
   storageThreadId: string,
   subSession: Pick<Session, 'claudeSessionId' | 'claudeSessionPrimed' | 'opencodeSessionId' | 'codexSessionId' | 'antigravitySessionId' | 'kimiSessionId' | 'qoderSessionId' | 'piSessionId' | 'mimoSessionId' | 'copilotSessionId'>,
 ): Promise<AgentCallOptions> {
-  if (agentName === 'claude-code') {
+  const strategy = SUBTASK_AGENT_SESSION[agentName]
+  if (!strategy) return { storageThreadId }
+
+  if (strategy.kind === 'claude-preallocate') {
     let claudeId = subSession.claudeSessionId
     if (!claudeId) {
       claudeId = randomUUID()
@@ -934,63 +915,7 @@ export async function prepareSubtaskAgentCallOptions(
     return { storageThreadId, agentSessionId: claudeId, agentSessionResume: resume }
   }
 
-  if (agentName === 'opencode') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.opencodeSessionId,
-      agentSessionResume: !!subSession.opencodeSessionId,
-    }
-  }
-
-  if (agentName === 'codex') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.codexSessionId,
-      agentSessionResume: !!subSession.codexSessionId,
-    }
-  }
-
-  if (agentName === 'antigravity') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.antigravitySessionId,
-      agentSessionResume: !!subSession.antigravitySessionId,
-    }
-  }
-
-  if (agentName === 'kimi-code') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.kimiSessionId,
-      agentSessionResume: !!subSession.kimiSessionId,
-    }
-  }
-
-  if (agentName === 'qoder') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.qoderSessionId,
-      agentSessionResume: !!subSession.qoderSessionId,
-    }
-  }
-
-  if (agentName === 'pi') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.piSessionId,
-      agentSessionResume: !!subSession.piSessionId,
-    }
-  }
-
-  if (agentName === 'mimo') {
-    return {
-      storageThreadId,
-      agentSessionId: subSession.mimoSessionId,
-      agentSessionResume: !!subSession.mimoSessionId,
-    }
-  }
-
-  if (agentName === 'copilot') {
+  if (strategy.kind === 'copilot-preallocate') {
     let copilotId = subSession.copilotSessionId
     if (!copilotId) {
       copilotId = randomUUID()
@@ -1003,5 +928,10 @@ export async function prepareSubtaskAgentCallOptions(
     }
   }
 
-  return { storageThreadId }
+  const sid = subSession[strategy.field]
+  return {
+    storageThreadId,
+    agentSessionId: sid,
+    agentSessionResume: !!sid,
+  }
 }

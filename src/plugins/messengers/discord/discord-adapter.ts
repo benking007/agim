@@ -272,13 +272,25 @@ export class DiscordAdapter implements MessengerAdapter {
         channelId: this.config?.channelId || 'default',
       }
 
+      // CRITICAL: do NOT await messageHandler here. discord.js delivers
+      // messageCreate on the shared gateway; awaiting an agent run that is
+      // blocked on IM-side HITL (approval / ask_user) stalls the client for
+      // every other guild/channel. Match Telegram/Feishu fire-and-forget.
       log.debug({ threadId: msg.threadId, userId: msg.userId }, 'Calling message handler')
-      await this.messageHandler(msgCtx)
-      log.debug({ threadId: msg.threadId }, 'Message handler completed')
+      void this.messageHandler(msgCtx).then(
+        () => {
+          log.debug({ threadId: msg.threadId }, 'Message handler completed')
+        },
+        (err: unknown) => {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          const stack = err instanceof Error ? err.stack : undefined
+          log.error({ err: errMsg, stack, threadId: msg.threadId }, 'Error in message handler')
+        },
+      )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       const stack = err instanceof Error ? err.stack : undefined
-      log.error({ err: errMsg, stack }, 'Error in message handler')
+      log.error({ err: errMsg, stack }, 'Error building message context')
     }
   }
 }

@@ -6,8 +6,13 @@ import { discoverAgents, discoverMany } from '../../src/plugins/agents/acp/disco
 
 let server: Server
 let port = 0
+let prevAllowLoopback: string | undefined
 
 beforeAll(async () => {
+  // Local fixture server binds 127.0.0.1 — allow loopback for this suite only.
+  prevAllowLoopback = process.env.AGIM_ACP_ALLOW_LOOPBACK
+  process.env.AGIM_ACP_ALLOW_LOOPBACK = '1'
+
   server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = req.url || ''
     if (url === '/.well-known/acp') {
@@ -15,7 +20,8 @@ beforeAll(async () => {
       res.end(JSON.stringify({
         agents: [
           { name: 'good-agent', endpoint: 'http://example.com/good', aliases: ['g'] },
-          { name: 'auth-agent', endpoint: 'http://example.com/auth',
+          // Credentialed entries must be https (url-guard forwardsCredentials).
+          { name: 'auth-agent', endpoint: 'https://example.com/auth',
             auth: { type: 'bearer', token: 'tok-123' } },
           { name: '', endpoint: 'http://no-name' },         // malformed (skipped)
           { name: 'no-endpoint' },                            // malformed (skipped)
@@ -51,6 +57,8 @@ beforeAll(async () => {
 
 afterAll(() => {
   server?.close()
+  if (prevAllowLoopback === undefined) delete process.env.AGIM_ACP_ALLOW_LOOPBACK
+  else process.env.AGIM_ACP_ALLOW_LOOPBACK = prevAllowLoopback
 })
 
 const base = (): string => `http://127.0.0.1:${port}`

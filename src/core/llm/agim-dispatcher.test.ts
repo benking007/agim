@@ -142,6 +142,7 @@ describe('buildAgimDispatcher', () => {
 
     it('depth exceed: in-process branch rejects when nextDepth > maxDepth', async () => {
       process.env.AGIM_A2A_MAX_DEPTH = '1'
+      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       // Already-deep caller (depth=1) → nextDepth=2 > max=1 → reject.
       const d = buildAgimDispatcher({ ...CTX, callerDepth: 1 })
@@ -159,6 +160,7 @@ describe('buildAgimDispatcher', () => {
 
     it('A2A disabled: in-process branch refuses', async () => {
       process.env.AGIM_A2A_ENABLED = '0'
+      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       const d = buildAgimDispatcher(CTX)
       try {
@@ -176,6 +178,7 @@ describe('buildAgimDispatcher', () => {
       // failure path: callAgentByName for an unknown agent returns an
       // A2A-layer error string, distinct from the in-process branch's
       // "depth N > max" or "A2A disabled" messages.
+      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       const d = buildAgimDispatcher(CTX)
       try {
@@ -190,8 +193,8 @@ describe('buildAgimDispatcher', () => {
       } finally { restoreEnv() }
     })
 
-    it('kill switch: AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off forces subprocess path', async () => {
-      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'off'
+    it('default (unset) uses subprocess A2A path for native', async () => {
+      delete process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       const d = buildAgimDispatcher(CTX)
       try {
@@ -199,11 +202,6 @@ describe('buildAgimDispatcher', () => {
           { id: 'spawn-4', name: 'mcp__agim__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
           NOOP_SIGNAL,
         )
-        // With in-process disabled, we hit callAgentByName for 'native'
-        // which goes through the subprocess A2A path. If no native is
-        // registered in this test env, we expect a non-in-process
-        // error message (i.e. text NOT matching the in-process spawn
-        // log signature).
         expect(r.isError).toBe(true)
         expect(r.text).not.toMatch(/in-process/i)
       } finally { restoreEnv() }

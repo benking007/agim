@@ -75,8 +75,8 @@ function draftFromEnv(env: Record<string, string>): Draft {
     toolTimeoutMs:     env.AGIM_NATIVE_TOOL_TIMEOUT_MS ?? '',
     a2aMaxDepth:        env.AGIM_A2A_MAX_DEPTH ?? '',
     a2aTimeoutMs:       env.AGIM_A2A_TIMEOUT_DEFAULT_MS ?? '',
-    // Default ON: only 'off' / '0' / 'no' / 'false' disable.
-    callAgentInProcess: !isFalsy(env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS),
+    // Default OFF (A2A parity): only explicit on/1/true/yes enables in-process.
+    callAgentInProcess: isTruthy(env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS),
     callAgentMaxPerTurn: env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN ?? '',
     planModeDefault:    isTruthy(env.AGIM_NATIVE_PLAN_MODE),
     planIntentAuto:     isTruthy(env.AGIM_PLAN_INTENT_AUTO),
@@ -85,16 +85,7 @@ function draftFromEnv(env: Record<string, string>): Draft {
   }
 }
 
-/** Mirror of the native-side parser: 'off' / '0' / 'no' / 'false'
- *  (case-insensitive) disables a feature whose default is ON. Empty
- *  string means "not set" — caller decides whether that's ON or OFF
- *  depending on the variable's default. */
-function isFalsy(v: string | undefined): boolean {
-  if (!v) return false
-  const s = v.toLowerCase().trim()
-  return s === 'off' || s === 'false' || s === '0' || s === 'no'
-}
-
+/** True when env is an explicit on/1/true/yes. Empty means unset (caller default). */
 function isTruthy(v: string | undefined): boolean {
   if (!v) return false
   const s = v.toLowerCase()
@@ -193,8 +184,8 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
       updates.AGIM_A2A_TIMEOUT_DEFAULT_MS = draft.a2aTimeoutMs.trim() || null
     }
     if (draft.callAgentInProcess !== current.callAgentInProcess) {
-      // Default ON: write only when operator turned OFF; ON = delete the env.
-      updates.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = draft.callAgentInProcess ? null : 'off'
+      // Default OFF: write 'on' only when operator enables the fast path.
+      updates.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = draft.callAgentInProcess ? 'on' : null
     }
     if (draft.callAgentMaxPerTurn !== current.callAgentMaxPerTurn) {
       updates.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = draft.callAgentMaxPerTurn.trim() || null

@@ -614,7 +614,9 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // agents.
           //
           // Disabled via AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off
-          // (falls back to subprocess via callAgentByName).
+          // (falls back to callAgentByName — full A2A job/audit parity).
+          // Default remains in-process for latency; observability-sensitive
+          // deployments should set =off (see architecture-bridge-and-native §10.2).
           // Depth + A2A_ENABLED checks still apply.
           if (agentName === 'native' && !isInProcessSpawnDisabled()) {
             const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')

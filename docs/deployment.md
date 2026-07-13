@@ -7,7 +7,7 @@
 - Node.js >= 22.19（推荐 24 LTS）
 - npm
 - 至少一个可用 Agent 后端（CLI 或 ACP）
-- 如果本机编译 `better-sqlite3`，需要 `gcc/g++/make/python3`
+- **生产硬依赖**：原生 addon `better-sqlite3`（outbox / jobs / audit）。需要 `gcc/g++/make/python3` 编译。Bun 测试环境加载不了该 addon，不能作为生产运行时。
 
 常见 CLI agent 安装：
 

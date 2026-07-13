@@ -3,6 +3,7 @@
 // `agim diag llm` so `agim doctor` is safe to run on fragile installs.
 
 import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { checkTcpListenAvailable, detectService, readAcpEndpoint, readWebEndpoint } from './service.js'
 import { loadConfig } from '../core/onboarding.js'
@@ -10,6 +11,8 @@ import { hasAnyToken, getWebBootstrapTokenFile, isAuthEnabled } from '../core/ac
 import { describeSecretSource } from '../core/llm/secrets.js'
 import { checkAgentsFresh } from './readiness.js'
 import { resolveCliLang, type Lang } from './i18n.js'
+
+const require = createRequire(import.meta.url)
 
 type Level = 'ok' | 'warn' | 'fail' | 'info'
 
@@ -34,9 +37,23 @@ function text(lang: Lang, zh: string, en: string): string {
   return lang === 'zh' ? zh : en
 }
 
-function nodeAtLeast18(): boolean {
-  const major = Number.parseInt(process.versions.node.split('.')[0] ?? '', 10)
-  return Number.isFinite(major) && major >= 18
+function nodeAtLeastEngine(): boolean {
+  const [majorRaw, minorRaw] = process.versions.node.split('.')
+  const major = Number.parseInt(majorRaw ?? '', 10)
+  const minor = Number.parseInt(minorRaw ?? '', 10)
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false
+  if (major > 22) return true
+  if (major < 22) return false
+  return minor >= 19
+}
+
+function sqliteAddonAvailable(): boolean {
+  try {
+    require('better-sqlite3')
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<CheckRow[]> {
@@ -44,9 +61,21 @@ export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<
   const config = await loadConfig()
 
   rows.push({
-    level: nodeAtLeast18() ? 'ok' : 'fail',
+    level: nodeAtLeastEngine() ? 'ok' : 'fail',
     title: 'Node.js',
-    detail: `v${process.versions.node} (${text(lang, '需要 >=18，推荐 22 LTS 或更新', 'requires >=18, recommends 22 LTS or newer')})`,
+    detail: `v${process.versions.node} (${text(lang, '需要 >=22.19', 'requires >=22.19')})`,
+  })
+
+  rows.push({
+    level: sqliteAddonAvailable() ? 'ok' : 'fail',
+    title: 'SQLite',
+    detail: sqliteAddonAvailable()
+      ? text(lang, 'better-sqlite3 可用（outbox/jobs 依赖）', 'better-sqlite3 available (required for outbox/jobs)')
+      : text(
+        lang,
+        'better-sqlite3 不可用；生产投递队列会失效，请用 Node 安装原生模块',
+        'better-sqlite3 unavailable; production outbox will fail — install the native addon under Node',
+      ),
   })
 
   rows.push({

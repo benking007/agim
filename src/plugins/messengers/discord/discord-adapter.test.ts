@@ -241,6 +241,48 @@ describe('DiscordAdapter — incoming messageCreate', () => {
     await new Promise((r) => setTimeout(r, 5))
     expect(received.length).toBe(0)
   })
+
+  it('does not await a slow messageHandler (fire-and-forget)', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const blocked: MessageContext[] = []
+    const ch = makeFakeChannel('chan-1')
+    const { client, adapter } = bootAdapter({
+      channels: new Map([['chan-1', ch]]),
+    })
+    // Replace the default push-only handler with one that stays pending (HITL-like).
+    adapter.onMessage(async (ctx) => {
+      blocked.push(ctx)
+      await gate
+    })
+
+    client.emit('messageCreate', {
+      id: 'm-slow',
+      channelId: 'chan-1',
+      guildId: 'g-1',
+      content: 'block me',
+      author: { id: 'u-1', bot: false },
+      createdAt: new Date(),
+      attachments: { size: 0 },
+    })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(blocked.length).toBe(1)
+
+    // Second inbound must still be delivered while the first handler is pending.
+    client.emit('messageCreate', {
+      id: 'm-fast',
+      channelId: 'chan-1',
+      guildId: 'g-1',
+      content: 'second',
+      author: { id: 'u-2', bot: false },
+      createdAt: new Date(),
+      attachments: { size: 0 },
+    })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(blocked.length).toBe(2)
+    expect(blocked[1].message.text).toBe('second')
+    release()
+  })
 })
 
 describe('platformToMessengerName + DiscordAdapter — name match', () => {

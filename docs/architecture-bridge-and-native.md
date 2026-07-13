@@ -268,8 +268,9 @@ doesn't mistake them for the intended design:
   job or write an `intent:'a2a'` audit row, so `/a2a stats|recent|tree`
   and A2A cost don't see these in-process fan-outs. This round only chained
   the trace id (`${parent}/a2a-${id}`); the job/audit parity is still TODO.
-  Toggle off with `AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off` (falls back to the
-  standard subprocess path).
+  **Parity path (recommended when observability matters):**
+  `AGIM_NATIVE_CALL_AGENT_IN_PROCESS=off` — falls back to the standard
+  `callAgentByName` path (subprocess / full A2A bookkeeping).
 - **`isAgentEnabled('native')` returns true unconditionally**
   (`live-config.ts`): the SPA `config.agents` disable toggle is ignored for
   native. Either document the toggle's "preference-only" semantics or honour
@@ -278,6 +279,10 @@ doesn't mistake them for the intended design:
   config-persist, the discovery second-hop `endpoint`, and the runtime
   `ACPClient` are unguarded. The whole ACP surface is gated off by default
   behind `AGIM_ENABLE_REMOTE_AGENT`.
+- **ACP abort/outcome (closed):** `ACPAdapter` now forwards `opts.signal`
+  into fetch (merged with the 5min timeout) and reports exactly-once
+  `onOutcome` (`success` / `aborted` / `error`). Token `onUsage` remains
+  unused until the ACP wire format exposes usage.
 
 The fix direction for the first two: push any in-process optimisation **down
 into `callAgentByName` / the `AgentAdapter` layer** so the coordination

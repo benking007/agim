@@ -5,12 +5,18 @@
 // HTTP calls. Remote agents that don't recognize the field simply ignore
 // it; this is a forward-compatible spec extension.
 
-import type { AgentAdapter, ChatMessage } from '../../../core/types.js'
+import type { AgentAdapter, AgentSendOpts, ChatMessage } from '../../../core/types.js'
 import type { ACPAgentConfig, ACPManifest } from './types.js'
 import { ACPClient } from './acp-client.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'acp-adapter' })
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const name = (err as { name?: string }).name
+  return name === 'AbortError' || name === 'TimeoutError'
+}
 
 export class ACPAdapter implements AgentAdapter {
   readonly name: string
@@ -39,20 +45,62 @@ export class ACPAdapter implements AgentAdapter {
     return this.client.healthCheck()
   }
 
-  async *sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], _opts?: { model?: string; variant?: string }): AsyncGenerator<string> {
+  async *sendPrompt(
+    sessionId: string,
+    prompt: string,
+    history?: ChatMessage[],
+    opts?: AgentSendOpts,
+  ): AsyncGenerator<string> {
+    let outcomeReported = false
+    const reportOutcome = (outcome: Parameters<NonNullable<AgentSendOpts['onOutcome']>>[0]) => {
+      if (outcomeReported) return
+      outcomeReported = true
+      try { opts?.onOutcome?.(outcome) } catch { /* observer isolation */ }
+    }
+
+    if (opts?.signal?.aborted) {
+      reportOutcome({ status: 'aborted', providerFailure: false })
+      return
+    }
+
     // Try streaming first, fall back to sync.
     // NOTE: Fallback creates a new task; if the streaming task was partially
     // processed, the agent may repeat work. Acceptable for v1.
+    // ACP wire protocol does not yet expose token usage — leave onUsage unused.
     try {
-      for await (const chunk of this.client.streamPrompt(prompt, history, sessionId)) {
+      for await (const chunk of this.client.streamPrompt(prompt, history, sessionId, opts?.signal)) {
+        if (opts?.signal?.aborted) {
+          reportOutcome({ status: 'aborted', providerFailure: false })
+          return
+        }
         yield chunk
       }
+      reportOutcome({ status: 'success', providerFailure: false })
     } catch (streamError) {
+      if (opts?.signal?.aborted || isAbortError(streamError)) {
+        reportOutcome({ status: 'aborted', providerFailure: false })
+        return
+      }
       const errMsg = streamError instanceof Error ? streamError.message : String(streamError)
       log.warn({ agent: this.name, error: errMsg, sessionId },
         'ACP streaming failed, falling back to sync')
-      const response = await this.client.sendPromptSync(prompt, history, sessionId)
-      if (response) yield response
+      try {
+        const response = await this.client.sendPromptSync(prompt, history, sessionId, opts?.signal)
+        if (opts?.signal?.aborted) {
+          reportOutcome({ status: 'aborted', providerFailure: false })
+          return
+        }
+        if (response) yield response
+        reportOutcome({ status: 'success', providerFailure: false })
+      } catch (syncError) {
+        if (opts?.signal?.aborted || isAbortError(syncError)) {
+          reportOutcome({ status: 'aborted', providerFailure: false })
+          return
+        }
+        const msg = syncError instanceof Error ? syncError.message : String(syncError)
+        reportOutcome({ status: 'error', providerFailure: true, error: msg })
+        throw syncError
+      }
     }
   }
 

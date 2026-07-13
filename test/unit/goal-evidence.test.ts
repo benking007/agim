@@ -64,6 +64,42 @@ describeSqlite('goal evidence ledger', () => {
     expect(text).toMatch(/\[agim evidence observation: ev1_/)
   })
 
+  it('tool bridge blocks a duplicate mutation before dispatch replay', async () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'bridge-mutation',
+      userId: 'u',
+      title: 'dedupe bridge mutation',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    let dispatches = 0
+    const tool = agimToolToPi(
+      {
+        name: 'native_write_file',
+        description: 'write',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+      async () => {
+        dispatches += 1
+        return { text: 'wrote', isError: false, source: 'fs' }
+      },
+      {
+        traceId: 'trace-mutation',
+        goalEvidence: {
+          goalId: goal.id,
+          goalVersion: goal.version,
+          traceId: 'trace-mutation',
+        },
+      },
+    )
+    await tool.execute('same-call', {}, new AbortController().signal)
+    await expect(tool.execute('same-call', {}, new AbortController().signal)).rejects.toThrow(/ledger unavailable/)
+    expect(dispatches).toBe(1)
+    expect(getGoalById(goal.id)?.mutationEpoch).toBe(1)
+  })
+
   it('invalidates old evidence after mutation and accepts current verification', () => {
     _truncateForTests()
     const goal = setActiveGoal({
@@ -104,7 +140,6 @@ describeSqlite('goal evidence ledger', () => {
       evidenceIds: [oldEvidence!.id],
       recap: 'stale evidence must fail',
       status: 'completed',
-      requireEvidence: true,
       traceId: 'trace-root',
     })
     expect(stale.ok).toBe(false)
@@ -129,7 +164,6 @@ describeSqlite('goal evidence ledger', () => {
       evidenceIds: [currentEvidence!.id],
       recap: 'verified implementation completed',
       status: 'completed',
-      requireEvidence: true,
       traceId: 'trace-root',
     })
     expect(completed.ok).toBe(true)
@@ -155,7 +189,6 @@ describeSqlite('goal evidence ledger', () => {
       evidenceIds: [`ev1_${'a'.repeat(43)}`],
       recap: 'forged evidence rejected',
       status: 'completed',
-      requireEvidence: true,
       traceId: 'trace-root',
     })
     expect(forged.ok).toBe(false)
@@ -185,7 +218,6 @@ describeSqlite('goal evidence ledger', () => {
       evidenceIds: [evidence!.id],
       recap: 'cross trace evidence rejected',
       status: 'completed',
-      requireEvidence: true,
       traceId: 'trace-root',
     })
     expect(crossGoal.ok).toBe(false)
@@ -239,6 +271,27 @@ describeSqlite('goal evidence ledger', () => {
     })
     expect(getGoalById(goal.id)?.mutationEpoch).toBe(1)
   })
+
+  it('rejects duplicate mutation operation ids before a side effect can replay', () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'duplicate',
+      userId: 'u',
+      title: 'dedupe mutation',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    const input = {
+      context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace' },
+      toolCallId: 'same-call-id',
+      toolName: 'native_write_file',
+      args: { path: 'x' },
+      kind: 'mutation' as const,
+    }
+    expect(beginGoalToolOperation(input)).not.toBeNull()
+    expect(() => beginGoalToolOperation(input)).toThrow(/duplicate goal tool operation/)
+  })
 })
 
 describe('goal evidence classification', () => {
@@ -248,5 +301,7 @@ describe('goal evidence classification', () => {
     expect(classifyGoalEvidence('native_write_file', {}, false)).toBe('mutation')
     expect(classifyGoalEvidence('native_exec', { command: 'npm test' }, false)).toBe('mutation_verification')
     expect(classifyGoalEvidence('native_exec', { command: 'npm test && rm -rf out' }, false)).toBe('mutation')
+    expect(classifyGoalEvidence('native_exec', { command: 'npm test\ntrue' }, false)).toBe('mutation')
+    expect(classifyGoalEvidence('mcp__external__read', {}, true)).toBe('mutation')
   })
 })

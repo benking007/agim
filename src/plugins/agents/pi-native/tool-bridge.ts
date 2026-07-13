@@ -65,12 +65,9 @@ function truncateToolResult(text: string, cap: number, toolName: string): string
   return `${text.slice(0, cap)}\n\n…[${toolName} 输出已截断：省略 ${dropped}/${text.length} 字符；调高 AGIM_NATIVE_TOOL_RESULT_MAX_CHARS 可放宽]`
 }
 
-/** Run the dispatch with a per-tool wall timeout. Merges pi's signal with a
- *  timeout controller so cancelling either aborts the underlying dispatcher;
- *  a race guarantees execute() returns promptly even if a misbehaving tool
- *  ignores the abort (the dangling promise is best-effort cancelled + its
- *  rejection swallowed to avoid an unhandled rejection). timeoutMs === 0
- *  disables the cap entirely. */
+/** Run the dispatch with a per-tool wall timeout. Read-only/parallel-safe tools
+ * may detach after abort; mutation-capable tools must settle before returning
+ * so late side effects cannot bypass evidence invalidation. */
 async function dispatchWithTimeout(
   run: (signal: AbortSignal) => Promise<DispatcherResult>,
   outer: AbortSignal,
@@ -99,16 +96,21 @@ async function dispatchWithTimeout(
   outer.addEventListener('abort', onOuterAbort, { once: true })
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = timeoutMs === 0
-    ? null
-    : new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          // Reject BEFORE aborting so the "timed out" message wins the race
-          // even when a well-behaved dispatcher resolves-on-abort this tick.
-          reject(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
-          ctrl.abort()
-        }, timeoutMs)
-      })
+  let timedOut = false
+  let rejectTimeout: ((reason?: unknown) => void) | undefined
+  const timeout = timeoutMs > 0 && detachOnAbort
+    ? new Promise<never>((_resolve, reject) => { rejectTimeout = reject })
+    : null
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => {
+      timedOut = true
+      // Only read-only/parallel-safe tools may detach. Mutations wait for
+      // their dispatcher to settle so no late side effect can land after the
+      // evidence ledger has unblocked completion.
+      rejectTimeout?.(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
+      ctrl.abort()
+    }, timeoutMs)
+  }
 
   const runP = run(ctrl.signal)
   // If the timeout wins the race, runP may still reject later — swallow it so
@@ -119,7 +121,15 @@ async function dispatchWithTimeout(
     const races: Array<Promise<DispatcherResult>> = [runP]
     if (timeout) races.push(timeout)
     if (aborted) races.push(aborted)
-    return await Promise.race(races)
+    const result = await Promise.race(races)
+    if (timedOut && !detachOnAbort) {
+      return {
+        text: `工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时并已停止`,
+        isError: true,
+        source: 'timeout',
+      }
+    }
+    return result
   } finally {
     if (timer) clearTimeout(timer)
     outer.removeEventListener('abort', onOuterAbort)
@@ -136,6 +146,10 @@ export interface ToolBridgeOptions {
   parallelSafe?: (toolName: string) => boolean
   /** Active goal snapshot captured for this turn. */
   goalEvidence?: GoalEvidenceContext
+  /** Dynamic lookup supports long_task followed by tools in the same run. */
+  resolveGoalEvidence?: () => GoalEvidenceContext | null
+  /** Fail closed for mutations when goal state cannot be read. */
+  goalLedgerAvailable?: () => boolean
 }
 
 /** Wrap one agim ToolDef + the shared dispatcher into a pi AgentTool. */
@@ -153,11 +167,12 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
       const timeoutMs = resolveToolTimeoutMs(def.timeoutMs)
       const parsedArgs = (args ?? {}) as Record<string, unknown>
       const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
+      const goalEvidence = opts.resolveGoalEvidence?.() ?? opts.goalEvidence ?? null
       let operation: ReturnType<typeof beginGoalToolOperation> = null
-      if (opts.goalEvidence) {
+      if (goalEvidence) {
         try {
           operation = beginGoalToolOperation({
-            context: opts.goalEvidence,
+            context: goalEvidence,
             toolCallId,
             toolName: def.name,
             args: parsedArgs,
@@ -172,6 +187,11 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
         ) {
           throw new Error('goal evidence ledger unavailable; mutating tool blocked')
         }
+      } else if (
+        opts.goalLedgerAvailable?.() === false
+        && (evidenceKind === 'mutation' || evidenceKind === 'mutation_verification')
+      ) {
+        throw new Error('goal state unavailable; mutating tool blocked')
       }
       let result: DispatcherResult
       try {

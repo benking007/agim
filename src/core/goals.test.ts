@@ -39,6 +39,7 @@ describe('goals store', () => {
     expect(row.status).toBe('active')
     expect(row.version).toBe(1)
     expect(row.mutationEpoch).toBe(0)
+    expect(row.evidenceRequired).toBe(true)
     expect(row.body).toContain('CHANGELOG')
     const active = getActiveGoal(T.platform, T.channelId, T.threadId)
     expect(active?.id).toBe(row.id)

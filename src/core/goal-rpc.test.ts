@@ -40,9 +40,9 @@ function completionPayload(
     const op = beginGoalToolOperation({
       context: { goalId: active.id, goalVersion: active.version, traceId: CTX.traceId },
       toolCallId: `evidence-${++evidenceSeq}`,
-      toolName: 'native_read_file',
-      args: { path: 'result.md' },
-      kind: 'observation',
+      toolName: 'native_exec',
+      args: { command: 'npm test' },
+      kind: 'mutation_verification',
     })
     const evidence = finishGoalToolOperation(op, { ok: true, output: 'verified result' })
     if (!evidence) throw new Error('failed to issue evidence')
@@ -197,6 +197,12 @@ describe('goal-rpc', () => {
     if (!retry.ok) return
     expect(retry.result.already_completed).toBe(true)
     expect(retry.result.status).toBe('completed')
+    const changedReplay = await handleGoalOp('complete_goal', {
+      ...payload,
+      recap: 'different replay payload',
+    }, CTX)
+    expect(changedReplay.ok).toBe(false)
+    if (!changedReplay.ok) expect(changedReplay.error).toContain('differs')
   })
 
   it('a stale token cannot close a replacement goal', async () => {
@@ -285,6 +291,20 @@ describe('goal-rpc', () => {
     const refused = await handleGoalOp('complete_goal', payload, CTX)
     expect(refused.ok).toBe(false)
     if (!refused.ok) expect(refused.error).toContain('TODO_INCOMPLETE')
+  })
+
+  it('cannot bypass native evidence requirements by delegating completion', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Delegation-safe objective' }, CTX)
+    const active = _activeGoalSnapshot(CTX)!
+    const delegated = await handleGoalOp('complete_goal', {
+      goalId: active.id,
+      goalVersion: active.version,
+      evidenceIds: [],
+      recap: 'delegated without evidence',
+    }, { ...CTX, callerAgent: 'claude-code' })
+    expect(delegated.ok).toBe(false)
+    if (!delegated.ok) expect(delegated.error).toContain('EVIDENCE_REQUIRED')
   })
 
   it('complete_goal refuses when no active goal', async () => {

@@ -125,6 +125,8 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
     userId: ctx.userId,
     title: goal,
     body: summary,
+    replaceActive: force,
+    evidenceRequired: ctx.callerAgent === 'native',
   })
   if (!row) {
     return { ok: false, error: 'failed to register goal (db unavailable or empty title)' }
@@ -159,11 +161,12 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
       goalId: current.id,
       goalVersion: current.version,
       mutationEpoch: current.mutationEpoch,
+      evidenceRequired: current.evidenceRequired,
       title: current.title,
       status: current.status,
       previous_active_goal_paused: prior ? { id: prior.id, title: prior.title } : null,
       hint: 'I will see this goal in the [Active goal] block on every turn until completed. ' +
-        'Call complete_goal when done or when the user cancels.',
+        'Call complete_goal with this exact goalId/goalVersion and current evidence IDs when done.',
     },
   }
 }
@@ -211,7 +214,6 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
     evidenceIds,
     recap,
     status,
-    requireEvidence: status === 'completed' && ctx.callerAgent === 'native',
     traceId: ctx.traceId,
   })
   if (!completed.ok) return completed

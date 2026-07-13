@@ -68,9 +68,9 @@ Per turn:
 
 You can register / close goals YOURSELF — don't just suggest the user type `/goal set`. Use these tools:
 
-### `mcp__agim__long_task(goal, summary?)`
+### `mcp__agim__long_task(goal, summary?, force?)`
 
-Register a new active goal. Auto-pauses any prior active goal on this thread.
+Register a new active goal. Refuses when one is already active unless `force: true`.
 
 ```
 mcp__agim__long_task({
@@ -79,20 +79,23 @@ mcp__agim__long_task({
 })
 ```
 
-Returns `{ goalId, title, status: 'active', previous_active_goal_paused: {...}|null, hint }`. Tell the user something terse: "✅ 已登记目标 #N。我会在之后每轮看到它，到完成或取消时再调 complete_goal。"
+Returns `{ goalId, goalVersion, mutationEpoch, title, status: 'active', ... }`. Preserve `goalId/goalVersion` exactly; they are the completion CAS token.
 
-### `mcp__agim__complete_goal(recap?, status?)`
+### `mcp__agim__complete_goal(goalId, goalVersion, recap, evidenceIds?, status?)`
 
-Close the active goal honestly.
+Close exactly the versioned active goal. Successful tool results expose opaque `[agim evidence ...: ev1_...]` IDs. Completed goals require current evidence; cancelled goals do not.
 
 ```
 mcp__agim__complete_goal({
+  goalId: 42,
+  goalVersion: 3,
+  evidenceIds: ["ev1_..."],
   recap: "shipped v1.3.0 with all 5 tools + CHANGELOG done",
   status: "completed"          // default; pass "cancelled" if user cancelled / scope changed
 })
 ```
 
-Returns `{ goalId, title, status, recap_recorded }`. Tell the user one line: "✅ 目标 #N 已 completed。"
+Returns the new `goalVersion` and `mutationEpoch`. `STALE_GOAL` means the objective changed; never retry using a different goal's token in the same turn.
 
 ## When to call which
 

@@ -56,6 +56,7 @@ export interface GoalRow {
   version: number
   /** Increments after every successful mutating tool operation. */
   mutationEpoch: number
+  evidenceRequired: boolean
   platform: string
   channelId: string
   threadId: string
@@ -75,6 +76,7 @@ interface GoalRowRaw {
   id: number
   version: number
   mutation_epoch: number
+  evidence_required: number
   platform: string
   channel_id: string
   thread_id: string
@@ -97,6 +99,7 @@ const helper = createSqliteHelper({
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       version       INTEGER NOT NULL DEFAULT 1,
       mutation_epoch INTEGER NOT NULL DEFAULT 0,
+      evidence_required INTEGER NOT NULL DEFAULT 0,
       platform      TEXT    NOT NULL,
       channel_id    TEXT    NOT NULL,
       thread_id     TEXT    NOT NULL,
@@ -142,6 +145,9 @@ const helper = createSqliteHelper({
     if (!columns.some((column) => column.name === 'mutation_epoch')) {
       d.exec('ALTER TABLE goals ADD COLUMN mutation_epoch INTEGER NOT NULL DEFAULT 0')
     }
+    if (!columns.some((column) => column.name === 'evidence_required')) {
+      d.exec('ALTER TABLE goals ADD COLUMN evidence_required INTEGER NOT NULL DEFAULT 0')
+    }
     const recover = d.transaction(() => {
       // Keep only the newest active row in legacy databases before adding the
       // partial unique index.
@@ -157,17 +163,9 @@ const helper = createSqliteHelper({
             AND status = 'active' AND id <> ?
         `).run(row.platform, row.channel_id, row.thread_id, row.keep_id)
       }
-      // A process crash during a mutation makes every prior evidence stale.
-      const interrupted = d.prepare(`
-        SELECT DISTINCT goal_id FROM goal_ledger WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
-      `).all() as Array<{ goal_id: number }>
-      for (const row of interrupted) {
-        d.prepare('UPDATE goals SET mutation_epoch = mutation_epoch + 1 WHERE id = ?').run(row.goal_id)
-      }
-      d.prepare(`
-        UPDATE goal_ledger SET state = 'unknown', finished_at = datetime('now')
-        WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
-      `).run()
+      // Do not auto-resolve `started` mutations here: another live process may
+      // still own them. Leaving them started conservatively blocks completion
+      // until an operator explicitly reconciles the interrupted operation.
     })
     recover()
     d.exec(`
@@ -205,6 +203,7 @@ function rowFromRaw(r: GoalRowRaw): GoalRow {
     id: r.id,
     version: r.version ?? 1,
     mutationEpoch: r.mutation_epoch ?? 0,
+    evidenceRequired: r.evidence_required === 1,
     platform: r.platform,
     channelId: r.channel_id,
     threadId: r.thread_id,
@@ -234,6 +233,10 @@ export function setActiveGoal(input: {
   userId: string
   title: string
   body?: string
+  /** Agent RPC sets false unless force:true; user slash commands keep the
+   * historical replace behavior by omitting it. */
+  replaceActive?: boolean
+  evidenceRequired?: boolean
 }): GoalRow | null {
   const d = getDb()
   if (!d) return null
@@ -242,23 +245,25 @@ export function setActiveGoal(input: {
   if (!title) return null
   try {
     const tx = d.transaction((): number => {
-      d.prepare(`
-        UPDATE goals SET
-          status = 'paused',
-          version = version + 1,
-          updated_at = datetime('now')
-        WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
-      `).run(input.platform, input.channelId, input.threadId)
+      if (input.replaceActive !== false) {
+        d.prepare(`
+          UPDATE goals SET
+            status = 'paused',
+            version = version + 1,
+            updated_at = datetime('now')
+          WHERE platform = ? AND channel_id = ? AND thread_id = ? AND status = 'active'
+        `).run(input.platform, input.channelId, input.threadId)
+      }
 
       const info = d.prepare(`
         INSERT INTO goals (
           platform, channel_id, thread_id, user_id, title, body,
-          status, progress_log, version, mutation_epoch
+          status, progress_log, version, mutation_epoch, evidence_required
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', 1, 0)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', 1, 0, ?)
       `).run(
         input.platform, input.channelId, input.threadId,
-        input.userId, title, body,
+        input.userId, title, body, input.evidenceRequired === false ? 0 : 1,
       )
       return Number(info.lastInsertRowid)
     })
@@ -335,12 +340,12 @@ export function resumeGoal(goalId: number): boolean {
   const d = getDb()
   if (!d) return false
   try {
-    const row = d.prepare(`SELECT platform, channel_id, thread_id, status FROM goals WHERE id = ?`)
-      .get(goalId) as { platform: string; channel_id: string; thread_id: string; status: string } | undefined
-    if (!row) return false
-    if (row.status === 'completed' || row.status === 'cancelled') return false
-    if (row.status === 'active') return true
-    const tx = d.transaction((): void => {
+    const tx = d.transaction((): boolean => {
+      const row = d.prepare(`SELECT platform, channel_id, thread_id, status FROM goals WHERE id = ?`)
+        .get(goalId) as { platform: string; channel_id: string; thread_id: string; status: string } | undefined
+      if (!row) return false
+      if (row.status === 'completed' || row.status === 'cancelled') return false
+      if (row.status === 'active') return true
       d.prepare(`
         UPDATE goals SET
           status = 'paused',
@@ -354,11 +359,11 @@ export function resumeGoal(goalId: number): boolean {
           status = 'active',
           version = version + 1,
           updated_at = datetime('now')
-        WHERE id = ?
+        WHERE id = ? AND status NOT IN ('completed', 'cancelled')
       `).run(goalId)
+      return true
     })
-    tx()
-    return true
+    return tx.immediate()
   } catch (err) {
     rootLogger.warn({ event: 'goals.resume_failed', err: String(err) })
     return false
@@ -489,6 +494,7 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
   lines.push(`[agim context — active goal #${goal.id} for this thread]`)
   lines.push(`Completion token: {"goalId":${goal.id},"goalVersion":${goal.version}}`)
   lines.push(`Mutation epoch: ${goal.mutationEpoch}`)
+  lines.push(`Evidence required: ${goal.evidenceRequired ? 'yes' : 'no'}`)
   lines.push(`Title: ${goal.title}`)
   if (goal.body) {
     const truncated = goal.body.length > 800 ? `${goal.body.slice(0, 800)}…` : goal.body
@@ -504,7 +510,7 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
       lines.push(`  - ${t} (${note.by}) ${note.text}`)
     }
   }
-  lines.push('Use this goal to keep replies on-mission. To complete it, pass this exact goalId/goalVersion plus current server-issued evidence IDs to complete_goal. Ignore if the user explicitly changes topic.')
+  lines.push(`Use this goal to keep replies on-mission. To complete it, pass this exact goalId/goalVersion${goal.evidenceRequired ? ' plus current server-issued evidence IDs' : ''} to complete_goal. Ignore if the user explicitly changes topic.`)
   lines.push('')
   return lines.join('\n')
 }

@@ -363,7 +363,7 @@ program
       if (Object.keys(mcpSummary.failed).length > 0) {
         console.warn(`⚠️ ${cliT(bootLang, 'start.mcp_connect_failures', { failures: JSON.stringify(mcpSummary.failed) })}`)
       }
-      const { describeNativeAgent } = await import('./plugins/agents/native/index.js')
+      const { describeNativeAgent } = await import('./plugins/agents/agim-agent-shared/index.js')
       console.log(`🤖 ${cliT(bootLang, 'start.native_agent', { desc: describeNativeAgent() })}`)
     } catch (err) {
       const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')

@@ -1,5 +1,5 @@
 export function agentDisplayName(name: string): string {
-  if (name === 'native') return 'agim'
+  if (name === 'native') return 'Agim Agent'
   if (name === 'kimi-code') return 'Kimi Code'
   if (name === 'qoder') return 'Qoder'
   if (name === 'pi') return 'PI'

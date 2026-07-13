@@ -12,45 +12,65 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 
 const planMod = await import('../../src/core/plan-mode-state.js')
-const { effectivePlanModeOn, readEnvPlanModeDefault } = planMod
+const {
+  effectivePlanModeOn,
+  readEnvPlanModeDefault,
+  resolvePlanModeEnvPolicy,
+} = planMod
 
-describe('plan-mode-state — env defaults (v1.2.120)', () => {
-  const savedEnv = process.env.AGIM_NATIVE_PLAN_MODE
-  beforeEach(() => { delete process.env.AGIM_NATIVE_PLAN_MODE })
+describe('plan-mode-state — env defaults', () => {
+  const savedNative = process.env.AGIM_NATIVE_PLAN_MODE
+  const savedDisable = process.env.AGIM_DISABLE_PLAN_MODE
+  const savedUnified = process.env.AGIM_PLAN_MODE
+  beforeEach(() => {
+    delete process.env.AGIM_NATIVE_PLAN_MODE
+    delete process.env.AGIM_DISABLE_PLAN_MODE
+    delete process.env.AGIM_PLAN_MODE
+  })
   afterEach(() => {
-    if (savedEnv === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
-    else process.env.AGIM_NATIVE_PLAN_MODE = savedEnv
+    if (savedNative === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
+    else process.env.AGIM_NATIVE_PLAN_MODE = savedNative
+    if (savedDisable === undefined) delete process.env.AGIM_DISABLE_PLAN_MODE
+    else process.env.AGIM_DISABLE_PLAN_MODE = savedDisable
+    if (savedUnified === undefined) delete process.env.AGIM_PLAN_MODE
+    else process.env.AGIM_PLAN_MODE = savedUnified
   })
 
-  it('readEnvPlanModeDefault parses common truthy values', () => {
+  it('AGIM_PLAN_MODE is the canonical process policy', () => {
+    process.env.AGIM_PLAN_MODE = 'on'
+    expect(resolvePlanModeEnvPolicy()).toBe('on')
+    expect(readEnvPlanModeDefault()).toBe(true)
+    process.env.AGIM_PLAN_MODE = 'off'
+    expect(resolvePlanModeEnvPolicy()).toBe('off')
+    process.env.AGIM_PLAN_MODE = 'disabled'
+    expect(resolvePlanModeEnvPolicy()).toBe('disabled')
+    expect(effectivePlanModeOn()).toBe(false)
+  })
+
+  it('legacy AGIM_NATIVE_PLAN_MODE still enables default-on', () => {
     for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True']) {
       process.env.AGIM_NATIVE_PLAN_MODE = v
       expect(readEnvPlanModeDefault()).toBe(true)
     }
   })
 
-  it('readEnvPlanModeDefault rejects unset / falsy / garbage', () => {
-    for (const v of ['', '0', 'off', 'no', 'garbage']) {
-      process.env.AGIM_NATIVE_PLAN_MODE = v
-      expect(readEnvPlanModeDefault()).toBe(false)
-    }
-    delete process.env.AGIM_NATIVE_PLAN_MODE
-    expect(readEnvPlanModeDefault()).toBe(false)
+  it('legacy AGIM_DISABLE_PLAN_MODE=1 maps to disabled', () => {
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_DISABLE_PLAN_MODE = '1'
+    expect(resolvePlanModeEnvPolicy()).toBe('disabled')
+    expect(effectivePlanModeOn('any')).toBe(false)
+  })
+
+  it('canonical AGIM_PLAN_MODE wins over legacy keys', () => {
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_DISABLE_PLAN_MODE = '1'
+    process.env.AGIM_PLAN_MODE = 'on'
+    expect(resolvePlanModeEnvPolicy()).toBe('on')
   })
 
   it('effectivePlanModeOn() with no threadKey ⇒ env-only', () => {
-    delete process.env.AGIM_NATIVE_PLAN_MODE
     expect(effectivePlanModeOn()).toBe(false)
-    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_PLAN_MODE = 'on'
     expect(effectivePlanModeOn()).toBe(true)
-  })
-
-  it('effectivePlanModeOn(threadKey) falls through to env when no per-thread row', () => {
-    // Under bun, per-thread DB is a no-op so there's never a row;
-    // the per-thread check returns null and we always reach env.
-    process.env.AGIM_NATIVE_PLAN_MODE = '1'
-    expect(effectivePlanModeOn('nonexistent-thread')).toBe(true)
-    delete process.env.AGIM_NATIVE_PLAN_MODE
-    expect(effectivePlanModeOn('nonexistent-thread')).toBe(false)
   })
 })

@@ -78,7 +78,10 @@ function draftFromEnv(env: Record<string, string>): Draft {
     // Default OFF (A2A parity): only explicit on/1/true/yes enables in-process.
     callAgentInProcess: isTruthy(env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS),
     callAgentMaxPerTurn: env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN ?? '',
-    planModeDefault:    isTruthy(env.AGIM_NATIVE_PLAN_MODE),
+    // Prefer unified AGIM_PLAN_MODE when set; else legacy NATIVE_PLAN_MODE.
+    planModeDefault: (env.AGIM_PLAN_MODE != null && env.AGIM_PLAN_MODE !== '')
+      ? isTruthy(env.AGIM_PLAN_MODE)
+      : isTruthy(env.AGIM_NATIVE_PLAN_MODE),
     planIntentAuto:     isTruthy(env.AGIM_PLAN_INTENT_AUTO),
     planIntentPhrases:  env.AGIM_PLAN_INTENT_PHRASES ?? '',
     maxIter:            env.AGIM_NATIVE_AGENT_MAX_ITER ?? '',
@@ -192,7 +195,9 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
     }
     // Plan mode
     if (draft.planModeDefault !== current.planModeDefault) {
-      updates.AGIM_NATIVE_PLAN_MODE = draft.planModeDefault ? '1' : null
+      updates.AGIM_PLAN_MODE = draft.planModeDefault ? 'on' : null
+      // Clear legacy key so the unified knob is authoritative after Save.
+      updates.AGIM_NATIVE_PLAN_MODE = null
     }
     if (draft.planIntentAuto !== current.planIntentAuto) {
       updates.AGIM_PLAN_INTENT_AUTO = draft.planIntentAuto ? 'on' : null

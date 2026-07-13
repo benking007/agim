@@ -44,7 +44,7 @@
     "memos": "Memos",
     "memory": "Memory",
     "skills": "Skills",
-    "workspace": "Workspace",
+    "workspace": "Agent Files",
     "observability": "Observability",
     "settings": "Settings"
   },
@@ -183,8 +183,8 @@
       "chatDetail": "Web sandbox check",
       "start": "Quick setup",
       "startDetail": "Guided integration",
-      "workspace": "Workspace",
-      "workspaceDetail": "Agent files and memory",
+      "workspace": "Agent Files",
+      "workspaceDetail": "Per-agent CWD, AGENTS.md, memory files",
       "service": "Service matrix",
       "serviceDetail": "Daemon and port state"
     },

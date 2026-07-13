@@ -6,7 +6,8 @@
  * Surfaced here:
  *   * AGIM_DANGEROUSLY_SKIP_PERMISSIONS (safety)
  *   * AGIM_AUTO_APPROVE                 (approval bus immediate allow)
- *   * AGIM_TIMEOUT_DEFAULT              (approval bus default)
+ *   * AGIM_APPROVAL_ON_TIMEOUT          (approval bus on-timeout policy;
+ *                                         legacy alias AGIM_TIMEOUT_DEFAULT)
  *   * AGIM_APPROVAL_TIMEOUT_MS          (approval wait budget)
  *   * AGIM_MEMORY_ENABLED               (memory subsystem)
  *   * AGIM_VIEWER_ENABLED               (long-message viewer)
@@ -77,7 +78,9 @@ export default function SettingsPolicyRoute(): JSX.Element {
   const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
   const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
   const autoApprove   = envBool(env.AGIM_AUTO_APPROVE, true)
-  const timeoutAllow  = (env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase() !== 'deny'
+  const timeoutAllow  = (
+    env.AGIM_APPROVAL_ON_TIMEOUT ?? env.AGIM_TIMEOUT_DEFAULT ?? 'allow'
+  ).toLowerCase() !== 'deny'
   const approvalTimeoutSec = approvalTimeoutSeconds(env.AGIM_APPROVAL_TIMEOUT_MS)
   const a2aMode       = (env.AGIM_A2A_NOTIFY_MODE ?? 'essential').toLowerCase()
 
@@ -120,7 +123,7 @@ export default function SettingsPolicyRoute(): JSX.Element {
             allowOnTimeout={timeoutAllow}
             timeoutSeconds={approvalTimeoutSec}
             disabled={updateEnv.isPending}
-            onChange={(v) => void setValue('AGIM_TIMEOUT_DEFAULT', v)}
+            onChange={(v) => void setValue('AGIM_APPROVAL_ON_TIMEOUT', v)}
             onTimeoutChange={(v) => void setValue('AGIM_APPROVAL_TIMEOUT_MS', v)}
           />
           <ToggleCard

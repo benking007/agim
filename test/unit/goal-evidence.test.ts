@@ -24,7 +24,7 @@ const {
   isDetachedGoalCommand,
   reconcileInterruptedGoalOperations,
 } = await import('../../src/core/goal-evidence.js')
-const { agimToolToPi } = await import('../../src/plugins/agents/pi-native/tool-bridge.js')
+const { agimToolToPi } = await import('../../src/plugins/agents/agim-agent/tool-bridge.js')
 
 afterAll(() => {
   rmSync(TEST_HOME, { recursive: true, force: true })

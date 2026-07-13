@@ -57,22 +57,31 @@ export function isAutoApproveEnabled(): boolean {
   return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no'
 }
 
-// AGIM_TIMEOUT_DEFAULT=allow | deny (default allow). Decides what the bus
-// returns when a pending approval times out without a human response.
-// Only relevant when AGIM_AUTO_APPROVE is off (otherwise tools never
-// reach the timeout path). Default 'allow' auto-approves on timeout;
-// set 'deny' for strict interactive mode.
+// AGIM_APPROVAL_ON_TIMEOUT=allow | deny (default allow). Legacy alias:
+// AGIM_TIMEOUT_DEFAULT. Decides what the bus returns when a pending
+// approval times out without a human response. Only relevant when
+// AGIM_AUTO_APPROVE is off (otherwise tools never reach the timeout
+// path). Default 'allow' auto-approves on timeout; set 'deny' for
+// strict interactive mode.
 //
 // Read at every timer fire (not captured at module load) so the Web
 // Settings card can hot-toggle it.
 export function isTimeoutDefaultAllow(): boolean {
-  const raw = (process.env.AGIM_TIMEOUT_DEFAULT ?? 'allow').toLowerCase()
+  // Canonical: AGIM_APPROVAL_ON_TIMEOUT. Legacy: AGIM_TIMEOUT_DEFAULT.
+  // Both accept allow|deny; default allow. Read at every timer fire so
+  // the Web Settings card can hot-toggle without restart.
+  const raw = (
+    process.env.AGIM_APPROVAL_ON_TIMEOUT
+    ?? process.env.AGIM_TIMEOUT_DEFAULT
+    ?? 'allow'
+  ).toLowerCase()
   return raw !== 'deny'
 }
 
-// R13 C1 — visibility for "user away" mode. When AGIM_TIMEOUT_DEFAULT is
-// `allow`, every approval that times out without IM response auto-approves
-// — that's a meaningful weakening of the human-in-the-loop guarantee.
+// R13 C1 — visibility for "user away" mode. When AGIM_APPROVAL_ON_TIMEOUT
+// (legacy AGIM_TIMEOUT_DEFAULT) is `allow`, every approval that times out
+// without IM response auto-approves — that's a meaningful weakening of the
+// human-in-the-loop guarantee.
 let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
 
 export function announceTimeoutDefaultIfAllow(): void {
@@ -100,9 +109,9 @@ export function announceTimeoutDefaultIfAllow(): void {
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '⚠️  APPROVAL TIMEOUT POLICY: allow',
     '',
-    '   AGIM_TIMEOUT_DEFAULT=allow → unresolved approvals auto-approve.',
+    '   AGIM_APPROVAL_ON_TIMEOUT=allow → unresolved approvals auto-approve.',
     '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: AGIM_TIMEOUT_DEFAULT=deny (or unset).',
+    '   Revert with: AGIM_APPROVAL_ON_TIMEOUT=deny (or unset).',
     '   Prefer: AGIM_AUTO_APPROVE=1 for immediate auto-approve.',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '',
@@ -110,7 +119,7 @@ export function announceTimeoutDefaultIfAllow(): void {
   process.stdout.write(banner)
   log.warn({
     event: 'approval.bus.timeout_default_allow',
-    msg: 'AGIM_TIMEOUT_DEFAULT=allow — approval timeouts auto-approve',
+    msg: 'AGIM_APPROVAL_ON_TIMEOUT=allow — approval timeouts auto-approve',
   })
   try {
     void (async () => {
@@ -135,7 +144,7 @@ export function announceTimeoutDefaultIfAllow(): void {
       }
       log.warn({
         event: 'approval.bus.timeout_default_allow.reminder',
-        msg: 'reminder: AGIM_TIMEOUT_DEFAULT=allow still in effect',
+        msg: 'reminder: AGIM_APPROVAL_ON_TIMEOUT=allow still in effect',
       })
     }, 60 * 60 * 1000)
     if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer

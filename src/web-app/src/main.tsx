@@ -1,7 +1,7 @@
 /**
- * agim web v2 — React entrypoint.
+ * Agim web SPA entrypoint.
  *
- * Composition order (PR-5):
+ * Composition order:
  *   <Providers>     QueryClient + i18n bind + theme bind + auth bind
  *                   + TooltipProvider + Toaster
  *   <AppRouter>    react-router config (login / home / 404)

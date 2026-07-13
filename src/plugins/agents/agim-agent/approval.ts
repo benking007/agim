@@ -7,7 +7,7 @@ import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { buildPolicyApprovalGate } from '../../../core/llm/policy-approval-gate.js'
 import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
-import { buildNativeAskUser, resolvePolicy } from '../native/index.js'
+import { buildNativeAskUser, resolvePolicy } from '../agim-agent-shared/index.js'
 
 export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: string): ApprovalGate {
   const o = opts ?? {}

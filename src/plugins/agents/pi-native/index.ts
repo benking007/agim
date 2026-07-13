@@ -40,6 +40,8 @@ import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
+import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
+import { resolveCriticMode, runGoalCritic } from '../../../core/llm/goal-critic.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature } from './loop-fingerprint.js'
@@ -280,7 +282,36 @@ function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableTool
   return lines.join('\n')
 }
 
-type NativeStopReason = 'max_iter' | 'max_tool_calls' | 'stuck_loop'
+type NativeStopReason = 'max_iter' | 'max_tool_calls' | 'stuck_loop' | 'off_track' | 'hallucinated_tools'
+
+/** Soft mid-turn critic cadence — mirrors agent-loop.ts. */
+const CRITIC_MIN_TOOL_CALLS = 5
+const CRITIC_EVERY_N = 5
+const CRITIC_MAX_CALLS = 2
+
+function composeHallucinatedToolsRecap(text: string, evidence?: string): string {
+  const lines = [
+    '⚠️ 模型口述了工具调用，但没有真正发出 tool call。',
+    '本轮回复可能在假装执行操作，请当作未完成处理。',
+  ]
+  if (evidence) lines.push(`线索：${evidence.slice(0, 120)}`)
+  lines.push('', '你可以回「重试」让我用真实工具再跑一遍。', '', '---', text.trimEnd())
+  return lines.join('\n')
+}
+
+function composeOffTrackRecap(reason: string, redirect?: string): string {
+  const lines = [
+    '🧭 目标巡检判定本轮工具链偏离目标，已提前停止。',
+    `原因：${reason.slice(0, 300)}`,
+  ]
+  if (redirect?.trim()) lines.push(`建议：${redirect.trim().slice(0, 300)}`)
+  lines.push('', '你可以回「继续」按建议调整，或 /goal show 核对当前目标。')
+  return lines.join('\n')
+}
+
+function composeLengthTruncationNotice(text: string): string {
+  return `${text.trimEnd()}\n\n（注意：本轮回复因输出长度上限被截断，内容可能不完整；可回「继续」让我接着写。）`
+}
 
 function appendPartialToolDiagnostics(
   text: string,
@@ -296,6 +327,8 @@ function appendPartialToolDiagnostics(
     diagnostics.push(`已达到最大迭代步数 ${maxIter}，已提前停止；以上内容可能不完整。`)
   } else if (stopReason === 'max_tool_calls') {
     diagnostics.push(`已达到工具调用预算 ${maxToolCalls}，已提前停止；以上内容可能不完整。`)
+  } else if (stopReason === 'off_track') {
+    diagnostics.push('目标巡检判定偏离，已提前停止；以上内容可能不完整。')
   }
 
   const failed = toolRuns.filter((t) => t.isError)
@@ -598,12 +631,15 @@ export class NativeAgentAdapter implements AgentAdapter {
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
-    const ephemeralContext = opts?.ephemeralContext?.trim()
-    if (ephemeralContext) {
-      harness.on('context', (event) => ({
-        messages: injectEphemeralContext(event.messages, ephemeralContext),
-      }))
-    }
+    const ephemeralContext = opts?.ephemeralContext?.trim() ?? ''
+    /** Mid-turn soft steers (goal critic) — injected only via the context hook,
+     *  never appended as durable user messages. */
+    let ephemeralSteer = ''
+    harness.on('context', (event) => {
+      const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
+      if (!combined) return undefined
+      return { messages: injectEphemeralContext(event.messages, combined) }
+    })
 
     // Keep the turn-local flag mutable: native_exit_plan_mode can explicitly
     // clear persistent Plan Mode mid-run, after which this same harness must
@@ -611,48 +647,59 @@ export class NativeAgentAdapter implements AgentAdapter {
     let turnPlanMode = opts?.planMode === true
     let turnSignal = opts?.signal
     const planAllowed = this.deps.planModeAllowedTools ?? NATIVE_PLAN_MODE_ALLOWED_TOOLS
-    if (turnPlanMode || this.deps.resolveApprovalGate) {
-      harness.on(
-        'tool_call',
-        async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
-          // Plan-mode hard deny (covers A2A-propagated plan-mode even without
-          // an IM thread for the policy gate to read).
-          if (turnPlanMode && !planAllowed.has(ev.toolName)) {
-            return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
-          }
-          // agim policy gate: read-only / allow-list / deny-all, escalating to
-          // an IM approval card when configured. Resolve per call so a
-          // user-approved plan exit takes effect in the same harness turn.
-          const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
-          if (gate) {
-            const decision = await gate(
-              { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
-              0,
-              turnSignal,
-            )
-            if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
-          }
-          return undefined
-        },
-      )
-    }
 
-    // Runaway guards. Use lifecycle events for hard model/tool budgets so
-    // validation failures, unknown tools, policy blocks, and parallel batches
-    // cannot bypass a tool_result-only counter.
+    // Runaway guards. Declared early so tool_call preflight can share them.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
     const maxToolCalls = Math.max(1, this.deps.maxToolCalls ?? maxIter)
     let providerRequests = 0
     let declaredToolCalls = 0
+    let dispatchedToolCalls = 0
     let usageInput = 0
     let usageOutput = 0
     let usageCost = 0
     let sawUsage = false
     let stopReason: NativeStopReason | null = null
     let requestLoopStop = () => {}
+    let criticCallsFired = 0
+    let lastCriticAtToolCalls = 0
+    let offTrackSoftSteerUsed = false
+    let offTrackDetail = ''
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
+
+    harness.on(
+      'tool_call',
+      async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
+        // Pre-dispatch tool-call budget: block before a parallel batch can
+        // overrun maxToolCalls (message_end alone is too late).
+        if (dispatchedToolCalls >= maxToolCalls) {
+          stopReason = 'max_tool_calls'
+          requestLoopStop()
+          return { block: true, reason: `tool call budget exhausted (${maxToolCalls})` }
+        }
+        // Plan-mode hard deny (covers A2A-propagated plan-mode even without
+        // an IM thread for the policy gate to read).
+        if (turnPlanMode && !planAllowed.has(ev.toolName)) {
+          return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
+        }
+        // agim policy gate: read-only / allow-list / deny-all, escalating to
+        // an IM approval card when configured. Resolve per call so a
+        // user-approved plan exit takes effect in the same harness turn.
+        const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
+        if (gate) {
+          const decision = await gate(
+            { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
+            0,
+            turnSignal,
+          )
+          if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
+        }
+        dispatchedToolCalls += 1
+        return undefined
+      },
+    )
+
     const recordGuardOutcome = (
       toolName: string,
       input: unknown,
@@ -684,7 +731,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       providerRequests += 1
       return undefined
     })
-    const unsubscribeBudget = harness.subscribe((event) => {
+    const unsubscribeBudget = harness.subscribe(async (event) => {
       if (event.type === 'turn_end' && event.message.role === 'assistant') {
         const calls = (event.message.content ?? []).filter((item) => item.type === 'toolCall')
         for (const result of event.toolResults) {
@@ -700,6 +747,47 @@ export class NativeAgentAdapter implements AgentAdapter {
             true,
             preview,
           )
+        }
+        // Mid-turn goal critic (soft steer once, hard-stop on repeat).
+        if (!stopReason && toolRuns.length > 0) {
+          const activeGoal = goalScope
+            ? getActiveGoalState(goalScope.platform, goalScope.channelId, goalScope.threadId).goal
+            : null
+          const criticMode = resolveCriticMode()
+          const criticGateOpen = criticMode === 'always'
+            || (criticMode === 'goal-only' && !!activeGoal?.title?.trim())
+          if (
+            criticGateOpen
+            && toolRuns.length >= CRITIC_MIN_TOOL_CALLS
+            && criticCallsFired < CRITIC_MAX_CALLS
+            && toolRuns.length - lastCriticAtToolCalls >= CRITIC_EVERY_N
+          ) {
+            criticCallsFired += 1
+            lastCriticAtToolCalls = toolRuns.length
+            const verdict = await runGoalCritic({
+              prompt,
+              goalTitle: activeGoal?.title,
+              goalBody: activeGoal?.body,
+              recentToolCalls: toolRuns.slice(-10),
+            }, { signal: turnSignal })
+            if (!verdict.onTrack) {
+              offTrackDetail = verdict.redirect
+                ? `${verdict.reason} || redirect: ${verdict.redirect}`
+                : verdict.reason
+              if (!offTrackSoftSteerUsed) {
+                offTrackSoftSteerUsed = true
+                ephemeralSteer = [
+                  '[loop steer — goal critic]',
+                  `Off-track: ${verdict.reason.slice(0, 400)}`,
+                  verdict.redirect ? `Redirect: ${verdict.redirect.slice(0, 400)}` : '',
+                  'Resume toward the active goal; do not continue the previous digression.',
+                ].filter(Boolean).join('\n')
+              } else {
+                stopReason = 'off_track'
+                requestLoopStop()
+              }
+            }
+          }
         }
         return
       }
@@ -892,6 +980,13 @@ export class NativeAgentAdapter implements AgentAdapter {
           ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
           : stopReason === 'max_tool_calls'
             ? `（已达工具调用预算 ${maxToolCalls}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_TOOL_CALLS 后重试）`
+            : stopReason === 'off_track'
+              ? composeOffTrackRecap(
+                offTrackDetail.split(' || redirect: ')[0] ?? offTrackDetail,
+                offTrackDetail.includes(' || redirect: ')
+                  ? offTrackDetail.split(' || redirect: ').slice(1).join(' || redirect: ')
+                  : undefined,
+              )
             : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
         return
       }
@@ -909,11 +1004,37 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
 
+    // Non-empty answer. Flag narrated-but-not-emitted tool calls so we don't
+    // ship a lie as a successful turn.
+    if (
+      !stopReason
+      && !providerFailed
+      && !providerAborted
+      && !runTimedOut
+      && toolRuns.length === 0
+      && tools.length > 0
+      && isHallucinationDetectorOn()
+    ) {
+      const det = detectHallucinatedToolCall({
+        text,
+        toolNames: tools.map((t) => t.name),
+        emittedToolCallCount: 0,
+      })
+      if (det.hallucinated) {
+        opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'hallucinated_tools' })
+        yield composeHallucinatedToolsRecap(text, det.evidence)
+        return
+      }
+    }
+
     // Non-empty answer. Append tool diagnostics; if the turn ALSO hit a
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
     let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter, maxToolCalls)
-    if (opts?.signal?.aborted) {
+    if (result.stopReason === 'length' && !stopReason && !providerFailed && !providerAborted) {
+      out = composeLengthTruncationNotice(out)
+      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'length' })
+    } else if (opts?.signal?.aborted) {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false, error: 'aborted after partial response' })
     } else if (runTimedOut) {
       opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
@@ -923,6 +1044,14 @@ export class NativeAgentAdapter implements AgentAdapter {
       out = `${out.trimEnd()}\n\n（注意：本轮因网络/服务中断提前结束，回复可能不完整，可回「重试」。）`
     } else if (providerAborted) {
       opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'aborted after partial response' })
+    } else if (stopReason === 'off_track') {
+      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'off_track' })
+      out = `${out.trimEnd()}\n\n${composeOffTrackRecap(
+        offTrackDetail.split(' || redirect: ')[0] ?? offTrackDetail,
+        offTrackDetail.includes(' || redirect: ')
+          ? offTrackDetail.split(' || redirect: ').slice(1).join(' || redirect: ')
+          : undefined,
+      )}`
     } else if (stopReason) {
       opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: stopReason })
     }

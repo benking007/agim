@@ -616,6 +616,90 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('工具调用预算 3')
   })
 
+  it('blocks oversize single-message tool batches at tool_call preflight', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(
+        [1, 2, 3, 4, 5].map((n) => fauxToolCall('step', { n }, { id: `solo${n}` })),
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage('should not run'),
+    ])
+    let dispatchCount = 0
+    const tool: ToolDef = {
+      name: 'step',
+      description: 'step',
+      parameters: {
+        type: 'object',
+        properties: { n: { type: 'number' } },
+        required: ['n'],
+      },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-preflight-budget-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => {
+          dispatchCount += 1
+          return { text: 'ok', isError: false }
+        },
+        parallelSafe: () => true,
+      }),
+      maxIterations: 10,
+      maxToolCalls: 3,
+    })
+    const out = await collect(adapter.sendPrompt('preflight-budget', 'one fat batch'))
+    // message_end may abort the whole oversize batch (0 dispatches), or
+    // tool_call preflight may admit only the first N. Either way we must
+    // never execute past the budget.
+    expect(dispatchCount).toBeLessThanOrEqual(3)
+    expect(out).toContain('工具调用预算 3')
+  })
+
+  it('flags narrated tool calls that never emitted a real toolCall', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage('我现在调用 native_write_file 把结果写进去：\n```python\nprint(1)\n```'),
+    ])
+    const tool: ToolDef = {
+      name: 'native_write_file',
+      description: 'write',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    let outcome: string | undefined
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-hallucination-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => ({ text: 'should not run', isError: false }),
+      }),
+    })
+    const out = await collect(adapter.sendPrompt('hallucination', 'write the file', undefined, {
+      onOutcome: (value) => { outcome = value.error },
+    }))
+    expect(out).toContain('口述了工具调用')
+    expect(outcome).toBe('hallucinated_tools')
+  })
+
+  it('marks length-truncated replies as partial', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage('partial answer that got cut', { stopReason: 'length' }),
+    ])
+    let outcome: string | undefined
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-length-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const out = await collect(adapter.sendPrompt('length', 'write a long essay', undefined, {
+      onOutcome: (value) => { outcome = value.error ?? value.status },
+    }))
+    expect(out).toContain('输出长度上限被截断')
+    expect(outcome).toBe('length')
+  })
+
   it('counts schema-invalid loops against the model-turn budget', async () => {
     const reg = faux()
     reg.setResponses(Array.from({ length: 6 }, (_v, i) =>

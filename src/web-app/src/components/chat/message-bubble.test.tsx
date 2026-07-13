@@ -26,9 +26,9 @@ describe('MessageBubble explicit approval', () => {
   it('offers one-time allow and deny without auto-allow', () => {
     render(<MessageBubble msg={explicitApprovalMessage()} onApprove={() => true} />)
 
-    expect(screen.getByText('仅本次确认')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '批准' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '拒绝' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '本类自动放行' })).not.toBeInTheDocument()
+    expect(screen.getByText(/one-time decision|仅本次确认/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Allow|批准/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Deny|拒绝/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Auto for similar|本类自动放行/ })).not.toBeInTheDocument()
   })
 })

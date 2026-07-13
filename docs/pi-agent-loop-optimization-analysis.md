@@ -1,8 +1,8 @@
 # Agim 内置 pi-agent loop 优化分析
 
-> 基线：`origin/main@ed7518d3`（Agim `1.5.12`）  
-> 分析日期：2026-07-13  
-> 范围：内置 Agim Agent（`native` / `agim`，基于 `@earendil-works/pi-agent-core`），不包含外置 PI CLI 的内部 loop。  
+> 基线：`origin/main@ed7518d3`（Agim `1.5.12`）
+> 分析日期：2026-07-13
+> 范围：内置 Agim Agent（`native` / `agim`，基于 `@earendil-works/pi-agent-core`），不包含外置 PI CLI 的内部 loop。
 > 本文只给出分析、验证证据和后续实施拆分，不修改运行时行为。
 
 ## 1. 结论摘要

@@ -204,7 +204,7 @@ export function finishGoalToolOperation(
     const row = d.prepare('SELECT state FROM goal_ledger WHERE id = ?').get(operation.ledgerId) as
       | { state: string }
       | undefined
-    if (!row || row.state !== 'started') return null
+    if (row?.state !== 'started') return null
     const isMutation = operation.kind === 'mutation' || operation.kind === 'mutation_verification'
     if (!result.ok) {
       if (result.uncertain && isMutation) {
@@ -233,7 +233,7 @@ export function finishGoalToolOperation(
     `).get(operation.goalId) as
       | { version: number; mutation_epoch: number; status: string }
       | undefined
-    if (!goal || goal.status !== 'active' || goal.version !== operation.goalVersion) {
+    if (goal?.status !== 'active' || goal.version !== operation.goalVersion) {
       d.prepare(`
         UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
           metadata_json = ?, finished_at = datetime('now') WHERE id = ?
@@ -360,8 +360,7 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
           | { kind: string; state: string; trace_hash: string; tool_name: string }
           | undefined
         if (
-          !evidence
-          || evidence.state !== 'succeeded'
+          evidence?.state !== 'succeeded'
           || (evidence.kind !== 'observation' && evidence.kind !== 'mutation_verification')
           || evidence.trace_hash !== expectedTrace
         ) {

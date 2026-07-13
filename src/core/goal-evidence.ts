@@ -1,4 +1,11 @@
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
@@ -67,6 +74,32 @@ function hmac(value: string): string {
 
 function tokenHash(token: string): string {
   return createHash('sha256').update(token).digest('hex')
+}
+
+function sealPreview(value: string): string {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', secretKey().subarray(0, 32), iv)
+  const encrypted = Buffer.concat([cipher.update(value.slice(0, 4000), 'utf8'), cipher.final()])
+  return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString('base64url')).join('.')
+}
+
+function openPreview(value: string): string {
+  const [ivRaw, tagRaw, encryptedRaw] = value.split('.')
+  if (!ivRaw || !tagRaw || !encryptedRaw) return ''
+  try {
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      secretKey().subarray(0, 32),
+      Buffer.from(ivRaw, 'base64url'),
+    )
+    decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'))
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedRaw, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8')
+  } catch {
+    return ''
+  }
 }
 
 function traceRoot(traceId?: string): string {
@@ -312,6 +345,7 @@ export function finishGoalToolOperation(
     outputChars: result.output.length,
     ...(result.metadata ?? {}),
   }
+  const sealedPreview = sealPreview(`${operation.semanticInput}\n${result.output}`)
   const tx = d.transaction((): IssuedEvidence | null => {
     const row = d.prepare('SELECT state FROM goal_ledger WHERE id = ?').get(operation.ledgerId) as
       | { state: string }
@@ -330,11 +364,12 @@ export function finishGoalToolOperation(
       }
       d.prepare(`
         UPDATE goal_ledger SET state = ?, output_hash = ?,
-          metadata_json = ?, finished_at = datetime('now') WHERE id = ?
+          metadata_json = ?, sealed_preview = ?, finished_at = datetime('now') WHERE id = ?
       `).run(
         result.uncertain ? 'unknown' : 'failed',
         outputHash,
         JSON.stringify({ ...metadataBase, semanticBound: false }),
+        sealedPreview,
         operation.ledgerId,
       )
       return null
@@ -353,10 +388,11 @@ export function finishGoalToolOperation(
     if (goal?.status !== 'active' || goal.version !== operation.goalVersion) {
       d.prepare(`
         UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
-          metadata_json = ?, finished_at = datetime('now') WHERE id = ?
+          metadata_json = ?, sealed_preview = ?, finished_at = datetime('now') WHERE id = ?
       `).run(
         outputHash,
         JSON.stringify({ ...metadataBase, semanticBound: false }),
+        sealedPreview,
         operation.ledgerId,
       )
       return null
@@ -371,10 +407,11 @@ export function finishGoalToolOperation(
       if (inflight || epoch !== operation.epoch) {
         d.prepare(`
           UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
-            metadata_json = ?, finished_at = datetime('now') WHERE id = ?
+            metadata_json = ?, sealed_preview = ?, finished_at = datetime('now') WHERE id = ?
           `).run(
             outputHash,
             JSON.stringify({ ...metadataBase, semanticBound: false }),
+            sealedPreview,
             operation.ledgerId,
           )
         return null
@@ -386,13 +423,14 @@ export function finishGoalToolOperation(
     const token = canIssue ? `ev1_${randomBytes(32).toString('base64url')}` : null
     d.prepare(`
       UPDATE goal_ledger SET state = 'succeeded', epoch = ?, evidence_hash = ?,
-        output_hash = ?, metadata_json = ?, finished_at = datetime('now')
+        output_hash = ?, metadata_json = ?, sealed_preview = ?, finished_at = datetime('now')
       WHERE id = ?
     `).run(
       epoch,
       token ? tokenHash(token) : null,
       outputHash,
       JSON.stringify({ ...metadataBase, semanticBound }),
+      sealedPreview,
       operation.ledgerId,
     )
     if (!token) return null
@@ -415,6 +453,58 @@ export interface CompleteGoalCasInput {
   recap: string
   status: Extract<GoalStatus, 'completed' | 'cancelled'>
   traceId?: string
+}
+
+export interface GoalEvidenceReview {
+  goalTitle: string
+  goalBody: string
+  recentToolCalls: Array<{ name: string; isError: false; preview: string }>
+}
+
+export function getGoalEvidenceReview(input: {
+  platform: string
+  channelId: string
+  threadId: string
+  goalId: number
+  goalVersion: number
+  evidenceIds: string[]
+  traceId?: string
+}): GoalEvidenceReview | null {
+  const d = getGoalsDatabaseForLedger()
+  if (!d || input.evidenceIds.length === 0) return null
+  reconcileInterruptedGoalOperations()
+  const goal = d.prepare(`
+    SELECT title, body, mutation_epoch FROM goals
+    WHERE id = ? AND version = ? AND status = 'active'
+      AND platform = ? AND channel_id = ? AND thread_id = ?
+  `).get(
+    input.goalId,
+    input.goalVersion,
+    input.platform,
+    input.channelId,
+    input.threadId,
+  ) as { title: string; body: string; mutation_epoch: number } | undefined
+  if (!goal) return null
+  const expectedTrace = hmac(traceRoot(input.traceId))
+  const calls: GoalEvidenceReview['recentToolCalls'] = []
+  for (const token of input.evidenceIds.slice(0, 16)) {
+    const row = d.prepare(`
+      SELECT tool_name, state, trace_hash, sealed_preview FROM goal_ledger
+      WHERE evidence_hash = ? AND goal_id = ? AND goal_version = ? AND epoch = ?
+    `).get(
+      tokenHash(token),
+      input.goalId,
+      input.goalVersion,
+      goal.mutation_epoch,
+    ) as
+      | { tool_name: string; state: string; trace_hash: string; sealed_preview: string }
+      | undefined
+    if (row?.state !== 'succeeded' || row.trace_hash !== expectedTrace) return null
+    const preview = openPreview(row.sealed_preview)
+    if (!preview) return null
+    calls.push({ name: row.tool_name, isError: false, preview })
+  }
+  return { goalTitle: goal.title, goalBody: goal.body, recentToolCalls: calls }
 }
 
 export type CompleteGoalCasResult =

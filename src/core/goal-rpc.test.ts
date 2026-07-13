@@ -26,6 +26,7 @@ const CTX = {
   userId: 'u',
   callerAgent: 'native',
   traceId: 'trace-goal-rpc',
+  skipSemanticReview: true,
 }
 
 let evidenceSeq = 0
@@ -319,6 +320,25 @@ describe('goal-rpc', () => {
     }, { ...CTX, callerAgent: 'claude-code' })
     expect(delegated.ok).toBe(false)
     if (!delegated.ok) expect(delegated.error).toContain('EVIDENCE_REQUIRED')
+  })
+
+  it('semantic completion review rejects evidence unrelated to the claim', async () => {
+    if (!(await dbAvailable())) return
+    await handleGoalOp('long_task', { goal: 'Implement semantic review' }, CTX)
+    const payload = completionPayload('claim that does not match evidence')
+    const reviewed = await handleGoalOp('complete_goal', payload, {
+      ...CTX,
+      skipSemanticReview: false,
+      reviewGoalEvidence: async () => ({
+        onTrack: false,
+        reason: 'evidence does not satisfy acceptance criteria',
+        redirect: 'run the required verifier',
+        modelUsed: 'test-critic',
+      }),
+    })
+    expect(reviewed.ok).toBe(false)
+    if (!reviewed.ok) expect(reviewed.error).toContain('GOAL_OFF_TRACK')
+    expect(_activeGoalSnapshot(CTX)?.title).toBe('Implement semantic review')
   })
 
   it('preserves CAS-only completion for goals created by non-native agents', async () => {

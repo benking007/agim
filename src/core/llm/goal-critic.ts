@@ -44,7 +44,7 @@
 //     provider as the turn if `cheap` is unset.
 
 import { logger as rootLogger } from '../logger.js'
-import { getProvider } from './registry.js'
+import { getAnyProvider, getProvider } from './registry.js'
 import type { LlmProvider, LlmMessage } from './provider-base.js'
 
 const log = rootLogger.child({ component: 'goal-critic' })
@@ -120,8 +120,8 @@ function resolveCriticRole(): string {
 /** Pick the critic provider: env-named role → cheap role → null.
  *  Returns null when no usable provider — caller treats that as
  *  "critic disabled this turn" and skips. */
-export function pickCriticProvider(): { provider: LlmProvider; role: string } | null {
-  if (!resolveCriticEnabled()) return null
+export function pickCriticProvider(force = false): { provider: LlmProvider; role: string } | null {
+  if (!force && !resolveCriticEnabled()) return null
   const role = resolveCriticRole()
   const p = getProvider(role)
   if (p) return { provider: p, role }
@@ -131,6 +131,10 @@ export function pickCriticProvider(): { provider: LlmProvider; role: string } | 
     const fallback = getProvider('cheap')
     if (fallback) return { provider: fallback, role: 'cheap' }
   }
+  const native = getProvider('native-chat')
+  if (native) return { provider: native, role: 'native-chat' }
+  const any = getAnyProvider()
+  if (any) return { provider: any, role: 'auto' }
   return null
 }
 
@@ -151,13 +155,13 @@ function buildTranscript(calls: CriticInput['recentToolCalls']): string {
  */
 export async function runGoalCritic(
   input: CriticInput,
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; force?: boolean } = {},
 ): Promise<CriticVerdict> {
   const haveAnchor = !!(input.prompt?.trim() || input.goalTitle?.trim())
   if (!haveAnchor) {
     return { onTrack: true, reason: 'no prompt/goal anchor to judge against' }
   }
-  const picked = pickCriticProvider()
+  const picked = pickCriticProvider(opts.force)
   if (!picked) {
     return { onTrack: true, reason: 'critic disabled (no provider for cheap role / AGIM_NATIVE_CRITIC=off)' }
   }

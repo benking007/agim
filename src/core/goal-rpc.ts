@@ -21,8 +21,10 @@ import {
   appendProgress,
   type GoalRow,
 } from './goals.js'
-import { completeGoalCas } from './goal-evidence.js'
+import { completeGoalCas, getGoalEvidenceReview } from './goal-evidence.js'
 import { getTodoForThread } from './llm/todo-dispatcher.js'
+import { runGoalCritic } from './llm/goal-critic.js'
+import type { CriticInput, CriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
 
@@ -62,6 +64,10 @@ export interface GoalRpcCtx {
    *  so we can tell native-set goals from sidecar-set ones. */
   callerAgent?: string
   traceId?: string
+  /** Tests can bypass the external semantic model while exercising CAS. */
+  skipSemanticReview?: boolean
+  /** Test seam for deterministic semantic verdicts. Never populated from RPC payloads. */
+  reviewGoalEvidence?: (input: CriticInput) => Promise<CriticVerdict>
 }
 
 export type GoalOp = 'long_task' | 'complete_goal'
@@ -171,7 +177,7 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
   }
 }
 
-function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcResult {
+async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Promise<GoalRpcResult> {
   const goalId = typeof p.goalId === 'number' ? p.goalId : Number.NaN
   const goalVersion = typeof p.goalVersion === 'number' ? p.goalVersion : Number.NaN
   if (!Number.isSafeInteger(goalId) || goalId <= 0 || !Number.isSafeInteger(goalVersion) || goalVersion <= 0) {
@@ -205,6 +211,46 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
       return {
         ok: false,
         error: `TODO_INCOMPLETE: ${incomplete.length} checklist item(s) are not completed`,
+      }
+    }
+  }
+  const active = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
+  if (
+    status === 'completed'
+    && active?.evidenceRequired
+    && !ctx.skipSemanticReview
+  ) {
+    const review = getGoalEvidenceReview({
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      goalId,
+      goalVersion,
+      evidenceIds,
+      traceId: ctx.traceId,
+    })
+    if (!review) {
+      return { ok: false, error: 'SEMANTIC_REVIEW_UNAVAILABLE: evidence could not be prepared' }
+    }
+    const criticInput: CriticInput = {
+      prompt: `Completion claim: ${recap}`,
+      goalTitle: review.goalTitle,
+      goalBody: review.goalBody,
+      recentToolCalls: review.recentToolCalls,
+    }
+    const verdict = ctx.reviewGoalEvidence
+      ? await ctx.reviewGoalEvidence(criticInput)
+      : await runGoalCritic(criticInput, { force: true })
+    if (
+      !verdict.modelUsed
+      || /disabled|unparseable|empty|threw|no prompt/i.test(verdict.reason)
+    ) {
+      return { ok: false, error: `SEMANTIC_REVIEW_UNAVAILABLE: ${verdict.reason}` }
+    }
+    if (!verdict.onTrack) {
+      return {
+        ok: false,
+        error: `GOAL_OFF_TRACK: ${verdict.reason}${verdict.redirect ? `; ${verdict.redirect}` : ''}`,
       }
     }
   }

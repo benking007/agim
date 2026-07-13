@@ -57,7 +57,12 @@ export default function SettingsStartRoute(): JSX.Element {
   const cfg = cfgQuery.data
   const defaultAgent = cfg?.defaultAgent || cfg?.agents?.[0] || ''
   const agentName = defaultAgent ? agentDisplayName(defaultAgent) : t('start.unknown')
-  const agentStatus = defaultAgent ? agentsQuery.data?.[defaultAgent] : undefined
+  const agentStatus = defaultAgent
+    ? (agentsQuery.data?.[defaultAgent]
+      ?? ((defaultAgent === 'agim' || defaultAgent === 'native')
+        ? (agentsQuery.data?.agim ?? agentsQuery.data?.native)
+        : undefined))
+    : undefined
   const agentLoading = cfgQuery.isLoading || agentsQuery.isLoading
   const service = serviceQuery.data
   const serviceRunning = Boolean(service && service.mode !== 'none')

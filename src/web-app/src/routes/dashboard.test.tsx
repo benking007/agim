@@ -117,7 +117,7 @@ describe('/dashboard', () => {
         defaultAgent: 'agim',
         features: { globalIm: true, remoteAgent: true },
       },
-      agents: { native: true },
+      agents: { agim: true },
       llm: {
         backends: [
           {
@@ -134,7 +134,7 @@ describe('/dashboard', () => {
     renderPage()
 
     await waitFor(() => expect(screen.getByText((_text, el) => el?.textContent === '3/3 ready')).toBeInTheDocument())
-    expect(screen.getByText('agim is online')).toBeInTheDocument()
+    expect(screen.getByText('Agim Agent is online')).toBeInTheDocument()
     expect(screen.getByText('Connected: WeChat')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Review task activity/i })).toHaveAttribute('href', '/tasks')
   })

@@ -368,7 +368,7 @@ function injectEphemeralContext(messages: AgentMessage[], context: string): Agen
   }
   if (idx < 0) return messages
   const current = messages[idx]
-  if (!current || current.role !== 'user') return messages
+  if (current?.role !== 'user') return messages
   const content = typeof current.content === 'string'
     ? `${trimmed}\n${current.content}`
     : [

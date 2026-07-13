@@ -33,8 +33,9 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.baseUrl).toBe('https://api.anthropic.com') // default when unset
     const catalog = lookupModelMeta('anthropic', 'claude-sonnet-4-5')
     expect(catalog).not.toBeNull()
-    expect(binding.model.contextWindow).toBe(catalog?.contextWindow)
-    expect(binding.model.maxTokens).toBe(catalog?.maxTokens)
+    if (!catalog) throw new Error('missing catalog metadata for claude-sonnet-4-5')
+    expect(binding.model.contextWindow).toBe(catalog.contextWindow)
+    expect(binding.model.maxTokens).toBe(catalog.maxTokens)
   })
 
   it('returns null for an unsupported provider type', () => {

@@ -114,9 +114,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const meta = (await repo.list()).find((item) => item.id === 'ephemeral')
     if (!meta) throw new Error('missing ephemeral session')
     const entries = await (await repo.open(meta)).getEntries()
-    const persistedUsers = entries
-      .filter((entry) => entry.type === 'message' && entry.message.role === 'user')
-      .map((entry) => entry.message.content)
+    const persistedUsers = entries.flatMap((entry) =>
+      entry.type === 'message' && entry.message.role === 'user'
+        ? [entry.message.content]
+        : [])
     expect(JSON.stringify(persistedUsers)).toContain('raw user prompt')
     expect(JSON.stringify(persistedUsers)).not.toContain('[active goal]')
   })
@@ -719,9 +720,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const meta = (await repo.list()).find((item) => item.id === 'usage-all-turns')
     if (!meta) throw new Error('missing usage session')
     const entries = await (await repo.open(meta)).getEntries()
-    const usages = entries
-      .filter((entry) => entry.type === 'message' && entry.message.role === 'assistant')
-      .map((entry) => entry.message.usage)
+    const usages = entries.flatMap((entry) =>
+      entry.type === 'message' && entry.message.role === 'assistant'
+        ? [entry.message.usage]
+        : [])
     expect(usages).toHaveLength(2)
     expect(reported?.tokensInput).toBe(usages.reduce((sum, usage) => sum + usage.input, 0))
     expect(reported?.tokensOutput).toBe(usages.reduce((sum, usage) => sum + usage.output, 0))

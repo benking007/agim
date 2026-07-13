@@ -269,6 +269,64 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(maxActive).toBe(2) // different sessions still run in parallel
   })
 
+  it('aborts an active harness turn through opts.signal', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('wait_forever', {}, { id: 'wait1' }), { stopReason: 'toolUse' }),
+    ])
+    let notifyStarted!: () => void
+    const started = new Promise<void>((resolve) => { notifyStarted = resolve })
+    const tool: ToolDef = {
+      name: 'wait_forever',
+      description: 'wait',
+      parameters: { type: 'object', properties: {}, required: [] },
+      timeoutMs: 0,
+    }
+    const dispatch: ToolDispatcher = async () => {
+      notifyStarted()
+      return await new Promise<never>(() => {}) // deliberately ignores AbortSignal
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-abort-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const ctrl = new AbortController()
+    const run = collect(adapter.sendPrompt('abort-active', 'wait', undefined, { signal: ctrl.signal }))
+    await started
+    const t0 = performance.now()
+    ctrl.abort()
+    const out = await run
+
+    expect(performance.now() - t0).toBeLessThan(250)
+    expect(out).toContain('本轮已被取消')
+  })
+
+  it('cancels a queued same-session turn without waiting for the active turn', async () => {
+    const reg = faux()
+    reg.setResponses([
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        return fauxAssistantMessage('first')
+      },
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-queue-abort-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const first = collect(adapter.sendPrompt('queued', 'first'))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const ctrl = new AbortController()
+    ctrl.abort()
+    const t0 = performance.now()
+    const second = await collect(adapter.sendPrompt('queued', 'second', undefined, { signal: ctrl.signal }))
+
+    expect(performance.now() - t0).toBeLessThan(50)
+    expect(second).toContain('本轮已被取消')
+    expect(await first).toBe('first')
+    expect(reg.state.callCount).toBe(1)
+  })
+
   it('consults the approval gate and blocks a denied tool', async () => {
     const reg = faux()
     reg.setResponses([

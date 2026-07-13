@@ -371,18 +371,21 @@ describe('routeMessage', () => {
   it('passes only pre-turn history to a fresh agent call', async () => {
     const name = `history-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     let seenHistory: string[] | undefined
+    let seenSignal: AbortSignal | undefined
     const historyAgent: AgentAdapter = {
       name,
       aliases: [],
       isAvailable: async () => true,
-      sendPrompt: (_sessionId, _prompt, history) => {
+      sendPrompt: (_sessionId, _prompt, history, opts) => {
         seenHistory = (history ?? []).map((m) => m.content)
+        seenSignal = opts?.signal
         return mockGenerator()
       },
     }
     registry.registerAgent(historyAgent)
     const threadId = `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const historyCtx = makeCtx({ threadId, userId: `user-${threadId}` })
+    const controller = new AbortController()
+    const historyCtx = makeCtx({ threadId, userId: `user-${threadId}`, signal: controller.signal })
 
     const result = await routeMessage(
       { type: 'agent', agent: name, prompt: 'current prompt' },
@@ -391,6 +394,7 @@ describe('routeMessage', () => {
     for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
 
     expect(seenHistory).toEqual([])
+    expect(seenSignal).toBe(controller.signal)
     const stored = await sessionManager.getExistingSession(
       historyCtx.platform,
       historyCtx.channelId,

@@ -425,11 +425,10 @@ export interface AgentSendOpts {
    *  call_agent hop). Adapters forward it into RunContext.callDepth so
    *  the bus can enforce AGIM_A2A_MAX_DEPTH on the next hop. */
   callDepth?: number
-  /** Optional AbortSignal. When aborted, the adapter should terminate the
-   *  underlying child process (SIGTERM, then SIGKILL after a brief grace
-   *  period). A2A wires this from its per-call timeout so timeout failures
-   *  don't leave orphan codex / claude / opencode processes writing into
-   *  `_agim-output/` long after agim has given up on the result. */
+  /** Optional AbortSignal. CLI adapters terminate their child process;
+   *  in-process adapters abort provider/tool work and settle their session
+   *  before releasing it. A2A and inline jobs wire this from timeout/user
+   *  cancellation so work cannot continue after Agim reports it stopped. */
   signal?: AbortSignal
   /** The inbound turn's trace id (ADR-0002). Adapters that mint their own
    *  audit rows (notably the in-process native agent) should use this so the

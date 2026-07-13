@@ -71,22 +71,33 @@ async function dispatchWithTimeout(
   timeoutMs: number,
   toolName: string,
 ): Promise<DispatcherResult> {
-  if (timeoutMs === 0) return run(outer)
+  const abortError = () => {
+    const err = new Error(`工具 ${toolName} 已取消`)
+    err.name = 'AbortError'
+    return err
+  }
+  if (outer.aborted) throw abortError()
 
   const ctrl = new AbortController()
-  const onOuterAbort = () => ctrl.abort()
-  if (outer.aborted) ctrl.abort()
-  else outer.addEventListener('abort', onOuterAbort, { once: true })
+  let rejectAbort!: (reason?: unknown) => void
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject })
+  const onOuterAbort = () => {
+    ctrl.abort(outer.reason)
+    rejectAbort(abortError())
+  }
+  outer.addEventListener('abort', onOuterAbort, { once: true })
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      // Reject BEFORE aborting so the "timed out" message wins the race even
-      // when a well-behaved dispatcher resolves-on-abort in the same tick.
-      reject(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
-      ctrl.abort()
-    }, timeoutMs)
-  })
+  const timeout = timeoutMs === 0
+    ? null
+    : new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          // Reject BEFORE aborting so the "timed out" message wins the race
+          // even when a well-behaved dispatcher resolves-on-abort this tick.
+          reject(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
+          ctrl.abort()
+        }, timeoutMs)
+      })
 
   const runP = run(ctrl.signal)
   // If the timeout wins the race, runP may still reject later — swallow it so
@@ -94,7 +105,7 @@ async function dispatchWithTimeout(
   // race result when runP wins (await below observes the original settlement).
   runP.catch(() => {})
   try {
-    return await Promise.race([runP, timeout])
+    return await Promise.race(timeout ? [runP, timeout, aborted] : [runP, aborted])
   } finally {
     if (timer) clearTimeout(timer)
     outer.removeEventListener('abort', onOuterAbort)

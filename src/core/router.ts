@@ -74,6 +74,9 @@ export interface RouteContext {
   parentJobId?: number
   /** A2A-L1: call_depth (0 for user-originated runs). */
   callDepth?: number
+  /** Cancellation for the current inbound turn. Inline jobs bind this to the
+   *  job-board controller so /abort reaches every adapter. */
+  signal?: AbortSignal
 }
 
 export interface AgentCallOptions {
@@ -755,6 +758,7 @@ export async function callAgentWithHistory(
     // adapter can stamp RunContext (consumed by bus.handleA2A).
     parentJobId: ctx.parentJobId,
     callDepth: ctx.callDepth,
+    signal: ctx.signal,
     // ADR-0002: forward the inbound turn's trace id so an adapter that mints
     // its own audit rows (native) correlates them back to this message.
     traceId: ctx.traceId,

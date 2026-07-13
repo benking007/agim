@@ -239,7 +239,7 @@ export function buildNativeAskUser(opts: {
   channelId: string
   threadId: string
   userId: string
-}): (call: ToolCallRequest) => Promise<'allow' | 'deny'> {
+}): (call: ToolCallRequest, signal?: AbortSignal) => Promise<'allow' | 'deny'> {
   const baseCtx = {
     platform: opts.platform,
     channelId: opts.channelId,
@@ -247,17 +247,49 @@ export function buildNativeAskUser(opts: {
     userId: opts.userId,
     callerAgent: 'native',
   }
-  return async (call: ToolCallRequest): Promise<'allow' | 'deny'> => {
+  return async (call: ToolCallRequest, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
+    if (signal?.aborted) return 'deny'
     const reqId = randomUUID()
     return await new Promise<'allow' | 'deny'>((resolve, reject) => {
+      let settled = false
+      const cleanup = () => signal?.removeEventListener('abort', onAbort)
+      const finish = (decision: 'allow' | 'deny') => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(decision)
+      }
+      const onAbort = () => {
+        // If registration has reached pendingById this drains the card now.
+        // If it has not, the registration continuation below retries.
+        approvalBus.resolvePendingByReqId(reqId, {
+          behavior: 'deny',
+          message: 'approval cancelled: agent turn aborted',
+        })
+        finish('deny')
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
       void approvalBus.registerSyntheticPending({
         runId: opts.runId,
         reqId,
         toolName: call.name,
         input: call.arguments,
         ctx: baseCtx,
-        dispatch: (decision) => resolve(decision.behavior),
-      }).catch((err) => reject(err))
+        dispatch: (decision) => finish(decision.behavior),
+      }).then(() => {
+        // Covers abort racing before _registerPending inserted the request.
+        if (signal?.aborted) {
+          approvalBus.resolvePendingByReqId(reqId, {
+            behavior: 'deny',
+            message: 'approval cancelled: agent turn aborted',
+          })
+        }
+      }).catch((err) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(err)
+      })
     })
   }
 }

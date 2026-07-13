@@ -110,6 +110,32 @@ function safeJson(v: unknown): string {
   }
 }
 
+async function waitForTurnSlot(previous: Promise<void>, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) {
+    await previous
+    return true
+  }
+  if (signal.aborted) return false
+  return await new Promise<boolean>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    const onAbort = () => finish(false)
+    signal.addEventListener('abort', onAbort, { once: true })
+    previous.then(() => finish(true), (err) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    })
+  })
+}
+
 interface NativeToolRun {
   name: string
   isError: boolean
@@ -291,12 +317,21 @@ export class NativeAgentAdapter implements AgentAdapter {
     // slot when the turn (or an early consumer abandon) settles.
     const prev = this.sessionLocks.get(sessionId) ?? Promise.resolve()
     let release!: () => void
-    const mine = prev.then(() => new Promise<void>((resolve) => { release = resolve }))
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const mine = prev.then(() => held)
     this.sessionLocks.set(sessionId, mine)
     try {
-      await prev
+      const acquired = await waitForTurnSlot(prev, opts?.signal)
+      if (!acquired) {
+        yield composeProviderErrorNotice('aborted')
+        return
+      }
       yield* this.runTurn(sessionId, prompt, history, opts)
     } catch (err) {
+      if (opts?.signal?.aborted) {
+        yield composeProviderErrorNotice('aborted')
+        return
+      }
       // Never fail silently: a thrown turn would otherwise reach the IM layer
       // as "no response". Surface the error so it's visible + diagnosable.
       const msg = err instanceof Error ? `${err.message}` : String(err)
@@ -315,6 +350,10 @@ export class NativeAgentAdapter implements AgentAdapter {
     history: ChatMessage[] | undefined,
     opts: AgentSendOpts | undefined,
   ): AsyncGenerator<string> {
+    if (opts?.signal?.aborted) {
+      yield composeProviderErrorNotice('aborted')
+      return
+    }
     const slashResult = this.tryHandleModelSlash(prompt, sessionId, opts)
     if (slashResult) {
       yield slashResult
@@ -324,6 +363,10 @@ export class NativeAgentAdapter implements AgentAdapter {
     const overrideModel = opts?.model || this.sessionModelOverrides.get(sessionId)
     const effectiveOpts = overrideModel ? { ...(opts ?? {}), model: overrideModel } : opts
     const binding = await this.deps.resolveModel(effectiveOpts)
+    if (opts?.signal?.aborted) {
+      yield composeProviderErrorNotice('aborted')
+      return
+    }
     if (!binding) {
       yield '⚠️ Agim Agent：未配置可用的大模型 API（请在 /settings/llm 添加 API + API Key；角色绑定可选）'
       return
@@ -358,6 +401,10 @@ export class NativeAgentAdapter implements AgentAdapter {
       chmod(dirname(currentMeta.path), 0o700).catch(() => {}),
       chmod(currentMeta.path, 0o600).catch(() => {}),
     ])
+    if (opts?.signal?.aborted) {
+      yield composeProviderErrorNotice('aborted')
+      return
+    }
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
     const tools = toolSurface
@@ -404,6 +451,7 @@ export class NativeAgentAdapter implements AgentAdapter {
             const decision = await gate(
               { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
               0,
+              opts?.signal,
             )
             if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
           }
@@ -469,7 +517,38 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
     }
 
-    const result = await harness.prompt(prompt)
+    if (opts?.signal?.aborted) {
+      yield composeProviderErrorNotice('aborted')
+      return
+    }
+
+    // AgentHarness owns its run AbortController and prompt() does not accept an
+    // external signal. Bridge the caller signal through abort(), while the
+    // before_agent_start hook closes the small pre-controller race.
+    const externalSignal = opts?.signal
+    const unsubscribeBeforeStart = externalSignal
+      ? harness.on('before_agent_start', () => {
+          if (externalSignal.aborted) throw new Error('agent turn aborted before start')
+          return undefined
+        })
+      : undefined
+    const onExternalAbort = () => {
+      void harness.abort().catch((err) => {
+        console.error('[native] harness abort failed:', err instanceof Error ? err.message : err)
+      })
+    }
+    externalSignal?.addEventListener('abort', onExternalAbort, { once: true })
+
+    let result: Awaited<ReturnType<AgentHarness['prompt']>>
+    try {
+      const promptPromise = harness.prompt(prompt)
+      // Covers abort between the final pre-check and listener registration.
+      if (externalSignal?.aborted) onExternalAbort()
+      result = await promptPromise
+    } finally {
+      externalSignal?.removeEventListener('abort', onExternalAbort)
+      unsubscribeBeforeStart?.()
+    }
 
     if (opts?.onUsage && result.usage) {
       opts.onUsage({

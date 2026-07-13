@@ -59,7 +59,7 @@ export interface PolicyApprovalGateConfig {
    * Tools on `denyList` are NEVER routed through askUser — the denylist
    * is an operator-controlled emergency brake.
    */
-  askUser?: (call: ToolCallRequest) => Promise<'allow' | 'deny'>
+  askUser?: (call: ToolCallRequest, signal?: AbortSignal) => Promise<'allow' | 'deny'>
 }
 
 /**
@@ -100,7 +100,7 @@ export function buildPolicyApprovalGate(cfg: PolicyApprovalGateConfig = {}): App
   const autoAllow = new Set(cfg.autoAllow ?? [])
   const denyList = new Set(cfg.denyList ?? [])
   const askUser = cfg.askUser
-  return async (call: ToolCallRequest): Promise<'allow' | 'deny'> => {
+  return async (call: ToolCallRequest, _attempt: number, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     // denylist is non-negotiable — never escalate to user.
     if (denyList.has(call.name)) return 'deny'
     // autoAllow short-circuit — never bother the user.
@@ -129,7 +129,7 @@ export function buildPolicyApprovalGate(cfg: PolicyApprovalGateConfig = {}): App
     // decisions go through unchanged.
     if (modeDecision === 'deny' && askUser && mode !== 'deny-all') {
       try {
-        return await askUser(call)
+        return await askUser(call, signal)
       } catch (err) {
         // If the IM card pipeline throws (no notifier, socket closed,
         // ctx missing), fall back to deny so the agent loop still makes

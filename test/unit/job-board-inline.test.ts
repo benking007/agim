@@ -67,12 +67,12 @@ skipIfNoDb('inline-job state machine', () => {
     const id = jb.createInlineJob({
       agent: 'a', prompt: 'p', threadKey: 'p:p:p2',
     })
-    jb.markJobRunning(id)
+    expect(jb.markJobRunning(id)).toBe(true)
     const r1 = jb.getJob(id)!
     expect(r1.status).toBe('running')
     expect(r1.started_at).not.toBeNull()
     const stamp1 = r1.started_at
-    jb.markJobRunning(id)  // idempotent
+    expect(jb.markJobRunning(id)).toBe(true)  // idempotent
     const r2 = jb.getJob(id)!
     expect(r2.started_at).toBe(stamp1)  // not overwritten
   })
@@ -87,6 +87,40 @@ skipIfNoDb('inline-job state machine', () => {
     expect(r.status).toBe('completed')
     expect(r.result).toBe('the reply text')
     expect(r.completed_at).not.toBeNull()
+  })
+
+  it('a cancelled pending job cannot transition to running later', () => {
+    const id = jb.createInlineJob({
+      agent: 'a', prompt: 'queued', threadKey: 'p:p:cancelled-pending',
+    })
+    expect(jb.cancelJob(id)).toBe(true)
+    expect(jb.markJobRunning(id)).toBe(false)
+    expect(jb.getJob(id)?.status).toBe('cancelled')
+  })
+
+  it('cancelJob aborts an owner-bound inline controller', () => {
+    const id = jb.createInlineJob({
+      agent: 'a', prompt: 'running', threadKey: 'p:p:bound-controller',
+    })
+    const ctrl = new AbortController()
+    const unbind = jb.bindJobController(id, ctrl)
+    try {
+      expect(jb.markJobRunning(id)).toBe(true)
+      expect(jb.cancelJob(id)).toBe(true)
+      expect(ctrl.signal.aborted).toBe(true)
+      expect(jb.getJob(id)?.status).toBe('cancelled')
+    } finally {
+      unbind()
+    }
+  })
+
+  it('findActiveJobByThread prefers running over a newer pending job', () => {
+    const threadKey = `p:p:active-order-${Date.now()}`
+    const running = jb.createInlineJob({ agent: 'a', prompt: 'running', threadKey })
+    expect(jb.markJobRunning(running)).toBe(true)
+    const pending = jb.createInlineJob({ agent: 'a', prompt: 'pending', threadKey })
+    expect(pending).toBeGreaterThan(running)
+    expect(jb.findActiveJobByThread(threadKey)?.id).toBe(running)
   })
 
   it('markJobDelivered: completed → delivered; no-op for non-completed', () => {
@@ -138,7 +172,7 @@ skipIfNoDb('inline-job state machine', () => {
   })
 
   it('id<=0 makes every helper a no-op (no throw)', () => {
-    expect(() => jb.markJobRunning(-1)).not.toThrow()
+    expect(jb.markJobRunning(-1)).toBe(true)
     expect(() => jb.markJobCompleted(-1, 'x')).not.toThrow()
     expect(() => jb.markJobDelivered(-1)).not.toThrow()
     expect(() => jb.markJobFailed(-1, 'x')).not.toThrow()

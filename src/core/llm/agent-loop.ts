@@ -581,6 +581,7 @@ type MaybePromise<T> = T | Promise<T>
 export type ApprovalGate = (
   call: ToolCallRequest,
   attempt: number,
+  signal?: AbortSignal,
 ) => Promise<'allow' | 'deny'>
 
 /** Default: skip approval entirely. The agent loop is safe-by-default
@@ -601,6 +602,7 @@ export interface AgentToolPolicyContext {
   traceId?: string
   platform?: string
   userId?: string
+  signal?: AbortSignal
 }
 
 /**
@@ -1240,6 +1242,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         traceId: input.audit?.traceId,
         platform: input.audit?.platform,
         userId: input.audit?.userId,
+        signal: signal.signal,
       })
       if (decision.decision === 'deny') {
         const reason = decision.reason ? `: ${decision.reason}` : ''
@@ -1637,7 +1640,7 @@ async function decideToolAccess(
   }
 
   return {
-    decision: await safeApprove(approve, ctx.call, ctx.attempt),
+    decision: await safeApprove(approve, ctx.call, ctx.attempt, ctx.signal),
     source: 'approval',
   }
 }
@@ -1762,9 +1765,10 @@ async function safeApprove(
   gate: ApprovalGate,
   call: ToolCallRequest,
   attempt: number,
+  signal?: AbortSignal,
 ): Promise<'allow' | 'deny'> {
   try {
-    return await gate(call, attempt)
+    return await gate(call, attempt, signal)
   } catch (err) {
     log.warn({
       event: 'agent-loop.approve_threw',

@@ -29,7 +29,7 @@ import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
 import { sink } from './core/message-sink.js'
 import {
-  createInlineJob, markJobRunning, markJobCompleted, markJobFailed, linkJobOutbox, updateJobAgent,
+  bindJobController, createInlineJob, markJobRunning, markJobCompleted, markJobFailed, linkJobOutbox, updateJobAgent,
 } from './core/job-board.js'
 import {
   checkMessengerConfig,
@@ -1323,6 +1323,8 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
   // "not tracked": either the message didn't reach willInvokeAgent, or
   // createInlineJob fell back to in-memory (DB locked / AGIM_INLINE_JOB_TRACKING=0).
   let inlineJobId = -1
+  let inlineAbortController: AbortController | undefined
+  let unbindInlineController: (() => void) | undefined
 
   try {
     if (messenger.sendTyping) {
@@ -1498,6 +1500,9 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           creatorId: message.userId ?? '',
         })
       }
+      inlineAbortController = new AbortController()
+      routeCtx.signal = inlineAbortController.signal
+      unbindInlineController = bindJobController(inlineJobId, inlineAbortController)
       // A2A-L1: stash on routeCtx so callAgentWithHistory can forward it
       // through AgentSendOpts → adapter.registerRun → RunContext. When the
       // agent fires mcp__agim__call_agent the bus then knows what
@@ -1535,6 +1540,14 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     // (willInvokeAgent === false) bypass the queue so a `y` reply can
     // still resolve an approval card while an agent run is in flight.
     const runAgentInvocation = async (): Promise<void> => {
+      // A queued inline job may have been cancelled before its turn reached
+      // the head of runOnThread. CAS pending→running before any side effect;
+      // a terminal row must never invoke the adapter later.
+      if (willInvokeAgent && (inlineAbortController?.signal.aborted || !markJobRunning(inlineJobId))) {
+        logger.info({ event: 'message.cancelled_before_start', jobId: inlineJobId })
+        return
+      }
+
       if (willInvokeAgent && messenger.sendThinking) {
         try {
           dismissThinking = await messenger.sendThinking(
@@ -1546,11 +1559,6 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         }
       }
 
-      // Mark inline job 'running' just before the agent actually starts —
-      // anything that throws before this leaves the row in 'pending' which
-      // is the correct "never ran" semantic.
-      markJobRunning(inlineJobId)
-
       const result = await routeMessage(parsed, routeCtx)
 
       const dismiss = async () => {
@@ -1558,6 +1566,12 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
           try { await dismissThinking() } catch { /* ignore */ }
           dismissThinking = undefined
         }
+      }
+
+      if (inlineAbortController?.signal.aborted) {
+        await stopTyping()
+        await dismiss()
+        return
       }
 
       // Handle response (string or async generator)
@@ -1600,11 +1614,14 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         // Stream response chunks
         let fullResponse = ''
         for await (const chunk of result) {
+          if (inlineAbortController?.signal.aborted) break
           fullResponse += chunk
         }
 
         await stopTyping()
         await dismiss()
+
+        if (inlineAbortController?.signal.aborted) return
 
         if (fullResponse) {
           markJobCompleted(inlineJobId, fullResponse)
@@ -1644,6 +1661,14 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
+    if (inlineAbortController?.signal.aborted) {
+      logger.info({ event: 'message.cancelled', jobId: inlineJobId })
+      await stopTyping()
+      if (dismissThinking) {
+        try { await dismissThinking() } catch { /* ignore */ }
+      }
+      return
+    }
     logger.error({ event: 'message.error', error: errMsg })
     await stopTyping()
     if (dismissThinking) {
@@ -1658,6 +1683,8 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
       platform, channelId: ctx.channelId, threadId: message.threadId,
       payload: '❌ An error occurred processing your message.', kind: 'text',
     }).catch(() => { /* swallow — sink already logs */ })
+  } finally {
+    unbindInlineController?.()
   }
 }
 

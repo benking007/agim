@@ -17,6 +17,9 @@ import { dirname, join } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SERVER_TS = join(HERE, '..', '..', 'src', 'web', 'server.ts')
+const NATIVE_AGENT_TSX = join(
+  HERE, '..', '..', 'src', 'web-app', 'src', 'routes', 'settings', 'native-agent.tsx',
+)
 
 function readAllowedKeys(): Set<string> {
   const src = readFileSync(SERVER_TS, 'utf8')
@@ -36,6 +39,16 @@ function readAllowedKeys(): Set<string> {
   return keys
 }
 
+/** Keys the native-agent settings SPA writes via PUT /api/env. */
+function readSpaPutKeys(): string[] {
+  const src = readFileSync(NATIVE_AGENT_TSX, 'utf8')
+  const keys = new Set<string>()
+  for (const m of src.matchAll(/updates\.(AGIM_[A-Z0-9_]+)\s*=/g)) {
+    keys.add(m[1])
+  }
+  return [...keys].sort()
+}
+
 describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
   const keys = readAllowedKeys()
 
@@ -50,7 +63,7 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_TOOL_TIMEOUT_MS',
   ]
 
-  // Keys that stay editable: A2A delegation, plan mode, and active-loop caps.
+  // Keys that stay editable: A2A, plan mode, iteration, policy, critic.
   const LIVE_NATIVE_KEYS = [
     // A2A
     'AGIM_A2A_MAX_DEPTH',
@@ -64,18 +77,29 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
     // Active AgentHarness wall watchdog
     'AGIM_NATIVE_TURN_TIMEOUT_MS',
+    // Policy / role (SPA native-agent form)
+    'AGIM_NATIVE_AGENT_ROLE',
+    'AGIM_NATIVE_AGENT_MODE',
+    'AGIM_NATIVE_AGENT_AUTOALLOW',
+    'AGIM_NATIVE_AGENT_DENYLIST',
+    // Notification evaluator + heartbeat
+    'AGIM_NOTIFICATION_EVALUATOR',
+    'AGIM_NOTIFICATION_EVALUATOR_SOURCES',
+    'AGIM_HEARTBEAT_ENABLED',
+    'AGIM_HEARTBEAT_TICK_INTERVAL_MS',
+    'AGIM_HEARTBEAT_DEFAULT_INTERVAL_MIN',
+    // Live on pi-native (not only the retired runAgentLoop)
+    'AGIM_NATIVE_CRITIC',
+    'AGIM_NATIVE_CRITIC_ROLE',
+    'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
+    'AGIM_NATIVE_COMPACTION',
   ]
 
-  // Knobs removed from the native-agent settings page because they only
-  // affected the legacy runAgentLoop (goal-critic / auto-compact), never
-  // the pi AgentHarness path the Agim Agent actually runs on. Pin that
-  // they are NOT editable so they can't silently reappear.
+  // Knobs that only affected the retired runAgentLoop / old auto-compact
+  // path. Must stay off the allowlist so they cannot reappear in SPA Save.
   const REMOVED_DEAD_KEYS = [
     'AGIM_NATIVE_BLANK_RETRY_MAX',
     'AGIM_NATIVE_LENGTH_RECOVERY_MAX',
-    'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
-    'AGIM_NATIVE_CRITIC',
-    'AGIM_NATIVE_CRITIC_ROLE',
     'AGIM_NATIVE_COMPACT_TRIGGER_CHARS',
     'AGIM_NATIVE_COMPACT_KEEP_TURNS',
     'AGIM_NATIVE_COMPACT_KEEP_FIRST',
@@ -91,13 +115,21 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     }
   })
 
-  it('keeps the live native-agent keys (A2A / plan mode / iteration)', () => {
+  it('keeps the live native-agent keys', () => {
     for (const k of LIVE_NATIVE_KEYS) {
       expect(keys.has(k)).toBe(true)
     }
   })
 
-  it('does NOT include knobs removed for having no effect on Agim Agent', () => {
+  it('allowlists every key the native-agent SPA writes on Save', () => {
+    const spaKeys = readSpaPutKeys()
+    expect(spaKeys.length).toBeGreaterThan(5)
+    for (const k of spaKeys) {
+      expect(keys.has(k)).toBe(true)
+    }
+  })
+
+  it('does NOT include retired runAgentLoop-only knobs', () => {
     for (const k of REMOVED_DEAD_KEYS) {
       expect(keys.has(k)).toBe(false)
     }

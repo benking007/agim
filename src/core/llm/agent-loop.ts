@@ -1,5 +1,11 @@
 // agent-loop — multi-iteration tool-using chat loop (Stage 2 sub-PR #3).
 //
+// PRODUCTION STATUS: Agim Agent (`native`) runs on pi-native AgentHarness.
+// `runAgentLoop` is the retired in-process loop. Shared helpers still live
+// here (`ApprovalGate`, `isSemanticStuckLoop`, `resolveSemanticStuckLoopOn`)
+// and are imported by pi-native. Do not wire new production call sites to
+// `runAgentLoop`; shrink or extract helpers in a follow-up.
+//
 // One call to `runAgentLoop` is one *turn* from the IM user's perspective:
 //
 //                ┌──────────────────────────────────────────────────────┐

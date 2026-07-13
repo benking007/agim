@@ -460,19 +460,12 @@ export async function startWebServer(options: {
     // Loopback peers + the public paths below bypass.
     if (!checkAuth(req, res, url)) return
 
-    // v1.2.72 — v2 SPA is the only web admin. The legacy v1 monolithic
-    // HTML pages (settings.html / tasks.html / reminders.html /
-    // memos.html / _app.js) have been removed; the `AGIM_WEB_V2` env
-    // gate is gone — there is no v1 fallback anymore. Operators who
-    // were on the legacy layout flipped over automatically when they
-    // upgraded past 1.2.21 (default switch); the env knob remained as
-    // a back-out hatch through 1.2.71 and is retired here.
+    // v1.2.72 — SPA is the only web admin. The retired v1 HTML admin
+    // bundle and the old `AGIM_WEB_V2` gate are gone; this branch serves
+    // SPA assets and falls back to `index.html` for client-side routes.
     //
-    // This branch serves the SPA chunks under `/assets/*.js`, the
-    // favicon / manifest, and falls back to `index.html` for any
-    // client-side route. Without it a fresh install hits a white
-    // screen because `<script src="/assets/…js">` 404s — no other
-    // handler claims that path.
+    // Without it a fresh install hits a white screen because
+    // `<script src="/assets/…js">` 404s — no other handler claims that path.
     if (req.method === 'GET') {
       const p = url.pathname
       const isApi = p.startsWith('/api/')
@@ -3013,6 +3006,26 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
   // Active pi-native AgentHarness loop watchdog (0 disables).
   'AGIM_NATIVE_TURN_TIMEOUT_MS',
+  // Approval / role policy for Agim Agent (pi-native). SPA
+  // /settings/native-agent writes these; they were previously dropped
+  // by the allowlist filter (silent Save no-op).
+  'AGIM_NATIVE_AGENT_ROLE',
+  'AGIM_NATIVE_AGENT_MODE',
+  'AGIM_NATIVE_AGENT_AUTOALLOW',
+  'AGIM_NATIVE_AGENT_DENYLIST',
+  // Notification evaluator + heartbeat (same SPA page).
+  'AGIM_NOTIFICATION_EVALUATOR',
+  'AGIM_NOTIFICATION_EVALUATOR_SOURCES',
+  'AGIM_HEARTBEAT_ENABLED',
+  'AGIM_HEARTBEAT_TICK_INTERVAL_MS',
+  'AGIM_HEARTBEAT_DEFAULT_INTERVAL_MIN',
+  // Live on pi-native (goal critic + semantic stuck soft→hard). Ops-tunable
+  // via /api/env; not every knob has a dedicated SPA control yet.
+  'AGIM_NATIVE_CRITIC',
+  'AGIM_NATIVE_CRITIC_ROLE',
+  'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
+  // Proactive pi harness compaction (factory reads AGIM_NATIVE_COMPACTION).
+  'AGIM_NATIVE_COMPACTION',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'AGIM_SMTP_PASS',

@@ -39,8 +39,6 @@ export type TurnSessionStrategy =
   | { kind: 'copilot-preallocate'; field: 'copilotSessionId' }
   | { kind: 'resume-if-present'; field: AgentSessionField }
 
-export type SubtaskSessionStrategy = TurnSessionStrategy
-
 /** Agents that report a minted session id via opts.onAgentSessionId. */
 export const AGENT_SESSION_PERSIST: Record<string, AgentSessionPersistBinding> = {
   opencode: {
@@ -106,9 +104,6 @@ export const TURN_AGENT_SESSION: Record<string, TurnSessionStrategy> = {
   cursor: { kind: 'resume-if-present', field: 'cursorSessionId' },
   copilot: { kind: 'copilot-preallocate', field: 'copilotSessionId' },
 }
-
-/** @deprecated alias — prefer TURN_AGENT_SESSION */
-export const SUBTASK_AGENT_SESSION = TURN_AGENT_SESSION
 
 export type SessionStickyFields = Pick<
   Session,

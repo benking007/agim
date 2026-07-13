@@ -2,10 +2,10 @@
  * /settings/native-agent — focused env editor for Agim Agent +
  * notification evaluator + heartbeat (Stage 6).
  *
- * All three subsystems are env-driven; their env keys are already in
- * ENV_EDITABLE_KEYS so the generic /api/env GET+PUT pair works. This
- * page just gives them a curated form so operators don't have to dig
- * through the 200+-key generic env editor.
+ * All three subsystems are env-driven. Keys written by this form MUST
+ * appear in `ENV_EDITABLE_KEYS` (`src/web/server.ts`) — PUT /api/env
+ * silently drops anything else. The allowlist regression test parses
+ * this file to catch drift.
  *
  * The actual model API selection (which LLM, which role) lives on
  * /settings/llm; this module covers behavioral knobs.

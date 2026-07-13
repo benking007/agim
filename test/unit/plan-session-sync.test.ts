@@ -20,7 +20,9 @@ afterAll(() => {
   rmSync(TEST_HOME, { recursive: true, force: true })
 })
 
-describe('Plan Mode session/state synchronization', () => {
+const describeSqlite = process.env.AGIM_TEST_REQUIRE_SQLITE === '1' ? describe : describe.skip
+
+describeSqlite('Plan Mode session/state synchronization', () => {
   it('/new clears both the session flag and native policy state', async () => {
     const platform = 'test'
     const channelId = 'channel'

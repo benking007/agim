@@ -250,7 +250,19 @@ export async function callAgentByName(
     parentId: opts.parentJobId ?? null,
     callDepth: nextDepth,
   })
-  markJobRunning(jobId)
+  const abortController = new AbortController()
+  const unbindJobController = bindJobController(jobId, abortController)
+  const onOuterAbort = () => abortController.abort(opts.signal?.reason)
+  const cleanupController = () => {
+    opts.signal?.removeEventListener('abort', onOuterAbort)
+    unbindJobController()
+  }
+  opts.signal?.addEventListener('abort', onOuterAbort, { once: true })
+  if (opts.signal?.aborted) onOuterAbort()
+  if (!markJobRunning(jobId)) {
+    cleanupController()
+    return { ok: false, error: 'a2a cancelled before start', jobId, agent: target.name }
+  }
 
   // L2 — provision artifacts dir + copy inputs BEFORE building the
   // envelope so the prompt envelope can list real files / sizes. Errors
@@ -261,8 +273,10 @@ export async function callAgentByName(
   let promptWithEnvelope = prompt
   try {
     await ensureArtifactsDir(jobId)
+    if (abortController.signal.aborted) throw new Error('a2a aborted during artifact setup')
     if (opts.inputs && opts.inputs.length > 0) {
       copiedInputs = await copyInputs(jobId, opts.inputs, opts.parentJobId ?? undefined)
+      if (abortController.signal.aborted) throw new Error('a2a aborted during input copy')
     }
     const needEnvelope = copiedInputs.length > 0
       || (opts.expectOutputs && opts.expectOutputs.length > 0)
@@ -283,6 +297,7 @@ export async function callAgentByName(
     log.warn({ event: 'a2a.artifacts_setup_failed', jobId, err: msg },
       `A2A artifacts setup failed: ${msg}`)
     markJobFailed(jobId, msg)
+    cleanupController()
     return { ok: false, error: msg, jobId, agent: target.name }
   }
 
@@ -329,11 +344,6 @@ export async function callAgentByName(
   // child process actually terminates on timeout. Without this the callee
   // (codex / claude / opencode) keeps running and writes "orphan" files
   // into _agim-output/ long after agim has given up.
-  const abortController = new AbortController()
-  const unbindJobController = bindJobController(jobId, abortController)
-  const onOuterAbort = () => abortController.abort(opts.signal?.reason)
-  opts.signal?.addEventListener('abort', onOuterAbort, { once: true })
-  if (opts.signal?.aborted) onOuterAbort()
   try {
     const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
@@ -368,8 +378,7 @@ export async function callAgentByName(
     // sends SIGTERM (then SIGKILL after a grace period) to the agent CLI.
     try { abortController.abort() } catch { /* noop */ }
   } finally {
-    opts.signal?.removeEventListener('abort', onOuterAbort)
-    unbindJobController()
+    cleanupController()
   }
 
   // Stop heartbeat ASAP so we don't race the terminal notice.

@@ -39,8 +39,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
   })
 
   it('happy path: notifier fires, resolve(allow) dispatches once', async () => {
-    let notified: ApprovalNotification | null = null
-    bus.setNotifier(async (n) => { notified = n })
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
 
     const decisions: Decision[] = []
     await bus.registerSyntheticPending({
@@ -81,8 +81,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       dispatch: (d) => decisions.push(d),
     })
 
-    expect(notified).not.toBeNull()
-    expect((notified as ApprovalNotification).requiresExplicitDecision).toBe(true)
+    expect(notifications[0]?.requiresExplicitDecision).toBe(true)
     expect(decisions).toEqual([])
     expect(bus.hasPendingFor(KEY)).toBe(true)
 

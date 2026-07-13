@@ -81,7 +81,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       dispatch: (d) => decisions.push(d),
     })
 
-    expect(notified?.requiresExplicitDecision).toBe(true)
+    expect(notified).not.toBeNull()
+    expect((notified as ApprovalNotification).requiresExplicitDecision).toBe(true)
     expect(decisions).toEqual([])
     expect(bus.hasPendingFor(KEY)).toBe(true)
 

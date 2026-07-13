@@ -22,6 +22,12 @@ describe('pi-native loop fingerprints', () => {
     expect(a).toBe(b)
     expect(a).toContain('503')
     expect(normalizeErrorFingerprint('HTTP 404 failed')).not.toBe(normalizeErrorFingerprint('HTTP 503 failed'))
+    expect(normalizeErrorFingerprint('quota 100000 exceeded')).not.toBe(
+      normalizeErrorFingerprint('quota 200000 exceeded'),
+    )
+    expect(normalizeErrorFingerprint(`${'same '.repeat(40)}error A`)).not.toBe(
+      normalizeErrorFingerprint(`${'same '.repeat(40)}error B`),
+    )
   })
 
   it('builds the same failure signature for reordered equivalent args', () => {

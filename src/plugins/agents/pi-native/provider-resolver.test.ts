@@ -34,11 +34,23 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     const catalog = lookupModelMeta('anthropic', 'claude-sonnet-4-5')
     expect(catalog).not.toBeNull()
     if (!catalog) throw new Error('missing catalog metadata for claude-sonnet-4-5')
+    expect(binding.costKnown).toBe(true)
     expect(binding.model.contextWindow).toBe(catalog.contextWindow)
     expect(binding.model.maxTokens).toBe(catalog.maxTokens)
   })
 
   it('returns null for an unsupported provider type', () => {
     expect(bindingToPiModel({ name: 'x', providerType: 'some-future-thing', model: 'm' })).toBeNull()
+  })
+
+  it('marks uncatalogued custom models as unknown-cost', () => {
+    const binding = bindingToPiModel({
+      name: 'custom',
+      providerType: 'openai-compat',
+      model: 'private-model-not-in-catalog',
+      baseUrl: 'https://llm.internal/v1',
+    })!
+    expect(binding.costKnown).toBe(false)
+    expect(binding.model.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
   })
 })

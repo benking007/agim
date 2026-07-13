@@ -22,14 +22,15 @@ import {
   calculateContextTokens,
   compact,
   DEFAULT_COMPACTION_SETTINGS,
+  FileError,
   getLastAssistantUsage,
   JsonlSessionRepo,
   shouldCompact,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
-import type { AgentHarnessStreamOptions, AgentMessage } from '@earendil-works/pi-agent-core'
+import type { AgentHarnessStreamOptions, AgentMessage, Result } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
-import { chmod } from 'node:fs/promises'
+import { access, chmod } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, AgentTurnOutcome, ChatMessage } from '../../../core/types.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
@@ -43,6 +44,8 @@ import { failureSignature } from './loop-fingerprint.js'
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
   model: Model<string>
+  /** Whether model.cost came from a known catalog entry. */
+  costKnown?: boolean
   getApiKeyAndHeaders: () => Promise<{ apiKey: string; headers: Record<string, string> }>
 }
 
@@ -145,6 +148,51 @@ async function waitForTurnSlot(previous: Promise<void>, signal?: AbortSignal): P
   })
 }
 
+class SecureNodeExecutionEnv extends NodeExecutionEnv {
+  private readonly protectedSessionPaths = new Set<string>()
+
+  protectSessionPath(path: string): void {
+    this.protectedSessionPaths.add(path)
+  }
+
+  override async appendFile(
+    path: string,
+    content: string | Uint8Array,
+  ): Promise<Result<void, FileError>> {
+    const absolute = await this.absolutePath(path)
+    if (!absolute.ok) return absolute
+    if (this.protectedSessionPaths.has(absolute.value)) {
+      try {
+        await access(absolute.value)
+      } catch {
+        // Never let appendFile silently recreate a deleted active JSONL
+        // without its header (and with process-umask permissions).
+        return {
+          ok: false,
+          error: new FileError('not_found', 'active pi session file was removed', absolute.value),
+        }
+      }
+    }
+    const result = await super.appendFile(path, content)
+    if (result.ok && this.protectedSessionPaths.has(absolute.value) && process.platform !== 'win32') {
+      try {
+        await chmod(absolute.value, 0o600)
+      } catch (err) {
+        return {
+          ok: false,
+          error: new FileError(
+            'permission_denied',
+            'failed to enforce private pi session permissions',
+            absolute.value,
+            err instanceof Error ? err : undefined,
+          ),
+        }
+      }
+    }
+    return result
+  }
+}
+
 interface NativeToolRun {
   name: string
   isError: boolean
@@ -152,6 +200,7 @@ interface NativeToolRun {
 }
 
 interface NativeToolResultEvent {
+  toolCallId?: string
   toolName?: string
   input?: unknown
   isError?: boolean
@@ -159,17 +208,21 @@ interface NativeToolResultEvent {
   details?: unknown
 }
 
-function previewToolResult(ev: NativeToolResultEvent): string | undefined {
+function fullToolResultText(ev: NativeToolResultEvent): string | undefined {
   const contentText = (ev.content ?? [])
     .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
     .map((c) => c.text)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (contentText) return contentText.slice(0, 180)
-  if (typeof ev.details === 'string' && ev.details.trim()) return ev.details.trim().replace(/\s+/g, ' ').slice(0, 180)
-  if (ev.details !== undefined) return safeJson(ev.details).replace(/\s+/g, ' ').slice(0, 180)
+  if (contentText) return contentText
+  if (typeof ev.details === 'string' && ev.details.trim()) return ev.details.trim().replace(/\s+/g, ' ')
+  if (ev.details !== undefined) return safeJson(ev.details).replace(/\s+/g, ' ')
   return undefined
+}
+
+function previewToolResult(ev: NativeToolResultEvent): string | undefined {
+  return fullToolResultText(ev)?.slice(0, 180)
 }
 
 function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableToolNames: readonly string[]): string {
@@ -442,7 +495,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
 
-    const env = new NodeExecutionEnv({ cwd: this.deps.sessionsRoot })
+    const env = new SecureNodeExecutionEnv({ cwd: this.deps.sessionsRoot })
     const repo = new JsonlSessionRepo({ fs: env, sessionsRoot: this.deps.sessionsRoot })
 
     // One JSONL file per agim session id. Reopen if it exists (pi owns the
@@ -490,6 +543,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         chmod(currentMeta.path, 0o600),
       ])
     }
+    env.protectSessionPath(currentMeta.path)
     if (opts?.signal?.aborted) {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
@@ -567,7 +621,28 @@ export class NativeAgentAdapter implements AgentAdapter {
     let stopReason: NativeStopReason | null = null
     let requestLoopStop = () => {}
     const recentSigs: string[] = []
+    const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
+    const recordGuardOutcome = (
+      toolName: string,
+      input: unknown,
+      isError: boolean,
+      preview: string,
+    ): boolean => {
+      if (!isError) {
+        recentSigs.length = 0
+        return false
+      }
+      const sig = failureSignature(toolName, input, preview)
+      recentSigs.push(sig)
+      if (recentSigs.length > 3) recentSigs.shift()
+      if (recentSigs.length === 3 && recentSigs.every((item) => item === sig)) {
+        stopReason = 'stuck_loop'
+        requestLoopStop()
+        return true
+      }
+      return false
+    }
     harness.on('before_provider_request', () => {
       // This hook runs before pi calls the transport, unlike turn_start. Throw
       // here so an over-budget iteration does not consume one extra request.
@@ -580,10 +655,30 @@ export class NativeAgentAdapter implements AgentAdapter {
       return undefined
     })
     const unsubscribeBudget = harness.subscribe((event) => {
+      if (event.type === 'turn_end' && event.message.role === 'assistant') {
+        const calls = (event.message.content ?? []).filter((item) => item.type === 'toolCall')
+        for (const result of event.toolResults) {
+          if (!result.isError || afterHookToolCallIds.has(result.toolCallId)) continue
+          const call = calls.find((item) => item.id === result.toolCallId)
+          const preview = (result.content ?? [])
+            .filter((item) => item.type === 'text')
+            .map((item) => item.text)
+            .join(' ')
+          recordGuardOutcome(
+            result.toolName ?? call?.name ?? 'unknown_tool',
+            call?.arguments ?? {},
+            true,
+            preview,
+          )
+        }
+        return
+      }
       if (event.type !== 'message_end' || event.message.role !== 'assistant') return
       if (event.message.usage) {
         sawUsage = true
         usageInput += event.message.usage.input
+          + event.message.usage.cacheRead
+          + event.message.usage.cacheWrite
         usageOutput += event.message.usage.output
         usageCost += event.message.usage.cost?.total ?? 0
       }
@@ -597,6 +692,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       declaredToolCalls += batchCalls
     })
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
+      if (ev.toolCallId) afterHookToolCallIds.add(ev.toolCallId)
       if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
         turnPlanMode = false
       }
@@ -606,22 +702,14 @@ export class NativeAgentAdapter implements AgentAdapter {
         preview: previewToolResult(ev),
       })
       if (toolRuns.length > 30) toolRuns.shift()
-      if (!ev.isError) {
-        recentSigs.length = 0
-        return undefined
-      }
       // Stuck-loop: same tool + key-order-stable args + normalized error class
       // failing 3× in a row. A success resets the window.
-      const sig = failureSignature(
+      if (recordGuardOutcome(
         ev.toolName ?? 'unknown_tool',
         ev.input,
-        previewToolResult(ev) ?? '',
-      )
-      recentSigs.push(sig)
-      if (recentSigs.length > 3) recentSigs.shift()
-      if (recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
-        stopReason = 'stuck_loop'
-        requestLoopStop()
+        ev.isError === true,
+        fullToolResultText(ev) ?? '',
+      )) {
         return { terminate: true }
       }
       return undefined
@@ -741,6 +829,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         tokensInput: usageInput,
         tokensOutput: usageOutput,
         costUsd: usageCost,
+        costKnown: binding.costKnown === true,
       })
     }
 

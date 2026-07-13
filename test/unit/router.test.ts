@@ -425,6 +425,7 @@ describe('routeMessage', () => {
       aliases: [],
       isAvailable: async () => true,
       sendPrompt: (_sessionId, _prompt, _history, opts) => (async function* () {
+        opts?.onUsage?.({ tokensInput: 10, tokensOutput: 2, costUsd: 0.01 })
         controller.abort()
         opts?.onOutcome?.({ status: 'aborted', providerFailure: false })
         yield 'partial text that must not persist'
@@ -450,6 +451,9 @@ describe('routeMessage', () => {
       abortCtx.threadId,
     )
     expect(stored?.messages).toEqual([])
+    expect(stored?.usage?.tokensInput).toBe(10)
+    expect(stored?.usage?.tokensOutput).toBe(2)
+    expect(stored?.usage?.costUsd).toBe(0.01)
     expect(abortCtx.agentOutcome?.status).toBe('aborted')
   })
 

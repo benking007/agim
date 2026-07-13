@@ -20,7 +20,7 @@ import {
   type LlmRole,
 } from '../../../core/llm/registry.js'
 import type { NativeModelBinding } from './index.js'
-import { lookupModelMeta } from '../../../core/llm/model-catalog.js'
+import { findCatalogModel } from '../../../core/llm/model-catalog.js'
 
 /** agim providerType → pi-ai stream api id. Unmapped types are unsupported
  *  by the pi engine (resolver returns null → adapter reports unavailable). */
@@ -37,7 +37,7 @@ const DEFAULT_BASE_URL: Record<string, string> = {
 export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | null {
   const api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
-  const catalogMeta = lookupModelMeta(b.providerType, b.model)
+  const catalogModel = findCatalogModel(b.providerType, b.model)
   const model = {
     id: b.model,
     name: b.model,
@@ -46,12 +46,13 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     baseUrl: b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1',
     reasoning: false,
     input: ['text'] as ('text' | 'image')[],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: catalogMeta?.contextWindow ?? 128000,
-    maxTokens: b.maxTokens ?? catalogMeta?.maxTokens ?? 8192,
+    cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: catalogModel?.contextWindow ?? 128000,
+    maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? 8192,
   } as Model<string>
   return {
     model,
+    costKnown: catalogModel !== null,
     getApiKeyAndHeaders: async () => ({ apiKey: b.apiKey ?? '', headers: b.extraHeaders ?? {} }),
   }
 }

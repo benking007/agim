@@ -620,6 +620,7 @@ export async function callAgentWithHistory(
   let usageAcc = 0
   let tokensInputAcc = 0
   let tokensOutputAcc = 0
+  let unknownCost = false
   let adapterOutcome: AgentTurnOutcome | undefined
   const onAgentSessionId = (id: string): void => {
     // Persist the adapter-reported id on first sighting so the next turn can
@@ -653,8 +654,14 @@ export async function callAgentWithHistory(
     }
     // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
   }
-  const onUsage = (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }): void => {
+  const onUsage = (delta: {
+    costUsd?: number
+    costKnown?: boolean
+    tokensInput?: number
+    tokensOutput?: number
+  }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
+    if (delta.costKnown === false) unknownCost = true
     if (typeof delta.tokensInput === 'number' && Number.isFinite(delta.tokensInput)) tokensInputAcc += delta.tokensInput
     if (typeof delta.tokensOutput === 'number' && Number.isFinite(delta.tokensOutput)) tokensOutputAcc += delta.tokensOutput
   }
@@ -870,14 +877,16 @@ export async function callAgentWithHistory(
         circuitBreaker.recordNeutral(agent.name)
       }
 
-      if (!aborted) {
+      const hasMeasuredUsage = cost > 0 || tokensInputAcc > 0 || tokensOutputAcc > 0
+      if (!aborted || hasMeasuredUsage) {
         // Roll up into the session-level usage so /stats reflects reality.
         await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,
+          costKnown: !unknownCost,
           tokensInput: tokensInputAcc,
           tokensOutput: tokensOutputAcc,
           promptChars: prompt.length,
-          responseChars: fullResponse.length,
+          responseChars: aborted ? 0 : fullResponse.length,
           durationMs,
         })
       }

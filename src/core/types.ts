@@ -168,6 +168,7 @@ export interface SessionUsage {
   costUsd: number
   tokensInput?: number
   tokensOutput?: number
+  unknownCostTurns?: number
   promptChars: number
   responseChars: number
   durationMsTotal: number
@@ -424,7 +425,12 @@ export interface AgentSendOpts {
   /** Optional callback for adapters that surface usage data inline (cost +
    *  tokens). opencode's `step_finish` event carries this; cli accumulates
    *  the deltas to feed `recordUsage` so /stats reflects opencode cost. */
-  onUsage?: (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }) => void
+  onUsage?: (delta: {
+    costUsd?: number
+    costKnown?: boolean
+    tokensInput?: number
+    tokensOutput?: number
+  }) => void
   /** Structured terminal state. Adapters that report friendly error text must
    *  still call this so routers/jobs do not mistake that text for success. */
   onOutcome?: (outcome: AgentTurnOutcome) => void

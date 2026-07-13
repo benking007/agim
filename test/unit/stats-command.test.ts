@@ -40,7 +40,7 @@ describe('/stats', () => {
       promptChars: 100, responseChars: 200, durationMs: 1500,
     })
     await sessionManager.recordUsage(ctx.platform, ctx.channelId, ctx.threadId, {
-      costUsd: 0.0077, tokensInput: 5, tokensOutput: 7,
+      costUsd: 0.0077, costKnown: false, tokensInput: 5, tokensOutput: 7,
       promptChars: 50, responseChars: 75, durationMs: 800,
     })
 
@@ -48,6 +48,7 @@ describe('/stats', () => {
     // turns=2, cost = 0.02
     expect(out).toContain('轮次**: 2')
     expect(out).toContain('$0.0200')
+    expect(out).toContain('1 轮价格未知')
     expect(out).toContain('Token 用量')
     expect(out).toMatch(/Token 用量[\s\S]*输入: 15/)
     expect(out).toMatch(/Token 用量[\s\S]*输出: 27/)

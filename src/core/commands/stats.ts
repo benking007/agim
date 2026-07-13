@@ -52,6 +52,10 @@ export async function handleStatsCommand(_args: string, ctx: RouteContext): Prom
       : `${(ago / 3600_000).toFixed(1)} 小时前`
 
   const costCNY = usage.costUsd * fxRate()
+  const unknownCostTurns = usage.unknownCostTurns ?? 0
+  const costLine = unknownCostTurns > 0
+    ? `$${usage.costUsd.toFixed(4)} 已知部分（另有 ${unknownCostTurns} 轮价格未知）`
+    : `$${usage.costUsd.toFixed(4)} (≈ ¥${costCNY.toFixed(2)})`
   const avgDuration = usage.turns > 0 ? usage.durationMsTotal / usage.turns : 0
   const tokenTotal = (usage.tokensInput ?? 0) + (usage.tokensOutput ?? 0)
   const tokenBlock = tokenTotal > 0
@@ -60,7 +64,7 @@ export async function handleStatsCommand(_args: string, ctx: RouteContext): Prom
 
   return `📊 **当前会话统计**
 
-💰 **花费**: $${usage.costUsd.toFixed(4)} (≈ ¥${costCNY.toFixed(2)})
+💰 **花费**: ${costLine}
 🔢 **轮次**: ${usage.turns}
 ${tokenBlock}
 

@@ -685,6 +685,7 @@ class SessionManager {
     platform: string, channelId: string, threadId: string,
     delta: {
       costUsd: number
+      costKnown?: boolean
       tokensInput?: number
       tokensOutput?: number
       promptChars: number
@@ -702,6 +703,7 @@ class SessionManager {
           costUsd: 0,
           tokensInput: 0,
           tokensOutput: 0,
+          unknownCostTurns: 0,
           promptChars: 0,
           responseChars: 0,
           durationMsTotal: 0,
@@ -714,6 +716,9 @@ class SessionManager {
         + (Number.isFinite(delta.tokensInput) ? (delta.tokensInput ?? 0) : 0)
       session.usage.tokensOutput = (session.usage.tokensOutput ?? 0)
         + (Number.isFinite(delta.tokensOutput) ? (delta.tokensOutput ?? 0) : 0)
+      if (delta.costKnown === false) {
+        session.usage.unknownCostTurns = (session.usage.unknownCostTurns ?? 0) + 1
+      }
       session.usage.promptChars += Number.isFinite(delta.promptChars) ? delta.promptChars : 0
       session.usage.responseChars += Number.isFinite(delta.responseChars) ? delta.responseChars : 0
       session.usage.durationMsTotal += Number.isFinite(delta.durationMs) ? delta.durationMs : 0

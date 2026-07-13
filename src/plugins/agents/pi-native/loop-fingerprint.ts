@@ -21,9 +21,9 @@ export function normalizeErrorFingerprint(text: string): string {
   return first
     .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, '<uuid>')
     .replace(/\b\d{4}-\d{2}-\d{2}t[\d:.+-]+z?\b/gi, '<timestamp>')
-    .replace(/\b\d{6,}\b/g, '<number>')
+    .replace(/\b(request(?:[_ -]?id)?|req(?:uest)?[_ -]?id|trace[_ -]?id)\s*[:=#]?\s*[a-z0-9-]{6,}\b/gi, '$1 <id>')
     .replace(/\s+/g, ' ')
-    .slice(0, 160)
+    .slice(0, 512)
 }
 
 export function failureSignature(toolName: string, input: unknown, resultPreview: string): string {

@@ -141,6 +141,45 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect((await repo.list()).some((item) => item.id === 'stale-meta')).toBe(true)
   })
 
+  it('does not recreate a deleted active JSONL as a headerless public file', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('delete_session', {}, { id: 'delete1' }), { stopReason: 'toolUse' }),
+    ])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-active-delete-'))
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const tool: ToolDef = {
+      name: 'delete_session',
+      description: 'test-only delete',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => {
+          const meta = (await repo.list()).find((item) => item.id === 'active-delete')
+          if (!meta) throw new Error('missing active-delete session')
+          unlinkSync(meta.path)
+          return { text: 'deleted', isError: false }
+        },
+      }),
+    })
+
+    const failed = await collect(adapter.sendPrompt('active-delete', 'delete it'))
+    expect(failed).toContain('Agim Agent 本轮出错')
+    expect((await repo.list()).some((item) => item.id === 'active-delete')).toBe(false)
+
+    reg.appendResponses([fauxAssistantMessage('recovered safely')])
+    expect(await collect(adapter.sendPrompt('active-delete', 'retry'))).toBe('recovered safely')
+    const recreated = (await repo.list()).find((item) => item.id === 'active-delete')
+    expect(recreated).toBeDefined()
+    if (recreated && process.platform !== 'win32') {
+      expect(statSync(recreated.path).mode & 0o777).toBe(0o600)
+    }
+  })
+
   it('honors opts.planMode by blocking a mutating tool', async () => {
     const reg = faux()
     reg.setResponses([
@@ -611,6 +650,35 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('最大迭代步数 2')
   })
 
+  it('stops repeated schema-invalid calls with the exact failure guard', async () => {
+    const reg = faux()
+    reg.setResponses(Array.from({ length: 8 }, (_v, i) =>
+      fauxAssistantMessage(fauxToolCall('needs_arg', {}, { id: `invalid${i}` }), { stopReason: 'toolUse' })))
+    const tool: ToolDef = {
+      name: 'needs_arg',
+      description: 'needs arg',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-invalid-stuck-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => ({ text: 'unexpected', isError: false }),
+      }),
+      maxIterations: 10,
+      maxToolCalls: 10,
+    })
+
+    const out = await collect(adapter.sendPrompt('invalid-stuck', 'repeat invalid'))
+    expect(reg.state.callCount).toBe(3)
+    expect(out).toContain('死循环')
+  })
+
   it('returns a readable recap when tools ran but final text is empty', async () => {
     const reg = faux()
     reg.setResponses([
@@ -711,6 +779,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         tools: [tool],
         dispatch: async () => ({ text: 'tool result', isError: false }),
       }),
+      streamOptions: { cacheRetention: 'short' },
     })
     await collect(adapter.sendPrompt('usage-all-turns', 'run', undefined, {
       onUsage: (usage) => { reported = usage },
@@ -725,7 +794,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         ? [entry.message.usage]
         : [])
     expect(usages).toHaveLength(2)
-    expect(reported?.tokensInput).toBe(usages.reduce((sum, usage) => sum + usage.input, 0))
+    expect(reported?.tokensInput).toBe(usages.reduce(
+      (sum, usage) => sum + usage.input + usage.cacheRead + usage.cacheWrite,
+      0,
+    ))
     expect(reported?.tokensOutput).toBe(usages.reduce((sum, usage) => sum + usage.output, 0))
   })
 

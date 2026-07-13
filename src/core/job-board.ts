@@ -784,7 +784,7 @@ export async function runJob(
   // A pending job may be cancelled while waiting for a concurrency slot.
   // Re-read after acquisition and never start a terminal/replaced row.
   const job = getJob(id)
-  if (!job || job.status !== 'pending') {
+  if (job?.status !== 'pending') {
     releaseSlot()
     return
   }

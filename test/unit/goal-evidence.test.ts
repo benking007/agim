@@ -20,6 +20,7 @@ const {
   completeGoalCas,
   finishGoalToolOperation,
   getGoalEvidenceReview,
+  hashWorkspaceScope,
   isDetachedGoalCommand,
   reconcileInterruptedGoalOperations,
 } = await import('../../src/core/goal-evidence.js')
@@ -435,9 +436,9 @@ describeSqlite('goal evidence ledger', () => {
     if (!db) throw new Error('goals db unavailable')
     db.prepare(`
       INSERT INTO goal_ledger (
-        op_hash, goal_id, goal_version, epoch, kind, state,
+        op_hash, goal_id, goal_version, epoch, kind, state, workspace_scope,
         trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid, owner_start
-      ) VALUES ('orphan-op', ?, ?, 0, 'mutation', 'started',
+      ) VALUES ('orphan-op', ?, ?, 0, 'mutation', 'started', '',
         'trace', 'call', 'native_write_file', 'input', 'dead-owner', ?, 'reused-pid-start')
     `).run(goal.id, goal.version, process.pid)
     __resetGoalEvidenceKeyForTesting()
@@ -447,6 +448,64 @@ describeSqlite('goal evidence ledger', () => {
     const state = db.prepare(`SELECT state FROM goal_ledger WHERE op_hash = 'orphan-op'`)
       .get() as { state: string }
     expect(state.state).toBe('unknown')
+  })
+
+  it('scopes mutation epoch bumps to the shared workspace', () => {
+    _truncateForTests()
+    const scopeA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const scopeB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const goalA = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'scope-a',
+      userId: 'u',
+      title: 'workspace A goal',
+      workspaceScope: scopeA,
+    })
+    const goalB = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'scope-b',
+      userId: 'u',
+      title: 'workspace B goal',
+      workspaceScope: scopeB,
+    })
+    if (!goalA || !goalB) throw new Error('goals unavailable')
+
+    const mutation = beginGoalToolOperation({
+      context: {
+        goalId: goalA.id,
+        goalVersion: goalA.version,
+        traceId: 'trace-a',
+        workspaceScope: scopeA,
+      },
+      toolCallId: 'write-a',
+      toolName: 'native_write_file',
+      args: { path: 'a.txt' },
+      kind: 'mutation',
+    })
+    expect(finishGoalToolOperation(mutation, { ok: true, output: 'wrote a' })).toBeNull()
+    expect(getGoalById(goalA.id)?.mutationEpoch).toBe(1)
+    expect(getGoalById(goalB.id)?.mutationEpoch).toBe(0)
+
+    const observation = beginGoalToolOperation({
+      context: {
+        goalId: goalB.id,
+        goalVersion: goalB.version,
+        traceId: 'trace-b',
+        workspaceScope: scopeB,
+      },
+      toolCallId: 'read-b',
+      toolName: 'native_read_file',
+      args: { path: 'b.txt' },
+      kind: 'observation',
+    })
+    const evidence = finishGoalToolOperation(observation, {
+      ok: true,
+      output: 'workspace B goal contents',
+    })
+    expect(evidence?.id).toMatch(/^ev1_/)
+    expect(evidence?.epoch).toBe(0)
   })
 })
 
@@ -461,5 +520,16 @@ describe('goal evidence classification', () => {
     expect(classifyGoalEvidence('mcp__external__read', {}, true)).toBe('mutation')
     expect(isDetachedGoalCommand({ command: 'nohup worker &' })).toBe(true)
     expect(isDetachedGoalCommand({ command: 'npm test' })).toBe(false)
+  })
+
+  it('hashes workspace scopes opaquely and treats empty cwd as unknown', () => {
+    expect(hashWorkspaceScope('')).toBe('')
+    expect(hashWorkspaceScope(undefined)).toBe('')
+    const a = hashWorkspaceScope('/tmp/ws-a')
+    const b = hashWorkspaceScope('/tmp/ws-b')
+    expect(a).toHaveLength(32)
+    expect(b).toHaveLength(32)
+    expect(a).not.toBe(b)
+    expect(a).toBe(hashWorkspaceScope('/tmp/ws-a'))
   })
 })

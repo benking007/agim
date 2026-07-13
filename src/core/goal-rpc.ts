@@ -23,13 +23,32 @@ import {
   type GoalRow,
 } from './goals.js'
 import { completeGoalCas, getGoalEvidenceReview } from './goal-evidence.js'
-import { getTodoForThread } from './llm/todo-dispatcher.js'
+import { evaluateTodoCompletionGate } from './llm/todo-dispatcher.js'
 import { runGoalCompletionCritic } from './llm/goal-critic.js'
 import type { CompletionCriticInput, CompletionCriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
 import { approvalBus } from './approval-bus.js'
 import { randomUUID } from 'node:crypto'
+
+/** How long complete_goal waits for the owner's explicit yes/no.
+ *  Independent of the default 60s tool wall clock — confirmation is a
+ *  human round-trip and must outlive AGIM_NATIVE_TOOL_TIMEOUT_MS. */
+export function resolveGoalConfirmationTimeoutMs(): number {
+  const raw = (process.env.AGIM_GOAL_CONFIRMATION_TIMEOUT_MS ?? '').trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return approvalBus.approvalTimeoutMs
+}
+
+/** Tool-bridge wall budget for mcp__agim__complete_goal: confirmation
+ *  timeout plus a small settle margin so the approval deny path can
+ *  return before the tool race aborts. */
+export function resolveCompleteGoalToolTimeoutMs(): number {
+  return resolveGoalConfirmationTimeoutMs() + 60_000
+}
 
 function emitGoalEvent(
   phase: 'created' | 'status' | 'progress',
@@ -67,6 +86,8 @@ export interface GoalRpcCtx {
    *  so we can tell native-set goals from sidecar-set ones. */
   callerAgent?: string
   traceId?: string
+  /** Optional workspace scope hash (cwd) stamped onto new goals. */
+  workspaceScope?: string
   /** Tests can bypass the external semantic model while exercising CAS. */
   skipSemanticReview?: boolean
   /** Test seam for deterministic semantic verdicts. Never populated from RPC payloads. */
@@ -143,6 +164,7 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
     body: summary,
     replaceActive: force,
     evidenceRequired: ctx.callerAgent === 'native',
+    workspaceScope: ctx.workspaceScope,
   })
   if (!row) {
     return { ok: false, error: 'failed to register goal (db unavailable or empty title)' }
@@ -221,6 +243,7 @@ async function confirmGoalCompletion(
         recap: input.recap,
       },
       requiresExplicitDecision: true,
+      timeoutMs: resolveGoalConfirmationTimeoutMs(),
       ctx: {
         platform: ctx.platform,
         channelId: ctx.channelId,
@@ -269,14 +292,10 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
     ? p.evidenceIds.filter((value): value is string => typeof value === 'string').slice(0, 16)
     : []
   if (status === 'completed' && ctx.callerAgent === 'native') {
-    const todo = getTodoForThread(`${ctx.platform}:${ctx.channelId}:${ctx.threadId}`)
-    const incomplete = todo?.filter((item) => item.status !== 'completed') ?? []
-    if (incomplete.length > 0) {
-      return {
-        ok: false,
-        error: `TODO_INCOMPLETE: ${incomplete.length} checklist item(s) are not completed`,
-      }
-    }
+    const todoGate = evaluateTodoCompletionGate(
+      `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
+    )
+    if (!todoGate.ok) return todoGate
   }
   const tokenGoalState = getGoalByIdState(goalId)
   if (!tokenGoalState.available) {

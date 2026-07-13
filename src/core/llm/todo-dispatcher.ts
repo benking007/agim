@@ -14,11 +14,15 @@
 // Tool surface (intentionally tiny):
 //   - native_todo_write(items)  — overwrites the per-thread todo list
 //
-// Storage: in-memory Map<threadKey, TodoItem[]>. Per-thread, no DB.
-// Todo lists are intentionally short-lived (collapse a turn or two
-// after the goal completes); losing them on restart is fine.
+// Storage: ~/.agim/todos.db (SQLite) with an in-memory fallback when the
+// native addon is unavailable (Bun tests). Persistence matters for
+// complete_goal: a restart must not turn "incomplete checklist" into
+// "no checklist".
 
+import { join } from 'node:path'
+import { AGIM_HOME } from '../agim-paths.js'
 import { logger as rootLogger } from '../logger.js'
+import { createSqliteHelper } from '../sqlite-helper.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 
@@ -31,26 +35,158 @@ export interface TodoItem {
   status: TodoStatus
 }
 
+/** Three-state read for completion gates and inspectors. */
+export type TodoSnapshot =
+  | { status: 'unavailable' }
+  | { status: 'absent' }
+  | { status: 'present'; items: TodoItem[] }
+
 const TODO_TOOL_NAMES = ['native_todo_write'] as const
 export function isTodoToolName(name: string): boolean {
   return (TODO_TOOL_NAMES as readonly string[]).includes(name)
 }
 
-/** Module-level per-thread store. Map keyed by composite thread_key. */
-const TODOS = new Map<string, TodoItem[]>()
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS native_todos (
+  thread_key TEXT PRIMARY KEY,
+  items_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
+const DB_PATH_FROM_ENV = process.env.AGIM_TODO_DB
+const dbPath = DB_PATH_FROM_ENV && DB_PATH_FROM_ENV.length > 0
+  ? DB_PATH_FROM_ENV
+  : join(AGIM_HOME, 'todos.db')
+
+const helper = createSqliteHelper({
+  file: dbPath,
+  schema: SCHEMA,
+  logger: rootLogger,
+  component: 'todo-db',
+})
+
+/** In-memory fallback used when better-sqlite3 cannot load (Bun), and as a
+ *  write-through cache on the SQLite path for cheap reads inside a process. */
+const MEMORY = new Map<string, TodoItem[]>()
+
+function cloneItems(items: TodoItem[]): TodoItem[] {
+  return items.map((it) => ({ ...it }))
+}
+
+function parseItemsJson(raw: string): TodoItem[] | null {
+  try {
+    const parsed = JSON.parse(raw || '[]') as unknown
+    if (!Array.isArray(parsed)) return null
+    const items: TodoItem[] = []
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== 'object') return null
+      const content = typeof (entry as { content?: unknown }).content === 'string'
+        ? (entry as { content: string }).content
+        : ''
+      const status = (entry as { status?: unknown }).status
+      if (!content) return null
+      if (status !== 'pending' && status !== 'in_progress' && status !== 'completed') return null
+      items.push({ content, status })
+    }
+    return items
+  } catch {
+    return null
+  }
+}
+
+function dbAvailable(): boolean {
+  return helper.get() !== null
+}
 
 /** Read API for callers that want to render the list outside the
- *  dispatcher (web admin, recap composer, etc.). */
+ *  dispatcher (web admin, recap composer, etc.).
+ *  Returns null when the thread has never written a checklist. */
 export function getTodoForThread(threadKey: string): TodoItem[] | null {
-  if (!threadKey) return null
-  const cur = TODOS.get(threadKey)
-  return cur ? cur.map((it) => ({ ...it })) : null
+  const snap = getTodoSnapshot(threadKey)
+  if (snap.status !== 'present') return null
+  return cloneItems(snap.items)
+}
+
+/** Prefer this for completion gates — distinguishes unavailable / absent /
+ *  present (including an explicit empty list). */
+export function getTodoSnapshot(threadKey: string): TodoSnapshot {
+  if (!threadKey) return { status: 'absent' }
+  if (dbAvailable()) {
+    return helper.safe((d): TodoSnapshot => {
+      const row = d
+        .prepare('SELECT items_json FROM native_todos WHERE thread_key = ?')
+        .get(threadKey) as { items_json?: string } | undefined
+      if (!row) {
+        MEMORY.delete(threadKey)
+        return { status: 'absent' }
+      }
+      const items = parseItemsJson(row.items_json ?? '[]')
+      if (!items) return { status: 'unavailable' }
+      MEMORY.set(threadKey, cloneItems(items))
+      return { status: 'present', items: cloneItems(items) }
+    }, { status: 'unavailable' })
+  }
+  // SQLite unavailable: memory-only process. Treat as present/absent from
+  // MEMORY; do NOT claim "unavailable" here — Bun unit tests exercise this
+  // path and still need a working checklist. Completion fail-closed on
+  // unavailable only when the DB was expected (Node) but is broken.
+  if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
+    return { status: 'unavailable' }
+  }
+  const cur = MEMORY.get(threadKey)
+  return cur ? { status: 'present', items: cloneItems(cur) } : { status: 'absent' }
+}
+
+/** Gate used by complete_goal for native agents. */
+export function evaluateTodoCompletionGate(threadKey: string):
+  | { ok: true }
+  | { ok: false; error: string } {
+  const snap = getTodoSnapshot(threadKey)
+  if (snap.status === 'unavailable') {
+    return {
+      ok: false,
+      error: 'TODO_UNAVAILABLE: checklist store unavailable; completion blocked',
+    }
+  }
+  if (snap.status === 'absent') return { ok: true }
+  const incomplete = snap.items.filter((item) => item.status !== 'completed')
+  if (incomplete.length > 0) {
+    return {
+      ok: false,
+      error: `TODO_INCOMPLETE: ${incomplete.length} checklist item(s) are not completed`,
+    }
+  }
+  return { ok: true }
 }
 
 /** Clear a thread's todo list (e.g. on /new conversation). */
 export function clearTodoForThread(threadKey: string): void {
   if (!threadKey) return
-  TODOS.delete(threadKey)
+  MEMORY.delete(threadKey)
+  if (!dbAvailable()) return
+  helper.safe((d) => {
+    d.prepare('DELETE FROM native_todos WHERE thread_key = ?').run(threadKey)
+    return true
+  }, false)
+}
+
+function persistTodo(threadKey: string, items: TodoItem[]): boolean {
+  MEMORY.set(threadKey, cloneItems(items))
+  if (!dbAvailable()) {
+    // Bun / broken-addon path: memory is the only store.
+    return process.env.AGIM_TEST_REQUIRE_SQLITE !== '1'
+  }
+  return helper.safe((d) => {
+    d.prepare(
+      `INSERT INTO native_todos (thread_key, items_json, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(thread_key) DO UPDATE SET
+         items_json = excluded.items_json,
+         updated_at = datetime('now')`,
+    ).run(threadKey, JSON.stringify(items))
+    return true
+  }, false)
 }
 
 /** Tool definitions to advertise to the LLM. */
@@ -150,7 +286,13 @@ function handleWrite(args: Record<string, unknown>, threadKey: string): Dispatch
     }
     normalized.push({ content, status: rawStatus })
   }
-  TODOS.set(threadKey, normalized)
+  if (!persistTodo(threadKey, normalized)) {
+    return {
+      text: 'todo store unavailable; checklist was not persisted',
+      isError: true,
+      source: 'todo',
+    }
+  }
   log.info({
     event: 'todo.write',
     threadKey,
@@ -176,4 +318,20 @@ function renderMarkdownChecklist(items: TodoItem[]): string {
     lines.push(`${i + 1}. ${icon} ${it.content}`)
   }
   return lines.join('\n')
+}
+
+/** Test-only: drop memory + close the handle so a temp DB can be unlinked
+ *  or reopened after a simulated restart. */
+export function closeTodoDbForTesting(): void {
+  MEMORY.clear()
+  helper.close()
+}
+
+/** Test-only: wipe rows without closing the handle. */
+export function _truncateTodosForTests(): void {
+  MEMORY.clear()
+  helper.safe((d) => {
+    d.exec('DELETE FROM native_todos')
+    return true
+  }, false)
 }

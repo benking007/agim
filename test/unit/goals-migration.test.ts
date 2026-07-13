@@ -42,6 +42,7 @@ describeSqlite('goals schema migration', () => {
     expect(row?.version).toBe(1)
     expect(row?.mutationEpoch).toBe(0)
     expect(row?.evidenceRequired).toBe(false)
+    expect(row?.workspaceScope).toBe('')
     goals.closeGoalsDbForTesting()
   })
 })

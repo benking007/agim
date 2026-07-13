@@ -42,6 +42,9 @@ import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
+import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
+import { hashWorkspaceScope } from '../goal-evidence.js'
+import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
 import {
   createReminder,
   listReminders,
@@ -390,6 +393,9 @@ export function getAgimTools(): ToolDef[] {
         required: ['goalId', 'goalVersion', 'recap'],
         additionalProperties: false,
       },
+      // Human confirmation can take minutes; do not inherit the 60s tool
+      // default. Budget = confirmation timeout + settle margin.
+      timeoutMs: resolveCompleteGoalToolTimeoutMs(),
     },
     {
       name: 'mcp__agim__create_reminder',
@@ -769,6 +775,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             callerAgent: ctx.callerAgent,
             traceId: toolCtx?.traceId,
             signal,
+            workspaceScope: hashWorkspaceScope(
+              resolveAgentCwd('native', {
+                platform: ctx.platform,
+                channelId: ctx.channelId,
+                threadId: ctx.threadId,
+              }) || defaultAgentCwd('native'),
+            ),
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
           return ok(safeJson(r.result))

@@ -57,6 +57,9 @@ export interface GoalRow {
   /** Increments after every successful mutating tool operation. */
   mutationEpoch: number
   evidenceRequired: boolean
+  /** Opaque hash of the agent cwd/workspace this goal observes. Empty
+   *  means unknown → mutations bump epochs conservatively. */
+  workspaceScope: string
   platform: string
   channelId: string
   threadId: string
@@ -77,6 +80,7 @@ interface GoalRowRaw {
   version: number
   mutation_epoch: number
   evidence_required: number
+  workspace_scope: string
   platform: string
   channel_id: string
   thread_id: string
@@ -100,6 +104,7 @@ const helper = createSqliteHelper({
       version       INTEGER NOT NULL DEFAULT 1,
       mutation_epoch INTEGER NOT NULL DEFAULT 0,
       evidence_required INTEGER NOT NULL DEFAULT 0,
+      workspace_scope TEXT NOT NULL DEFAULT '',
       platform      TEXT    NOT NULL,
       channel_id    TEXT    NOT NULL,
       thread_id     TEXT    NOT NULL,
@@ -115,6 +120,7 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_goals_thread   ON goals(platform, channel_id, thread_id, status);
     CREATE INDEX IF NOT EXISTS idx_goals_status   ON goals(status, updated_at);
     CREATE INDEX IF NOT EXISTS idx_goals_owner    ON goals(platform, user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_goals_scope    ON goals(workspace_scope, status);
     CREATE TABLE IF NOT EXISTS goal_ledger (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
       op_hash           TEXT NOT NULL,
@@ -124,6 +130,7 @@ const helper = createSqliteHelper({
       epoch             INTEGER NOT NULL,
       kind              TEXT NOT NULL,
       state             TEXT NOT NULL,
+      workspace_scope   TEXT NOT NULL DEFAULT '',
       trace_hash        TEXT NOT NULL DEFAULT '',
       tool_call_hash    TEXT NOT NULL DEFAULT '',
       tool_name         TEXT NOT NULL,
@@ -140,6 +147,8 @@ const helper = createSqliteHelper({
     );
     CREATE INDEX IF NOT EXISTS idx_goal_ledger_goal
       ON goal_ledger(goal_id, goal_version, epoch, state);
+    CREATE INDEX IF NOT EXISTS idx_goal_ledger_scope
+      ON goal_ledger(workspace_scope, kind, state);
   `,
   init: (d) => {
     const columns = d.pragma('table_info(goals)') as Array<{ name: string }>
@@ -151,6 +160,9 @@ const helper = createSqliteHelper({
     }
     if (!columns.some((column) => column.name === 'evidence_required')) {
       d.exec('ALTER TABLE goals ADD COLUMN evidence_required INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!columns.some((column) => column.name === 'workspace_scope')) {
+      d.exec("ALTER TABLE goals ADD COLUMN workspace_scope TEXT NOT NULL DEFAULT ''")
     }
     const ledgerColumns = d.pragma('table_info(goal_ledger)') as Array<{ name: string }>
     if (!ledgerColumns.some((column) => column.name === 'owner_id')) {
@@ -164,6 +176,9 @@ const helper = createSqliteHelper({
     }
     if (!ledgerColumns.some((column) => column.name === 'sealed_preview')) {
       d.exec("ALTER TABLE goal_ledger ADD COLUMN sealed_preview TEXT NOT NULL DEFAULT ''")
+    }
+    if (!ledgerColumns.some((column) => column.name === 'workspace_scope')) {
+      d.exec("ALTER TABLE goal_ledger ADD COLUMN workspace_scope TEXT NOT NULL DEFAULT ''")
     }
     const recover = d.transaction(() => {
       // Keep only the newest active row in legacy databases before adding the
@@ -221,6 +236,7 @@ function rowFromRaw(r: GoalRowRaw): GoalRow {
     version: r.version ?? 1,
     mutationEpoch: r.mutation_epoch ?? 0,
     evidenceRequired: r.evidence_required === 1,
+    workspaceScope: r.workspace_scope ?? '',
     platform: r.platform,
     channelId: r.channel_id,
     threadId: r.thread_id,
@@ -254,11 +270,16 @@ export function setActiveGoal(input: {
    * historical replace behavior by omitting it. */
   replaceActive?: boolean
   evidenceRequired?: boolean
+  /** Opaque cwd/workspace hash for scoped mutation epochs. */
+  workspaceScope?: string
 }): GoalRow | null {
   const d = getDb()
   if (!d) return null
   const title = input.title.trim().slice(0, MAX_TITLE_CHARS)
   const body = (input.body ?? '').trim().slice(0, MAX_BODY_CHARS)
+  const workspaceScope = typeof input.workspaceScope === 'string'
+    ? input.workspaceScope.slice(0, 128)
+    : ''
   if (!title) return null
   try {
     const tx = d.transaction((): number => {
@@ -275,12 +296,13 @@ export function setActiveGoal(input: {
       const info = d.prepare(`
         INSERT INTO goals (
           platform, channel_id, thread_id, user_id, title, body,
-          status, progress_log, version, mutation_epoch, evidence_required
+          status, progress_log, version, mutation_epoch, evidence_required, workspace_scope
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', 1, 0, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', 1, 0, ?, ?)
       `).run(
         input.platform, input.channelId, input.threadId,
         input.userId, title, body, input.evidenceRequired === false ? 0 : 1,
+        workspaceScope,
       )
       return Number(info.lastInsertRowid)
     })

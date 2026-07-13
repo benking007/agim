@@ -1424,6 +1424,9 @@ export class ApprovalBus {
       return
     }
     const { handleGoalOp } = await import('./goal-rpc.js')
+    const { hashWorkspaceScope } = await import('./goal-evidence.js')
+    const { defaultAgentCwd, resolveAgentCwd } = await import('./agent-cwd.js')
+    const agentName = ctx.callerAgent || 'native'
     const result = await handleGoalOp(op, payload, {
       platform: ctx.platform,
       channelId: ctx.channelId,
@@ -1431,6 +1434,13 @@ export class ApprovalBus {
       userId: ctx.userId,
       callerAgent: ctx.callerAgent,
       traceId: ctx.traceId,
+      workspaceScope: hashWorkspaceScope(
+        resolveAgentCwd(agentName, {
+          platform: ctx.platform,
+          channelId: ctx.channelId,
+          threadId: ctx.threadId,
+        }) || defaultAgentCwd(agentName),
+      ),
     })
     this.sendGoalResult(socket, reqId, result)
   }
@@ -1520,6 +1530,8 @@ export class ApprovalBus {
     toolUseId?: string
     /** Require a one-time human decision; bypasses every automatic allow path. */
     requiresExplicitDecision?: boolean
+    /** Override the pending timer (e.g. goal confirmation uses its own budget). */
+    timeoutMs?: number
     ctx: RunContext
     dispatch: (decision: Decision) => void
   }): Promise<void> {
@@ -1546,6 +1558,7 @@ export class ApprovalBus {
       input: input.input,
       ctx: input.ctx,
       requiresExplicitDecision: input.requiresExplicitDecision,
+      timeoutMs: input.timeoutMs,
       transport: { dispatch: input.dispatch },
     })
   }
@@ -1563,6 +1576,8 @@ export class ApprovalBus {
     input: Record<string, unknown>
     ctx: RunContext
     requiresExplicitDecision?: boolean
+    /** Optional override for the pending resolution timer. */
+    timeoutMs?: number
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.toolName, args.input)
@@ -1688,7 +1703,9 @@ export class ApprovalBus {
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
     const isAutoAllow = !args.requiresExplicitDecision
       && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
-    const timeoutMs = isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs
+    const timeoutMs = typeof args.timeoutMs === 'number' && args.timeoutMs > 0
+      ? args.timeoutMs
+      : (isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs)
 
     const transport = args.transport
     const pending: PendingApproval = {

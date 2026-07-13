@@ -16,6 +16,8 @@ export interface GoalEvidenceContext {
   goalId: number
   goalVersion: number
   traceId?: string
+  /** Opaque hash of the agent cwd/workspace. Empty = unknown scope. */
+  workspaceScope?: string
 }
 
 export interface GoalToolOperation {
@@ -24,6 +26,7 @@ export interface GoalToolOperation {
   goalVersion: number
   epoch: number
   kind: Exclude<GoalEvidenceKind, 'control'>
+  workspaceScope: string
   /** In-memory only; never persisted in plaintext. */
   semanticInput: string
 }
@@ -86,6 +89,59 @@ function traceRoot(traceId?: string): string {
   return (traceId ?? '').split('/a2a-')[0] ?? ''
 }
 
+/** Hash a cwd/workspace path into an opaque scope token. Empty input →
+ *  empty scope (conservative global bumps). */
+export function hashWorkspaceScope(cwd: string | undefined | null): string {
+  const normalized = typeof cwd === 'string' ? cwd.trim() : ''
+  if (!normalized) return ''
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 32)
+}
+
+/** Bump mutation epochs for active goals that share `scope`.
+ *  Empty scope (unknown) bumps every active goal — fail closed. */
+function bumpMutationEpochsForScope(
+  d: NonNullable<ReturnType<typeof getGoalsDatabaseForLedger>>,
+  scope: string,
+): void {
+  if (!scope) {
+    d.prepare(`
+      UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
+      WHERE status = 'active'
+    `).run()
+    return
+  }
+  d.prepare(`
+    UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
+    WHERE status = 'active'
+      AND (workspace_scope = '' OR workspace_scope = ?)
+  `).run(scope)
+}
+
+/** True when an in-flight mutation in `rowScope` can affect observations
+ *  in `goalScope`. Empty either side means "could touch anything". */
+function scopesOverlap(goalScope: string, rowScope: string): boolean {
+  if (!goalScope || !rowScope) return true
+  return goalScope === rowScope
+}
+
+function hasInflightMutation(
+  d: NonNullable<ReturnType<typeof getGoalsDatabaseForLedger>>,
+  goalScope: string,
+): boolean {
+  if (!goalScope) {
+    return !!(d.prepare(`
+      SELECT 1 FROM goal_ledger
+      WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+      LIMIT 1
+    `).get())
+  }
+  const rows = d.prepare(`
+    SELECT workspace_scope FROM goal_ledger
+    WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+  `).all() as Array<{ workspace_scope: string }>
+  return rows.some((row) => scopesOverlap(goalScope, row.workspace_scope ?? ''))
+}
+
 function isPidAlive(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false
   try {
@@ -114,10 +170,22 @@ export function reconcileInterruptedGoalOperations(): number {
   })
   if (stale.length === 0) return 0
   const tx = d.transaction(() => {
-    d.prepare(`
-      UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
-      WHERE status = 'active'
-    `).run()
+    const scopeRows = d.prepare(`
+      SELECT DISTINCT workspace_scope FROM goal_ledger
+      WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+        AND owner_id = ? AND owner_pid = ? AND owner_start = ?
+    `)
+    const scopes = new Set<string>()
+    for (const owner of stale) {
+      const rows = scopeRows.all(owner.owner_id, owner.owner_pid, owner.owner_start) as
+        Array<{ workspace_scope: string }>
+      for (const row of rows) scopes.add(row.workspace_scope ?? '')
+    }
+    if (scopes.has('')) {
+      bumpMutationEpochsForScope(d, '')
+    } else {
+      for (const scope of scopes) bumpMutationEpochsForScope(d, scope)
+    }
     const update = d.prepare(`
       UPDATE goal_ledger SET state = 'unknown', finished_at = datetime('now')
       WHERE owner_id = ? AND owner_pid = ? AND owner_start = ?
@@ -254,12 +322,13 @@ export function beginGoalToolOperation(input: {
   const inputHash = hmac(stableJson(input.args))
   const tx = d.transaction((): GoalToolOperation | null => {
     const goal = d.prepare(`
-      SELECT id, version, mutation_epoch FROM goals
+      SELECT id, version, mutation_epoch, workspace_scope FROM goals
       WHERE id = ? AND version = ? AND status = 'active'
     `).get(input.context.goalId, input.context.goalVersion) as
-      | { id: number; version: number; mutation_epoch: number }
+      | { id: number; version: number; mutation_epoch: number; workspace_scope: string }
       | undefined
     if (!goal) return null
+    const workspaceScope = (input.context.workspaceScope || goal.workspace_scope || '').slice(0, 128)
     const existing = d.prepare(`
       SELECT id, goal_id, goal_version, epoch, kind, state FROM goal_ledger
       WHERE op_hash = ? AND kind = ?
@@ -278,15 +347,16 @@ export function beginGoalToolOperation(input: {
     }
     const info = d.prepare(`
       INSERT INTO goal_ledger (
-        op_hash, goal_id, goal_version, epoch, kind, state,
+        op_hash, goal_id, goal_version, epoch, kind, state, workspace_scope,
         trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid, owner_start
-      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       opHash,
       goal.id,
       goal.version,
       goal.mutation_epoch,
       input.kind,
+      workspaceScope,
       traceHash,
       toolCallHash,
       input.toolName,
@@ -301,6 +371,7 @@ export function beginGoalToolOperation(input: {
       goalVersion: goal.version,
       epoch: goal.mutation_epoch,
       kind: input.kind as GoalToolOperation['kind'],
+      workspaceScope,
       semanticInput: stableJson(input.args).slice(0, 2000),
     }
   })
@@ -334,13 +405,9 @@ export function finishGoalToolOperation(
     const isMutation = operation.kind === 'mutation' || operation.kind === 'mutation_verification'
     if (!result.ok) {
       if (result.uncertain && isMutation) {
-        // Scope is conservatively global until per-workspace mutation scopes
-        // land: a late/unknown write must invalidate every active goal that
-        // could observe the same filesystem.
-        d.prepare(`
-          UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
-          WHERE status = 'active'
-        `).run()
+        // Unknown/timeout writes invalidate every active goal that shares
+        // this workspace (or all goals when scope is unknown).
+        bumpMutationEpochsForScope(d, operation.workspaceScope)
       }
       d.prepare(`
         UPDATE goal_ledger SET state = ?, output_hash = ?,
@@ -355,15 +422,19 @@ export function finishGoalToolOperation(
       return null
     }
     if (isMutation) {
-      d.prepare(`
-        UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
-        WHERE status = 'active'
-      `).run()
+      bumpMutationEpochsForScope(d, operation.workspaceScope)
     }
     const goal = d.prepare(`
-      SELECT version, mutation_epoch, status, title, body FROM goals WHERE id = ?
+      SELECT version, mutation_epoch, status, title, body, workspace_scope FROM goals WHERE id = ?
     `).get(operation.goalId) as
-      | { version: number; mutation_epoch: number; status: string; title: string; body: string }
+      | {
+          version: number
+          mutation_epoch: number
+          status: string
+          title: string
+          body: string
+          workspace_scope: string
+        }
       | undefined
     if (goal?.status !== 'active' || goal.version !== operation.goalVersion) {
       d.prepare(`
@@ -379,12 +450,7 @@ export function finishGoalToolOperation(
     }
     const epoch = goal.mutation_epoch
     if (!isMutation) {
-      const inflight = d.prepare(`
-        SELECT 1 FROM goal_ledger
-        WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
-        LIMIT 1
-      `).get()
-      if (inflight || epoch !== operation.epoch) {
+      if (hasInflightMutation(d, goal.workspace_scope || operation.workspaceScope) || epoch !== operation.epoch) {
         d.prepare(`
           UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
             metadata_json = ?, sealed_preview = ?, finished_at = datetime('now') WHERE id = ?
@@ -513,7 +579,7 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
   reconcileInterruptedGoalOperations()
   const tx = d.transaction((): CompleteGoalCasResult => {
     const goal = d.prepare(`
-      SELECT id, title, status, version, mutation_epoch, evidence_required, progress_log
+      SELECT id, title, status, version, mutation_epoch, evidence_required, progress_log, workspace_scope
       FROM goals WHERE id = ? AND platform = ? AND channel_id = ? AND thread_id = ? AND user_id = ?
     `).get(input.goalId, input.platform, input.channelId, input.threadId, input.userId) as
       | {
@@ -524,6 +590,7 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
           mutation_epoch: number
           evidence_required: number
           progress_log: string
+          workspace_scope: string
         }
       | undefined
     if (!goal) return { ok: false, error: 'STALE_GOAL: goal token is not valid for this thread' }
@@ -555,12 +622,9 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
     if (goal.status !== 'active' || goal.version !== input.goalVersion) {
       return { ok: false, error: 'STALE_GOAL: goal version is no longer current; nothing changed' }
     }
-    const inflight = d.prepare(`
-      SELECT 1 FROM goal_ledger
-      WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
-      LIMIT 1
-    `).get()
-    if (inflight) return { ok: false, error: 'GOAL_BUSY: a mutating operation is still in flight' }
+    if (hasInflightMutation(d, goal.workspace_scope ?? '')) {
+      return { ok: false, error: 'GOAL_BUSY: a mutating operation is still in flight' }
+    }
 
     if (input.status === 'completed' && goal.evidence_required === 1) {
       if (input.evidenceIds.length === 0) {

@@ -12,6 +12,7 @@ import {
   getTodoTools,
   isTodoToolName,
   getTodoForThread,
+  getTodoSnapshot,
   clearTodoForThread,
 } from '../../src/core/llm/todo-dispatcher.js'
 
@@ -77,6 +78,10 @@ describe('todo-dispatcher (v1.2.124)', () => {
       }, SIG)
       const list = getTodoForThread('thread-a')
       expect(list).toEqual([{ content: 'Step 1', status: 'completed' }])
+      expect(getTodoSnapshot('thread-a')).toEqual({
+        status: 'present',
+        items: [{ content: 'Step 1', status: 'completed' }],
+      })
     })
 
     it('empty items array clears the list and reports it', async () => {

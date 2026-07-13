@@ -38,6 +38,8 @@ import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
+import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
+import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature } from './loop-fingerprint.js'
@@ -573,9 +575,14 @@ export class NativeAgentAdapter implements AgentAdapter {
               const state = getActiveGoalState(goalScope.platform, goalScope.channelId, goalScope.threadId)
               if (!state.available) throw new Error('goal state unavailable')
               const active = state.goal
-              return active
-                ? { goalId: active.id, goalVersion: active.version, traceId: opts?.traceId }
-                : null
+              if (!active) return null
+              const cwd = resolveAgentCwd('native', opts ?? {}) || defaultAgentCwd('native')
+              return {
+                goalId: active.id,
+                goalVersion: active.version,
+                traceId: opts?.traceId,
+                workspaceScope: active.workspaceScope || hashWorkspaceScope(cwd),
+              }
             },
           } : {}),
         })

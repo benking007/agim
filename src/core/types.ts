@@ -427,10 +427,12 @@ export interface AgentSendOpts {
    *  the deltas to feed `recordUsage` so /stats reflects opencode cost. */
   onUsage?: (delta: {
     costUsd?: number
-    costKnown?: boolean
     tokensInput?: number
     tokensOutput?: number
   }) => void
+  /** Reports whether adapter cost is backed by known model metadata. Kept
+   *  separate from numeric usage for compatibility with existing callbacks. */
+  onCostMetadata?: (metadata: { known: boolean }) => void
   /** Structured terminal state. Adapters that report friendly error text must
    *  still call this so routers/jobs do not mistake that text for success. */
   onOutcome?: (outcome: AgentTurnOutcome) => void

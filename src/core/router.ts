@@ -656,14 +656,15 @@ export async function callAgentWithHistory(
   }
   const onUsage = (delta: {
     costUsd?: number
-    costKnown?: boolean
     tokensInput?: number
     tokensOutput?: number
   }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
-    if (delta.costKnown === false) unknownCost = true
     if (typeof delta.tokensInput === 'number' && Number.isFinite(delta.tokensInput)) tokensInputAcc += delta.tokensInput
     if (typeof delta.tokensOutput === 'number' && Number.isFinite(delta.tokensOutput)) tokensOutputAcc += delta.tokensOutput
+  }
+  const onCostMetadata = (metadata: { known: boolean }): void => {
+    if (!metadata.known) unknownCost = true
   }
   const onOutcome = (outcome: AgentTurnOutcome): void => {
     adapterOutcome = outcome
@@ -766,6 +767,7 @@ export async function callAgentWithHistory(
     agentSessionResume,
     onAgentSessionId,
     onUsage,
+    onCostMetadata,
     onOutcome,
     planMode: effectivePlanMode || undefined,
     // A2A-L1: forward the caller's tracking id + call depth so the

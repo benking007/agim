@@ -829,9 +829,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         tokensInput: usageInput,
         tokensOutput: usageOutput,
         costUsd: usageCost,
-        costKnown: binding.costKnown === true,
       })
     }
+    opts?.onCostMetadata?.({ known: binding.costKnown === true })
 
     // Defensive: pi always returns a content array, but guard against a
     // malformed/empty shape so a provider hiccup degrades to a friendly notice

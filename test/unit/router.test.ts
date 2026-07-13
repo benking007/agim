@@ -368,6 +368,37 @@ describe('routeMessage', () => {
     registry.registerAgent(mockAgent)
   })
 
+  it('passes only pre-turn history to a fresh agent call', async () => {
+    const name = `history-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    let seenHistory: string[] | undefined
+    const historyAgent: AgentAdapter = {
+      name,
+      aliases: [],
+      isAvailable: async () => true,
+      sendPrompt: (_sessionId, _prompt, history) => {
+        seenHistory = (history ?? []).map((m) => m.content)
+        return mockGenerator()
+      },
+    }
+    registry.registerAgent(historyAgent)
+    const threadId = `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const historyCtx = makeCtx({ threadId, userId: `user-${threadId}` })
+
+    const result = await routeMessage(
+      { type: 'agent', agent: name, prompt: 'current prompt' },
+      historyCtx,
+    )
+    for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
+
+    expect(seenHistory).toEqual([])
+    const stored = await sessionManager.getExistingSession(
+      historyCtx.platform,
+      historyCtx.channelId,
+      historyCtx.threadId,
+    )
+    expect(stored?.messages.map((m) => m.content)).toEqual(['current prompt', 'test response'])
+  })
+
   describe('command routing', () => {
     it('should return service-status message for /status', async () => {
       const result = await routeMessage({ type: 'service', action: 'status', args: '' }, ctx)

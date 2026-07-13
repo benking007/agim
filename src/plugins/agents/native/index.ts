@@ -207,7 +207,12 @@ function splitEnvList(raw: string | undefined): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
-const PLAN_MODE_DENY_TOOLS = ['native_write_file', 'native_exec'] as const
+/** Canonical local mutation tools blocked while Plan Mode is active.
+ * Exported so the pi-native hard gate and policy gate cannot drift apart. */
+export const PLAN_MODE_DENY_TOOLS: ReadonlySet<string> = new Set([
+  'native_write_file',
+  'native_exec',
+])
 
 export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const mode = (process.env.AGIM_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode

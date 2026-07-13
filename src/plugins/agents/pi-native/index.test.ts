@@ -5,9 +5,9 @@ import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, type Model, registerFauxProvider } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { type NativeModelBinding, NativeAgentAdapter } from './index.js'
@@ -46,6 +46,25 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(await collect(adapter.sendPrompt('s1', 'hi'))).toBe('hi from pi engine')
   })
 
+  it('stores pi session directories and JSONL files with private POSIX modes', async () => {
+    if (process.platform === 'win32') return
+    const reg = faux()
+    reg.setResponses([fauxAssistantMessage('private')])
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-mode-'))
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot,
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    await collect(adapter.sendPrompt('private-session', 'hi'))
+
+    const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+    const meta = (await repo.list()).find((m) => m.id === 'private-session')
+    expect(meta).toBeDefined()
+    if (!meta) throw new Error('missing private session metadata')
+    expect(statSync(dirname(meta.path)).mode & 0o777).toBe(0o700)
+    expect(statSync(meta.path).mode & 0o777).toBe(0o600)
+  })
+
   it('pi owns durable history: 2nd turn sees turn-1 with no history arg', async () => {
     const reg = faux()
     const userCounts: number[] = []
@@ -71,11 +90,19 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('honors opts.planMode by blocking a mutating tool', async () => {
     const reg = faux()
     reg.setResponses([
-      fauxAssistantMessage(fauxToolCall('native_write', { path: '/x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('native_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
       fauxAssistantMessage('blocked'),
     ])
     const sink: string[] = []
-    const tool: ToolDef = { name: 'native_write', description: 'write', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } }
+    const tool: ToolDef = {
+      name: 'native_write_file',
+      description: 'write',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, content: { type: 'string' } },
+        required: ['path', 'content'],
+      },
+    }
     const dispatch: ToolDispatcher = async (call) => {
       sink.push(String(call.arguments.path))
       return { text: 'wrote', isError: false }
@@ -88,6 +115,52 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const out = await collect(adapter.sendPrompt('s3', 'write', undefined, { planMode: true }))
     expect(sink).toEqual([])
     expect(out).toContain('blocked')
+  })
+
+  it('applies an approved plan exit within the same harness turn', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('native_exit_plan_mode', { plan: '- write /x' }, { id: 'p1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('native_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('implemented'),
+    ])
+    let planActive = true
+    const dispatched: string[] = []
+    const tools: ToolDef[] = [
+      {
+        name: 'native_exit_plan_mode',
+        description: 'exit plan',
+        parameters: {
+          type: 'object',
+          properties: { plan: { type: 'string' } },
+          required: ['plan'],
+        },
+      },
+      {
+        name: 'native_write_file',
+        description: 'write',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' }, content: { type: 'string' } },
+          required: ['path', 'content'],
+        },
+      },
+    ]
+    const dispatch: ToolDispatcher = async (call) => {
+      dispatched.push(call.name)
+      if (call.name === 'native_exit_plan_mode') planActive = false
+      return { text: call.name === 'native_exit_plan_mode' ? 'approved' : 'wrote', isError: false }
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-plan-exit-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools, dispatch }),
+      resolveApprovalGate: () => async () => planActive ? 'deny' : 'allow',
+    })
+
+    const out = await collect(adapter.sendPrompt('plan-exit', 'plan then implement', undefined, { planMode: true }))
+    expect(dispatched).toEqual(['native_exit_plan_mode', 'native_write_file'])
+    expect(out).toBe('implemented')
   })
 
   it('reports unavailable and throws cleanly when no backend is configured', async () => {

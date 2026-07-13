@@ -10,7 +10,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir, chmod } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
 import { logger as rootLogger } from './logger.js'
@@ -156,7 +156,10 @@ class SessionManager {
 
   async start(): Promise<void> {
     // Ensure sessions directory exists
-    await mkdir(SESSIONS_DIR, { recursive: true })
+    await mkdir(SESSIONS_DIR, { recursive: true, mode: 0o700 })
+    // mkdir's mode only applies on creation; tighten pre-existing directories
+    // as well so metadata/log files are not traversable by other host users.
+    await chmod(SESSIONS_DIR, 0o700).catch(() => { /* non-POSIX / best-effort */ })
 
     // Start cleanup timer
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL)

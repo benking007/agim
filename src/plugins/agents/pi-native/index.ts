@@ -28,10 +28,14 @@ import {
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { AgentHarnessStreamOptions } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
+import { chmod } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from '../../../core/types.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
+import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
+import { PLAN_MODE_DENY_TOOLS } from '../native/index.js'
 import { agimToolsToPi } from './tool-bridge.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
@@ -225,8 +229,6 @@ function composeProviderErrorNotice(kind: 'error' | 'aborted', errorMessage?: st
   ].join('\n')
 }
 
-const DEFAULT_PLAN_DENY: ReadonlySet<string> = new Set(['native_write', 'native_exec'])
-
 function seedUserMessage(text: string) {
   return { role: 'user' as const, content: [{ type: 'text' as const, text }], timestamp: Date.now() }
 }
@@ -342,13 +344,20 @@ export class NativeAgentAdapter implements AgentAdapter {
       const found = (await repo.list()).find((m) => m.id === sessionId)
       if (found) {
         session = await repo.open(found)
-        this.sessionMeta.set(sessionId, found)
       } else {
         session = await repo.create({ cwd: this.deps.sessionsRoot, id: sessionId })
         fresh = true
-        this.sessionMeta.set(sessionId, await session.getMetadata())
       }
     }
+    const currentMeta = await session.getMetadata()
+    this.sessionMeta.set(sessionId, currentMeta)
+    // pi's NodeExecutionEnv creates directories/files with process umask
+    // defaults (typically 0755/0644). Session transcripts can contain prompts,
+    // tool arguments, and tool results, so match Agim's private-state posture.
+    await Promise.all([
+      chmod(dirname(currentMeta.path), 0o700).catch(() => {}),
+      chmod(currentMeta.path, 0o600).catch(() => {}),
+    ])
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
     const tools = toolSurface
@@ -369,19 +378,28 @@ export class NativeAgentAdapter implements AgentAdapter {
       ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
 
-    const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
-    const planDeny = this.deps.planModeMutatingTools ?? DEFAULT_PLAN_DENY
-    if (opts?.planMode || gate) {
+    // Keep the turn-local flag mutable: native_exit_plan_mode can explicitly
+    // clear persistent Plan Mode mid-run, after which this same harness must
+    // be able to execute the user-approved plan.
+    let turnPlanMode = opts?.planMode === true
+    const planDeny = this.deps.planModeMutatingTools ?? PLAN_MODE_DENY_TOOLS
+    if (turnPlanMode || this.deps.resolveApprovalGate) {
       harness.on(
         'tool_call',
         async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
           // Plan-mode hard deny (covers A2A-propagated plan-mode even without
           // an IM thread for the policy gate to read).
-          if (opts?.planMode && planDeny.has(ev.toolName)) {
+          if (turnPlanMode && planDeny.has(ev.toolName)) {
             return { block: true, reason: 'plan-mode: mutating tools are denied' }
           }
+          // The dispatcher owns this approval-only handshake. Routing it
+          // through the generic policy gate first creates a duplicate card
+          // (or silently auto-approves the first gate).
+          if (ev.toolName === PLAN_EXIT_TOOL_NAME) return undefined
           // agim policy gate: read-only / allow-list / deny-all, escalating to
-          // an IM approval card when configured.
+          // an IM approval card when configured. Resolve per call so a
+          // user-approved plan exit takes effect in the same harness turn.
+          const gate = this.deps.resolveApprovalGate?.(opts, sessionId) ?? null
           if (gate) {
             const decision = await gate(
               { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
@@ -402,6 +420,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     const recentSigs: string[] = []
     const toolRuns: NativeToolRun[] = []
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
+      if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
+        turnPlanMode = false
+      }
       toolRounds += 1
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',

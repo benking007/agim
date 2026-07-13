@@ -250,6 +250,15 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
   }
 
   const mins = Math.max(1, Math.round(approvalBus.approvalTimeoutMs / 60000))
+  if (n.requiresExplicitDecision) {
+    const header = primary ? `🔐 必须确认 · ${tool} · ${primary}` : `🔐 必须确认 · ${tool}`
+    return [
+      header,
+      ...body,
+      'y 批准一次 · n 拒绝',
+      `${mins}min 未回 → 拒绝 · req ${reqShort}`,
+    ].join('\n')
+  }
   const fallback = isTimeoutDefaultAllow() ? '放行' : '拒绝'
   const header = primary ? `🔐 审批 · ${tool} · ${primary}` : `🔐 审批 · ${tool}`
   return [
@@ -345,7 +354,7 @@ export function install(opts: InstallOptions): void {
         reqId: n.reqId,
         toolName: n.toolName,
         inputJson: safeStringify(n.input, MAX_INPUT_PREVIEW_CARD),
-        mode: n.autoAllow ? 'auto-allow' : 'normal',
+        mode: n.autoAllow ? 'auto-allow' : n.requiresExplicitDecision ? 'explicit' : 'normal',
         graceSeconds: n.autoAllow ? Math.round(n.autoAllow.graceMs / 1000) : undefined,
       }
       let lastErr: unknown = null

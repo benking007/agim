@@ -598,6 +598,11 @@ export async function callAgentWithHistory(
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
   const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
 
+  // Freeze history BEFORE addMessage mutates Session.messages. Most callers
+  // pass the session's live array by reference; without this snapshot a fresh
+  // pi-native session seeds the current prompt from `history` and then appends
+  // it again via harness.prompt(), so the model sees the first turn twice.
+  const priorHistory = history.slice()
   await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
     role: 'user',
     content: prompt,
@@ -611,7 +616,7 @@ export async function callAgentWithHistory(
   // conversation log on disk — feeding history again would duplicate every
   // prior turn in the model's view. Pass an empty history in that case so
   // claude relies purely on its native session memory.
-  const effectiveHistory = agentSessionResume ? [] : history
+  const effectiveHistory = agentSessionResume ? [] : priorHistory
 
   // Per-call accumulators for adapters that surface usage / session-id
   // inline (currently opencode). Closure-bound so concurrent runs can't

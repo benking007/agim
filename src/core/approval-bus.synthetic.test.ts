@@ -64,6 +64,52 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 
+  it('explicit-decision requests bypass auto-approve and cannot seed remembered rules', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
+    let notified: ApprovalNotification | null = null
+    bus.setNotifier(async (n) => { notified = n })
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'plan-1',
+      reqId: 'plan-exit-1',
+      toolName: 'native_exit_plan_mode',
+      input: { plan: '- step' },
+      requiresExplicitDecision: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+
+    expect(notified?.requiresExplicitDecision).toBe(true)
+    expect(decisions).toEqual([])
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true })
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(bus.getAutoAllowKeys(KEY)).toEqual([])
+  })
+
+  it('explicit-decision requests deny on timeout even when timeout default is allow', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
+    bus.setNotifier(async () => {})
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'plan-2',
+      reqId: 'plan-exit-2',
+      toolName: 'native_exit_plan_mode',
+      input: { plan: '- step' },
+      requiresExplicitDecision: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+
+    await sleep(300)
+    expect(decisions).toEqual([{ behavior: 'deny', message: 'explicit approval timeout' }])
+  })
+
   it('resolve(deny) forwards the message via dispatch', async () => {
     bus.setNotifier(async () => {})
     const decisions: Decision[] = []

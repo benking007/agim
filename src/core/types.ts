@@ -313,9 +313,10 @@ export interface ApprovalCardPrompt {
   toolName: string
   /** Stringified input, already length-capped. May contain newlines. */
   inputJson: string
-  /** 'normal' = ask user; 'auto-allow' = grace window before automatic
-   *  allow (only the deny button is meaningful). */
-  mode: 'normal' | 'auto-allow'
+  /** 'normal' = ask user with optional remember action; 'explicit' = one-time
+   *  human decision only; 'auto-allow' = grace window before automatic allow
+   *  (only the deny button is meaningful). */
+  mode: 'normal' | 'explicit' | 'auto-allow'
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
 }

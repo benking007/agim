@@ -172,6 +172,10 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         reqId,
         toolName: PLAN_EXIT_TOOL_NAME,
         input: { plan: planMd },
+        // Exiting Plan Mode changes the user's safety boundary. It must never
+        // inherit global auto-approve, remembered allow rules, or allow-on-
+        // timeout behavior from ordinary tool approvals.
+        requiresExplicitDecision: true,
         ctx: {
           platform,
           channelId: ctx.channelId ?? 'default',

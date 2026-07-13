@@ -249,6 +249,10 @@ export interface ApprovalNotification {
    *  instead of the regular y/n one — the bus will allow on timer expiry,
    *  unless the user actively denies first. */
   autoAllow?: { graceMs: number }
+  /** Security-sensitive state transitions (for example exiting Plan Mode)
+   * require a one-time human decision. Auto-approve, remembered allow rules,
+   * allow-on-timeout, and "allow all" must not bypass this prompt. */
+  requiresExplicitDecision?: boolean
 }
 
 /** Notifier 只负责"通知 IM 推卡片/消息"。不要在这里返回决策；决策走 resolvePending。 */
@@ -345,6 +349,9 @@ interface PendingApproval {
    *  resolves to allow rather than deny, and an explicit deny revokes the
    *  matching auto-allow rule. */
   autoAllow: boolean
+  /** True for approval-only state transitions that must be decided by a
+   *  human for this exact request. */
+  requiresExplicitDecision: boolean
 }
 
 export interface ApprovalBusOptions {
@@ -1471,6 +1478,8 @@ export class ApprovalBus {
     input: Record<string, unknown>
     /** Optional — used by Claude's MCP path; defaults to '' for synthetic. */
     toolUseId?: string
+    /** Require a one-time human decision; bypasses every automatic allow path. */
+    requiresExplicitDecision?: boolean
     ctx: RunContext
     dispatch: (decision: Decision) => void
   }): Promise<void> {
@@ -1496,6 +1505,7 @@ export class ApprovalBus {
       toolUseId: input.toolUseId ?? '',
       input: input.input,
       ctx: input.ctx,
+      requiresExplicitDecision: input.requiresExplicitDecision,
       transport: { dispatch: input.dispatch },
     })
   }
@@ -1512,6 +1522,7 @@ export class ApprovalBus {
     toolUseId: string
     input: Record<string, unknown>
     ctx: RunContext
+    requiresExplicitDecision?: boolean
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.toolName, args.input)
@@ -1567,7 +1578,7 @@ export class ApprovalBus {
     // / notifier so it costs zero IM round-trips. Counts toward totals so the
     // metrics dashboard still reflects activity, but never fires the SSE
     // event-bus or notifier — readonly calls are deliberately invisible.
-    if (READONLY_TOOLS.has(args.toolName) && this.isReadonlyAutoAllowEnabled(cKey)) {
+    if (!args.requiresExplicitDecision && READONLY_TOOLS.has(args.toolName) && this.isReadonlyAutoAllowEnabled(cKey)) {
       this.metricsSnapshot.totalRequests++
       this.metricsSnapshot.totalResolved++
       this.metricsSnapshot.totalAllowed++
@@ -1594,7 +1605,7 @@ export class ApprovalBus {
     // Fires after sensitive-path hard-deny (above) and self-protect
     // (inline below). Skips the notifier entirely so we must run
     // self-protect here rather than relying on approval-router.
-    if (isAutoApproveEnabled()) {
+    if (!args.requiresExplicitDecision && isAutoApproveEnabled()) {
       try {
         const { checkToolUse } = await import('./self-protect.js')
         const selfGuard = checkToolUse(args.toolName, args.input)
@@ -1635,7 +1646,8 @@ export class ApprovalBus {
     }
 
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
-    const isAutoAllow = this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false
+    const isAutoAllow = !args.requiresExplicitDecision
+      && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
     const timeoutMs = isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs
 
     const transport = args.transport
@@ -1653,8 +1665,11 @@ export class ApprovalBus {
       dispatch: 'dispatch' in transport ? transport.dispatch : undefined,
       resolved: false,
       autoAllow: isAutoAllow,
+      requiresExplicitDecision: args.requiresExplicitDecision === true,
       timer: setTimeout(() => {
-        if (isAutoAllow) {
+        if (args.requiresExplicitDecision) {
+          this.cancelPending(pending, { behavior: 'deny', message: 'explicit approval timeout' }, 'timeout')
+        } else if (isAutoAllow) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
         } else if (isTimeoutDefaultAllow()) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
@@ -1699,6 +1714,7 @@ export class ApprovalBus {
         runId: args.runId, reqId: args.reqId, toolName: args.toolName,
         input: args.input, toolUseId: args.toolUseId, ctx: args.ctx,
         ...(isAutoAllow ? { autoAllow: { graceMs: this.autoAllowGraceMs } } : {}),
+        ...(args.requiresExplicitDecision ? { requiresExplicitDecision: true } : {}),
       })
     } catch (err) {
       log.error({ event: 'approval.bus.notifier_error', reqId: args.reqId, err: String(err) })
@@ -1732,6 +1748,16 @@ export class ApprovalBus {
     if (p.resolved) return
     p.resolved = true
     clearTimeout(p.timer)
+
+    // "Allow all" is never meaningful for approval-only state transitions.
+    // Treat it as a one-time allow so this request cannot seed a remembered
+    // rule that silently approves a later plan exit.
+    if (p.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+      decision = {
+        behavior: 'allow',
+        ...(decision.updatedInput ? { updatedInput: decision.updatedInput } : {}),
+      }
+    }
 
     // M14: account for the resolution. Bucket into exactly ONE of
     // allowed / denied / timedOut so the three sub-counters sum to

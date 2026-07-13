@@ -3,7 +3,7 @@
 // from index.ts so the adapter class stays free of registry/path coupling
 // (and unit-testable with injected deps).
 
-import { mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
@@ -50,7 +50,10 @@ function resolveStreamOptions() {
 export function createNativeAgentAdapter(): NativeAgentAdapter {
   const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
   try {
-    mkdirSync(sessionsRoot, { recursive: true })
+    mkdirSync(sessionsRoot, { recursive: true, mode: 0o700 })
+    // mkdir's mode does not tighten an existing directory. Enforce the
+    // private-state boundary on every startup (best-effort on non-POSIX).
+    chmodSync(sessionsRoot, 0o700)
   } catch {
     /* best-effort; sendPrompt surfaces a clear error if the dir is unusable */
   }

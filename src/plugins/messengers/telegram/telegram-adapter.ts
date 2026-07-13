@@ -1034,6 +1034,15 @@ function renderApprovalCardHtml(p: ApprovalCardPrompt): string {
       `<i>req: ${reqShort}</i>`,
     ].join('\n')
   }
+  if (p.mode === 'explicit') {
+    return [
+      '🔐 <b>必须由你确认</b>',
+      `工具：<b>${tool}</b>`,
+      `入参：<pre>${input}</pre>`,
+      '<i>不会自动批准或记住本次选择</i>',
+      `<i>req: ${reqShort}</i>`,
+    ].join('\n')
+  }
   return [
     `🔐 <b>工具调用审批</b>`,
     `工具：<b>${tool}</b>`,
@@ -1050,6 +1059,14 @@ function renderApprovalKeyboard(p: ApprovalCardPrompt): {
     return {
       inline_keyboard: [[
         { text: '❌ 拒绝（撤销规则）', callback_data: `apv:${r}:n` },
+      ]],
+    }
+  }
+  if (p.mode === 'explicit') {
+    return {
+      inline_keyboard: [[
+        { text: '✅ 批准一次', callback_data: `apv:${r}:y` },
+        { text: '❌ 拒绝', callback_data: `apv:${r}:n` },
       ]],
     }
   }

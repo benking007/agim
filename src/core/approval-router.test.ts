@@ -119,6 +119,24 @@ describe('formatApprovalPrompt', () => {
     expect(text).toContain('n')
   })
 
+  it('renders explicit decisions without auto-allow or allow-on-timeout hints', () => {
+    const n: ApprovalNotification = {
+      runId: 'run-plan',
+      reqId: 'plan12345678',
+      toolName: 'native_exit_plan_mode',
+      input: { plan: '- implement' },
+      toolUseId: '',
+      ctx: RUN_CTX,
+      requiresExplicitDecision: true,
+    }
+    const text = formatApprovalPrompt(n)
+    expect(text).toContain('必须确认')
+    expect(text).toContain('批准一次')
+    expect(text).toContain('未回 → 拒绝')
+    expect(text).not.toContain('all')
+    expect(text).not.toContain('自动放行')
+  })
+
   it('truncates very long input', () => {
     const big = 'x'.repeat(2000)
     const n: ApprovalNotification = {

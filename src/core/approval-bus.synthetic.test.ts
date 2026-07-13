@@ -52,10 +52,10 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       dispatch: (d) => { decisions.push(d) },
     })
 
-    expect(notified).not.toBeNull()
-    expect(notified!.toolName).toBe('external_directory')
-    expect(notified!.input).toEqual({ patterns: ['/root/workspace/agim/*'] })
-    expect(notified!.ctx.threadId).toBe('thread-A')
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]?.toolName).toBe('external_directory')
+    expect(notifications[0]?.input).toEqual({ patterns: ['/root/workspace/agim/*'] })
+    expect(notifications[0]?.ctx.threadId).toBe('thread-A')
     expect(bus.hasPendingFor(KEY)).toBe(true)
 
     bus.resolvePending(KEY, { behavior: 'allow' })
@@ -67,8 +67,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
   it('explicit-decision requests bypass auto-approve and cannot seed remembered rules', async () => {
     process.env.AGIM_AUTO_APPROVE = '1'
     process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
-    let notified: ApprovalNotification | null = null
-    bus.setNotifier(async (n) => { notified = n })
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
     const decisions: Decision[] = []
 
     await bus.registerSyntheticPending({

@@ -730,7 +730,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
     let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter, maxToolCalls)
-    if (runTimedOut) {
+    if (opts?.signal?.aborted) {
+      opts.onOutcome?.({ status: 'aborted', providerFailure: false, error: 'aborted after partial response' })
+    } else if (runTimedOut) {
       opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
       out = `${out.trimEnd()}\n\n（注意：${composeRunTimeoutNotice(runTimeoutMs)}）`
     } else if (providerFailed) {

@@ -128,12 +128,14 @@ Agent: ${job.agent}
         const prompt = agent.handlesAgimSkillsPrompt
           ? j.prompt
           : `${buildSkillsSummary()}${j.prompt}`
+        const outcomes: AgentTurnOutcome[] = []
         if (isAgentBaseAgent) {
           const ba = agent as unknown as AgentBase
-          const result = await ba.spawnAndCollect(prompt, signal)
+          const result = await ba.spawnAndCollect(prompt, signal, {
+            onOutcome: (value) => { outcomes.push(value) },
+          })
           if (result) yield result
         } else {
-          const outcomes: AgentTurnOutcome[] = []
           const generator = agent.sendPrompt(`job-${j.id}`, prompt, [], {
             signal,
             onOutcome: (value) => { outcomes.push(value) },
@@ -142,10 +144,10 @@ Agent: ${job.agent}
             if (signal.aborted) break
             yield chunk
           }
-          const outcome = outcomes.at(-1)
-          if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
-            throw new Error(outcome.error ?? outcome.status)
-          }
+        }
+        const outcome = outcomes.at(-1)
+        if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+          throw new Error(outcome.error ?? outcome.status)
         }
       }, ctx.logger).catch(() => {})
 

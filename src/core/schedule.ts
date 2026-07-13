@@ -327,11 +327,13 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     const prompt = agent.handlesAgimSkillsPrompt
       ? job.prompt
       : `${buildSkillsSummary()}${job.prompt}`
+    const outcomes: AgentTurnOutcome[] = []
     if (agent instanceof AgentBase) {
-      const text = await agent.spawnAndCollect(prompt, signal)
+      const text = await agent.spawnAndCollect(prompt, signal, {
+        onOutcome: (value) => { outcomes.push(value) },
+      })
       if (text) yield text
     } else {
-      const outcomes: AgentTurnOutcome[] = []
       for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [], {
         signal,
         onOutcome: (value) => { outcomes.push(value) },
@@ -339,10 +341,10 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
         if (signal.aborted) break
         yield chunk
       }
-      const outcome = outcomes.at(-1)
-      if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
-        throw new Error(outcome.error ?? outcome.status)
-      }
+    }
+    const outcome = outcomes.at(-1)
+    if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+      throw new Error(outcome.error ?? outcome.status)
     }
   }, logger).then(async () => {
     if (!s.notify_url) return

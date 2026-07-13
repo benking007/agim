@@ -15,7 +15,6 @@ import { existsSync, readdirSync } from 'node:fs'
 import { readFile, writeFile, mkdir, unlink, chmod, stat } from 'node:fs/promises'
 import { sessionManager } from '../../src/core/session'
 import { AGIM_HOME } from '../../src/core/agim-paths'
-import { effectivePlanModeOn, setPlanModeForThread } from '../../src/core/plan-mode-state'
 
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
@@ -223,24 +222,16 @@ describe('SessionManager (real, on-disk)', () => {
 
   it('resetConversation clears messages and assigns new id', async () => {
     const k = uniqueKey('reset')
-    const savedPlanDefault = process.env.AGIM_NATIVE_PLAN_MODE
-    delete process.env.AGIM_NATIVE_PLAN_MODE
     try {
       const s1 = await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'opencode')
       const oldId = s1.id  // capture before reset mutates the shared ref
       await sessionManager.addMessage(k.platform, k.channelId, k.threadId,
         { role: 'user', content: 'hi', timestamp: new Date() })
-      const planKey = `${k.platform}:${k.channelId}:${k.threadId}`
-      setPlanModeForThread(planKey, true)
-      expect(effectivePlanModeOn(planKey)).toBe(true)
       const s2 = await sessionManager.resetConversation(k.platform, k.channelId, k.threadId)
       expect(s2).toBeDefined()
       expect(s2?.id).not.toBe(oldId)
       expect(s2?.messages.length).toBe(0)
-      expect(effectivePlanModeOn(planKey)).toBe(false)
     } finally {
-      if (savedPlanDefault === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
-      else process.env.AGIM_NATIVE_PLAN_MODE = savedPlanDefault
       await cleanupKey(k)
     }
   })

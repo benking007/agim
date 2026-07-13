@@ -2729,11 +2729,13 @@ async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: numb
     const log = createLogger({ traceId, platform: 'web', component: 'job-run' })
     // Fire and forget — UI polls /api/jobs/:id for status.
     void runJob(id, async function* (j, _logger, signal) {
+      const outcomes: Array<{ status: string; error?: string }> = []
       if (agent instanceof AgentBase) {
-        const text = await agent.spawnAndCollect(j.prompt, signal)
+        const text = await agent.spawnAndCollect(j.prompt, signal, {
+          onOutcome: (value) => { outcomes.push(value) },
+        })
         if (text) yield text
       } else {
-        const outcomes: Array<{ status: string; error?: string }> = []
         for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
           signal,
           onOutcome: (value) => { outcomes.push(value) },
@@ -2741,10 +2743,10 @@ async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: numb
           if (signal.aborted) break
           yield chunk
         }
-        const outcome = outcomes.at(-1)
-        if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
-          throw new Error(outcome.error ?? outcome.status)
-        }
+      }
+      const outcome = outcomes.at(-1)
+      if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+        throw new Error(outcome.error ?? outcome.status)
       }
     }, log).catch(() => { /* job-board logs */ })
 
@@ -4624,11 +4626,13 @@ async function handleBatchJob(
         // Same fire-and-forget pattern as handleRunJob — the dashboard
         // streams status from /events / /api/jobs.
         void runJob(id, async function* (j, _logger, signal) {
+          const outcomes: Array<{ status: string; error?: string }> = []
           if (agent instanceof AgentBase) {
-            const text = await agent.spawnAndCollect(j.prompt, signal)
+            const text = await agent.spawnAndCollect(j.prompt, signal, {
+              onOutcome: (value) => { outcomes.push(value) },
+            })
             if (text) yield text
           } else {
-            const outcomes: Array<{ status: string; error?: string }> = []
             for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
               signal,
               onOutcome: (value) => { outcomes.push(value) },
@@ -4636,10 +4640,10 @@ async function handleBatchJob(
               if (signal.aborted) break
               yield chunk
             }
-            const outcome = outcomes.at(-1)
-            if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
-              throw new Error(outcome.error ?? outcome.status)
-            }
+          }
+          const outcome = outcomes.at(-1)
+          if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+            throw new Error(outcome.error ?? outcome.status)
           }
         }, log).catch(() => { /* job-board logs */ })
         return { id, ok: true, traceId }

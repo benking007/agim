@@ -29,6 +29,7 @@ import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
 import { workspaceRegistry } from './workspace.js'
 import {
+  bindJobController,
   createInlineJob,
   markJobRunning,
   markJobCompleted,
@@ -329,6 +330,7 @@ export async function callAgentByName(
   // (codex / claude / opencode) keeps running and writes "orphan" files
   // into _agim-output/ long after agim has given up.
   const abortController = new AbortController()
+  const unbindJobController = bindJobController(jobId, abortController)
   const onOuterAbort = () => abortController.abort(opts.signal?.reason)
   opts.signal?.addEventListener('abort', onOuterAbort, { once: true })
   if (opts.signal?.aborted) onOuterAbort()
@@ -367,6 +369,7 @@ export async function callAgentByName(
     try { abortController.abort() } catch { /* noop */ }
   } finally {
     opts.signal?.removeEventListener('abort', onOuterAbort)
+    unbindJobController()
   }
 
   // Stop heartbeat ASAP so we don't race the terminal notice.

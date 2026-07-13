@@ -260,6 +260,28 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).not.toContain('没有产出可见回复')
   })
 
+  it('reports external cancellation as aborted even when partial text exists', async () => {
+    const ctrl = new AbortController()
+    const reg = faux()
+    reg.setResponses([
+      () => {
+        ctrl.abort()
+        return fauxAssistantMessage('partial text', { stopReason: 'aborted' })
+      },
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-partial-abort-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    const outcomes: string[] = []
+    const out = await collect(adapter.sendPrompt('partial-abort', 'hi', undefined, {
+      signal: ctrl.signal,
+      onOutcome: (value) => { outcomes.push(value.status) },
+    }))
+    expect(out).toContain('partial text')
+    expect(outcomes.at(-1)).toBe('aborted')
+  })
+
   it('serializes concurrent turns on the same session id (no interleaved harness writes)', async () => {
     const reg = faux()
     let active = 0

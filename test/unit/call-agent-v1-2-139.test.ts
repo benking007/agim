@@ -205,4 +205,36 @@ describe('v1.2.139 — CallAgentOpts.planMode propagation', () => {
     // Field absent (we avoid stamping false so adapters' default behaviour stays unchanged).
     expect(captured!.planMode).toBeUndefined()
   })
+
+  it('propagates parent cancellation and returns a failed A2A outcome', async () => {
+    let started!: () => void
+    const didStart = new Promise<void>((resolve) => { started = resolve })
+    const fake: AgentAdapter = {
+      name: 'test-fake-cancel',
+      aliases: [],
+      async isAvailable() { return true },
+      async *sendPrompt(_sid, _prompt, _history, opts?: AgentSendOpts) {
+        started()
+        const signal = opts?.signal
+        if (!signal?.aborted) {
+          await new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve(), { once: true }))
+        }
+        opts?.onOutcome?.({ status: 'aborted', providerFailure: false })
+        yield 'cancelled'
+      },
+    }
+    registry.registerAgent(fake)
+    process.env.AGIM_A2A_MAX_DEPTH = '5'
+    const ctrl = new AbortController()
+    const run = a2a.callAgentByName('test-fake-cancel', 'wait', fakeRouteCtx(), {
+      callerAgent: 'native',
+      signal: ctrl.signal,
+    })
+    await didStart
+    ctrl.abort()
+
+    const result = await run
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('aborted')
+  })
 })

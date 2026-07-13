@@ -440,9 +440,6 @@ export async function routeMessage(
         ctx.platform, ctx.channelId, ctx.threadId, agent.name
       )
       ctx.intent = 'explicit'
-      // Commit point: claim the half-open probe (if any) now that the call is
-      // guaranteed to run and pair with record* in callAgentWithHistory.
-      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
 
@@ -573,9 +570,6 @@ export async function routeMessage(
       const session = await sessionManager.getOrCreateSession(
         ctx.platform, ctx.channelId, ctx.threadId, agentName
       )
-      // Commit point: claim the half-open probe (if any) now that the call is
-      // guaranteed to run and pair with record* in callAgentWithHistory.
-      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
   }
@@ -600,7 +594,6 @@ export async function callAgentWithHistory(
     throw new Error('callAgentWithHistory called without a configured agent')
   }
   if (ctx.signal?.aborted) {
-    circuitBreaker.recordNeutral(agent.name)
     return (async function* (): AsyncGenerator<string> { /* cancelled before side effects */ })()
   }
 
@@ -608,16 +601,9 @@ export async function callAgentWithHistory(
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
   const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
 
-  // Freeze history BEFORE addMessage mutates Session.messages. Most callers
-  // pass the session's live array by reference; without this snapshot a fresh
-  // pi-native session seeds the current prompt from `history` and then appends
-  // it again via harness.prompt(), so the model sees the first turn twice.
+  // Freeze history before this turn is persisted. Most callers pass the
+  // session's live array by reference.
   const priorHistory = history.slice()
-  await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
-    role: 'user',
-    content: prompt,
-    timestamp: new Date()
-  })
 
   const startTime = Date.now()
   ctx.logger.info({ event: 'agent.invoke.start', agent: agent.name, promptLen: prompt.length, historyLen: history.length })
@@ -780,7 +766,27 @@ export async function callAgentWithHistory(
   return (async function* (): AsyncGenerator<string> {
     let fullResponse = ''
     let invocationError: string | undefined
+    let userPersisted = false
     try {
+      if (ctx.signal?.aborted) {
+        adapterOutcome = { status: 'aborted', providerFailure: false }
+        ctx.agentOutcome = adapterOutcome
+        return
+      }
+      // Claim the half-open probe only when the lazy generator actually
+      // starts, guaranteeing the finally below will release it.
+      circuitBreaker.acquireProbe(agent.name)
+      await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
+        role: 'user',
+        content: prompt,
+        timestamp: new Date(),
+      })
+      userPersisted = true
+      if (ctx.signal?.aborted) {
+        adapterOutcome = { status: 'aborted', providerFailure: false }
+        ctx.agentOutcome = adapterOutcome
+        return
+      }
       for await (const chunk of generator) {
         fullResponse += chunk
         yield chunk
@@ -799,6 +805,15 @@ export async function callAgentWithHistory(
       const aborted = outcome.status === 'aborted'
       const successful = outcome.status === 'success' || outcome.status === 'partial'
       const effectiveError = invocationError ?? outcome.error ?? (successful ? undefined : outcome.status)
+
+      if (aborted && userPersisted) {
+        await sessionManager.removeLastMessageIfMatches(
+          ctx.platform,
+          ctx.channelId,
+          storageThreadId,
+          { role: 'user', content: prompt },
+        )
+      }
 
       if (!aborted && fullResponse.trim()) {
         await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {

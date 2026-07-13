@@ -416,6 +416,28 @@ class SessionManager {
     })
   }
 
+  /** Remove the current turn's just-appended user message when cancellation
+   * wins during the async history write. Match-last semantics prevent deleting
+   * an unrelated message if another path advanced the session. */
+  async removeLastMessageIfMatches(
+    platform: string,
+    channelId: string,
+    threadId: string,
+    expected: Pick<ChatMessage, 'role' | 'content'>,
+  ): Promise<boolean> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      const last = session?.messages.at(-1)
+      if (!session || !last || last.role !== expected.role || last.content !== expected.content) return false
+      session.messages.pop()
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+      return true
+    })
+  }
+
   /**
    * Persist `model` / `variant` / arbitrary patchable fields. Used by
    * `/model`, `/think` etc so the change survives a restart between turns.

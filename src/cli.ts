@@ -1579,7 +1579,7 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         }
       }
 
-      if (inlineAbortController?.signal.aborted) {
+      if (inlineAbortController?.signal.aborted && typeof result === 'string') {
         await stopTyping()
         await dismiss()
         return

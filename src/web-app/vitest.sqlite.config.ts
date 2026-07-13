@@ -44,6 +44,7 @@ export default defineConfig({
       'test/unit/message-sink.test.ts',
       'test/unit/memos.test.ts',
       'test/unit/outbox.test.ts',
+      'test/unit/plan-session-sync.test.ts',
       'test/unit/reminder-rpc.test.ts',
       'test/unit/reminders.test.ts',
       'test/unit/viewer-retention.test.ts',

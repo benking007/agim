@@ -672,6 +672,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     let offTrackSoftSteerUsed = false
     let offTrackDetail = ''
     let semanticStuckSoftSteerUsed = false
+    let compactionCalls = 0
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
@@ -690,6 +691,32 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (typeof usage.costUsd === 'number' && Number.isFinite(usage.costUsd)) {
         usageCost += usage.costUsd
       }
+    }
+    const resolvedUsage = (): AgentTurnOutcome['usage'] | undefined => {
+      if (!sawUsage && usageInput <= 0 && usageOutput <= 0 && !(usageCost > 0)) return undefined
+      let costUsd = usageCost
+      if (binding.costKnown === true && !(costUsd > 0) && (usageInput > 0 || usageOutput > 0)) {
+        const estimated = estimateCostUsd(undefined, binding.model.id, {
+          input: usageInput,
+          output: usageOutput,
+        })
+        if (estimated != null) costUsd = estimated
+      }
+      return { tokensInput: usageInput, tokensOutput: usageOutput, costUsd }
+    }
+    const emitOutcome = (outcome: AgentTurnOutcome) => {
+      const usage = resolvedUsage()
+      const resolvedStop = outcome.stopReason
+        ?? stopReason
+        ?? undefined
+      opts?.onOutcome?.({
+        ...outcome,
+        ...(resolvedStop ? { stopReason: resolvedStop } : {}),
+        modelTurns: providerRequests,
+        toolCalls: dispatchedToolCalls,
+        auxModelCalls: compactionCalls + criticCallsFired,
+        ...(usage ? { usage } : {}),
+      })
     }
 
     harness.on(
@@ -932,6 +959,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           sawUsage = true
           usageInput += approxIn
           usageOutput += approxOut
+          compactionCalls += 1
           if (binding.costKnown) {
             const estimated = estimateCostUsd(undefined, binding.model.id, {
               input: approxIn,
@@ -1007,19 +1035,14 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     if (opts?.onUsage && sawUsage) {
-      let costUsd = usageCost
-      if (binding.costKnown === true && !(costUsd > 0) && (usageInput > 0 || usageOutput > 0)) {
-        const estimated = estimateCostUsd(undefined, binding.model.id, {
-          input: usageInput,
-          output: usageOutput,
+      const usage = resolvedUsage()
+      if (usage) {
+        opts.onUsage({
+          tokensInput: usage.tokensInput,
+          tokensOutput: usage.tokensOutput,
+          costUsd: usage.costUsd,
         })
-        if (estimated != null) costUsd = estimated
       }
-      opts.onUsage({
-        tokensInput: usageInput,
-        tokensOutput: usageOutput,
-        costUsd,
-      })
     }
     opts?.onCostMetadata?.({ known: binding.costKnown === true })
 
@@ -1042,12 +1065,12 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     if (!hasText) {
       if (runTimedOut) {
-        opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
+        emitOutcome({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
         yield composeRunTimeoutNotice(runTimeoutMs)
         return
       }
       if (stopReason) {
-        opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: stopReason })
+        emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
         yield stopReason === 'stuck_loop'
           ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
           : stopReason === 'max_tool_calls'
@@ -1063,7 +1086,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         return
       }
       if (providerFailed || providerAborted) {
-        opts?.onOutcome?.({
+        emitOutcome({
           status: providerFailed ? 'error' : 'aborted',
           providerFailure: providerFailed,
           error: result.errorMessage,
@@ -1071,7 +1094,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         yield composeProviderErrorNotice(providerFailed ? 'error' : 'aborted', result.errorMessage)
         return
       }
-      opts?.onOutcome?.({ status: 'error', providerFailure: false, error: 'empty model response' })
+      emitOutcome({ status: 'error', providerFailure: false, error: 'empty model response', stopReason: 'empty' })
       yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
@@ -1093,7 +1116,12 @@ export class NativeAgentAdapter implements AgentAdapter {
         emittedToolCallCount: 0,
       })
       if (det.hallucinated) {
-        opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'hallucinated_tools' })
+        emitOutcome({
+          status: 'partial',
+          providerFailure: false,
+          error: 'hallucinated_tools',
+          stopReason: 'hallucinated_tools',
+        })
         yield composeHallucinatedToolsRecap(text, det.evidence)
         return
       }
@@ -1105,19 +1133,19 @@ export class NativeAgentAdapter implements AgentAdapter {
     let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter, maxToolCalls)
     if (result.stopReason === 'length' && !stopReason && !providerFailed && !providerAborted) {
       out = composeLengthTruncationNotice(out)
-      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'length' })
+      emitOutcome({ status: 'partial', providerFailure: false, error: 'length', stopReason: 'length' })
     } else if (opts?.signal?.aborted) {
-      opts.onOutcome?.({ status: 'aborted', providerFailure: false, error: 'aborted after partial response' })
+      emitOutcome({ status: 'aborted', providerFailure: false, error: 'aborted after partial response' })
     } else if (runTimedOut) {
-      opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
+      emitOutcome({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
       out = `${out.trimEnd()}\n\n（注意：${composeRunTimeoutNotice(runTimeoutMs)}）`
     } else if (providerFailed) {
-      opts?.onOutcome?.({ status: 'partial', providerFailure: true, error: result.errorMessage })
+      emitOutcome({ status: 'partial', providerFailure: true, error: result.errorMessage })
       out = `${out.trimEnd()}\n\n（注意：本轮因网络/服务中断提前结束，回复可能不完整，可回「重试」。）`
     } else if (providerAborted) {
-      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'aborted after partial response' })
+      emitOutcome({ status: 'partial', providerFailure: false, error: 'aborted after partial response' })
     } else if (stopReason === 'off_track') {
-      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'off_track' })
+      emitOutcome({ status: 'partial', providerFailure: false, error: 'off_track', stopReason: 'off_track' })
       out = `${out.trimEnd()}\n\n${composeOffTrackRecap(
         offTrackDetail.split(' || redirect: ')[0] ?? offTrackDetail,
         offTrackDetail.includes(' || redirect: ')
@@ -1125,7 +1153,9 @@ export class NativeAgentAdapter implements AgentAdapter {
           : undefined,
       )}`
     } else if (stopReason) {
-      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: stopReason })
+      emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
+    } else {
+      emitOutcome({ status: 'success', providerFailure: false })
     }
     yield out
   }

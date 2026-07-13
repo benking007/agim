@@ -383,6 +383,20 @@ export interface AgentTurnOutcome {
    *  cancellation, policy denial, and local watchdog expiry are neutral. */
   providerFailure?: boolean
   error?: string
+  /** Guard / terminal stop code when known (e.g. stuck_loop, length, max_iter). */
+  stopReason?: string
+  /** Provider/model turns observed this run (before_provider_request count). */
+  modelTurns?: number
+  /** Tool calls that passed preflight and were dispatched. */
+  toolCalls?: number
+  /** Auxiliary model calls observed this run (goal critic, compaction estimate). */
+  auxModelCalls?: number
+  /** Aggregated usage when available (main loop + observed aux). */
+  usage?: {
+    tokensInput?: number
+    tokensOutput?: number
+    costUsd?: number
+  }
 }
 
 /**

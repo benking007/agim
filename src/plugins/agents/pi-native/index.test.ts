@@ -817,9 +817,16 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveTools: () => ({ tools: [tool], dispatch }),
       maxIterations: 50, // high — stuck-loop must fire first
     })
-    const out = await collect(adapter.sendPrompt('s7', 'do the flaky thing'))
+    let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
+    const out = await collect(adapter.sendPrompt('s7', 'do the flaky thing', undefined, {
+      onOutcome: (value) => { outcome = value },
+    }))
     expect(calls).toBe(3) // exact stuck-loop window
     expect(out).toContain('死循环')
+    expect(outcome?.status).toBe('partial')
+    expect(outcome?.stopReason).toBe('stuck_loop')
+    expect(outcome?.toolCalls).toBe(3)
+    expect((outcome?.modelTurns ?? 0)).toBeGreaterThanOrEqual(1)
   })
 
   it('soft-steers then hard-stops a cross-tool semantic stuck loop', async () => {
@@ -907,6 +914,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       parameters: { type: 'object', properties: {}, required: [] },
     }
     let reported: { tokensInput?: number; tokensOutput?: number } | undefined
+    let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
     const adapter = new NativeAgentAdapter({
       sessionsRoot,
       resolveModel: async () => bindingFromFaux(reg),
@@ -918,6 +926,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     })
     await collect(adapter.sendPrompt('usage-all-turns', 'run', undefined, {
       onUsage: (usage) => { reported = usage },
+      onOutcome: (value) => { outcome = value },
     }))
 
     const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
@@ -934,6 +943,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       0,
     ))
     expect(reported?.tokensOutput).toBe(usages.reduce((sum, usage) => sum + usage.output, 0))
+    expect(outcome?.status).toBe('success')
+    expect(outcome?.modelTurns).toBe(2)
+    expect(outcome?.toolCalls).toBe(1)
+    expect(outcome?.usage?.tokensInput).toBe(reported?.tokensInput)
+    expect(outcome?.usage?.tokensOutput).toBe(reported?.tokensOutput)
   })
 
   it('handles /models and /model directly without sending them to the LLM', async () => {
@@ -1071,8 +1085,10 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     // Turn 2 is over budget → an extra summary call fires before the turn itself.
     reg.appendResponses([fauxAssistantMessage('history summary'), fauxAssistantMessage('t2')])
     let reported: { tokensInput?: number; tokensOutput?: number } | undefined
+    let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
     expect(await collect(adapter.sendPrompt('cmp', 'q2', undefined, {
       onUsage: (usage) => { reported = usage },
+      onOutcome: (value) => { outcome = value },
     }))).toBe('t2')
     // The durable session now carries a compaction entry.
     const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
@@ -1083,6 +1099,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(entries.some((e) => e.type === 'compaction')).toBe(true)
     // Compaction has no assistant usage row — estimated tokens still reach onUsage.
     expect((reported?.tokensInput ?? 0) + (reported?.tokensOutput ?? 0)).toBeGreaterThan(0)
+    expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
   })
 
   it('skips compaction when disabled (no extra summary call)', async () => {

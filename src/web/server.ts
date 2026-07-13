@@ -3000,6 +3000,8 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_PLAN_INTENT_PHRASES',
   // Per-turn iteration cap.
   'AGIM_NATIVE_AGENT_MAX_ITER',
+  // Active pi-native AgentHarness loop watchdog (0 disables).
+  'AGIM_NATIVE_TURN_TIMEOUT_MS',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'AGIM_SMTP_PASS',

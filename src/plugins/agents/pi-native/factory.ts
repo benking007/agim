@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
+import { applyGoalTimeoutBoost } from '../../../core/goals.js'
+import type { AgentSendOpts } from '../../../core/types.js'
 import { getAnyProvider, getProvider, getProviderByName, listProviders } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
@@ -32,6 +34,18 @@ function envInt(name: string, def: number): number {
   if (!raw?.trim()) return def
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : def
+}
+
+/** Whole active AgentHarness-loop watchdog. Compaction runs before this timer
+ * because pi 0.79.x does not expose an external compaction signal. */
+function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
+  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 5 * 60 * 1000)
+  if (base === 0) return 0
+  return applyGoalTimeoutBoost(base, {
+    platform: opts?.platform,
+    channelId: opts?.channelId,
+    threadId: opts?.threadId,
+  })
 }
 
 /** Provider resilience + prompt-cache options, all env-overridable. Defaults:
@@ -88,6 +102,7 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     // Provider retry/backoff/timeout + prompt cache (rides out transient LLM
     // 429/5xx and cuts repeat token cost). All AGIM_NATIVE_* env-overridable.
     streamOptions: resolveStreamOptions(),
+    resolveRunTimeoutMs,
     // Reuse native's full system prompt so the model knows its real backend +
     // model + role (fixes "what model are you" → it stops hallucinating claude)
     // and gets the operator role + skill routing + tool guides.

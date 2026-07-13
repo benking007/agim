@@ -302,6 +302,32 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('本轮已被取消')
   })
 
+  it('stops a runaway active loop at the configured run timeout', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('wait_forever', {}, { id: 'wait-timeout' }), { stopReason: 'toolUse' }),
+    ])
+    const tool: ToolDef = {
+      name: 'wait_forever',
+      description: 'wait',
+      parameters: { type: 'object', properties: {}, required: [] },
+      timeoutMs: 0,
+    }
+    const dispatch: ToolDispatcher = async () => await new Promise<never>(() => {})
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-run-timeout-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+      resolveRunTimeoutMs: () => 30,
+    })
+    const t0 = performance.now()
+    const out = await collect(adapter.sendPrompt('run-timeout', 'wait'))
+
+    expect(performance.now() - t0).toBeLessThan(250)
+    expect(out).toContain('运行超过')
+    expect(out).toContain('AGIM_NATIVE_TURN_TIMEOUT_MS')
+  })
+
   it('cancels a queued same-session turn without waiting for the active turn', async () => {
     const reg = faux()
     reg.setResponses([

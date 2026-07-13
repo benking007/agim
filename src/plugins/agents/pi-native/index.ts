@@ -98,6 +98,10 @@ export interface NativeAgentDeps {
    *  token cost of the system prompt + history). Factory builds it from
    *  AGIM_NATIVE_* envs; omit to use pi defaults. */
   streamOptions?: AgentHarnessStreamOptions
+  /** Active AgentHarness loop watchdog in milliseconds, resolved per turn so
+   *  goal-aware callers can extend it. Starts after optional compaction because
+   *  pi 0.79.x does not expose a cancellable compaction signal. 0 disables. */
+  resolveRunTimeoutMs?: (opts: AgentSendOpts | undefined) => number
 }
 
 const DEFAULT_MAX_ITER = 50
@@ -253,6 +257,11 @@ function composeProviderErrorNotice(kind: 'error' | 'aborted', errorMessage?: st
     '  · 回「重试」让我重新跑一遍',
     '  · 稍后再试，或在 /settings/llm 切换大模型后端',
   ].join('\n')
+}
+
+function composeRunTimeoutNotice(timeoutMs: number): string {
+  const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+  return `⏱️ 本轮运行超过 ${seconds} 秒上限，已停止（未完成）。可缩小任务范围、设置长期目标后重试，或由管理员调整 AGIM_NATIVE_TURN_TIMEOUT_MS。`
 }
 
 function seedUserMessage(text: string) {
@@ -429,6 +438,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     // clear persistent Plan Mode mid-run, after which this same harness must
     // be able to execute the user-approved plan.
     let turnPlanMode = opts?.planMode === true
+    let turnSignal = opts?.signal
     const planDeny = this.deps.planModeMutatingTools ?? PLAN_MODE_DENY_TOOLS
     if (turnPlanMode || this.deps.resolveApprovalGate) {
       harness.on(
@@ -451,7 +461,7 @@ export class NativeAgentAdapter implements AgentAdapter {
             const decision = await gate(
               { id: ev.toolCallId, name: ev.toolName, arguments: (ev.input ?? {}) as Record<string, unknown> },
               0,
-              opts?.signal,
+              turnSignal,
             )
             if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
           }
@@ -523,31 +533,48 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     // AgentHarness owns its run AbortController and prompt() does not accept an
-    // external signal. Bridge the caller signal through abort(), while the
-    // before_agent_start hook closes the small pre-controller race.
+    // external signal. Merge caller cancellation with an active-loop watchdog,
+    // then bridge that signal through abort(). The watchdog intentionally starts
+    // after compaction; pi 0.79.x does not expose cancellable compaction.
+    const runController = new AbortController()
     const externalSignal = opts?.signal
-    const unsubscribeBeforeStart = externalSignal
-      ? harness.on('before_agent_start', () => {
-          if (externalSignal.aborted) throw new Error('agent turn aborted before start')
-          return undefined
-        })
+    const forwardExternalAbort = () => runController.abort(externalSignal?.reason)
+    externalSignal?.addEventListener('abort', forwardExternalAbort, { once: true })
+    if (externalSignal?.aborted) forwardExternalAbort()
+
+    const runTimeoutMs = Math.max(0, this.deps.resolveRunTimeoutMs?.(opts) ?? 0)
+    let runTimedOut = false
+    const timeoutTimer = runTimeoutMs > 0
+      ? setTimeout(() => {
+          runTimedOut = true
+          runController.abort(new Error(`native run timed out after ${runTimeoutMs}ms`))
+        }, runTimeoutMs)
       : undefined
-    const onExternalAbort = () => {
+    timeoutTimer?.unref?.()
+    turnSignal = runController.signal
+
+    const unsubscribeBeforeStart = harness.on('before_agent_start', () => {
+      if (turnSignal?.aborted) throw new Error('agent turn aborted before start')
+      return undefined
+    })
+    const onRunAbort = () => {
       void harness.abort().catch((err) => {
         console.error('[native] harness abort failed:', err instanceof Error ? err.message : err)
       })
     }
-    externalSignal?.addEventListener('abort', onExternalAbort, { once: true })
+    turnSignal.addEventListener('abort', onRunAbort, { once: true })
 
     let result: Awaited<ReturnType<AgentHarness['prompt']>>
     try {
       const promptPromise = harness.prompt(prompt)
       // Covers abort between the final pre-check and listener registration.
-      if (externalSignal?.aborted) onExternalAbort()
+      if (turnSignal.aborted) onRunAbort()
       result = await promptPromise
     } finally {
-      externalSignal?.removeEventListener('abort', onExternalAbort)
-      unsubscribeBeforeStart?.()
+      if (timeoutTimer) clearTimeout(timeoutTimer)
+      externalSignal?.removeEventListener('abort', forwardExternalAbort)
+      runController.signal.removeEventListener('abort', onRunAbort)
+      unsubscribeBeforeStart()
     }
 
     if (opts?.onUsage && result.usage) {
@@ -572,10 +599,14 @@ export class NativeAgentAdapter implements AgentAdapter {
     // text — NOT as a thrown error. Detect it explicitly so a network drop is
     // reported as such (with a retry hint) instead of being misread as "the
     // model returned empty content".
-    const providerAborted = result.stopReason === 'aborted' || opts?.signal?.aborted === true
+    const providerAborted = result.stopReason === 'aborted' || runController.signal.aborted
     const providerFailed = result.stopReason === 'error' && !providerAborted
 
     if (!hasText) {
+      if (runTimedOut) {
+        yield composeRunTimeoutNotice(runTimeoutMs)
+        return
+      }
       if (providerFailed || providerAborted) {
         yield composeProviderErrorNotice(providerFailed ? 'error' : 'aborted', result.errorMessage)
         return
@@ -594,7 +625,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
     let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)
-    if (providerFailed) {
+    if (runTimedOut) {
+      out = `${out.trimEnd()}\n\n（注意：${composeRunTimeoutNotice(runTimeoutMs)}）`
+    } else if (providerFailed) {
       out = `${out.trimEnd()}\n\n（注意：本轮因网络/服务中断提前结束，回复可能不完整，可回「重试」。）`
     }
     yield out

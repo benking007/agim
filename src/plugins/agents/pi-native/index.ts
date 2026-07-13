@@ -30,7 +30,7 @@ import {
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { AgentHarnessStreamOptions, AgentMessage, Result } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
-import { access, chmod } from 'node:fs/promises'
+import { chmod, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, AgentTurnOutcome, ChatMessage } from '../../../core/types.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
@@ -161,35 +161,43 @@ class SecureNodeExecutionEnv extends NodeExecutionEnv {
   ): Promise<Result<void, FileError>> {
     const absolute = await this.absolutePath(path)
     if (!absolute.ok) return absolute
-    if (this.protectedSessionPaths.has(absolute.value)) {
-      try {
-        await access(absolute.value)
-      } catch {
-        // Never let appendFile silently recreate a deleted active JSONL
-        // without its header (and with process-umask permissions).
-        return {
-          ok: false,
-          error: new FileError('not_found', 'active pi session file was removed', absolute.value),
-        }
-      }
+    if (!this.protectedSessionPaths.has(absolute.value)) {
+      return await super.appendFile(path, content)
     }
-    const result = await super.appendFile(path, content)
-    if (result.ok && this.protectedSessionPaths.has(absolute.value) && process.platform !== 'win32') {
-      try {
-        await chmod(absolute.value, 0o600)
-      } catch (err) {
-        return {
-          ok: false,
-          error: new FileError(
-            'permission_denied',
-            'failed to enforce private pi session permissions',
-            absolute.value,
-            err instanceof Error ? err : undefined,
-          ),
-        }
+    // Open without O_CREAT. If the active JSONL is removed before or during
+    // this operation, we either fail with ENOENT or keep writing only to the
+    // already-open unlinked inode; we never recreate a headerless path.
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    try {
+      handle = await open(absolute.value, 'r+')
+      const stat = await handle.stat()
+      const bytes = typeof content === 'string' ? Buffer.from(content) : Buffer.from(content)
+      await handle.write(bytes, 0, bytes.byteLength, stat.size)
+      if (process.platform !== 'win32') await handle.chmod(0o600)
+      return { ok: true, value: undefined }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      const fileCode = code === 'ENOENT'
+        ? 'not_found'
+        : code === 'EACCES' || code === 'EPERM'
+          ? 'permission_denied'
+          : 'unknown'
+      return {
+        ok: false,
+        error: new FileError(
+          fileCode,
+          fileCode === 'not_found'
+            ? 'active pi session file was removed'
+            : 'failed to append active pi session securely',
+          absolute.value,
+          err instanceof Error ? err : undefined,
+        ),
       }
+    } finally {
+      try {
+        await handle?.close()
+      } catch { /* best-effort close */ }
     }
-    return result
   }
 }
 

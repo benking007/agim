@@ -35,6 +35,18 @@ describe('builtin-dispatcher — tool roster', () => {
     expect(isBuiltinToolName('native_unknown')).toBe(false)
   })
 
+  it('accepts legacy native_* aliases for dispatch recognition', () => {
+    expect(isBuiltinToolName('native_echo')).toBe(true)
+    expect(isBuiltinToolName('native_now')).toBe(true)
+  })
+
+  it('dispatches legacy native_echo to the same handler', async () => {
+    const d = buildBuiltinDispatcher()
+    const r = await d(call('native_echo', { text: 'hi' }), new AbortController().signal)
+    expect(r.isError).toBe(false)
+    expect(r.text).toBe('hi')
+  })
+
   it('every tool def declares an object schema', () => {
     for (const t of getBuiltinTools()) {
       expect(t.parameters.type).toBe('object')

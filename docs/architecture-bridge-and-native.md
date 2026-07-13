@@ -266,11 +266,10 @@ opt in / accept the documented semantics:
   `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` empty → `callAgentByName` (full
   inline job + `intent:'a2a'` audit). Opt in with `=on` for the
   latency fast path (no A2A job row).
-- **`isAgentEnabled('native')` returns true unconditionally**
-  (`live-config.ts`): the SPA `config.agents` disable toggle is a
-  preference / default-picker signal, **not** a routing kill-switch —
-  `/na` stays reachable. Intentional for installs whose enabled list
-  predates native; changing it needs a config migration.
+- **`isAgentEnabled('native')` honour `config.agents`** (`live-config.ts`):
+  SPA disable is a real routing kill-switch. Boot runs
+  `migrateNativeAgentToggle` once so legacy non-empty lists that
+  omitted `native` get it appended before the filter applies.
 - **ACP SSRF**: `assertSafeAcpUrl` now guards Web discover/test,
   discovery `.well-known` + advertised endpoints, and
   `registry.loadACPAgents` before adapter construction. Runtime fetch
@@ -278,9 +277,10 @@ opt in / accept the documented semantics:
   `AGIM_ACP_ALLOW_LOOPBACK=1`.
 - **ACP abort/outcome**: `ACPAdapter` forwards `opts.signal` and reports
   exactly-once `onOutcome`. Token `onUsage` awaits ACP wire support.
-- **Session id persistence**: router uses
-  `agent-session-bindings.ts` tables instead of per-agent if-chains
-  (`onAgentSessionId` + `prepareSubtaskAgentCallOptions`).
+- **Session id persistence**: router **and** cli `onAgentResolved` use
+  `agent-session-bindings.ts` (`bindTurnAgentSession` + persist tables)
+  instead of per-agent if-chains. Cursor now has `cursorSessionId`
+  like the other resume-driven CLI agents.
 
 The fix direction for remaining name special-cases: push behaviour
 into `AgentAdapter` / shared tables — never special-case by name in

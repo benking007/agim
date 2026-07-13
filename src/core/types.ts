@@ -153,6 +153,10 @@ export interface Session {
   /** GitHub Copilot CLI session UUID preallocated by Agim and passed via
    *  `--session-id <uuid>`. Cleared by /new. */
   copilotSessionId?: string
+  /** Cursor (`cursor-agent`) chat id surfaced from stream-json
+   *  `system.init.session_id`. Subsequent turns pass `--resume <id>`.
+   *  Cleared by /new. */
+  cursorSessionId?: string
   /** Plan mode flag — toggled by /plan on / /plan off. When true:
    *    • claude-code adapter spawns with `--permission-mode plan` and bypasses
    *      the IM approval bus (plan mode is read-only, no mutations to gate).

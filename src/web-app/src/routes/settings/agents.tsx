@@ -58,10 +58,9 @@ import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
  *  `kind` distinguishes spawn flavor:
  *    - 'cli'        → external CLI subprocess, needs `npm install -g <pkg>`
  *    - 'in-process' → runs inside agim, no install needed; `pkg` carries
- *                     a one-liner hint instead of an install command. The
- *                     runtime always exposes it via `isAgentEnabled`
- *                     regardless of config.agents, so default-picker
- *                     eligibility ignores the enabled-list constraint. */
+ *                     a one-liner hint instead of an install command.
+ *                     Honours `config.agents` like CLI agents (boot
+ *                     migrates legacy lists that omitted `native`). */
 interface BuiltinAgentInfo {
   aliases: string[]
   pkg: string
@@ -127,19 +126,10 @@ export default function SettingsAgentsRoute(): JSX.Element {
   }, [cfg, enabled, defaultAgent, acpAgents])
 
   /** Eligible defaults = installed + enabled. Picker disables when
-   *  empty (no agent is both).
-   *
-   *  v1.2.140 — in-process agents (e.g. `native`) are exempt from the
-   *  enabled-list check. Runtime `isAgentEnabled('native')` always
-   *  returns true regardless of config.agents (see live-config.ts), so
-   *  the picker should mirror that and not require the user to flip the
-   *  toggle on first. */
+   *  empty (no agent is both). In-process `native` follows the same
+   *  enabled-list rule as CLI agents. */
   const eligibleDefaults = useMemo(
-    () => AGENT_NAMES.filter((a) => {
-      const info = BUILTIN_AGENTS[a]
-      const enabledOrInProcess = info.kind === 'in-process' ? true : enabled.includes(a)
-      return enabledOrInProcess && status[a]
-    }),
+    () => AGENT_NAMES.filter((a) => enabled.includes(a) && status[a]),
     [enabled, status],
   )
 

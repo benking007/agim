@@ -1,8 +1,11 @@
 // Table-driven agent session id bindings.
 //
-// Keeps router / subtask resume free of per-agent if-chains while leaving the
-// Session schema and per-field setters unchanged. Adding a callback-driven CLI
-// agent = one row here (+ existing session.ts setter / Session field).
+// Keeps router / cli / subtask resume free of per-agent if-chains while
+// leaving the Session schema and per-field setters unchanged. Adding a
+// callback-driven CLI agent = one row here (+ existing session.ts setter
+// / Session field).
+
+import { randomUUID } from 'node:crypto'
 
 import type { Session } from './types.js'
 import { sessionManager } from './session.js'
@@ -17,6 +20,7 @@ export type AgentSessionField = keyof Pick<
   | 'piSessionId'
   | 'mimoSessionId'
   | 'copilotSessionId'
+  | 'cursorSessionId'
 >
 
 export interface AgentSessionPersistBinding {
@@ -30,10 +34,12 @@ export interface AgentSessionPersistBinding {
   logLabel: string
 }
 
-export type SubtaskSessionStrategy =
+export type TurnSessionStrategy =
   | { kind: 'claude-preallocate' }
   | { kind: 'copilot-preallocate'; field: 'copilotSessionId' }
   | { kind: 'resume-if-present'; field: AgentSessionField }
+
+export type SubtaskSessionStrategy = TurnSessionStrategy
 
 /** Agents that report a minted session id via opts.onAgentSessionId. */
 export const AGENT_SESSION_PERSIST: Record<string, AgentSessionPersistBinding> = {
@@ -77,10 +83,18 @@ export const AGENT_SESSION_PERSIST: Record<string, AgentSessionPersistBinding> =
     persist: (p, c, t, id) => sessionManager.setCopilotSessionId(p, c, t, id),
     logLabel: 'setCopilotSessionId',
   },
+  cursor: {
+    field: 'cursorSessionId',
+    persist: (p, c, t, id) => sessionManager.setCursorSessionId(p, c, t, id),
+    logLabel: 'setCursorSessionId',
+  },
 }
 
-/** How prepareSubtaskAgentCallOptions builds resume opts for each agent. */
-export const SUBTASK_AGENT_SESSION: Record<string, SubtaskSessionStrategy> = {
+/**
+ * How cli `onAgentResolved` and `prepareSubtaskAgentCallOptions` wire
+ * resume / preallocate for each agent. Same table for both paths.
+ */
+export const TURN_AGENT_SESSION: Record<string, TurnSessionStrategy> = {
   'claude-code': { kind: 'claude-preallocate' },
   opencode: { kind: 'resume-if-present', field: 'opencodeSessionId' },
   codex: { kind: 'resume-if-present', field: 'codexSessionId' },
@@ -89,5 +103,92 @@ export const SUBTASK_AGENT_SESSION: Record<string, SubtaskSessionStrategy> = {
   qoder: { kind: 'resume-if-present', field: 'qoderSessionId' },
   pi: { kind: 'resume-if-present', field: 'piSessionId' },
   mimo: { kind: 'resume-if-present', field: 'mimoSessionId' },
+  cursor: { kind: 'resume-if-present', field: 'cursorSessionId' },
   copilot: { kind: 'copilot-preallocate', field: 'copilotSessionId' },
+}
+
+/** @deprecated alias — prefer TURN_AGENT_SESSION */
+export const SUBTASK_AGENT_SESSION = TURN_AGENT_SESSION
+
+export type SessionStickyFields = Pick<
+  Session,
+  | 'claudeSessionId'
+  | 'claudeSessionPrimed'
+  | 'opencodeSessionId'
+  | 'codexSessionId'
+  | 'antigravitySessionId'
+  | 'kimiSessionId'
+  | 'qoderSessionId'
+  | 'piSessionId'
+  | 'mimoSessionId'
+  | 'copilotSessionId'
+  | 'cursorSessionId'
+>
+
+export interface BoundTurnSession {
+  agentSessionId?: string
+  agentSessionResume?: boolean
+}
+
+/**
+ * Bind resume / preallocate session ids for one agent turn.
+ *
+ * Shared by cli `onAgentResolved` and router subtask prep so both stay
+ * table-driven. When `ensureSession` is true (IM inbound path), creates
+ * the agim Session row before writing any agent-native id.
+ */
+export async function bindTurnAgentSession(
+  agentName: string,
+  sticky: SessionStickyFields | undefined | null,
+  ids: { platform: string; channelId: string; threadId: string },
+  opts: { ensureSession?: boolean } = {},
+): Promise<BoundTurnSession> {
+  const strategy = TURN_AGENT_SESSION[agentName]
+  if (!strategy) return {}
+
+  if (opts.ensureSession) {
+    await sessionManager.getOrCreateSession(
+      ids.platform, ids.channelId, ids.threadId, agentName,
+    )
+  }
+
+  if (strategy.kind === 'claude-preallocate') {
+    let claudeId = sticky?.claudeSessionId
+    if (!claudeId) {
+      claudeId = randomUUID()
+      await sessionManager.setClaudeSessionId(
+        ids.platform, ids.channelId, ids.threadId, claudeId,
+      )
+    }
+    const willResume = !!sticky?.claudeSessionPrimed
+    if (!willResume) {
+      try {
+        await sessionManager.markClaudeSessionPrimed(
+          ids.platform, ids.channelId, ids.threadId,
+        )
+      } catch {
+        // Best-effort: adapter still gets agentSessionId; next turn may
+        // retry --session-id once if primed never stuck.
+      }
+    }
+    return { agentSessionId: claudeId, agentSessionResume: willResume }
+  }
+
+  if (strategy.kind === 'copilot-preallocate') {
+    let copilotId = sticky?.copilotSessionId
+    if (!copilotId) {
+      copilotId = randomUUID()
+      await sessionManager.setCopilotSessionId(
+        ids.platform, ids.channelId, ids.threadId, copilotId,
+      )
+    }
+    return {
+      agentSessionId: copilotId,
+      agentSessionResume: !!sticky?.copilotSessionId,
+    }
+  }
+
+  const sid = sticky?.[strategy.field]
+  if (!sid) return {}
+  return { agentSessionId: sid, agentSessionResume: true }
 }

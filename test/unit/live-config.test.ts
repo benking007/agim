@@ -61,12 +61,12 @@ describe('live-config singleton', () => {
     expect(isAgentEnabled('cursor')).toBe(false)
   })
 
-  it('isAgentEnabled() — native is always allowed (v1.2.105: never filtered)', () => {
-    // Enabled list excludes native; native must still be reachable so /na
-    // and native-default routing keep working.
+  it('isAgentEnabled() — native honours the enabled list like other agents', () => {
     setLiveConfig(cfg({ agents: ['codex'], defaultAgent: 'codex' }))
-    expect(isAgentEnabled('native')).toBe(true)
+    expect(isAgentEnabled('native')).toBe(false)
     expect(isAgentEnabled('claude-code')).toBe(false)
+    setLiveConfig(cfg({ agents: ['codex', 'native'], defaultAgent: 'codex' }))
+    expect(isAgentEnabled('native')).toBe(true)
   })
 
   it('isAgentEnabled() — the default agent is always allowed even if not listed', () => {

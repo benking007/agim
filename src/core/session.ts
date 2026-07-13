@@ -131,6 +131,7 @@ function deserializeSession(value: unknown): Session | null {
     piSessionId: parsed.piSessionId,
     mimoSessionId: parsed.mimoSessionId,
     copilotSessionId: parsed.copilotSessionId,
+    cursorSessionId: parsed.cursorSessionId,
     planMode: parsed.planMode,
   }
 }
@@ -357,6 +358,7 @@ class SessionManager {
         piSessionId: existing?.piSessionId,
         mimoSessionId: existing?.mimoSessionId,
         copilotSessionId: existing?.copilotSessionId,
+        cursorSessionId: existing?.cursorSessionId,
         planMode: existing?.planMode,
       }
 
@@ -678,6 +680,27 @@ class SessionManager {
   }
 
   /**
+   * Persist Cursor's stream-json session_id after system.init reports it.
+   * Subsequent turns pass it back via `cursor-agent --resume <id>`.
+   */
+  async setCursorSessionId(
+    platform: string, channelId: string, threadId: string,
+    cursorSessionId: string,
+  ): Promise<Session | undefined> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return undefined
+      if (session.cursorSessionId === cursorSessionId) return session
+      session.cursorSessionId = cursorSessionId
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return session
+    })
+  }
+
+  /**
    * Increment the per-session usage roll-up after a successful agent
    * invocation. Used by router.callAgentWithHistory to power /stats.
    */
@@ -756,6 +779,7 @@ class SessionManager {
         delete session.piSessionId
         delete session.mimoSessionId
         delete session.copilotSessionId
+        delete session.cursorSessionId
         // Plan mode is per-conversation intent ("先规划再动手") — a fresh
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
@@ -1003,6 +1027,7 @@ class SessionManager {
         piSessionId: session.piSessionId,
         mimoSessionId: session.mimoSessionId,
         copilotSessionId: session.copilotSessionId,
+        cursorSessionId: session.cursorSessionId,
         planMode: session.planMode,
         messageCount: session.messages.length,
       }

@@ -132,6 +132,7 @@ const helper = createSqliteHelper({
       metadata_json     TEXT NOT NULL DEFAULT '{}',
       owner_id           TEXT NOT NULL DEFAULT '',
       owner_pid          INTEGER NOT NULL DEFAULT 0,
+      owner_start        TEXT NOT NULL DEFAULT '',
       created_at        TEXT NOT NULL DEFAULT (datetime('now')),
       finished_at       TEXT,
       UNIQUE(op_hash, kind)
@@ -156,6 +157,9 @@ const helper = createSqliteHelper({
     }
     if (!ledgerColumns.some((column) => column.name === 'owner_pid')) {
       d.exec('ALTER TABLE goal_ledger ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!ledgerColumns.some((column) => column.name === 'owner_start')) {
+      d.exec("ALTER TABLE goal_ledger ADD COLUMN owner_start TEXT NOT NULL DEFAULT ''")
     }
     const recover = d.transaction(() => {
       // Keep only the newest active row in legacy databases before adding the

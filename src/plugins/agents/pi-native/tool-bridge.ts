@@ -24,6 +24,7 @@ import {
   classifyGoalEvidence,
   finishGoalToolOperation,
   isDetachedGoalCommand,
+  isGoalExecContainmentAvailable,
   type GoalEvidenceContext,
 } from '../../../core/goal-evidence.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
@@ -169,8 +170,13 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
       const parsedArgs = (args ?? {}) as Record<string, unknown>
       const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
       const goalEvidence = opts.resolveGoalEvidence?.() ?? opts.goalEvidence ?? null
-      if (goalEvidence && def.name === 'native_exec' && isDetachedGoalCommand(parsedArgs)) {
-        throw new Error('detached/background exec is not allowed while a versioned goal is active')
+      if (goalEvidence && def.name === 'native_exec') {
+        if (!isGoalExecContainmentAvailable()) {
+          throw new Error('native_exec requires bwrap process containment while a versioned goal is active')
+        }
+        if (isDetachedGoalCommand(parsedArgs)) {
+          throw new Error('detached/background exec is not allowed while a versioned goal is active')
+        }
       }
       let operation: ReturnType<typeof beginGoalToolOperation> = null
       if (goalEvidence) {

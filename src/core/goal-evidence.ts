@@ -18,6 +18,8 @@ export interface GoalToolOperation {
   goalVersion: number
   epoch: number
   kind: Exclude<GoalEvidenceKind, 'control'>
+  /** In-memory only; never persisted in plaintext. */
+  semanticInput: string
 }
 
 export interface IssuedEvidence {
@@ -29,6 +31,19 @@ export interface IssuedEvidence {
 const KEY_FILE = join(AGIM_HOME, 'goal-evidence.key')
 let cachedKey: Buffer | null = null
 const PROCESS_OWNER_ID = `${process.pid}:${Date.now()}:${randomUUID()}`
+
+function processStartIdentity(pid: number): string {
+  if (process.platform !== 'linux' || !Number.isSafeInteger(pid) || pid <= 0) return ''
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const tail = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/)
+    return tail[19] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+const PROCESS_START_ID = processStartIdentity(process.pid)
 
 function secretKey(): Buffer {
   if (cachedKey) return cachedKey
@@ -75,11 +90,15 @@ export function reconcileInterruptedGoalOperations(): number {
   const d = getGoalsDatabaseForLedger()
   if (!d) return 0
   const owners = d.prepare(`
-    SELECT DISTINCT owner_id, owner_pid FROM goal_ledger
+    SELECT DISTINCT owner_id, owner_pid, owner_start FROM goal_ledger
     WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
-  `).all() as Array<{ owner_id: string; owner_pid: number }>
-  const stale = owners.filter((owner) =>
-    owner.owner_id !== PROCESS_OWNER_ID && !isPidAlive(owner.owner_pid))
+  `).all() as Array<{ owner_id: string; owner_pid: number; owner_start: string }>
+  const stale = owners.filter((owner) => {
+    if (owner.owner_id === PROCESS_OWNER_ID) return false
+    if (!isPidAlive(owner.owner_pid)) return true
+    const liveStart = processStartIdentity(owner.owner_pid)
+    return !!owner.owner_start && !!liveStart && owner.owner_start !== liveStart
+  })
   if (stale.length === 0) return 0
   const tx = d.transaction(() => {
     d.prepare(`
@@ -88,11 +107,13 @@ export function reconcileInterruptedGoalOperations(): number {
     `).run()
     const update = d.prepare(`
       UPDATE goal_ledger SET state = 'unknown', finished_at = datetime('now')
-      WHERE owner_id = ? AND owner_pid = ?
+      WHERE owner_id = ? AND owner_pid = ? AND owner_start = ?
         AND kind IN ('mutation', 'mutation_verification') AND state = 'started'
     `)
     let changed = 0
-    for (const owner of stale) changed += update.run(owner.owner_id, owner.owner_pid).changes
+    for (const owner of stale) {
+      changed += update.run(owner.owner_id, owner.owner_pid, owner.owner_start).changes
+    }
     return changed
   })
   const changed = tx.immediate()
@@ -149,6 +170,12 @@ export function isDetachedGoalCommand(input: unknown): boolean {
   return /(?:^|[\s/])(?:setsid|nohup|disown|systemd-run|bgjob)(?:\s|$)|docker\s+run\b[^;\n]*\s-d(?:\s|$)|&\s*$/i.test(command)
 }
 
+export function isGoalExecContainmentAvailable(): boolean {
+  return process.platform === 'linux'
+    && existsSync('/usr/bin/bwrap')
+    && (process.env.AGIM_EXEC_SANDBOX || '').toLowerCase() !== 'off'
+}
+
 export function classifyGoalEvidence(
   toolName: string,
   input: unknown,
@@ -158,6 +185,37 @@ export function classifyGoalEvidence(
   if (toolName === 'native_exec' && isVerificationCommand(input)) return 'mutation_verification'
   if (OBSERVATION_TOOLS.has(toolName)) return 'observation'
   return 'mutation'
+}
+
+function semanticTerms(text: string): Set<string> {
+  const normalized = text.toLowerCase()
+  const terms = new Set(normalized.match(/[a-z0-9][a-z0-9._-]{2,}/g) ?? [])
+  for (const match of normalized.matchAll(/[\u3400-\u9fff]{2,}/g)) {
+    const value = match[0]
+    for (let i = 0; i < value.length - 1; i++) terms.add(value.slice(i, i + 2))
+  }
+  for (const stop of ['the', 'and', 'with', 'from', 'this', 'that', 'goal', 'task']) terms.delete(stop)
+  return terms
+}
+
+function isSemanticallyBound(
+  goal: { title: string; body: string },
+  operation: GoalToolOperation,
+  output: string,
+): boolean {
+  const goalText = `${goal.title}\n${goal.body}`
+  if (
+    operation.kind === 'mutation_verification'
+    && /(?:code|bug|release|build|test|ship|implement|代码|修复|发布|构建|测试|实现)/i.test(goalText)
+  ) {
+    return true
+  }
+  const goalTerms = semanticTerms(goalText)
+  const evidenceTerms = semanticTerms(`${operation.semanticInput}\n${output.slice(0, 2000)}`)
+  for (const term of goalTerms) {
+    if (evidenceTerms.has(term)) return true
+  }
+  return false
 }
 
 export function beginGoalToolOperation(input: {
@@ -208,8 +266,8 @@ export function beginGoalToolOperation(input: {
     const info = d.prepare(`
       INSERT INTO goal_ledger (
         op_hash, goal_id, goal_version, epoch, kind, state,
-        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid
-      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?)
+        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid, owner_start
+      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?)
     `).run(
       opHash,
       goal.id,
@@ -222,6 +280,7 @@ export function beginGoalToolOperation(input: {
       inputHash,
       PROCESS_OWNER_ID,
       process.pid,
+      PROCESS_START_ID,
     )
     return {
       ledgerId: Number(info.lastInsertRowid),
@@ -229,6 +288,7 @@ export function beginGoalToolOperation(input: {
       goalVersion: goal.version,
       epoch: goal.mutation_epoch,
       kind: input.kind as GoalToolOperation['kind'],
+      semanticInput: stableJson(input.args).slice(0, 2000),
     }
   })
   return tx.immediate()
@@ -248,10 +308,10 @@ export function finishGoalToolOperation(
   const d = getGoalsDatabaseForLedger()
   if (!d) return null
   const outputHash = hmac(result.output)
-  const metadata = JSON.stringify({
+  const metadataBase = {
     outputChars: result.output.length,
     ...(result.metadata ?? {}),
-  })
+  }
   const tx = d.transaction((): IssuedEvidence | null => {
     const row = d.prepare('SELECT state FROM goal_ledger WHERE id = ?').get(operation.ledgerId) as
       | { state: string }
@@ -271,7 +331,12 @@ export function finishGoalToolOperation(
       d.prepare(`
         UPDATE goal_ledger SET state = ?, output_hash = ?,
           metadata_json = ?, finished_at = datetime('now') WHERE id = ?
-      `).run(result.uncertain ? 'unknown' : 'failed', outputHash, metadata, operation.ledgerId)
+      `).run(
+        result.uncertain ? 'unknown' : 'failed',
+        outputHash,
+        JSON.stringify({ ...metadataBase, semanticBound: false }),
+        operation.ledgerId,
+      )
       return null
     }
     if (isMutation) {
@@ -281,15 +346,19 @@ export function finishGoalToolOperation(
       `).run()
     }
     const goal = d.prepare(`
-      SELECT version, mutation_epoch, status FROM goals WHERE id = ?
+      SELECT version, mutation_epoch, status, title, body FROM goals WHERE id = ?
     `).get(operation.goalId) as
-      | { version: number; mutation_epoch: number; status: string }
+      | { version: number; mutation_epoch: number; status: string; title: string; body: string }
       | undefined
     if (goal?.status !== 'active' || goal.version !== operation.goalVersion) {
       d.prepare(`
         UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
           metadata_json = ?, finished_at = datetime('now') WHERE id = ?
-      `).run(outputHash, metadata, operation.ledgerId)
+      `).run(
+        outputHash,
+        JSON.stringify({ ...metadataBase, semanticBound: false }),
+        operation.ledgerId,
+      )
       return null
     }
     const epoch = goal.mutation_epoch
@@ -303,17 +372,29 @@ export function finishGoalToolOperation(
         d.prepare(`
           UPDATE goal_ledger SET state = 'unknown', output_hash = ?,
             metadata_json = ?, finished_at = datetime('now') WHERE id = ?
-        `).run(outputHash, metadata, operation.ledgerId)
+          `).run(
+            outputHash,
+            JSON.stringify({ ...metadataBase, semanticBound: false }),
+            operation.ledgerId,
+          )
         return null
       }
     }
-    const canIssue = operation.kind === 'observation' || operation.kind === 'mutation_verification'
+    const semanticBound = isSemanticallyBound(goal, operation, result.output)
+    const canIssue = semanticBound
+      && (operation.kind === 'observation' || operation.kind === 'mutation_verification')
     const token = canIssue ? `ev1_${randomBytes(32).toString('base64url')}` : null
     d.prepare(`
       UPDATE goal_ledger SET state = 'succeeded', epoch = ?, evidence_hash = ?,
         output_hash = ?, metadata_json = ?, finished_at = datetime('now')
       WHERE id = ?
-    `).run(epoch, token ? tokenHash(token) : null, outputHash, metadata, operation.ledgerId)
+    `).run(
+      epoch,
+      token ? tokenHash(token) : null,
+      outputHash,
+      JSON.stringify({ ...metadataBase, semanticBound }),
+      operation.ledgerId,
+    )
     if (!token) return null
     return {
       id: token,

@@ -353,6 +353,7 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
   const argv: string[] = [
     '--die-with-parent',
     '--new-session',
+    '--unshare-pid',
     '--ro-bind', '/usr', '/usr',
     '--ro-bind-try', '/lib', '/lib',
     '--ro-bind-try', '/lib64', '/lib64',

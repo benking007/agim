@@ -44,7 +44,7 @@ function completionPayload(
       args: { command: 'npm test' },
       kind: 'mutation_verification',
     })
-    const evidence = finishGoalToolOperation(op, { ok: true, output: 'verified result' })
+    const evidence = finishGoalToolOperation(op, { ok: true, output: `verified ${active.title}` })
     if (!evidence) throw new Error('failed to issue evidence')
     evidenceIds.push(evidence.id)
   }

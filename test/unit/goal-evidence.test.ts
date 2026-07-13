@@ -51,7 +51,7 @@ describeSqlite('goal evidence ledger', () => {
           required: ['path'],
         },
       },
-      async () => ({ text: 'file contents', isError: false, source: 'fs' }),
+      async () => ({ text: 'bridge evidence file contents', isError: false, source: 'fs' }),
       {
         traceId: 'trace-bridge',
         parallelSafe: () => true,
@@ -64,7 +64,7 @@ describeSqlite('goal evidence ledger', () => {
     )
     const result = await tool.execute('bridge-call', { path: 'file.txt' }, new AbortController().signal)
     const text = result.content.find((item) => item.type === 'text')?.text ?? ''
-    expect(text).toContain('file contents')
+    expect(text).toContain('bridge evidence file contents')
     expect(text).toMatch(/\[agim evidence observation: ev1_/)
   })
 
@@ -141,7 +141,7 @@ describeSqlite('goal evidence ledger', () => {
       'detached-call',
       { command: 'nohup worker &' },
       new AbortController().signal,
-    )).rejects.toThrow(/detached/)
+    )).rejects.toThrow(/bwrap|detached/)
     expect(dispatches).toBe(0)
   })
 
@@ -163,7 +163,10 @@ describeSqlite('goal evidence ledger', () => {
       args: { path: 'a.txt' },
       kind: 'observation',
     })
-    const oldEvidence = finishGoalToolOperation(observation, { ok: true, output: 'before' })
+    const oldEvidence = finishGoalToolOperation(observation, {
+      ok: true,
+      output: 'ship verified change before',
+    })
     expect(oldEvidence?.id).toMatch(/^ev1_/)
 
     const mutation = beginGoalToolOperation({
@@ -229,10 +232,13 @@ describeSqlite('goal evidence ledger', () => {
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-research' },
       toolCallId: 'search-one',
       toolName: 'native_web_search',
-      args: { query: 'topic' },
+      args: { query: 'research corroboration' },
       kind: 'observation',
     })
-    const evidence = finishGoalToolOperation(operation, { ok: true, output: 'one source' })
+    const evidence = finishGoalToolOperation(operation, {
+      ok: true,
+      output: 'research corroboration from one source',
+    })
     const result = completeGoalCas({
       platform: 'test',
       channelId: 'c',
@@ -246,6 +252,29 @@ describeSqlite('goal evidence ledger', () => {
     })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('EVIDENCE_INSUFFICIENT')
+  })
+
+  it('does not issue evidence for observations unrelated to the goal', () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'semantic',
+      userId: 'u',
+      title: 'research battery recycling',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    const operation = beginGoalToolOperation({
+      context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-semantic' },
+      toolCallId: 'unrelated',
+      toolName: 'native_web_search',
+      args: { query: 'football scores' },
+      kind: 'observation',
+    })
+    expect(finishGoalToolOperation(operation, {
+      ok: true,
+      output: 'latest football league results',
+    })).toBeNull()
   })
 
   it('rejects forged and cross-goal evidence capabilities', () => {
@@ -286,7 +315,7 @@ describeSqlite('goal evidence ledger', () => {
       args: { path: 'x' },
       kind: 'observation',
     })
-    const evidence = finishGoalToolOperation(op, { ok: true, output: 'x' })
+    const evidence = finishGoalToolOperation(op, { ok: true, output: 'other goal evidence' })
     const crossGoal = completeGoalCas({
       platform: 'test',
       channelId: 'c',
@@ -386,10 +415,10 @@ describeSqlite('goal evidence ledger', () => {
     db.prepare(`
       INSERT INTO goal_ledger (
         op_hash, goal_id, goal_version, epoch, kind, state,
-        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid
+        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid, owner_start
       ) VALUES ('orphan-op', ?, ?, 0, 'mutation', 'started',
-        'trace', 'call', 'native_write_file', 'input', 'dead-owner', 99999999)
-    `).run(goal.id, goal.version)
+        'trace', 'call', 'native_write_file', 'input', 'dead-owner', ?, 'reused-pid-start')
+    `).run(goal.id, goal.version, process.pid)
     __resetGoalEvidenceKeyForTesting()
 
     expect(reconcileInterruptedGoalOperations()).toBe(1)

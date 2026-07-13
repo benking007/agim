@@ -229,6 +229,8 @@ export interface RunContext {
    *  write/exec tools on their behalf, so approved filesystem operations land
    *  in the same workspace the agent is reasoning about. */
   cwd?: string
+  /** Root invocation trace used to bind goal evidence lineage. */
+  traceId?: string
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -249,6 +251,10 @@ export interface ApprovalNotification {
    *  instead of the regular y/n one — the bus will allow on timer expiry,
    *  unless the user actively denies first. */
   autoAllow?: { graceMs: number }
+  /** Security-sensitive state transitions (for example exiting Plan Mode)
+   * require a one-time human decision. Auto-approve, remembered allow rules,
+   * allow-on-timeout, and "allow all" must not bypass this prompt. */
+  requiresExplicitDecision?: boolean
 }
 
 /** Notifier 只负责"通知 IM 推卡片/消息"。不要在这里返回决策；决策走 resolvePending。 */
@@ -319,6 +325,8 @@ interface PendingApproval {
    *  a valid platform even when the underlying runContext has already been
    *  cleared (e.g. unregisterRun deletes the context BEFORE cancelling). */
   platform: string
+  /** Only this user may resolve an explicit-decision request. */
+  approverUserId: string
   /** Truncated input fingerprint used for auto-allow lookups + revocation. */
   fingerprint: string
   /** Original tool input — kept verbatim so dashboard / `listPending` can
@@ -345,6 +353,9 @@ interface PendingApproval {
    *  resolves to allow rather than deny, and an explicit deny revokes the
    *  matching auto-allow rule. */
   autoAllow: boolean
+  /** True for approval-only state transitions that must be decided by a
+   *  human for this exact request. */
+  requiresExplicitDecision: boolean
 }
 
 export interface ApprovalBusOptions {
@@ -536,11 +547,11 @@ export class ApprovalBus {
    *  composite produced by `threadKey(platform, channelId, threadId)`. The
    *  text-reply path (cli's tryHandleApprovalReply) is the canonical caller;
    *  button callbacks should use `resolvePendingByReqId` instead. */
-  resolvePending(key: string, decision: Decision): ResolvedInfo | null {
+  resolvePending(key: string, decision: Decision, actorUserId?: string): ResolvedInfo | null {
     const q = this.pendingByThread.get(key)
     const head = q?.[0]
     if (!head) return null
-    return this._resolveTarget(head, decision)
+    return this._resolveTarget(head, decision, actorUserId)
   }
 
   /**
@@ -548,13 +559,48 @@ export class ApprovalBus {
    * callbacks and the dashboard where the UI element carries the exact reqId,
    * avoiding the FIFO head-of-thread ambiguity of resolvePending().
    */
-  resolvePendingByReqId(reqId: string, decision: Decision): ResolvedInfo | null {
+  resolvePendingByReqId(reqId: string, decision: Decision, actorUserId?: string): ResolvedInfo | null {
     const target = this.pendingById.get(reqId)
     if (!target || target.resolved) return null
-    return this._resolveTarget(target, decision)
+    return this._resolveTarget(target, decision, actorUserId)
   }
 
-  private _resolveTarget(target: PendingApproval, decision: Decision): ResolvedInfo {
+  /** Cancel a specific request from a non-user lifecycle event. Unlike
+   * resolvePendingByReqId this preserves the cause so card renderers expire
+   * stale buttons instead of treating an abort as a human click. */
+  cancelPendingByReqId(
+    reqId: string,
+    message: string,
+    cause: Exclude<ResolutionCause, 'user'> = 'run-terminated',
+  ): boolean {
+    const target = this.pendingById.get(reqId)
+    if (!target || target.resolved) return false
+    this.cancelPending(target, { behavior: 'deny', message }, cause)
+    return true
+  }
+
+  private _resolveTarget(
+    target: PendingApproval,
+    decision: Decision,
+    actorUserId?: string,
+  ): ResolvedInfo | null {
+    if (
+      target.requiresExplicitDecision
+      && (!actorUserId || actorUserId !== target.approverUserId)
+    ) {
+      log.warn({
+        event: 'approval.bus.explicit_actor_mismatch',
+        reqId: target.reqId,
+        expectedUserId: target.approverUserId,
+        actorUserId: actorUserId ?? '',
+      })
+      return null
+    }
+    if (target.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+      // Mutate the caller-visible decision too: approval-router uses the same
+      // object for receipts/card outcomes after resolvePending returns.
+      delete decision.autoAllowFurther
+    }
     const platform = this.runContexts.get(target.runId)?.platform ?? ''
     const info: ResolvedInfo = {
       reqId: target.reqId,
@@ -1378,12 +1424,23 @@ export class ApprovalBus {
       return
     }
     const { handleGoalOp } = await import('./goal-rpc.js')
+    const { hashWorkspaceScope } = await import('./goal-evidence.js')
+    const { defaultAgentCwd, resolveAgentCwd } = await import('./agent-cwd.js')
+    const agentName = ctx.callerAgent || 'native'
     const result = await handleGoalOp(op, payload, {
       platform: ctx.platform,
       channelId: ctx.channelId,
       threadId: ctx.threadId,
       userId: ctx.userId,
       callerAgent: ctx.callerAgent,
+      traceId: ctx.traceId,
+      workspaceScope: hashWorkspaceScope(
+        resolveAgentCwd(agentName, {
+          platform: ctx.platform,
+          channelId: ctx.channelId,
+          threadId: ctx.threadId,
+        }) || defaultAgentCwd(agentName),
+      ),
     })
     this.sendGoalResult(socket, reqId, result)
   }
@@ -1471,6 +1528,10 @@ export class ApprovalBus {
     input: Record<string, unknown>
     /** Optional — used by Claude's MCP path; defaults to '' for synthetic. */
     toolUseId?: string
+    /** Require a one-time human decision; bypasses every automatic allow path. */
+    requiresExplicitDecision?: boolean
+    /** Override the pending timer (e.g. goal confirmation uses its own budget). */
+    timeoutMs?: number
     ctx: RunContext
     dispatch: (decision: Decision) => void
   }): Promise<void> {
@@ -1496,6 +1557,8 @@ export class ApprovalBus {
       toolUseId: input.toolUseId ?? '',
       input: input.input,
       ctx: input.ctx,
+      requiresExplicitDecision: input.requiresExplicitDecision,
+      timeoutMs: input.timeoutMs,
       transport: { dispatch: input.dispatch },
     })
   }
@@ -1512,6 +1575,9 @@ export class ApprovalBus {
     toolUseId: string
     input: Record<string, unknown>
     ctx: RunContext
+    requiresExplicitDecision?: boolean
+    /** Optional override for the pending resolution timer. */
+    timeoutMs?: number
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.toolName, args.input)
@@ -1567,7 +1633,7 @@ export class ApprovalBus {
     // / notifier so it costs zero IM round-trips. Counts toward totals so the
     // metrics dashboard still reflects activity, but never fires the SSE
     // event-bus or notifier — readonly calls are deliberately invisible.
-    if (READONLY_TOOLS.has(args.toolName) && this.isReadonlyAutoAllowEnabled(cKey)) {
+    if (!args.requiresExplicitDecision && READONLY_TOOLS.has(args.toolName) && this.isReadonlyAutoAllowEnabled(cKey)) {
       this.metricsSnapshot.totalRequests++
       this.metricsSnapshot.totalResolved++
       this.metricsSnapshot.totalAllowed++
@@ -1594,7 +1660,7 @@ export class ApprovalBus {
     // Fires after sensitive-path hard-deny (above) and self-protect
     // (inline below). Skips the notifier entirely so we must run
     // self-protect here rather than relying on approval-router.
-    if (isAutoApproveEnabled()) {
+    if (!args.requiresExplicitDecision && isAutoApproveEnabled()) {
       try {
         const { checkToolUse } = await import('./self-protect.js')
         const selfGuard = checkToolUse(args.toolName, args.input)
@@ -1635,8 +1701,11 @@ export class ApprovalBus {
     }
 
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
-    const isAutoAllow = this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false
-    const timeoutMs = isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs
+    const isAutoAllow = !args.requiresExplicitDecision
+      && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
+    const timeoutMs = typeof args.timeoutMs === 'number' && args.timeoutMs > 0
+      ? args.timeoutMs
+      : (isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs)
 
     const transport = args.transport
     const pending: PendingApproval = {
@@ -1646,6 +1715,7 @@ export class ApprovalBus {
       threadId: args.ctx.threadId,
       compositeKey: cKey,
       platform: args.ctx.platform,
+      approverUserId: args.ctx.userId,
       fingerprint,
       input: args.input,
       registeredAt: Date.now(),
@@ -1653,8 +1723,11 @@ export class ApprovalBus {
       dispatch: 'dispatch' in transport ? transport.dispatch : undefined,
       resolved: false,
       autoAllow: isAutoAllow,
+      requiresExplicitDecision: args.requiresExplicitDecision === true,
       timer: setTimeout(() => {
-        if (isAutoAllow) {
+        if (args.requiresExplicitDecision) {
+          this.cancelPending(pending, { behavior: 'deny', message: 'explicit approval timeout' }, 'timeout')
+        } else if (isAutoAllow) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
         } else if (isTimeoutDefaultAllow()) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
@@ -1699,6 +1772,7 @@ export class ApprovalBus {
         runId: args.runId, reqId: args.reqId, toolName: args.toolName,
         input: args.input, toolUseId: args.toolUseId, ctx: args.ctx,
         ...(isAutoAllow ? { autoAllow: { graceMs: this.autoAllowGraceMs } } : {}),
+        ...(args.requiresExplicitDecision ? { requiresExplicitDecision: true } : {}),
       })
     } catch (err) {
       log.error({ event: 'approval.bus.notifier_error', reqId: args.reqId, err: String(err) })
@@ -1732,6 +1806,16 @@ export class ApprovalBus {
     if (p.resolved) return
     p.resolved = true
     clearTimeout(p.timer)
+
+    // "Allow all" is never meaningful for approval-only state transitions.
+    // Treat it as a one-time allow so this request cannot seed a remembered
+    // rule that silently approves a later plan exit.
+    if (p.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+      decision = {
+        behavior: 'allow',
+        ...(decision.updatedInput ? { updatedInput: decision.updatedInput } : {}),
+      }
+    }
 
     // M14: account for the resolution. Bucket into exactly ONE of
     // allowed / denied / timedOut so the three sub-counters sum to

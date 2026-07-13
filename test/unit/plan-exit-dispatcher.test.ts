@@ -14,6 +14,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import type { ToolCallRequest } from '../../src/core/llm/provider-base.js'
+import { approvalBus, threadKey as makeThreadKey, type ApprovalNotification } from '../../src/core/approval-bus.js'
+import { sessionManager } from '../../src/core/session.js'
 import {
   buildPlanExitDispatcher,
   getPlanExitTools,
@@ -121,5 +123,93 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
     const r = await d(call('native_exit_plan_mode', { plan: '- step 1\n- step 2' }), SIGNAL)
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/no interactive ui/i)
+  })
+
+  it('requires a real user decision even when global auto-approve is enabled', async () => {
+    const savedAuto = process.env.AGIM_AUTO_APPROVE
+    const savedTimeout = process.env.AGIM_TIMEOUT_DEFAULT
+    const unique = `plan-explicit-${Date.now()}`
+    const key = makeThreadKey('telegram', 'c1', unique)
+    let notification: ApprovalNotification | undefined
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
+    approvalBus.setNotifier(async (n) => { notification = n })
+    try {
+      await sessionManager.getOrCreateSession('telegram', 'c1', unique, 'native')
+      await sessionManager.patchSession('telegram', 'c1', unique, { planMode: true })
+      const d = buildPlanExitDispatcher({
+        threadKey: key,
+        runId: `run-${unique}`,
+        platform: 'telegram',
+        channelId: 'c1',
+        threadId: unique,
+        userId: 'u1',
+      })
+      let settled = false
+      const resultPromise = d(
+        call('native_exit_plan_mode', { plan: '- implement only after approval' }),
+        SIGNAL,
+      ).then((result) => {
+        settled = true
+        return result
+      })
+
+      for (let i = 0; i < 20 && !approvalBus.hasPendingFor(key); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(settled).toBe(false)
+      expect(notification?.requiresExplicitDecision).toBe(true)
+      approvalBus.resolvePending(key, { behavior: 'allow' }, 'u1')
+      const result = await resultPromise
+      expect(result.isError).toBe(false)
+      expect(result.text).toContain('approved by user')
+      expect((await sessionManager.getExistingSession('telegram', 'c1', unique))?.planMode).toBeUndefined()
+    } finally {
+      approvalBus.setNotifier(null)
+      await approvalBus.stop()
+      if (savedAuto === undefined) delete process.env.AGIM_AUTO_APPROVE
+      else process.env.AGIM_AUTO_APPROVE = savedAuto
+      if (savedTimeout === undefined) delete process.env.AGIM_TIMEOUT_DEFAULT
+      else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeout
+    }
+  })
+
+  it('cancels the pending approval when the agent turn is aborted', async () => {
+    const savedAuto = process.env.AGIM_AUTO_APPROVE
+    const unique = `plan-abort-${Date.now()}`
+    const key = makeThreadKey('telegram', 'c1', unique)
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_AUTO_APPROVE = '1'
+    approvalBus.setNotifier(async () => {})
+    const ctrl = new AbortController()
+    try {
+      const d = buildPlanExitDispatcher({
+        threadKey: key,
+        runId: `run-${unique}`,
+        platform: 'telegram',
+        channelId: 'c1',
+        threadId: unique,
+        userId: 'u1',
+      })
+      const resultPromise = d(
+        call('native_exit_plan_mode', { plan: '- only after approval' }),
+        ctrl.signal,
+      )
+      for (let i = 0; i < 20 && !approvalBus.hasPendingFor(key); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(approvalBus.hasPendingFor(key)).toBe(true)
+      ctrl.abort()
+      const result = await resultPromise
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('agent turn aborted')
+      expect(approvalBus.hasPendingFor(key)).toBe(false)
+    } finally {
+      approvalBus.setNotifier(null)
+      await approvalBus.stop()
+      if (savedAuto === undefined) delete process.env.AGIM_AUTO_APPROVE
+      else process.env.AGIM_AUTO_APPROVE = savedAuto
+    }
   })
 })

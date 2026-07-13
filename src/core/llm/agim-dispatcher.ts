@@ -42,6 +42,9 @@ import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
+import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
+import { hashWorkspaceScope } from '../goal-evidence.js'
+import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
 import {
   createReminder,
   listReminders,
@@ -371,17 +374,28 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__complete_goal',
       description:
-        'Mark the thread\'s currently-active goal as done (or cancelled). Use when the work is ' +
-        'finished, when the user cancels, or when the user replaces the goal with a different ' +
-        'objective. Without `status` defaults to "completed". `recap` is appended as a final ' +
-        'progress note so the historical log makes sense.',
+        'Complete exactly the active goal identified by the Completion token in context. Copy its ' +
+        '`goalId` and `goalVersion` verbatim. Native completed goals also require current server-issued ' +
+        '`evidenceIds` from successful tool results and final user confirmation; cancelled goals do not. Stale tokens fail closed.',
       parameters: {
         type: 'object',
         properties: {
+          goalId: { type: 'number', description: 'Exact positive goalId from the active-goal Completion token.' },
+          goalVersion: { type: 'number', description: 'Exact positive goalVersion from the Completion token.' },
+          evidenceIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Current `[agim evidence ...]` capability IDs supporting completion.',
+          },
           recap: { type: 'string', description: 'One-line honest summary of how the goal ended.' },
           status: { type: 'string', enum: ['completed', 'cancelled'] },
         },
+        required: ['goalId', 'goalVersion', 'recap'],
+        additionalProperties: false,
       },
+      // Human confirmation can take minutes; do not inherit the 60s tool
+      // default. Budget = confirmation timeout + settle margin.
+      timeoutMs: resolveCompleteGoalToolTimeoutMs(),
     },
     {
       name: 'mcp__agim__create_reminder',
@@ -667,7 +681,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 raw = await runOnce()
               } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e)
-                if (!isTransientSubAgentError(msg)) throw e
+                if (signal.aborted || !isTransientSubAgentError(msg)) throw e
                 log.warn({
                   event: 'native.call_agent.in_process_retry',
                   err: msg, threadId: ctx.threadId,
@@ -715,6 +729,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
             // v1.2.139 — propagate parent's plan-mode to the sub-agent.
             ...(ctx.callerPlanMode ? { planMode: true } : {}),
+            signal,
           }
           // v1.2.139 — one-shot transient retry. callAgentByName already
           // wraps its own audit + notify lifecycle; we just retry the
@@ -722,7 +737,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // reset / quick timeout. Permanent failures (workspace ACL,
           // depth exceeded, model refusal) skip the retry.
           let result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
-          if (!result.ok && isTransientSubAgentError(result.error || '')) {
+          if (!signal.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
             log.warn({
               event: 'native.call_agent.retry',
               calleeAgent: agentName,
@@ -758,6 +773,15 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             threadId: ctx.threadId,
             userId: ctx.userId,
             callerAgent: ctx.callerAgent,
+            traceId: toolCtx?.traceId,
+            signal,
+            workspaceScope: hashWorkspaceScope(
+              resolveAgentCwd('native', {
+                platform: ctx.platform,
+                channelId: ctx.channelId,
+                threadId: ctx.threadId,
+              }) || defaultAgentCwd('native'),
+            ),
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
           return ok(safeJson(r.result))

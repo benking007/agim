@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
-import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, unlink, chmod, stat } from 'node:fs/promises'
 import { sessionManager } from '../../src/core/session'
 import { AGIM_HOME } from '../../src/core/agim-paths'
 
@@ -46,6 +46,17 @@ async function cleanupKey(k: { platform: string; channelId: string; threadId: st
 describe('SessionManager (real, on-disk)', () => {
   beforeEach(async () => {
     await mkdir(SESSIONS_DIR, { recursive: true })
+  })
+
+  it('tightens the session directory to owner-only access on startup', async () => {
+    if (process.platform === 'win32') return
+    await chmod(SESSIONS_DIR, 0o755)
+    await sessionManager.start()
+    try {
+      expect((await stat(SESSIONS_DIR)).mode & 0o777).toBe(0o700)
+    } finally {
+      sessionManager.stop()
+    }
   })
 
   it('addMessage appends to JSONL log', async () => {

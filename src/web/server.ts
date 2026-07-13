@@ -2729,14 +2729,24 @@ async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: numb
     const log = createLogger({ traceId, platform: 'web', component: 'job-run' })
     // Fire and forget — UI polls /api/jobs/:id for status.
     void runJob(id, async function* (j, _logger, signal) {
+      const outcomes: Array<{ status: string; error?: string }> = []
       if (agent instanceof AgentBase) {
-        const text = await agent.spawnAndCollect(j.prompt, signal)
+        const text = await agent.spawnAndCollect(j.prompt, signal, {
+          onOutcome: (value) => { outcomes.push(value) },
+        })
         if (text) yield text
       } else {
-        for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [])) {
+        for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
+          signal,
+          onOutcome: (value) => { outcomes.push(value) },
+        })) {
           if (signal.aborted) break
           yield chunk
         }
+      }
+      const outcome = outcomes.at(-1)
+      if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+        throw new Error(outcome.error ?? outcome.status)
       }
     }, log).catch(() => { /* job-board logs */ })
 
@@ -3000,6 +3010,9 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_PLAN_INTENT_PHRASES',
   // Per-turn iteration cap.
   'AGIM_NATIVE_AGENT_MAX_ITER',
+  'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
+  // Active pi-native AgentHarness loop watchdog (0 disables).
+  'AGIM_NATIVE_TURN_TIMEOUT_MS',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'AGIM_SMTP_PASS',
@@ -4613,14 +4626,24 @@ async function handleBatchJob(
         // Same fire-and-forget pattern as handleRunJob — the dashboard
         // streams status from /events / /api/jobs.
         void runJob(id, async function* (j, _logger, signal) {
+          const outcomes: Array<{ status: string; error?: string }> = []
           if (agent instanceof AgentBase) {
-            const text = await agent.spawnAndCollect(j.prompt, signal)
+            const text = await agent.spawnAndCollect(j.prompt, signal, {
+              onOutcome: (value) => { outcomes.push(value) },
+            })
             if (text) yield text
           } else {
-            for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [])) {
+            for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
+              signal,
+              onOutcome: (value) => { outcomes.push(value) },
+            })) {
               if (signal.aborted) break
               yield chunk
             }
+          }
+          const outcome = outcomes.at(-1)
+          if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+            throw new Error(outcome.error ?? outcome.status)
           }
         }, log).catch(() => { /* job-board logs */ })
         return { id, ok: true, traceId }

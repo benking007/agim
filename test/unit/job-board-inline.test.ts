@@ -17,6 +17,7 @@ import { describe, it, expect, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { logger } from '../../src/core/logger.js'
 
 const TEST_HOME = mkdtempSync(join(tmpdir(), 'agim-jobinline-test-'))
 process.env.AGIM_HOME = TEST_HOME
@@ -67,12 +68,12 @@ skipIfNoDb('inline-job state machine', () => {
     const id = jb.createInlineJob({
       agent: 'a', prompt: 'p', threadKey: 'p:p:p2',
     })
-    jb.markJobRunning(id)
+    expect(jb.markJobRunning(id)).toBe(true)
     const r1 = jb.getJob(id)!
     expect(r1.status).toBe('running')
     expect(r1.started_at).not.toBeNull()
     const stamp1 = r1.started_at
-    jb.markJobRunning(id)  // idempotent
+    expect(jb.markJobRunning(id)).toBe(true)  // idempotent
     const r2 = jb.getJob(id)!
     expect(r2.started_at).toBe(stamp1)  // not overwritten
   })
@@ -87,6 +88,91 @@ skipIfNoDb('inline-job state machine', () => {
     expect(r.status).toBe('completed')
     expect(r.result).toBe('the reply text')
     expect(r.completed_at).not.toBeNull()
+  })
+
+  it('a cancelled pending job cannot transition to running later', () => {
+    const id = jb.createInlineJob({
+      agent: 'a', prompt: 'queued', threadKey: 'p:p:cancelled-pending',
+    })
+    expect(jb.cancelJob(id)).toBe(true)
+    expect(jb.markJobRunning(id)).toBe(false)
+    expect(jb.getJob(id)?.status).toBe('cancelled')
+  })
+
+  it('cancelJob aborts an owner-bound inline controller', () => {
+    const id = jb.createInlineJob({
+      agent: 'a', prompt: 'running', threadKey: 'p:p:bound-controller',
+    })
+    const ctrl = new AbortController()
+    const unbind = jb.bindJobController(id, ctrl)
+    try {
+      expect(jb.markJobRunning(id)).toBe(true)
+      expect(jb.cancelJob(id)).toBe(true)
+      expect(ctrl.signal.aborted).toBe(true)
+      expect(jb.getJob(id)?.status).toBe('cancelled')
+    } finally {
+      unbind()
+    }
+  })
+
+  it('findActiveJobByThread prefers running over a newer pending job', () => {
+    const threadKey = `p:p:active-order-${Date.now()}`
+    const running = jb.createInlineJob({ agent: 'a', prompt: 'running', threadKey })
+    expect(jb.markJobRunning(running)).toBe(true)
+    const pending = jb.createInlineJob({ agent: 'a', prompt: 'pending', threadKey })
+    expect(pending).toBeGreaterThan(running)
+    expect(jb.findActiveJobByThread(threadKey)?.id).toBe(running)
+  })
+
+  it('runJob does not start a pending job cancelled while waiting for a slot', async () => {
+    const saved = process.env.AGIM_MAX_CONCURRENT_JOBS
+    process.env.AGIM_MAX_CONCURRENT_JOBS = '1'
+    let releaseFirst!: () => void
+    const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const first = jb.createInlineJob({ agent: 'a', prompt: 'first', threadKey: 'slot:first' })
+    const second = jb.createInlineJob({ agent: 'a', prompt: 'second', threadKey: 'slot:second' })
+    let secondRan = false
+    try {
+      const firstRun = jb.runJob(first, async function* () {
+        await firstBlocked
+        yield 'first done'
+      }, logger)
+      for (let i = 0; i < 20 && jb.getJob(first)?.status !== 'running'; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      const secondRun = jb.runJob(second, async function* () {
+        secondRan = true
+        yield 'must not run'
+      }, logger)
+      for (let i = 0; i < 20 && jb._waitQueueDepth() === 0; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(jb.cancelJob(second)).toBe(true)
+      releaseFirst()
+      await Promise.all([firstRun, secondRun])
+      expect(secondRan).toBe(false)
+      expect(jb.getJob(second)?.status).toBe('cancelled')
+    } finally {
+      releaseFirst()
+      if (saved === undefined) delete process.env.AGIM_MAX_CONCURRENT_JOBS
+      else process.env.AGIM_MAX_CONCURRENT_JOBS = saved
+    }
+  })
+
+  it('runJob preserves cancelled when the runner rejects while aborting', async () => {
+    const id = jb.createInlineJob({ agent: 'a', prompt: 'abort', threadKey: 'abort:reject' })
+    const run = jb.runJob(id, async function* (_job, _logger, signal) {
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted runner')), { once: true })
+      })
+      yield 'unreachable'
+    }, logger)
+    for (let i = 0; i < 20 && jb.getJob(id)?.status !== 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(jb.cancelJob(id)).toBe(true)
+    await run
+    expect(jb.getJob(id)?.status).toBe('cancelled')
   })
 
   it('markJobDelivered: completed → delivered; no-op for non-completed', () => {
@@ -138,7 +224,7 @@ skipIfNoDb('inline-job state machine', () => {
   })
 
   it('id<=0 makes every helper a no-op (no throw)', () => {
-    expect(() => jb.markJobRunning(-1)).not.toThrow()
+    expect(jb.markJobRunning(-1)).toBe(true)
     expect(() => jb.markJobCompleted(-1, 'x')).not.toThrow()
     expect(() => jb.markJobDelivered(-1)).not.toThrow()
     expect(() => jb.markJobFailed(-1, 'x')).not.toThrow()

@@ -1534,18 +1534,22 @@ export function buildServer(client: ApprovalClient): McpServer {
     {
       title: 'Mark the active goal complete / cancelled',
       description:
-        'Mark the thread\'s currently-active goal as done. Use when work is finished, when the ' +
-        'user cancels, or when the user replaces the goal with a different objective. Default ' +
-        'status="completed"; pass "cancelled" for user-cancelled / superseded work. `recap` is ' +
-        'appended to the goal\'s progress log.',
+        'Complete exactly the goal identified by the active-goal Completion token. Copy goalId and ' +
+        'goalVersion verbatim; stale tokens are rejected without touching a replacement goal.',
       inputSchema: {
-        recap: z.string().optional().describe('One-line honest summary of how the goal ended.'),
+        goalId: z.number().int().positive().describe('Exact goalId from the Completion token.'),
+        goalVersion: z.number().int().positive().describe('Exact goalVersion from the Completion token.'),
+        evidenceIds: z.array(z.string()).optional().describe('Server-issued evidence capabilities, when available.'),
+        recap: z.string().min(10).describe('One-line honest summary of how the goal ended.'),
         status: z.enum(['completed', 'cancelled']).optional().describe('Default "completed".'),
       },
     },
     async (args) => {
       const result = await client.requestGoal('complete_goal', {
-        ...(typeof args.recap === 'string' ? { recap: args.recap } : {}),
+        goalId: args.goalId,
+        goalVersion: args.goalVersion,
+        ...(Array.isArray(args.evidenceIds) ? { evidenceIds: args.evidenceIds } : {}),
+        recap: args.recap,
         ...(typeof args.status === 'string' ? { status: args.status } : {}),
       })
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }

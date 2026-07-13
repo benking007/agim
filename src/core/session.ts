@@ -10,9 +10,10 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir, chmod } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
+import { clearPlanModeForThread } from './plan-mode-state.js'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 
@@ -156,7 +157,14 @@ class SessionManager {
 
   async start(): Promise<void> {
     // Ensure sessions directory exists
-    await mkdir(SESSIONS_DIR, { recursive: true })
+    await mkdir(SESSIONS_DIR, { recursive: true, mode: 0o700 })
+    // mkdir's mode only applies on creation; tighten pre-existing directories
+    // as well so metadata/log files are not traversable by other host users.
+    if (process.platform !== 'win32') {
+      await chmod(SESSIONS_DIR, 0o700).catch((err) => {
+        log.warn({ event: 'session.dir_chmod_failed', dir: SESSIONS_DIR, err: String(err) })
+      })
+    }
 
     // Start cleanup timer
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL)
@@ -408,6 +416,28 @@ class SessionManager {
     })
   }
 
+  /** Remove the current turn's just-appended user message when cancellation
+   * wins during the async history write. Match-last semantics prevent deleting
+   * an unrelated message if another path advanced the session. */
+  async removeLastMessageIfMatches(
+    platform: string,
+    channelId: string,
+    threadId: string,
+    expected: Pick<ChatMessage, 'role' | 'content'>,
+  ): Promise<boolean> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      const last = session?.messages.at(-1)
+      if (!session || !last || last.role !== expected.role || last.content !== expected.content) return false
+      session.messages.pop()
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+      return true
+    })
+  }
+
   /**
    * Persist `model` / `variant` / arbitrary patchable fields. Used by
    * `/model`, `/think` etc so the change survives a restart between turns.
@@ -653,7 +683,15 @@ class SessionManager {
    */
   async recordUsage(
     platform: string, channelId: string, threadId: string,
-    delta: { costUsd: number; promptChars: number; responseChars: number; durationMs: number },
+    delta: {
+      costUsd: number
+      costKnown?: boolean
+      tokensInput?: number
+      tokensOutput?: number
+      promptChars: number
+      responseChars: number
+      durationMs: number
+    },
   ): Promise<void> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -663,6 +701,9 @@ class SessionManager {
         session.usage = {
           turns: 0,
           costUsd: 0,
+          tokensInput: 0,
+          tokensOutput: 0,
+          unknownCostTurns: 0,
           promptChars: 0,
           responseChars: 0,
           durationMsTotal: 0,
@@ -671,6 +712,13 @@ class SessionManager {
       }
       session.usage.turns += 1
       session.usage.costUsd += Number.isFinite(delta.costUsd) ? delta.costUsd : 0
+      session.usage.tokensInput = (session.usage.tokensInput ?? 0)
+        + (Number.isFinite(delta.tokensInput) ? (delta.tokensInput ?? 0) : 0)
+      session.usage.tokensOutput = (session.usage.tokensOutput ?? 0)
+        + (Number.isFinite(delta.tokensOutput) ? (delta.tokensOutput ?? 0) : 0)
+      if (delta.costKnown === false) {
+        session.usage.unknownCostTurns = (session.usage.unknownCostTurns ?? 0) + 1
+      }
       session.usage.promptChars += Number.isFinite(delta.promptChars) ? delta.promptChars : 0
       session.usage.responseChars += Number.isFinite(delta.responseChars) ? delta.responseChars : 0
       session.usage.durationMsTotal += Number.isFinite(delta.durationMs) ? delta.durationMs : 0
@@ -712,6 +760,7 @@ class SessionManager {
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
         delete session.planMode
+        clearPlanModeForThread(key)
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
         try { approvalBus.clearAutoAllowForThread(key) } catch { /* ignore */ }

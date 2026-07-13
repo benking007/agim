@@ -183,6 +183,19 @@ describe('exec-dispatcher', () => {
       expect(parsed.timed_out).toBe(true)
     }, 20000)
 
+    it('waits for child close after external abort', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const ctrl = new AbortController()
+      const run = d(
+        { id: 't', name: 'native_exec', arguments: { command: 'sleep 10' } },
+        ctrl.signal,
+      )
+      setTimeout(() => ctrl.abort(), 50)
+      const result = await run
+      expect(result.isError).toBe(true)
+      expect(result.text).toMatch(/aborted|AbortError|SIGTERM/i)
+    }, 10000)
+
     it('truncates oversize stdout', async () => {
       process.env.AGIM_EXEC_MAX_OUTPUT = '2000'
       const d = buildExecDispatcher({ cwd })

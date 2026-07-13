@@ -6,8 +6,8 @@
 // Two operations:
 //   - 'long_task'    { goal, summary? }  → setActiveGoal({title:goal, body:summary})
 //                                          + initial progress note
-//   - 'complete_goal' { recap?, status? } → updateStatus(currentActive, status)
-//                                           + final progress note
+//   - 'complete_goal' { goalId, goalVersion, evidenceIds?, recap, status? }
+//       → transactional CAS close; native completions require current evidence
 //
 // Both require a RunContext (platform / channelId / threadId / userId).
 // The RPC is intentionally narrow — it does NOT support listing,
@@ -18,12 +18,37 @@
 import {
   setActiveGoal,
   getActiveGoal,
-  updateStatus,
+  getGoalByIdState,
   appendProgress,
   type GoalRow,
 } from './goals.js'
+import { completeGoalCas, getGoalEvidenceReview } from './goal-evidence.js'
+import { evaluateTodoCompletionGate } from './llm/todo-dispatcher.js'
+import { runGoalCompletionCritic } from './llm/goal-critic.js'
+import type { CompletionCriticInput, CompletionCriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
 import { logger as rootLogger } from './logger.js'
+import { approvalBus } from './approval-bus.js'
+import { randomUUID } from 'node:crypto'
+
+/** How long complete_goal waits for the owner's explicit yes/no.
+ *  Independent of the default 60s tool wall clock — confirmation is a
+ *  human round-trip and must outlive AGIM_NATIVE_TOOL_TIMEOUT_MS. */
+export function resolveGoalConfirmationTimeoutMs(): number {
+  const raw = (process.env.AGIM_GOAL_CONFIRMATION_TIMEOUT_MS ?? '').trim()
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return approvalBus.approvalTimeoutMs
+}
+
+/** Tool-bridge wall budget for mcp__agim__complete_goal: confirmation
+ *  timeout plus a small settle margin so the approval deny path can
+ *  return before the tool race aborts. */
+export function resolveCompleteGoalToolTimeoutMs(): number {
+  return resolveGoalConfirmationTimeoutMs() + 60_000
+}
 
 function emitGoalEvent(
   phase: 'created' | 'status' | 'progress',
@@ -47,31 +72,9 @@ function emitGoalEvent(
 
 const log = rootLogger.child({ component: 'goal-rpc' })
 
-// v1.3.7 (F9) — idempotency for complete_goal. A retried call (network
-// blip, double-send) finds no active goal and would otherwise return a
-// confusing "no active goal" error. We remember each thread's most recent
-// completion for a short window and replay an `already_completed` ok result
-// instead. Entries are pruned on write (only the last ~minute is kept), so
-// the map can't grow unbounded.
-const COMPLETE_IDEMPOTENT_WINDOW_MS = 60_000
-interface RecentCompletion { goalId: number; title: string; status: 'completed' | 'cancelled'; at: number }
-const recentCompletions = new Map<string, RecentCompletion>()
-
-function threadKey(ctx: GoalRpcCtx): string {
-  return `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
-}
-
-function recordCompletion(ctx: GoalRpcCtx, c: RecentCompletion): void {
-  const now = Date.now()
-  for (const [k, v] of recentCompletions) {
-    if (now - v.at > COMPLETE_IDEMPOTENT_WINDOW_MS) recentCompletions.delete(k)
-  }
-  recentCompletions.set(threadKey(ctx), c)
-}
-
-/** Test seam: clear the idempotency cache between cases. */
+/** Backward-compatible test seam; idempotency is now persisted in goals.db. */
 export function __resetCompletionCacheForTesting(): void {
-  recentCompletions.clear()
+  // no-op
 }
 
 export interface GoalRpcCtx {
@@ -82,6 +85,20 @@ export interface GoalRpcCtx {
   /** Optional — included in the audit log + progress note attribution
    *  so we can tell native-set goals from sidecar-set ones. */
   callerAgent?: string
+  traceId?: string
+  /** Optional workspace scope hash (cwd) stamped onto new goals. */
+  workspaceScope?: string
+  /** Tests can bypass the external semantic model while exercising CAS. */
+  skipSemanticReview?: boolean
+  /** Test seam for deterministic semantic verdicts. Never populated from RPC payloads. */
+  reviewGoalCompletion?: (input: CompletionCriticInput) => Promise<CompletionCriticVerdict>
+  skipUserConfirmation?: boolean
+  confirmGoalCompletion?: (input: {
+    goalId: number
+    goalVersion: number
+    recap: string
+  }) => Promise<boolean>
+  signal?: AbortSignal
 }
 
 export type GoalOp = 'long_task' | 'complete_goal'
@@ -97,6 +114,9 @@ export interface LongTaskPayload {
 }
 
 export interface CompleteGoalPayload {
+  goalId?: unknown
+  goalVersion?: unknown
+  evidenceIds?: unknown
   recap?: unknown
   status?: unknown
 }
@@ -142,12 +162,16 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
     userId: ctx.userId,
     title: goal,
     body: summary,
+    replaceActive: force,
+    evidenceRequired: ctx.callerAgent === 'native',
+    workspaceScope: ctx.workspaceScope,
   })
   if (!row) {
     return { ok: false, error: 'failed to register goal (db unavailable or empty title)' }
   }
 
   appendProgress(row.id, 'agent', `objective registered by ${ctx.callerAgent ?? 'agent'}`)
+  const current = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId) ?? row
   // v1.2.86 — emit so /tasks/goals web view + any SSE consumer
   // updates without polling.
   emitGoalEvent('created', {
@@ -172,43 +196,89 @@ function handleLongTask(p: LongTaskPayload, ctx: GoalRpcCtx): GoalRpcResult {
   return {
     ok: true,
     result: {
-      goalId: row.id,
-      title: row.title,
-      status: row.status,
+      goalId: current.id,
+      goalVersion: current.version,
+      mutationEpoch: current.mutationEpoch,
+      evidenceRequired: current.evidenceRequired,
+      title: current.title,
+      status: current.status,
       previous_active_goal_paused: prior ? { id: prior.id, title: prior.title } : null,
       hint: 'I will see this goal in the [Active goal] block on every turn until completed. ' +
-        'Call complete_goal when done or when the user cancels.',
+        'Call complete_goal with this exact goalId/goalVersion and current evidence IDs when done.',
     },
   }
 }
 
-function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcResult {
+async function confirmGoalCompletion(
+  ctx: GoalRpcCtx,
+  input: { goalId: number; goalVersion: number; recap: string },
+): Promise<boolean> {
+  if (ctx.skipUserConfirmation) return true
+  if (ctx.confirmGoalCompletion) return await ctx.confirmGoalCompletion(input)
+  if (!approvalBus.hasNotifier() || !ctx.platform || !ctx.threadId) return false
+  if (ctx.signal?.aborted) return false
+  const reqId = randomUUID()
+  const runId = ctx.traceId || `goal-completion-${input.goalId}`
+  return await new Promise<boolean>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => ctx.signal?.removeEventListener('abort', onAbort)
+    const finish = (allowed: boolean) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(allowed)
+    }
+    const onAbort = () => {
+      approvalBus.cancelPendingByReqId(reqId, 'goal completion cancelled: turn aborted')
+      finish(false)
+    }
+    ctx.signal?.addEventListener('abort', onAbort, { once: true })
+    void approvalBus.registerSyntheticPending({
+      runId,
+      reqId,
+      toolName: 'mcp__agim__complete_goal',
+      input: {
+        goalId: input.goalId,
+        goalVersion: input.goalVersion,
+        recap: input.recap,
+      },
+      requiresExplicitDecision: true,
+      timeoutMs: resolveGoalConfirmationTimeoutMs(),
+      ctx: {
+        platform: ctx.platform,
+        channelId: ctx.channelId,
+        threadId: ctx.threadId,
+        userId: ctx.userId,
+        callerAgent: ctx.callerAgent,
+        traceId: ctx.traceId,
+      },
+      dispatch: (decision) => finish(decision.behavior === 'allow'),
+    }).then(() => {
+      if (ctx.signal?.aborted) onAbort()
+    }).catch((err) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    })
+  })
+}
+
+async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Promise<GoalRpcResult> {
+  const goalId = typeof p.goalId === 'number' ? p.goalId : Number.NaN
+  const goalVersion = typeof p.goalVersion === 'number' ? p.goalVersion : Number.NaN
+  if (!Number.isSafeInteger(goalId) || goalId <= 0 || !Number.isSafeInteger(goalVersion) || goalVersion <= 0) {
+    return {
+      ok: false,
+      error: 'complete_goal requires the exact positive integer `goalId` and `goalVersion` from the active-goal Completion token.',
+    }
+  }
   const recap = typeof p.recap === 'string' ? p.recap.trim() : ''
   const requestedStatus = typeof p.status === 'string' ? p.status : 'completed'
-  // Only `completed` / `cancelled` make sense from the agent's side.
-  const status: 'completed' | 'cancelled' = requestedStatus === 'cancelled' ? 'cancelled' : 'completed'
-
-  // Structural error first — no goal to complete is the action-
-  // blocking failure regardless of recap.
-  const active = getActiveGoal(ctx.platform, ctx.channelId, ctx.threadId)
-  if (!active) {
-    // v1.3.7 (F9) — idempotent retry: if THIS thread just completed a goal,
-    // replay that result instead of a confusing error.
-    const recent = recentCompletions.get(threadKey(ctx))
-    if (recent && Date.now() - recent.at <= COMPLETE_IDEMPOTENT_WINDOW_MS) {
-      return {
-        ok: true,
-        result: { goalId: recent.goalId, title: recent.title, status: recent.status, already_completed: true },
-      }
-    }
-    return { ok: false, error: 'no active goal on this thread to complete' }
+  if (requestedStatus !== 'completed' && requestedStatus !== 'cancelled') {
+    return { ok: false, error: 'complete_goal status must be completed or cancelled' }
   }
-  // v1.2.86 — recap is now required (≥ 10 chars). Without it the
-  // goal's "what was actually done" gets lost. Match nanobot's
-  // design: complete_goal is the only chance to close the loop, so
-  // make it mandatory. Cancellations also need a short reason
-  // ("user changed mind", "obsoleted by goal #42") — silent
-  // cancellations are the worst kind of state to leave behind.
+  const status: 'completed' | 'cancelled' = requestedStatus === 'cancelled' ? 'cancelled' : 'completed'
   if (recap.length < 10) {
     return {
       ok: false,
@@ -218,34 +288,125 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
         '/ "user changed direction to Y, abandoning original plan".',
     }
   }
-  appendProgress(active.id, 'agent', `[${status}] ${recap}`)
-  const ok = updateStatus(active.id, status)
-  if (!ok) {
-    return { ok: false, error: `failed to mark goal #${active.id} ${status}` }
+  const evidenceIds = Array.isArray(p.evidenceIds)
+    ? p.evidenceIds.filter((value): value is string => typeof value === 'string').slice(0, 16)
+    : []
+  if (status === 'completed' && ctx.callerAgent === 'native') {
+    const todoGate = evaluateTodoCompletionGate(
+      `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
+    )
+    if (!todoGate.ok) return todoGate
   }
-  recordCompletion(ctx, { goalId: active.id, title: active.title, status, at: Date.now() })  // F9
-  // v1.2.86 — emit so the web view can flip the row from active to
-  // completed/cancelled immediately.
-  emitGoalEvent('status', {
-    id: active.id, platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.threadId,
-    status, title: active.title,
-  }, recap.slice(0, 120))
+  const tokenGoalState = getGoalByIdState(goalId)
+  if (!tokenGoalState.available) {
+    return { ok: false, error: 'goal database unavailable; completion blocked' }
+  }
+  const tokenGoal = tokenGoalState.goal
+  const tokenIsCurrent = !!tokenGoal
+    && tokenGoal.platform === ctx.platform
+    && tokenGoal.channelId === ctx.channelId
+    && tokenGoal.threadId === ctx.threadId
+    && tokenGoal.userId === ctx.userId
+    && tokenGoal.status === 'active'
+    && tokenGoal.version === goalVersion
+  if (
+    status === 'completed'
+    && tokenIsCurrent
+    && tokenGoal?.evidenceRequired
+    && !ctx.skipSemanticReview
+  ) {
+    const review = getGoalEvidenceReview({
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      userId: ctx.userId,
+      goalId,
+      goalVersion,
+      evidenceIds,
+      traceId: ctx.traceId,
+    })
+    if (!review) {
+      return { ok: false, error: 'SEMANTIC_REVIEW_UNAVAILABLE: evidence could not be prepared' }
+    }
+    const criticInput: CompletionCriticInput = {
+      goalTitle: review.goalTitle,
+      goalBody: review.goalBody,
+      evidence: review.recentToolCalls.map((item) => ({
+        name: item.name,
+        preview: item.preview,
+      })),
+    }
+    const verdict = ctx.reviewGoalCompletion
+      ? await ctx.reviewGoalCompletion(criticInput)
+      : await runGoalCompletionCritic(criticInput)
+    if (!ctx.reviewGoalCompletion && !verdict.modelUsed) {
+      return { ok: false, error: `SEMANTIC_REVIEW_UNAVAILABLE: ${verdict.reason}` }
+    }
+    if (!verdict.completed) {
+      return {
+        ok: false,
+        error: `GOAL_INCOMPLETE: ${verdict.reason}`,
+      }
+    }
+  }
+  if (
+    status === 'completed'
+    && tokenIsCurrent
+    && tokenGoal?.evidenceRequired
+    && !await confirmGoalCompletion(ctx, { goalId, goalVersion, recap })
+  ) {
+    return {
+      ok: false,
+      error: approvalBus.hasNotifier()
+        ? 'GOAL_CONFIRMATION_DENIED: user did not approve completion'
+        : 'USER_CONFIRMATION_REQUIRED: ask the user to run /goal complete',
+    }
+  }
+  const completed = completeGoalCas({
+    platform: ctx.platform,
+    channelId: ctx.channelId,
+    threadId: ctx.threadId,
+    userId: ctx.userId,
+    goalId,
+    goalVersion,
+    evidenceIds,
+    recap,
+    status,
+    traceId: ctx.traceId,
+  })
+  if (!completed.ok) return completed
+  if (!completed.alreadyCompleted) {
+    emitGoalEvent('status', {
+      id: goalId,
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      status,
+      title: completed.title,
+    }, recap.slice(0, 120))
+  }
   log.info({
     event: 'goal-rpc.complete_goal',
     callerAgent: ctx.callerAgent ?? 'unknown',
     threadId: ctx.threadId,
-    goalId: active.id,
+    goalId,
+    goalVersion,
+    completedVersion: completed.version,
+    alreadyCompleted: completed.alreadyCompleted,
     status,
     recapLen: recap.length,
-  }, `marked goal #${active.id} ${status}`)
+  }, `marked goal #${goalId} ${status}`)
 
   return {
     ok: true,
     result: {
-      goalId: active.id,
-      title: active.title,
+      goalId,
+      goalVersion: completed.version,
+      mutationEpoch: completed.mutationEpoch,
+      title: completed.title,
       status,
       recap_length: recap.length,
+      already_completed: completed.alreadyCompleted,
     },
   }
 }

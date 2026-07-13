@@ -8,10 +8,16 @@ import { isPlanModeOn, resolvePolicy } from './index.js'
 
 describe('PlanMode (v1.2.119)', () => {
   const saved = process.env.AGIM_NATIVE_PLAN_MODE
-  beforeEach(() => { delete process.env.AGIM_NATIVE_PLAN_MODE })
+  const savedDisable = process.env.AGIM_DISABLE_PLAN_MODE
+  beforeEach(() => {
+    delete process.env.AGIM_NATIVE_PLAN_MODE
+    delete process.env.AGIM_DISABLE_PLAN_MODE
+  })
   afterEach(() => {
     if (saved === undefined) delete process.env.AGIM_NATIVE_PLAN_MODE
     else process.env.AGIM_NATIVE_PLAN_MODE = saved
+    if (savedDisable === undefined) delete process.env.AGIM_DISABLE_PLAN_MODE
+    else process.env.AGIM_DISABLE_PLAN_MODE = savedDisable
   })
 
   describe('isPlanModeOn', () => {
@@ -28,6 +34,13 @@ describe('PlanMode (v1.2.119)', () => {
     it('unset env ⇒ off', () => {
       delete process.env.AGIM_NATIVE_PLAN_MODE
       expect(isPlanModeOn()).toBe(false)
+    })
+
+    it('AGIM_DISABLE_PLAN_MODE overrides env and persisted defaults', () => {
+      process.env.AGIM_NATIVE_PLAN_MODE = '1'
+      process.env.AGIM_DISABLE_PLAN_MODE = '1'
+      expect(isPlanModeOn()).toBe(false)
+      expect(resolvePolicy().denyList).not.toContain('native_write_file')
     })
   })
 

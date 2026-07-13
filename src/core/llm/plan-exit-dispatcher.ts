@@ -27,6 +27,7 @@
 import { logger as rootLogger } from '../logger.js'
 import { approvalBus } from '../approval-bus.js'
 import { recordPlanHistory } from '../plan-history.js'
+import { sessionManager } from '../session.js'
 import {
   effectivePlanModeOn,
   setPlanModeForThread,
@@ -102,7 +103,7 @@ export function getPlanExitTools(): ToolDef[] {
 /** Build a per-thread dispatcher. Each agent-loop run gets one; the
  *  closure captures threadKey + runId + IM context. */
 export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
-  return async (call, _signal, _ctxDispatcher): Promise<DispatcherResult> => {
+  return async (call, signal, _ctxDispatcher): Promise<DispatcherResult> => {
     if (call.name !== PLAN_EXIT_TOOL_NAME) {
       return { text: `not handled: ${call.name}`, isError: true, source: 'unknown' }
     }
@@ -166,12 +167,32 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
     //    long the user took.
     const reqId = randomUUID()
     const t0 = Date.now()
+    if (signal.aborted) {
+      return { text: 'Plan approval cancelled: agent turn aborted.', isError: true, source: 'plan-exit' }
+    }
     const decision = await new Promise<{ behavior: 'allow' | 'deny'; reason?: string }>((resolve, reject) => {
+      let settled = false
+      const cleanup = () => signal.removeEventListener('abort', onAbort)
+      const finish = (result: { behavior: 'allow' | 'deny'; reason?: string }) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+      const onAbort = () => {
+        approvalBus.cancelPendingByReqId(reqId, 'plan approval cancelled: agent turn aborted')
+        finish({ behavior: 'deny', reason: 'agent turn aborted' })
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
       void approvalBus.registerSyntheticPending({
         runId: ctx.runId,
         reqId,
         toolName: PLAN_EXIT_TOOL_NAME,
         input: { plan: planMd },
+        // Exiting Plan Mode changes the user's safety boundary. It must never
+        // inherit global auto-approve, remembered allow rules, or allow-on-
+        // timeout behavior from ordinary tool approvals.
+        requiresExplicitDecision: true,
         ctx: {
           platform,
           channelId: ctx.channelId ?? 'default',
@@ -182,11 +203,20 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         // `message` is only present on the deny branch (Decision is a
         // discriminated union); we narrow defensively so the approve
         // branch's lack of `message` doesn't trip the type checker.
-        dispatch: (d) => resolve({
+        dispatch: (d) => finish({
           behavior: d.behavior,
           reason: d.behavior === 'deny' ? d.message : undefined,
         }),
-      }).catch((err) => reject(err))
+      }).then(() => {
+        if (signal.aborted) {
+          approvalBus.cancelPendingByReqId(reqId, 'plan approval cancelled: agent turn aborted')
+        }
+      }).catch((err) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(err)
+      })
     })
     const pendingMs = Date.now() - t0
 
@@ -195,6 +225,32 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
       //     Use setPlanModeForThread(false) — explicit "this thread is
       //     out", which beats the env default even if env says ON.
       setPlanModeForThread(ctx.threadKey, false)
+      try {
+        const patched = await sessionManager.patchSession(
+          platform,
+          ctx.channelId ?? '',
+          threadId,
+          { planMode: false },
+        )
+        if (!patched) throw new Error('Agim session not found')
+      } catch (err) {
+        // Keep both Plan Mode stores aligned. If the durable session cannot be
+        // cleared, restore the policy state and refuse to unlock write tools.
+        setPlanModeForThread(ctx.threadKey, true)
+        const detail = err instanceof Error ? err.message : String(err)
+        recordPlanHistory({
+          threadKey: ctx.threadKey,
+          planMd,
+          outcome: 'rejected',
+          detail: `approved but failed to persist Plan Mode exit: ${detail}`,
+          pendingMs,
+        })
+        return {
+          text: `Plan approval could not be persisted; remaining in Plan Mode: ${detail}`,
+          isError: true,
+          source: 'plan-exit',
+        }
+      }
       recordPlanHistory({
         threadKey: ctx.threadKey,
         planMd,

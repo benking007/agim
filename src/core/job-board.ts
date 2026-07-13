@@ -59,6 +59,18 @@ function resolveMaxConcurrent(): number {
 // Running job controllers (for cancellation)
 const runningControllers = new Map<number, AbortController>()
 
+/** Bind a controller to a tracked job, including inline jobs that do not run
+ * through runJob(). The owner must call the returned cleanup after its work
+ * has fully settled; cancelJob only aborts and never removes another owner's
+ * binding. */
+export function bindJobController(id: number, controller: AbortController): () => void {
+  if (id <= 0) return () => {}
+  runningControllers.set(id, controller)
+  return () => {
+    if (runningControllers.get(id) === controller) runningControllers.delete(id)
+  }
+}
+
 // Wait queue for jobs that arrived while at capacity. Each entry is the
 // resolver of a Promise the caller is awaiting on.
 const waitQueue: Array<() => void> = []
@@ -644,20 +656,24 @@ export function updateJobAgent(id: number, agent: string): void {
 }
 
 /** pending → running. Stamps started_at. Idempotent: an already-running row
- *  keeps its original started_at. */
-export function markJobRunning(id: number): void {
-  if (id <= 0) return
+ *  keeps its original started_at. Returns false only when a tracked row is
+ *  missing or already terminal (notably cancelled while queued). */
+export function markJobRunning(id: number): boolean {
+  if (id <= 0) return true
   const d = getDb()
-  if (!d) return
+  if (!d) return true
   try {
-    d.prepare(
+    const info = d.prepare(
       `UPDATE jobs
           SET status = 'running',
               started_at = COALESCE(started_at, datetime('now'))
         WHERE id = ? AND status IN ('pending', 'running')`,
     ).run(id)
+    return info.changes > 0
   } catch (err) {
     rootLogger.debug({ component: 'job-board', event: 'markJobRunning_failed', id, err: String(err) })
+    // Tracking is best-effort; a DB failure must not block the user path.
+    return true
   }
 }
 
@@ -758,17 +774,29 @@ export async function runJob(
   runner: JobRunner,
   logger: Logger
 ): Promise<void> {
-  const job = getJob(id)
-  if (!job) return
+  const initialJob = getJob(id)
+  if (!initialJob) return
 
   // Block here if the job board is at capacity. The job stays 'pending' in
   // SQLite while waiting — visible to /job list as queued.
   await acquireSlot()
 
-  const controller = new AbortController()
-  runningControllers.set(id, controller)
+  // A pending job may be cancelled while waiting for a concurrency slot.
+  // Re-read after acquisition and never start a terminal/replaced row.
+  const job = getJob(id)
+  if (job?.status !== 'pending') {
+    releaseSlot()
+    return
+  }
 
-  updateJob(id, { status: 'running' })
+  const controller = new AbortController()
+  const unbindController = bindJobController(id, controller)
+
+  if (!markJobRunning(id)) {
+    unbindController()
+    releaseSlot()
+    return
+  }
   eventBus.publish({ type: 'job', phase: 'started', jobId: id, agent: job.agent })
   logger.info({ event: 'job.start', jobId: id, agent: job.agent, active: activeJobs })
 
@@ -811,11 +839,22 @@ export async function runJob(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack : undefined
-    updateJob(id, { status: 'failed', error: msg, completed_at: new Date().toISOString() })
-    eventBus.publish({ type: 'job', phase: 'failed', jobId: id, agent: job.agent })
-    logger.error({ event: 'job.failed', jobId: id, error: msg, stack })
+    if (controller.signal.aborted) {
+      // cancelJob owns the terminal transition/event. Never overwrite a user
+      // cancellation with "failed" merely because the runner rejected while
+      // unwinding its AbortSignal.
+      if (getJob(id)?.status !== 'cancelled') {
+        updateJob(id, { status: 'cancelled', result: fullText || null, completed_at: new Date().toISOString() })
+        eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })
+      }
+      logger.info({ event: 'job.cancelled', jobId: id, error: msg })
+    } else {
+      updateJob(id, { status: 'failed', error: msg, completed_at: new Date().toISOString() })
+      eventBus.publish({ type: 'job', phase: 'failed', jobId: id, agent: job.agent })
+      logger.error({ event: 'job.failed', jobId: id, error: msg, stack })
+    }
   } finally {
-    runningControllers.delete(id)
+    unbindController()
     releaseSlot()
   }
 }
@@ -837,7 +876,8 @@ export function findActiveJobByThread(threadKey: string): Job | null {
     `SELECT * FROM jobs
        WHERE thread_key = ?
          AND status IN ('running', 'pending')
-       ORDER BY created_at DESC
+       ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END,
+                created_at DESC
        LIMIT 1`,
   ).get(threadKey) as Job | null
 }
@@ -848,7 +888,6 @@ export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
   const ctrl = runningControllers.get(id)
   if (ctrl) {
     ctrl.abort()
-    runningControllers.delete(id)
   }
   updateJob(id, { status: 'cancelled', completed_at: new Date().toISOString() })
   eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })

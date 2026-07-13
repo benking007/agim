@@ -353,6 +353,7 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
   const argv: string[] = [
     '--die-with-parent',
     '--new-session',
+    '--unshare-pid',
     '--ro-bind', '/usr', '/usr',
     '--ro-bind-try', '/lib', '/lib',
     '--ro-bind-try', '/lib64', '/lib64',
@@ -399,15 +400,44 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
     let stdoutTruncated = false
     let stderrTruncated = false
     let timedOut = false
+    let spawnError: Error | null = null
+    let settled = false
 
     const env = buildExecEnv(opts.extraEnv)  // v1.3.7 (F1) — allow-list, not full process.env
-    const child = spawn(bin, argv, { cwd: opts.cwd, env, signal: opts.signal })
+    const child = spawn(bin, argv, {
+      cwd: opts.cwd,
+      env,
+      signal: opts.signal,
+      // A shell command can spawn grandchildren (`sh -c "sleep 10"`). Put it
+      // in its own process group so cancellation/timeout can settle the whole
+      // operation before goal evidence is finalized.
+      detached: process.platform !== 'win32',
+    })
+    const killTree = (signalName: NodeJS.Signals) => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signalName)
+        else child.kill(signalName)
+      } catch { /* process already gone */ }
+    }
+    let killTimer: ReturnType<typeof setTimeout> | undefined
+    const armHardKill = () => {
+      if (killTimer) return
+      killTimer = setTimeout(() => {
+        killTree('SIGKILL')
+      }, 3_000)
+      killTimer.unref()
+    }
+    const onAbort = () => {
+      killTree('SIGTERM')
+      armHardKill()
+    }
+    opts.signal.addEventListener('abort', onAbort, { once: true })
     const timer = setTimeout(() => {
       timedOut = true
-      try { child.kill('SIGTERM') } catch { /* ignore */ }
+      killTree('SIGTERM')
       // Hard SIGKILL after a 3s grace period so the dispatcher doesn't
       // hang on a process that ignores SIGTERM.
-      setTimeout(() => { try { child.kill('SIGKILL') } catch { /* ignore */ } }, 3_000).unref()
+      armHardKill()
     }, opts.timeoutMs)
     timer.unref()
 
@@ -426,7 +456,14 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       if (chunk.length > room) stderrTruncated = true
     })
     child.on('close', (code, signalName) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
+      // The shell leader may exit while background descendants in its process
+      // group remain alive. Reap that group before reporting settlement.
+      if (process.platform !== 'win32') killTree('SIGKILL')
+      if (killTimer) clearTimeout(killTimer)
+      opts.signal.removeEventListener('abort', onAbort)
       const exitCode = code ?? -1
       const payload = {
         exit_code: exitCode,
@@ -443,6 +480,8 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       const isError = timedOut || (exitCode !== 0 && exitCode !== null)
       const summary = timedOut
         ? `command timed out after ${opts.timeoutMs}ms; partial output below.\n`
+        : spawnError
+          ? `command aborted/failed: ${spawnError.message}\n`
         : ''
       resolve({
         text: summary + JSON.stringify(payload, null, 2),
@@ -451,7 +490,16 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       })
     })
     child.on('error', (err) => {
+      spawnError = err
+      // AbortSignal-driven child_process errors are followed by `close`.
+      // Wait for close (and the SIGKILL fallback) so callers know the process
+      // has actually settled before advancing the goal evidence epoch.
+      if (opts.signal.aborted && child.pid) return
+      if (settled) return
+      settled = true
       clearTimeout(timer)
+      if (killTimer) clearTimeout(killTimer)
+      opts.signal.removeEventListener('abort', onAbort)
       resolve({
         text: `spawn failed: ${err.message}`,
         isError: true,

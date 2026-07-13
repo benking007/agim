@@ -133,6 +133,7 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
   const { t } = useTranslation()
   const { messageId, prompt, text, outcome } = approval
   const isAuto = prompt?.mode === 'auto-allow'
+  const isExplicit = prompt?.mode === 'explicit'
 
   // v1.2.88 — optimistic "submitting" state. Without this, a click
   // produced ZERO visible feedback until the server pushed
@@ -177,6 +178,11 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
             {t('chat.approvalAutoBadge', { defaultValue: 'auto-allow' })}
           </Badge>
         )}
+        {isExplicit && !outcome && (
+          <Badge variant="outline" className="text-[10px] uppercase">
+            {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
+          </Badge>
+        )}
       </div>
 
       {/* Auto-allow countdown */}
@@ -209,30 +215,29 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
       ) : prompt ? (
         <>
           <div className="mt-3 flex flex-wrap gap-2">
-            {/* In auto-allow mode the bus will auto-allow; only Deny is
-                meaningful. Hide the Allow/Auto-allow buttons to avoid
-                redundant clicks. */}
+            {/* Auto mode only offers Deny. Explicit mode offers a one-time
+                Allow but deliberately hides "Auto for similar". */}
             {!isAuto && (
-              <>
-                <Button
-                  size="sm"
-                  disabled={pendingChoice !== null}
-                  onClick={() => handleClick('y')}
-                >
-                  {t('chat.approvalAllow', { defaultValue: 'Allow' })}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={pendingChoice !== null}
-                  onClick={() => handleClick('a')}
-                  title={t('chat.approvalAutoTip', {
-                    defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
-                  })}
-                >
-                  {t('chat.approvalAuto', { defaultValue: 'Auto for similar' })}
-                </Button>
-              </>
+              <Button
+                size="sm"
+                disabled={pendingChoice !== null}
+                onClick={() => handleClick('y')}
+              >
+                {t('chat.approvalAllow', { defaultValue: 'Allow' })}
+              </Button>
+            )}
+            {!isAuto && !isExplicit && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={pendingChoice !== null}
+                onClick={() => handleClick('a')}
+                title={t('chat.approvalAutoTip', {
+                  defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
+                })}
+              >
+                {t('chat.approvalAuto', { defaultValue: 'Auto for similar' })}
+              </Button>
             )}
             <Button
               size="sm"

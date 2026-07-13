@@ -33,6 +33,12 @@ describe('approvalActionsFor', () => {
     expect(actions[0]?.choice).toBe('n')
     expect(actions[0]?.label).toBe('拒绝')
   })
+
+  it('必须确认的审批不提供同类默认批准', () => {
+    const actions = approvalActionsFor(buildApproval('explicit'))
+    expect(actions.map((a) => a.choice)).toEqual(['y', 'n'])
+    expect(actions[0]?.label).toBe('仅批准本次')
+  })
 })
 
 describe('toApprovalStatusLine', () => {

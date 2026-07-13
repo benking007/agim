@@ -62,6 +62,13 @@ class CircuitBreaker {
     this.states.delete(agent)
   }
 
+  /** Release a claimed half-open probe without treating caller cancellation,
+   *  policy denial, or a local watchdog as provider success/failure. */
+  recordNeutral(agent: string): void {
+    const s = this.states.get(agent)
+    if (s?.phase === 'half-open') s.phase = 'open'
+  }
+
   /**
    * Check if an agent is currently blocked (breaker open AND cooldown still
    * active). After cooldown elapses we transition to half-open and *return

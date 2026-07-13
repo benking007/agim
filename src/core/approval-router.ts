@@ -250,6 +250,15 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
   }
 
   const mins = Math.max(1, Math.round(approvalBus.approvalTimeoutMs / 60000))
+  if (n.requiresExplicitDecision) {
+    const header = primary ? `🔐 必须确认 · ${tool} · ${primary}` : `🔐 必须确认 · ${tool}`
+    return [
+      header,
+      ...body,
+      'y 批准一次 · n 拒绝',
+      `${mins}min 未回 → 拒绝 · req ${reqShort}`,
+    ].join('\n')
+  }
   const fallback = isTimeoutDefaultAllow() ? '放行' : '拒绝'
   const header = primary ? `🔐 审批 · ${tool} · ${primary}` : `🔐 审批 · ${tool}`
   return [
@@ -345,7 +354,7 @@ export function install(opts: InstallOptions): void {
         reqId: n.reqId,
         toolName: n.toolName,
         inputJson: safeStringify(n.input, MAX_INPUT_PREVIEW_CARD),
-        mode: n.autoAllow ? 'auto-allow' : 'normal',
+        mode: n.autoAllow ? 'auto-allow' : n.requiresExplicitDecision ? 'explicit' : 'normal',
         graceSeconds: n.autoAllow ? Math.round(n.autoAllow.graceMs / 1000) : undefined,
       }
       let lastErr: unknown = null
@@ -511,11 +520,11 @@ function onBusResolution(e: ResolutionEvent): void {
  * — same value the bus stored under at registerRun/registerSyntheticPending
  * time. A bare threadId will miss in multi-platform deployments.
  */
-export function tryHandleApprovalReply(key: string, text: string): boolean {
+export function tryHandleApprovalReply(key: string, text: string, userId?: string): boolean {
   if (!approvalBus.hasPendingFor(key)) return false
   const decision = parseApprovalReply(text)
   if (decision) {
-    const info = approvalBus.resolvePending(key, decision)
+    const info = approvalBus.resolvePending(key, decision, userId)
     log.info({ event: 'approval.router.resolved', key, behavior: decision.behavior })
     // R12 ⑤ — persistent audit. ResolvedInfo has platform + threadId +
     // toolName but no user_id (the IM reply identifies a thread, not a
@@ -544,7 +553,7 @@ export function tryHandleApprovalReply(key: string, text: string): boolean {
     behavior: 'deny',
     message: '用户在 IM 中改换话题，未给出审批回复',
   }
-  const info = approvalBus.resolvePending(key, redirectDecision)
+  const info = approvalBus.resolvePending(key, redirectDecision, userId)
   if (info) editCardOnThreadResolution(info, redirectDecision, undefined)
   log.info({ event: 'approval.router.redirected', key })
   return false
@@ -597,7 +606,7 @@ async function handleButtonCallback(platform: string, cb: ButtonCallback): Promi
     return
   }
   const decision = decisionFromButton(parsed.choice)
-  const info = approvalBus.resolvePendingByReqId(parsed.reqId, decision)
+  const info = approvalBus.resolvePendingByReqId(parsed.reqId, decision, cb.userId)
 
   if (!info) {
     await cb.ack('请求已过期或已被处理')

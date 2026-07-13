@@ -50,7 +50,7 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_TOOL_TIMEOUT_MS',
   ]
 
-  // Keys that stay editable: A2A delegation, plan mode, iteration cap.
+  // Keys that stay editable: A2A delegation, plan mode, and active-loop caps.
   const LIVE_NATIVE_KEYS = [
     // A2A
     'AGIM_A2A_MAX_DEPTH',
@@ -61,6 +61,9 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_PLAN_MODE',
     // Iteration cap
     'AGIM_NATIVE_AGENT_MAX_ITER',
+    'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
+    // Active AgentHarness wall watchdog
+    'AGIM_NATIVE_TURN_TIMEOUT_MS',
   ]
 
   // Knobs removed from the native-agent settings page because they only

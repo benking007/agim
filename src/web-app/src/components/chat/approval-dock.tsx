@@ -63,6 +63,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
   const { t } = useTranslation()
   const { messageId, prompt, outcome } = entry
   const isAuto = prompt.mode === 'auto-allow'
+  const isExplicit = prompt.mode === 'explicit'
 
   // v1.2.88 optimistic submitting state — kept for the dock so the
   // user gets immediate feedback on click. Cleared when the outcome
@@ -94,6 +95,11 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
             {t('chat.approvalAutoBadge', { defaultValue: 'auto-allow' })}
           </Badge>
         )}
+        {isExplicit && !outcome && (
+          <Badge variant="outline" className="text-[10px] uppercase">
+            {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
+          </Badge>
+        )}
         {isAuto && !outcome && prompt.graceSeconds != null && (
           <AutoAllowCountdown graceSeconds={prompt.graceSeconds} />
         )}
@@ -112,26 +118,26 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
         <>
           <div className="flex flex-wrap gap-2">
             {!isAuto && (
-              <>
-                <Button
-                  size="sm"
-                  disabled={pendingChoice !== null}
-                  onClick={() => handleClick('y')}
-                >
-                  {t('chat.approvalAllow')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={pendingChoice !== null}
-                  onClick={() => handleClick('a')}
-                  title={t('chat.approvalAutoTip', {
-                    defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
-                  })}
-                >
-                  {t('chat.approvalAuto')}
-                </Button>
-              </>
+              <Button
+                size="sm"
+                disabled={pendingChoice !== null}
+                onClick={() => handleClick('y')}
+              >
+                {t('chat.approvalAllow')}
+              </Button>
+            )}
+            {!isAuto && !isExplicit && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={pendingChoice !== null}
+                onClick={() => handleClick('a')}
+                title={t('chat.approvalAutoTip', {
+                  defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
+                })}
+              >
+                {t('chat.approvalAuto')}
+              </Button>
             )}
             <Button
               size="sm"

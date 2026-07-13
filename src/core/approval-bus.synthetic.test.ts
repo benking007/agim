@@ -39,8 +39,8 @@ describe('ApprovalBus.registerSyntheticPending', () => {
   })
 
   it('happy path: notifier fires, resolve(allow) dispatches once', async () => {
-    let notified: ApprovalNotification | null = null
-    bus.setNotifier(async (n) => { notified = n })
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
 
     const decisions: Decision[] = []
     await bus.registerSyntheticPending({
@@ -52,15 +52,81 @@ describe('ApprovalBus.registerSyntheticPending', () => {
       dispatch: (d) => { decisions.push(d) },
     })
 
-    expect(notified).not.toBeNull()
-    expect(notified!.toolName).toBe('external_directory')
-    expect(notified!.input).toEqual({ patterns: ['/root/workspace/agim/*'] })
-    expect(notified!.ctx.threadId).toBe('thread-A')
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]?.toolName).toBe('external_directory')
+    expect(notifications[0]?.input).toEqual({ patterns: ['/root/workspace/agim/*'] })
+    expect(notifications[0]?.ctx.threadId).toBe('thread-A')
     expect(bus.hasPendingFor(KEY)).toBe(true)
 
     bus.resolvePending(KEY, { behavior: 'allow' })
     expect(decisions.length).toBe(1)
     expect(decisions[0]).toEqual({ behavior: 'allow' })
+    expect(bus.hasPendingFor(KEY)).toBe(false)
+  })
+
+  it('explicit-decision requests bypass auto-approve and cannot seed remembered rules', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'plan-1',
+      reqId: 'plan-exit-1',
+      toolName: 'native_exit_plan_mode',
+      input: { plan: '- step' },
+      requiresExplicitDecision: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+
+    expect(notifications[0]?.requiresExplicitDecision).toBe(true)
+    expect(decisions).toEqual([])
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+
+    expect(bus.resolvePending(KEY, { behavior: 'allow' }, 'other-user')).toBeNull()
+    expect(bus.hasPendingFor(KEY)).toBe(true)
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true }, RUN_CTX.userId)
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(bus.getAutoAllowKeys(KEY)).toEqual([])
+  })
+
+  it('explicit-decision requests deny on timeout even when timeout default is allow', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
+    bus.setNotifier(async () => {})
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'plan-2',
+      reqId: 'plan-exit-2',
+      toolName: 'native_exit_plan_mode',
+      input: { plan: '- step' },
+      requiresExplicitDecision: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+
+    await sleep(300)
+    expect(decisions).toEqual([{ behavior: 'deny', message: 'explicit approval timeout' }])
+  })
+
+  it('lifecycle cancellation preserves a non-user resolution cause', async () => {
+    bus.setNotifier(async () => {})
+    const causes: string[] = []
+    bus.setResolutionListener((event) => { causes.push(event.cause) })
+    await bus.registerSyntheticPending({
+      runId: 'cancel-1',
+      reqId: 'cancel-pending-1',
+      toolName: 'native_exec',
+      input: { command: 'sleep 10' },
+      ctx: RUN_CTX,
+      dispatch: () => {},
+    })
+
+    expect(bus.cancelPendingByReqId('cancel-pending-1', 'turn aborted')).toBe(true)
+    expect(causes).toEqual(['run-terminated'])
     expect(bus.hasPendingFor(KEY)).toBe(false)
   })
 

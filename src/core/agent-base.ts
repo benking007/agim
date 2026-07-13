@@ -242,9 +242,9 @@ export abstract class AgentBase implements AgentAdapter {
    * Sync convenience wrapper: drain the streaming generator into a single
    * string. Used by Job Board where the caller wants the final result.
    */
-  public async spawnAndCollect(prompt: string, signal?: AbortSignal): Promise<string> {
+  public async spawnAndCollect(prompt: string, signal?: AbortSignal, opts: AgentSendOpts = {}): Promise<string> {
     let acc = ''
-    for await (const chunk of this.spawnStream(prompt, signal, {})) {
+    for await (const chunk of this.spawnStream(prompt, signal, opts)) {
       acc += chunk
     }
     return acc
@@ -257,6 +257,12 @@ export abstract class AgentBase implements AgentAdapter {
    */
   protected async *spawnStream(prompt: string, signal?: AbortSignal, opts: AgentSendOpts = {}): AsyncGenerator<string> {
     const idleTimeout = this.idleTimeoutMs
+    let outcomeReported = false
+    const reportOutcome = (outcome: Parameters<NonNullable<AgentSendOpts['onOutcome']>>[0]) => {
+      if (outcomeReported) return
+      outcomeReported = true
+      try { opts.onOutcome?.(outcome) } catch { /* observer isolation */ }
+    }
 
     // prepareCommand returns a self-contained plan — args, optional extra env,
     // optional cleanup. No instance state involved, so concurrent spawnStream
@@ -443,12 +449,14 @@ export abstract class AgentBase implements AgentAdapter {
         rootLogger.warn(
           { component: `agent.${this.name}`, agent: this.name, idleTimeoutMs: idleTimeout, reason: 'idle' },
           `[${this.name}] killed after ${mins}min of no stdout/stderr (likely hang)`)
+        reportOutcome({ status: 'timeout', providerFailure: true, error: `idle timeout ${idleTimeout}ms` })
         yield `\n\n⚠️ agent 子进程 ${mins} 分钟无任何输出，强制超时（可能 hang 或网络挂起）`
         return
       }
 
       if (aborted) {
         rootLogger.info({ component: `agent.${this.name}`, agent: this.name }, `[${this.name}] cancelled via signal`)
+        reportOutcome({ status: 'aborted', providerFailure: false })
         yield '\n\n🚫 任务已被取消。'
         return
       }
@@ -465,6 +473,11 @@ export abstract class AgentBase implements AgentAdapter {
 
       if (exitCode !== null && exitCode !== 0) {
         const friendly = this.handleError(exitCode, stderrAccum, errorMessage)
+        reportOutcome({
+          status: 'error',
+          providerFailure: true,
+          error: errorMessage || stderrAccum.trim() || `exit ${exitCode}`,
+        })
         if (friendly !== null) {
           yield friendly
           return
@@ -479,6 +492,7 @@ export abstract class AgentBase implements AgentAdapter {
         const empty = this.emptyOutputMessage(stderrAccum, errorMessage)
         if (empty !== null) yield empty
       }
+      reportOutcome({ status: 'success', providerFailure: false })
     } finally {
       if (idleTimer) clearTimeout(idleTimer)
       if (killTimer) clearTimeout(killTimer)

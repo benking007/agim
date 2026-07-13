@@ -115,6 +115,43 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
     }
   })
 
+  it('waits for mutation-capable dispatchers to settle after timeout abort', async () => {
+    const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+    process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '20'
+    try {
+      const mutation: ToolDef = {
+        name: 'native_write_file',
+        description: 'write',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }
+      const dispatch: ToolDispatcher = (_call, signal) => new Promise((resolve) => {
+        signal.addEventListener('abort', () => {
+          setTimeout(() => resolve({ text: 'aborted after cleanup', isError: true }), 40)
+        }, { once: true })
+      })
+      const [tool] = agimToolsToPi([mutation], dispatch)
+      const started = performance.now()
+      await expect(tool.execute('mutation-timeout', {}, new AbortController().signal)).rejects.toThrow(/超时/)
+      expect(performance.now() - started).toBeGreaterThanOrEqual(50)
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+      else process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = prev
+    }
+  })
+
+  it('returns promptly on outer abort even when the dispatcher ignores its signal', async () => {
+    const slowTool: ToolDef = { ...QUOTE_TOOL, timeoutMs: 0 }
+    const dispatch: ToolDispatcher = async () => await new Promise<never>(() => {})
+    const [tool] = agimToolsToPi([slowTool], dispatch, { parallelSafe: () => true })
+    const ctrl = new AbortController()
+    const run = tool!.execute('c1', { symbol: 'x' }, ctrl.signal)
+    const t0 = performance.now()
+    ctrl.abort()
+
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' })
+    expect(performance.now() - t0).toBeLessThan(100)
+  })
+
   it('honors a per-tool timeoutMs=0 opt-out (no cap even with a tiny env timeout)', async () => {
     const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
     process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '10'

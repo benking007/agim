@@ -3,11 +3,13 @@
 // from index.ts so the adapter class stays free of registry/path coupling
 // (and unit-testable with injected deps).
 
-import { mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
+import { applyGoalTimeoutBoost } from '../../../core/goals.js'
+import type { AgentSendOpts } from '../../../core/types.js'
 import { getAnyProvider, getProvider, getProviderByName, listProviders } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../native/index.js'
 import { buildPiApprovalGate } from './approval.js'
@@ -26,12 +28,34 @@ function resolveMaxIterations(): number {
   return Math.min(n, 100)
 }
 
+function resolveMaxToolCalls(): number {
+  const raw = process.env.AGIM_NATIVE_AGENT_MAX_TOOL_CALLS
+  if (!raw?.trim()) return 50
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return 50
+  return Math.min(n, 1000)
+}
+
 /** Positive-integer env override, else the given default. */
 function envInt(name: string, def: number): number {
   const raw = process.env[name]
   if (!raw?.trim()) return def
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n >= 0 ? n : def
+}
+
+/** Whole active AgentHarness-loop watchdog. Compaction runs before this timer
+ * because pi 0.79.x does not expose an external compaction signal. */
+function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
+  // Match the longest built-in interactive approval window so a legitimate
+  // Plan Mode confirmation is not killed before the user can answer.
+  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 15 * 60 * 1000)
+  if (base === 0) return 0
+  return applyGoalTimeoutBoost(base, {
+    platform: opts?.platform,
+    channelId: opts?.channelId,
+    threadId: opts?.threadId,
+  })
 }
 
 /** Provider resilience + prompt-cache options, all env-overridable. Defaults:
@@ -50,9 +74,14 @@ function resolveStreamOptions() {
 export function createNativeAgentAdapter(): NativeAgentAdapter {
   const sessionsRoot = join(AGIM_HOME, 'pi-sessions')
   try {
-    mkdirSync(sessionsRoot, { recursive: true })
-  } catch {
-    /* best-effort; sendPrompt surfaces a clear error if the dir is unusable */
+    mkdirSync(sessionsRoot, { recursive: true, mode: 0o700 })
+    // mkdir's mode does not tighten an existing directory. Enforce the
+    // private-state boundary on every startup (best-effort on non-POSIX).
+    chmodSync(sessionsRoot, 0o700)
+  } catch (err) {
+    // Do not hide a weakened state-directory boundary. sendPrompt will still
+    // surface an error if the path is unusable.
+    console.error('[native] failed to secure pi session root:', err instanceof Error ? err.message : err)
   }
   return new NativeAgentAdapter({
     name: 'native',
@@ -79,12 +108,14 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     // allow-list / plan-mode / IM approval card).
     resolveApprovalGate: (opts, sessionId) => buildPiApprovalGate(opts, sessionId),
     maxIterations: resolveMaxIterations(),
+    maxToolCalls: resolveMaxToolCalls(),
     // Proactive per-turn compaction (pi never auto-compacts). On by default;
     // AGIM_NATIVE_COMPACTION=off disables it.
     compactionEnabled: process.env.AGIM_NATIVE_COMPACTION !== 'off',
     // Provider retry/backoff/timeout + prompt cache (rides out transient LLM
     // 429/5xx and cuts repeat token cost). All AGIM_NATIVE_* env-overridable.
     streamOptions: resolveStreamOptions(),
+    resolveRunTimeoutMs,
     // Reuse native's full system prompt so the model knows its real backend +
     // model + role (fixes "what model are you" → it stops hallucinating claude)
     // and gets the operator role + skill routing + tool guides.

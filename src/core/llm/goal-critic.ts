@@ -44,8 +44,8 @@
 //     provider as the turn if `cheap` is unset.
 
 import { logger as rootLogger } from '../logger.js'
-import { getProvider } from './registry.js'
-import type { LlmProvider, LlmMessage } from './provider-base.js'
+import { getAnyProvider, getProvider } from './registry.js'
+import type { LlmProvider, LlmMessage, LlmUsage } from './provider-base.js'
 
 const log = rootLogger.child({ component: 'goal-critic' })
 
@@ -76,6 +76,20 @@ export interface CriticVerdict {
    *  do differently. May be empty if the critic couldn't think of one. */
   redirect?: string
   /** Provider/model used for the critic call, for audit. */
+  modelUsed?: string
+  /** Token/cost usage from the critic provider call, when reported. */
+  usage?: LlmUsage
+}
+
+export interface CompletionCriticInput {
+  goalTitle: string
+  goalBody?: string
+  evidence: ReadonlyArray<{ name: string; preview: string }>
+}
+
+export interface CompletionCriticVerdict {
+  completed: boolean
+  reason: string
   modelUsed?: string
 }
 
@@ -120,8 +134,8 @@ function resolveCriticRole(): string {
 /** Pick the critic provider: env-named role → cheap role → null.
  *  Returns null when no usable provider — caller treats that as
  *  "critic disabled this turn" and skips. */
-export function pickCriticProvider(): { provider: LlmProvider; role: string } | null {
-  if (!resolveCriticEnabled()) return null
+export function pickCriticProvider(force = false): { provider: LlmProvider; role: string } | null {
+  if (!force && !resolveCriticEnabled()) return null
   const role = resolveCriticRole()
   const p = getProvider(role)
   if (p) return { provider: p, role }
@@ -131,6 +145,10 @@ export function pickCriticProvider(): { provider: LlmProvider; role: string } | 
     const fallback = getProvider('cheap')
     if (fallback) return { provider: fallback, role: 'cheap' }
   }
+  const native = getProvider('native-chat')
+  if (native) return { provider: native, role: 'native-chat' }
+  const any = getAnyProvider()
+  if (any) return { provider: any, role: 'auto' }
   return null
 }
 
@@ -151,13 +169,13 @@ function buildTranscript(calls: CriticInput['recentToolCalls']): string {
  */
 export async function runGoalCritic(
   input: CriticInput,
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; force?: boolean } = {},
 ): Promise<CriticVerdict> {
   const haveAnchor = !!(input.prompt?.trim() || input.goalTitle?.trim())
   if (!haveAnchor) {
     return { onTrack: true, reason: 'no prompt/goal anchor to judge against' }
   }
-  const picked = pickCriticProvider()
+  const picked = pickCriticProvider(opts.force)
   if (!picked) {
     return { onTrack: true, reason: 'critic disabled (no provider for cheap role / AGIM_NATIVE_CRITIC=off)' }
   }
@@ -184,18 +202,19 @@ export async function runGoalCritic(
     })
     const text = (r.text ?? '').trim()
     if (!text) {
-      return { onTrack: true, reason: 'critic returned empty text', modelUsed: r.modelUsed }
+      return { onTrack: true, reason: 'critic returned empty text', modelUsed: r.modelUsed, usage: r.usage }
     }
     const parsed = tryParseJson(text)
     if (!parsed) {
       log.warn({ event: 'goal-critic.parse_failed', raw: text.slice(0, 200) })
-      return { onTrack: true, reason: 'critic JSON unparseable', modelUsed: r.modelUsed }
+      return { onTrack: true, reason: 'critic JSON unparseable', modelUsed: r.modelUsed, usage: r.usage }
     }
     return {
       onTrack: parsed.onTrack !== false,  // default true on weird type
       reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 120) : '',
       redirect: typeof parsed.redirect === 'string' ? parsed.redirect.slice(0, 120) : undefined,
       modelUsed: r.modelUsed,
+      usage: r.usage,
     }
   } catch (err) {
     log.warn({
@@ -203,6 +222,60 @@ export async function runGoalCritic(
       err: err instanceof Error ? err.message : String(err),
     })
     return { onTrack: true, reason: `critic call threw — letting loop continue` }
+  }
+}
+
+/** Hard completion proof review. Evidence and recap are untrusted model/tool
+ * data; malformed output and provider failures fail closed. */
+export async function runGoalCompletionCritic(
+  input: CompletionCriticInput,
+  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<CompletionCriticVerdict> {
+  const picked = pickCriticProvider(true)
+  if (!picked) return { completed: false, reason: 'no completion critic provider configured' }
+  const system =
+    'You are Agim\'s completion verifier. Decide whether the supplied TOOL EVIDENCE proves that every material acceptance criterion in the GOAL is completed now. ' +
+    'Evidence previews are fixed server-generated attestations, not tool text. ' +
+    'Progress, relevance, intent, or a plausible claim are not proof of completion. When uncertain, missing criteria, stale state, or only partial evidence: completed=false. ' +
+    'Output only strict JSON: {"completed":true|false,"reason":"<=120 chars"}.'
+  const payload = {
+    goal: {
+      title: input.goalTitle.slice(0, 500),
+      body: (input.goalBody ?? '').slice(0, 2000),
+    },
+    evidence: input.evidence.slice(0, 16).map((item) => ({
+      tool: item.name.slice(0, 120),
+      preview: item.preview.slice(0, 1000),
+    })),
+  }
+  try {
+    const response = await picked.provider.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: JSON.stringify(payload) },
+    ], {
+      timeoutMs: opts.timeoutMs ?? 30_000,
+      signal: opts.signal,
+    })
+    const parsed = tryParseJson(response.text ?? '') as
+      | { completed?: unknown; reason?: unknown }
+      | null
+    if (!parsed || typeof parsed.completed !== 'boolean') {
+      return {
+        completed: false,
+        reason: 'completion critic returned malformed verdict',
+        modelUsed: response.modelUsed,
+      }
+    }
+    return {
+      completed: parsed.completed,
+      reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 120) : '',
+      modelUsed: response.modelUsed,
+    }
+  } catch (err) {
+    return {
+      completed: false,
+      reason: `completion critic failed: ${err instanceof Error ? err.message : String(err)}`,
+    }
   }
 }
 

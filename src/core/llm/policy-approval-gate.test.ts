@@ -12,6 +12,20 @@ function call(name: string): ToolCallRequest {
 }
 
 describe('policy-approval-gate', () => {
+  it('forwards the turn AbortSignal to interactive approval', async () => {
+    const ctrl = new AbortController()
+    let seen: AbortSignal | undefined
+    const gate = buildPolicyApprovalGate({
+      mode: 'allow-list',
+      askUser: async (_call, signal) => {
+        seen = signal
+        return 'deny'
+      },
+    })
+    await gate(call('native_exec'), 0, ctrl.signal)
+    expect(seen).toBe(ctrl.signal)
+  })
+
   it('default (allow-list, no entries) denies everything', async () => {
     const gate = buildPolicyApprovalGate()
     expect(await gate(call('native_echo'), 0)).toBe('deny')

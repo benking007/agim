@@ -1,6 +1,6 @@
 // Message router — parses commands and routes to agents
 
-import type { ParsedMessage, ChatMessage, Session } from './types.js'
+import type { ParsedMessage, ChatMessage, Session, AgentTurnOutcome } from './types.js'
 import type { Logger } from 'pino'
 import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
@@ -74,6 +74,12 @@ export interface RouteContext {
   parentJobId?: number
   /** A2A-L1: call_depth (0 for user-originated runs). */
   callDepth?: number
+  /** Cancellation for the current inbound turn. Inline jobs bind this to the
+   *  job-board controller so /abort reaches every adapter. */
+  signal?: AbortSignal
+  /** Structured terminal state reported by the selected adapter. Consumers
+   *  (CLI/job/web) use it after draining the generator. */
+  agentOutcome?: AgentTurnOutcome
 }
 
 export interface AgentCallOptions {
@@ -434,9 +440,6 @@ export async function routeMessage(
         ctx.platform, ctx.channelId, ctx.threadId, agent.name
       )
       ctx.intent = 'explicit'
-      // Commit point: claim the half-open probe (if any) now that the call is
-      // guaranteed to run and pair with record* in callAgentWithHistory.
-      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
 
@@ -567,9 +570,6 @@ export async function routeMessage(
       const session = await sessionManager.getOrCreateSession(
         ctx.platform, ctx.channelId, ctx.threadId, agentName
       )
-      // Commit point: claim the half-open probe (if any) now that the call is
-      // guaranteed to run and pair with record* in callAgentWithHistory.
-      circuitBreaker.acquireProbe(agent.name)
       return callAgentWithHistory(agent, session.id, parsed.prompt, session.messages, ctx, session.model, session.variant, session.planMode)
     }
   }
@@ -593,16 +593,17 @@ export async function callAgentWithHistory(
   if (!agent) {
     throw new Error('callAgentWithHistory called without a configured agent')
   }
+  if (ctx.signal?.aborted) {
+    return (async function* (): AsyncGenerator<string> { /* cancelled before side effects */ })()
+  }
 
   const storageThreadId = options.storageThreadId ?? ctx.threadId
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
   const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
 
-  await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
-    role: 'user',
-    content: prompt,
-    timestamp: new Date()
-  })
+  // Freeze history before this turn is persisted. Most callers pass the
+  // session's live array by reference.
+  const priorHistory = history.slice()
 
   const startTime = Date.now()
   ctx.logger.info({ event: 'agent.invoke.start', agent: agent.name, promptLen: prompt.length, historyLen: history.length })
@@ -611,12 +612,16 @@ export async function callAgentWithHistory(
   // conversation log on disk — feeding history again would duplicate every
   // prior turn in the model's view. Pass an empty history in that case so
   // claude relies purely on its native session memory.
-  const effectiveHistory = agentSessionResume ? [] : history
+  const effectiveHistory = agentSessionResume ? [] : priorHistory
 
   // Per-call accumulators for adapters that surface usage / session-id
   // inline (currently opencode). Closure-bound so concurrent runs can't
   // race each other.
   let usageAcc = 0
+  let tokensInputAcc = 0
+  let tokensOutputAcc = 0
+  let unknownCost = false
+  let adapterOutcome: AgentTurnOutcome | undefined
   const onAgentSessionId = (id: string): void => {
     // Persist the adapter-reported id on first sighting so the next turn can
     // pass it back via --session / exec resume. Setters are idempotent.
@@ -649,8 +654,21 @@ export async function callAgentWithHistory(
     }
     // claude-code pre-allocates its own UUID in cli.ts, never calls back here.
   }
-  const onUsage = (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }): void => {
+  const onUsage = (delta: {
+    costUsd?: number
+    tokensInput?: number
+    tokensOutput?: number
+  }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
+    if (typeof delta.tokensInput === 'number' && Number.isFinite(delta.tokensInput)) tokensInputAcc += delta.tokensInput
+    if (typeof delta.tokensOutput === 'number' && Number.isFinite(delta.tokensOutput)) tokensOutputAcc += delta.tokensOutput
+  }
+  const onCostMetadata = (metadata: { known: boolean }): void => {
+    if (!metadata.known) unknownCost = true
+  }
+  const onOutcome = (outcome: AgentTurnOutcome): void => {
+    adapterOutcome = outcome
+    ctx.agentOutcome = outcome
   }
 
   // Plan mode kill-switch: ops can flip AGIM_DISABLE_PLAN_MODE=1 to ignore
@@ -713,7 +731,10 @@ export async function callAgentWithHistory(
   // installed; filter(Boolean) below drops it cleanly.
   const skillsSnippet = agent.handlesAgimSkillsPrompt ? '' : buildSkillsSummary()
   const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
-  const augmentedPrompt = headerBlocks.length > 0 ? `${headerBlocks.join('\n\n')}\n${prompt}` : prompt
+  const ephemeralContext = headerBlocks.join('\n\n')
+  const wirePrompt = agent.handlesEphemeralContext || !ephemeralContext
+    ? prompt
+    : `${ephemeralContext}\n${prompt}`
 
   // A2A coverage: ensure EVERY top-level agent turn has a parent inline job,
   // regardless of entry point. The IM inbound path (cli.ts) pre-creates one
@@ -734,22 +755,26 @@ export async function callAgentWithHistory(
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
 
-  const generator = agent.sendPrompt(sessionId, augmentedPrompt, effectiveHistory, {
+  const generator = agent.sendPrompt(sessionId, wirePrompt, effectiveHistory, {
     model,
     variant,
     threadId: ctx.threadId,
     platform: ctx.platform,
     userId: ctx.userId,
     channelId: ctx.channelId,
+    ...(agent.handlesEphemeralContext && ephemeralContext ? { ephemeralContext } : {}),
     agentSessionId,
     agentSessionResume,
     onAgentSessionId,
     onUsage,
+    onCostMetadata,
+    onOutcome,
     planMode: effectivePlanMode || undefined,
     // A2A-L1: forward the caller's tracking id + call depth so the
     // adapter can stamp RunContext (consumed by bus.handleA2A).
     parentJobId: ctx.parentJobId,
     callDepth: ctx.callDepth,
+    signal: ctx.signal,
     // ADR-0002: forward the inbound turn's trace id so an adapter that mints
     // its own audit rows (native) correlates them back to this message.
     traceId: ctx.traceId,
@@ -758,7 +783,27 @@ export async function callAgentWithHistory(
   return (async function* (): AsyncGenerator<string> {
     let fullResponse = ''
     let invocationError: string | undefined
+    let userPersisted = false
     try {
+      if (ctx.signal?.aborted) {
+        adapterOutcome = { status: 'aborted', providerFailure: false }
+        ctx.agentOutcome = adapterOutcome
+        return
+      }
+      // Claim the half-open probe only when the lazy generator actually
+      // starts, guaranteeing the finally below will release it.
+      circuitBreaker.acquireProbe(agent.name)
+      await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
+        role: 'user',
+        content: prompt,
+        timestamp: new Date(),
+      })
+      userPersisted = true
+      if (ctx.signal?.aborted) {
+        adapterOutcome = { status: 'aborted', providerFailure: false }
+        ctx.agentOutcome = adapterOutcome
+        return
+      }
       for await (const chunk of generator) {
         fullResponse += chunk
         yield chunk
@@ -768,7 +813,26 @@ export async function callAgentWithHistory(
       throw err
     } finally {
       const durationMs = Date.now() - startTime
-      if (fullResponse.trim()) {
+      const outcome: AgentTurnOutcome = adapterOutcome
+        ?? (ctx.signal?.aborted
+          ? { status: 'aborted' }
+          : invocationError
+            ? { status: 'error', providerFailure: true, error: invocationError }
+            : { status: 'success', providerFailure: false })
+      const aborted = outcome.status === 'aborted'
+      const successful = outcome.status === 'success' || outcome.status === 'partial'
+      const effectiveError = invocationError ?? outcome.error ?? (successful ? undefined : outcome.status)
+
+      if (aborted && userPersisted) {
+        await sessionManager.removeLastMessageIfMatches(
+          ctx.platform,
+          ctx.channelId,
+          storageThreadId,
+          { role: 'user', content: prompt },
+        )
+      }
+
+      if (!aborted && fullResponse.trim()) {
         await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
           role: 'assistant',
           content: fullResponse,
@@ -780,6 +844,7 @@ export async function callAgentWithHistory(
         agent: agent.name,
         durationMs,
         responseLen: fullResponse.length,
+        outcome: outcome.status,
       })
 
       // Cost: prefer the inline usage accumulator (opencode emits this in
@@ -802,21 +867,33 @@ export async function callAgentWithHistory(
         responseLen: fullResponse.length,
         durationMs,
         cost,
-        success: !invocationError,
-        error: invocationError,
+        success: successful,
+        error: effectiveError,
       })
 
-      if (invocationError) {
+      if (invocationError || outcome.providerFailure) {
         circuitBreaker.recordFailure(agent.name)
-      } else {
+      } else if (successful) {
         circuitBreaker.recordSuccess(agent.name)
+      } else {
+        circuitBreaker.recordNeutral(agent.name)
+      }
+
+      const hasMeasuredUsage = cost > 0 || tokensInputAcc > 0 || tokensOutputAcc > 0
+      if (!aborted || hasMeasuredUsage) {
         // Roll up into the session-level usage so /stats reflects reality.
         await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,
+          costKnown: !unknownCost,
+          tokensInput: tokensInputAcc,
+          tokensOutput: tokensOutputAcc,
           promptChars: prompt.length,
-          responseChars: fullResponse.length,
+          responseChars: aborted ? 0 : fullResponse.length,
           durationMs,
         })
+      }
+
+      if (outcome.status === 'success') {
         // v1.5 — memory distillation. Fire-and-forget post-reply hook.
         // Runs only when AGIM_MEMORY_ENABLED is on; uses the same agent
         // we just talked to (model-agnostic). Skipped for tiny exchanges.

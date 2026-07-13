@@ -166,6 +166,9 @@ export interface Session {
 export interface SessionUsage {
   turns: number
   costUsd: number
+  tokensInput?: number
+  tokensOutput?: number
+  unknownCostTurns?: number
   promptChars: number
   responseChars: number
   durationMsTotal: number
@@ -313,9 +316,10 @@ export interface ApprovalCardPrompt {
   toolName: string
   /** Stringified input, already length-capped. May contain newlines. */
   inputJson: string
-  /** 'normal' = ask user; 'auto-allow' = grace window before automatic
-   *  allow (only the deny button is meaningful). */
-  mode: 'normal' | 'auto-allow'
+  /** 'normal' = ask user with optional remember action; 'explicit' = one-time
+   *  human decision only; 'auto-allow' = grace window before automatic allow
+   *  (only the deny button is meaningful). */
+  mode: 'normal' | 'explicit' | 'auto-allow'
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
 }
@@ -373,6 +377,28 @@ export interface ApprovalCardOutcome {
  *  is ready, to remove or otherwise hide the placeholder. */
 export type ThinkingHandle = () => Promise<void>
 
+export interface AgentTurnOutcome {
+  status: 'success' | 'partial' | 'aborted' | 'timeout' | 'error'
+  /** True only when provider health should affect the circuit breaker. User
+   *  cancellation, policy denial, and local watchdog expiry are neutral. */
+  providerFailure?: boolean
+  error?: string
+  /** Guard / terminal stop code when known (e.g. stuck_loop, length, max_iter). */
+  stopReason?: string
+  /** Provider/model turns observed this run (before_provider_request count). */
+  modelTurns?: number
+  /** Tool calls that passed preflight and were dispatched. */
+  toolCalls?: number
+  /** Auxiliary model calls observed this run (goal critic, compaction estimate). */
+  auxModelCalls?: number
+  /** Aggregated usage when available (main loop + observed aux). */
+  usage?: {
+    tokensInput?: number
+    tokensOutput?: number
+    costUsd?: number
+  }
+}
+
 /**
  * Optional per-call context piped from the IM router into the agent. Lets
  * adapters (e.g. ClaudeCodeAdapter) route side-channel events back to the
@@ -389,6 +415,10 @@ export interface AgentSendOpts {
   platform?: string
   userId?: string
   channelId?: string
+  /** Request-only context (goal/persona/reminders/viewer hints). Adapters that
+   *  support it inject this at provider context time without persisting it as
+   *  part of the user's durable message. */
+  ephemeralContext?: string
   /** Optional UUID to bind to the agent's own resumable-session concept.
    *  Currently honoured by the claude-code adapter (passed as
    *  `--session-id` for first call, `--resume` for subsequent calls) so
@@ -409,7 +439,17 @@ export interface AgentSendOpts {
   /** Optional callback for adapters that surface usage data inline (cost +
    *  tokens). opencode's `step_finish` event carries this; cli accumulates
    *  the deltas to feed `recordUsage` so /stats reflects opencode cost. */
-  onUsage?: (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }) => void
+  onUsage?: (delta: {
+    costUsd?: number
+    tokensInput?: number
+    tokensOutput?: number
+  }) => void
+  /** Reports whether adapter cost is backed by known model metadata. Kept
+   *  separate from numeric usage for compatibility with existing callbacks. */
+  onCostMetadata?: (metadata: { known: boolean }) => void
+  /** Structured terminal state. Adapters that report friendly error text must
+   *  still call this so routers/jobs do not mistake that text for success. */
+  onOutcome?: (outcome: AgentTurnOutcome) => void
   /** When true, the adapter should run the agent in plan / read-only mode.
    *  claude-code translates this to `--permission-mode plan`; opencode
    *  translates it to `--agent plan` (stdio) or `agent: 'plan'` in the HTTP
@@ -424,11 +464,10 @@ export interface AgentSendOpts {
    *  call_agent hop). Adapters forward it into RunContext.callDepth so
    *  the bus can enforce AGIM_A2A_MAX_DEPTH on the next hop. */
   callDepth?: number
-  /** Optional AbortSignal. When aborted, the adapter should terminate the
-   *  underlying child process (SIGTERM, then SIGKILL after a brief grace
-   *  period). A2A wires this from its per-call timeout so timeout failures
-   *  don't leave orphan codex / claude / opencode processes writing into
-   *  `_agim-output/` long after agim has given up on the result. */
+  /** Optional AbortSignal. CLI adapters terminate their child process;
+   *  in-process adapters abort provider/tool work and settle their session
+   *  before releasing it. A2A and inline jobs wire this from timeout/user
+   *  cancellation so work cannot continue after Agim reports it stopped. */
   signal?: AbortSignal
   /** The inbound turn's trace id (ADR-0002). Adapters that mint their own
    *  audit rows (notably the in-process native agent) should use this so the
@@ -474,6 +513,9 @@ export interface AgentAdapter {
   /** True when the adapter injects Agim Skills via its own system prompt.
    *  Router-level prompt prefix injection is skipped to avoid duplicates. */
   readonly handlesAgimSkillsPrompt?: boolean
+  /** True when the adapter consumes AgentSendOpts.ephemeralContext without
+   *  requiring router-level prompt concatenation. */
+  readonly handlesEphemeralContext?: boolean
   sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], opts?: AgentSendOpts): AsyncGenerator<string>
   isAvailable(): Promise<boolean>
   /** Optional short hint for `/agents` UI ('model: deepseek-chat',

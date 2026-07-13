@@ -87,9 +87,9 @@ export interface ApprovalCardPrompt {
   toolName: string
   /** Stringified input, already display-capped server-side. */
   inputJson: string
-  /** `normal` = ask user; `auto-allow` = grace window before automatic
-   *  allow (only the deny button is meaningful in that mode). */
-  mode: 'normal' | 'auto-allow'
+  /** `normal` = ask user with remember option; `explicit` = one-time human
+   *  decision; `auto-allow` = grace window before automatic allow. */
+  mode: 'normal' | 'explicit' | 'auto-allow'
   /** Auto-allow grace window in seconds, present iff mode = `auto-allow`. */
   graceSeconds?: number
 }

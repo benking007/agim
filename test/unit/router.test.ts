@@ -368,6 +368,95 @@ describe('routeMessage', () => {
     registry.registerAgent(mockAgent)
   })
 
+  it('passes only pre-turn history to a fresh agent call', async () => {
+    const name = `history-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    let seenHistory: string[] | undefined
+    let seenSignal: AbortSignal | undefined
+    let seenPrompt: string | undefined
+    let seenEphemeralContext: string | undefined
+    const historyAgent: AgentAdapter = {
+      name,
+      aliases: [],
+      handlesAgimSkillsPrompt: true,
+      handlesEphemeralContext: true,
+      isAvailable: async () => true,
+      sendPrompt: (_sessionId, prompt, history, opts) => {
+        seenHistory = (history ?? []).map((m) => m.content)
+        seenSignal = opts?.signal
+        seenPrompt = prompt
+        seenEphemeralContext = opts?.ephemeralContext
+        return mockGenerator()
+      },
+    }
+    registry.registerAgent(historyAgent)
+    const threadId = `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const controller = new AbortController()
+    const historyCtx = makeCtx({ threadId, userId: `user-${threadId}`, signal: controller.signal })
+    const savedViewer = process.env.AGIM_VIEWER_ENABLED
+    process.env.AGIM_VIEWER_ENABLED = '1'
+    try {
+      const result = await routeMessage(
+        { type: 'agent', agent: name, prompt: 'current prompt' },
+        historyCtx,
+      )
+      for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
+
+      expect(seenHistory).toEqual([])
+      expect(seenSignal).toBe(controller.signal)
+      expect(seenPrompt).toBe('current prompt')
+      expect(seenEphemeralContext).toContain('im-summary')
+      const stored = await sessionManager.getExistingSession(
+        historyCtx.platform,
+        historyCtx.channelId,
+        historyCtx.threadId,
+      )
+      expect(stored?.messages.map((m) => m.content)).toEqual(['current prompt', 'test response'])
+    } finally {
+      if (savedViewer === undefined) delete process.env.AGIM_VIEWER_ENABLED
+      else process.env.AGIM_VIEWER_ENABLED = savedViewer
+    }
+  })
+
+  it('does not persist user or partial assistant text when a turn is aborted', async () => {
+    const name = `aborting-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const controller = new AbortController()
+    const abortingAgent: AgentAdapter = {
+      name,
+      aliases: [],
+      isAvailable: async () => true,
+      sendPrompt: (_sessionId, _prompt, _history, opts) => (async function* () {
+        opts?.onUsage?.({ tokensInput: 10, tokensOutput: 2, costUsd: 0.01 })
+        controller.abort()
+        opts?.onOutcome?.({ status: 'aborted', providerFailure: false })
+        yield 'partial text that must not persist'
+      })(),
+    }
+    registry.registerAgent(abortingAgent)
+    const threadId = `abort-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const abortCtx = makeCtx({
+      threadId,
+      userId: `user-${threadId}`,
+      signal: controller.signal,
+    })
+
+    const result = await routeMessage(
+      { type: 'agent', agent: name, prompt: 'cancel me' },
+      abortCtx,
+    )
+    for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
+
+    const stored = await sessionManager.getExistingSession(
+      abortCtx.platform,
+      abortCtx.channelId,
+      abortCtx.threadId,
+    )
+    expect(stored?.messages).toEqual([])
+    expect(stored?.usage?.tokensInput).toBe(10)
+    expect(stored?.usage?.tokensOutput).toBe(2)
+    expect(stored?.usage?.costUsd).toBe(0.01)
+    expect(abortCtx.agentOutcome?.status).toBe('aborted')
+  })
+
   describe('command routing', () => {
     it('should return service-status message for /status', async () => {
       const result = await routeMessage({ type: 'service', action: 'status', args: '' }, ctx)

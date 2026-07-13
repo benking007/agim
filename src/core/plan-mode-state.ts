@@ -127,6 +127,11 @@ export function readEnvPlanModeDefault(): boolean {
  * boot banner), we return the env default — matches v1.2.119 behaviour.
  */
 export function effectivePlanModeOn(threadKey?: string): boolean {
+  // Global emergency kill switch must be authoritative for every consumer
+  // (router, system prompt, policy gate, and tool roster). Previously only
+  // router.ts honored it, so native could still advertise Plan Mode and deny
+  // tools from stale per-thread state after operators disabled the feature.
+  if (process.env.AGIM_DISABLE_PLAN_MODE === '1') return false
   if (threadKey) {
     const explicit = getPlanModeForThread(threadKey)
     if (explicit !== null) {

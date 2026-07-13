@@ -7,6 +7,7 @@ import { AgentBase } from '../agent-base.js'
 import { createJob, getJob, listJobs, cancelJob, runJob, getJobStats, type Job } from '../job-board.js'
 import { workspaceRegistry } from '../workspace.js'
 import { buildSkillsSummary } from '../skills/loader.js'
+import type { AgentTurnOutcome } from '../types.js'
 
 const JOB_STATUS_ICON: Record<string, string> = {
   pending: '⏳', running: '🔄', completed: '✅', delivered: '📬',
@@ -127,16 +128,26 @@ Agent: ${job.agent}
         const prompt = agent.handlesAgimSkillsPrompt
           ? j.prompt
           : `${buildSkillsSummary()}${j.prompt}`
+        const outcomes: AgentTurnOutcome[] = []
         if (isAgentBaseAgent) {
           const ba = agent as unknown as AgentBase
-          const result = await ba.spawnAndCollect(prompt, signal)
+          const result = await ba.spawnAndCollect(prompt, signal, {
+            onOutcome: (value) => { outcomes.push(value) },
+          })
           if (result) yield result
         } else {
-          const generator = agent.sendPrompt(`job-${j.id}`, prompt, [])
+          const generator = agent.sendPrompt(`job-${j.id}`, prompt, [], {
+            signal,
+            onOutcome: (value) => { outcomes.push(value) },
+          })
           for await (const chunk of generator) {
             if (signal.aborted) break
             yield chunk
           }
+        }
+        const outcome = outcomes.at(-1)
+        if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+          throw new Error(outcome.error ?? outcome.status)
         }
       }, ctx.logger).catch(() => {})
 

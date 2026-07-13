@@ -271,7 +271,7 @@ LLM request → tool timeout → LLM request → tool timeout → ...
 
 建议新增 `AGIM_NATIVE_TURN_TIMEOUT_MS`：
 
-- 初始默认与 legacy 行为对齐为 5 分钟，并通过指标校准。
+- 初始默认 15 分钟，与最长内置人工审批窗口对齐，并通过指标校准。
 - active goal 使用现有 `applyGoalTimeoutBoost()`，保留 6 小时硬上限。
 - A2A 显式 timeout 仍是更外层的 ceiling。
 - watchdog 到期调用同一 `NativeTurnController.abort()`，不能维护第二套停止路径。

@@ -170,4 +170,42 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
       else process.env.AGIM_TIMEOUT_DEFAULT = savedTimeout
     }
   })
+
+  it('cancels the pending approval when the agent turn is aborted', async () => {
+    const savedAuto = process.env.AGIM_AUTO_APPROVE
+    const unique = `plan-abort-${Date.now()}`
+    const key = makeThreadKey('telegram', 'c1', unique)
+    process.env.AGIM_NATIVE_PLAN_MODE = '1'
+    process.env.AGIM_AUTO_APPROVE = '1'
+    approvalBus.setNotifier(async () => {})
+    const ctrl = new AbortController()
+    try {
+      const d = buildPlanExitDispatcher({
+        threadKey: key,
+        runId: `run-${unique}`,
+        platform: 'telegram',
+        channelId: 'c1',
+        threadId: unique,
+        userId: 'u1',
+      })
+      const resultPromise = d(
+        call('native_exit_plan_mode', { plan: '- only after approval' }),
+        ctrl.signal,
+      )
+      for (let i = 0; i < 20 && !approvalBus.hasPendingFor(key); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(approvalBus.hasPendingFor(key)).toBe(true)
+      ctrl.abort()
+      const result = await resultPromise
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('agent turn aborted')
+      expect(approvalBus.hasPendingFor(key)).toBe(false)
+    } finally {
+      approvalBus.setNotifier(null)
+      await approvalBus.stop()
+      if (savedAuto === undefined) delete process.env.AGIM_AUTO_APPROVE
+      else process.env.AGIM_AUTO_APPROVE = savedAuto
+    }
+  })
 })

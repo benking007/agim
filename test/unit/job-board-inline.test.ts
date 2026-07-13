@@ -17,6 +17,7 @@ import { describe, it, expect, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { logger } from '../../src/core/logger.js'
 
 const TEST_HOME = mkdtempSync(join(tmpdir(), 'agim-jobinline-test-'))
 process.env.AGIM_HOME = TEST_HOME
@@ -121,6 +122,41 @@ skipIfNoDb('inline-job state machine', () => {
     const pending = jb.createInlineJob({ agent: 'a', prompt: 'pending', threadKey })
     expect(pending).toBeGreaterThan(running)
     expect(jb.findActiveJobByThread(threadKey)?.id).toBe(running)
+  })
+
+  it('runJob does not start a pending job cancelled while waiting for a slot', async () => {
+    const saved = process.env.AGIM_MAX_CONCURRENT_JOBS
+    process.env.AGIM_MAX_CONCURRENT_JOBS = '1'
+    let releaseFirst!: () => void
+    const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const first = jb.createInlineJob({ agent: 'a', prompt: 'first', threadKey: 'slot:first' })
+    const second = jb.createInlineJob({ agent: 'a', prompt: 'second', threadKey: 'slot:second' })
+    let secondRan = false
+    try {
+      const firstRun = jb.runJob(first, async function* () {
+        await firstBlocked
+        yield 'first done'
+      }, logger)
+      for (let i = 0; i < 20 && jb.getJob(first)?.status !== 'running'; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      const secondRun = jb.runJob(second, async function* () {
+        secondRan = true
+        yield 'must not run'
+      }, logger)
+      for (let i = 0; i < 20 && jb._waitQueueDepth() === 0; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(jb.cancelJob(second)).toBe(true)
+      releaseFirst()
+      await Promise.all([firstRun, secondRun])
+      expect(secondRan).toBe(false)
+      expect(jb.getJob(second)?.status).toBe('cancelled')
+    } finally {
+      releaseFirst()
+      if (saved === undefined) delete process.env.AGIM_MAX_CONCURRENT_JOBS
+      else process.env.AGIM_MAX_CONCURRENT_JOBS = saved
+    }
   })
 
   it('markJobDelivered: completed → delivered; no-op for non-completed', () => {

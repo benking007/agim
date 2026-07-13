@@ -12,7 +12,8 @@
 //        the IM transcript (the tool result is markdown checklist).
 //
 // Tool surface (intentionally tiny):
-//   - native_todo_write(items)  — overwrites the per-thread todo list
+//   - agim_todo_write(items)  — overwrites the per-thread todo list
+//     (legacy alias: native_todo_write)
 //
 // Storage: ~/.agim/todos.db (SQLite) with an in-memory fallback when the
 // native addon is unavailable (Bun tests). Persistence matters for
@@ -25,6 +26,7 @@ import { logger as rootLogger } from '../logger.js'
 import { createSqliteHelper } from '../sqlite-helper.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 
 const log = rootLogger.child({ component: 'todo-dispatcher' })
 
@@ -41,9 +43,9 @@ export type TodoSnapshot =
   | { status: 'absent' }
   | { status: 'present'; items: TodoItem[] }
 
-const TODO_TOOL_NAMES = ['native_todo_write'] as const
+const TODO_TOOL_NAMES = ['agim_todo_write'] as const
 export function isTodoToolName(name: string): boolean {
-  return (TODO_TOOL_NAMES as readonly string[]).includes(name)
+  return (TODO_TOOL_NAMES as readonly string[]).includes(canonicalizeToolName(name))
 }
 
 const SCHEMA = `
@@ -193,7 +195,7 @@ function persistTodo(threadKey: string, items: TodoItem[]): boolean {
 export function getTodoTools(): ToolDef[] {
   return [
     {
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       description:
         'Overwrite this conversation\'s plan checklist with a fresh array of items. ' +
         'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan, ' +
@@ -251,7 +253,7 @@ export function buildTodoDispatcher(threadKey: string): ToolDispatcher {
       // to a synthetic key so the tool still works.
       threadKey = '_no-thread'
     }
-    if (call.name === 'native_todo_write') {
+    if (canonicalizeToolName(call.name) === 'agim_todo_write') {
       return handleWrite(call.arguments, threadKey)
     }
     return { text: `unknown todo tool: ${call.name}`, isError: true, source: 'todo' }

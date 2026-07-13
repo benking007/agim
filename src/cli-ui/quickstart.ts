@@ -54,13 +54,13 @@ export async function runQuickstart(lang: Lang = resolveCliLang()): Promise<void
       '还没有可用的 Agent。你可以配置 Agim Agent（只需要一个大模型 API key），也可以先安装 Claude Code / Codex。',
       'No usable agent is available yet. You can configure Agim Agent with one model API key, or install Claude Code / Codex first.',
     ))
-    let action: 'native' | 'install' | 'advanced' | 'doctor' | typeof BACK
+    let action: 'agim' | 'install' | 'advanced' | 'doctor' | typeof BACK
     try {
-      action = await menu<'native' | 'install' | 'advanced' | 'doctor'>({
+      action = await menu<'agim' | 'install' | 'advanced' | 'doctor'>({
         lang,
         message: t(lang, 'menu.subtitle'),
         choices: [
-          { value: 'native', name: text(lang, '配置 Agim Agent 大模型 API（推荐）', 'Configure Agim Agent model API (recommended)') },
+          { value: 'agim', name: text(lang, '配置 Agim Agent 大模型 API（推荐）', 'Configure Agim Agent model API (recommended)') },
           { value: 'install', name: text(lang, '查看 Agent CLI 安装命令', 'Show Agent CLI install commands') },
           { value: 'doctor', name: text(lang, '先运行本机体检', 'Run local doctor first') },
           { value: 'advanced', name: text(lang, '进入完整配置菜单', 'Open full configuration menu'), separatorBefore: true },

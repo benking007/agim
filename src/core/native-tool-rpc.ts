@@ -15,14 +15,16 @@ interface NativeToolSpec {
 }
 
 const TOOL_ALIASES: Record<string, NativeToolSpec> = {
-  web_search: { key: 'web_search', dispatchName: 'native_web_search' },
-  web_fetch: { key: 'web_fetch', dispatchName: 'native_web_fetch' },
-  native_web_search: { key: 'web_search', dispatchName: 'native_web_search' },
-  native_web_fetch: { key: 'web_fetch', dispatchName: 'native_web_fetch' },
+  web_search: { key: 'web_search', dispatchName: 'agim_web_search' },
+  web_fetch: { key: 'web_fetch', dispatchName: 'agim_web_fetch' },
+  native_web_search: { key: 'web_search', dispatchName: 'agim_web_search' },
+  native_web_fetch: { key: 'web_fetch', dispatchName: 'agim_web_fetch' },
+  agim_web_search: { key: 'web_search', dispatchName: 'agim_web_search' },
+  agim_web_fetch: { key: 'web_fetch', dispatchName: 'agim_web_fetch' },
 
-  agim_bash: { key: 'bash', dispatchName: 'native_exec', approvalName: 'Bash' },
-  agim_write: { key: 'write', dispatchName: 'native_write_file', approvalName: 'Write' },
-  agim_edit: { key: 'edit', dispatchName: 'native_edit_file', approvalName: 'Edit' },
+  agim_bash: { key: 'bash', dispatchName: 'agim_exec', approvalName: 'Bash' },
+  agim_write: { key: 'write', dispatchName: 'agim_write_file', approvalName: 'Write' },
+  agim_edit: { key: 'edit', dispatchName: 'agim_edit_file', approvalName: 'Edit' },
 }
 
 const webDispatcher = buildWebDispatcher()
@@ -135,7 +137,7 @@ async function runEditFile(
   if (!oldString) return { text: 'old_string required', isError: true, source: 'fs' }
   const d = fsDispatcher(opts)
   const read = await d(
-    { id: `${opts.reqId ?? 'native-tool'}:read`, name: 'native_read_file', arguments: { path, max_bytes: 8 * 1024 * 1024 } },
+    { id: `${opts.reqId ?? 'native-tool'}:read`, name: 'agim_read_file', arguments: { path, max_bytes: 8 * 1024 * 1024 } },
     signal,
     { traceId: opts.reqId },
   )
@@ -158,7 +160,7 @@ async function runEditFile(
     ? read.text.split(oldString).join(newString)
     : read.text.replace(oldString, newString)
   return d(
-    { id: `${opts.reqId ?? 'native-tool'}:write`, name: 'native_write_file', arguments: { path, content } },
+    { id: `${opts.reqId ?? 'native-tool'}:write`, name: 'agim_write_file', arguments: { path, content } },
     signal,
     { traceId: opts.reqId },
   )

@@ -5,8 +5,8 @@ import type { AppConfig } from '@/types/api'
 
 const TEST_WORKBENCH_CONFIG: AppConfig = {
   messengers: [],
-  agents: ['native'],
-  defaultAgent: 'native',
+  agents: ['agim'],
+  defaultAgent: 'agim',
 }
 
 /**

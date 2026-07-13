@@ -50,27 +50,27 @@ describe('isSemanticStuckLoop (v1.2.122)', () => {
 
   it('fires when 3 different tools share the same long argument value', () => {
     const reports = [
-      rep('native_web_search', '{"query":"aapl Q3 earnings call transcript"}'),
+      rep('agim_web_search', '{"query":"aapl Q3 earnings call transcript"}'),
       rep('mcp__tavily',       '{"query":"aapl Q3 earnings call transcript"}'),
-      rep('native_exec',       '{"command":"curl https://x.example/aapl Q3 earnings call transcript"}'),
+      rep('agim_exec',       '{"command":"curl https://x.example/aapl Q3 earnings call transcript"}'),
     ]
     expect(isSemanticStuckLoop(reports)).toBe(true)
   })
 
   it('does NOT fire when all 3 are the same tool name (isStuckLoop covers it)', () => {
     const reports = [
-      rep('native_web_search', '{"query":"aapl earnings transcript"}'),
-      rep('native_web_search', '{"query":"aapl earnings transcript"}'),
-      rep('native_web_search', '{"query":"aapl earnings transcript"}'),
+      rep('agim_web_search', '{"query":"aapl earnings transcript"}'),
+      rep('agim_web_search', '{"query":"aapl earnings transcript"}'),
+      rep('agim_web_search', '{"query":"aapl earnings transcript"}'),
     ]
     expect(isSemanticStuckLoop(reports)).toBe(false)
   })
 
   it('does NOT fire when salient strings differ', () => {
     const reports = [
-      rep('native_web_search', '{"query":"meta Q3 earnings"}'),
+      rep('agim_web_search', '{"query":"meta Q3 earnings"}'),
       rep('mcp__tavily',       '{"query":"apple Q3 earnings"}'),
-      rep('native_exec',       '{"command":"curl https://x.example/different"}'),
+      rep('agim_exec',       '{"command":"curl https://x.example/different"}'),
     ]
     expect(isSemanticStuckLoop(reports)).toBe(false)
   })
@@ -86,9 +86,9 @@ describe('isSemanticStuckLoop (v1.2.122)', () => {
       rep('foo', '{"x":"random123"}'),
       rep('bar', '{"y":"other456"}'),
       // the 3 we care about — all share salient string
-      rep('native_web_search', '{"query":"target keyword phrase Z"}'),
+      rep('agim_web_search', '{"query":"target keyword phrase Z"}'),
       rep('mcp__tavily',       '{"query":"target keyword phrase Z"}'),
-      rep('native_exec',       '{"command":"echo target keyword phrase Z"}'),
+      rep('agim_exec',       '{"command":"echo target keyword phrase Z"}'),
     ]
     expect(isSemanticStuckLoop(reports)).toBe(true)
   })

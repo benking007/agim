@@ -93,11 +93,11 @@ describe('/settings/start', () => {
     mockFetch({
       config: {
         messengers: ['wechat-ilink'],
-        agents: ['native'],
-        defaultAgent: 'native',
+        agents: ['agim'],
+        defaultAgent: 'agim',
         features: { globalIm: true, remoteAgent: true },
       },
-      agents: { native: true },
+      agents: { agim: true },
       llm: {
         backends: [
           {
@@ -116,7 +116,7 @@ describe('/settings/start', () => {
     await waitFor(() => {
       expect(screen.getByText((_text, el) => el?.textContent === '4/4')).toBeInTheDocument()
     })
-    expect(screen.getByText('agim is online')).toBeInTheDocument()
+    expect(screen.getByText('Agim Agent is online')).toBeInTheDocument()
     expect(screen.getByText('1 usable API configured.')).toBeInTheDocument()
     expect(screen.getByText('Connected: WeChat')).toBeInTheDocument()
   })

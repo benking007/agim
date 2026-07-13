@@ -1,11 +1,11 @@
 // hallucination-detector — flag turns where the assistant TALKS about
-// invoking a native_* tool but never actually emits a toolCalls entry
+// invoking a native_* / agim_* tool but never actually emits a toolCalls entry
 // (v1.2.147).
 //
 // Why: DeepSeek-v4 and other Chinese-tuned LLMs occasionally degrade in
 // long, error-recovery contexts and start narrating tool invocations
 // instead of emitting them through the function-calling schema. The
-// model says "我现在调用 native_write_file: ```python …```" but
+// model says "我现在调用 agim_write_file: ```python …```" but
 // `message.tool_calls` stays empty. Downstream we treated that as a
 // normal text reply and the user got "卡住没消息" — promise without
 // follow-through.
@@ -20,6 +20,8 @@
 // not high-recall) and false positives just trigger a recap card that
 // invites the user to retry. False negatives are silent regressions.
 // Operators who want it off can set AGIM_NATIVE_HALLUCINATION_DETECT=off.
+
+import { canonicalizeToolName, toolNameVariants } from './tool-names.js'
 
 export interface HallucinationInput {
   /** The assistant's final text for this iteration. */
@@ -82,13 +84,13 @@ const PATTERNS: Pattern[] = [
   // it exists in the tool surface (when surface known).
   {
     id: 'zh:invoke-narration',
-    re: /(?:我|让我|我来|这就|现在|我这就)\s*(?:就|马上|现在)?\s*(?:去)?\s*(?:调|调用|使用|跑|run|call|use)\s*[`'"]?\s*(native_[a-z_][a-z0-9_]*)/i,
+    re: /(?:我|让我|我来|这就|现在|我这就)\s*(?:就|马上|现在)?\s*(?:去)?\s*(?:调|调用|使用|跑|run|call|use)\s*[`'"]?\s*((?:native_|agim_)[a-z_][a-z0-9_]*)/i,
     needsToolName: true,
   },
   // "I will call native_xxx" / "Let me invoke native_xxx" — English form.
   {
     id: 'en:invoke-narration',
-    re: /(?:I(?:'?ll)?\s*(?:will\s*)?(?:now\s*)?|let\s*me\s*(?:now\s*)?)(?:call|invoke|use|run|execute)\s+[`'"]?\s*(native_[a-z_][a-z0-9_]*)/i,
+    re: /(?:I(?:'?ll)?\s*(?:will\s*)?(?:now\s*)?|let\s*me\s*(?:now\s*)?)(?:call|invoke|use|run|execute)\s+[`'"]?\s*((?:native_|agim_)[a-z_][a-z0-9_]*)/i,
     needsToolName: true,
   },
   // "这次不废话，直接写。" / "这次直接写完整文件。" — empty promise without
@@ -110,7 +112,7 @@ export function detectHallucinatedToolCall(input: HallucinationInput): Hallucina
   if (!input.text || input.text.length < 4) return { hallucinated: false }
 
   const toolSet = input.toolNames && input.toolNames.length > 0
-    ? new Set(input.toolNames)
+    ? new Set(input.toolNames.flatMap((n) => toolNameVariants(n)))
     : null
 
   for (const p of PATTERNS) {
@@ -121,7 +123,7 @@ export function detectHallucinatedToolCall(input: HallucinationInput): Hallucina
     // exist)" educational discussions. When surface unknown, skip.
     if (p.needsToolName && toolSet) {
       const cap = m[1]
-      if (!cap || !toolSet.has(cap)) continue
+      if (!cap || !(toolSet.has(cap) || toolSet.has(canonicalizeToolName(cap)))) continue
     }
     return {
       hallucinated: true,

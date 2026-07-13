@@ -248,7 +248,7 @@ const cursorDriver: ModelDriver = {
 // ─── native / Agim Agent driver ─────────────────────────────────────
 
 const nativeDriver: ModelDriver = {
-  label: 'native',
+  label: 'agim',
   namespaced: false,
   switchHint: '例: /model deepseek-agim',
 
@@ -425,7 +425,7 @@ const MODEL_DRIVERS: Record<string, ModelDriver> = {
   'mimo-code': mimoDriver,
 }
 
-const SUPPORTED_AGENTS = ['opencode', 'cursor', 'native', 'kimi-code', 'copilot', 'qoder', 'pi', 'mimo']
+const SUPPORTED_AGENTS = ['opencode', 'cursor', 'agim', 'native', 'kimi-code', 'copilot', 'qoder', 'pi', 'mimo']
 
 /** Per-session cache: last /models ordered result, indexed from 1 */
 const sessionModelIndex = new Map<string, string[]>()

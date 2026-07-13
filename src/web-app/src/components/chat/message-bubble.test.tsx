@@ -14,7 +14,7 @@ function explicitApprovalMessage(): ChatMessage {
       messageId: 'm-explicit',
       prompt: {
         reqId: 'req-explicit',
-        toolName: 'native_exit_plan_mode',
+        toolName: 'agim_exit_plan_mode',
         inputJson: '{"plan":"- implement"}',
         mode: 'explicit',
       },

@@ -134,7 +134,7 @@ describe('runAgentLoop — streaming + partial preservation (v1.2.112)', () => {
       [
         {
           textDelta: '',
-          toolCallDeltas: [{ index: 0, id: 'call_x', name: 'native_read_file' }],
+          toolCallDeltas: [{ index: 0, id: 'call_x', name: 'agim_read_file' }],
         },
         {
           textDelta: '',
@@ -159,13 +159,13 @@ describe('runAgentLoop — streaming + partial preservation (v1.2.112)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       streamPartialText: true,
     })
     expect(dispatchArgs).toEqual({ path: '/etc/hostname' })
     expect(r.toolCalls.length).toBe(1)
-    expect(r.toolCalls[0]!.name).toBe('native_read_file')
+    expect(r.toolCalls[0]!.name).toBe('agim_read_file')
     expect(r.text).toBe('done')
   })
 
@@ -179,7 +179,7 @@ describe('runAgentLoop — streaming + partial preservation (v1.2.112)', () => {
       [
         {
           textDelta: 'calling',
-          toolCalls: [{ id: 'toolu_1', name: 'native_read_file', arguments: { path: '/etc/hostname' } }],
+          toolCalls: [{ id: 'toolu_1', name: 'agim_read_file', arguments: { path: '/etc/hostname' } }],
           finishReason: 'tool_use',
         },
       ],
@@ -196,13 +196,13 @@ describe('runAgentLoop — streaming + partial preservation (v1.2.112)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
       streamPartialText: true,
     })
     expect(dispatchArgs).toEqual({ path: '/etc/hostname' })
     expect(r.toolCalls.length).toBe(1)
-    expect(r.toolCalls[0]!.name).toBe('native_read_file')
+    expect(r.toolCalls[0]!.name).toBe('agim_read_file')
     expect(r.text).toBe('done')
   })
 

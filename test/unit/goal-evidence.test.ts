@@ -45,7 +45,7 @@ describeSqlite('goal evidence ledger', () => {
     if (!goal) throw new Error('goal unavailable')
     const tool = agimToolToPi(
       {
-        name: 'native_read_file',
+        name: 'agim_read_file',
         description: 'read',
         parameters: {
           type: 'object',
@@ -83,7 +83,7 @@ describeSqlite('goal evidence ledger', () => {
     let dispatches = 0
     const tool = agimToolToPi(
       {
-        name: 'native_write_file',
+        name: 'agim_write_file',
         description: 'write',
         parameters: { type: 'object', properties: {}, required: [] },
       },
@@ -119,7 +119,7 @@ describeSqlite('goal evidence ledger', () => {
     let dispatches = 0
     const tool = agimToolToPi(
       {
-        name: 'native_exec',
+        name: 'agim_exec',
         description: 'exec',
         parameters: {
           type: 'object',
@@ -161,7 +161,7 @@ describeSqlite('goal evidence ledger', () => {
     const observation = beginGoalToolOperation({
       context,
       toolCallId: 'read-before',
-      toolName: 'native_read_file',
+      toolName: 'agim_read_file',
       args: { path: 'a.txt' },
       kind: 'observation',
     })
@@ -174,7 +174,7 @@ describeSqlite('goal evidence ledger', () => {
     const mutation = beginGoalToolOperation({
       context,
       toolCallId: 'write',
-      toolName: 'native_write_file',
+      toolName: 'agim_write_file',
       args: { path: 'a.txt' },
       kind: 'mutation',
     })
@@ -198,7 +198,7 @@ describeSqlite('goal evidence ledger', () => {
     const verification = beginGoalToolOperation({
       context,
       toolCallId: 'verify',
-      toolName: 'native_exec',
+      toolName: 'agim_exec',
       args: { command: 'npm test' },
       kind: 'mutation_verification',
     })
@@ -235,7 +235,7 @@ describeSqlite('goal evidence ledger', () => {
     const operation = beginGoalToolOperation({
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-research' },
       toolCallId: 'search-one',
-      toolName: 'native_web_search',
+      toolName: 'agim_web_search',
       args: { query: 'research corroboration' },
       kind: 'observation',
     })
@@ -272,7 +272,7 @@ describeSqlite('goal evidence ledger', () => {
     const operation = beginGoalToolOperation({
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-semantic' },
       toolCallId: 'unrelated',
-      toolName: 'native_web_search',
+      toolName: 'agim_web_search',
       args: { query: 'football scores' },
       kind: 'observation',
     })
@@ -317,7 +317,7 @@ describeSqlite('goal evidence ledger', () => {
     const op = beginGoalToolOperation({
       context: { goalId: other.id, goalVersion: other.version, traceId: 'other-trace' },
       toolCallId: 'read',
-      toolName: 'native_read_file',
+      toolName: 'agim_read_file',
       args: { path: 'x' },
       kind: 'observation',
     })
@@ -350,7 +350,7 @@ describeSqlite('goal evidence ledger', () => {
     const op = beginGoalToolOperation({
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-private' },
       toolCallId: 'private-call',
-      toolName: 'native_read_file',
+      toolName: 'agim_read_file',
       args: { path: '/secret/private.txt' },
       kind: 'observation',
     })
@@ -389,7 +389,7 @@ describeSqlite('goal evidence ledger', () => {
     const operation = beginGoalToolOperation({
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace' },
       toolCallId: 'timeout-write',
-      toolName: 'native_write_file',
+      toolName: 'agim_write_file',
       args: { path: 'x' },
       kind: 'mutation',
     })
@@ -414,7 +414,7 @@ describeSqlite('goal evidence ledger', () => {
     const input = {
       context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace' },
       toolCallId: 'same-call-id',
-      toolName: 'native_write_file',
+      toolName: 'agim_write_file',
       args: { path: 'x' },
       kind: 'mutation' as const,
     }
@@ -439,7 +439,7 @@ describeSqlite('goal evidence ledger', () => {
         op_hash, goal_id, goal_version, epoch, kind, state, workspace_scope,
         trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid, owner_start
       ) VALUES ('orphan-op', ?, ?, 0, 'mutation', 'started', '',
-        'trace', 'call', 'native_write_file', 'input', 'dead-owner', ?, 'reused-pid-start')
+        'trace', 'call', 'agim_write_file', 'input', 'dead-owner', ?, 'reused-pid-start')
     `).run(goal.id, goal.version, process.pid)
     __resetGoalEvidenceKeyForTesting()
 
@@ -480,7 +480,7 @@ describeSqlite('goal evidence ledger', () => {
         workspaceScope: scopeA,
       },
       toolCallId: 'write-a',
-      toolName: 'native_write_file',
+      toolName: 'agim_write_file',
       args: { path: 'a.txt' },
       kind: 'mutation',
     })
@@ -496,7 +496,7 @@ describeSqlite('goal evidence ledger', () => {
         workspaceScope: scopeB,
       },
       toolCallId: 'read-b',
-      toolName: 'native_read_file',
+      toolName: 'agim_read_file',
       args: { path: 'b.txt' },
       kind: 'observation',
     })
@@ -511,12 +511,12 @@ describeSqlite('goal evidence ledger', () => {
 
 describe('goal evidence classification', () => {
   it('classifies control, observation, mutation, and strict verifier commands', () => {
-    expect(classifyGoalEvidence('native_todo_write', {}, false)).toBe('control')
-    expect(classifyGoalEvidence('native_read_file', {}, true)).toBe('observation')
-    expect(classifyGoalEvidence('native_write_file', {}, false)).toBe('mutation')
-    expect(classifyGoalEvidence('native_exec', { command: 'npm test' }, false)).toBe('mutation_verification')
-    expect(classifyGoalEvidence('native_exec', { command: 'npm test && rm -rf out' }, false)).toBe('mutation')
-    expect(classifyGoalEvidence('native_exec', { command: 'npm test\ntrue' }, false)).toBe('mutation')
+    expect(classifyGoalEvidence('agim_todo_write', {}, false)).toBe('control')
+    expect(classifyGoalEvidence('agim_read_file', {}, true)).toBe('observation')
+    expect(classifyGoalEvidence('agim_write_file', {}, false)).toBe('mutation')
+    expect(classifyGoalEvidence('agim_exec', { command: 'npm test' }, false)).toBe('mutation_verification')
+    expect(classifyGoalEvidence('agim_exec', { command: 'npm test && rm -rf out' }, false)).toBe('mutation')
+    expect(classifyGoalEvidence('agim_exec', { command: 'npm test\ntrue' }, false)).toBe('mutation')
     expect(classifyGoalEvidence('mcp__external__read', {}, true)).toBe('mutation')
     expect(isDetachedGoalCommand({ command: 'nohup worker &' })).toBe(true)
     expect(isDetachedGoalCommand({ command: 'npm test' })).toBe(false)

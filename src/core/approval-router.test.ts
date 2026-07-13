@@ -123,7 +123,7 @@ describe('formatApprovalPrompt', () => {
     const n: ApprovalNotification = {
       runId: 'run-plan',
       reqId: 'plan12345678',
-      toolName: 'native_exit_plan_mode',
+      toolName: 'agim_exit_plan_mode',
       input: { plan: '- implement' },
       toolUseId: '',
       ctx: RUN_CTX,

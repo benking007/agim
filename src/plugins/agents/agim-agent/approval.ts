@@ -3,8 +3,9 @@
 // this gate from its beforeToolCall hook.
 
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
-import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
+import { isPlanExitToolName, PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { buildPolicyApprovalGate } from '../../../core/llm/policy-approval-gate.js'
+import { canonicalizeToolName, expandToolNameList } from '../../../core/llm/tool-names.js'
 import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { buildNativeAskUser, resolvePolicy } from '../agim-agent-shared/index.js'
@@ -27,12 +28,17 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
         })
       : undefined
   const gate = buildPolicyApprovalGate({ ...policy, askUser })
+  const denyExpanded = expandToolNameList(policy.denyList ?? [])
   return async (call, attempt, signal) => {
-    if (call.name === PLAN_EXIT_TOOL_NAME) {
+    if (isPlanExitToolName(call.name) || canonicalizeToolName(call.name) === PLAN_EXIT_TOOL_NAME) {
       // The plan-exit dispatcher owns the mandatory one-time human prompt.
       // Avoid a duplicate generic card, while still honoring operator-level
       // deny-all / explicit deny-list controls.
-      if (policy.mode === 'deny-all' || policy.denyList?.includes(call.name)) return 'deny'
+      if (policy.mode === 'deny-all'
+        || denyExpanded.has(call.name)
+        || denyExpanded.has(canonicalizeToolName(call.name))) {
+        return 'deny'
+      }
       return 'allow'
     }
     return await gate(call, attempt, signal)

@@ -46,7 +46,7 @@ describe('todo completion gate', () => {
     const d = buildTodoDispatcher('gate-a')
     await d({
       id: 't1',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: { items: [{ content: 'still open', status: 'pending' }] },
     }, SIG)
     const gate = evaluateTodoCompletionGate('gate-a')
@@ -58,7 +58,7 @@ describe('todo completion gate', () => {
     const d = buildTodoDispatcher('gate-a')
     await d({
       id: 't2',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: { items: [{ content: 'done', status: 'completed' }] },
     }, SIG)
     expect(evaluateTodoCompletionGate('gate-a')).toEqual({ ok: true })
@@ -68,12 +68,12 @@ describe('todo completion gate', () => {
     const d = buildTodoDispatcher('gate-a')
     await d({
       id: 't3a',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: { items: [{ content: 'x', status: 'pending' }] },
     }, SIG)
     await d({
       id: 't3b',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: { items: [] },
     }, SIG)
     expect(getTodoSnapshot('gate-a')).toEqual({ status: 'present', items: [] })
@@ -109,7 +109,7 @@ describeSqlite('todo sqlite persistence', () => {
     const d = buildTodoDispatcher('persist-a')
     await d({
       id: 'p1',
-      name: 'native_todo_write',
+      name: 'agim_todo_write',
       arguments: {
         items: [
           { content: 'keep me', status: 'in_progress' },

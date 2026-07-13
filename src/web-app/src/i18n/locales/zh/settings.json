@@ -648,7 +648,7 @@
     },
     "exec": {
       "title": "Native exec 工具",
-      "description": "对 native_exec 的沙盒与超时控制。每次 exec 调用还会经 IM 审批卡（除非已 autoallow 同 fingerprint）。",
+      "description": "对 agim_exec 的沙盒与超时控制。每次 exec 调用还会经 IM 审批卡（除非已 autoallow 同 fingerprint）。",
       "sandbox": "沙盒后端",
       "sandboxNone": "无（直接 spawn）",
       "sandboxBwrap": "bubblewrap（Linux only）",
@@ -930,7 +930,7 @@
     "planModeDefault": "PlanMode 默认状态",
     "planModeDefaultHint": "AGIM_NATIVE_PLAN_MODE。默认关；`/plan on` 在单线程内可独立切换不受此影响。",
     "planIntentAuto": "自动进入 Plan 模式",
-    "planIntentAutoHint": "AGIM_PLAN_INTENT_AUTO。开启后，含「先想想 / plan only / 不要直接做」等关键词的 prompt 会临时进入 plan 模式，仅本轮生效；从不自动退出——必须 /plan off 或模型调 native_exit_plan_mode。",
+    "planIntentAutoHint": "AGIM_PLAN_INTENT_AUTO。开启后，含「先想想 / plan only / 不要直接做」等关键词的 prompt 会临时进入 plan 模式，仅本轮生效；从不自动退出——必须 /plan off 或模型调 agim_exit_plan_mode。",
     "planIntentPhrases": "意图关键词列表（可选覆盖）",
     "planIntentPhrasesHint": "AGIM_PLAN_INTENT_PHRASES。逗号分隔。留空则用内置中英文默认列表。匹配方式：大小写不敏感的子串。",
     "iterationCard": "迭代上限",
@@ -940,7 +940,7 @@
   },
   "search": {
     "title": "Web 搜索 Provider",
-    "subtitle": "native_web_search 工具的后端链路。失败时按顺序回退到下一家。键留空 = 删除该值；填则覆盖。所有修改热生效。",
+    "subtitle": "agim_web_search 工具的后端链路。失败时按顺序回退到下一家。键留空 = 删除该值；填则覆盖。所有修改热生效。",
     "refresh": "刷新",
     "save": "保存",
     "discard": "放弃",

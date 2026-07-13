@@ -217,7 +217,7 @@ async function addAction(): Promise<number> {
         }
         return { config: next, result: undefined }
       }, {
-        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+        fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
       })
     } catch (err) {
       if (err instanceof SetupMcpConfigError) return cancel(err.message)
@@ -260,7 +260,7 @@ async function removeAction(maybeName?: string): Promise<number> {
       }
       return { config: { ...latest, mcpServers: next }, result: undefined }
     }, {
-      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
     })
   } catch (err) {
     if (err instanceof SetupMcpConfigError) return cancel(err.message)
@@ -311,7 +311,7 @@ async function healthAction(maybeName?: string): Promise<number> {
 
 async function readConfig(): Promise<RawConfig> {
   return await readConfigObject<RawConfig>({
-    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
   })
 }
 

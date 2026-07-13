@@ -82,7 +82,7 @@ const BUILTIN_AGENTS = {
   // v1.2.140 — surface the in-process `native` agent in the admin list.
   // Previously the agent was registered + always-enabled at runtime but
   // hidden from this page, so operators could only reach it via the CLI.
-  'native':      { aliases: ['agim', 'na', 'llm', 'native-llm'], pkg: 'in-process', kind: 'in-process', scope: 'agim' },
+  'agim':        { aliases: ['native', 'na', 'llm', 'native-llm', 'agim-agent'], pkg: 'in-process', kind: 'in-process', scope: 'agim' },
 } satisfies Record<string, BuiltinAgentInfo>
 
 type BuiltinAgentName = keyof typeof BUILTIN_AGENTS

@@ -2,7 +2,8 @@
 
 Canonical names for Agim surfaces. When code, config, UI, and docs
 disagree, **this file wins** for new work. Historical keys stay as
-aliases until a migration is explicitly scheduled.
+aliases until the migration window closes — see
+[`migration-naming-v2.md`](./migration-naming-v2.md).
 
 ## Identity matrix
 
@@ -11,14 +12,17 @@ aliases until a migration is explicitly scheduled.
 | Brand | **Agim** / 阿吉姆 | — | “Agim CLI product” as a separate brand |
 | npm package | `agim-cli` | — | renaming without a major release |
 | Binary / state dir | `agim`, `~/.agim/` | — | — |
-| Built-in agent (UI / chat) | **Agim Agent** | slash `/agim`, `/na`, `/llm` | calling it “PI” in operator docs |
-| Built-in agent (config / registry) | `native` | aliases above | changing registry id without migration |
+| Built-in agent (UI / chat) | **Agim Agent** | slash `/agim`, `/na`, `/llm`, `/native` | calling it “PI” in operator docs |
+| Built-in agent (config / registry) | `agim` | `native` (legacy alias) | new third id for the same agent |
 | Built-in agent (code dir) | `src/plugins/agents/agim-agent/` | was `pi-native/` | treating `pi` CLI as the same thing |
 | Shared prompt/policy helpers | `src/plugins/agents/agim-agent-shared/` | was `native/` | assuming this folder is the adapter |
+| Built-in tools (advertised) | `agim_*` | `native_*` (dispatch alias) | inventing a third prefix |
+| Agim Agent session root | `~/.agim/agim-sessions/` | `pi-sessions/` (boot-migrated) | confusing with PI CLI `.pi-sessions` |
+| Access-rule config field | `tenants[]` | `workspaces[]` (read + dual-write) | using bare “workspace” for both concepts |
 | External PI CLI agent | registry `pi` | `/pi`, `/pi-agent` | “pi-native” |
 
-Display rule: show **Agim Agent** to humans; persist **`native`** in
-`config.json` / sessions / jobs until a dedicated migration renames it.
+Display rule: show **Agim Agent** to humans; persist **`agim`** in
+`config.json` / new sessions / jobs. Boot migrates legacy `native`.
 
 ## Protocols (do not collapse)
 
@@ -36,7 +40,7 @@ handoffs (A2A)”), not bare “ACP” alone.
 | Surface | Meaning | Route / field |
 |---------|---------|---------------|
 | **Agent files** | Per-agent CWD browser (AGENTS.md, memory files, …) | SPA `/workspace`, API `/api/workspace-files` |
-| **Access rules** | Multi-tenant member / agent / rate-limit scopes | SPA `/settings/workspaces`, config `workspaces[]` |
+| **Access rules** | Multi-tenant member / agent / rate-limit scopes | SPA `/settings/workspaces`, config `tenants[]` (alias `workspaces[]`) |
 
 Never use the bare word “workspace” in new UI strings without the
 qualifier (files vs access rules).
@@ -60,11 +64,13 @@ should prefer `on`/`off` and document the default explicitly.
 | **Background jobs** (`/tasks/bgjobs`) | Host CLI agent background scripts (Claude/opencode/codex) |
 | **A2A / inline job** | Nested `call_agent` tracking row under a parent job |
 
-## Deliberately deferred (high break cost)
+## Naming v2 (shipped)
 
-Tracked in [`tech-debt.md`](./tech-debt.md):
+Operator guide: [`migration-naming-v2.md`](./migration-naming-v2.md).
 
-1. Registry id `native` → `agim` (config / session / cron migration)
-2. Tool names `native_*` → `agim_*` (prompt + policy migration)
-3. Session dir `pi-sessions` → `agim-sessions`
-4. Config field `workspaces[]` → `tenants[]`
+| Item | Status |
+|------|--------|
+| Registry id `native` → `agim` | Done (alias kept) |
+| Tools `native_*` → `agim_*` | Done (dispatch accepts both) |
+| Session dir `pi-sessions` → `agim-sessions` | Done (boot rename) |
+| Config `workspaces[]` → `tenants[]` | Done (read both; dual-write) |

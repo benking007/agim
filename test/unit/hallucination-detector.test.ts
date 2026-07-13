@@ -11,7 +11,7 @@ import {
   isHallucinationDetectorOn,
 } from '../../src/core/llm/hallucination-detector.js'
 
-const TOOLS = ['native_write_file', 'native_read_file', 'native_exec', 'native_web_fetch']
+const TOOLS = ['agim_write_file', 'agim_read_file', 'agim_exec', 'agim_web_fetch']
 
 describe('detectHallucinatedToolCall — POSITIVE cases', () => {
   test('ZH: direct-write-block — "直接写：```python ..."', () => {
@@ -35,9 +35,9 @@ describe('detectHallucinatedToolCall — POSITIVE cases', () => {
     expect(v.pattern).toBe('zh:direct-write-block')
   })
 
-  test('ZH: invoke-narration — "我现在调用 native_write_file"', () => {
+  test('ZH: invoke-narration — "我现在调用 agim_write_file"', () => {
     const v = detectHallucinatedToolCall({
-      text: '好，我现在调用 native_write_file 把文件存下来。',
+      text: '好，我现在调用 agim_write_file 把文件存下来。',
       toolNames: TOOLS,
       emittedToolCallCount: 0,
     })
@@ -45,9 +45,9 @@ describe('detectHallucinatedToolCall — POSITIVE cases', () => {
     expect(v.pattern).toBe('zh:invoke-narration')
   })
 
-  test('ZH: invoke-narration — "这就调 native_exec"', () => {
+  test('ZH: invoke-narration — "这就调 agim_exec"', () => {
     const v = detectHallucinatedToolCall({
-      text: '行，这就调 native_exec 跑一遍。',
+      text: '行，这就调 agim_exec 跑一遍。',
       toolNames: TOOLS,
       emittedToolCallCount: 0,
     })
@@ -55,9 +55,9 @@ describe('detectHallucinatedToolCall — POSITIVE cases', () => {
     expect(v.pattern).toBe('zh:invoke-narration')
   })
 
-  test('EN: invoke-narration — "I will call native_write_file"', () => {
+  test('EN: invoke-narration — "I will call agim_write_file"', () => {
     const v = detectHallucinatedToolCall({
-      text: 'OK, I will call native_write_file with the content below.',
+      text: 'OK, I will call agim_write_file with the content below.',
       toolNames: TOOLS,
       emittedToolCallCount: 0,
     })
@@ -65,9 +65,9 @@ describe('detectHallucinatedToolCall — POSITIVE cases', () => {
     expect(v.pattern).toBe('en:invoke-narration')
   })
 
-  test("EN: invoke-narration — \"Let me invoke native_exec\"", () => {
+  test("EN: invoke-narration — \"Let me invoke agim_exec\"", () => {
     const v = detectHallucinatedToolCall({
-      text: 'Let me invoke native_exec now.',
+      text: 'Let me invoke agim_exec now.',
       toolNames: TOOLS,
       emittedToolCallCount: 0,
     })
@@ -89,7 +89,7 @@ describe('detectHallucinatedToolCall — POSITIVE cases', () => {
 describe('detectHallucinatedToolCall — NEGATIVE / guard cases', () => {
   test('NEG: model actually emitted a tool call → not flagged', () => {
     const v = detectHallucinatedToolCall({
-      text: '我现在调用 native_write_file 把文件存下来。',
+      text: '我现在调用 agim_write_file 把文件存下来。',
       toolNames: TOOLS,
       emittedToolCallCount: 1,
     })
@@ -115,9 +115,9 @@ describe('detectHallucinatedToolCall — NEGATIVE / guard cases', () => {
     expect(v.hallucinated).toBe(false)
   })
 
-  test('NEG: past tense "已经调过 native_write_file" — does not match invoke patterns', () => {
+  test('NEG: past tense "已经调过 agim_write_file" — does not match invoke patterns', () => {
     const v = detectHallucinatedToolCall({
-      text: '我已经调过 native_write_file 了，文件应该存好了。',
+      text: '我已经调过 agim_write_file 了，文件应该存好了。',
       toolNames: TOOLS,
       emittedToolCallCount: 0,
     })

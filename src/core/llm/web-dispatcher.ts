@@ -1,8 +1,8 @@
 // web-dispatcher — read-only web tools for the native agent.
 //
 // Two tools shipped:
-//   - native_web_fetch(url, format?)   GET + optional Jina Reader text extract
-//   - native_web_search(query, n?)     configurable provider chain
+//   - agim_web_fetch(url, format?)   GET + optional Jina Reader text extract
+//   - agim_web_search(query, n?)     configurable provider chain
 //
 // Both have:
 //   * 30s default per-call timeout (override via AGIM_NATIVE_WEB_TIMEOUT_MS)
@@ -24,6 +24,7 @@ import net from 'node:net'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
+import { canonicalizeToolName } from './tool-names.js'
 
 const log = rootLogger.child({ component: 'web-dispatcher' })
 
@@ -41,22 +42,22 @@ const JINA_READER_BASE = 'https://r.jina.ai/'
 // → fast-and-cheap (Brave/Serper) → free fallbacks (DDG/Metaso).
 const DEFAULT_PROVIDER_ORDER = 'tavily,brave,serper,exa,duckduckgo,metaso'
 
-const WEB_TOOL_NAMES = ['native_web_fetch', 'native_web_search'] as const
+const WEB_TOOL_NAMES = ['agim_web_fetch', 'agim_web_search'] as const
 export function isWebToolName(name: string): boolean {
-  return (WEB_TOOL_NAMES as readonly string[]).includes(name)
+  return (WEB_TOOL_NAMES as readonly string[]).includes(canonicalizeToolName(name))
 }
 
 export function getWebTools(): ToolDef[] {
   return [
     {
-      name: 'native_web_fetch',
+      name: 'agim_web_fetch',
       description:
         'Fetch the contents of a SPECIFIC, KNOWN URL the user already supplied (or that you pulled ' +
         'from search results). DO NOT use this to "find" / "look up" / "search" / "discover" — ' +
-        'use native_web_search for that. ' +
+        'use agim_web_search for that. ' +
         '\n\n' +
         '**Trigger phrases**: "读这个页面/链接 …" · "fetch …" · "open this URL …" · "看一下 https://…" · ' +
-        'when you have a result from native_web_search and want the full body. ' +
+        'when you have a result from agim_web_search and want the full body. ' +
         '\n\n' +
         'Default `format="reader"` runs the URL through r.jina.ai for HTML→text extraction; ' +
         '`format="raw"` returns the response body verbatim (use for JSON APIs). 200KB max, ' +
@@ -76,11 +77,11 @@ export function getWebTools(): ToolDef[] {
       },
     },
     {
-      name: 'native_web_search',
+      name: 'agim_web_search',
       description:
         'Web search by KEYWORDS — use this when the user wants to FIND / LOOK UP / DISCOVER ' +
         'something and you do NOT already have a specific URL. Returns up to 8 results with ' +
-        'title + url + snippet; if any result is interesting, follow up with native_web_fetch ' +
+        'title + url + snippet; if any result is interesting, follow up with agim_web_fetch ' +
         'on the chosen URL. ' +
         '\n\n' +
         '**Trigger phrases (Chinese)**: "查找 …" · "搜一下 …" · "找最新 …" · "搜索 …" · ' +
@@ -89,8 +90,8 @@ export function getWebTools(): ToolDef[] {
         '**Trigger phrases (English)**: "search for …" · "find …" · "look up …" · ' +
         '"what\'s the latest on …" · "any news about …". ' +
         '\n\n' +
-        'DO NOT use native_web_fetch when the user only gave keywords without a URL — ' +
-        'always start with native_web_search, then optionally native_web_fetch on a result. ' +
+        'DO NOT use agim_web_fetch when the user only gave keywords without a URL — ' +
+        'always start with agim_web_search, then optionally agim_web_fetch on a result. ' +
         '\n\n' +
         'Backend chain configurable via AGIM_WEB_SEARCH_PROVIDERS '
         + '(default "tavily,brave,serper,exa,duckduckgo,metaso"). Key env vars: '
@@ -117,21 +118,22 @@ export function buildWebDispatcher(): ToolDispatcher {
     if (!isWebToolName(call.name)) {
       return { text: `not handled: ${call.name}`, isError: true, source: 'unknown' }
     }
+    const toolName = canonicalizeToolName(call.name)
     const timeoutMs = resolveTimeoutMs()
     try {
-      return await raceTimeout(runOne(call.name, call.arguments, signal), timeoutMs, call.name)
+      return await raceTimeout(runOne(toolName, call.arguments, signal), timeoutMs, toolName)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log.warn({ event: 'web.tool.error', tool: call.name, err: msg })
-      return { text: `${call.name} failed: ${msg}`, isError: true, source: 'web' }
+      log.warn({ event: 'web.tool.error', tool: toolName, err: msg })
+      return { text: `${toolName} failed: ${msg}`, isError: true, source: 'web' }
     }
   }
 }
 
 async function runOne(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<DispatcherResult> {
   switch (name) {
-    case 'native_web_fetch': return runWebFetch(args, signal)
-    case 'native_web_search': return runWebSearch(args, signal)
+    case 'agim_web_fetch': return runWebFetch(args, signal)
+    case 'agim_web_search': return runWebSearch(args, signal)
     default:
       return { text: `unknown web tool: ${name}`, isError: true, source: 'web' }
   }

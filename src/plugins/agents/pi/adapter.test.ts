@@ -108,7 +108,7 @@ describe('PiAdapter — buildArgs', () => {
       expect(tools).not.toContain('bash')
       expect(tools).not.toContain('edit')
       expect(tools).not.toContain('write')
-      expect(tools).not.toContain('native_exec')
+      expect(tools).not.toContain('agim_exec')
       expect(args.at(-1)).toBe('hello')
     })
   })

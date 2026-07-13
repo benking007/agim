@@ -336,7 +336,7 @@ function NativeAgentCard({ draft, setField }: CardProps): JSX.Element {
           <Input
             value={draft.autoAllow}
             onChange={(e) => setField('autoAllow', e.target.value)}
-            placeholder="native_,mcp_filesystem_"
+            placeholder="agim_,native_,mcp_filesystem_"
             className="font-mono text-xs"
           />
         </Field>

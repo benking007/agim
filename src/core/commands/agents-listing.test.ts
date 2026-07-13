@@ -27,7 +27,7 @@ const CTX = {
   platform: 'test',
   channelId: 'c',
   threadId: 't',
-  defaultAgent: 'native',
+  defaultAgent: 'agim',
   traceId: 'tx',
   logger: console as unknown as RouteContext['logger'],
 } as unknown as RouteContext

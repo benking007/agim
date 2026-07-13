@@ -120,7 +120,7 @@ Subcommands:
   role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)
   secret <name>         (re)set the API key for an existing backend
   native-enable [<name>] one-walk wizard: bind native-chat role + cheap (optional)
-                        + defaultAgent: 'native' so the in-process agent is the
+                        + defaultAgent: 'agim' so the in-process agent is the
                         default backend for unrouted IM traffic
 
 Notes:
@@ -219,7 +219,7 @@ async function addAction(): Promise<number> {
         }
         return { config: next, result: undefined }
       }, {
-        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+        fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
       })
     } catch (err) {
       if (err instanceof SetupLlmConfigError) return cancel(err.message)
@@ -245,7 +245,7 @@ async function addAction(): Promise<number> {
           for (const role of roles) llmRoles[role] = name
           return { config: { ...cfg, llmRoles }, result: undefined }
         }, {
-          fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+          fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
         })
       } catch (err) {
         if (err instanceof SetupLlmConfigError) return cancel(err.message)
@@ -299,7 +299,7 @@ async function removeAction(maybeName?: string): Promise<number> {
         result: undefined,
       }
     }, {
-      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
     })
   } catch (err) {
     if (err instanceof SetupLlmConfigError) return cancel(err.message)
@@ -358,7 +358,7 @@ async function roleAction(): Promise<number> {
         }
         return { config: { ...latest, llmRoles }, result: undefined }
       }, {
-        fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+        fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
       })
     } catch (err) {
       if (err instanceof SetupLlmConfigError) return cancel(err.message)
@@ -431,7 +431,7 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
     if (bindCheap === '' || bindCheap === 'y' || bindCheap === 'yes') {
       bindCheapSelected = true
     }
-    const setDefault = (await ask(rl, `Set defaultAgent: "native" (in-process agent handles unrouted IM)? [Y/n]: `))
+    const setDefault = (await ask(rl, `Set defaultAgent: "agim" (in-process agent handles unrouted IM)? [Y/n]: `))
       .trim().toLowerCase()
     if (setDefault === '' || setDefault === 'y' || setDefault === 'yes') {
       setDefaultSelected = true
@@ -450,7 +450,7 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
       const next = {
         ...latest,
         llmRoles,
-        ...(setDefaultSelected ? { defaultAgent: 'native' } : {}),
+        ...(setDefaultSelected ? { defaultAgent: 'agim' } : {}),
       }
       const parsed = configSchema.safeParse(next)
       if (!parsed.success) {
@@ -460,7 +460,7 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
       }
       return { config: next, result: undefined }
     }, {
-      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
     })
     savedConfig = update.config as RawConfig
   } catch (err) {
@@ -490,7 +490,7 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
 
 async function readConfig(): Promise<RawConfig> {
   return await readConfigObject<RawConfig>({
-    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+    fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
   })
 }
 

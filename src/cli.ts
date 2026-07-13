@@ -273,25 +273,43 @@ program
     const validatedConfig = validation.config
     config = validatedConfig as unknown as Config
 
-    // One-shot: add `native` to legacy non-empty agents[] so SPA disable
-    // can become a real routing kill-switch without breaking old installs.
+    // Naming v2: Agim Agent id, tenants field, session dirs (see
+    // docs/migration-naming-v2.md). Idempotent flags on config.json.
     {
-      const { migrateNativeAgentToggle } = await import('./core/config-migrate.js')
+      const {
+        migrateNamingV2,
+        migratePiSessionsDir,
+        migrateSessionAgentIds,
+        migrateAgentWorkspaceDir,
+      } = await import('./core/naming-migrate.js')
       const { saveConfig: persistConfig } = await import('./core/onboarding.js')
-      const migrated = migrateNativeAgentToggle(config)
+      const migrated = migrateNamingV2(config)
       if (migrated.changed) {
         config = migrated.config
         try {
           await persistConfig(config)
-          console.log('Config migration: native agent toggle now honours agents[]')
+          console.log('Config migration: naming v2 (agim agent id / tenants)')
         } catch (err) {
           console.warn(
-            `⚠️  Could not persist native-agent toggle migration: ${
+            `⚠️  Could not persist naming v2 migration: ${
               err instanceof Error ? err.message : String(err)
             }`,
           )
         }
       }
+      try {
+        migratePiSessionsDir()
+        migrateAgentWorkspaceDir()
+        const n = migrateSessionAgentIds()
+        if (n > 0) console.log(`Session migration: rewrote agent id on ${n} session file(s)`)
+      } catch (err) {
+        console.warn(
+          `⚠️  Filesystem naming migration issue: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+      // Prefer tenants[] for workspace registry (workspaces[] is read-alias).
     }
 
     // v1.2.103 — publish the in-memory config to the live-config singleton
@@ -302,11 +320,15 @@ program
     const { setLiveConfig } = await import('./core/live-config.js')
     setLiveConfig(config)
 
-    // Initialize workspace registry
-    const rawConfig = config as Record<string, unknown>
-    const workspaces = rawConfig.workspaces as Array<Record<string, unknown>> | undefined
-    workspaceRegistry.load({ workspaces: workspaces as Array<{ id: string; name: string; agents: string[]; members?: string[]; rateLimit?: { rate: number; intervalSec: number; burst: number } }> })
-    const wsCount = workspaces?.length || 1
+    // Initialize workspace registry (config.tenants preferred; workspaces alias)
+    const { getTenantsFromConfig } = await import('./core/naming-migrate.js')
+    const tenants = getTenantsFromConfig(config as Record<string, unknown>) as Array<{
+      id: string; name: string; agents: string[]
+      members?: string[]
+      rateLimit?: { rate: number; intervalSec: number; burst: number }
+    }>
+    workspaceRegistry.load({ workspaces: tenants })
+    const wsCount = tenants.length || 1
     console.log(`Workspaces loaded: ${wsCount} workspace(s)`)
 
     // Initialize session manager

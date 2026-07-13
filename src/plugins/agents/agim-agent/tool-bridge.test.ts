@@ -120,7 +120,7 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
     process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '20'
     try {
       const mutation: ToolDef = {
-        name: 'native_write_file',
+        name: 'agim_write_file',
         description: 'write',
         parameters: { type: 'object', properties: {}, required: [] },
       }

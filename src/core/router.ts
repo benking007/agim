@@ -109,7 +109,7 @@ function formatRateLimitError(ws: ReturnType<typeof workspaceRegistry.resolve>, 
 }
 
 function displayAgentName(name: string): string {
-  return name === 'native' ? 'Agim Agent' : name
+  return name === 'native' || name === 'agim' ? 'Agim Agent' : name
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 } from '../../../core/llm/policy-approval-gate.js'
 import type { ToolCallRequest } from '../../../core/llm/provider-base.js'
 import { effectivePlanModeOn } from '../../../core/plan-mode-state.js'
+import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/prompt-injection-guard.js'
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { logger as rootLogger } from '../../../core/logger.js'
@@ -92,9 +93,9 @@ export function buildSystemPrompt(
   if (isPlanModeOn(threadKey)) {
     lines.push(
       '⚠ Plan mode is ACTIVE',
-      '  - You MUST produce a read-only plan; native_write_file and native_exec are HARD-BLOCKED.',
-      '  - Use read tools freely: native_read_file / native_list_dir / native_glob / native_grep / native_web_fetch / native_web_search.',
-      '  - When the plan is ready, call native_exit_plan_mode({ plan }) so the user can approve or reject it.',
+      '  - You MUST produce a read-only plan; agim_write_file and agim_exec are HARD-BLOCKED.',
+      '  - Use read tools freely: agim_read_file / agim_list_dir / agim_glob / agim_grep / agim_web_fetch / agim_web_search.',
+      '  - When the plan is ready, call agim_exit_plan_mode({ plan }) so the user can approve or reject it.',
       '',
     )
   }
@@ -102,9 +103,9 @@ export function buildSystemPrompt(
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal',
-    '  - native filesystem tools: native_read_file, native_write_file, native_list_dir, native_glob, native_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
-    '  - native web tools: native_web_fetch, native_web_search. Private IPs blocked by default.',
-    '  - native_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
+    '  - native filesystem tools: agim_read_file, agim_write_file, agim_list_dir, agim_glob, agim_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
+    '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
+    '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers configured by the operator:',
     externalMcp,
     '',
@@ -210,8 +211,8 @@ function splitEnvList(raw: string | undefined): string[] {
 /** Canonical local mutation tools blocked while Plan Mode is active.
  * Exported so the pi-native hard gate and policy gate cannot drift apart. */
 export const PLAN_MODE_DENY_TOOLS: ReadonlySet<string> = new Set([
-  'native_write_file',
-  'native_exec',
+  'agim_write_file',
+  'agim_exec',
 ])
 
 export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
@@ -224,7 +225,7 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   // pre-approve specific tools even when auto-approve is off.
   const effectiveAllow = autoAllow
   const effectiveDeny = isPlanModeOn(threadKey)
-    ? Array.from(new Set([...denyList, ...PLAN_MODE_DENY_TOOLS]))
+    ? Array.from(expandToolNameList([...denyList, ...PLAN_MODE_DENY_TOOLS]))
     : denyList
   return { mode, autoAllow: effectiveAllow, denyList: effectiveDeny }
 }
@@ -245,7 +246,7 @@ export function buildNativeAskUser(opts: {
     channelId: opts.channelId,
     threadId: opts.threadId,
     userId: opts.userId,
-    callerAgent: 'native',
+    callerAgent: 'agim',
   }
   return async (call: ToolCallRequest, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     if (signal?.aborted) return 'deny'

@@ -138,7 +138,7 @@ describe('runAgentLoop — length-recovery (v1.2.117)', () => {
       {
         text: 'about to call a tool',
         finishReason: 'length',
-        toolCalls: [{ id: 'call_truncated', name: 'native_read_file', arguments: { path: '/etc/host' } }],
+        toolCalls: [{ id: 'call_truncated', name: 'agim_read_file', arguments: { path: '/etc/host' } }],
         usage: {}, modelUsed: 'stub-m',
       },
       { text: 'recovered cleanly', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
@@ -150,7 +150,7 @@ describe('runAgentLoop — length-recovery (v1.2.117)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch,
     })
     expect(dispatchCalls).toBe(0)             // tool_calls dropped

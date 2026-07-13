@@ -62,7 +62,7 @@ interface ClientConnection {
 }
 
 function formatWebAgentUnavailableMessage(agentName: string): string {
-  if (agentName === 'native') {
+  if ((agentName === 'native' || agentName === 'agim')) {
     return [
       'Agim Agent is not configured yet.',
       '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
@@ -1840,7 +1840,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
       const existing = {
         messengers: [],
         agents: [],
-        defaultAgent: 'native',
+        defaultAgent: 'agim',
         ...current,
       } as Config
       const merged: Record<string, unknown> = { ...existing }
@@ -1926,7 +1926,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         result: undefined,
       }
     }, {
-      fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+      fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
     })
     // v1.2.103 — propagate the new config to the live-config singleton.
     // Without this, the SPA's "enabled agents" / "default agent" toggles
@@ -2033,11 +2033,13 @@ function validateWorkspacePayload(raw: unknown, expectedId?: string): { ok: true
  * change is live until the next process boot.
  */
 async function persistWorkspacesToConfig(workspaces: import('../core/workspace.js').WorkspaceConfig[]): Promise<void> {
-  await updateConfigObject((current) => ({
-    config: { ...current, workspaces },
-    result: undefined,
-  }), {
-    fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+  await updateConfigObject((current) => {
+    const next = { ...current, tenants: workspaces } as Record<string, unknown>
+    // Keep workspaces mirrored for one release so older readers still see it.
+    next.workspaces = workspaces
+    return { config: next, result: undefined }
+  }, {
+    fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
   })
 }
 
@@ -2178,7 +2180,7 @@ async function handleWechatQrStatus(res: ServerResponse, url: URL): Promise<void
             result: undefined,
           }
         }, {
-          fallback: { messengers: [], agents: [], defaultAgent: 'native' },
+          fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
         })
       } catch (err) {
         webLog.warn({ event: 'wechat.qr.config_persist_failed', err: String(err) })

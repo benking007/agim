@@ -111,7 +111,7 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
       {
         text: '',
         finishReason: 'tool_use',
-        toolCalls: [{ id: 'c1', name: 'native_read_file', arguments: { path: '/tmp/x' } }],
+        toolCalls: [{ id: 'c1', name: 'agim_read_file', arguments: { path: '/tmp/x' } }],
         usage: {}, modelUsed: 'stub-m',
       },
       { text: 'done', finishReason: 'stop', usage: {}, modelUsed: 'stub-m' },
@@ -119,7 +119,7 @@ describe('runAgentLoop — blank-response intra-loop retry (v1.2.119)', () => {
     const r = await runAgentLoop({
       provider,
       messages: [{ role: 'user', content: 'go' }],
-      tools: [{ name: 'native_read_file', description: '', parameters: { type: 'object', properties: {} } }],
+      tools: [{ name: 'agim_read_file', description: '', parameters: { type: 'object', properties: {} } }],
       dispatch: async () => ({ text: 'file content', isError: false, source: 'stub' }),
     })
     // No retry should have fired — exactly 2 chat calls (the iter

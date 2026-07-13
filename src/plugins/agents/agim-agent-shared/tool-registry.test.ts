@@ -30,10 +30,10 @@ describe('assembleNativeTools — single source of truth', () => {
     const names = new Set(tools.map((t) => t.name))
     // built-in / fs / web / exec / todo / agim representatives
     for (const n of [
-      'native_echo', 'native_now', 'native_random_uuid',
-      'native_read_file', 'native_write_file', 'native_list_dir', 'native_glob', 'native_grep',
-      'native_web_fetch', 'native_web_search',
-      'native_exec', 'native_todo_write',
+      'agim_echo', 'agim_now', 'agim_random_uuid',
+      'agim_read_file', 'agim_write_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
+      'agim_web_fetch', 'agim_web_search',
+      'agim_exec', 'agim_todo_write',
       'mcp__agim__read_skill', 'mcp__agim__save_memo', 'mcp__agim__call_agent',
     ]) {
       expect(names.has(n)).toBe(true)
@@ -42,15 +42,15 @@ describe('assembleNativeTools — single source of truth', () => {
 
   it('gates the plan-exit TOOL on advertisePlanExit (dispatcher always wired)', () => {
     const off = assembleNativeTools(baseOpts({ advertisePlanExit: false }))
-    expect(off.tools.some((t) => t.name === 'native_exit_plan_mode')).toBe(false)
+    expect(off.tools.some((t) => t.name === 'agim_exit_plan_mode')).toBe(false)
     const on = assembleNativeTools(baseOpts({ advertisePlanExit: true }))
-    expect(on.tools.some((t) => t.name === 'native_exit_plan_mode')).toBe(true)
+    expect(on.tools.some((t) => t.name === 'agim_exit_plan_mode')).toBe(true)
   })
 
   it('dispatch routes a built-in and falls through for unknown names', async () => {
     const { dispatch } = assembleNativeTools(baseOpts())
     const ctrl = new AbortController()
-    const now = await dispatch({ id: '1', name: 'native_now', arguments: {} }, ctrl.signal)
+    const now = await dispatch({ id: '1', name: 'agim_now', arguments: {} }, ctrl.signal)
     expect(now.isError).toBe(false)
     expect(now.source).toBe('builtin')
     const unknown = await dispatch({ id: '2', name: 'totally_made_up_tool', arguments: {} }, ctrl.signal)
@@ -62,17 +62,17 @@ describe('assembleNativeTools — single source of truth', () => {
 describe('assembleNativeTools — per-call concurrency classifier (fail-closed)', () => {
   it('marks read-only / pure tools safe and everything else serial', () => {
     const { isParallelSafe } = assembleNativeTools(baseOpts())
-    const safe = ['native_echo', 'native_now', 'native_random_uuid',
-      'native_read_file', 'native_list_dir', 'native_glob', 'native_grep',
-      'native_web_fetch', 'native_web_search',
+    const safe = ['agim_echo', 'agim_now', 'agim_random_uuid',
+      'agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
+      'agim_web_fetch', 'agim_web_search',
       'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
       'mcp__agim__memory_list', 'mcp__agim__memory_query']
     for (const n of safe) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(true)
     }
-    const serial = ['native_write_file', 'native_exec', 'native_sleep_ms', 'native_todo_write',
+    const serial = ['agim_write_file', 'agim_exec', 'agim_sleep_ms', 'agim_todo_write',
       'mcp__agim__save_memo', 'mcp__agim__push_message', 'mcp__agim__call_agent',
-      'native_exit_plan_mode']
+      'agim_exit_plan_mode']
     for (const n of serial) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(false)
     }

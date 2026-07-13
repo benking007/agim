@@ -45,7 +45,7 @@ const done = (text = 'ok'): ChatResult => ({
 })
 
 const readFileTool = {
-  name: 'native_read_file',
+  name: 'agim_read_file',
   description: 'read a file',
   parameters: {
     type: 'object',
@@ -69,7 +69,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   it('missing required field is caught BEFORE dispatch (dispatcher never called)', async () => {
     delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     const provider = new QueuedStubProvider([
-      turn([tc('1', 'native_read_file', { limit: 5 })]),  // no `path`
+      turn([tc('1', 'agim_read_file', { limit: 5 })]),  // no `path`
       done(),
     ])
     let dispatchCalls = 0
@@ -87,7 +87,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
     expect(r.toolCalls.length).toBe(1)
     expect(r.toolCalls[0]!.isError).toBe(true)
     expect(r.toolCalls[0]!.source).toBe('schema-validation')
-    expect(r.toolCalls[0]!.preview).toContain('native_read_file')
+    expect(r.toolCalls[0]!.preview).toContain('agim_read_file')
     expect(r.toolCalls[0]!.preview).toContain('required field missing')
   })
 
@@ -101,7 +101,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
       }
     }
     const provider = new CapturingStub([
-      turn([tc('1', 'native_read_file', { path: 123 })]),  // wrong type
+      turn([tc('1', 'agim_read_file', { path: 123 })]),  // wrong type
       done(),
     ])
     await runAgentLoop({
@@ -128,9 +128,9 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
     // errorType). Loop returns finishReason='stuck_loop'.
     const provider = new QueuedStubProvider([
       turn([
-        tc('1', 'native_read_file', { limit: 5 }),
-        tc('2', 'native_read_file', { limit: 5 }),
-        tc('3', 'native_read_file', { limit: 5 }),
+        tc('1', 'agim_read_file', { limit: 5 }),
+        tc('2', 'agim_read_file', { limit: 5 }),
+        tc('3', 'agim_read_file', { limit: 5 }),
       ]),
       done(),
     ])
@@ -148,7 +148,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   it('AGIM_TOOL_SCHEMA_VALIDATE=off bypasses validation (back to v1.2.109)', async () => {
     process.env.AGIM_TOOL_SCHEMA_VALIDATE = 'off'
     const provider = new QueuedStubProvider([
-      turn([tc('1', 'native_read_file', { limit: 5 })]),  // bad args
+      turn([tc('1', 'agim_read_file', { limit: 5 })]),  // bad args
       done(),
     ])
     let dispatchCalls = 0
@@ -169,7 +169,7 @@ describe('runAgentLoop — schema validation (v1.2.110)', () => {
   it('valid args dispatch through untouched', async () => {
     delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
     const provider = new QueuedStubProvider([
-      turn([tc('1', 'native_read_file', { path: '/etc/hostname', limit: 100 })]),
+      turn([tc('1', 'agim_read_file', { path: '/etc/hostname', limit: 100 })]),
       done(),
     ])
     let dispatchCalls = 0

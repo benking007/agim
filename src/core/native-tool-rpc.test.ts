@@ -15,19 +15,19 @@ const RUN_CTX = {
 
 describe('native-tool-rpc', () => {
   it('maps public PI aliases to native read-only web tools', () => {
-    expect(normalizeNativeToolName('web_search')).toBe('native_web_search')
-    expect(normalizeNativeToolName('web_fetch')).toBe('native_web_fetch')
-    expect(normalizeNativeToolName('native_web_search')).toBe('native_web_search')
-    expect(normalizeNativeToolName('native_web_fetch')).toBe('native_web_fetch')
-    expect(normalizeNativeToolName('agim_bash')).toBe('native_exec')
-    expect(normalizeNativeToolName('agim_write')).toBe('native_write_file')
-    expect(normalizeNativeToolName('agim_edit')).toBe('native_edit_file')
+    expect(normalizeNativeToolName('web_search')).toBe('agim_web_search')
+    expect(normalizeNativeToolName('web_fetch')).toBe('agim_web_fetch')
+    expect(normalizeNativeToolName('agim_web_search')).toBe('agim_web_search')
+    expect(normalizeNativeToolName('agim_web_fetch')).toBe('agim_web_fetch')
+    expect(normalizeNativeToolName('agim_bash')).toBe('agim_exec')
+    expect(normalizeNativeToolName('agim_write')).toBe('agim_write_file')
+    expect(normalizeNativeToolName('agim_edit')).toBe('agim_edit_file')
   })
 
   it('does not expose high-risk native tools', async () => {
-    expect(normalizeNativeToolName('native_exec')).toBeNull()
+    expect(normalizeNativeToolName('agim_exec')).toBeNull()
     const res = await handleNativeToolOp(
-      { name: 'native_exec', arguments: { command: 'pwd' } },
+      { name: 'agim_exec', arguments: { command: 'pwd' } },
       { reqId: 'test', signal: NEVER_ABORT },
     )
     expect(res.ok).toBe(false)

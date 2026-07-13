@@ -34,6 +34,7 @@
 // `source: 'unknown'` so `combineDispatchers(builtin, agim, mcp)`
 // can fall through to the next layer (external MCP servers).
 
+import { isAgimAgentId, AGIM_AGENT_ID } from '../naming-migrate.js'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDispatcher, DispatcherResult } from './tool-dispatcher.js'
 import type { ToolDef } from './provider-base.js'
@@ -586,7 +587,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             return err(
               `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn ` +
               `(cap=${callAgentMaxPerTurn}). Prior delegations:\n${summary}\n\n` +
-              `Use your own tools (native_read_file, native_grep, native_list_dir, mcp__agim__* …) to ` +
+              `Use your own tools (agim_read_file, agim_grep, agim_list_dir, mcp__agim__* …) to ` +
               `finish the task with the information you already gathered. If you genuinely need another ` +
               `agent for the rest, tell the user to switch explicitly (for example /cc, /oc, /co, /qd, /pi, or /mimo) — don't keep chaining call_agent.`,
             )
@@ -610,7 +611,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // keeps A2A job/audit/notify parity (architecture-bridge §10.2).
           // Enable with AGIM_NATIVE_CALL_AGENT_IN_PROCESS=on for latency.
           // Depth + A2A_ENABLED checks still apply.
-          if (agentName === 'native' && isInProcessSpawnEnabled()) {
+          if (isAgimAgentId(agentName) && isInProcessSpawnEnabled()) {
             const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
             if (!isA2AEnabled()) {
               callAgentHistory.push({ agent: agentName, promptHead, ok: false })
@@ -643,7 +644,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               // Route to the single Agim Agent registered under 'native' so
               // in-process sub-agent runs use the same adapter as the parent.
               const { registry } = await import('../registry.js')
-              const nativeAdapter = registry.findAgent('native')
+              const nativeAdapter = registry.findAgent(AGIM_AGENT_ID) ?? registry.findAgent('native')
               if (!nativeAdapter) throw new Error('native engine not registered')
               const subSessionId = `${ctx.threadId}-spawn-${call.id}`
               const parts: string[] = []
@@ -770,11 +771,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             traceId: toolCtx?.traceId,
             signal,
             workspaceScope: hashWorkspaceScope(
-              resolveAgentCwd('native', {
+              resolveAgentCwd(AGIM_AGENT_ID, {
                 platform: ctx.platform,
                 channelId: ctx.channelId,
                 threadId: ctx.threadId,
-              }) || defaultAgentCwd('native'),
+              }) || defaultAgentCwd(AGIM_AGENT_ID),
             ),
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)

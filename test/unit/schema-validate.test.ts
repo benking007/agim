@@ -175,8 +175,8 @@ describe('formatValidationErrors', () => {
       { path: 'path', message: 'required field missing' },
       { path: 'limit', message: 'expected integer, got string' },
     ]
-    const out = formatValidationErrors('native_read_file', errs)
-    expect(out).toContain('native_read_file')
+    const out = formatValidationErrors('agim_read_file', errs)
+    expect(out).toContain('agim_read_file')
     expect(out).toContain('path: required field missing')
     expect(out).toContain('limit: expected integer, got string')
     expect(out).toContain('NOT dispatched')

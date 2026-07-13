@@ -22,22 +22,22 @@ describe('policy-approval-gate', () => {
         return 'deny'
       },
     })
-    await gate(call('native_exec'), 0, ctrl.signal)
+    await gate(call('agim_exec'), 0, ctrl.signal)
     expect(seen).toBe(ctrl.signal)
   })
 
   it('default (allow-list, no entries) denies everything', async () => {
     const gate = buildPolicyApprovalGate()
-    expect(await gate(call('native_echo'), 0)).toBe('deny')
+    expect(await gate(call('agim_echo'), 0)).toBe('deny')
     expect(await gate(call('mcp_fs_read_file'), 0)).toBe('deny')
   })
 
   it('allow-list mode allows only listed names', async () => {
     const gate = buildPolicyApprovalGate({
       mode: 'allow-list',
-      autoAllow: ['native_echo', 'mcp_fs_read_file'],
+      autoAllow: ['agim_echo', 'mcp_fs_read_file'],
     })
-    expect(await gate(call('native_echo'), 0)).toBe('allow')
+    expect(await gate(call('agim_echo'), 0)).toBe('allow')
     expect(await gate(call('mcp_fs_read_file'), 0)).toBe('allow')
     expect(await gate(call('mcp_fs_write_file'), 0)).toBe('deny')
   })
@@ -54,13 +54,13 @@ describe('policy-approval-gate', () => {
   it('deny-all mode denies everything, even autoAllow', async () => {
     const gate = buildPolicyApprovalGate({
       mode: 'deny-all',
-      autoAllow: ['native_echo'],
+      autoAllow: ['agim_echo'],
     })
     // Defensive note: autoAllow STILL passes in deny-all unless the
     // deny list explicitly covers it. The contract: deny-all = "never
     // run any tool I didn't explicitly green-light." autoAllow is the
     // green-light. Update the test to match the documented contract.
-    expect(await gate(call('native_echo'), 0)).toBe('allow')
+    expect(await gate(call('agim_echo'), 0)).toBe('allow')
     expect(await gate(call('mcp_anything'), 0)).toBe('deny')
   })
 
@@ -79,12 +79,12 @@ describe('policy-approval-gate', () => {
     expect(await gate(call('mcp_db_list_users'), 0)).toBe('allow')
     expect(await gate(call('mcp_github_get_pr'), 0)).toBe('allow')
     expect(await gate(call('mcp_fs_search_grep'), 0)).toBe('allow')
-    expect(await gate(call('native_echo'), 0)).toBe('allow')
-    expect(await gate(call('native_now'), 0)).toBe('allow')
+    expect(await gate(call('agim_echo'), 0)).toBe('allow')
+    expect(await gate(call('agim_now'), 0)).toBe('allow')
 
     expect(await gate(call('mcp_fs_write_file'), 0)).toBe('deny')
     expect(await gate(call('mcp_db_delete'), 0)).toBe('deny')
-    expect(await gate(call('native_sleep_ms'), 0)).toBe('deny')
+    expect(await gate(call('agim_sleep_ms'), 0)).toBe('deny')
   })
 
   it('read-only mode treats unrecognised verbs as deny', async () => {
@@ -94,18 +94,18 @@ describe('policy-approval-gate', () => {
   })
 
   it('read-only mode does NOT auto-allow outbound fetch tools (F4)', async () => {
-    // native_web_fetch / WebFetch are full outbound HTTP clients (largest
+    // agim_web_fetch / WebFetch are full outbound HTTP clients (largest
     // SSRF surface), so 'fetch' was removed from READ_ONLY_HINTS. They now
     // require an explicit autoAllow / approval even in read-only mode.
     const gate = buildPolicyApprovalGate({ mode: 'read-only' })
-    expect(await gate(call('native_web_fetch'), 0)).toBe('deny')
+    expect(await gate(call('agim_web_fetch'), 0)).toBe('deny')
     expect(await gate(call('mcp_http_fetch_url'), 0)).toBe('deny')
     expect(await gate(call('WebFetch'), 0)).toBe('deny')
   })
 
   it('read-only mode still allows explicitly autoAllowed fetch tools', async () => {
-    const gate = buildPolicyApprovalGate({ mode: 'read-only', autoAllow: ['native_web_fetch'] })
-    expect(await gate(call('native_web_fetch'), 0)).toBe('allow')
+    const gate = buildPolicyApprovalGate({ mode: 'read-only', autoAllow: ['agim_web_fetch'] })
+    expect(await gate(call('agim_web_fetch'), 0)).toBe('allow')
   })
 
   it('describePolicy returns a stable one-liner', () => {
@@ -123,13 +123,13 @@ describe('policy-approval-gate', () => {
       let asked: string | null = null as string | null
       const gate = buildPolicyApprovalGate({
         mode: 'allow-list',
-        autoAllow: ['native_read_file'],
+        autoAllow: ['agim_read_file'],
         askUser: async (c) => { asked = c.name; return 'allow' },
       })
-      expect(await gate(call('native_read_file'), 0)).toBe('allow')
+      expect(await gate(call('agim_read_file'), 0)).toBe('allow')
       expect(asked).toBeNull()  // autoAllow bypasses askUser
-      expect(await gate(call('native_write_file'), 0)).toBe('allow')  // user OK'd
-      expect(asked).toBe('native_write_file')
+      expect(await gate(call('agim_write_file'), 0)).toBe('allow')  // user OK'd
+      expect(asked).toBe('agim_write_file')
     })
 
     it('honors askUser deny', async () => {
@@ -137,7 +137,7 @@ describe('policy-approval-gate', () => {
         mode: 'allow-list',
         askUser: async () => 'deny',
       })
-      expect(await gate(call('native_write_file'), 0)).toBe('deny')
+      expect(await gate(call('agim_write_file'), 0)).toBe('deny')
     })
 
     it('denylist NEVER escalates to askUser', async () => {
@@ -166,12 +166,12 @@ describe('policy-approval-gate', () => {
         mode: 'allow-list',
         askUser: async () => { throw new Error('bus down') },
       })
-      expect(await gate(call('native_write_file'), 0)).toBe('deny')
+      expect(await gate(call('agim_write_file'), 0)).toBe('deny')
     })
 
     it('without askUser, legacy silent-deny behavior preserved', async () => {
       const gate = buildPolicyApprovalGate({ mode: 'allow-list' })
-      expect(await gate(call('native_write_file'), 0)).toBe('deny')
+      expect(await gate(call('agim_write_file'), 0)).toBe('deny')
     })
   })
 })

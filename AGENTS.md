@@ -38,8 +38,8 @@ Both the root project and `src/web-app` commit npm v3 lockfiles whose tarballs r
 ```json
 {
   "messengers": ["telegram"],
-  "agents": ["native", "claude-code"],
-  "defaultAgent": "native",
+  "agents": ["agim", "claude-code"],
+  "defaultAgent": "agim",
   "telegram": { "botToken": "placeholder" }
 }
 ```

@@ -74,7 +74,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     await bus.registerSyntheticPending({
       runId: 'plan-1',
       reqId: 'plan-exit-1',
-      toolName: 'native_exit_plan_mode',
+      toolName: 'agim_exit_plan_mode',
       input: { plan: '- step' },
       requiresExplicitDecision: true,
       ctx: RUN_CTX,
@@ -101,7 +101,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     await bus.registerSyntheticPending({
       runId: 'plan-2',
       reqId: 'plan-exit-2',
-      toolName: 'native_exit_plan_mode',
+      toolName: 'agim_exit_plan_mode',
       input: { plan: '- step' },
       requiresExplicitDecision: true,
       ctx: RUN_CTX,
@@ -119,7 +119,7 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     await bus.registerSyntheticPending({
       runId: 'cancel-1',
       reqId: 'cancel-pending-1',
-      toolName: 'native_exec',
+      toolName: 'agim_exec',
       input: { command: 'sleep 10' },
       ctx: RUN_CTX,
       dispatch: () => {},

@@ -33,16 +33,16 @@ describe('fs-dispatcher', () => {
       const tools = getFsTools()
       const names = tools.map((t) => t.name).sort()
       expect(names).toEqual([
-        'native_glob', 'native_grep', 'native_list_dir',
-        'native_read_file', 'native_write_file',
+        'agim_glob', 'agim_grep', 'agim_list_dir',
+        'agim_read_file', 'agim_write_file',
       ])
     })
 
     it('isFsToolName matches the 5 tools', () => {
-      for (const n of ['native_read_file', 'native_write_file', 'native_list_dir', 'native_glob', 'native_grep']) {
+      for (const n of ['agim_read_file', 'agim_write_file', 'agim_list_dir', 'agim_glob', 'agim_grep']) {
         expect(isFsToolName(n)).toBe(true)
       }
-      expect(isFsToolName('native_echo')).toBe(false)
+      expect(isFsToolName('agim_echo')).toBe(false)
       expect(isFsToolName('mcp__agim__call_agent')).toBe(false)
     })
   })
@@ -51,7 +51,7 @@ describe('fs-dispatcher', () => {
     it('reads a file in workspace', async () => {
       await writeFile(join(workspace, 'hello.txt'), 'hi there')
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'hello.txt' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'hello.txt' } }, NEVER_ABORT)
       expect(r.isError).toBe(false)
       expect(r.text).toBe('hi there')
       expect(r.source).toBe('fs')
@@ -62,7 +62,7 @@ describe('fs-dispatcher', () => {
       await writeFile(join(workspace, 'big.txt'), big)
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
-        { id: 't', name: 'native_read_file', arguments: { path: 'big.txt', max_bytes: 100 } },
+        { id: 't', name: 'agim_read_file', arguments: { path: 'big.txt', max_bytes: 100 } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
@@ -73,7 +73,7 @@ describe('fs-dispatcher', () => {
     it('refuses paths outside workspace when restricted', async () => {
       process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '/etc/hostname' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: '/etc/hostname' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/outside workspace|sensitive/i)
     })
@@ -84,7 +84,7 @@ describe('fs-dispatcher', () => {
       await writeFile(outside, 'outside content')
       try {
         const d = buildFsDispatcher({ cwd: workspace })
-        const r = await d({ id: 't', name: 'native_read_file', arguments: { path: outside } }, NEVER_ABORT)
+        const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: outside } }, NEVER_ABORT)
         expect(r.isError).toBe(false)
         expect(r.text).toBe('outside content')
       } finally {
@@ -94,7 +94,7 @@ describe('fs-dispatcher', () => {
 
     it('by default (unrestricted), still denies sensitive paths', async () => {
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/sensitive/i)
     })
@@ -103,7 +103,7 @@ describe('fs-dispatcher', () => {
       process.env.AGIM_NATIVE_FS_RESTRICT = '0'
       const d = buildFsDispatcher({ cwd: workspace })
       // ~/.agim is on the sensitive denylist
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: '~/.agim/env' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/sensitive/i)
     })
@@ -111,7 +111,7 @@ describe('fs-dispatcher', () => {
     it('refuses non-files (e.g. directory)', async () => {
       await mkdir(join(workspace, 'subdir'), { recursive: true })
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'subdir' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'subdir' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/not a file/)
     })
@@ -121,27 +121,27 @@ describe('fs-dispatcher', () => {
     it('overwrites a file', async () => {
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
-        { id: 't', name: 'native_write_file', arguments: { path: 'out.txt', content: 'first' } },
+        { id: 't', name: 'agim_write_file', arguments: { path: 'out.txt', content: 'first' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
       const r2 = await d(
-        { id: 't', name: 'native_write_file', arguments: { path: 'out.txt', content: 'second' } },
+        { id: 't', name: 'agim_write_file', arguments: { path: 'out.txt', content: 'second' } },
         NEVER_ABORT,
       )
       expect(r2.isError).toBe(false)
-      const readBack = await d({ id: 't', name: 'native_read_file', arguments: { path: 'out.txt' } }, NEVER_ABORT)
+      const readBack = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'out.txt' } }, NEVER_ABORT)
       expect(readBack.text).toBe('second')
     })
 
     it('appends with mode=append', async () => {
       const d = buildFsDispatcher({ cwd: workspace })
-      await d({ id: 't', name: 'native_write_file', arguments: { path: 'append.txt', content: 'A' } }, NEVER_ABORT)
+      await d({ id: 't', name: 'agim_write_file', arguments: { path: 'append.txt', content: 'A' } }, NEVER_ABORT)
       await d(
-        { id: 't', name: 'native_write_file', arguments: { path: 'append.txt', content: 'B', mode: 'append' } },
+        { id: 't', name: 'agim_write_file', arguments: { path: 'append.txt', content: 'B', mode: 'append' } },
         NEVER_ABORT,
       )
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'append.txt' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'append.txt' } }, NEVER_ABORT)
       expect(r.text).toBe('AB')
     })
 
@@ -149,7 +149,7 @@ describe('fs-dispatcher', () => {
       process.env.AGIM_NATIVE_FS_RESTRICT = '1'
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
-        { id: 't', name: 'native_write_file', arguments: { path: '/tmp/agim-evil', content: 'no' } },
+        { id: 't', name: 'agim_write_file', arguments: { path: '/tmp/agim-evil', content: 'no' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -163,7 +163,7 @@ describe('fs-dispatcher', () => {
       await writeFile(join(subdir, 'a.txt'), 'hi')
       await writeFile(join(subdir, 'b.txt'), 'longer content')
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_list_dir', arguments: { path: 'listme' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_list_dir', arguments: { path: 'listme' } }, NEVER_ABORT)
       expect(r.isError).toBe(false)
       const parsed = JSON.parse(r.text)
       expect(parsed.entries.length).toBe(2)
@@ -182,7 +182,7 @@ describe('fs-dispatcher', () => {
       await writeFile(join(root, 'sub', 'z.txt'), '')
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
-        { id: 't', name: 'native_glob', arguments: { pattern: '**/*.ts', root: 'globme' } },
+        { id: 't', name: 'agim_glob', arguments: { pattern: '**/*.ts', root: 'globme' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
@@ -200,7 +200,7 @@ describe('fs-dispatcher', () => {
       // necessarily, since most ops complete fast).
       process.env.AGIM_NATIVE_FS_TIMEOUT_MS = '5000'
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'does-not-exist' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'does-not-exist' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       delete process.env.AGIM_NATIVE_FS_TIMEOUT_MS
     })
@@ -223,7 +223,7 @@ describe('fs-dispatcher', () => {
         try { await rm(link, { force: true }) } catch { /* ignore */ }
         await symlink(target, link)
         const d = buildFsDispatcher({ cwd: workspace })
-        const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'evil-env' } }, NEVER_ABORT)
+        const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'evil-env' } }, NEVER_ABORT)
         expect(r.isError).toBe(true)
         expect(r.text).toMatch(/sensitive/i)
       } finally {
@@ -239,7 +239,7 @@ describe('fs-dispatcher', () => {
       try { await rm(link, { force: true }) } catch { /* ignore */ }
       await symlink(join(otherDir, 'secret.txt'), link)
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'escape' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'escape' } }, NEVER_ABORT)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/outside workspace|symlink/i)
       try { await rm(otherDir, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -253,7 +253,7 @@ describe('fs-dispatcher', () => {
       await symlink(otherDir, linkDir)
       const d = buildFsDispatcher({ cwd: workspace })
       const r = await d(
-        { id: 't', name: 'native_write_file', arguments: { path: 'evil-dir/x.txt', content: 'no' } },
+        { id: 't', name: 'agim_write_file', arguments: { path: 'evil-dir/x.txt', content: 'no' } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(true)
@@ -268,7 +268,7 @@ describe('fs-dispatcher', () => {
       try { await rm(link, { force: true }) } catch { /* ignore */ }
       await symlink(target, link)
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_read_file', arguments: { path: 'inside-link' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'inside-link' } }, NEVER_ABORT)
       expect(r.isError).toBe(false)
       expect(r.text).toBe('allowed')
     })
@@ -277,7 +277,7 @@ describe('fs-dispatcher', () => {
   describe('unknown tool routing', () => {
     it('returns source:unknown so combineDispatchers tries the next layer', async () => {
       const d = buildFsDispatcher({ cwd: workspace })
-      const r = await d({ id: 't', name: 'native_echo', arguments: { text: 'x' } }, NEVER_ABORT)
+      const r = await d({ id: 't', name: 'agim_echo', arguments: { text: 'x' } }, NEVER_ABORT)
       expect(r.source).toBe('unknown')
       expect(r.isError).toBe(true)
     })

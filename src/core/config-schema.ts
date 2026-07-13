@@ -174,7 +174,7 @@ const discordLooseSchema = z.object({
 export const configSchema = z.object({
   messengers: z.array(z.string()).default([]),
   agents: z.array(z.string()).default([]),
-  defaultAgent: z.string().default('native'),
+  defaultAgent: z.string().default('agim'),
   telegram: telegramLooseSchema,
   feishu: feishuLooseSchema,
   discord: discordLooseSchema,
@@ -194,6 +194,22 @@ export const configSchema = z.object({
       burst: z.number().int().positive(),
     }).optional(),
   })).optional(),
+  /** Naming v2: preferred field for access-rule scopes (alias of workspaces). */
+  tenants: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string().default(''),
+    agents: z.array(z.string()).default([]),
+    members: z.array(z.string()).optional(),
+    rateLimit: z.object({
+      rate: z.number().int().positive(),
+      intervalSec: z.number().int().positive(),
+      burst: z.number().int().positive(),
+    }).optional(),
+  })).optional(),
+  /** Boot migration flags (idempotent). */
+  nativeAgentToggleMigrated: z.boolean().optional(),
+  agimAgentIdMigrated: z.boolean().optional(),
+  tenantsFieldMigrated: z.boolean().optional(),
   /** D+ Stage 1: native LLM backends (OpenAI-compat now, Anthropic /
    *  Ollama in Stage 2). Optional — when absent the registry returns
    *  no providers and every caller falls back to its CLI agent path. */
@@ -283,7 +299,7 @@ export function validateConfig(data: unknown):
         : [],
       defaultAgent: typeof sanitized.defaultAgent === 'string'
         ? sanitized.defaultAgent
-        : 'native',
+        : 'agim',
     })
   return { ok: false, config, errors }
 }

@@ -120,7 +120,6 @@ const helper = createSqliteHelper({
     CREATE INDEX IF NOT EXISTS idx_goals_thread   ON goals(platform, channel_id, thread_id, status);
     CREATE INDEX IF NOT EXISTS idx_goals_status   ON goals(status, updated_at);
     CREATE INDEX IF NOT EXISTS idx_goals_owner    ON goals(platform, user_id, status);
-    CREATE INDEX IF NOT EXISTS idx_goals_scope    ON goals(workspace_scope, status);
     CREATE TABLE IF NOT EXISTS goal_ledger (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
       op_hash           TEXT NOT NULL,
@@ -147,8 +146,6 @@ const helper = createSqliteHelper({
     );
     CREATE INDEX IF NOT EXISTS idx_goal_ledger_goal
       ON goal_ledger(goal_id, goal_version, epoch, state);
-    CREATE INDEX IF NOT EXISTS idx_goal_ledger_scope
-      ON goal_ledger(workspace_scope, kind, state);
   `,
   init: (d) => {
     const columns = d.pragma('table_info(goals)') as Array<{ name: string }>
@@ -180,6 +177,10 @@ const helper = createSqliteHelper({
     if (!ledgerColumns.some((column) => column.name === 'workspace_scope')) {
       d.exec("ALTER TABLE goal_ledger ADD COLUMN workspace_scope TEXT NOT NULL DEFAULT ''")
     }
+    // Scope indexes must be created after the ALTER path above so legacy
+    // databases without workspace_scope still open cleanly.
+    d.exec('CREATE INDEX IF NOT EXISTS idx_goals_scope ON goals(workspace_scope, status)')
+    d.exec('CREATE INDEX IF NOT EXISTS idx_goal_ledger_scope ON goal_ledger(workspace_scope, kind, state)')
     const recover = d.transaction(() => {
       // Keep only the newest active row in legacy databases before adding the
       // partial unique index.

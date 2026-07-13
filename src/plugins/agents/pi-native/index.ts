@@ -20,6 +20,7 @@
 import {
   AgentHarness,
   calculateContextTokens,
+  compact,
   DEFAULT_COMPACTION_SETTINGS,
   getLastAssistantUsage,
   JsonlSessionRepo,
@@ -30,12 +31,12 @@ import type { AgentHarnessStreamOptions } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
 import { chmod } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, ChatMessage } from '../../../core/types.js'
+import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, AgentTurnOutcome, ChatMessage } from '../../../core/types.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
-import { PLAN_MODE_DENY_TOOLS } from '../native/index.js'
+import { NATIVE_PLAN_MODE_ALLOWED_TOOLS } from '../native/tool-registry.js'
 import { agimToolsToPi } from './tool-bridge.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
@@ -71,8 +72,8 @@ export interface NativeAgentDeps {
     opts: AgentSendOpts | undefined,
     sessionId: string,
   ) => { tools: ToolDef[]; dispatch: ToolDispatcher; parallelSafe?: (toolName: string) => boolean } | null
-  /** Tool names denied under plan-mode (mutating/stateful). */
-  planModeMutatingTools?: ReadonlySet<string>
+  /** Tools allowed under Plan Mode. Unknown tools fail closed. */
+  planModeAllowedTools?: ReadonlySet<string>
   /** Read-only verdict for parallel tool execution. */
   parallelSafe?: (toolName: string) => boolean
   /** Per-turn agim policy approval gate (read-only / allow-list / deny-all +
@@ -86,6 +87,9 @@ export interface NativeAgentDeps {
    *  has no built-in cap, so we enforce one (mirrors agim's
    *  AGIM_NATIVE_AGENT_MAX_ITER). Defaults to 50; clamped to [1, 100]. */
   maxIterations?: number
+  /** Hard cap on tool calls declared by assistant messages in one run. A batch
+   *  that would exceed it is aborted before dispatch. Defaults to maxIterations. */
+  maxToolCalls?: number
   /** Proactive context compaction before each turn. pi never auto-compacts, so
    *  when a durable session grows past the model window (minus reserve) the
    *  adapter summarizes old history — without this, long-lived IM sessions grow
@@ -211,12 +215,22 @@ function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableTool
   return lines.join('\n')
 }
 
-function appendPartialToolDiagnostics(text: string, toolRuns: readonly NativeToolRun[], stopReason: 'max_iter' | 'stuck_loop' | null, maxIter: number): string {
+type NativeStopReason = 'max_iter' | 'max_tool_calls' | 'stuck_loop'
+
+function appendPartialToolDiagnostics(
+  text: string,
+  toolRuns: readonly NativeToolRun[],
+  stopReason: NativeStopReason | null,
+  maxIter: number,
+  maxToolCalls: number,
+): string {
   const diagnostics: string[] = []
   if (stopReason === 'stuck_loop') {
     diagnostics.push('检测到工具反复以相同参数失败，已提前停止；以上内容可能只覆盖已取得的信息。')
   } else if (stopReason === 'max_iter') {
     diagnostics.push(`已达到最大迭代步数 ${maxIter}，已提前停止；以上内容可能不完整。`)
+  } else if (stopReason === 'max_tool_calls') {
+    diagnostics.push(`已达到工具调用预算 ${maxToolCalls}，已提前停止；以上内容可能不完整。`)
   }
 
   const failed = toolRuns.filter((t) => t.isError)
@@ -321,6 +335,16 @@ export class NativeAgentAdapter implements AgentAdapter {
     history?: ChatMessage[],
     opts?: AgentSendOpts,
   ): AsyncGenerator<string> {
+    let outcomeReported = false
+    const reportOutcome = (outcome: AgentTurnOutcome) => {
+      if (outcomeReported) return
+      outcomeReported = true
+      try { opts?.onOutcome?.(outcome) } catch { /* observer must not break turn */ }
+    }
+    const turnOpts: AgentSendOpts = {
+      ...(opts ?? {}),
+      onOutcome: reportOutcome,
+    }
     // Serialize turns that share a session id (see sessionLocks). Chain this
     // turn behind whatever is already queued for the same id, and release the
     // slot when the turn (or an early consumer abandon) settles.
@@ -329,15 +353,24 @@ export class NativeAgentAdapter implements AgentAdapter {
     const held = new Promise<void>((resolve) => { release = resolve })
     const mine = prev.then(() => held)
     this.sessionLocks.set(sessionId, mine)
+    // A cancelled waiter can return before `prev` settles. Keep its chained
+    // promise in the map until the chain really drains; deleting it from the
+    // waiter's finally would let a third turn overlap the still-active first.
+    void mine.then(() => {
+      if (this.sessionLocks.get(sessionId) === mine) this.sessionLocks.delete(sessionId)
+    })
     try {
-      const acquired = await waitForTurnSlot(prev, opts?.signal)
+      const acquired = await waitForTurnSlot(prev, turnOpts.signal)
       if (!acquired) {
+        reportOutcome({ status: 'aborted', providerFailure: false })
         yield composeProviderErrorNotice('aborted')
         return
       }
-      yield* this.runTurn(sessionId, prompt, history, opts)
+      yield* this.runTurn(sessionId, prompt, history, turnOpts)
+      reportOutcome({ status: 'success', providerFailure: false })
     } catch (err) {
-      if (opts?.signal?.aborted) {
+      if (turnOpts.signal?.aborted) {
+        reportOutcome({ status: 'aborted', providerFailure: false })
         yield composeProviderErrorNotice('aborted')
         return
       }
@@ -345,11 +378,10 @@ export class NativeAgentAdapter implements AgentAdapter {
       // as "no response". Surface the error so it's visible + diagnosable.
       const msg = err instanceof Error ? `${err.message}` : String(err)
       console.error('[native] turn failed:', err instanceof Error ? err.stack : err)
+      reportOutcome({ status: 'error', providerFailure: true, error: msg })
       yield `⚠️ Agim Agent 本轮出错：${msg}`
     } finally {
       release()
-      // Drop our slot only if nobody queued behind us, so a waiter keeps its ref.
-      if (this.sessionLocks.get(sessionId) === mine) this.sessionLocks.delete(sessionId)
     }
   }
 
@@ -360,6 +392,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     opts: AgentSendOpts | undefined,
   ): AsyncGenerator<string> {
     if (opts?.signal?.aborted) {
+      opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
       return
     }
@@ -373,10 +406,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     const effectiveOpts = overrideModel ? { ...(opts ?? {}), model: overrideModel } : opts
     const binding = await this.deps.resolveModel(effectiveOpts)
     if (opts?.signal?.aborted) {
+      opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
       return
     }
     if (!binding) {
+      opts?.onOutcome?.({ status: 'error', providerFailure: false, error: 'no configured model backend' })
       yield '⚠️ Agim Agent：未配置可用的大模型 API（请在 /settings/llm 添加 API + API Key；角色绑定可选）'
       return
     }
@@ -406,11 +441,16 @@ export class NativeAgentAdapter implements AgentAdapter {
     // pi's NodeExecutionEnv creates directories/files with process umask
     // defaults (typically 0755/0644). Session transcripts can contain prompts,
     // tool arguments, and tool results, so match Agim's private-state posture.
-    await Promise.all([
-      chmod(dirname(currentMeta.path), 0o700).catch(() => {}),
-      chmod(currentMeta.path, 0o600).catch(() => {}),
-    ])
+    if (process.platform !== 'win32') {
+      // Fail closed on POSIX: continuing after chmod failure would persist
+      // sensitive prompts/tool output in a potentially world-readable file.
+      await Promise.all([
+        chmod(dirname(currentMeta.path), 0o700),
+        chmod(currentMeta.path, 0o600),
+      ])
+    }
     if (opts?.signal?.aborted) {
+      opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
       return
     }
@@ -439,20 +479,16 @@ export class NativeAgentAdapter implements AgentAdapter {
     // be able to execute the user-approved plan.
     let turnPlanMode = opts?.planMode === true
     let turnSignal = opts?.signal
-    const planDeny = this.deps.planModeMutatingTools ?? PLAN_MODE_DENY_TOOLS
+    const planAllowed = this.deps.planModeAllowedTools ?? NATIVE_PLAN_MODE_ALLOWED_TOOLS
     if (turnPlanMode || this.deps.resolveApprovalGate) {
       harness.on(
         'tool_call',
         async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
           // Plan-mode hard deny (covers A2A-propagated plan-mode even without
           // an IM thread for the policy gate to read).
-          if (turnPlanMode && planDeny.has(ev.toolName)) {
-            return { block: true, reason: 'plan-mode: mutating tools are denied' }
+          if (turnPlanMode && !planAllowed.has(ev.toolName)) {
+            return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
           }
-          // The dispatcher owns this approval-only handshake. Routing it
-          // through the generic policy gate first creates a duplicate card
-          // (or silently auto-approves the first gate).
-          if (ev.toolName === PLAN_EXIT_TOOL_NAME) return undefined
           // agim policy gate: read-only / allow-list / deny-all, escalating to
           // an IM approval card when configured. Resolve per call so a
           // user-approved plan exit takes effect in the same harness turn.
@@ -470,28 +506,46 @@ export class NativeAgentAdapter implements AgentAdapter {
       )
     }
 
-    // Runaway guards: pi's loop has no iteration cap and no stuck-loop
-    // detection, so we enforce both via the tool_result terminate hint.
+    // Runaway guards. Use lifecycle events for hard model/tool budgets so
+    // validation failures, unknown tools, policy blocks, and parallel batches
+    // cannot bypass a tool_result-only counter.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
-    let toolRounds = 0
-    let stopReason: 'max_iter' | 'stuck_loop' | null = null
+    const maxToolCalls = Math.max(1, this.deps.maxToolCalls ?? maxIter)
+    let modelTurns = 0
+    let declaredToolCalls = 0
+    let stopReason: NativeStopReason | null = null
+    let requestLoopStop = () => {}
     const recentSigs: string[] = []
     const toolRuns: NativeToolRun[] = []
+    const unsubscribeBudget = harness.subscribe((event) => {
+      if (event.type === 'turn_start') {
+        modelTurns += 1
+        if (modelTurns > maxIter && !stopReason) {
+          stopReason = 'max_iter'
+          requestLoopStop()
+        }
+        return
+      }
+      if (event.type !== 'message_end' || event.message.role !== 'assistant') return
+      const batchCalls = (event.message.content ?? []).filter((c) => c.type === 'toolCall').length
+      if (batchCalls === 0) return
+      if (declaredToolCalls + batchCalls > maxToolCalls) {
+        stopReason = 'max_tool_calls'
+        requestLoopStop()
+        return
+      }
+      declaredToolCalls += batchCalls
+    })
     harness.on('tool_result', (ev: NativeToolResultEvent) => {
       if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
         turnPlanMode = false
       }
-      toolRounds += 1
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
         preview: previewToolResult(ev),
       })
       if (toolRuns.length > 30) toolRuns.shift()
-      if (toolRounds >= maxIter) {
-        stopReason = 'max_iter'
-        return { terminate: true }
-      }
       // Stuck-loop: the same tool + same args erroring 3× in a row (mirrors
       // agim's exact stuck-loop detector — catches a model wedged on one
       // failing call well before it burns the whole iteration budget).
@@ -500,6 +554,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (recentSigs.length > 3) recentSigs.shift()
       if (ev.isError && recentSigs.length === 3 && recentSigs.every((s) => s === sig)) {
         stopReason = 'stuck_loop'
+        requestLoopStop()
         return { terminate: true }
       }
       return undefined
@@ -517,6 +572,32 @@ export class NativeAgentAdapter implements AgentAdapter {
     // backlog every turn. Best-effort — a failed compaction must not block the
     // turn (it just runs with the larger context). Off via AGIM_NATIVE_COMPACTION=off.
     if (this.deps.compactionEnabled !== false && Number.isFinite(binding.model.contextWindow)) {
+      const compactionController = new AbortController()
+      const externalSignal = opts?.signal
+      const forwardCompactionAbort = () => compactionController.abort(externalSignal?.reason)
+      externalSignal?.addEventListener('abort', forwardCompactionAbort, { once: true })
+      if (externalSignal?.aborted) forwardCompactionAbort()
+      const compactionTimeoutMs = Math.max(1, this.deps.streamOptions?.timeoutMs ?? 120_000)
+      const compactionTimer = setTimeout(() => {
+        compactionController.abort(new Error(`compaction timed out after ${compactionTimeoutMs}ms`))
+      }, compactionTimeoutMs)
+      compactionTimer.unref?.()
+      // AgentHarness 0.79.x otherwise passes `undefined` to compact(). Supply a
+      // completed result from the hook so compaction honors caller/timeout abort.
+      const unsubscribeCompaction = harness.on('session_before_compact', async (event) => {
+        const auth = await binding.getApiKeyAndHeaders()
+        const result = await compact(
+          event.preparation,
+          binding.model,
+          auth.apiKey,
+          auth.headers,
+          event.customInstructions,
+          compactionController.signal,
+          undefined,
+        )
+        if (!result.ok) throw result.error
+        return { compaction: result.value }
+      })
       try {
         const usage = getLastAssistantUsage(await session.getEntries())
         if (usage && shouldCompact(calculateContextTokens(usage), binding.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
@@ -524,19 +605,29 @@ export class NativeAgentAdapter implements AgentAdapter {
         }
       } catch (err) {
         console.error('[native] compaction skipped:', err instanceof Error ? err.message : err)
+      } finally {
+        clearTimeout(compactionTimer)
+        externalSignal?.removeEventListener('abort', forwardCompactionAbort)
+        unsubscribeCompaction()
       }
     }
 
     if (opts?.signal?.aborted) {
+      unsubscribeBudget()
+      opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
       return
     }
 
     // AgentHarness owns its run AbortController and prompt() does not accept an
     // external signal. Merge caller cancellation with an active-loop watchdog,
-    // then bridge that signal through abort(). The watchdog intentionally starts
-    // after compaction; pi 0.79.x does not expose cancellable compaction.
+    // then bridge that signal through abort().
     const runController = new AbortController()
+    requestLoopStop = () => {
+      if (!runController.signal.aborted) {
+        runController.abort(new Error(`native loop stopped: ${stopReason ?? 'guard'}`))
+      }
+    }
     const externalSignal = opts?.signal
     const forwardExternalAbort = () => runController.abort(externalSignal?.reason)
     externalSignal?.addEventListener('abort', forwardExternalAbort, { once: true })
@@ -575,6 +666,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       externalSignal?.removeEventListener('abort', forwardExternalAbort)
       runController.signal.removeEventListener('abort', onRunAbort)
       unsubscribeBeforeStart()
+      unsubscribeBudget()
     }
 
     if (opts?.onUsage && result.usage) {
@@ -604,19 +696,29 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     if (!hasText) {
       if (runTimedOut) {
+        opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
         yield composeRunTimeoutNotice(runTimeoutMs)
         return
       }
+      if (stopReason) {
+        opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: stopReason })
+        yield stopReason === 'stuck_loop'
+          ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
+          : stopReason === 'max_tool_calls'
+            ? `（已达工具调用预算 ${maxToolCalls}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_TOOL_CALLS 后重试）`
+            : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
+        return
+      }
       if (providerFailed || providerAborted) {
+        opts?.onOutcome?.({
+          status: providerFailed ? 'error' : 'aborted',
+          providerFailure: providerFailed,
+          error: result.errorMessage,
+        })
         yield composeProviderErrorNotice(providerFailed ? 'error' : 'aborted', result.errorMessage)
         return
       }
-      if (stopReason) {
-        yield stopReason === 'stuck_loop'
-          ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
-          : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
-        return
-      }
+      opts?.onOutcome?.({ status: 'error', providerFailure: false, error: 'empty model response' })
       yield composeEmptyTurnRecap(toolRuns, tools.map((t) => t.name))
       return
     }
@@ -624,11 +726,17 @@ export class NativeAgentAdapter implements AgentAdapter {
     // Non-empty answer. Append tool diagnostics; if the turn ALSO hit a
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
-    let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter)
+    let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter, maxToolCalls)
     if (runTimedOut) {
+      opts?.onOutcome?.({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
       out = `${out.trimEnd()}\n\n（注意：${composeRunTimeoutNotice(runTimeoutMs)}）`
     } else if (providerFailed) {
+      opts?.onOutcome?.({ status: 'partial', providerFailure: true, error: result.errorMessage })
       out = `${out.trimEnd()}\n\n（注意：本轮因网络/服务中断提前结束，回复可能不完整，可回「重试」。）`
+    } else if (providerAborted) {
+      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: 'aborted after partial response' })
+    } else if (stopReason) {
+      opts?.onOutcome?.({ status: 'partial', providerFailure: false, error: stopReason })
     }
     yield out
   }

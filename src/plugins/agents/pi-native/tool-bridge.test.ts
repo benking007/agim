@@ -118,7 +118,7 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
   it('returns promptly on outer abort even when the dispatcher ignores its signal', async () => {
     const slowTool: ToolDef = { ...QUOTE_TOOL, timeoutMs: 0 }
     const dispatch: ToolDispatcher = async () => await new Promise<never>(() => {})
-    const [tool] = agimToolsToPi([slowTool], dispatch)
+    const [tool] = agimToolsToPi([slowTool], dispatch, { parallelSafe: () => true })
     const ctrl = new AbortController()
     const run = tool!.execute('c1', { symbol: 'x' }, ctrl.signal)
     const t0 = performance.now()

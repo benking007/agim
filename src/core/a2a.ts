@@ -24,6 +24,7 @@
 //     createInlineJob, which is automatically swept on restart).
 
 import type { RouteContext } from './router.js'
+import type { AgentTurnOutcome } from './types.js'
 import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
 import { workspaceRegistry } from './workspace.js'
@@ -153,6 +154,9 @@ export interface CallAgentOpts {
   callerAgent?: string
   /** Override timeout. Falls back to env / default. */
   timeoutMs?: number
+  /** Parent tool/turn cancellation. Aborting it terminates the callee in
+   *  addition to A2A's own timeout controller. */
+  signal?: AbortSignal
   /** L2: files to drop in the callee's _agim-input/ before it runs.
    *  Each input has a target filename plus exactly one of:
    *    - fromAbsolutePath: copy/hard-link from a path on disk
@@ -319,11 +323,15 @@ export async function callAgentByName(
   let result = ''
   let outcome: 'completed' | 'failed' | 'timeout' = 'completed'
   let errMsg = ''
+  const calleeOutcomes: AgentTurnOutcome[] = []
   // v1.1.10: abortController is passed into sendPrompt so the underlying
   // child process actually terminates on timeout. Without this the callee
   // (codex / claude / opencode) keeps running and writes "orphan" files
   // into _agim-output/ long after agim has given up.
   const abortController = new AbortController()
+  const onOuterAbort = () => abortController.abort(opts.signal?.reason)
+  opts.signal?.addEventListener('abort', onOuterAbort, { once: true })
+  if (opts.signal?.aborted) onOuterAbort()
   try {
     const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
@@ -343,14 +351,22 @@ export async function callAgentByName(
       // write access, bypassing the user's intent.
       ...(opts.planMode ? { planMode: true } : {}),
       signal: abortController.signal,
+      onOutcome: (value) => { calleeOutcomes.push(value) },
     })
     result = await accumulateWithTimeout(gen, timeoutMs)
+    const calleeOutcome = calleeOutcomes.at(-1)
+    if (calleeOutcome && calleeOutcome.status !== 'success' && calleeOutcome.status !== 'partial') {
+      outcome = calleeOutcome.status === 'timeout' ? 'timeout' : 'failed'
+      errMsg = calleeOutcome.error ?? calleeOutcome.status
+    }
   } catch (err) {
     outcome = err instanceof TimeoutError ? 'timeout' : 'failed'
     errMsg = err instanceof Error ? err.message : String(err)
     // Cancel the in-flight child. spawnStream listens on the signal and
     // sends SIGTERM (then SIGKILL after a grace period) to the agent CLI.
     try { abortController.abort() } catch { /* noop */ }
+  } finally {
+    opts.signal?.removeEventListener('abort', onOuterAbort)
   }
 
   // Stop heartbeat ASAP so we don't race the terminal notice.

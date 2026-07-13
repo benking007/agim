@@ -110,6 +110,24 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(decisions).toEqual([{ behavior: 'deny', message: 'explicit approval timeout' }])
   })
 
+  it('lifecycle cancellation preserves a non-user resolution cause', async () => {
+    bus.setNotifier(async () => {})
+    const causes: string[] = []
+    bus.setResolutionListener((event) => { causes.push(event.cause) })
+    await bus.registerSyntheticPending({
+      runId: 'cancel-1',
+      reqId: 'cancel-pending-1',
+      toolName: 'native_exec',
+      input: { command: 'sleep 10' },
+      ctx: RUN_CTX,
+      dispatch: () => {},
+    })
+
+    expect(bus.cancelPendingByReqId('cancel-pending-1', 'turn aborted')).toBe(true)
+    expect(causes).toEqual(['run-terminated'])
+    expect(bus.hasPendingFor(KEY)).toBe(false)
+  })
+
   it('resolve(deny) forwards the message via dispatch', async () => {
     bus.setNotifier(async () => {})
     const decisions: Decision[] = []

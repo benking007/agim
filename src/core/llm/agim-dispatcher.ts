@@ -667,7 +667,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 raw = await runOnce()
               } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e)
-                if (!isTransientSubAgentError(msg)) throw e
+                if (signal.aborted || !isTransientSubAgentError(msg)) throw e
                 log.warn({
                   event: 'native.call_agent.in_process_retry',
                   err: msg, threadId: ctx.threadId,
@@ -715,6 +715,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
             // v1.2.139 — propagate parent's plan-mode to the sub-agent.
             ...(ctx.callerPlanMode ? { planMode: true } : {}),
+            signal,
           }
           // v1.2.139 — one-shot transient retry. callAgentByName already
           // wraps its own audit + notify lifecycle; we just retry the
@@ -722,7 +723,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // reset / quick timeout. Permanent failures (workspace ACL,
           // depth exceeded, model refusal) skip the retry.
           let result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
-          if (!result.ok && isTransientSubAgentError(result.error || '')) {
+          if (!signal.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
             log.warn({
               event: 'native.call_agent.retry',
               calleeAgent: agentName,

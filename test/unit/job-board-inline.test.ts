@@ -159,6 +159,22 @@ skipIfNoDb('inline-job state machine', () => {
     }
   })
 
+  it('runJob preserves cancelled when the runner rejects while aborting', async () => {
+    const id = jb.createInlineJob({ agent: 'a', prompt: 'abort', threadKey: 'abort:reject' })
+    const run = jb.runJob(id, async function* (_job, _logger, signal) {
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted runner')), { once: true })
+      })
+      yield 'unreachable'
+    }, logger)
+    for (let i = 0; i < 20 && jb.getJob(id)?.status !== 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(jb.cancelJob(id)).toBe(true)
+    await run
+    expect(jb.getJob(id)?.status).toBe('cancelled')
+  })
+
   it('markJobDelivered: completed → delivered; no-op for non-completed', () => {
     const id = jb.createInlineJob({
       agent: 'a', prompt: 'p', threadKey: 'p:p:p4',

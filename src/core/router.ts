@@ -1,6 +1,6 @@
 // Message router — parses commands and routes to agents
 
-import type { ParsedMessage, ChatMessage, Session } from './types.js'
+import type { ParsedMessage, ChatMessage, Session, AgentTurnOutcome } from './types.js'
 import type { Logger } from 'pino'
 import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
@@ -77,6 +77,9 @@ export interface RouteContext {
   /** Cancellation for the current inbound turn. Inline jobs bind this to the
    *  job-board controller so /abort reaches every adapter. */
   signal?: AbortSignal
+  /** Structured terminal state reported by the selected adapter. Consumers
+   *  (CLI/job/web) use it after draining the generator. */
+  agentOutcome?: AgentTurnOutcome
 }
 
 export interface AgentCallOptions {
@@ -596,6 +599,10 @@ export async function callAgentWithHistory(
   if (!agent) {
     throw new Error('callAgentWithHistory called without a configured agent')
   }
+  if (ctx.signal?.aborted) {
+    circuitBreaker.recordNeutral(agent.name)
+    return (async function* (): AsyncGenerator<string> { /* cancelled before side effects */ })()
+  }
 
   const storageThreadId = options.storageThreadId ?? ctx.threadId
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
@@ -625,6 +632,7 @@ export async function callAgentWithHistory(
   // inline (currently opencode). Closure-bound so concurrent runs can't
   // race each other.
   let usageAcc = 0
+  let adapterOutcome: AgentTurnOutcome | undefined
   const onAgentSessionId = (id: string): void => {
     // Persist the adapter-reported id on first sighting so the next turn can
     // pass it back via --session / exec resume. Setters are idempotent.
@@ -659,6 +667,10 @@ export async function callAgentWithHistory(
   }
   const onUsage = (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }): void => {
     if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd)) usageAcc += delta.costUsd
+  }
+  const onOutcome = (outcome: AgentTurnOutcome): void => {
+    adapterOutcome = outcome
+    ctx.agentOutcome = outcome
   }
 
   // Plan mode kill-switch: ops can flip AGIM_DISABLE_PLAN_MODE=1 to ignore
@@ -753,6 +765,7 @@ export async function callAgentWithHistory(
     agentSessionResume,
     onAgentSessionId,
     onUsage,
+    onOutcome,
     planMode: effectivePlanMode || undefined,
     // A2A-L1: forward the caller's tracking id + call depth so the
     // adapter can stamp RunContext (consumed by bus.handleA2A).
@@ -777,7 +790,17 @@ export async function callAgentWithHistory(
       throw err
     } finally {
       const durationMs = Date.now() - startTime
-      if (fullResponse.trim()) {
+      const outcome: AgentTurnOutcome = adapterOutcome
+        ?? (ctx.signal?.aborted
+          ? { status: 'aborted' }
+          : invocationError
+            ? { status: 'error', providerFailure: true, error: invocationError }
+            : { status: 'success', providerFailure: false })
+      const aborted = outcome.status === 'aborted'
+      const successful = outcome.status === 'success' || outcome.status === 'partial'
+      const effectiveError = invocationError ?? outcome.error ?? (successful ? undefined : outcome.status)
+
+      if (!aborted && fullResponse.trim()) {
         await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
           role: 'assistant',
           content: fullResponse,
@@ -789,6 +812,7 @@ export async function callAgentWithHistory(
         agent: agent.name,
         durationMs,
         responseLen: fullResponse.length,
+        outcome: outcome.status,
       })
 
       // Cost: prefer the inline usage accumulator (opencode emits this in
@@ -811,14 +835,19 @@ export async function callAgentWithHistory(
         responseLen: fullResponse.length,
         durationMs,
         cost,
-        success: !invocationError,
-        error: invocationError,
+        success: successful,
+        error: effectiveError,
       })
 
-      if (invocationError) {
+      if (invocationError || outcome.providerFailure) {
         circuitBreaker.recordFailure(agent.name)
-      } else {
+      } else if (successful) {
         circuitBreaker.recordSuccess(agent.name)
+      } else {
+        circuitBreaker.recordNeutral(agent.name)
+      }
+
+      if (!aborted) {
         // Roll up into the session-level usage so /stats reflects reality.
         await sessionManager.recordUsage(ctx.platform, ctx.channelId, storageThreadId, {
           costUsd: cost,
@@ -826,6 +855,9 @@ export async function callAgentWithHistory(
           responseChars: fullResponse.length,
           durationMs,
         })
+      }
+
+      if (outcome.status === 'success') {
         // v1.5 — memory distillation. Fire-and-forget post-reply hook.
         // Runs only when AGIM_MEMORY_ENABLED is on; uses the same agent
         // we just talked to (model-agnostic). Skipped for tiny exchanges.

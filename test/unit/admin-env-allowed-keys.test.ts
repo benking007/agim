@@ -61,6 +61,7 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_PLAN_MODE',
     // Iteration cap
     'AGIM_NATIVE_AGENT_MAX_ITER',
+    'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
     // Active AgentHarness wall watchdog
     'AGIM_NATIVE_TURN_TIMEOUT_MS',
   ]

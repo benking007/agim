@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir, chmod } from 'node:fs/promises'
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
+import { clearPlanModeForThread } from './plan-mode-state.js'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 
@@ -159,7 +160,11 @@ class SessionManager {
     await mkdir(SESSIONS_DIR, { recursive: true, mode: 0o700 })
     // mkdir's mode only applies on creation; tighten pre-existing directories
     // as well so metadata/log files are not traversable by other host users.
-    await chmod(SESSIONS_DIR, 0o700).catch(() => { /* non-POSIX / best-effort */ })
+    if (process.platform !== 'win32') {
+      await chmod(SESSIONS_DIR, 0o700).catch((err) => {
+        log.warn({ event: 'session.dir_chmod_failed', dir: SESSIONS_DIR, err: String(err) })
+      })
+    }
 
     // Start cleanup timer
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL)
@@ -715,6 +720,7 @@ class SessionManager {
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
         delete session.planMode
+        clearPlanModeForThread(key)
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
         try { approvalBus.clearAutoAllowForThread(key) } catch { /* ignore */ }

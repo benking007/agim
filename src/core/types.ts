@@ -374,6 +374,14 @@ export interface ApprovalCardOutcome {
  *  is ready, to remove or otherwise hide the placeholder. */
 export type ThinkingHandle = () => Promise<void>
 
+export interface AgentTurnOutcome {
+  status: 'success' | 'partial' | 'aborted' | 'timeout' | 'error'
+  /** True only when provider health should affect the circuit breaker. User
+   *  cancellation, policy denial, and local watchdog expiry are neutral. */
+  providerFailure?: boolean
+  error?: string
+}
+
 /**
  * Optional per-call context piped from the IM router into the agent. Lets
  * adapters (e.g. ClaudeCodeAdapter) route side-channel events back to the
@@ -411,6 +419,9 @@ export interface AgentSendOpts {
    *  tokens). opencode's `step_finish` event carries this; cli accumulates
    *  the deltas to feed `recordUsage` so /stats reflects opencode cost. */
   onUsage?: (delta: { costUsd?: number; tokensInput?: number; tokensOutput?: number }) => void
+  /** Structured terminal state. Adapters that report friendly error text must
+   *  still call this so routers/jobs do not mistake that text for success. */
+  onOutcome?: (outcome: AgentTurnOutcome) => void
   /** When true, the adapter should run the agent in plan / read-only mode.
    *  claude-code translates this to `--permission-mode plan`; opencode
    *  translates it to `--agent plan` (stdio) or `agent: 'plan'` in the HTTP

@@ -839,9 +839,20 @@ export async function runJob(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack : undefined
-    updateJob(id, { status: 'failed', error: msg, completed_at: new Date().toISOString() })
-    eventBus.publish({ type: 'job', phase: 'failed', jobId: id, agent: job.agent })
-    logger.error({ event: 'job.failed', jobId: id, error: msg, stack })
+    if (controller.signal.aborted) {
+      // cancelJob owns the terminal transition/event. Never overwrite a user
+      // cancellation with "failed" merely because the runner rejected while
+      // unwinding its AbortSignal.
+      if (getJob(id)?.status !== 'cancelled') {
+        updateJob(id, { status: 'cancelled', result: fullText || null, completed_at: new Date().toISOString() })
+        eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })
+      }
+      logger.info({ event: 'job.cancelled', jobId: id, error: msg })
+    } else {
+      updateJob(id, { status: 'failed', error: msg, completed_at: new Date().toISOString() })
+      eventBus.publish({ type: 'job', phase: 'failed', jobId: id, agent: job.agent })
+      logger.error({ event: 'job.failed', jobId: id, error: msg, stack })
+    }
   } finally {
     unbindController()
     releaseSlot()

@@ -29,7 +29,7 @@ import { createReminder } from './core/reminders.js'
 import { setReminderConfirmNotifier } from './core/reminder-rpc.js'
 import { sink } from './core/message-sink.js'
 import {
-  bindJobController, createInlineJob, markJobRunning, markJobCompleted, markJobFailed, linkJobOutbox, updateJobAgent,
+  bindJobController, cancelJob, createInlineJob, markJobRunning, markJobCompleted, markJobFailed, linkJobOutbox, updateJobAgent,
 } from './core/job-board.js'
 import {
   checkMessengerConfig,
@@ -1559,6 +1559,17 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         }
       }
 
+      // Cancellation can arrive while the thinking placeholder is being sent.
+      // Re-check before router side effects (history write / circuit probe).
+      if (inlineAbortController?.signal.aborted) {
+        await stopTyping()
+        if (dismissThinking) {
+          try { await dismissThinking() } catch { /* ignore */ }
+          dismissThinking = undefined
+        }
+        return
+      }
+
       const result = await routeMessage(parsed, routeCtx)
 
       const dismiss = async () => {
@@ -1573,12 +1584,22 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await dismiss()
         return
       }
+      if (routeCtx.agentOutcome?.status === 'aborted') {
+        cancelJob(inlineJobId)
+        await stopTyping()
+        await dismiss()
+        return
+      }
 
       // Handle response (string or async generator)
       if (typeof result === 'string') {
         await stopTyping()
         await dismiss()
-        markJobCompleted(inlineJobId, result)
+        if (routeCtx.agentOutcome?.status === 'error' || routeCtx.agentOutcome?.status === 'timeout') {
+          markJobFailed(inlineJobId, routeCtx.agentOutcome.error ?? routeCtx.agentOutcome.status)
+        } else {
+          markJobCompleted(inlineJobId, result)
+        }
         // v1.2.73 — `result: string` is no longer exclusively "slash
         // command output". Cases that fall into this branch:
         //   1. slash command (e.g. /job list, /a2a tree, /restart, /audit)
@@ -1622,9 +1643,17 @@ async function handleMessage(ctx: MessageContext, defaultAgent: string): Promise
         await dismiss()
 
         if (inlineAbortController?.signal.aborted) return
+        if (routeCtx.agentOutcome?.status === 'aborted') {
+          cancelJob(inlineJobId)
+          return
+        }
 
         if (fullResponse) {
-          markJobCompleted(inlineJobId, fullResponse)
+          if (routeCtx.agentOutcome?.status === 'error' || routeCtx.agentOutcome?.status === 'timeout') {
+            markJobFailed(inlineJobId, routeCtx.agentOutcome.error ?? routeCtx.agentOutcome.status)
+          } else {
+            markJobCompleted(inlineJobId, fullResponse)
+          }
           const sinkRes = await sink.deliver({
             platform, channelId: ctx.channelId, threadId: message.threadId,
             payload: await maybePrefix(fullResponse), kind: 'text',

@@ -70,6 +70,7 @@ async function dispatchWithTimeout(
   outer: AbortSignal,
   timeoutMs: number,
   toolName: string,
+  detachOnAbort: boolean,
 ): Promise<DispatcherResult> {
   const abortError = () => {
     const err = new Error(`工具 ${toolName} 已取消`)
@@ -79,11 +80,15 @@ async function dispatchWithTimeout(
   if (outer.aborted) throw abortError()
 
   const ctrl = new AbortController()
-  let rejectAbort!: (reason?: unknown) => void
-  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject })
+  let rejectAbort: ((reason?: unknown) => void) | undefined
+  const aborted = detachOnAbort
+    ? new Promise<never>((_resolve, reject) => { rejectAbort = reject })
+    : null
   const onOuterAbort = () => {
+    // Reject the adapter-facing race first so a cooperative dispatcher that
+    // resolves synchronously from its abort listener cannot win with "success".
+    rejectAbort?.(abortError())
     ctrl.abort(outer.reason)
-    rejectAbort(abortError())
   }
   outer.addEventListener('abort', onOuterAbort, { once: true })
 
@@ -105,7 +110,10 @@ async function dispatchWithTimeout(
   // race result when runP wins (await below observes the original settlement).
   runP.catch(() => {})
   try {
-    return await Promise.race(timeout ? [runP, timeout, aborted] : [runP, aborted])
+    const races: Array<Promise<DispatcherResult>> = [runP]
+    if (timeout) races.push(timeout)
+    if (aborted) races.push(aborted)
+    return await Promise.race(races)
   } finally {
     if (timer) clearTimeout(timer)
     outer.removeEventListener('abort', onOuterAbort)
@@ -124,13 +132,14 @@ export interface ToolBridgeOptions {
 
 /** Wrap one agim ToolDef + the shared dispatcher into a pi AgentTool. */
 export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolBridgeOptions = {}): AgentTool {
+  const parallelSafe = opts.parallelSafe?.(def.name) === true
   return {
     label: def.name,
     name: def.name,
     description: def.description,
     // pi reads only .properties/.required off this; agim's JSON Schema is fine.
     parameters: def.parameters as AgentTool['parameters'],
-    executionMode: opts.parallelSafe?.(def.name) ? 'parallel' : 'sequential',
+    executionMode: parallelSafe ? 'parallel' : 'sequential',
     execute: async (toolCallId, args, signal) => {
       const cap = resolveToolResultMaxChars()
       const timeoutMs = resolveToolTimeoutMs(def.timeoutMs)
@@ -143,6 +152,7 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
         signal ?? NEVER_ABORT,
         timeoutMs,
         def.name,
+        parallelSafe,
       )
       const text = truncateToolResult(result.text, cap, def.name)
       // pi marks errors via throw (no isError field on its result shape).

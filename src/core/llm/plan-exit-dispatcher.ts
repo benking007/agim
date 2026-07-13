@@ -27,6 +27,7 @@
 import { logger as rootLogger } from '../logger.js'
 import { approvalBus } from '../approval-bus.js'
 import { recordPlanHistory } from '../plan-history.js'
+import { sessionManager } from '../session.js'
 import {
   effectivePlanModeOn,
   setPlanModeForThread,
@@ -179,10 +180,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         resolve(result)
       }
       const onAbort = () => {
-        approvalBus.resolvePendingByReqId(reqId, {
-          behavior: 'deny',
-          message: 'plan approval cancelled: agent turn aborted',
-        })
+        approvalBus.cancelPendingByReqId(reqId, 'plan approval cancelled: agent turn aborted')
         finish({ behavior: 'deny', reason: 'agent turn aborted' })
       }
       signal.addEventListener('abort', onAbort, { once: true })
@@ -211,10 +209,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
         }),
       }).then(() => {
         if (signal.aborted) {
-          approvalBus.resolvePendingByReqId(reqId, {
-            behavior: 'deny',
-            message: 'plan approval cancelled: agent turn aborted',
-          })
+          approvalBus.cancelPendingByReqId(reqId, 'plan approval cancelled: agent turn aborted')
         }
       }).catch((err) => {
         if (settled) return
@@ -230,6 +225,32 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
       //     Use setPlanModeForThread(false) — explicit "this thread is
       //     out", which beats the env default even if env says ON.
       setPlanModeForThread(ctx.threadKey, false)
+      try {
+        const patched = await sessionManager.patchSession(
+          platform,
+          ctx.channelId ?? '',
+          threadId,
+          { planMode: false },
+        )
+        if (!patched) throw new Error('Agim session not found')
+      } catch (err) {
+        // Keep both Plan Mode stores aligned. If the durable session cannot be
+        // cleared, restore the policy state and refuse to unlock write tools.
+        setPlanModeForThread(ctx.threadKey, true)
+        const detail = err instanceof Error ? err.message : String(err)
+        recordPlanHistory({
+          threadKey: ctx.threadKey,
+          planMd,
+          outcome: 'rejected',
+          detail: `approved but failed to persist Plan Mode exit: ${detail}`,
+          pendingMs,
+        })
+        return {
+          text: `Plan approval could not be persisted; remaining in Plan Mode: ${detail}`,
+          isError: true,
+          source: 'plan-exit',
+        }
+      }
       recordPlanHistory({
         threadKey: ctx.threadKey,
         planMd,

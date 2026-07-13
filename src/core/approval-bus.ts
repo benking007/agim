@@ -561,7 +561,26 @@ export class ApprovalBus {
     return this._resolveTarget(target, decision)
   }
 
+  /** Cancel a specific request from a non-user lifecycle event. Unlike
+   * resolvePendingByReqId this preserves the cause so card renderers expire
+   * stale buttons instead of treating an abort as a human click. */
+  cancelPendingByReqId(
+    reqId: string,
+    message: string,
+    cause: Exclude<ResolutionCause, 'user'> = 'run-terminated',
+  ): boolean {
+    const target = this.pendingById.get(reqId)
+    if (!target || target.resolved) return false
+    this.cancelPending(target, { behavior: 'deny', message }, cause)
+    return true
+  }
+
   private _resolveTarget(target: PendingApproval, decision: Decision): ResolvedInfo {
+    if (target.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+      // Mutate the caller-visible decision too: approval-router uses the same
+      // object for receipts/card outcomes after resolvePending returns.
+      delete decision.autoAllowFurther
+    }
     const platform = this.runContexts.get(target.runId)?.platform ?? ''
     const info: ResolvedInfo = {
       reqId: target.reqId,

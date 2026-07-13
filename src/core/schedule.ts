@@ -19,6 +19,7 @@ import { buildSkillsSummary } from './skills/loader.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { lookup } from 'node:dns/promises'
 import { isPrivateAddr } from '../plugins/agents/acp/url-guard.js'
+import type { AgentTurnOutcome } from './types.js'
 
 const SCHED_DB = join(AGIM_HOME, 'schedules.db')
 const TICK_INTERVAL_MS = 30 * 1000
@@ -330,9 +331,17 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
       const text = await agent.spawnAndCollect(prompt, signal)
       if (text) yield text
     } else {
-      for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [])) {
+      const outcomes: AgentTurnOutcome[] = []
+      for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [], {
+        signal,
+        onOutcome: (value) => { outcomes.push(value) },
+      })) {
         if (signal.aborted) break
         yield chunk
+      }
+      const outcome = outcomes.at(-1)
+      if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+        throw new Error(outcome.error ?? outcome.status)
       }
     }
   }, logger).then(async () => {

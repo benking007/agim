@@ -262,10 +262,7 @@ export function buildNativeAskUser(opts: {
       const onAbort = () => {
         // If registration has reached pendingById this drains the card now.
         // If it has not, the registration continuation below retries.
-        approvalBus.resolvePendingByReqId(reqId, {
-          behavior: 'deny',
-          message: 'approval cancelled: agent turn aborted',
-        })
+        approvalBus.cancelPendingByReqId(reqId, 'approval cancelled: agent turn aborted')
         finish('deny')
       }
       signal?.addEventListener('abort', onAbort, { once: true })
@@ -279,10 +276,7 @@ export function buildNativeAskUser(opts: {
       }).then(() => {
         // Covers abort racing before _registerPending inserted the request.
         if (signal?.aborted) {
-          approvalBus.resolvePendingByReqId(reqId, {
-            behavior: 'deny',
-            message: 'approval cancelled: agent turn aborted',
-          })
+          approvalBus.cancelPendingByReqId(reqId, 'approval cancelled: agent turn aborted')
         }
       }).catch((err) => {
         if (settled) return

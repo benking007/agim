@@ -2733,9 +2733,17 @@ async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: numb
         const text = await agent.spawnAndCollect(j.prompt, signal)
         if (text) yield text
       } else {
-        for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [])) {
+        const outcomes: Array<{ status: string; error?: string }> = []
+        for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
+          signal,
+          onOutcome: (value) => { outcomes.push(value) },
+        })) {
           if (signal.aborted) break
           yield chunk
+        }
+        const outcome = outcomes.at(-1)
+        if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+          throw new Error(outcome.error ?? outcome.status)
         }
       }
     }, log).catch(() => { /* job-board logs */ })
@@ -3000,6 +3008,7 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_PLAN_INTENT_PHRASES',
   // Per-turn iteration cap.
   'AGIM_NATIVE_AGENT_MAX_ITER',
+  'AGIM_NATIVE_AGENT_MAX_TOOL_CALLS',
   // Active pi-native AgentHarness loop watchdog (0 disables).
   'AGIM_NATIVE_TURN_TIMEOUT_MS',
 ] as const
@@ -4619,9 +4628,17 @@ async function handleBatchJob(
             const text = await agent.spawnAndCollect(j.prompt, signal)
             if (text) yield text
           } else {
-            for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [])) {
+            const outcomes: Array<{ status: string; error?: string }> = []
+            for await (const chunk of agent.sendPrompt(`web-job-${j.id}`, j.prompt, [], {
+              signal,
+              onOutcome: (value) => { outcomes.push(value) },
+            })) {
               if (signal.aborted) break
               yield chunk
+            }
+            const outcome = outcomes.at(-1)
+            if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+              throw new Error(outcome.error ?? outcome.status)
             }
           }
         }, log).catch(() => { /* job-board logs */ })

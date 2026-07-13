@@ -117,6 +117,39 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('blocked')
   })
 
+  it('fails closed for unknown external tools in Plan Mode', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('mcp__external__write', { value: 'x' }, { id: 'm1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('blocked external mutation'),
+    ])
+    let dispatched = false
+    const tool: ToolDef = {
+      name: 'mcp__external__write',
+      description: 'unknown external mutation',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-plan-mcp-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => {
+          dispatched = true
+          return { text: 'wrote', isError: false }
+        },
+      }),
+    })
+
+    const out = await collect(adapter.sendPrompt('plan-mcp', 'plan only', undefined, { planMode: true }))
+    expect(dispatched).toBe(false)
+    expect(out).toContain('blocked external mutation')
+  })
+
   it('applies an approved plan exit within the same harness turn', async () => {
     const reg = faux()
     reg.setResponses([
@@ -155,7 +188,8 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-plan-exit-')),
       resolveModel: async () => bindingFromFaux(reg),
       resolveTools: () => ({ tools, dispatch }),
-      resolveApprovalGate: () => async () => planActive ? 'deny' : 'allow',
+      resolveApprovalGate: () => async (call) =>
+        call.name === 'native_exit_plan_mode' || !planActive ? 'allow' : 'deny',
     })
 
     const out = await collect(adapter.sendPrompt('plan-exit', 'plan then implement', undefined, { planMode: true }))
@@ -196,13 +230,17 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
       resolveModel: async () => bindingFromFaux(reg),
     })
-    const out = await collect(adapter.sendPrompt('perr', 'hi'))
+    let outcome: string | undefined
+    const out = await collect(adapter.sendPrompt('perr', 'hi', undefined, {
+      onOutcome: (value) => { outcome = value.status },
+    }))
     expect(out).toContain('网络或模型服务中断')
     expect(out).toContain('socket hang up') // the real cause is surfaced
     expect(out).toContain('重试')
     // must NOT be misreported as the model returning empty content
     expect(out).not.toContain('没有产出可见回复')
     expect(out).not.toContain('模型返回了空内容')
+    expect(outcome).toBe('error')
   })
 
   it('surfaces a mid-stream provider throw (undici "terminated") as a retry notice', async () => {
@@ -289,10 +327,14 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-abort-')),
       resolveModel: async () => bindingFromFaux(reg),
-      resolveTools: () => ({ tools: [tool], dispatch }),
+      resolveTools: () => ({ tools: [tool], dispatch, parallelSafe: () => true }),
     })
     const ctrl = new AbortController()
-    const run = collect(adapter.sendPrompt('abort-active', 'wait', undefined, { signal: ctrl.signal }))
+    let outcome: string | undefined
+    const run = collect(adapter.sendPrompt('abort-active', 'wait', undefined, {
+      signal: ctrl.signal,
+      onOutcome: (value) => { outcome = value.status },
+    }))
     await started
     const t0 = performance.now()
     ctrl.abort()
@@ -300,6 +342,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
 
     expect(performance.now() - t0).toBeLessThan(250)
     expect(out).toContain('本轮已被取消')
+    expect(outcome).toBe('aborted')
   })
 
   it('stops a runaway active loop at the configured run timeout', async () => {
@@ -317,23 +360,38 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const adapter = new NativeAgentAdapter({
       sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-run-timeout-')),
       resolveModel: async () => bindingFromFaux(reg),
-      resolveTools: () => ({ tools: [tool], dispatch }),
+      resolveTools: () => ({ tools: [tool], dispatch, parallelSafe: () => true }),
       resolveRunTimeoutMs: () => 30,
     })
     const t0 = performance.now()
-    const out = await collect(adapter.sendPrompt('run-timeout', 'wait'))
+    let outcome: string | undefined
+    const out = await collect(adapter.sendPrompt('run-timeout', 'wait', undefined, {
+      onOutcome: (value) => { outcome = value.status },
+    }))
 
     expect(performance.now() - t0).toBeLessThan(250)
     expect(out).toContain('运行超过')
     expect(out).toContain('AGIM_NATIVE_TURN_TIMEOUT_MS')
+    expect(outcome).toBe('timeout')
   })
 
   it('cancels a queued same-session turn without waiting for the active turn', async () => {
     const reg = faux()
+    let active = 0
+    let maxActive = 0
     reg.setResponses([
       async () => {
+        active += 1
+        maxActive = Math.max(maxActive, active)
         await new Promise((resolve) => setTimeout(resolve, 120))
+        active -= 1
         return fauxAssistantMessage('first')
+      },
+      async () => {
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        active -= 1
+        return fauxAssistantMessage('third')
       },
     ])
     const adapter = new NativeAgentAdapter({
@@ -349,8 +407,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
 
     expect(performance.now() - t0).toBeLessThan(50)
     expect(second).toContain('本轮已被取消')
+    const third = collect(adapter.sendPrompt('queued', 'third'))
     expect(await first).toBe('first')
-    expect(reg.state.callCount).toBe(1)
+    expect(await third).toBe('third')
+    expect(maxActive).toBe(1)
+    expect(reg.state.callCount).toBe(2)
   })
 
   it('consults the approval gate and blocks a denied tool', async () => {
@@ -400,6 +461,78 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const out = await collect(adapter.sendPrompt('s6', 'spin forever'))
     expect(ran.length).toBe(3) // stopped at the cap instead of looping out the queue
     expect(out).toContain('最大迭代')
+  })
+
+  it('enforces tool-call budget across parallel batches before dispatch', async () => {
+    const reg = faux()
+    const batch = (prefix: string, offset: number) => fauxAssistantMessage(
+      [1, 2, 3].map((n) => fauxToolCall('step', { n: n + offset }, { id: `${prefix}${n}` })),
+      { stopReason: 'toolUse' },
+    )
+    reg.setResponses([batch('a', 0), batch('b', 3), fauxAssistantMessage('unreachable')])
+    let dispatchCount = 0
+    const tool: ToolDef = {
+      name: 'step',
+      description: 'step',
+      parameters: {
+        type: 'object',
+        properties: { n: { type: 'number' } },
+        required: ['n'],
+      },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-tool-budget-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => {
+          dispatchCount += 1
+          return { text: 'ok', isError: false }
+        },
+        parallelSafe: () => true,
+      }),
+      maxIterations: 10,
+      maxToolCalls: 3,
+    })
+
+    const out = await collect(adapter.sendPrompt('tool-budget', 'run batches'))
+    expect(dispatchCount).toBe(3)
+    expect(reg.state.callCount).toBe(2)
+    expect(out).toContain('工具调用预算 3')
+  })
+
+  it('counts schema-invalid loops against the model-turn budget', async () => {
+    const reg = faux()
+    reg.setResponses(Array.from({ length: 6 }, (_v, i) =>
+      fauxAssistantMessage(fauxToolCall('needs_arg', {}, { id: `bad${i}` }), { stopReason: 'toolUse' })))
+    let dispatchCount = 0
+    const tool: ToolDef = {
+      name: 'needs_arg',
+      description: 'needs arg',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-invalid-budget-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => {
+          dispatchCount += 1
+          return { text: 'unexpected', isError: false }
+        },
+      }),
+      maxIterations: 2,
+      maxToolCalls: 10,
+    })
+
+    const out = await collect(adapter.sendPrompt('invalid-budget', 'run invalid'))
+    expect(dispatchCount).toBe(0)
+    expect(reg.state.callCount).toBe(2)
+    expect(out).toContain('最大迭代步数 2')
   })
 
   it('returns a readable recap when tools ran but final text is empty', async () => {

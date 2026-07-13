@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import type { ToolCallRequest } from '../../src/core/llm/provider-base.js'
 import { approvalBus, threadKey as makeThreadKey, type ApprovalNotification } from '../../src/core/approval-bus.js'
+import { sessionManager } from '../../src/core/session.js'
 import {
   buildPlanExitDispatcher,
   getPlanExitTools,
@@ -135,6 +136,8 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
     process.env.AGIM_TIMEOUT_DEFAULT = 'allow'
     approvalBus.setNotifier(async (n) => { notification = n })
     try {
+      await sessionManager.getOrCreateSession('telegram', 'c1', unique, 'native')
+      await sessionManager.patchSession('telegram', 'c1', unique, { planMode: true })
       const d = buildPlanExitDispatcher({
         threadKey: key,
         runId: `run-${unique}`,
@@ -161,6 +164,7 @@ describe('plan-exit-dispatcher — input gates (v1.2.131 P0b)', () => {
       const result = await resultPromise
       expect(result.isError).toBe(false)
       expect(result.text).toContain('approved by user')
+      expect((await sessionManager.getExistingSession('telegram', 'c1', unique))?.planMode).toBeUndefined()
     } finally {
       approvalBus.setNotifier(null)
       await approvalBus.stop()

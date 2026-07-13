@@ -86,6 +86,19 @@ const AGIM_SAFE = new Set([
 ])
 const EMPTY: ReadonlySet<string> = new Set()
 
+/** Explicit Plan Mode capability allowlist. Unknown/external tools fail closed;
+ * side-effecting Agim tools (memo/reminder/goal/push/A2A) are intentionally
+ * absent. Plan-exit is the one approval-only state transition allowed. */
+export const NATIVE_PLAN_MODE_ALLOWED_TOOLS: ReadonlySet<string> = new Set([
+  ...BUILTIN_SAFE,
+  'native_sleep_ms',
+  ...FS_SAFE,
+  ...WEB_SAFE,
+  ...AGIM_SAFE,
+  'native_todo_write',
+  'native_exit_plan_mode',
+])
+
 export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
   // Source order == dispatch precedence. Built-ins first so a stray MCP tool
   // sharing a native name can't shadow it; external MCP is appended last

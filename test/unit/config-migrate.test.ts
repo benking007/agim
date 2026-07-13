@@ -23,23 +23,23 @@ describe('migrateNativeAgentToggle', () => {
     expect(config).toBe(input)
   })
 
-  it('adds native to a legacy non-empty list and sets the flag', () => {
+  it('adds agim to a legacy non-empty list and sets the flag', () => {
     const { config, changed } = migrateNativeAgentToggle(
       cfg({ agents: ['codex', 'opencode'] }),
     )
     expect(changed).toBe(true)
-    expect(config.agents).toEqual(['codex', 'opencode', 'native'])
+    expect(config.agents).toEqual(['codex', 'opencode', 'agim'])
     expect(config.nativeAgentToggleMigrated).toBe(true)
   })
 
-  it('only sets the flag for empty agents (allow-all) without injecting native', () => {
+  it('only sets the flag for empty agents (allow-all) without injecting agim', () => {
     const { config, changed } = migrateNativeAgentToggle(cfg({ agents: [] }))
     expect(changed).toBe(true)
     expect(config.agents).toEqual([])
     expect(config.nativeAgentToggleMigrated).toBe(true)
   })
 
-  it('does not duplicate native when already listed', () => {
+  it('does not duplicate when legacy native is already listed', () => {
     const { config, changed } = migrateNativeAgentToggle(
       cfg({ agents: ['native', 'codex'] }),
     )
@@ -48,10 +48,19 @@ describe('migrateNativeAgentToggle', () => {
     expect(config.nativeAgentToggleMigrated).toBe(true)
   })
 
-  it('after migration, absence of native is preserved on later runs', () => {
+  it('does not duplicate when agim is already listed', () => {
+    const { config, changed } = migrateNativeAgentToggle(
+      cfg({ agents: ['agim', 'codex'] }),
+    )
+    expect(changed).toBe(true)
+    expect(config.agents).toEqual(['agim', 'codex'])
+    expect(config.nativeAgentToggleMigrated).toBe(true)
+  })
+
+  it('after migration, absence of agim is preserved on later runs', () => {
     const first = migrateNativeAgentToggle(cfg({ agents: ['codex'] }))
-    expect(first.config.agents).toContain('native')
-    // Operator then disables native in the SPA:
+    expect(first.config.agents).toContain('agim')
+    // Operator then disables Agim Agent in the SPA:
     const afterDisable: Config = {
       ...first.config,
       agents: ['codex'],

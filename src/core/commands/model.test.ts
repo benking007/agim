@@ -36,7 +36,7 @@ describe('handleModelCommand — agent gating', () => {
     })
 
     const out = await handleModelCommand('list', { ...baseCtx, threadId: 'native-list' } as never)
-    expect(out).toContain('native 模型列表')
+    expect(out).toContain('agim 模型列表')
     expect(out).toContain('deepseek-agim')
     expect(out).toContain('当前: `deepseek-agim`')
   })

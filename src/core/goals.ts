@@ -130,6 +130,8 @@ const helper = createSqliteHelper({
       input_hash        TEXT NOT NULL,
       output_hash       TEXT NOT NULL DEFAULT '',
       metadata_json     TEXT NOT NULL DEFAULT '{}',
+      owner_id           TEXT NOT NULL DEFAULT '',
+      owner_pid          INTEGER NOT NULL DEFAULT 0,
       created_at        TEXT NOT NULL DEFAULT (datetime('now')),
       finished_at       TEXT,
       UNIQUE(op_hash, kind)
@@ -147,6 +149,13 @@ const helper = createSqliteHelper({
     }
     if (!columns.some((column) => column.name === 'evidence_required')) {
       d.exec('ALTER TABLE goals ADD COLUMN evidence_required INTEGER NOT NULL DEFAULT 0')
+    }
+    const ledgerColumns = d.pragma('table_info(goal_ledger)') as Array<{ name: string }>
+    if (!ledgerColumns.some((column) => column.name === 'owner_id')) {
+      d.exec("ALTER TABLE goal_ledger ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
+    }
+    if (!ledgerColumns.some((column) => column.name === 'owner_pid')) {
+      d.exec('ALTER TABLE goal_ledger ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0')
     }
     const recover = d.transaction(() => {
       // Keep only the newest active row in legacy databases before adding the

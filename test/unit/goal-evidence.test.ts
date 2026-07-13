@@ -10,13 +10,16 @@ process.env.AGIM_GOALS_DB = join(TEST_HOME, 'goals.db')
 const {
   _truncateForTests,
   getGoalById,
+  getGoalsDatabaseForLedger,
   setActiveGoal,
 } = await import('../../src/core/goals.js')
 const {
   beginGoalToolOperation,
+  __resetGoalEvidenceKeyForTesting,
   classifyGoalEvidence,
   completeGoalCas,
   finishGoalToolOperation,
+  reconcileInterruptedGoalOperations,
 } = await import('../../src/core/goal-evidence.js')
 const { agimToolToPi } = await import('../../src/plugins/agents/pi-native/tool-bridge.js')
 
@@ -170,6 +173,39 @@ describeSqlite('goal evidence ledger', () => {
     if (completed.ok) expect(completed.alreadyCompleted).toBe(false)
   })
 
+  it('requires two distinct observations when no verifier evidence exists', () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'research',
+      userId: 'u',
+      title: 'research with corroboration',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    const operation = beginGoalToolOperation({
+      context: { goalId: goal.id, goalVersion: goal.version, traceId: 'trace-research' },
+      toolCallId: 'search-one',
+      toolName: 'native_web_search',
+      args: { query: 'topic' },
+      kind: 'observation',
+    })
+    const evidence = finishGoalToolOperation(operation, { ok: true, output: 'one source' })
+    const result = completeGoalCas({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'research',
+      goalId: goal.id,
+      goalVersion: goal.version,
+      evidenceIds: [evidence!.id],
+      recap: 'only one source found',
+      status: 'completed',
+      traceId: 'trace-research',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('EVIDENCE_INSUFFICIENT')
+  })
+
   it('rejects forged and cross-goal evidence capabilities', () => {
     _truncateForTests()
     const goal = setActiveGoal({
@@ -291,6 +327,34 @@ describeSqlite('goal evidence ledger', () => {
     }
     expect(beginGoalToolOperation(input)).not.toBeNull()
     expect(() => beginGoalToolOperation(input)).toThrow(/duplicate goal tool operation/)
+  })
+
+  it('reconciles mutation intents owned by a dead process', () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'orphan',
+      userId: 'u',
+      title: 'recover orphan mutation',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    const db = getGoalsDatabaseForLedger()
+    if (!db) throw new Error('goals db unavailable')
+    db.prepare(`
+      INSERT INTO goal_ledger (
+        op_hash, goal_id, goal_version, epoch, kind, state,
+        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid
+      ) VALUES ('orphan-op', ?, ?, 0, 'mutation', 'started',
+        'trace', 'call', 'native_write_file', 'input', 'dead-owner', 99999999)
+    `).run(goal.id, goal.version)
+    __resetGoalEvidenceKeyForTesting()
+
+    expect(reconcileInterruptedGoalOperations()).toBe(1)
+    expect(getGoalById(goal.id)?.mutationEpoch).toBe(1)
+    const state = db.prepare(`SELECT state FROM goal_ledger WHERE op_hash = 'orphan-op'`)
+      .get() as { state: string }
+    expect(state.state).toBe('unknown')
   })
 })
 

@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
@@ -28,6 +28,8 @@ export interface IssuedEvidence {
 
 const KEY_FILE = join(AGIM_HOME, 'goal-evidence.key')
 let cachedKey: Buffer | null = null
+const PROCESS_OWNER_ID = `${process.pid}:${Date.now()}:${randomUUID()}`
+let reconciledOwners = false
 
 function secretKey(): Buffer {
   if (cachedKey) return cachedKey
@@ -55,6 +57,52 @@ function tokenHash(token: string): string {
 
 function traceRoot(traceId?: string): string {
   return (traceId ?? '').split('/a2a-')[0] ?? ''
+}
+
+function isPidAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** Reconcile mutation intents owned by processes that are no longer alive.
+ * Live foreign owners remain blocking, so concurrent agents cannot mistake
+ * each other's in-flight writes for crash debris. */
+export function reconcileInterruptedGoalOperations(): number {
+  if (reconciledOwners) return 0
+  const d = getGoalsDatabaseForLedger()
+  if (!d) return 0
+  const owners = d.prepare(`
+    SELECT DISTINCT owner_id, owner_pid FROM goal_ledger
+    WHERE kind IN ('mutation', 'mutation_verification') AND state = 'started'
+  `).all() as Array<{ owner_id: string; owner_pid: number }>
+  const stale = owners.filter((owner) =>
+    owner.owner_id !== PROCESS_OWNER_ID && !isPidAlive(owner.owner_pid))
+  if (stale.length === 0) {
+    reconciledOwners = true
+    return 0
+  }
+  const tx = d.transaction(() => {
+    d.prepare(`
+      UPDATE goals SET mutation_epoch = mutation_epoch + 1, updated_at = datetime('now')
+      WHERE status = 'active'
+    `).run()
+    const update = d.prepare(`
+      UPDATE goal_ledger SET state = 'unknown', finished_at = datetime('now')
+      WHERE owner_id = ? AND owner_pid = ?
+        AND kind IN ('mutation', 'mutation_verification') AND state = 'started'
+    `)
+    let changed = 0
+    for (const owner of stale) changed += update.run(owner.owner_id, owner.owner_pid).changes
+    return changed
+  })
+  const changed = tx.immediate()
+  reconciledOwners = true
+  return changed
 }
 
 function stableJson(value: unknown): string {
@@ -121,6 +169,7 @@ export function beginGoalToolOperation(input: {
   if (input.kind === 'control') return null
   const d = getGoalsDatabaseForLedger()
   if (!d) return null
+  reconcileInterruptedGoalOperations()
   const opHash = hmac([
     input.context.goalId,
     input.context.goalVersion,
@@ -158,8 +207,8 @@ export function beginGoalToolOperation(input: {
     const info = d.prepare(`
       INSERT INTO goal_ledger (
         op_hash, goal_id, goal_version, epoch, kind, state,
-        trace_hash, tool_call_hash, tool_name, input_hash
-      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?)
+        trace_hash, tool_call_hash, tool_name, input_hash, owner_id, owner_pid
+      ) VALUES (?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?)
     `).run(
       opHash,
       goal.id,
@@ -170,6 +219,8 @@ export function beginGoalToolOperation(input: {
       toolCallHash,
       input.toolName,
       inputHash,
+      PROCESS_OWNER_ID,
+      process.pid,
     )
     return {
       ledgerId: Number(info.lastInsertRowid),
@@ -291,6 +342,7 @@ export type CompleteGoalCasResult =
 export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasResult {
   const d = getGoalsDatabaseForLedger()
   if (!d) return { ok: false, error: 'goal evidence database unavailable' }
+  reconcileInterruptedGoalOperations()
   const tx = d.transaction((): CompleteGoalCasResult => {
     const goal = d.prepare(`
       SELECT id, title, status, version, mutation_epoch, evidence_required, progress_log
@@ -422,4 +474,5 @@ export function completeGoalCas(input: CompleteGoalCasInput): CompleteGoalCasRes
 
 export function __resetGoalEvidenceKeyForTesting(): void {
   cachedKey = null
+  reconciledOwners = false
 }

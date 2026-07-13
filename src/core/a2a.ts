@@ -350,6 +350,7 @@ export async function callAgentByName(
       platform: ctx.platform,
       channelId: ctx.channelId,
       userId: ctx.userId,
+      traceId: ctx.traceId,
       // A2A-L1: forward our own jobId + nextDepth so the callee's adapter
       // stamps RunContext correctly. If the callee then fires
       // mcp__agim__call_agent itself, its bus.handleA2A sees

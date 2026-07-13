@@ -399,15 +399,30 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
     let stdoutTruncated = false
     let stderrTruncated = false
     let timedOut = false
+    let spawnError: Error | null = null
+    let settled = false
 
     const env = buildExecEnv(opts.extraEnv)  // v1.3.7 (F1) — allow-list, not full process.env
     const child = spawn(bin, argv, { cwd: opts.cwd, env, signal: opts.signal })
+    let killTimer: ReturnType<typeof setTimeout> | undefined
+    const armHardKill = () => {
+      if (killTimer) return
+      killTimer = setTimeout(() => {
+        try { child.kill('SIGKILL') } catch { /* ignore */ }
+      }, 3_000)
+      killTimer.unref()
+    }
+    const onAbort = () => {
+      try { child.kill('SIGTERM') } catch { /* ignore */ }
+      armHardKill()
+    }
+    opts.signal.addEventListener('abort', onAbort, { once: true })
     const timer = setTimeout(() => {
       timedOut = true
       try { child.kill('SIGTERM') } catch { /* ignore */ }
       // Hard SIGKILL after a 3s grace period so the dispatcher doesn't
       // hang on a process that ignores SIGTERM.
-      setTimeout(() => { try { child.kill('SIGKILL') } catch { /* ignore */ } }, 3_000).unref()
+      armHardKill()
     }, opts.timeoutMs)
     timer.unref()
 
@@ -426,7 +441,11 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       if (chunk.length > room) stderrTruncated = true
     })
     child.on('close', (code, signalName) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
+      if (killTimer) clearTimeout(killTimer)
+      opts.signal.removeEventListener('abort', onAbort)
       const exitCode = code ?? -1
       const payload = {
         exit_code: exitCode,
@@ -443,6 +462,8 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       const isError = timedOut || (exitCode !== 0 && exitCode !== null)
       const summary = timedOut
         ? `command timed out after ${opts.timeoutMs}ms; partial output below.\n`
+        : spawnError
+          ? `command aborted/failed: ${spawnError.message}\n`
         : ''
       resolve({
         text: summary + JSON.stringify(payload, null, 2),
@@ -451,7 +472,16 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
       })
     })
     child.on('error', (err) => {
+      spawnError = err
+      // AbortSignal-driven child_process errors are followed by `close`.
+      // Wait for close (and the SIGKILL fallback) so callers know the process
+      // has actually settled before advancing the goal evidence epoch.
+      if (opts.signal.aborted && child.pid) return
+      if (settled) return
+      settled = true
       clearTimeout(timer)
+      if (killTimer) clearTimeout(killTimer)
+      opts.signal.removeEventListener('abort', onAbort)
       resolve({
         text: `spawn failed: ${err.message}`,
         isError: true,

@@ -115,6 +115,17 @@ describe('goal-rpc', () => {
     expect(r.ok).toBe(false)
   })
 
+  it('rejects unknown completion status instead of treating it as completed', async () => {
+    const r = await handleGoalOp('complete_goal', {
+      goalId: 1,
+      goalVersion: 1,
+      recap: 'invalid status must fail',
+      status: 'done-ish',
+    }, CTX)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('status')
+  })
+
   // ── DB-backed tests (skipped under bun-no-better-sqlite3) ────────
 
   it('long_task registers a new goal', async () => {
@@ -305,6 +316,22 @@ describe('goal-rpc', () => {
     }, { ...CTX, callerAgent: 'claude-code' })
     expect(delegated.ok).toBe(false)
     if (!delegated.ok) expect(delegated.error).toContain('EVIDENCE_REQUIRED')
+  })
+
+  it('preserves CAS-only completion for goals created by non-native agents', async () => {
+    if (!(await dbAvailable())) return
+    const otherCtx = { ...CTX, callerAgent: 'claude-code' }
+    const created = await handleGoalOp('long_task', { goal: 'Sidecar-owned objective' }, otherCtx)
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.result.evidenceRequired).toBe(false)
+    const completed = await handleGoalOp('complete_goal', {
+      goalId: created.result.goalId,
+      goalVersion: created.result.goalVersion,
+      recap: 'completed by sidecar safely',
+      evidenceIds: [],
+    }, otherCtx)
+    expect(completed.ok).toBe(true)
   })
 
   it('complete_goal refuses when no active goal', async () => {

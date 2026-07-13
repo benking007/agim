@@ -182,6 +182,9 @@ function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): GoalRpcRes
   }
   const recap = typeof p.recap === 'string' ? p.recap.trim() : ''
   const requestedStatus = typeof p.status === 'string' ? p.status : 'completed'
+  if (requestedStatus !== 'completed' && requestedStatus !== 'cancelled') {
+    return { ok: false, error: 'complete_goal status must be completed or cancelled' }
+  }
   const status: 'completed' | 'cancelled' = requestedStatus === 'cancelled' ? 'cancelled' : 'completed'
   if (recap.length < 10) {
     return {

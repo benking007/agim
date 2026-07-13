@@ -403,23 +403,37 @@ function runChild(bin: string, argv: string[], opts: RunOpts): Promise<Dispatche
     let settled = false
 
     const env = buildExecEnv(opts.extraEnv)  // v1.3.7 (F1) — allow-list, not full process.env
-    const child = spawn(bin, argv, { cwd: opts.cwd, env, signal: opts.signal })
+    const child = spawn(bin, argv, {
+      cwd: opts.cwd,
+      env,
+      signal: opts.signal,
+      // A shell command can spawn grandchildren (`sh -c "sleep 10"`). Put it
+      // in its own process group so cancellation/timeout can settle the whole
+      // operation before goal evidence is finalized.
+      detached: process.platform !== 'win32',
+    })
+    const killTree = (signalName: NodeJS.Signals) => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signalName)
+        else child.kill(signalName)
+      } catch { /* process already gone */ }
+    }
     let killTimer: ReturnType<typeof setTimeout> | undefined
     const armHardKill = () => {
       if (killTimer) return
       killTimer = setTimeout(() => {
-        try { child.kill('SIGKILL') } catch { /* ignore */ }
+        killTree('SIGKILL')
       }, 3_000)
       killTimer.unref()
     }
     const onAbort = () => {
-      try { child.kill('SIGTERM') } catch { /* ignore */ }
+      killTree('SIGTERM')
       armHardKill()
     }
     opts.signal.addEventListener('abort', onAbort, { once: true })
     const timer = setTimeout(() => {
       timedOut = true
-      try { child.kill('SIGTERM') } catch { /* ignore */ }
+      killTree('SIGTERM')
       // Hard SIGKILL after a 3s grace period so the dispatcher doesn't
       // hang on a process that ignores SIGTERM.
       armHardKill()

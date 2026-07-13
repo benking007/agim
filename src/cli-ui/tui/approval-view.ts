@@ -16,6 +16,11 @@ const AUTO_ALLOW_APPROVAL_ACTIONS: readonly TuiApprovalAction[] = [
   { choice: 'n', label: '拒绝', color: 'red' },
 ]
 
+const EXPLICIT_APPROVAL_ACTIONS: readonly TuiApprovalAction[] = [
+  { choice: 'y', label: '仅批准本次', color: 'green' },
+  { choice: 'n', label: '拒绝', color: 'red' },
+]
+
 export interface TuiApprovalStatusLine {
   toolName: string
   label: string
@@ -25,6 +30,7 @@ export interface TuiApprovalStatusLine {
 export function approvalActionsFor(approval: TuiApprovalView | null): readonly TuiApprovalAction[] {
   if (!approval) return NORMAL_APPROVAL_ACTIONS
   if (approval.prompt.mode === 'auto-allow') return AUTO_ALLOW_APPROVAL_ACTIONS
+  if (approval.prompt.mode === 'explicit') return EXPLICIT_APPROVAL_ACTIONS
   return NORMAL_APPROVAL_ACTIONS
 }
 

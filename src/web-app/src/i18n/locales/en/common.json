@@ -296,6 +296,7 @@
     "copyFailed": "Copy failed",
     "approvalTitle":      "🔐 Tool approval",
     "approvalAutoBadge":  "auto-allow",
+    "approvalExplicitBadge": "one-time decision",
     "approvalAutoIn":     "Auto-allowing in {{count}}s — Deny to stop.",
     "approvalAutoResolving": "Auto-allowing now…",
     "approvalToolLabel":  "Tool",

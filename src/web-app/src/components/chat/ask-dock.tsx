@@ -160,6 +160,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
           <div className="mt-2">
             <Button
               size="sm"
+              className="min-h-11 px-3"
               disabled={submitting || !multiReady}
               onClick={() => submit(`ask:${reqId}:multi:${[...picked].sort((a, b) => a - b).join(',')}`)}
             >
@@ -174,6 +175,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
               key={c.data}
               size="sm"
               variant="secondary"
+              className="min-h-11 px-3"
               disabled={submitting}
               onClick={() => submit(c.data)}
             >
@@ -194,11 +196,12 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && custom.trim()) submit(`ask:${reqId}:custom:${base64url(custom.trim())}`)
             }}
-            className="flex-1 rounded border border-border bg-surface px-2 py-1 text-sm text-text outline-none focus:border-info"
+            className="flex-1 rounded border border-border bg-surface px-2 py-2 text-base text-text outline-none focus:border-info"
           />
           <Button
             size="sm"
             variant="outline"
+            className="min-h-11 px-3"
             disabled={submitting || !custom.trim()}
             onClick={() => submit(`ask:${reqId}:custom:${base64url(custom.trim())}`)}
           >

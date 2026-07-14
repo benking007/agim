@@ -1,33 +1,43 @@
 /**
- * Redirect phones that land on the desktop chat route (`/`) to `/m/chat`.
- * Desktop admin chat stays at `/`. Skip when the operator explicitly
- * asks for the admin surface via `?desktop=1`.
+ * Redirect phones / tablets that land on the desktop chat route (`/`)
+ * to `/m/chat`. Matches the Topbar breakpoint where chat chrome children
+ * used to vanish below `lg` — keep the dedicated mobile surface instead.
+ * Skip when the operator asks for admin chat via `?desktop=1`.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 
-const MOBILE_MQ = '(max-width: 639px)'
+/** Align with Tailwind `lg` (1024px): below this, prefer /m/chat. */
+const MOBILE_CHAT_MQ = '(max-width: 1023px)'
+
+function readIsMobileChat(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia(MOBILE_CHAT_MQ).matches
+}
 
 export function MobileChatRedirect({ children }: { children: ReactNode }): JSX.Element {
   const [searchParams] = useSearchParams()
   const forceDesktop = searchParams.get('desktop') === '1'
-  const [isMobile, setIsMobile] = useState<boolean | null>(null)
+  // Sync init avoids a first-paint flash of the admin chat chrome.
+  const [isMobile, setIsMobile] = useState(() => (forceDesktop ? false : readIsMobileChat()))
 
   useEffect(() => {
-    if (forceDesktop || typeof window === 'undefined' || !window.matchMedia) {
+    if (forceDesktop) {
       setIsMobile(false)
       return
     }
-    const mq = window.matchMedia(MOBILE_MQ)
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      setIsMobile(false)
+      return
+    }
+    const mq = window.matchMedia(MOBILE_CHAT_MQ)
     const update = (): void => setIsMobile(mq.matches)
     update()
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [forceDesktop])
 
-  // SSR / first paint: render children to avoid a flash of empty.
-  if (isMobile === null) return <>{children}</>
   if (isMobile && !forceDesktop) {
     const qs = searchParams.toString()
     return <Navigate to={qs ? `/m/chat?${qs}` : '/m/chat'} replace />

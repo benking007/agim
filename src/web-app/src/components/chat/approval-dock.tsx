@@ -120,6 +120,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
             {!isAuto && (
               <Button
                 size="sm"
+                className="min-h-11 px-3"
                 disabled={pendingChoice !== null}
                 onClick={() => handleClick('y')}
               >
@@ -130,6 +131,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
               <Button
                 size="sm"
                 variant="secondary"
+                className="min-h-11 px-3"
                 disabled={pendingChoice !== null}
                 onClick={() => handleClick('a')}
                 title={t('chat.approvalAutoTip', {
@@ -142,6 +144,7 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
             <Button
               size="sm"
               variant="destructive"
+              className="min-h-11 px-3"
               disabled={pendingChoice !== null}
               onClick={() => handleClick('n')}
             >

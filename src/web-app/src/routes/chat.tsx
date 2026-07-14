@@ -28,6 +28,8 @@ import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
+import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
+import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
@@ -80,27 +82,14 @@ export default function ChatRoute(): JSX.Element {
     [state.messages],
   )
 
-  // Auto-scroll to bottom on new messages OR streaming chunk. Use
-  // requestAnimationFrame so the layout has settled before we scroll;
-  // also tolerate the case where the user scrolled up intentionally.
-  useEffect(() => {
-    if (messageCount === 0 && !latestMessageContent && state.currentReplyId == null) return
-    if (!listRef.current) return
-    const el = listRef.current
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200
-    if (!nearBottom && state.currentReplyId == null) return
-    requestAnimationFrame(() => {
-      const top = el.scrollHeight
-      if (typeof el.scrollTo === 'function') {
-        el.scrollTo({
-          top,
-          behavior: state.currentReplyId ? 'smooth' : 'auto',
-        })
-      } else {
-        el.scrollTop = top
-      }
-    })
-  }, [latestMessageContent, messageCount, state.currentReplyId])
+  useChatFollowBottom({
+    listRef,
+    messageCount,
+    latestMessageContent,
+    streaming: state.currentReplyId != null,
+  })
+  useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
+  useBlurComposerOnUserScroll(listRef, inputRef)
 
   // Surface WS errors as toasts (and clear so they don't re-fire on
   // every render).
@@ -170,6 +159,7 @@ export default function ChatRoute(): JSX.Element {
       <div
         ref={listRef}
         className="flex-1 overflow-y-auto overscroll-contain"
+        onPointerDown={(e) => blurComposerOnListInteract(e, inputRef)}
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-2 px-3 py-3 sm:px-4">
           {(state.messages.length === 0 || forceWelcome) && state.status === 'open' && (

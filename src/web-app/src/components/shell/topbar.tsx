@@ -124,7 +124,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
         {isDesktop && <div className="flex min-w-0 flex-1">{navLinks}</div>}
 
         <div className="flex shrink-0 items-center gap-3">
-          {children && <div className="hidden items-center gap-2 lg:flex">{children}</div>}
+          {children && <div className="flex items-center gap-2">{children}</div>}
 
           <ThemeAndLangControls />
         </div>

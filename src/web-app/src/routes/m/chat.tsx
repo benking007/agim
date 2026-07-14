@@ -26,16 +26,20 @@ import { toast } from 'sonner'
 
 import { useChat, type ChatMessage, type RunActivity } from '@/hooks/use-chat'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
+import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
+import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { MobileBottomSheet } from '@/components/chat/mobile-bottom-sheet'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
+import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 
@@ -193,25 +197,14 @@ export default function MobileChatRoute(): JSX.Element {
     return () => ro.disconnect()
   }, [])
 
-  // Smooth follow during streaming when the user is near the bottom.
-  useEffect(() => {
-    if (messageCount === 0 && !latestMessageContent && state.currentReplyId == null) return
-    const el = listRef.current
-    if (!el) return
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distFromBottom > 200 && state.currentReplyId == null) return
-    requestAnimationFrame(() => {
-      const top = el.scrollHeight
-      if (typeof el.scrollTo === 'function') {
-        el.scrollTo({
-          top,
-          behavior: state.currentReplyId ? 'smooth' : 'auto',
-        })
-      } else {
-        el.scrollTop = top
-      }
-    })
-  }, [latestMessageContent, messageCount, state.currentReplyId])
+  useChatFollowBottom({
+    listRef,
+    messageCount,
+    latestMessageContent,
+    streaming: state.currentReplyId != null,
+  })
+  useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
+  useBlurComposerOnUserScroll(listRef, inputRef)
 
   function onSubmit(): void {
     const v = input.trim()
@@ -286,7 +279,11 @@ export default function MobileChatRoute(): JSX.Element {
         </Button>
       </header>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain">
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto overscroll-contain"
+        onPointerDown={(e) => blurComposerOnListInteract(e, inputRef)}
+      >
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 py-4">
           {chatMessages.length === 0 && state.status === 'open' && (
             <div className="flex flex-col items-center gap-2 py-14 text-center">
@@ -450,125 +447,126 @@ export default function MobileChatRoute(): JSX.Element {
         )}
       />
 
-      {sheet !== 'none' && (
-        <>
-          <button
-            type="button"
-            aria-label={t('actions.close', { ns: 'common', defaultValue: 'Close' })}
-            className="fixed inset-0 z-30 bg-black/35"
-            onClick={() => setSheet('none')}
-          />
-          <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-2xl border border-border bg-surface px-4 pb-safe pt-3 shadow-lg">
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-border" />
-
-            {sheet === 'menu' && (
-              <div className="space-y-3 pb-3">
-                <div>
-                  <div className="mb-1 text-[11px] uppercase text-text-dim">
-                    {t('chat.agent', { defaultValue: 'Agent' })}
-                  </div>
-                  <AgentPicker
-                    agents={state.agents}
-                    value={state.agent}
-                    onChange={(a) => {
-                      switchAgent(a)
-                      setSheet('none')
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="block w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-surface-hover disabled:opacity-50"
-                  disabled={state.status !== 'open' || !!state.currentReplyId}
-                  onClick={onStartNewConversation}
-                >
-                  {t('chat.newConv', { defaultValue: 'New conversation' })}
-                </button>
-
-                <button
-                  type="button"
-                  className="block w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-surface-hover"
-                  onClick={() => setSheet('activity')}
-                >
-                  {t('chat.activity', { defaultValue: 'Activity' })}
-                </button>
-
-                <button
-                  type="button"
-                  className="block w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-surface-hover"
-                  onClick={() => {
-                    setSheet('none')
-                    window.location.assign('/settings/llm')
-                  }}
-                >
-                  {t('chat.llmSettings', { defaultValue: 'LLM settings' })}
-                </button>
-
-                <button
-                  type="button"
-                  className="block w-full rounded-md border border-danger/30 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
-                  onClick={onLogout}
-                >
-                  {t('chat.logout', { defaultValue: 'Log out' })}
-                </button>
+      <MobileBottomSheet
+        open={sheet !== 'none'}
+        onClose={() => setSheet('none')}
+        keyboardInset={keyboardInset}
+      >
+        {sheet === 'menu' && (
+          <div className="space-y-3 pb-3">
+            <div>
+              <div className="mb-1 text-[11px] uppercase text-text-dim">
+                {t('chat.agent', { defaultValue: 'Agent' })}
               </div>
-            )}
+              <AgentPicker
+                agents={state.agents}
+                value={state.agent}
+                onChange={(a) => {
+                  switchAgent(a)
+                  setSheet('none')
+                }}
+              />
+            </div>
 
-            {sheet === 'activity' && (
-              <div className="space-y-3 pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">
-                    {t('chat.activityTitle', { defaultValue: 'Run activity' })}
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs text-text-dim hover:text-text"
-                    onClick={() => setSheet('menu')}
-                  >
-                    {t('actions.back', { ns: 'common', defaultValue: 'Back' })}
-                  </button>
-                </div>
-
-                <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs text-text-dim">
-                  {t('chat.pendingApprovals', { defaultValue: 'Pending approvals' })}: {state.pendingApprovals.length}
-                </div>
-
-                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                  {latestRuns.length === 0 && (
-                    <div className="rounded-md border border-border px-3 py-5 text-center text-xs text-text-dim">
-                      {t('chat.activityEmpty', { defaultValue: 'No recent runs yet.' })}
-                    </div>
-                  )}
-                  {latestRuns.map((run) => (
-                    <div key={run.runId} className="rounded-md border border-border px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <Badge className={cn('border-0', runStatusBadgeClass(run.status))}>
-                          {run.status}
-                        </Badge>
-                        <span className="truncate text-xs font-medium">{agentDisplayName(run.agent)}</span>
-                        <span className="ml-auto text-[11px] text-text-muted">
-                          {formatDurationMs(run.durationMs)}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-1 text-[11px] text-text-muted">
-                        <Clock3 className="h-3 w-3" />
-                        {formatClock(run.startedAt, i18n.language)}
-                        {run.outputChars != null && (
-                          <span>· {run.outputChars} chars</span>
-                        )}
-                      </div>
-                      {run.error && (
-                        <p className="mt-1 text-[11px] text-danger">{run.error}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+              <span className="text-[11px] uppercase text-text-dim">
+                {t('chat.appearance', { defaultValue: 'Appearance' })}
+              </span>
+              <div className="flex items-center gap-2">
+                <ThemeAndLangControls />
               </div>
-            )}
+            </div>
+
+            <button
+              type="button"
+              className="block min-h-11 w-full rounded-md border border-border px-3 py-2.5 text-left text-sm hover:bg-surface-hover disabled:opacity-50"
+              disabled={state.status !== 'open' || !!state.currentReplyId}
+              onClick={onStartNewConversation}
+            >
+              {t('chat.newConv', { defaultValue: 'New conversation' })}
+            </button>
+
+            <button
+              type="button"
+              className="block min-h-11 w-full rounded-md border border-border px-3 py-2.5 text-left text-sm hover:bg-surface-hover"
+              onClick={() => setSheet('activity')}
+            >
+              {t('chat.activity', { defaultValue: 'Activity' })}
+            </button>
+
+            <button
+              type="button"
+              className="block min-h-11 w-full rounded-md border border-border px-3 py-2.5 text-left text-sm hover:bg-surface-hover"
+              onClick={() => {
+                setSheet('none')
+                window.location.assign('/settings/llm')
+              }}
+            >
+              {t('chat.llmSettings', { defaultValue: 'LLM settings' })}
+            </button>
+
+            <button
+              type="button"
+              className="block min-h-11 w-full rounded-md border border-danger/30 px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/10"
+              onClick={onLogout}
+            >
+              {t('chat.logout', { defaultValue: 'Log out' })}
+            </button>
           </div>
-        </>
-      )}
+        )}
+
+        {sheet === 'activity' && (
+          <div className="space-y-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">
+                {t('chat.activityTitle', { defaultValue: 'Run activity' })}
+              </div>
+              <button
+                type="button"
+                className="min-h-11 px-2 text-xs text-text-dim hover:text-text"
+                onClick={() => setSheet('menu')}
+              >
+                {t('actions.back', { ns: 'common', defaultValue: 'Back' })}
+              </button>
+            </div>
+
+            <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs text-text-dim">
+              {t('chat.pendingApprovals', { defaultValue: 'Pending approvals' })}: {state.pendingApprovals.length}
+            </div>
+
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {latestRuns.length === 0 && (
+                <div className="rounded-md border border-border px-3 py-5 text-center text-xs text-text-dim">
+                  {t('chat.activityEmpty', { defaultValue: 'No recent runs yet.' })}
+                </div>
+              )}
+              {latestRuns.map((run) => (
+                <div key={run.runId} className="rounded-md border border-border px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className={cn('border-0', runStatusBadgeClass(run.status))}>
+                      {run.status}
+                    </Badge>
+                    <span className="truncate text-xs font-medium">{agentDisplayName(run.agent)}</span>
+                    <span className="ml-auto text-[11px] text-text-muted">
+                      {formatDurationMs(run.durationMs)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1 text-[11px] text-text-muted">
+                    <Clock3 className="h-3 w-3" />
+                    {formatClock(run.startedAt, i18n.language)}
+                    {run.outputChars != null && (
+                      <span>· {run.outputChars} chars</span>
+                    )}
+                  </div>
+                  {run.error && (
+                    <p className="mt-1 text-[11px] text-danger">{run.error}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </MobileBottomSheet>
     </div>
   )
 }

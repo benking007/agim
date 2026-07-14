@@ -31,7 +31,18 @@ import type { EventEmitter } from 'node:events'
 import { registry } from '../../core/registry.js'
 import { logger as rootLogger } from '../../core/logger.js'
 import type { ChatMessage as AgentChatMessage } from '../../core/types.js'
+import {
+  appendApprovalStep,
+  appendAskStep,
+  createChatActivity,
+  finishActivity,
+  mergeToolActivityStep,
+  resolveApprovalStep,
+  resolveAskStep,
+  type ChatActivity,
+} from '../../core/chat-activity.js'
 import { Markdown } from './markdown.js'
+import { ActivityBlock } from './activity-block.js'
 import { nextRevealLen, resolveTickMs, streamSmoothingEnabled } from './stream-reveal.js'
 import { generateSessionId, listSessions, saveSession, type StoredMessage } from './sessions.js'
 import type {
@@ -55,6 +66,8 @@ export interface ChatMessage {
   pending?: boolean
   elapsedMs?: number
   agentName?: string
+  /** In-thread tool / approval / A2A accordion (web ChatActivity parity). */
+  activity?: ChatActivity
 }
 
 let messageSeq = 0
@@ -67,6 +80,23 @@ function withMessageId(message: ChatMessage): ChatMessage {
 }
 function withMessageIds(messages: ChatMessage[]): ChatMessage[] {
   return messages.map(withMessageId)
+}
+
+/** Patch activity on the current in-flight assistant row (last pending). */
+function patchPendingActivity(
+  messages: ChatMessage[],
+  update: (activity: ChatActivity) => ChatActivity,
+): ChatMessage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i]
+    if (msg?.role === 'assistant' && msg.pending) {
+      const base = msg.activity ?? createChatActivity(`tui-${msg.id ?? i}`)
+      const next = [...messages]
+      next[i] = { ...msg, activity: update(base) }
+      return next
+    }
+  }
+  return messages
 }
 
 /** Compact token count: 1234 → 1.2k, 1_200_000 → 1.2M. */
@@ -183,9 +213,12 @@ const MessageRow = React.memo(function MessageRow({ message: m, agent, chatWidth
         {m.role === 'system' && <Text color="yellow" bold>系统 </Text>}
         {m.pending && <Text dimColor>· 生成中…（Esc 取消）</Text>}
       </Text>
+      {m.role === 'assistant' && m.activity && (
+        <ActivityBlock activity={m.activity} width={chatWidth} />
+      )}
       {m.role === 'assistant' && !m.pending
         ? <Markdown source={m.content} width={chatWidth} />
-        : <Text>{m.content || (m.pending ? '…' : '')}</Text>}
+        : <Text>{m.content || (m.pending && !m.activity?.steps.length ? '…' : '')}</Text>}
       {m.role === 'assistant' && !m.pending && m.elapsedMs !== undefined && (
         <Text dimColor>■ {m.agentName || agent} · {(m.elapsedMs / 1000).toFixed(1)}s</Text>
       )}
@@ -402,11 +435,21 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         const status = toApprovalStatusLine(next)
         if (status) setApprovalStatusLine(status)
         setApproval(null)
+        const decision = next.outcome.decision
+        setMessages((m) => patchPendingActivity(m, (activity) => resolveApprovalStep(activity, {
+          messageId: next.messageId,
+          decision,
+        })))
         return
       }
       if (next) {
         setApprovalActionIndex(0)
         setApprovalStatusLine(null)
+        setMessages((m) => patchPendingActivity(m, (activity) => appendApprovalStep(activity, {
+          messageId: next.messageId,
+          toolName: next.prompt.toolName,
+          inputJson: next.prompt.inputJson,
+        })))
       }
       setApproval(next)
     })
@@ -415,6 +458,16 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         setAskActionIndex(0)
         setAskSelectedIndexes([])
         setAskCustomInputMode(false)
+        setMessages((m) => patchPendingActivity(m, (activity) => appendAskStep(activity, {
+          messageId: next.messageId,
+          label: next.prompt.title || next.prompt.body.slice(0, 48) || 'ask_user',
+          body: next.prompt.body,
+        })))
+      } else if (next?.finalText) {
+        setMessages((m) => patchPendingActivity(m, (activity) => resolveAskStep(activity, {
+          messageId: next.messageId,
+          finalText: next.finalText,
+        })))
       }
       setAsk(next)
     })
@@ -1113,7 +1166,13 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
     setMessages((m) => [
       ...m,
       withMessageId({ role: 'user', content: text }),
-      withMessageId({ role: 'assistant', content: '', pending: true, agentName: agent }),
+      withMessageId({
+        role: 'assistant',
+        content: '',
+        pending: true,
+        agentName: agent,
+        activity: createChatActivity(`tui-run-${Date.now().toString(36)}`, startMs),
+      }),
     ])
 
     const currentAgentSessionId = agentSessionsRef.current[agent]
@@ -1169,6 +1228,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
           outTok: u.outTok + (d.tokensOutput ?? 0),
           costUsd: u.costUsd + (d.costUsd ?? 0),
         })),
+        onToolActivity: (step) => {
+          setMessages((m) => patchPendingActivity(m, (activity) => mergeToolActivityStep(activity, step)))
+        },
       })) {
         full += chunk
         // When smoothing is off, push every chunk immediately (legacy
@@ -1191,7 +1253,20 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       setMessages((m) => {
         const last = m[m.length - 1]
         if (last?.role !== 'assistant' || !last.pending) return m
-        return [...m.slice(0, -1), { ...last, content: full, pending: false, elapsedMs: elapsed }]
+        const activity = last.activity
+          ? finishActivity(last.activity, {
+              status: 'success',
+              finishedAt: Date.now(),
+              outputChars: full.length,
+            })
+          : undefined
+        return [...m.slice(0, -1), {
+          ...last,
+          content: full,
+          pending: false,
+          elapsedMs: elapsed,
+          ...(activity ? { activity } : {}),
+        }]
       })
       // Completion bell — visible (well, audible) cue for sshing-into-
       // box-and-waiting users. Suppressible via env.
@@ -1213,9 +1288,22 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
         const last = m[m.length - 1]
         if (last?.role !== 'assistant' || !last.pending) return m
         const base = full || last.content || ''
+        const activity = last.activity
+          ? finishActivity(last.activity, {
+              status: 'error',
+              finishedAt: Date.now(),
+              error: msg,
+            })
+          : undefined
         return [
           ...m.slice(0, -1),
-          { ...last, pending: false, elapsedMs: elapsed, content: `${base}\n\n[错误] ${msg}` },
+          {
+            ...last,
+            pending: false,
+            elapsedMs: elapsed,
+            content: `${base}\n\n[错误] ${msg}`,
+            ...(activity ? { activity } : {}),
+          },
         ]
       })
     } finally {

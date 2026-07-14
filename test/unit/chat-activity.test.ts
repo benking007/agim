@@ -2,9 +2,11 @@ import { describe, expect, it } from 'bun:test'
 import {
   appendApprovalStep,
   appendAskStep,
+  countActivityStepKinds,
   createChatActivity,
   findWaitingAgentStep,
   finishActivity,
+  formatActivityKindSummaryParts,
   mergeToolActivityStep,
   resolveApprovalStep,
   resolveAskStep,
@@ -100,5 +102,29 @@ describe('chat-activity helpers', () => {
     expect(activity.status).toBe('success')
     expect(activity.durationMs).toBe(1000)
     expect(activity.steps[0]?.status).toBe('success')
+  })
+
+  it('counts step kinds and formats summary parts', () => {
+    let activity = createChatActivity('run-5', 1000)
+    activity = mergeToolActivityStep(activity, {
+      id: 't1', kind: 'tool', label: 'agim_read', status: 'success', startedAt: 1,
+    })
+    activity = mergeToolActivityStep(activity, {
+      id: 'sk1', kind: 'skill', label: 'skill_x', status: 'success', startedAt: 2,
+    })
+    activity = appendApprovalStep(activity, { messageId: 'apv-1', toolName: 'agim_exec' })
+    activity = mergeToolActivityStep(activity, {
+      id: 'a1', kind: 'agent', label: 'claude-code', status: 'success', startedAt: 3,
+    })
+    const counts = countActivityStepKinds(activity)
+    expect(counts).toEqual({
+      tools: 1, skills: 1, agents: 1, approvals: 1, asks: 0, total: 4,
+    })
+    expect(formatActivityKindSummaryParts(counts, 'en')).toEqual([
+      '1 tool', '1 skill', '1 agent', '1 approval',
+    ])
+    expect(formatActivityKindSummaryParts(counts, 'zh')).toEqual([
+      '1 次工具', '1 次技能', '1 次协作', '1 次审批',
+    ])
   })
 })

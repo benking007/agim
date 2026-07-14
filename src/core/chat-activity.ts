@@ -228,3 +228,98 @@ export function formatActivityDuration(ms: number | undefined): string | null {
   const s = Math.round(sec % 60)
   return `${m}m ${s}s`
 }
+
+/** Per-kind tallies for collapsed “Worked · N tools · M skills” titles. */
+export interface ChatActivityKindCounts {
+  tools: number
+  skills: number
+  agents: number
+  approvals: number
+  asks: number
+  total: number
+}
+
+export function countActivityStepKinds(
+  activity: ChatActivity,
+): ChatActivityKindCounts {
+  let tools = 0
+  let skills = 0
+  let agents = 0
+  let approvals = 0
+  let asks = 0
+  for (const step of activity.steps) {
+    switch (step.kind) {
+      case 'tool':
+        tools += 1
+        break
+      case 'skill':
+        skills += 1
+        break
+      case 'agent':
+        agents += 1
+        break
+      case 'approval':
+        approvals += 1
+        break
+      case 'ask':
+        asks += 1
+        break
+      default:
+        tools += 1
+        break
+    }
+  }
+  return {
+    tools,
+    skills,
+    agents,
+    approvals,
+    asks,
+    total: activity.steps.length,
+  }
+}
+
+/**
+ * Compact English/Chinese-style summary fragments after “Worked” /
+ * “已完成”, e.g. `["2 tools", "1 skill"]`. Empty when there are no steps.
+ * Callers join with ` · ` and append duration separately.
+ */
+export function formatActivityKindSummaryParts(
+  counts: ChatActivityKindCounts,
+  locale: 'en' | 'zh' = 'en',
+): string[] {
+  const parts: string[] = []
+  const en = locale === 'en'
+  if (counts.tools > 0) {
+    parts.push(en
+      ? `${counts.tools} ${counts.tools === 1 ? 'tool' : 'tools'}`
+      : `${counts.tools} 次工具`)
+  }
+  if (counts.skills > 0) {
+    parts.push(en
+      ? `${counts.skills} ${counts.skills === 1 ? 'skill' : 'skills'}`
+      : `${counts.skills} 次技能`)
+  }
+  if (counts.agents > 0) {
+    parts.push(en
+      ? `${counts.agents} ${counts.agents === 1 ? 'agent' : 'agents'}`
+      : `${counts.agents} 次协作`)
+  }
+  if (counts.approvals > 0) {
+    parts.push(en
+      ? `${counts.approvals} ${counts.approvals === 1 ? 'approval' : 'approvals'}`
+      : `${counts.approvals} 次审批`)
+  }
+  if (counts.asks > 0) {
+    parts.push(en
+      ? `${counts.asks} ${counts.asks === 1 ? 'ask' : 'asks'}`
+      : `${counts.asks} 次提问`)
+  }
+  // Fallback if kinds were empty but steps existed (shouldn't happen).
+  if (parts.length === 0 && counts.total > 0) {
+    parts.push(en
+      ? `${counts.total} ${counts.total === 1 ? 'step' : 'steps'}`
+      : `${counts.total} 步`)
+  }
+  return parts
+}

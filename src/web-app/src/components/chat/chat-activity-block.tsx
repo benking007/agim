@@ -1,12 +1,12 @@
 /**
  * ChatActivityBlock — Cursor-style in-thread run accordion.
  *
- * Collapsed: "Running ›" / "Worked · 3 steps · 4.2s ›"
+ * Default collapsed. Header: "Running ›" / "Worked · 2 tools · 1 skill · 4.2s ›"
  * When waiting on A2A: subtitle "Waiting for subagent"
  * Expanded: ordered tool / approval / ask / agent steps with status + preview.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
@@ -36,6 +36,43 @@ function formatDuration(ms: number | undefined): string | null {
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
   return `${m}m ${s}s`
+}
+
+interface KindCounts {
+  tools: number
+  skills: number
+  agents: number
+  approvals: number
+  asks: number
+  total: number
+}
+
+function countStepKinds(activity: ChatActivity): KindCounts {
+  let tools = 0
+  let skills = 0
+  let agents = 0
+  let approvals = 0
+  let asks = 0
+  for (const step of activity.steps) {
+    switch (step.kind) {
+      case 'skill':
+        skills += 1
+        break
+      case 'agent':
+        agents += 1
+        break
+      case 'approval':
+        approvals += 1
+        break
+      case 'ask':
+        asks += 1
+        break
+      default:
+        tools += 1
+        break
+    }
+  }
+  return { tools, skills, agents, approvals, asks, total: activity.steps.length }
 }
 
 function StepIcon({ step }: { step: ChatActivityStep }): JSX.Element {
@@ -81,15 +118,57 @@ function AgentStatusBadge({ step }: { step: ChatActivityStep }): JSX.Element | n
   return null
 }
 
+function kindSummaryParts(
+  counts: KindCounts,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string[] {
+  const parts: string[] = []
+  if (counts.tools > 0) {
+    parts.push(t('chat.activityToolCount', {
+      count: counts.tools,
+      defaultValue: '{{count}} tools',
+    }))
+  }
+  if (counts.skills > 0) {
+    parts.push(t('chat.activitySkillCount', {
+      count: counts.skills,
+      defaultValue: '{{count}} skills',
+    }))
+  }
+  if (counts.agents > 0) {
+    parts.push(t('chat.activityAgentCount', {
+      count: counts.agents,
+      defaultValue: '{{count}} agents',
+    }))
+  }
+  if (counts.approvals > 0) {
+    parts.push(t('chat.activityApprovalCount', {
+      count: counts.approvals,
+      defaultValue: '{{count}} approvals',
+    }))
+  }
+  if (counts.asks > 0) {
+    parts.push(t('chat.activityAskCount', {
+      count: counts.asks,
+      defaultValue: '{{count}} asks',
+    }))
+  }
+  if (parts.length === 0 && counts.total > 0) {
+    parts.push(t('chat.activityStepCount', {
+      count: counts.total,
+      defaultValue: '{{count}} steps',
+    }))
+  }
+  return parts
+}
+
 export function ChatActivityBlock({ activity, className }: ChatActivityBlockProps): JSX.Element {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(activity.status === 'running')
-
-  useEffect(() => {
-    if (activity.status === 'running') setOpen(true)
-  }, [activity.status])
+  // Default collapsed — title carries live step / kind tallies; expand on demand.
+  const [open, setOpen] = useState(false)
 
   const stepCount = activity.steps.length
+  const kindCounts = countStepKinds(activity)
   const liveStep = [...activity.steps].reverse().find((s) => (
     s.status === 'running' || s.status === 'pending'
   ))
@@ -120,12 +199,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
     title = t('chat.activityFailed', { defaultValue: 'Failed' })
   } else {
     const parts = [t('chat.activityWorked', { defaultValue: 'Worked' })]
-    if (stepCount > 0) {
-      parts.push(t('chat.activityStepCount', {
-        count: stepCount,
-        defaultValue: '{{count}} steps',
-      }))
-    }
+    parts.push(...kindSummaryParts(kindCounts, t))
     if (duration) parts.push(duration)
     title = parts.join(' · ')
   }

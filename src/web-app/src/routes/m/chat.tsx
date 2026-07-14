@@ -110,7 +110,7 @@ function runStatusBadgeClass(status: RunActivity['status']): string {
 }
 
 export default function MobileChatRoute(): JSX.Element {
-  const { t, i18n } = useTranslation(['chat', 'common'])
+  const { t, i18n } = useTranslation()
   const {
     state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
@@ -128,9 +128,9 @@ export default function MobileChatRoute(): JSX.Element {
 
   const quickPrompts = useMemo(
     () => [
-      t('chat.quickPrompt.plan'),
-      t('chat.quickPrompt.risks'),
-      t('chat.quickPrompt.summary'),
+      t('chat.quickPrompt.plan', { defaultValue: 'Make a plan' }),
+      t('chat.quickPrompt.risks', { defaultValue: 'List risks' }),
+      t('chat.quickPrompt.summary', { defaultValue: 'Write a summary' }),
     ],
     [t],
   )
@@ -431,7 +431,9 @@ export default function MobileChatRoute(): JSX.Element {
               )}
               {!state.currentReplyId && (
                 <span className="text-[11px] text-text-muted">
-                  {t('chat.mobileHint')}
+                  {t('chat.mobileHint', {
+                    defaultValue: 'Enter creates new lines, tap Send to submit.',
+                  })}
                 </span>
               )}
             </div>

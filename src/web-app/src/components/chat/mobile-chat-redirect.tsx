@@ -12,8 +12,15 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 const MOBILE_CHAT_MQ = '(max-width: 1023px)'
 
 function readIsMobileChat(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false
-  return window.matchMedia(MOBILE_CHAT_MQ).matches
+  if (typeof window === 'undefined') return false
+  // Prefer CSS media query; fall back to innerWidth for environments
+  // where device-toolbar emulation and matchMedia briefly disagree.
+  if (window.matchMedia) {
+    try {
+      if (window.matchMedia(MOBILE_CHAT_MQ).matches) return true
+    } catch { /* ignore */ }
+  }
+  return window.innerWidth > 0 && window.innerWidth <= 1023
 }
 
 export function MobileChatRedirect({ children }: { children: ReactNode }): JSX.Element {
@@ -27,15 +34,17 @@ export function MobileChatRedirect({ children }: { children: ReactNode }): JSX.E
       setIsMobile(false)
       return
     }
-    if (typeof window === 'undefined' || !window.matchMedia) {
-      setIsMobile(false)
-      return
-    }
-    const mq = window.matchMedia(MOBILE_CHAT_MQ)
-    const update = (): void => setIsMobile(mq.matches)
+    const update = (): void => setIsMobile(readIsMobileChat())
     update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
+    const mq = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia(MOBILE_CHAT_MQ)
+      : null
+    mq?.addEventListener('change', update)
+    window.addEventListener('resize', update)
+    return () => {
+      mq?.removeEventListener('change', update)
+      window.removeEventListener('resize', update)
+    }
   }, [forceDesktop])
 
   if (isMobile && !forceDesktop) {

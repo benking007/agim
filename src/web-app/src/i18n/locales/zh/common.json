@@ -268,6 +268,7 @@
     "activity": "运行动态",
     "activityTitle": "运行动态",
     "activityEmpty": "暂无运行记录。",
+    "appearance": "外观",
     "llmSettings": "Agim Agent 配置",
     "nativeSetupRequired": "Agim Agent 未配置。请先在 /settings/llm 配置一个可用模型 API（角色绑定可选）。",
     "nativeSetupAction": "去配置",

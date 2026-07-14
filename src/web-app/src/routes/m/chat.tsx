@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { MobileBottomSheet } from '@/components/chat/mobile-bottom-sheet'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
@@ -56,7 +57,7 @@ type MessageRow =
   | { type: 'divider'; key: string; label: string }
   | { type: 'message'; key: string; msg: ChatMessage }
 
-/** Visual QA only — `/m/chat?demo=approval` seeds a floating dock. */
+/** Visual QA only — `/m/chat?demo=approval|activity` seeds docks / Worked row. */
 const DEMO_APPROVAL: PendingApproval = {
   messageId: 'demo-apv-m',
   prompt: {
@@ -69,6 +70,53 @@ const DEMO_APPROVAL: PendingApproval = {
     }),
     mode: 'explicit',
   },
+}
+
+function demoThread(mode: 'approval' | 'activity'): ChatMessage[] {
+  const now = Date.now()
+  const running = mode === 'approval'
+  return [
+    {
+      id: 'demo-u',
+      role: 'user',
+      content: 'Run the unit tests and summarize failures.',
+      timestamp: now - 8_000,
+    },
+    {
+      id: 'demo-a',
+      role: 'assistant',
+      content: running ? '' : 'All unit tests passed. One flake was retried successfully.',
+      agent: 'agim',
+      timestamp: now - 2_000,
+      activity: {
+        runId: 'demo-run',
+        status: running ? 'running' : 'success',
+        startedAt: now - 7_000,
+        finishedAt: running ? undefined : now - 2_500,
+        durationMs: running ? undefined : 4_500,
+        steps: [
+          {
+            id: 'demo-step-read',
+            kind: 'tool',
+            label: 'agim_read',
+            status: 'success',
+            startedAt: now - 6_500,
+            finishedAt: now - 5_800,
+            preview: '{"path":"package.json"}',
+          },
+          {
+            id: 'demo-apv-m',
+            kind: 'approval',
+            label: 'agim_exec',
+            status: running ? 'pending' : 'success',
+            startedAt: now - 5_500,
+            finishedAt: running ? undefined : now - 3_000,
+            preview: DEMO_APPROVAL.prompt.inputJson,
+          },
+        ],
+      },
+    },
+  ]
 }
 
 function safeTs(ts: number): number {
@@ -142,7 +190,9 @@ export default function MobileChatRoute(): JSX.Element {
   const [dockHeight, setDockHeight] = useState(0)
   const keyboardInset = useKeyboardInset()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
-  const demoApproval = searchParams.get('demo') === 'approval'
+  const demoMode = searchParams.get('demo')
+  const demoApproval = demoMode === 'approval'
+  const demoActivity = demoMode === 'activity' || demoApproval
 
   const pendingApprovals = useMemo(
     () => (demoApproval && state.pendingApprovals.length === 0
@@ -160,10 +210,13 @@ export default function MobileChatRoute(): JSX.Element {
     [t],
   )
 
-  const chatMessages = useMemo(
-    () => state.messages.filter((m) => !m.approval),
-    [state.messages],
-  )
+  const chatMessages = useMemo(() => {
+    const live = state.messages.filter((m) => !m.approval)
+    if (live.length === 0 && demoActivity) {
+      return demoThread(demoApproval ? 'approval' : 'activity')
+    }
+    return live
+  }, [state.messages, demoActivity, demoApproval])
   const messageCount = state.messages.length
   const latestMessageContent = state.messages.at(-1)?.content ?? ''
   const rows = useMemo(
@@ -348,6 +401,9 @@ export default function MobileChatRoute(): JSX.Element {
             const flags = bubbleGroupFlags(chatMessages, Math.max(0, idx))
             return (
               <div key={row.key} className="space-y-1">
+                {row.msg.role === 'assistant' && row.msg.activity && (
+                  <ChatActivityBlock activity={row.msg.activity} />
+                )}
                 <MessageBubble
                   msg={row.msg}
                   isFirstInGroup={flags.isFirstInGroup}

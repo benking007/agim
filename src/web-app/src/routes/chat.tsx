@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
@@ -189,13 +190,17 @@ export default function ChatRoute(): JSX.Element {
           {visibleMessages.map((m, i) => {
             const flags = bubbleGroupFlags(visibleMessages, i)
             return (
-              <MessageBubble
-                key={m.id}
-                msg={m}
-                isFirstInGroup={flags.isFirstInGroup}
-                isLastInGroup={flags.isLastInGroup}
-                onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
-              />
+              <div key={m.id} className="space-y-1">
+                {m.role === 'assistant' && m.activity && (
+                  <ChatActivityBlock activity={m.activity} />
+                )}
+                <MessageBubble
+                  msg={m}
+                  isFirstInGroup={flags.isFirstInGroup}
+                  isLastInGroup={flags.isLastInGroup}
+                  onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+                />
+              </div>
             )
           })}
         </div>

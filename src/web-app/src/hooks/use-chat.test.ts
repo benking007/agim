@@ -342,4 +342,59 @@ describe('chatReducer', () => {
     expect(sess.currentReplyId).toBeNull()
     expect(sess.messages.map((m) => m.content)).toEqual(['hello', 'Hi there!'])
   })
+
+  it('RUN_START attaches a running activity to the current assistant placeholder', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+    )
+    expect(after.activeRunId).toBe('run-1')
+    expect(after.messages[1]?.activity).toMatchObject({
+      runId: 'run-1',
+      status: 'running',
+      startedAt: 1_000,
+      steps: [],
+    })
+  })
+
+  it('APPROVAL_CARD appends a pending step onto the active activity', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      { kind: 'APPROVAL_CARD', messageId: 'apv-1', prompt: mkPrompt({ toolName: 'agim_exec' }) },
+    )
+    expect(after.pendingApprovals).toHaveLength(1)
+    expect(after.messages[1]?.activity?.steps).toEqual([
+      expect.objectContaining({
+        id: 'apv-1',
+        kind: 'approval',
+        label: 'agim_exec',
+        status: 'pending',
+      }),
+    ])
+  })
+
+  it('RUN_FINISH marks the activity Worked and resolves pending steps', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      { kind: 'APPROVAL_CARD', messageId: 'apv-1', prompt: mkPrompt() },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 5_000,
+        durationMs: 4_000,
+      },
+    )
+    expect(after.messages[1]?.activity).toMatchObject({
+      status: 'success',
+      durationMs: 4_000,
+    })
+    expect(after.messages[1]?.activity?.steps[0]?.status).toBe('success')
+    expect(after.activeRunId).toBeNull()
+  })
 })

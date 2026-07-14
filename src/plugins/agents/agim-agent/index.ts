@@ -475,6 +475,17 @@ export class NativeAgentAdapter implements AgentAdapter {
     this.aliases = deps.aliases ?? ['agim', 'na', 'llm', 'native-llm']
   }
 
+  /** True while a turn for this session id is queued or running. */
+  isSessionBusy(sessionId: string): boolean {
+    return this.sessionLocks.has(sessionId)
+  }
+
+  /** Drop cached JSONL metadata / model override after quarantine or external delete. */
+  invalidateSessionMeta(sessionId: string): void {
+    this.sessionMeta.delete(sessionId)
+    this.sessionModelOverrides.delete(sessionId)
+  }
+
   async isAvailable(): Promise<boolean> {
     return (await this.deps.resolveModel()) !== null
   }

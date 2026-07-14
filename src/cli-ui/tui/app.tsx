@@ -41,6 +41,7 @@ import {
   resolveAskStep,
   type ChatActivity,
 } from '../../core/chat-activity.js'
+import { scheduleRetireAgimAgentSession } from '../../core/agim-agent-session-lifecycle.js'
 import { Markdown } from './markdown.js'
 import { ActivityBlock } from './activity-block.js'
 import { nextRevealLen, resolveTickMs, streamSmoothingEnabled } from './stream-reveal.js'
@@ -1100,6 +1101,9 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
   function startNewSession(): void {
     if (busy) { setError('正在生成中，无法新建会话'); return }
     persistSnapshot(messages, agent)
+    // Agim Agent JSONL is keyed as `tui-${activeSessionId}` — retire the old
+    // id the same way IM/Web /new does (quarantine, not unbounded orphans).
+    scheduleRetireAgimAgentSession(`tui-${activeSessionId}`, 'new')
     const nextId = generateSessionId()
     createdAtRef.current = new Date().toISOString()
     setActiveSessionId(nextId)

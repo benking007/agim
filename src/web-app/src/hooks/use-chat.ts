@@ -60,7 +60,7 @@ export interface ChatMessage {
 /** One step inside a ChatActivity accordion (tool / approval / ask). */
 export interface ChatActivityStep {
   id: string
-  kind: 'tool' | 'approval' | 'ask' | 'status'
+  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
   startedAt: number
@@ -189,6 +189,7 @@ type Action =
       durationMs: number
       error?: string
     }
+  | { kind: 'ACTIVITY_STEP'; runId: string; step: ChatActivityStep }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
 
@@ -562,6 +563,46 @@ function reducer(s: ChatState, a: Action): ChatState {
         activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
       }
     }
+    case 'ACTIVITY_STEP': {
+      let messages = s.messages
+      let idx = findActivityMessageIndex(messages, {
+        runId: a.runId,
+        replyId: s.currentReplyId,
+      })
+      if (idx < 0 && s.currentReplyId) {
+        idx = messages.findIndex((m) => m.id === s.currentReplyId)
+      }
+      if (idx < 0) return s
+      const msg = messages[idx]
+      if (!msg) return s
+      const base: ChatActivity = msg.activity ?? {
+        runId: a.runId,
+        status: 'running',
+        startedAt: a.step.startedAt,
+        steps: [],
+      }
+      const existing = base.steps.findIndex((st) => st.id === a.step.id)
+      const steps = [...base.steps]
+      const prev = existing >= 0 ? steps[existing] : undefined
+      if (prev) {
+        steps[existing] = {
+          ...prev,
+          ...a.step,
+          // Keep earliest start; prefer newer preview/status/finishedAt.
+          startedAt: Math.min(prev.startedAt, a.step.startedAt),
+          preview: a.step.preview ?? prev.preview,
+        }
+      } else {
+        steps.push(a.step)
+      }
+      messages = withActivityAt(messages, idx, {
+        ...base,
+        runId: a.runId || base.runId,
+        status: base.status === 'running' ? 'running' : base.status,
+        steps,
+      })
+      return { ...s, messages }
+    }
     case 'RESET_CONVERSATION':
       // Clear all chat state but keep WS status + agent list + current
       // agent. Pending dock entries also clear — server's empty
@@ -778,6 +819,37 @@ export function useChat(): UseChat {
           error: msg.error,
         })
         return
+      case 'activity-step': {
+        const startedAt = typeof msg.step.startedAt === 'number'
+          ? msg.step.startedAt
+          : (Number.isFinite(Date.parse(String(msg.step.startedAt)))
+              ? Date.parse(String(msg.step.startedAt))
+              : Date.now())
+        const finishedAt = msg.step.finishedAt == null
+          ? undefined
+          : typeof msg.step.finishedAt === 'number'
+            ? msg.step.finishedAt
+            : (Number.isFinite(Date.parse(String(msg.step.finishedAt)))
+                ? Date.parse(String(msg.step.finishedAt))
+                : undefined)
+        dispatch({
+          kind: 'ACTIVITY_STEP',
+          runId: msg.runId,
+          step: {
+            id: msg.step.id,
+            kind: msg.step.kind === 'skill' || msg.step.kind === 'status'
+              || msg.step.kind === 'approval' || msg.step.kind === 'ask'
+              ? msg.step.kind
+              : 'tool',
+            label: msg.step.label,
+            status: msg.step.status,
+            startedAt,
+            finishedAt,
+            preview: msg.step.preview,
+          },
+        })
+        return
+      }
       case 'chunk':
         bufferChunk(msg.text)
         return

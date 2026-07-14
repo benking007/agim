@@ -278,6 +278,7 @@
     "activityNoSteps": "本回合未记录工具步骤。",
     "activityApproval": "审批",
     "activityAsk": "提问",
+    "activitySkill": "技能",
     "llmSettings": "Agim Agent 配置",
     "nativeSetupRequired": "Agim Agent 未配置。请先在 /settings/llm 配置一个可用模型 API（角色绑定可选）。",
     "nativeSetupAction": "去配置",

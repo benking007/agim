@@ -46,6 +46,7 @@ function StepIcon({ step }: { step: ChatActivityStep }): JSX.Element {
   }
   if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-warning')} />
   if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-info')} />
+  if (step.kind === 'skill') return <Wrench className={cn(cls, 'text-accent')} />
   if (step.status === 'success') return <Check className={cn(cls, 'text-success')} />
   return <Wrench className={cn(cls, 'text-text-muted')} />
 }
@@ -138,6 +139,11 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 {step.kind === 'ask' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
                     {t('chat.activityAsk', { defaultValue: 'ask' })}
+                  </span>
+                )}
+                {step.kind === 'skill' && (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
+                    {t('chat.activitySkill', { defaultValue: 'skill' })}
                   </span>
                 )}
               </div>

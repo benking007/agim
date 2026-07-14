@@ -5383,6 +5383,10 @@ async function handleClientMessage(
           traceId,
           logger,
           userId: `web:${clientId}`,
+          webRunId: runId,
+          onToolActivity: (step) => {
+            sendToClient(ws, { type: 'activity-step', runId, step })
+          },
         }
 
         logger.info({ event: 'message.received', ...sanitizeUserText(text) })

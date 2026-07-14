@@ -278,6 +278,7 @@
     "activityNoSteps": "No tool steps recorded for this turn.",
     "activityApproval": "approval",
     "activityAsk": "ask",
+    "activitySkill": "skill",
     "llmSettings": "Agim Agent settings",
     "nativeSetupRequired": "Agim Agent is not configured. Open /settings/llm to add a usable model API (role bindings are optional).",
     "nativeSetupAction": "Configure now",

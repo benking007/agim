@@ -66,4 +66,22 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
     expect(screen.getByText('agim_exec')).toBeInTheDocument()
   })
+
+  it('labels skill steps when expanded', async () => {
+    const user = userEvent.setup()
+    render(<ChatActivityBlock activity={activity({
+      steps: [{
+        id: 'sk1',
+        kind: 'skill',
+        label: 'skill_accessibility',
+        status: 'success',
+        startedAt: 1,
+        finishedAt: 2,
+      }],
+    })}
+    />)
+    await user.click(screen.getByRole('button', { name: /Worked|已完成/ }))
+    expect(screen.getByText('skill_accessibility')).toBeInTheDocument()
+    expect(screen.getByText(/^skill$|^技能$/)).toBeInTheDocument()
+  })
 })

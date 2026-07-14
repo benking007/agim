@@ -397,4 +397,59 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.steps[0]?.status).toBe('success')
     expect(after.activeRunId).toBeNull()
   })
+
+  it('ACTIVITY_STEP upserts live tool steps onto the bound reply', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'agim_read',
+          status: 'running',
+          startedAt: 1_100,
+          preview: '{"path":"a.ts"}',
+        },
+      },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'agim_read',
+          status: 'success',
+          startedAt: 1_100,
+          finishedAt: 1_400,
+          preview: 'ok',
+        },
+      },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'tc-2',
+          kind: 'skill',
+          label: 'skill_accessibility',
+          status: 'running',
+          startedAt: 1_500,
+        },
+      },
+    )
+    expect(after.messages[1]?.activity?.steps).toHaveLength(2)
+    expect(after.messages[1]?.activity?.steps[0]).toMatchObject({
+      id: 'tc-1',
+      status: 'success',
+      preview: 'ok',
+    })
+    expect(after.messages[1]?.activity?.steps[1]).toMatchObject({
+      kind: 'skill',
+      label: 'skill_accessibility',
+      status: 'running',
+    })
+  })
 })

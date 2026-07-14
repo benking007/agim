@@ -80,6 +80,10 @@ export interface RouteContext {
   /** Structured terminal state reported by the selected adapter. Consumers
    *  (CLI/job/web) use it after draining the generator. */
   agentOutcome?: AgentTurnOutcome
+  /** Web chat WS run id — correlated with SPA ChatActivityBlock. */
+  webRunId?: string
+  /** Live tool activity callback for web chat (Agim Agent harness). */
+  onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
 }
 
 export interface AgentCallOptions {
@@ -762,6 +766,8 @@ export async function callAgentWithHistory(
     // ADR-0002: forward the inbound turn's trace id so an adapter that mints
     // its own audit rows (native) correlates them back to this message.
     traceId: ctx.traceId,
+    webRunId: ctx.webRunId,
+    onToolActivity: ctx.onToolActivity,
   })
 
   return (async function* (): AsyncGenerator<string> {

@@ -2,12 +2,14 @@
  * ChatActivityBlock — Cursor-style in-thread run accordion.
  *
  * Collapsed: "Running ›" / "Worked · 3 steps · 4.2s ›"
- * Expanded: ordered tool / approval / ask steps with status + preview.
+ * When waiting on A2A: subtitle "Waiting for subagent"
+ * Expanded: ordered tool / approval / ask / agent steps with status + preview.
  */
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  Bot,
   Check,
   ChevronRight,
   CircleAlert,
@@ -46,9 +48,37 @@ function StepIcon({ step }: { step: ChatActivityStep }): JSX.Element {
   }
   if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-warning')} />
   if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-info')} />
+  if (step.kind === 'agent') return <Bot className={cn(cls, 'text-accent')} />
   if (step.kind === 'skill') return <Wrench className={cn(cls, 'text-accent')} />
   if (step.status === 'success') return <Check className={cn(cls, 'text-success')} />
   return <Wrench className={cn(cls, 'text-text-muted')} />
+}
+
+function AgentStatusBadge({ step }: { step: ChatActivityStep }): JSX.Element | null {
+  const { t } = useTranslation()
+  if (step.kind !== 'agent') return null
+  if (step.status === 'running' || step.status === 'pending') {
+    return (
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
+        {t('chat.activityAgentRunning', { defaultValue: 'running' })}
+      </span>
+    )
+  }
+  if (step.status === 'success') {
+    return (
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
+        {t('chat.activityAgentDone', { defaultValue: 'completed' })}
+      </span>
+    )
+  }
+  if (step.status === 'error' || step.status === 'denied') {
+    return (
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-danger">
+        {t('chat.activityAgentFailed', { defaultValue: 'failed' })}
+      </span>
+    )
+  }
+  return null
 }
 
 export function ChatActivityBlock({ activity, className }: ChatActivityBlockProps): JSX.Element {
@@ -63,6 +93,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
   const liveStep = [...activity.steps].reverse().find((s) => (
     s.status === 'running' || s.status === 'pending'
   ))
+  const waitingAgent = liveStep?.kind === 'agent' ? liveStep : undefined
   const duration = formatDuration(activity.durationMs)
   const running = activity.status === 'running'
 
@@ -113,6 +144,15 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
         />
       </button>
 
+      {waitingAgent && (
+        <p className="mt-0.5 pl-1.5 text-xs text-text-muted">
+          {t('chat.activityWaitingSubagent', {
+            agent: waitingAgent.label,
+            defaultValue: 'Waiting for subagent',
+          })}
+        </p>
+      )}
+
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-border/80 pl-3">
           {stepCount === 0 && (
@@ -130,7 +170,18 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
             <div key={step.id} className="min-w-0">
               <div className="flex items-center gap-1.5 text-[12px] text-text-dim">
                 <StepIcon step={step} />
-                <span className="truncate font-mono text-[12px] text-text">{step.label}</span>
+                <span className={cn(
+                  'truncate text-[12px] text-text',
+                  step.kind === 'agent' ? 'font-medium' : 'font-mono',
+                )}
+                >
+                  {step.kind === 'agent'
+                    ? t('chat.activityAgentLabel', {
+                        agent: step.label,
+                        defaultValue: '→ {{agent}}',
+                      })
+                    : step.label}
+                </span>
                 {step.kind === 'approval' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
                     {t('chat.activityApproval', { defaultValue: 'approval' })}
@@ -146,6 +197,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                     {t('chat.activitySkill', { defaultValue: 'skill' })}
                   </span>
                 )}
+                <AgentStatusBadge step={step} />
               </div>
               {step.preview && (
                 <pre className="mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-2/80 px-2 py-1 font-mono text-[11px] leading-snug text-text-muted">

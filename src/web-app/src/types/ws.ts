@@ -84,7 +84,7 @@ export interface ActivityStepEvent {
   runId: string
   step: {
     id: string
-    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask'
+    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
     label: string
     status: 'pending' | 'running' | 'success' | 'error' | 'denied'
     /** Epoch ms (server may also send ISO — SPA normalizes). */

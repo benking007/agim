@@ -256,11 +256,17 @@ function previewToolInput(input: unknown): string | undefined {
   }
 }
 
-/** Heuristic: skill-ish tools get kind=skill in the web activity accordion. */
-function classifyToolActivityKind(toolName: string): 'tool' | 'skill' {
+/** Heuristic: skill-ish tools get kind=skill; call_agent is owned by A2A. */
+function classifyToolActivityKind(toolName: string): 'tool' | 'skill' | 'agent' {
   const n = toolName.toLowerCase()
+  if (n === 'call_agent' || n.endsWith('__call_agent')) return 'agent'
   if (n.includes('skill') || n.startsWith('mcp__agim__skill')) return 'skill'
   return 'tool'
+}
+
+function isCallAgentTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n === 'call_agent' || n.endsWith('__call_agent')
 }
 
 function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableToolNames: readonly string[]): string {
@@ -742,7 +748,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const emitToolActivity = (
       step: {
         id: string
-        kind?: 'tool' | 'skill' | 'status'
+        kind?: 'tool' | 'skill' | 'status' | 'agent'
         label: string
         status: 'pending' | 'running' | 'success' | 'error' | 'denied'
         startedAt: number
@@ -751,6 +757,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       },
     ): void => {
       if (!opts?.onToolActivity) return
+      // call_agent activity is owned by callAgentByName / in-process spawn
+      // so the accordion shows a single "Waiting for subagent" row.
+      if (isCallAgentTool(step.label) && step.status !== 'denied') return
       try {
         opts.onToolActivity({
           id: step.id,

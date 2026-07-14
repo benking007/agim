@@ -105,6 +105,15 @@ function demoThread(mode: 'approval' | 'activity'): ChatMessage[] {
             preview: '{"path":"package.json"}',
           },
           {
+            id: 'demo-a2a',
+            kind: 'agent',
+            label: 'claude-code',
+            status: running ? 'running' : 'success',
+            startedAt: now - 5_700,
+            finishedAt: running ? undefined : now - 4_200,
+            preview: running ? 'Run the unit tests…' : '1.3s · 842 chars',
+          },
+          {
             id: 'demo-apv-m',
             kind: 'approval',
             label: 'agim_exec',

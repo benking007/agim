@@ -201,6 +201,7 @@ export class QoderAdapter extends AgentBase {
         ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
         ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
         ...(opts.planMode ? { callerPlanMode: true } : {}),
+        ...(opts.onToolActivity ? { onToolActivity: opts.onToolActivity } : {}),
       })
       registered = true
       log.info({ event: 'qoder.approval.routed', runId, threadId, platform },

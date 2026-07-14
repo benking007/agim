@@ -84,4 +84,43 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByText('skill_accessibility')).toBeInTheDocument()
     expect(screen.getByText(/^skill$|^技能$/)).toBeInTheDocument()
   })
+
+  it('shows Waiting for subagent while a delegated agent is running', () => {
+    render(<ChatActivityBlock activity={activity({
+      status: 'running',
+      finishedAt: undefined,
+      durationMs: undefined,
+      steps: [{
+        id: 'a2a-1',
+        kind: 'agent',
+        label: 'claude-code',
+        status: 'running',
+        startedAt: 1,
+      }],
+    })}
+    />)
+    expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
+    expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
+    expect(screen.getByText(/→ claude-code/)).toBeInTheDocument()
+    expect(screen.getByText(/^running$|^运行中$/)).toBeInTheDocument()
+  })
+
+  it('shows completed badge for finished agent steps', async () => {
+    const user = userEvent.setup()
+    render(<ChatActivityBlock activity={activity({
+      steps: [{
+        id: 'a2a-2',
+        kind: 'agent',
+        label: 'codex',
+        status: 'success',
+        startedAt: 1,
+        finishedAt: 2,
+      }],
+    })}
+    />)
+    await user.click(screen.getByRole('button', { name: /Worked|已完成/ }))
+    expect(screen.getByText(/→ codex/)).toBeInTheDocument()
+    const badges = screen.getAllByText(/^completed$|^已完成$/)
+    expect(badges.length).toBeGreaterThanOrEqual(1)
+  })
 })

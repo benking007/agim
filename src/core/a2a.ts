@@ -24,7 +24,7 @@
 //     createInlineJob, which is automatically swept on restart).
 
 import type { RouteContext } from './router.js'
-import type { AgentTurnOutcome } from './types.js'
+import type { AgentTurnOutcome, ToolActivityStep } from './types.js'
 import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
 import { workspaceRegistry } from './workspace.js'
@@ -176,6 +176,9 @@ export interface CallAgentOpts {
    *  to e.g. claude-code, which would launch with full write access and
    *  bypass the user's intent. */
   planMode?: boolean
+  /** Web chat activity accordion — live "Waiting for subagent" steps.
+   *  Prefer this over RouteContext.onToolActivity when both are set. */
+  onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
 }
 
 export type CallAgentResult =
@@ -189,6 +192,18 @@ export type CallAgentResult =
       warnings?: string[]
     }
   | { ok: false; error: string;  jobId?: number; agent?: string }
+
+function emitAgentActivity(
+  opts: CallAgentOpts,
+  ctx: RouteContext,
+  step: ToolActivityStep,
+): void {
+  const emit = opts.onToolActivity ?? ctx.onToolActivity
+  if (!emit) return
+  try {
+    emit(step)
+  } catch { /* observer must not break A2A */ }
+}
 
 /** Programmatic A2A entry. Invokes `agentName` with `prompt` under the
  *  given RouteContext. Does NOT touch session history, does NOT deliver
@@ -335,6 +350,15 @@ export async function callAgentByName(
     callerAgent: opts.callerAgent,
   })
   const heartbeat = startHeartbeat(ctx, nextDepth, jobId, target.name)
+  const activityStartedAt = Date.now()
+  emitAgentActivity(opts, ctx, {
+    id: `a2a-${jobId}`,
+    kind: 'agent',
+    label: target.name,
+    status: 'running',
+    startedAt: activityStartedAt,
+    preview: prompt.slice(0, 120).replace(/\s+/g, ' '),
+  })
 
   let result = ''
   let outcome: 'completed' | 'failed' | 'timeout' = 'completed'
@@ -418,6 +442,15 @@ export async function callAgentByName(
     log.warn({
       event: 'a2a.invoke_end', outcome, jobId, durationMs, callee: target.name, err: errMsg,
     }, `A2A → ${target.name} ${outcome}: ${errMsg}`)
+    emitAgentActivity(opts, ctx, {
+      id: `a2a-${jobId}`,
+      kind: 'agent',
+      label: target.name,
+      status: 'error',
+      startedAt: activityStartedAt,
+      finishedAt: Date.now(),
+      preview: (errMsg || outcome).slice(0, 180),
+    })
     if (outcome === 'timeout') {
       void notifyA2ATimeout(ctx, nextDepth, { jobId, callee: target.name, durationMs })
     } else {
@@ -449,6 +482,15 @@ export async function callAgentByName(
     event: 'a2a.invoke_end', outcome: 'ok', jobId, durationMs, callee: target.name,
     resultLen: result.length, outputCount: outputs.length, warningCount: warnings.length,
   }, `A2A → ${target.name} ok (${result.length} chars, ${outputs.length} outputs, in ${durationMs}ms)`)
+  emitAgentActivity(opts, ctx, {
+    id: `a2a-${jobId}`,
+    kind: 'agent',
+    label: target.name,
+    status: 'success',
+    startedAt: activityStartedAt,
+    finishedAt: Date.now(),
+    preview: `${Math.round(durationMs / 100) / 10}s · ${result.length} chars`,
+  })
   void notifyA2AComplete(ctx, nextDepth, {
     jobId,
     callee: target.name,

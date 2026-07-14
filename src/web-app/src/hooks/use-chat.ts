@@ -60,7 +60,7 @@ export interface ChatMessage {
 /** One step inside a ChatActivity accordion (tool / approval / ask). */
 export interface ChatActivityStep {
   id: string
-  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status'
+  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status' | 'agent'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
   startedAt: number
@@ -839,6 +839,7 @@ export function useChat(): UseChat {
             id: msg.step.id,
             kind: msg.step.kind === 'skill' || msg.step.kind === 'status'
               || msg.step.kind === 'approval' || msg.step.kind === 'ask'
+              || msg.step.kind === 'agent'
               ? msg.step.kind
               : 'tool',
             label: msg.step.label,

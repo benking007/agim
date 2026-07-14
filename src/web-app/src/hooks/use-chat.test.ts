@@ -452,4 +452,40 @@ describe('chatReducer', () => {
       status: 'running',
     })
   })
+
+  it('ACTIVITY_STEP accepts agent (A2A) steps', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'running',
+          startedAt: 1_200,
+        },
+      },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'success',
+          startedAt: 1_200,
+          finishedAt: 2_000,
+        },
+      },
+    )
+    expect(after.messages[1]?.activity?.steps[0]).toMatchObject({
+      kind: 'agent',
+      label: 'claude-code',
+      status: 'success',
+    })
+  })
 })

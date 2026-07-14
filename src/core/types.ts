@@ -491,7 +491,8 @@ export interface AgentSendOpts {
 /** One live activity step pushed to the web chat UI (P1 activity-step). */
 export interface ToolActivityStep {
   id: string
-  kind: 'tool' | 'skill' | 'status'
+  /** `agent` = A2A / call_agent delegation (Waiting for subagent). */
+  kind: 'tool' | 'skill' | 'status' | 'agent'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
   /** Epoch ms */

@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import {
   Activity,
   ArrowDown,
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { useChat, type ChatMessage, type RunActivity } from '@/hooks/use-chat'
+import { useChat, type ChatMessage, type PendingApproval, type RunActivity } from '@/hooks/use-chat'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
 import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
@@ -54,6 +55,21 @@ type SheetMode = 'none' | 'menu' | 'activity'
 type MessageRow =
   | { type: 'divider'; key: string; label: string }
   | { type: 'message'; key: string; msg: ChatMessage }
+
+/** Visual QA only — `/m/chat?demo=approval` seeds a floating dock. */
+const DEMO_APPROVAL: PendingApproval = {
+  messageId: 'demo-apv-m',
+  prompt: {
+    reqId: 'demo-req-m',
+    toolName: 'agim_exec',
+    inputJson: JSON.stringify({
+      command: 'npm test',
+      cwd: '/workspace',
+      timeoutMs: 120000,
+    }),
+    mode: 'explicit',
+  },
+}
 
 function safeTs(ts: number): number {
   return Number.isFinite(ts) ? ts : Date.now()
@@ -111,6 +127,7 @@ function runStatusBadgeClass(status: RunActivity['status']): string {
 
 export default function MobileChatRoute(): JSX.Element {
   const { t, i18n } = useTranslation()
+  const [searchParams] = useSearchParams()
   const {
     state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
@@ -125,6 +142,14 @@ export default function MobileChatRoute(): JSX.Element {
   const [dockHeight, setDockHeight] = useState(0)
   const keyboardInset = useKeyboardInset()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
+  const demoApproval = searchParams.get('demo') === 'approval'
+
+  const pendingApprovals = useMemo(
+    () => (demoApproval && state.pendingApprovals.length === 0
+      ? [DEMO_APPROVAL]
+      : state.pendingApprovals),
+    [demoApproval, state.pendingApprovals],
+  )
 
   const quickPrompts = useMemo(
     () => [
@@ -358,7 +383,7 @@ export default function MobileChatRoute(): JSX.Element {
 
       <div ref={dockRef}>
         <ApprovalDock
-          approvals={state.pendingApprovals}
+          approvals={pendingApprovals}
           onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
         />
         <AskDock
@@ -391,7 +416,7 @@ export default function MobileChatRoute(): JSX.Element {
         )}
         prepend={(
           <>
-            {chatMessages.length === 0 && state.status === 'open' && (
+            {chatMessages.length === 0 && state.status === 'open' && pendingApprovals.length === 0 && state.pendingAsks.length === 0 && (
               <div className="mb-1 flex gap-2 overflow-x-auto pb-1">
                 {quickPrompts.map((prompt) => (
                   <button

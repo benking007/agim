@@ -295,7 +295,9 @@
     "copied": "已复制",
     "copyMarkdown": "复制 Markdown",
     "copyFailed": "复制失败",
-    "approvalTitle":         "🔐 工具授权",
+    "approvalTitle":         "工具授权",
+    "approvalSubtitle":      "确认后再继续执行该工具调用",
+    "approvalPendingCount":  "{{count}} 项待确认",
     "approvalAutoBadge":     "自动放行",
     "approvalExplicitBadge": "仅本次确认",
     "approvalAutoIn":        "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
@@ -307,17 +309,19 @@
     "approvalAutoTip":       "批准并对本会话内同类调用自动放行",
     "approvalDeny":          "拒绝",
     "approvalSubmitting": "已发送，等待结果…",
-    "askTitle": "🤔 请选择",
+    "askTitle": "请选择",
+    "askSubtitle": "智能体需要你的回答才能继续",
+    "askPendingCount": "{{count}} 个问题待回答",
     "askMultiHint": "选择 {{min}}–{{max}} 项",
     "askSubmit": "提交",
     "askCustomPlaceholder": "自定义回答…",
-    "askResolved": "✅ 已回答",
+    "askResolved": "已回答",
     "outcome": {
-      "allowed":        "✅ 已批准",
-      "allowedPinned":  "✅ 已批准 · 后续同类自动放行",
-      "denied":         "❌ 已拒绝",
-      "deniedRevoked":  "❌ 已拒绝（撤销自动放行）",
-      "expired":        "⏱ 已超时"
+      "allowed":        "已批准",
+      "allowedPinned":  "已批准 · 后续同类自动放行",
+      "denied":         "已拒绝",
+      "deniedRevoked":  "已拒绝（撤销自动放行）",
+      "expired":        "已超时"
     }
   }
 }

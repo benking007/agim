@@ -34,16 +34,54 @@ export interface AskDockProps {
 }
 
 export function AskDock({ asks, onSubmit }: AskDockProps): JSX.Element | null {
+  const { t } = useTranslation()
   if (asks.length === 0) return null
   return (
-    <div className="border-t border-info/40 bg-info-bg/40">
-      <div className="mx-auto max-h-72 w-full max-w-3xl overflow-y-auto px-3 py-2 sm:px-4">
-        <div className="flex flex-col gap-2">
-          {asks.map((a) => (
-            <AskRow key={a.messageId} entry={a} onSubmit={onSubmit} />
-          ))}
+    <div className="relative z-20 px-3 pb-1.5 pt-0 sm:px-4">
+      <section
+        className={cn(
+          'mx-auto flex w-full max-w-3xl flex-col',
+          'max-h-[min(52vh,28rem)]',
+          'rounded-2xl border border-info/30 bg-surface/98',
+          'shadow-[0_-8px_30px_rgba(15,23,42,0.12)]',
+          'ring-1 ring-black/5',
+          'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
+        )}
+        aria-label={t('chat.askTitle', { defaultValue: 'Choose an option' })}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-info/15 bg-info-bg/90 px-4 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-info/15 text-info">
+            <ListChecks className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold tracking-tight text-text">
+              {t('chat.askTitle', { defaultValue: 'Choose an option' })}
+            </p>
+            <p className="truncate text-xs text-text-dim">
+              {asks.length > 1
+                ? t('chat.askPendingCount', {
+                    count: asks.length,
+                    defaultValue: '{{count}} questions waiting',
+                  })
+                : t('chat.askSubtitle', {
+                    defaultValue: 'The agent needs your answer to continue',
+                  })}
+            </p>
+          </div>
+          {asks.length > 1 && (
+            <Badge variant="info" className="shrink-0 tabular-nums">
+              {asks.length}
+            </Badge>
+          )}
         </div>
-      </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex flex-col divide-y divide-border/70">
+            {asks.map((a) => (
+              <AskRow key={a.messageId} entry={a} onSubmit={onSubmit} stacked={asks.length > 1} />
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
@@ -69,9 +107,10 @@ function choiceIndex(data: string): number {
 interface AskRowProps {
   entry: PendingAsk
   onSubmit: (messageId: string, data: string) => boolean | undefined
+  stacked?: boolean
 }
 
-function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
+function AskRow({ entry, onSubmit, stacked = false }: AskRowProps): JSX.Element {
   const { t } = useTranslation()
   const { messageId, prompt, finalText, resolvedAt } = entry
   const meta = prompt.meta
@@ -90,6 +129,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
   const maxSel = meta?.maxSelections ?? prompt.choices.length
   const allowCustom = meta?.allowCustomInput ?? false
   const reqId = meta?.reqId ?? ''
+  const title = prompt.title || t('chat.askTitle', { defaultValue: 'Choose an option' })
 
   function submit(data: string): void {
     if (submitting) return
@@ -105,35 +145,33 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
   const multiReady = picked.length >= minSel && picked.length <= maxSel
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border bg-surface p-3 shadow-sm transition-opacity',
-        resolved ? 'border-success/60 opacity-80' : 'border-info',
-      )}
-    >
-      <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <Badge variant="info" className="gap-1">
-          <ListChecks className="h-3 w-3" />
-          {prompt.title || t('chat.askTitle', { defaultValue: '🤔 请选择' })}
-        </Badge>
+    <div className={cn('px-4 py-4 transition-opacity', resolved && 'opacity-80')}>
+      <div className="mb-3">
+        {stacked && (
+          <div className="mb-1.5 text-xs text-text-dim">{title}</div>
+        )}
+        {!stacked && prompt.title ? (
+          <p className="mb-1 text-sm font-semibold text-text">{prompt.title}</p>
+        ) : null}
         {!resolved && selectionMode === 'multi' && (
-          <span className="text-xs text-text-dim">
+          <p className="mb-2 text-xs text-text-dim">
             {t('chat.askMultiHint', {
               min: minSel,
               max: maxSel,
               defaultValue: 'Pick {{min}}–{{max}}',
             })}
-          </span>
+          </p>
         )}
+        <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-text">
+          {prompt.body}
+        </p>
       </div>
 
-      <p className="mb-2 whitespace-pre-wrap break-words text-sm text-text">{prompt.body}</p>
-
       {resolved ? (
-        <Badge variant="success">{finalText || t('chat.askResolved', { defaultValue: '✅ 已回答' })}</Badge>
+        <Badge variant="success">{finalText || t('chat.askResolved', { defaultValue: 'Answered' })}</Badge>
       ) : selectionMode === 'multi' ? (
         <>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             {prompt.choices.map((c) => {
               const idx = choiceIndex(c.data)
               const on = picked.includes(idx)
@@ -141,7 +179,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
                 <label
                   key={c.data}
                   className={cn(
-                    'flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-sm transition',
+                    'flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition',
                     on ? 'border-info bg-info-bg/50' : 'border-border hover:bg-surface-2',
                     submitting && 'pointer-events-none opacity-60',
                   )}
@@ -157,10 +195,9 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
               )
             })}
           </div>
-          <div className="mt-2">
+          <div className="mt-3">
             <Button
-              size="sm"
-              className="min-h-11 px-3"
+              className="min-h-12 w-full text-sm font-semibold"
               disabled={submitting || !multiReady}
               onClick={() => submit(`ask:${reqId}:multi:${[...picked].sort((a, b) => a - b).join(',')}`)}
             >
@@ -169,13 +206,12 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
           </div>
         </>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {prompt.choices.map((c) => (
             <Button
               key={c.data}
-              size="sm"
               variant="secondary"
-              className="min-h-11 px-3"
+              className="min-h-12 w-full justify-start px-4 text-left text-sm"
               disabled={submitting}
               onClick={() => submit(c.data)}
             >
@@ -186,7 +222,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
       )}
 
       {!resolved && allowCustom && (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 flex gap-2">
           <input
             type="text"
             value={custom}
@@ -196,12 +232,11 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && custom.trim()) submit(`ask:${reqId}:custom:${base64url(custom.trim())}`)
             }}
-            className="flex-1 rounded border border-border bg-surface px-2 py-2 text-base text-text outline-none focus:border-info"
+            className="flex-1 rounded-xl border border-border bg-bg px-3 py-2.5 text-base text-text outline-none focus:border-info focus:ring-2 focus:ring-info/20"
           />
           <Button
-            size="sm"
             variant="outline"
-            className="min-h-11 px-3"
+            className="min-h-12 px-4"
             disabled={submitting || !custom.trim()}
             onClick={() => submit(`ask:${reqId}:custom:${base64url(custom.trim())}`)}
           >
@@ -211,14 +246,14 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
       )}
 
       {prompt.links?.length ? (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {prompt.links.map((l) => (
             <a
               key={l.url}
               href={l.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center rounded border border-border px-2 py-1 text-xs text-info underline-offset-2 transition hover:bg-surface-2 hover:underline"
+              className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 py-2 text-sm text-info underline-offset-2 transition hover:bg-surface-2 hover:underline"
             >
               {l.label}
             </a>
@@ -227,7 +262,7 @@ function AskRow({ entry, onSubmit }: AskRowProps): JSX.Element {
       ) : null}
 
       {submitting && !resolved && (
-        <p className="mt-1.5 text-xs text-text-dim">{t('chat.approvalSubmitting')}</p>
+        <p className="mt-2 text-xs text-text-dim">{t('chat.approvalSubmitting')}</p>
       )}
     </div>
   )

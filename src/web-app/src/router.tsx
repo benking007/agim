@@ -185,6 +185,11 @@ const router = createBrowserRouter([
     path: '/m/chat',
     lazy: authedLazy(() => import('@/routes/m/chat')),
   },
+  // Visual playground for floating approval / ask docks (no auth).
+  {
+    path: '/dev/chat-docks',
+    lazy: lazy(() => import('@/routes/dev/chat-docks-preview')),
+  },
   { path: '*', element: <NotFoundRoute /> },
 ], {
   future: { v7_relativeSplatPath: true },

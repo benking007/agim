@@ -90,7 +90,7 @@ export function ChatComposer({
     }
   }
 
-  const canSend = !!value.trim() && !disabled
+  const canSend = !!value.trim() && !disabled && !busy
 
   return (
     <form

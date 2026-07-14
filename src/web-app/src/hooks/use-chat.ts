@@ -288,12 +288,18 @@ function reducer(s: ChatState, a: Action): ChatState {
       if (idx >= 0) {
         const msg = messages[idx]
         if (msg?.activity && msg.activity.status === 'running') {
+          const finishedAt = Date.now()
           messages = withActivityAt(messages, idx, {
             ...msg.activity,
             status: 'error',
-            finishedAt: Date.now(),
-            durationMs: Date.now() - msg.activity.startedAt,
+            finishedAt,
+            durationMs: finishedAt - msg.activity.startedAt,
             error: a.message,
+            steps: msg.activity.steps.map((st) => (
+              st.status === 'pending' || st.status === 'running'
+                ? { ...st, status: 'error', finishedAt }
+                : st
+            )),
           })
         }
       }

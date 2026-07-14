@@ -879,7 +879,19 @@ export function TuiApp({ initialAgent, resumed, sessionId, onSessionIdChange, ap
       setMessages((m) => {
         const last = m[m.length - 1]
         if (last && last.role === 'assistant' && last.pending) {
-          return [...m.slice(0, -1), { ...last, pending: false, content: `${last.content}\n[已取消]` }]
+          const activity = last.activity
+            ? finishActivity(last.activity, {
+                status: 'error',
+                finishedAt: Date.now(),
+                error: 'cancelled',
+              })
+            : undefined
+          return [...m.slice(0, -1), {
+            ...last,
+            pending: false,
+            content: `${last.content}\n[已取消]`,
+            ...(activity ? { activity } : {}),
+          }]
         }
         return m
       })

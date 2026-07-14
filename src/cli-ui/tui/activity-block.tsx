@@ -1,16 +1,18 @@
 /**
  * Ink ActivityBlock — Cursor-style in-thread run accordion for the TUI.
  *
- * Shows "执行中 · …" / "已完成 · N 步 · 4.2s" plus step rows.
+ * Shows "执行中 · …" / "已完成 · N 次工具 · M 次技能 · 4.2s" plus step rows.
  * A2A: "等待子 Agent" while an agent step is running.
  * Always expanded in the TUI (no mouse accordion toggle).
  */
 
 import { Box, Text } from 'ink'
 import {
+  countActivityStepKinds,
   findLiveActivityStep,
   findWaitingAgentStep,
   formatActivityDuration,
+  formatActivityKindSummaryParts,
   type ChatActivity,
   type ChatActivityStep,
 } from '../../core/chat-activity.js'
@@ -63,7 +65,7 @@ export function ActivityBlock({ activity }: ActivityBlockProps): JSX.Element {
     title = '失败'
   } else {
     const parts = ['已完成']
-    if (stepCount > 0) parts.push(`${stepCount} 步`)
+    parts.push(...formatActivityKindSummaryParts(countActivityStepKinds(activity), 'zh'))
     if (duration) parts.push(duration)
     title = parts.join(' · ')
   }

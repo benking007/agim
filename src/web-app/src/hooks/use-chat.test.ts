@@ -156,6 +156,32 @@ describe('chatReducer', () => {
     expect(after.currentReplyId).toBeNull()
   })
 
+  it('ERROR closes open activity steps on the in-flight reply', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'agim_read',
+          status: 'running',
+          startedAt: 1_100,
+        },
+      },
+      { kind: 'ERROR', message: 'agent crashed' },
+    )
+    expect(after.error).toBe('agent crashed')
+    expect(after.messages[1]?.activity).toMatchObject({
+      status: 'error',
+      error: 'agent crashed',
+    })
+    expect(after.messages[1]?.activity?.steps[0]?.status).toBe('error')
+  })
+
   it('CLEAR_ERROR resets only the error field', () => {
     const after = reduce(
       { ...initialChatState, error: 'oops', agents: ['a'] },

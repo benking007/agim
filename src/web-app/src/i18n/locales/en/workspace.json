@@ -1,14 +1,14 @@
 {
-  "pageTitle": "Workspace",
-  "subtitle": "Read and edit files in the per-agent working directories (`AGENT_CWD`).",
+  "pageTitle": "Agent Files",
+  "subtitle": "Read and edit files in each agent's working directory (`AGENT_CWD`).",
   "agentPicker": {
-    "label":     "Agent",
+    "label": "Agent",
     "placeholder": "Pick an agent",
-    "online":    "online",
-    "offline":   "offline"
+    "online": "online",
+    "offline": "offline"
   },
   "noAgent": {
-    "title": "Pick an agent to browse its workspace",
+    "title": "Pick an agent to browse its agent files",
     "description": "Each registered agent runs from its own CWD. The picker lists every agent the registry knows about; the green dot next to a name means it reports available."
   },
   "quick": {
@@ -26,26 +26,26 @@
   "tree": {
     "title": "Files",
     "loading": "Loading…",
-    "empty":   "(empty directory)",
-    "up":      "Up",
-    "rootLabel": "(workspace root)",
-    "binary":  "binary",
-    "symlinkEscape": "symlink → outside workspace, hidden",
-    "broken":  "unreadable"
+    "empty": "(empty directory)",
+    "up": "Up",
+    "rootLabel": "(agent files root)",
+    "binary": "binary",
+    "symlinkEscape": "Symlink points outside the agent files root; hidden",
+    "broken": "unreadable"
   },
   "editor": {
-    "noFile":    "Select a file from the tree to view or edit it.",
-    "binary":    "This file looks binary (base64-encoded) — editing not supported.",
+    "noFile": "Select a file from the tree to view or edit it.",
+    "binary": "This file looks binary (base64-encoded) — editing not supported.",
     "truncated": "File is over 1 MiB; only the first 1 MiB is shown. Saving from here would replace the whole file with the truncated content — close without saving.",
     "truncatedBadge": "Truncated",
-    "save":      "Save",
-    "saving":    "Saving…",
+    "save": "Save",
+    "saving": "Saving…",
     "savedMeta": "Saved · {{size}} bytes · {{at}}",
     "dirtyHint": "Unsaved changes",
-    "loadFailed":"Failed to load file"
+    "loadFailed": "Failed to load file"
   },
   "toast": {
-    "saved":     "Saved {{path}}",
-    "created":   "Created {{path}}"
+    "saved": "Saved {{path}}",
+    "created": "Created {{path}}"
   }
 }

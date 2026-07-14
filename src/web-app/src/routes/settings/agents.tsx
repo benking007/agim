@@ -51,6 +51,34 @@ import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import type { ACPAgentConfig, ACPAuthConfig, ACPAuthType } from '@/types/api'
 
+/** Canonicalize Agim Agent registry id for SPA drafts / saves. */
+function normalizeAgentId(name: string): string {
+  return name === 'native' ? 'agim' : name
+}
+
+function normalizeAgentList(list: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of list) {
+    const id = normalizeAgentId(raw)
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+function agentStatusOn(status: Record<string, boolean>, name: string): boolean {
+  if (status[name]) return true
+  // Legacy status key from older servers / fixtures.
+  if (name === 'agim' && status.native) return true
+  return false
+}
+
+function listsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
 /** Mirror of v1 settings.html:BUILTIN_AGENTS. Hardcoded because
  *  backend doesn't expose this metadata yet; the table changes
  *  rarely enough that copying it here is fine.
@@ -106,41 +134,40 @@ export default function SettingsAgentsRoute(): JSX.Element {
   const [draftAcp, setDraftAcp] = useState<ACPAgentConfig[] | null>(null)
 
   useEffect(() => {
-    if (cfg && draftEnabled == null) setDraftEnabled(cfg.agents ?? [])
-    if (cfg && draftDefault == null) setDraftDefault(cfg.defaultAgent ?? '')
+    if (cfg && draftEnabled == null) setDraftEnabled(normalizeAgentList(cfg.agents ?? []))
+    if (cfg && draftDefault == null) setDraftDefault(normalizeAgentId(cfg.defaultAgent ?? ''))
     if (cfg && draftAcp == null) setDraftAcp(cfg.acpAgents ?? [])
   }, [cfg, draftEnabled, draftDefault, draftAcp])
 
-  const enabled = draftEnabled ?? cfg?.agents ?? []
-  const defaultAgent = draftDefault ?? cfg?.defaultAgent ?? ''
+  const enabled = draftEnabled ?? normalizeAgentList(cfg?.agents ?? [])
+  const defaultAgent = normalizeAgentId(draftDefault ?? cfg?.defaultAgent ?? '')
   const acpAgents = draftAcp ?? cfg?.acpAgents ?? []
 
   const isDirty = useMemo(() => {
     if (!cfg) return false
-    const enabledSame =
-      enabled.length === (cfg.agents?.length ?? 0)
-      && enabled.every((a) => cfg.agents?.includes(a))
-    const defaultSame = defaultAgent === (cfg.defaultAgent ?? '')
+    const enabledSame = listsEqual(enabled, normalizeAgentList(cfg.agents ?? []))
+    const defaultSame = defaultAgent === normalizeAgentId(cfg.defaultAgent ?? '')
     const acpSame = acpEqual(acpAgents, cfg.acpAgents ?? [])
     return !enabledSame || !defaultSame || !acpSame
   }, [cfg, enabled, defaultAgent, acpAgents])
 
   /** Eligible defaults = installed + enabled. Picker disables when
-   *  empty (no agent is both). In-process `native` follows the same
-   *  enabled-list rule as CLI agents. */
+   *  empty (no agent is both). Agim Agent accepts legacy `native` in
+   *  the enabled list / status map during the naming-v2 window. */
   const eligibleDefaults = useMemo(
-    () => AGENT_NAMES.filter((a) => enabled.includes(a) && status[a]),
+    () => AGENT_NAMES.filter((a) => enabled.includes(a) && agentStatusOn(status, a)),
     [enabled, status],
   )
 
   function toggleAgent(name: string, on: boolean): void {
+    const id = normalizeAgentId(name)
     const next = on
-      ? Array.from(new Set([...enabled, name]))
-      : enabled.filter((a) => a !== name)
+      ? Array.from(new Set([...enabled, id]))
+      : enabled.filter((a) => a !== id)
     setDraftEnabled(next)
     // If the default just got disabled, clear it so save doesn't
     // ship an inconsistent pair.
-    if (!on && name === defaultAgent) setDraftDefault('')
+    if (!on && id === defaultAgent) setDraftDefault('')
   }
 
   async function onSave(): Promise<void> {
@@ -148,8 +175,8 @@ export default function SettingsAgentsRoute(): JSX.Element {
     try {
       await updateCfg.mutateAsync({
         ...cfg,
-        agents: enabled,
-        defaultAgent: defaultAgent || cfg.defaultAgent,
+        agents: normalizeAgentList(enabled),
+        defaultAgent: normalizeAgentId(defaultAgent || cfg.defaultAgent || ''),
         acpAgents,
       })
       toast.success(t('agents.toast.saved'))
@@ -304,12 +331,13 @@ function DefaultAgentPicker({
   onChange,
 }: DefaultAgentPickerProps): JSX.Element {
   const disabled = options.length === 0
-  const selectedValue = value && options.includes(value) ? value : undefined
+  const canon = normalizeAgentId(value)
+  const selectedValue = canon && options.includes(canon) ? canon : undefined
 
   return (
     <Select
       value={selectedValue ?? ''}
-      onValueChange={onChange}
+      onValueChange={(next) => onChange(normalizeAgentId(next))}
       disabled={disabled}
     >
       <SelectTrigger id="default-agent" className="mt-2 h-10 w-64 max-w-full">

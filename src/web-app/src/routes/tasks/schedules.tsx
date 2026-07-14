@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useSchedules } from '@/hooks/use-schedules'
 import type { Schedule } from '@/types/api'
+import { agentDisplayName } from '@/lib/agent-label'
 
 export default function SchedulesRoute(): JSX.Element {
   const { t } = useTranslation(['tasks', 'common'])
@@ -52,7 +53,7 @@ export default function SchedulesRoute(): JSX.Element {
       {
         id: 'agent',
         header: t('schedules.col.agent'),
-        cell: (r) => <span className="text-text-dim">{r.agent}</span>,
+        cell: (r) => <span className="text-text-dim">{agentDisplayName(r.agent)}</span>,
         headClassName: 'w-32',
       },
       {

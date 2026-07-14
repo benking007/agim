@@ -12,10 +12,10 @@
     "overview": "Overview",
     "jobs": "Jobs",
     "subtasks": "Subtasks",
-    "bgjobs": "Background",
+    "bgjobs": "Background jobs",
     "schedules": "Schedules",
     "outbox": "Outbox",
-    "a2a": "Agent ↔ Agent",
+    "a2a": "Agent handoffs (A2A)",
     "heartbeat": "Heartbeat",
     "goals": "Goals",
     "asks": "Ask User",
@@ -51,7 +51,7 @@
         "action": "Open schedules"
       },
       "a2a": {
-        "title": "Agent handoffs",
+        "title": "Agent handoffs (A2A)",
         "detail": "Agent-to-agent calls in the last 24h",
         "action": "Open handoffs"
       }
@@ -126,7 +126,7 @@
     },
     "kind": {
       "job": "Job",
-      "inline": "Inline"
+      "inline": "Inline (A2A)"
     },
     "stats": {
       "pending": "Pending",
@@ -267,7 +267,7 @@
     }
   },
   "a2a": {
-    "title": "Agent ↔ Agent",
+    "title": "Agent handoffs (A2A)",
     "subtitle": "Recent inline jobs spawned with a parent (one agent invoking another).",
     "empty": {
       "title": "No agent-to-agent calls yet",

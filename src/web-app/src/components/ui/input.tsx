@@ -4,9 +4,9 @@
  * Density: h-8 (32px). The original shadcn default is h-9 (36px),
  * but real-world feedback found 36px rows visually inflated against
  * shadcn-style table cells (h-10 at most). 32px sits closer to
- * Linear / Notion density. iOS auto-zoom is suppressed via
- * `maximum-scale=1` in viewport meta, so text-sm (14px) is safe
- * here without inflating to 16px.
+ * Linear / Notion density. Chat composers use text-base (16px) to
+ * avoid iOS Safari auto-zoom without locking `maximum-scale`. Admin
+ * forms keep text-sm here for denser settings rows.
  */
 
 import * as React from 'react'

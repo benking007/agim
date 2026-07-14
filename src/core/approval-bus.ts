@@ -240,6 +240,9 @@ export interface RunContext {
   cwd?: string
   /** Root invocation trace used to bind goal evidence lineage. */
   traceId?: string
+  /** Web chat activity accordion — forwarded into handleA2A → callAgentByName
+   *  so CLI agents (claude-code etc.) can surface "Waiting for subagent". */
+  onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
 }
 
 /** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
@@ -949,6 +952,7 @@ export class ApprovalBus {
       parentJobId: ctx.parentJobId ?? null,
       // SEC: a plan-mode parent must not launch the callee with write access.
       ...(ctx.callerPlanMode ? { planMode: true } : {}),
+      ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
       timeoutMs,
       ...(inputs && inputs.length > 0 ? { inputs } : {}),
       ...(expectOutputs && expectOutputs.length > 0 ? { expectOutputs } : {}),

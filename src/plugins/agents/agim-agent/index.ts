@@ -246,6 +246,29 @@ function previewToolResult(ev: NativeToolResultEvent): string | undefined {
   return fullToolResultText(ev)?.slice(0, 180)
 }
 
+function previewToolInput(input: unknown): string | undefined {
+  if (input == null) return undefined
+  try {
+    const raw = typeof input === 'string' ? input : JSON.stringify(input)
+    return raw.length > 220 ? `${raw.slice(0, 220)}…` : raw
+  } catch {
+    return undefined
+  }
+}
+
+/** Heuristic: skill-ish tools get kind=skill; call_agent is owned by A2A. */
+function classifyToolActivityKind(toolName: string): 'tool' | 'skill' | 'agent' {
+  const n = toolName.toLowerCase()
+  if (n === 'call_agent' || n.endsWith('__call_agent')) return 'agent'
+  if (n.includes('skill') || n.startsWith('mcp__agim__skill')) return 'skill'
+  return 'tool'
+}
+
+function isCallAgentTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n === 'call_agent' || n.endsWith('__call_agent')
+}
+
 function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableToolNames: readonly string[]): string {
   if (toolRuns.length === 0) {
     const sample = availableToolNames.slice(0, 8)
@@ -722,6 +745,35 @@ export class NativeAgentAdapter implements AgentAdapter {
       })
     }
 
+    const emitToolActivity = (
+      step: {
+        id: string
+        kind?: 'tool' | 'skill' | 'status' | 'agent'
+        label: string
+        status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+        startedAt: number
+        finishedAt?: number
+        preview?: string
+      },
+    ): void => {
+      if (!opts?.onToolActivity) return
+      // call_agent activity is owned by callAgentByName / in-process spawn
+      // so the accordion shows a single "Waiting for subagent" row.
+      if (isCallAgentTool(step.label) && step.status !== 'denied') return
+      try {
+        opts.onToolActivity({
+          id: step.id,
+          kind: step.kind ?? classifyToolActivityKind(step.label),
+          label: step.label,
+          status: step.status,
+          startedAt: step.startedAt,
+          finishedAt: step.finishedAt,
+          preview: step.preview,
+        })
+      } catch { /* observer must not break the harness loop */ }
+    }
+    const toolStartAt = new Map<string, number>()
+
     harness.on(
       'tool_call',
       async (ev: { toolName: string; toolCallId: string; input: unknown }) => {
@@ -730,11 +782,27 @@ export class NativeAgentAdapter implements AgentAdapter {
         if (dispatchedToolCalls >= maxToolCalls) {
           stopReason = 'max_tool_calls'
           requestLoopStop()
+          emitToolActivity({
+            id: ev.toolCallId,
+            label: ev.toolName,
+            status: 'denied',
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            preview: `tool call budget exhausted (${maxToolCalls})`,
+          })
           return { block: true, reason: `tool call budget exhausted (${maxToolCalls})` }
         }
         // Plan-mode hard deny (covers A2A-propagated plan-mode even without
         // an IM thread for the policy gate to read).
         if (turnPlanMode && !planAllowed.has(ev.toolName)) {
+          emitToolActivity({
+            id: ev.toolCallId,
+            label: ev.toolName,
+            status: 'denied',
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            preview: 'plan-mode: tool is not in the read/approval allowlist',
+          })
           return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
         }
         // agim policy gate: read-only / allow-list / deny-all, escalating to
@@ -747,9 +815,28 @@ export class NativeAgentAdapter implements AgentAdapter {
             0,
             turnSignal,
           )
-          if (decision === 'deny') return { block: true, reason: `denied by policy: ${ev.toolName}` }
+          if (decision === 'deny') {
+            emitToolActivity({
+              id: ev.toolCallId,
+              label: ev.toolName,
+              status: 'denied',
+              startedAt: Date.now(),
+              finishedAt: Date.now(),
+              preview: `denied by policy: ${ev.toolName}`,
+            })
+            return { block: true, reason: `denied by policy: ${ev.toolName}` }
+          }
         }
         dispatchedToolCalls += 1
+        const startedAt = Date.now()
+        toolStartAt.set(ev.toolCallId, startedAt)
+        emitToolActivity({
+          id: ev.toolCallId,
+          label: ev.toolName,
+          status: 'running',
+          startedAt,
+          preview: previewToolInput(ev.input),
+        })
         return undefined
       },
     )
@@ -892,13 +979,26 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
         turnPlanMode = false
       }
+      const preview = previewToolResult(ev)
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
-        preview: previewToolResult(ev),
+        preview,
         argsKey: stableStringify(ev.input ?? {}),
       })
       if (toolRuns.length > 30) toolRuns.shift()
+      if (ev.toolCallId) {
+        const startedAt = toolStartAt.get(ev.toolCallId) ?? Date.now()
+        toolStartAt.delete(ev.toolCallId)
+        emitToolActivity({
+          id: ev.toolCallId,
+          label: ev.toolName ?? 'unknown_tool',
+          status: ev.isError === true ? 'error' : 'success',
+          startedAt,
+          finishedAt: Date.now(),
+          preview,
+        })
+      }
       // Stuck-loop: same tool + key-order-stable args + normalized error class
       // failing 3× in a row. A success resets the window.
       if (recordGuardOutcome(

@@ -42,6 +42,8 @@ export interface ChatMessage {
   content: string
   agent?: string
   timestamp: number
+  /** In-thread run accordion (tool/approval steps) for this assistant turn. */
+  activity?: ChatActivity
   /** Approval cards land here as a system message with embedded data.
    *  `prompt` is the full structured payload from the server (toolName,
    *  inputJson, mode, graceSeconds, reqId). `text` is a plain string
@@ -53,6 +55,29 @@ export interface ChatMessage {
     text?: string
     outcome?: ApprovalCardOutcome
   }
+}
+
+/** One step inside a ChatActivity accordion (tool / approval / ask). */
+export interface ChatActivityStep {
+  id: string
+  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status' | 'agent'
+  label: string
+  status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+  startedAt: number
+  finishedAt?: number
+  preview?: string
+}
+
+/** Cursor-style “Worked ›” block bound to an assistant reply. */
+export interface ChatActivity {
+  runId: string
+  status: 'running' | 'success' | 'error'
+  startedAt: number
+  finishedAt?: number
+  durationMs?: number
+  outputChars?: number
+  error?: string
+  steps: ChatActivityStep[]
 }
 
 /**
@@ -164,10 +189,53 @@ type Action =
       durationMs: number
       error?: string
     }
+  | { kind: 'ACTIVITY_STEP'; runId: string; step: ChatActivityStep }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
 
 const MAX_RUN_ACTIVITIES = 24
+
+function findActivityMessageIndex(messages: ChatMessage[], opts: {
+  replyId?: string | null
+  runId?: string | null
+}): number {
+  if (opts.runId) {
+    const byRun = messages.findIndex((m) => m.activity?.runId === opts.runId)
+    if (byRun >= 0) return byRun
+  }
+  if (opts.replyId) {
+    const byReply = messages.findIndex((m) => m.id === opts.replyId)
+    if (byReply >= 0) return byReply
+  }
+  return -1
+}
+
+function withActivityAt(
+  messages: ChatMessage[],
+  index: number,
+  nextActivity: ChatActivity | undefined,
+): ChatMessage[] {
+  const cur = messages[index]
+  if (!cur) return messages
+  const next = [...messages]
+  next[index] = { ...cur, activity: nextActivity }
+  return next
+}
+
+function outcomeToStepStatus(
+  decision: ApprovalCardOutcome['decision'],
+): ChatActivityStep['status'] {
+  switch (decision) {
+    case 'allowed':
+    case 'allowed-pinned':
+      return 'success'
+    case 'denied':
+    case 'denied-revoked':
+      return 'denied'
+    case 'expired':
+      return 'error'
+  }
+}
 
 function reducer(s: ChatState, a: Action): ChatState {
   switch (a.kind) {
@@ -211,19 +279,77 @@ function reducer(s: ChatState, a: Action): ChatState {
       }
       return { ...s, messages: next, currentReplyId: null }
     }
-    case 'ERROR':
-      return { ...s, error: a.message, currentReplyId: null }
-    case 'APPROVAL_CARD':
+    case 'ERROR': {
+      let messages = s.messages
+      const idx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (idx >= 0) {
+        const msg = messages[idx]
+        if (msg?.activity && msg.activity.status === 'running') {
+          const finishedAt = Date.now()
+          messages = withActivityAt(messages, idx, {
+            ...msg.activity,
+            status: 'error',
+            finishedAt,
+            durationMs: finishedAt - msg.activity.startedAt,
+            error: a.message,
+            steps: msg.activity.steps.map((st) => (
+              st.status === 'pending' || st.status === 'running'
+                ? { ...st, status: 'error', finishedAt }
+                : st
+            )),
+          })
+        }
+      }
+      return { ...s, messages, error: a.message, currentReplyId: null }
+    }
+    case 'APPROVAL_CARD': {
       // v1.2.115 — dock-only. Don't pollute the chat stream; the dock
       // renders these. Dedupe by messageId in case server replays.
       if (s.pendingApprovals.some((p) => p.messageId === a.messageId)) return s
+      let messages = s.messages
+      const idx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (idx >= 0) {
+        const msg = messages[idx]
+        if (msg) {
+          const base: ChatActivity = msg.activity ?? {
+            runId: s.activeRunId ?? `pending-${a.messageId}`,
+            status: 'running',
+            startedAt: Date.now(),
+            steps: [],
+          }
+          if (!base.steps.some((st) => st.id === a.messageId)) {
+            messages = withActivityAt(messages, idx, {
+              ...base,
+              steps: [
+                ...base.steps,
+                {
+                  id: a.messageId,
+                  kind: 'approval',
+                  label: a.prompt.toolName,
+                  status: 'pending',
+                  startedAt: Date.now(),
+                  preview: a.prompt.inputJson,
+                },
+              ],
+            })
+          }
+        }
+      }
       return {
         ...s,
+        messages,
         pendingApprovals: [
           ...s.pendingApprovals,
           { messageId: a.messageId, prompt: a.prompt },
         ],
       }
+    }
     case 'APPROVAL_TEXT':
       // v1.2.115 — legacy text-fallback (no buttons, used by adapters
       // without sendApprovalCard, or for receipt strings like "已批准
@@ -237,32 +363,104 @@ function reducer(s: ChatState, a: Action): ChatState {
       // after a short delay so the user sees the ✅/❌/⏱ transition.
       const idx = s.pendingApprovals.findIndex((p) => p.messageId === a.messageId)
       if (idx < 0) return s
-      const next = [...s.pendingApprovals]
-      const cur = next[idx]
+      const nextApprovals = [...s.pendingApprovals]
+      const cur = nextApprovals[idx]
       if (cur) {
-        next[idx] = { ...cur, outcome: a.outcome, resolvedAt: Date.now() }
+        nextApprovals[idx] = { ...cur, outcome: a.outcome, resolvedAt: Date.now() }
       }
-      return { ...s, pendingApprovals: next }
+      let messages = s.messages
+      const msgIdx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (msgIdx >= 0) {
+        const msg = messages[msgIdx]
+        if (msg?.activity) {
+          const stepStatus = outcomeToStepStatus(a.outcome.decision)
+          messages = withActivityAt(messages, msgIdx, {
+            ...msg.activity,
+            steps: msg.activity.steps.map((st) => (
+              st.id === a.messageId
+                ? { ...st, status: stepStatus, finishedAt: Date.now() }
+                : st
+            )),
+          })
+        }
+      }
+      return { ...s, messages, pendingApprovals: nextApprovals }
     }
     case 'APPROVAL_DISMISS':
       return {
         ...s,
         pendingApprovals: s.pendingApprovals.filter((p) => p.messageId !== a.messageId),
       }
-    case 'CHOICE_CARD':
+    case 'CHOICE_CARD': {
       // Dock-only, mirroring APPROVAL_CARD. Dedupe by messageId.
       if (s.pendingAsks.some((p) => p.messageId === a.messageId)) return s
+      let messages = s.messages
+      const idx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (idx >= 0) {
+        const msg = messages[idx]
+        if (msg) {
+          const base: ChatActivity = msg.activity ?? {
+            runId: s.activeRunId ?? `pending-${a.messageId}`,
+            status: 'running',
+            startedAt: Date.now(),
+            steps: [],
+          }
+          if (!base.steps.some((st) => st.id === a.messageId)) {
+            const label = a.prompt.title || a.prompt.body.slice(0, 48) || 'ask_user'
+            messages = withActivityAt(messages, idx, {
+              ...base,
+              steps: [
+                ...base.steps,
+                {
+                  id: a.messageId,
+                  kind: 'ask',
+                  label,
+                  status: 'pending',
+                  startedAt: Date.now(),
+                  preview: a.prompt.body,
+                },
+              ],
+            })
+          }
+        }
+      }
       return {
         ...s,
+        messages,
         pendingAsks: [...s.pendingAsks, { messageId: a.messageId, prompt: a.prompt }],
       }
+    }
     case 'CHOICE_EDIT': {
       const idx = s.pendingAsks.findIndex((p) => p.messageId === a.messageId)
       if (idx < 0) return s
-      const next = [...s.pendingAsks]
-      const cur = next[idx]
-      if (cur) next[idx] = { ...cur, finalText: a.finalText, resolvedAt: Date.now() }
-      return { ...s, pendingAsks: next }
+      const nextAsks = [...s.pendingAsks]
+      const cur = nextAsks[idx]
+      if (cur) nextAsks[idx] = { ...cur, finalText: a.finalText, resolvedAt: Date.now() }
+      let messages = s.messages
+      const msgIdx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (msgIdx >= 0) {
+        const msg = messages[msgIdx]
+        if (msg?.activity) {
+          messages = withActivityAt(messages, msgIdx, {
+            ...msg.activity,
+            steps: msg.activity.steps.map((st) => (
+              st.id === a.messageId
+                ? { ...st, status: 'success', finishedAt: Date.now(), preview: a.finalText }
+                : st
+            )),
+          })
+        }
+      }
+      return { ...s, messages, pendingAsks: nextAsks }
     }
     case 'CHOICE_DISMISS':
       return {
@@ -270,7 +468,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         pendingAsks: s.pendingAsks.filter((p) => p.messageId !== a.messageId),
       }
     case 'RUN_START': {
-      const next: RunActivity[] = [
+      const nextRuns: RunActivity[] = [
         {
           runId: a.runId,
           agent: a.agent,
@@ -279,50 +477,137 @@ function reducer(s: ChatState, a: Action): ChatState {
         },
         ...s.runActivities.filter((r) => r.runId !== a.runId),
       ]
+      let messages = s.messages
+      const idx = findActivityMessageIndex(messages, { replyId: s.currentReplyId })
+      if (idx >= 0) {
+        const msg = messages[idx]
+        if (msg) {
+          messages = withActivityAt(messages, idx, {
+            runId: a.runId,
+            status: 'running',
+            startedAt: a.startedAt,
+            steps: msg.activity?.steps ?? [],
+          })
+        }
+      }
       return {
         ...s,
-        runActivities: next.slice(0, MAX_RUN_ACTIVITIES),
+        messages,
+        runActivities: nextRuns.slice(0, MAX_RUN_ACTIVITIES),
         activeRunId: a.runId,
       }
     }
     case 'RUN_USAGE': {
       const idx = s.runActivities.findIndex((r) => r.runId === a.runId)
-      if (idx < 0) return s
-      const next = [...s.runActivities]
-      const cur = next[idx]
-      if (cur) {
-        next[idx] = {
-          ...cur,
-          durationMs: a.durationMs,
-          outputChars: a.outputChars,
+      let runActivities = s.runActivities
+      if (idx >= 0) {
+        const next = [...s.runActivities]
+        const cur = next[idx]
+        if (cur) {
+          next[idx] = {
+            ...cur,
+            durationMs: a.durationMs,
+            outputChars: a.outputChars,
+          }
+        }
+        runActivities = next
+      }
+      let messages = s.messages
+      const msgIdx = findActivityMessageIndex(messages, { runId: a.runId, replyId: s.currentReplyId })
+      if (msgIdx >= 0) {
+        const msg = messages[msgIdx]
+        if (msg?.activity) {
+          messages = withActivityAt(messages, msgIdx, {
+            ...msg.activity,
+            durationMs: a.durationMs,
+            outputChars: a.outputChars,
+          })
         }
       }
-      return { ...s, runActivities: next }
+      return { ...s, runActivities, messages }
     }
     case 'RUN_FINISH': {
       const idx = s.runActivities.findIndex((r) => r.runId === a.runId)
-      if (idx < 0) {
-        return {
-          ...s,
-          activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
+      let runActivities = s.runActivities
+      if (idx >= 0) {
+        const next = [...s.runActivities]
+        const cur = next[idx]
+        if (cur) {
+          next[idx] = {
+            ...cur,
+            status: a.status,
+            finishedAt: a.finishedAt,
+            durationMs: a.durationMs,
+            error: a.error,
+          }
         }
+        runActivities = next
       }
-      const next = [...s.runActivities]
-      const cur = next[idx]
-      if (cur) {
-        next[idx] = {
-          ...cur,
-          status: a.status,
-          finishedAt: a.finishedAt,
-          durationMs: a.durationMs,
-          error: a.error,
+      let messages = s.messages
+      const msgIdx = findActivityMessageIndex(messages, { runId: a.runId, replyId: s.currentReplyId })
+      if (msgIdx >= 0) {
+        const msg = messages[msgIdx]
+        if (msg?.activity) {
+          messages = withActivityAt(messages, msgIdx, {
+            ...msg.activity,
+            status: a.status,
+            finishedAt: a.finishedAt,
+            durationMs: a.durationMs,
+            error: a.error,
+            steps: msg.activity.steps.map((st) => (
+              st.status === 'pending' || st.status === 'running'
+                ? { ...st, status: a.status === 'success' ? 'success' : 'error', finishedAt: a.finishedAt }
+                : st
+            )),
+          })
         }
       }
       return {
         ...s,
-        runActivities: next,
+        messages,
+        runActivities,
         activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
       }
+    }
+    case 'ACTIVITY_STEP': {
+      let messages = s.messages
+      let idx = findActivityMessageIndex(messages, {
+        runId: a.runId,
+        replyId: s.currentReplyId,
+      })
+      if (idx < 0 && s.currentReplyId) {
+        idx = messages.findIndex((m) => m.id === s.currentReplyId)
+      }
+      if (idx < 0) return s
+      const msg = messages[idx]
+      if (!msg) return s
+      const base: ChatActivity = msg.activity ?? {
+        runId: a.runId,
+        status: 'running',
+        startedAt: a.step.startedAt,
+        steps: [],
+      }
+      const existing = base.steps.findIndex((st) => st.id === a.step.id)
+      const steps = [...base.steps]
+      const prev = existing >= 0 ? steps[existing] : undefined
+      if (prev) {
+        steps[existing] = {
+          ...prev,
+          ...a.step,
+          // Keep earliest start; prefer newer preview/status/finishedAt.
+          startedAt: Math.min(prev.startedAt, a.step.startedAt),
+          preview: a.step.preview ?? prev.preview,
+        }
+      } else {
+        steps.push(a.step)
+      }
+      messages = withActivityAt(messages, idx, {
+        ...base,
+        runId: a.runId || base.runId,
+        status: base.status === 'running' ? 'running' : base.status,
+        steps,
+      })
+      return { ...s, messages }
     }
     case 'RESET_CONVERSATION':
       // Clear all chat state but keep WS status + agent list + current
@@ -540,6 +825,38 @@ export function useChat(): UseChat {
           error: msg.error,
         })
         return
+      case 'activity-step': {
+        const startedAt = typeof msg.step.startedAt === 'number'
+          ? msg.step.startedAt
+          : (Number.isFinite(Date.parse(String(msg.step.startedAt)))
+              ? Date.parse(String(msg.step.startedAt))
+              : Date.now())
+        const finishedAt = msg.step.finishedAt == null
+          ? undefined
+          : typeof msg.step.finishedAt === 'number'
+            ? msg.step.finishedAt
+            : (Number.isFinite(Date.parse(String(msg.step.finishedAt)))
+                ? Date.parse(String(msg.step.finishedAt))
+                : undefined)
+        dispatch({
+          kind: 'ACTIVITY_STEP',
+          runId: msg.runId,
+          step: {
+            id: msg.step.id,
+            kind: msg.step.kind === 'skill' || msg.step.kind === 'status'
+              || msg.step.kind === 'approval' || msg.step.kind === 'ask'
+              || msg.step.kind === 'agent'
+              ? msg.step.kind
+              : 'tool',
+            label: msg.step.label,
+            status: msg.step.status,
+            startedAt,
+            finishedAt,
+            preview: msg.step.preview,
+          },
+        })
+        return
+      }
       case 'chunk':
         bufferChunk(msg.text)
         return

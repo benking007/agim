@@ -40,9 +40,18 @@ export interface MessageBubbleProps {
    *  approval card uses this to revert its optimistic "submitting"
    *  state when the socket is disconnected. */
   onApprove?: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
+  /** First bubble in a consecutive same-role run (shows agent label). */
+  isFirstInGroup?: boolean
+  /** Last bubble in a consecutive same-role run (full corner radius). */
+  isLastInGroup?: boolean
 }
 
-export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Element {
+export function MessageBubble({
+  msg,
+  onApprove,
+  isFirstInGroup = true,
+  isLastInGroup = true,
+}: MessageBubbleProps): JSX.Element {
   if (msg.approval) {
     return <ApprovalView approval={msg.approval} onApprove={onApprove} />
   }
@@ -51,20 +60,46 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
   // Assistant replies can be copied as raw markdown (tables/code survive).
   const canCopy = !isUser && !!msg.content
   const displayAgent = msg.agent ? agentDisplayName(msg.agent) : ''
+  // iMessage-like asymmetric corners: tight on the trailing edge within a
+  // group, fuller on the outer / last bubble.
+  const radius = isUser
+    ? cn(
+        'rounded-[20px]',
+        isFirstInGroup ? 'rounded-tr-[20px]' : 'rounded-tr-md',
+        isLastInGroup ? 'rounded-br-[6px]' : 'rounded-br-md',
+      )
+    : cn(
+        'rounded-[20px]',
+        isFirstInGroup ? 'rounded-tl-[20px]' : 'rounded-tl-md',
+        isLastInGroup ? 'rounded-bl-[6px]' : 'rounded-bl-md',
+      )
+
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div
+      className={cn(
+        'flex motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200',
+        isUser ? 'justify-end' : 'justify-start',
+        !isFirstInGroup && 'mt-0.5',
+      )}
+    >
       <div
         className={cn(
-          'max-w-[85%] sm:max-w-[75%] rounded-lg px-3 py-2 shadow-sm',
+          'max-w-[85%] sm:max-w-[75%] px-3.5 py-2 shadow-sm',
+          radius,
           isUser
             ? 'bg-accent text-accent-fg'
-            : 'bg-surface text-text border border-border',
+            : 'bg-surface text-text border border-border/80',
         )}
       >
-        {!isUser && (msg.agent || canCopy) && (
+        {!isUser && isFirstInGroup && (msg.agent || canCopy) && (
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-text-muted">{displayAgent}</span>
             {canCopy && <CopyButton text={msg.content} />}
+          </div>
+        )}
+        {!isUser && !isFirstInGroup && canCopy && (
+          <div className="mb-1 flex justify-end">
+            <CopyButton text={msg.content} />
           </div>
         )}
         {/* v1.2.116 — render assistant responses as markdown (GFM:
@@ -74,15 +109,15 @@ export function MessageBubble({ msg, onApprove }: MessageBubbleProps): JSX.Eleme
         {!isUser && msg.content ? (
           <Suspense
             fallback={(
-              <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+              <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed sm:text-sm">
                 {msg.content}
               </div>
             )}
           >
-            <MarkdownView content={msg.content} className="break-words" />
+            <MarkdownView content={msg.content} className="break-words text-[15px] leading-relaxed sm:text-sm" />
           </Suspense>
         ) : (
-          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+          <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed sm:text-sm">
             {msg.content || (msg.role === 'assistant' && (
               <span className="inline-block animate-pulse text-text-dim">…</span>
             ))}

@@ -41,6 +41,7 @@ export type ChatIncoming =
   | RunStartEvent
   | RunUsageEvent
   | RunFinishEvent
+  | ActivityStepEvent
   | { type: 'error'; message: string }
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
@@ -75,6 +76,22 @@ export interface RunFinishEvent {
   finishedAt: string
   durationMs: number
   error?: string
+}
+
+/** Live tool / skill step for the in-thread activity accordion (P1). */
+export interface ActivityStepEvent {
+  type: 'activity-step'
+  runId: string
+  step: {
+    id: string
+    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
+    label: string
+    status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+    /** Epoch ms (server may also send ISO — SPA normalizes). */
+    startedAt: number | string
+    finishedAt?: number | string
+    preview?: string
+  }
 }
 
 /** Mirror of src/core/types.ts:ApprovalCardPrompt — the structured

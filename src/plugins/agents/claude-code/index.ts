@@ -233,6 +233,7 @@ export class ClaudeCodeAdapter extends AgentBase {
       // escalate the callee to write access. (claude-code's plan path
       // short-circuits before here today, but keep it for defense-in-depth.)
       ...(opts.planMode ? { callerPlanMode: true } : {}),
+      ...(opts.onToolActivity ? { onToolActivity: opts.onToolActivity } : {}),
     })
 
     log.info({ event: 'claude.approval.routed', runId, threadId, platform },

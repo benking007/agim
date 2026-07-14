@@ -1,8 +1,8 @@
 {
   "name": "Agim",
   "short_name": "Agim",
-  "description": "agim — multi-agent gateway console",
-  "start_url": "/",
+  "description": "Agim — multi-agent gateway console",
+  "start_url": "/m/chat",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

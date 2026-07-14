@@ -1,32 +1,14 @@
 /**
- * ApprovalDock — floating panel for pending approval cards (v1.2.115).
+ * ApprovalDock — floating action sheet for pending tool approvals.
  *
- * Before this iteration, approval cards rendered inline in the chat
- * message stream and resolved cards lingered as "✅ Allowed · WEB"
- * badges sandwiched between assistant replies. Two problems:
- *   1. Chat history was visually cluttered — every tool call left a
- *      stale terminal-state row behind.
- *   2. Active cards were buried below the latest assistant reply, so
- *      the user had to scroll back to find them.
- *
- * Dock semantics:
- *   - Renders only PENDING cards (and briefly the just-resolved ones
- *     for the badge transition, then they auto-dismiss).
- *   - Stacked vertically above the chat input; max-height 240px with
- *     an inner scroll so a flood of concurrent approvals doesn't push
- *     the chat list off-screen.
- *   - Click → optimistic disabled state ("已发送…") via per-row
- *     `pendingChoice` local state. Outcome arrives → row swaps to
- *     OutcomeBadge → setTimeout in use-chat.ts dismisses the row.
- *
- * Why all rows are unconditional disclosure (no collapse): users
- * explicitly need to act on every one; hiding any of them risks
- * stalling the agent loop. The 240px scroll cap is the safety valve.
+ * Elevated card above the composer (not a full-bleed border-t strip).
+ * Header + actions stay pinned; only the tool/JSON body scrolls when
+ * content is tall — so Allow/Deny never get clipped on short phones.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, Timer } from 'lucide-react'
 
 import type { ApprovalChoice, PendingApproval } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
@@ -39,17 +21,70 @@ export interface ApprovalDockProps {
   onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
 }
 
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.Element | null {
+  const { t } = useTranslation()
   if (approvals.length === 0) return null
+
   return (
-    <div className="border-t border-warning/40 bg-warning-bg/40">
-      <div className="mx-auto max-h-60 w-full max-w-3xl overflow-y-auto px-3 py-2 sm:px-4">
-        <div className="flex flex-col gap-2">
-          {approvals.map((a) => (
-            <DockRow key={a.messageId} entry={a} onApprove={onApprove} />
-          ))}
+    <div className="relative z-20 px-3 pb-1.5 pt-0 sm:px-4">
+      <section
+        className={cn(
+          'mx-auto flex w-full max-w-3xl flex-col',
+          'max-h-[min(52vh,28rem)]',
+          'rounded-2xl border border-warning/30 bg-surface/98',
+          'shadow-[0_-8px_30px_rgba(15,23,42,0.12)]',
+          'ring-1 ring-black/5',
+          'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
+        )}
+        aria-label={t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-warning/15 bg-warning-bg/90 px-4 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+            <ShieldAlert className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold tracking-tight text-text">
+              {t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
+            </p>
+            <p className="truncate text-xs text-text-dim">
+              {approvals.length > 1
+                ? t('chat.approvalPendingCount', {
+                    count: approvals.length,
+                    defaultValue: '{{count}} pending decisions',
+                  })
+                : t('chat.approvalSubtitle', {
+                    defaultValue: 'Review the tool call before it continues',
+                  })}
+            </p>
+          </div>
+          {approvals.length > 1 && (
+            <Badge variant="warning" className="shrink-0 tabular-nums">
+              {approvals.length}
+            </Badge>
+          )}
         </div>
-      </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex flex-col divide-y divide-border/70">
+            {approvals.map((a) => (
+              <DockRow
+                key={a.messageId}
+                entry={a}
+                onApprove={onApprove}
+                stacked={approvals.length > 1}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
@@ -57,17 +92,16 @@ export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.E
 interface DockRowProps {
   entry: PendingApproval
   onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
+  stacked: boolean
 }
 
-function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
+function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
   const { t } = useTranslation()
   const { messageId, prompt, outcome } = entry
   const isAuto = prompt.mode === 'auto-allow'
   const isExplicit = prompt.mode === 'explicit'
+  const formatted = useMemo(() => prettyJson(prompt.inputJson), [prompt.inputJson])
 
-  // v1.2.88 optimistic submitting state — kept for the dock so the
-  // user gets immediate feedback on click. Cleared when the outcome
-  // arrives (use-chat dismisses the row shortly after).
   const [pendingChoice, setPendingChoice] = useState<ApprovalChoice | null>(null)
   useEffect(() => { if (outcome) setPendingChoice(null) }, [outcome])
 
@@ -79,89 +113,96 @@ function DockRow({ entry, onApprove }: DockRowProps): JSX.Element {
   }
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border bg-surface p-3 shadow-sm transition-opacity',
-        outcome ? 'border-success/60 opacity-80' : 'border-warning',
-      )}
-    >
-      <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <Badge variant="warning" className="gap-1">
-          <ShieldCheck className="h-3 w-3" />
-          {t('chat.approvalTitle')}
-        </Badge>
-        {isAuto && !outcome && (
-          <Badge variant="outline" className="text-[10px] uppercase">
-            {t('chat.approvalAutoBadge', { defaultValue: 'auto-allow' })}
-          </Badge>
+    <div className={cn('flex flex-col transition-opacity', outcome && 'opacity-80')}>
+      <div className="px-4 pt-4">
+        {stacked && (
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs text-text-dim">
+            <ShieldCheck className="h-3.5 w-3.5 text-warning" />
+            {t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
+          </div>
         )}
-        {isExplicit && !outcome && (
-          <Badge variant="outline" className="text-[10px] uppercase">
-            {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
-          </Badge>
-        )}
-        {isAuto && !outcome && prompt.graceSeconds != null && (
-          <AutoAllowCountdown graceSeconds={prompt.graceSeconds} />
-        )}
-        <code className="ml-auto rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs">
+        <code className="block truncate font-mono text-[15px] font-semibold tracking-tight text-text">
           {prompt.toolName}
         </code>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {isAuto && !outcome && (
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+              {t('chat.approvalAutoBadge', { defaultValue: 'auto-allow' })}
+            </Badge>
+          )}
+          {isExplicit && !outcome && (
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+              {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
+            </Badge>
+          )}
+          {isAuto && !outcome && prompt.graceSeconds != null && (
+            <AutoAllowCountdown graceSeconds={prompt.graceSeconds} />
+          )}
+        </div>
+
+        <pre className="mt-3 max-h-36 overflow-auto rounded-xl border border-border/70 bg-bg/80 px-3.5 py-3 font-mono text-[12px] leading-relaxed text-text-dim sm:text-[13px]">
+          {formatted}
+        </pre>
       </div>
 
-      <pre className="mb-2 max-h-32 overflow-auto rounded bg-surface-2 p-2 font-mono text-xs leading-relaxed text-text">
-        {prompt.inputJson}
-      </pre>
-
-      {outcome ? (
-        <OutcomeBadge outcome={outcome} />
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {!isAuto && (
-              <Button
-                size="sm"
-                disabled={pendingChoice !== null}
-                onClick={() => handleClick('y')}
-              >
-                {t('chat.approvalAllow')}
-              </Button>
-            )}
-            {!isAuto && !isExplicit && (
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pendingChoice !== null}
-                onClick={() => handleClick('a')}
-                title={t('chat.approvalAutoTip', {
-                  defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
-                })}
-              >
-                {t('chat.approvalAuto')}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={pendingChoice !== null}
-              onClick={() => handleClick('n')}
+      <div className="sticky bottom-0 mt-3 border-t border-border/60 bg-surface/95 px-4 py-3 backdrop-blur-sm">
+        {outcome ? (
+          <OutcomeBadge outcome={outcome} />
+        ) : (
+          <>
+            <div
+              className={cn(
+                'grid gap-2',
+                isAuto
+                  ? 'grid-cols-1'
+                  : isExplicit
+                    ? 'grid-cols-2'
+                    : 'grid-cols-1 sm:grid-cols-[1.4fr_1fr_1fr]',
+              )}
             >
-              {t('chat.approvalDeny')}
-            </Button>
-          </div>
-          {pendingChoice !== null && (
-            <p className="mt-1.5 text-xs text-text-dim">
-              {t('chat.approvalSubmitting')}
-            </p>
-          )}
-        </>
-      )}
+              {!isAuto && (
+                <Button
+                  className="min-h-12 w-full text-sm font-semibold"
+                  disabled={pendingChoice !== null}
+                  onClick={() => handleClick('y')}
+                >
+                  {t('chat.approvalAllow')}
+                </Button>
+              )}
+              {!isAuto && !isExplicit && (
+                <Button
+                  variant="secondary"
+                  className="min-h-12 w-full"
+                  disabled={pendingChoice !== null}
+                  onClick={() => handleClick('a')}
+                  title={t('chat.approvalAutoTip', {
+                    defaultValue: 'Allow and auto-allow similar calls for the rest of the session',
+                  })}
+                >
+                  {t('chat.approvalAuto')}
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                className="min-h-12 w-full"
+                disabled={pendingChoice !== null}
+                onClick={() => handleClick('n')}
+              >
+                {t('chat.approvalDeny')}
+              </Button>
+            </div>
+            {pendingChoice !== null && (
+              <p className="mt-2 text-xs text-text-dim">
+                {t('chat.approvalSubmitting')}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
-/** Mirrors message-bubble.tsx's countdown — kept inline to avoid a
- *  cross-module import dependency. The bus-side timer is authoritative;
- *  this just paints a visual cue. */
 function AutoAllowCountdown({ graceSeconds }: { graceSeconds: number }): JSX.Element | null {
   const { t } = useTranslation()
   const [remaining, setRemaining] = useState(Math.max(0, graceSeconds))
@@ -175,7 +216,8 @@ function AutoAllowCountdown({ graceSeconds }: { graceSeconds: number }): JSX.Ele
   }, [graceSeconds])
   if (graceSeconds <= 0) return null
   return (
-    <span className="text-xs text-warning">
+    <span className="inline-flex items-center gap-1 text-xs text-warning">
+      <Timer className="h-3 w-3" />
       {remaining > 0
         ? t('chat.approvalAutoIn', {
             count: remaining,
@@ -191,14 +233,14 @@ function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Elemen
   const by = outcome.byUserDisplay ? ` · ${outcome.byUserDisplay}` : ''
   switch (outcome.decision) {
     case 'allowed':
-      return <Badge variant="success">{t('chat.outcome.allowed', { defaultValue: '✅ Allowed' })}{by}</Badge>
+      return <Badge variant="success">{t('chat.outcome.allowed', { defaultValue: 'Allowed' })}{by}</Badge>
     case 'allowed-pinned':
-      return <Badge variant="success">{t('chat.outcome.allowedPinned', { defaultValue: '✅ Allowed + auto-allow further' })}{by}</Badge>
+      return <Badge variant="success">{t('chat.outcome.allowedPinned', { defaultValue: 'Allowed + auto-allow further' })}{by}</Badge>
     case 'denied':
-      return <Badge variant="danger">{t('chat.outcome.denied', { defaultValue: '❌ Denied' })}{by}</Badge>
+      return <Badge variant="danger">{t('chat.outcome.denied', { defaultValue: 'Denied' })}{by}</Badge>
     case 'denied-revoked':
-      return <Badge variant="danger">{t('chat.outcome.deniedRevoked', { defaultValue: '❌ Denied (auto-allow revoked)' })}{by}</Badge>
+      return <Badge variant="danger">{t('chat.outcome.deniedRevoked', { defaultValue: 'Denied (auto-allow revoked)' })}{by}</Badge>
     case 'expired':
-      return <Badge variant="outline">{t('chat.outcome.expired', { defaultValue: '⏱ Timed out' })}{by}</Badge>
+      return <Badge variant="outline">{t('chat.outcome.expired', { defaultValue: 'Timed out' })}{by}</Badge>
   }
 }

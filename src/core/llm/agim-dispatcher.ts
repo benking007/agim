@@ -94,6 +94,9 @@ export interface AgimDispatcherCtx {
    *  parent_id and the web `/api/a2a/*` views (which filter parent_id IS NOT
    *  NULL) show them as 0. */
   parentJobId?: number
+  /** Web chat activity accordion — forwarded into callAgentByName so A2A
+   *  emits "Waiting for subagent" steps on the parent turn. */
+  onToolActivity?: import('../types.js').AgentSendOpts['onToolActivity']
 }
 
 /** v1.2.139 — env-driven output cap. When a sub-agent's reply exceeds
@@ -640,6 +643,26 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             // below). Falls back to undefined → the sub-turn self-mints.
             const inProcParentTrace = toolCtx?.traceId
             const inProcA2aTrace = inProcParentTrace ? `${inProcParentTrace}/a2a-${call.id}` : undefined
+            const activityId = `a2a-inproc-${call.id}`
+            const activityStartedAt = Date.now()
+            const emitInProcActivity = (
+              status: 'running' | 'success' | 'error',
+              preview?: string,
+            ): void => {
+              if (!ctx.onToolActivity) return
+              try {
+                ctx.onToolActivity({
+                  id: activityId,
+                  kind: 'agent',
+                  label: agentName,
+                  status,
+                  startedAt: activityStartedAt,
+                  ...(status !== 'running' ? { finishedAt: Date.now() } : {}),
+                  preview,
+                })
+              } catch { /* observer must not break dispatch */ }
+            }
+            emitInProcActivity('running', promptHead)
             const runOnce = async (): Promise<string> => {
               // Route to the single Agim Agent registered under 'native' so
               // in-process sub-agent runs use the same adapter as the parent.
@@ -684,12 +707,14 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 raw = await runOnce()
               }
               callAgentHistory.push({ agent: agentName, promptHead, ok: true })
+              emitInProcActivity('success', `${raw.length} chars`)
               return ok(applyOutputCap(raw, agentName, null))
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               log.warn({ event: 'native.call_agent.in_process_failed', err: msg },
                 'in-process self-spawn threw; surfacing error to caller')
               callAgentHistory.push({ agent: agentName, promptHead, ok: false })
+              emitInProcActivity('error', msg.slice(0, 180))
               return err(`call_agent (in-process native) failed: ${msg}`)
             }
           }
@@ -715,6 +740,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             defaultAgent: ctx.callerAgent,
             traceId: a2aTrace,
             logger: (ctx.logger ?? rootLogger).child({ component: 'a2a-from-native', threadId: ctx.threadId }),
+            ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
           }
           const baseOpts = {
             callerDepth: ctx.callerDepth ?? 0,
@@ -724,6 +750,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
             // v1.2.139 — propagate parent's plan-mode to the sub-agent.
             ...(ctx.callerPlanMode ? { planMode: true } : {}),
+            ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
             signal,
           }
           // v1.2.139 — one-shot transient retry. callAgentByName already

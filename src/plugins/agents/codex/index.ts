@@ -344,6 +344,7 @@ export class CodexAdapter extends AgentBase {
       // SEC: forward plan-mode so a call_agent from inside this read-only run
       // can't launch the callee with full write access.
       ...(opts.planMode ? { callerPlanMode: true } : {}),
+      ...(opts.onToolActivity ? { onToolActivity: opts.onToolActivity } : {}),
     })
     log.info({ event: 'codex.mcp.run_registered', runId, threadId, platform },
       'Codex run registered with bus for agim MCP tools')

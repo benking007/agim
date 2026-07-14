@@ -21,6 +21,7 @@ import { ErrorBoundary } from '@/components/shell/error-boundary'
 import LoginRoute from '@/routes/login'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
+import { MobileChatRedirect } from '@/components/chat/mobile-chat-redirect'
 
 /** Wrap a `lazy:` factory so the route renders behind RequireAuth.
  *  We can't apply the auth wrapper via element AND lazy, so the
@@ -55,7 +56,9 @@ const router = createBrowserRouter([
     path: '/',
     element: (
       <RequireAuth>
-        <ChatRoute />
+        <MobileChatRedirect>
+          <ChatRoute />
+        </MobileChatRedirect>
       </RequireAuth>
     ),
   },
@@ -181,6 +184,11 @@ const router = createBrowserRouter([
   {
     path: '/m/chat',
     lazy: authedLazy(() => import('@/routes/m/chat')),
+  },
+  // Visual playground for floating approval / ask docks (no auth).
+  {
+    path: '/dev/chat-docks',
+    lazy: lazy(() => import('@/routes/dev/chat-docks-preview')),
   },
   { path: '*', element: <NotFoundRoute /> },
 ], {

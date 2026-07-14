@@ -267,6 +267,7 @@ export class AntigravityAdapter extends AgentBase {
         // SEC: forward plan-mode so a call_agent from inside this run can't
         // launch the callee with full write access.
         ...(opts.planMode ? { callerPlanMode: true } : {}),
+        ...(opts.onToolActivity ? { onToolActivity: opts.onToolActivity } : {}),
       })
       registered = true
       log.info({ event: 'antigravity.approval.routed', runId, threadId, platform },

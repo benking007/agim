@@ -115,6 +115,7 @@ export class OpenCodeAdapter extends AgentBase {
       // SEC: forward plan-mode so a call_agent from inside this run can't
       // launch the callee with full write access.
       ...(opts.planMode ? { callerPlanMode: true } : {}),
+      ...(opts.onToolActivity ? { onToolActivity: opts.onToolActivity } : {}),
     })
     log.info({ event: 'opencode.mcp.run_registered', runId, threadId: opts.threadId },
       'opencode run registered with bus for MCP reminder tools')

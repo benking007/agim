@@ -479,6 +479,26 @@ export interface AgentSendOpts {
    *  in SIEM joins, rather than minting a disconnected id. CLI adapters that
    *  don't self-audit can ignore it. */
   traceId?: string
+  /** Web chat run id (`run-…`) minted by the WS handler. Adapters that emit
+   *  per-tool activity steps should include this so the SPA can attach them
+   *  to the matching ChatActivityBlock. Optional — IM / scheduler omit it. */
+  webRunId?: string
+  /** Live tool / skill activity for the web chat accordion. Fired by adapters
+   *  that observe tool dispatch (currently Agim Agent / native harness). */
+  onToolActivity?: (step: ToolActivityStep) => void
+}
+
+/** One live activity step pushed to the web chat UI (P1 activity-step). */
+export interface ToolActivityStep {
+  id: string
+  /** `agent` = A2A / call_agent delegation (Waiting for subagent). */
+  kind: 'tool' | 'skill' | 'status' | 'agent'
+  label: string
+  status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+  /** Epoch ms */
+  startedAt: number
+  finishedAt?: number
+  preview?: string
 }
 
 /**

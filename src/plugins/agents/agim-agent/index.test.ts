@@ -553,6 +553,74 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('denied')
   })
 
+  it('emits onToolActivity running→success and classifies skill-ish tools', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_read', { path: 'a.ts' }, { id: 'tc-read' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('skill_accessibility', { query: 'a11y' }, { id: 'tc-skill' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('done'),
+    ])
+    const toolRead: ToolDef = {
+      name: 'agim_read',
+      description: 'read',
+      parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    }
+    const toolSkill: ToolDef = {
+      name: 'skill_accessibility',
+      description: 'skill',
+      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    }
+    const steps: Array<{ id: string; kind: string; label: string; status: string }> = []
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-activity-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [toolRead, toolSkill],
+        dispatch: async (call) => ({ text: `ok:${call.name}`, isError: false }),
+      }),
+    })
+    await collect(adapter.sendPrompt('activity-steps', 'read then skill', undefined, {
+      onToolActivity: (step) => {
+        steps.push({ id: step.id, kind: step.kind, label: step.label, status: step.status })
+      },
+    }))
+    expect(steps).toEqual([
+      { id: 'tc-read', kind: 'tool', label: 'agim_read', status: 'running' },
+      { id: 'tc-read', kind: 'tool', label: 'agim_read', status: 'success' },
+      { id: 'tc-skill', kind: 'skill', label: 'skill_accessibility', status: 'running' },
+      { id: 'tc-skill', kind: 'skill', label: 'skill_accessibility', status: 'success' },
+    ])
+  })
+
+  it('emits onToolActivity denied when approval gate blocks', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_exec', { cmd: 'ls' }, { id: 'deny-1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('stopped'),
+    ])
+    const tool: ToolDef = {
+      name: 'agim_exec',
+      description: 'exec',
+      parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] },
+    }
+    const steps: Array<{ id: string; status: string }> = []
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-activity-deny-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => ({ text: 'ran', isError: false }),
+      }),
+      resolveApprovalGate: () => async () => 'deny',
+    })
+    await collect(adapter.sendPrompt('activity-deny', 'run', undefined, {
+      onToolActivity: (step) => {
+        steps.push({ id: step.id, status: step.status })
+      },
+    }))
+    expect(steps).toEqual([{ id: 'deny-1', status: 'denied' }])
+  })
+
   it('caps tool-call rounds at maxIterations (runaway guard)', async () => {
     const reg = faux()
     // The model loops forever, always emitting another tool call.

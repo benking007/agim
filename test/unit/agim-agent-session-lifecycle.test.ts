@@ -168,7 +168,7 @@ describe('agim-agent-session-lifecycle', () => {
     await retireAgimAgentSession('x-id', 'switch')
     // Quarantine must not be a child of sessionsRoot — otherwise
     // JsonlSessionRepo.list() would resurrect the transcript.
-    expect(quarantineRoot.startsWith(sessionsRoot + '/')).toBe(false)
+    expect(quarantineRoot.startsWith(`${sessionsRoot}/`)).toBe(false)
     expect(readdirSync(sessionsRoot).some((n) => n.includes('quarantine'))).toBe(false)
     expect(readdirSync(quarantineRoot).some((n) => n.includes('x-id'))).toBe(true)
   })

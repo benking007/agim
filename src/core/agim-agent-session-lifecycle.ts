@@ -32,6 +32,7 @@ import {
   rmdirSync,
   statSync,
   unlinkSync,
+  type Stats,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
@@ -162,7 +163,7 @@ export function findActiveAgimAgentSessionFiles(
     // Quarantine lives outside this root; still skip underscore dirs defensively.
     if (name.startsWith('_') || name.startsWith('.')) continue
     const dir = join(sessionsRoot, name)
-    let st
+    let st: Stats
     try { st = statSync(dir) } catch { continue }
     if (!st.isDirectory()) continue
     let files: string[] = []
@@ -201,7 +202,7 @@ export function listActiveAgimAgentSessionIds(sessionsRoot: string): Map<string,
   for (const name of entries) {
     if (name.startsWith('_') || name.startsWith('.')) continue
     const dir = join(sessionsRoot, name)
-    let st
+    let st: Stats
     try { st = statSync(dir) } catch { continue }
     if (!st.isDirectory()) continue
     let files: string[] = []

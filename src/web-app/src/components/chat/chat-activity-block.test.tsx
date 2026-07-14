@@ -101,8 +101,35 @@ describe('ChatActivityBlock', () => {
     />)
     expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
     expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
-    expect(screen.getByText(/→ claude-code/)).toBeInTheDocument()
+    expect(screen.getAllByText(/→ claude-code/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/^running$|^运行中$/)).toBeInTheDocument()
+  })
+
+  it('keeps Waiting for subagent even when an approval is also pending', () => {
+    render(<ChatActivityBlock activity={activity({
+      status: 'running',
+      finishedAt: undefined,
+      durationMs: undefined,
+      steps: [
+        {
+          id: 'a2a-1',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'running',
+          startedAt: 1,
+        },
+        {
+          id: 'apv-1',
+          kind: 'approval',
+          label: 'agim_exec',
+          status: 'pending',
+          startedAt: 2,
+        },
+      ],
+    })}
+    />)
+    expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
   })
 
   it('shows completed badge for finished agent steps', async () => {

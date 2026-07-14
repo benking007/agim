@@ -93,15 +93,26 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
   const liveStep = [...activity.steps].reverse().find((s) => (
     s.status === 'running' || s.status === 'pending'
   ))
-  const waitingAgent = liveStep?.kind === 'agent' ? liveStep : undefined
+  // Prefer a live A2A/agent step for the Cursor-style subtitle even when an
+  // approval/ask is also pending further down the same turn.
+  const waitingAgent = [...activity.steps].reverse().find((s) => (
+    s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
+  ))
   const duration = formatDuration(activity.durationMs)
   const running = activity.status === 'running'
 
   let title: string
   if (running) {
-    title = liveStep
+    // Prefer showing the delegated agent in the Running title while waiting.
+    const titleStep = waitingAgent ?? liveStep
+    title = titleStep
       ? t('chat.activityRunningStep', {
-          step: liveStep.label,
+          step: titleStep.kind === 'agent'
+            ? t('chat.activityAgentLabel', {
+                agent: titleStep.label,
+                defaultValue: '→ {{agent}}',
+              })
+            : titleStep.label,
           defaultValue: 'Running · {{step}}',
         })
       : t('chat.activityRunning', { defaultValue: 'Running' })

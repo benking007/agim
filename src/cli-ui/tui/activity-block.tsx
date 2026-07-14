@@ -24,10 +24,10 @@ export interface ActivityBlockProps {
 function stepGlyph(step: ChatActivityStep): string {
   if (step.status === 'running' || step.status === 'pending') return '…'
   if (step.status === 'denied' || step.status === 'error') return '✗'
+  if (step.status === 'success') return '✓'
   if (step.kind === 'approval') return '⚠'
   if (step.kind === 'ask') return '?'
-  if (step.kind === 'agent') return '→'
-  if (step.status === 'success') return '✓'
+  if (step.kind === 'agent') return '◆'
   return '·'
 }
 

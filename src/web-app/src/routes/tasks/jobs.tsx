@@ -47,6 +47,7 @@ import { useEventStream, type SseStatus } from '@/hooks/use-event-stream'
 import type { Job, JobStatus, ListJobsQuery } from '@/types/api'
 import { describeError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
+import { agentDisplayName } from '@/lib/agent-label'
 
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 const DEFAULT_PER_PAGE = 20
@@ -158,7 +159,7 @@ export default function JobsRoute(): JSX.Element {
       {
         id: 'agent',
         header: t('jobs.col.agent'),
-        cell: (r) => <span className="font-medium">{r.agent}</span>,
+        cell: (r) => <span className="font-medium">{agentDisplayName(r.agent)}</span>,
         headClassName: 'w-32',
       },
       {

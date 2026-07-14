@@ -21,10 +21,10 @@
     "nativeAgent": "Agim Agent",
     "search": "Web 搜索",
     "mobile": "手机端",
-    "agimSkills": "agim Skills",
+    "agimSkills": "Agim Skills",
     "policy": "策略",
     "security": "安全",
-    "workspaces": "成员与限流",
+    "workspaces": "访问规则",
     "admins": "管理员",
     "env": "环境变量",
     "service": "服务"
@@ -79,7 +79,7 @@
   },
   "agents": {
     "title": "Agents",
-    "subtitle": "这里管理桥接的外部 Agent（CLI / ACP）。Agim Agent 是系统内置默认 Agent，在「Agim Agent」页通过大模型 API 配置。",
+    "subtitle": "这里管理桥接的外部 Agent（CLI / 远程 Agent (ACP)）。Agim Agent 是系统内置默认 Agent，在「Agim Agent」页通过大模型 API 配置。",
     "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
     "nativeInstallHint": "Agim Agent 尚未配置大模型 API。前往 设置 → Agim Agent 添加一个 API（OpenAI / DeepSeek / Anthropic 等）即可使用。",
     "inProcessBadge": "内置",
@@ -183,7 +183,7 @@
       "envKey": "AGIM_VIEWER_ENABLED"
     },
     "a2aNotify": {
-      "title": "A2A 通知模式",
+      "title": "Agent 协作 (A2A) 通知模式",
       "description": "Agent 间互相调用时 bus 的提示详细程度。`essential`（默认）仅发关键事件；`verbose` 包含每次状态切换；`off` 完全静默跨 Agent 通知。",
       "envKey": "AGIM_A2A_NOTIFY_MODE",
       "valEssential": "关键事件",
@@ -407,7 +407,7 @@
     }
   },
   "workspaces": {
-    "title": "访问域",
+    "title": "访问规则",
     "subtitle": "按用户、团队或客户划分可用 Agent 与调用频率。`default` 承接所有未匹配的用户。",
     "empty": {
       "title": "只有默认访问域",
@@ -512,7 +512,7 @@
       "subtitle": "agim 启动时监听的端口。留空使用默认值；改动需下次服务重启生效（保存后点下方「重启」按钮）。",
       "webPort": "Web 端口",
       "webPortHint": "聊天 UI + REST API 的 HTTP 服务端口。默认 {{default}}。",
-      "acpPort": "ACP 端口",
+      "acpPort": "Agim ACP 对外端口",
       "acpPortHint": "Agent Communication Protocol 服务端口（远程 Agent 接入面）。默认 {{default}}。",
       "invalidPort": "需为 1-65535 之间的数字。",
       "restartRequired": "需重启生效",
@@ -595,14 +595,14 @@
           "detail": "工具调用会继承 root 权限；生产环境建议使用独立系统用户运行。"
         },
         "privateWeb": {
-          "title": "Native web 允许访问所有私网",
+          "title": "Agim Agent web 允许访问所有私网",
           "detail": "这会放宽 SSRF 防护；仅内网可信部署才建议打开。",
           "action": "关闭"
         },
         "fsOpen": {
-          "title": "Native 文件系统未限制到 workspace",
-          "detail": "默认可读写非敏感路径；对外使用前建议限制到 Agent 工作区。",
-          "action": "限制到 workspace"
+          "title": "Agim Agent 文件系统未限制到 Agent 文件目录",
+          "detail": "默认可读写非敏感路径；对外使用前建议限制到 Agent 文件目录。",
+          "action": "限制到 Agent 文件"
         }
       }
     },
@@ -647,7 +647,7 @@
       "emptyRestrictedToast": "限制模式下至少选择或添加一个用户。"
     },
     "exec": {
-      "title": "Native exec 工具",
+      "title": "Agim Agent exec 工具",
       "description": "对 agim_exec 的沙盒与超时控制。每次 exec 调用还会经 IM 审批卡（除非已 autoallow 同 fingerprint）。",
       "sandbox": "沙盒后端",
       "sandboxNone": "无（直接 spawn）",
@@ -660,7 +660,7 @@
       "maxOutput": "单流输出上限（字节，默认 32768）"
     },
     "web": {
-      "title": "Native web 工具",
+      "title": "Agim Agent web 工具",
       "description": "SSRF 防护与超时。CIDR 白名单可放行 Tailscale/100.64.0.0/10 这类私网。",
       "allowPrivate": "允许所有私网（不推荐）",
       "allowPrivateHelp": "= 1 时跳过所有私网检查。仅用于受信任的内网部署。",
@@ -669,16 +669,16 @@
       "timeoutMs": "fetch / search 超时（毫秒，默认 30000）"
     },
     "fs": {
-      "title": "Native filesystem 工具",
-      "description": "fs 工具默认可访问非敏感路径；开启后限制在 native 当前线程的 workspace 子树内。",
-      "restrict": "限制到 workspace",
+      "title": "Agim Agent 文件系统工具",
+      "description": "fs 工具默认可访问非敏感路径；开启后限制在 Agim Agent 当前线程的 Agent 文件子树内。",
+      "restrict": "限制到 Agent 文件",
       "restrictOn": "ON（推荐）",
       "restrictOff": "OFF（允许任意路径；sensitive-paths 黑名单仍生效）",
       "timeoutMs": "fs 工具超时（毫秒，默认 60000）"
     },
     "delegation": {
-      "title": "Native call_agent 上限",
-      "description": "一次对话内 mcp__agim__call_agent 允许的最多次数。防止 native 死循环委托给 CLI agent。0 = 无限。",
+      "title": "Agim Agent call_agent 上限",
+      "description": "一次对话内 mcp__agim__call_agent 允许的最多次数。防止 Agim Agent 死循环委托给 CLI agent。0 = 无限。",
       "envKey": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN",
       "valueLabel": "默认 2"
     },
@@ -741,7 +741,7 @@
     "advanced": {
       "title": "高级设置",
       "badge": "可选",
-      "subtitle": "管理多个 API、角色绑定、工具审批、上下文压缩、A2A、通知评估器和心跳。",
+      "subtitle": "管理多个 API、角色绑定、工具审批、上下文压缩、Agent 协作 (A2A)、通知评估器和心跳。",
       "show": "展开高级设置",
       "hide": "收起高级设置"
     },
@@ -781,14 +781,14 @@
     "remove": "删除",
     "pinging": "探测中…",
     "setKeyFirst": "请先设置 API Key",
-  "pingHint": "发送一次小型 chat 探测",
-  "errorDialog": {
-    "title": "探测失败",
-    "description": "后端 {{backend}} 返回了错误。",
-    "defaultHint": "请检查 API Key、Base URL 与模型名称；错误详情如下。",
-    "temperatureHint": "该模型不接受 temperature 参数。Agim 现在只会在你显式配置 temperature 时发送它；请重新探测一次。"
-  },
-  "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
+    "pingHint": "发送一次小型 chat 探测",
+    "errorDialog": {
+      "title": "探测失败",
+      "description": "后端 {{backend}} 返回了错误。",
+      "defaultHint": "请检查 API Key、Base URL 与模型名称；错误详情如下。",
+      "temperatureHint": "该模型不接受 temperature 参数。Agim 现在只会在你显式配置 temperature 时发送它；请重新探测一次。"
+    },
+    "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
     "removedToast": "已删除（同时清除 {{count}} 个角色绑定）。",
     "roleUpdated": "已更新角色 {{role}}",
     "unset": "（未设置）",
@@ -894,7 +894,7 @@
     "modeAllowAll": "全部放行（所有工具）",
     "modeDenyAll": "全部禁止（不允许工具）",
     "autoAllow": "自动允许工具前缀",
-    "autoAllowHint": "逗号分隔。名称以任一前缀开头的工具绕过门控（如 native_,mcp_filesystem_）。",
+    "autoAllowHint": "逗号分隔。名称以任一前缀开头的工具绕过门控（如 agim_、native_（兼容）、mcp_filesystem_）。",
     "denyList": "拒绝列表工具前缀",
     "denyListHint": "逗号分隔。无论模式如何始终拒绝（如 mcp_shell_）。",
     "evalDesc": "过滤例行/空的 agent 主动推送消息的 LLM 门控。使用 evaluator 角色。失败开放：LLM 错误或缺少可用 API → 仍投递消息。",
@@ -915,7 +915,7 @@
     "toolResultCapHint": "AGIM_NATIVE_TOOL_RESULT_MAX_CHARS。超出截断+附说明。默认 64000。",
     "toolTimeoutMs": "单次工具超时（毫秒）",
     "toolTimeoutHint": "AGIM_NATIVE_TOOL_TIMEOUT_MS。默认 60000（60 秒）。",
-    "a2aCard": "A2A 子 Agent 派发",
+    "a2aCard": "Agent 协作 (A2A)",
     "a2aDesc": "模型调用 `mcp__agim__call_agent` 时的深度、超时与单轮上限。agim→agim 默认走内置快速路径。",
     "a2aMaxDepth": "递归深度上限",
     "a2aMaxDepthHint": "AGIM_A2A_MAX_DEPTH。call_agent 嵌套调用最大层数。默认 1。",
@@ -1014,7 +1014,7 @@
     "hint": "保存后无需重启；下一轮系统提示构建会读取最新内容。"
   },
   "agimSkills": {
-    "title": "agim Skills",
+    "title": "Agim Skills",
     "tab": {
       "overview": "总览",
       "installed": "已安装",
@@ -1084,7 +1084,7 @@
     "group": {
       "framework": "Framework（agim-*）",
       "builtin": "Agim 内置（非 ECC）",
-      "workspace": "Workspace（运营者亲装业务）",
+      "workspace": "已安装（运营者）",
       "eccPicks": "ECC 推荐池",
       "eccRemainder": "ECC 余下"
     },

@@ -28,6 +28,7 @@ import { useSubtasks, useInvalidateSubtasks } from '@/hooks/use-subtasks'
 import { useEventStream, type SseStatus } from '@/hooks/use-event-stream'
 import type { Subtask } from '@/types/api'
 import { cn } from '@/lib/utils'
+import { agentDisplayName } from '@/lib/agent-label'
 
 const LIVE_STATUS_CLASS: Record<SseStatus, string> = {
   connected:    'text-success',
@@ -69,7 +70,7 @@ export default function SubtasksRoute(): JSX.Element {
       {
         id: 'agent',
         header: t('subtasks.col.agent'),
-        cell: (r) => <span className="font-medium">{r.agent}</span>,
+        cell: (r) => <span className="font-medium">{agentDisplayName(r.agent)}</span>,
         headClassName: 'w-32',
       },
       {

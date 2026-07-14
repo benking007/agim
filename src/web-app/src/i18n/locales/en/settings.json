@@ -21,7 +21,7 @@
     "nativeAgent": "Agim Agent",
     "search": "Web search",
     "mobile": "Mobile",
-    "agimSkills": "agim Skills",
+    "agimSkills": "Agim Skills",
     "policy": "Policy",
     "security": "Security",
     "workspaces": "Access Rules",
@@ -79,7 +79,7 @@
   },
   "agents": {
     "title": "Agents",
-    "subtitle": "Manage bridged external agents (CLI / ACP). Agim Agent is the built-in default agent and is configured from the Agim Agent tab via Model APIs.",
+    "subtitle": "Manage bridged external agents (CLI / Remote agents (ACP)). Agim Agent is the built-in default agent and is configured from the Agim Agent tab via Model APIs.",
     "installHint": "Not installed. `npm install -g {{pkg}}` on the host.",
     "nativeInstallHint": "No model API configured for Agim Agent. Open Settings → Agim Agent to add one (OpenAI / DeepSeek / Anthropic / …).",
     "inProcessBadge": "built-in",
@@ -183,7 +183,7 @@
       "envKey": "AGIM_VIEWER_ENABLED"
     },
     "a2aNotify": {
-      "title": "A2A notify mode",
+      "title": "Agent handoffs (A2A) notify mode",
       "description": "How verbose the bus is when one agent calls another. `essential` (default) sends only headline events; `verbose` includes every transition; `off` silences cross-agent notifications entirely.",
       "envKey": "AGIM_A2A_NOTIFY_MODE",
       "valEssential": "Essential",
@@ -407,7 +407,7 @@
     }
   },
   "workspaces": {
-    "title": "Access Scopes",
+    "title": "Access Rules",
     "subtitle": "Partition available Agents and call rates by user, team, or customer. `default` catches every unrouted user.",
     "empty": {
       "title": "Only the default scope",
@@ -512,7 +512,7 @@
       "subtitle": "Which ports agim binds when started. Leave blank to use the default. Changes apply on the next service restart (use the Restart button below after saving).",
       "webPort": "Web port",
       "webPortHint": "HTTP server for the chat UI + REST API. Default: {{default}}.",
-      "acpPort": "ACP port",
+      "acpPort": "Agim ACP endpoint port",
       "acpPortHint": "Agent Communication Protocol server (remote agent surface). Default: {{default}}.",
       "invalidPort": "Must be a number between 1 and 65535.",
       "restartRequired": "Restart required",
@@ -595,14 +595,14 @@
           "detail": "Tool calls inherit root privileges. Production deployments should run under a dedicated system user."
         },
         "privateWeb": {
-          "title": "Native web can reach all private ranges",
+          "title": "Agim Agent web can reach all private ranges",
           "detail": "This relaxes SSRF protection. Keep it on only for trusted internal deployments.",
           "action": "Turn off"
         },
         "fsOpen": {
-          "title": "Native filesystem is not confined to the workspace",
-          "detail": "By default it can access non-sensitive paths. Restrict it before external use.",
-          "action": "Restrict"
+          "title": "Agim Agent filesystem is not confined to the agent-files subtree",
+          "detail": "By default it can access non-sensitive paths. Restrict it to the agent-files subtree before external use.",
+          "action": "Restrict to agent files"
         }
       }
     },
@@ -647,7 +647,7 @@
       "emptyRestrictedToast": "Restricted mode needs at least one selected or manual user."
     },
     "exec": {
-      "title": "Native exec tool",
+      "title": "Agim Agent exec tool",
       "description": "Sandbox + timeout controls for agim_exec. Each invocation also goes through an IM approval card (unless previously auto-allowed by fingerprint).",
       "sandbox": "Sandbox backend",
       "sandboxNone": "None (plain spawn)",
@@ -660,7 +660,7 @@
       "maxOutput": "Per-stream output cap (bytes, default 32768)"
     },
     "web": {
-      "title": "Native web tools",
+      "title": "Agim Agent web tools",
       "description": "SSRF defense and timeouts. CIDR whitelist lets you allow Tailscale / 100.64.0.0/10 / VPN ranges back in.",
       "allowPrivate": "Allow all private ranges (not recommended)",
       "allowPrivateHelp": "= 1 disables all private-IP checks. Only for trusted internal deployments.",
@@ -669,16 +669,16 @@
       "timeoutMs": "fetch / search timeout (ms, default 30000)"
     },
     "fs": {
-      "title": "Native filesystem tools",
-      "description": "By default, fs tools can access non-sensitive paths. Turn this on to confine them to the native agent's per-thread workspace subtree.",
-      "restrict": "Restrict to workspace",
+      "title": "Agim Agent filesystem tools",
+      "description": "By default, fs tools can access non-sensitive paths. Turn this on to confine them to Agim Agent's per-thread agent-files subtree.",
+      "restrict": "Restrict to agent files",
       "restrictOn": "ON (recommended)",
       "restrictOff": "OFF (allow any path; sensitive-paths denylist still applies)",
       "timeoutMs": "fs tool timeout (ms, default 60000)"
     },
     "delegation": {
-      "title": "Native call_agent cap",
-      "description": "Max mcp__agim__call_agent invocations per turn. Prevents native from spinning on infinite delegations. 0 = unlimited.",
+      "title": "Agim Agent call_agent cap",
+      "description": "Hard cap on mcp__agim__call_agent calls per turn. Prevents Agim Agent from spinning in a CLI-agent loop. 0 = unlimited.",
       "envKey": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN",
       "valueLabel": "default 2"
     },
@@ -741,7 +741,7 @@
     "advanced": {
       "title": "Advanced settings",
       "badge": "optional",
-      "subtitle": "Manage multiple APIs, role bindings, tool approvals, context compaction, A2A, notification evaluation, and heartbeat.",
+      "subtitle": "Manage multiple APIs, role bindings, tool approvals, context compaction, Agent handoffs (A2A), notification evaluation, and heartbeat.",
       "show": "Show advanced settings",
       "hide": "Hide advanced settings"
     },
@@ -766,7 +766,7 @@
     "backendsTitle": "APIs ({{count}})",
     "backendsEmpty": "No model APIs configured yet. Add one below.",
     "rolesTitle": "Role Bindings (optional, advanced)",
-    "rolesOptionalHint": "Role bindings are optional. Native auto-uses any usable API.",
+    "rolesOptionalHint": "Role bindings are optional. Agim Agent auto-uses any usable API.",
     "addTitle": "Add API",
     "col": {
       "name": "Name",
@@ -781,14 +781,14 @@
     "remove": "Remove",
     "pinging": "pinging…",
     "setKeyFirst": "set API key first",
-  "pingHint": "send a tiny chat probe",
-  "errorDialog": {
-    "title": "Probe failed",
-    "description": "Backend {{backend}} returned an error.",
-    "defaultHint": "Check the API key, Base URL, and model name. Details are below.",
-    "temperatureHint": "This model does not accept the temperature parameter. Agim now sends temperature only when you explicitly configure it; run the probe again."
-  },
-  "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
+    "pingHint": "send a tiny chat probe",
+    "errorDialog": {
+      "title": "Probe failed",
+      "description": "Backend {{backend}} returned an error.",
+      "defaultHint": "Check the API key, Base URL, and model name. Details are below.",
+      "temperatureHint": "This model does not accept the temperature parameter. Agim now sends temperature only when you explicitly configure it; run the probe again."
+    },
+    "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
     "removedToast": "Removed (also cleared {{count}} role binding(s)).",
     "roleUpdated": "Updated role {{role}}",
     "unset": "(unset)",
@@ -894,7 +894,7 @@
     "modeAllowAll": "allow-all (every tool, no gate)",
     "modeDenyAll": "deny-all (no tools)",
     "autoAllow": "Auto-allow tool prefixes",
-    "autoAllowHint": "Comma-separated. Tool names starting with any entry bypass the gate (e.g. native_,mcp_filesystem_).",
+    "autoAllowHint": "Comma-separated. Tools whose names start with any prefix bypass the gate (e.g. agim_,native_ (legacy),mcp_filesystem_).",
     "denyList": "Deny-list tool prefixes",
     "denyListHint": "Comma-separated. Always rejected regardless of mode (e.g. mcp_shell_).",
     "evalDesc": "LLM gate that filters routine / empty agent-initiated push messages. Uses the evaluator role. Fail-open: LLM error or missing API → message is delivered.",
@@ -915,7 +915,7 @@
     "toolResultCapHint": "AGIM_NATIVE_TOOL_RESULT_MAX_CHARS. Truncates + appends a note. Default 64000.",
     "toolTimeoutMs": "Per-tool timeout (ms)",
     "toolTimeoutHint": "AGIM_NATIVE_TOOL_TIMEOUT_MS. Default 60000 (60 s).",
-    "a2aCard": "A2A sub-agent delegation",
+    "a2aCard": "Agent handoffs (A2A)",
     "a2aDesc": "Controls for model-triggered `mcp__agim__call_agent`, including depth and timeout limits. Agim→Agim calls use the built-in fast path by default.",
     "a2aMaxDepth": "Max recursion depth",
     "a2aMaxDepthHint": "AGIM_A2A_MAX_DEPTH. Hard cap on nested call_agent chains. Default 1.",
@@ -1014,7 +1014,7 @@
     "hint": "No restart needed; the next system-prompt build reads the latest content."
   },
   "agimSkills": {
-    "title": "agim Skills",
+    "title": "Agim Skills",
     "tab": {
       "overview": "Overview",
       "installed": "Installed",
@@ -1084,7 +1084,7 @@
     "group": {
       "framework": "Framework (agim-*)",
       "builtin": "Agim builtin (non-ECC)",
-      "workspace": "Workspace (operator-installed)",
+      "workspace": "Installed (operator)",
       "eccPicks": "ECC recommended picks",
       "eccRemainder": "ECC remainder"
     },

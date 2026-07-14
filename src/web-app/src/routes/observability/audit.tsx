@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { useAudit } from '@/hooks/use-observability'
 import type { InvocationRow, ListAuditQuery } from '@/types/api'
 import { cn } from '@/lib/utils'
+import { agentDisplayName } from '@/lib/agent-label'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -91,7 +92,7 @@ export default function ObservabilityAuditRoute(): JSX.Element {
       {
         id: 'agent',
         header: t('audit.col.agent'),
-        cell: (r) => <span className="font-medium">{r.agent}</span>,
+        cell: (r) => <span className="font-medium">{agentDisplayName(r.agent)}</span>,
         headClassName: 'w-32',
       },
       {

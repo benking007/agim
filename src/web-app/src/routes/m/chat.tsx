@@ -21,15 +21,18 @@ import {
   Loader2,
   MoreVertical,
   Sparkles,
-  Send,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage, type RunActivity } from '@/hooks/use-chat'
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
+import { bubbleGroupFlags } from '@/components/chat/bubble-group'
+import { ChatComposer } from '@/components/chat/chat-composer'
 import { ApprovalDock } from '@/components/chat/approval-dock'
+import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
@@ -105,7 +108,7 @@ function runStatusBadgeClass(status: RunActivity['status']): string {
 export default function MobileChatRoute(): JSX.Element {
   const { t, i18n } = useTranslation(['chat', 'common'])
   const {
-    state, send, switchAgent, approvalClick, newConversation, clearError,
+    state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
   const [sheet, setSheet] = useState<SheetMode>('none')
@@ -114,6 +117,9 @@ export default function MobileChatRoute(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
+  const [dockHeight, setDockHeight] = useState(0)
+  const keyboardInset = useKeyboardInset()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
 
   const quickPrompts = useMemo(
@@ -149,17 +155,6 @@ export default function MobileChatRoute(): JSX.Element {
     [state.activeRunId, state.runActivities],
   )
 
-  // Auto-scroll to bottom on new messages OR streaming chunk. Same
-  // pinch-tolerance as desktop: hold position when user is reading up.
-  useEffect(() => {
-    if (messageCount === 0 && !latestMessageContent && state.currentReplyId == null) return
-    const el = listRef.current
-    if (!el) return
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distFromBottom > 200 && state.currentReplyId == null) return
-    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-  }, [latestMessageContent, messageCount, state.currentReplyId])
-
   // Floating "scroll to bottom" pill.
   useEffect(() => {
     const el = listRef.current
@@ -185,33 +180,48 @@ export default function MobileChatRoute(): JSX.Element {
     clearError()
   }, [state.error, clearError])
 
-  // Auto-grow textarea up to 6 lines.
+  // Track dock stack height so the scroll-to-bottom FAB clears it.
+  // ResizeObserver alone is enough — docks grow/shrink in place.
   useEffect(() => {
-    const ta = inputRef.current
-    if (!ta || ta.value !== input) return
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, 24 * 6 + 16)}px`
-  }, [input])
+    const el = dockRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      setDockHeight(el.getBoundingClientRect().height)
+    })
+    ro.observe(el)
+    setDockHeight(el.getBoundingClientRect().height)
+    return () => ro.disconnect()
+  }, [])
 
-  function onSubmit(e?: React.FormEvent): void {
-    e?.preventDefault()
+  // Smooth follow during streaming when the user is near the bottom.
+  useEffect(() => {
+    if (messageCount === 0 && !latestMessageContent && state.currentReplyId == null) return
+    const el = listRef.current
+    if (!el) return
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distFromBottom > 200 && state.currentReplyId == null) return
+    requestAnimationFrame(() => {
+      const top = el.scrollHeight
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({
+          top,
+          behavior: state.currentReplyId ? 'smooth' : 'auto',
+        })
+      } else {
+        el.scrollTop = top
+      }
+    })
+  }, [latestMessageContent, messageCount, state.currentReplyId])
+
+  function onSubmit(): void {
     const v = input.trim()
     if (!v) return
     if (state.status !== 'open') {
       toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))
       return
     }
-    if (state.currentReplyId) return
     send(v)
     setInput('')
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    // IME-safe: never submit while composition is active.
-    const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
-    if (ne.isComposing || e.keyCode === 229) return
-    // Mobile keeps Enter for newline; explicit Send button submits.
   }
 
   function onScrollToBottom(): void {
@@ -276,7 +286,7 @@ export default function MobileChatRoute(): JSX.Element {
         </Button>
       </header>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto">
+      <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 py-4">
           {chatMessages.length === 0 && state.status === 'open' && (
             <div className="flex flex-col items-center gap-2 py-14 text-center">
@@ -304,25 +314,36 @@ export default function MobileChatRoute(): JSX.Element {
               </p>
             </div>
           )}
-          {rows.map((row) => row.type === 'divider' ? (
-            <div key={row.key} className="py-1 text-center text-[11px] text-text-muted">
-              {row.label}
-            </div>
-          ) : (
-            <div key={row.key} className="space-y-1">
-              <MessageBubble
-                msg={row.msg}
-                onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
-              />
-              <div className={cn(
-                'px-1 text-[11px] text-text-muted',
-                row.msg.role === 'user' ? 'text-right' : 'text-left',
-              )}
-              >
-                {formatClock(row.msg.timestamp, i18n.language)}
+          {rows.map((row) => {
+            if (row.type === 'divider') {
+              return (
+                <div key={row.key} className="py-1 text-center text-[11px] text-text-muted">
+                  {row.label}
+                </div>
+              )
+            }
+            const idx = chatMessages.findIndex((m) => m.id === row.msg.id)
+            const flags = bubbleGroupFlags(chatMessages, Math.max(0, idx))
+            return (
+              <div key={row.key} className="space-y-1">
+                <MessageBubble
+                  msg={row.msg}
+                  isFirstInGroup={flags.isFirstInGroup}
+                  isLastInGroup={flags.isLastInGroup}
+                  onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+                />
+                {flags.isLastInGroup && (
+                  <div className={cn(
+                    'px-1 text-[11px] text-text-muted',
+                    row.msg.role === 'user' ? 'text-right' : 'text-left',
+                  )}
+                  >
+                    {formatClock(row.msg.timestamp, i18n.language)}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -330,114 +351,104 @@ export default function MobileChatRoute(): JSX.Element {
         <button
           type="button"
           onClick={onScrollToBottom}
-          className="absolute bottom-28 left-1/2 z-20 -translate-x-1/2 rounded-full border border-border bg-surface p-2 shadow-md"
+          className="absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-border bg-surface p-2.5 shadow-md"
+          style={{ bottom: `calc(${Math.max(dockHeight, 96)}px + ${keyboardInset}px + 0.75rem)` }}
           aria-label={t('chat.scrollDown', { defaultValue: 'Scroll to bottom' })}
         >
           <ArrowDown className="h-4 w-4" />
         </button>
       )}
 
-      <ApprovalDock
-        approvals={state.pendingApprovals}
-        onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
-      />
+      <div ref={dockRef}>
+        <ApprovalDock
+          approvals={state.pendingApprovals}
+          onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+        />
+        <AskDock
+          asks={state.pendingAsks}
+          onSubmit={(mid, data) => choiceSubmit(mid, data)}
+        />
+      </div>
 
-      <form
+      <ChatComposer
+        value={input}
+        onChange={setInput}
         onSubmit={onSubmit}
-        className="sticky bottom-0 border-t border-border bg-surface px-3 py-2"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
-      >
-        {chatMessages.length === 0 && state.status === 'open' && (
-          <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
-            {quickPrompts.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => {
-                  setInput(prompt)
-                  requestAnimationFrame(() => inputRef.current?.focus())
-                }}
-                className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-dim hover:bg-surface-hover"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {activeRun && (
-          <div className="mb-2 flex items-center justify-between rounded-xl border border-info/30 bg-info-bg/50 px-3 py-1.5">
-            <span className="inline-flex items-center gap-1 text-xs text-info">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {t('chat.running', { defaultValue: 'Running' })}
-            </span>
-            <span className="truncate text-xs text-text-dim">
-              {agentDisplayName(activeRun.agent)} · {formatDurationMs(activeRun.durationMs)}
-            </span>
-          </div>
-        )}
-
-        <div className="flex items-end gap-2">
+        disabled={state.status !== 'open'}
+        busy={!!state.currentReplyId}
+        enterNewline
+        keyboardInset={keyboardInset}
+        inputRef={inputRef}
+        placeholder={t('chat.inputPlaceholderMobile', { defaultValue: 'Message…' })}
+        leading={(
           <Button
             type="button"
             variant="ghost"
             onClick={onStartNewConversation}
-            disabled={state.status !== 'open' || !!state.currentReplyId}
+            disabled={state.status !== 'open'}
             aria-label={t('chat.newConv', { defaultValue: 'New conversation' })}
             className="h-11 w-11 shrink-0 rounded-full p-0"
           >
             <Sparkles className="h-4 w-4" />
           </Button>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t('chat.inputPlaceholderMobile', { defaultValue: 'Message…' })}
-            rows={1}
-            className={cn(
-              'flex-1 resize-none rounded-3xl border border-border bg-bg',
-              'px-3 py-2 text-[15px] leading-6',
-              'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 focus:ring-offset-bg',
+        )}
+        prepend={(
+          <>
+            {chatMessages.length === 0 && state.status === 'open' && (
+              <div className="mb-1 flex gap-2 overflow-x-auto pb-1">
+                {quickPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => {
+                      setInput(prompt)
+                      requestAnimationFrame(() => inputRef.current?.focus())
+                    }}
+                    className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-dim hover:bg-surface-hover"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             )}
-          />
-          <Button
-            type="submit"
-            disabled={!input.trim() || state.status !== 'open' || !!state.currentReplyId}
-            aria-label={t('chat.send', { defaultValue: 'Send' })}
-            className="h-11 w-11 shrink-0 rounded-full p-0"
-          >
-            {state.currentReplyId ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
+            {activeRun && (
+              <div className="flex items-center justify-between rounded-xl border border-info/30 bg-info-bg/50 px-3 py-1.5">
+                <span className="inline-flex items-center gap-1 text-xs text-info">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('chat.running', { defaultValue: 'Running' })}
+                </span>
+                <span className="truncate text-xs text-text-dim">
+                  {agentDisplayName(activeRun.agent)} · {formatDurationMs(activeRun.durationMs)}
+                </span>
+              </div>
             )}
-          </Button>
-        </div>
-
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {state.currentReplyId && (
-              <Badge variant="info">
-                {t('chat.streaming', { defaultValue: '… streaming' })}
-              </Badge>
-            )}
-            {!state.currentReplyId && (
-              <span className="text-[11px] text-text-muted">
-                {t('chat.mobileHint')}
-              </span>
-            )}
+          </>
+        )}
+        footer={(
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {state.currentReplyId && (
+                <Badge variant="info">
+                  {t('chat.streaming', { defaultValue: '… streaming' })}
+                </Badge>
+              )}
+              {!state.currentReplyId && (
+                <span className="text-[11px] text-text-muted">
+                  {t('chat.mobileHint')}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSheet('activity')}
+              className="inline-flex min-h-11 items-center gap-1 rounded px-2 py-1 text-xs text-text-dim hover:bg-surface-hover hover:text-text"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              {t('chat.activity', { defaultValue: 'Activity' })}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setSheet('activity')}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-text-dim hover:bg-surface-hover hover:text-text"
-          >
-            <Activity className="h-3.5 w-3.5" />
-            {t('chat.activity', { defaultValue: 'Activity' })}
-          </button>
-        </div>
-      </form>
+        )}
+      />
 
       {sheet !== 'none' && (
         <>

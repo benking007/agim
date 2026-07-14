@@ -2,8 +2,12 @@
  * AgentPicker — dropdown to switch the active agent in the chat
  * surface. Driven by the `agents` list the WS server pushes via
  * `init` / `agents` messages.
+ *
+ * Switching confirms via an inline banner (not window.confirm) so the
+ * flow stays inside the themed SPA chrome — closer to an iOS action sheet.
  */
 
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Select,
@@ -12,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { agentDisplayName } from '@/lib/agent-label'
 
 export interface AgentPickerProps {
@@ -22,30 +27,49 @@ export interface AgentPickerProps {
 
 export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.Element {
   const { t } = useTranslation()
-  // Confirm before switching so an accidental tap doesn't move the
-  // conversation to a different agent. Picking the current agent is a no-op.
+  const [pending, setPending] = useState<string | null>(null)
+
   function handleChange(next: string): void {
     if (!next || next === value) return
-    const displayNext = agentDisplayName(next)
-    const ok = window.confirm(
-      t('chat.switchAgentConfirm', { agent: displayNext }),
-    )
-    if (ok) onChange(next)
-    // On cancel we do nothing — the Select is controlled by `value`, so it
-    // re-renders back to the current agent automatically.
+    setPending(next)
   }
+
+  function confirmSwitch(): void {
+    if (!pending) return
+    onChange(pending)
+    setPending(null)
+  }
+
   return (
-    <Select value={value || undefined} onValueChange={handleChange}>
-      <SelectTrigger className="h-7 w-28 sm:w-36 text-xs">
-        <SelectValue placeholder={agentDisplayName(agents[0] ?? '—')} />
-      </SelectTrigger>
-      <SelectContent>
-        {agents.map((a) => (
-          <SelectItem key={a} value={a}>
-            {agentDisplayName(a)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-col gap-1">
+      <Select value={value || undefined} onValueChange={handleChange}>
+        <SelectTrigger className="h-9 min-h-9 w-28 sm:w-36 text-xs">
+          <SelectValue placeholder={agentDisplayName(agents[0] ?? '—')} />
+        </SelectTrigger>
+        <SelectContent>
+          {agents.map((a) => (
+            <SelectItem key={a} value={a}>
+              {agentDisplayName(a)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-xs">
+          <span className="text-text-dim">
+            {t('chat.switchAgentConfirm', {
+              agent: agentDisplayName(pending),
+              defaultValue: 'Switch to {{agent}}?',
+            })}
+          </span>
+          <Button size="sm" className="h-8" onClick={confirmSwitch}>
+            {t('chat.switchAgentOk', { defaultValue: 'Switch' })}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={() => setPending(null)}>
+            {t('actions.cancel', { ns: 'common', defaultValue: 'Cancel' })}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }

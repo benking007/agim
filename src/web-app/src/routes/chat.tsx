@@ -2,9 +2,8 @@
  * /chat — agim's primary surface. Replaces the PR-5 placeholder.
  *
  * Layout: sticky topbar (agent picker + status dot + theme/lang) +
- * scrollable message list + bottom input pinned with safe-area
- * padding. Uses `min-h-dvh` so the soft keyboard pushes the input
- * up instead of overlaying it on iOS Safari.
+ * scrollable message list + bottom composer lifted by visualViewport
+ * when the soft keyboard is open (iOS Safari).
  *
  * State: useChat() owns the WebSocket + reducer; the route is a
  * thin presenter — every interaction (send, switch-agent, approval
@@ -28,9 +27,12 @@ import {
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
+import { bubbleGroupFlags } from '@/components/chat/bubble-group'
+import { ChatComposer } from '@/components/chat/chat-composer'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
@@ -58,6 +60,7 @@ export default function ChatRoute(): JSX.Element {
   const [searchParams] = useSearchParams()
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const keyboardInset = useKeyboardInset()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
   const messageCount = state.messages.length
   const latestMessageContent = state.messages.at(-1)?.content ?? ''
@@ -72,6 +75,11 @@ export default function ChatRoute(): JSX.Element {
     [t],
   )
 
+  const visibleMessages = useMemo(
+    () => state.messages.filter((m) => !m.approval),
+    [state.messages],
+  )
+
   // Auto-scroll to bottom on new messages OR streaming chunk. Use
   // requestAnimationFrame so the layout has settled before we scroll;
   // also tolerate the case where the user scrolled up intentionally.
@@ -82,7 +90,15 @@ export default function ChatRoute(): JSX.Element {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200
     if (!nearBottom && state.currentReplyId == null) return
     requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight
+      const top = el.scrollHeight
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({
+          top,
+          behavior: state.currentReplyId ? 'smooth' : 'auto',
+        })
+      } else {
+        el.scrollTop = top
+      }
     })
   }, [latestMessageContent, messageCount, state.currentReplyId])
 
@@ -99,8 +115,7 @@ export default function ChatRoute(): JSX.Element {
     clearError()
   }, [state.error, clearError])
 
-  function onSubmit(e?: React.FormEvent): void {
-    e?.preventDefault()
+  function onSubmit(): void {
     const v = input.trim()
     if (!v) return
     if (state.status !== 'open') {
@@ -109,23 +124,6 @@ export default function ChatRoute(): JSX.Element {
     }
     send(v)
     setInput('')
-    // Keep focus on mobile keyboards.
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    // Respect IME composition: CJK input methods use Enter to commit
-    // candidates. Without this guard, pressing Enter to confirm a
-    // Chinese candidate would also submit the message — the textarea
-    // sees an Enter event the IME hasn't yet "consumed". `isComposing`
-    // is true while the composition span is active; `keyCode === 229`
-    // is the legacy fallback for browsers that don't expose the flag.
-    const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
-    if (ne.isComposing || e.keyCode === 229) return
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      onSubmit()
-    }
   }
 
   return (
@@ -171,7 +169,7 @@ export default function ChatRoute(): JSX.Element {
       {/* Message list */}
       <div
         ref={listRef}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto overscroll-contain"
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-2 px-3 py-3 sm:px-4">
           {(state.messages.length === 0 || forceWelcome) && state.status === 'open' && (
@@ -198,19 +196,18 @@ export default function ChatRoute(): JSX.Element {
               </p>
             </div>
           )}
-          {state.messages
-            // v1.2.115 — approval cards now render in the dock, not
-            // inline. Filter out any approval-typed messages that may
-            // exist in restored history from older builds (server-side
-            // session may still hold them as system rows).
-            .filter((m) => !m.approval)
-            .map((m) => (
+          {visibleMessages.map((m, i) => {
+            const flags = bubbleGroupFlags(visibleMessages, i)
+            return (
               <MessageBubble
                 key={m.id}
                 msg={m}
+                isFirstInGroup={flags.isFirstInGroup}
+                isLastInGroup={flags.isLastInGroup}
                 onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
               />
-            ))}
+            )
+          })}
         </div>
       </div>
 
@@ -227,47 +224,23 @@ export default function ChatRoute(): JSX.Element {
         onSubmit={(mid, data) => choiceSubmit(mid, data)}
       />
 
-      {/* Input — height matches the h-8 topbar widgets (agent picker /
-          lang select / theme button) so the whole chat surface has one
-          consistent vertical rhythm. */}
-      <form
+      <ChatComposer
+        value={input}
+        onChange={setInput}
         onSubmit={onSubmit}
-        className="sticky bottom-0 border-t border-border bg-surface px-4 py-2 pb-safe sm:px-6"
-      >
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t('chat.inputPlaceholder', {
-              defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
-            })}
-            rows={1}
-            className={cn(
-              'flex-1 resize-none rounded-md border border-border bg-bg',
-              'px-3 py-1.5 text-sm leading-5',
-              'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 focus:ring-offset-bg',
-              'max-h-32 min-h-8',
-            )}
-          />
-          <Button
-            type="submit"
-            disabled={!input.trim() || state.status !== 'open'}
-            aria-label={t('chat.send', { defaultValue: 'Send' })}
-            className="h-8 w-8 p-0"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-        {state.currentReplyId && (
-          <div className="mx-auto mt-2 flex max-w-3xl items-center gap-2">
-            <Badge variant="info">
-              {t('chat.streaming', { defaultValue: '… streaming' })}
-            </Badge>
-          </div>
-        )}
-      </form>
+        disabled={state.status !== 'open'}
+        busy={!!state.currentReplyId}
+        keyboardInset={keyboardInset}
+        inputRef={inputRef}
+        placeholder={t('chat.inputPlaceholder', {
+          defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
+        })}
+        footer={state.currentReplyId ? (
+          <Badge variant="info">
+            {t('chat.streaming', { defaultValue: '… streaming' })}
+          </Badge>
+        ) : null}
+      />
     </div>
   )
 }

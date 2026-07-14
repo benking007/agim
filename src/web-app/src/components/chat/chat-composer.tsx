@@ -74,14 +74,15 @@ export function ChatComposer({
 
   function handleSubmit(e?: FormEvent): void {
     e?.preventDefault()
-    // Allow queueing another message while a reply is still streaming.
-    if (disabled || !value.trim()) return
+    // Busy blocks a second send while streaming so WS chunks stay bound
+    // to the current reply (runId / currentReplyId stay aligned).
+    if (disabled || busy || !value.trim()) return
     onSubmit()
     requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
-    const ne = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+    const ne = e.nativeEvent as { isComposing?: boolean }
     if (ne.isComposing || e.keyCode === 229) return
     if (enterNewline) return
     if (e.key === 'Enter' && !e.shiftKey) {

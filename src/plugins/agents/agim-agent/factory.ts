@@ -6,6 +6,10 @@
 import { chmodSync, mkdirSync } from 'node:fs'
 import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
+import {
+  configureAgimAgentSessionLifecycle,
+  startAgimAgentSessionRetention,
+} from '../../../core/agim-agent-session-lifecycle.js'
 import { migratePiSessionsDir } from '../../../core/naming-migrate.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { applyGoalTimeoutBoost } from '../../../core/goals.js'
@@ -79,7 +83,7 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
   } catch (err) {
     console.error('[agim-agent] failed to secure session root:', err instanceof Error ? err.message : err)
   }
-  return new NativeAgentAdapter({
+  const adapter = new NativeAgentAdapter({
     name: 'agim',
     aliases: ['native', 'na', 'llm', 'native-llm', 'agim-agent'],
     sessionsRoot,
@@ -144,6 +148,20 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
       return undefined
     },
   })
+
+  // Wire /new · switch · META TTL → quarantine. Boot orphan inventory is
+  // started from the CLI after sessionManager.start() so unit-test imports
+  // of this module do not scan the operator's real AGIM_HOME.
+  configureAgimAgentSessionLifecycle({
+    sessionsRoot,
+    hooks: {
+      isBusy: (id) => adapter.isSessionBusy(id),
+      invalidateCache: (id) => adapter.invalidateSessionMeta(id),
+    },
+  })
+  startAgimAgentSessionRetention({ runBootInventory: false })
+
+  return adapter
 }
 
 export const nativeAgentAdapter = createNativeAgentAdapter()

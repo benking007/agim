@@ -16,6 +16,7 @@ import { approvalBus } from './approval-bus.js'
 import { clearPlanModeForThread } from './plan-mode-state.js'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { scheduleRetireAgimAgentSession } from './agim-agent-session-lifecycle.js'
 
 const log = rootLogger.child({ component: 'session' })
 
@@ -332,6 +333,7 @@ class SessionManager {
 
       // Get existing session or create new
       const existing = this.sessions.get(key) || await this.loadSession(key)
+      const retiredId = existing?.id
 
       const now = new Date()
       const session: Session = {
@@ -364,6 +366,11 @@ class SessionManager {
 
       this.sessions.set(key, session)
       await this.saveSession(key, session)
+
+      // Minting a new session.id orphans the previous Agim Agent JSONL.
+      if (retiredId && retiredId !== session.id) {
+        scheduleRetireAgimAgentSession(retiredId, 'switch')
+      }
 
       return session
     })
@@ -764,6 +771,7 @@ class SessionManager {
       const session = this.sessions.get(key) || await this.loadSession(key)
 
       if (session) {
+        const retiredId = session.id
         session.messages = []
         session.lastActivity = new Date()
         session.id = `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}` // New session ID
@@ -790,6 +798,8 @@ class SessionManager {
         try { approvalBus.clearAutoAllowForThread(key) } catch { /* ignore */ }
         this.sessions.set(key, session)
         await this.saveSession(key, session)
+        // Quarantine the previous Agim Agent JSONL (does not block /new).
+        scheduleRetireAgimAgentSession(retiredId, 'new')
         return session
       }
 
@@ -1111,15 +1121,20 @@ class SessionManager {
       const idle = now - session.lastActivity.getTime()
       if (idle > META_TTL) {
         // Full eviction: thread truly cold. Drop both files + cache entry.
+        const retiredId = session.id
         this.sessions.delete(key)
         const filePath = sessionFilePath(key)
         const logPath = sessionLogPath(key)
         try { await unlink(filePath) } catch { /* ignore */ }
         try { await unlink(logPath) } catch { /* ignore */ }
+        // Messages TTL keeps sticky routing; META TTL drops the id entirely,
+        // so the corresponding Agim Agent JSONL becomes an orphan.
+        scheduleRetireAgimAgentSession(retiredId, 'meta_ttl')
       } else if (idle > MESSAGES_TTL && session.messages.length > 0) {
         // Messages-only eviction: keep sticky agent / claudeSessionId on disk
         // (meta file untouched), drop chat log + in-memory messages so the
         // next turn starts with a fresh history but the same routing.
+        // Do NOT retire Agim Agent JSONL — session.id is still live.
         session.messages = []
         const logPath = sessionLogPath(key)
         try { await unlink(logPath) } catch { /* ignore */ }

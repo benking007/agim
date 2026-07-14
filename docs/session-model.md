@@ -221,5 +221,44 @@ env 钩子完整列表见 `im-workspaces-guide.md § 六`。
 | Claude 续接靠什么 | session 的 `claudeSessionId` + `--resume` |
 | OpenCode/Codex 续接靠什么 | session 的 `opencodeSessionId` / `codexSessionId` + adapter resume |
 | sticky 怎么改 | `/cc` `/oc` 等显式命令或 `/new` 重置 |
+| Agim Agent JSONL 在哪 | `~/.agim/agim-sessions/`；退役进 `~/.agim/agim-session-quarantine/` |
+| `/new` 清 JSONL 吗 | 不清内容原地删；rename 进 quarantine（忙则延后） |
 | 跨平台共享 sticky 吗 | 不共享，key 含 platform |
 | 重启进程会丢吗 | 不会，落盘的元数据会被 lazy 加载回来 |
+
+---
+
+## 九、Agim Agent JSONL（第三层）
+
+Agim Agent 的对话真源不在 `sessions/*.log`，而在：
+
+```
+~/.agim/agim-sessions/<cwd-encoded>/<timestamp>_<session.id>.jsonl
+```
+
+`session.id` 与主 session 元数据绑定。`/new`、`switchAgent`、META TTL 会换新 id；MESSAGES TTL 只清消息、**保留** id。
+
+### 9.1 Quarantine / retention
+
+| 路径 | 作用 |
+|---|---|
+| `~/.agim/agim-sessions/` | 活跃 JSONL（JsonlSessionRepo） |
+| `~/.agim/agim-session-quarantine/` | 退役归档（**sessionsRoot 外**，避免 `repo.list()` 扫回） |
+
+触发退役（rename → quarantine，忙则 deferred）：
+
+- `/new` → `resetConversation`（reason `new`）
+- `switchAgent`（reason `switch`）
+- META TTL 全量驱逐（reason `meta_ttl`）
+- Boot orphan inventory：磁盘 JSONL id ∉ 任何 `sessions/*.json` 的 `id`（reason `orphan`）
+
+宽限期后物理删除：`AGIM_AGENT_SESSION_QUARANTINE_DAYS`（默认 7）。
+
+| 环境变量 | 默认 | 含义 |
+|---|---|---|
+| `AGIM_AGENT_SESSION_QUARANTINE` | `on` | `off` / `on` / `inventory`（只记日志不移动） |
+| `AGIM_AGENT_SESSION_QUARANTINE_DAYS` | `7` | quarantine 后保留天数；`0` 表示不自动 purge |
+| `AGIM_AGENT_SESSION_RETENTION_SWEEP_MS` | `6h` | 周期 sweep；`0` 关闭 |
+| `AGIM_AGENT_SESSION_RETIRE_WAIT_MS` | `30000` | 等待 session lock 排空的上限 |
+
+代码：`src/core/agim-agent-session-lifecycle.ts`；adapter hooks 在 `agim-agent/factory.ts`。

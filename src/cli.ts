@@ -334,6 +334,13 @@ program
     // Initialize session manager
     await sessionManager.start()
 
+    // Quarantine Agim Agent JSONL orphans left by /new · switch · META TTL
+    // across prior process lifetimes. Best-effort; never blocks boot.
+    try {
+      const { inventoryAndQuarantineOrphans } = await import('./core/agim-agent-session-lifecycle.js')
+      void inventoryAndQuarantineOrphans().catch(() => { /* logged inside */ })
+    } catch { /* ignore */ }
+
     // Start approval-bus before any agent can spawn — failure here is
     // non-fatal: claude-code falls back to legacy --permission-mode dontAsk.
     if (process.env.AGIM_APPROVAL_DISABLED === '1') {
@@ -1193,6 +1200,10 @@ program
       // in-flight sockets so the listener actually releases the port
       // before any DB / messenger teardown begins.
       sessionManager.stop()
+      try {
+        const { stopAgimAgentSessionRetention } = await import('./core/agim-agent-session-lifecycle.js')
+        stopAgimAgentSessionRetention()
+      } catch { /* ignore */ }
       try { webServer?.close() } catch { /* ignore */ }
       try { acpServer?.close() } catch { /* ignore */ }
 

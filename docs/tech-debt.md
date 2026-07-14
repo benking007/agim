@@ -19,6 +19,7 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Tools `native_*` → `agim_*` | Advertise `agim_*`; dispatch accepts both |
 | `pi-sessions` → `agim-sessions` | Boot rename when target absent |
 | Config `workspaces[]` → `tenants[]` | Prefer `tenants`; dual-write on SPA save |
+| Agim Agent JSONL orphaned on `/new` / TTL | Quarantine + grace purge (`agim-agent-session-lifecycle`) |
 
 ## Intentionally keep (ops / compat)
 
@@ -42,6 +43,9 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Drop `native` / `native_*` / `workspaces` read aliases | After compat window |
 | Rename SPA `/api/workspaces` → `/api/tenants` | Optional; keep redirect |
 | Shrink `agent-loop.ts` | Extract shared helpers; delete retired loop body |
+| Full activity-lease before hard-delete | Quarantine uses sessionLocks wait; richer lease is milestone B |
+| Agim Agent metadata index | After retention stable (milestone H) |
+| Unify TUI `/new` id with sessionManager | TUI still mints independent ids |
 
 ## Dead env knobs (must stay off SPA allowlist)
 

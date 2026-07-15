@@ -98,6 +98,12 @@ describe('formatAgentInstallHint', () => {
 
     expect(hint).toBe('')
   })
+
+  it('uses the cursor curl install hint (not npm i -g cursor)', () => {
+    const hint = formatAgentInstallHint(['cursor'])
+    expect(hint).toContain('cursor.com/install')
+    expect(hint).not.toContain('npm i -g cursor')
+  })
 })
 
 describe('formatAgentNotAvailableError', () => {

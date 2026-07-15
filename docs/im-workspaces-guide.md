@@ -2,7 +2,7 @@
 
 > 适用：v2 升级后（A/D/B 已落地，C 自然就位）
 > 角色：agim 用户 / 接入方 / 运维
-> 关联：[`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md) · [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)
+> 关联：历史计划 [`im-gateway-v2-plan.md`](./im-gateway-v2-plan.md)（已归档）· [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md) · [`session-model.md`](./session-model.md)
 
 本文档面向"已经在用 IM 跟 Claude Code / opencode 聊天"的用户，讲 v2 之后的新能力怎么用：
 

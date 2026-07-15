@@ -1,5 +1,7 @@
 # Code Review: agim v1.3.6
 
+> **归档**：仓库根目录历史 code review。现行安全/运维以 `docs/security-hardening.md`、`docs/runbook.md`、CHANGELOG 为准。索引见 `docs/README.md` §归档。
+
 **Reviewer:** Claude (delegated multi-agent review + manual source verification)
 **Scope:** whole project (~112k LOC TypeScript), focus on security boundaries, correctness, concurrency
 **Date:** 2026-06-22

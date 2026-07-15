@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `agim start` on a TTY no longer forces IM onboarding (or exits on cancel); empty `messengers` is web-console-only, with an optional IM prompt (default no).
+- Background start / restart / `agim go` wait for `/api/health` (up to ~20s) before printing the Web URL / token hint, instead of a fixed 1.5s race.
+- Uninstall `creds` mode now also deletes `web-bootstrap-token` and `llm-secrets.json`.
+- Cursor install hints use the official curl installer (no bogus `npm i -g cursor`).
+
+### Changed
+
+- README / README.zh-CN / AGENTS.md / deployment first-run docs aligned on `agim go`, web-only minimal config, Node ≥22.19, and `agim` (alias `native`) naming.
+- Docs debt cleanup: archive stamps for pi-loop analysis / task-recovery testing / dream-distillation; fix ZH auto-approve, session-model opencode diagnosis + Web Chat §十, memory/deployment links, docs index, tech-debt Docs row; soften GLOBAL_IM README claim.
+
 ## [1.5.12] - 2026-07-11
 
 ### Added

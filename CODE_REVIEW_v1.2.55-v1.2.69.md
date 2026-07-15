@@ -1,5 +1,7 @@
 # Code Review: agim v1.2.55 → v1.2.69
 
+> **归档**：仓库根目录历史 code review。现行文档见 `docs/README.md` §归档。
+
 **Reviewer:** Claude (delegated CR + manual triage)
 **Scope:** 15 versions, ~3700 LOC of net additions
 **Date:** 2026-05-26

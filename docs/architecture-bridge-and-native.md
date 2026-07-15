@@ -4,13 +4,20 @@
 > two separate products?
 
 **No.** agim is, and continues to be, a **messenger-to-agent bridge**.
-The Agim Agent (internal id: `native`) is just another `AgentAdapter` in the registry —
-peer-equal to `claude-code`, `codex`, `copilot`, `opencode`, `kimi-code`, `qoder`, `pi`, `mimo`, and `antigravity`.
+The **Agim Agent** (registry id: `agim`; legacy routing/config alias: `native`)
+is just another `AgentAdapter` in the registry — peer-equal to
+`claude-code`, `codex`, `copilot`, `opencode`, `cursor`, `kimi-code`,
+`qoder`, `pi`, `mimo`, and `antigravity`.
 The only thing that's "special" about it is **where it runs**
 (in-process LLM loop, no subprocess spawn).
 
 This doc explains the architecture, the invariants, and the practical
 consequences for operators + contributors.
+
+> Naming: new configs and docs should use `agim`. `native` still routes
+> and survives in older `config.json` / sessions during the compat window
+> (see `migration-naming-v2.md`). Env knobs that still say `AGIM_NATIVE_*`
+> are historical spellings for Agim Agent behaviour.
 
 ## 1. The product is the bridge
 
@@ -44,7 +51,7 @@ export interface AgentAdapter {
 That's it. The whole rest of agim (router, approval bus, A2A,
 heartbeat, /goal, /skill, /router compare, audit log, web dashboard…)
 talks to backends only through this interface — never through
-"is this CLI?" or "is this native?" branches.
+"is this CLI?" or "is this Agim Agent?" branches.
 
 This is the load-bearing architectural decision. Once a backend
 implements `AgentAdapter`, every existing agim feature works on it
@@ -55,8 +62,8 @@ automatically.
 ```
 'cli'         spawns an external CLI subprocess per turn
               (Claude Code, Codex, OpenCode, Antigravity)
-'in-process'  runs entirely inside the agim process via the native
-              LLM client + agent loop (the `native` adapter)
+'in-process'  runs entirely inside the agim process via the
+              LLM client + agent loop (the Agim Agent / `agim` adapter)
 'remote'      talks to an external Agent Client Protocol endpoint
               over the network (acp-* adapters)
 ```
@@ -81,12 +88,13 @@ The current registry:
 | `codex` | `/cx`, `/openai`, `/codexcli` | `cli` | `codex exec` subprocess |
 | `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `cli` | GitHub Copilot CLI (`copilot -p --output-format json`) |
 | `opencode` | `/oc`, `/opencodeai` | `cli` | opencode CLI (stdio or HTTP daemon) |
+| `cursor` | `/cs`, `/cur` | `cli` | Cursor Agent CLI (`cursor-agent`) |
 | `kimi-code` | `/kimi`, `/km` | `cli` | Kimi Code CLI (`kimi -p --output-format stream-json`) |
 | `qoder` | `/qd`, `/qodercli` | `cli` | Qoder CLI (`qodercli --print --output-format stream-json`) |
 | `pi` | `/pi`, `/pi-agent` | `cli` | PI CLI (`pi --mode json -p`) |
 | `mimo` | `/mo`, `/mimo-code` | `cli` | MiMo Code CLI (`mimo run --format json`) |
 | `antigravity` | `/agy`, `/gemini`, `/ag` | `cli` | Google Antigravity CLI |
-| `native` | `/agim`, `/na`, `/llm`, `/native-llm` | `in-process` | LLM client + agent loop (no subprocess) |
+| `agim` | `/agim`, `/na`, `/llm`, `/native-llm` (+ alias id `native`) | `in-process` | LLM client + agent loop (no subprocess) |
 | (per-config) | per-config | `remote` | ACP endpoint over HTTP |
 
 `/agents` renders every row with its `kind` tag and a one-line
@@ -108,28 +116,28 @@ The current registry:
 
 ## 5. The Six Things You Get Automatically
 
-Because native is just another `AgentAdapter`, every agim feature
+Because Agim Agent is just another `AgentAdapter`, every agim feature
 works without per-feature wiring. Concretely:
 
 ### 5a. Routing
 
-The same `resolveActiveAgent` picks among them. `defaultAgent: 'native'`
-is a valid config. `/cc`, `/cx`, `/oc`, `/agim` all switch sticky session.
+The same `resolveActiveAgent` picks among them. `defaultAgent: 'agim'`
+is a valid config (`native` still accepted as alias). `/cc`, `/cx`, `/oc`, `/agim` all switch sticky session.
 
 ### 5b. A2A (cross-agent calls)
 
-`mcp__agim__call_agent('native', '...')` works. So does
-`mcp__agim__call_agent('claude-code', '...')` from inside native.
+`mcp__agim__call_agent('agim', '...')` works. So does
+`mcp__agim__call_agent('claude-code', '...')` from inside Agim Agent.
 You can mix and match freely:
 
 ```
 user → claude-code (heavy planning)
-       → call_agent('native', 'extract 50 keywords from these docs')
+       → call_agent('agim', 'extract 50 keywords from these docs')
        → call_agent('opencode', 'apply these patches')
 ```
 
 ```
-user → native (cheap intent classifier)
+user → agim (cheap intent classifier)
        → call_agent('claude-code', 'now write the production code')
 ```
 
@@ -138,7 +146,7 @@ user → native (cheap intent classifier)
 Approval bus, MCP tool dispatch, SKILL.md tier-1 injection, the
 notification evaluator, the `/goal` + `/heartbeat` + `/memo` +
 `/remind` prompt injections — every one of them runs at the
-`AgentAdapter.sendPrompt` layer or above. Native gets all of it without
+`AgentAdapter.sendPrompt` layer or above. Agim Agent gets all of it without
 adding a single conditional.
 
 ### 5d. Web admin panels (Stage 6 + P1 follow-up)
@@ -158,34 +166,35 @@ Cross-thread admin views land under two SPA areas:
 - `/settings/llm` — list / add / remove LLM backends; optional role
   bindings (`cheap` / `evaluator` / `native-chat`); per-backend **Ping**
   button via `/api/llm/backends/:name/ping`.
-- `/chat` + `/m/chat` — when switching to `native` without a usable
+- `/chat` + `/m/chat` — when switching to `agim` without a usable
   backend, show a persistent setup modal (instead of transient toast),
   submit backend config in place, then auto-retry switch.
 - `/settings/mcp` — list / add / remove external MCP servers (stdio
   or HTTP/SSE); per-server **Health** button via
-  `/api/mcp/servers/:name/health`. Tools flow into the native agent's
+  `/api/mcp/servers/:name/health`. Tools flow into the Agim Agent
   dispatcher with `mcp_<server>_<tool>` naming.
-- `/settings/native-agent` — focused form for the 4 native-agent env
-  knobs + 2 notification-evaluator + 3 heartbeat knobs (lifted out of
-  the generic env editor).
+- `/settings/native-agent` — focused form for Agim Agent env
+  knobs + notification-evaluator + heartbeat knobs (lifted out of
+  the generic env editor; route name keeps historical `native-agent`).
 
 ### 5e. Audit / cost / sessions
 
-Every turn lands in `invocations` with `agent='native'` (or
+Every turn lands in `invocations` with `agent='agim'` (or
 `agent='claude-code'`, etc.) — the dashboard sums them the same way.
-Sticky sessions store `agent='native'` and resume correctly.
+Sticky sessions store `agent='agim'` and resume correctly (legacy
+`native` values still route).
 
 ### 5f. `/router compare` A/B evaluation
 
-`/router compare agent:claude-code agent:native "..."` works on day
-one. There's no special "compare CLI vs native" code — both sides go
+`/router compare agent:claude-code agent:agim "..."` works on day
+one. There's no special "compare CLI vs Agim Agent" code — both sides go
 through the same `BackendRef.kind='agent'` branch.
 
 ### 5g. Fallback chains
 
 Stage 5's `tryIntrospectChain` can cascade through LLM roles; the
-analogous "if CLI is down, fall back to native" lives in the same
-circuit-breaker layer that handles CLI-to-CLI fallback. No native
+analogous "if CLI is down, fall back to Agim Agent" lives in the same
+circuit-breaker layer that handles CLI-to-CLI fallback. No Agim Agent
 exception.
 
 ## 6. When to use which (operator guidance)
@@ -193,9 +202,9 @@ exception.
 | scenario | recommended |
 |---|---|
 | User-facing, complex multi-step work | a CLI agent (Claude Code / Codex) |
-| Cheap internal introspection (memo extract, intent class) | native (`role=cheap`) |
-| Local-first / no-egress requirement | native with a local Ollama backend |
-| Need a model the CLI agents don't support (DeepSeek, GLM, Kimi) | native (or opencode for limited support) |
+| Cheap internal introspection (memo extract, intent class) | Agim Agent (`role=cheap`) |
+| Local-first / no-egress requirement | Agim Agent with a local Ollama backend |
+| Need a model the CLI agents don't support (DeepSeek, GLM, Kimi) | Agim Agent (or opencode for limited support) |
 | Operator wants the same prompt → 2 backends to pick a winner | `/router compare` |
 | Long-running monitoring loop that pings on actionable updates | `/heartbeat` (uses cheap LLM + evaluator gate) |
 | Disambiguation question from agent to user | `mcp__agim__ask_user` |
@@ -206,9 +215,9 @@ exception.
   approval / A2A / audit code. If you find yourself wanting to, the
   feature belongs in the `AgentAdapter` interface (extend it) or in
   the adapter itself.
-- ❌ Don't write a parallel "native router" / "native approval bus".
+- ❌ Don't write a parallel "Agim Agent router" / "Agim Agent approval bus".
   There is one router, one approval bus.
-- ❌ Don't make `native` a hardcoded default; respect the operator's
+- ❌ Don't make `agim` (or legacy `native`) a hardcoded default; respect the operator's
   `defaultAgent` config like any other backend.
 
 ## 8. Future evolution
@@ -217,7 +226,7 @@ The peer model gives us a clean upgrade path:
 
 - **More CLI backends** — just implement `AgentAdapter` with
   `kind='cli'`. Drop in `src/plugins/agents/<name>/` and register.
-- **More native models** — add a provider in `src/core/llm/`; native can
+- **More models for Agim Agent** — add a provider in `src/core/llm/`; Agim Agent can
   pick it automatically once it has a usable key. `llmRoles` remains an
   optional preference layer for deterministic role routing.
 - **Remote backends** — register an ACP-compatible endpoint with
@@ -230,46 +239,46 @@ The bridge identity stays. The peer set grows.
 ## 9. TL;DR
 
 > agim = **messenger ↔ agent bridge**.
-> All agent backends — CLI, in-process native, remote ACP — are peer
+> All agent backends — CLI, in-process Agim Agent (`agim`), remote ACP — are peer
 > `AgentAdapter` implementations. `kind` is a UI tag, not a code path.
 > Every existing feature (routing, A2A, approval, skills, goal,
 > heartbeat, ask_user, /router compare) works on every peer
 > automatically.
 
-## 10. v1.2.145 — native harness upgrade + honest deviations
+## 10. v1.2.145 — Agim Agent harness upgrade + honest deviations
 
 A round of "harness engineering" (distilled from
 [agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill))
-hardened the native adapter **without** breaking the peer model. None of
+hardened the Agim Agent adapter **without** breaking the peer model. None of
 these added a `kind`-based branch in router / approval / audit.
 
-### 10.1 What changed in native
+### 10.1 What changed in Agim Agent
 
 | Area | Change | Where |
 |---|---|---|
-| Provider | Anthropic usable as a native backend: pseudo-stream now carries complete `toolCalls` (streaming previously dropped every Anthropic tool call); baseURL strips a trailing `/v1` (the wizard preset's `…/v1` 404'd) | `anthropic-provider.ts`, `provider-base.ts` (`ChatStreamChunk.toolCalls`), `agent-loop.ts` |
-| Context budget | `readOperatorRole` memoized by mtime/size; system-prompt skills list capped at `MAX_INJECTED_SKILLS` | `native/index.ts` |
-| Tool registry | one `assembleNativeTools()` produces defs + dispatch + a **per-call** concurrency classifier (was 3 hand-kept lists); external MCP partition name-sorted for prompt-cache stability | `native/tool-registry.ts`, `agent-loop.ts` (`parallelSafeClassifier`) |
-| Instruction layering | operator role = `<cwd>/AGENTS.md` (project) + `<cwd>/AGENTS.local.md` (local, **wins**); `AGIM_NATIVE_AGENT_ROLE_FILE` still pins one file | `native/index.ts` |
-| Verification subagent | prompt SOP: produce a result → spin a **fresh** subagent to verify it with a self-contained brief; synthesize-before-delegate. Prompt-only — uses the existing `call_agent`, no new code path | `native/index.ts` |
-| Trust gate | `AGIM_NATIVE_TRUST_WORKSPACE=off` makes native skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | `native/index.ts` (`isWorkspaceTrusted`) |
-| Audit traceId | native now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted `native-<sid>-<ts>` id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, `native/index.ts` |
+| Provider | Anthropic usable as an Agim Agent backend: pseudo-stream now carries complete `toolCalls` (streaming previously dropped every Anthropic tool call); baseURL strips a trailing `/v1` (the wizard preset's `…/v1` 404'd) | `anthropic-provider.ts`, `provider-base.ts` (`ChatStreamChunk.toolCalls`), `agent-loop.ts` |
+| Context budget | `readOperatorRole` memoized by mtime/size; system-prompt skills list capped at `MAX_INJECTED_SKILLS` | Agim Agent adapter (`agim-agent` / historical `native/` paths) |
+| Tool registry | one `assembleNativeTools()` produces defs + dispatch + a **per-call** concurrency classifier (was 3 hand-kept lists); external MCP partition name-sorted for prompt-cache stability | `tool-registry.ts`, `agent-loop.ts` (`parallelSafeClassifier`) |
+| Instruction layering | operator role = `<cwd>/AGENTS.md` (project) + `<cwd>/AGENTS.local.md` (local, **wins**); `AGIM_NATIVE_AGENT_ROLE_FILE` still pins one file | Agim Agent adapter |
+| Verification subagent | prompt SOP: produce a result → spin a **fresh** subagent to verify it with a self-contained brief; synthesize-before-delegate. Prompt-only — uses the existing `call_agent`, no new code path | Agim Agent adapter |
+| Trust gate | `AGIM_NATIVE_TRUST_WORKSPACE=off` makes Agim Agent skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | Agim Agent adapter (`isWorkspaceTrusted`) |
+| Audit traceId | Agim Agent now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, Agim Agent adapter |
 
 ### 10.2 Honest deviations from the peer model
 
-These use a hardcoded **`agentName === 'native'`** check (not
+These use hardcoded **`agim` / `native`** id checks (not
 `adapter.kind`), but they still break peer symmetry unless operators
 opt in / accept the documented semantics:
 
 - **A2A in-process fast path** (`agim-dispatcher.ts`,
-  `call_agent('native')`): **default OFF**. Unset /
+  `call_agent('agim')`): **default OFF**. Unset /
   `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` empty → `callAgentByName` (full
   inline job + `intent:'a2a'` audit). Opt in with `=on` for the
   latency fast path (no A2A job row).
-- **`isAgentEnabled('native')` honour `config.agents`** (`live-config.ts`):
+- **`isAgentEnabled('agim'|'native')` honour `config.agents`** (`live-config.ts`):
   SPA disable is a real routing kill-switch. Boot runs
   `migrateNativeAgentToggle` once so legacy non-empty lists that
-  omitted `native` get it appended before the filter applies.
+  omitted the in-process agent get it appended before the filter applies.
 - **ACP SSRF**: `assertSafeAcpUrl` now guards Web discover/test,
   discovery `.well-known` + advertised endpoints, and
   `registry.loadACPAgents` before adapter construction. Runtime fetch

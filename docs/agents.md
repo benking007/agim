@@ -8,7 +8,7 @@ For the implementation checklist used when adding a new backend, see `agent-inte
 
 | Agent ID | IM aliases | Install / login hint | Model switch | Agim tools |
 |---|---|---|---|---|
-| `native` | `/agim`, `/na`, `/llm` | No external CLI. Configure `llmBackends`. | Yes | In-process tools |
+| `agim` (alias `native`) | `/agim`, `/na`, `/llm` | No external CLI. Configure `llmBackends`. | Yes | In-process tools |
 | `claude-code` | `/cc`, `/claude` | Install Claude Code, then complete its login flow. | CLI default | MCP + approval |
 | `codex` | `/cx` | Install Codex CLI, then complete its login flow. | CLI default | MCP + approval |
 | `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `npm install -g @github/copilot`, then `copilot login`. | Yes | MCP + approval |
@@ -27,7 +27,7 @@ For the implementation checklist used when adding a new backend, see `agent-inte
 
 1. Run `agim go`.
 2. Let Agim detect installed agents.
-3. If no external agent is ready, configure `native` with an OpenAI-compatible or Anthropic backend.
+3. If no external agent is ready, configure Agim Agent (`agim` / alias `native`) with an OpenAI-compatible or Anthropic backend.
 4. Open Web and send the first message.
 5. After Web chat works, enable IM channels from Settings.
 

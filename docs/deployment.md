@@ -6,7 +6,7 @@
 
 - Node.js >= 22.19（推荐 24 LTS）
 - npm
-- 至少一个可用 Agent 后端（CLI 或 ACP）
+- 至少一个可用 Agent 后端（CLI agent、Agim Agent + `llmBackends`，或 ACP）
 - **生产硬依赖**：原生 addon `better-sqlite3`（outbox / jobs / audit）。需要 `gcc/g++/make/python3` 编译。Bun 测试环境加载不了该 addon，不能作为生产运行时。
 
 常见 CLI agent 安装：
@@ -39,15 +39,19 @@ npm link
 
 ## 3. 首次配置
 
+推荐入口（Web-first，不必先配 IM）：
+
+```bash
+agim go
+```
+
+`agim go` 会探测本机 Agent（或引导配置 Agim Agent API），写入 `~/.agim/config.json`，并后台启动服务。跑通 Web 对话后再用设置页或 `agim config` 连接微信 / 飞书 / 钉钉。
+
+也可打开引导菜单：
+
 ```bash
 agim
 ```
-
-向导会完成：
-
-- IM 通道配置（微信/飞书/钉钉等）
-- Agent 可用性检查
-- 基础运行配置写入 `~/.agim/config.json`
 
 手工配置入口：
 
@@ -187,9 +191,10 @@ curl -fsS http://127.0.0.1:3000/api/health
 
 - [ ] `agim status` 正常
 - [ ] `/api/health` 正常
-- [ ] 至少一个 IM 通道可收发
-- [ ] 至少一个 agent 可执行
-- [ ] token 鉴权已启用
+- [ ] 至少一个 agent 可执行（CLI / Agim Agent / ACP）
+- [ ] Web 对话可用（`messengers: []` 的 web-console-only 也算通过）
+- [ ] 若启用 IM：至少一个 IM 通道可收发
+- [ ] token 鉴权已启用（或已确认 loopback / `AGIM_WEB_AUTH=off` 的部署边界）
 - [ ] 审批策略已确认（默认自动放行；需人工审批设 `AGIM_AUTO_APPROVE=0`）
 - [ ] 已配置备份
 - [ ] 已记录升级回滚流程

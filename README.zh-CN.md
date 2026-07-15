@@ -8,12 +8,14 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 ## 项目重点
 
 - **桥接优先**：微信 / 飞书 / 钉钉 / 邮件接入多类 Agent。
-- **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、native LLM、ACP 远端 Agent。
+- **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、Agim Agent（进程内 LLM）、ACP 远端 Agent。
 - **AI 能力成套**：记忆、技能、长目标、心跳、提醒、备忘、结构化提问。
 - **运行可靠**：SQLite outbox（at-least-once 投递）、重启恢复、任务看板、审计日志。生产环境硬依赖 Node 原生 `better-sqlite3`；无 SQLite 时 outbox 不可用。
 - **安全默认开启**：token 鉴权、敏感路径拦截；工具自动审批默认开（单人自用）。面向非受信 IM 时请按加固清单收紧。
 
 ## 快速开始
+
+需要 **Node.js ≥ 22.19**。安装时需能编译 `better-sqlite3`（`gcc/g++`、`make`、`python3`）。
 
 先不用配置 IM，也不用理解 systemd / token / 工作区。先把 Web 控制台跑起来，确认能和一个 Agent 对话：
 
@@ -26,7 +28,7 @@ agim go
 
 1. 检测本机可用的 Agent（Claude Code / Codex / GitHub Copilot CLI / Cursor / Kimi Code / Qoder / PI / MiMo Code / Agim Agent 等）。
 2. 如果没有可用 Agent，引导你配置 Agim Agent 的大模型 API。
-3. 后台启动 Agim，并打印 Web 控制台地址和首次访问 token。
+3. 后台启动 Agim，并打印 Web 控制台地址。首次启动会把一次性 token 写到 `~/.agim/web-bootstrap-token`（需要时用 `agim token bootstrap` 查看）。本机 `127.0.0.1` 访问通常可免登。
 
 默认 Web 控制台：`http://localhost:3000`
 
@@ -67,10 +69,10 @@ agim doctor
 | 场景 | 推荐路径 |
 |---|---|
 | 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
-| 低成本 API 直连 | `native` + `llmBackends` |
+| 低成本 API 直连 | `agim`（别名 `native`）+ `llmBackends` |
 | 自定义远端执行器 | ACP (`acpAgents`) |
 
-native 配置详见：`docs/llm-backends.md`
+Agim Agent 配置详见：`docs/llm-backends.md`
 
 内置 Agent 清单与能力说明：`docs/agents.md`
 
@@ -90,7 +92,7 @@ native 配置详见：`docs/llm-backends.md`
 ## 安全与合规
 
 - Web 默认开启 token 鉴权。
-- 工具调用默认走审批门。
+- 工具自动审批默认开启（`AGIM_AUTO_APPROVE=1`）：通过敏感路径与自保护检查后自动放行。面向非受信 IM 时设 `AGIM_AUTO_APPROVE=0` 走人工审批。
 - 敏感路径默认拒绝访问。
 - 海外 IM 可按需启用，国内部署可保持关闭。
 
@@ -117,22 +119,24 @@ native 配置详见：`docs/llm-backends.md`
 
 ```json
 {
-  "messengers": ["wechat-ilink"],
+  "messengers": [],
   "agents": ["agim", "claude-code"],
   "defaultAgent": "agim",
   "llmBackends": [
     {
-      "name": "default-native",
+      "name": "default-agim",
       "provider": "openai-compat",
       "baseUrl": "https://api.openai.com/v1",
       "model": "gpt-4o-mini"
     }
   ],
   "llmRoles": {
-    "cheap": "default-native"
+    "cheap": "default-agim"
   }
 }
 ```
+
+IM 可选——`messengers` 留空即为纯 Web 控制台；之后再在设置或 `agim config` 里加微信 / 飞书 / 钉钉。
 
 密钥与配置文件分离存储。
 

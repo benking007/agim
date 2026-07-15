@@ -3,7 +3,7 @@
 > Status: accepted · 2026-05-02
 > Supersedes: nothing
 > Related: ADR 0001 (AgentBase abstraction), ADR 0004 (sticky agent + split TTL),
-> `docs/architecture/agent-cwd-and-memory.md`, `docs/im-gateway-v2-plan.md` Phase B
+> `docs/architecture/agent-cwd-and-memory.md`, historical `docs/im-gateway-v2-plan.md` (archived) Phase B
 
 ## Context
 

@@ -512,26 +512,36 @@ program
     // ONBOARDING CHECKS (before default fill!)
     // ============================================
 
-    // Check messengers BEFORE the default fill
+    // Check messengers BEFORE the default fill.
+    // Web-console-only (empty messengers) is a supported first-run shape —
+    // match non-TTY / `agim go`. Do NOT force the IM wizard on TTY `start`
+    // (that contradicted README "no IM first" and exited on cancel).
     const onboardingResult = checkMessengerConfig(config)
     if (onboardingResult.needsOnboarding) {
+      console.log('ℹ️ No messengers configured — running in web-console-only mode.')
+      console.log('   Configure later with: agim config <wechat|feishu|dingtalk>')
       if (process.stdin.isTTY) {
-        // Interactive shell — run the picker.
-        console.log('👋 No messengers configured.\n')
-        const newConfig = await runMessengerOnboarding(config)
-        if (!newConfig) {
-          console.log('\n❌ Onboarding cancelled.')
-          console.log('Run "agim config <messenger>" to configure manually.')
-          process.exit(1)
+        const { yesNo, UserAbortError } = await import('./cli-ui/prompts.js')
+        try {
+          const wantIm = await yesNo({
+            message: 'Configure an IM messenger now? (optional)',
+            default: false,
+          })
+          if (wantIm) {
+            const newConfig = await runMessengerOnboarding(config)
+            if (newConfig) {
+              config = await saveConfigChanges(config, newConfig)
+            } else {
+              console.log('   Skipped IM setup — continuing with web console only.')
+            }
+          }
+        } catch (err) {
+          if (err instanceof UserAbortError) {
+            console.log('   Continuing with web console only.')
+          } else {
+            throw err
+          }
         }
-        config = await saveConfigChanges(config, newConfig)
-      } else {
-        // Non-interactive (systemd / launchctl / docker / bgjob). Don't try
-        // to prompt and don't exit — web-console-only deployments are a
-        // legitimate use case. Log a hint and keep going; web server + ACP
-        // server + scheduler / reminders / memos / approval bus still start.
-        console.log('ℹ️ No messengers configured — running in web-console-only mode.')
-        console.log('   Configure later with: agim config <wechat|feishu|dingtalk>')
       }
     }
 

@@ -3,15 +3,17 @@
 本页用于快速定位文档。  
 建议先看根目录 `README.md` / `README.zh-CN.md`，再按角色进入对应模块。
 
+**后端清单以 [`agents.md`](./agents.md) 为唯一权威来源**；架构文只解释立场，避免再维护第二份 inventory。
+
 ## 新用户（先读）
 
-- `README.md` / `README.zh-CN.md`：项目概览与快速开始
+- `README.md` / `README.zh-CN.md`：项目概览与快速开始（`agim go`）
 - `agents.md`：支持的 Agent 后端、安装入口、模型切换与工具能力
 - `deployment.md`：部署与上线
-- `architecture-bridge-and-native.md`：桥接 + native 的核心架构立场
+- `architecture-bridge-and-native.md`：桥接 + Agim Agent（`agim`，别名 `native`）的核心架构立场
 - `naming.md`：命名术语表（Agim Agent / agim / ACP≠A2A / tenants）
 - `migration-naming-v2.md`：Naming v2 新老迁移指引（registry / tools / sessions / tenants）
-- `llm-backends.md`：native LLM 配置与排障
+- `llm-backends.md`：Agim Agent 大模型 API 配置与排障
 
 ## AI 能力专题
 
@@ -27,42 +29,50 @@
 - `release.md`：npm 发版流程（main push 触发、版本号、Actions、npm 验证）
 - `security-hardening.md`：安全基线与防护项（含非受信 IM 加固清单）
 - `messenger-capability-matrix.md`：各 IM 的 HITL / 附件 / 网关能力差异
-- `tech-debt.md`：历史债 / 死开关 / 孤儿代码盘点与跟进
-- `session-model.md`：会话模型与恢复
-- `task-recovery-testing.md`：恢复链路测试记录
+- `tech-debt.md`：历史债 / 死开关 / 孤儿代码 / **文档债**盘点与跟进
+- `session-model.md`：会话模型与恢复（含 Web Chat、Agim Agent quarantine）
 - `viewer-modes.md`：长内容 viewer 模式
 
 ## 适配与集成
 
 - `agent-integration-sop.md`：新增 agent 接入 SOP（adapter、工具注入、Skills、Memory、Web/CLI 验收）
 - `agents.md`：当前内置 Agent 后端清单与使用说明
-- `discord-setup.md`：Discord 接入
+- `discord-setup.md`：Discord 接入（需 `AGIM_ENABLE_GLOBAL_IM=1`）
 - `im-workspaces-guide.md`：IM 工作区使用指南
 - `keyring-integration.md`：keyring/dbus 集成
 
 ## 架构补充
 
 - `architecture/current.md`：当前实现结构图、模块说明与决策交互链路
-- `architecture/agent-cwd-and-memory.md`：工作目录与记忆隔离
+- `architecture/agent-cwd-and-memory.md`：工作目录与记忆隔离（已实施）
 - `endpoint-contracts.md`：Web 服务端路由清单与 SPA API 合同维护
 - `adr/`：架构决策记录（ADR）
 
 ## 归档文档（历史背景）
 
-以下文档保留历史上下文，不再作为当前实施指南：
+以下文档保留历史上下文，**不再作为当前实施指南**：
+
+### 计划 / 对比 / 目标态
+
+- `upgrade-plan.md`
+- `im-gateway-v2-plan.md`
+- `task-recovery-plan.md`
+- `task-recovery-testing.md`（灰度笔记）
+- `agent-to-agent-plan.md`
+- `a2a-l2-plan.md`
+- `nanobot-comparison-rollout.md`
+- `architecture/target.md`
+- `design-dream-distillation.md`（草案）
+- `pi-agent-loop-optimization-analysis.md`（1.5.12 分析快照；路径已迁 `agim-agent/`）
+
+### Code review / 流水账
 
 - `code-review-2026-04-30.md`
 - `code-review-2026-04-30-main.md`
 - `code-review-2026-05-06-main.md`
 - `code-review-2026-06-21-main.md`
 - `optimization-log-2026-06-21.md`
-- `upgrade-plan.md`
-- `im-gateway-v2-plan.md`
-- `task-recovery-plan.md`
-- `agent-to-agent-plan.md`
-- `a2a-l2-plan.md`
-- `nanobot-comparison-rollout.md`
-- `architecture/target.md`
+- 仓库根目录：`../CODE_REVIEW_v1.2.55-v1.2.69.md`、`../CODE_REVIEW_v1.3.6.md`
 
 ## 版本变更
 

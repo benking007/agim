@@ -9,6 +9,7 @@
 | 我想做 | 看哪一节 |
 |---|---|
 | 启用 Discord / Telegram | [§1](#1-启用-discord--telegram) |
+| 找回 Web bootstrap token | [§1b](#1b-web-bootstrap-token) |
 | 启用远程 ACP Agent | [§2](#2-启用远程-acp-agent) |
 | 改 Web 端口 | [§3](#3-改-web-端口) |
 | 重启服务 | [§4](#4-重启服务) |
@@ -47,6 +48,17 @@ Environment="AGIM_ENABLE_GLOBAL_IM=1"
 2. Web 后台 `/settings/messengers` → Telegram + Discord 卡片可见
 
 **关闭**：删 env 行或改成 `0` → `systemctl restart agim`。**关闭不会删** `~/.agim/config.json` 里已有的 telegram/discord 凭据 —— 翻开开关后立即恢复。
+
+---
+
+## 1b. Web bootstrap token
+
+首次启动 Web 服务且尚未有任何 access token 时，会生成一次性 bootstrap token：
+
+- 原值写入 `~/.agim/web-bootstrap-token`（`chmod 600`），**不会**打进 journald / pino
+- 取回：`agim token bootstrap`（或 `cat ~/.agim/web-bootstrap-token`）
+- 本机 `127.0.0.1` 默认信任 loopback，多数本机调试可免登
+- 已有 token 时：`agim token create <label>`
 
 ---
 
@@ -156,7 +168,7 @@ agim uninstall
 
 选择：
 1. **保留全部数据（默认）** —— 删 npm 包 + systemd unit + config + env + PID 文件；**保留** tokens / 记忆 / 会话 / artifacts
-2. **删凭据保留历史** —— 1 的基础上额外删 `tokens.json` / `admin-bootstrap-token` / `acp-token` / `approval-bus.sock`
+2. **删凭据保留历史** —— 1 的基础上额外删 `tokens.json` / `web-bootstrap-token` / `llm-secrets.json` / `admin-bootstrap-token` / `acp-token` / `approval-bus.sock`
 3. **完全销毁（不可逆）** —— 必须输入 `DELETE` 大写确认；shred 敏感文件 + `rm -rf ~/.agim` + `rm -rf ~/.agim-workspaces`
 
 ---
@@ -394,5 +406,5 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3000/api/config | jq '.f
 - [`docs/keyring-integration.md`](./keyring-integration.md) — 可选 keyring 集成 + R14 故障案例
 - [`docs/memory-and-vector.md`](./memory-and-vector.md) — 长期记忆与向量召回
 - [`docs/im-workspaces-guide.md`](./im-workspaces-guide.md) — IM 工作区
-- [`docs/session-model.md`](./session-model.md) — 会话模型
-- [`docs/task-recovery-plan.md`](./task-recovery-plan.md) — 任务恢复
+- [`docs/session-model.md`](./session-model.md) — 会话模型（含 Web Chat 恢复）
+- （历史）[`docs/task-recovery-plan.md`](./task-recovery-plan.md) — 任务恢复早期设计（已归档）

@@ -149,6 +149,12 @@ const AGENT_PACKAGES: Record<string, AgentInstallHint> = {
     command: 'mimo',
     installCmd: 'curl -fsSL https://mimo.xiaomi.com/install | bash  # or: npm install -g @mimo-ai/cli',
   },
+  'cursor': {
+    agent: 'cursor',
+    npmPackage: '',
+    command: 'cursor-agent',
+    installCmd: 'curl https://cursor.com/install -fsS | bash',
+  },
   // D+ Stage 2 sub-PR #4 — native (in-process LLM) agent. No CLI to
   // install; "availability" means an LLM backend with role native-chat
   // (or cheap fallback) is configured. The hint string steers operators

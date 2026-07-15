@@ -47,6 +47,17 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Agim Agent metadata index | After retention stable (milestone H) |
 | Unify TUI `/new` id with sessionManager | TUI still mints independent ids |
 
+## Docs debt (living)
+
+| Item | Notes |
+|------|-------|
+| Keep `agents.md` as sole agent inventory | Architecture docs link out; don't fork tables |
+| Archived snapshots stay stamped | `pi-agent-loop-optimization-analysis`, `task-recovery-testing`, `design-dream-distillation` |
+| Web Chat restore documented | `session-model.md` §十 |
+| Root `CODE_REVIEW_*.md` | Indexed under docs/README 归档 |
+
+When adding a one-shot analysis or greyscale note: **stamp archive + add to docs/README 归档**, do not leave it under 「运维与稳定性」.
+
 ## Dead env knobs (must stay off SPA allowlist)
 
 - `AGIM_NATIVE_BLANK_RETRY_MAX`

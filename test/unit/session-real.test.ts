@@ -333,6 +333,59 @@ describe('SessionManager (real, on-disk)', () => {
     }
   })
 
+  it('patchLastAssistantActivity attaches activity and survives cold reload', async () => {
+    const k = {
+      platform: 'web',
+      channelId: 'web',
+      threadId: `web-act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    }
+    try {
+      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'agim')
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'user', content: 'q1', timestamp: new Date(),
+      })
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'assistant', content: 'a1', timestamp: new Date(),
+      })
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'user', content: 'q2', timestamp: new Date(),
+      })
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'assistant', content: 'a2', timestamp: new Date(),
+      })
+
+      const ok1 = await sessionManager.patchLastAssistantActivity(
+        k.platform, k.channelId, k.threadId,
+        {
+          runId: 'run-1', status: 'success', startedAt: 1, finishedAt: 2, durationMs: 1,
+          steps: [{ id: 's1', kind: 'tool', label: 't', status: 'success', startedAt: 1, finishedAt: 2 }],
+        },
+        'a1',
+      )
+      // matchContent a1 should find the first assistant even though a2 is last
+      expect(ok1).toBe(true)
+
+      const ok2 = await sessionManager.patchLastAssistantActivity(
+        k.platform, k.channelId, k.threadId,
+        {
+          runId: 'run-2', status: 'success', startedAt: 3, finishedAt: 15_000, durationMs: 12_000,
+          steps: [],
+        },
+        'a2',
+      )
+      expect(ok2).toBe(true)
+
+      // @ts-expect-error — private map
+      sessionManager.sessions.delete(`${k.platform}:${k.channelId}:${k.threadId}`)
+      const hist = await sessionManager.getSessionWithHistory(k.platform, k.channelId, k.threadId)
+      expect(hist?.messages[1]?.activity?.runId).toBe('run-1')
+      expect(hist?.messages[1]?.activity?.steps[0]?.label).toBe('t')
+      expect(hist?.messages[3]?.activity?.durationMs).toBe(12_000)
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
   it('web chat bubbles survive cold reload past the IM 30min message TTL', async () => {
     const k = {
       platform: 'web',

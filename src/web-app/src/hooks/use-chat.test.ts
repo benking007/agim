@@ -90,6 +90,42 @@ describe('chatReducer', () => {
     expect(s.agent).toBe('claude')
   })
 
+  it('HISTORY restores per-message activity accordions', () => {
+    const hist: ChatMessage[] = [
+      userMsg('h-1', 'hi'),
+      {
+        ...asstMsg('h-2', 'hello'),
+        activity: {
+          runId: 'run-a',
+          status: 'success',
+          startedAt: 1000,
+          finishedAt: 2000,
+          durationMs: 1000,
+          steps: [{
+            id: 's1', kind: 'tool', label: 'search', status: 'success',
+            startedAt: 1100, finishedAt: 1500,
+          }],
+        },
+      },
+      userMsg('h-3', 'more'),
+      {
+        ...asstMsg('h-4', 'done'),
+        activity: {
+          runId: 'run-b',
+          status: 'success',
+          startedAt: 3000,
+          finishedAt: 5000,
+          durationMs: 2000,
+          steps: [],
+        },
+      },
+    ]
+    const s = reduce(initialChatState, { kind: 'HISTORY', messages: hist, agent: 'agim' })
+    expect(s.messages[1]?.activity?.runId).toBe('run-a')
+    expect(s.messages[1]?.activity?.steps[0]?.label).toBe('search')
+    expect(s.messages[3]?.activity?.durationMs).toBe(2000)
+  })
+
   it('HISTORY with empty messages keeps local bubbles but adopts sticky agent', () => {
     const local = [userMsg('u-1', 'kept'), asstMsg('a-1', 'local')]
     const s = reduce(

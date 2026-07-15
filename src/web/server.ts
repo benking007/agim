@@ -5390,7 +5390,39 @@ async function handleClientMessage(
         appendActiveRunChunk,
         setActiveRunPartialText,
         finishActiveRun,
+        getActiveRun,
+        snapshotToPersistedActivity,
       } = await import('./active-runs.js')
+
+      const persistFinishedActivity = async (matchContent?: string): Promise<void> => {
+        const snap = getActiveRun(sessionThreadId)
+        if (!snap || snap.status === 'running') return
+        // Persist even with empty steps so "已完成 · Xs" survives refresh.
+        const activity = snapshotToPersistedActivity(snap)
+        try {
+          let ok = await sessionManager.patchLastAssistantActivity(
+            'web', 'web', sessionThreadId, activity, matchContent,
+          )
+          if (!ok && matchContent !== undefined) {
+            ok = await sessionManager.patchLastAssistantActivity(
+              'web', 'web', sessionThreadId, activity,
+            )
+          }
+          if (!ok) {
+            webLog.warn({
+              event: 'web.activity.persist_miss',
+              threadId: sessionThreadId,
+              runId: snap.runId,
+            }, 'No assistant message to attach activity to')
+          }
+        } catch (err) {
+          webLog.warn({
+            event: 'web.activity.persist_failed',
+            threadId: sessionThreadId,
+            err: err instanceof Error ? err.message : String(err),
+          }, 'Failed to persist chat activity')
+        }
+      }
 
       startActiveRun({
         threadId: sessionThreadId,
@@ -5441,6 +5473,7 @@ async function handleClientMessage(
           finishActiveRun(sessionThreadId, {
             status: 'success', finishedAt, durationMs, finalText: result,
           })
+          await persistFinishedActivity(result)
           emit({ type: 'done', text: result, runId })
           emit({
             type: 'usage',
@@ -5484,6 +5517,7 @@ async function handleClientMessage(
         finishActiveRun(sessionThreadId, {
           status: 'success', finishedAt, durationMs, finalText: fullText,
         })
+        await persistFinishedActivity(fullText)
         emit({ type: 'done', text: fullText, runId })
         emit({
           type: 'usage',
@@ -5507,6 +5541,7 @@ async function handleClientMessage(
         finishActiveRun(sessionThreadId, {
           status: 'error', finishedAt, durationMs, error: errorMsg,
         })
+        await persistFinishedActivity()
         emit({
           type: 'run-finish',
           runId,
@@ -5634,20 +5669,27 @@ async function sendSessionHistory(
   const { getActiveRun } = await import('./active-runs.js')
   const active = getActiveRun(client.id)
   if (active) {
-    sendToClient(ws, {
-      type: 'active-run',
-      runId: active.runId,
-      agent: active.agent,
-      startedAt: new Date(active.startedAt).toISOString(),
-      status: active.status,
-      steps: active.steps,
-      partialText: active.partialText,
-      finishedAt: active.finishedAt != null
-        ? new Date(active.finishedAt).toISOString()
-        : undefined,
-      durationMs: active.durationMs,
-      error: active.error,
-    })
+    const alreadyOnHistory = history?.messages.some(
+      (m) => m.activity?.runId === active.runId,
+    )
+    // Always replay in-flight runs. Replay finished ones only when the
+    // durable patch hasn't landed on history yet (rare race).
+    if (active.status === 'running' || !alreadyOnHistory) {
+      sendToClient(ws, {
+        type: 'active-run',
+        runId: active.runId,
+        agent: active.agent,
+        startedAt: new Date(active.startedAt).toISOString(),
+        status: active.status,
+        steps: active.steps,
+        partialText: active.partialText,
+        finishedAt: active.finishedAt != null
+          ? new Date(active.finishedAt).toISOString()
+          : undefined,
+        durationMs: active.durationMs,
+        error: active.error,
+      })
+    }
   }
 }
 

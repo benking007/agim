@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Web chat (`/` / `/m/chat`): tool accordion, run timeline, and “接收中” survive tab switches and page refresh. Server keeps an ActiveRun snapshot, retargets live chunks to the reconnected socket, and replays `active-run` after `history`.
+- Web chat persists each turn's activity onto the assistant session message, so refresh restores **every** accordion (“已完成 · Xs”), not only the latest in-memory ActiveRun.
 
 ## [1.5.28] - 2026-07-15
 

@@ -188,6 +188,16 @@ export interface HistoryMessage {
   content: string
   timestamp?: string
   agent?: string
+  /** Persisted tool/run accordion; restored on refresh / reconnect. */
+  activity?: {
+    runId: string
+    status: 'running' | 'success' | 'error'
+    startedAt: number
+    finishedAt?: number
+    durationMs?: number
+    error?: string
+    steps: ActivityStepEvent['step'][]
+  }
 }
 
 export interface AgentMetric {

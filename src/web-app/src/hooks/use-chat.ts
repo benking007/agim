@@ -869,13 +869,49 @@ export function useChat(): UseChat {
         dispatch({
           kind: 'HISTORY',
           agent: msg.agent,
-          messages: msg.messages.map((h, i): ChatMessage => ({
-            id: `hist-${i}`,
-            role: h.role,
-            content: h.content,
-            agent: h.agent,
-            timestamp: h.timestamp ? Date.parse(h.timestamp) : Date.now() - i * 1000,
-          })),
+          messages: msg.messages.map((h, i): ChatMessage => {
+            const activity = h.activity
+              ? {
+                  runId: h.activity.runId,
+                  status: h.activity.status,
+                  startedAt: h.activity.startedAt,
+                  finishedAt: h.activity.finishedAt,
+                  durationMs: h.activity.durationMs,
+                  error: h.activity.error,
+                  steps: h.activity.steps.map((st): ChatActivityStep => ({
+                    id: st.id,
+                    kind: st.kind === 'skill' || st.kind === 'status'
+                      || st.kind === 'approval' || st.kind === 'ask'
+                      || st.kind === 'agent'
+                      ? st.kind
+                      : 'tool',
+                    label: st.label,
+                    status: st.status,
+                    startedAt: typeof st.startedAt === 'number'
+                      ? st.startedAt
+                      : (Number.isFinite(Date.parse(String(st.startedAt)))
+                          ? Date.parse(String(st.startedAt))
+                          : Date.now()),
+                    finishedAt: st.finishedAt == null
+                      ? undefined
+                      : typeof st.finishedAt === 'number'
+                        ? st.finishedAt
+                        : (Number.isFinite(Date.parse(String(st.finishedAt)))
+                            ? Date.parse(String(st.finishedAt))
+                            : undefined),
+                    preview: st.preview,
+                  })),
+                }
+              : undefined
+            return {
+              id: `hist-${i}`,
+              role: h.role,
+              content: h.content,
+              agent: h.agent,
+              timestamp: h.timestamp ? Date.parse(h.timestamp) : Date.now() - i * 1000,
+              activity,
+            }
+          }),
         })
         return
       case 'active-run': {

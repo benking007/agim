@@ -43,7 +43,7 @@ export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.
   return (
     <div className="flex flex-col gap-1">
       <Select value={value || undefined} onValueChange={handleChange}>
-        <SelectTrigger className="h-9 min-h-9 w-28 sm:w-36 text-xs">
+        <SelectTrigger className="h-7 w-28 whitespace-nowrap text-xs sm:w-36 [&>span]:whitespace-nowrap [&>svg]:shrink-0">
           <SelectValue placeholder={agentDisplayName(agents[0] ?? '—')} />
         </SelectTrigger>
         <SelectContent>

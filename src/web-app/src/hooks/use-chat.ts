@@ -244,7 +244,16 @@ function reducer(s: ChatState, a: Action): ChatState {
     case 'INIT':
       return { ...s, agents: a.agents, agent: s.agent || a.defaultAgent }
     case 'HISTORY':
-      return { ...s, messages: a.messages, agent: a.agent }
+      // Non-empty history is authoritative (refresh / reconnect).
+      // Empty history must NOT wipe in-memory bubbles: after MESSAGES_TTL
+      // the server drops .log but the tab may still show the transcript,
+      // and new-conversation already clears via RESET_CONVERSATION.
+      // Always adopt the sticky agent from the session meta.
+      return {
+        ...s,
+        messages: a.messages.length > 0 ? a.messages : s.messages,
+        agent: a.agent || s.agent,
+      }
     case 'AGENTS':
       return { ...s, agents: a.agents }
     case 'AGENT_SWITCHED':
@@ -735,7 +744,7 @@ export function useChat(): UseChat {
     }
     const threadId = loadOrCreateThreadId()
 
-    // On mount, ask the backend to:
+    // On every WS open, ask the backend to:
     //   * replay history (rekey session to our persisted threadId)
     //   * re-send the agents list — the WS connection is a module-level
     //     singleton, so the server's `init` (agents + clientId) only
@@ -743,31 +752,24 @@ export function useChat(): UseChat {
     //     navigates away from /chat and back, `useChat()` re-mounts with
     //     a fresh empty reducer state but the WS doesn't re-emit `init`,
     //     leaving the agent picker empty. `get-agents` re-publishes.
+    //
+    // Re-bootstrap on EVERY open (not just the first): mobile visibility
+    // reconnect and network blips mint a new server clientId. Without a
+    // fresh get-history rekey, subsequent turns land under a different
+    // session key and refresh cannot load the previous conversation.
     function bootstrap(): void {
       ws.send({ type: 'get-history', threadId })
       ws.send({ type: 'get-agents' })
     }
-    // R10: previously the open-branch returned a cleanup that only
-    // unsubscribed off1/off2, while the not-open branch returned a
-    // cleanup that ALSO unsubscribed the one-shot off3. Under
-    // StrictMode + route hops (/chat → /tasks → /chat) the off1/off2
-    // subscriptions leaked across remounts. Unify: always declare off3
-    // (no-op when we already saw 'open'), always return a single
-    // cleanup that drops all three.
-    let off3: () => void = () => {}
-    if (ws.status() === 'open') {
-      bootstrap()
-    } else {
-      off3 = ws.subscribe({
-        type: 'status',
-        fn: (s) => {
-          if (s === 'open') {
-            bootstrap()
-            off3()
-          }
-        },
-      })
-    }
+    // subscribe() replays the current status, so an already-open socket
+    // still triggers bootstrap on mount. Keep the listener for later
+    // reconnects (do not unsubscribe after the first open).
+    const off3 = ws.subscribe({
+      type: 'status',
+      fn: (s) => {
+        if (s === 'open') bootstrap()
+      },
+    })
     return () => { off1(); off2(); off3() }
   }, [])
 

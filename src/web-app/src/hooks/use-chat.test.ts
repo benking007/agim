@@ -90,6 +90,16 @@ describe('chatReducer', () => {
     expect(s.agent).toBe('claude')
   })
 
+  it('HISTORY with empty messages keeps local bubbles but adopts sticky agent', () => {
+    const local = [userMsg('u-1', 'kept'), asstMsg('a-1', 'local')]
+    const s = reduce(
+      { ...initialChatState, messages: local, agent: 'default' },
+      { kind: 'HISTORY', messages: [], agent: 'agim' },
+    )
+    expect(s.messages).toBe(local)
+    expect(s.agent).toBe('agim')
+  })
+
   it('SEND_USER appends user message + placeholder + sets currentReplyId + clears error', () => {
     const u = userMsg('u-1', 'hi')
     const p = asstMsg('p-1')

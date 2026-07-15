@@ -1381,8 +1381,10 @@ export async function startWebServer(options: {
       clientId,
     })
 
-    // Load existing session history if available
-    sendSessionHistory(ws, clientId, getDefaultAgent(options.defaultAgent))
+    // Load existing session history if available (usually empty for a
+    // freshly minted clientId; the SPA's get-history rekey is the real
+    // restore path).
+    sendSessionHistory(ws, client, getDefaultAgent(options.defaultAgent))
 
     const enqueueInbound = createSerialQueue()
 
@@ -5525,7 +5527,7 @@ async function handleClientMessage(
         onRekey?.(oldId, wantedThreadId)
         webLog.info({ clientId, oldId, event: 'web.session.rekey' }, 'WS client adopted persisted threadId')
       }
-      await sendSessionHistory(ws, clientId, defaultAgent)
+      await sendSessionHistory(ws, client, defaultAgent)
       break
     }
 
@@ -5544,17 +5546,28 @@ async function handleClientMessage(
 }
 
 /**
- * Send session history to a client
+ * Send session history to a client.
+ *
+ * Always emit a `history` frame when a session exists — including an empty
+ * message list — so the SPA can adopt the sticky agent after MESSAGES_TTL
+ * cleared the transcript. Previously we skipped empty histories, which left
+ * the agent picker on the process default after refresh.
  */
-async function sendSessionHistory(ws: WebSocket, clientId: string, _defaultAgent: string): Promise<void> {
-  const history = await sessionManager.getSessionWithHistory('web', 'web', clientId)
-  if (history && history.messages.length > 0) {
-    sendToClient(ws, {
-      type: 'history',
-      messages: history.messages,
-      agent: history.session.agent,
-    })
+async function sendSessionHistory(
+  ws: WebSocket,
+  client: ClientConnection,
+  _defaultAgent: string,
+): Promise<void> {
+  const history = await sessionManager.getSessionWithHistory('web', 'web', client.id)
+  if (!history) return
+  if (history.session.agent) {
+    client.agent = history.session.agent
   }
+  sendToClient(ws, {
+    type: 'history',
+    messages: history.messages,
+    agent: history.session.agent,
+  })
 }
 
 /** L1: backpressure threshold for the WS send path. When `ws.bufferedAmount`

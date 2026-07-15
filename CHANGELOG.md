@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+<<<<<<< HEAD
 - `agim start` on a TTY no longer forces IM onboarding (or exits on cancel); empty `messengers` is web-console-only, with an optional IM prompt (default no).
 - Background start / restart / `agim go` wait for `/api/health` (up to ~20s) before printing the Web URL / token hint, instead of a fixed 1.5s race.
 - Uninstall `creds` mode now also deletes `web-bootstrap-token` and `llm-secrets.json`.
@@ -16,6 +17,10 @@ All notable changes to this project will be documented in this file.
 
 - README / README.zh-CN / AGENTS.md / deployment first-run docs aligned on `agim go`, web-only minimal config, Node ≥22.19, and `agim` (alias `native`) naming.
 - Docs debt cleanup: archive stamps for pi-loop analysis / task-recovery testing / dream-distillation; fix ZH auto-approve, session-model opencode diagnosis + Web Chat §十, memory/deployment links, docs index, tech-debt Docs row; soften GLOBAL_IM README claim.
+=======
+- Web chat re-sends `get-history` on every WebSocket reconnect so the persisted `localStorage` thread id is rekeyed after background tab / network drops (previously only the first open rekeyed, and later turns could land under a new session key).
+- Web chat `history` frames are also sent when the transcript is empty so the sticky agent restores after `MESSAGES_TTL`; empty history no longer wipes in-tab bubbles.
+>>>>>>> 2f2c5cad (fix(web): restore chat session across WS reconnects)
 
 ## [1.5.12] - 2026-07-11
 

@@ -1,13 +1,13 @@
 # Agim Agent 大模型 API 配置指南
 
-本页说明如何为 Agim 配置 `native` agent（对外名称：Agim Agent）的大模型 API。
+本页说明如何为 **Agim Agent**（registry id：`agim`，兼容别名 `native`）配置大模型 API。
 目标：**只配一次就能跑**，角色绑定是可选优化项，不是阻塞条件。
 
 ## 1. 核心原则
 
-- `native` 只需要至少一个可用 backend（`baseUrl + model + apiKey`）。
+- Agim Agent 只需要至少一个可用 backend（`baseUrl + model + apiKey`）。
 - `llmRoles` 是可选策略层，用于精细路由（如 cheap/evaluator）。
-- 未配置角色时，`native` 会自动回退到任意可用 backend。
+- 未配置角色时，会自动回退到任意可用 backend。
 
 ## 2. 配置方式
 

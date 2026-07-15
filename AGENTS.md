@@ -33,20 +33,21 @@ Both the root project and `src/web-app` commit npm v3 lockfiles whose tarballs r
 
 ### Running the app locally
 
-1. The app requires a config at `~/.agim/config.json`. Without it, an interactive onboarding wizard starts and exits on cancel. Create a minimal config to skip onboarding:
+1. The app requires a config at `~/.agim/config.json`. Without it, interactive wizards (`agim go` / `agim config`) create one. For a non-interactive stub that skips IM:
 
 ```json
 {
-  "messengers": ["telegram"],
+  "messengers": [],
   "agents": ["agim", "claude-code"],
-  "defaultAgent": "agim",
-  "telegram": { "botToken": "placeholder" }
+  "defaultAgent": "agim"
 }
 ```
 
-2. The app checks agent CLI availability via `<command> --version`. At least one agent CLI must be on PATH or the app exits. A stub script at `/usr/local/bin/claude` satisfies this check.
+Web-console-only is valid — empty `messengers` no longer blocks `agim start`. Telegram/Discord stay hidden unless `AGIM_ENABLE_GLOBAL_IM=1`.
 
-3. After `npm run build`, start with `node dist/cli.js start`. Web UI at `http://localhost:3000` (token-gated unless `AGIM_WEB_AUTH=off`). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes). ACP endpoint at `http://localhost:9090` uses a bearer token from the access-token registry (`~/.agim/tokens.json`; legacy `~/.agim/acp-token` may still exist on older installs and is cleaned on uninstall).
+2. At least one agent must be available: either an agent CLI on PATH (`<command> --version`), or Agim Agent with a usable `llmBackends` entry (+ API key in `~/.agim/llm-secrets.json`). A stub `/usr/local/bin/claude` satisfies the CLI check for cloud VMs. For local SPA debugging without tokens, `AGIM_WEB_AUTH=off` is fine on loopback.
+
+3. After `npm run build`, start with `node dist/cli.js start` (or `agim start --bg`). Web UI at `http://localhost:3000` (token-gated unless `AGIM_WEB_AUTH=off` or loopback trust). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes). ACP endpoint at `http://localhost:9090` uses a bearer token from the access-token registry (`~/.agim/tokens.json`; legacy `~/.agim/acp-token` may still exist on older installs and is cleaned on uninstall).
 
 ### Testing notes
 

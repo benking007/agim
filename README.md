@@ -8,12 +8,14 @@ It is designed for production use: at-least-once persistent delivery, session co
 ## What matters
 
 - **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
-- **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, native LLM, and ACP remote agents.
+- **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, Agim Agent (in-process LLM), and ACP remote agents.
 - **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
 - **Reliable runtime**: SQLite outbox (at-least-once delivery), restart recovery, job board, structured audit. Production requires native `better-sqlite3`; without it the outbox is unavailable.
 - **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is on by default (single-operator); tighten for untrusted IM using the hardening checklist.
 
 ## Quick start
+
+Requires **Node.js ≥ 22.19**. A C++ toolchain (`gcc/g++`, `make`, `python3`) is needed so `better-sqlite3` can compile on install.
 
 You do not need to configure IM, systemd, tokens, or workspaces first.
 Start with the smallest loop: Web console + one working agent.
@@ -27,7 +29,7 @@ agim go
 
 1. Detect usable local agents such as Claude Code, Codex, GitHub Copilot CLI, Cursor, Kimi Code, Qoder, PI, MiMo Code, or Agim Agent.
 2. Help configure an Agim Agent model API if no agent is ready yet.
-3. Start Agim in the background and print the Web console URL plus the first access token.
+3. Start Agim in the background and print the Web console URL. On first boot a one-time token is written to `~/.agim/web-bootstrap-token` (retrieve with `agim token bootstrap` if needed). Loopback (`127.0.0.1`) usually skips login.
 
 Default Web console: `http://localhost:3000`
 
@@ -68,10 +70,10 @@ Common CLI entries:
 | Scenario | Recommended path |
 |---|---|
 | Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
-| API-only, low-cost native mode | `native` + `llmBackends` |
+| API-only, low-cost in-process mode | `agim` (alias `native`) + `llmBackends` |
 | Bring your own remote agent | ACP (`acpAgents`) |
 
-Native setup details: `docs/llm-backends.md`
+Agim Agent setup details: `docs/llm-backends.md`
 
 Supported agent details: `docs/agents.md`
 
@@ -119,22 +121,24 @@ Security reference: `docs/security-hardening.md`
 
 ```json
 {
-  "messengers": ["wechat-ilink"],
+  "messengers": [],
   "agents": ["agim", "claude-code"],
   "defaultAgent": "agim",
   "llmBackends": [
     {
-      "name": "default-native",
+      "name": "default-agim",
       "provider": "openai-compat",
       "baseUrl": "https://api.openai.com/v1",
       "model": "gpt-4o-mini"
     }
   ],
   "llmRoles": {
-    "cheap": "default-native"
+    "cheap": "default-agim"
   }
 }
 ```
+
+IM is optional — leave `messengers` empty for web-console-only, then add WeChat / Feishu / DingTalk from Settings or `agim config`.
 
 Secrets are stored separately from this file.
 

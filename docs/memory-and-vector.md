@@ -64,7 +64,7 @@ sudo systemctl restart agim
 3. 远程：填 baseUrl / model / API Key → 「🧪 测试连接」
 4. 「保存配置」→「🔄 回填全部」（用新模型为已有 facts 重新生成 embedding）
 
-**命令行**：直接编辑 `~/.agim/env`（参考 `docs/deployment.md` § 十三 环境变量速查）。
+**命令行**：直接编辑 `~/.agim/env`（参考 `docs/deployment.md` 与 `docs/runbook.md` 中的环境变量说明）。
 
 ---
 

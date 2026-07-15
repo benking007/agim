@@ -39,15 +39,19 @@ npm link
 
 ## 3. 首次配置
 
+推荐入口（Web-first，不必先配 IM）：
+
+```bash
+agim go
+```
+
+`agim go` 会探测本机 Agent（或引导配置 Agim Agent API），写入 `~/.agim/config.json`，并后台启动服务。跑通 Web 对话后再用设置页或 `agim config` 连接微信 / 飞书 / 钉钉。
+
+也可打开引导菜单：
+
 ```bash
 agim
 ```
-
-向导会完成：
-
-- IM 通道配置（微信/飞书/钉钉等）
-- Agent 可用性检查
-- 基础运行配置写入 `~/.agim/config.json`
 
 手工配置入口：
 

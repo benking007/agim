@@ -133,9 +133,63 @@ function printStartupCheckLog(lang: Lang): void {
   } else {
     console.log(text(
       lang,
-      `   日志文件尚未生成；首次后台启动成功后会创建：${LOG_FILE}`,
-      `   Log file has not been created yet; it appears after the first successful background start: ${LOG_FILE}`,
+      `   日志文件尚未生成；任意一次成功 start 后会写入：${LOG_FILE}`,
+      `   Log file has not been created yet; it appears after any successful start: ${LOG_FILE}`,
     ))
+  }
+}
+
+/** Probe the public /api/health endpoint (no auth). */
+async function probeLocalWebHealth(url: string): Promise<boolean> {
+  try {
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 800)
+    try {
+      const res = await fetch(url, { signal: ac.signal })
+      return res.ok
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return false
+  }
+}
+
+/**
+ * After spawnBackground, wait until the child is serving /api/health
+ * (or dies). Replaces the old fixed 1.5s sleep that raced cold starts
+ * and often printed the token hint before web-bootstrap-token existed.
+ */
+async function waitForBackgroundReady(
+  pid: number,
+  opts: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<'ready' | 'dead'> {
+  const timeoutMs = opts.timeoutMs ?? 20_000
+  const pollMs = opts.pollMs ?? 400
+  const endpoint = readWebEndpoint() ?? { bind: '127.0.0.1', port: DEFAULT_WEB_PORT }
+  const host = endpoint.bind === '0.0.0.0' || endpoint.bind === '::' || endpoint.bind === '[::]'
+    ? '127.0.0.1'
+    : endpoint.bind
+  const healthUrl = `http://${host}:${endpoint.port}/api/health`
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return 'dead'
+    }
+    if (await probeLocalWebHealth(healthUrl)) return 'ready'
+    await new Promise((r) => setTimeout(r, pollMs))
+  }
+
+  // Process still alive after the window — treat as ready so status / token
+  // hints still print (health may be slow behind a heavy optional import).
+  try {
+    process.kill(pid, 0)
+    return 'ready'
+  } catch {
+    return 'dead'
   }
 }
 
@@ -147,9 +201,9 @@ async function startBackgroundDaemon(
   const __dirname = dirname(fileURLToPath(import.meta.url))
   const cliJs = join(__dirname, '..', 'cli.js')
   const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
-  await new Promise(r => setTimeout(r, 1500))
+  const ready = await waitForBackgroundReady(pid)
   const after = detectService()
-  if (after.mode === 'background' && after.pid === pid) {
+  if (ready === 'ready' && after.mode === 'background' && after.pid === pid) {
     console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
     if (opts.showAccessHint !== false) {
       console.log(t(lang, 'svc.start.bg_hint'))
@@ -461,9 +515,9 @@ export async function cmdRestart(): Promise<void> {
     const __dirname = dirname(fileURLToPath(import.meta.url))
     const cliJs = join(__dirname, '..', 'cli.js')
     const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
-    await new Promise(r => setTimeout(r, 1500))
+    const ready = await waitForBackgroundReady(pid)
     const after = detectService()
-    if (after.mode === 'background' && after.pid === pid) {
+    if (ready === 'ready' && after.mode === 'background' && after.pid === pid) {
       console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
       console.log(t(lang, 'svc.restart.done'))
       await printWebAccessHint(lang)
@@ -482,6 +536,8 @@ function credentialFiles(): string[] {
   return [
     join(CONFIG_DIR, 'tokens.json'),
     join(CONFIG_DIR, 'admin-bootstrap-token'),
+    join(CONFIG_DIR, 'web-bootstrap-token'),
+    join(CONFIG_DIR, 'llm-secrets.json'),
     // Legacy ACP token file from pre-Web-token-unified versions.
     join(CONFIG_DIR, 'acp-token'),
     join(CONFIG_DIR, 'approval-bus.sock'),
@@ -722,9 +778,9 @@ export async function offerServiceStart(
       const __dirname = dirname(fileURLToPath(import.meta.url))
       const cliJs = join(__dirname, '..', 'cli.js')
       const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
-      await new Promise(r => setTimeout(r, 1500))
+      const ready = await waitForBackgroundReady(pid)
       const after = detectService()
-      if (after.mode === 'background' && after.pid === pid) {
+      if (ready === 'ready' && after.mode === 'background' && after.pid === pid) {
         console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
         const web = readWebEndpoint()
         if (web) {
@@ -779,9 +835,9 @@ export async function offerServiceStart(
     const __dirname = dirname(fileURLToPath(import.meta.url))
     const cliJs = join(__dirname, '..', 'cli.js')
     const { pid } = spawnBackground(process.execPath, [cliJs, 'start'])
-    await new Promise(r => setTimeout(r, 1500))
+    const ready = await waitForBackgroundReady(pid)
     const after = detectService()
-    if (after.mode === 'background' && after.pid === pid) {
+    if (ready === 'ready' && after.mode === 'background' && after.pid === pid) {
       console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
       const web = readWebEndpoint()
       if (web) {
@@ -830,7 +886,11 @@ export async function printWebAccessHint(
     if (hasAnyToken()) {
       console.log(text(lang, '已有 Web token；如需新 token：agim token create <label>', 'A Web token already exists; create another with: agim token create <label>'))
     } else {
-      console.log(text(lang, '首次启动后会生成 Web token；如未看到，请运行：agim token bootstrap', 'First startup creates a Web token; if you did not see it, run: agim token bootstrap'))
+      console.log(text(
+        lang,
+        '本机 127.0.0.1 访问通常可免登；若需 token：agim token bootstrap',
+        'Loopback (127.0.0.1) usually skips login; if you need a token: agim token bootstrap',
+      ))
     }
   } catch {
     console.log(text(lang, '如需 Web token：agim token bootstrap 或 agim token create <label>', 'For a Web token: agim token bootstrap or agim token create <label>'))
@@ -843,4 +903,7 @@ void ENV_FILE
 
 export const _internal = {
   browserOpenCommand,
+  waitForBackgroundReady,
+  probeLocalWebHealth,
+  credentialFiles,
 }

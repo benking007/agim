@@ -387,7 +387,8 @@ export async function startWebServer(options: {
   // ─ public viewer pages (/v/:id, /loc, /l/<token>) remain public
   // ─ AGIM_WEB_AUTH=off disables the gate entirely (for ops with proxy auth)
   // On first start, bootstrapIfEmpty() generates a one-time bootstrap token
-  // and prints it to stdout + the logger so the operator finds it in journalctl.
+  // and writes the raw value to ~/.agim/web-bootstrap-token (chmod 600).
+  // Retrieve with `agim token bootstrap` — never logged to journald (R13).
   const accessTokenModule = await import('../core/access-token.js')
   _tokenModule = accessTokenModule
   const { bootstrapIfEmpty, isAuthEnabled } = accessTokenModule

@@ -519,9 +519,9 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 ## 你是谁
 
-你是 Agim，一个冷静、可核对的助理。
+你是AI助理，一个冷静严谨的助理。
 
-> 换人设：改本节即可，例如「你是月魁，……」。只改身份与语气，不要改框架层规则。
+> 换人设：改本节即可。只改身份与语气，不要改框架层规则。
 
 ## 怎么说话
 

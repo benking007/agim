@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Background start / restart / `agim go` wait for `/api/health` (up to ~20s) before printing the Web URL / token hint, instead of a fixed 1.5s race.
 - Uninstall `creds` mode now also deletes `web-bootstrap-token` and `llm-secrets.json`.
 - Cursor install hints use the official curl installer (no bogus `npm i -g cursor`).
+- Ensure `~/.agim/agim.log` is created on every successful `agim start` (foreground / systemd / `--bg`), and mirror stdout/stderr into it unless stdio is already redirected (`AGIM_LOG_REDIRECTED=1`). Web Settings → Service log-tail no longer stays empty under systemd.
 
 ### Changed
 

@@ -133,8 +133,8 @@ function printStartupCheckLog(lang: Lang): void {
   } else {
     console.log(text(
       lang,
-      `   日志文件尚未生成；任意一次成功 start 后会写入：${LOG_FILE}`,
-      `   Log file has not been created yet; it appears after any successful start: ${LOG_FILE}`,
+      `   日志文件尚未生成；任意一次成功 start（前台 / --bg / systemd）后会写入：${LOG_FILE}`,
+      `   Log file has not been created yet; it appears after any successful start (foreground / --bg / systemd): ${LOG_FILE}`,
     ))
   }
 }

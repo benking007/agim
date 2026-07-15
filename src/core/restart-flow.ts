@@ -317,7 +317,9 @@ function buildHelperCode(parentPid: number, cliJs: string): string {
     '    clearInterval(t);',
     '    try{',
     `      const fd=fs.openSync(${escapedLog},"a");`,
-    `      const c=spawn(${escapedExe},[${escapedCli},"start"],{detached:true,stdio:["ignore",fd,fd],env:process.env});`,
+    // AGIM_LOG_REDIRECTED=1: child must not tee — stdio already is agim.log.
+    `      const env={...process.env,AGIM_LOG_REDIRECTED:"1"};`,
+    `      const c=spawn(${escapedExe},[${escapedCli},"start"],{detached:true,stdio:["ignore",fd,fd],env});`,
     '      c.unref();',
     `      fs.writeFileSync(${escapedPid},String(c.pid)+"\\n");`,
     '      fs.closeSync(fd);',

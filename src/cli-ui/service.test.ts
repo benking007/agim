@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { beforeEach, afterEach, describe, expect, it } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,7 +7,15 @@ const TMP_OWN = join(tmpdir(), `agim-service-test-${process.pid}`)
 process.env.AGIM_HOME = TMP_OWN
 
 const { AGIM_HOME } = await import('../core/agim-paths.js')
-const { _internal: serviceInternal, PID_FILE, readAcpEndpoint, readWebEndpoint } = await import('./service.js')
+const {
+  _internal: serviceInternal,
+  PID_FILE,
+  LOG_FILE,
+  LOG_REDIRECTED_ENV,
+  ensureServiceLogMirror,
+  readAcpEndpoint,
+  readWebEndpoint,
+} = await import('./service.js')
 const { _internal, cmdStatus, cmdWeb } = await import('./cmd-handlers.js')
 
 function writeConfig(cfg: Record<string, unknown>): void {
@@ -23,9 +31,16 @@ beforeEach(() => {
   delete process.env.AGIM_VIEWER_PUBLIC_BASE_URL
   delete process.env.AGIM_VIEWER_TUNNEL_MODE
   delete process.env.AGIM_VIEWER_ENABLED
+  delete process.env[LOG_REDIRECTED_ENV]
   serviceInternal.setDetectServiceOverride(null)
+  serviceInternal.resetServiceLogMirrorForTests()
   rmSync(AGIM_HOME, { recursive: true, force: true })
   mkdirSync(AGIM_HOME, { recursive: true })
+})
+
+afterEach(() => {
+  serviceInternal.resetServiceLogMirrorForTests()
+  delete process.env[LOG_REDIRECTED_ENV]
 })
 
 async function captureStdout(fn: () => void | Promise<void>): Promise<string> {
@@ -154,5 +169,32 @@ describe('cmdStatus', () => {
     expect(out).toContain('http://127.0.0.1:3000')
     expect(out).toContain('agim go')
     expect(out).toContain('agim start --bg')
+  })
+})
+
+describe('ensureServiceLogMirror', () => {
+  it('creates ~/.agim/agim.log when missing', () => {
+    expect(existsSync(LOG_FILE)).toBe(false)
+    ensureServiceLogMirror()
+    expect(existsSync(LOG_FILE)).toBe(true)
+  })
+
+  it('mirrors stdout into agim.log when not redirected', async () => {
+    ensureServiceLogMirror()
+    const marker = `ops-log-mirror-${Date.now()}`
+    process.stdout.write(`${marker}\n`)
+    // Give the write stream a tick to flush the buffered chunk.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(readFileSync(LOG_FILE, 'utf-8')).toContain(marker)
+  })
+
+  it('creates the file but does not tee when AGIM_LOG_REDIRECTED=1', async () => {
+    process.env[LOG_REDIRECTED_ENV] = '1'
+    ensureServiceLogMirror()
+    expect(existsSync(LOG_FILE)).toBe(true)
+    const marker = `ops-log-no-tee-${Date.now()}`
+    process.stdout.write(`${marker}\n`)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(readFileSync(LOG_FILE, 'utf-8')).not.toContain(marker)
   })
 })

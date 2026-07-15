@@ -80,7 +80,7 @@ interface Session {
 
 | TTL | 默认 | env 变量 | 过期时做什么 |
 |---|---|---|---|
-| `MESSAGES_TTL` | 30 min | `AGIM_SESSION_MESSAGES_TTL_MS` | 清空内存 `messages[]` + 删 `.log` 文件，**保留** `.json` 与 sticky / `claudeSessionId` |
+| `MESSAGES_TTL` | 30 min（IM）/ **7 d（web）** | `AGIM_SESSION_MESSAGES_TTL_MS` / `AGIM_WEB_SESSION_MESSAGES_TTL_MS` | 清空内存 `messages[]` + 删 `.log` 文件，**保留** `.json` 与 sticky / `claudeSessionId`。Web 控制台默认跟 META，避免服务重启后 `/`、`/m/chat` 气泡丢失 |
 | `META_TTL` | 7 d | `AGIM_SESSION_META_TTL_MS` | 完整删除（`.json` + `.log` + 内存 entry） |
 
 cleanup 定时器每 5 min 跑一次，用同一对 helper 在两个层级独立判定。
@@ -90,7 +90,7 @@ cleanup 定时器每 5 min 跑一次，用同一对 helper 在两个层级独立
 | 事件 | 效果 |
 |---|---|
 | 任意消息进来 | `lastActivity` 推到当前时间，两个 TTL 都重置 |
-| 30 min 不说话 | 仅清消息历史，sticky agent / Claude UUID 保留 |
+| IM 默认 30 min / Web 默认 7 d 无活动 | 仅清消息历史，sticky agent / Claude UUID 保留 |
 | 7 d 不说话 | 整条 session 删除 |
 | `/cc` `/oc` 等显式切换 | `switchAgent` 改 `agent` 字段并落盘；不动 `claudeSessionId` |
 | `/new` | 清消息 + 删 `claudeSessionId` + 重置 approval auto-allow（强制下次 Claude 起新 UUID） |
@@ -206,7 +206,7 @@ env 钩子完整列表见 `im-workspaces-guide.md § 六`。
 | Agent 又漂了 | `/audit` 看最近一条 `intent`：`sticky` = 锁正常；`topic` / `keyword` = sticky 失效（要么 META 过期要么 bug）；同时 `ls -la ~/.agim/sessions/<safe-key>.json` 看元数据是否还在 |
 | Claude 上下文丢了 | `jq '.claudeSessionId, .lastActivity' ~/.agim/sessions/<safe-key>.json`；为空 = META 过期；非空但 Claude 报 "session not found" = cwd 与 jsonl 路径不一致（v2 升级冷启动一次会出现，发一条消息生成新 UUID 即可） |
 | opencode / Codex 像失忆 | 查 `opencodeSessionId` / `codexSessionId` 是否仍在 META TTL 内；为空则只剩 agim 短历史（可调大 `MESSAGES_TTL`）。adapter 有原生 resume；不要当成「完全没有 session」 |
-| Web Chat 刷新后空了 | 见下文「Web Chat」；查 `localStorage.agim-web-thread-id` 与 `~/.agim/sessions/web:web:<id>.*`；超过 `MESSAGES_TTL`（默认 30 min）会清气泡但 sticky agent 可保留 |
+| Web Chat 刷新 / 重启后空了 | 见下文「Web Chat」；查 `localStorage.agim-web-thread-id` 与 `~/.agim/sessions/`；Web 消息 TTL 默认 7 d（`AGIM_WEB_SESSION_MESSAGES_TTL_MS`），IM 仍为 30 min |
 | 想看消息历史 | `cat ~/.agim/sessions/<safe-key>.log`（JSONL，每行一条） |
 | 想看 Claude 历史 | `ls -lt ~/.claude/projects/-root-agim-workspaces-claude-code/*.jsonl \| head` |
 
@@ -278,12 +278,13 @@ web:web:<threadId>
 |---|---|
 | 浏览器 thread id | SPA 把 id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形） |
 | 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`；服务端 rekey 到该 id 并回放 `.log` |
-| 空历史 | session 仍在但消息已过 `MESSAGES_TTL` 时仍发 `history`（可为空），用于恢复 sticky agent |
+| 空历史 | session 仍在但消息已过 Web 消息 TTL 时仍发 `history`（可为空），用于恢复 sticky agent |
 | 「新对话」 | WS `new-conversation` → `resetConversation`；**同一** localStorage thread id，气泡清空 |
 | Agent 切换 | UI 气泡可保留；Agim Agent JSONL 按 §九 quarantine |
+| 消息 TTL | Web 默认与 `META_TTL` 对齐（7 d，`AGIM_WEB_SESSION_MESSAGES_TTL_MS`），**服务重启后气泡可恢复**；IM 仍默认 30 min |
 
 排障：
 
 1. DevTools → Application → `agim-web-thread-id`
-2. `ls ~/.agim/sessions/web:web:<id>.*`（或 sanitize 后的 safe-key）
-3. 超过默认 30 min 无活动：气泡被清属预期；调 `AGIM_SESSION_MESSAGES_TTL_MS` 可延长
+2. `ls ~/.agim/sessions/` 下对应 safe-key 的 `.json` / `.log`
+3. Web 气泡被清：检查是否超过 `AGIM_WEB_SESSION_MESSAGES_TTL_MS`（默认 = META 7 d）；IM 渠道仍看 `AGIM_SESSION_MESSAGES_TTL_MS`（默认 30 min）

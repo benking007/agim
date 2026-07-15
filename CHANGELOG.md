@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Web console (`/` / `/m/chat`) keeps chat bubbles across service restarts: message TTL for `platform=web` defaults to META TTL (7 days, `AGIM_WEB_SESSION_MESSAGES_TTL_MS`) instead of the IM 30-minute window that previously wiped `~/.agim/sessions/*.log` on the first post-restart `get-history`.
+
 ## [1.5.26] - 2026-07-15
 
 Batch of fixes that landed on git as empty bot bumps `1.5.22`–`1.5.25` but **never reached npm** (Publish is not triggered by `github-actions[bot]` pushes). This release publishes them and hardens the release path.

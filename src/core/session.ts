@@ -39,11 +39,11 @@ function sessionLogPath(key: string): string {
 }
 // Two-tier TTL (split out to fix the "agent drift after long pause" issue):
 //
-//   MESSAGES_TTL  — how long the in-memory chat history sticks around before
-//                   we drop it from RAM and delete the .log file. Short by
-//                   default (30 min) because a long pause usually means the
-//                   user has switched topics; replaying stale messages back to
-//                   the agent just bloats the prompt.
+//   MESSAGES_TTL  — how long chat history sticks around before we drop it
+//                   from RAM and delete the .log file. Short by default
+//                   (30 min) for IM because a long pause usually means the
+//                   user has switched topics; replaying stale messages back
+//                   to the agent just bloats the prompt.
 //
 //   META_TTL      — how long the *session metadata* (agent, model, variant,
 //                   claudeSessionId, claudeSessionPrimed, usage stats) lives
@@ -53,26 +53,46 @@ function sessionLogPath(key: string): string {
 //                   silence followed by a coding-keyword message would
 //                   re-classify and switch agents (e.g. claude-code → opencode).
 //
-// Both are env-overridable for ops tuning.
+//   Web console (`platform === 'web'`, including `/` and `/m/chat`) defaults
+//   message retention to META_TTL instead: operators restart the service
+//   often, and blanking the SPA after a restart felt like total data loss.
+//   Override with AGIM_WEB_SESSION_MESSAGES_TTL_MS.
+//
+// Both are env-overridable for ops tuning. Values are read per call so tests
+// (and live env edits) can change TTL without reloading the module.
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name]
   if (!raw) return fallback
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
-const MESSAGES_TTL = envInt('AGIM_SESSION_MESSAGES_TTL_MS', 30 * 60 * 1000)
-const META_TTL = envInt('AGIM_SESSION_META_TTL_MS', 7 * 24 * 60 * 60 * 1000)
+function messagesTtlDefault(): number {
+  return envInt('AGIM_SESSION_MESSAGES_TTL_MS', 30 * 60 * 1000)
+}
+function metaTtl(): number {
+  return envInt('AGIM_SESSION_META_TTL_MS', 7 * 24 * 60 * 60 * 1000)
+}
+/** Per-platform message retention. Web keeps bubbles across restarts. */
+function messagesTtlFor(platform: string): number {
+  if (platform === 'web') {
+    return envInt('AGIM_WEB_SESSION_MESSAGES_TTL_MS', metaTtl())
+  }
+  return messagesTtlDefault()
+}
 // Back-compat: external callers (tests, schedule.ts) used to import DEFAULT_TTL
 // to mean "the one ttl". Keep the symbol pointing at META_TTL so anywhere it
 // still appears in logs/metrics gets the long-lived value.
-const DEFAULT_TTL = META_TTL
+const DEFAULT_TTL = metaTtl()
 const CLEANUP_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 function metaStale(s: { lastActivity: Date }, now: number = Date.now()): boolean {
-  return now - s.lastActivity.getTime() > META_TTL
+  return now - s.lastActivity.getTime() > metaTtl()
 }
-function messagesStale(s: { lastActivity: Date }, now: number = Date.now()): boolean {
-  return now - s.lastActivity.getTime() > MESSAGES_TTL
+function messagesStale(
+  s: { lastActivity: Date; platform: string },
+  now: number = Date.now(),
+): boolean {
+  return now - s.lastActivity.getTime() > messagesTtlFor(s.platform)
 }
 
 type PersistedSession = Omit<Partial<Session>, 'createdAt' | 'lastActivity'> & {
@@ -1119,7 +1139,7 @@ class SessionManager {
 
     for (const [key, session] of this.sessions.entries()) {
       const idle = now - session.lastActivity.getTime()
-      if (idle > META_TTL) {
+      if (idle > metaTtl()) {
         // Full eviction: thread truly cold. Drop both files + cache entry.
         const retiredId = session.id
         this.sessions.delete(key)
@@ -1130,7 +1150,7 @@ class SessionManager {
         // Messages TTL keeps sticky routing; META TTL drops the id entirely,
         // so the corresponding Agim Agent JSONL becomes an orphan.
         scheduleRetireAgimAgentSession(retiredId, 'meta_ttl')
-      } else if (idle > MESSAGES_TTL && session.messages.length > 0) {
+      } else if (idle > messagesTtlFor(session.platform) && session.messages.length > 0) {
         // Messages-only eviction: keep sticky agent / claudeSessionId on disk
         // (meta file untouched), drop chat log + in-memory messages so the
         // next turn starts with a fresh history but the same routing.

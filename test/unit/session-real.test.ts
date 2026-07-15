@@ -333,6 +333,78 @@ describe('SessionManager (real, on-disk)', () => {
     }
   })
 
+  it('web chat bubbles survive cold reload past the IM 30min message TTL', async () => {
+    const k = {
+      platform: 'web',
+      channelId: 'web',
+      threadId: `web-surv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    }
+    const prevWeb = process.env.AGIM_WEB_SESSION_MESSAGES_TTL_MS
+    const prevIm = process.env.AGIM_SESSION_MESSAGES_TTL_MS
+    // Explicit web TTL = 1h; IM default stays 30min — lastActivity 45min ago
+    // must keep web bubbles but would wipe an IM session.
+    process.env.AGIM_WEB_SESSION_MESSAGES_TTL_MS = String(60 * 60 * 1000)
+    process.env.AGIM_SESSION_MESSAGES_TTL_MS = String(30 * 60 * 1000)
+    try {
+      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'agim')
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'user', content: 'still here after restart', timestamp: new Date(),
+      })
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'assistant', content: 'ok', timestamp: new Date(),
+      })
+
+      // Age lastActivity to 45 minutes ago on disk (simulates downtime).
+      const metaPath = join(SESSIONS_DIR, `${fileStem(k)}.json`)
+      const meta = JSON.parse(await readFile(metaPath, 'utf-8')) as { lastActivity: string }
+      meta.lastActivity = new Date(Date.now() - 45 * 60 * 1000).toISOString()
+      await writeFile(metaPath, JSON.stringify(meta), 'utf-8')
+
+      // Simulate process restart: drop in-memory cache.
+      // @ts-expect-error — private map
+      sessionManager.sessions.delete(`${k.platform}:${k.channelId}:${k.threadId}`)
+
+      const hist = await sessionManager.getSessionWithHistory(k.platform, k.channelId, k.threadId)
+      expect(hist?.messages.length).toBe(2)
+      expect(hist?.messages[0]?.content).toBe('still here after restart')
+      expect(existsSync(join(SESSIONS_DIR, `${fileStem(k)}.log`))).toBe(true)
+    } finally {
+      if (prevWeb === undefined) delete process.env.AGIM_WEB_SESSION_MESSAGES_TTL_MS
+      else process.env.AGIM_WEB_SESSION_MESSAGES_TTL_MS = prevWeb
+      if (prevIm === undefined) delete process.env.AGIM_SESSION_MESSAGES_TTL_MS
+      else process.env.AGIM_SESSION_MESSAGES_TTL_MS = prevIm
+      await cleanupKey(k)
+    }
+  })
+
+  it('IM message TTL still drops bubbles after 30min on cold reload', async () => {
+    const k = uniqueKey('im-ttl')
+    const prevIm = process.env.AGIM_SESSION_MESSAGES_TTL_MS
+    process.env.AGIM_SESSION_MESSAGES_TTL_MS = String(30 * 60 * 1000)
+    try {
+      await sessionManager.getOrCreateSession(k.platform, k.channelId, k.threadId, 'agim')
+      await sessionManager.addMessage(k.platform, k.channelId, k.threadId, {
+        role: 'user', content: 'gone after idle', timestamp: new Date(),
+      })
+
+      const metaPath = join(SESSIONS_DIR, `${fileStem(k)}.json`)
+      const meta = JSON.parse(await readFile(metaPath, 'utf-8')) as { lastActivity: string }
+      meta.lastActivity = new Date(Date.now() - 45 * 60 * 1000).toISOString()
+      await writeFile(metaPath, JSON.stringify(meta), 'utf-8')
+
+      // @ts-expect-error — private map
+      sessionManager.sessions.delete(`${k.platform}:${k.channelId}:${k.threadId}`)
+
+      const hist = await sessionManager.getSessionWithHistory(k.platform, k.channelId, k.threadId)
+      expect(hist?.messages.length).toBe(0)
+      expect(existsSync(join(SESSIONS_DIR, `${fileStem(k)}.log`))).toBe(false)
+    } finally {
+      if (prevIm === undefined) delete process.env.AGIM_SESSION_MESSAGES_TTL_MS
+      else process.env.AGIM_SESSION_MESSAGES_TTL_MS = prevIm
+      await cleanupKey(k)
+    }
+  })
+
   // setOpencodeSessionId is idempotent — opencode emits the same sessionID
   // on every event in a run; the adapter forwards each one and we need to
   // tolerate that without re-writing meta or bumping lastActivity.

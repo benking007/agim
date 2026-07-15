@@ -29,6 +29,14 @@ jobs:
         with:
           bun-version: latest
 
+      # Catch "git advanced, npm stuck" early (e.g. bot version bumps that
+      # never fired Publish). Grace: 1 patch ahead is OK; ≥2 patches or any
+      # minor/major drift fails the job so the gap cannot sit unnoticed.
+      - name: npm ↔ package.json drift check
+        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+        run: npm run check:npm-drift
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+
       # ───── Backend (agim-cli) ─────
       # The committed lockfile resolves from registry.npmjs.org. Keep CI on
       # `npm ci` so dependency drift cannot change a passing build.

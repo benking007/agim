@@ -4,19 +4,26 @@
 //   1. systemd-managed   — Linux + root, /etc/systemd/system/agim.service
 //                          exists and systemd reports it as enabled.
 //   2. background daemon — `agim start --bg` writes ~/.agim/agim.pid
-//                          and ~/.agim/agim.log.
+//                          and redirects stdio to ~/.agim/agim.log.
 //                          nohup + setsid; survives shell exit. Works on
 //                          Linux, macOS, WSL2.
 //   3. foreground        — a TTY-attached `agim start` somewhere. We detect
 //                          it via `pgrep -af` matching, but can't stop or
 //                          restart it from outside the owning TTY.
 //
+// Ops artifact: every successful `agim start` (any mode) maintains
+// ~/.agim/agim.log via ensureServiceLogMirror() — same R15 idea as PID_FILE.
+//
 // The detection helpers are all best-effort: a missing systemctl, a stale
 // pid file, or a pgrep mismatch produces "not running" rather than an
 // error, so the caller can decide what to ack.
 
 import { execFileSync, execSync, spawn } from 'node:child_process'
-import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, readdirSync } from 'node:fs'
+import {
+  readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync,
+  openSync, closeSync, readdirSync, chmodSync, createWriteStream,
+} from 'node:fs'
+import type { WriteStream } from 'node:fs'
 import { createServer as createNetServer } from 'node:net'
 import { join, dirname, basename } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
@@ -25,8 +32,15 @@ import { readEnvFile } from './env-file.js'
 // Pid + log files live inside AGIM_HOME.
 export const PID_FILE = join(AGIM_HOME, 'agim.pid')
 export const LOG_FILE = join(AGIM_HOME, 'agim.log')
+/** Set by spawnBackground / restart helper when child stdio already is LOG_FILE. */
+export const LOG_REDIRECTED_ENV = 'AGIM_LOG_REDIRECTED'
 export const DEFAULT_WEB_PORT = 3000
 export const DEFAULT_ACP_PORT = 9090
+
+let logMirrorInstalled = false
+let stdoutWriteOrig: typeof process.stdout.write | null = null
+let stderrWriteOrig: typeof process.stderr.write | null = null
+let logMirrorStream: WriteStream | null = null
 
 /** Systemd unit candidates, checked in order. */
 const SYSTEMD_UNIT_CANDIDATES = [
@@ -75,6 +89,80 @@ export const _internal = {
   setDetectServiceOverride(fn: (() => ServiceState) | null): void {
     detectServiceOverride = fn
   },
+  /** Test-only: unwrap stdout/stderr mirrors installed by ensureServiceLogMirror. */
+  resetServiceLogMirrorForTests(): void {
+    if (stdoutWriteOrig) process.stdout.write = stdoutWriteOrig
+    if (stderrWriteOrig) process.stderr.write = stderrWriteOrig
+    stdoutWriteOrig = null
+    stderrWriteOrig = null
+    logMirrorInstalled = false
+    if (logMirrorStream) {
+      try { logMirrorStream.destroy() } catch { /* ignore */ }
+      logMirrorStream = null
+    }
+  },
+}
+
+/**
+ * Ensure ~/.agim/agim.log exists and mirror stdout/stderr into it.
+ *
+ * Historically only `spawnBackground` (`agim start --bg` / restart helper)
+ * opened the file as the child's stdout/stderr. systemd and foreground
+ * starts never created it, so Web Settings → Service log-tail and CLI
+ * status always reported "not generated yet".
+ *
+ * When `AGIM_LOG_REDIRECTED=1`, stdio already points at LOG_FILE — only
+ * touch/ensure the path; do not tee (would duplicate every line).
+ */
+export function ensureServiceLogMirror(): void {
+  mkdirSync(dirname(LOG_FILE), { recursive: true })
+  const fd = openSync(LOG_FILE, 'a', 0o600)
+  try {
+    try { chmodSync(LOG_FILE, 0o600) } catch { /* non-POSIX */ }
+
+    if (process.env[LOG_REDIRECTED_ENV] === '1') {
+      closeSync(fd)
+      return
+    }
+    if (logMirrorInstalled) {
+      closeSync(fd)
+      return
+    }
+
+    const stream = createWriteStream(LOG_FILE, { fd, flags: 'a', autoClose: true })
+    logMirrorStream = stream
+    logMirrorInstalled = true
+    stdoutWriteOrig = process.stdout.write.bind(process.stdout)
+    stderrWriteOrig = process.stderr.write.bind(process.stderr)
+
+    const mirror = (
+      orig: typeof process.stdout.write,
+    ): typeof process.stdout.write => {
+      return function mirroredWrite(
+        this: NodeJS.WriteStream,
+        chunk: string | Uint8Array,
+        encoding?: BufferEncoding | ((err?: Error | null) => void),
+        cb?: (err?: Error | null) => void,
+      ): boolean {
+        try {
+          if (typeof encoding === 'function') {
+            stream.write(chunk)
+          } else if (typeof encoding === 'string') {
+            stream.write(chunk, encoding)
+          } else {
+            stream.write(chunk)
+          }
+        } catch { /* best-effort mirror; never block primary stdio */ }
+        return orig.call(this, chunk, encoding as never, cb as never)
+      } as typeof process.stdout.write
+    }
+
+    process.stdout.write = mirror(stdoutWriteOrig)
+    process.stderr.write = mirror(stderrWriteOrig)
+  } catch (err) {
+    try { closeSync(fd) } catch { /* ignore */ }
+    throw err
+  }
 }
 
 function readConfigObject(): Record<string, unknown> | null {
@@ -208,7 +296,8 @@ export function spawnBackground(executable: string, args: string[] = ['start']):
     const child = spawn(executable, args, {
       detached: true,
       stdio: ['ignore', fd, fd],
-      env: process.env,
+      // Tell the child not to tee again — stdout/stderr already are LOG_FILE.
+      env: { ...process.env, [LOG_REDIRECTED_ENV]: '1' },
     })
     child.unref()
     if (!child.pid) throw new Error('spawn returned no pid')

@@ -257,6 +257,17 @@ program
       console.warn(`⚠️  Could not write PID file: ${err instanceof Error ? err.message : String(err)}`)
     }
 
+    // Same R15 idea for ~/.agim/agim.log: historically only --bg / restart
+    // helper redirected stdio into the file. systemd + foreground never
+    // created it, so Web Settings log-tail stayed empty. Mirror console
+    // (and pino) into the file unless AGIM_LOG_REDIRECTED=1 (bg child).
+    try {
+      const { ensureServiceLogMirror } = await import('./cli-ui/service.js')
+      ensureServiceLogMirror()
+    } catch (err) {
+      console.warn(`⚠️  Could not open service log: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     let config = await loadConfig()
     console.log(`Config loaded from ${CONFIG_FILE}`)
 

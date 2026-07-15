@@ -160,6 +160,15 @@ describe('bootstrapAgentWorkspaces', () => {
     expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
     expect(await readFile(join(tmpRoot, 'mimo', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
     expect(await readFile(join(tmpRoot, 'copilot', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
+
+    const agimGuide = await readFile(join(tmpRoot, 'agim', 'AGENTS.md'), 'utf8')
+    expect(agimGuide).toContain('分层')
+    expect(agimGuide).toContain('快准稳')
+    expect(agimGuide).toContain('没有结果不说完成')
+    // Framework tool-discipline lives in buildSystemPrompt — seed must not
+    // re-paste the long hard-constraint block (operator role stays lean).
+    expect(agimGuide).not.toContain('agim 框架级硬约束')
+    expect(agimGuide).toContain(AGIM_MEMORY_LINK_START)
   })
 
   it('safe to run twice and preserves user edits while adding the memory link once', async () => {

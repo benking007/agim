@@ -135,6 +135,27 @@ export function clearActiveRun(threadId: string): void {
   runs.delete(threadId)
 }
 
+/** Convert a snapshot into the durable ChatMessage.activity shape. */
+export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
+  runId: string
+  status: 'running' | 'success' | 'error'
+  startedAt: number
+  finishedAt?: number
+  durationMs?: number
+  error?: string
+  steps: ActiveRunStep[]
+} {
+  return {
+    runId: snap.runId,
+    status: snap.status,
+    startedAt: snap.startedAt,
+    finishedAt: snap.finishedAt,
+    durationMs: snap.durationMs,
+    error: snap.error,
+    steps: snap.steps.map((st) => ({ ...st })),
+  }
+}
+
 /** Test helper. */
 export function _resetActiveRunsForTests(): void {
   for (const t of finishTimers.values()) clearTimeout(t)

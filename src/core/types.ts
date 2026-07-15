@@ -21,6 +21,33 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  /** Sticky agent label for web history replay (optional). */
+  agent?: string
+  /**
+   * Web chat tool/run accordion snapshot. Persisted so refresh / tab
+   * switch can restore every turn's activity — not only the latest
+   * in-memory ActiveRun.
+   */
+  activity?: PersistedChatActivity
+}
+
+/** Durable copy of the web chat activity accordion (epoch-ms timestamps). */
+export interface PersistedChatActivity {
+  runId: string
+  status: 'running' | 'success' | 'error'
+  startedAt: number
+  finishedAt?: number
+  durationMs?: number
+  error?: string
+  steps: Array<{
+    id: string
+    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
+    label: string
+    status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+    startedAt: number
+    finishedAt?: number
+    preview?: string
+  }>
 }
 
 /**

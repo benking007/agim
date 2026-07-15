@@ -468,6 +468,41 @@ class SessionManager {
   }
 
   /**
+   * Attach a web-chat activity accordion to the latest assistant message
+   * (optionally matched by content). Rewrites the JSONL so refresh can
+   * restore every turn's tools — not only the in-memory ActiveRun.
+   */
+  async patchLastAssistantActivity(
+    platform: string,
+    channelId: string,
+    threadId: string,
+    activity: NonNullable<ChatMessage['activity']>,
+    matchContent?: string,
+  ): Promise<boolean> {
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session || session.messages.length === 0) return false
+      let idx = -1
+      for (let i = session.messages.length - 1; i >= 0; i--) {
+        const m = session.messages[i]
+        if (!m || m.role !== 'assistant') continue
+        if (matchContent !== undefined && m.content !== matchContent) continue
+        idx = i
+        break
+      }
+      if (idx < 0) return false
+      const target = session.messages[idx]
+      if (!target) return false
+      session.messages[idx] = { ...target, activity }
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSession(key, session)
+      return true
+    })
+  }
+
+  /**
    * Persist `model` / `variant` / arbitrary patchable fields. Used by
    * `/model`, `/think` etc so the change survives a restart between turns.
    * Mutates the in-memory session in place AND writes metadata atomically.

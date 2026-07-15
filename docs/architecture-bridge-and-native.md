@@ -88,6 +88,7 @@ The current registry:
 | `codex` | `/cx`, `/openai`, `/codexcli` | `cli` | `codex exec` subprocess |
 | `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `cli` | GitHub Copilot CLI (`copilot -p --output-format json`) |
 | `opencode` | `/oc`, `/opencodeai` | `cli` | opencode CLI (stdio or HTTP daemon) |
+| `cursor` | `/cs`, `/cur` | `cli` | Cursor Agent CLI (`cursor-agent`) |
 | `kimi-code` | `/kimi`, `/km` | `cli` | Kimi Code CLI (`kimi -p --output-format stream-json`) |
 | `qoder` | `/qd`, `/qodercli` | `cli` | Qoder CLI (`qodercli --print --output-format stream-json`) |
 | `pi` | `/pi`, `/pi-agent` | `cli` | PI CLI (`pi --mode json -p`) |

@@ -1,7 +1,10 @@
 # task-recovery 灰度测试指南
 
-> 分支：`feat/task-recovery`（4 commits、未合并 main）
-> 部署状态：`dist/` 已 build Phase 3 代码；systemd drop-in `KillMode=mixed` 已应用并 daemon-reload；**等首次重启加载新进程**。
+> **已归档** · 分支 `feat/task-recovery` 当时的灰度笔记（未作为现行运维指南）。  
+> 现行 outbox / 任务恢复行为见 [`runbook.md`](./runbook.md)、[`session-model.md`](./session-model.md) 与 CHANGELOG。  
+> 历史设计见归档 [`task-recovery-plan.md`](./task-recovery-plan.md)。
+
+> 原文状态：`feat/task-recovery`（4 commits、未合并 main）；部署笔记含 `/root/.agim` 路径，仅作历史参考。
 
 ---
 

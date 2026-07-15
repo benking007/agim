@@ -1,7 +1,7 @@
 # 长期记忆与向量召回（v1.2.0+）
 
 > 受众：把 agim 当个人 / 小团队助理的运维者
-> 配套：[`architecture/current.md`](./architecture/current.md) 「四、v1.x 演化」节、CHANGELOG v1.2.0
+> 配套：[`architecture/current.md`](./architecture/current.md)、[`CHANGELOG.md`](../CHANGELOG.md) v1.2.0+
 
 ---
 
@@ -224,7 +224,7 @@ sqlite3 ~/.agim/memory.db \
 
 ### 6.3 备份
 
-参见 [`deployment.md`](./deployment.md) § 八。`memory.db` 含隐私偏好信息，建议加密备份。
+参见 [`deployment.md`](./deployment.md) §7（备份）。`memory.db` 含隐私偏好信息，建议加密备份。
 `cache/transformers/` 不用备份，重新启用 vector 时按需重下。
 
 ### 6.4 完全关闭

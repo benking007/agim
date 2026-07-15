@@ -2,7 +2,7 @@
 
 - **日期**：2026-05-02
 - **状态**：接受（agim v2 Phase A + D 落地）
-- **相关计划**：`docs/im-gateway-v2-plan.md`
+- **相关计划**：历史 [`docs/im-gateway-v2-plan.md`](../im-gateway-v2-plan.md)（已归档；现行说明见 [`session-model.md`](../session-model.md)）
 
 ---
 

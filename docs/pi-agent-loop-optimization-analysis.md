@@ -1,13 +1,20 @@
 # Agim 内置 pi-agent loop 优化分析
 
-> 基线：`origin/main@ed7518d3`（Agim `1.5.12`）
-> 分析日期：2026-07-13
+> **归档快照（非现行实施指南）**  
+> 基线：`origin/main@ed7518d3`（Agim `1.5.12`）· 分析日期：2026-07-13  
+> 路径已迁：文中历史链接指向的 `src/plugins/agents/agim-agent/` 现为  
+> [`src/plugins/agents/agim-agent/`](../src/plugins/agents/agim-agent/)。  
+> **已部分过时**：Agim Agent JSONL 退役 / quarantine 已在后续版本落地  
+> （见 [`session-model.md`](./session-model.md) §九 · [`tech-debt.md`](./tech-debt.md)）。  
+> 工具前缀现以 `agim_*` 为主（`native_*` 仍为 dispatch 别名）。  
+> 现行能力与排障请以 README、`session-model.md`、CHANGELOG 为准。
+
 > 范围：内置 Agim Agent（registry id `agim`，别名 `native`；基于 `@earendil-works/pi-agent-core`），不包含外置 PI CLI 的内部 loop。
-> 本文只给出分析、验证证据和后续实施拆分，不修改运行时行为。
+> 本文是当时的分析与证据快照，不保证条目仍未修复。
 
 ## 1. 结论摘要
 
-当前生产 loop 的主路径是 [`NativeAgentAdapter`](../src/plugins/agents/pi-native/index.ts)，实际循环由 `@earendil-works/pi-agent-core@0.79.8` 的 `AgentHarness` 执行。仓库中的 [`runAgentLoop`](../src/core/llm/agent-loop.ts) 已退役为库与测试参考，不能用它的测试通过情况推断生产 `pi-native` 具备相同行为。
+当前生产 loop 的主路径是 [`NativeAgentAdapter`](../src/plugins/agents/agim-agent/index.ts)，实际循环由 `@earendil-works/pi-agent-core@0.79.8` 的 `AgentHarness` 执行。仓库中的 [`runAgentLoop`](../src/core/llm/agent-loop.ts) 已退役为库与测试参考，不能用它的测试通过情况推断生产 `agim-agent` 具备相同行为。
 
 最优先的问题不是继续堆提示词，而是先修复六个确定性控制与数据缺口：
 
@@ -17,6 +24,7 @@
 4. **没有整轮 wall timeout**：`AGIM_NATIVE_REQUEST_TIMEOUT_MS` 只限制单次 provider 请求，不限制一个包含多轮 LLM 与工具调用的 turn。
 5. **冷 session 首轮 prompt 双写**：router 先把当前 prompt push 到被传入的 history 引用，fresh pi session 随后 seed 这份 history，又调用一次 `harness.prompt()`；模型和 JSONL 都看到两条当前 user turn。
 6. **pi JSONL 权限与生命周期没有接入 Agim session 管理**：典型 `umask 022` 下探针得到目录 `0755`、文件 `0644`；`/new` 与 session TTL 清理也不会删除旧 pi JSONL。
+   > **后续已落地**：Agim Agent JSONL 现由 quarantine / grace purge 管理（见 `session-model.md` §九）。本条保留为快照时的发现记录。
 
 影响目标达成质量的下一层问题是：
 
@@ -34,7 +42,7 @@ Agim 中有两条名称容易混淆的路径：
 
 | 产品路径 | 注册名 | 实现 | loop 归属 |
 |---|---|---|---|
-| 内置 Agim Agent | `agim`（别名 `native`；斜杠 `/agim` `/na` `/llm`） | [`src/plugins/agents/pi-native/`](../src/plugins/agents/pi-native/) | Agim 进程内的 `AgentHarness` |
+| 内置 Agim Agent | `agim`（别名 `native`；斜杠 `/agim` `/na` `/llm`） | [`src/plugins/agents/agim-agent/`](../src/plugins/agents/agim-agent/) | Agim 进程内的 `AgentHarness` |
 | 外置 PI CLI | `pi`、`pi-agent` | [`src/plugins/agents/pi/`](../src/plugins/agents/pi/) | 外部 `pi --mode json` 子进程 |
 
 本文的“pi-agent loop”专指第一条路径。外置 PI CLI 的内部停止条件、重试和上下文策略不在 Agim 控制范围内。
@@ -61,10 +69,10 @@ flowchart TD
 关键契约：
 
 - [`callAgentWithHistory()`](../src/core/router.ts) 先把原始 user prompt 写入 Agim session，再把动态上下文拼到 prompt 前面交给 adapter。
-- [`NativeAgentAdapter`](../src/plugins/agents/pi-native/index.ts) 每个 turn 新建一个 `AgentHarness`，但复用同一个 `sessionId` 对应的 JSONL。
+- [`NativeAgentAdapter`](../src/plugins/agents/agim-agent/index.ts) 每个 turn 新建一个 `AgentHarness`，但复用同一个 `sessionId` 对应的 JSONL。
 - 冷 session 才从 Agim history seed；热 session 以 pi JSONL 为 loop 历史真源。
 - 同 session 通过 `sessionLocks` 串行；不同 session 可并发。
-- [`tool-bridge.ts`](../src/plugins/agents/pi-native/tool-bridge.ts) 把 Agim dispatcher 错误翻译成 throw，并提供工具超时和结果截断。
+- [`tool-bridge.ts`](../src/plugins/agents/agim-agent/tool-bridge.ts) 把 Agim dispatcher 错误翻译成 throw，并提供工具超时和结果截断。
 - 当前只在 `harness.prompt()` 完成后 yield 一次最终文本；token delta 没有接入 adapter。
 
 ### 3.1 已经有效的能力
@@ -92,10 +100,10 @@ flowchart TD
 
 ```text
 ./node_modules/.bin/bun test --isolate \
-  src/plugins/agents/pi-native/index.test.ts \
-  src/plugins/agents/pi-native/tool-bridge.test.ts \
-  src/plugins/agents/pi-native/provider-resolver.test.ts \
-  src/plugins/agents/pi-native/pi-runtime.smoke.test.ts \
+  src/plugins/agents/agim-agent/index.test.ts \
+  src/plugins/agents/agim-agent/tool-bridge.test.ts \
+  src/plugins/agents/agim-agent/provider-resolver.test.ts \
+  src/plugins/agents/agim-agent/pi-runtime.smoke.test.ts \
   src/core/goals.test.ts src/core/goal-rpc.test.ts \
   test/unit/call-agent-v1-2-139.test.ts \
   test/unit/job-board-inline.test.ts \
@@ -147,7 +155,7 @@ npm run test:sqlite
 
 #### P0-1 Plan Mode 的硬阻断工具名漂移
 
-[`pi-native/index.ts`](../src/plugins/agents/pi-native/index.ts) 当前默认集合：
+[`pi-native/index.ts`](../src/plugins/agents/agim-agent/index.ts) 当前默认集合：
 
 ```text
 native_write
@@ -204,7 +212,7 @@ flowchart LR
 - [`job-board.ts`](../src/core/job-board.ts) 的 `runningControllers` 只在 `runJob()` 注册。
 - [`cli.ts`](../src/cli.ts) 的 inline path 只调用 `markJobRunning()`。
 - [`router.ts`](../src/core/router.ts) 没有把 inline signal 放入 `AgentSendOpts`。
-- [`NativeAgentAdapter`](../src/plugins/agents/pi-native/index.ts) 不读取 `opts.signal`。
+- [`NativeAgentAdapter`](../src/plugins/agents/agim-agent/index.ts) 不读取 `opts.signal`。
 - `AgentHarness.prompt()` 不接收 signal，但 `AgentHarness.abort()` 已提供正确的内部取消入口。
 - `dispatchWithTimeout()` 在 outer abort 时只 abort 子 controller；若 dispatcher 不合作，Promise 仍等到工具完成或 timeout。
 - `findActiveJobByThread()` 把 `running` 与 `pending` 混在一起按创建时间倒序；一个 turn 正在运行、后面又排了消息时，`/abort` 可能取消较新的 pending，而不是当前运行项。
@@ -261,7 +269,7 @@ pi `0.79.8` 的规则是：只有一个 batch 中**每个** finalized result 都
 
 #### P0-4 缺少整轮 watchdog
 
-[`factory.ts`](../src/plugins/agents/pi-native/factory.ts) 的 `timeoutMs` 是 provider request timeout。一个 turn 可以执行：
+[`factory.ts`](../src/plugins/agents/agim-agent/factory.ts) 的 `timeoutMs` 是 provider request timeout。一个 turn 可以执行：
 
 ```text
 LLM request → tool timeout → LLM request → tool timeout → ...
@@ -329,7 +337,7 @@ JSONL 包含完整 prompt、工具参数/结果、文件内容摘要及可能的
 总 token 低估约 48.3%
 ```
 
-同时 [`provider-resolver.ts`](../src/plugins/agents/pi-native/provider-resolver.ts) 把 model cost 固定为 0、context window 固定为 128000。仓库已有 [`model-catalog.ts`](../src/core/llm/model-catalog.ts)，但 catalog 只能提供带 source/version 的估算：它会按 model id 跨 provider 回退，不能代表自定义 OpenAI-compatible endpoint 的真实价格。
+同时 [`provider-resolver.ts`](../src/plugins/agents/agim-agent/provider-resolver.ts) 把 model cost 固定为 0、context window 固定为 128000。仓库已有 [`model-catalog.ts`](../src/core/llm/model-catalog.ts)，但 catalog 只能提供带 source/version 的估算：它会按 model id 跨 provider 回退，不能代表自定义 OpenAI-compatible endpoint 的真实价格。
 
 另一个语义问题是：adapter 把 provider error、abort 和内部 throw 转成普通文本并正常结束 generator。不只是 router，A2A、inline/explicit job、schedule 与 Web job 都会把这类文本当成功结果。router 因此执行：
 
@@ -591,8 +599,8 @@ flowchart TD
 
 涉及文件：
 
-- [`src/plugins/agents/pi-native/index.ts`](../src/plugins/agents/pi-native/index.ts)
-- [`src/plugins/agents/pi-native/tool-bridge.ts`](../src/plugins/agents/pi-native/tool-bridge.ts)
+- [`src/plugins/agents/agim-agent/index.ts`](../src/plugins/agents/agim-agent/index.ts)
+- [`src/plugins/agents/agim-agent/tool-bridge.ts`](../src/plugins/agents/agim-agent/tool-bridge.ts)
 - [`src/core/router.ts`](../src/core/router.ts)
 - [`src/core/job-board.ts`](../src/core/job-board.ts)
 - [`src/core/thread-queue.ts`](../src/core/thread-queue.ts)
@@ -734,23 +742,23 @@ streaming 与 steering 是两个可独立发布的能力；不要与 pi 依赖�
 
 | 行为 | 推荐测试位置 |
 |---|---|
-| `opts.signal → harness.abort` | `src/plugins/agents/pi-native/index.test.ts` |
-| session lock 等待期取消；第三个 waiter 仍可继续 | `src/plugins/agents/pi-native/index.test.ts` |
+| `opts.signal → harness.abort` | `src/plugins/agents/agim-agent/index.test.ts` |
+| session lock 等待期取消；第三个 waiter 仍可继续 | `src/plugins/agents/agim-agent/index.test.ts` |
 | approval 等待、compaction、provider backoff、parallel tool 中取消 | pi-native adapter + 上游 runtime smoke |
 | user abort 与 watchdog 同时触发，terminal outcome exactly-once | 新增 controller 状态机测试 |
-| 完整 Plan access matrix（deny/allow/approvalOnly） | `src/plugins/agents/pi-native/index.test.ts` + plan integration |
+| 完整 Plan access matrix（deny/allow/approvalOnly） | `src/plugins/agents/agim-agent/index.test.ts` + plan integration |
 | 默认 auto-approve 下 `approvalOnly` 仍需用户确认 | approval-bus + plan-exit integration |
-| Plan exit 后同 turn 的 effective policy | `src/plugins/agents/pi-native/index.test.ts` + plan integration |
+| Plan exit 后同 turn 的 effective policy | `src/plugins/agents/agim-agent/index.test.ts` + plan integration |
 | 不支持 Plan Mode 的 A2A target fail closed | `test/unit/call-agent-v1-2-139.test.ts` |
-| invalid/unknown/policy-denied/normal 的 parallel/mixed batch budget | `src/plugins/agents/pi-native/index.test.ts` |
-| outer abort + cooperative/non-cooperative dispatcher；mutate isolation | `src/plugins/agents/pi-native/tool-bridge.test.ts` |
+| invalid/unknown/policy-denied/normal 的 parallel/mixed batch budget | `src/plugins/agents/agim-agent/index.test.ts` |
+| outer abort + cooperative/non-cooperative dispatcher；mutate isolation | `src/plugins/agents/agim-agent/tool-bridge.test.ts` |
 | inline `/abort` 端到端 | 新增 `test/integration/native-abort.test.ts` |
 | 一个 running + 多个 pending 时 abort 选择 | `test/unit/job-board-inline.test.ts`，Node pool |
 | pending 取消后 queue closure/slot holder 不执行 | `thread-queue` + `job-board` Node pool |
 | cancel 后无 outbox、无 assistant success，下一 turn 可继续 | `test/integration/native-abort.test.ts` |
-| 多轮 usage/outcome/audit | `src/plugins/agents/pi-native/index.test.ts` |
+| 多轮 usage/outcome/audit | `src/plugins/agents/agim-agent/index.test.ts` |
 | compaction/critic/recovery auxiliary usage | 上游 smoke + outcome integration |
-| schema 上游契约防回退 | `src/plugins/agents/pi-native/pi-runtime.smoke.test.ts` |
+| schema 上游契约防回退 | `src/plugins/agents/agim-agent/pi-runtime.smoke.test.ts` |
 | cold router session 当前 prompt 恰好一次 | 新增 `test/integration/native-context.test.ts` |
 | transient context 不落 JSONL | 新增 `test/integration/native-context.test.ts` |
 | blank/length/hallucination correction 不落 user history | pi-native adapter 专测，不复用 legacy loop 测试 |

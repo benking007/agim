@@ -3,7 +3,7 @@
 - **日期**：2026-04-30
 - **状态**：接受（Phase 1 本批次落地）
 
-> **更新 v1.2.145**：本 ADR §实现细节 3 约定 traceId "通过 `opts.traceId` 传入 agent adapter"，但该字段长期缺失，`native` adapter 因此自造 `native-<sessionId>-<ts>` traceId，其审计 / `invocations` 行无法关联回入站消息（CR M5）。已补：`AgentSendOpts.traceId`（`types.ts`）由 `router.ts` 透传，`native/index.ts` 优先采用，进程内 A2A 子调用链接 `${parent}/a2a-${id}`。CLI adapter 内部 pino 日志仍用 `rootLogger`（无 traceId binding），属已知次要断链，未在本轮收口。事件名现状（`router.intent` 而非 `route.matched`、无 `agent.invoke.error`/`spanId`）与上文规范仍有出入，按实现为准。
+> **更新 v1.2.145**：本 ADR §实现细节 3 约定 traceId "通过 `opts.traceId` 传入 agent adapter"，但该字段长期缺失，Agim Agent adapter 因此自造 `native-<sessionId>-<ts>` traceId，其审计 / `invocations` 行无法关联回入站消息（CR M5）。已补：`AgentSendOpts.traceId`（`types.ts`）由 `router.ts` 透传，Agim Agent adapter（现 `src/plugins/agents/agim-agent/`，历史路径曾为 `native/`）优先采用，进程内 A2A 子调用链接 `${parent}/a2a-${id}`。CLI adapter 内部 pino 日志仍用 `rootLogger`（无 traceId binding），属已知次要断链，未在本轮收口。事件名现状（`router.intent` 而非 `route.matched`、无 `agent.invoke.error`/`spanId`）与上文规范仍有出入，按实现为准。
 
 ---
 

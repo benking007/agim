@@ -92,7 +92,7 @@ Agim Agent 配置详见：`docs/llm-backends.md`
 ## 安全与合规
 
 - Web 默认开启 token 鉴权。
-- 工具调用默认走审批门。
+- 工具自动审批默认开启（`AGIM_AUTO_APPROVE=1`）：通过敏感路径与自保护检查后自动放行。面向非受信 IM 时设 `AGIM_AUTO_APPROVE=0` 走人工审批。
 - 敏感路径默认拒绝访问。
 - 海外 IM 可按需启用，国内部署可保持关闭。
 

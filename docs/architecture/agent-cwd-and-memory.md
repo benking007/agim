@@ -1,7 +1,7 @@
 # Agent CWD 与长期项目记忆设计（agim v2 Phase B + C）
 
 > 状态：**已实施（2026-05-02）**
-> 关联：`docs/im-gateway-v2-plan.md`、`docs/adr/0004-sticky-agent-and-split-ttl.md`、`docs/adr/0005-agent-cwd-isolation.md`
+> 关联：历史计划 [`im-gateway-v2-plan.md`](../im-gateway-v2-plan.md)（已归档）· [`adr/0004-sticky-agent-and-split-ttl.md`](../adr/0004-sticky-agent-and-split-ttl.md) · [`adr/0005-agent-cwd-isolation.md`](../adr/0005-agent-cwd-isolation.md) · 现行指南 [`im-workspaces-guide.md`](../im-workspaces-guide.md)
 > 日期：2026-05-02
 >
 > **实施版本**：本文是落地后的设计 + 决策合订本。代码 = `core/agent-cwd.ts` + 两 adapter
@@ -227,6 +227,7 @@ Phase C 完成的标志：
 - [x] 测试：`core/agent-cwd.test.ts` 13 pass，覆盖 4 条决策分支 + 种子幂等性 +
       env override 优先级 + `opts.threadId` 为空回退 undefined
 - [x] 既有测试无回归：`claude-code/adapter.test.ts` 8 pass
-- [x] 文档：本文 + ADR 0005 + `deployment.md` "IM 工作区" 一节 + 主计划的 Phase B
-      段落
-- [ ] （Phase C 增强）`/memo` 命令 — 设计在第六节"长期项目记忆"，未实现，按需再做
+- [x] 文档：本文 + ADR 0005 + [`im-workspaces-guide.md`](../im-workspaces-guide.md) + 主计划的 Phase B
+      段落（`deployment.md` 不再单开「IM 工作区」节，以本指南为准）
+- [x] `/memo`（5W1H 备忘）已作为产品能力落地 — 见 README / `im-workspaces-guide.md`
+- [ ] （可选增强）Agent CWD 内「项目 MEMORY.md」的 slash 快捷入口 — 设计在第六节，按需再做

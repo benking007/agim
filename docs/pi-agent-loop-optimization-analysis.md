@@ -2,7 +2,7 @@
 
 > 基线：`origin/main@ed7518d3`（Agim `1.5.12`）
 > 分析日期：2026-07-13
-> 范围：内置 Agim Agent（`native` / `agim`，基于 `@earendil-works/pi-agent-core`），不包含外置 PI CLI 的内部 loop。
+> 范围：内置 Agim Agent（registry id `agim`，别名 `native`；基于 `@earendil-works/pi-agent-core`），不包含外置 PI CLI 的内部 loop。
 > 本文只给出分析、验证证据和后续实施拆分，不修改运行时行为。
 
 ## 1. 结论摘要
@@ -34,7 +34,7 @@ Agim 中有两条名称容易混淆的路径：
 
 | 产品路径 | 注册名 | 实现 | loop 归属 |
 |---|---|---|---|
-| 内置 Agim Agent | `native`、`agim`、`na`、`llm` | [`src/plugins/agents/pi-native/`](../src/plugins/agents/pi-native/) | Agim 进程内的 `AgentHarness` |
+| 内置 Agim Agent | `agim`（别名 `native`；斜杠 `/agim` `/na` `/llm`） | [`src/plugins/agents/pi-native/`](../src/plugins/agents/pi-native/) | Agim 进程内的 `AgentHarness` |
 | 外置 PI CLI | `pi`、`pi-agent` | [`src/plugins/agents/pi/`](../src/plugins/agents/pi/) | 外部 `pi --mode json` 子进程 |
 
 本文的“pi-agent loop”专指第一条路径。外置 PI CLI 的内部停止条件、重试和上下文策略不在 Agim 控制范围内。

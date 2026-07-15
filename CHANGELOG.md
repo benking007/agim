@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - README / README.zh-CN / AGENTS.md / deployment first-run docs aligned on `agim go`, web-only minimal config, Node ≥22.19, and `agim` (alias `native`) naming.
+- Full docs pass: architecture / llm-backends / runbook / security / discord / docs index / current topology use Agim Agent (`agim`) as the current registry id; migration/ADR history kept intentional.
 
 ## [1.5.12] - 2026-07-11
 

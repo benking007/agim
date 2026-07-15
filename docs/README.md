@@ -8,10 +8,10 @@
 - `README.md` / `README.zh-CN.md`：项目概览与快速开始
 - `agents.md`：支持的 Agent 后端、安装入口、模型切换与工具能力
 - `deployment.md`：部署与上线
-- `architecture-bridge-and-native.md`：桥接 + native 的核心架构立场
+- `architecture-bridge-and-native.md`：桥接 + Agim Agent（`agim`，别名 `native`）的核心架构立场
 - `naming.md`：命名术语表（Agim Agent / agim / ACP≠A2A / tenants）
 - `migration-naming-v2.md`：Naming v2 新老迁移指引（registry / tools / sessions / tenants）
-- `llm-backends.md`：native LLM 配置与排障
+- `llm-backends.md`：Agim Agent 大模型 API 配置与排障
 
 ## AI 能力专题
 

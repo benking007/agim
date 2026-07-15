@@ -102,7 +102,7 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 - `evaluator`：通知评估等判定任务
 - `native-chat`：指定聊天主角色（可选）
 
-即使不配置这些角色，只要有可用 backend，`native` 仍可运行。
+即使不配置这些角色，只要有可用 backend，Agim Agent（`agim`）仍可运行。
 
 ## 7. 常用 CLI
 
@@ -111,13 +111,13 @@ agim config
 # → 选择 "Agim Agent 大模型 API"
 
 agim setup llm
-agim setup llm native-enable
+agim setup llm native-enable   # 历史子命令名；效果是启用 Agim Agent + 绑定角色
 agim diag llm
 ```
 
 ## 8. 运行时行为
 
-当收到 `native` 请求时：
+当收到 Agim Agent 请求（`agim` / 别名 `native`）时：
 
 1. 先尝试角色绑定对应 backend（如果有）。
 2. 若角色无可用项，自动回退到任意已配置且可用 backend。
@@ -134,7 +134,7 @@ agim diag llm
 3. `baseUrl` 是否可访问
 4. `model` 是否存在/可用
 
-### 9.2 刚保存配置但 native 仍不可用
+### 9.2 刚保存配置但 Agim Agent 仍不可用
 
 一般无需重启；若仍异常：
 
@@ -144,12 +144,12 @@ agim diag llm
 ### 9.3 角色绑定写错
 
 角色不是硬依赖。
-只要 backend 有一个可用，native 依然可跑；修复角色绑定用于优化而非解阻塞。
+只要 backend 有一个可用，Agim Agent 依然可跑；修复角色绑定用于优化而非解阻塞。
 
 ## 10. 最小上线建议
 
 1. 先配一个稳定 backend（例如 `deepseek-main`）
-2. 验证 `native` 能跑通
+2. 验证 Agim Agent（Web 对话或 `/agim`）能跑通
 3. 再逐步添加 `cheap/evaluator` 角色绑定
 4. 最后增加第二 backend 做冗余
 

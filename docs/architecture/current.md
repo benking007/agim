@@ -7,7 +7,7 @@
 Agim 是一个**单进程 IM-to-Agent 网关**：
 
 - 向上接 IM / Web / ACP 请求
-- 向下编排 CLI agent 与 native LLM agent
+- 向下编排 CLI agent 与 Agim Agent（进程内 LLM，registry id `agim`）
 - 中间统一做路由、权限、会话、审计、投递与恢复
 
 ## 2. 运行拓扑
@@ -39,8 +39,9 @@ Agent invocation layer (AgentAdapter)
   - kimi-code
   - qoder
   - pi
+  - mimo
   - antigravity
-  - native
+  - agim          # Agim Agent (alias: native)
   - acp
       │
       ▼
@@ -91,7 +92,7 @@ IM delivery + web views
 - 输出：流式文本 + usage + 可选 session id 回写
 - 特性：支持 fallback、A2A、审批、技能与记忆注入
 
-这让 CLI agent 与 native agent 成为“并列后端”，而不是两套系统。
+这让 CLI agent 与 Agim Agent（`agim`）成为“并列后端”，而不是两套系统。
 
 ## 6. 安全边界
 

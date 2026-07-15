@@ -1,5 +1,9 @@
 # Discord 适配器配置指南
 
+> **前置门控**：Telegram / Discord 默认不出现在向导与加载列表中。
+> 需先设置 `AGIM_ENABLE_GLOBAL_IM=1`（写入 `~/.agim/env` 或进程环境），
+> 然后重启服务。详见 `runbook.md` §1。
+
 ## 一、创建 Discord Bot
 
 ### 1. 创建应用

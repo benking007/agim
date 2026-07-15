@@ -108,6 +108,8 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | `~/.agim/env` | 0o600 | `cli-ui/env-file.ts:updateEnvFile` |
 | `~/.agim/config.json` | 0o600 | `core/onboarding.ts:saveConfig` |
 | `~/.agim/tokens.json` | 0o600 | `core/access-token.ts:writeFile` |
+| `~/.agim/web-bootstrap-token` | 0o600 | `core/access-token.ts:bootstrapIfEmpty`（一次性原值；`agim token bootstrap` 取回后删除） |
+| `~/.agim/llm-secrets.json` | 0o600 | `cli-ui/setup-llm.ts` / LLM API |
 | `~/.agim/admin-bootstrap-token` | 0o600 | `core/admin-bootstrap.ts:ensureBootstrapTokenIfNeeded` |
 | `~/.agim/acp-token` | 0o600 | `core/acp-server.ts:getOrCreateAcpToken` |
 | `~/.agim/approval-bus.sock` | 0o600 | `core/approval-bus.ts:start` 后 chmod |
@@ -129,7 +131,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 
 之前 admin bootstrap + web bootstrap token **都写 stdout 和 pino**，systemd journald 可读权限的人都能拿。R13 加固后：
 
-- Web bootstrap (`core/access-token.ts`)：banner 只显示 **token id + 文件路径**，原值通过 `consumeBootstrapTokenRaw()` 一次性 TTY 取回
+- Web bootstrap (`core/access-token.ts`)：banner 只显示 **token id + 文件路径**；原值落在 `~/.agim/web-bootstrap-token`（0o600），运维用 `agim token bootstrap`（或 `cat` 该文件）取回。内部仍可能经 `consumeBootstrapTokenRaw()` / `retrieveWebBootstrapTokenRaw()` 消费，但**不再**把 raw 打进 journald。
 - IM admin bootstrap (`core/admin-bootstrap.ts`)：pino log 不带 token；stdout banner 引导 `cat ~/.agim/admin-bootstrap-token`
 
 ---

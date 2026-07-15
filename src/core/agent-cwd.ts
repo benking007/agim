@@ -58,6 +58,25 @@ const AGIM_MEMORY_LINK_BLOCK = `${AGIM_MEMORY_LINK_START}
 - 如果它与本轮用户消息或更高优先级指令冲突，以当前消息和更高优先级指令为准。
 ${AGIM_MEMORY_LINK_END}`
 
+/** Default starter for per-agent MEMORY.md (created once; never overwritten). */
+export const AGIM_MEMORY_SEED = `# MEMORY.md — 工作区长期笔记
+
+> 运营方手写的长期上下文。Agim Agent 每轮会注入；桥接 CLI agent 经 AGENTS.md / CLAUDE.md 中的 memory-link 引导读取。
+> 与更高优先级指令冲突时，以当前用户消息与框架规则为准。
+
+## 偏好
+
+- （语言、语气、回复长度……）
+
+## 常驻事实
+
+- （项目名、环境、账号约定、不要做的事……）
+
+## 待办 / 备注
+
+- （可选）
+`
+
 function appendSeparator(raw: string): string {
   if (raw.length === 0) return ''
   if (raw.endsWith('\n\n')) return ''
@@ -90,6 +109,26 @@ export async function ensureAgentMemoryLink(
 
   await appendFile(guidePath, `${appendSeparator(raw)}${AGIM_MEMORY_LINK_BLOCK}\n`, 'utf8')
   return guidePath
+}
+
+/**
+ * Create a starter MEMORY.md in the agent workspace if missing.
+ * Idempotent: never overwrites operator edits.
+ */
+export async function ensureAgentMemoryFile(agentName: string): Promise<string | null> {
+  const explicit = process.env[envKeyFor(agentName)]
+  const dir = explicit || defaultAgentCwd(agentName)
+  await mkdir(dir, { recursive: true })
+  const memoryPath = join(dir, 'MEMORY.md')
+  try {
+    await access(memoryPath)
+    return null
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code !== 'ENOENT') throw err
+  }
+  await writeFile(memoryPath, AGIM_MEMORY_SEED, 'utf8')
+  return memoryPath
 }
 
 /**
@@ -195,6 +234,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
   ): Promise<string> {
     const dir = await ensureAgentWorkspace(agent, seed)
     await ensureAgentMemoryLink(agent, seed.filename)
+    await ensureAgentMemoryFile(agent)
     return dir
   }
 

@@ -7,8 +7,10 @@ import {
   defaultAgentCwd,
   agimWorkspacesRoot,
   ensureAgentWorkspace,
+  ensureAgentMemoryFile,
   bootstrapAgentWorkspaces,
   AGIM_MEMORY_LINK_START,
+  AGIM_MEMORY_SEED,
 } from './agent-cwd.js'
 
 const FULL_IM_OPTS = { threadId: 'thread-A', platform: 'feishu', channelId: 'chan-1', userId: 'u1' }
@@ -169,15 +171,34 @@ describe('bootstrapAgentWorkspaces', () => {
     // re-paste the long hard-constraint block (operator role stays lean).
     expect(agimGuide).not.toContain('agim 框架级硬约束')
     expect(agimGuide).toContain(AGIM_MEMORY_LINK_START)
+
+    // Every built-in agent workspace gets a starter MEMORY.md (once).
+    for (const agent of ['claude-code', 'opencode', 'agim', 'cursor', 'copilot', 'mimo']) {
+      const memory = await readFile(join(tmpRoot, agent, 'MEMORY.md'), 'utf8')
+      expect(memory).toContain('MEMORY.md')
+      expect(memory).toContain('常驻事实')
+      expect(memory.startsWith(AGIM_MEMORY_SEED.slice(0, 20))).toBe(true)
+    }
   })
 
   it('safe to run twice and preserves user edits while adding the memory link once', async () => {
     await bootstrapAgentWorkspaces()
     await writeFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'USER', 'utf8')
+    await writeFile(join(tmpRoot, 'claude-code', 'MEMORY.md'), 'MY MEMORY', 'utf8')
     await bootstrapAgentWorkspaces()
     const content = await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')
     expect(content).toContain('USER')
     expect(content).not.toContain('Claude Code — IM 入口工作区')
     expect(content.match(/agim:memory-link:start/g)?.length).toBe(1)
+    expect(await readFile(join(tmpRoot, 'claude-code', 'MEMORY.md'), 'utf8')).toBe('MY MEMORY')
+  })
+
+  it('ensureAgentMemoryFile creates MEMORY.md once and never overwrites', async () => {
+    const created = await ensureAgentMemoryFile('agim')
+    expect(created).toBe(join(tmpRoot, 'agim', 'MEMORY.md'))
+    expect(await readFile(join(tmpRoot, 'agim', 'MEMORY.md'), 'utf8')).toContain('常驻事实')
+    await writeFile(join(tmpRoot, 'agim', 'MEMORY.md'), 'kept', 'utf8')
+    expect(await ensureAgentMemoryFile('agim')).toBeNull()
+    expect(await readFile(join(tmpRoot, 'agim', 'MEMORY.md'), 'utf8')).toBe('kept')
   })
 })

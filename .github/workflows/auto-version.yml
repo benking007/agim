@@ -7,12 +7,17 @@ on:
 
 permissions:
   contents: write # needed to push version bump commit
+  # id-token / contents for the reusable publish workflow are declared there;
+  # secrets: inherit forwards NPM_TOKEN to the called job.
 
 jobs:
   bump:
     # Only run when PR is merged (not just closed)
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,3 +47,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           npm version ${{ steps.bump.outputs.level }} -m "chore: release v%s"
           git push
+
+      - name: Record bump metadata
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+  # Bot pushes do not trigger the push-based Publish workflow; call it here.
+  publish:
+    needs: bump
+    if: needs.bump.outputs.sha != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
+    secrets: inherit

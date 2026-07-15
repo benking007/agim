@@ -41,9 +41,11 @@ export function AgentPicker({ agents, value, onChange }: AgentPickerProps): JSX.
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex shrink-0 flex-col gap-1">
       <Select value={value || undefined} onValueChange={handleChange}>
-        <SelectTrigger className="h-7 w-28 whitespace-nowrap text-xs sm:w-36 [&>span]:whitespace-nowrap [&>svg]:shrink-0">
+        {/* Match ThemeAndLangControls: base SelectTrigger is h-8/py-1/text-sm;
+            override height + kill vertical padding so the control is truly h-7. */}
+        <SelectTrigger className="h-7 min-h-7 w-28 shrink-0 whitespace-nowrap py-0 text-xs leading-none sm:w-36 [&>span]:whitespace-nowrap [&>svg]:size-3.5 [&>svg]:shrink-0">
           <SelectValue placeholder={agentDisplayName(agents[0] ?? '—')} />
         </SelectTrigger>
         <SelectContent>

@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.27] - 2026-07-15
+
 ### Fixed
 
 - Web console (`/` / `/m/chat`) keeps chat bubbles across service restarts: message TTL for `platform=web` defaults to META TTL (7 days, `AGIM_WEB_SESSION_MESSAGES_TTL_MS`) instead of the IM 30-minute window that previously wiped `~/.agim/sessions/*.log` on the first post-restart `get-history`.
+- Auto Version Bump grants `id-token` / nested-job permissions so `workflow_call` Publish can start (was `startup_failure` after #136).
 
 ## [1.5.26] - 2026-07-15
 

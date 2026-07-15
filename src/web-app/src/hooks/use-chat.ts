@@ -166,6 +166,18 @@ type Action =
   | { kind: 'WS_STATUS'; status: WsStatus }
   | { kind: 'INIT'; agents: string[]; defaultAgent: string }
   | { kind: 'HISTORY'; messages: ChatMessage[]; agent: string }
+  | {
+      kind: 'ACTIVE_RUN'
+      runId: string
+      agent: string
+      startedAt: number
+      status: 'running' | 'success' | 'error'
+      steps: ChatActivityStep[]
+      partialText: string
+      finishedAt?: number
+      durationMs?: number
+      error?: string
+    }
   | { kind: 'AGENTS'; agents: string[] }
   | { kind: 'AGENT_SWITCHED'; agent: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
@@ -249,11 +261,86 @@ function reducer(s: ChatState, a: Action): ChatState {
       // the server drops .log but the tab may still show the transcript,
       // and new-conversation already clears via RESET_CONVERSATION.
       // Always adopt the sticky agent from the session meta.
+      // Clear ephemeral run UI — ACTIVE_RUN (if any) re-applies next.
       return {
         ...s,
         messages: a.messages.length > 0 ? a.messages : s.messages,
         agent: a.agent || s.agent,
+        currentReplyId: a.messages.length > 0 ? null : s.currentReplyId,
+        activeRunId: a.messages.length > 0 ? null : s.activeRunId,
       }
+    case 'ACTIVE_RUN': {
+      // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
+      // onto the last assistant bubble (or create a streaming placeholder).
+      const startedAt = a.startedAt
+      const finishedAt = a.finishedAt
+      const activity: ChatActivity = {
+        runId: a.runId,
+        status: a.status,
+        startedAt,
+        finishedAt,
+        durationMs: a.durationMs ?? (finishedAt != null ? Math.max(0, finishedAt - startedAt) : undefined),
+        error: a.error,
+        steps: a.steps,
+      }
+      let messages = [...s.messages]
+      let replyId = s.currentReplyId
+      let idx = findActivityMessageIndex(messages, { runId: a.runId, replyId })
+      if (idx < 0) {
+        // Prefer last assistant; else append a placeholder for in-flight.
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]?.role === 'assistant') { idx = i; break }
+        }
+      }
+      if (idx < 0 && (a.status === 'running' || a.partialText)) {
+        const placeholder: ChatMessage = {
+          id: `reply-restore-${a.runId}`,
+          role: 'assistant',
+          content: a.partialText,
+          agent: a.agent,
+          timestamp: startedAt,
+          activity,
+        }
+        messages = [...messages, placeholder]
+        replyId = placeholder.id
+        idx = messages.length - 1
+      } else if (idx >= 0) {
+        const cur = messages[idx]
+        if (cur) {
+          const id = a.status === 'running' ? `reply-restore-${a.runId}` : cur.id
+          messages[idx] = {
+            ...cur,
+            id,
+            content: a.partialText || cur.content,
+            agent: cur.agent || a.agent,
+            activity,
+          }
+          replyId = id
+        }
+      }
+      const runRow: RunActivity = {
+        runId: a.runId,
+        agent: a.agent,
+        startedAt,
+        status: a.status,
+        finishedAt,
+        durationMs: activity.durationMs,
+        outputChars: a.partialText.length || undefined,
+        error: a.error,
+      }
+      const runActivities = [
+        runRow,
+        ...s.runActivities.filter((r) => r.runId !== a.runId),
+      ].slice(0, MAX_RUN_ACTIVITIES)
+      return {
+        ...s,
+        messages,
+        agent: a.agent || s.agent,
+        runActivities,
+        activeRunId: a.status === 'running' ? a.runId : null,
+        currentReplyId: a.status === 'running' ? replyId : null,
+      }
+    }
     case 'AGENTS':
       return { ...s, agents: a.agents }
     case 'AGENT_SWITCHED':
@@ -791,6 +878,53 @@ export function useChat(): UseChat {
           })),
         })
         return
+      case 'active-run': {
+        const normStep = (st: (typeof msg.steps)[number]): ChatActivityStep => ({
+          id: st.id,
+          kind: st.kind === 'skill' || st.kind === 'status'
+            || st.kind === 'approval' || st.kind === 'ask'
+            || st.kind === 'agent'
+            ? st.kind
+            : 'tool',
+          label: st.label,
+          status: st.status,
+          startedAt: typeof st.startedAt === 'number'
+            ? st.startedAt
+            : (Number.isFinite(Date.parse(String(st.startedAt)))
+                ? Date.parse(String(st.startedAt))
+                : Date.now()),
+          finishedAt: st.finishedAt == null
+            ? undefined
+            : typeof st.finishedAt === 'number'
+              ? st.finishedAt
+              : (Number.isFinite(Date.parse(String(st.finishedAt)))
+                  ? Date.parse(String(st.finishedAt))
+                  : undefined),
+          preview: st.preview,
+        })
+        dispatch({
+          kind: 'ACTIVE_RUN',
+          runId: msg.runId,
+          agent: msg.agent,
+          startedAt: Number.isFinite(Date.parse(msg.startedAt))
+            ? Date.parse(msg.startedAt)
+            : Date.now(),
+          status: msg.status,
+          steps: msg.steps.map(normStep),
+          partialText: msg.partialText || '',
+          finishedAt: msg.finishedAt && Number.isFinite(Date.parse(msg.finishedAt))
+            ? Date.parse(msg.finishedAt)
+            : undefined,
+          durationMs: msg.durationMs,
+          error: msg.error,
+        })
+        // Eagerly bind the streaming target so chunks that arrive before
+        // the React effect syncing currentReplyIdRef are not dropped.
+        currentReplyIdRef.current = msg.status === 'running'
+          ? `reply-restore-${msg.runId}`
+          : null
+        return
+      }
       case 'agents':
         dispatch({ kind: 'AGENTS', agents: msg.agents })
         return

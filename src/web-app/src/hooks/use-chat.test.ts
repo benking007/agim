@@ -100,6 +100,63 @@ describe('chatReducer', () => {
     expect(s.agent).toBe('agim')
   })
 
+  it('ACTIVE_RUN restores running activity + streaming target after HISTORY', () => {
+    const hist = [userMsg('h-1', 'analyze'), asstMsg('h-2', 'partial…')]
+    const afterHist = reduce(initialChatState, {
+      kind: 'HISTORY', messages: hist, agent: 'agim',
+    })
+    const s = reduce(afterHist, {
+      kind: 'ACTIVE_RUN',
+      runId: 'run-9',
+      agent: 'agim',
+      startedAt: 1_000,
+      status: 'running',
+      steps: [{
+        id: 'tc-1',
+        kind: 'tool',
+        label: 'web_search',
+        status: 'running',
+        startedAt: 1_100,
+      }],
+      partialText: 'partial… more',
+    })
+    expect(s.activeRunId).toBe('run-9')
+    expect(s.currentReplyId).toBe('reply-restore-run-9')
+    expect(s.messages.at(-1)?.activity?.steps[0]?.label).toBe('web_search')
+    expect(s.messages.at(-1)?.content).toBe('partial… more')
+    expect(s.runActivities[0]?.status).toBe('running')
+  })
+
+  it('ACTIVE_RUN finished snapshot restores accordion without streaming badge', () => {
+    const hist = [userMsg('h-1', 'hi'), asstMsg('h-2', 'final answer')]
+    const s = reduce(
+      initialChatState,
+      { kind: 'HISTORY', messages: hist, agent: 'agim' },
+      {
+        kind: 'ACTIVE_RUN',
+        runId: 'run-8',
+        agent: 'agim',
+        startedAt: 1_000,
+        status: 'success',
+        finishedAt: 2_000,
+        durationMs: 1_000,
+        steps: [{
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'web_search',
+          status: 'success',
+          startedAt: 1_100,
+          finishedAt: 1_500,
+        }],
+        partialText: 'final answer',
+      },
+    )
+    expect(s.activeRunId).toBeNull()
+    expect(s.currentReplyId).toBeNull()
+    expect(s.messages.at(-1)?.activity?.status).toBe('success')
+    expect(s.messages.at(-1)?.activity?.steps).toHaveLength(1)
+  })
+
   it('SEND_USER appends user message + placeholder + sets currentReplyId + clears error', () => {
     const u = userMsg('u-1', 'hi')
     const p = asstMsg('p-1')

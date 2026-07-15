@@ -1383,8 +1383,8 @@ export async function startWebServer(options: {
 
     // Load existing session history if available (usually empty for a
     // freshly minted clientId; the SPA's get-history rekey is the real
-    // restore path).
-    sendSessionHistory(ws, client, getDefaultAgent(options.defaultAgent))
+    // restore path). Also replays ActiveRun when present.
+    void sendSessionHistory(ws, client, getDefaultAgent(options.defaultAgent))
 
     const enqueueInbound = createSerialQueue()
 
@@ -1496,6 +1496,7 @@ export async function startWebServer(options: {
             },
             tokenId,
             threadOwners,
+            clients,
           )
         } catch (err) {
           webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error in client message handler')
@@ -5336,11 +5337,21 @@ async function handleClientMessage(
   /** R9: shared threadId → tokenId map. The handler validates
    *  ownership before adopting a client-supplied threadId. */
   threadOwners?: Map<string, string>,
+  /** Live client registry — used to retarget chunk/activity frames after
+   *  a reconnect (the closure `ws` may already be CLOSED). */
+  clients?: Map<string, ClientConnection>,
 ): Promise<void> {
   const { ws } = client
   // Read client.id fresh — `get-history` may rekey it mid-handler so the
   // session lookup matches the client's persisted threadId.
   let clientId = client.id
+
+  /** Prefer the currently-connected socket for this thread (post-rekey /
+   *  reconnect), falling back to the handler's original `ws`. */
+  const emit = (data: Record<string, unknown>): void => {
+    const live = clients?.get(clientId)
+    sendToClient(live?.ws ?? ws, data)
+  }
 
   switch (msg.type) {
     case 'message': {
@@ -5351,6 +5362,8 @@ async function handleClientMessage(
       const runStartedAt = Date.now()
       const traceId = generateTraceId()
       const logger = createLogger({ traceId, platform: 'web', component: 'web' })
+      // Stable session key for ActiveRun + live emit (survives WS replace).
+      const sessionThreadId = clientId
 
       if (msg.agent && msg.agent !== client.agent) {
         client.agent = msg.agent
@@ -5367,10 +5380,25 @@ async function handleClientMessage(
         const sw = registry.findAgent(parsed.agent)
         if (sw && sw.name !== client.agent && (await isAgentAvailableCached(sw.name))) {
           client.agent = sw.name
-          sendToClient(ws, { type: 'agent-switched', agent: sw.name })
+          emit({ type: 'agent-switched', agent: sw.name })
         }
       }
-      sendToClient(ws, {
+
+      const {
+        startActiveRun,
+        upsertActiveRunStep,
+        appendActiveRunChunk,
+        setActiveRunPartialText,
+        finishActiveRun,
+      } = await import('./active-runs.js')
+
+      startActiveRun({
+        threadId: sessionThreadId,
+        runId,
+        agent: client.agent,
+        startedAt: runStartedAt,
+      })
+      emit({
         type: 'run-start',
         runId,
         agent: client.agent,
@@ -5388,7 +5416,16 @@ async function handleClientMessage(
           userId: `web:${clientId}`,
           webRunId: runId,
           onToolActivity: (step) => {
-            sendToClient(ws, { type: 'activity-step', runId, step })
+            upsertActiveRunStep(sessionThreadId, {
+              id: step.id,
+              kind: step.kind,
+              label: step.label,
+              status: step.status,
+              startedAt: step.startedAt,
+              finishedAt: step.finishedAt,
+              preview: step.preview,
+            })
+            emit({ type: 'activity-step', runId, step })
           },
         }
 
@@ -5400,14 +5437,18 @@ async function handleClientMessage(
         if (typeof result === 'string') {
           const finishedAt = Date.now()
           const durationMs = Math.max(0, finishedAt - runStartedAt)
-          sendToClient(ws, { type: 'done', text: result, runId })
-          sendToClient(ws, {
+          setActiveRunPartialText(sessionThreadId, result)
+          finishActiveRun(sessionThreadId, {
+            status: 'success', finishedAt, durationMs, finalText: result,
+          })
+          emit({ type: 'done', text: result, runId })
+          emit({
             type: 'usage',
             runId,
             durationMs,
             outputChars: result.length,
           })
-          sendToClient(ws, {
+          emit({
             type: 'run-finish',
             runId,
             status: 'success',
@@ -5421,24 +5462,36 @@ async function handleClientMessage(
         let fullText = ''
         for await (const chunk of result) {
           fullText += chunk
+          appendActiveRunChunk(sessionThreadId, chunk)
           // L1: defer when the per-socket send buffer is full. Without
           // this, a slow client lets the chunk producer keep allocating
           // frames into the kernel + ws-internal queue, which can grow
           // to GBs for a long agent response.
-          await awaitWsDrain(ws)
-          if (ws.readyState !== ws.OPEN) break
-          sendToClient(ws, { type: 'chunk', text: chunk, runId })
+          const liveWs = clients?.get(sessionThreadId)?.ws ?? ws
+          await awaitWsDrain(liveWs)
+          // Keep producing even if the original socket died — a reconnect
+          // may have registered under sessionThreadId. Only stop if there
+          // is still no live peer AND the original is closed (avoid
+          // unbounded buffering into ActiveRun alone for hours).
+          const peer = clients?.get(sessionThreadId)
+          if (!peer && liveWs.readyState !== liveWs.OPEN) break
+          if (peer) emit({ type: 'chunk', text: chunk, runId })
+          else if (liveWs.readyState === liveWs.OPEN) emit({ type: 'chunk', text: chunk, runId })
         }
         const finishedAt = Date.now()
         const durationMs = Math.max(0, finishedAt - runStartedAt)
-        sendToClient(ws, { type: 'done', text: fullText, runId })
-        sendToClient(ws, {
+        setActiveRunPartialText(sessionThreadId, fullText)
+        finishActiveRun(sessionThreadId, {
+          status: 'success', finishedAt, durationMs, finalText: fullText,
+        })
+        emit({ type: 'done', text: fullText, runId })
+        emit({
           type: 'usage',
           runId,
           durationMs,
           outputChars: fullText.length,
         })
-        sendToClient(ws, {
+        emit({
           type: 'run-finish',
           runId,
           status: 'success',
@@ -5450,15 +5503,19 @@ async function handleClientMessage(
         const stack = err instanceof Error ? err.stack : undefined
         logger.error({ event: 'web.handle.error', err: errorMsg, stack }, 'Error handling client message')
         const finishedAt = Date.now()
-        sendToClient(ws, {
+        const durationMs = Math.max(0, finishedAt - runStartedAt)
+        finishActiveRun(sessionThreadId, {
+          status: 'error', finishedAt, durationMs, error: errorMsg,
+        })
+        emit({
           type: 'run-finish',
           runId,
           status: 'error',
           finishedAt: new Date(finishedAt).toISOString(),
-          durationMs: Math.max(0, finishedAt - runStartedAt),
+          durationMs,
           error: errorMsg,
         })
-        sendToClient(ws, { type: 'error', message: `Agent error: ${errorMsg}` })
+        emit({ type: 'error', message: `Agent error: ${errorMsg}` })
       }
       break
     }
@@ -5538,6 +5595,8 @@ async function handleClientMessage(
     // WS client receives a follow-up `history` message with an empty
     // list so the UI repaints the cleared state.
     case 'new-conversation': {
+      const { clearActiveRun } = await import('./active-runs.js')
+      clearActiveRun(clientId)
       await sessionManager.resetConversation('web', 'web', clientId)
       sendToClient(ws, { type: 'history', messages: [], agent: client.agent })
       break
@@ -5552,6 +5611,9 @@ async function handleClientMessage(
  * message list — so the SPA can adopt the sticky agent after MESSAGES_TTL
  * cleared the transcript. Previously we skipped empty histories, which left
  * the agent picker on the process default after refresh.
+ *
+ * After history, replay any in-flight (or recently finished) ActiveRun so
+ * tab-switch / refresh can restore the activity accordion and "接收中".
  */
 async function sendSessionHistory(
   ws: WebSocket,
@@ -5559,15 +5621,34 @@ async function sendSessionHistory(
   _defaultAgent: string,
 ): Promise<void> {
   const history = await sessionManager.getSessionWithHistory('web', 'web', client.id)
-  if (!history) return
-  if (history.session.agent) {
-    client.agent = history.session.agent
+  if (history) {
+    if (history.session.agent) {
+      client.agent = history.session.agent
+    }
+    sendToClient(ws, {
+      type: 'history',
+      messages: history.messages,
+      agent: history.session.agent,
+    })
   }
-  sendToClient(ws, {
-    type: 'history',
-    messages: history.messages,
-    agent: history.session.agent,
-  })
+  const { getActiveRun } = await import('./active-runs.js')
+  const active = getActiveRun(client.id)
+  if (active) {
+    sendToClient(ws, {
+      type: 'active-run',
+      runId: active.runId,
+      agent: active.agent,
+      startedAt: new Date(active.startedAt).toISOString(),
+      status: active.status,
+      steps: active.steps,
+      partialText: active.partialText,
+      finishedAt: active.finishedAt != null
+        ? new Date(active.finishedAt).toISOString()
+        : undefined,
+      durationMs: active.durationMs,
+      error: active.error,
+    })
+  }
 }
 
 /** L1: backpressure threshold for the WS send path. When `ws.bufferedAmount`

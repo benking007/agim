@@ -42,6 +42,7 @@ export type ChatIncoming =
   | RunUsageEvent
   | RunFinishEvent
   | ActivityStepEvent
+  | ActiveRunEvent
   | { type: 'error'; message: string }
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
@@ -92,6 +93,24 @@ export interface ActivityStepEvent {
     finishedAt?: number | string
     preview?: string
   }
+}
+
+/**
+ * Snapshot of the thread's current (or recently finished) run, replayed
+ * after `history` on reconnect / refresh so the accordion + streaming
+ * badge survive tab switches.
+ */
+export interface ActiveRunEvent {
+  type: 'active-run'
+  runId: string
+  agent: string
+  startedAt: string
+  status: 'running' | 'success' | 'error'
+  steps: ActivityStepEvent['step'][]
+  partialText: string
+  finishedAt?: string
+  durationMs?: number
+  error?: string
 }
 
 /** Mirror of src/core/types.ts:ApprovalCardPrompt — the structured

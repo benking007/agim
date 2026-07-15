@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Web chat (`/` / `/m/chat`): tool accordion, run timeline, and “接收中” survive tab switches and page refresh. Server keeps an ActiveRun snapshot, retargets live chunks to the reconnected socket, and replays `active-run` after `history`.
+
+## [1.5.28] - 2026-07-15
+
+Auto Version bump after 1.5.27 publish.
+
 ## [1.5.27] - 2026-07-15
 
 ### Fixed

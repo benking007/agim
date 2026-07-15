@@ -177,6 +177,7 @@ describe('ensureServiceLogMirror', () => {
     expect(existsSync(LOG_FILE)).toBe(false)
     ensureServiceLogMirror()
     expect(existsSync(LOG_FILE)).toBe(true)
+    expect(readFileSync(LOG_FILE, 'utf-8')).toContain('[agim] service log opened')
   })
 
   it('mirrors stdout into agim.log when not redirected', async () => {
@@ -192,6 +193,7 @@ describe('ensureServiceLogMirror', () => {
     process.env[LOG_REDIRECTED_ENV] = '1'
     ensureServiceLogMirror()
     expect(existsSync(LOG_FILE)).toBe(true)
+    expect(readFileSync(LOG_FILE, 'utf-8')).toContain('[agim] service log opened')
     const marker = `ops-log-no-tee-${Date.now()}`
     process.stdout.write(`${marker}\n`)
     await new Promise((r) => setTimeout(r, 20))

@@ -4,23 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.26] - 2026-07-15
+
+Batch of fixes that landed on git as empty bot bumps `1.5.22`–`1.5.25` but **never reached npm** (Publish is not triggered by `github-actions[bot]` pushes). This release publishes them and hardens the release path.
+
 ### Fixed
 
-<<<<<<< HEAD
-- `agim start` on a TTY no longer forces IM onboarding (or exits on cancel); empty `messengers` is web-console-only, with an optional IM prompt (default no).
-- Background start / restart / `agim go` wait for `/api/health` (up to ~20s) before printing the Web URL / token hint, instead of a fixed 1.5s race.
-- Uninstall `creds` mode now also deletes `web-bootstrap-token` and `llm-secrets.json`.
-- Cursor install hints use the official curl installer (no bogus `npm i -g cursor`).
-- Ensure `~/.agim/agim.log` is created on every successful `agim start` (foreground / systemd / `--bg`), and mirror stdout/stderr into it unless stdio is already redirected (`AGIM_LOG_REDIRECTED=1`). Web Settings → Service log-tail no longer stays empty under systemd.
+- `agim start` on a TTY no longer forces IM onboarding (or exits on cancel); empty `messengers` is web-console-only, with an optional IM prompt (default no). (#135)
+- Background start / restart / `agim go` wait for `/api/health` (up to ~20s) before printing the Web URL / token hint, instead of a fixed 1.5s race. (#135)
+- Uninstall `creds` mode now also deletes `web-bootstrap-token` and `llm-secrets.json`. (#135)
+- Cursor install hints use the official curl installer (no bogus `npm i -g cursor`). (#135)
+- Ensure `~/.agim/agim.log` is created on every successful `agim start` (foreground / systemd / `--bg`), and mirror stdout/stderr into it unless stdio is already redirected (`AGIM_LOG_REDIRECTED=1`). Empty logs get a one-line open banner. (#132)
+- Web chat re-sends `get-history` on every WebSocket reconnect so the persisted `localStorage` thread id is rekeyed after background tab / network drops. (#134)
+- Web chat `history` frames are also sent when the transcript is empty so the sticky agent restores after `MESSAGES_TTL`. (#134)
+- Chat AgentPicker matches theme/lang topbar density (`h-7` / `py-0`). (#133)
+- Auto Version Bump calls Publish via `workflow_call`; CI runs `npm run check:npm-drift` so a multi-patch git↔npm gap cannot sit unnoticed. (supersedes #103)
 
 ### Changed
 
-- README / README.zh-CN / AGENTS.md / deployment first-run docs aligned on `agim go`, web-only minimal config, Node ≥22.19, and `agim` (alias `native`) naming.
-- Docs debt cleanup: archive stamps for pi-loop analysis / task-recovery testing / dream-distillation; fix ZH auto-approve, session-model opencode diagnosis + Web Chat §十, memory/deployment links, docs index, tech-debt Docs row; soften GLOBAL_IM README claim.
-=======
-- Web chat re-sends `get-history` on every WebSocket reconnect so the persisted `localStorage` thread id is rekeyed after background tab / network drops (previously only the first open rekeyed, and later turns could land under a new session key).
-- Web chat `history` frames are also sent when the transcript is empty so the sticky agent restores after `MESSAGES_TTL`; empty history no longer wipes in-tab bubbles.
->>>>>>> 2f2c5cad (fix(web): restore chat session across WS reconnects)
+- README / README.zh-CN / AGENTS.md / deployment first-run docs aligned on `agim go`, web-only minimal config, Node ≥22.19, and `agim` (alias `native`) naming. (#135)
+- Docs debt cleanup: archive stamps for pi-loop analysis / task-recovery testing / dream-distillation; fix ZH auto-approve, session-model opencode diagnosis + Web Chat §十, memory/deployment links, docs index, tech-debt Docs row; soften GLOBAL_IM README claim. (#135)
 
 ## [1.5.12] - 2026-07-11
 

@@ -21,7 +21,7 @@
 import { execFileSync, execSync, spawn } from 'node:child_process'
 import {
   readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync,
-  openSync, closeSync, readdirSync, chmodSync, createWriteStream,
+  openSync, closeSync, readdirSync, chmodSync, createWriteStream, fstatSync,
 } from 'node:fs'
 import type { WriteStream } from 'node:fs'
 import { createServer as createNetServer } from 'node:net'
@@ -116,9 +116,21 @@ export const _internal = {
  */
 export function ensureServiceLogMirror(): void {
   mkdirSync(dirname(LOG_FILE), { recursive: true })
+  // Always create/touch the file first so Web Settings → log-tail and
+  // `agim status` see a path even if mirroring is skipped (redirected
+  // stdio) or later fails.
   const fd = openSync(LOG_FILE, 'a', 0o600)
   try {
     try { chmodSync(LOG_FILE, 0o600) } catch { /* non-POSIX */ }
+
+    // Seed an empty file with a one-line banner so operators can tell
+    // the mirror ran (empty ENOENT vs zero-byte file were easy to confuse).
+    let size = 0
+    try { size = fstatSync(fd).size } catch { /* ignore */ }
+    if (size === 0) {
+      const banner = `[agim] service log opened pid=${process.pid} at ${new Date().toISOString()}\n`
+      writeFileSync(fd, banner)
+    }
 
     if (process.env[LOG_REDIRECTED_ENV] === '1') {
       closeSync(fd)

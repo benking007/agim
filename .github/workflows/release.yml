@@ -5,12 +5,19 @@ on:
     branches: [main]
     paths:
       - 'package.json'
-  # Manual trigger — needed when an auto-version-bump commit lands on main.
-  # GitHub Actions deliberately blocks bot commits (incl. github-actions[bot]
-  # from the auto-version workflow) from triggering other workflows, so an
-  # auto-bumped package.json never fires this push hook. Maintainers run
-  # workflow_dispatch from the Actions UI (or the REST API) to publish.
+  # Manual trigger — fallback when a publish was skipped.
   workflow_dispatch:
+  # Called by Auto Version Bump after it pushes a bot version commit.
+  # GitHub blocks github-actions[bot] pushes from triggering other workflows
+  # on `push`, so without workflow_call the registry stays stale (e.g. npm
+  # stuck at 1.5.21 while git advanced through 1.5.22–1.5.25).
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref/SHA to publish (bump commit). Empty = github.sha.'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   id-token: write # 必须：用于 OIDC 身份验证
@@ -24,6 +31,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          # Prefer the bump SHA from workflow_call; otherwise the event SHA.
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

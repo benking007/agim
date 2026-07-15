@@ -1,6 +1,6 @@
 {
   "name": "agim-cli",
-  "version": "1.5.25",
+  "version": "1.5.26",
   "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord / Email to Claude Code, Codex, Copilot, Kimi Code, Qoder, PI, MiMo, native LLM, or any custom ACP agent.",
   "type": "module",
   "bin": {
@@ -33,6 +33,7 @@
     "lint:web": "biome lint src/web-app/index.html src/web-app/public/favicon.svg src/web-app/src src/web-app/tools src/web-app/vite.config.ts src/web-app/vitest.config.ts src/web-app/vitest.sqlite.config.ts src/web-app/tailwind.config.ts",
     "check:contracts": "npm --prefix src/web-app run check-endpoints",
     "check:dist": "node tools/check-dist.mjs",
+    "check:npm-drift": "node tools/check-npm-drift.mjs",
     "verify:release": "npm run lint && npm run typecheck && npm test && npm --prefix src/web-app run typecheck && npm --prefix src/web-app run check-i18n && npm run check:contracts && npm run test:web && npm run build && npm run test:node",
     "format": "biome format . --write",
     "prepublishOnly": "npm run build"

@@ -6,9 +6,9 @@ on:
     branches: [main]
 
 permissions:
-  contents: write # needed to push version bump commit
-  # id-token / contents for the reusable publish workflow are declared there;
-  # secrets: inherit forwards NPM_TOKEN to the called job.
+  contents: write # push version bump commit
+  id-token: write # required so the nested Publish workflow can use OIDC / npm auth
+  actions: write  # allow invoking the reusable Publish workflow
 
 jobs:
   bump:
@@ -57,8 +57,11 @@ jobs:
   # Bot pushes do not trigger the push-based Publish workflow; call it here.
   publish:
     needs: bump
-    if: needs.bump.outputs.sha != ''
+    if: needs.bump.result == 'success' && needs.bump.outputs.sha != ''
     uses: ./.github/workflows/release.yml
     with:
       ref: ${{ needs.bump.outputs.sha }}
     secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

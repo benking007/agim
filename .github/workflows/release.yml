@@ -18,6 +18,9 @@ on:
         type: string
         required: false
         default: ''
+    secrets:
+      NPM_TOKEN:
+        required: false
 
 permissions:
   id-token: write # 必须：用于 OIDC 身份验证

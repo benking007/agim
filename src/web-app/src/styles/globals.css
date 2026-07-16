@@ -142,4 +142,13 @@
   .glow-primary {
     box-shadow: 0 4px 20px -2px rgb(99 102 241 / 0.15);
   }
+
+  /* Hide scrollbars on mobile portal surfaces (design prototype). */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

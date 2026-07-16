@@ -43,11 +43,13 @@ struct ChatActivityStep: Identifiable, Hashable {
 struct PendingApproval: Identifiable, Hashable {
     let messageId: String
     let prompt: ApprovalCardPrompt
+    var id: String { messageId }
 }
 
 struct PendingAsk: Identifiable, Hashable {
     let messageId: String
     let prompt: ChoiceCardPrompt
+    var id: String { messageId }
 }
 
 enum ConnectionStatus: String {

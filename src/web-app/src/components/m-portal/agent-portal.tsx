@@ -7,19 +7,28 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
-  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Menu, MessageSquare,
+  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Loader2, Menu, MessageSquare,
   Mic, Moon, Plus, Search, Sparkles, Sun, User, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
+import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
+import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { MarkdownView } from '@/components/chat/markdown-view'
+import { agentDisplayName } from '@/lib/agent-label'
 import { usePrefs, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
 import { VoiceOverlay } from './voice-overlay'
+
+function formatDurationMs(ms?: number): string {
+  if (!ms || ms <= 0) return '0ms'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`
+}
 
 type Tab = 'chat' | 'explore'
 type Theme = 'dark' | 'light'
@@ -43,6 +52,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const { state, send, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
+  useIosViewportZoomReset()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showModelDropdown, setShowModelDropdown] = useState(false)
@@ -57,12 +67,29 @@ export function AgentPortal(): JSX.Element {
   const AgentIcon = visual.icon
   const isTyping = state.currentReplyId != null
   const chatMessages = state.messages.filter((m) => !m.approval)
+  const activeRun = useMemo(
+    () => state.runActivities.find((r) => r.runId === state.activeRunId),
+    [state.activeRunId, state.runActivities],
+  )
+  const streamingEmpty = isTyping && !chatMessages.some(
+    (m) => m.id === state.currentReplyId && !!m.content,
+  )
+
+  // Lock document scroll so WKWebView / mobile Safari rubber-band the
+  // message list only — not the whole portal chrome.
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('agim-portal-lock')
+    return () => {
+      root.classList.remove('agim-portal-lock')
+    }
+  }, [])
 
   // Scroll on new messages / streaming — intentional broad deps.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when transcript grows or streams
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages.length, chatMessages[chatMessages.length - 1]?.content, isTyping])
+  }, [chatMessages.length, chatMessages[chatMessages.length - 1]?.content, isTyping, activeRun?.durationMs])
 
   const agentsCatalog = useMemo(() => {
     return state.agents.map((id) => {
@@ -201,7 +228,7 @@ export function AgentPortal(): JSX.Element {
 
       {/* Header */}
       <header className={cn(
-        'sticky top-0 z-30 flex items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
+        'sticky top-0 z-30 flex shrink-0 items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
         dark ? 'border-zinc-900/50 bg-zinc-950/90 text-white' : 'border-zinc-200/50 bg-white/90 text-zinc-800',
       )}>
         <button
@@ -292,7 +319,7 @@ export function AgentPortal(): JSX.Element {
       {/* Chat */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'flex flex-1 flex-col space-y-5 overflow-y-auto px-4 py-3 pb-28 transition-colors duration-300 scrollbar-none',
+          'min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-3 pb-28 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           {chatMessages.length === 0 && (
@@ -343,7 +370,7 @@ export function AgentPortal(): JSX.Element {
             >
               {msg.role === 'user' ? (
                 <div className={cn(
-                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs font-medium leading-relaxed shadow-sm',
+                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm',
                   dark ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-200 text-zinc-900',
                 )}>
                   {msg.content}
@@ -358,12 +385,27 @@ export function AgentPortal(): JSX.Element {
                       {displayAgentName(msg.agent || agentId)}
                     </span>
                   </div>
+                  {msg.activity && (
+                    <ChatActivityBlock activity={msg.activity} className="max-w-full" />
+                  )}
+                  {/* Match MessageBubble markdown sizing; avoid whitespace-pre-wrap
+                      around MarkdownView (breaks CJK / GFM layout). Explicit CJK
+                      stack avoids tofu boxes in WKWebView mono/code paths. */}
                   <div className={cn(
-                    'select-text whitespace-pre-wrap pl-1 text-xs leading-relaxed',
+                    'select-text break-words pl-1 text-[15px] leading-relaxed',
                     dark ? 'text-zinc-200' : 'text-zinc-800',
-                  )}>
+                  )}
+                    style={{
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+                    }}
+                  >
                     {msg.content
-                      ? <MarkdownView content={msg.content} />
+                      ? (
+                          <MarkdownView
+                            content={msg.content}
+                            className="break-words text-[15px] leading-relaxed [&_*]:text-inherit"
+                          />
+                        )
                       : (isTyping && msg.id === state.currentReplyId ? null : '…')}
                   </div>
                 </div>
@@ -371,13 +413,15 @@ export function AgentPortal(): JSX.Element {
             </div>
           ))}
 
-          {isTyping && (
+          {streamingEmpty && (
             <div className="flex animate-pulse flex-col items-start space-y-2">
               <div className="flex items-center gap-2">
                 <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', visual.color)}>
                   <AgentIcon className="h-3.5 w-3.5" />
                 </div>
-                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Evaluating inputs...</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                  {activeRun ? 'Running…' : 'Evaluating inputs...'}
+                </span>
               </div>
               <div className="flex items-center gap-1 py-1 pl-1.5">
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '0ms' }} />
@@ -393,7 +437,7 @@ export function AgentPortal(): JSX.Element {
       {/* Explore */}
       {activeTab === 'explore' && (
         <div className={cn(
-          'flex-1 space-y-6 overflow-y-auto px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
+          'min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           <div className="space-y-2">
@@ -411,7 +455,8 @@ export function AgentPortal(): JSX.Element {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={cn(
-                'w-full rounded-xl border py-2 pl-9 pr-4 text-xs transition-all focus:border-teal-500 focus:outline-none',
+                // text-md (16px) — iOS Safari auto-zooms focused inputs under 16px
+                'w-full rounded-xl border py-2 pl-9 pr-4 text-md transition-all focus:border-teal-500 focus:outline-none',
                 dark
                   ? 'border-zinc-800 bg-zinc-900 text-zinc-200 placeholder:text-zinc-500'
                   : 'border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400 shadow-sm',
@@ -526,6 +571,23 @@ export function AgentPortal(): JSX.Element {
             asks={state.pendingAsks}
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
+          {activeRun && (
+            <div className={cn(
+              'mb-2 flex items-center justify-between rounded-xl border px-3 py-1.5',
+              dark ? 'border-teal-500/30 bg-teal-500/10' : 'border-teal-600/30 bg-teal-50',
+            )}>
+              <span className={cn(
+                'inline-flex items-center gap-1.5 text-xs font-semibold',
+                dark ? 'text-teal-300' : 'text-teal-700',
+              )}>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Running
+              </span>
+              <span className="truncate text-xs text-zinc-400">
+                {agentDisplayName(activeRun.agent)} · {formatDurationMs(activeRun.durationMs)}
+              </span>
+            </div>
+          )}
           <form
             onSubmit={onSend}
             className={cn(
@@ -542,7 +604,9 @@ export function AgentPortal(): JSX.Element {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               className={cn(
-                'flex-1 bg-transparent px-3 py-1 text-xs focus:outline-none',
+                // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
+                // focused inputs under 16px — same fix as ChatComposer.
+                'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
                 dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
               )}
             />

@@ -151,4 +151,28 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* /m/chat Agent Portal in WKWebView: lock document rubber-band; only
+     the inner message list should scroll (see overscroll-contain there). */
+  html.agim-portal-lock,
+  html.agim-portal-lock body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100%;
+    width: 100%;
+    position: fixed;
+    inset: 0;
+  }
+  html.agim-portal-lock #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* Mono + CJK fallbacks — default Menlo/Consolas omit Han glyphs and
+     show tofu (□) for Chinese inside fenced / inline code. */
+  .agim-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", "PingFang SC", "Hiragino Sans GB",
+      "Noto Sans SC", "Microsoft YaHei", monospace;
+  }
 }

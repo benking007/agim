@@ -317,8 +317,8 @@ export function AgentPortal(): JSX.Element {
               {turn.user && (
                 <div
                   className={cn(
-                    // Cursor-style topic sticky: pins while this turn is in view
-                    'sticky top-0 z-10 w-full rounded-[1.25rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                    // Sticky topic chip — rounded rect (not a full pill/ellipse)
+                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100 shadow-[0_8px_24px_rgba(0,0,0,0.35)]'
                       : 'border-zinc-200 bg-white text-zinc-900 shadow-[0_6px_20px_rgba(15,23,42,0.08)]',
@@ -330,7 +330,7 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  className="flex w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                  className="flex w-[92%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
                 >
                   <div className="w-full space-y-1.5">
                     {(() => {
@@ -379,7 +379,7 @@ export function AgentPortal(): JSX.Element {
                       >
                         <MarkdownView
                           content={msg.content}
-                          className="break-words text-[13px] leading-relaxed [&_*]:text-inherit"
+                          className="break-words text-[13px] leading-relaxed"
                         />
                         {!(isTyping && msg.id === state.currentReplyId) && (
                           <MessageActions content={msg.content} dark={dark} />
@@ -393,13 +393,15 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <PortalRunStatus
-              dark={dark}
-              agentName={displayAgentName(agentId)}
-              agentColor={visual.color}
-              AgentIcon={AgentIcon}
-              streaming
-            />
+            <div className="w-[92%] max-w-full">
+              <PortalRunStatus
+                dark={dark}
+                agentName={displayAgentName(agentId)}
+                agentColor={visual.color}
+                AgentIcon={AgentIcon}
+                streaming
+              />
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>

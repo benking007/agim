@@ -139,109 +139,14 @@ export function AgentPortal(): JSX.Element {
       'relative flex h-dvh flex-col overflow-hidden font-sans selection:bg-teal-500/30',
       dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
     )}>
-      {/* Sidebar */}
-      {sidebarOpen && (
-        <div className="absolute inset-0 z-40 flex">
-          <div className={cn(
-            'flex h-full w-3/4 animate-in slide-in-from-left flex-col justify-between border-r p-6 shadow-2xl duration-300',
-            dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
-          )}>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold text-teal-500">
-                  <Sparkles className="h-5 w-5" />
-                  <span className="text-sm">{t('chat.portal.brand')}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
-                <div className={cn(
-                  'flex items-center gap-3 rounded-xl border p-3',
-                  dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
-                )}>
-                  <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
-                    <AgentIcon className="h-4 w-4" />
-                  </div>
-                  <div className="truncate">
-                    <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
-                      {displayAgentName(agentId)}
-                    </h4>
-                    <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
-                  </div>
-                </div>
-              </div>
-
-              <nav className="space-y-1">
-                <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
-                <SideNavButton
-                  active={activeTab === 'chat'}
-                  dark={dark}
-                  icon={<MessageSquare className="h-4 w-4" />}
-                  label={t('chat.portal.chat')}
-                  onClick={() => { setActiveTab('chat'); setSidebarOpen(false) }}
-                />
-                <SideNavButton
-                  active={activeTab === 'explore'}
-                  dark={dark}
-                  icon={<Compass className="h-4 w-4" />}
-                  label={t('chat.portal.explore')}
-                  onClick={() => { setActiveTab('explore'); setSidebarOpen(false) }}
-                />
-                <SideNavButton
-                  active={false}
-                  dark={dark}
-                  icon={<Plus className="h-4 w-4" />}
-                  label={t('chat.portal.newConversation')}
-                  onClick={() => { newConversation(); setSidebarOpen(false); setActiveTab('chat') }}
-                />
-              </nav>
-            </div>
-
-            <div className="space-y-3">
-              <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
-                <button
-                  type="button"
-                  onClick={toggleLang}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-                    dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
-                  )}
-                  aria-label={t('chat.portal.language')}
-                >
-                  <Languages className="h-3.5 w-3.5" />
-                  {prefs.lang === 'zh' ? t('lang.zh') : t('lang.en')}
-                </button>
-              </div>
-              <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-                <div className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full',
-                  dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
-                )}>
-                  <User className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
-                    {state.status === 'open' ? t('chat.portal.connected') : state.status}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <button type="button" className="flex-1 bg-black/50 backdrop-blur-[2px]" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
-        </div>
-      )}
-
-      {/* Header — opaque so dropdown / chrome never ghost chat text */}
+      {/* Main surface — fully blurred while the sidebar is open */}
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col transition-[filter,opacity] duration-300',
+          sidebarOpen && 'pointer-events-none select-none blur-[6px] brightness-75',
+        )}
+        aria-hidden={sidebarOpen || undefined}
+      >
       <header className={cn(
         'sticky top-0 z-30 flex shrink-0 items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
         dark ? 'border-zinc-900 bg-zinc-950 text-white' : 'border-zinc-200 bg-white text-zinc-800',
@@ -697,6 +602,117 @@ export function AgentPortal(): JSX.Element {
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      </div>
+
+      {/* Sidebar sheet over the blurred main surface */}
+      {sidebarOpen && (
+        <div className="absolute inset-0 z-40">
+          <button
+            type="button"
+            className={cn(
+              'absolute inset-0 transition-opacity duration-300',
+              dark ? 'bg-black/40' : 'bg-zinc-900/25',
+            )}
+            aria-label="Close menu"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className={cn(
+            'absolute inset-y-0 left-0 z-10 flex h-full w-[min(20rem,78%)] animate-in slide-in-from-left flex-col justify-between border-r p-6 shadow-2xl duration-300',
+            dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
+          )}>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-teal-500">
+                  <Sparkles className="h-5 w-5" />
+                  <span className="text-sm">{t('chat.portal.brand')}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
+                <div className={cn(
+                  'flex items-center gap-3 rounded-xl border p-3',
+                  dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
+                )}>
+                  <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
+                    <AgentIcon className="h-4 w-4" />
+                  </div>
+                  <div className="truncate">
+                    <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
+                      {displayAgentName(agentId)}
+                    </h4>
+                    <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
+                  </div>
+                </div>
+              </div>
+
+              <nav className="space-y-1">
+                <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
+                <SideNavButton
+                  active={activeTab === 'chat'}
+                  dark={dark}
+                  icon={<MessageSquare className="h-4 w-4" />}
+                  label={t('chat.portal.chat')}
+                  onClick={() => { setActiveTab('chat'); setSidebarOpen(false) }}
+                />
+                <SideNavButton
+                  active={activeTab === 'explore'}
+                  dark={dark}
+                  icon={<Compass className="h-4 w-4" />}
+                  label={t('chat.portal.explore')}
+                  onClick={() => { setActiveTab('explore'); setSidebarOpen(false) }}
+                />
+                <SideNavButton
+                  active={false}
+                  dark={dark}
+                  icon={<Plus className="h-4 w-4" />}
+                  label={t('chat.portal.newConversation')}
+                  onClick={() => { newConversation(); setSidebarOpen(false); setActiveTab('chat') }}
+                />
+              </nav>
+            </div>
+
+            <div className="space-y-3">
+              <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
+                <button
+                  type="button"
+                  onClick={toggleLang}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+                    dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
+                  )}
+                  aria-label={t('chat.portal.language')}
+                >
+                  <Languages className="h-3.5 w-3.5" />
+                  {prefs.lang === 'zh' ? t('lang.zh') : t('lang.en')}
+                </button>
+              </div>
+              <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+                <div className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full',
+                  dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
+                )}>
+                  <User className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
+                    {state.status === 'open' ? t('chat.portal.connected') : state.status}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

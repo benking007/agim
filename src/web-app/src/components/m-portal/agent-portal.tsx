@@ -380,13 +380,16 @@ export function AgentPortal(): JSX.Element {
               key={msg.id}
               className={cn(
                 'flex animate-in fade-in slide-in-from-bottom-2 flex-col duration-300',
-                msg.role === 'user' ? 'items-end' : 'items-start',
+                msg.role === 'user' ? 'items-stretch' : 'items-start',
               )}
             >
               {msg.role === 'user' ? (
                 <div className={cn(
-                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] font-medium leading-relaxed shadow-sm',
-                  dark ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-200 text-zinc-900',
+                  // Cursor-style: full-width oval white chip, left-aligned text
+                  'w-full rounded-[1.35rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                  dark
+                    ? 'border-zinc-700/70 bg-zinc-900 text-zinc-100'
+                    : 'border-zinc-200/90 bg-white text-zinc-900 shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
                 )}>
                   {msg.content}
                 </div>

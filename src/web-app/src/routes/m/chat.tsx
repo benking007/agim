@@ -515,20 +515,11 @@ export default function MobileChatRoute(): JSX.Element {
         )}
         footer={(
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {state.currentReplyId && (
-                <Badge variant="info">
-                  {t('chat.streaming', { defaultValue: '… streaming' })}
-                </Badge>
-              )}
-              {!state.currentReplyId && (
-                <span className="text-[11px] text-text-muted">
-                  {t('chat.mobileHint', {
-                    defaultValue: 'Enter creates new lines, tap Send to submit.',
-                  })}
-                </span>
-              )}
-            </div>
+            <span className="text-[11px] text-text-muted">
+              {t('chat.mobileHint', {
+                defaultValue: 'Enter creates new lines, tap Send to submit.',
+              })}
+            </span>
             <button
               type="button"
               onClick={() => setSheet('activity')}

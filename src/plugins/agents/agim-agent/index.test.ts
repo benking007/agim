@@ -1115,7 +1115,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).not.toContain('Status:')
   })
 
-  it('appends diagnostics when tools fail but the model still returns text', async () => {
+  it('does not append tool-failure diagnostics when tools fail but the model still returns text', async () => {
     const reg = faux()
     reg.setResponses([
       fauxAssistantMessage(fauxToolCall('flaky_lookup', { query: 'x' }, { id: 'f1' }), { stopReason: 'toolUse' }),
@@ -1133,9 +1133,9 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveTools: () => ({ tools: [tool], dispatch }),
     })
     const out = await collect(adapter.sendPrompt('partial-diagnostic', '查一下'))
-    expect(out).toContain('我根据已有信息继续。')
-    expect(out).toContain('诊断')
-    expect(out).toContain('flaky_lookup')
+    expect(out).toBe('我根据已有信息继续。')
+    expect(out).not.toContain('诊断')
+    expect(out).not.toContain('flaky_lookup')
     expect(out).not.toContain('Status:')
   })
 

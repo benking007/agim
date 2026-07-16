@@ -346,7 +346,6 @@ function composeLengthTruncationNotice(text: string): string {
 
 function appendPartialToolDiagnostics(
   text: string,
-  toolRuns: readonly NativeToolRun[],
   stopReason: NativeStopReason | null,
   maxIter: number,
   maxToolCalls: number,
@@ -362,11 +361,9 @@ function appendPartialToolDiagnostics(
     diagnostics.push('目标巡检判定偏离，已提前停止；以上内容可能不完整。')
   }
 
-  const failed = toolRuns.filter((t) => t.isError)
-  if (failed.length > 0) {
-    const names = [...new Set(failed.map((t) => t.name))].slice(0, 4)
-    diagnostics.push(`本轮有 ${failed.length} 次工具调用失败或被阻断（${names.join('、')}），回复基于已成功取得的信息。`)
-  }
+  // Tool failures are already visible in the activity / tool UI. Do not append
+  // a user-facing "诊断：本轮有 N 次工具调用失败…" footer — operators rarely
+  // want that noise in the chat transcript.
 
   if (diagnostics.length === 0) return text
   return `${text.trimEnd()}\n\n（诊断：${diagnostics.join(' ')}）`
@@ -1244,7 +1241,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     // Non-empty answer. Append tool diagnostics; if the turn ALSO hit a
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
-    let out = appendPartialToolDiagnostics(text, toolRuns, stopReason, maxIter, maxToolCalls)
+    let out = appendPartialToolDiagnostics(text, stopReason, maxIter, maxToolCalls)
     if (result.stopReason === 'length' && !stopReason && !providerFailed && !providerAborted) {
       out = composeLengthTruncationNotice(out)
       emitOutcome({ status: 'partial', providerFailure: false, error: 'length', stopReason: 'length' })

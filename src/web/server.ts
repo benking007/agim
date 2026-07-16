@@ -5469,6 +5469,10 @@ async function handleClientMessage(
               finishedAt: step.finishedAt,
               preview: step.preview,
             })
+            // Drop steps after finishActiveRun — late MCP/approval cleanup
+            // must not reopen a Running accordion on the SPA (CLI agents).
+            const snap = getActiveRun(sessionThreadId)
+            if (!snap || snap.status !== 'running') return
             emit({ type: 'activity-step', runId, step })
           },
         }

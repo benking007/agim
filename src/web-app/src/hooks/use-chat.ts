@@ -182,7 +182,7 @@ type Action =
   | { kind: 'AGENT_SWITCHED'; agent: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
   | { kind: 'CHUNK'; replyId: string; text: string }
-  | { kind: 'DONE'; replyId: string; finalText: string }
+  | { kind: 'DONE'; replyId: string; finalText: string; runId?: string }
   | { kind: 'ERROR'; message: string }
   | { kind: 'APPROVAL_CARD'; messageId: string; prompt: ApprovalCardPrompt }
   | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
@@ -220,6 +220,34 @@ function findActivityMessageIndex(messages: ChatMessage[], opts: {
     if (byReply >= 0) return byReply
   }
   return -1
+}
+
+/** Last assistant bubble still marked running (HISTORY remaps ids; replyId can miss). */
+function findRunningActivityIndex(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role === 'assistant' && m.activity?.status === 'running') return i
+  }
+  return -1
+}
+
+function finalizeRunningActivity(
+  activity: ChatActivity,
+  opts: { status: 'success' | 'error'; error?: string; finishedAt?: number },
+): ChatActivity {
+  const finishedAt = opts.finishedAt ?? Date.now()
+  return {
+    ...activity,
+    status: opts.status,
+    finishedAt,
+    durationMs: Math.max(0, finishedAt - activity.startedAt),
+    error: opts.error ?? activity.error,
+    steps: activity.steps.map((st) => (
+      st.status === 'pending' || st.status === 'running'
+        ? { ...st, status: opts.status === 'error' ? 'error' : 'success', finishedAt }
+        : st
+    )),
+  }
 }
 
 function withActivityAt(
@@ -262,6 +290,14 @@ function reducer(s: ChatState, a: Action): ChatState {
       // and new-conversation already clears via RESET_CONVERSATION.
       // Always adopt the sticky agent from the session meta.
       // Clear ephemeral run UI — ACTIVE_RUN (if any) re-applies next.
+      //
+      // Mid-flight guard: a late get-history must not wipe the live
+      // placeholder / Running accordion. CLI agents (non-agim) take longer,
+      // so mobile reconnect/bootstrap often races the in-flight turn —
+      // remapping ids then lets DONE miss the bubble and leave status=running.
+      if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
+        return { ...s, agent: a.agent || s.agent }
+      }
       return {
         ...s,
         messages: a.messages.length > 0 ? a.messages : s.messages,
@@ -364,7 +400,14 @@ function reducer(s: ChatState, a: Action): ChatState {
       return { ...s, messages: next }
     }
     case 'DONE': {
-      const idx = s.messages.findIndex((m) => m.id === a.replyId)
+      // Prefer runId (server always sends it) so HISTORY remaps / stale
+      // replyId refs still close the Running accordion — especially for
+      // CLI agents where reconnect races are common.
+      let idx = findActivityMessageIndex(s.messages, {
+        runId: a.runId,
+        replyId: a.replyId || s.currentReplyId,
+      })
+      if (idx < 0) idx = findRunningActivityIndex(s.messages)
       if (idx < 0) return { ...s, currentReplyId: null, activeRunId: null }
       const next = [...s.messages]
       const target = next[idx]
@@ -375,23 +418,11 @@ function reducer(s: ChatState, a: Action): ChatState {
         // If run-finish was dropped / delayed (common with some CLI
         // agents), close the accordion so the portal leaves Running…
         if (activity && activity.status === 'running') {
-          const finishedAt = Date.now()
-          activity = {
-            ...activity,
-            status: a.finalText.includes('用户打断了执行') ? 'error' : 'success',
-            finishedAt,
-            durationMs: finishedAt - activity.startedAt,
-            error: a.finalText.includes('用户打断了执行') ? '用户打断了执行' : activity.error,
-            steps: activity.steps.map((st) => (
-              st.status === 'pending' || st.status === 'running'
-                ? {
-                    ...st,
-                    status: a.finalText.includes('用户打断了执行') ? 'error' : 'success',
-                    finishedAt,
-                  }
-                : st
-            )),
-          }
+          const interrupted = a.finalText.includes('用户打断了执行')
+          activity = finalizeRunningActivity(activity, {
+            status: interrupted ? 'error' : 'success',
+            error: interrupted ? '用户打断了执行' : undefined,
+          })
         }
         next[idx] = { ...target, content: a.finalText || target.content, activity }
       }
@@ -596,7 +627,12 @@ function reducer(s: ChatState, a: Action): ChatState {
         ...s.runActivities.filter((r) => r.runId !== a.runId),
       ]
       let messages = s.messages
-      const idx = findActivityMessageIndex(messages, { replyId: s.currentReplyId })
+      let idx = findActivityMessageIndex(messages, { replyId: s.currentReplyId })
+      if (idx < 0) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]?.role === 'assistant') { idx = i; break }
+        }
+      }
       if (idx >= 0) {
         const msg = messages[idx]
         if (msg) {
@@ -685,6 +721,10 @@ function reducer(s: ChatState, a: Action): ChatState {
         messages,
         runActivities,
         activeRunId: s.activeRunId === a.runId ? null : s.activeRunId,
+        // done may have been dropped; clear streaming once the run finishes.
+        currentReplyId: (s.activeRunId === a.runId || msgIdx >= 0)
+          ? null
+          : s.currentReplyId,
       }
     }
     case 'ACTIVITY_STEP': {
@@ -1063,6 +1103,7 @@ export function useChat(): UseChat {
           // Same stale-closure trap as bufferChunk — read via ref.
           replyId: currentReplyIdRef.current ?? '',
           finalText: msg.text,
+          runId: msg.runId,
         })
         return
       case 'error':
@@ -1153,6 +1194,9 @@ export function useChat(): UseChat {
     const ws = wsRef.current
     const userId = mkId('u')
     const replyId = mkId('a')
+    // Bind before the React effect so early chunks / done from fast
+    // agents (and late done after HISTORY races) still target this bubble.
+    currentReplyIdRef.current = replyId
     dispatch({
       kind: 'SEND_USER',
       message: { id: userId, role: 'user', content: trimmed, timestamp: Date.now() },

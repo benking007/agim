@@ -250,6 +250,89 @@ describe('chatReducer', () => {
     expect(after.messages).toEqual([])
   })
 
+  it('DONE resolves activity by runId when replyId was remapped', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-cli', agent: 'claude-code', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-cli',
+        step: {
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'Bash',
+          status: 'running',
+          startedAt: 1_100,
+        },
+      },
+      // Simulate HISTORY remapping the bubble id while the run is live.
+      {
+        kind: 'DONE',
+        replyId: 'stale-id',
+        runId: 'run-cli',
+        finalText: 'done via runId',
+      },
+    )
+    expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
+    expect(after.messages[1]?.content).toBe('done via runId')
+    expect(after.messages[1]?.activity).toMatchObject({ status: 'success', runId: 'run-cli' })
+    expect(after.messages[1]?.activity?.steps[0]?.status).toBe('success')
+  })
+
+  it('DONE falls back to the last running activity when ids are missing', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-pi', agent: 'pi', startedAt: 1_000 },
+      { kind: 'DONE', replyId: '', finalText: 'recovered' },
+    )
+    expect(after.messages[1]?.activity?.status).toBe('success')
+    expect(after.currentReplyId).toBeNull()
+  })
+
+  it('HISTORY does not wipe an in-flight turn', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'codex', startedAt: 1_000 },
+    )
+    const after = reduce(
+      mid,
+      {
+        kind: 'HISTORY',
+        agent: 'codex',
+        messages: [
+          { id: 'hist-0', role: 'user', content: 'old', timestamp: 1 },
+          { id: 'hist-1', role: 'assistant', content: 'old reply', timestamp: 2 },
+        ],
+      },
+    )
+    expect(after.currentReplyId).toBe('p-1')
+    expect(after.activeRunId).toBe('run-1')
+    expect(after.messages[1]?.id).toBe('p-1')
+    expect(after.messages[1]?.activity?.status).toBe('running')
+  })
+
+  it('RUN_FINISH clears currentReplyId so Running… cannot stick', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'claude-code', startedAt: 1_000 },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 1_500,
+        durationMs: 500,
+      },
+    )
+    expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
+    expect(after.messages[1]?.activity?.status).toBe('success')
+  })
+
   it('ERROR records the message + clears currentReplyId', () => {
     const after = reduce(
       { ...initialChatState, currentReplyId: 'p-1' },

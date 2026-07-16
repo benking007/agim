@@ -347,6 +347,50 @@
       "denied":         "Denied",
       "deniedRevoked":  "Denied (auto-allow revoked)",
       "expired":        "Timed out"
+    },
+    "portal": {
+      "brand": "AGIM Space",
+      "activeAgent": "Active Agent",
+      "shortcuts": "Shortcuts",
+      "chat": "Interactive Chat",
+      "explore": "Explore Agents Directory",
+      "newConversation": "New conversation",
+      "connected": "Connected",
+      "selectAgent": "Select Agent",
+      "discoverMore": "Discover more agents",
+      "toggleTheme": "Toggle theme",
+      "messagePlaceholder": "Message {{agent}}...",
+      "stop": "Stop",
+      "voice": "Voice mode",
+      "exploreTitle": "Custom Agents",
+      "closeExplore": "Close",
+      "exploreSubtitle": "Instantly hook into specialised agents available on this Agim host.",
+      "searchAgents": "Search tailored agents...",
+      "directoryResults": "Directory results ({{count}})",
+      "noAgents": "No agents match this filter.",
+      "ideaTitle": "Have an idea for an Agent?",
+      "ideaBody": "Configure agents on the Agim host, then refresh this list.",
+      "cats": {
+        "All": "All",
+        "Featured": "Featured",
+        "Programming": "Programming",
+        "Writing": "Writing",
+        "Design": "Design",
+        "Lifestyle": "Lifestyle"
+      },
+      "usingTool": "Using {{tool}}",
+      "waitingAgent": "Waiting for {{agent}}",
+      "waitingSteps": "Waiting for tool activity…",
+      "noSteps": "No tool steps recorded.",
+      "pet": {
+        "aria": "Agim pet",
+        "idle": ["Tap me!", "I'm listening", "Ready when you are"],
+        "running": ["Working…", "On it!", "Thinking hard"],
+        "tap": ["Hi!", "Boop!", "♪", "I'm here", "Keep going!"]
+      },
+      "feedbackGood": "Marked as helpful",
+      "feedbackBad": "Marked as needs improvement",
+      "language": "Language"
     }
   }
 }

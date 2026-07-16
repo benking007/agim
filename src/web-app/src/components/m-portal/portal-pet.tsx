@@ -86,7 +86,7 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
         onClick={onTap}
         aria-label={t('chat.portal.pet.aria', { defaultValue: 'Agim pet' })}
         className={cn(
-          'relative flex h-14 w-14 items-center justify-center rounded-full outline-none',
+          'relative flex h-11 w-11 items-center justify-center rounded-full outline-none',
           'transition-transform active:scale-95',
           mood === 'busy' && 'animate-pulse',
         )}
@@ -98,7 +98,7 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
               : undefined,
         }}
       >
-        <svg viewBox="0 0 64 64" className="h-12 w-12 drop-shadow-lg" aria-hidden="true">
+        <svg viewBox="0 0 64 64" className="h-9 w-9 drop-shadow-md" aria-hidden="true">
           <ellipse cx="32" cy="54" rx="16" ry="4" fill={dark ? '#000' : '#94a3b8'} opacity="0.25" />
           <path
             d="M12 34c0-12 9-22 20-22s20 10 20 22c0 10-7 18-20 18S12 44 12 34z"

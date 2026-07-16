@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils'
 export interface ApprovalDockProps {
   approvals: PendingApproval[]
   onApprove: (messageId: string, reqId: string, choice: ApprovalChoice) => boolean | undefined
+  /** Skip outer horizontal padding when the parent already insets. */
+  flush?: boolean
 }
 
 function prettyJson(raw: string): string {
@@ -29,12 +31,12 @@ function prettyJson(raw: string): string {
   }
 }
 
-export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.Element | null {
+export function ApprovalDock({ approvals, onApprove, flush }: ApprovalDockProps): JSX.Element | null {
   const { t } = useTranslation()
   if (approvals.length === 0) return null
 
   return (
-    <div className="relative z-20 px-3 pb-1.5 pt-0 sm:px-4">
+    <div className={cn('relative z-20 pb-1.5 pt-0', flush ? 'px-0' : 'px-3 sm:px-4')}>
       <section
         className={cn(
           'mx-auto flex w-full max-w-3xl flex-col',

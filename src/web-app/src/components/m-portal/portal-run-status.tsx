@@ -215,7 +215,7 @@ export function PortalRunStatus({
         </button>
       )}
 
-      {running && (
+      {running && !liveStep && !waitingAgent && (
         <div className="flex items-center gap-1 py-0.5 pl-1.5">
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '0ms' }} />
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '150ms' }} />

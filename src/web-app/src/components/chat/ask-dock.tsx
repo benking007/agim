@@ -31,13 +31,15 @@ export interface AskDockProps {
   /** Submit a fully-formed `ask:<reqId>:…` callback. Returns whether the
    *  WS send went out, so the row can revert its optimistic state. */
   onSubmit: (messageId: string, data: string) => boolean | undefined
+  /** Skip outer horizontal padding when the parent already insets. */
+  flush?: boolean
 }
 
-export function AskDock({ asks, onSubmit }: AskDockProps): JSX.Element | null {
+export function AskDock({ asks, onSubmit, flush }: AskDockProps): JSX.Element | null {
   const { t } = useTranslation()
   if (asks.length === 0) return null
   return (
-    <div className="relative z-20 px-3 pb-1.5 pt-0 sm:px-4">
+    <div className={cn('relative z-20 pb-1.5 pt-0', flush ? 'px-0' : 'px-3 sm:px-4')}>
       <section
         className={cn(
           'mx-auto flex w-full max-w-3xl flex-col',

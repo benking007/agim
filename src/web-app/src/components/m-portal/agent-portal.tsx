@@ -137,7 +137,7 @@ export function AgentPortal(): JSX.Element {
   return (
     <div className={cn(
       'relative flex h-dvh flex-col overflow-hidden font-sans selection:bg-teal-500/30',
-      dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900',
+      dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
     )}>
       {/* Sidebar */}
       {sidebarOpen && (
@@ -334,24 +334,26 @@ export function AgentPortal(): JSX.Element {
       {/* Chat */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-3 pb-28 transition-colors duration-300 scrollbar-none',
-          dark ? 'bg-zinc-950' : 'bg-zinc-50',
+          // pb leaves room for composer + perched pet; docks add their own scroll cover via gradient
+          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-40 transition-colors duration-300 scrollbar-none',
+          dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
           {chatMessages.length === 0 && (
             <div className="flex animate-in fade-in flex-col items-center space-y-4 py-12 text-center duration-500">
               <div className={cn(
-                'flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-tr text-white shadow-xl ring-4 ring-neutral-900/10',
+                'flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr text-white shadow-lg ring-4',
+                dark ? 'ring-white/5' : 'ring-black/5',
                 visual.color,
               )}>
-                <AgentIcon className="h-8 w-8" />
+                <AgentIcon className="h-7 w-7" />
               </div>
               <div>
-                <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-zinc-100' : 'text-zinc-800')}>
+                <h2 className={cn('text-lg font-bold tracking-tight', dark ? 'text-zinc-100' : 'text-zinc-800')}>
                   {displayAgentName(agentId)}
                 </h2>
                 <p className="mx-auto mt-1 max-w-[260px] text-xs leading-normal text-zinc-400">{visual.tagline}</p>
               </div>
-              <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-2 pt-4 text-left">
+              <div className="mt-4 grid w-full max-w-sm grid-cols-2 gap-2 pt-2 text-left">
                 {[
                   { title: 'Brand Palettes', hint: 'Aesthetic color schemes for dark and light views.', prompt: 'Recommend 3 premium mock palettes for our brand layout.' },
                   { title: 'UI Architecture', hint: 'Configure viewport parameters across layout frameworks.', prompt: 'Structure a high performance responsive viewport architecture.' },
@@ -363,8 +365,8 @@ export function AgentPortal(): JSX.Element {
                     className={cn(
                       'cursor-pointer rounded-2xl border p-3.5 text-left transition-all',
                       dark
-                        ? 'border-zinc-900 bg-zinc-900/60 hover:border-zinc-800 hover:bg-zinc-900'
-                        : 'border-zinc-200/80 bg-white shadow-sm hover:border-zinc-300 hover:bg-zinc-100/50',
+                        ? 'border-zinc-800 bg-zinc-900/70 hover:border-zinc-700 hover:bg-zinc-900'
+                        : 'border-zinc-200 bg-white shadow-sm hover:border-zinc-300 hover:bg-white',
                     )}
                   >
                     <p className={cn('text-xs font-bold', dark ? 'text-zinc-300' : 'text-zinc-800')}>{card.title}</p>
@@ -378,23 +380,20 @@ export function AgentPortal(): JSX.Element {
           {chatMessages.map((msg) => (
             <div
               key={msg.id}
-              className={cn(
-                'flex animate-in fade-in slide-in-from-bottom-2 flex-col duration-300',
-                msg.role === 'user' ? 'items-stretch' : 'items-start',
-              )}
+              className="flex w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
             >
               {msg.role === 'user' ? (
                 <div className={cn(
-                  // Cursor-style: full-width oval white chip, left-aligned text
-                  'w-full rounded-[1.35rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                  // Cursor-style chip: oval white surface, left-aligned text
+                  'w-full rounded-[1.25rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
                   dark
-                    ? 'border-zinc-700/70 bg-zinc-900 text-zinc-100'
-                    : 'border-zinc-200/90 bg-white text-zinc-900 shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
+                    ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
+                    : 'border-zinc-200 bg-white text-zinc-900 shadow-[0_1px_2px_rgba(15,23,42,0.05)]',
                 )}>
                   {msg.content}
                 </div>
               ) : (
-                <div className="w-full space-y-2">
+                <div className="w-full space-y-1.5">
                   {(() => {
                     const isCurrent = isTyping && msg.id === state.currentReplyId
                     // Prefer the message's own agent; never fall back to the
@@ -423,7 +422,7 @@ export function AgentPortal(): JSX.Element {
                         <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', msgVisual.color)}>
                           <MsgIcon className="h-3.5 w-3.5" />
                         </div>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                           {label}
                         </span>
                       </div>
@@ -431,7 +430,7 @@ export function AgentPortal(): JSX.Element {
                   })()}
                   {msg.content ? (
                     <div className={cn(
-                      'select-text break-words pl-1 text-[13px] leading-relaxed',
+                      'select-text break-words text-[13px] leading-relaxed',
                       dark ? 'text-zinc-200' : 'text-zinc-800',
                     )}
                       style={{
@@ -469,7 +468,7 @@ export function AgentPortal(): JSX.Element {
       {activeTab === 'explore' && (
         <div className={cn(
           'min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
-          dark ? 'bg-zinc-950' : 'bg-zinc-50',
+          dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
           <div className="space-y-2">
             <div className="flex items-start justify-between gap-3">
@@ -610,82 +609,95 @@ export function AgentPortal(): JSX.Element {
       {/* Docks + composer */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'absolute inset-x-0 bottom-0 z-20 px-3 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-          dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent' : 'bg-gradient-to-t from-zinc-50 via-zinc-50 to-transparent',
+          'absolute inset-x-0 bottom-0 z-20 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+          dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
-          <div className="relative mx-auto w-full max-w-3xl">
-            <PortalPet
-              dark={dark}
-              busy={canStop}
-              className="absolute bottom-[calc(100%+0.25rem)] right-1 z-30"
-            />
-          </div>
           <ApprovalDock
+            flush
             approvals={state.pendingApprovals}
             onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
           />
           <AskDock
+            flush
             asks={state.pendingAsks}
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
-          <form
-            onSubmit={onSend}
-            className={cn(
-              'mt-2 flex items-center justify-between rounded-[28px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
-              dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
-            )}
-          >
-            <button type="button" className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-500" onClick={() => newConversation()} aria-label={t('chat.portal.newConversation')}>
-              <Plus className="h-4 w-4" />
-            </button>
-            <input
-              type="text"
-              placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              className={cn(
-                // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
-                // focused inputs under 16px — same fix as ChatComposer.
-                'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
-                dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
-              )}
+          <div className="relative">
+            <PortalPet
+              dark={dark}
+              busy={canStop}
+              className="absolute bottom-[calc(100%+0.15rem)] right-1 z-30"
             />
-            <div className="flex items-center gap-1.5">
-              {inputMessage.trim() && !canStop ? (
-                <button
-                  type="submit"
-                  className={cn(
-                    'rounded-full p-2 shadow-md transition-all',
-                    dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
-                  )}
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </button>
-              ) : canStop ? (
-                <button
-                  type="button"
-                  onClick={() => stop()}
-                  className={cn(
-                    'rounded-lg p-2 shadow-md transition-all',
-                    dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
-                  )}
-                  title={t('chat.portal.stop')}
-                  aria-label={t('chat.portal.stop')}
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowVoiceOverlay(true)}
-                  className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-500"
-                  title={t('chat.portal.voice')}
-                >
-                  <Mic className="h-4 w-4" />
-                </button>
+            <form
+              onSubmit={onSend}
+              className={cn(
+                'flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
-            </div>
-          </form>
+            >
+              <button
+                type="button"
+                className={cn(
+                  'rounded-full p-2 text-zinc-400 transition-colors',
+                  dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
+                )}
+                onClick={() => newConversation()}
+                aria-label={t('chat.portal.newConversation')}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <input
+                type="text"
+                placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                className={cn(
+                  // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
+                  // focused inputs under 16px — same fix as ChatComposer.
+                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
+                  dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
+                )}
+              />
+              <div className="flex items-center gap-1">
+                {inputMessage.trim() && !canStop ? (
+                  <button
+                    type="submit"
+                    className={cn(
+                      'rounded-full p-2 shadow-md transition-all',
+                      dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
+                    )}
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                ) : canStop ? (
+                  <button
+                    type="button"
+                    onClick={() => stop()}
+                    className={cn(
+                      'rounded-full p-2 shadow-md transition-all',
+                      dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
+                    )}
+                    title={t('chat.portal.stop')}
+                    aria-label={t('chat.portal.stop')}
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowVoiceOverlay(true)}
+                    className={cn(
+                      'rounded-full p-2 text-zinc-400 transition-colors',
+                      dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
+                    )}
+                    title={t('chat.portal.voice')}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

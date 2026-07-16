@@ -42,7 +42,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
   )
 
   return (
-    <div className={cn('flex items-center justify-end gap-0.5 pt-1', className)}>
+    <div className={cn('flex items-center justify-start gap-0.5 pt-1.5', className)}>
       <button
         type="button"
         className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}

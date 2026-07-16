@@ -12,6 +12,9 @@ struct ChatView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if store.status != .open || !store.sessionReady {
+                connectionBanner
+            }
             messageList
             if let err = store.error {
                 errorBanner(err)
@@ -31,7 +34,7 @@ struct ChatView: View {
                 text: $draft,
                 focused: $focused,
                 busy: store.isBusy,
-                disabled: store.status != .open,
+                disabled: !store.canSend,
                 onSend: {
                     let t = draft
                     draft = ""
@@ -42,6 +45,10 @@ struct ChatView: View {
         .background(Color(.systemBackground))
         .confirmationDialog("菜单", isPresented: $showMenu, titleVisibility: .visible) {
             Button("新会话") { store.newConversation() }
+            Button("重新连接") { store.reconnect() }
+            if store.isBusy {
+                Button("取消卡住的回复") { store.clearStuckReply() }
+            }
             Button("退出登录", role: .destructive) { session.logout() }
             Button("取消", role: .cancel) {}
         }
@@ -65,6 +72,9 @@ struct ChatView: View {
             .frame(maxWidth: .infinity)
 
             Menu {
+                if store.agents.isEmpty {
+                    Text("暂无 Agent（等待连接）")
+                }
                 ForEach(store.agents, id: \.self) { name in
                     Button {
                         store.switchAgent(name)
@@ -80,7 +90,6 @@ struct ChatView: View {
                 Image(systemName: "cpu")
                     .frame(width: 36, height: 36)
             }
-            .disabled(store.agents.isEmpty)
 
             Button {
                 showMenu = true
@@ -92,6 +101,29 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    private var connectionBanner: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.status == .open ? "正在同步会话…" : "正在连接 \(store.hostLabel)")
+                    .font(.caption.weight(.medium))
+                if let hint = store.transportHint, !hint.isEmpty {
+                    Text(hint)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            Button("重连") { store.reconnect() }
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.12))
     }
 
     private var messageList: some View {
@@ -109,6 +141,7 @@ struct ChatView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: store.messages.last?.content) { _, _ in
                 if let id = store.messages.last?.id {
                     withAnimation { proxy.scrollTo(id, anchor: .bottom) }
@@ -123,19 +156,24 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
             Text("开始对话")
                 .font(.title3.weight(.semibold))
             Text(store.hostLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("输入消息，或从菜单切换 Agent / 新会话。")
+            Text(store.canSend
+                 ? "输入消息，或从菜单切换 Agent / 新会话。"
+                 : "等待连接就绪后再发送。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 80)
+        .padding(.top, 72)
     }
 
     private func runningRail(_ act: ChatActivity) -> some View {
@@ -156,7 +194,7 @@ struct ChatView: View {
     }
 
     private func errorBanner(_ text: String) -> some View {
-        HStack {
+        HStack(alignment: .top) {
             Text(text)
                 .font(.footnote)
                 .foregroundStyle(.red)
@@ -170,8 +208,9 @@ struct ChatView: View {
     }
 
     private var statusColor: Color {
+        if store.activeRunId != nil { return .accentColor }
         switch store.status {
-        case .open: return .green
+        case .open: return store.sessionReady ? .green : .orange
         case .connecting: return .orange
         case .closed, .error: return .gray
         }
@@ -180,7 +219,7 @@ struct ChatView: View {
     private var statusLabel: String {
         if store.activeRunId != nil { return "处理中" }
         switch store.status {
-        case .open: return "已连接"
+        case .open: return store.sessionReady ? "已连接" : "同步中"
         case .connecting: return "连接中"
         case .closed: return "已断开"
         case .error: return "出错"

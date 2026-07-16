@@ -81,10 +81,9 @@ enum ChatIncoming: Decodable {
                 clientId: try c.decode(String.self, forKey: .clientId)
             )
         case "history":
-            self = .history(
-                messages: try c.decodeIfPresent([HistoryMessage].self, forKey: .messages) ?? [],
-                agent: try c.decodeIfPresent(String.self, forKey: .agent) ?? ""
-            )
+            let agent = try c.decodeIfPresent(String.self, forKey: .agent) ?? ""
+            let parsed = (try? c.decode([HistoryMessage].self, forKey: .messages)) ?? []
+            self = .history(messages: parsed, agent: agent)
         case "agents":
             self = .agents(try c.decode([String].self, forKey: .agents))
         case "agent-switched":
@@ -175,8 +174,8 @@ struct HistoryMessage: Decodable {
 struct HistoryActivity: Decodable {
     let runId: String
     let status: String
-    let startedAt: Double
-    let finishedAt: Double?
+    let startedAt: FlexibleDate
+    let finishedAt: FlexibleDate?
     let durationMs: Double?
     let error: String?
     let steps: [ActivityStepDTO]
@@ -203,6 +202,24 @@ struct ActiveRunDTO: Decodable {
     let finishedAt: String?
     let durationMs: Double?
     let error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case type, runId, agent, startedAt, status, steps, partialText, finishedAt, durationMs, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decode(String.self, forKey: .type)
+        runId = try c.decode(String.self, forKey: .runId)
+        agent = try c.decodeIfPresent(String.self, forKey: .agent) ?? ""
+        startedAt = try c.decode(String.self, forKey: .startedAt)
+        status = try c.decode(String.self, forKey: .status)
+        steps = try c.decodeIfPresent([ActivityStepDTO].self, forKey: .steps) ?? []
+        partialText = try c.decodeIfPresent(String.self, forKey: .partialText) ?? ""
+        finishedAt = try c.decodeIfPresent(String.self, forKey: .finishedAt)
+        durationMs = try c.decodeIfPresent(Double.self, forKey: .durationMs)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+    }
 }
 
 struct ApprovalCardPrompt: Decodable, Hashable {
@@ -246,6 +263,23 @@ struct ChoiceCardMeta: Decodable, Hashable {
     let allowCustomInput: Bool
     let customInputLabel: String
     let timeoutSec: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, reqId, selectionMode, minSelections, maxSelections
+        case allowCustomInput, customInputLabel, timeoutSec
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "ask-user"
+        reqId = try c.decode(String.self, forKey: .reqId)
+        selectionMode = try c.decodeIfPresent(String.self, forKey: .selectionMode) ?? "single"
+        minSelections = try c.decodeIfPresent(Int.self, forKey: .minSelections) ?? 1
+        maxSelections = try c.decodeIfPresent(Int.self, forKey: .maxSelections) ?? 1
+        allowCustomInput = try c.decodeIfPresent(Bool.self, forKey: .allowCustomInput) ?? false
+        customInputLabel = try c.decodeIfPresent(String.self, forKey: .customInputLabel) ?? "自定义"
+        timeoutSec = try c.decodeIfPresent(Int.self, forKey: .timeoutSec) ?? 120
+    }
 }
 
 /// Accepts epoch ms (number) or ISO string from the server.
@@ -259,6 +293,10 @@ enum FlexibleDate: Decodable, Hashable {
             self = .millis(n)
             return
         }
+        if let n = try? c.decode(Int.self) {
+            self = .millis(Double(n))
+            return
+        }
         if let s = try? c.decode(String.self) {
             self = .iso(s)
             return
@@ -270,7 +308,13 @@ enum FlexibleDate: Decodable, Hashable {
         switch self {
         case .millis(let n): return n
         case .iso(let s):
-            if let d = ISO8601DateFormatter().date(from: s) {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = f.date(from: s) {
+                return d.timeIntervalSince1970 * 1000
+            }
+            f.formatOptions = [.withInternetDateTime]
+            if let d = f.date(from: s) {
                 return d.timeIntervalSince1970 * 1000
             }
             return Date().timeIntervalSince1970 * 1000

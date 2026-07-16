@@ -10,7 +10,7 @@ struct ComposerView: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("输入消息…", text: $text, axis: .vertical)
-                .font(.body) // 17pt — avoid iOS auto-zoom on focus
+                .font(.body)
                 .lineLimit(1...6)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -18,6 +18,10 @@ struct ComposerView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .focused(focused)
                 .disabled(disabled)
+                .submitLabel(.send)
+                .onSubmit {
+                    if canSend { onSend() }
+                }
 
             Button(action: onSend) {
                 Group {
@@ -42,6 +46,8 @@ struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !disabled && !busy && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Hard-disable only when the socket/session is not ready.
+        // In-flight replies are gated inside ChatStore.send.
+        !disabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

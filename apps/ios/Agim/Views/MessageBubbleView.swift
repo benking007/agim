@@ -16,14 +16,7 @@ struct MessageBubbleView: View {
                     ActivityBlockView(activity: activity)
                 }
                 if !message.content.isEmpty || message.role == .user {
-                    Text(message.content.isEmpty && message.role == .assistant ? "…" : message.content)
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(bubbleColor)
-                        .foregroundStyle(message.role == .user ? Color.white : Color.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    contentBody
                 } else if message.role == .assistant {
                     Text("…")
                         .font(.body)
@@ -35,12 +28,52 @@ struct MessageBubbleView: View {
             }
             if message.role == .assistant { Spacer(minLength: 48) }
         }
+        .contextMenu {
+            if !message.content.isEmpty {
+                Button {
+                    UIPasteboard.general.string = message.content
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contentBody: some View {
+        let text = message.content.isEmpty && message.role == .assistant ? "…" : message.content
+        Group {
+            if message.role == .assistant {
+                Text(markdownAttributed(text))
+                    .font(.body)
+                    .textSelection(.enabled)
+            } else {
+                Text(text)
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(bubbleColor)
+        .foregroundStyle(message.role == .user ? Color.white : Color.primary)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var bubbleColor: Color {
         message.role == .user
             ? Color.accentColor
             : Color(.secondarySystemBackground)
+    }
+
+    private func markdownAttributed(_ raw: String) -> AttributedString {
+        if let attr = try? AttributedString(
+            markdown: raw,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            return attr
+        }
+        return AttributedString(raw)
     }
 }
 

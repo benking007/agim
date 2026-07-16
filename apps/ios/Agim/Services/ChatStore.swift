@@ -15,15 +15,20 @@ final class ChatStore {
     private(set) var pendingAsks: [PendingAsk] = []
     private(set) var error: String?
     private(set) var hostLabel: String = ""
+    private(set) var transportHint: String?
+    /// True after we have received a server `init` (or agents list).
+    private(set) var sessionReady = false
 
     private var socket: ChatWebSocket?
     private var credentials: HostCredentials?
     private var chunkBuffer: String = ""
     private var chunkFlushTask: Task<Void, Never>?
+    private var pendingUserMessageId: String?
 
     init() {}
 
-    var isBusy: Bool { currentReplyId != nil || activeRunId != nil }
+    /// Busy while a reply is in flight — UI may still allow "取消卡住".
+    var isBusy: Bool { currentReplyId != nil }
 
     var activeActivity: ChatActivity? {
         guard let activeRunId else { return nil }
@@ -31,17 +36,27 @@ final class ChatStore {
             ?? messages.last?.activity
     }
 
+    var canSend: Bool {
+        status == .open && sessionReady
+    }
+
     func start(with credentials: HostCredentials) {
         self.credentials = credentials
         hostLabel = credentials.host
             .replacingOccurrences(of: "https://", with: "")
             .replacingOccurrences(of: "http://", with: "")
+        sessionReady = false
         socket?.disconnect()
         let ws = ChatWebSocket(credentials: credentials)
         ws.onStatus = { [weak self] s in
-            self?.status = s
+            guard let self else { return }
+            self.status = s
+            self.transportHint = ws.lastTransportError
             if s == .open {
-                self?.bootstrap()
+                self.bootstrap()
+            }
+            if s == .error || s == .closed {
+                self.sessionReady = false
             }
         }
         ws.onMessage = { [weak self] msg in
@@ -58,6 +73,14 @@ final class ChatStore {
         }
     }
 
+    func reconnect() {
+        sessionReady = false
+        status = .connecting
+        transportHint = nil
+        error = nil
+        socket?.reconnectNow()
+    }
+
     func disconnect() {
         socket?.disconnect()
         socket = nil
@@ -71,6 +94,29 @@ final class ChatStore {
         pendingApprovals = []
         pendingAsks = []
         credentials = nil
+        sessionReady = false
+        currentReplyId = nil
+        activeRunId = nil
+    }
+
+    /// Clear a stuck empty assistant bubble so the user can send again.
+    func clearStuckReply() {
+        flushChunks()
+        if let replyId = currentReplyId,
+           let idx = messages.firstIndex(where: { $0.id == replyId }) {
+            if messages[idx].content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                messages.remove(at: idx)
+                // Also drop the preceding user bubble if it was the pending send.
+                if let uid = pendingUserMessageId,
+                   let uidx = messages.firstIndex(where: { $0.id == uid }) {
+                    messages.remove(at: uidx)
+                }
+            }
+        }
+        currentReplyId = nil
+        activeRunId = nil
+        pendingUserMessageId = nil
+        error = nil
     }
 
     // MARK: - Outgoing
@@ -78,9 +124,27 @@ final class ChatStore {
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard status == .open else {
-            error = "未连接，正在重连…"
+        guard canSend else {
+            error = status == .open
+                ? "会话尚未就绪，请稍候或点重连"
+                : "未连接：\(transportHint ?? "正在重连…")"
             return
+        }
+        if isBusy {
+            // Only auto-clear a *stuck* empty placeholder; never cancel a live stream.
+            let stuckEmpty: Bool = {
+                guard let replyId = currentReplyId,
+                      let msg = messages.first(where: { $0.id == replyId })
+                else { return true }
+                return msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && activeRunId == nil
+            }()
+            if stuckEmpty {
+                clearStuckReply()
+            } else {
+                error = "上一轮还在回复中，请稍候"
+                return
+            }
         }
         let user = ChatMessage(
             id: "u-\(UUID().uuidString)",
@@ -98,9 +162,16 @@ final class ChatStore {
         )
         messages.append(user)
         messages.append(placeholder)
+        pendingUserMessageId = user.id
         currentReplyId = placeholder.id
         error = nil
-        _ = socket?.send(.message(text: trimmed, agent: agent.isEmpty ? nil : agent))
+
+        let ok = socket?.send(.message(text: trimmed, agent: agent.isEmpty ? nil : agent)) ?? false
+        if !ok {
+            error = "发送失败，请检查网络后重连"
+            clearStuckReply()
+            socket?.reconnectNow()
+        }
     }
 
     func switchAgent(_ name: String) {
@@ -114,15 +185,14 @@ final class ChatStore {
         activeRunId = nil
         pendingApprovals = []
         pendingAsks = []
+        pendingUserMessageId = nil
         error = nil
         ThreadIDStore.reset()
         _ = socket?.send(.newConversation)
-        // Re-bind to a fresh thread id on next open bootstrap; also ask now.
         _ = socket?.send(.getHistory(threadId: ThreadIDStore.loadOrCreate()))
     }
 
     func approvalAction(messageId: String, choice: String) {
-        // choice: y | n | a  → apv:<reqId>:<choice>
         guard let pending = pendingApprovals.first(where: { $0.messageId == messageId }) else { return }
         let data = "apv:\(pending.prompt.reqId):\(choice)"
         _ = socket?.send(.approvalAction(data: data, messageId: messageId))
@@ -147,6 +217,7 @@ final class ChatStore {
         case .initSession(let agents, let defaultAgent, _):
             self.agents = agents
             if agent.isEmpty { agent = defaultAgent }
+            sessionReady = true
 
         case .history(let hist, let agentName):
             if !hist.isEmpty {
@@ -155,11 +226,16 @@ final class ChatStore {
                 }
                 currentReplyId = nil
                 activeRunId = nil
+                pendingUserMessageId = nil
             }
             if !agentName.isEmpty { agent = agentName }
+            // History without init still means the socket works.
+            sessionReady = true
 
         case .agents(let list):
             agents = list
+            if agent.isEmpty, let first = list.first { agent = first }
+            sessionReady = true
 
         case .agentSwitched(let name):
             agent = name
@@ -170,6 +246,7 @@ final class ChatStore {
         case .done(let text, _):
             flushChunks()
             finishReply(finalText: text)
+            pendingUserMessageId = nil
 
         case .runStart(let runId, let agentName, let startedAt):
             activeRunId = runId
@@ -225,8 +302,15 @@ final class ChatStore {
                 act.error = message
                 messages[idx].activity = act
             }
+            // Keep user message; mark assistant bubble with the error text if empty.
+            if let replyId = currentReplyId,
+               let idx = messages.firstIndex(where: { $0.id == replyId }),
+               messages[idx].content.isEmpty {
+                messages[idx].content = "⚠️ \(message)"
+            }
             currentReplyId = nil
             activeRunId = nil
+            pendingUserMessageId = nil
 
         case .approvalCard(let messageId, let prompt):
             if !pendingApprovals.contains(where: { $0.messageId == messageId }) {
@@ -297,8 +381,8 @@ final class ChatStore {
             ChatActivity(
                 runId: a.runId,
                 status: ChatActivity.Status(rawValue: a.status) ?? .success,
-                startedAt: Date(timeIntervalSince1970: a.startedAt / 1000),
-                finishedAt: a.finishedAt.map { Date(timeIntervalSince1970: $0 / 1000) },
+                startedAt: Date(timeIntervalSince1970: a.startedAt.millis / 1000),
+                finishedAt: a.finishedAt.map { Date(timeIntervalSince1970: $0.millis / 1000) },
                 durationMs: a.durationMs,
                 error: a.error,
                 steps: a.steps.map {

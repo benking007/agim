@@ -32,6 +32,9 @@ final class PairingParserTests: XCTestCase {
             PairingParser.wsURL(host: "http://192.168.1.8:3000")?.absoluteString,
             "ws://192.168.1.8:3000/ws"
         )
+        let withTok = PairingParser.wsURL(host: "https://example.com", token: "agim_x")
+        XCTAssertEqual(withTok?.scheme, "wss")
+        XCTAssertTrue(withTok?.query?.contains("token=agim_x") == true)
     }
 
     func testNormalizeHostStripsPath() {

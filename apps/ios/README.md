@@ -55,6 +55,12 @@ apps/ios/
   AgimTests/                  # Pairing URL parser tests
 ```
 
-## Protocol
+## Troubleshooting
 
-Wire frames match `src/web-app/src/types/ws.ts`. Do not fork the protocol — change the server + SPA + this app together.
+| 现象 | 处理 |
+|------|------|
+| 顶栏一直「连接中 / 同步中」 | 菜单 → **重新连接**；确认 host 从模拟器可达（本机服务用 Mac 的局域网 IP，不要用仅监听 `127.0.0.1` 的地址给真机） |
+| 能配对但不能发消息 | 等状态变成「已连接」；若仍卡住，菜单 → **取消卡住的回复** 后再发 |
+| Xcode 控制台 | 过滤 subsystem `host.iclaw.agim` 查看 WS 握手 / decode 日志 |
+
+WS 使用 `wss?token=`（兼 `Authorization: Bearer`），与 Web `/ws` 同一协议。

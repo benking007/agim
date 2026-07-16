@@ -69,12 +69,16 @@ enum PairingParser {
         return out
     }
 
-    static func wsURL(host: String) -> URL? {
+    static func wsURL(host: String, token: String? = nil) -> URL? {
         guard var comps = URLComponents(string: host) else { return nil }
         comps.scheme = (comps.scheme?.lowercased() == "https") ? "wss" : "ws"
         comps.path = "/ws"
-        comps.query = nil
         comps.fragment = nil
+        if let token, !token.isEmpty {
+            comps.queryItems = [URLQueryItem(name: "token", value: token)]
+        } else {
+            comps.query = nil
+        }
         return comps.url
     }
 }

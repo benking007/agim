@@ -469,7 +469,21 @@ export function AgentPortal(): JSX.Element {
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           <div className="space-y-2">
-            <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-white' : 'text-zinc-800')}>{t('chat.portal.exploreTitle')}</h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-white' : 'text-zinc-800')}>{t('chat.portal.exploreTitle')}</h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('chat')}
+                aria-label={t('chat.portal.closeExplore', { defaultValue: 'Close' })}
+                title={t('chat.portal.closeExplore', { defaultValue: 'Close' })}
+                className={cn(
+                  'mt-0.5 shrink-0 rounded-full p-1.5 transition',
+                  dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800',
+                )}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
             <p className="text-[11px] leading-normal text-zinc-400">
               {t('chat.portal.exploreSubtitle')}
             </p>

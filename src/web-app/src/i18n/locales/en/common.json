@@ -363,6 +363,7 @@
       "stop": "Stop",
       "voice": "Voice mode",
       "exploreTitle": "Custom Agents",
+      "closeExplore": "Close",
       "exploreSubtitle": "Instantly hook into specialised agents available on this Agim host.",
       "searchAgents": "Search tailored agents...",
       "directoryResults": "Directory results ({{count}})",

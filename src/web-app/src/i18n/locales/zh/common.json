@@ -363,6 +363,7 @@
       "stop": "停止",
       "voice": "语音模式",
       "exploreTitle": "自定义 Agent",
+      "closeExplore": "关闭",
       "exploreSubtitle": "快速接入本机 Agim 上可用的专用 Agent。",
       "searchAgents": "搜索 Agent…",
       "directoryResults": "目录结果（{{count}}）",

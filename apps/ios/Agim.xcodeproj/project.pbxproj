@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714C74F3ACD346F04961C87C /* AgimApp.swift */; };
+		0342AFD66418AC19537F65D4 /* HostCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8DE6BF965E77BA56525D70 /* HostCredentials.swift */; };
 		BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */; };
 		B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64FE668EEC1E0A572C31F83 /* PairingParser.swift */; };
 		007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092E604AA4355F3BA6AEBAC9 /* PairingView.swift */; };
@@ -22,6 +23,7 @@
 		886C6A3ED7C78373E79612F2 /* Agim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7AF768ADD8C1E79EC20DD3E8 /* AgimTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		714C74F3ACD346F04961C87C /* AgimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgimApp.swift"; sourceTree = "<group>"; };
+		BB8DE6BF965E77BA56525D70 /* HostCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/HostCredentials.swift"; sourceTree = "<group>"; };
 		45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/KeychainStore.swift"; sourceTree = "<group>"; };
 		F64FE668EEC1E0A572C31F83 /* PairingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PairingParser.swift"; sourceTree = "<group>"; };
 		092E604AA4355F3BA6AEBAC9 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/PairingView.swift"; sourceTree = "<group>"; };
@@ -66,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				714C74F3ACD346F04961C87C /* AgimApp.swift */,
+				BB8DE6BF965E77BA56525D70 /* HostCredentials.swift */,
 				45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */,
 				F64FE668EEC1E0A572C31F83 /* PairingParser.swift */,
 				092E604AA4355F3BA6AEBAC9 /* PairingView.swift */,
@@ -195,6 +198,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */,
+				0342AFD66418AC19537F65D4 /* HostCredentials.swift in Sources */,
 				BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */,
 				B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */,
 				007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */,

@@ -52,6 +52,11 @@ struct WebViewRepresentable: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Chat list scrolls inside the page; disable WKWebView rubber-banding
+        // so pull-down does not drag the whole portal chrome.
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
         webView.isOpaque = false
         webView.backgroundColor = .black
         context.coordinator.webView = webView

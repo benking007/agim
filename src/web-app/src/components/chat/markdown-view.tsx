@@ -69,17 +69,17 @@ const COMPONENTS: Components = {
   }) => {
     if (inline) {
       return (
-        <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em]" {...rest}>
+        <code className="agim-mono rounded bg-surface-2 px-1 py-0.5 text-[0.85em]" {...rest}>
           {children}
         </code>
       )
     }
     // Fenced — content lives inside the parent <pre>; keep this lean
     // so the <pre> styles do the heavy lifting.
-    return <code className={cn('font-mono text-xs', className)} {...rest}>{children}</code>
+    return <code className={cn('agim-mono text-xs', className)} {...rest}>{children}</code>
   },
   pre: ({ children, ...p }) => (
-    <pre className="my-2 overflow-x-auto rounded bg-surface-2 p-2 text-xs leading-relaxed" {...p}>{children}</pre>
+    <pre className="agim-mono my-2 overflow-x-auto rounded bg-surface-2 p-2 text-xs leading-relaxed" {...p}>{children}</pre>
   ),
   // Tables — agent data dumps. Compact, scroll on overflow.
   table: ({ children, ...p }) => (

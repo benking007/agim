@@ -27,6 +27,7 @@ import { toast } from 'sonner'
 
 import { useChat, type ChatMessage, type PendingApproval, type RunActivity } from '@/hooks/use-chat'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
+import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
 import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
 import { Button } from '@/components/ui/button'
@@ -198,6 +199,7 @@ export default function MobileChatRoute(): JSX.Element {
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockHeight, setDockHeight] = useState(0)
   const keyboardInset = useKeyboardInset()
+  useIosViewportZoomReset()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
   const demoMode = searchParams.get('demo')
   const demoApproval = demoMode === 'approval'

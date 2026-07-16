@@ -232,7 +232,7 @@ function AskRow({ entry, onSubmit, stacked = false }: AskRowProps): JSX.Element 
             onKeyDown={(e) => {
               if (e.key === 'Enter' && custom.trim()) submit(`ask:${reqId}:custom:${base64url(custom.trim())}`)
             }}
-            className="flex-1 rounded-xl border border-border bg-bg px-3 py-2.5 text-base text-text outline-none focus:border-info focus:ring-2 focus:ring-info/20"
+            className="flex-1 rounded-xl border border-border bg-bg px-3 py-2.5 text-md text-text outline-none focus:border-info focus:ring-2 focus:ring-info/20"
           />
           <Button
             variant="outline"

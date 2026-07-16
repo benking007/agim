@@ -124,7 +124,9 @@ export function ChatComposer({
           enterKeyHint={enterNewline ? 'enter' : 'send'}
           className={cn(
             'flex-1 resize-none rounded-[22px] border border-border bg-bg',
-            'px-4 py-2.5 text-base leading-6',
+            // text-md = 16px (theme `text-base` is 15px). iOS Safari auto-zooms
+            // focused inputs under 16px and often leaves the page stuck zoomed.
+            'px-4 py-2.5 text-md leading-6',
             'focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-1 focus:ring-offset-bg',
             'placeholder:text-text-muted',
           )}

@@ -5,8 +5,10 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if session.isPaired {
-                ChatView()
+            if let creds = session.credentials {
+                WebShellView(credentials: creds) {
+                    session.logout()
+                }
             } else {
                 PairingView()
             }

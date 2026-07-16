@@ -8,20 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714C74F3ACD346F04961C87C /* AgimApp.swift */; };
-		21652BA3076726A45D771B13 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBC65C0B66942EE43695F53 /* ChatModels.swift */; };
-		09AA62C682BEDE342033BD77 /* WSMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */; };
-		1A79D2E12D3378CC2D595A7C /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */; };
-		67FBFBCFB4237D57BB833240 /* ChatWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */; };
 		BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */; };
 		B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64FE668EEC1E0A572C31F83 /* PairingParser.swift */; };
-		5DE21EA3D042CCF09357A107 /* ApprovalDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C64918844246EAD2D16D07 /* ApprovalDockView.swift */; };
-		9F1B95799BC970D6FD0D6B9C /* AskDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C76BFBF6E20619D5539957A /* AskDockView.swift */; };
-		29A0C4DA32EA8708C315BA9F /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01674911BE5D92E8F4626A8 /* ChatView.swift */; };
-		863A79632A62A517EF679608 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */; };
-		FCC7741AEE68B81936B56F6B /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */; };
 		007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092E604AA4355F3BA6AEBAC9 /* PairingView.swift */; };
 		56B7446B33C66C71BE6977F0 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */; };
 		759406531FD8D305DB1C2070 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCE814A9A0AC1E63956178E /* RootView.swift */; };
+		4EE90A907CFA6D71394DA203 /* WebShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061D2F1D6F88EF3457F30305 /* WebShellView.swift */; };
 		630079499D908838C6A12464 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
 		89901AECE1F5AE1B6F76A1F3 /* PairingParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88CE5CBABF888B7EFF66C89 /* PairingParserTests.swift */; };
 /* End PBXBuildFile section */
@@ -30,20 +22,12 @@
 		886C6A3ED7C78373E79612F2 /* Agim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7AF768ADD8C1E79EC20DD3E8 /* AgimTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		714C74F3ACD346F04961C87C /* AgimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgimApp.swift"; sourceTree = "<group>"; };
-		6EBC65C0B66942EE43695F53 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/ChatModels.swift"; sourceTree = "<group>"; };
-		0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/WSMessages.swift"; sourceTree = "<group>"; };
-		3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ChatStore.swift"; sourceTree = "<group>"; };
-		DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ChatWebSocket.swift"; sourceTree = "<group>"; };
 		45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/KeychainStore.swift"; sourceTree = "<group>"; };
 		F64FE668EEC1E0A572C31F83 /* PairingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PairingParser.swift"; sourceTree = "<group>"; };
-		72C64918844246EAD2D16D07 /* ApprovalDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ApprovalDockView.swift"; sourceTree = "<group>"; };
-		0C76BFBF6E20619D5539957A /* AskDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/AskDockView.swift"; sourceTree = "<group>"; };
-		B01674911BE5D92E8F4626A8 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ChatView.swift"; sourceTree = "<group>"; };
-		D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ComposerView.swift"; sourceTree = "<group>"; };
-		4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/MessageBubbleView.swift"; sourceTree = "<group>"; };
 		092E604AA4355F3BA6AEBAC9 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/PairingView.swift"; sourceTree = "<group>"; };
 		10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/QRScannerView.swift"; sourceTree = "<group>"; };
 		3FCE814A9A0AC1E63956178E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/RootView.swift"; sourceTree = "<group>"; };
+		061D2F1D6F88EF3457F30305 /* WebShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/WebShellView.swift"; sourceTree = "<group>"; };
 		E88CE5CBABF888B7EFF66C89 /* PairingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PairingParserTests.swift"; sourceTree = "<group>"; };
 		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		CAF9B6B99962BF5C22648242 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -82,20 +66,12 @@
 			isa = PBXGroup;
 			children = (
 				714C74F3ACD346F04961C87C /* AgimApp.swift */,
-				6EBC65C0B66942EE43695F53 /* ChatModels.swift */,
-				0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */,
-				3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */,
-				DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */,
 				45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */,
 				F64FE668EEC1E0A572C31F83 /* PairingParser.swift */,
-				72C64918844246EAD2D16D07 /* ApprovalDockView.swift */,
-				0C76BFBF6E20619D5539957A /* AskDockView.swift */,
-				B01674911BE5D92E8F4626A8 /* ChatView.swift */,
-				D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */,
-				4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */,
 				092E604AA4355F3BA6AEBAC9 /* PairingView.swift */,
 				10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */,
 				3FCE814A9A0AC1E63956178E /* RootView.swift */,
+				061D2F1D6F88EF3457F30305 /* WebShellView.swift */,
 				32BB636196F91ED59D7A4919 /* Assets.xcassets */,
 				CAF9B6B99962BF5C22648242 /* Info.plist */,
 			);
@@ -219,20 +195,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */,
-				21652BA3076726A45D771B13 /* ChatModels.swift in Sources */,
-				09AA62C682BEDE342033BD77 /* WSMessages.swift in Sources */,
-				1A79D2E12D3378CC2D595A7C /* ChatStore.swift in Sources */,
-				67FBFBCFB4237D57BB833240 /* ChatWebSocket.swift in Sources */,
 				BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */,
 				B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */,
-				5DE21EA3D042CCF09357A107 /* ApprovalDockView.swift in Sources */,
-				9F1B95799BC970D6FD0D6B9C /* AskDockView.swift in Sources */,
-				29A0C4DA32EA8708C315BA9F /* ChatView.swift in Sources */,
-				863A79632A62A517EF679608 /* ComposerView.swift in Sources */,
-				FCC7741AEE68B81936B56F6B /* MessageBubbleView.swift in Sources */,
 				007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */,
 				56B7446B33C66C71BE6977F0 /* QRScannerView.swift in Sources */,
 				759406531FD8D305DB1C2070 /* RootView.swift in Sources */,
+				4EE90A907CFA6D71394DA203 /* WebShellView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -295,7 +263,6 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim;
-				ENABLE_TESTABILITY = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -320,7 +287,6 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim;
-				ENABLE_TESTABILITY = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

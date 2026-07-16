@@ -1,9 +1,9 @@
 import SwiftUI
+import WebKit
 
 @main
 struct AgimApp: App {
     @State private var session = AppSession()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -12,28 +12,18 @@ struct AgimApp: App {
                 .onOpenURL { url in
                     session.handleDeepLink(url)
                 }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .active {
-                        session.chat.handleForeground()
-                    }
-                }
         }
     }
 }
 
-/// App-wide session: credentials + chat store.
 @MainActor
 @Observable
 final class AppSession {
     var credentials: HostCredentials?
-    var chat = ChatStore()
     var pairingError: String?
 
     init() {
-        if let saved = KeychainStore.load() {
-            credentials = saved
-            chat.start(with: saved)
-        }
+        credentials = KeychainStore.load()
     }
 
     var isPaired: Bool { credentials != nil }
@@ -44,8 +34,6 @@ final class AppSession {
             try KeychainStore.save(creds)
             credentials = creds
             pairingError = nil
-            chat = ChatStore()
-            chat.start(with: creds)
         } catch {
             pairingError = "无法保存凭证：\(error.localizedDescription)"
         }
@@ -73,7 +61,7 @@ final class AppSession {
     }
 
     func logout() {
-        chat.logout()
+        KeychainStore.clear()
         credentials = nil
     }
 }

@@ -12,7 +12,7 @@ struct PairingView: View {
                 Section {
                     Text("Agim")
                         .font(.largeTitle.bold())
-                    Text("扫描后台 Mobile 二维码，或粘贴主机与 Token。")
+                    Text("扫描后台 Mobile 二维码，进入 Agent Portal（WebUI）。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

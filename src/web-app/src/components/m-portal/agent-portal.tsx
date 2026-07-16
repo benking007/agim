@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { useChat } from '@/hooks/use-chat'
+import { useChat, type ChatMessage } from '@/hooks/use-chat'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
@@ -30,6 +30,32 @@ type Tab = 'chat' | 'explore'
 type Theme = 'dark' | 'light'
 
 const EXPLORE_CATS = ['All', 'Featured', 'Programming', 'Writing', 'Design', 'Lifestyle'] as const
+
+/** One user turn + following assistant/system replies (until the next user). */
+interface ChatTurn {
+  id: string
+  user?: ChatMessage
+  replies: ChatMessage[]
+}
+
+function groupChatTurns(messages: ChatMessage[]): ChatTurn[] {
+  const turns: ChatTurn[] = []
+  let current: ChatTurn | null = null
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      if (current) turns.push(current)
+      current = { id: msg.id, user: msg, replies: [] }
+      continue
+    }
+    if (!current) {
+      current = { id: `orphan-${msg.id}`, replies: [msg] }
+    } else {
+      current.replies.push(msg)
+    }
+  }
+  if (current) turns.push(current)
+  return turns
+}
 
 function resolveTheme(mode: ThemeMode): Theme {
   if (mode === 'light') return 'light'
@@ -67,7 +93,11 @@ export function AgentPortal(): JSX.Element {
   const visual = agentVisual(agentId)
   const AgentIcon = visual.icon
   const isTyping = state.currentReplyId != null
-  const chatMessages = state.messages.filter((m) => !m.approval)
+  const chatMessages = useMemo(
+    () => state.messages.filter((m) => !m.approval),
+    [state.messages],
+  )
+  const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
@@ -282,77 +312,83 @@ export function AgentPortal(): JSX.Element {
             </div>
           )}
 
-          {chatMessages.map((msg) => (
-            <div
-              key={msg.id}
-              className="flex w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
-            >
-              {msg.role === 'user' ? (
-                <div className={cn(
-                  // Cursor-style chip: oval white surface, left-aligned text
-                  'w-full rounded-[1.25rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
-                  dark
-                    ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
-                    : 'border-zinc-200 bg-white text-zinc-900 shadow-[0_1px_2px_rgba(15,23,42,0.05)]',
-                )}>
-                  {msg.content}
-                </div>
-              ) : (
-                <div className="w-full space-y-1.5">
-                  {(() => {
-                    const isCurrent = isTyping && msg.id === state.currentReplyId
-                    // Prefer the message's own agent; never fall back to the
-                    // currently selected agent (that recolors history on switch).
-                    const stamped = msg.agent
-                    const msgVisual = stamped
-                      ? agentVisual(stamped)
-                      : { color: 'from-zinc-500 to-zinc-600', icon: Bot, category: 'Featured', tagline: '' }
-                    const MsgIcon = msgVisual.icon
-                    const label = stamped ? displayAgentName(stamped) : 'Agent'
-                    const showRun = !!msg.activity || isCurrent
-                    if (showRun) {
-                      return (
-                        <PortalRunStatus
-                          dark={dark}
-                          agentName={label}
-                          agentColor={msgVisual.color}
-                          AgentIcon={MsgIcon}
-                          activity={msg.activity}
-                          streaming={isCurrent && (!msg.activity || msg.activity.status === 'running')}
-                        />
-                      )
-                    }
-                    return (
-                      <div className="flex items-center gap-2">
-                        <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', msgVisual.color)}>
-                          <MsgIcon className="h-3.5 w-3.5" />
-                        </div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                          {label}
-                        </span>
-                      </div>
-                    )
-                  })()}
-                  {msg.content ? (
-                    <div className={cn(
-                      'select-text break-words text-[13px] leading-relaxed',
-                      dark ? 'text-zinc-200' : 'text-zinc-800',
-                    )}
-                      style={{
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-                      }}
-                    >
-                      <MarkdownView
-                        content={msg.content}
-                        className="break-words text-[13px] leading-relaxed [&_*]:text-inherit"
-                      />
-                      {!(isTyping && msg.id === state.currentReplyId) && (
-                        <MessageActions content={msg.content} dark={dark} />
-                      )}
-                    </div>
-                  ) : null}
+          {chatTurns.map((turn) => (
+            <div key={turn.id} className="flex w-full flex-col gap-3">
+              {turn.user && (
+                <div
+                  className={cn(
+                    // Cursor-style topic sticky: pins while this turn is in view
+                    'sticky top-0 z-10 w-full rounded-[1.25rem] border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                    dark
+                      ? 'border-zinc-700 bg-zinc-800 text-zinc-100 shadow-[0_8px_24px_rgba(0,0,0,0.35)]'
+                      : 'border-zinc-200 bg-white text-zinc-900 shadow-[0_6px_20px_rgba(15,23,42,0.08)]',
+                  )}
+                >
+                  {turn.user.content}
                 </div>
               )}
+              {turn.replies.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="flex w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                >
+                  <div className="w-full space-y-1.5">
+                    {(() => {
+                      const isCurrent = isTyping && msg.id === state.currentReplyId
+                      // Prefer the message's own agent; never fall back to the
+                      // currently selected agent (that recolors history on switch).
+                      const stamped = msg.agent
+                      const msgVisual = stamped
+                        ? agentVisual(stamped)
+                        : { color: 'from-zinc-500 to-zinc-600', icon: Bot, category: 'Featured', tagline: '' }
+                      const MsgIcon = msgVisual.icon
+                      const label = stamped ? displayAgentName(stamped) : 'Agent'
+                      const showRun = !!msg.activity || isCurrent
+                      if (showRun) {
+                        return (
+                          <PortalRunStatus
+                            dark={dark}
+                            agentName={label}
+                            agentColor={msgVisual.color}
+                            AgentIcon={MsgIcon}
+                            activity={msg.activity}
+                            streaming={isCurrent && (!msg.activity || msg.activity.status === 'running')}
+                          />
+                        )
+                      }
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', msgVisual.color)}>
+                            <MsgIcon className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                            {label}
+                          </span>
+                        </div>
+                      )
+                    })()}
+                    {msg.content ? (
+                      <div
+                        className={cn(
+                          'select-text break-words text-[13px] leading-relaxed',
+                          dark ? 'text-zinc-200' : 'text-zinc-800',
+                        )}
+                        style={{
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+                        }}
+                      >
+                        <MarkdownView
+                          content={msg.content}
+                          className="break-words text-[13px] leading-relaxed [&_*]:text-inherit"
+                        />
+                        {!(isTyping && msg.id === state.currentReplyId) && (
+                          <MessageActions content={msg.content} dark={dark} />
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
 

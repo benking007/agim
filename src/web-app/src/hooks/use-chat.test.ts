@@ -285,6 +285,30 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.steps[0]?.status).toBe('error')
   })
 
+  it('DONE closes a still-running activity when run-finish is missing', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'pi', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'tc-1',
+          kind: 'tool',
+          label: 'Bash',
+          status: 'running',
+          startedAt: 1_100,
+        },
+      },
+      { kind: 'DONE', replyId: 'p-1', finalText: 'all done' },
+    )
+    expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
+    expect(after.messages[1]?.activity).toMatchObject({ status: 'success' })
+    expect(after.messages[1]?.activity?.steps[0]?.status).toBe('success')
+  })
+
   it('CLEAR_ERROR resets only the error field', () => {
     const after = reduce(
       { ...initialChatState, error: 'oops', agents: ['a'] },

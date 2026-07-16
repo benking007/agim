@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Menu, MessageSquare,
-  Mic, Moon, Plus, Search, Sparkles, Sun, User, X,
+  Mic, Moon, Plus, Search, Sparkles, Square, Sun, User, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -17,6 +17,7 @@ import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { MarkdownView } from '@/components/chat/markdown-view'
+import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
@@ -44,7 +45,7 @@ export function AgentPortal(): JSX.Element {
     prefs.setTheme(next)
   }
 
-  const { state, send, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
+  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
   useIosViewportZoomReset()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -63,6 +64,7 @@ export function AgentPortal(): JSX.Element {
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
+  const canStop = isTyping || state.activeRunId != null
 
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
@@ -215,10 +217,10 @@ export function AgentPortal(): JSX.Element {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header — opaque so dropdown / chrome never ghost chat text */}
       <header className={cn(
         'sticky top-0 z-30 flex shrink-0 items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
-        dark ? 'border-zinc-900/50 bg-zinc-950/90 text-white' : 'border-zinc-200/50 bg-white/90 text-zinc-800',
+        dark ? 'border-zinc-900 bg-zinc-950 text-white' : 'border-zinc-200 bg-white text-zinc-800',
       )}>
         <button
           type="button"
@@ -244,10 +246,10 @@ export function AgentPortal(): JSX.Element {
 
           {showModelDropdown && (
             <>
-              <button type="button" className="fixed inset-0 z-[45]" aria-label="Close" onClick={() => setShowModelDropdown(false)} />
+              <button type="button" className="fixed inset-0 z-[45] bg-black/40" aria-label="Close" onClick={() => setShowModelDropdown(false)} />
               <div className={cn(
                 'absolute left-1/2 top-full z-50 mt-2 w-56 -translate-x-1/2 animate-in fade-in slide-in-from-top-2 rounded-2xl border p-2 shadow-2xl duration-200',
-                dark ? 'border-zinc-800 bg-[#161618] text-zinc-200' : 'border-zinc-200 bg-white text-zinc-800',
+                dark ? 'border-zinc-800 bg-zinc-950 text-zinc-200' : 'border-zinc-200 bg-white text-zinc-800',
               )}>
                 <p className="mb-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400">Select Agent</p>
                 <div className="space-y-1">
@@ -359,7 +361,7 @@ export function AgentPortal(): JSX.Element {
             >
               {msg.role === 'user' ? (
                 <div className={cn(
-                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm',
+                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] font-medium leading-relaxed shadow-sm',
                   dark ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-200 text-zinc-900',
                 )}>
                   {msg.content}
@@ -368,14 +370,20 @@ export function AgentPortal(): JSX.Element {
                 <div className="w-full space-y-2">
                   {(() => {
                     const isCurrent = isTyping && msg.id === state.currentReplyId
-                    const msgVisual = agentVisual(msg.agent || agentId)
+                    // Prefer the message's own agent; never fall back to the
+                    // currently selected agent (that recolors history on switch).
+                    const stamped = msg.agent
+                    const msgVisual = stamped
+                      ? agentVisual(stamped)
+                      : { color: 'from-zinc-500 to-zinc-600', icon: Bot, category: 'Featured', tagline: '' }
                     const MsgIcon = msgVisual.icon
+                    const label = stamped ? displayAgentName(stamped) : 'Agent'
                     const showRun = !!msg.activity || isCurrent
                     if (showRun) {
                       return (
                         <PortalRunStatus
                           dark={dark}
-                          agentName={displayAgentName(msg.agent || agentId)}
+                          agentName={label}
                           agentColor={msgVisual.color}
                           AgentIcon={MsgIcon}
                           activity={msg.activity}
@@ -389,17 +397,14 @@ export function AgentPortal(): JSX.Element {
                           <MsgIcon className="h-3.5 w-3.5" />
                         </div>
                         <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                          {displayAgentName(msg.agent || agentId)}
+                          {label}
                         </span>
                       </div>
                     )
                   })()}
-                  {/* Match MessageBubble markdown sizing; avoid whitespace-pre-wrap
-                      around MarkdownView (breaks CJK / GFM layout). Explicit CJK
-                      stack avoids tofu boxes in WKWebView mono/code paths. */}
                   {msg.content ? (
                     <div className={cn(
-                      'select-text break-words pl-1 text-[15px] leading-relaxed',
+                      'select-text break-words pl-1 text-[13px] leading-relaxed',
                       dark ? 'text-zinc-200' : 'text-zinc-800',
                     )}
                       style={{
@@ -408,8 +413,11 @@ export function AgentPortal(): JSX.Element {
                     >
                       <MarkdownView
                         content={msg.content}
-                        className="break-words text-[15px] leading-relaxed [&_*]:text-inherit"
+                        className="break-words text-[13px] leading-relaxed [&_*]:text-inherit"
                       />
+                      {!(isTyping && msg.id === state.currentReplyId) && (
+                        <MessageActions content={msg.content} dark={dark} />
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -590,7 +598,7 @@ export function AgentPortal(): JSX.Element {
               )}
             />
             <div className="flex items-center gap-1.5">
-              {inputMessage.trim() ? (
+              {inputMessage.trim() && !canStop ? (
                 <button
                   type="submit"
                   className={cn(
@@ -599,6 +607,19 @@ export function AgentPortal(): JSX.Element {
                   )}
                 >
                   <ArrowUp className="h-4 w-4" />
+                </button>
+              ) : canStop ? (
+                <button
+                  type="button"
+                  onClick={() => stop()}
+                  className={cn(
+                    'rounded-lg p-2 shadow-md transition-all',
+                    dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
+                  )}
+                  title="停止执行"
+                  aria-label="Stop running"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
                 </button>
               ) : (
                 <button

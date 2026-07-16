@@ -39,14 +39,14 @@ export function ApprovalDock({ approvals, onApprove }: ApprovalDockProps): JSX.E
         className={cn(
           'mx-auto flex w-full max-w-3xl flex-col',
           'max-h-[min(52vh,28rem)]',
-          'rounded-2xl border border-warning/30 bg-surface/98',
+          'rounded-2xl border border-warning/30 bg-surface',
           'shadow-[0_-8px_30px_rgba(15,23,42,0.12)]',
           'ring-1 ring-black/5',
           'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
         )}
         aria-label={t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-warning/15 bg-warning-bg/90 px-4 py-3">
+        <div className="flex shrink-0 items-center gap-3 border-b border-warning/15 bg-warning-bg px-4 py-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
             <ShieldAlert className="h-5 w-5" />
           </span>

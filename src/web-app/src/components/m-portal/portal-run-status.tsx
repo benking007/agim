@@ -44,15 +44,22 @@ function formatDuration(ms: number | undefined): string | null {
   return `${m}m ${s}s`
 }
 
-function countKinds(activity: ChatActivity): { tools: number; skills: number; total: number } {
+function countKinds(activity: ChatActivity): {
+  tools: number
+  skills: number
+  asks: number
+  total: number
+} {
   let tools = 0
   let skills = 0
+  let asks = 0
   for (const step of activity.steps) {
     if (step.kind === 'skill') skills += 1
+    else if (step.kind === 'ask') asks += 1
     else if (step.kind === 'tool' || step.kind === 'status') tools += 1
-    else if (step.kind !== 'agent' && step.kind !== 'approval' && step.kind !== 'ask') tools += 1
+    else if (step.kind !== 'agent' && step.kind !== 'approval') tools += 1
   }
-  return { tools, skills, total: activity.steps.length }
+  return { tools, skills, asks, total: activity.steps.length }
 }
 
 function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JSX.Element {
@@ -100,21 +107,22 @@ export function PortalRunStatus({
     : undefined
 
   const duration = formatDuration(activity?.durationMs)
-  const counts = activity ? countKinds(activity) : { tools: 0, skills: 0, total: 0 }
+  const counts = activity ? countKinds(activity) : { tools: 0, skills: 0, asks: 0, total: 0 }
 
-  let doneSummary = 'Worked'
-  if (failed) doneSummary = 'Failed'
+  let doneSummary = '已完成'
+  if (failed) doneSummary = '失败'
   else if (counts.total > 0) {
-    const parts = ['Worked']
-    if (counts.tools > 0) parts.push(`${counts.tools} tool${counts.tools === 1 ? '' : 's'}`)
-    if (counts.skills > 0) parts.push(`${counts.skills} skill${counts.skills === 1 ? '' : 's'}`)
-    if (counts.tools === 0 && counts.skills === 0) {
-      parts.push(`${counts.total} step${counts.total === 1 ? '' : 's'}`)
+    const parts = ['已完成']
+    if (counts.tools > 0) parts.push(`${counts.tools} 次工具`)
+    if (counts.skills > 0) parts.push(`${counts.skills} 次技能`)
+    if (counts.asks > 0) parts.push(`${counts.asks} 次提问`)
+    if (counts.tools === 0 && counts.skills === 0 && counts.asks === 0) {
+      parts.push(`${counts.total} 步`)
     }
     if (duration) parts.push(duration)
     doneSummary = parts.join(' · ')
   } else if (duration) {
-    doneSummary = `Worked · ${duration}`
+    doneSummary = `已完成 · ${duration}`
   }
 
   const canExpandWhileRunning = running && hasSteps
@@ -134,7 +142,7 @@ export function PortalRunStatus({
             className="flex min-w-0 items-center gap-1 rounded-md py-0.5 text-left transition hover:opacity-80"
           >
             <span className="truncate text-[9px] font-bold uppercase tracking-wider text-zinc-400 animate-pulse">
-              Running...
+              执行中...
             </span>
             <ChevronRight
               className={cn(
@@ -148,7 +156,7 @@ export function PortalRunStatus({
             'text-[9px] font-bold uppercase tracking-wider text-zinc-400',
             running && 'animate-pulse',
           )}>
-            {running ? 'Running...' : agentName}
+            {running ? '执行中...' : agentName}
           </span>
         )}
       </div>
@@ -160,9 +168,9 @@ export function PortalRunStatus({
           dark ? 'text-zinc-500' : 'text-zinc-400',
         )}>
           {waitingAgent
-            ? `Waiting for ${waitingAgent.label}`
+            ? `等待 ${waitingAgent.label}`
             : liveStep
-              ? `Using ${stepLabel(liveStep)}`
+              ? `正在使用 ${stepLabel(liveStep)}`
               : null}
         </p>
       )}
@@ -207,7 +215,7 @@ export function PortalRunStatus({
         )}>
           {activity.steps.length === 0 && (
             <p className="text-[11px] text-zinc-500">
-              {running ? 'Waiting for tool activity…' : 'No tool steps recorded.'}
+              {running ? '等待工具活动…' : '本轮没有工具记录。'}
             </p>
           )}
           {activity.steps.map((step) => (

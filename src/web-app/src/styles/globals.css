@@ -175,4 +175,35 @@
       "Liberation Mono", "Courier New", "PingFang SC", "Hiragino Sans GB",
       "Noto Sans SC", "Microsoft YaHei", monospace;
   }
+
+  /* highlight.js token colors — compact theme for chat code fences. */
+  .hljs { color: hsl(var(--ag-text)); }
+  .hljs-comment, .hljs-quote { color: #6b7280; font-style: italic; }
+  .hljs-keyword, .hljs-selector-tag, .hljs-addition { color: #7c3aed; }
+  .hljs-number, .hljs-string, .hljs-meta .hljs-meta-string, .hljs-literal,
+  .hljs-doctag, .hljs-regexp { color: #059669; }
+  .hljs-title, .hljs-section, .hljs-name, .hljs-selector-id, .hljs-selector-class {
+    color: #2563eb;
+  }
+  .hljs-attribute, .hljs-attr, .hljs-variable, .hljs-template-variable,
+  .hljs-class .hljs-title, .hljs-type { color: #d97706; }
+  .hljs-symbol, .hljs-bullet, .hljs-link { color: #db2777; }
+  .hljs-built_in, .hljs-builtin-name { color: #0891b2; }
+  .hljs-meta { color: #64748b; }
+  .hljs-deletion { color: #dc2626; }
+  .hljs-emphasis { font-style: italic; }
+  .hljs-strong { font-weight: 600; }
+
+  html[data-theme='dark'] .hljs-keyword,
+  html[data-theme='dark'] .hljs-selector-tag { color: #c4b5fd; }
+  html[data-theme='dark'] .hljs-number,
+  html[data-theme='dark'] .hljs-string,
+  html[data-theme='dark'] .hljs-literal { color: #6ee7b7; }
+  html[data-theme='dark'] .hljs-title,
+  html[data-theme='dark'] .hljs-section,
+  html[data-theme='dark'] .hljs-name { color: #93c5fd; }
+  html[data-theme='dark'] .hljs-attr,
+  html[data-theme='dark'] .hljs-attribute,
+  html[data-theme='dark'] .hljs-variable { color: #fbbf24; }
+  html[data-theme='dark'] .hljs-comment { color: #9ca3af; }
 }

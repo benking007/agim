@@ -41,9 +41,9 @@ describe('PortalRunStatus', () => {
         streaming
       />,
     )
-    expect(screen.getByText(/Running/i)).toBeTruthy()
-    expect(screen.getByText(/Using web_search/i)).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /Running/i }))
+    expect(screen.getByText(/执行中/i)).toBeTruthy()
+    expect(screen.getByText(/正在使用 web_search/i)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /执行中/i }))
     expect(screen.getByText('web_search')).toBeTruthy()
   })
 
@@ -70,8 +70,8 @@ describe('PortalRunStatus', () => {
       />,
     )
     expect(screen.getByText('Agim')).toBeTruthy()
-    expect(screen.getByText(/Worked · 1 tool · 4\.2s/i)).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /Worked/i }))
+    expect(screen.getByText(/已完成 · 1 次工具 · 4\.2s/i)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /已完成/i }))
     expect(screen.getByText('web_search')).toBeTruthy()
   })
 })

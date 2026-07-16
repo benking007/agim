@@ -19,6 +19,8 @@ export type ChatOutgoing =
   /** Clear messages + per-agent CLI bindings + auto-allow rules. The
    *  server replies with an empty `history` so the UI repaints clear. */
   | { type: 'new-conversation' }
+  /** Abort the in-flight web chat run for this thread (Stop button). */
+  | { type: 'stop' }
   /** Approval card button click. `data` MUST be the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router's
    *  `parseCallbackData` expects — v2 routes it through unchanged. */

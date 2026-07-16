@@ -813,7 +813,7 @@ export async function callAgentWithHistory(
       const successful = outcome.status === 'success' || outcome.status === 'partial'
       const effectiveError = invocationError ?? outcome.error ?? (successful ? undefined : outcome.status)
 
-      if (aborted && userPersisted) {
+      if (aborted && userPersisted && ctx.platform !== 'web') {
         await sessionManager.removeLastMessageIfMatches(
           ctx.platform,
           ctx.channelId,
@@ -826,6 +826,7 @@ export async function callAgentWithHistory(
         await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
           role: 'assistant',
           content: fullResponse,
+          agent: agent.name,
           timestamp: new Date()
         })
       }

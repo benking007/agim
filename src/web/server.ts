@@ -61,6 +61,11 @@ interface ClientConnection {
   agent: string
 }
 
+/** In-flight web chat runs — Stop button aborts the matching controller. */
+const webRunAborts = new Map<string, AbortController>()
+
+const USER_INTERRUPTED_TEXT = '用户打断了执行'
+
 function formatWebAgentUnavailableMessage(agentName: string): string {
   if ((agentName === 'native' || agentName === 'agim')) {
     return [
@@ -5437,6 +5442,12 @@ async function handleClientMessage(
         startedAt: new Date(runStartedAt).toISOString(),
       })
 
+      // Abort any previous in-flight run on this thread, then bind a fresh
+      // controller so the Stop button (WS `stop`) can interrupt the CLI.
+      webRunAborts.get(sessionThreadId)?.abort()
+      const runAbort = new AbortController()
+      webRunAborts.set(sessionThreadId, runAbort)
+
       try {
         const routeCtx: RouteContext = {
           threadId: clientId,
@@ -5447,6 +5458,7 @@ async function handleClientMessage(
           logger,
           userId: `web:${clientId}`,
           webRunId: runId,
+          signal: runAbort.signal,
           onToolActivity: (step) => {
             upsertActiveRunStep(sessionThreadId, {
               id: step.id,
@@ -5464,6 +5476,33 @@ async function handleClientMessage(
         logger.info({ event: 'message.received', ...sanitizeUserText(text) })
 
         const result = await routeMessage(parsed, routeCtx)
+
+        if (runAbort.signal.aborted) {
+          const finishedAt = Date.now()
+          const durationMs = Math.max(0, finishedAt - runStartedAt)
+          finishActiveRun(sessionThreadId, {
+            status: 'error', finishedAt, durationMs, error: USER_INTERRUPTED_TEXT,
+          })
+          try {
+            await sessionManager.addMessage('web', 'web', sessionThreadId, {
+              role: 'assistant',
+              content: USER_INTERRUPTED_TEXT,
+              agent: client.agent,
+              timestamp: new Date(),
+            })
+          } catch { /* best-effort */ }
+          await persistFinishedActivity(USER_INTERRUPTED_TEXT)
+          emit({ type: 'done', text: USER_INTERRUPTED_TEXT, runId })
+          emit({
+            type: 'run-finish',
+            runId,
+            status: 'error',
+            finishedAt: new Date(finishedAt).toISOString(),
+            durationMs,
+            error: USER_INTERRUPTED_TEXT,
+          })
+          return
+        }
 
         // String response (built-in commands, errors)
         if (typeof result === 'string') {
@@ -5494,6 +5533,7 @@ async function handleClientMessage(
         // Streaming response (agent responses)
         let fullText = ''
         for await (const chunk of result) {
+          if (runAbort.signal.aborted) break
           fullText += chunk
           appendActiveRunChunk(sessionThreadId, chunk)
           // L1: defer when the per-socket send buffer is full. Without
@@ -5511,6 +5551,30 @@ async function handleClientMessage(
           if (peer) emit({ type: 'chunk', text: chunk, runId })
           else if (liveWs.readyState === liveWs.OPEN) emit({ type: 'chunk', text: chunk, runId })
         }
+
+        if (runAbort.signal.aborted) {
+          const finishedAt = Date.now()
+          const durationMs = Math.max(0, finishedAt - runStartedAt)
+          const text = fullText.trim()
+            ? `${fullText.trimEnd()}\n\n${USER_INTERRUPTED_TEXT}`
+            : USER_INTERRUPTED_TEXT
+          setActiveRunPartialText(sessionThreadId, text)
+          finishActiveRun(sessionThreadId, {
+            status: 'error', finishedAt, durationMs, error: USER_INTERRUPTED_TEXT, finalText: text,
+          })
+          await persistFinishedActivity(text)
+          emit({ type: 'done', text, runId })
+          emit({
+            type: 'run-finish',
+            runId,
+            status: 'error',
+            finishedAt: new Date(finishedAt).toISOString(),
+            durationMs,
+            error: USER_INTERRUPTED_TEXT,
+          })
+          return
+        }
+
         const finishedAt = Date.now()
         const durationMs = Math.max(0, finishedAt - runStartedAt)
         setActiveRunPartialText(sessionThreadId, fullText)
@@ -5533,15 +5597,36 @@ async function handleClientMessage(
           durationMs,
         })
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err)
+        const aborted = runAbort.signal.aborted
+          || (err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message)))
+        const errorMsg = aborted
+          ? USER_INTERRUPTED_TEXT
+          : (err instanceof Error ? err.message : String(err))
         const stack = err instanceof Error ? err.stack : undefined
-        logger.error({ event: 'web.handle.error', err: errorMsg, stack }, 'Error handling client message')
+        if (!aborted) {
+          logger.error({ event: 'web.handle.error', err: errorMsg, stack }, 'Error handling client message')
+        } else {
+          logger.info({ event: 'web.handle.aborted', runId }, 'Web chat run aborted by user')
+        }
         const finishedAt = Date.now()
         const durationMs = Math.max(0, finishedAt - runStartedAt)
         finishActiveRun(sessionThreadId, {
           status: 'error', finishedAt, durationMs, error: errorMsg,
         })
-        await persistFinishedActivity()
+        if (aborted) {
+          try {
+            await sessionManager.addMessage('web', 'web', sessionThreadId, {
+              role: 'assistant',
+              content: USER_INTERRUPTED_TEXT,
+              agent: client.agent,
+              timestamp: new Date(),
+            })
+          } catch { /* best-effort */ }
+          await persistFinishedActivity(USER_INTERRUPTED_TEXT)
+          emit({ type: 'done', text: USER_INTERRUPTED_TEXT, runId })
+        } else {
+          await persistFinishedActivity()
+        }
         emit({
           type: 'run-finish',
           runId,
@@ -5550,8 +5635,22 @@ async function handleClientMessage(
           durationMs,
           error: errorMsg,
         })
-        emit({ type: 'error', message: `Agent error: ${errorMsg}` })
+        if (!aborted) emit({ type: 'error', message: `Agent error: ${errorMsg}` })
+      } finally {
+        if (webRunAborts.get(sessionThreadId) === runAbort) {
+          webRunAborts.delete(sessionThreadId)
+        }
       }
+      break
+    }
+
+    case 'stop': {
+      const ac = webRunAborts.get(clientId)
+      if (!ac) {
+        sendToClient(ws, { type: 'error', message: '当前没有正在执行的任务' })
+        break
+      }
+      ac.abort()
       break
     }
 

@@ -365,15 +365,37 @@ function reducer(s: ChatState, a: Action): ChatState {
     }
     case 'DONE': {
       const idx = s.messages.findIndex((m) => m.id === a.replyId)
-      if (idx < 0) return { ...s, currentReplyId: null }
+      if (idx < 0) return { ...s, currentReplyId: null, activeRunId: null }
       const next = [...s.messages]
       const target = next[idx]
       if (target) {
         // Server's `done` ships the full text — prefer it over the
         // accumulated chunks so we recover from any chunk we dropped.
-        next[idx] = { ...target, content: a.finalText || target.content }
+        let activity = target.activity
+        // If run-finish was dropped / delayed (common with some CLI
+        // agents), close the accordion so the portal leaves Running…
+        if (activity && activity.status === 'running') {
+          const finishedAt = Date.now()
+          activity = {
+            ...activity,
+            status: a.finalText.includes('用户打断了执行') ? 'error' : 'success',
+            finishedAt,
+            durationMs: finishedAt - activity.startedAt,
+            error: a.finalText.includes('用户打断了执行') ? '用户打断了执行' : activity.error,
+            steps: activity.steps.map((st) => (
+              st.status === 'pending' || st.status === 'running'
+                ? {
+                    ...st,
+                    status: a.finalText.includes('用户打断了执行') ? 'error' : 'success',
+                    finishedAt,
+                  }
+                : st
+            )),
+          }
+        }
+        next[idx] = { ...target, content: a.finalText || target.content, activity }
       }
-      return { ...s, messages: next, currentReplyId: null }
+      return { ...s, messages: next, currentReplyId: null, activeRunId: null }
     }
     case 'ERROR': {
       let messages = s.messages
@@ -766,6 +788,8 @@ export type ChatAction = Action
 export interface UseChat {
   state: ChatState
   send: (text: string) => void
+  /** Abort the in-flight web run (composer Stop button). */
+  stop: () => void
   switchAgent: (name: string) => void
   /** Approval card button click. The hook composes the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router expects;
@@ -1226,9 +1250,20 @@ export function useChat(): UseChat {
     wsRef.current.send({ type: 'new-conversation' })
   }
 
+  function stop(): void {
+    const ok = wsRef.current.send({ type: 'stop' })
+    if (!ok) {
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
+      })
+    }
+  }
+
   return {
     state,
     send,
+    stop,
     switchAgent,
     approvalClick,
     choiceSubmit,

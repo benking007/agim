@@ -51,8 +51,9 @@ export const MIN_CHOICES = 2
 export const MAX_CHOICES = 9   // 1..9 keypad-friendly; cards have layout limits
 
 /** Default timeout. Generous because the user might be reading a long
- *  question; agents asking yes/no should pass a shorter timeoutSec. */
-const DEFAULT_TIMEOUT_SEC = 300  // 5 min
+ *  question or comparing options; agents asking yes/no can pass a shorter
+ *  timeoutSec. 15 min matches the native tool schema default. */
+const DEFAULT_TIMEOUT_SEC = 900  // 15 min
 const MIN_TIMEOUT_SEC = 5
 const MAX_TIMEOUT_SEC = 60 * 30  // 30 min
 

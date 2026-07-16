@@ -20,17 +20,29 @@
  *
  * XSS: react-markdown defaults to safe (no raw HTML). We do NOT add
  * rehype-raw; assistant output is untrusted from a web-security POV.
+ * Fenced code highlighting uses highlight.js on escaped token HTML only.
  */
 
+import type { ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
+import { CodeFence } from './code-fence'
 
 export interface MarkdownViewProps {
   content: string
   /** Extra classes on the wrapper div. The chat bubble pads itself
    *  so we just match its text-size + leading. */
   className?: string
+}
+
+function codeChildProps(children: ReactNode): { className?: string; body: ReactNode } {
+  const child = Array.isArray(children) ? children[0] : children
+  if (child && typeof child === 'object' && 'props' in child) {
+    const props = (child as { props?: { className?: string; children?: ReactNode } }).props
+    return { className: props?.className, body: props?.children ?? children }
+  }
+  return { body: children }
 }
 
 /** Per-tag class map. Most rules are conservative scale-downs of
@@ -60,8 +72,7 @@ const COMPONENTS: Components = {
   blockquote: ({ children, ...p }) => (
     <blockquote className="my-2 border-l-2 border-border pl-3 text-text-dim" {...p}>{children}</blockquote>
   ),
-  // Code — inline vs fenced. The wrapper <pre> sits inside a scrollable
-  // block; <code> alone inside <p> is the inline variant.
+  // Code — inline vs fenced. Fenced blocks are rewritten via <pre>.
   code: ({ inline, className, children, ...rest }: {
     inline?: boolean
     className?: string
@@ -74,13 +85,14 @@ const COMPONENTS: Components = {
         </code>
       )
     }
-    // Fenced — content lives inside the parent <pre>; keep this lean
-    // so the <pre> styles do the heavy lifting.
+    // Nested under <pre> — CodeFence owns the chrome; keep a plain code
+    // node for react-markdown's tree until pre rewrites it.
     return <code className={cn('agim-mono text-xs', className)} {...rest}>{children}</code>
   },
-  pre: ({ children, ...p }) => (
-    <pre className="agim-mono my-2 overflow-x-auto rounded bg-surface-2 p-2 text-xs leading-relaxed" {...p}>{children}</pre>
-  ),
+  pre: ({ children }) => {
+    const { className, body } = codeChildProps(children)
+    return <CodeFence className={className}>{body}</CodeFence>
+  },
   // Tables — agent data dumps. Compact, scroll on overflow.
   table: ({ children, ...p }) => (
     <div className="my-2 overflow-x-auto">

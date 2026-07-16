@@ -311,13 +311,13 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__ask_user',
       description:
-        'Present the user with a structured question and reliably get an answer back. Supports single-select (default), multi-select, and optional custom free-form input. Use when you need disambiguation rather than free-form chat. Default timeout 90s.',
+        'Present the user with a structured question and reliably get an answer back. Supports single-select (default), multi-select, and optional custom free-form input. Use when you need disambiguation rather than free-form chat. Default timeout 900s (15 min); give the user enough time to think.',
       parameters: {
         type: 'object',
         properties: {
           question: { type: 'string', description: 'Single-line question, ≤400 chars.' },
           choices: { type: 'array', items: { type: 'string' }, description: '2-9 short choice labels.' },
-          timeoutSec: { type: 'integer', minimum: 5, maximum: 600, default: 90 },
+          timeoutSec: { type: 'integer', minimum: 5, maximum: 1800, default: 900 },
           selectionMode: { type: 'string', enum: ['single', 'multi'], default: 'single' },
           minSelections: { type: 'integer', minimum: 1, description: 'Only for multi mode. Default 1.' },
           maxSelections: { type: 'integer', minimum: 1, description: 'Only for multi mode. Default = choices.length.' },

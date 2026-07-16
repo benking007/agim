@@ -1212,7 +1212,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'DingTalk) receive a numbered text prompt and the user replies with the number or label.\n\n' +
         'Returns { ok: true, result: { index, label, via, raw, selectionMode?, indexes?, labels?, customText? } } on success; ' +
         '{ ok: false, error, reason } on failure (reason ∈ timeout|cancelled|invalid|no-messenger). ' +
-        'Timeout defaults to 300s; the user gets a single chance to respond.\n\n' +
+        'Timeout defaults to 900s (15 min); the user gets a single chance to respond.\n\n' +
         'Do NOT use for: free-form questions (just ask in chat), Y/N permission gates (those go ' +
         'through the regular tool-use approval flow), or polling (call once + wait, do not loop).',
       inputSchema: {
@@ -1221,7 +1221,7 @@ export function buildServer(client: ApprovalClient): McpServer {
           '2-9 distinct option labels (each ≤80 chars). Shown to the user in order; the result\'s `index` is 1-based.',
         ),
         timeoutSec: z.number().int().min(5).max(1800).optional().describe(
-          'Seconds to wait before resolving with reason:timeout. Default 300, range 5-1800.',
+          'Seconds to wait before resolving with reason:timeout. Default 900 (15 min), range 5-1800.',
         ),
         selectionMode: z.enum(['single', 'multi']).optional().describe(
           'Selection mode. `single` (default) expects one option; `multi` allows selecting multiple options at once.',

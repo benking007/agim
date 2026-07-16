@@ -6,6 +6,7 @@
  */
 
 import { useState, type ComponentType } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Bot,
   Check,
@@ -91,6 +92,7 @@ export function PortalRunStatus({
   streaming = false,
   className,
 }: PortalRunStatusProps): JSX.Element {
+  const { t } = useTranslation()
   const running = streaming || activity?.status === 'running'
   const failed = activity?.status === 'error'
   const hasSteps = (activity?.steps.length ?? 0) > 0
@@ -109,24 +111,31 @@ export function PortalRunStatus({
   const duration = formatDuration(activity?.durationMs)
   const counts = activity ? countKinds(activity) : { tools: 0, skills: 0, asks: 0, total: 0 }
 
-  let doneSummary = '已完成'
-  if (failed) doneSummary = '失败'
+  let doneSummary = t('chat.activityWorked', { defaultValue: 'Worked' })
+  if (failed) doneSummary = t('chat.activityFailed', { defaultValue: 'Failed' })
   else if (counts.total > 0) {
-    const parts = ['已完成']
-    if (counts.tools > 0) parts.push(`${counts.tools} 次工具`)
-    if (counts.skills > 0) parts.push(`${counts.skills} 次技能`)
-    if (counts.asks > 0) parts.push(`${counts.asks} 次提问`)
+    const parts = [t('chat.activityWorked', { defaultValue: 'Worked' })]
+    if (counts.tools > 0) {
+      parts.push(t('chat.activityToolCount', { count: counts.tools, defaultValue: '{{count}} tools' }))
+    }
+    if (counts.skills > 0) {
+      parts.push(t('chat.activitySkillCount', { count: counts.skills, defaultValue: '{{count}} skills' }))
+    }
+    if (counts.asks > 0) {
+      parts.push(t('chat.activityAskCount', { count: counts.asks, defaultValue: '{{count}} asks' }))
+    }
     if (counts.tools === 0 && counts.skills === 0 && counts.asks === 0) {
-      parts.push(`${counts.total} 步`)
+      parts.push(t('chat.activityStepCount', { count: counts.total, defaultValue: '{{count}} steps' }))
     }
     if (duration) parts.push(duration)
     doneSummary = parts.join(' · ')
   } else if (duration) {
-    doneSummary = `已完成 · ${duration}`
+    doneSummary = `${t('chat.activityWorked', { defaultValue: 'Worked' })} · ${duration}`
   }
 
   const canExpandWhileRunning = running && hasSteps
   const showDoneSummary = !running && !!activity && (hasSteps || failed)
+  const runningLabel = `${t('chat.activityRunning', { defaultValue: 'Running' })}...`
 
   return (
     <div className={cn('w-full space-y-2', className)}>
@@ -142,7 +151,7 @@ export function PortalRunStatus({
             className="flex min-w-0 items-center gap-1 rounded-md py-0.5 text-left transition hover:opacity-80"
           >
             <span className="truncate text-[9px] font-bold uppercase tracking-wider text-zinc-400 animate-pulse">
-              执行中...
+              {runningLabel}
             </span>
             <ChevronRight
               className={cn(
@@ -156,7 +165,7 @@ export function PortalRunStatus({
             'text-[9px] font-bold uppercase tracking-wider text-zinc-400',
             running && 'animate-pulse',
           )}>
-            {running ? '执行中...' : agentName}
+            {running ? runningLabel : agentName}
           </span>
         )}
       </div>
@@ -168,9 +177,15 @@ export function PortalRunStatus({
           dark ? 'text-zinc-500' : 'text-zinc-400',
         )}>
           {waitingAgent
-            ? `等待 ${waitingAgent.label}`
+            ? t('chat.activityWaitingSubagent', {
+                agent: waitingAgent.label,
+                defaultValue: 'Waiting for subagent',
+              })
             : liveStep
-              ? `正在使用 ${stepLabel(liveStep)}`
+              ? t('chat.activityRunningStep', {
+                  step: stepLabel(liveStep),
+                  defaultValue: 'Running · {{step}}',
+                })
               : null}
         </p>
       )}
@@ -215,7 +230,9 @@ export function PortalRunStatus({
         )}>
           {activity.steps.length === 0 && (
             <p className="text-[11px] text-zinc-500">
-              {running ? '等待工具活动…' : '本轮没有工具记录。'}
+              {running
+                ? t('chat.portal.waitingSteps')
+                : t('chat.portal.noSteps')}
             </p>
           )}
           {activity.steps.map((step) => (
@@ -232,13 +249,19 @@ export function PortalRunStatus({
                   {stepLabel(step)}
                 </span>
                 {step.kind === 'approval' && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">approval</span>
+                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+                    {t('chat.activityApproval')}
+                  </span>
                 )}
                 {step.kind === 'ask' && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">ask</span>
+                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+                    {t('chat.activityAsk')}
+                  </span>
                 )}
                 {step.kind === 'skill' && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">skill</span>
+                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+                    {t('chat.activitySkill')}
+                  </span>
                 )}
               </div>
               {step.preview && (

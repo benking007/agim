@@ -347,6 +347,49 @@
       "denied":         "已拒绝",
       "deniedRevoked":  "已拒绝（撤销自动放行）",
       "expired":        "已超时"
+    },
+    "portal": {
+      "brand": "AGIM Space",
+      "activeAgent": "当前 Agent",
+      "shortcuts": "快捷入口",
+      "chat": "对话",
+      "explore": "探索 Agent",
+      "newConversation": "新对话",
+      "connected": "已连接",
+      "selectAgent": "选择 Agent",
+      "discoverMore": "发现更多 Agent",
+      "toggleTheme": "切换主题",
+      "messagePlaceholder": "给 {{agent}} 发消息…",
+      "stop": "停止",
+      "voice": "语音模式",
+      "exploreTitle": "自定义 Agent",
+      "exploreSubtitle": "快速接入本机 Agim 上可用的专用 Agent。",
+      "searchAgents": "搜索 Agent…",
+      "directoryResults": "目录结果（{{count}}）",
+      "noAgents": "没有匹配的 Agent。",
+      "ideaTitle": "有新的 Agent 想法？",
+      "ideaBody": "在 Agim 主机上配置后，刷新此处列表即可。",
+      "cats": {
+        "All": "全部",
+        "Featured": "精选",
+        "Programming": "编程",
+        "Writing": "写作",
+        "Design": "设计",
+        "Lifestyle": "生活"
+      },
+      "usingTool": "正在使用 {{tool}}",
+      "waitingAgent": "等待 {{agent}}",
+      "waitingSteps": "等待工具活动…",
+      "noSteps": "本轮没有工具记录。",
+      "pet": {
+        "aria": "Agim 电子宠物",
+        "idle": ["点我玩～", "我在听", "随时待命"],
+        "running": ["加油中…", "忙着呢", "认真想"],
+        "tap": ["嗨！", "啵～", "♪", "我在这儿", "继续冲！"]
+      },
+      "feedbackGood": "已标记为有帮助",
+      "feedbackBad": "已标记为需改进",
+      "language": "语言"
     }
   }
 }

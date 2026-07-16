@@ -3,6 +3,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,7 @@ export interface MessageActionsProps {
 }
 
 export function MessageActions({ content, dark, className }: MessageActionsProps): JSX.Element | null {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [vote, setVote] = useState<'up' | 'down' | null>(null)
 
@@ -25,13 +27,13 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast.error('复制失败')
+      toast.error(t('chat.copyFailed'))
     }
   }
 
   function onVote(next: 'up' | 'down'): void {
     setVote(next)
-    toast.success(next === 'up' ? '已标记为有帮助' : '已标记为需改进')
+    toast.success(next === 'up' ? t('chat.portal.feedbackGood') : t('chat.portal.feedbackBad'))
   }
 
   const btn = cn(
@@ -45,7 +47,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         type="button"
         className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
         aria-label="Good"
-        title="有帮助"
+        title={t('chat.portal.feedbackGood')}
         onClick={() => onVote('up')}
       >
         <ThumbsUp className="h-3.5 w-3.5" />
@@ -54,7 +56,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         type="button"
         className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
         aria-label="Bad"
-        title="需改进"
+        title={t('chat.portal.feedbackBad')}
         onClick={() => onVote('down')}
       >
         <ThumbsDown className="h-3.5 w-3.5" />
@@ -63,7 +65,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         type="button"
         className={btn}
         aria-label="Copy"
-        title="复制回复"
+        title={t('chat.copy')}
         onClick={() => void onCopy()}
       >
         {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}

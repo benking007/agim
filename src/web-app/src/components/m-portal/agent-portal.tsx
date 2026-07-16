@@ -6,8 +6,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
-  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Menu, MessageSquare,
+  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
   Mic, Moon, Plus, Search, Sparkles, Square, Sun, User, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,9 +19,10 @@ import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { MarkdownView } from '@/components/chat/markdown-view'
 import { MessageActions } from '@/components/chat/message-actions'
-import { usePrefs, type ThemeMode } from '@/stores/prefs'
+import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
+import { PortalPet } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
 import { VoiceOverlay } from './voice-overlay'
 
@@ -39,10 +41,15 @@ function resolveTheme(mode: ThemeMode): Theme {
 }
 
 export function AgentPortal(): JSX.Element {
+  const { t } = useTranslation()
   const prefs = usePrefs()
   const theme = resolveTheme(prefs.theme)
   const setTheme = (next: Theme): void => {
     prefs.setTheme(next)
+  }
+  const toggleLang = (): void => {
+    const next: Lang = prefs.lang === 'zh' ? 'en' : 'zh'
+    prefs.setLang(next)
   }
 
   const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
@@ -143,7 +150,7 @@ export function AgentPortal(): JSX.Element {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-teal-500">
                   <Sparkles className="h-5 w-5" />
-                  <span className="text-sm">Codex Space</span>
+                  <span className="text-sm">{t('chat.portal.brand')}</span>
                 </div>
                 <button
                   type="button"
@@ -155,7 +162,7 @@ export function AgentPortal(): JSX.Element {
               </div>
 
               <div className="space-y-2">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Active Agent</p>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
                 <div className={cn(
                   'flex items-center gap-3 rounded-xl border p-3',
                   dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
@@ -173,43 +180,60 @@ export function AgentPortal(): JSX.Element {
               </div>
 
               <nav className="space-y-1">
-                <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">Shortcuts</p>
+                <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
                 <SideNavButton
                   active={activeTab === 'chat'}
                   dark={dark}
                   icon={<MessageSquare className="h-4 w-4" />}
-                  label="Interactive Chat"
+                  label={t('chat.portal.chat')}
                   onClick={() => { setActiveTab('chat'); setSidebarOpen(false) }}
                 />
                 <SideNavButton
                   active={activeTab === 'explore'}
                   dark={dark}
                   icon={<Compass className="h-4 w-4" />}
-                  label="Explore Agents Directory"
+                  label={t('chat.portal.explore')}
                   onClick={() => { setActiveTab('explore'); setSidebarOpen(false) }}
                 />
                 <SideNavButton
                   active={false}
                   dark={dark}
                   icon={<Plus className="h-4 w-4" />}
-                  label="New conversation"
+                  label={t('chat.portal.newConversation')}
                   onClick={() => { newConversation(); setSidebarOpen(false); setActiveTab('chat') }}
                 />
               </nav>
             </div>
 
-            <div className={cn('flex items-center gap-3 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-              <div className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-full',
-                dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
-              )}>
-                <User className="h-4 w-4" />
+            <div className="space-y-3">
+              <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
+                <button
+                  type="button"
+                  onClick={toggleLang}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+                    dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
+                  )}
+                  aria-label={t('chat.portal.language')}
+                >
+                  <Languages className="h-3.5 w-3.5" />
+                  {prefs.lang === 'zh' ? t('lang.zh') : t('lang.en')}
+                </button>
               </div>
-              <div>
-                <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
-                  {state.status === 'open' ? 'Connected' : state.status}
-                </p>
+              <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+                <div className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full',
+                  dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
+                )}>
+                  <User className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
+                    {state.status === 'open' ? t('chat.portal.connected') : state.status}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -251,7 +275,7 @@ export function AgentPortal(): JSX.Element {
                 'absolute left-1/2 top-full z-50 mt-2 w-56 -translate-x-1/2 animate-in fade-in slide-in-from-top-2 rounded-2xl border p-2 shadow-2xl duration-200',
                 dark ? 'border-zinc-800 bg-zinc-950 text-zinc-200' : 'border-zinc-200 bg-white text-zinc-800',
               )}>
-                <p className="mb-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400">Select Agent</p>
+                <p className="mb-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.selectAgent')}</p>
                 <div className="space-y-1">
                   {agentsCatalog.map((agent) => {
                     const Icon = agent.icon
@@ -286,7 +310,7 @@ export function AgentPortal(): JSX.Element {
                     className="flex w-full items-center gap-1.5 text-[10px] font-semibold text-zinc-400 hover:text-teal-400"
                   >
                     <Compass className="h-3.5 w-3.5" />
-                    Discover more agents
+                    {t('chat.portal.discoverMore')}
                   </button>
                 </div>
               </div>
@@ -301,7 +325,7 @@ export function AgentPortal(): JSX.Element {
             'rounded-lg p-1.5 transition',
             dark ? 'text-yellow-400 hover:bg-zinc-900' : 'text-indigo-500 hover:bg-zinc-100',
           )}
-          title="Toggle theme"
+          title={t('chat.portal.toggleTheme')}
         >
           {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
@@ -445,9 +469,9 @@ export function AgentPortal(): JSX.Element {
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           <div className="space-y-2">
-            <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-white' : 'text-zinc-800')}>Custom Agents</h2>
+            <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-white' : 'text-zinc-800')}>{t('chat.portal.exploreTitle')}</h2>
             <p className="text-[11px] leading-normal text-zinc-400">
-              Instantly hook into specialised agents available on this Agim host.
+              {t('chat.portal.exploreSubtitle')}
             </p>
           </div>
 
@@ -455,7 +479,7 @@ export function AgentPortal(): JSX.Element {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
-              placeholder="Search tailored agents..."
+              placeholder={t('chat.portal.searchAgents')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={cn(
@@ -488,14 +512,19 @@ export function AgentPortal(): JSX.Element {
                       : 'bg-zinc-200/60 text-zinc-600 hover:bg-zinc-200',
                 )}
               >
-                {cat}
+                {cat === 'All' ? t('chat.portal.cats.All')
+                  : cat === 'Featured' ? t('chat.portal.cats.Featured')
+                    : cat === 'Programming' ? t('chat.portal.cats.Programming')
+                      : cat === 'Writing' ? t('chat.portal.cats.Writing')
+                        : cat === 'Design' ? t('chat.portal.cats.Design')
+                          : t('chat.portal.cats.Lifestyle')}
               </button>
             ))}
           </div>
 
           <div className="space-y-3">
             <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-              Directory results ({filteredAgents.length})
+              {t('chat.portal.directoryResults', { count: filteredAgents.length })}
             </p>
             <div className="space-y-2.5">
               {filteredAgents.map((agent) => {
@@ -539,7 +568,7 @@ export function AgentPortal(): JSX.Element {
                 )
               })}
               {filteredAgents.length === 0 && (
-                <p className="py-8 text-center text-xs text-zinc-400">No agents match this filter.</p>
+                <p className="py-8 text-center text-xs text-zinc-400">{t('chat.portal.noAgents')}</p>
               )}
             </div>
           </div>
@@ -554,8 +583,8 @@ export function AgentPortal(): JSX.Element {
               <Bot className="h-5 w-5" />
             </div>
             <div>
-              <h3 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Have an idea for an Agent?</h3>
-              <p className="mt-0.5 text-[10px] text-zinc-400">Configure agents on the Agim host, then refresh this list.</p>
+              <h3 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>{t('chat.portal.ideaTitle')}</h3>
+              <p className="mt-0.5 text-[10px] text-zinc-400">{t('chat.portal.ideaBody')}</p>
             </div>
           </div>
         </div>
@@ -567,6 +596,13 @@ export function AgentPortal(): JSX.Element {
           'absolute inset-x-0 bottom-0 z-20 px-3 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent' : 'bg-gradient-to-t from-zinc-50 via-zinc-50 to-transparent',
         )}>
+          <div className="relative mx-auto w-full max-w-3xl">
+            <PortalPet
+              dark={dark}
+              busy={canStop}
+              className="absolute bottom-[calc(100%+0.25rem)] right-1 z-30"
+            />
+          </div>
           <ApprovalDock
             approvals={state.pendingApprovals}
             onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
@@ -582,12 +618,12 @@ export function AgentPortal(): JSX.Element {
               dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
             )}
           >
-            <button type="button" className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-500" onClick={() => newConversation()} aria-label="New conversation">
+            <button type="button" className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-500" onClick={() => newConversation()} aria-label={t('chat.portal.newConversation')}>
               <Plus className="h-4 w-4" />
             </button>
             <input
               type="text"
-              placeholder={`Message ${displayAgentName(agentId)}...`}
+              placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               className={cn(
@@ -616,8 +652,8 @@ export function AgentPortal(): JSX.Element {
                     'rounded-lg p-2 shadow-md transition-all',
                     dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                   )}
-                  title="停止执行"
-                  aria-label="Stop running"
+                  title={t('chat.portal.stop')}
+                  aria-label={t('chat.portal.stop')}
                 >
                   <Square className="h-3.5 w-3.5 fill-current" />
                 </button>
@@ -626,7 +662,7 @@ export function AgentPortal(): JSX.Element {
                   type="button"
                   onClick={() => setShowVoiceOverlay(true)}
                   className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-500"
-                  title="Enter Advanced Voice Mode"
+                  title={t('chat.portal.voice')}
                 >
                   <Mic className="h-4 w-4" />
                 </button>

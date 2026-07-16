@@ -292,7 +292,7 @@ export function AgentPortal(): JSX.Element {
       {/* Chat */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'flex flex-1 flex-col space-y-5 overflow-y-auto px-4 py-3 pb-36 transition-colors duration-300 scrollbar-none',
+          'flex flex-1 flex-col space-y-5 overflow-y-auto px-4 py-3 pb-28 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           {chatMessages.length === 0 && (
@@ -393,7 +393,7 @@ export function AgentPortal(): JSX.Element {
       {/* Explore */}
       {activeTab === 'explore' && (
         <div className={cn(
-          'flex-1 space-y-6 overflow-y-auto px-4 py-5 pb-20 transition-colors duration-300 scrollbar-none',
+          'flex-1 space-y-6 overflow-y-auto px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-50',
         )}>
           <div className="space-y-2">
@@ -515,7 +515,7 @@ export function AgentPortal(): JSX.Element {
       {/* Docks + composer */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'absolute inset-x-0 bottom-12 z-20 px-3 pt-4',
+          'absolute inset-x-0 bottom-0 z-20 px-3 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent' : 'bg-gradient-to-t from-zinc-50 via-zinc-50 to-transparent',
         )}>
           <ApprovalDock
@@ -571,35 +571,6 @@ export function AgentPortal(): JSX.Element {
           </form>
         </div>
       )}
-
-      {/* Bottom tabs */}
-      <div className={cn(
-        'absolute inset-x-0 bottom-0 z-[15] flex h-12 items-center justify-around border-t px-10 pb-[env(safe-area-inset-bottom)] transition-colors',
-        dark ? 'border-zinc-900 bg-zinc-950/95' : 'border-zinc-200 bg-white/95',
-      )}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('chat')}
-          className={cn(
-            'flex h-full w-12 flex-col items-center justify-center transition-colors',
-            activeTab === 'chat' ? 'text-teal-500' : 'text-zinc-400 hover:text-zinc-300',
-          )}
-        >
-          <MessageSquare className="h-4 w-4" />
-          <span className="mt-0.5 text-[8px] font-bold">Chat</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('explore')}
-          className={cn(
-            'flex h-full w-12 flex-col items-center justify-center transition-colors',
-            activeTab === 'explore' ? 'text-teal-500' : 'text-zinc-400 hover:text-zinc-300',
-          )}
-        >
-          <Compass className="h-4 w-4" />
-          <span className="mt-0.5 text-[8px] font-bold">Explore</span>
-        </button>
-      </div>
 
       {showVoiceOverlay && (
         <VoiceOverlay theme={theme} agentId={agentId} onClose={() => setShowVoiceOverlay(false)} />

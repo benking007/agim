@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
-  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Loader2, Menu, MessageSquare,
+  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Menu, MessageSquare,
   Mic, Moon, Plus, Search, Sparkles, Sun, User, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -16,19 +16,12 @@ import { useChat } from '@/hooks/use-chat'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
-import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { MarkdownView } from '@/components/chat/markdown-view'
-import { agentDisplayName } from '@/lib/agent-label'
 import { usePrefs, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
+import { PortalRunStatus } from './portal-run-status'
 import { VoiceOverlay } from './voice-overlay'
-
-function formatDurationMs(ms?: number): string {
-  if (!ms || ms <= 0) return '0ms'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`
-}
 
 type Tab = 'chat' | 'explore'
 type Theme = 'dark' | 'light'
@@ -67,13 +60,9 @@ export function AgentPortal(): JSX.Element {
   const AgentIcon = visual.icon
   const isTyping = state.currentReplyId != null
   const chatMessages = state.messages.filter((m) => !m.approval)
-  const activeRun = useMemo(
-    () => state.runActivities.find((r) => r.runId === state.activeRunId),
-    [state.activeRunId, state.runActivities],
-  )
-  const streamingEmpty = isTyping && !chatMessages.some(
-    (m) => m.id === state.currentReplyId && !!m.content,
-  )
+  const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
+  // Fallback only when the placeholder message has not landed yet.
+  const streamingFallback = isTyping && !currentReplyInList
 
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
@@ -89,7 +78,7 @@ export function AgentPortal(): JSX.Element {
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when transcript grows or streams
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages.length, chatMessages[chatMessages.length - 1]?.content, isTyping, activeRun?.durationMs])
+  }, [chatMessages.length, chatMessages[chatMessages.length - 1]?.content, isTyping, chatMessages[chatMessages.length - 1]?.activity?.steps.length])
 
   const agentsCatalog = useMemo(() => {
     return state.agents.map((id) => {
@@ -377,58 +366,65 @@ export function AgentPortal(): JSX.Element {
                 </div>
               ) : (
                 <div className="w-full space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', visual.color)}>
-                      <AgentIcon className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                      {displayAgentName(msg.agent || agentId)}
-                    </span>
-                  </div>
-                  {msg.activity && (
-                    <ChatActivityBlock activity={msg.activity} className="max-w-full" />
-                  )}
+                  {(() => {
+                    const isCurrent = isTyping && msg.id === state.currentReplyId
+                    const msgVisual = agentVisual(msg.agent || agentId)
+                    const MsgIcon = msgVisual.icon
+                    const showRun = !!msg.activity || isCurrent
+                    if (showRun) {
+                      return (
+                        <PortalRunStatus
+                          dark={dark}
+                          agentName={displayAgentName(msg.agent || agentId)}
+                          agentColor={msgVisual.color}
+                          AgentIcon={MsgIcon}
+                          activity={msg.activity}
+                          streaming={isCurrent && (!msg.activity || msg.activity.status === 'running')}
+                        />
+                      )
+                    }
+                    return (
+                      <div className="flex items-center gap-2">
+                        <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', msgVisual.color)}>
+                          <MsgIcon className="h-3.5 w-3.5" />
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                          {displayAgentName(msg.agent || agentId)}
+                        </span>
+                      </div>
+                    )
+                  })()}
                   {/* Match MessageBubble markdown sizing; avoid whitespace-pre-wrap
                       around MarkdownView (breaks CJK / GFM layout). Explicit CJK
                       stack avoids tofu boxes in WKWebView mono/code paths. */}
-                  <div className={cn(
-                    'select-text break-words pl-1 text-[15px] leading-relaxed',
-                    dark ? 'text-zinc-200' : 'text-zinc-800',
-                  )}
-                    style={{
-                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-                    }}
-                  >
-                    {msg.content
-                      ? (
-                          <MarkdownView
-                            content={msg.content}
-                            className="break-words text-[15px] leading-relaxed [&_*]:text-inherit"
-                          />
-                        )
-                      : (isTyping && msg.id === state.currentReplyId ? null : '…')}
-                  </div>
+                  {msg.content ? (
+                    <div className={cn(
+                      'select-text break-words pl-1 text-[15px] leading-relaxed',
+                      dark ? 'text-zinc-200' : 'text-zinc-800',
+                    )}
+                      style={{
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+                      }}
+                    >
+                      <MarkdownView
+                        content={msg.content}
+                        className="break-words text-[15px] leading-relaxed [&_*]:text-inherit"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
           ))}
 
-          {streamingEmpty && (
-            <div className="flex animate-pulse flex-col items-start space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', visual.color)}>
-                  <AgentIcon className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                  {activeRun ? 'Running…' : 'Evaluating inputs...'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 py-1 pl-1.5">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '0ms' }} />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '150ms' }} />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
+          {streamingFallback && (
+            <PortalRunStatus
+              dark={dark}
+              agentName={displayAgentName(agentId)}
+              agentColor={visual.color}
+              AgentIcon={AgentIcon}
+              streaming
+            />
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -571,23 +567,6 @@ export function AgentPortal(): JSX.Element {
             asks={state.pendingAsks}
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
-          {activeRun && (
-            <div className={cn(
-              'mb-2 flex items-center justify-between rounded-xl border px-3 py-1.5',
-              dark ? 'border-teal-500/30 bg-teal-500/10' : 'border-teal-600/30 bg-teal-50',
-            )}>
-              <span className={cn(
-                'inline-flex items-center gap-1.5 text-xs font-semibold',
-                dark ? 'text-teal-300' : 'text-teal-700',
-              )}>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Running
-              </span>
-              <span className="truncate text-xs text-zinc-400">
-                {agentDisplayName(activeRun.agent)} · {formatDurationMs(activeRun.durationMs)}
-              </span>
-            </div>
-          )}
           <form
             onSubmit={onSend}
             className={cn(

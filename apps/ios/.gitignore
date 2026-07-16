@@ -1,0 +1,6 @@
+# Xcode / local
+apps/ios/**/xcuserdata/
+apps/ios/**/DerivedData/
+apps/ios/**/*.xcworkspace/xcuserdata/
+apps/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+apps/ios/.DS_Store

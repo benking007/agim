@@ -1,0 +1,398 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714C74F3ACD346F04961C87C /* AgimApp.swift */; };
+		21652BA3076726A45D771B13 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBC65C0B66942EE43695F53 /* ChatModels.swift */; };
+		09AA62C682BEDE342033BD77 /* WSMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */; };
+		1A79D2E12D3378CC2D595A7C /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */; };
+		67FBFBCFB4237D57BB833240 /* ChatWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */; };
+		BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */; };
+		B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64FE668EEC1E0A572C31F83 /* PairingParser.swift */; };
+		5DE21EA3D042CCF09357A107 /* ApprovalDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C64918844246EAD2D16D07 /* ApprovalDockView.swift */; };
+		9F1B95799BC970D6FD0D6B9C /* AskDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C76BFBF6E20619D5539957A /* AskDockView.swift */; };
+		29A0C4DA32EA8708C315BA9F /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01674911BE5D92E8F4626A8 /* ChatView.swift */; };
+		863A79632A62A517EF679608 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */; };
+		FCC7741AEE68B81936B56F6B /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */; };
+		007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092E604AA4355F3BA6AEBAC9 /* PairingView.swift */; };
+		56B7446B33C66C71BE6977F0 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */; };
+		759406531FD8D305DB1C2070 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCE814A9A0AC1E63956178E /* RootView.swift */; };
+		630079499D908838C6A12464 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
+		89901AECE1F5AE1B6F76A1F3 /* PairingParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88CE5CBABF888B7EFF66C89 /* PairingParserTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		886C6A3ED7C78373E79612F2 /* Agim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agim.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7AF768ADD8C1E79EC20DD3E8 /* AgimTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		714C74F3ACD346F04961C87C /* AgimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgimApp.swift"; sourceTree = "<group>"; };
+		6EBC65C0B66942EE43695F53 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/ChatModels.swift"; sourceTree = "<group>"; };
+		0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/WSMessages.swift"; sourceTree = "<group>"; };
+		3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ChatStore.swift"; sourceTree = "<group>"; };
+		DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ChatWebSocket.swift"; sourceTree = "<group>"; };
+		45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/KeychainStore.swift"; sourceTree = "<group>"; };
+		F64FE668EEC1E0A572C31F83 /* PairingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PairingParser.swift"; sourceTree = "<group>"; };
+		72C64918844246EAD2D16D07 /* ApprovalDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ApprovalDockView.swift"; sourceTree = "<group>"; };
+		0C76BFBF6E20619D5539957A /* AskDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/AskDockView.swift"; sourceTree = "<group>"; };
+		B01674911BE5D92E8F4626A8 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ChatView.swift"; sourceTree = "<group>"; };
+		D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ComposerView.swift"; sourceTree = "<group>"; };
+		4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/MessageBubbleView.swift"; sourceTree = "<group>"; };
+		092E604AA4355F3BA6AEBAC9 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/PairingView.swift"; sourceTree = "<group>"; };
+		10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/QRScannerView.swift"; sourceTree = "<group>"; };
+		3FCE814A9A0AC1E63956178E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/RootView.swift"; sourceTree = "<group>"; };
+		E88CE5CBABF888B7EFF66C89 /* PairingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PairingParserTests.swift"; sourceTree = "<group>"; };
+		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
+		CAF9B6B99962BF5C22648242 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		ACCF45864EA1BB52E158239F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8D3FC6DB5D0827F168A73277 = {
+			isa = PBXGroup;
+			children = (
+				42BDC0CB69EBBE70EE8545A2 /* Agim */,
+				24DFAD7E3B56719996E6F208 /* AgimTests */,
+				86024CAD1E83101D97359D73 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		86024CAD1E83101D97359D73 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				886C6A3ED7C78373E79612F2 /* Agim.app */,
+				7AF768ADD8C1E79EC20DD3E8 /* AgimTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		42BDC0CB69EBBE70EE8545A2 /* Agim */ = {
+			isa = PBXGroup;
+			children = (
+				714C74F3ACD346F04961C87C /* AgimApp.swift */,
+				6EBC65C0B66942EE43695F53 /* ChatModels.swift */,
+				0B5BAE06D553EE16DCA388F2 /* WSMessages.swift */,
+				3EE51EA42C2F3B2B57ABE3D2 /* ChatStore.swift */,
+				DFD104545F428C2DD390DEC0 /* ChatWebSocket.swift */,
+				45DBE9D7BA2C3994774B12EA /* KeychainStore.swift */,
+				F64FE668EEC1E0A572C31F83 /* PairingParser.swift */,
+				72C64918844246EAD2D16D07 /* ApprovalDockView.swift */,
+				0C76BFBF6E20619D5539957A /* AskDockView.swift */,
+				B01674911BE5D92E8F4626A8 /* ChatView.swift */,
+				D2F2C780D5BAEAA7F5CC0E4D /* ComposerView.swift */,
+				4BCAAA3C3767A3239093B28E /* MessageBubbleView.swift */,
+				092E604AA4355F3BA6AEBAC9 /* PairingView.swift */,
+				10FF85BE7221BEA5054ED2A5 /* QRScannerView.swift */,
+				3FCE814A9A0AC1E63956178E /* RootView.swift */,
+				32BB636196F91ED59D7A4919 /* Assets.xcassets */,
+				CAF9B6B99962BF5C22648242 /* Info.plist */,
+			);
+			path = Agim;
+			sourceTree = "<group>";
+		};
+		24DFAD7E3B56719996E6F208 /* AgimTests */ = {
+			isa = PBXGroup;
+			children = (
+				E88CE5CBABF888B7EFF66C89 /* PairingParserTests.swift */,
+			);
+			path = AgimTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		79FA3D3C7D0DBF5A587BAC23 /* Agim */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8AC9071E2B96AAB87405AE6F /* Build configuration list for PBXNativeTarget "Agim" */;
+			buildPhases = (
+				DDC2F1D99EAF2D62109A5108 /* Sources */,
+				ACCF45864EA1BB52E158239F /* Frameworks */,
+				E33E307C6F4E92ED350E9934 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Agim;
+			productName = Agim;
+			productReference = 886C6A3ED7C78373E79612F2 /* Agim.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9CA4B63375BBECC069794E56 /* AgimTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EFD6E787177FDC13A5B2A64A /* Build configuration list for PBXNativeTarget "AgimTests" */;
+			buildPhases = (
+				7640A65737A0089ACD34E04C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2254342BECCEAFBD04538E0A /* PBXTargetDependency */,
+			);
+			name = AgimTests;
+			productName = AgimTests;
+			productReference = 7AF768ADD8C1E79EC20DD3E8 /* AgimTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		2254342BECCEAFBD04538E0A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79FA3D3C7D0DBF5A587BAC23 /* Agim */;
+			targetProxy = 431387EB7262E1CFC79B125E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		431387EB7262E1CFC79B125E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79FA3D3C7D0DBF5A587BAC23;
+			remoteInfo = Agim;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXProject section */
+		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					79FA3D3C7D0DBF5A587BAC23 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					9CA4B63375BBECC069794E56 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 79FA3D3C7D0DBF5A587BAC23;
+					};
+				};
+			};
+			buildConfigurationList = F9BB7F06B78D2DECD1E90E10 /* Build configuration list for PBXProject "Agim" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8D3FC6DB5D0827F168A73277;
+			productRefGroup = 86024CAD1E83101D97359D73 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				79FA3D3C7D0DBF5A587BAC23 /* Agim */,
+				9CA4B63375BBECC069794E56 /* AgimTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E33E307C6F4E92ED350E9934 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				630079499D908838C6A12464 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DDC2F1D99EAF2D62109A5108 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3A0740B4A83980D196E2FFD5 /* AgimApp.swift in Sources */,
+				21652BA3076726A45D771B13 /* ChatModels.swift in Sources */,
+				09AA62C682BEDE342033BD77 /* WSMessages.swift in Sources */,
+				1A79D2E12D3378CC2D595A7C /* ChatStore.swift in Sources */,
+				67FBFBCFB4237D57BB833240 /* ChatWebSocket.swift in Sources */,
+				BB3B76959F20EF2BEB633D0D /* KeychainStore.swift in Sources */,
+				B7D4F778E952CC1D449314D2 /* PairingParser.swift in Sources */,
+				5DE21EA3D042CCF09357A107 /* ApprovalDockView.swift in Sources */,
+				9F1B95799BC970D6FD0D6B9C /* AskDockView.swift in Sources */,
+				29A0C4DA32EA8708C315BA9F /* ChatView.swift in Sources */,
+				863A79632A62A517EF679608 /* ComposerView.swift in Sources */,
+				FCC7741AEE68B81936B56F6B /* MessageBubbleView.swift in Sources */,
+				007BA9029B284EEEA12AE5C3 /* PairingView.swift in Sources */,
+				56B7446B33C66C71BE6977F0 /* QRScannerView.swift in Sources */,
+				759406531FD8D305DB1C2070 /* RootView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7640A65737A0089ACD34E04C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89901AECE1F5AE1B6F76A1F3 /* PairingParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		59233E4D684FB5A1A72525B8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_DYNAMIC_NO_PIC = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8D5ED1041709BB7FC1DE2B10 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D8579749783A718541606A67 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Agim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim;
+				ENABLE_TESTABILITY = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		553194FECB7E1C4EBBAFB6CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Agim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim;
+				ENABLE_TESTABILITY = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		0B9D7A058B3133F2CFB1D4A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agim.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agim";
+			};
+			name = Debug;
+		};
+		17BFBBF586B1A6F2699F7699 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agim.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agim";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F9BB7F06B78D2DECD1E90E10 /* Build configuration list for PBXProject "Agim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				59233E4D684FB5A1A72525B8 /* Debug */,
+				8D5ED1041709BB7FC1DE2B10 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8AC9071E2B96AAB87405AE6F /* Build configuration list for PBXNativeTarget "Agim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D8579749783A718541606A67 /* Debug */,
+				553194FECB7E1C4EBBAFB6CE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EFD6E787177FDC13A5B2A64A /* Build configuration list for PBXNativeTarget "AgimTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0B9D7A058B3133F2CFB1D4A0 /* Debug */,
+				17BFBBF586B1A6F2699F7699 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+}

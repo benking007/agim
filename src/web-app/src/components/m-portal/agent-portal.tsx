@@ -444,7 +444,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="mx-auto w-[88%] max-w-[88%] min-w-0 self-center" data-testid="portal-ai-reply-streaming">
+            <div className="mx-auto w-[92%] max-w-[92%] min-w-0 self-center" data-testid="portal-ai-reply-streaming">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

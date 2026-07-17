@@ -4,36 +4,17 @@ import WebKit
 /// Native shell: WKWebView loads Agim `/m/chat` (Agent Portal WebUI).
 struct WebShellView: View {
     let credentials: HostCredentials
-    var onLogout: () -> Void
-
-    @State private var reloadToken = UUID()
-    @State private var showMenu = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            WebViewRepresentable(credentials: credentials, reloadToken: reloadToken)
-                .ignoresSafeArea(edges: .bottom)
-
-            Button {
-                showMenu = true
-            } label: {
-                Image(systemName: "ellipsis.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.hierarchical)
-                    .padding(12)
-            }
-            .confirmationDialog("Agim", isPresented: $showMenu, titleVisibility: .visible) {
-                Button("刷新") { reloadToken = UUID() }
-                Button("退出登录", role: .destructive, action: onLogout)
-                Button("取消", role: .cancel) {}
-            }
-        }
+        // Full-bleed portal only — no native ellipsis overlay (it covered
+        // the web theme toggle in the portal header).
+        WebViewRepresentable(credentials: credentials)
+            .ignoresSafeArea(edges: .bottom)
     }
 }
 
 struct WebViewRepresentable: UIViewRepresentable {
     let credentials: HostCredentials
-    let reloadToken: UUID
 
     func makeCoordinator() -> Coordinator {
         Coordinator(credentials: credentials)
@@ -84,17 +65,12 @@ struct WebViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        if context.coordinator.lastReloadToken != reloadToken {
-            context.coordinator.lastReloadToken = reloadToken
-            context.coordinator.credentials = credentials
-            context.coordinator.loadPortal()
-        }
+        context.coordinator.credentials = credentials
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var credentials: HostCredentials
         weak var webView: WKWebView?
-        var lastReloadToken = UUID()
 
         init(credentials: HostCredentials) {
             self.credentials = credentials

@@ -434,12 +434,12 @@ export function AgentPortal(): JSX.Element {
                     })()}
                     {msg.content ? (
                       <div className={cn(
-                        'min-w-0 select-text break-words text-[13px] leading-relaxed',
+                        'min-w-0 select-text break-words text-base leading-relaxed',
                         dark ? 'text-zinc-200' : 'text-zinc-800',
                       )}>
                         <MarkdownView
                           content={msg.content}
-                          className="break-words text-[13px] leading-relaxed"
+                          className="break-words text-base leading-relaxed"
                         />
                         {!(isTyping && msg.id === state.currentReplyId) && (
                           <MessageActions content={msg.content} dark={dark} />

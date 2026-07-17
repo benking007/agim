@@ -1,0 +1,47 @@
+/*
+ * Self-hosted Noto Sans SC (SIL OFL) — see public/fonts/OFL.txt.
+ *
+ * WKWebView on some iOS locales resolves -apple-system / Helvetica without a
+ * working Han fallback, so Chinese paints as .notdef tofu (□ / [?]) even
+ * though the UTF-8 strings are fine. Shipping a SC webfont first makes CJK
+ * independent of system PingFang.
+ */
+@font-face {
+  font-family: 'Agim CJK';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2') format('woff2');
+  unicode-range:
+    U+2E80-2EFF,  /* CJK Radicals Supplement */
+    U+2F00-2FDF,  /* Kangxi Radicals */
+    U+3000-303F,  /* CJK Symbols and Punctuation */
+    U+3040-309F,  /* Hiragana (occasional) */
+    U+30A0-30FF,  /* Katakana */
+    U+3100-312F,  /* Bopomofo */
+    U+31A0-31BF,  /* Bopomofo Extended */
+    U+3400-4DBF,  /* CJK Ext-A */
+    U+4E00-9FFF,  /* CJK Unified Ideographs */
+    U+F900-FAFF,  /* CJK Compatibility Ideographs */
+    U+FF00-FFEF;  /* Halfwidth/Fullwidth Forms */
+}
+
+@font-face {
+  font-family: 'Agim CJK';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2') format('woff2');
+  unicode-range:
+    U+2E80-2EFF,
+    U+2F00-2FDF,
+    U+3000-303F,
+    U+3040-309F,
+    U+30A0-30FF,
+    U+3100-312F,
+    U+31A0-31BF,
+    U+3400-4DBF,
+    U+4E00-9FFF,
+    U+F900-FAFF,
+    U+FF00-FFEF;
+}

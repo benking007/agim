@@ -48,6 +48,19 @@ struct WebViewRepresentable: UIViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
+        // Force CJK webfont before first paint. Some iOS locales resolve
+        // -apple-system without a Han glyph fallback (tofu / [?]).
+        let cjkCss = """
+        (function(){
+          var s=document.createElement('style');
+          s.textContent='html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif!important;}';
+          document.documentElement.appendChild(s);
+        })();
+        """
+        config.userContentController.addUserScript(
+            WKUserScript(source: cjkCss, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator

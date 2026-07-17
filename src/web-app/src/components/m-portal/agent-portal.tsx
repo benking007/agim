@@ -331,7 +331,7 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  className="flex w-[70%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                  className="flex w-[55%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
                 >
                   <div className="w-full space-y-1.5">
                     {(() => {
@@ -389,7 +389,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="w-[70%] max-w-full">
+            <div className="w-[55%] max-w-full">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

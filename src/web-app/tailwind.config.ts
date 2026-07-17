@@ -93,10 +93,13 @@ export default {
         xl:   ['24px', { lineHeight: '32px' }],
         '2xl':['30px', { lineHeight: '38px' }],
       },
-      // CJK-first stacks — WKWebView tofu (□/[?]) when Menlo/system-ui
-      // resolve without a Han fallback. PingFang must appear early.
+      // CJK-first stacks — WKWebView often paints Han as .notdef when
+      // -apple-system/Helvetica claim coverage without glyphs. Self-hosted
+      // `Agim CJK` (Noto Sans SC subset) is first so Chinese never depends
+      // on system PingFang; unicode-range keeps Latin on the system face.
       fontFamily: {
         sans: [
+          '"Agim CJK"',
           '-apple-system',
           'BlinkMacSystemFont',
           '"PingFang SC"',
@@ -110,6 +113,7 @@ export default {
           'sans-serif',
         ],
         mono: [
+          '"Agim CJK"',
           'ui-monospace',
           'SFMono-Regular',
           'Menlo',

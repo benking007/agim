@@ -385,7 +385,7 @@ export function AgentPortal(): JSX.Element {
                   // AI reply column — slightly inset vs the full-width user
                   // chip, centered (equal left/right gap). min-w-0 so wide
                   // tables cannot expand past the cap.
-                  className="mx-auto flex w-[88%] max-w-[88%] min-w-0 flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  className="mx-auto flex w-[88%] max-w-[88%] min-w-0 flex-col self-center overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
                   data-testid="portal-ai-reply"
                 >
                   <div className="w-full min-w-0 space-y-1.5 overflow-x-auto">
@@ -444,7 +444,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="mx-auto w-[88%] max-w-[88%] min-w-0" data-testid="portal-ai-reply-streaming">
+            <div className="mx-auto w-[88%] max-w-[88%] min-w-0 self-center" data-testid="portal-ai-reply-streaming">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

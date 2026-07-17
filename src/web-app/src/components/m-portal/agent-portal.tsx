@@ -569,12 +569,13 @@ export function AgentPortal(): JSX.Element {
             <PortalPet
               dark={dark}
               busy={canStop}
-              className="absolute bottom-[calc(100%+0.15rem)] right-1 z-30"
+              // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
+              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-0"
             />
             <form
               onSubmit={onSend}
               className={cn(
-                'flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >

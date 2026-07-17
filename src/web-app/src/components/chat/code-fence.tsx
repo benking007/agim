@@ -1,9 +1,8 @@
 /**
  * CodeFence — fenced markdown code block with copy + syntax highlight.
  *
- * highlight.js is loaded on first mount (dynamic import) so the SPA
- * entry stays under the bundle budget; unhighlighted text renders
- * immediately as a fallback.
+ * highlight.js is loaded once (module promise) so the SPA entry stays
+ * under the bundle budget; unhighlighted text renders immediately.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -27,45 +26,91 @@ function langFromClass(className?: string): string | undefined {
   return m?.[1]?.toLowerCase()
 }
 
+type HljsLike = {
+  getLanguage: (name: string) => unknown
+  registerLanguage: (name: string, def: unknown) => void
+  highlight: (code: string, opts: { language: string; ignoreIllegals: boolean }) => { value: string }
+  highlightAuto: (code: string) => { value: string }
+}
+
+let hljsReady: Promise<HljsLike> | null = null
+
+async function loadHljs(): Promise<HljsLike> {
+  if (hljsReady) return hljsReady
+  hljsReady = (async () => {
+    const hljs = (await import('highlight.js/lib/core')).default as HljsLike
+    const specs: Array<[string, () => Promise<{ default: unknown }>]> = [
+      ['javascript', () => import('highlight.js/lib/languages/javascript')],
+      ['typescript', () => import('highlight.js/lib/languages/typescript')],
+      ['json', () => import('highlight.js/lib/languages/json')],
+      ['bash', () => import('highlight.js/lib/languages/bash')],
+      ['shell', () => import('highlight.js/lib/languages/shell')],
+      ['python', () => import('highlight.js/lib/languages/python')],
+      ['xml', () => import('highlight.js/lib/languages/xml')],
+      ['css', () => import('highlight.js/lib/languages/css')],
+      ['markdown', () => import('highlight.js/lib/languages/markdown')],
+      ['yaml', () => import('highlight.js/lib/languages/yaml')],
+      ['sql', () => import('highlight.js/lib/languages/sql')],
+      ['go', () => import('highlight.js/lib/languages/go')],
+      ['rust', () => import('highlight.js/lib/languages/rust')],
+      ['java', () => import('highlight.js/lib/languages/java')],
+      ['c', () => import('highlight.js/lib/languages/c')],
+      ['cpp', () => import('highlight.js/lib/languages/cpp')],
+      ['csharp', () => import('highlight.js/lib/languages/csharp')],
+      ['ruby', () => import('highlight.js/lib/languages/ruby')],
+      ['php', () => import('highlight.js/lib/languages/php')],
+      ['kotlin', () => import('highlight.js/lib/languages/kotlin')],
+      ['swift', () => import('highlight.js/lib/languages/swift')],
+      ['diff', () => import('highlight.js/lib/languages/diff')],
+      ['dockerfile', () => import('highlight.js/lib/languages/dockerfile')],
+      ['ini', () => import('highlight.js/lib/languages/ini')],
+      ['plaintext', () => import('highlight.js/lib/languages/plaintext')],
+    ]
+    await Promise.all(specs.map(async ([name, load]) => {
+      if (hljs.getLanguage(name)) return
+      const mod = await load()
+      hljs.registerLanguage(name, mod.default)
+    }))
+    return hljs
+  })()
+  return hljsReady
+}
+
+const LANG_ALIASES: Record<string, string> = {
+  js: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  html: 'xml',
+  htm: 'xml',
+  svg: 'xml',
+  sh: 'bash',
+  zsh: 'bash',
+  shell: 'bash',
+  py: 'python',
+  rb: 'ruby',
+  cs: 'csharp',
+  'c++': 'cpp',
+  cc: 'cpp',
+  golang: 'go',
+  yml: 'yaml',
+  md: 'markdown',
+  docker: 'dockerfile',
+  text: 'plaintext',
+  txt: 'plaintext',
+}
+
+function resolveLang(lang?: string): string | undefined {
+  if (!lang) return undefined
+  return LANG_ALIASES[lang] ?? lang
+}
+
 async function highlight(code: string, lang?: string): Promise<string | null> {
   try {
-    const hljs = (await import('highlight.js/lib/core')).default
-    const mods = await Promise.all([
-      import('highlight.js/lib/languages/javascript'),
-      import('highlight.js/lib/languages/typescript'),
-      import('highlight.js/lib/languages/json'),
-      import('highlight.js/lib/languages/bash'),
-      import('highlight.js/lib/languages/shell'),
-      import('highlight.js/lib/languages/python'),
-      import('highlight.js/lib/languages/xml'),
-      import('highlight.js/lib/languages/css'),
-      import('highlight.js/lib/languages/markdown'),
-      import('highlight.js/lib/languages/yaml'),
-      import('highlight.js/lib/languages/sql'),
-      import('highlight.js/lib/languages/plaintext'),
-    ])
-    const names = [
-      'javascript', 'typescript', 'json', 'bash', 'shell', 'python',
-      'xml', 'css', 'markdown', 'yaml', 'sql', 'plaintext',
-    ] as const
-    for (let i = 0; i < names.length; i++) {
-      const name = names[i]
-      const mod = mods[i]
-      if (name && mod && !hljs.getLanguage(name)) {
-        hljs.registerLanguage(name, mod.default)
-      }
-    }
-    // Aliases agents commonly emit
-    if (!hljs.getLanguage('js')) hljs.registerLanguage('js', (await import('highlight.js/lib/languages/javascript')).default)
-    if (!hljs.getLanguage('ts')) hljs.registerLanguage('ts', (await import('highlight.js/lib/languages/typescript')).default)
-    if (!hljs.getLanguage('tsx')) hljs.registerLanguage('tsx', (await import('highlight.js/lib/languages/typescript')).default)
-    if (!hljs.getLanguage('jsx')) hljs.registerLanguage('jsx', (await import('highlight.js/lib/languages/javascript')).default)
-    if (!hljs.getLanguage('html')) hljs.registerLanguage('html', (await import('highlight.js/lib/languages/xml')).default)
-    if (!hljs.getLanguage('sh')) hljs.registerLanguage('sh', (await import('highlight.js/lib/languages/bash')).default)
-    if (!hljs.getLanguage('zsh')) hljs.registerLanguage('zsh', (await import('highlight.js/lib/languages/bash')).default)
-
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+    const hljs = await loadHljs()
+    const resolved = resolveLang(lang)
+    if (resolved && hljs.getLanguage(resolved)) {
+      return hljs.highlight(code, { language: resolved, ignoreIllegals: true }).value
     }
     return hljs.highlightAuto(code).value
   } catch {
@@ -96,9 +141,9 @@ export function CodeFence({
 
   useEffect(() => {
     const el = codeRef.current
-    if (!el) return
+    if (!el || html == null) return
     // highlight.js emits escaped HTML for syntax tokens only (no raw user HTML).
-    el.innerHTML = html ?? ''
+    el.innerHTML = html
   }, [html])
 
   async function onCopy(): Promise<void> {
@@ -129,9 +174,9 @@ export function CodeFence({
       </div>
       <pre className="agim-mono overflow-x-auto p-2.5 text-[12px] leading-relaxed">
         {html ? (
-          <code ref={codeRef} className={cn('hljs', className)} />
+          <code ref={codeRef} className={cn('hljs agim-mono block', className)} />
         ) : (
-          <code className={cn('agim-mono', className)}>{raw}</code>
+          <code className={cn('agim-mono block', className)}>{raw}</code>
         )}
       </pre>
     </div>

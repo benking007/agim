@@ -37,12 +37,12 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
   }
 
   const btn = cn(
-    'inline-flex h-7 w-7 items-center justify-center rounded-lg transition',
+    'inline-flex h-5 w-5 items-center justify-center rounded-md transition',
     dark ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700',
   )
 
   return (
-    <div className={cn('flex items-center justify-start gap-0.5 pt-1.5', className)}>
+    <div className={cn('flex items-center justify-start gap-0 pt-1.5', className)}>
       <button
         type="button"
         className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
@@ -50,7 +50,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         title={t('chat.portal.feedbackGood')}
         onClick={() => onVote('up')}
       >
-        <ThumbsUp className="h-3.5 w-3.5" />
+        <ThumbsUp className="h-3 w-3" />
       </button>
       <button
         type="button"
@@ -59,7 +59,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         title={t('chat.portal.feedbackBad')}
         onClick={() => onVote('down')}
       >
-        <ThumbsDown className="h-3.5 w-3.5" />
+        <ThumbsDown className="h-3 w-3" />
       </button>
       <button
         type="button"
@@ -68,7 +68,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         title={t('chat.copy')}
         onClick={() => void onCopy()}
       >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
       </button>
     </div>
   )

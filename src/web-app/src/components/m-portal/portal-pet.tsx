@@ -1,6 +1,6 @@
 /**
- * PortalPet — small interactive 2D companion (Claude-style) perched
- * above the composer. Tap for a reaction; mood follows run state.
+ * PortalPet — Minecraft / Lego mosaic companion perched above the composer.
+ * Tap for a reaction; mood follows run state.
  */
 
 import { useEffect, useState } from 'react'
@@ -15,9 +15,122 @@ export interface PortalPetProps {
 
 type Mood = 'idle' | 'busy' | 'happy'
 
+/** 16×16 pixel art. Values are palette keys; `.` = empty. */
+const IDLE: string[] = [
+  '................',
+  '......oooo......',
+  '.....oooooo.....',
+  '....oooooooo....',
+  '...ooYooooYoo...',
+  '...oooooooooo...',
+  '..oooooooooooo..',
+  '..ooEEooooEEoo..',
+  '..ooEEooooEEoo..',
+  '..oooooooooooo..',
+  '...ooooMMoooo...',
+  '...oooooooooo...',
+  '....oooooOoo....',
+  '.....oooooo.....',
+  '......o..o......',
+  '......o..o......',
+]
+
+const BUSY: string[] = [
+  '................',
+  '......oooo......',
+  '.....oooooo.....',
+  '....oooooooo....',
+  '...ooYooooYoo...',
+  '...oooooooooo...',
+  '..oooooooooooo..',
+  '..ooXXooooXXoo..',
+  '..oooooooooooo..',
+  '..oooooooooooo..',
+  '...oooooooooo...',
+  '...ooooMMoooo...',
+  '....oooooooo....',
+  '.....oooooo.....',
+  '......o..o......',
+  '......o..o......',
+]
+
+const HAPPY: string[] = [
+  '................',
+  '......oooo......',
+  '.....oooooo.....',
+  '....oooooooo....',
+  '...ooYooooYoo...',
+  '...oooooooooo...',
+  '..oooooooooooo..',
+  '..ooUUooooUUoo..',
+  '..oooooooooooo..',
+  '..oooooooooooo..',
+  '...oooWMMWooo...',
+  '...oooooooooo...',
+  '....oooooOoo....',
+  '.....oooooo.....',
+  '......o..o......',
+  '......o..o......',
+]
+
 function pickPhrase(list: unknown, fallback: string): string {
   const arr = Array.isArray(list) ? list as string[] : [fallback]
   return arr[Math.floor(Math.random() * arr.length)] ?? fallback
+}
+
+function palette(dark: boolean): Record<string, string> {
+  return {
+    o: dark ? '#2dd4bf' : '#14b8a6', // body
+    Y: dark ? '#5eead4' : '#5eead4', // highlight ear
+    E: dark ? '#0f172a' : '#134e4a', // eye
+    X: dark ? '#0f172a' : '#134e4a', // busy dash eye
+    U: dark ? '#0f172a' : '#134e4a', // happy eye
+    M: dark ? '#f472b6' : '#fb7185', // mouth / blush
+    W: dark ? '#f9a8d4' : '#fda4af', // smile cheek
+    O: dark ? '#0d9488' : '#0f766e', // nose shade
+  }
+}
+
+function PixelSprite({
+  grid,
+  colors,
+}: {
+  grid: string[]
+  colors: Record<string, string>
+}): JSX.Element {
+  const cells: JSX.Element[] = []
+  for (let y = 0; y < grid.length; y++) {
+    const row = grid[y] ?? ''
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x]
+      if (!ch || ch === '.') continue
+      const fill = colors[ch]
+      if (!fill) continue
+      cells.push(
+        <rect
+          key={`${x}-${y}`}
+          x={x}
+          y={y}
+          width={1}
+          height={1}
+          fill={fill}
+          shapeRendering="crispEdges"
+        />,
+      )
+    }
+  }
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-9 w-9"
+      aria-hidden="true"
+      style={{ imageRendering: 'pixelated' }}
+    >
+      {/* soft ground shadow */}
+      <rect x={4} y={15} width={8} height={1} fill="#000" opacity="0.18" />
+      {cells}
+    </svg>
+  )
 }
 
 export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Element {
@@ -44,7 +157,6 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
     window.setTimeout(() => setMood(busy ? 'busy' : 'idle'), 900)
   }
 
-  // Periodic idle whisper when quiet
   useEffect(() => {
     if (busy) return
     const id = window.setInterval(() => {
@@ -59,16 +171,15 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
     setBubble(pickPhrase(t('chat.portal.pet.running', { returnObjects: true }), '…'))
   }, [busy, t])
 
-  const bodyFill = dark ? '#2dd4bf' : '#14b8a6'
-  const cheek = dark ? '#f472b6' : '#fb7185'
-  const eye = dark ? '#0f172a' : '#134e4a'
+  const grid = mood === 'busy' ? BUSY : mood === 'happy' ? HAPPY : IDLE
+  const colors = palette(dark)
 
   return (
     <div className={cn('pointer-events-auto relative', className)}>
       {bubble && (
         <div
           className={cn(
-            'absolute bottom-full left-1/2 mb-1.5 max-w-[9rem] -translate-x-1/2 whitespace-nowrap rounded-2xl px-2.5 py-1 text-[10px] font-semibold shadow-md',
+            'absolute bottom-full left-1/2 mb-1.5 max-w-[9rem] -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-semibold shadow-md',
             dark ? 'bg-zinc-800 text-zinc-100' : 'bg-white text-zinc-700',
           )}
         >
@@ -86,7 +197,7 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
         onClick={onTap}
         aria-label={t('chat.portal.pet.aria', { defaultValue: 'Agim pet' })}
         className={cn(
-          'relative flex h-11 w-11 items-center justify-center rounded-full outline-none',
+          'relative flex h-11 w-11 items-center justify-center outline-none',
           'transition-transform active:scale-95',
           mood === 'busy' && 'animate-pulse',
         )}
@@ -98,44 +209,7 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
               : undefined,
         }}
       >
-        <svg viewBox="0 0 64 64" className="h-9 w-9 drop-shadow-md" aria-hidden="true">
-          <ellipse cx="32" cy="54" rx="16" ry="4" fill={dark ? '#000' : '#94a3b8'} opacity="0.25" />
-          <path
-            d="M12 34c0-12 9-22 20-22s20 10 20 22c0 10-7 18-20 18S12 44 12 34z"
-            fill={bodyFill}
-          />
-          <ellipse cx="32" cy="40" rx="11" ry="9" fill={dark ? '#99f6e4' : '#ccfbf1'} opacity="0.85" />
-          <circle cx="18" cy="36" r="3.2" fill={cheek} opacity="0.7" />
-          <circle cx="46" cy="36" r="3.2" fill={cheek} opacity="0.7" />
-          {mood === 'busy' ? (
-            <>
-              <path d="M22 30 h8" stroke={eye} strokeWidth="2.2" strokeLinecap="round" />
-              <path d="M34 30 h8" stroke={eye} strokeWidth="2.2" strokeLinecap="round" />
-            </>
-          ) : mood === 'happy' ? (
-            <>
-              <path d="M22 31 q4 -5 8 0" fill="none" stroke={eye} strokeWidth="2.2" strokeLinecap="round" />
-              <path d="M34 31 q4 -5 8 0" fill="none" stroke={eye} strokeWidth="2.2" strokeLinecap="round" />
-            </>
-          ) : (
-            <>
-              <circle cx="26" cy="30" r="3.2" fill={eye} />
-              <circle cx="38" cy="30" r="3.2" fill={eye} />
-              <circle cx="27" cy="29" r="1" fill="#fff" />
-              <circle cx="39" cy="29" r="1" fill="#fff" />
-            </>
-          )}
-          <path
-            d="M27 42 q5 5 10 0"
-            fill="none"
-            stroke={eye}
-            strokeWidth="2"
-            strokeLinecap="round"
-            opacity={mood === 'busy' ? 0.35 : 1}
-          />
-          <circle cx="32" cy="10" r="3" fill={cheek} />
-          <path d="M32 13 v4" stroke={cheek} strokeWidth="2" strokeLinecap="round" />
-        </svg>
+        <PixelSprite grid={grid} colors={colors} />
       </button>
     </div>
   )

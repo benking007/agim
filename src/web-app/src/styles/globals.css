@@ -176,36 +176,54 @@
       "Noto Sans SC", "Microsoft YaHei", monospace;
   }
 
-  /* highlight.js token colors — compact theme for chat code fences. */
-  .hljs { color: hsl(var(--ag-text)); }
-  .hljs-comment, .hljs-quote { color: #6b7280; font-style: italic; }
-  .hljs-keyword, .hljs-selector-tag, .hljs-addition { color: #7c3aed; }
-  .hljs-number, .hljs-string, .hljs-meta .hljs-meta-string, .hljs-literal,
-  .hljs-doctag, .hljs-regexp { color: #059669; }
-  .hljs-title, .hljs-section, .hljs-name, .hljs-selector-id, .hljs-selector-class {
-    color: #2563eb;
-  }
-  .hljs-attribute, .hljs-attr, .hljs-variable, .hljs-template-variable,
-  .hljs-class .hljs-title, .hljs-type { color: #d97706; }
-  .hljs-symbol, .hljs-bullet, .hljs-link { color: #db2777; }
-  .hljs-built_in, .hljs-builtin-name { color: #0891b2; }
-  .hljs-meta { color: #64748b; }
-  .hljs-deletion { color: #dc2626; }
-  .hljs-emphasis { font-style: italic; }
-  .hljs-strong { font-weight: 600; }
+  /* highlight.js token colors — compact theme for chat code fences.
+     Scoped under `code.hljs` so parent text utilities cannot wash them out. */
+  code.hljs { color: hsl(var(--ag-text)); background: transparent; }
+  code.hljs .hljs-comment,
+  code.hljs .hljs-quote { color: #6b7280; font-style: italic; }
+  code.hljs .hljs-keyword,
+  code.hljs .hljs-selector-tag,
+  code.hljs .hljs-addition { color: #7c3aed; }
+  code.hljs .hljs-number,
+  code.hljs .hljs-string,
+  code.hljs .hljs-meta .hljs-meta-string,
+  code.hljs .hljs-literal,
+  code.hljs .hljs-doctag,
+  code.hljs .hljs-regexp { color: #059669; }
+  code.hljs .hljs-title,
+  code.hljs .hljs-section,
+  code.hljs .hljs-name,
+  code.hljs .hljs-selector-id,
+  code.hljs .hljs-selector-class { color: #2563eb; }
+  code.hljs .hljs-attribute,
+  code.hljs .hljs-attr,
+  code.hljs .hljs-variable,
+  code.hljs .hljs-template-variable,
+  code.hljs .hljs-class .hljs-title,
+  code.hljs .hljs-type { color: #d97706; }
+  code.hljs .hljs-symbol,
+  code.hljs .hljs-bullet,
+  code.hljs .hljs-link { color: #db2777; }
+  code.hljs .hljs-built_in,
+  code.hljs .hljs-builtin-name { color: #0891b2; }
+  code.hljs .hljs-meta { color: #64748b; }
+  code.hljs .hljs-deletion { color: #dc2626; }
+  code.hljs .hljs-emphasis { font-style: italic; }
+  code.hljs .hljs-strong { font-weight: 600; }
 
-  html[data-theme='dark'] .hljs-keyword,
-  html[data-theme='dark'] .hljs-selector-tag { color: #c4b5fd; }
-  html[data-theme='dark'] .hljs-number,
-  html[data-theme='dark'] .hljs-string,
-  html[data-theme='dark'] .hljs-literal { color: #6ee7b7; }
-  html[data-theme='dark'] .hljs-title,
-  html[data-theme='dark'] .hljs-section,
-  html[data-theme='dark'] .hljs-name { color: #93c5fd; }
-  html[data-theme='dark'] .hljs-attr,
-  html[data-theme='dark'] .hljs-attribute,
-  html[data-theme='dark'] .hljs-variable { color: #fbbf24; }
-  html[data-theme='dark'] .hljs-comment { color: #9ca3af; }
+  html[data-theme='dark'] code.hljs .hljs-keyword,
+  html[data-theme='dark'] code.hljs .hljs-selector-tag { color: #c4b5fd; }
+  html[data-theme='dark'] code.hljs .hljs-number,
+  html[data-theme='dark'] code.hljs .hljs-string,
+  html[data-theme='dark'] code.hljs .hljs-literal { color: #6ee7b7; }
+  html[data-theme='dark'] code.hljs .hljs-title,
+  html[data-theme='dark'] code.hljs .hljs-section,
+  html[data-theme='dark'] code.hljs .hljs-name { color: #93c5fd; }
+  html[data-theme='dark'] code.hljs .hljs-attr,
+  html[data-theme='dark'] code.hljs .hljs-attribute,
+  html[data-theme='dark'] code.hljs .hljs-variable { color: #fbbf24; }
+  html[data-theme='dark'] code.hljs .hljs-comment { color: #9ca3af; }
+  html[data-theme='dark'] code.hljs .hljs-built_in { color: #67e8f9; }
 
   @keyframes agim-pet-bob {
     0%, 100% { transform: translateY(0); }

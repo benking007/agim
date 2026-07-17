@@ -93,10 +93,11 @@ const COMPONENTS: Components = {
     const { className, body } = codeChildProps(children)
     return <CodeFence className={className}>{body}</CodeFence>
   },
-  // Tables — agent data dumps. Compact, scroll on overflow.
+  // Tables — agent data dumps. Compact; scroll inside the reply column
+  // (parent uses min-w-0 so this does not inflate past the 75% cap).
   table: ({ children, ...p }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-xs" {...p}>{children}</table>
+    <div className="my-2 max-w-full min-w-0 overflow-x-auto">
+      <table className="w-full min-w-0 border-collapse text-xs" {...p}>{children}</table>
     </div>
   ),
   thead: ({ children, ...p }) => <thead className="border-b border-border bg-surface-2/50" {...p}>{children}</thead>,

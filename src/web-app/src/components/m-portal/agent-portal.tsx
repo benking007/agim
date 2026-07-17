@@ -382,10 +382,10 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  // AI reply column — match annotated blue frame (~75% of
-                  // chat column). min-w-0 + max-w + overflow so wide tables
-                  // cannot expand past the cap (flex default min-width:auto).
-                  className="flex w-[75%] max-w-[75%] min-w-0 flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  // AI reply column — slightly inset vs the full-width user
+                  // chip, centered (equal left/right gap). min-w-0 so wide
+                  // tables cannot expand past the cap.
+                  className="mx-auto flex w-[88%] max-w-[88%] min-w-0 flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
                   data-testid="portal-ai-reply"
                 >
                   <div className="w-full min-w-0 space-y-1.5 overflow-x-auto">
@@ -444,7 +444,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="w-[75%] max-w-[75%] min-w-0" data-testid="portal-ai-reply-streaming">
+            <div className="mx-auto w-[88%] max-w-[88%] min-w-0" data-testid="portal-ai-reply-streaming">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

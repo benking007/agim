@@ -94,7 +94,7 @@ const COMPONENTS: Components = {
     return <CodeFence className={className}>{body}</CodeFence>
   },
   // Tables — agent data dumps. Compact; scroll inside the reply column
-  // (parent uses min-w-0 so this does not inflate past the 75% cap).
+  // (parent uses min-w-0 so this does not inflate past the width cap).
   table: ({ children, ...p }) => (
     <div className="my-2 max-w-full min-w-0 overflow-x-auto">
       <table className="w-full min-w-0 border-collapse text-xs" {...p}>{children}</table>

@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build:spa": "cd src/web-app && npm run build && cd ../.. && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg",
+    "build:spa": "cd src/web-app && npm run build && cd ../.. && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg && rm -rf src/web/public/fonts && mkdir -p src/web/public/fonts && cp -r src/web-app/dist/fonts/. src/web/public/fonts/",
     "build": "npm run build:spa && rm -rf dist && tsc && cp -r src/web/public dist/web/public && mkdir -p dist/core/skills && cp -r src/core/skills/builtin dist/core/skills/builtin && chmod +x dist/cli.js",
     "postbuild": "npm run check:dist",
     "dev": "tsc --watch",

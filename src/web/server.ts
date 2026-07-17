@@ -497,6 +497,10 @@ export async function startWebServer(options: {
             candidate.endsWith('.svg')   ? 'image/svg+xml' :
             candidate.endsWith('.webmanifest') ? 'application/manifest+json' :
             candidate.endsWith('.json')  ? 'application/json; charset=utf-8' :
+            candidate.endsWith('.woff2') ? 'font/woff2' :
+            candidate.endsWith('.woff')  ? 'font/woff' :
+            candidate.endsWith('.ttf')   ? 'font/ttf' :
+            candidate.endsWith('.otf')   ? 'font/otf' :
             'application/octet-stream'
           return serveStatic(res, candidate, ct)
         }

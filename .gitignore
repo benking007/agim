@@ -34,6 +34,7 @@ coverage/
 # published npm artifact ships the built dist/, not these. Keep the hand-authored
 # static files in src/web/public (loc.html / login.html / m/ / vendor/).
 src/web/public/assets/
+src/web/public/fonts/
 src/web/public/index.html
 src/web/public/manifest.webmanifest
 src/web/public/favicon.svg

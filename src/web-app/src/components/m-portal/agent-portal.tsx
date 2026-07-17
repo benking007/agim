@@ -66,6 +66,55 @@ function resolveTheme(mode: ThemeMode): Theme {
   return 'light'
 }
 
+/** Local visual QA only (`/m/chat?demo=width`) — seeds a wide markdown
+ *  table so AI reply column width can be screenshotted without a live agent. */
+function widthDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-width-user',
+      role: 'user',
+      content: '请帮我详细对比一下中证A50和中证A500这两个指数，我打算配置养老金，不知道选哪个更合适？',
+      timestamp: now - 60_000,
+    },
+    {
+      id: 'demo-width-assistant',
+      role: 'assistant',
+      agent: 'agim',
+      timestamp: now - 1_000,
+      activity: {
+        runId: 'demo-width-run',
+        status: 'success',
+        startedAt: now - 59_000,
+        finishedAt: now - 1_000,
+        durationMs: 58_000,
+        steps: [
+          { id: 't1', kind: 'tool', label: 'web_search', status: 'success', startedAt: now - 58_000, finishedAt: now - 50_000 },
+          { id: 't2', kind: 'tool', label: 'fetch', status: 'success', startedAt: now - 50_000, finishedAt: now - 40_000 },
+          { id: 't3', kind: 'tool', label: 'analyze', status: 'success', startedAt: now - 40_000, finishedAt: now - 30_000 },
+          { id: 't4', kind: 'tool', label: 'compare', status: 'success', startedAt: now - 30_000, finishedAt: now - 20_000 },
+          { id: 't5', kind: 'tool', label: 'summarize', status: 'success', startedAt: now - 20_000, finishedAt: now - 10_000 },
+          { id: 's1', kind: 'skill', label: 'market', status: 'success', startedAt: now - 45_000, finishedAt: now - 35_000 },
+          { id: 's2', kind: 'skill', label: 'pension', status: 'success', startedAt: now - 35_000, finishedAt: now - 25_000 },
+          { id: 's3', kind: 'skill', label: 'index', status: 'success', startedAt: now - 25_000, finishedAt: now - 15_000 },
+        ],
+      },
+      content: [
+        '## 中证 A50 vs 中证 A500（养老金配置向）',
+        '',
+        '| 维度 | 中证 A50 | 中证 A500 |',
+        '| --- | --- | --- |',
+        '| 样本空间 | 沪深市场超大盘龙头 | 剔除超大盘后的中大盘 |',
+        '| 行业结构 | 金融/消费权重更高 | 制造/科技更均衡 |',
+        '| 波动特征 | 相对更稳、弹性略低 | 弹性更大、回撤也更大 |',
+        '| 适合谁 | 求稳、核心底仓 | 增强收益、卫星仓 |',
+        '',
+        '简要建议：养老金核心仓可偏 A50，卫星仓再用 A500 做增强；具体比例按风险承受能力调整。',
+      ].join('\n'),
+    },
+  ]
+}
+
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -93,9 +142,11 @@ export function AgentPortal(): JSX.Element {
   const visual = agentVisual(agentId)
   const AgentIcon = visual.icon
   const isTyping = state.currentReplyId != null
+  const demoWidth = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'width'
   const chatMessages = useMemo(
-    () => state.messages.filter((m) => !m.approval),
-    [state.messages],
+    () => (demoWidth ? widthDemoMessages() : state.messages.filter((m) => !m.approval)),
+    [demoWidth, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -331,9 +382,13 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  className="flex w-[70%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                  // AI reply column — slightly inset vs the full-width user
+                  // chip, centered (equal left/right gap). min-w-0 so wide
+                  // tables cannot expand past the cap.
+                  className="mx-auto flex w-[95%] max-w-[95%] min-w-0 flex-col self-center overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  data-testid="portal-ai-reply"
                 >
-                  <div className="w-full space-y-1.5">
+                  <div className="w-full min-w-0 space-y-1.5 overflow-x-auto">
                     {(() => {
                       const isCurrent = isTyping && msg.id === state.currentReplyId
                       // Prefer the message's own agent; never fall back to the
@@ -370,7 +425,7 @@ export function AgentPortal(): JSX.Element {
                     })()}
                     {msg.content ? (
                       <div className={cn(
-                        'select-text break-words text-[13px] leading-relaxed',
+                        'min-w-0 select-text break-words text-[13px] leading-relaxed',
                         dark ? 'text-zinc-200' : 'text-zinc-800',
                       )}>
                         <MarkdownView
@@ -389,7 +444,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="w-[70%] max-w-full">
+            <div className="mx-auto w-[95%] max-w-[95%] min-w-0 self-center" data-testid="portal-ai-reply-streaming">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

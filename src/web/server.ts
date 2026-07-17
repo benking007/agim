@@ -102,7 +102,13 @@ const PUBLIC_EXACT_PATHS = new Set<string>([
 // vendor/ prefix has been public for the same reason; assets/ is the
 // agim-built sibling. Bundle contents are minified app code with no
 // secrets — same trust model as serving the index.html itself.
-const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/', '/assets/']
+//
+// v1.5.43 — `/fonts/` must be public too. SPA CSS declares @font-face
+// pointing at `/fonts/noto-sans-sc-*.woff2` (Agim CJK). When that URL
+// 302's to /login (HTML), WKWebView silently fails the webfont and
+// Chinese paints as tofu / [?]. Fonts are OFL-licensed static files
+// with no secrets — same trust model as /assets/.
+const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/', '/assets/', '/fonts/']
 const PUBLIC_API_VIEWER_RE = /^\/api\/viewer\/[0-9a-f-]{8,}$/i
 
 function isPublicPath(pathname: string, method: string): boolean {
@@ -502,7 +508,11 @@ export async function startWebServer(options: {
             candidate.endsWith('.ttf')   ? 'font/ttf' :
             candidate.endsWith('.otf')   ? 'font/otf' :
             'application/octet-stream'
-          return serveStatic(res, candidate, ct)
+          const isFont = candidate.endsWith('.woff2') || candidate.endsWith('.woff')
+            || candidate.endsWith('.ttf') || candidate.endsWith('.otf')
+          return serveStatic(res, candidate, ct, isFont
+            ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
+            : undefined)
         }
         return servePageHtml(res, join(PUBLIC_DIR, 'index.html'))
       }
@@ -5849,14 +5859,19 @@ async function awaitWsDrain(ws: WebSocket): Promise<void> {
 /**
  * Serve a static file (no token injection needed)
  */
-function serveStatic(res: ServerResponse, filePath: string, contentType: string): void {
+function serveStatic(
+  res: ServerResponse,
+  filePath: string,
+  contentType: string,
+  extraHeaders?: Record<string, string>,
+): void {
   if (!existsSync(filePath)) {
     res.writeHead(404)
     res.end('Not found')
     return
   }
   const content = readFileSync(filePath)
-  res.writeHead(200, { 'Content-Type': contentType })
+  res.writeHead(200, { 'Content-Type': contentType, ...extraHeaders })
   res.end(content)
 }
 

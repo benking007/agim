@@ -49,11 +49,17 @@ struct WebViewRepresentable: UIViewRepresentable {
         config.defaultWebpagePreferences = prefs
 
         // Force CJK webfont before first paint. Some iOS locales resolve
-        // -apple-system without a Han glyph fallback (tofu / [?]).
+        // -apple-system without a Han glyph fallback (tofu / [?]). Also
+        // declare @font-face here so the face exists even if CSS arrives
+        // late; /fonts/ is a public path (must not 302 to login).
         let cjkCss = """
         (function(){
           var s=document.createElement('style');
-          s.textContent='html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif!important;}';
+          s.textContent=[
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");}',
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");}',
+            'html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif!important;}'
+          ].join('');
           document.documentElement.appendChild(s);
         })();
         """

@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
+import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { MarkdownView } from '@/components/chat/markdown-view'
@@ -129,6 +130,7 @@ export function AgentPortal(): JSX.Element {
 
   const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
   useIosViewportZoomReset()
+  const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showModelDropdown, setShowModelDropdown] = useState(false)
@@ -216,10 +218,15 @@ export function AgentPortal(): JSX.Element {
   const dark = theme === 'dark'
 
   return (
-    <div className={cn(
-      'relative flex h-dvh flex-col overflow-hidden font-sans selection:bg-teal-500/30',
-      dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
-    )}>
+    <div
+      style={viewportStyle}
+      className={cn(
+        // Height/top come from visualViewport so iOS keyboard pan cannot
+        // shove the header off-screen (sticky alone is not enough).
+        'flex flex-col overflow-hidden font-sans selection:bg-teal-500/30',
+        dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
+      )}
+    >
       {/* Main surface — fully blurred while the sidebar is open */}
       <div
         className={cn(
@@ -229,7 +236,9 @@ export function AgentPortal(): JSX.Element {
         aria-hidden={sidebarOpen || undefined}
       >
       <header className={cn(
-        'sticky top-0 z-30 flex shrink-0 items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
+        // shrink-0 + portal VV frame = always visible at top of the
+        // visible viewport (not document-sticky, which iOS still pans).
+        'z-30 flex shrink-0 items-center justify-between border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-all',
         dark ? 'border-zinc-900 bg-zinc-950 text-white' : 'border-zinc-200 bg-white text-zinc-800',
       )}>
         <button

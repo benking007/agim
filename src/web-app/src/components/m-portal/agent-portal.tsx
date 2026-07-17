@@ -379,7 +379,7 @@ export function AgentPortal(): JSX.Element {
                 <div
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
-                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',
@@ -434,12 +434,12 @@ export function AgentPortal(): JSX.Element {
                     })()}
                     {msg.content ? (
                       <div className={cn(
-                        'min-w-0 select-text break-words text-[13px] leading-relaxed',
+                        'min-w-0 select-text break-words text-base leading-relaxed',
                         dark ? 'text-zinc-200' : 'text-zinc-800',
                       )}>
                         <MarkdownView
                           content={msg.content}
-                          className="break-words text-[13px] leading-relaxed"
+                          className="break-words text-base leading-relaxed"
                         />
                         {!(isTyping && msg.id === state.currentReplyId) && (
                           <MessageActions content={msg.content} dark={dark} />

@@ -93,6 +93,37 @@ export default {
         xl:   ['24px', { lineHeight: '32px' }],
         '2xl':['30px', { lineHeight: '38px' }],
       },
+      // CJK-first stacks — WKWebView tofu (□/[?]) when Menlo/system-ui
+      // resolve without a Han fallback. PingFang must appear early.
+      fontFamily: {
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Noto Sans SC"',
+          '"Microsoft YaHei"',
+          '"Segoe UI"',
+          'Roboto',
+          'Helvetica',
+          'Arial',
+          'sans-serif',
+        ],
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          '"Liberation Mono"',
+          '"Courier New"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Noto Sans SC"',
+          '"Microsoft YaHei"',
+          'monospace',
+        ],
+      },
       boxShadow: {
         sm: 'var(--ag-shadow-sm)',
         DEFAULT: 'var(--ag-shadow-md)',

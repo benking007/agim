@@ -123,7 +123,7 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
             {t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
           </div>
         )}
-        <code className="block truncate font-mono text-[15px] font-semibold tracking-tight text-text">
+        <code className="block truncate agim-mono text-[15px] font-semibold tracking-tight text-text">
           {prompt.toolName}
         </code>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -142,7 +142,7 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
           )}
         </div>
 
-        <pre className="mt-3 max-h-36 overflow-auto rounded-xl border border-border/70 bg-bg/80 px-3.5 py-3 font-mono text-[12px] leading-relaxed text-text-dim sm:text-[13px]">
+        <pre className="mt-3 max-h-36 overflow-auto rounded-xl border border-border/70 bg-bg/80 px-3.5 py-3 agim-mono text-[12px] leading-relaxed text-text-dim sm:text-[13px]">
           {formatted}
         </pre>
       </div>

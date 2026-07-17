@@ -96,7 +96,7 @@ describe('v1.2.153: isPublicPath — SPA bundle bootstrap', () => {
     expect(__webAuthForTesting.isPublicPath('/assets/react-C9F3QeMB.js', 'GET')).toBe(true)
   })
 
-  it('keeps API + admin paths gated — the fix scopes to /assets/ ONLY', () => {
+  it('keeps API + admin paths gated — the fix scopes to /assets/ (+ /fonts/)', () => {
     expect(__webAuthForTesting.isPublicPath('/api/agim-skills', 'GET')).toBe(false)
     expect(__webAuthForTesting.isPublicPath('/api/config', 'GET')).toBe(false)
     expect(__webAuthForTesting.isPublicPath('/api/jobs', 'POST')).toBe(false)
@@ -109,5 +109,22 @@ describe('v1.2.153: isPublicPath — SPA bundle bootstrap', () => {
     expect(__webAuthForTesting.isPublicPath('/favicon.svg', 'GET')).toBe(true)
     expect(__webAuthForTesting.isPublicPath('/vendor/chart.umd.min.js', 'GET')).toBe(true)
     expect(__webAuthForTesting.isPublicPath('/l/abc123', 'GET')).toBe(true)
+  })
+})
+
+// v1.5.43 — CJK webfont must load without a session cookie. CSS under
+// /assets/ is public and references /fonts/*.woff2; a 302→login HTML
+// response makes WKWebView drop the face → Chinese tofu / [?].
+describe('v1.5.43: isPublicPath — CJK webfont bootstrap', () => {
+  it('treats /fonts/*.woff2 as public so Agim CJK can load uncookied', () => {
+    expect(__webAuthForTesting.isPublicPath(
+      '/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2',
+      'GET',
+    )).toBe(true)
+    expect(__webAuthForTesting.isPublicPath(
+      '/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2',
+      'GET',
+    )).toBe(true)
+    expect(__webAuthForTesting.isPublicPath('/fonts/OFL.txt', 'GET')).toBe(true)
   })
 })

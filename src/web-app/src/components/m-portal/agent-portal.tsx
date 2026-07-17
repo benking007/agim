@@ -379,7 +379,7 @@ export function AgentPortal(): JSX.Element {
                 <div
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
-                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
+                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',

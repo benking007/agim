@@ -244,7 +244,7 @@ export function PortalRunStatus({
                 <StepIcon step={step} dark={dark} />
                 <span className={cn(
                   'truncate',
-                  step.kind === 'agent' ? 'font-medium' : 'font-mono text-[11px]',
+                  step.kind === 'agent' ? 'font-medium' : 'agim-mono text-[11px]',
                 )}>
                   {stepLabel(step)}
                 </span>

@@ -269,8 +269,9 @@ export function AgentPortal(): JSX.Element {
       {/* Chat */}
       {activeTab === 'chat' && (
         <div className={cn(
-          // pb leaves room for composer + perched pet; docks add their own scroll cover via gradient
-          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-40 transition-colors duration-300 scrollbar-none',
+          // pt-0 so sticky user chips sit flush under the header (no py gap when pinned).
+          // pb leaves room for composer + perched pet.
+          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
           {chatMessages.length === 0 && (
@@ -330,7 +331,7 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  className="flex w-[88%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                  className="flex w-[70%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
                 >
                   <div className="w-full space-y-1.5">
                     {(() => {
@@ -368,15 +369,10 @@ export function AgentPortal(): JSX.Element {
                       )
                     })()}
                     {msg.content ? (
-                      <div
-                        className={cn(
-                          'select-text break-words text-[13px] leading-relaxed',
-                          dark ? 'text-zinc-200' : 'text-zinc-800',
-                        )}
-                        style={{
-                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-                        }}
-                      >
+                      <div className={cn(
+                        'select-text break-words text-[13px] leading-relaxed',
+                        dark ? 'text-zinc-200' : 'text-zinc-800',
+                      )}>
                         <MarkdownView
                           content={msg.content}
                           className="break-words text-[13px] leading-relaxed"
@@ -393,7 +389,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="w-[88%] max-w-full">
+            <div className="w-[70%] max-w-full">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}

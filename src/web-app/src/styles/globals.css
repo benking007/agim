@@ -51,9 +51,7 @@
     height: 100%;
   }
   body {
-    @apply bg-bg text-text antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-      "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+    @apply bg-bg text-text antialiased font-sans;
     background-color: hsl(var(--ag-bg));
     transition: background-color 0.3s ease, color 0.3s ease;
     /* Mobile: disable double-tap-zoom on text and tone down the tap
@@ -61,6 +59,13 @@
        users via Tailwind's preflight + shadcn defaults. */
     touch-action: manipulation;
     -webkit-tap-highlight-color: hsl(var(--ag-accent) / 0.15);
+  }
+
+  /* Ensure preflight mono (code/kbd/pre) also keeps CJK fallbacks.
+     Tailwind's theme.fontFamily.mono covers `.font-mono`; preflight
+     still emits a Latin-only stack unless we override it here. */
+  code, kbd, samp, pre {
+    @apply font-mono;
   }
 
   /* Touch-friendly hit targets across the board. Tailwind class-only
@@ -171,9 +176,7 @@
   /* Mono + CJK fallbacks — default Menlo/Consolas omit Han glyphs and
      show tofu (□) for Chinese inside fenced / inline code. */
   .agim-mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      "Liberation Mono", "Courier New", "PingFang SC", "Hiragino Sans GB",
-      "Noto Sans SC", "Microsoft YaHei", monospace;
+    @apply font-mono;
   }
 
   /* highlight.js token colors — compact theme for chat code fences.

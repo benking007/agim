@@ -6,9 +6,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if let creds = session.credentials {
-                WebShellView(credentials: creds) {
-                    session.logout()
-                }
+                WebShellView(credentials: creds)
             } else {
                 PairingView()
             }

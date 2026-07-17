@@ -320,8 +320,8 @@ export function AgentPortal(): JSX.Element {
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
                     'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-[13px] font-medium leading-relaxed',
                     dark
-                      ? 'border-zinc-700 bg-zinc-800 text-zinc-100 shadow-[0_8px_24px_rgba(0,0,0,0.35)]'
-                      : 'border-zinc-200 bg-white text-zinc-900 shadow-[0_6px_20px_rgba(15,23,42,0.08)]',
+                      ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
+                      : 'border-zinc-200 bg-white text-zinc-900',
                   )}
                 >
                   {turn.user.content}
@@ -330,7 +330,7 @@ export function AgentPortal(): JSX.Element {
               {turn.replies.map((msg) => (
                 <div
                   key={msg.id}
-                  className="flex w-[92%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
+                  className="flex w-[88%] max-w-full animate-in fade-in slide-in-from-bottom-2 flex-col duration-300"
                 >
                   <div className="w-full space-y-1.5">
                     {(() => {
@@ -393,7 +393,7 @@ export function AgentPortal(): JSX.Element {
           ))}
 
           {streamingFallback && (
-            <div className="w-[92%] max-w-full">
+            <div className="w-[88%] max-w-full">
               <PortalRunStatus
                 dark={dark}
                 agentName={displayAgentName(agentId)}
@@ -569,12 +569,13 @@ export function AgentPortal(): JSX.Element {
             <PortalPet
               dark={dark}
               busy={canStop}
-              className="absolute bottom-[calc(100%+0.15rem)] right-1 z-30"
+              // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
+              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-0"
             />
             <form
               onSubmit={onSend}
               className={cn(
-                'flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >

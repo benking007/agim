@@ -248,17 +248,17 @@ export function PortalPet({
   return (
     <div id={panelId} className={cn('pointer-events-auto relative', className)}>
       {/* Completion floats — drift left from the pet. */}
-      <div className="pointer-events-none absolute bottom-full right-0 mb-2 flex flex-col items-end gap-1.5">
+      <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 flex flex-col items-end gap-1.5">
         {floats.map((f) => (
           <div
             key={f.id}
             className={cn(
               'flex max-w-[14rem] items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-md',
-              'animate-[agim-pet-float-left_2.8s_ease-out_forwards]',
               f.tone === 'err'
                 ? (dark ? 'bg-red-950/90 text-red-200' : 'bg-red-50 text-red-700')
                 : (dark ? 'bg-emerald-950/90 text-emerald-200' : 'bg-emerald-50 text-emerald-800'),
             )}
+            style={{ animation: 'agim-pet-float-left 2.8s ease-out forwards' }}
           >
             {f.tone === 'err'
               ? <X className="h-3 w-3 shrink-0" />

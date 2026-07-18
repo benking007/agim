@@ -116,6 +116,35 @@ function widthDemoMessages(): ChatMessage[] {
   ]
 }
 
+/** Local visual QA (`/m/chat?demo=pet`) — running activity for the pet panel. */
+function petDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-pet-user',
+      role: 'user',
+      content: '帮我查一下今天大盘，并整理成三条要点。',
+      timestamp: now - 20_000,
+    },
+    {
+      id: 'demo-pet-assistant',
+      role: 'assistant',
+      agent: 'agim',
+      timestamp: now - 5_000,
+      activity: {
+        runId: 'demo-pet-run',
+        status: 'running',
+        startedAt: now - 18_000,
+        steps: [
+          { id: 't1', kind: 'tool', label: 'web_search', status: 'success', startedAt: now - 17_000, finishedAt: now - 12_000 },
+          { id: 't2', kind: 'tool', label: 'summarize', status: 'running', startedAt: now - 11_000 },
+        ],
+      },
+      content: '正在整理要点…',
+    },
+  ]
+}
+
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -149,9 +178,15 @@ export function AgentPortal(): JSX.Element {
   const isTyping = state.currentReplyId != null
   const demoWidth = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'width'
+  const demoPet = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'pet'
   const chatMessages = useMemo(
-    () => (demoWidth ? widthDemoMessages() : state.messages.filter((m) => !m.approval)),
-    [demoWidth, state.messages],
+    () => {
+      if (demoPet) return petDemoMessages()
+      if (demoWidth) return widthDemoMessages()
+      return state.messages.filter((m) => !m.approval)
+    },
+    [demoPet, demoWidth, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -201,6 +236,22 @@ export function AgentPortal(): JSX.Element {
         detail: ask.prompt?.body || ask.prompt?.title || undefined,
       })
     }
+    if (demoPet) {
+      items.push(
+        {
+          id: 'demo-apv',
+          kind: 'approval',
+          label: t('chat.portal.pet.approvalLabel'),
+          detail: 'bash',
+        },
+        {
+          id: 'demo-ask',
+          kind: 'ask',
+          label: t('chat.portal.pet.askLabel'),
+          detail: '要用简洁版还是详细版？',
+        },
+      )
+    }
     return items
   }, [
     chatMessages,
@@ -209,6 +260,7 @@ export function AgentPortal(): JSX.Element {
     state.pendingApprovals,
     state.pendingAsks,
     agentId,
+    demoPet,
     t,
   ])
 
@@ -236,6 +288,18 @@ export function AgentPortal(): JSX.Element {
     activityStatusRef.current = next
   }, [chatMessages, t])
 
+  // demo=pet — fire a completion float so recording can capture the drift.
+  useEffect(() => {
+    if (!demoPet) return
+    const id = window.setTimeout(() => {
+      setPetAnnounce({
+        id: `demo-pet-done-${Date.now()}`,
+        text: t('chat.portal.pet.doneOk', { agent: 'Agim' }),
+        tone: 'ok',
+      })
+    }, 1800)
+    return () => window.clearTimeout(id)
+  }, [demoPet, t])
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
   useEffect(() => {
@@ -708,14 +772,14 @@ export function AgentPortal(): JSX.Element {
           <div className="relative">
             <PortalPet
               dark={dark}
-              busy={canStop}
+              busy={canStop || demoPet}
               tasks={petTasks}
               announce={petAnnounce}
               onAnnounceDone={(id) => {
                 setPetAnnounce((cur) => (cur?.id === id ? null : cur))
               }}
               // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
-              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-0"
+              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
             />
             <form
               onSubmit={onSend}

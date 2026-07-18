@@ -288,17 +288,24 @@ export function AgentPortal(): JSX.Element {
     activityStatusRef.current = next
   }, [chatMessages, t])
 
-  // demo=pet — fire a completion float so recording can capture the drift.
+  // demo=pet — fire completion floats so recording can capture the drift.
+  // Repeat every 4.5s: SPA soft-navigations keep demoPet=true without remount,
+  // so a one-shot timeout is easy to miss on a second visit.
   useEffect(() => {
     if (!demoPet) return
-    const id = window.setTimeout(() => {
+    const fire = (): void => {
       setPetAnnounce({
         id: `demo-pet-done-${Date.now()}`,
         text: t('chat.portal.pet.doneOk', { agent: 'Agim' }),
         tone: 'ok',
       })
-    }, 1800)
-    return () => window.clearTimeout(id)
+    }
+    const first = window.setTimeout(fire, 1600)
+    const loop = window.setInterval(fire, 4500)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(loop)
+    }
   }, [demoPet, t])
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.

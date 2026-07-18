@@ -1,16 +1,41 @@
 /**
  * PortalPet — Minecraft / Lego mosaic companion perched above the composer.
- * Tap for a reaction; mood follows run state.
+ *
+ * - Mood follows run state; idle/tap still keep emotional phrases.
+ * - Tap toggles a left-expanding panel of in-flight portal tasks
+ *   (runs / approvals / asks).
+ * - Completion announcements float left as drifting bubbles.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CheckCircle2, Loader2, MessageCircleQuestion, ShieldAlert, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+export type PetTaskKind = 'run' | 'approval' | 'ask'
+
+export interface PetTaskItem {
+  id: string
+  kind: PetTaskKind
+  label: string
+  detail?: string
+}
+
+export interface PetAnnounce {
+  id: string
+  text: string
+  tone?: 'ok' | 'err'
+}
 
 export interface PortalPetProps {
   dark: boolean
   busy?: boolean
   className?: string
+  /** In-flight work shown when the panel is open. */
+  tasks?: PetTaskItem[]
+  /** One-shot completion toast; floats left then clears. */
+  announce?: PetAnnounce | null
+  onAnnounceDone?: (id: string) => void
 }
 
 type Mood = 'idle' | 'busy' | 'happy'
@@ -80,14 +105,14 @@ function pickPhrase(list: unknown, fallback: string): string {
 
 function palette(dark: boolean): Record<string, string> {
   return {
-    o: dark ? '#2dd4bf' : '#14b8a6', // body
-    Y: dark ? '#5eead4' : '#5eead4', // highlight ear
-    E: dark ? '#0f172a' : '#134e4a', // eye
-    X: dark ? '#0f172a' : '#134e4a', // busy dash eye
-    U: dark ? '#0f172a' : '#134e4a', // happy eye
-    M: dark ? '#f472b6' : '#fb7185', // mouth / blush
-    W: dark ? '#f9a8d4' : '#fda4af', // smile cheek
-    O: dark ? '#0d9488' : '#0f766e', // nose shade
+    o: dark ? '#2dd4bf' : '#14b8a6',
+    Y: dark ? '#5eead4' : '#5eead4',
+    E: dark ? '#0f172a' : '#134e4a',
+    X: dark ? '#0f172a' : '#134e4a',
+    U: dark ? '#0f172a' : '#134e4a',
+    M: dark ? '#f472b6' : '#fb7185',
+    W: dark ? '#f9a8d4' : '#fda4af',
+    O: dark ? '#0d9488' : '#0f766e',
   }
 }
 
@@ -126,17 +151,33 @@ function PixelSprite({
       aria-hidden="true"
       style={{ imageRendering: 'pixelated' }}
     >
-      {/* soft ground shadow */}
       <rect x={4} y={15} width={8} height={1} fill="#000" opacity="0.18" />
       {cells}
     </svg>
   )
 }
 
-export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Element {
+function KindIcon({ kind, className }: { kind: PetTaskKind; className?: string }): JSX.Element {
+  if (kind === 'approval') return <ShieldAlert className={className} />
+  if (kind === 'ask') return <MessageCircleQuestion className={className} />
+  return <Loader2 className={cn(className, 'animate-spin')} />
+}
+
+export function PortalPet({
+  dark,
+  busy,
+  className,
+  tasks = [],
+  announce = null,
+  onAnnounceDone,
+}: PortalPetProps): JSX.Element {
   const { t } = useTranslation()
+  const panelId = useId()
   const [mood, setMood] = useState<Mood>('idle')
   const [bubble, setBubble] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [floats, setFloats] = useState<PetAnnounce[]>([])
+  const seenAnnounce = useRef<string | null>(null)
 
   useEffect(() => {
     setMood(busy ? 'busy' : 'idle')
@@ -148,9 +189,38 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
     return () => window.clearTimeout(id)
   }, [bubble])
 
+  // Queue completion toasts that drift left.
+  useEffect(() => {
+    if (!announce || announce.id === seenAnnounce.current) return
+    seenAnnounce.current = announce.id
+    setFloats((prev) => [...prev.slice(-4), announce])
+    const clearId = window.setTimeout(() => {
+      setFloats((prev) => prev.filter((f) => f.id !== announce.id))
+      onAnnounceDone?.(announce.id)
+    }, 2800)
+    return () => window.clearTimeout(clearId)
+  }, [announce, onAnnounceDone])
+
+  // Close panel on outside tap.
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (ev: MouseEvent): void => {
+      const root = document.getElementById(panelId)
+      if (root && !root.contains(ev.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open, panelId])
+
   function onTap(): void {
+    setOpen((v) => !v)
     setMood('happy')
     setBubble(null)
+    if (!open) {
+      // Opening panel — skip random emoji bubble.
+      window.setTimeout(() => setMood(busy ? 'busy' : 'idle'), 900)
+      return
+    }
     window.setTimeout(() => {
       setBubble(pickPhrase(t('chat.portal.pet.tap', { returnObjects: true }), '♪'))
     }, 0)
@@ -158,25 +228,107 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
   }
 
   useEffect(() => {
-    if (busy) return
+    if (busy || open) return
     const id = window.setInterval(() => {
       if (document.hidden) return
       setBubble(pickPhrase(t('chat.portal.pet.idle', { returnObjects: true }), '♪'))
     }, 22_000)
     return () => window.clearInterval(id)
-  }, [busy, t])
+  }, [busy, open, t])
 
   useEffect(() => {
-    if (!busy) return
+    if (!busy || open) return
     setBubble(pickPhrase(t('chat.portal.pet.running', { returnObjects: true }), '…'))
-  }, [busy, t])
+  }, [busy, open, t])
 
   const grid = mood === 'busy' ? BUSY : mood === 'happy' ? HAPPY : IDLE
   const colors = palette(dark)
+  const taskCount = tasks.length
 
   return (
-    <div className={cn('pointer-events-auto relative', className)}>
-      {bubble && (
+    <div id={panelId} className={cn('pointer-events-auto relative', className)}>
+      {/* Completion floats — drift left from the pet. */}
+      <div className="pointer-events-none absolute bottom-full right-0 mb-2 flex flex-col items-end gap-1.5">
+        {floats.map((f) => (
+          <div
+            key={f.id}
+            className={cn(
+              'flex max-w-[14rem] items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-md',
+              'animate-[agim-pet-float-left_2.8s_ease-out_forwards]',
+              f.tone === 'err'
+                ? (dark ? 'bg-red-950/90 text-red-200' : 'bg-red-50 text-red-700')
+                : (dark ? 'bg-emerald-950/90 text-emerald-200' : 'bg-emerald-50 text-emerald-800'),
+            )}
+          >
+            {f.tone === 'err'
+              ? <X className="h-3 w-3 shrink-0" />
+              : <CheckCircle2 className="h-3 w-3 shrink-0" />}
+            <span className="truncate">{f.text}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Left-expanding task panel */}
+      {open && (
+        <div
+          className={cn(
+            'absolute bottom-0 right-full mr-2 w-[min(16.5rem,72vw)] origin-bottom-right animate-in fade-in slide-in-from-right-2 rounded-2xl border p-2 shadow-xl duration-200',
+            dark ? 'border-zinc-800 bg-zinc-950/95 text-zinc-100' : 'border-zinc-200 bg-white/95 text-zinc-800',
+          )}
+          role="dialog"
+          aria-label={t('chat.portal.pet.panelTitle')}
+        >
+          <div className="mb-1.5 flex items-center justify-between px-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+              {t('chat.portal.pet.panelTitle')}
+            </p>
+            <span className={cn(
+              'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+              taskCount > 0
+                ? (dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-50 text-teal-700')
+                : 'bg-zinc-500/10 text-zinc-400',
+            )}>
+              {taskCount}
+            </span>
+          </div>
+          {taskCount === 0 ? (
+            <p className="px-1 py-3 text-center text-[11px] text-zinc-400">
+              {t('chat.portal.pet.empty')}
+            </p>
+          ) : (
+            <ul className="max-h-40 space-y-1 overflow-y-auto scrollbar-none">
+              {tasks.map((item) => (
+                <li
+                  key={item.id}
+                  className={cn(
+                    'flex items-start gap-2 rounded-xl px-2 py-1.5 text-[11px]',
+                    dark ? 'bg-zinc-900/80' : 'bg-zinc-50',
+                  )}
+                >
+                  <KindIcon
+                    kind={item.kind}
+                    className={cn(
+                      'mt-0.5 h-3.5 w-3.5 shrink-0',
+                      item.kind === 'approval' ? 'text-amber-400'
+                        : item.kind === 'ask' ? 'text-sky-400'
+                          : 'text-teal-500',
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{item.label}</p>
+                    {item.detail && (
+                      <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-400">{item.detail}</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Emotional bubble (hidden while panel open / floats active) */}
+      {bubble && !open && floats.length === 0 && (
         <div
           className={cn(
             'absolute bottom-full left-1/2 mb-1.5 max-w-[9rem] -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-semibold shadow-md',
@@ -192,9 +344,11 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
           />
         </div>
       )}
+
       <button
         type="button"
         onClick={onTap}
+        aria-expanded={open}
         aria-label={t('chat.portal.pet.aria', { defaultValue: 'Agim pet' })}
         className={cn(
           'relative flex h-11 w-11 items-center justify-center outline-none',
@@ -210,6 +364,11 @@ export function PortalPet({ dark, busy, className }: PortalPetProps): JSX.Elemen
         }}
       >
         <PixelSprite grid={grid} colors={colors} />
+        {taskCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-teal-500 px-0.5 text-[8px] font-bold text-white shadow">
+            {taskCount > 9 ? '9+' : taskCount}
+          </span>
+        )}
       </button>
     </div>
   )

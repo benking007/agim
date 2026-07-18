@@ -23,7 +23,7 @@ import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
-import { PortalPet } from './portal-pet'
+import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
 import { VoiceOverlay } from './voice-overlay'
 
@@ -138,7 +138,10 @@ export function AgentPortal(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<(typeof EXPLORE_CATS)[number]>('All')
   const [inputMessage, setInputMessage] = useState('')
+  const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const activityStatusRef = useRef<Map<string, string>>(new Map())
+
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = agentVisual(agentId)
@@ -155,6 +158,83 @@ export function AgentPortal(): JSX.Element {
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
   const canStop = isTyping || state.activeRunId != null
+
+  const petTasks = useMemo((): PetTaskItem[] => {
+    const items: PetTaskItem[] = []
+    for (const msg of chatMessages) {
+      if (msg.role !== 'assistant' || !msg.activity) continue
+      if (msg.activity.status !== 'running') continue
+      const live = [...msg.activity.steps].reverse().find(
+        (s) => s.status === 'running' || s.status === 'pending',
+      )
+      items.push({
+        id: `run-${msg.activity.runId || msg.id}`,
+        kind: 'run',
+        label: msg.agent ? displayAgentName(msg.agent) : t('chat.portal.pet.runLabel'),
+        detail: live?.label
+          || t('chat.activityRunning', { defaultValue: 'Running' }),
+      })
+    }
+    if (isTyping && !items.some((i) => i.kind === 'run')) {
+      items.push({
+        id: `run-${state.currentReplyId ?? 'streaming'}`,
+        kind: 'run',
+        label: displayAgentName(agentId),
+        detail: t('chat.activityRunning', { defaultValue: 'Running' }),
+      })
+    }
+    for (const ap of state.pendingApprovals) {
+      if (ap.outcome) continue
+      items.push({
+        id: `apv-${ap.messageId}`,
+        kind: 'approval',
+        label: t('chat.portal.pet.approvalLabel'),
+        detail: ap.prompt?.toolName || undefined,
+      })
+    }
+    for (const ask of state.pendingAsks) {
+      if (ask.finalText) continue
+      items.push({
+        id: `ask-${ask.messageId}`,
+        kind: 'ask',
+        label: t('chat.portal.pet.askLabel'),
+        detail: ask.prompt?.body || ask.prompt?.title || undefined,
+      })
+    }
+    return items
+  }, [
+    chatMessages,
+    isTyping,
+    state.currentReplyId,
+    state.pendingApprovals,
+    state.pendingAsks,
+    agentId,
+    t,
+  ])
+
+  // Float a left-drifting bubble when a run finishes.
+  useEffect(() => {
+    const prev = activityStatusRef.current
+    const next = new Map(prev)
+    for (const msg of chatMessages) {
+      if (msg.role !== 'assistant' || !msg.activity) continue
+      const key = msg.activity.runId || msg.id
+      const cur = msg.activity.status
+      const was = prev.get(key)
+      if (was === 'running' && (cur === 'success' || cur === 'error')) {
+        const agent = msg.agent ? displayAgentName(msg.agent) : 'Agim'
+        setPetAnnounce({
+          id: `done-${key}-${cur}-${msg.activity.finishedAt ?? Date.now()}`,
+          text: cur === 'success'
+            ? t('chat.portal.pet.doneOk', { agent })
+            : t('chat.portal.pet.doneErr', { agent }),
+          tone: cur === 'success' ? 'ok' : 'err',
+        })
+      }
+      next.set(key, cur)
+    }
+    activityStatusRef.current = next
+  }, [chatMessages, t])
 
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
@@ -629,6 +709,11 @@ export function AgentPortal(): JSX.Element {
             <PortalPet
               dark={dark}
               busy={canStop}
+              tasks={petTasks}
+              announce={petAnnounce}
+              onAnnounceDone={(id) => {
+                setPetAnnounce((cur) => (cur?.id === id ? null : cur))
+              }}
               // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
               className="absolute bottom-[calc(100%-0.85rem)] right-1 z-0"
             />

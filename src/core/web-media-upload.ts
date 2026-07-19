@@ -7,6 +7,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, extname, join, resolve } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
@@ -98,18 +99,20 @@ export function formatMediaMarker(saved: SavedWebMedia): string {
   return `[文件附件：${saved.path} (${saved.name}, ${sizeStr})]`
 }
 
-/**
- * Resolve a client-supplied absolute path only if it is a real file under
- * the web media root (prevents path traversal outside ~/.agim/media).
- */
 export function resolveSafeWebMediaPath(requested: string): string | null {
   const raw = (requested || '').trim()
   if (!raw) return null
-  const root = getWebMediaRoot()
   const abs = resolve(raw)
-  const rootWithSep = root.endsWith('/') ? root : `${root}/`
-  if (abs !== root && !abs.startsWith(rootWithSep)) return null
-  return abs
+  const roots = new Set<string>([
+    getWebMediaRoot(),
+    resolve(join(AGIM_HOME, 'media')),
+    resolve(join(homedir(), '.agim', 'media')),
+  ])
+  for (const root of roots) {
+    const rootWithSep = root.endsWith('/') ? root : `${root}/`
+    if (abs === root || abs.startsWith(rootWithSep)) return abs
+  }
+  return null
 }
 
 /** Guess a Content-Type from filename when the on-disk mime is unknown. */

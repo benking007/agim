@@ -566,6 +566,7 @@ export function AgentPortal(): JSX.Element {
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',
                   )}
+                  style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
                 >
                   <PortalUserContent dark={dark} content={turn.user.content} />
                 </div>

@@ -813,6 +813,8 @@ export function AgentPortal(): JSX.Element {
                 setPetAnnounce((cur) => (cur?.id === id ? null : cur))
               }}
               // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
+              // Anchored to the form only — attachment strip is absolute so it
+              // never shifts this perch when files are added.
               className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
             />
             <AttachmentStrip
@@ -823,6 +825,9 @@ export function AgentPortal(): JSX.Element {
                 if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
                 setAttachments(attachments.filter((a) => a.id !== id))
               }}
+              // Float above the form; leave ~3.5rem on the right for the pet
+              // (w-11 + right-1 + gap). Extra items scroll horizontally.
+              className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
             />
             <form
               onSubmit={(e) => { void onSend(e) }}

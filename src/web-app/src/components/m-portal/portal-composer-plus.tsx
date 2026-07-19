@@ -268,41 +268,52 @@ export function AttachmentStrip({
   dark,
   attachments,
   onRemove,
+  className,
 }: {
   dark: boolean
   attachments: PendingAttachment[]
   onRemove: (id: string) => void
+  className?: string
 }): JSX.Element | null {
   if (attachments.length === 0) return null
   return (
-    <ul className="mb-2 flex gap-2 overflow-x-auto pb-0.5 scrollbar-none">
-      {attachments.map((a) => (
-        <li
-          key={a.id}
-          className={cn(
-            'relative shrink-0 overflow-hidden rounded-xl border',
-            dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
-            a.kind === 'image' ? 'h-16 w-16' : 'flex h-16 min-w-[7rem] max-w-[10rem] items-center gap-2 px-2',
-          )}
-        >
-          {a.kind === 'image' && a.previewUrl ? (
-            <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
-          ) : (
-            <>
-              <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
-              <span className="truncate text-[10px] font-medium">{a.name}</span>
-            </>
-          )}
-          <button
-            type="button"
-            aria-label="Remove"
-            onClick={() => onRemove(a.id)}
-            className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+    // Cap width short of the perched pet (h-11/w-11 + right-1); overflow scrolls
+    // horizontally so extra files never shove or cover the sprite.
+    <div
+      className={cn(
+        'pointer-events-auto overflow-x-auto overscroll-x-contain scrollbar-none',
+        className,
+      )}
+    >
+      <ul className="flex w-max gap-2 pb-0.5">
+        {attachments.map((a) => (
+          <li
+            key={a.id}
+            className={cn(
+              'relative shrink-0 overflow-hidden rounded-xl border',
+              dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
+              a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
+            )}
           >
-            <X className="h-3 w-3" />
-          </button>
-        </li>
-      ))}
-    </ul>
+            {a.kind === 'image' && a.previewUrl ? (
+              <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
+            ) : (
+              <>
+                <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
+                <span className="truncate text-[10px] font-medium">{a.name}</span>
+              </>
+            )}
+            <button
+              type="button"
+              aria-label="Remove"
+              onClick={() => onRemove(a.id)}
+              className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

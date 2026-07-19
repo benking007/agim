@@ -189,10 +189,10 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
           step: titleStep.kind === 'agent'
             ? t('chat.activityAgentLabel', {
                 agent: titleStep.label,
-                defaultValue: '→ {{agent}}',
+                defaultValue: '-> {{agent}}',
               })
             : titleStep.label,
-          defaultValue: 'Running · {{step}}',
+          defaultValue: 'Running | {{step}}',
         })
       : t('chat.activityRunning', { defaultValue: 'Running' })
   } else if (activity.status === 'error') {
@@ -201,7 +201,8 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
     const parts = [t('chat.activityWorked', { defaultValue: 'Worked' })]
     parts.push(...kindSummaryParts(kindCounts, t))
     if (duration) parts.push(duration)
-    title = parts.join(' · ')
+    // ASCII separators avoid tofu when Agim CJK incorrectly claims U+00B7.
+    title = parts.join(' | ')
   }
 
   return (
@@ -263,7 +264,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                   {step.kind === 'agent'
                     ? t('chat.activityAgentLabel', {
                         agent: step.label,
-                        defaultValue: '→ {{agent}}',
+                        defaultValue: '-> {{agent}}',
                       })
                     : step.label}
                 </span>
@@ -286,7 +287,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
               </div>
               {step.preview && (
                 <pre className="mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-2/80 px-2 py-1 font-mono text-[11px] leading-snug text-text-muted">
-                  {step.preview.length > 280 ? `${step.preview.slice(0, 280)}…` : step.preview}
+                  {step.preview.length > 280 ? `${step.preview.slice(0, 280)}...` : step.preview}
                 </pre>
               )}
             </div>

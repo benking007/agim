@@ -270,7 +270,7 @@
     "activityEmpty": "暂无运行记录。",
     "appearance": "外观",
     "activityRunning": "执行中",
-    "activityRunningStep": "执行中 · {{step}}",
+    "activityRunningStep": "执行中 | {{step}}",
     "activityWorked": "已完成",
     "activityFailed": "失败",
     "activityStepCount": "{{count}} 步",
@@ -290,7 +290,7 @@
     "activityAsk": "提问",
     "activitySkill": "技能",
     "activityWaitingSubagent": "等待子 Agent",
-    "activityAgentLabel": "→ {{agent}}",
+    "activityAgentLabel": "-> {{agent}}",
     "activityAgentRunning": "运行中",
     "activityAgentDone": "已完成",
     "activityAgentFailed": "失败",
@@ -343,7 +343,7 @@
     "askResolved": "已回答",
     "outcome": {
       "allowed":        "已批准",
-      "allowedPinned":  "已批准 · 后续同类自动放行",
+      "allowedPinned":  "已批准 | 后续同类自动放行",
       "denied":         "已拒绝",
       "deniedRevoked":  "已拒绝（撤销自动放行）",
       "expired":        "已超时"
@@ -398,8 +398,8 @@
       "pet": {
         "aria": "Agim 电子宠物",
         "idle": ["点我玩～", "我在听", "随时待命"],
-        "running": ["加油中…", "忙着呢", "认真想"],
-        "tap": ["嗨！", "啵～", "♪", "我在这儿", "继续冲！"],
+        "running": ["加油中...", "忙着呢", "认真想"],
+        "tap": ["嗨！", "啵~", "!", "我在这儿", "继续冲！"],
         "panelTitle": "进行中",
         "empty": "现在没有进行中的任务",
         "runLabel": "Agent 执行中",

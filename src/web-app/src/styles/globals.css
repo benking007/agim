@@ -246,3 +246,27 @@
     100% { opacity: 0; transform: translateX(-96px) translateY(-14px); }
   }
 }
+
+/*
+ * Sonner hardcodes `ui-sans-serif, -apple-system…` (no CJK face). That
+ * beats body inheritance for toast text; on some iOS WKWebView locales
+ * 点赞 feedback ("已标记为有帮助") paints as [?]. :where() has zero
+ * specificity so this rule wins without !important.
+ */
+[data-sonner-toaster],
+[data-sonner-toast],
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
+  font-family:
+    "Agim CJK",
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Noto Sans SC",
+    "Microsoft YaHei",
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji";
+}

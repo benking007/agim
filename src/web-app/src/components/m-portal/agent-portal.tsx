@@ -189,7 +189,9 @@ export function AgentPortal(): JSX.Element {
     const line = 24
     const pad = 8
     const maxLines = 6
-    ta.style.height = `${Math.min(ta.scrollHeight, line * maxLines + pad)}px`
+    // Read inputMessage so height tracks typed content (biome deps).
+    const scroll = inputMessage.length >= 0 ? ta.scrollHeight : 0
+    ta.style.height = `${Math.min(scroll, line * maxLines + pad)}px`
   }, [inputMessage])
 
 

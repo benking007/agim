@@ -873,7 +873,8 @@ export function AgentPortal(): JSX.Element {
                     type="submit"
                     disabled={uploading}
                     className={cn(
-                      'rounded-full p-2 shadow-md transition-all disabled:opacity-50',
+                      // Match + button: fixed h-8 w-8 circle.
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >
@@ -884,7 +885,7 @@ export function AgentPortal(): JSX.Element {
                     type="button"
                     onClick={() => stop()}
                     className={cn(
-                      'rounded-full p-2 shadow-md transition-all',
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                     title={t('chat.portal.stop')}
@@ -897,8 +898,8 @@ export function AgentPortal(): JSX.Element {
                     type="button"
                     onClick={() => setShowVoiceOverlay(true)}
                     className={cn(
-                      'rounded-full p-2 text-zinc-400 transition-colors',
-                      dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                      dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
                   >

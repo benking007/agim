@@ -184,8 +184,8 @@ export function PortalComposerPlus({
         aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
         onClick={() => setMenuOpen(!open)}
         className={cn(
-          // Perfect circle: equal h/w + rounded-full; no padding oval stretch.
-          'flex aspect-square h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 text-[17px] leading-none outline-none transition-colors',
+          // Match send/mic/stop: fixed h-8 w-8 circle, no border ring.
+          'flex aspect-square h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 text-[17px] leading-none outline-none ring-0 transition-colors',
           'disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-teal-500/50',
           dark
             ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'
@@ -446,8 +446,12 @@ export function AttachmentStrip({
           role="dialog"
           aria-modal="true"
           aria-label={preview.name}
+          tabIndex={-1}
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4"
           onClick={() => setPreview(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') setPreview(null)
+          }}
         >
           <button
             type="button"
@@ -460,8 +464,7 @@ export function AttachmentStrip({
           <img
             src={preview.url}
             alt={preview.name}
-            className="max-h-[min(85vh,720px)] max-w-full rounded-lg object-contain shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-none max-h-[min(85vh,720px)] max-w-full rounded-lg object-contain shadow-2xl"
           />
         </div>,
         document.body,

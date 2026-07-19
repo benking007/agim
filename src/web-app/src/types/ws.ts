@@ -35,7 +35,8 @@ export type ChatOutgoing =
 /** Server → Client */
 export type ChatIncoming =
   | { type: 'init'; agents: string[]; defaultAgent: string; clientId: string }
-  | { type: 'history'; messages: HistoryMessage[]; agent: string }
+  | { type: 'history'; messages: HistoryMessage[]; agent: string; planMode?: boolean }
+  | { type: 'plan-mode'; enabled: boolean }
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
   | { type: 'chunk'; text: string; runId?: string }

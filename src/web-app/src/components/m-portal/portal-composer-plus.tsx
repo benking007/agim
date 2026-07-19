@@ -1,0 +1,474 @@
+/**
+ * PortalComposerPlus — "+" menu for Plan / Memo / Goal / camera / photos / files,
+ * plus a pending-attachment strip above the input.
+ */
+
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  Camera, FileText, FolderOpen, Image as ImageIcon, ListTodo, MapPin,
+  StickyNote, X,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { useAuth } from '@/stores/auth'
+
+export interface PendingAttachment {
+  id: string
+  kind: 'image' | 'file'
+  name: string
+  mime: string
+  previewUrl?: string
+  /** Local File until uploaded at send time. */
+  file: File
+}
+
+interface PortalComposerPlusProps {
+  dark: boolean
+  planMode: boolean
+  disabled?: boolean
+  attachments: PendingAttachment[]
+  onAttachmentsChange: (next: PendingAttachment[]) => void
+  onFillInput: (text: string) => void
+  onSendCommand: (text: string) => void
+  onOpenChange?: (open: boolean) => void
+}
+
+async function uploadChatMedia(file: File, threadId: string): Promise<{ marker: string }> {
+  const tok = useAuth.getState().token
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/octet-stream',
+    'X-Agim-Filename': encodeURIComponent(file.name || 'file'),
+    'X-Agim-Mime': file.type || 'application/octet-stream',
+  }
+  if (tok) headers.Authorization = `Bearer ${tok}`
+  const res = await fetch(`/api/chat/media?threadId=${encodeURIComponent(threadId)}`, {
+    method: 'POST',
+    headers,
+    body: file,
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(body.slice(0, 200) || `upload ${res.status}`)
+  }
+  return res.json() as Promise<{ marker: string }>
+}
+
+/** Upload all pending attachments; return marker lines for the chat text. */
+export async function uploadPendingAttachments(
+  items: PendingAttachment[],
+  threadId: string,
+): Promise<string[]> {
+  const markers: string[] = []
+  for (const item of items) {
+    const { marker } = await uploadChatMedia(item.file, threadId)
+    markers.push(marker)
+  }
+  return markers
+}
+
+export function PortalComposerPlus({
+  dark,
+  planMode,
+  disabled,
+  attachments,
+  onAttachmentsChange,
+  onFillInput,
+  onSendCommand,
+  onOpenChange,
+}: PortalComposerPlusProps): JSX.Element {
+  const { t } = useTranslation()
+  const menuId = useId()
+  const [open, setOpen] = useState(false)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const photosRef = useRef<HTMLInputElement>(null)
+  const filesRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
+
+  const setMenuOpen = useCallback((next: boolean): void => {
+    setOpen(next)
+    onOpenChange?.(next)
+  }, [onOpenChange])
+
+  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number; maxH: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPos(null)
+      return
+    }
+    const sync = (): void => {
+      const el = rootRef.current
+      if (!el) return
+      // Anchor to composer form top — tight hug, ignores attachment strip height.
+      const form = el.closest('form') ?? el
+      const formRect = form.getBoundingClientRect()
+      const btnRect = el.getBoundingClientRect()
+      const gap = 4
+      const bottom = Math.max(8, window.innerHeight - formRect.top + gap)
+      const maxH = Math.max(120, window.innerHeight - bottom - 8)
+      const left = Math.max(8, Math.min(btnRect.left, window.innerWidth - 216 - 8))
+      setMenuPos({ left, bottom, maxH })
+    }
+    sync()
+    window.addEventListener('resize', sync)
+    window.addEventListener('scroll', sync, true)
+    return () => {
+      window.removeEventListener('resize', sync)
+      window.removeEventListener('scroll', sync, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (ev: MouseEvent): void => {
+      const t = ev.target as Node
+      if (rootRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open, setMenuOpen])
+
+  useEffect(() => () => {
+    for (const a of attachmentsRef.current) {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+    }
+  }, [])
+
+  function addFiles(list: FileList | null, preferImage: boolean): void {
+    if (!list || list.length === 0) return
+    const next = [...attachments]
+    for (const file of Array.from(list)) {
+      if (next.length >= 8) {
+        toast.error(t('chat.portal.attach.max', { defaultValue: '最多 8 个附件' }))
+        break
+      }
+      const isImage = preferImage || file.type.startsWith('image/')
+      const previewUrl = isImage ? URL.createObjectURL(file) : undefined
+      next.push({
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: isImage ? 'image' : 'file',
+        name: file.name || (isImage ? 'image.jpg' : 'file'),
+        mime: file.type || 'application/octet-stream',
+        previewUrl,
+        file,
+      })
+    }
+    onAttachmentsChange(next)
+    setMenuOpen(false)
+  }
+
+  function onPick(e: ChangeEvent<HTMLInputElement>, preferImage: boolean): void {
+    addFiles(e.target.files, preferImage)
+    e.target.value = ''
+  }
+
+  const itemCls = cn(
+    'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] font-semibold transition',
+    dark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-zinc-700 hover:bg-zinc-100',
+  )
+
+  return (
+    <div ref={rootRef} className={cn('relative shrink-0', open && 'z-50')}>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
+        onClick={() => setMenuOpen(!open)}
+        className={cn(
+          // Match send/mic/stop: fixed h-8 w-8 circle, no border ring.
+          'flex aspect-square h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 text-[17px] leading-none outline-none ring-0 transition-colors',
+          'disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-teal-500/50',
+          dark
+            ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'
+            : 'bg-zinc-200/90 text-rose-600 hover:bg-zinc-300/90',
+          open && (dark ? 'bg-zinc-700 text-rose-300' : 'bg-zinc-300 text-rose-700'),
+        )}
+      >
+        <span aria-hidden className="translate-y-[-0.5px]">+</span>
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          style={menuPos
+            ? {
+                left: menuPos.left,
+                bottom: menuPos.bottom,
+                maxHeight: menuPos.maxH,
+              }
+            : { left: -9999, bottom: 0, visibility: 'hidden' }}
+          className={cn(
+            // bottom-anchored to form top — always tight; paints over attachments.
+            'fixed z-[100] w-[13.5rem] overflow-y-auto origin-bottom-left animate-in fade-in zoom-in-95 rounded-2xl border p-1.5 shadow-xl duration-150 scrollbar-none',
+            dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
+          )}
+        >
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={planMode}
+            className={itemCls}
+            onClick={() => {
+              setMenuOpen(false)
+              onSendCommand(planMode ? '/plan off' : '/plan on')
+            }}
+          >
+            <ListTodo className={cn('h-3.5 w-3.5', planMode ? 'text-rose-500' : 'text-zinc-400')} />
+            <span className="flex-1">{t('chat.portal.menu.plan', { defaultValue: 'Plan 模式' })}</span>
+            <span className={cn(
+              'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+              planMode
+                ? (dark ? 'bg-rose-500/20 text-rose-300' : 'bg-rose-50 text-rose-700')
+                : 'bg-zinc-500/10 text-zinc-400',
+            )}>
+              {planMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => {
+              setMenuOpen(false)
+              onFillInput('/memo here')
+            }}
+          >
+            <StickyNote className="h-3.5 w-3.5 text-amber-500" />
+            <span>Memo</span>
+            <MapPin className="ml-auto h-3 w-3 text-zinc-400" />
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => {
+              setMenuOpen(false)
+              onFillInput('/goal')
+            }}
+          >
+            <ListTodo className="h-3.5 w-3.5 text-sky-500" />
+            <span>Goal</span>
+          </button>
+          <div className={cn('my-1 border-t', dark ? 'border-zinc-800' : 'border-zinc-100')} />
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => cameraRef.current?.click()}
+          >
+            <Camera className="h-3.5 w-3.5 text-zinc-400" />
+            <span>{t('chat.portal.menu.camera', { defaultValue: '拍照' })}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => photosRef.current?.click()}
+          >
+            <ImageIcon className="h-3.5 w-3.5 text-zinc-400" />
+            <span>{t('chat.portal.menu.photos', { defaultValue: '照片' })}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => filesRef.current?.click()}
+          >
+            <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
+            <span>{t('chat.portal.menu.files', { defaultValue: 'Files' })}</span>
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => onPick(e, true)}
+      />
+      <input
+        ref={photosRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => onPick(e, true)}
+      />
+      <input
+        ref={filesRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => onPick(e, false)}
+      />
+    </div>
+  )
+}
+
+export function AttachmentStrip({
+  dark,
+  attachments,
+  onRemove,
+  className,
+}: {
+  dark: boolean
+  attachments: PendingAttachment[]
+  onRemove: (id: string) => void
+  className?: string
+}): JSX.Element | null {
+  const { t } = useTranslation()
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  const [fadeLeft, setFadeLeft] = useState(false)
+  const [fadeRight, setFadeRight] = useState(false)
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+
+  useEffect(() => {
+    if (!scroller) {
+      setFadeLeft(false)
+      setFadeRight(false)
+      return
+    }
+    const sync = (): void => {
+      const { scrollLeft, scrollWidth, clientWidth } = scroller
+      setFadeLeft(scrollLeft > 2)
+      setFadeRight(scrollLeft + clientWidth < scrollWidth - 2)
+    }
+    sync()
+    scroller.addEventListener('scroll', sync, { passive: true })
+    const ro = new ResizeObserver(sync)
+    ro.observe(scroller)
+    const list = scroller.firstElementChild
+    if (list) ro.observe(list)
+    const mo = new MutationObserver(sync)
+    if (list) mo.observe(list, { childList: true, subtree: true })
+    return () => {
+      scroller.removeEventListener('scroll', sync)
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [scroller])
+
+  useEffect(() => {
+    if (!preview) return
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') setPreview(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [preview])
+
+  if (attachments.length === 0) return null
+
+  return (
+    <>
+      {/* Cap width short of the perched pet; overflow scrolls horizontally. */}
+      <div className={cn('pointer-events-auto relative', className)}>
+        <div
+          ref={setScroller}
+          className="overflow-x-auto overscroll-x-contain scrollbar-none"
+        >
+          <ul className="flex w-max gap-2 pb-0.5">
+            {attachments.map((a) => (
+              <li
+                key={a.id}
+                className={cn(
+                  'relative shrink-0 overflow-hidden rounded-xl border',
+                  dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
+                  a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
+                )}
+              >
+                {a.kind === 'image' && a.previewUrl ? (
+                  <button
+                    type="button"
+                    className="h-full w-full"
+                    aria-label={t('chat.portal.attach.preview', { defaultValue: '预览图片' })}
+                    onClick={() => {
+                      const url = a.previewUrl
+                      if (url) setPreview({ url, name: a.name })
+                    }}
+                  >
+                    <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
+                  </button>
+                ) : (
+                  <>
+                    <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
+                    <span className="truncate text-[10px] font-medium">{a.name}</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-label="Remove"
+                  onClick={() => onRemove(a.id)}
+                  className="absolute right-0.5 top-0.5 z-[1] flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {fadeLeft && (
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r to-transparent',
+              dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+            )}
+          />
+        )}
+        {fadeRight && (
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l to-transparent',
+              dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+            )}
+          />
+        )}
+      </div>
+
+      {preview && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.name}
+          tabIndex={-1}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4"
+          onClick={() => setPreview(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') setPreview(null)
+          }}
+        >
+          <button
+            type="button"
+            aria-label={t('chat.portal.attach.closePreview', { defaultValue: '关闭预览' })}
+            onClick={() => setPreview(null)}
+            className="absolute right-4 top-4 z-[1] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white transition hover:bg-black/75"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={preview.url}
+            alt={preview.name}
+            className="pointer-events-none max-h-[min(85vh,720px)] max-w-full rounded-lg object-contain shadow-2xl"
+          />
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}

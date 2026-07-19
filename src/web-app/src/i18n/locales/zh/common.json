@@ -362,6 +362,19 @@
       "messagePlaceholder": "给 {{agent}} 发消息…",
       "stop": "停止",
       "voice": "语音模式",
+      "plusMenu": "更多",
+      "menu": {
+        "plan": "Plan 模式",
+        "camera": "拍照",
+        "photos": "照片",
+        "files": "文件"
+      },
+      "attach": {
+        "max": "最多 8 个附件",
+        "uploadFailed": "附件上传失败",
+        "preview": "预览图片",
+        "closePreview": "关闭预览"
+      },
       "exploreTitle": "自定义 Agent",
       "closeExplore": "关闭",
       "exploreSubtitle": "快速接入本机 Agim 上可用的专用 Agent。",

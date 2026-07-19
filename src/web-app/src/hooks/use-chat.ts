@@ -147,6 +147,10 @@ export interface ChatState {
    *  accumulate into messages[currentReplyId].content. */
   currentReplyId: string | null
   error: string | null
+  /** Live session plan-mode flag (from history / plan-mode events). */
+  planMode: boolean
+  /** WebSocket thread id (web-…). Used for media upload subdir. */
+  clientId: string | null
 }
 
 const initialState: ChatState = {
@@ -160,12 +164,16 @@ const initialState: ChatState = {
   status: 'connecting',
   currentReplyId: null,
   error: null,
+  planMode: false,
+  clientId: null,
 }
 
 type Action =
   | { kind: 'WS_STATUS'; status: WsStatus }
-  | { kind: 'INIT'; agents: string[]; defaultAgent: string }
-  | { kind: 'HISTORY'; messages: ChatMessage[]; agent: string }
+  | { kind: 'INIT'; agents: string[]; defaultAgent: string; clientId?: string }
+  | { kind: 'SET_CLIENT_ID'; clientId: string }
+  | { kind: 'HISTORY'; messages: ChatMessage[]; agent: string; planMode?: boolean }
+  | { kind: 'PLAN_MODE'; enabled: boolean }
   | {
       kind: 'ACTIVE_RUN'
       runId: string
@@ -282,7 +290,16 @@ function reducer(s: ChatState, a: Action): ChatState {
     case 'WS_STATUS':
       return { ...s, status: a.status }
     case 'INIT':
-      return { ...s, agents: a.agents, agent: s.agent || a.defaultAgent }
+      return {
+        ...s,
+        agents: a.agents,
+        agent: s.agent || a.defaultAgent,
+        // Prefer the persisted localStorage threadId (SET_CLIENT_ID) over
+        // the ephemeral WS mint — media uploads must match get-history rekey.
+        clientId: s.clientId || a.clientId || null,
+      }
+    case 'SET_CLIENT_ID':
+      return { ...s, clientId: a.clientId }
     case 'HISTORY':
       // Non-empty history is authoritative (refresh / reconnect).
       // Empty history must NOT wipe in-memory bubbles: after MESSAGES_TTL
@@ -296,7 +313,11 @@ function reducer(s: ChatState, a: Action): ChatState {
       // so mobile reconnect/bootstrap often races the in-flight turn —
       // remapping ids then lets DONE miss the bubble and leave status=running.
       if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
-        return { ...s, agent: a.agent || s.agent }
+        return {
+          ...s,
+          agent: a.agent || s.agent,
+          planMode: a.planMode ?? s.planMode,
+        }
       }
       return {
         ...s,
@@ -304,7 +325,10 @@ function reducer(s: ChatState, a: Action): ChatState {
         agent: a.agent || s.agent,
         currentReplyId: a.messages.length > 0 ? null : s.currentReplyId,
         activeRunId: a.messages.length > 0 ? null : s.activeRunId,
+        planMode: a.planMode ?? s.planMode,
       }
+    case 'PLAN_MODE':
+      return { ...s, planMode: a.enabled }
     case 'ACTIVE_RUN': {
       // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
       // onto the last assistant bubble (or create a streaming placeholder).
@@ -780,6 +804,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         activeRunId: null,
         currentReplyId: null,
         error: null,
+        planMode: false,
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
@@ -894,6 +919,7 @@ export function useChat(): UseChat {
       return fresh
     }
     const threadId = loadOrCreateThreadId()
+    dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
 
     // On every WS open, ask the backend to:
     //   * replay history (rekey session to our persisted threadId)
@@ -927,12 +953,18 @@ export function useChat(): UseChat {
   function onIncoming(msg: ChatIncoming): void {
     switch (msg.type) {
       case 'init':
-        dispatch({ kind: 'INIT', agents: msg.agents, defaultAgent: msg.defaultAgent })
+        dispatch({
+          kind: 'INIT',
+          agents: msg.agents,
+          defaultAgent: msg.defaultAgent,
+          clientId: msg.clientId,
+        })
         return
       case 'history':
         dispatch({
           kind: 'HISTORY',
           agent: msg.agent,
+          planMode: msg.planMode,
           messages: msg.messages.map((h, i): ChatMessage => {
             const activity = h.activity
               ? {
@@ -977,6 +1009,9 @@ export function useChat(): UseChat {
             }
           }),
         })
+        return
+      case 'plan-mode':
+        dispatch({ kind: 'PLAN_MODE', enabled: !!msg.enabled })
         return
       case 'active-run': {
         const normStep = (st: (typeof msg.steps)[number]): ChatActivityStep => ({

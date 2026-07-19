@@ -362,6 +362,19 @@
       "messagePlaceholder": "Message {{agent}}...",
       "stop": "Stop",
       "voice": "Voice mode",
+      "plusMenu": "More",
+      "menu": {
+        "plan": "Plan mode",
+        "camera": "Camera",
+        "photos": "Photos",
+        "files": "Files"
+      },
+      "attach": {
+        "max": "Up to 8 attachments",
+        "uploadFailed": "Attachment upload failed",
+        "preview": "Preview image",
+        "closePreview": "Close preview"
+      },
       "exploreTitle": "Custom Agents",
       "closeExplore": "Close",
       "exploreSubtitle": "Instantly hook into specialised agents available on this Agim host.",

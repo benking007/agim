@@ -185,13 +185,18 @@ export function AgentPortal(): JSX.Element {
   useEffect(() => {
     const ta = composerInputRef.current
     if (!ta) return
-    ta.style.height = 'auto'
-    const line = 24
-    const pad = 8
+    // Reset so scrollHeight reflects wrapped content width.
+    ta.style.height = '0px'
+    const cs = getComputedStyle(ta)
+    const line = Number.parseFloat(cs.lineHeight) || 20
+    const padY = (Number.parseFloat(cs.paddingTop) || 0)
+      + (Number.parseFloat(cs.paddingBottom) || 0)
     const maxLines = 6
+    const minH = line + padY
+    const maxH = line * maxLines + padY
     // Read inputMessage so height tracks typed content (biome deps).
     const scroll = inputMessage.length >= 0 ? ta.scrollHeight : 0
-    ta.style.height = `${Math.min(scroll, line * maxLines + pad)}px`
+    ta.style.height = `${Math.min(Math.max(scroll, minH), maxH)}px`
   }, [inputMessage])
 
 
@@ -820,7 +825,7 @@ export function AgentPortal(): JSX.Element {
             asks={state.pendingAsks}
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
-          <div className="relative">
+          <div className="relative min-w-0 w-full">
             <PortalPet
               dark={dark}
               busy={canStop || demoPet}
@@ -849,7 +854,8 @@ export function AgentPortal(): JSX.Element {
               className={cn(
                 // z-10 covers pet feet; + menu is portaled to body so it is fine.
                 // items-end keeps + / send aligned to the last line as the field grows.
-                'relative z-10 flex items-end justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // min-w-0 + w-full: flex child must shrink so textarea wraps instead of growing.
+                'relative z-10 flex w-full min-w-0 items-end gap-0.5 rounded-[22px] border p-1 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -890,49 +896,50 @@ export function AgentPortal(): JSX.Element {
                 className={cn(
                   // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
                   // focused inputs under 16px — same fix as ChatComposer.
-                  // min-w-0: flex item must shrink so long CJK wraps instead of overflowing.
-                  'min-h-[32px] min-w-0 max-h-[152px] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-1.5 text-md leading-6',
-                  'whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:outline-none disabled:opacity-60',
+                  // Compact single-line: leading-5 + py-1 ≈ 28px, matches h-7 controls.
+                  // min-w-0 / w-full: wrap long CJK instead of horizontal overflow.
+                  'box-border min-h-[28px] min-w-0 w-full max-h-[128px] flex-1 resize-none overflow-x-hidden overflow-y-auto bg-transparent px-2.5 py-1 text-md leading-5',
+                  'whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] focus:outline-none disabled:opacity-60',
                   dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
                 )}
               />
-              <div className="flex shrink-0 items-end gap-1 self-end pb-0.5">
+              <div className="flex shrink-0 items-end gap-1 self-end">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"
                     disabled={uploading}
                     className={cn(
-                      // Match + button: fixed h-8 w-8 circle.
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                      // Match + button: fixed h-7 w-7 circle.
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-3.5 w-3.5" />
                   </button>
                 ) : canStop ? (
                   <button
                     type="button"
                     onClick={() => stop()}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                     title={t('chat.portal.stop')}
                     aria-label={t('chat.portal.stop')}
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                    <Square className="h-3 w-3 fill-current" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowVoiceOverlay(true)}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
                       dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
                   >
-                    <Mic className="h-4 w-4" />
+                    <Mic className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>

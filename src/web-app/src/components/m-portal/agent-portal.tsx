@@ -179,15 +179,35 @@ function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: str
   const now = Date.now()
   const markers = [
     ...imagePaths.map((p) => `[图片附件：${p}]`),
-    `[文件附件：${filePath} (${fileName}, 42 B)]`,
-    'see the photo',
-  ].join('\n')
+    `[文件附件：${filePath} (${fileName}, 12 B)]`,
+  ]
   return [
     {
       id: 'demo-media-user',
       role: 'user',
-      content: markers,
+      content: [...markers, 'see the photo'].join('\n'),
       timestamp: now - 10_000,
+    },
+  ]
+}
+
+/** Local visual QA (`/m/chat?demo=collapse`) — long user body for fold/mask. */
+function collapseDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-collapse-user',
+      role: 'user',
+      content: [
+        '1、老问题，这个输入款高度太高了',
+        '2、/memo 应该自动填充 /memo here',
+        '3、输入 / 或 @ 后，如果用的是键盘上下键选择，无法选择列表的选项。',
+        '4、左侧的加号菜单，也加上 models、skills、remember',
+        '5、消息体过长时需要默认折叠，点击后再展开',
+        '6、选择文件夹/文件/skill 后，backspace 要能删掉 chip',
+        '7、小精灵位置往上调，把脚挡住就行',
+      ].join('\n'),
+      timestamp: now - 5_000,
     },
   ]
 }
@@ -246,10 +266,13 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'pet'
   const demoMedia = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'media'
+  const demoCollapse = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'collapse'
   const chatMessages = useMemo(
     () => {
       if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
+      if (demoCollapse) return collapseDemoMessages()
       if (demoMedia) {
         const params = new URLSearchParams(window.location.search)
         const images = (params.get('images') || '').split('|').filter(Boolean)
@@ -261,7 +284,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoPet, demoWidth, demoMedia, state.messages],
+    [demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -1040,9 +1063,9 @@ export function AgentPortal(): JSX.Element {
               onAnnounceDone={(id) => {
                 setPetAnnounce((cur) => (cur?.id === id ? null : cur))
               }}
-              // Perch on the form rim; z below the form so feet are covered by
-              // the opaque composer (not painted on top of it).
-              className="absolute bottom-[calc(100%-1.4rem)] right-1 z-[5]"
+              // Perch on the form rim; z below the form so only feet tuck
+              // under the opaque composer (not painted on top of it).
+              className="absolute bottom-[calc(100%-0.55rem)] right-1 z-[5]"
             />
             <AttachmentStrip
               dark={dark}

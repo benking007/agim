@@ -1,9 +1,12 @@
 /**
  * PortalUserContent — render user bubble text with uploaded media markers
  * as in-bubble image thumbnails (5-up wrap grid) and @filename links.
+ *
+ * Long non-image bodies collapse to ~3.5 lines (3 full + half-mask) until
+ * the chip is tapped to expand.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
@@ -20,6 +23,11 @@ import { MentionChip, mentionLabel } from './portal-mention-chip'
 
 /** ~5 thumbs per row on a typical portal user chip (mobile ~358px content). */
 const IMAGE_GRID_COLS = 5
+
+/** Collapsed body: 3 full lines + ~half a fourth (mask). Matches text-base/leading-relaxed. */
+const COLLAPSE_LINE_PX = 26
+const COLLAPSE_LINES = 3.5
+const COLLAPSE_MAX_PX = Math.round(COLLAPSE_LINE_PX * COLLAPSE_LINES)
 
 async function fetchMediaBlob(path: string): Promise<{ blob: Blob; mime: string } | null> {
   const tok = useAuth.getState().token
@@ -280,6 +288,142 @@ function blockKey(block: RenderBlock, index: number): string {
   return `f:${index}:${block.files.map((f) => f.path).join('|')}`
 }
 
+/** Collapse tall non-image bodies; tap to expand. Images stay outside. */
+function CollapsibleBody({
+  dark,
+  contentKey,
+  children,
+}: {
+  dark: boolean
+  contentKey: string
+  children: ReactNode
+}): JSX.Element {
+  const { t } = useTranslation()
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    // Re-measure whenever the serialized message body changes.
+    void contentKey
+    const measure = (): void => {
+      const prev = el.style.maxHeight
+      el.style.maxHeight = 'none'
+      const full = el.scrollHeight
+      el.style.maxHeight = prev
+      setOverflows(full > COLLAPSE_MAX_PX + 2)
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [contentKey])
+
+  const collapsed = overflows && !expanded
+
+  return (
+    <div className="relative min-w-0">
+      <div
+        ref={bodyRef}
+        className={cn(collapsed && 'overflow-hidden')}
+        style={collapsed ? { maxHeight: COLLAPSE_MAX_PX } : undefined}
+      >
+        {children}
+      </div>
+      {collapsed && (
+        <>
+          <button
+            type="button"
+            className="absolute inset-0 z-[1] cursor-pointer"
+            aria-label={t('chat.portal.expandMessage', { defaultValue: '展开消息' })}
+            onClick={() => setExpanded(true)}
+          />
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-[1.35em]',
+              dark
+                ? 'bg-gradient-to-t from-zinc-800 via-zinc-800/80 to-transparent'
+                : 'bg-gradient-to-t from-white via-white/80 to-transparent',
+            )}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+function renderNonImageBlock(
+  block: Exclude<RenderBlock, { kind: 'images' }>,
+  index: number,
+  dark: boolean,
+  onOpenFile: (path: string, name: string) => void,
+): JSX.Element {
+  if (block.kind === 'text') {
+    return (
+      <span
+        key={blockKey(block, index)}
+        className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]"
+      >
+        {block.text}
+      </span>
+    )
+  }
+  if (block.kind === 'mention') {
+    const m = block.mention
+    if (m.kind === 'workspace') {
+      return (
+        <MentionChip
+          key={blockKey(block, index)}
+          kind="workspace"
+          label={mentionLabel('workspace')}
+          dark={dark}
+          className="mx-0.5"
+        />
+      )
+    }
+    if (m.kind === 'skill') {
+      return (
+        <MentionChip
+          key={blockKey(block, index)}
+          kind="skill"
+          label={mentionLabel('skill', m.name)}
+          dark={dark}
+          className="mx-0.5"
+        />
+      )
+    }
+    return (
+      <MentionChip
+        key={blockKey(block, index)}
+        kind={m.isDir ? 'dir' : 'file'}
+        label={mentionLabel(m.isDir ? 'dir' : 'file', m.path)}
+        dark={dark}
+        className="mx-0.5"
+      />
+    )
+  }
+  return (
+    <div key={blockKey(block, index)} className="flex flex-wrap gap-x-3 gap-y-1">
+      {block.files.map((file) => (
+        <button
+          key={file.path}
+          type="button"
+          className="inline font-medium text-sky-500 underline-offset-2 hover:underline"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenFile(file.path, file.name)
+          }}
+        >
+          @{file.name}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function PortalUserContent({
   dark,
   content,
@@ -295,93 +439,44 @@ export function PortalUserContent({
   const [fileModal, setFileModal] = useState<FileModalState | null>(null)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
 
-  const hasMedia = blocks.some((b) => b.kind === 'images' || b.kind === 'files')
+  const imageBlocks = blocks.filter((b): b is Extract<RenderBlock, { kind: 'images' }> => b.kind === 'images')
+  const bodyBlocks = blocks.filter((b): b is Exclude<RenderBlock, { kind: 'images' }> => b.kind !== 'images')
+  const hasImages = imageBlocks.length > 0
+  const hasBody = bodyBlocks.length > 0
 
   return (
     <>
       <div className={cn(
         'min-w-0 max-w-full overflow-hidden',
-        hasMedia ? 'flex flex-col items-stretch gap-2' : null,
+        (hasImages && hasBody) ? 'flex flex-col items-stretch gap-2' : null,
         className,
       )}>
-        {blocks.map((block, index) => {
-          if (block.kind === 'text') {
-            return (
-              <span
-                key={blockKey(block, index)}
-                className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]"
-              >
-                {block.text}
-              </span>
-            )
-          }
-          if (block.kind === 'mention') {
-            const m = block.mention
-            if (m.kind === 'workspace') {
-              return (
-                <MentionChip
-                  key={blockKey(block, index)}
-                  kind="workspace"
-                  label={mentionLabel('workspace')}
-                  dark={dark}
-                  className="mx-0.5"
-                />
-              )
-            }
-            if (m.kind === 'skill') {
-              return (
-                <MentionChip
-                  key={blockKey(block, index)}
-                  kind="skill"
-                  label={mentionLabel('skill', m.name)}
-                  dark={dark}
-                  className="mx-0.5"
-                />
-              )
-            }
-            return (
-              <MentionChip
-                key={blockKey(block, index)}
-                kind={m.isDir ? 'dir' : 'file'}
-                label={mentionLabel(m.isDir ? 'dir' : 'file', m.path)}
+        {imageBlocks.map((block, index) => (
+          <div
+            key={blockKey(block, index)}
+            className="grid w-full gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${IMAGE_GRID_COLS}, minmax(0, 1fr))` }}
+          >
+            {block.paths.map((path) => (
+              <ImageThumb
+                key={path}
                 dark={dark}
-                className="mx-0.5"
+                path={path}
+                onOpen={(url, name) => setImagePreview({ url, name })}
               />
-            )
-          }
-          if (block.kind === 'images') {
-            return (
-              <div
-                key={blockKey(block, index)}
-                className="grid w-full gap-1.5"
-                style={{ gridTemplateColumns: `repeat(${IMAGE_GRID_COLS}, minmax(0, 1fr))` }}
-              >
-                {block.paths.map((path) => (
-                  <ImageThumb
-                    key={path}
-                    dark={dark}
-                    path={path}
-                    onOpen={(url, name) => setImagePreview({ url, name })}
-                  />
-                ))}
-              </div>
-            )
-          }
-          return (
-            <div key={blockKey(block, index)} className="flex flex-wrap gap-x-3 gap-y-1">
-              {block.files.map((file) => (
-                <button
-                  key={file.path}
-                  type="button"
-                  className="inline font-medium text-sky-500 underline-offset-2 hover:underline"
-                  onClick={() => setFileModal({ path: file.path, name: file.name })}
-                >
-                  @{file.name}
-                </button>
-              ))}
-            </div>
-          )
-        })}
+            ))}
+          </div>
+        ))}
+
+        {hasBody && (
+          <CollapsibleBody dark={dark} contentKey={content}>
+            {bodyBlocks.map((block, index) =>
+              renderNonImageBlock(block, index, dark, (path, name) => {
+                setFileModal({ path, name })
+              }),
+            )}
+          </CollapsibleBody>
+        )}
       </div>
 
       {fileModal && (

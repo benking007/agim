@@ -70,3 +70,17 @@ describe('filterSlashCommands', () => {
     expect(memo?.action).toEqual({ type: 'fill', text: '/memo here' })
   })
 })
+
+describe('backspace deletes trailing chip', () => {
+  it('drops last chip via serialize roundtrip', () => {
+    const chips = [
+      makeChip({ kind: 'workspace', marker: workspaceMarker(), label: 'workspace' }),
+      makeChip({ kind: 'skill', marker: skillMarker('agim-reminders'), label: 'agim-reminders' }),
+    ]
+    const value = serializeComposer(chips, '')
+    const parsed = chipsFromValue(value)
+    expect(parsed.chips).toHaveLength(2)
+    const after = serializeComposer(parsed.chips.slice(0, -1), parsed.text)
+    expect(chipsFromValue(after).chips.map((c) => c.kind)).toEqual(['workspace'])
+  })
+})

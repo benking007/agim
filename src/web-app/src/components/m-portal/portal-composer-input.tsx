@@ -163,6 +163,28 @@ export function PortalComposerInput({
     onCaretChange?.(ta.selectionStart, text)
   }
 
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    // Backspace at caret 0 deletes the trailing mention chip (Cursor-style).
+    if (e.key === 'Backspace' && chips.length > 0) {
+      const ta = inputRef.current
+      const atStart = (ta?.selectionStart ?? 0) === 0 && (ta?.selectionEnd ?? 0) === 0
+      if (atStart) {
+        e.preventDefault()
+        const nextChips = chips.slice(0, -1)
+        emit(nextChips, text)
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (!el) return
+          el.focus()
+          el.setSelectionRange(0, 0)
+          onCaretChange?.(0, text)
+        })
+        return
+      }
+    }
+    onKeyDown?.(e)
+  }
+
   return (
     <div
       className={cn(
@@ -193,7 +215,7 @@ export function PortalComposerInput({
         disabled={disabled}
         placeholder={chips.length === 0 ? placeholder : undefined}
         onChange={(e) => onTextChange(e.target.value)}
-        onKeyDown={onKeyDown}
+        onKeyDown={handleKeyDown}
         onSelect={reportCaret}
         onClick={reportCaret}
         onKeyUp={(e) => {

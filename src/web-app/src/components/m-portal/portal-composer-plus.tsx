@@ -94,7 +94,7 @@ export function PortalComposerPlus({
     onOpenChange?.(next)
   }, [onOpenChange])
 
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number; maxH?: number } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) {
@@ -106,18 +106,19 @@ export function PortalComposerPlus({
       if (!el) return
       const r = el.getBoundingClientRect()
       const gap = attachments.length > 0 ? 72 : 8
-      // Approximate menu height; clamp so Plan…Files stay on-screen.
-      const menuH = menuRef.current?.offsetHeight || 292
+      // Keep the menu above the + / attachment strip; scroll inside if needed.
+      const bottomLimit = r.top - gap
+      const naturalH = menuRef.current?.scrollHeight || 292
       const left = Math.max(8, Math.min(r.left, window.innerWidth - 216 - 8))
-      let top = r.top - gap - menuH
-      if (top < 8) top = 8
-      if (top + menuH > window.innerHeight - 8) {
-        top = Math.max(8, window.innerHeight - menuH - 8)
+      let top = bottomLimit - naturalH
+      let maxH: number | undefined
+      if (top < 8) {
+        top = 8
+        maxH = Math.max(120, bottomLimit - 8)
       }
-      setMenuPos({ left, top })
+      setMenuPos({ left, top, maxH })
     }
     sync()
-    // Remeasure after paint once the portaled node exists.
     const raf = requestAnimationFrame(sync)
     window.addEventListener('resize', sync)
     window.addEventListener('scroll', sync, true)
@@ -203,11 +204,16 @@ export function PortalComposerPlus({
           id={menuId}
           role="menu"
           style={menuPos
-            ? { left: menuPos.left, top: menuPos.top }
+            ? {
+                left: menuPos.left,
+                top: menuPos.top,
+                maxHeight: menuPos.maxH,
+                overflowY: menuPos.maxH ? 'auto' : undefined,
+              }
             : { left: -9999, top: 0, visibility: 'hidden' }}
           className={cn(
             // Portal to body + fixed — always above attachment strip / pet / header.
-            'fixed z-[100] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
+            'fixed z-[100] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150 scrollbar-none',
             dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
           )}
         >
@@ -283,7 +289,7 @@ export function PortalComposerPlus({
             onClick={() => filesRef.current?.click()}
           >
             <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
-            <span>{t('chat.portal.menu.files', { defaultValue: '文件' })}</span>
+            <span>{t('chat.portal.menu.files', { defaultValue: 'Files' })}</span>
           </button>
         </div>,
         document.body,

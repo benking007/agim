@@ -373,7 +373,9 @@
         "max": "Up to 8 attachments",
         "uploadFailed": "Attachment upload failed",
         "preview": "Preview image",
-        "closePreview": "Close preview"
+        "closePreview": "Close preview",
+        "loading": "Loading…",
+        "unreadable": "Unable to read this file"
       },
       "exploreTitle": "Custom Agents",
       "closeExplore": "Close",

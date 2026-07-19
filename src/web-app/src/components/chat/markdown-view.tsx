@@ -93,24 +93,27 @@ const COMPONENTS: Components = {
     const { className, body } = codeChildProps(children)
     return <CodeFence className={className}>{body}</CodeFence>
   },
-  // Tables — agent data dumps. Compact; scroll inside the reply column
-  // (parent uses min-w-0 so this does not inflate past the width cap).
+  // Tables — agent data dumps. Scroll ONLY inside this wrapper so the
+  // portal / iOS WKWebView never pans horizontally (page rubber-band).
   table: ({ children, ...p }) => (
-    <div className="my-2 max-w-full min-w-0 overflow-x-auto">
-      <table className="w-full min-w-0 border-collapse text-xs" {...p}>{children}</table>
+    <div className="agim-md-table my-2">
+      <table className="w-max min-w-full border-collapse text-xs" {...p}>{children}</table>
     </div>
   ),
   thead: ({ children, ...p }) => <thead className="border-b border-border bg-surface-2/50" {...p}>{children}</thead>,
   tbody: ({ children, ...p }) => <tbody {...p}>{children}</tbody>,
   tr: ({ children, ...p }) => <tr className="border-b border-border/40 last:border-b-0" {...p}>{children}</tr>,
-  th: ({ children, ...p }) => <th className="px-2 py-1 text-left font-semibold" {...p}>{children}</th>,
-  td: ({ children, ...p }) => <td className="px-2 py-1 align-top" {...p}>{children}</td>,
+  th: ({ children, ...p }) => <th className="whitespace-nowrap px-2 py-1 text-left font-semibold" {...p}>{children}</th>,
+  td: ({ children, ...p }) => <td className="max-w-[10rem] break-words px-2 py-1 align-top sm:max-w-[14rem]" {...p}>{children}</td>,
   hr: (p) => <hr className="my-2 border-border" {...p} />,
 }
 
 export function MarkdownView({ content, className }: MarkdownViewProps): JSX.Element {
   return (
-    <div className={cn('text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}>
+    <div className={cn(
+      'min-w-0 max-w-full overflow-x-hidden text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+      className,
+    )}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
         {content}
       </ReactMarkdown>

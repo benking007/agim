@@ -82,6 +82,8 @@ export function PortalComposerPlus({
   const photosRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
 
   useEffect(() => {
     if (!open) return
@@ -93,10 +95,9 @@ export function PortalComposerPlus({
   }, [open])
 
   useEffect(() => () => {
-    for (const a of attachments) {
+    for (const a of attachmentsRef.current) {
       if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
     }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only revoke object URLs on unmount
   }, [])
 
   function addFiles(list: FileList | null, preferImage: boolean): void {
@@ -120,12 +121,6 @@ export function PortalComposerPlus({
     }
     onAttachmentsChange(next)
     setOpen(false)
-  }
-
-  function removeAttachment(id: string): void {
-    const target = attachments.find((a) => a.id === id)
-    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-    onAttachmentsChange(attachments.filter((a) => a.id !== id))
   }
 
   function onPick(e: ChangeEvent<HTMLInputElement>, preferImage: boolean): void {

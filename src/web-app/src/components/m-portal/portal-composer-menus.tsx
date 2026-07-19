@@ -47,6 +47,22 @@ import {
 const SKILL_PREVIEW = 3
 const CMD_PREVIEW = 5
 
+function slashCmdLabel(
+  t: (key: string, opts?: { defaultValue?: string }) => string,
+  cmd: PortalSlashCommand,
+): string {
+  return t(`chat.portal.slash.cmd.${cmd.id}.label`, { defaultValue: cmd.label })
+}
+
+function slashCmdDescription(
+  t: (key: string, opts?: { defaultValue?: string }) => string,
+  cmd: PortalSlashCommand,
+): string | undefined {
+  const fallback = cmd.description || ''
+  const value = t(`chat.portal.slash.cmd.${cmd.id}.description`, { defaultValue: fallback })
+  return value || undefined
+}
+
 function PopupShell({
   dark,
   anchor,
@@ -411,7 +427,7 @@ export function PortalSlashPopup({
         {previewSkills.length > 0 && (
           <>
             <SectionLabel dark={dark}>
-              {t('chat.portal.slash.skills', { defaultValue: 'Skills' })}
+              {t('chat.portal.slash.skills')}
             </SectionLabel>
             {previewSkills.map((s) => {
               const i = idx++
@@ -430,10 +446,7 @@ export function PortalSlashPopup({
             {moreSkills > 0 && (
               <MoreLink
                 dark={dark}
-                label={t('chat.portal.slash.showMoreSkills', {
-                  count: moreSkills,
-                  defaultValue: `Show ${moreSkills} more skills`,
-                })}
+                label={t('chat.portal.slash.showMoreSkills', { count: moreSkills })}
                 onClick={() => setSkillsModal(true)}
               />
             )}
@@ -442,15 +455,15 @@ export function PortalSlashPopup({
         {previewCommands.length > 0 && (
           <>
             <SectionLabel dark={dark}>
-              {t('chat.portal.slash.commands', { defaultValue: 'Commands' })}
+              {t('chat.portal.slash.commands')}
             </SectionLabel>
             {previewCommands.map((c) => {
               const i = idx++
               const subtitle = c.id === 'plan'
                 ? (planMode
-                  ? t('chat.portal.slash.planOn', { defaultValue: 'Plan mode is on — click to turn off' })
-                  : (c.description || undefined))
-                : c.description
+                  ? t('chat.portal.slash.planOn')
+                  : slashCmdDescription(t, c))
+                : slashCmdDescription(t, c)
               return (
                 <RowButton
                   key={`cmd-${c.id}`}
@@ -458,7 +471,7 @@ export function PortalSlashPopup({
                   active={i === activeIndex}
                   onClick={() => onPickCommand(c)}
                   icon={commandIcon(c.id)}
-                  title={c.label}
+                  title={slashCmdLabel(t, c)}
                   subtitle={subtitle}
                 />
               )
@@ -466,10 +479,7 @@ export function PortalSlashPopup({
             {moreCommands > 0 && (
               <MoreLink
                 dark={dark}
-                label={t('chat.portal.slash.showMoreCommands', {
-                  count: moreCommands,
-                  defaultValue: `Show ${moreCommands} more commands`,
-                })}
+                label={t('chat.portal.slash.showMoreCommands', { count: moreCommands })}
                 onClick={() => setCmdsModal(true)}
               />
             )}
@@ -477,7 +487,7 @@ export function PortalSlashPopup({
         )}
         {previewSkills.length === 0 && previewCommands.length === 0 && (
           <p className={cn('px-2 py-3 text-center text-[12px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
-            {t('chat.portal.slash.empty', { defaultValue: 'No matching skills or commands' })}
+            {t('chat.portal.slash.empty')}
           </p>
         )}
       </PopupShell>
@@ -485,7 +495,7 @@ export function PortalSlashPopup({
       {skillsModal && (
         <ModalShell
           dark={dark}
-          title={t('chat.portal.slash.allSkills', { defaultValue: 'Skills' })}
+          title={t('chat.portal.slash.allSkills')}
           onClose={() => setSkillsModal(false)}
         >
           {filteredSkills.map((s) => (
@@ -507,7 +517,7 @@ export function PortalSlashPopup({
       {cmdsModal && (
         <ModalShell
           dark={dark}
-          title={t('chat.portal.slash.allCommands', { defaultValue: 'Commands' })}
+          title={t('chat.portal.slash.allCommands')}
           onClose={() => setCmdsModal(false)}
         >
           {commands.map((c) => (
@@ -519,8 +529,8 @@ export function PortalSlashPopup({
                 onPickCommand(c)
               }}
               icon={commandIcon(c.id)}
-              title={c.label}
-              subtitle={c.description}
+              title={slashCmdLabel(t, c)}
+              subtitle={slashCmdDescription(t, c)}
             />
           ))}
         </ModalShell>
@@ -585,12 +595,23 @@ export function PortalAtPopup({
 
   const rootItems = useMemo(() => {
     const items = [
-      { id: 'workspace', label: 'workspace', sub: 'workspace' },
-      { id: 'files', label: 'Files & Folders', sub: undefined as string | undefined },
+      {
+        id: 'workspace',
+        label: t('chat.portal.at.workspace'),
+        sub: t('chat.portal.at.workspace'),
+      },
+      {
+        id: 'files',
+        label: t('chat.portal.at.filesFolders'),
+        sub: undefined as string | undefined,
+      },
     ]
     if (!q) return items
-    return items.filter((i) => i.label.toLowerCase().includes(q) || (i.sub || '').includes(q))
-  }, [q])
+    return items.filter((i) => {
+      const hay = `${i.label} ${i.sub || ''} workspace files folders 工作区 文件`.toLowerCase()
+      return hay.includes(q)
+    })
+  }, [q, t])
 
   const flatCount = mode === 'root' ? rootItems.length : entries.length
   const activeIndexRef = useRef(activeIndex)
@@ -717,21 +738,21 @@ export function PortalAtPopup({
             )}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="truncate">{dirPath || t('chat.portal.at.workspaceRoot', { defaultValue: 'workspace' })}</span>
+            <span className="truncate">{dirPath || t('chat.portal.at.workspaceRoot')}</span>
           </button>
           {listing.isLoading && (
             <p className={cn('px-2 py-3 text-[12px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
-              {t('chat.portal.at.loading', { defaultValue: 'Loading…' })}
+              {t('chat.portal.at.loading')}
             </p>
           )}
           {listing.isError && (
             <p className="px-2 py-3 text-[12px] text-rose-400">
-              {t('chat.portal.at.loadFailed', { defaultValue: 'Failed to load workspace files' })}
+              {t('chat.portal.at.loadFailed')}
             </p>
           )}
           {!listing.isLoading && !listing.isError && entries.length === 0 && (
             <p className={cn('px-2 py-3 text-[12px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
-              {t('chat.portal.at.empty', { defaultValue: 'Empty folder' })}
+              {t('chat.portal.at.empty')}
             </p>
           )}
           {entries.map((entry, i) => {
@@ -766,7 +787,7 @@ export function PortalAtPopup({
                         onPickFile(rel, true)
                       }}
                     >
-                      {t('chat.portal.at.selectFolder', { defaultValue: 'Select' })}
+                      {t('chat.portal.at.selectFolder')}
                     </button>
                   )
                   : undefined}

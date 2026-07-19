@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Portal `+` button: larger dark glyph (no rose accent).
+- Portal `/` `@` pickers and `+` menu: full en/zh strings for section labels, “more skills/commands”, command titles/descriptions, and workspace file browser.
 - Portal `+` menu also offers Remember / Models / Skills; Memo fills `/memo here`.
 - `GET /api/workspace-files` and `GET /api/agim-skills*` are readable by any authenticated peer so Portal pickers work without admin (mutations stay admin-only).
 

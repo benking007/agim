@@ -5994,7 +5994,7 @@ function servePageHtml(res: ServerResponse, filePath: string): void {
       "connect-src 'self' ws: wss:",
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
+      "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "frame-ancestors 'none'",
       "base-uri 'self'",

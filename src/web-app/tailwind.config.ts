@@ -96,7 +96,8 @@ export default {
       // CJK-first stacks — WKWebView often paints Han as .notdef when
       // -apple-system/Helvetica claim coverage without glyphs. Self-hosted
       // `Agim CJK` (Noto Sans SC subset) is first so Chinese never depends
-      // on system PingFang; unicode-range keeps Latin on the system face.
+      // on system PingFang; unicode-range keeps Latin + emoji on system
+      // faces (Apple Color Emoji). Without emoji at the end, 📋⭐ become [?].
       fontFamily: {
         sans: [
           '"Agim CJK"',
@@ -111,6 +112,9 @@ export default {
           'Helvetica',
           'Arial',
           'sans-serif',
+          '"Apple Color Emoji"',
+          '"Segoe UI Emoji"',
+          '"Noto Color Emoji"',
         ],
         mono: [
           '"Agim CJK"',
@@ -126,6 +130,9 @@ export default {
           '"Noto Sans SC"',
           '"Microsoft YaHei"',
           'monospace',
+          '"Apple Color Emoji"',
+          '"Segoe UI Emoji"',
+          '"Noto Color Emoji"',
         ],
       },
       boxShadow: {

@@ -33,13 +33,18 @@ struct WebViewRepresentable: UIViewRepresentable {
         // -apple-system without a Han glyph fallback (tofu / [?]). Also
         // declare @font-face here so the face exists even if CSS arrives
         // late; /fonts/ is a public path (must not 302 to login).
+        //
+        // unicode-range is mandatory: without it Agim CJK claims emoji
+        // code points it does not contain → 📋⭐ render as [?]. Keep in
+        // sync with src/web-app/src/styles/cjk-font.css.
         let cjkCss = """
         (function(){
           var s=document.createElement('style');
+          var ur='U+2E80-2EFF,U+2F00-2FDF,U+3000-303F,U+3040-309F,U+30A0-30FF,U+3100-312F,U+31A0-31BF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF';
           s.textContent=[
-            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");}',
-            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");}',
-            'html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif!important;}'
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");unicode-range:'+ur+';}',
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");unicode-range:'+ur+';}',
+            'html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"!important;}'
           ].join('');
           document.documentElement.appendChild(s);
         })();

@@ -365,9 +365,49 @@
       "plusMenu": "More",
       "menu": {
         "plan": "Plan mode",
+        "memo": "Memo",
+        "goal": "Goal",
+        "remember": "Remember",
+        "models": "Models",
+        "skills": "Skills",
         "camera": "Camera",
         "photos": "Photos",
         "files": "Files"
+      },
+      "slash": {
+        "skills": "Skills",
+        "commands": "Commands",
+        "showMoreSkills": "Show {{count}} more skills",
+        "showMoreCommands": "Show {{count}} more commands",
+        "allSkills": "Skills",
+        "allCommands": "Commands",
+        "empty": "No matching skills or commands",
+        "planOn": "Plan mode is on — click to turn off",
+        "cmd": {
+          "plan": { "label": "Plan", "description": "Generate an implementation plan" },
+          "memo": { "label": "Memo", "description": "Save a 5W1H memo" },
+          "goal": { "label": "Goal", "description": "Track a long-running goal" },
+          "remember": { "label": "Remember", "description": "Set a reminder" },
+          "models": { "label": "Models", "description": "List available models" },
+          "new": { "label": "New", "description": "Start a new conversation" },
+          "help": { "label": "Help", "description": "Show command help" },
+          "agents": { "label": "Agents", "description": "List available agents" },
+          "status": { "label": "Status", "description": "Service status" },
+          "think": { "label": "Think", "description": "Toggle extended thinking" },
+          "skill": { "label": "Skill", "description": "List or show skills" },
+          "sessions": { "label": "Sessions", "description": "Recent sessions" },
+          "stats": { "label": "Stats", "description": "Usage statistics" },
+          "abort": { "label": "Abort", "description": "Abort the current run" }
+        }
+      },
+      "at": {
+        "workspace": "workspace",
+        "filesFolders": "Files & Folders",
+        "workspaceRoot": "workspace",
+        "loading": "Loading…",
+        "loadFailed": "Failed to load workspace files",
+        "empty": "Empty folder",
+        "selectFolder": "Select"
       },
       "attach": {
         "max": "Up to 8 attachments",

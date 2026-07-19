@@ -185,15 +185,16 @@ export function PortalComposerPlus({
         onClick={() => setMenuOpen(!open)}
         className={cn(
           // Match send/mic/stop: fixed h-7 w-7 circle, no border ring.
-          'flex aspect-square h-7 w-7 shrink-0 items-center justify-center rounded-full border-0 text-[15px] leading-none outline-none ring-0 transition-colors',
+          // Plus glyph: slightly larger than before, dark (not rose).
+          'flex aspect-square h-7 w-7 shrink-0 items-center justify-center rounded-full border-0 text-[22px] font-medium leading-none outline-none ring-0 transition-colors',
           'disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-teal-500/50',
           dark
-            ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'
-            : 'bg-zinc-200/90 text-rose-600 hover:bg-zinc-300/90',
-          open && (dark ? 'bg-zinc-700 text-rose-300' : 'bg-zinc-300 text-rose-700'),
+            ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700'
+            : 'bg-zinc-200/90 text-zinc-800 hover:bg-zinc-300/90',
+          open && (dark ? 'bg-zinc-700 text-white' : 'bg-zinc-300 text-zinc-900'),
         )}
       >
-        <span aria-hidden className="translate-y-[-0.5px]">+</span>
+        <span aria-hidden className="translate-y-[-1px]">+</span>
       </button>
 
       {open && createPortal(
@@ -225,7 +226,7 @@ export function PortalComposerPlus({
             }}
           >
             <ListTodo className={cn('h-3.5 w-3.5', planMode ? 'text-rose-500' : 'text-zinc-400')} />
-            <span className="flex-1">{t('chat.portal.menu.plan', { defaultValue: 'Plan 模式' })}</span>
+            <span className="flex-1">{t('chat.portal.menu.plan')}</span>
             <span className={cn(
               'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
               planMode
@@ -245,7 +246,7 @@ export function PortalComposerPlus({
             }}
           >
             <StickyNote className="h-3.5 w-3.5 text-amber-500" />
-            <span>Memo</span>
+            <span>{t('chat.portal.menu.memo')}</span>
             <MapPin className="ml-auto h-3 w-3 text-zinc-400" />
           </button>
           <button
@@ -258,7 +259,7 @@ export function PortalComposerPlus({
             }}
           >
             <ListTodo className="h-3.5 w-3.5 text-sky-500" />
-            <span>Goal</span>
+            <span>{t('chat.portal.menu.goal')}</span>
           </button>
           <button
             type="button"
@@ -270,7 +271,7 @@ export function PortalComposerPlus({
             }}
           >
             <Bell className="h-3.5 w-3.5 text-rose-400" />
-            <span>Remember</span>
+            <span>{t('chat.portal.menu.remember')}</span>
           </button>
           <button
             type="button"
@@ -282,7 +283,7 @@ export function PortalComposerPlus({
             }}
           >
             <Boxes className="h-3.5 w-3.5 text-violet-400" />
-            <span>Models</span>
+            <span>{t('chat.portal.menu.models')}</span>
           </button>
           <button
             type="button"
@@ -295,7 +296,7 @@ export function PortalComposerPlus({
             }}
           >
             <Sparkles className="h-3.5 w-3.5 text-teal-400" />
-            <span>Skills</span>
+            <span>{t('chat.portal.menu.skills')}</span>
           </button>
           <div className={cn('my-1 border-t', dark ? 'border-zinc-800' : 'border-zinc-100')} />
           <button
@@ -305,7 +306,7 @@ export function PortalComposerPlus({
             onClick={() => cameraRef.current?.click()}
           >
             <Camera className="h-3.5 w-3.5 text-zinc-400" />
-            <span>{t('chat.portal.menu.camera', { defaultValue: '拍照' })}</span>
+            <span>{t('chat.portal.menu.camera')}</span>
           </button>
           <button
             type="button"
@@ -314,7 +315,7 @@ export function PortalComposerPlus({
             onClick={() => photosRef.current?.click()}
           >
             <ImageIcon className="h-3.5 w-3.5 text-zinc-400" />
-            <span>{t('chat.portal.menu.photos', { defaultValue: '照片' })}</span>
+            <span>{t('chat.portal.menu.photos')}</span>
           </button>
           <button
             type="button"
@@ -323,7 +324,7 @@ export function PortalComposerPlus({
             onClick={() => filesRef.current?.click()}
           >
             <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
-            <span>{t('chat.portal.menu.files', { defaultValue: 'Files' })}</span>
+            <span>{t('chat.portal.menu.files')}</span>
           </button>
         </div>,
         document.body,

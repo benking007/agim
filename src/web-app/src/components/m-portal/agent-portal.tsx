@@ -817,8 +817,8 @@ export function AgentPortal(): JSX.Element {
                       'rounded-full p-2 shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
-                    aria-label={t('chat.portal.send', { defaultValue: 'Send' })}
-                    title={t('chat.portal.send', { defaultValue: 'Send' })}
+                    aria-label={t('chat.send')}
+                    title={t('chat.send')}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </button>

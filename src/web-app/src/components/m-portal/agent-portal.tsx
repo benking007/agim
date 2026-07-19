@@ -777,28 +777,19 @@ export function AgentPortal(): JSX.Element {
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
           <div className="relative">
-            <PortalPet
-              dark={dark}
-              busy={canStop || demoPet}
-              tasks={petTasks}
-              announce={petAnnounce}
-              onAnnounceDone={(id) => {
-                setPetAnnounce((cur) => (cur?.id === id ? null : cur))
-              }}
-              // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
-              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
-            />
             <form
               onSubmit={onSend}
               className={cn(
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // pr-12 reserves the right end for the perched pet so Mic /
+                // Send are never covered (pet is z-above the form chrome).
+                'relative z-10 flex items-center rounded-[26px] border p-1.5 pr-12 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
               <button
                 type="button"
                 className={cn(
-                  'rounded-full p-2 text-zinc-400 transition-colors',
+                  'shrink-0 rounded-full p-2 text-zinc-400 transition-colors',
                   dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
                 )}
                 onClick={() => newConversation()}
@@ -814,11 +805,11 @@ export function AgentPortal(): JSX.Element {
                 className={cn(
                   // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
                   // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
+                  'min-w-0 flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
                   dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
                 )}
               />
-              <div className="flex items-center gap-1">
+              <div className="relative z-20 flex shrink-0 items-center gap-1">
                 {inputMessage.trim() && !canStop ? (
                   <button
                     type="submit"
@@ -826,6 +817,8 @@ export function AgentPortal(): JSX.Element {
                       'rounded-full p-2 shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
+                    aria-label={t('chat.send')}
+                    title={t('chat.send')}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </button>
@@ -851,12 +844,24 @@ export function AgentPortal(): JSX.Element {
                       dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
+                    aria-label={t('chat.portal.voice')}
                   >
                     <Mic className="h-4 w-4" />
                   </button>
                 )}
               </div>
             </form>
+            <PortalPet
+              dark={dark}
+              busy={canStop || demoPet}
+              tasks={petTasks}
+              announce={petAnnounce}
+              onAnnounceDone={(id) => {
+                setPetAnnounce((cur) => (cur?.id === id ? null : cur))
+              }}
+              // Feet sit on the composer bottom edge (not perched on the top rim).
+              className="absolute bottom-0 right-0.5 z-[15]"
+            />
           </div>
         </div>
       )}

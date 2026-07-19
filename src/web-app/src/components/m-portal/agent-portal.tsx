@@ -5,7 +5,7 @@
  * Transport: existing useChat() WebSocket — not the prototype's Gemini mock.
  */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
@@ -178,7 +178,26 @@ export function AgentPortal(): JSX.Element {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
+
+  // Auto-grow composer height with wrapped text (cap ~6 lines).
+  useEffect(() => {
+    const ta = composerInputRef.current
+    if (!ta) return
+    // Reset so scrollHeight reflects wrapped content width.
+    ta.style.height = '0px'
+    const cs = getComputedStyle(ta)
+    const line = Number.parseFloat(cs.lineHeight) || 20
+    const padY = (Number.parseFloat(cs.paddingTop) || 0)
+      + (Number.parseFloat(cs.paddingBottom) || 0)
+    const maxLines = 6
+    const minH = line + padY
+    const maxH = line * maxLines + padY
+    // Read inputMessage so height tracks typed content (biome deps).
+    const scroll = inputMessage.length >= 0 ? ta.scrollHeight : 0
+    ta.style.height = `${Math.min(Math.max(scroll, minH), maxH)}px`
+  }, [inputMessage])
 
 
   const agentId = state.agent || state.agents[0] || 'agim'
@@ -806,7 +825,7 @@ export function AgentPortal(): JSX.Element {
             asks={state.pendingAsks}
             onSubmit={(mid, data) => choiceSubmit(mid, data)}
           />
-          <div className="relative">
+          <div className="relative min-w-0 w-full">
             <PortalPet
               dark={dark}
               busy={canStop || demoPet}
@@ -834,7 +853,9 @@ export function AgentPortal(): JSX.Element {
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
                 // z-10 covers pet feet; + menu is portaled to body so it is fine.
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // items-end keeps + / send aligned to the last line as the field grows.
+                // min-w-0 + w-full: flex child must shrink so textarea wraps instead of growing.
+                'relative z-10 flex w-full min-w-0 items-end gap-0.5 rounded-[22px] border p-1 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -854,56 +875,71 @@ export function AgentPortal(): JSX.Element {
                   send(cmd)
                 }}
               />
-              <input
-                type="text"
+              <textarea
+                ref={composerInputRef}
+                rows={1}
                 placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+                  // Enter always inserts a newline — never submit. Users must tap
+                  // the send button (long drafts need reliable line breaks).
+                  const ne = e.nativeEvent as { isComposing?: boolean }
+                  if (ne.isComposing || e.keyCode === 229) return
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    // Block Cmd/Ctrl+Enter form quirks; send only via the button.
+                    e.preventDefault()
+                  }
+                }}
                 disabled={uploading}
+                enterKeyHint="enter"
                 className={cn(
                   // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
                   // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none disabled:opacity-60',
+                  // Compact single-line: leading-5 + py-1 ≈ 28px, matches h-7 controls.
+                  // min-w-0 / w-full: wrap long CJK instead of horizontal overflow.
+                  'box-border min-h-[28px] min-w-0 w-full max-h-[128px] flex-1 resize-none overflow-x-hidden overflow-y-auto bg-transparent px-2.5 py-1 text-md leading-5',
+                  'whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] focus:outline-none disabled:opacity-60',
                   dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
                 )}
               />
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-end gap-1 self-end">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"
                     disabled={uploading}
                     className={cn(
-                      // Match + button: fixed h-8 w-8 circle.
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                      // Match + button: fixed h-7 w-7 circle.
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-3.5 w-3.5" />
                   </button>
                 ) : canStop ? (
                   <button
                     type="button"
                     onClick={() => stop()}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                     title={t('chat.portal.stop')}
                     aria-label={t('chat.portal.stop')}
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                    <Square className="h-3 w-3 fill-current" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowVoiceOverlay(true)}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
                       dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
                   >
-                    <Mic className="h-4 w-4" />
+                    <Mic className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>

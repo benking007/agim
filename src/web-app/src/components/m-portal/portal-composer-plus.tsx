@@ -175,7 +175,7 @@ export function PortalComposerPlus({
   )
 
   return (
-    <div ref={rootRef} className={cn('relative shrink-0', open && 'z-50')}>
+    <div ref={rootRef} className={cn('relative shrink-0 self-end', open && 'z-50')}>
       <button
         type="button"
         disabled={disabled}
@@ -184,8 +184,8 @@ export function PortalComposerPlus({
         aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
         onClick={() => setMenuOpen(!open)}
         className={cn(
-          // Match send/mic/stop: fixed h-8 w-8 circle, no border ring.
-          'flex aspect-square h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 text-[17px] leading-none outline-none ring-0 transition-colors',
+          // Match send/mic/stop: fixed h-7 w-7 circle, no border ring.
+          'flex aspect-square h-7 w-7 shrink-0 items-center justify-center rounded-full border-0 text-[15px] leading-none outline-none ring-0 transition-colors',
           'disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-teal-500/50',
           dark
             ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'

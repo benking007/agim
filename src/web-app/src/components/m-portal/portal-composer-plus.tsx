@@ -156,7 +156,9 @@ export function PortalComposerPlus({
           id={menuId}
           role="menu"
           className={cn(
-            'absolute bottom-full left-0 z-40 mb-2 w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
+            'absolute bottom-full left-0 z-40 w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
+            // Clear the floating attachment strip (h-14 + gap) when present.
+            attachments.length > 0 ? 'mb-[4.25rem]' : 'mb-2',
             dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
           )}
         >

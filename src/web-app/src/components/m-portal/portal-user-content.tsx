@@ -99,30 +99,60 @@ function FilePreviewModal({
   onClose: () => void
 }): JSX.Element {
   const { t } = useTranslation()
-  const { url, mime, error, loading } = useAuthedObjectUrl(state.path)
+  const [url, setUrl] = useState<string | null>(null)
+  const [mime, setMime] = useState<string | null>(null)
   const [text, setText] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [unreadable, setUnreadable] = useState(false)
 
   useEffect(() => {
-    setText(null)
-    setUnreadable(false)
-    if (!url || !mime) return
-    if (mime.startsWith('image/') || mime === 'application/pdf') return
-    if (!isPreviewableTextMime(mime)) {
-      setUnreadable(true)
-      return
-    }
     let cancelled = false
-    void fetch(url).then((r) => r.text()).then((body) => {
-      if (!cancelled) setText(body)
+    let objectUrl: string | null = null
+    setLoading(true)
+    setUnreadable(false)
+    setUrl(null)
+    setMime(null)
+    setText(null)
+    void fetchMediaBlob(state.path).then(async (got) => {
+      if (cancelled) return
+      if (!got) {
+        setUnreadable(true)
+        setLoading(false)
+        return
+      }
+      setMime(got.mime)
+      if (got.mime.startsWith('image/') || got.mime === 'application/pdf') {
+        objectUrl = URL.createObjectURL(got.blob)
+        setUrl(objectUrl)
+        setLoading(false)
+        return
+      }
+      if (isPreviewableTextMime(got.mime)) {
+        try {
+          const body = await got.blob.text()
+          if (!cancelled) setText(body)
+        } catch {
+          if (!cancelled) setUnreadable(true)
+        }
+        if (!cancelled) setLoading(false)
+        return
+      }
+      setUnreadable(true)
+      setLoading(false)
     }).catch(() => {
-      if (!cancelled) setUnreadable(true)
+      if (!cancelled) {
+        setUnreadable(true)
+        setLoading(false)
+      }
     })
-    return () => { cancelled = true }
-  }, [url, mime])
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [state.path])
 
   const title = state.name
-  const cannotRead = error || unreadable || (!loading && !url)
+  const cannotRead = unreadable || (!loading && !url && text == null)
 
   return createPortal(
     <div

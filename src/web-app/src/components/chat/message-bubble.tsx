@@ -128,6 +128,7 @@ export function MessageBubble({
           <PortalUserContent
             dark={dark}
             content={msg.content}
+            messageId={msg.id}
             className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] text-[15px] leading-relaxed sm:text-sm"
           />
         ) : (

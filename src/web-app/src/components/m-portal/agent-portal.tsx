@@ -192,24 +192,25 @@ function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: str
 }
 
 /** Local visual QA (`/m/chat?demo=collapse`) — long user body for fold/mask. */
+const COLLAPSE_DEMO_MESSAGES: ChatMessage[] = [
+  {
+    id: 'demo-collapse-user',
+    role: 'user',
+    content: [
+      '1、老问题，这个输入款高度太高了',
+      '2、/memo 应该自动填充 /memo here',
+      '3、输入 / 或 @ 后，如果用的是键盘上下键选择，无法选择列表的选项。',
+      '4、左侧的加号菜单，也加上 models、skills、remember',
+      '5、消息体过长时需要默认折叠，点击后再展开',
+      '6、选择文件夹/文件/skill 后，backspace 要能删掉 chip',
+      '7、小精灵位置往上调，把脚挡住就行',
+    ].join('\n'),
+    timestamp: 0,
+  },
+]
+
 function collapseDemoMessages(): ChatMessage[] {
-  const now = Date.now()
-  return [
-    {
-      id: 'demo-collapse-user',
-      role: 'user',
-      content: [
-        '1、老问题，这个输入款高度太高了',
-        '2、/memo 应该自动填充 /memo here',
-        '3、输入 / 或 @ 后，如果用的是键盘上下键选择，无法选择列表的选项。',
-        '4、左侧的加号菜单，也加上 models、skills、remember',
-        '5、消息体过长时需要默认折叠，点击后再展开',
-        '6、选择文件夹/文件/skill 后，backspace 要能删掉 chip',
-        '7、小精灵位置往上调，把脚挡住就行',
-      ].join('\n'),
-      timestamp: now - 5_000,
-    },
-  ]
+  return COLLAPSE_DEMO_MESSAGES
 }
 
 export function AgentPortal(): JSX.Element {
@@ -812,7 +813,11 @@ export function AgentPortal(): JSX.Element {
                   )}
                   style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
                 >
-                  <PortalUserContent dark={dark} content={turn.user.content} />
+                  <PortalUserContent
+                    dark={dark}
+                    content={turn.user.content}
+                    messageId={turn.user.id}
+                  />
                 </div>
               )}
               {turn.replies.map((msg) => (

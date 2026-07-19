@@ -288,6 +288,9 @@ function blockKey(block: RenderBlock, index: number): string {
   return `f:${index}:${block.files.map((f) => f.path).join('|')}`
 }
 
+/** Survives CollapsibleBody remounts (list refresh / sticky reflow). */
+const expandedMessageKeys = new Set<string>()
+
 /** Collapse tall non-image bodies; tap to expand. Images stay outside. */
 function CollapsibleBody({
   dark,
@@ -300,8 +303,13 @@ function CollapsibleBody({
 }): JSX.Element {
   const { t } = useTranslation()
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => expandedMessageKeys.has(contentKey))
   const [overflows, setOverflows] = useState(false)
+
+  // Re-hydrate if this body remounts after the user already expanded it.
+  useEffect(() => {
+    if (expandedMessageKeys.has(contentKey)) setExpanded(true)
+  }, [contentKey])
 
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -323,6 +331,11 @@ function CollapsibleBody({
 
   const collapsed = overflows && !expanded
 
+  function expand(): void {
+    expandedMessageKeys.add(contentKey)
+    setExpanded(true)
+  }
+
   return (
     <div className="relative min-w-0">
       <div
@@ -338,7 +351,7 @@ function CollapsibleBody({
             type="button"
             className="absolute inset-0 z-[1] cursor-pointer"
             aria-label={t('chat.portal.expandMessage', { defaultValue: '展开消息' })}
-            onClick={() => setExpanded(true)}
+            onClick={expand}
           />
           <div
             aria-hidden
@@ -427,10 +440,13 @@ function renderNonImageBlock(
 export function PortalUserContent({
   dark,
   content,
+  messageId,
   className,
 }: {
   dark: boolean
   content: string
+  /** Stable id so expand state survives list remounts. */
+  messageId?: string
   className?: string
 }): JSX.Element {
   const { t } = useTranslation()
@@ -443,6 +459,7 @@ export function PortalUserContent({
   const bodyBlocks = blocks.filter((b): b is Exclude<RenderBlock, { kind: 'images' }> => b.kind !== 'images')
   const hasImages = imageBlocks.length > 0
   const hasBody = bodyBlocks.length > 0
+  const collapseKey = messageId || content
 
   return (
     <>
@@ -469,7 +486,7 @@ export function PortalUserContent({
         ))}
 
         {hasBody && (
-          <CollapsibleBody dark={dark} contentKey={content}>
+          <CollapsibleBody dark={dark} contentKey={collapseKey}>
             {bodyBlocks.map((block, index) =>
               renderNonImageBlock(block, index, dark, (path, name) => {
                 setFileModal({ path, name })

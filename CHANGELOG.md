@@ -4,8 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Portal (`/m/chat`): Cursor-style `/` picker for Skills + Commands (Plan / Memo / Goal / Remember / Models, with “show more” modals) and `@` picker for Workspace / Files & Folders with blue mention chips.
+- Portal: user-bubble media previews for `[图片附件]` / `[文件附件]` (image grid + file modal); long non-image bodies collapse to ~3.5 lines with a bottom fade (tap to expand, tap outside to fold).
+- Docs: `docs/portal-composer.md` covering Portal composer, chips, collapse, and media.
+
+### Changed
+
+- Portal `+` menu also offers Remember / Models / Skills; Memo fills `/memo here`.
+- `GET /api/workspace-files` and `GET /api/agim-skills*` are readable by any authenticated peer so Portal pickers work without admin (mutations stay admin-only).
+
 ### Fixed
 
+- Portal composer height tightened (`p-1` / `h-7`); keyboard ↑↓/Enter for `/` and `@` menus; Backspace at caret 0 deletes the trailing mention chip; pet perch raised so only feet tuck under the input.
 - Web chat (`/` / `/m/chat`): tool accordion, run timeline, and “接收中” survive tab switches and page refresh. Server keeps an ActiveRun snapshot, retargets live chunks to the reconnected socket, and replays `active-run` after `history`.
 - Web chat persists each turn's activity onto the assistant session message, so refresh restores **every** accordion (“已完成 · Xs”), not only the latest in-memory ActiveRun.
 

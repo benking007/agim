@@ -34,6 +34,7 @@ agim go
 Default Web console: `http://localhost:3000`
 
 - Chat: `/`
+- Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs — see [`docs/portal-composer.md`](docs/portal-composer.md))
 - Tasks: `/tasks`
 - Settings: `/settings`
 

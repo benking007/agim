@@ -94,7 +94,7 @@ export function PortalComposerPlus({
     onOpenChange?.(next)
   }, [onOpenChange])
 
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number; maxH?: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number; maxH: number } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) {
@@ -104,27 +104,20 @@ export function PortalComposerPlus({
     const sync = (): void => {
       const el = rootRef.current
       if (!el) return
-      const r = el.getBoundingClientRect()
-      // Always hug the input bar (reference: tight above composer). Attachment
-      // previews must NOT shift this anchor — menu simply paints over them.
-      const gap = 6
-      const bottomLimit = r.top - gap
-      const naturalH = menuRef.current?.scrollHeight || 292
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - 216 - 8))
-      let top = bottomLimit - naturalH
-      let maxH: number | undefined
-      if (top < 8) {
-        top = 8
-        maxH = Math.max(120, bottomLimit - 8)
-      }
-      setMenuPos({ left, top, maxH })
+      // Anchor to composer form top — tight hug, ignores attachment strip height.
+      const form = el.closest('form') ?? el
+      const formRect = form.getBoundingClientRect()
+      const btnRect = el.getBoundingClientRect()
+      const gap = 4
+      const bottom = Math.max(8, window.innerHeight - formRect.top + gap)
+      const maxH = Math.max(120, window.innerHeight - bottom - 8)
+      const left = Math.max(8, Math.min(btnRect.left, window.innerWidth - 216 - 8))
+      setMenuPos({ left, bottom, maxH })
     }
     sync()
-    const raf = requestAnimationFrame(sync)
     window.addEventListener('resize', sync)
     window.addEventListener('scroll', sync, true)
     return () => {
-      cancelAnimationFrame(raf)
       window.removeEventListener('resize', sync)
       window.removeEventListener('scroll', sync, true)
     }
@@ -191,15 +184,16 @@ export function PortalComposerPlus({
         aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
         onClick={() => setMenuOpen(!open)}
         className={cn(
-          // Perfect circle (fixed square + rounded-full); avoid p-2 oval stretch.
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[18px] leading-none transition-colors disabled:opacity-40',
+          // Perfect circle: equal h/w + rounded-full; no padding oval stretch.
+          'flex aspect-square h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 text-[17px] leading-none outline-none transition-colors',
+          'disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-teal-500/50',
           dark
             ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'
-            : 'bg-zinc-100 text-rose-600 hover:bg-zinc-200',
-          open && (dark ? 'bg-zinc-700 text-rose-300' : 'bg-zinc-200 text-rose-700'),
+            : 'bg-zinc-200/90 text-rose-600 hover:bg-zinc-300/90',
+          open && (dark ? 'bg-zinc-700 text-rose-300' : 'bg-zinc-300 text-rose-700'),
         )}
       >
-        <span aria-hidden>+</span>
+        <span aria-hidden className="translate-y-[-0.5px]">+</span>
       </button>
 
       {open && createPortal(
@@ -210,14 +204,13 @@ export function PortalComposerPlus({
           style={menuPos
             ? {
                 left: menuPos.left,
-                top: menuPos.top,
+                bottom: menuPos.bottom,
                 maxHeight: menuPos.maxH,
-                overflowY: menuPos.maxH ? 'auto' : undefined,
               }
-            : { left: -9999, top: 0, visibility: 'hidden' }}
+            : { left: -9999, bottom: 0, visibility: 'hidden' }}
           className={cn(
-            // Portal to body + fixed — always above attachment strip / pet / header.
-            'fixed z-[100] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150 scrollbar-none',
+            // bottom-anchored to form top — always tight; paints over attachments.
+            'fixed z-[100] w-[13.5rem] overflow-y-auto origin-bottom-left animate-in fade-in zoom-in-95 rounded-2xl border p-1.5 shadow-xl duration-150 scrollbar-none',
             dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
           )}
         >

@@ -817,7 +817,7 @@ export function AgentPortal(): JSX.Element {
               }}
               // Perch on the form rim; z below the form so feet are covered by
               // the opaque composer (not painted on top of it).
-              className="absolute bottom-[calc(100%-1.15rem)] right-1 z-[5]"
+              className="absolute bottom-[calc(100%-1.4rem)] right-1 z-[5]"
             />
             <AttachmentStrip
               dark={dark}

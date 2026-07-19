@@ -388,6 +388,12 @@
       "authRequired": true
     },
     {
+      "method": "GET",
+      "path": "/api/chat/media/file",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
       "method": "POST",
       "path": "/api/invoke",
       "source": "exact",

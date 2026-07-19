@@ -31,6 +31,7 @@ import {
 } from './portal-composer-plus'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
+import { PortalUserContent } from './portal-user-content'
 import { VoiceOverlay } from './voice-overlay'
 
 type Tab = 'chat' | 'explore'
@@ -558,13 +559,15 @@ export function AgentPortal(): JSX.Element {
                 <div
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
-                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
+                    'sticky top-0 z-10 w-full min-w-0 overflow-hidden rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
+                    // Force wrap long unbroken tokens (digits / paths) inside the chip.
+                    'whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',
                   )}
                 >
-                  {turn.user.content}
+                  <PortalUserContent dark={dark} content={turn.user.content} />
                 </div>
               )}
               {turn.replies.map((msg) => (

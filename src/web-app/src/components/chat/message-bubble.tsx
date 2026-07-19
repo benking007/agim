@@ -24,8 +24,10 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { PortalUserContent } from '@/components/m-portal/portal-user-content'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
+import { usePrefs } from '@/stores/prefs'
 import type { ChatMessage, ApprovalChoice } from '@/hooks/use-chat'
 import type { ApprovalCardOutcome } from '@/types/ws'
 
@@ -52,6 +54,12 @@ export function MessageBubble({
   isFirstInGroup = true,
   isLastInGroup = true,
 }: MessageBubbleProps): JSX.Element {
+  const themeMode = usePrefs((s) => s.theme)
+  const dark = themeMode === 'dark'
+    || (themeMode === 'system'
+      && typeof window !== 'undefined'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches)
+
   if (msg.approval) {
     return <ApprovalView approval={msg.approval} onApprove={onApprove} />
   }
@@ -84,7 +92,7 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          'max-w-[85%] sm:max-w-[75%] px-3.5 py-2 shadow-sm',
+          'max-w-[85%] min-w-0 overflow-hidden sm:max-w-[75%] px-3.5 py-2 shadow-sm',
           radius,
           isUser
             ? 'bg-accent text-accent-fg'
@@ -103,9 +111,9 @@ export function MessageBubble({
           </div>
         )}
         {/* v1.2.116 — render assistant responses as markdown (GFM:
-            tables, code, headings, lists). User input stays plain so
-            their typed `**foo**` survives verbatim. Empty assistant
-            content during streaming startup shows the … placeholder. */}
+            tables, code, headings, lists). User input uses PortalUserContent
+            so media markers become previews / @file links; plain text still
+            wraps. Empty assistant content during streaming startup shows the … placeholder. */}
         {!isUser && msg.content ? (
           <Suspense
             fallback={(
@@ -116,6 +124,12 @@ export function MessageBubble({
           >
             <MarkdownView content={msg.content} className="break-words text-[15px] leading-relaxed sm:text-sm" />
           </Suspense>
+        ) : isUser ? (
+          <PortalUserContent
+            dark={dark}
+            content={msg.content}
+            className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] text-[15px] leading-relaxed sm:text-sm"
+          />
         ) : (
           <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed sm:text-sm">
             {msg.content || (msg.role === 'assistant' && (

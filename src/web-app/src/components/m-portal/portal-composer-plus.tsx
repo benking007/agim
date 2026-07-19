@@ -3,7 +3,8 @@
  * plus a pending-attachment strip above the input.
  */
 
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Camera, FileText, FolderOpen, Image as ImageIcon, ListTodo, MapPin,
   StickyNote, X,
@@ -84,6 +85,7 @@ export function PortalComposerPlus({
   const photosRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
 
@@ -92,10 +94,40 @@ export function PortalComposerPlus({
     onOpenChange?.(next)
   }, [onOpenChange])
 
+  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPos(null)
+      return
+    }
+    const sync = (): void => {
+      const el = rootRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      // Sit above the + control; clear attachment strip (~3.5rem + gap) when present.
+      const clear = attachments.length > 0 ? 72 : 8
+      setMenuPos({
+        left: Math.max(8, r.left),
+        bottom: Math.max(8, window.innerHeight - r.top + clear),
+      })
+    }
+    sync()
+    window.addEventListener('resize', sync)
+    window.addEventListener('scroll', sync, true)
+    return () => {
+      window.removeEventListener('resize', sync)
+      window.removeEventListener('scroll', sync, true)
+    }
+  }, [open, attachments.length])
+
   useEffect(() => {
     if (!open) return
     const onDoc = (ev: MouseEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(ev.target as Node)) setMenuOpen(false)
+      const t = ev.target as Node
+      if (rootRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      setMenuOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -158,15 +190,15 @@ export function PortalComposerPlus({
         <span className="block text-lg leading-none">+</span>
       </button>
 
-      {open && (
+      {open && menuPos && createPortal(
         <div
+          ref={menuRef}
           id={menuId}
           role="menu"
+          style={{ left: menuPos.left, bottom: menuPos.bottom }}
           className={cn(
-            // Above attachment strip (z-20) + pet (z-30); parent also lifts to z-50 when open.
-            'absolute bottom-full left-0 z-[60] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
-            // Clear the floating attachment strip (h-14 + gap) when present.
-            attachments.length > 0 ? 'mb-[4.25rem]' : 'mb-2',
+            // Portal to body + fixed — always above attachment strip / pet / header.
+            'fixed z-[100] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
             dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
           )}
         >
@@ -244,7 +276,8 @@ export function PortalComposerPlus({
             <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.files', { defaultValue: '文件' })}</span>
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <input

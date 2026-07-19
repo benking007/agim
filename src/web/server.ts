@@ -863,6 +863,11 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleMobileQR(req, res)
     }
+    // Portal / desktop chat media upload (camera, photos, files).
+    // Auth already enforced by checkAuth; any signed-in web user may upload.
+    if (url.pathname === '/api/chat/media' && req.method === 'POST') {
+      return handleChatMediaUpload(req, res, url)
+    }
     // v1.2.133 — plan-history admin list. Shows every
     // native_exit_plan_mode handshake (v1.2.131) with outcome +
     // pending_ms + the plan markdown the model proposed. Admin-only:
@@ -4907,6 +4912,8 @@ function mask(value: string | undefined): string {
 
 /** Hard cap on inbound JSON bodies for the Web REST API. */
 const MAX_API_BODY_BYTES = 1 * 1024 * 1024  // 1 MiB
+/** Binary chat media (images/files) — keep in sync with WEB_MEDIA_MAX_BYTES. */
+const MAX_CHAT_MEDIA_BYTES = 20 * 1024 * 1024
 
 function readBody(req: IncomingMessage, res?: ServerResponse): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -4942,6 +4949,92 @@ function readBody(req: IncomingMessage, res?: ServerResponse): Promise<string> {
       if (!aborted) reject(err)
     })
   })
+}
+
+function readBinaryBody(req: IncomingMessage, res: ServerResponse, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let total = 0
+    let aborted = false
+    req.on('data', (chunk: Buffer) => {
+      if (aborted) return
+      total += chunk.length
+      if (total > maxBytes) {
+        aborted = true
+        if (!res.headersSent) {
+          sendJson(res, 413, { error: 'file too large', code: 'MEDIA_TOO_LARGE', maxBytes })
+          res.once('finish', () => {
+            if (!req.destroyed) req.destroy()
+          })
+        } else if (!req.destroyed) {
+          req.destroy()
+        }
+        const err = new Error('file too large') as Error & { handled?: boolean }
+        err.handled = true
+        reject(err)
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (aborted) return
+      resolve(Buffer.concat(chunks))
+    })
+    req.on('error', (err) => {
+      if (!aborted) reject(err)
+    })
+  })
+}
+
+async function handleChatMediaUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<void> {
+  const { formatMediaMarker, saveWebChatMedia, WEB_MEDIA_MAX_BYTES } = await import('../core/web-media-upload.js')
+  const filenameHeader = req.headers['x-agim-filename']
+  const mimeHeader = req.headers['x-agim-mime']
+  const filenameRaw = Array.isArray(filenameHeader) ? filenameHeader[0] : filenameHeader
+  const mime = Array.isArray(mimeHeader) ? mimeHeader[0] : mimeHeader
+  let filename = filenameRaw
+  if (filename) {
+    try { filename = decodeURIComponent(filename) } catch { /* keep raw */ }
+  }
+  if (!filename) {
+    sendError(res, 400, 'MEDIA_FILENAME_REQUIRED', { message: 'X-Agim-Filename required' })
+    return
+  }
+  const threadId = (url.searchParams.get('threadId') || 'web').slice(0, 120)
+  try {
+    const body = await readBinaryBody(req, res, Math.max(WEB_MEDIA_MAX_BYTES, MAX_CHAT_MEDIA_BYTES))
+    const saved = await saveWebChatMedia({
+      threadId,
+      filename,
+      mime: mime || 'application/octet-stream',
+      body,
+    })
+    sendJson(res, 200, {
+      path: saved.path,
+      bytes: saved.bytes,
+      mime: saved.mime,
+      name: saved.name,
+      kind: saved.kind,
+      marker: formatMediaMarker(saved),
+    })
+  } catch (err) {
+    const e = err as Error & { code?: string; handled?: boolean }
+    if (e.handled) return
+    if (e.code === 'TOO_LARGE') {
+      sendError(res, 413, 'MEDIA_TOO_LARGE', { message: e.message })
+      return
+    }
+    if (e.code === 'EMPTY') {
+      sendError(res, 400, 'MEDIA_EMPTY', { message: e.message })
+      return
+    }
+    webLog.warn({ err: e }, 'chat media upload failed')
+    sendError(res, 500, 'MEDIA_UPLOAD_FAILED', { message: e.message || 'upload failed' })
+  }
 }
 
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -5532,6 +5625,10 @@ async function handleClientMessage(
           })
           await persistFinishedActivity(result)
           emit({ type: 'done', text: result, runId })
+          if (parsed.type === 'plan') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'plan-mode', enabled: !!sess?.planMode })
+          }
           emit({
             type: 'usage',
             runId,
@@ -5781,6 +5878,7 @@ async function sendSessionHistory(
       type: 'history',
       messages: history.messages,
       agent: history.session.agent,
+      planMode: !!history.session.planMode,
     })
   }
   const { getActiveRun } = await import('./active-runs.js')

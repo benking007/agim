@@ -35,7 +35,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: Scan the Agim pairing QR code from the web console.
+        NSCameraUsageDescription: Scan pairing QR codes and take photos to send in chat.
+        NSPhotoLibraryUsageDescription: Choose photos from your library to send in Agim chat.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
           NSAllowsLocalNetworking: true

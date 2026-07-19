@@ -23,6 +23,12 @@ import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
+import {
+  AttachmentStrip,
+  PortalComposerPlus,
+  uploadPendingAttachments,
+  type PendingAttachment,
+} from './portal-composer-plus'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
 import { VoiceOverlay } from './voice-overlay'
@@ -167,6 +173,8 @@ export function AgentPortal(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<(typeof EXPLORE_CATS)[number]>('All')
   const [inputMessage, setInputMessage] = useState('')
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
@@ -347,16 +355,35 @@ export function AgentPortal(): JSX.Element {
     return matchesSearch && matchesCategory
   })
 
-  function onSend(e?: FormEvent): void {
+  async function onSend(e?: FormEvent): Promise<void> {
     e?.preventDefault()
     const text = inputMessage.trim()
-    if (!text) return
+    if ((!text && attachments.length === 0) || uploading) return
     if (state.status !== 'open') {
       toast.error('Not connected')
       return
     }
-    setInputMessage('')
-    send(text)
+    try {
+      setUploading(true)
+      let markers: string[] = []
+      if (attachments.length > 0) {
+        const threadId = state.clientId || 'web'
+        markers = await uploadPendingAttachments(attachments, threadId)
+      }
+      const body = [...markers, text].filter(Boolean).join('\n')
+      for (const a of attachments) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+      }
+      setAttachments([])
+      setInputMessage('')
+      send(body)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
+        defaultValue: '附件上传失败',
+      }))
+    } finally {
+      setUploading(false)
+    }
   }
 
   function selectAgent(id: string): void {
@@ -788,42 +815,57 @@ export function AgentPortal(): JSX.Element {
               // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
               className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
             />
+            <AttachmentStrip
+              dark={dark}
+              attachments={attachments}
+              onRemove={(id) => {
+                const target = attachments.find((a) => a.id === id)
+                if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+                setAttachments(attachments.filter((a) => a.id !== id))
+              }}
+            />
             <form
-              onSubmit={onSend}
+              onSubmit={(e) => { void onSend(e) }}
               className={cn(
                 'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
-              <button
-                type="button"
-                className={cn(
-                  'rounded-full p-2 text-zinc-400 transition-colors',
-                  dark ? 'hover:bg-zinc-800 hover:text-teal-400' : 'hover:bg-zinc-100 hover:text-teal-600',
-                )}
-                onClick={() => newConversation()}
-                aria-label={t('chat.portal.newConversation')}
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <PortalComposerPlus
+                dark={dark}
+                planMode={state.planMode}
+                disabled={uploading || state.status !== 'open'}
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+                onFillInput={(text) => setInputMessage(text)}
+                onSendCommand={(cmd) => {
+                  if (state.status !== 'open') {
+                    toast.error('Not connected')
+                    return
+                  }
+                  send(cmd)
+                }}
+              />
               <input
                 type="text"
                 placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
+                disabled={uploading}
                 className={cn(
                   // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
                   // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none',
+                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none disabled:opacity-60',
                   dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
                 )}
               />
               <div className="flex items-center gap-1">
-                {inputMessage.trim() && !canStop ? (
+                {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"
+                    disabled={uploading}
                     className={cn(
-                      'rounded-full p-2 shadow-md transition-all',
+                      'rounded-full p-2 shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >

@@ -1,6 +1,6 @@
 /**
  * PortalUserContent — render user bubble text with uploaded media markers
- * as in-bubble image thumbnails and @filename links (modal preview).
+ * as in-bubble image thumbnails (5-up wrap grid) and @filename links.
  */
 
 import { useEffect, useState } from 'react'
@@ -14,8 +14,11 @@ import {
   isPreviewableTextMime,
   mediaFileApiUrl,
   parseUserMediaContent,
-  type UserContentSegment,
+  groupUserContentBlocks,
 } from '@/lib/parse-user-media'
+
+/** ~5 thumbs per row on a typical portal user chip (mobile ~358px content). */
+const IMAGE_GRID_COLS = 5
 
 async function fetchMediaBlob(path: string): Promise<{ blob: Blob; mime: string } | null> {
   const tok = useAuth.getState().token
@@ -203,73 +206,41 @@ function ImageThumb({
   const { url, error, loading } = useAuthedObjectUrl(path)
   const name = path.split(/[/\\]/).pop() || 'image'
 
+  const shell = cn(
+    'aspect-square w-full overflow-hidden rounded-md border',
+    dark ? 'border-sky-500/40 bg-zinc-900' : 'border-sky-400/70 bg-zinc-50',
+  )
+
   if (loading) {
-    return (
-      <div className={cn(
-        'h-28 w-28 animate-pulse rounded-xl',
-        dark ? 'bg-zinc-800' : 'bg-zinc-200',
-      )}
-      />
-    )
+    return <div className={cn(shell, 'animate-pulse', dark ? 'bg-zinc-800' : 'bg-zinc-200')} />
   }
   if (error || !url) {
     return (
-      <span className="text-xs text-zinc-400">
-        {t('chat.portal.attach.unreadable', { defaultValue: '无法读取该文件' })}
-      </span>
+      <div className={cn(shell, 'flex items-center justify-center p-1')}>
+        <span className="text-center text-[9px] leading-tight text-zinc-400">
+          {t('chat.portal.attach.unreadable', { defaultValue: '无法读取该文件' })}
+        </span>
+      </div>
     )
   }
   return (
     <button
       type="button"
-      className={cn(
-        'block overflow-hidden rounded-xl border',
-        dark ? 'border-zinc-700' : 'border-zinc-200',
-      )}
+      className={shell}
       aria-label={t('chat.portal.attach.preview', { defaultValue: '预览图片' })}
       onClick={() => onOpen(url, name)}
     >
-      <img src={url} alt={name} className="max-h-48 max-w-full object-contain" />
+      <img src={url} alt={name} className="h-full w-full object-cover" />
     </button>
   )
 }
 
-function SegmentView({
-  dark,
-  segment,
-  onFileOpen,
-  onImageOpen,
-}: {
-  dark: boolean
-  segment: UserContentSegment
-  onFileOpen: (path: string, name: string) => void
-  onImageOpen: (url: string, name: string) => void
-}): JSX.Element {
-  if (segment.kind === 'text') {
-    return (
-      <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]">
-        {segment.text}
-      </span>
-    )
-  }
-  if (segment.kind === 'image') {
-    return <ImageThumb dark={dark} path={segment.path} onOpen={onImageOpen} />
-  }
-  return (
-    <button
-      type="button"
-      className="inline font-medium text-sky-500 underline-offset-2 hover:underline"
-      onClick={() => onFileOpen(segment.path, segment.name)}
-    >
-      @{segment.name}
-    </button>
-  )
-}
+type RenderBlock = import('@/lib/parse-user-media').UserContentBlock
 
-function segmentKey(seg: UserContentSegment): string {
-  if (seg.kind === 'text') return `t:${seg.text.slice(0, 48)}:${seg.text.length}`
-  if (seg.kind === 'image') return `i:${seg.path}`
-  return `f:${seg.path}:${seg.name}`
+function blockKey(block: RenderBlock, index: number): string {
+  if (block.kind === 'text') return `t:${index}:${block.text.length}`
+  if (block.kind === 'images') return `i:${index}:${block.paths.join('|')}`
+  return `f:${index}:${block.files.map((f) => f.path).join('|')}`
 }
 
 export function PortalUserContent({
@@ -283,27 +254,63 @@ export function PortalUserContent({
 }): JSX.Element {
   const { t } = useTranslation()
   const segments = parseUserMediaContent(content)
+  const blocks = groupUserContentBlocks(segments)
   const [fileModal, setFileModal] = useState<FileModalState | null>(null)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
 
-  const hasMedia = segments.some((s) => s.kind !== 'text')
+  const hasMedia = blocks.some((b) => b.kind !== 'text')
 
   return (
     <>
       <div className={cn(
         'min-w-0 max-w-full overflow-hidden',
-        hasMedia ? 'flex flex-col items-start gap-2' : null,
+        hasMedia ? 'flex flex-col items-stretch gap-2' : null,
         className,
       )}>
-        {segments.map((seg) => (
-          <SegmentView
-            key={segmentKey(seg)}
-            dark={dark}
-            segment={seg}
-            onFileOpen={(path, name) => setFileModal({ path, name })}
-            onImageOpen={(url, name) => setImagePreview({ url, name })}
-          />
-        ))}
+        {blocks.map((block, index) => {
+          if (block.kind === 'text') {
+            return (
+              <span
+                key={blockKey(block, index)}
+                className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]"
+              >
+                {block.text}
+              </span>
+            )
+          }
+          if (block.kind === 'images') {
+            return (
+              <div
+                key={blockKey(block, index)}
+                className="grid w-full gap-1.5"
+                style={{ gridTemplateColumns: `repeat(${IMAGE_GRID_COLS}, minmax(0, 1fr))` }}
+              >
+                {block.paths.map((path) => (
+                  <ImageThumb
+                    key={path}
+                    dark={dark}
+                    path={path}
+                    onOpen={(url, name) => setImagePreview({ url, name })}
+                  />
+                ))}
+              </div>
+            )
+          }
+          return (
+            <div key={blockKey(block, index)} className="flex flex-wrap gap-x-3 gap-y-1">
+              {block.files.map((file) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  className="inline font-medium text-sky-500 underline-offset-2 hover:underline"
+                  onClick={() => setFileModal({ path: file.path, name: file.name })}
+                >
+                  @{file.name}
+                </button>
+              ))}
+            </div>
+          )
+        })}
       </div>
 
       {fileModal && (

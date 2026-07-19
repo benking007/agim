@@ -152,6 +152,24 @@ function petDemoMessages(): ChatMessage[] {
   ]
 }
 
+/** Local visual QA (`/m/chat?demo=media`) — 8 image thumbs (5+3 wrap) + @file. */
+function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: string): ChatMessage[] {
+  const now = Date.now()
+  const markers = [
+    ...imagePaths.map((p) => `[图片附件：${p}]`),
+    `[文件附件：${filePath} (${fileName}, 42 B)]`,
+    'see the photo',
+  ].join('\n')
+  return [
+    {
+      id: 'demo-media-user',
+      role: 'user',
+      content: markers,
+      timestamp: now - 10_000,
+    },
+  ]
+}
+
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -190,13 +208,24 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'width'
   const demoPet = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'pet'
+  const demoMedia = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'media'
   const chatMessages = useMemo(
     () => {
       if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
+      if (demoMedia) {
+        const params = new URLSearchParams(window.location.search)
+        const images = (params.get('images') || '').split('|').filter(Boolean)
+        const file = params.get('file') || ''
+        const fileName = params.get('fileName') || 'notes.txt'
+        if (images.length > 0 && file) {
+          return mediaDemoMessages(images, file, fileName)
+        }
+      }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoPet, demoWidth, state.messages],
+    [demoPet, demoWidth, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)

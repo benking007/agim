@@ -57,10 +57,13 @@ export function parseUserMediaContent(content: string): UserContentSegment[] {
     last = index + m[0].length
   }
   if (last < content.length) {
-    out.push({ kind: 'text', text: content.slice(last) })
+    const text = content.slice(last)
+    if (text.trim().length > 0) {
+      out.push({ kind: 'text', text: text.replace(/^\n+/, '') })
+    }
   }
   // Drop leading/trailing whitespace-only text segments from marker joins.
-  return out.filter((s) => s.kind !== 'text' || s.text.length > 0)
+  return out.filter((s) => s.kind !== 'text' || s.text.trim().length > 0)
 }
 
 export function mediaFileApiUrl(absPath: string): string {
@@ -77,4 +80,30 @@ export function isPreviewableTextMime(mime: string): boolean {
     || m.includes('typescript')
     || m === 'application/pdf'
   )
+}
+
+export type UserContentBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'images'; paths: string[] }
+  | { kind: 'files'; files: Array<{ path: string; name: string }> }
+
+/** Collapse consecutive image/file markers so thumbs can sit in one wrap grid. */
+export function groupUserContentBlocks(segments: UserContentSegment[]): UserContentBlock[] {
+  const blocks: UserContentBlock[] = []
+  for (const seg of segments) {
+    if (seg.kind === 'text') {
+      blocks.push({ kind: 'text', text: seg.text })
+      continue
+    }
+    if (seg.kind === 'image') {
+      const last = blocks[blocks.length - 1]
+      if (last?.kind === 'images') last.paths.push(seg.path)
+      else blocks.push({ kind: 'images', paths: [seg.path] })
+      continue
+    }
+    const last = blocks[blocks.length - 1]
+    if (last?.kind === 'files') last.files.push({ path: seg.path, name: seg.name })
+    else blocks.push({ kind: 'files', files: [{ path: seg.path, name: seg.name }] })
+  }
+  return blocks
 }

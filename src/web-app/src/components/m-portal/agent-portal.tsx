@@ -5,7 +5,7 @@
  * Transport: existing useChat() WebSocket — not the prototype's Gemini mock.
  */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
@@ -29,8 +29,30 @@ import {
   uploadPendingAttachments,
   type PendingAttachment,
 } from './portal-composer-plus'
+import {
+  chipsFromValue,
+  makeChip,
+  PortalComposerInput,
+  serializeComposer,
+} from './portal-composer-input'
+import {
+  bumpSkillUsage,
+  bumpSlashUsage,
+  detectAtTrigger,
+  detectSlashTrigger,
+  PortalAtPopup,
+  PortalSlashPopup,
+} from './portal-composer-menus'
+import { mentionLabel } from './portal-mention-chip'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
+import {
+  skillMarker,
+  workspaceFileMarker,
+  workspaceMarker,
+  type PortalSkillItem,
+  type PortalSlashCommand,
+} from './portal-slash-commands'
 import { PortalUserContent } from './portal-user-content'
 import { VoiceOverlay } from './voice-overlay'
 
@@ -196,9 +218,19 @@ export function AgentPortal(): JSX.Element {
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [atOpen, setAtOpen] = useState(false)
+  const [slashQuery, setSlashQuery] = useState('')
+  const [atQuery, setAtQuery] = useState('')
+  const [slashActive, setSlashActive] = useState(0)
+  const [atActive, setAtActive] = useState(0)
+  const [textCaret, setTextCaret] = useState(0)
+  const [slashTriggerStart, setSlashTriggerStart] = useState(0)
+  const [atTriggerStart, setAtTriggerStart] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
-
+  const composerFormRef = useRef<HTMLFormElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = agentVisual(agentId)
@@ -407,6 +439,8 @@ export function AgentPortal(): JSX.Element {
       }
       setAttachments([])
       setInputMessage('')
+      setSlashOpen(false)
+      setAtOpen(false)
       send(body)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
@@ -414,6 +448,129 @@ export function AgentPortal(): JSX.Element {
       }))
     } finally {
       setUploading(false)
+    }
+  }
+
+  const syncTriggers = useCallback((caret: number, plainText: string) => {
+    setTextCaret(caret)
+    const slash = detectSlashTrigger(plainText, caret)
+    const at = !slash ? detectAtTrigger(plainText, caret) : null
+    if (slash) {
+      setSlashOpen(true)
+      setAtOpen(false)
+      setSlashQuery(slash.query)
+      setSlashTriggerStart(slash.start)
+      setSlashActive(0)
+    } else if (at) {
+      setAtOpen(true)
+      setSlashOpen(false)
+      setAtQuery(at.query)
+      setAtTriggerStart(at.start)
+      setAtActive(0)
+    } else {
+      setSlashOpen(false)
+      setAtOpen(false)
+    }
+  }, [])
+
+  function clearTriggerFromText(triggerStart: number, caret: number): { chips: ReturnType<typeof chipsFromValue>['chips']; text: string } {
+    const { chips, text } = chipsFromValue(inputMessage)
+    const nextText = `${text.slice(0, triggerStart)}${text.slice(caret)}`
+    return { chips, text: nextText }
+  }
+
+  function onPickSkill(skill: PortalSkillItem): void {
+    bumpSkillUsage(skill.name)
+    const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const chip = makeChip({
+      kind: 'skill',
+      marker: skillMarker(skill.name),
+      label: mentionLabel('skill', skill.name),
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setSlashOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onPickCommand(cmd: PortalSlashCommand): void {
+    bumpSlashUsage(cmd.id)
+    const action = cmd.action
+    if (action.type === 'toggle-plan') {
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      setInputMessage(serializeComposer(chips, text))
+      setSlashOpen(false)
+      if (state.status !== 'open') {
+        toast.error('Not connected')
+        return
+      }
+      send(state.planMode ? '/plan off' : '/plan on')
+      return
+    }
+    if (action.type === 'send') {
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      setInputMessage(serializeComposer(chips, text))
+      setSlashOpen(false)
+      if (state.status !== 'open') {
+        toast.error('Not connected')
+        return
+      }
+      send(action.text)
+      return
+    }
+    // fill
+    const { chips } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const { text: rest } = chipsFromValue(inputMessage)
+    const after = rest.slice(textCaret)
+    setInputMessage(serializeComposer(chips, `${action.text}${after}`))
+    setSlashOpen(false)
+    requestAnimationFrame(() => {
+      const ta = composerInputRef.current
+      if (!ta) return
+      ta.focus()
+      const pos = action.text.length
+      ta.setSelectionRange(pos, pos)
+      syncTriggers(pos, action.text + after)
+    })
+  }
+
+  function onPickWorkspace(): void {
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const chip = makeChip({
+      kind: 'workspace',
+      marker: workspaceMarker(),
+      label: mentionLabel('workspace'),
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setAtOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onPickWorkspaceFile(relPath: string, isDir: boolean): void {
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const kind = isDir ? 'dir' as const : 'file' as const
+    const chip = makeChip({
+      kind,
+      marker: workspaceFileMarker(relPath, isDir),
+      label: mentionLabel(kind, relPath),
+      path: relPath,
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setAtOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (slashOpen || atOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape') {
+        // Handled by popup window listeners; prevent caret jump.
+        if (e.key !== 'Escape') e.preventDefault()
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Popup selects the active item.
+        e.preventDefault()
+        return
+      }
     }
   }
 
@@ -425,7 +582,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const dark = theme === 'dark'
-
+  const composerMenuOpen = plusMenuOpen || slashOpen || atOpen
   return (
     <div
       style={viewportStyle}
@@ -825,8 +982,8 @@ export function AgentPortal(): JSX.Element {
       {activeTab === 'chat' && (
         <div className={cn(
           'absolute inset-x-0 bottom-0 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-          // Lift above header (z-30) while + menu is open so it isn't clipped/covered.
-          plusMenuOpen ? 'z-50' : 'z-20',
+          // Lift above header (z-30) while + / slash / @ menu is open so it isn't clipped/covered.
+          composerMenuOpen ? 'z-50' : 'z-20',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
           <ApprovalDock
@@ -864,10 +1021,11 @@ export function AgentPortal(): JSX.Element {
               className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
             />
             <form
+              ref={composerFormRef}
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
-                // z-10 covers pet feet; + menu is portaled to body so it is fine.
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // z-10 covers pet feet; menus are portaled to body so they are fine.
+                'relative z-10 flex items-end justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -887,20 +1045,46 @@ export function AgentPortal(): JSX.Element {
                   send(cmd)
                 }}
               />
-              <input
-                type="text"
-                placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
+              <PortalComposerInput
+                dark={dark}
                 value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
+                onChange={(next) => {
+                  setInputMessage(next)
+                  const { text } = chipsFromValue(next)
+                  const caret = composerInputRef.current?.selectionStart ?? text.length
+                  syncTriggers(caret, text)
+                }}
                 disabled={uploading}
-                className={cn(
-                  // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
-                  // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none disabled:opacity-60',
-                  dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
-                )}
+                placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
+                inputRef={composerInputRef}
+                onKeyDown={onComposerKeyDown}
+                onCaretChange={syncTriggers}
               />
-              <div className="flex items-center gap-1">
+              <PortalSlashPopup
+                dark={dark}
+                open={slashOpen}
+                query={slashQuery}
+                formRef={composerFormRef}
+                planMode={state.planMode}
+                activeIndex={slashActive}
+                onActiveIndexChange={setSlashActive}
+                onPickCommand={onPickCommand}
+                onPickSkill={onPickSkill}
+                onClose={() => setSlashOpen(false)}
+              />
+              <PortalAtPopup
+                dark={dark}
+                open={atOpen}
+                query={atQuery}
+                agentId={agentId}
+                formRef={composerFormRef}
+                activeIndex={atActive}
+                onActiveIndexChange={setAtActive}
+                onPickWorkspace={onPickWorkspace}
+                onPickFile={onPickWorkspaceFile}
+                onClose={() => setAtOpen(false)}
+              />
+              <div className="flex items-center gap-1 self-end">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"

@@ -175,7 +175,7 @@ export function PortalComposerPlus({
   )
 
   return (
-    <div ref={rootRef} className={cn('relative shrink-0', open && 'z-50')}>
+    <div ref={rootRef} className={cn('relative shrink-0 self-end', open && 'z-50')}>
       <button
         type="button"
         disabled={disabled}

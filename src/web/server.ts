@@ -1088,8 +1088,9 @@ export async function startWebServer(options: {
     // ~/.agim-workspaces/<agent>/ contents — list dirs, peek small
     // text files. PUT path supports inline editing (annotate CLAUDE.md,
     // AGENTS.md, etc.) — same traversal/size guards as GET.
+    // GET is available to any authenticated peer so Portal @-mentions can
+    // browse the active agent workspace; mutations stay admin-only.
     if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
-      if (!requireAdmin(req, res)) return
       return handleWorkspaceFiles(req, res, url)
     }
     if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
@@ -1144,11 +1145,12 @@ export async function startWebServer(options: {
       const handled = await handleBackgroundTasksApi(req, res, url)
       if (handled) return
     }
-    // P1 follow-up — agim skills editor (SKILL.md CRUD). SKILL.md
-    // bodies are injected into every agent prompt; admin-gated even
-    // on GET because the dir paths reveal install layout.
+    // P1 follow-up — agim skills editor (SKILL.md CRUD). Mutations stay
+    // admin-gated (bodies inject into every agent prompt). GET list/detail
+    // are readable by any authenticated peer so Portal `/` skill picker works.
     if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
-      if (!requireAdmin(req, res)) return
+      const method = (req.method || 'GET').toUpperCase()
+      if (method !== 'GET' && !requireAdmin(req, res)) return
       const handled = await handleAgimSkillsApi(req, res, url)
       if (handled) return
     }

@@ -16,6 +16,7 @@ import {
   parseUserMediaContent,
   groupUserContentBlocks,
 } from '@/lib/parse-user-media'
+import { MentionChip, mentionLabel } from './portal-mention-chip'
 
 /** ~5 thumbs per row on a typical portal user chip (mobile ~358px content). */
 const IMAGE_GRID_COLS = 5
@@ -270,6 +271,12 @@ type RenderBlock = import('@/lib/parse-user-media').UserContentBlock
 function blockKey(block: RenderBlock, index: number): string {
   if (block.kind === 'text') return `t:${index}:${block.text.length}`
   if (block.kind === 'images') return `i:${index}:${block.paths.join('|')}`
+  if (block.kind === 'mention') {
+    const m = block.mention
+    if (m.kind === 'workspace') return `m:${index}:ws`
+    if (m.kind === 'skill') return `m:${index}:sk:${m.name}`
+    return `m:${index}:wf:${m.path}`
+  }
   return `f:${index}:${block.files.map((f) => f.path).join('|')}`
 }
 
@@ -288,7 +295,7 @@ export function PortalUserContent({
   const [fileModal, setFileModal] = useState<FileModalState | null>(null)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
 
-  const hasMedia = blocks.some((b) => b.kind !== 'text')
+  const hasMedia = blocks.some((b) => b.kind === 'images' || b.kind === 'files')
 
   return (
     <>
@@ -306,6 +313,40 @@ export function PortalUserContent({
               >
                 {block.text}
               </span>
+            )
+          }
+          if (block.kind === 'mention') {
+            const m = block.mention
+            if (m.kind === 'workspace') {
+              return (
+                <MentionChip
+                  key={blockKey(block, index)}
+                  kind="workspace"
+                  label={mentionLabel('workspace')}
+                  dark={dark}
+                  className="mx-0.5"
+                />
+              )
+            }
+            if (m.kind === 'skill') {
+              return (
+                <MentionChip
+                  key={blockKey(block, index)}
+                  kind="skill"
+                  label={mentionLabel('skill', m.name)}
+                  dark={dark}
+                  className="mx-0.5"
+                />
+              )
+            }
+            return (
+              <MentionChip
+                key={blockKey(block, index)}
+                kind={m.isDir ? 'dir' : 'file'}
+                label={mentionLabel(m.isDir ? 'dir' : 'file', m.path)}
+                dark={dark}
+                className="mx-0.5"
+              />
             )
           }
           if (block.kind === 'images') {

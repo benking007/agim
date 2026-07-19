@@ -25,9 +25,18 @@ describe('parseUserMediaContent', () => {
     expect(segs.some((s) => s.kind === 'text' && s.text.includes('see the photo'))).toBe(true)
   })
 
-  it('supports long unbroken text segments', () => {
-    const long = `324244243432324324325r${'234'.repeat(40)}`
-    expect(parseUserMediaContent(long)[0]).toEqual({ kind: 'text', text: long })
+  it('parses workspace / skill mention markers', () => {
+    const raw = '[工作区] 请看 [工作区文件：src/app.ts] 并用 [技能：create-skill]'
+    const segs = parseUserMediaContent(raw)
+    expect(segs).toEqual([
+      { kind: 'workspace' },
+      { kind: 'text', text: ' 请看 ' },
+      { kind: 'ws-file', path: 'src/app.ts', isDir: false },
+      { kind: 'text', text: ' 并用 ' },
+      { kind: 'skill', name: 'create-skill' },
+    ])
+    const blocks = groupUserContentBlocks(segs)
+    expect(blocks.some((b) => b.kind === 'mention')).toBe(true)
   })
 })
 

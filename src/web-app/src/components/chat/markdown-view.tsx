@@ -96,7 +96,7 @@ const COMPONENTS: Components = {
   // Tables — agent data dumps. Scroll ONLY inside this wrapper so the
   // portal / iOS WKWebView never pans horizontally (page rubber-band).
   table: ({ children, ...p }) => (
-    <div className="agim-md-table my-2 max-w-full min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+    <div className="agim-md-table my-2">
       <table className="w-max min-w-full border-collapse text-xs" {...p}>{children}</table>
     </div>
   ),

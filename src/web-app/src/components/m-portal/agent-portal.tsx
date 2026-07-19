@@ -766,7 +766,9 @@ export function AgentPortal(): JSX.Element {
       {/* Docks + composer */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'absolute inset-x-0 bottom-0 z-20 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+          // Clip pet panel / float bubbles so they cannot widen document
+          // scroll width on iOS WKWebView.
+          'absolute inset-x-0 bottom-0 z-20 overflow-x-hidden px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
           <ApprovalDock

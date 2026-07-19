@@ -33,13 +33,19 @@ struct WebViewRepresentable: UIViewRepresentable {
         // -apple-system without a Han glyph fallback (tofu / [?]). Also
         // declare @font-face here so the face exists even if CSS arrives
         // late; /fonts/ is a public path (must not 302 to login).
+        //
+        // unicode-range is mandatory: without it Agim CJK claims emoji
+        // code points it does not contain → 📋⭐ render as [?]. Keep in
+        // sync with src/web-app/src/styles/cjk-font.css.
         let cjkCss = """
         (function(){
           var s=document.createElement('style');
+          var ur='U+2E80-2EFF,U+2F00-2FDF,U+3000-303F,U+3040-309F,U+30A0-30FF,U+3100-312F,U+31A0-31BF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF';
           s.textContent=[
-            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");}',
-            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");}',
-            'html,body,#root,button,input,textarea{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif!important;}'
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");unicode-range:'+ur+';}',
+            '@font-face{font-family:"Agim CJK";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");unicode-range:'+ur+';}',
+            'html,body,#root,button,input,textarea,[data-sonner-toaster],[data-sonner-toast]{font-family:"Agim CJK",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"!important;}',
+            'html,body,#root{overflow-x:clip!important;max-width:100%!important;touch-action:pan-y!important;}'
           ].join('');
           document.documentElement.appendChild(s);
         })();
@@ -51,17 +57,27 @@ struct WebViewRepresentable: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        // Chat list scrolls inside the page; disable WKWebView rubber-banding
-        // so pull-down / sideways pan does not drag the whole portal chrome.
-        // Wide markdown tables scroll inside their own overflow-x wrappers.
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.scrollView.bounces = false
-        webView.scrollView.alwaysBounceVertical = false
-        webView.scrollView.alwaysBounceHorizontal = false
-        webView.scrollView.isDirectionalLockEnabled = true
-        // Pinch-zoom can widen layout and enable horizontal pan; keep off.
-        webView.scrollView.minimumZoomScale = 1
-        webView.scrollView.maximumZoomScale = 1
+
+        // Portal scrolls inside overflow-y:auto divs — disable the document
+        // UIScrollView entirely. Otherwise wide tables inflate contentSize
+        // and iOS pans the WHOLE page horizontally even with CSS
+        // overflow-x:hidden (alwaysBounceHorizontal=false does not help
+        // when contentSize.width > bounds.width).
+        let sv = webView.scrollView
+        sv.contentInsetAdjustmentBehavior = .never
+        sv.isScrollEnabled = false
+        sv.bounces = false
+        sv.alwaysBounceVertical = false
+        sv.alwaysBounceHorizontal = false
+        sv.showsHorizontalScrollIndicator = false
+        sv.isDirectionalLockEnabled = true
+        sv.minimumZoomScale = 1
+        sv.maximumZoomScale = 1
+        // Belt-and-suspenders: if WebKit re-enables scrolling or widens
+        // contentSize, pin offset.x / width (do NOT set sv.delegate —
+        // WKWebView owns it internally).
+        context.coordinator.lockDocumentHorizontalPan(sv)
+
         webView.isOpaque = false
         webView.backgroundColor = .black
         context.coordinator.webView = webView
@@ -76,9 +92,44 @@ struct WebViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var credentials: HostCredentials
         weak var webView: WKWebView?
+        private var contentSizeObs: NSKeyValueObservation?
+        private var contentOffsetObs: NSKeyValueObservation?
+        private var boundsObs: NSKeyValueObservation?
+        private var pinning = false
 
         init(credentials: HostCredentials) {
             self.credentials = credentials
+        }
+
+        /// Keep WKWebView's document scroll view from panning sideways.
+        /// Inner HTML overflow-x:auto (tables/code) still scroll on their own.
+        func lockDocumentHorizontalPan(_ scrollView: UIScrollView) {
+            let pin: (UIScrollView) -> Void = { [weak self] sv in
+                guard let self, !self.pinning else { return }
+                self.pinning = true
+                defer { self.pinning = false }
+                let w = sv.bounds.width
+                if w > 1, sv.contentSize.width > w + 0.5 {
+                    sv.contentSize = CGSize(width: w, height: sv.contentSize.height)
+                }
+                if abs(sv.contentOffset.x) > 0.5 {
+                    sv.contentOffset = CGPoint(x: 0, y: sv.contentOffset.y)
+                }
+                // Portal owns vertical scroll; keep document scroller off.
+                if sv.isScrollEnabled {
+                    sv.isScrollEnabled = false
+                }
+            }
+            contentSizeObs = scrollView.observe(\.contentSize, options: [.new]) { sv, _ in
+                pin(sv)
+            }
+            contentOffsetObs = scrollView.observe(\.contentOffset, options: [.new]) { sv, _ in
+                pin(sv)
+            }
+            boundsObs = scrollView.observe(\.bounds, options: [.new]) { sv, _ in
+                pin(sv)
+            }
+            pin(scrollView)
         }
 
         func loadPortal() {

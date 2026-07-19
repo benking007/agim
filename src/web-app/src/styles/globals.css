@@ -160,12 +160,13 @@
 
   /* /m/chat Agent Portal in WKWebView: lock document rubber-band; only
      the inner message list should scroll (see overscroll-contain there).
-     touch-action: pan-y + overflow-x: hidden — wide tables must not pan
-     the whole page horizontally on iOS. */
+     overflow-x: clip + touch-action: pan-y — wide tables must not pan
+     the whole page horizontally on iOS (hidden alone still inflates
+     WKWebView contentSize). */
   html.agim-portal-lock,
   html.agim-portal-lock body {
     overflow: hidden;
-    overflow-x: hidden;
+    overflow-x: clip;
     overscroll-behavior: none;
     overscroll-behavior-x: none;
     touch-action: pan-y;
@@ -180,7 +181,19 @@
     width: 100%;
     max-width: 100%;
     overflow: hidden;
-    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  /* Markdown tables: contain inline size so w-max cells cannot inflate
+     the document scroll width; horizontal pan stays inside the wrapper. */
+  .agim-md-table {
+    max-width: 100%;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    contain: inline-size;
   }
 
   /* Mono + CJK fallbacks — default Menlo/Consolas omit Han glyphs and

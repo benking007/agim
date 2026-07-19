@@ -22,6 +22,8 @@ export interface PortalViewportFrame {
 export function usePortalViewportFrame(): PortalViewportFrame {
   const [frame, setFrame] = useState(() => ({
     top: 0,
+    left: 0,
+    width: typeof window !== 'undefined' ? window.innerWidth : 0,
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
     keyboardInset: 0,
   }))
@@ -31,12 +33,22 @@ export function usePortalViewportFrame(): PortalViewportFrame {
 
     const update = (): void => {
       if (!vv) {
-        setFrame({ top: 0, height: window.innerHeight, keyboardInset: 0 })
+        setFrame({
+          top: 0,
+          left: 0,
+          width: window.innerWidth,
+          height: window.innerHeight,
+          keyboardInset: 0,
+        })
         return
       }
       const obscured = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop))
       setFrame({
         top: vv.offsetTop,
+        // Bind left/width to visualViewport so residual zoom / sideways
+        // visual pan cannot leave a wider layout surface to drag.
+        left: vv.offsetLeft,
+        width: vv.width,
         height: vv.height,
         keyboardInset: obscured > 24 ? Math.round(obscured) : 0,
       })
@@ -61,10 +73,11 @@ export function usePortalViewportFrame(): PortalViewportFrame {
     style: {
       position: 'fixed',
       top: frame.top,
-      left: 0,
-      right: 0,
-      width: '100%',
+      left: frame.left,
+      width: frame.width,
       height: frame.height,
+      maxWidth: '100%',
+      overflowX: 'hidden',
     },
     keyboardInset: frame.keyboardInset,
   }

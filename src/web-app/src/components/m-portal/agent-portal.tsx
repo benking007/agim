@@ -231,6 +231,10 @@ export function AgentPortal(): JSX.Element {
   const activityStatusRef = useRef<Map<string, string>>(new Map())
   const composerFormRef = useRef<HTMLFormElement>(null)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  const slashQueryRef = useRef('')
+  const atQueryRef = useRef('')
+  const slashOpenRef = useRef(false)
+  const atOpenRef = useRef(false)
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = agentVisual(agentId)
@@ -456,18 +460,32 @@ export function AgentPortal(): JSX.Element {
     const slash = detectSlashTrigger(plainText, caret)
     const at = !slash ? detectAtTrigger(plainText, caret) : null
     if (slash) {
+      const queryChanged = slashQueryRef.current !== slash.query
+      const wasClosed = !slashOpenRef.current
+      slashQueryRef.current = slash.query
+      slashOpenRef.current = true
+      atOpenRef.current = false
       setSlashOpen(true)
       setAtOpen(false)
       setSlashQuery(slash.query)
       setSlashTriggerStart(slash.start)
-      setSlashActive(0)
+      if (wasClosed || queryChanged) setSlashActive(0)
     } else if (at) {
+      const queryChanged = atQueryRef.current !== at.query
+      const wasClosed = !atOpenRef.current
+      atQueryRef.current = at.query
+      atOpenRef.current = true
+      slashOpenRef.current = false
       setAtOpen(true)
       setSlashOpen(false)
       setAtQuery(at.query)
       setAtTriggerStart(at.start)
-      setAtActive(0)
+      if (wasClosed || queryChanged) setAtActive(0)
     } else {
+      slashQueryRef.current = ''
+      atQueryRef.current = ''
+      slashOpenRef.current = false
+      atOpenRef.current = false
       setSlashOpen(false)
       setAtOpen(false)
     }
@@ -560,18 +578,35 @@ export function AgentPortal(): JSX.Element {
   }
 
   function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (slashOpen || atOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape') {
-        // Handled by popup window listeners; prevent caret jump.
-        if (e.key !== 'Escape') e.preventDefault()
-        return
-      }
-      if (e.key === 'Enter' && !e.shiftKey) {
-        // Popup selects the active item.
-        e.preventDefault()
-        return
-      }
+    if (!slashOpen && !atOpen) return
+    // Capture-phase popup listeners move highlight / commit selection;
+    // block caret motion and accidental newlines here.
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      return
     }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setSlashOpen(false)
+      setAtOpen(false)
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+    }
+  }
+
+  function fillComposer(text: string): void {
+    setInputMessage(text)
+    requestAnimationFrame(() => {
+      const ta = composerInputRef.current
+      if (!ta) return
+      ta.focus()
+      const { text: plain } = chipsFromValue(text)
+      const pos = plain.length
+      ta.setSelectionRange(pos, pos)
+      syncTriggers(pos, plain)
+    })
   }
 
   function selectAgent(id: string): void {
@@ -1025,7 +1060,7 @@ export function AgentPortal(): JSX.Element {
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
                 // z-10 covers pet feet; menus are portaled to body so they are fine.
-                'relative z-10 flex items-end justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                'relative z-10 flex items-center justify-between rounded-[26px] border p-1 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -1035,7 +1070,7 @@ export function AgentPortal(): JSX.Element {
                 disabled={uploading || state.status !== 'open'}
                 attachments={attachments}
                 onAttachmentsChange={setAttachments}
-                onFillInput={(text) => setInputMessage(text)}
+                onFillInput={fillComposer}
                 onOpenChange={setPlusMenuOpen}
                 onSendCommand={(cmd) => {
                   if (state.status !== 'open') {
@@ -1084,43 +1119,43 @@ export function AgentPortal(): JSX.Element {
                 onPickFile={onPickWorkspaceFile}
                 onClose={() => setAtOpen(false)}
               />
-              <div className="flex items-center gap-1 self-end">
+              <div className="flex items-center gap-1 self-center">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"
                     disabled={uploading}
                     className={cn(
-                      // Match + button: fixed h-8 w-8 circle.
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                      // Match + button: fixed h-7 w-7 circle.
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-3.5 w-3.5" />
                   </button>
                 ) : canStop ? (
                   <button
                     type="button"
                     onClick={() => stop()}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                     title={t('chat.portal.stop')}
                     aria-label={t('chat.portal.stop')}
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                    <Square className="h-3 w-3 fill-current" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowVoiceOverlay(true)}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
                       dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
                   >
-                    <Mic className="h-4 w-4" />
+                    <Mic className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>

@@ -135,11 +135,12 @@ export function PortalComposerInput({
     const ta = inputRef.current
     if (!ta) return
     ta.style.height = 'auto'
-    const line = 20
-    const pad = 8
+    // Keep single-line height tight (~28px) to match h-7 side buttons.
+    const minH = 28
+    const maxH = 28 * 6
     // Read `text` so height tracks typed content (auto-grow).
-    const scroll = text.length >= 0 ? ta.scrollHeight : 0
-    ta.style.height = `${Math.min(scroll, line * 6 + pad)}px`
+    const scroll = text.length >= 0 ? ta.scrollHeight : minH
+    ta.style.height = `${Math.max(minH, Math.min(scroll, maxH))}px`
   }, [text, inputRef])
 
   function emit(nextChips: ComposerChip[], nextText: string): void {
@@ -165,7 +166,7 @@ export function PortalComposerInput({
   return (
     <div
       className={cn(
-        'flex min-w-0 flex-1 flex-wrap items-center gap-1 px-2 py-0.5',
+        'flex min-w-0 flex-1 flex-wrap items-center gap-1 px-1.5',
         className,
       )}
     >
@@ -195,13 +196,20 @@ export function PortalComposerInput({
         onKeyDown={onKeyDown}
         onSelect={reportCaret}
         onClick={reportCaret}
-        onKeyUp={reportCaret}
+        onKeyUp={(e) => {
+          // Arrow keys only move the popup highlight — skip caret sync
+          // so we don't fight selection state on keyup.
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+            return
+          }
+          reportCaret()
+        }}
         // Prevent form submit on Enter — newline only; send via button.
         onKeyPress={(e) => {
           if (e.key === 'Enter') e.stopPropagation()
         }}
         className={cn(
-          'min-w-[6rem] flex-1 resize-none bg-transparent py-1 text-md leading-5 focus:outline-none disabled:opacity-60',
+          'min-h-7 min-w-[6rem] flex-1 resize-none bg-transparent py-0 text-md leading-7 focus:outline-none disabled:opacity-60',
           dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
         )}
       />

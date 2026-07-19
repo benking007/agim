@@ -63,4 +63,10 @@ describe('filterSlashCommands', () => {
     const list = filterSlashCommands('pla')
     expect(list[0]?.id).toBe('plan')
   })
+
+  it('fills memo as /memo here', () => {
+    const memo = filterSlashCommands('memo')[0]
+    expect(memo?.id).toBe('memo')
+    expect(memo?.action).toEqual({ type: 'fill', text: '/memo here' })
+  })
 })

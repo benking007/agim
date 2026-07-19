@@ -45,7 +45,7 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     description: 'Save a 5W1H memo',
     keywords: ['memo', '备忘', '记录'],
     priority: 1,
-    action: { type: 'fill', text: '/memo ' },
+    action: { type: 'fill', text: '/memo here' },
   },
   {
     id: 'goal',

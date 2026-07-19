@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -299,7 +300,7 @@ export interface PortalSlashPopupProps {
   formRef: React.RefObject<HTMLElement | null>
   planMode: boolean
   activeIndex: number
-  onActiveIndexChange: (i: number) => void
+  onActiveIndexChange: (next: number | ((prev: number) => number)) => void
   onPickCommand: (cmd: PortalSlashCommand) => void
   onPickSkill: (skill: PortalSkillItem) => void
   onClose: () => void
@@ -351,6 +352,11 @@ export function PortalSlashPopup({
     return items
   }, [previewSkills, previewCommands])
 
+  const activeIndexRef = useRef(activeIndex)
+  activeIndexRef.current = activeIndex
+  const flatItemsRef = useRef(flatItems)
+  flatItemsRef.current = flatItems
+
   useEffect(() => {
     if (!open) return
     if (activeIndex >= flatItems.length) onActiveIndexChange(Math.max(0, flatItems.length - 1))
@@ -372,16 +378,17 @@ export function PortalSlashPopup({
         return
       }
       if (skillsModal || cmdsModal) return
+      const items = flatItemsRef.current
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        if (flatItems.length === 0) return
-        onActiveIndexChange((activeIndex + 1) % flatItems.length)
+        if (items.length === 0) return
+        onActiveIndexChange((prev) => (prev + 1) % items.length)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        if (flatItems.length === 0) return
-        onActiveIndexChange((activeIndex - 1 + flatItems.length) % flatItems.length)
+        if (items.length === 0) return
+        onActiveIndexChange((prev) => (prev - 1 + items.length) % items.length)
       } else if (e.key === 'Enter' && !e.shiftKey) {
-        const item = flatItems[activeIndex]
+        const item = items[activeIndexRef.current]
         if (!item) return
         e.preventDefault()
         e.stopPropagation()
@@ -391,7 +398,7 @@ export function PortalSlashPopup({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, skillsModal, cmdsModal, flatItems, activeIndex, onActiveIndexChange, onPickSkill, onPickCommand, onClose])
+  }, [open, skillsModal, cmdsModal, onActiveIndexChange, onPickSkill, onPickCommand, onClose])
 
   const anchor = useComposerAnchor(open && !skillsModal && !cmdsModal, formRef)
   if (!open) return null
@@ -529,7 +536,7 @@ export interface PortalAtPopupProps {
   agentId: string
   formRef: React.RefObject<HTMLElement | null>
   activeIndex: number
-  onActiveIndexChange: (i: number) => void
+  onActiveIndexChange: (next: number | ((prev: number) => number)) => void
   onPickWorkspace: () => void
   onPickFile: (relPath: string, isDir: boolean) => void
   onClose: () => void
@@ -586,6 +593,18 @@ export function PortalAtPopup({
   }, [q])
 
   const flatCount = mode === 'root' ? rootItems.length : entries.length
+  const activeIndexRef = useRef(activeIndex)
+  activeIndexRef.current = activeIndex
+  const rootItemsRef = useRef(rootItems)
+  rootItemsRef.current = rootItems
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const dirPathRef = useRef(dirPath)
+  dirPathRef.current = dirPath
+  const flatCountRef = useRef(flatCount)
+  flatCountRef.current = flatCount
 
   useEffect(() => {
     if (!open) return
@@ -597,9 +616,9 @@ export function PortalAtPopup({
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        if (mode === 'browse') {
-          if (dirPath) {
-            const parts = dirPath.split('/').filter(Boolean)
+        if (modeRef.current === 'browse') {
+          if (dirPathRef.current) {
+            const parts = dirPathRef.current.split('/').filter(Boolean)
             parts.pop()
             setDirPath(parts.join('/'))
           } else {
@@ -610,19 +629,21 @@ export function PortalAtPopup({
         onClose()
         return
       }
+      const count = flatCountRef.current
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        if (flatCount === 0) return
-        onActiveIndexChange((activeIndex + 1) % flatCount)
+        if (count === 0) return
+        onActiveIndexChange((prev) => (prev + 1) % count)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        if (flatCount === 0) return
-        onActiveIndexChange((activeIndex - 1 + flatCount) % flatCount)
+        if (count === 0) return
+        onActiveIndexChange((prev) => (prev - 1 + count) % count)
       } else if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         e.stopPropagation()
-        if (mode === 'root') {
-          const item = rootItems[activeIndex]
+        const idx = activeIndexRef.current
+        if (modeRef.current === 'root') {
+          const item = rootItemsRef.current[idx]
           if (!item) return
           if (item.id === 'workspace') onPickWorkspace()
           else {
@@ -631,9 +652,9 @@ export function PortalAtPopup({
             onActiveIndexChange(0)
           }
         } else {
-          const entry = entries[activeIndex]
+          const entry = entriesRef.current[idx]
           if (!entry) return
-          const rel = dirPath ? `${dirPath}/${entry.name}` : entry.name
+          const rel = dirPathRef.current ? `${dirPathRef.current}/${entry.name}` : entry.name
           if (entry.isDir) {
             setDirPath(rel)
             onActiveIndexChange(0)
@@ -645,10 +666,7 @@ export function PortalAtPopup({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [
-    open, mode, dirPath, flatCount, activeIndex, rootItems, entries,
-    onActiveIndexChange, onPickWorkspace, onPickFile, onClose,
-  ])
+  }, [open, onActiveIndexChange, onPickWorkspace, onPickFile, onClose])
 
   const anchor = useComposerAnchor(open, formRef)
   if (!open) return null

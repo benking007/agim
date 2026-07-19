@@ -105,8 +105,9 @@ export function PortalComposerPlus({
       const el = rootRef.current
       if (!el) return
       const r = el.getBoundingClientRect()
-      const gap = attachments.length > 0 ? 72 : 8
-      // Keep the menu above the + / attachment strip; scroll inside if needed.
+      // Always hug the input bar (reference: tight above composer). Attachment
+      // previews must NOT shift this anchor — menu simply paints over them.
+      const gap = 6
       const bottomLimit = r.top - gap
       const naturalH = menuRef.current?.scrollHeight || 292
       const left = Math.max(8, Math.min(r.left, window.innerWidth - 216 - 8))
@@ -127,7 +128,7 @@ export function PortalComposerPlus({
       window.removeEventListener('resize', sync)
       window.removeEventListener('scroll', sync, true)
     }
-  }, [open, attachments.length])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -190,12 +191,15 @@ export function PortalComposerPlus({
         aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
         onClick={() => setMenuOpen(!open)}
         className={cn(
-          'rounded-full p-2 text-zinc-400 transition-colors disabled:opacity-40',
-          dark ? 'hover:bg-zinc-800 hover:text-rose-400' : 'hover:bg-zinc-100 hover:text-rose-600',
-          open && (dark ? 'bg-zinc-800 text-rose-400' : 'bg-zinc-100 text-rose-600'),
+          // Perfect circle (fixed square + rounded-full); avoid p-2 oval stretch.
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[18px] leading-none transition-colors disabled:opacity-40',
+          dark
+            ? 'bg-zinc-800 text-rose-400 hover:bg-zinc-700'
+            : 'bg-zinc-100 text-rose-600 hover:bg-zinc-200',
+          open && (dark ? 'bg-zinc-700 text-rose-300' : 'bg-zinc-200 text-rose-700'),
         )}
       >
-        <span className="block text-lg leading-none">+</span>
+        <span aria-hidden>+</span>
       </button>
 
       {open && createPortal(
@@ -333,9 +337,11 @@ export function AttachmentStrip({
   onRemove: (id: string) => void
   className?: string
 }): JSX.Element | null {
+  const { t } = useTranslation()
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const [fadeLeft, setFadeLeft] = useState(false)
   const [fadeRight, setFadeRight] = useState(false)
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
 
   useEffect(() => {
     if (!scroller) {
@@ -363,64 +369,110 @@ export function AttachmentStrip({
     }
   }, [scroller])
 
+  useEffect(() => {
+    if (!preview) return
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') setPreview(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [preview])
+
   if (attachments.length === 0) return null
 
   return (
-    // Cap width short of the perched pet; overflow scrolls horizontally.
-    // Edge fades hint clipped content without covering the sprite.
-    <div className={cn('pointer-events-auto relative', className)}>
-      <div
-        ref={setScroller}
-        className="overflow-x-auto overscroll-x-contain scrollbar-none"
-      >
-        <ul className="flex w-max gap-2 pb-0.5">
-          {attachments.map((a) => (
-            <li
-              key={a.id}
-              className={cn(
-                'relative shrink-0 overflow-hidden rounded-xl border',
-                dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
-                a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
-              )}
-            >
-              {a.kind === 'image' && a.previewUrl ? (
-                <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
-              ) : (
-                <>
-                  <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
-                  <span className="truncate text-[10px] font-medium">{a.name}</span>
-                </>
-              )}
-              <button
-                type="button"
-                aria-label="Remove"
-                onClick={() => onRemove(a.id)}
-                className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+    <>
+      {/* Cap width short of the perched pet; overflow scrolls horizontally. */}
+      <div className={cn('pointer-events-auto relative', className)}>
+        <div
+          ref={setScroller}
+          className="overflow-x-auto overscroll-x-contain scrollbar-none"
+        >
+          <ul className="flex w-max gap-2 pb-0.5">
+            {attachments.map((a) => (
+              <li
+                key={a.id}
+                className={cn(
+                  'relative shrink-0 overflow-hidden rounded-xl border',
+                  dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
+                  a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
+                )}
               >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
+                {a.kind === 'image' && a.previewUrl ? (
+                  <button
+                    type="button"
+                    className="h-full w-full"
+                    aria-label={t('chat.portal.attach.preview', { defaultValue: '预览图片' })}
+                    onClick={() => {
+                      const url = a.previewUrl
+                      if (url) setPreview({ url, name: a.name })
+                    }}
+                  >
+                    <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
+                  </button>
+                ) : (
+                  <>
+                    <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
+                    <span className="truncate text-[10px] font-medium">{a.name}</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-label="Remove"
+                  onClick={() => onRemove(a.id)}
+                  className="absolute right-0.5 top-0.5 z-[1] flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {fadeLeft && (
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r to-transparent',
+              dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+            )}
+          />
+        )}
+        {fadeRight && (
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l to-transparent',
+              dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+            )}
+          />
+        )}
       </div>
-      {fadeLeft && (
+
+      {preview && createPortal(
         <div
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r to-transparent',
-            dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
-          )}
-        />
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.name}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4"
+          onClick={() => setPreview(null)}
+        >
+          <button
+            type="button"
+            aria-label={t('chat.portal.attach.closePreview', { defaultValue: '关闭预览' })}
+            onClick={() => setPreview(null)}
+            className="absolute right-4 top-4 z-[1] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white transition hover:bg-black/75"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={preview.url}
+            alt={preview.name}
+            className="max-h-[min(85vh,720px)] max-w-full rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body,
       )}
-      {fadeRight && (
-        <div
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l to-transparent',
-            dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
-          )}
-        />
-      )}
-    </div>
+    </>
   )
 }

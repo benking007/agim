@@ -371,7 +371,9 @@
       },
       "attach": {
         "max": "最多 8 个附件",
-        "uploadFailed": "附件上传失败"
+        "uploadFailed": "附件上传失败",
+        "preview": "预览图片",
+        "closePreview": "关闭预览"
       },
       "exploreTitle": "自定义 Agent",
       "closeExplore": "关闭",

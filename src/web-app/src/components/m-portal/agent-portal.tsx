@@ -815,10 +815,9 @@ export function AgentPortal(): JSX.Element {
               onAnnounceDone={(id) => {
                 setPetAnnounce((cur) => (cur?.id === id ? null : cur))
               }}
-              // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
-              // Anchored to the form only — attachment strip is absolute so it
-              // never shifts this perch when files are added.
-              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
+              // Perch on the form rim; z below the form so feet are covered by
+              // the opaque composer (not painted on top of it).
+              className="absolute bottom-[calc(100%-1.15rem)] right-1 z-[5]"
             />
             <AttachmentStrip
               dark={dark}
@@ -828,16 +827,14 @@ export function AgentPortal(): JSX.Element {
                 if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
                 setAttachments(attachments.filter((a) => a.id !== id))
               }}
-              // Float above the form; leave ~3.5rem on the right for the pet
-              // (w-11 + right-1 + gap). Extra items scroll horizontally.
+              // Float above the form; leave ~3.5rem on the right for the pet.
               className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
             />
             <form
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
-                // No stacking z-index here — otherwise the + menu (child) cannot
-                // paint above the sibling AttachmentStrip (z-20).
-                'relative flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // z-10 covers pet feet; + menu is portaled to body so it is fine.
+                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >

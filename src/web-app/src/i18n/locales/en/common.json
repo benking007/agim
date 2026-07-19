@@ -371,7 +371,9 @@
       },
       "attach": {
         "max": "Up to 8 attachments",
-        "uploadFailed": "Attachment upload failed"
+        "uploadFailed": "Attachment upload failed",
+        "preview": "Preview image",
+        "closePreview": "Close preview"
       },
       "exploreTitle": "Custom Agents",
       "closeExplore": "Close",

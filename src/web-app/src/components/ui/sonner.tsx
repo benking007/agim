@@ -15,6 +15,10 @@
  *
  * Mobile: position defaults to `top-center` so the toast is reachable
  * even when the soft keyboard is up.
+ *
+ * Font: sonner's stylesheet hardcodes `ui-sans-serif, -apple-system…`
+ * without Agim CJK / PingFang. On some iOS WKWebView locales that
+ * stack paints Han as [?]; force `font-sans` (Agim CJK-first).
  */
 
 import { Toaster as Sonner, type ToasterProps } from 'sonner'
@@ -25,12 +29,13 @@ function Toaster(props: ToasterProps): JSX.Element {
       position="top-center"
       richColors
       closeButton
+      className="font-sans"
       toastOptions={{
         classNames: {
           toast:
-            'border border-border bg-surface text-text shadow-md',
-          title: 'font-medium',
-          description: 'text-text-dim text-sm',
+            'border border-border bg-surface text-text shadow-md font-sans',
+          title: 'font-medium font-sans',
+          description: 'text-text-dim text-sm font-sans',
           actionButton:
             'bg-accent text-accent-fg rounded-md',
           cancelButton:

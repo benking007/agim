@@ -7,6 +7,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, extname, join, resolve } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
@@ -96,4 +97,42 @@ export function formatMediaMarker(saved: SavedWebMedia): string {
       ? `${(saved.bytes / 1024).toFixed(1)} KB`
       : `${(saved.bytes / (1024 * 1024)).toFixed(1)} MB`
   return `[文件附件：${saved.path} (${saved.name}, ${sizeStr})]`
+}
+
+export function resolveSafeWebMediaPath(requested: string): string | null {
+  const raw = (requested || '').trim()
+  if (!raw) return null
+  const abs = resolve(raw)
+  const roots = new Set<string>([
+    getWebMediaRoot(),
+    resolve(join(AGIM_HOME, 'media')),
+    resolve(join(homedir(), '.agim', 'media')),
+  ])
+  for (const root of roots) {
+    const rootWithSep = root.endsWith('/') ? root : `${root}/`
+    if (abs === root || abs.startsWith(rootWithSep)) return abs
+  }
+  return null
+}
+
+/** Guess a Content-Type from filename when the on-disk mime is unknown. */
+export function guessMediaContentType(filename: string): string {
+  const lower = basename(filename).toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  if (lower.endsWith('.pdf')) return 'application/pdf'
+  if (lower.endsWith('.json')) return 'application/json'
+  if (lower.endsWith('.md')) return 'text/markdown; charset=utf-8'
+  if (lower.endsWith('.csv')) return 'text/csv; charset=utf-8'
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html; charset=utf-8'
+  if (lower.endsWith('.txt') || lower.endsWith('.log')) return 'text/plain; charset=utf-8'
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js')
+    || lower.endsWith('.jsx') || lower.endsWith('.css') || lower.endsWith('.xml')
+    || lower.endsWith('.yaml') || lower.endsWith('.yml')) {
+    return 'text/plain; charset=utf-8'
+  }
+  return 'application/octet-stream'
 }

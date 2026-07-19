@@ -33,6 +33,7 @@ agim go
 默认 Web 控制台：`http://localhost:3000`
 
 - 对话：`/`
+- 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区引用等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
 - 任务：`/tasks`
 - 设置：`/settings`
 

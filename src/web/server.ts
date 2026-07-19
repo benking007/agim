@@ -868,6 +868,10 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/chat/media' && req.method === 'POST') {
       return handleChatMediaUpload(req, res, url)
     }
+    // Serve a previously uploaded chat media file for in-bubble preview.
+    if (url.pathname === '/api/chat/media/file' && req.method === 'GET') {
+      return handleChatMediaFile(req, res, url)
+    }
     // v1.2.133 — plan-history admin list. Shows every
     // native_exit_plan_mode handshake (v1.2.131) with outcome +
     // pending_ms + the plan markdown the model proposed. Admin-only:
@@ -1084,8 +1088,9 @@ export async function startWebServer(options: {
     // ~/.agim-workspaces/<agent>/ contents — list dirs, peek small
     // text files. PUT path supports inline editing (annotate CLAUDE.md,
     // AGENTS.md, etc.) — same traversal/size guards as GET.
+    // GET is available to any authenticated peer so Portal @-mentions can
+    // browse the active agent workspace; mutations stay admin-only.
     if (url.pathname === '/api/workspace-files' && req.method === 'GET') {
-      if (!requireAdmin(req, res)) return
       return handleWorkspaceFiles(req, res, url)
     }
     if (url.pathname === '/api/workspace-files' && req.method === 'PUT') {
@@ -1140,11 +1145,12 @@ export async function startWebServer(options: {
       const handled = await handleBackgroundTasksApi(req, res, url)
       if (handled) return
     }
-    // P1 follow-up — agim skills editor (SKILL.md CRUD). SKILL.md
-    // bodies are injected into every agent prompt; admin-gated even
-    // on GET because the dir paths reveal install layout.
+    // P1 follow-up — agim skills editor (SKILL.md CRUD). Mutations stay
+    // admin-gated (bodies inject into every agent prompt). GET list/detail
+    // are readable by any authenticated peer so Portal `/` skill picker works.
     if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
-      if (!requireAdmin(req, res)) return
+      const method = (req.method || 'GET').toUpperCase()
+      if (method !== 'GET' && !requireAdmin(req, res)) return
       const handled = await handleAgimSkillsApi(req, res, url)
       if (handled) return
     }
@@ -5034,6 +5040,51 @@ async function handleChatMediaUpload(
     }
     webLog.warn({ err: e }, 'chat media upload failed')
     sendError(res, 500, 'MEDIA_UPLOAD_FAILED', { message: e.message || 'upload failed' })
+  }
+}
+
+async function handleChatMediaFile(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<void> {
+  const {
+    guessMediaContentType,
+    resolveSafeWebMediaPath,
+  } = await import('../core/web-media-upload.js')
+  const raw = url.searchParams.get('path') || ''
+  const abs = resolveSafeWebMediaPath(raw)
+  if (!abs) {
+    sendError(res, 400, 'MEDIA_PATH_INVALID', { message: 'invalid media path' })
+    return
+  }
+  try {
+    const { promises: fs } = await import('node:fs')
+    const st = await fs.stat(abs)
+    if (!st.isFile()) {
+      sendError(res, 404, 'MEDIA_NOT_FOUND', { message: 'media not found' })
+      return
+    }
+    const buf = await fs.readFile(abs)
+    const name = abs.split(/[/\\]/).pop() || 'file'
+    const contentType = guessMediaContentType(name)
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': buf.length,
+      'Content-Disposition': `inline; filename="${name.replace(/"/g, '_')}"`,
+      'Cache-Control': 'private, max-age=3600',
+    })
+    res.end(buf)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') {
+      sendError(res, 404, 'MEDIA_NOT_FOUND', { message: 'media not found' })
+      return
+    }
+    webLog.warn({ err }, 'chat media file read failed')
+    sendError(res, 500, 'MEDIA_READ_FAILED', {
+      message: err instanceof Error ? err.message : 'read failed',
+    })
   }
 }
 

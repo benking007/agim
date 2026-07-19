@@ -18,6 +18,7 @@
 ## AI 能力专题
 
 - `skills.md`：Skills 机制
+- `portal-composer.md`：Portal（`/m/chat`）输入框 `/`·`@`、chip、长文折叠与附件预览
 - `goals.md`：`/goal` 长目标
 - `ask-user.md`：结构化提问（ask_user，支持单选/多选/自定义输入）
 - `memory-and-vector.md`：长期记忆与向量召回

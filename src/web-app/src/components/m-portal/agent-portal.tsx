@@ -5,7 +5,7 @@
  * Transport: existing useChat() WebSocket — not the prototype's Gemini mock.
  */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
@@ -29,8 +29,31 @@ import {
   uploadPendingAttachments,
   type PendingAttachment,
 } from './portal-composer-plus'
+import {
+  chipsFromValue,
+  makeChip,
+  PortalComposerInput,
+  serializeComposer,
+} from './portal-composer-input'
+import {
+  bumpSkillUsage,
+  bumpSlashUsage,
+  detectAtTrigger,
+  detectSlashTrigger,
+  PortalAtPopup,
+  PortalSlashPopup,
+} from './portal-composer-menus'
+import { mentionLabel } from './portal-mention-chip'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
+import {
+  skillMarker,
+  workspaceFileMarker,
+  workspaceMarker,
+  type PortalSkillItem,
+  type PortalSlashCommand,
+} from './portal-slash-commands'
+import { PortalUserContent } from './portal-user-content'
 import { VoiceOverlay } from './voice-overlay'
 
 type Tab = 'chat' | 'explore'
@@ -151,6 +174,45 @@ function petDemoMessages(): ChatMessage[] {
   ]
 }
 
+/** Local visual QA (`/m/chat?demo=media`) — 8 image thumbs (5+3 wrap) + @file. */
+function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: string): ChatMessage[] {
+  const now = Date.now()
+  const markers = [
+    ...imagePaths.map((p) => `[图片附件：${p}]`),
+    `[文件附件：${filePath} (${fileName}, 12 B)]`,
+  ]
+  return [
+    {
+      id: 'demo-media-user',
+      role: 'user',
+      content: [...markers, 'see the photo'].join('\n'),
+      timestamp: now - 10_000,
+    },
+  ]
+}
+
+/** Local visual QA (`/m/chat?demo=collapse`) — long user body for fold/mask. */
+const COLLAPSE_DEMO_MESSAGES: ChatMessage[] = [
+  {
+    id: 'demo-collapse-user',
+    role: 'user',
+    content: [
+      '1、老问题，这个输入款高度太高了',
+      '2、/memo 应该自动填充 /memo here',
+      '3、输入 / 或 @ 后，如果用的是键盘上下键选择，无法选择列表的选项。',
+      '4、左侧的加号菜单，也加上 models、skills、remember',
+      '5、消息体过长时需要默认折叠，点击后再展开',
+      '6、选择文件夹/文件/skill 后，backspace 要能删掉 chip',
+      '7、小精灵位置往上调，把脚挡住就行',
+    ].join('\n'),
+    timestamp: 0,
+  },
+]
+
+function collapseDemoMessages(): ChatMessage[] {
+  return COLLAPSE_DEMO_MESSAGES
+}
+
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -177,9 +239,23 @@ export function AgentPortal(): JSX.Element {
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [atOpen, setAtOpen] = useState(false)
+  const [slashQuery, setSlashQuery] = useState('')
+  const [atQuery, setAtQuery] = useState('')
+  const [slashActive, setSlashActive] = useState(0)
+  const [atActive, setAtActive] = useState(0)
+  const [textCaret, setTextCaret] = useState(0)
+  const [slashTriggerStart, setSlashTriggerStart] = useState(0)
+  const [atTriggerStart, setAtTriggerStart] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
-
+  const composerFormRef = useRef<HTMLFormElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  const slashQueryRef = useRef('')
+  const atQueryRef = useRef('')
+  const slashOpenRef = useRef(false)
+  const atOpenRef = useRef(false)
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = agentVisual(agentId)
@@ -189,13 +265,27 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'width'
   const demoPet = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'pet'
+  const demoMedia = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'media'
+  const demoCollapse = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'collapse'
   const chatMessages = useMemo(
     () => {
       if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
+      if (demoCollapse) return collapseDemoMessages()
+      if (demoMedia) {
+        const params = new URLSearchParams(window.location.search)
+        const images = (params.get('images') || '').split('|').filter(Boolean)
+        const file = params.get('file') || ''
+        const fileName = params.get('fileName') || 'notes.txt'
+        if (images.length > 0 && file) {
+          return mediaDemoMessages(images, file, fileName)
+        }
+      }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoPet, demoWidth, state.messages],
+    [demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -377,6 +467,8 @@ export function AgentPortal(): JSX.Element {
       }
       setAttachments([])
       setInputMessage('')
+      setSlashOpen(false)
+      setAtOpen(false)
       send(body)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
@@ -387,6 +479,160 @@ export function AgentPortal(): JSX.Element {
     }
   }
 
+  const syncTriggers = useCallback((caret: number, plainText: string) => {
+    setTextCaret(caret)
+    const slash = detectSlashTrigger(plainText, caret)
+    const at = !slash ? detectAtTrigger(plainText, caret) : null
+    if (slash) {
+      const queryChanged = slashQueryRef.current !== slash.query
+      const wasClosed = !slashOpenRef.current
+      slashQueryRef.current = slash.query
+      slashOpenRef.current = true
+      atOpenRef.current = false
+      setSlashOpen(true)
+      setAtOpen(false)
+      setSlashQuery(slash.query)
+      setSlashTriggerStart(slash.start)
+      if (wasClosed || queryChanged) setSlashActive(0)
+    } else if (at) {
+      const queryChanged = atQueryRef.current !== at.query
+      const wasClosed = !atOpenRef.current
+      atQueryRef.current = at.query
+      atOpenRef.current = true
+      slashOpenRef.current = false
+      setAtOpen(true)
+      setSlashOpen(false)
+      setAtQuery(at.query)
+      setAtTriggerStart(at.start)
+      if (wasClosed || queryChanged) setAtActive(0)
+    } else {
+      slashQueryRef.current = ''
+      atQueryRef.current = ''
+      slashOpenRef.current = false
+      atOpenRef.current = false
+      setSlashOpen(false)
+      setAtOpen(false)
+    }
+  }, [])
+
+  function clearTriggerFromText(triggerStart: number, caret: number): { chips: ReturnType<typeof chipsFromValue>['chips']; text: string } {
+    const { chips, text } = chipsFromValue(inputMessage)
+    const nextText = `${text.slice(0, triggerStart)}${text.slice(caret)}`
+    return { chips, text: nextText }
+  }
+
+  function onPickSkill(skill: PortalSkillItem): void {
+    bumpSkillUsage(skill.name)
+    const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const chip = makeChip({
+      kind: 'skill',
+      marker: skillMarker(skill.name),
+      label: mentionLabel('skill', skill.name),
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setSlashOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onPickCommand(cmd: PortalSlashCommand): void {
+    bumpSlashUsage(cmd.id)
+    const action = cmd.action
+    if (action.type === 'toggle-plan') {
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      setInputMessage(serializeComposer(chips, text))
+      setSlashOpen(false)
+      if (state.status !== 'open') {
+        toast.error('Not connected')
+        return
+      }
+      send(state.planMode ? '/plan off' : '/plan on')
+      return
+    }
+    if (action.type === 'send') {
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      setInputMessage(serializeComposer(chips, text))
+      setSlashOpen(false)
+      if (state.status !== 'open') {
+        toast.error('Not connected')
+        return
+      }
+      send(action.text)
+      return
+    }
+    // fill
+    const { chips } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const { text: rest } = chipsFromValue(inputMessage)
+    const after = rest.slice(textCaret)
+    setInputMessage(serializeComposer(chips, `${action.text}${after}`))
+    setSlashOpen(false)
+    requestAnimationFrame(() => {
+      const ta = composerInputRef.current
+      if (!ta) return
+      ta.focus()
+      const pos = action.text.length
+      ta.setSelectionRange(pos, pos)
+      syncTriggers(pos, action.text + after)
+    })
+  }
+
+  function onPickWorkspace(): void {
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const chip = makeChip({
+      kind: 'workspace',
+      marker: workspaceMarker(),
+      label: mentionLabel('workspace'),
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setAtOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onPickWorkspaceFile(relPath: string, isDir: boolean): void {
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const kind = isDir ? 'dir' as const : 'file' as const
+    const chip = makeChip({
+      kind,
+      marker: workspaceFileMarker(relPath, isDir),
+      label: mentionLabel(kind, relPath),
+      path: relPath,
+    })
+    setInputMessage(serializeComposer([...chips, chip], text))
+    setAtOpen(false)
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }
+
+  function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (!slashOpen && !atOpen) return
+    // Capture-phase popup listeners move highlight / commit selection;
+    // block caret motion and accidental newlines here.
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setSlashOpen(false)
+      setAtOpen(false)
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+    }
+  }
+
+  function fillComposer(text: string): void {
+    setInputMessage(text)
+    requestAnimationFrame(() => {
+      const ta = composerInputRef.current
+      if (!ta) return
+      ta.focus()
+      const { text: plain } = chipsFromValue(text)
+      const pos = plain.length
+      ta.setSelectionRange(pos, pos)
+      syncTriggers(pos, plain)
+    })
+  }
+
   function selectAgent(id: string): void {
     switchAgent(id)
     setActiveTab('chat')
@@ -395,7 +641,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const dark = theme === 'dark'
-
+  const composerMenuOpen = plusMenuOpen || slashOpen || atOpen
   return (
     <div
       style={viewportStyle}
@@ -556,15 +802,23 @@ export function AgentPortal(): JSX.Element {
             <div key={turn.id} className="flex w-full flex-col gap-3">
               {turn.user && (
                 <div
+                  data-user-message
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
-                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
+                    'sticky top-0 z-10 w-full min-w-0 overflow-hidden rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
+                    // Force wrap long unbroken tokens (digits / paths) inside the chip.
+                    'whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',
                   )}
+                  style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
                 >
-                  {turn.user.content}
+                  <PortalUserContent
+                    dark={dark}
+                    content={turn.user.content}
+                    messageId={turn.user.id}
+                  />
                 </div>
               )}
               {turn.replies.map((msg) => (
@@ -792,8 +1046,8 @@ export function AgentPortal(): JSX.Element {
       {activeTab === 'chat' && (
         <div className={cn(
           'absolute inset-x-0 bottom-0 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-          // Lift above header (z-30) while + menu is open so it isn't clipped/covered.
-          plusMenuOpen ? 'z-50' : 'z-20',
+          // Lift above header (z-30) while + / slash / @ menu is open so it isn't clipped/covered.
+          composerMenuOpen ? 'z-50' : 'z-20',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
           <ApprovalDock
@@ -815,9 +1069,9 @@ export function AgentPortal(): JSX.Element {
               onAnnounceDone={(id) => {
                 setPetAnnounce((cur) => (cur?.id === id ? null : cur))
               }}
-              // Perch on the form rim; z below the form so feet are covered by
-              // the opaque composer (not painted on top of it).
-              className="absolute bottom-[calc(100%-1.4rem)] right-1 z-[5]"
+              // Perch on the form rim; z below the form so only feet tuck
+              // under the opaque composer (not painted on top of it).
+              className="absolute bottom-[calc(100%-0.55rem)] right-1 z-[5]"
             />
             <AttachmentStrip
               dark={dark}
@@ -831,10 +1085,11 @@ export function AgentPortal(): JSX.Element {
               className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
             />
             <form
+              ref={composerFormRef}
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
-                // z-10 covers pet feet; + menu is portaled to body so it is fine.
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // z-10 covers pet feet; menus are portaled to body so they are fine.
+                'relative z-10 flex items-center justify-between rounded-[26px] border p-1 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -844,7 +1099,7 @@ export function AgentPortal(): JSX.Element {
                 disabled={uploading || state.status !== 'open'}
                 attachments={attachments}
                 onAttachmentsChange={setAttachments}
-                onFillInput={(text) => setInputMessage(text)}
+                onFillInput={fillComposer}
                 onOpenChange={setPlusMenuOpen}
                 onSendCommand={(cmd) => {
                   if (state.status !== 'open') {
@@ -854,56 +1109,82 @@ export function AgentPortal(): JSX.Element {
                   send(cmd)
                 }}
               />
-              <input
-                type="text"
-                placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
+              <PortalComposerInput
+                dark={dark}
                 value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
+                onChange={(next) => {
+                  setInputMessage(next)
+                  const { text } = chipsFromValue(next)
+                  const caret = composerInputRef.current?.selectionStart ?? text.length
+                  syncTriggers(caret, text)
+                }}
                 disabled={uploading}
-                className={cn(
-                  // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
-                  // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none disabled:opacity-60',
-                  dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
-                )}
+                placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
+                inputRef={composerInputRef}
+                onKeyDown={onComposerKeyDown}
+                onCaretChange={syncTriggers}
               />
-              <div className="flex items-center gap-1">
+              <PortalSlashPopup
+                dark={dark}
+                open={slashOpen}
+                query={slashQuery}
+                formRef={composerFormRef}
+                planMode={state.planMode}
+                activeIndex={slashActive}
+                onActiveIndexChange={setSlashActive}
+                onPickCommand={onPickCommand}
+                onPickSkill={onPickSkill}
+                onClose={() => setSlashOpen(false)}
+              />
+              <PortalAtPopup
+                dark={dark}
+                open={atOpen}
+                query={atQuery}
+                agentId={agentId}
+                formRef={composerFormRef}
+                activeIndex={atActive}
+                onActiveIndexChange={setAtActive}
+                onPickWorkspace={onPickWorkspace}
+                onPickFile={onPickWorkspaceFile}
+                onClose={() => setAtOpen(false)}
+              />
+              <div className="flex items-center gap-1 self-center">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"
                     disabled={uploading}
                     className={cn(
-                      // Match + button: fixed h-8 w-8 circle.
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                      // Match + button: fixed h-7 w-7 circle.
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-3.5 w-3.5" />
                   </button>
                 ) : canStop ? (
                   <button
                     type="button"
                     onClick={() => stop()}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
                       dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
                     )}
                     title={t('chat.portal.stop')}
                     aria-label={t('chat.portal.stop')}
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                    <Square className="h-3 w-3 fill-current" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowVoiceOverlay(true)}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
                       dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
                     )}
                     title={t('chat.portal.voice')}
                   >
-                    <Mic className="h-4 w-4" />
+                    <Mic className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>

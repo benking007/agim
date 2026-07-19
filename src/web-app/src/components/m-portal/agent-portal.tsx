@@ -374,7 +374,8 @@ export function AgentPortal(): JSX.Element {
       className={cn(
         // Height/top come from visualViewport so iOS keyboard pan cannot
         // shove the header off-screen (sticky alone is not enough).
-        'flex flex-col overflow-hidden font-sans selection:bg-teal-500/30',
+        // overflow-x-hidden: wide tables must not pan the portal shell.
+        'flex min-w-0 max-w-full flex-col overflow-hidden overflow-x-hidden font-sans selection:bg-teal-500/30',
         dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
       )}
     >
@@ -482,7 +483,9 @@ export function AgentPortal(): JSX.Element {
         <div className={cn(
           // pt-0 so sticky user chips sit flush under the header (no py gap when pinned).
           // pb leaves room for composer + perched pet.
-          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
+          // overflow-x-hidden: wide markdown tables must NOT pan the whole
+          // transcript (iOS WKWebView). Tables scroll inside their wrapper.
+          'min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain overscroll-x-none px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
           {chatMessages.length === 0 && (
@@ -525,12 +528,12 @@ export function AgentPortal(): JSX.Element {
           )}
 
           {chatTurns.map((turn) => (
-            <div key={turn.id} className="flex w-full flex-col gap-3">
+            <div key={turn.id} className="flex w-full min-w-0 max-w-full flex-col gap-3">
               {turn.user && (
                 <div
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
-                    'sticky top-0 z-10 w-full rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
+                    'sticky top-0 z-10 w-full min-w-0 max-w-full overflow-x-hidden break-words rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
                     dark
                       ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                       : 'border-zinc-200 bg-white text-zinc-900',
@@ -545,10 +548,10 @@ export function AgentPortal(): JSX.Element {
                   // AI reply column — slightly inset vs the full-width user
                   // chip, centered (equal left/right gap). min-w-0 so wide
                   // tables cannot expand past the cap.
-                  className="mx-auto flex w-[95%] max-w-[95%] min-w-0 flex-col self-center overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  className="mx-auto flex w-[95%] max-w-[95%] min-w-0 flex-col self-center overflow-x-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
                   data-testid="portal-ai-reply"
                 >
-                  <div className="w-full min-w-0 space-y-1.5 overflow-x-auto">
+                  <div className="w-full min-w-0 max-w-full space-y-1.5 overflow-x-hidden">
                     {(() => {
                       const isCurrent = isTyping && msg.id === state.currentReplyId
                       // Prefer the message's own agent; never fall back to the

@@ -51,12 +51,17 @@ struct WebViewRepresentable: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
         // Chat list scrolls inside the page; disable WKWebView rubber-banding
-        // so pull-down does not drag the whole portal chrome.
+        // so pull-down / sideways pan does not drag the whole portal chrome.
+        // Wide markdown tables scroll inside their own overflow-x wrappers.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
         webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.isDirectionalLockEnabled = true
+        // Pinch-zoom can widen layout and enable horizontal pan; keep off.
+        webView.scrollView.minimumZoomScale = 1
+        webView.scrollView.maximumZoomScale = 1
         webView.isOpaque = false
         webView.backgroundColor = .black
         context.coordinator.webView = webView

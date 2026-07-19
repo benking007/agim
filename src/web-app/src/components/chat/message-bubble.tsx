@@ -58,6 +58,7 @@ export function MessageBubble({
   const dark = themeMode === 'dark'
     || (themeMode === 'system'
       && typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
       && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   if (msg.approval) {

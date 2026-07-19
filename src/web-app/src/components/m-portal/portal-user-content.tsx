@@ -288,10 +288,7 @@ function blockKey(block: RenderBlock, index: number): string {
   return `f:${index}:${block.files.map((f) => f.path).join('|')}`
 }
 
-/** Survives CollapsibleBody remounts (list refresh / sticky reflow). */
-const expandedMessageKeys = new Set<string>()
-
-/** Collapse tall non-image bodies; tap to expand. Images stay outside. */
+/** Collapse tall non-image bodies; tap to expand, click outside to fold again. */
 function CollapsibleBody({
   dark,
   contentKey,
@@ -302,14 +299,10 @@ function CollapsibleBody({
   children: ReactNode
 }): JSX.Element {
   const { t } = useTranslation()
+  const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState(() => expandedMessageKeys.has(contentKey))
+  const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
-
-  // Re-hydrate if this body remounts after the user already expanded it.
-  useEffect(() => {
-    if (expandedMessageKeys.has(contentKey)) setExpanded(true)
-  }, [contentKey])
 
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -329,15 +322,25 @@ function CollapsibleBody({
     return () => ro?.disconnect()
   }, [contentKey])
 
+  // Click / tap outside this user message chip → fold again.
+  useEffect(() => {
+    if (!expanded) return
+    const onPointerDown = (ev: PointerEvent): void => {
+      const root = rootRef.current
+      if (!root) return
+      const boundary = root.closest('[data-user-message]') ?? root
+      if (ev.target instanceof Node && boundary.contains(ev.target)) return
+      setExpanded(false)
+    }
+    // Capture so composer / sidebar taps still collapse first.
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [expanded])
+
   const collapsed = overflows && !expanded
 
-  function expand(): void {
-    expandedMessageKeys.add(contentKey)
-    setExpanded(true)
-  }
-
   return (
-    <div className="relative min-w-0">
+    <div ref={rootRef} className="relative min-w-0">
       <div
         ref={bodyRef}
         className={cn(collapsed && 'overflow-hidden')}
@@ -351,7 +354,8 @@ function CollapsibleBody({
             type="button"
             className="absolute inset-0 z-[1] cursor-pointer"
             aria-label={t('chat.portal.expandMessage', { defaultValue: '展开消息' })}
-            onClick={expand}
+            aria-expanded={false}
+            onClick={() => setExpanded(true)}
           />
           <div
             aria-hidden

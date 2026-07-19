@@ -91,6 +91,7 @@ export function MessageBubble({
       )}
     >
       <div
+        data-user-message={isUser ? '' : undefined}
         className={cn(
           'max-w-[85%] min-w-0 overflow-hidden sm:max-w-[75%] px-3.5 py-2 shadow-sm',
           radius,

@@ -802,6 +802,7 @@ export function AgentPortal(): JSX.Element {
             <div key={turn.id} className="flex w-full flex-col gap-3">
               {turn.user && (
                 <div
+                  data-user-message
                   className={cn(
                     // Sticky topic chip — rounded rect (not a full pill/ellipse)
                     'sticky top-0 z-10 w-full min-w-0 overflow-hidden rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',

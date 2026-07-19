@@ -94,7 +94,7 @@ export function PortalComposerPlus({
     onOpenChange?.(next)
   }, [onOpenChange])
 
-  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) {
@@ -105,17 +105,24 @@ export function PortalComposerPlus({
       const el = rootRef.current
       if (!el) return
       const r = el.getBoundingClientRect()
-      // Sit above the + control; clear attachment strip (~3.5rem + gap) when present.
-      const clear = attachments.length > 0 ? 72 : 8
-      setMenuPos({
-        left: Math.max(8, r.left),
-        bottom: Math.max(8, window.innerHeight - r.top + clear),
-      })
+      const gap = attachments.length > 0 ? 72 : 8
+      // Approximate menu height; clamp so Plan…Files stay on-screen.
+      const menuH = menuRef.current?.offsetHeight || 292
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 216 - 8))
+      let top = r.top - gap - menuH
+      if (top < 8) top = 8
+      if (top + menuH > window.innerHeight - 8) {
+        top = Math.max(8, window.innerHeight - menuH - 8)
+      }
+      setMenuPos({ left, top })
     }
     sync()
+    // Remeasure after paint once the portaled node exists.
+    const raf = requestAnimationFrame(sync)
     window.addEventListener('resize', sync)
     window.addEventListener('scroll', sync, true)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener('resize', sync)
       window.removeEventListener('scroll', sync, true)
     }
@@ -190,12 +197,14 @@ export function PortalComposerPlus({
         <span className="block text-lg leading-none">+</span>
       </button>
 
-      {open && menuPos && createPortal(
+      {open && createPortal(
         <div
           ref={menuRef}
           id={menuId}
           role="menu"
-          style={{ left: menuPos.left, bottom: menuPos.bottom }}
+          style={menuPos
+            ? { left: menuPos.left, top: menuPos.top }
+            : { left: -9999, top: 0, visibility: 'hidden' }}
           className={cn(
             // Portal to body + fixed — always above attachment strip / pet / header.
             'fixed z-[100] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',

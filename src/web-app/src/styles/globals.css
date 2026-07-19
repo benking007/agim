@@ -238,4 +238,11 @@
     40% { transform: translateY(-10px) scale(1.06); }
     100% { transform: translateY(0) scale(1); }
   }
+  /* Completion toast: drift left + fade from the pet perch. */
+  @keyframes agim-pet-float-left {
+    0% { opacity: 0; transform: translateX(0) translateY(4px); }
+    12% { opacity: 1; transform: translateX(-8px) translateY(0); }
+    70% { opacity: 1; transform: translateX(-48px) translateY(-6px); }
+    100% { opacity: 0; transform: translateX(-96px) translateY(-14px); }
+  }
 }

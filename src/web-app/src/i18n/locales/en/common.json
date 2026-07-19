@@ -386,7 +386,14 @@
         "aria": "Agim pet",
         "idle": ["Tap me!", "I'm listening", "Ready when you are"],
         "running": ["Working…", "On it!", "Thinking hard"],
-        "tap": ["Hi!", "Boop!", "♪", "I'm here", "Keep going!"]
+        "tap": ["Hi!", "Boop!", "♪", "I'm here", "Keep going!"],
+        "panelTitle": "In progress",
+        "empty": "No tasks in progress",
+        "runLabel": "Agent running",
+        "approvalLabel": "Awaiting approval",
+        "askLabel": "Awaiting your reply",
+        "doneOk": "{{agent}} finished",
+        "doneErr": "{{agent}} failed"
       },
       "feedbackGood": "Marked as helpful",
       "feedbackBad": "Marked as needs improvement",

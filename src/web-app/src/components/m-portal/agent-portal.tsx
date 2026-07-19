@@ -23,7 +23,7 @@ import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
-import { PortalPet } from './portal-pet'
+import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
 import { VoiceOverlay } from './voice-overlay'
 
@@ -116,6 +116,35 @@ function widthDemoMessages(): ChatMessage[] {
   ]
 }
 
+/** Local visual QA (`/m/chat?demo=pet`) — running activity for the pet panel. */
+function petDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-pet-user',
+      role: 'user',
+      content: '帮我查一下今天大盘，并整理成三条要点。',
+      timestamp: now - 20_000,
+    },
+    {
+      id: 'demo-pet-assistant',
+      role: 'assistant',
+      agent: 'agim',
+      timestamp: now - 5_000,
+      activity: {
+        runId: 'demo-pet-run',
+        status: 'running',
+        startedAt: now - 18_000,
+        steps: [
+          { id: 't1', kind: 'tool', label: 'web_search', status: 'success', startedAt: now - 17_000, finishedAt: now - 12_000 },
+          { id: 't2', kind: 'tool', label: 'summarize', status: 'running', startedAt: now - 11_000 },
+        ],
+      },
+      content: '正在整理要点…',
+    },
+  ]
+}
+
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -138,7 +167,10 @@ export function AgentPortal(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<(typeof EXPLORE_CATS)[number]>('All')
   const [inputMessage, setInputMessage] = useState('')
+  const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const activityStatusRef = useRef<Map<string, string>>(new Map())
+
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = agentVisual(agentId)
@@ -146,9 +178,15 @@ export function AgentPortal(): JSX.Element {
   const isTyping = state.currentReplyId != null
   const demoWidth = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'width'
+  const demoPet = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'pet'
   const chatMessages = useMemo(
-    () => (demoWidth ? widthDemoMessages() : state.messages.filter((m) => !m.approval)),
-    [demoWidth, state.messages],
+    () => {
+      if (demoPet) return petDemoMessages()
+      if (demoWidth) return widthDemoMessages()
+      return state.messages.filter((m) => !m.approval)
+    },
+    [demoPet, demoWidth, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -156,6 +194,119 @@ export function AgentPortal(): JSX.Element {
   const streamingFallback = isTyping && !currentReplyInList
   const canStop = isTyping || state.activeRunId != null
 
+  const petTasks = useMemo((): PetTaskItem[] => {
+    const items: PetTaskItem[] = []
+    for (const msg of chatMessages) {
+      if (msg.role !== 'assistant' || !msg.activity) continue
+      if (msg.activity.status !== 'running') continue
+      const live = [...msg.activity.steps].reverse().find(
+        (s) => s.status === 'running' || s.status === 'pending',
+      )
+      items.push({
+        id: `run-${msg.activity.runId || msg.id}`,
+        kind: 'run',
+        label: msg.agent ? displayAgentName(msg.agent) : t('chat.portal.pet.runLabel'),
+        detail: live?.label
+          || t('chat.activityRunning', { defaultValue: 'Running' }),
+      })
+    }
+    if (isTyping && !items.some((i) => i.kind === 'run')) {
+      items.push({
+        id: `run-${state.currentReplyId ?? 'streaming'}`,
+        kind: 'run',
+        label: displayAgentName(agentId),
+        detail: t('chat.activityRunning', { defaultValue: 'Running' }),
+      })
+    }
+    for (const ap of state.pendingApprovals) {
+      if (ap.outcome) continue
+      items.push({
+        id: `apv-${ap.messageId}`,
+        kind: 'approval',
+        label: t('chat.portal.pet.approvalLabel'),
+        detail: ap.prompt?.toolName || undefined,
+      })
+    }
+    for (const ask of state.pendingAsks) {
+      if (ask.finalText) continue
+      items.push({
+        id: `ask-${ask.messageId}`,
+        kind: 'ask',
+        label: t('chat.portal.pet.askLabel'),
+        detail: ask.prompt?.body || ask.prompt?.title || undefined,
+      })
+    }
+    if (demoPet) {
+      items.push(
+        {
+          id: 'demo-apv',
+          kind: 'approval',
+          label: t('chat.portal.pet.approvalLabel'),
+          detail: 'bash',
+        },
+        {
+          id: 'demo-ask',
+          kind: 'ask',
+          label: t('chat.portal.pet.askLabel'),
+          detail: '要用简洁版还是详细版？',
+        },
+      )
+    }
+    return items
+  }, [
+    chatMessages,
+    isTyping,
+    state.currentReplyId,
+    state.pendingApprovals,
+    state.pendingAsks,
+    agentId,
+    demoPet,
+    t,
+  ])
+
+  // Float a left-drifting bubble when a run finishes.
+  useEffect(() => {
+    const prev = activityStatusRef.current
+    const next = new Map(prev)
+    for (const msg of chatMessages) {
+      if (msg.role !== 'assistant' || !msg.activity) continue
+      const key = msg.activity.runId || msg.id
+      const cur = msg.activity.status
+      const was = prev.get(key)
+      if (was === 'running' && (cur === 'success' || cur === 'error')) {
+        const agent = msg.agent ? displayAgentName(msg.agent) : 'Agim'
+        setPetAnnounce({
+          id: `done-${key}-${cur}-${msg.activity.finishedAt ?? Date.now()}`,
+          text: cur === 'success'
+            ? t('chat.portal.pet.doneOk', { agent })
+            : t('chat.portal.pet.doneErr', { agent }),
+          tone: cur === 'success' ? 'ok' : 'err',
+        })
+      }
+      next.set(key, cur)
+    }
+    activityStatusRef.current = next
+  }, [chatMessages, t])
+
+  // demo=pet — fire completion floats so recording can capture the drift.
+  // Repeat every 4.5s: SPA soft-navigations keep demoPet=true without remount,
+  // so a one-shot timeout is easy to miss on a second visit.
+  useEffect(() => {
+    if (!demoPet) return
+    const fire = (): void => {
+      setPetAnnounce({
+        id: `demo-pet-done-${Date.now()}`,
+        text: t('chat.portal.pet.doneOk', { agent: 'Agim' }),
+        tone: 'ok',
+      })
+    }
+    const first = window.setTimeout(fire, 1600)
+    const loop = window.setInterval(fire, 4500)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(loop)
+    }
+  }, [demoPet, t])
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
   useEffect(() => {
@@ -628,9 +779,14 @@ export function AgentPortal(): JSX.Element {
           <div className="relative">
             <PortalPet
               dark={dark}
-              busy={canStop}
+              busy={canStop || demoPet}
+              tasks={petTasks}
+              announce={petAnnounce}
+              onAnnounceDone={(id) => {
+                setPetAnnounce((cur) => (cur?.id === id ? null : cur))
+              }}
               // Sink ~30% of the h-11 pet behind the composer (0.3 × 2.75rem ≈ 0.85rem).
-              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-0"
+              className="absolute bottom-[calc(100%-0.85rem)] right-1 z-30"
             />
             <form
               onSubmit={onSend}

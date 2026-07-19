@@ -386,7 +386,14 @@
         "aria": "Agim 电子宠物",
         "idle": ["点我玩～", "我在听", "随时待命"],
         "running": ["加油中…", "忙着呢", "认真想"],
-        "tap": ["嗨！", "啵～", "♪", "我在这儿", "继续冲！"]
+        "tap": ["嗨！", "啵～", "♪", "我在这儿", "继续冲！"],
+        "panelTitle": "进行中",
+        "empty": "现在没有进行中的任务",
+        "runLabel": "Agent 执行中",
+        "approvalLabel": "等待审批",
+        "askLabel": "等待你的回答",
+        "doneOk": "{{agent}} 完成啦",
+        "doneErr": "{{agent}} 出错了"
       },
       "feedbackGood": "已标记为有帮助",
       "feedbackBad": "已标记为需改进",

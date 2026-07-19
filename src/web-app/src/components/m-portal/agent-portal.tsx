@@ -832,7 +832,9 @@ export function AgentPortal(): JSX.Element {
             <form
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // No stacking z-index here — otherwise the + menu (child) cannot
+                // paint above the sibling AttachmentStrip (z-20).
+                'relative flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >

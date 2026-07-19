@@ -134,7 +134,7 @@ export function PortalComposerPlus({
   )
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <div ref={rootRef} className={cn('relative shrink-0', open && 'z-50')}>
       <button
         type="button"
         disabled={disabled}
@@ -156,7 +156,8 @@ export function PortalComposerPlus({
           id={menuId}
           role="menu"
           className={cn(
-            'absolute bottom-full left-0 z-40 w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
+            // Above attachment strip (z-20) + pet (z-30); parent also lifts to z-50 when open.
+            'absolute bottom-full left-0 z-[60] w-[13.5rem] origin-bottom-left animate-in fade-in slide-in-from-bottom-2 rounded-2xl border p-1.5 shadow-xl duration-150',
             // Clear the floating attachment strip (h-14 + gap) when present.
             attachments.length > 0 ? 'mb-[4.25rem]' : 'mb-2',
             dark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-800',
@@ -277,45 +278,94 @@ export function AttachmentStrip({
   onRemove: (id: string) => void
   className?: string
 }): JSX.Element | null {
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  const [fadeLeft, setFadeLeft] = useState(false)
+  const [fadeRight, setFadeRight] = useState(false)
+
+  useEffect(() => {
+    if (!scroller) {
+      setFadeLeft(false)
+      setFadeRight(false)
+      return
+    }
+    const sync = (): void => {
+      const { scrollLeft, scrollWidth, clientWidth } = scroller
+      setFadeLeft(scrollLeft > 2)
+      setFadeRight(scrollLeft + clientWidth < scrollWidth - 2)
+    }
+    sync()
+    scroller.addEventListener('scroll', sync, { passive: true })
+    const ro = new ResizeObserver(sync)
+    ro.observe(scroller)
+    const list = scroller.firstElementChild
+    if (list) ro.observe(list)
+    const mo = new MutationObserver(sync)
+    if (list) mo.observe(list, { childList: true, subtree: true })
+    return () => {
+      scroller.removeEventListener('scroll', sync)
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [scroller])
+
   if (attachments.length === 0) return null
+
   return (
-    // Cap width short of the perched pet (h-11/w-11 + right-1); overflow scrolls
-    // horizontally so extra files never shove or cover the sprite.
-    <div
-      className={cn(
-        'pointer-events-auto overflow-x-auto overscroll-x-contain scrollbar-none',
-        className,
-      )}
-    >
-      <ul className="flex w-max gap-2 pb-0.5">
-        {attachments.map((a) => (
-          <li
-            key={a.id}
-            className={cn(
-              'relative shrink-0 overflow-hidden rounded-xl border',
-              dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
-              a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
-            )}
-          >
-            {a.kind === 'image' && a.previewUrl ? (
-              <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
-            ) : (
-              <>
-                <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
-                <span className="truncate text-[10px] font-medium">{a.name}</span>
-              </>
-            )}
-            <button
-              type="button"
-              aria-label="Remove"
-              onClick={() => onRemove(a.id)}
-              className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+    // Cap width short of the perched pet; overflow scrolls horizontally.
+    // Edge fades hint clipped content without covering the sprite.
+    <div className={cn('pointer-events-auto relative', className)}>
+      <div
+        ref={setScroller}
+        className="overflow-x-auto overscroll-x-contain scrollbar-none"
+      >
+        <ul className="flex w-max gap-2 pb-0.5">
+          {attachments.map((a) => (
+            <li
+              key={a.id}
+              className={cn(
+                'relative shrink-0 overflow-hidden rounded-xl border',
+                dark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-white',
+                a.kind === 'image' ? 'h-14 w-14' : 'flex h-14 min-w-[6.5rem] max-w-[9rem] items-center gap-2 px-2',
+              )}
             >
-              <X className="h-3 w-3" />
-            </button>
-          </li>
-        ))}
-      </ul>
+              {a.kind === 'image' && a.previewUrl ? (
+                <img src={a.previewUrl} alt={a.name} className="h-full w-full object-cover" />
+              ) : (
+                <>
+                  <FileText className={cn('h-5 w-5 shrink-0', dark ? 'text-rose-300' : 'text-rose-500')} />
+                  <span className="truncate text-[10px] font-medium">{a.name}</span>
+                </>
+              )}
+              <button
+                type="button"
+                aria-label="Remove"
+                onClick={() => onRemove(a.id)}
+                className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {fadeLeft && (
+        <div
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r to-transparent',
+            dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+          )}
+        />
+      )}
+      {fadeRight && (
+        <div
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l to-transparent',
+            dark ? 'from-zinc-950/95 via-zinc-950/55' : 'from-zinc-100/95 via-zinc-100/55',
+          )}
+        />
+      )}
     </div>
   )
 }

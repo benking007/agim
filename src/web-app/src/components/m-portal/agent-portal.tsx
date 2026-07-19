@@ -5,7 +5,7 @@
  * Transport: existing useChat() WebSocket — not the prototype's Gemini mock.
  */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
@@ -178,7 +178,19 @@ export function AgentPortal(): JSX.Element {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
+
+  // Auto-grow composer height with wrapped text (cap ~6 lines).
+  useEffect(() => {
+    const ta = composerInputRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    const line = 24
+    const pad = 8
+    const maxLines = 6
+    ta.style.height = `${Math.min(ta.scrollHeight, line * maxLines + pad)}px`
+  }, [inputMessage])
 
 
   const agentId = state.agent || state.agents[0] || 'agim'
@@ -834,7 +846,8 @@ export function AgentPortal(): JSX.Element {
               onSubmit={(e) => { void onSend(e) }}
               className={cn(
                 // z-10 covers pet feet; + menu is portaled to body so it is fine.
-                'relative z-10 flex items-center justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
+                // items-end keeps + / send aligned to the last line as the field grows.
+                'relative z-10 flex items-end justify-between rounded-[26px] border p-1.5 shadow-lg transition-all focus-within:border-teal-500',
                 dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',
               )}
             >
@@ -854,20 +867,34 @@ export function AgentPortal(): JSX.Element {
                   send(cmd)
                 }}
               />
-              <input
-                type="text"
+              <textarea
+                ref={composerInputRef}
+                rows={1}
                 placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+                  // Enter always inserts a newline — never submit. Users must tap
+                  // the send button (long drafts need reliable line breaks).
+                  const ne = e.nativeEvent as { isComposing?: boolean }
+                  if (ne.isComposing || e.keyCode === 229) return
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    // Block Cmd/Ctrl+Enter form quirks; send only via the button.
+                    e.preventDefault()
+                  }
+                }}
                 disabled={uploading}
+                enterKeyHint="enter"
                 className={cn(
                   // text-md = 16px (theme text-base is 15px). iOS Safari auto-zooms
                   // focused inputs under 16px — same fix as ChatComposer.
-                  'flex-1 bg-transparent px-3 py-1 text-md focus:outline-none disabled:opacity-60',
+                  // min-w-0: flex item must shrink so long CJK wraps instead of overflowing.
+                  'min-h-[32px] min-w-0 max-h-[152px] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-1.5 text-md leading-6',
+                  'whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:outline-none disabled:opacity-60',
                   dark ? 'text-zinc-200 placeholder:text-zinc-500' : 'text-zinc-800 placeholder:text-zinc-400',
                 )}
               />
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-end gap-1 self-end pb-0.5">
                 {(inputMessage.trim() || attachments.length > 0) && !canStop ? (
                   <button
                     type="submit"

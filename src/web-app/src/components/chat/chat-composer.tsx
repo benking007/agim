@@ -3,7 +3,7 @@
  *
  * - Pill textarea with auto-grow (capped)
  * - 44×44 send button (Apple HIG minimum)
- * - IME-safe Enter handling (desktop: Enter sends; mobile: newline)
+ * - IME-safe Enter handling (default: Enter newline; Send button submits)
  * - Optional leading action (e.g. new conversation)
  * - Optional footer slot (streaming badge, activity link, …)
  */
@@ -22,7 +22,7 @@ export interface ChatComposerProps {
   disabled?: boolean
   /** Show spinner on the send button when empty (streaming); does not block send. */
   busy?: boolean
-  /** When true, Enter inserts a newline; Send button submits. */
+  /** When true, Enter inserts a newline; Send button submits. Default true. */
   enterNewline?: boolean
   placeholder?: string
   leading?: ReactNode
@@ -46,7 +46,7 @@ export function ChatComposer({
   onSubmit,
   disabled = false,
   busy = false,
-  enterNewline = false,
+  enterNewline = true,
   placeholder,
   leading,
   prepend,
@@ -118,7 +118,7 @@ export function ChatComposer({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder ?? t('chat.inputPlaceholder', {
-            defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
+            defaultValue: 'Message… (Enter for newline, tap Send)',
           })}
           rows={1}
           enterKeyHint={enterNewline ? 'enter' : 'send'}

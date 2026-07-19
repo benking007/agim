@@ -228,7 +228,7 @@ export default function ChatRoute(): JSX.Element {
         keyboardInset={keyboardInset}
         inputRef={inputRef}
         placeholder={t('chat.inputPlaceholder', {
-          defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
+          defaultValue: 'Message… (Enter for newline, tap Send)',
         })}
         footer={state.currentReplyId ? (
           <Badge variant="info">

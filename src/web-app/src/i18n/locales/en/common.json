@@ -262,7 +262,7 @@
       "agentSettings": "Agent settings",
       "messengerSettings": "Connect IM"
     },
-    "inputPlaceholder": "Message… (Enter sends, Shift+Enter newlines)",
+    "inputPlaceholder": "Message… (Enter for newline, tap Send)",
     "inputPlaceholderMobile": "Message…",
     "mobileHint": "Enter creates new lines, tap Send to submit.",
     "activity": "Activity",

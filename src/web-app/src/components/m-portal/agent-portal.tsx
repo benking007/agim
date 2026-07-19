@@ -175,6 +175,7 @@ export function AgentPortal(): JSX.Element {
   const [inputMessage, setInputMessage] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [uploading, setUploading] = useState(false)
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
@@ -790,7 +791,9 @@ export function AgentPortal(): JSX.Element {
       {/* Docks + composer */}
       {activeTab === 'chat' && (
         <div className={cn(
-          'absolute inset-x-0 bottom-0 z-20 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+          'absolute inset-x-0 bottom-0 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+          // Lift above header (z-30) while + menu is open so it isn't clipped/covered.
+          plusMenuOpen ? 'z-50' : 'z-20',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
           <ApprovalDock
@@ -845,6 +848,7 @@ export function AgentPortal(): JSX.Element {
                 attachments={attachments}
                 onAttachmentsChange={setAttachments}
                 onFillInput={(text) => setInputMessage(text)}
+                onOpenChange={setPlusMenuOpen}
                 onSendCommand={(cmd) => {
                   if (state.status !== 'open') {
                     toast.error('Not connected')

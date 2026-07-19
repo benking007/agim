@@ -3,7 +3,7 @@
  * plus a pending-attachment strip above the input.
  */
 
-import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
 import {
   Camera, FileText, FolderOpen, Image as ImageIcon, ListTodo, MapPin,
   StickyNote, X,
@@ -31,6 +31,7 @@ interface PortalComposerPlusProps {
   onAttachmentsChange: (next: PendingAttachment[]) => void
   onFillInput: (text: string) => void
   onSendCommand: (text: string) => void
+  onOpenChange?: (open: boolean) => void
 }
 
 async function uploadChatMedia(file: File, threadId: string): Promise<{ marker: string }> {
@@ -74,6 +75,7 @@ export function PortalComposerPlus({
   onAttachmentsChange,
   onFillInput,
   onSendCommand,
+  onOpenChange,
 }: PortalComposerPlusProps): JSX.Element {
   const { t } = useTranslation()
   const menuId = useId()
@@ -85,14 +87,19 @@ export function PortalComposerPlus({
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
 
+  const setMenuOpen = useCallback((next: boolean): void => {
+    setOpen(next)
+    onOpenChange?.(next)
+  }, [onOpenChange])
+
   useEffect(() => {
     if (!open) return
     const onDoc = (ev: MouseEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(ev.target as Node)) setOpen(false)
+      if (rootRef.current && !rootRef.current.contains(ev.target as Node)) setMenuOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
+  }, [open, setMenuOpen])
 
   useEffect(() => () => {
     for (const a of attachmentsRef.current) {
@@ -120,7 +127,7 @@ export function PortalComposerPlus({
       })
     }
     onAttachmentsChange(next)
-    setOpen(false)
+    setMenuOpen(false)
   }
 
   function onPick(e: ChangeEvent<HTMLInputElement>, preferImage: boolean): void {
@@ -141,7 +148,7 @@ export function PortalComposerPlus({
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={t('chat.portal.plusMenu', { defaultValue: '更多' })}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setMenuOpen(!open)}
         className={cn(
           'rounded-full p-2 text-zinc-400 transition-colors disabled:opacity-40',
           dark ? 'hover:bg-zinc-800 hover:text-rose-400' : 'hover:bg-zinc-100 hover:text-rose-600',
@@ -169,7 +176,7 @@ export function PortalComposerPlus({
             aria-checked={planMode}
             className={itemCls}
             onClick={() => {
-              setOpen(false)
+              setMenuOpen(false)
               onSendCommand(planMode ? '/plan off' : '/plan on')
             }}
           >
@@ -189,7 +196,7 @@ export function PortalComposerPlus({
             role="menuitem"
             className={itemCls}
             onClick={() => {
-              setOpen(false)
+              setMenuOpen(false)
               onFillInput('/memo here')
             }}
           >
@@ -202,7 +209,7 @@ export function PortalComposerPlus({
             role="menuitem"
             className={itemCls}
             onClick={() => {
-              setOpen(false)
+              setMenuOpen(false)
               onFillInput('/goal')
             }}
           >

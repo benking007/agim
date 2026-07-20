@@ -97,3 +97,4 @@ Agim/
 - Bundle ID: `host.iclaw.agim.mac` (separate from iOS `host.iclaw.agim`)
 - ATS allows local networking (`http://192.168.x.x:3000`) for LAN hosts
 - External http(s) links open in the system browser
+- File pickers (拍照 / 照片 / 文件) need `WKUIDelegate.runOpenPanelWith` — implemented in `WebShellView`

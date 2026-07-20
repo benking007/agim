@@ -53,6 +53,12 @@ cd apps/macos
 | 重新加载（⌘R） | 重新走 `/m/login` → `/m/chat` |
 | 退出配对… | 清空 Keychain，并清除 WKWebView 网站数据 |
 
+## 附件选择（拍照 / 照片 / 文件）
+
+macOS `WKWebView` **默认禁用** `<input type="file">`。壳必须实现
+`WKUIDelegate.webView(_:runOpenPanelWith:…)` 并用 `NSOpenPanel` 回传选中路径，
+否则加号菜单里三项会「点了没反应」。见 `Agim/Views/WebShellView.swift`。
+
 ## 与 iOS 的差异
 
 | | iOS | macOS |

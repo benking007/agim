@@ -114,5 +114,23 @@ struct WebViewRepresentable: NSViewRepresentable {
             }
             return nil
         }
+
+        /// Required on macOS: without this, `<input type="file">` (拍照/照片/文件)
+        /// is treated as Cancel and appears to do nothing.
+        func webView(
+            _ webView: WKWebView,
+            runOpenPanelWith parameters: WKOpenPanelParameters,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping ([URL]?) -> Void
+        ) {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = parameters.allowsDirectories
+            panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+            // WebKit does not expose HTML accept= filters here; allow all files.
+            panel.begin { result in
+                completionHandler(result == .OK ? panel.urls : nil)
+            }
+        }
     }
 }

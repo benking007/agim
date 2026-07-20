@@ -24,7 +24,7 @@ import { promises as fs } from 'node:fs'
 import { logger as rootLogger } from './logger.js'
 import { sink } from './message-sink.js'
 import { savePaste } from './viewer-local.js'
-import { buildPasteUrl, getViewerConfig, resolveViewerMode } from './viewer-config.js'
+import { buildPasteUrl, isViewerEnabledForPlatform, resolveViewerMode } from './viewer-config.js'
 import { postPasteRemote } from './viewer-remote.js'
 import { getArtifactsDir } from './artifacts.js'
 import type { RouteContext } from './router.js'
@@ -161,7 +161,12 @@ export async function notifyA2AComplete(
     // Best-effort viewer link to the first .md output for one-tap preview.
     const md = opts.outputs.find((o) => o.name.toLowerCase().endsWith('.md'))
     if (md) {
-      const link = await snapshotToViewerLink(opts.jobId, md.name, `${opts.callee} #${opts.jobId} 输出 · ${md.name}`)
+      const link = await snapshotToViewerLink(
+        ctx.platform,
+        opts.jobId,
+        md.name,
+        `${opts.callee} #${opts.jobId} 输出 · ${md.name}`,
+      )
       if (link) lines.push(`   🔗 ${link}`)
     }
   }
@@ -292,7 +297,12 @@ async function heartbeatTick(state: HeartbeatState): Promise<void> {
 
   const md = newOrChanged.find((o) => o.name.toLowerCase().endsWith('.md') && !state.linkedNames.has(o.name))
   if (md) {
-    const link = await snapshotToViewerLink(state.jobId, md.name, `${state.callee} #${state.jobId} 进度 · ${md.name}`)
+    const link = await snapshotToViewerLink(
+      ctx.platform,
+      state.jobId,
+      md.name,
+      `${state.callee} #${state.jobId} 进度 · ${md.name}`,
+    )
     if (link) {
       state.linkedNames.add(md.name)
       lines.push(`   🔗 ${link}`)
@@ -327,11 +337,13 @@ async function readOutputDir(dir: string): Promise<Map<string, { bytes: number; 
  * paste-save fails. Returns null if neither is usable.
  */
 async function snapshotToViewerLink(
+  platform: string,
   jobId: number,
   filename: string,
   title: string,
 ): Promise<string | null> {
-  if (!getViewerConfig().enabled) return null
+  // Same IM-only gate as message-sink — never paste-link for web/Portal/TUI.
+  if (!isViewerEnabledForPlatform(platform)) return null
   const outputDir = getArtifactsDir(jobId).outputDir
   try {
     const buf = await fs.readFile(join(outputDir, filename))

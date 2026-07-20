@@ -226,6 +226,20 @@ describe('deliver viewer routing (agent source)', () => {
     expect(sent).not.toMatch(/viewer\.iclaw\.host/)
     expect(sent).not.toMatch(/📎\s+https?:\/\//)
   })
+
+  it('ignores AGIM_VIEWER_ENABLED for web (browser / app / mac Portal)', async () => {
+    process.env.AGIM_VIEWER_ENABLED = '1'
+    process.env.AGIM_VIEWER_REMOTE_PASTE_URL = 'https://paste.example.test/paste'
+    const a = makeAdapter('web')
+    register(a)
+    const long = `# Report\n\n${'paragraph '.repeat(80)}`
+    await sinkMod.deliver({
+      platform: 'web', channelId: 'c', threadId: 't',
+      payload: long, kind: 'text', priority: 'high', source: 'agent',
+    })
+    expect(a.log[0]?.payload).toBe(long)
+    expect(String(a.log[0]?.payload)).not.toMatch(/📎/)
+  })
 })
 
 describe('deliver card kind', () => {

@@ -179,7 +179,7 @@
     },
     "viewer": {
       "title": "Long-message viewer",
-      "description": "When ON, IM replies that exceed the viewer threshold are uploaded to the local paste store and the IM message becomes a short URL the user can click. Without it, long replies get truncated by the messenger.",
+      "description": "IM channels only (WeChat / Feishu / DingTalk / Telegram / …). When ON, long IM replies become a short clickable link. Browser, App, and Mac shells always show full markdown and ignore this switch. When OFF, messengers may truncate long replies themselves.",
       "envKey": "AGIM_VIEWER_ENABLED"
     },
     "a2aNotify": {
@@ -353,10 +353,10 @@
     },
     "viewer": {
       "title": "Viewer (long-message links)",
-      "subtitle": "Replies longer than the chars / lines threshold are uploaded to the local paste store and the IM message becomes a short `/v/<id>` link.",
+      "subtitle": "IM channels only. Long IM replies become a short `/v/<id>` link; browser, App, and Mac shells always show full markdown and ignore this switch.",
       "on": "enabled",
       "off": "disabled",
-      "enableLabel": "Enable the long-message Viewer",
+      "enableLabel": "Enable the long-message Viewer (IM only)",
       "publicUrl": "Public base URL",
       "publicUrlHint": "What the operator's reverse proxy / tunnel exposes. Used to build `/v/<id>` links.",
       "tunnelMode": "Tunnel mode",

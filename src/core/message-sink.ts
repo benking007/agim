@@ -34,7 +34,7 @@ import {
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
 import { decideRender } from './render-router.js'
-import { getViewerConfig, buildPasteUrl, resolveViewerMode } from './viewer-config.js'
+import { buildPasteUrl, isViewerEnabledForPlatform, getViewerConfig, resolveViewerMode } from './viewer-config.js'
 import { savePaste } from './viewer-local.js'
 import { postPasteRemote } from './viewer-remote.js'
 
@@ -194,8 +194,8 @@ async function doSend(row: OutboxRow, overrideAdapter?: MessengerAdapter): Promi
  */
 async function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): Promise<string> {
   const cfg = getViewerConfig()
-  // Master switch off → never truncate, never upload to remote paste.
-  if (!cfg.enabled) return text
+  // IM-only: AGIM_VIEWER_ENABLED is ignored for web/Portal shells / TUI.
+  if (!isViewerEnabledForPlatform(p.platform, cfg)) return text
   const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: true })
 
   if (decision.mode === 'inline') {

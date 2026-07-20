@@ -179,7 +179,7 @@
     },
     "viewer": {
       "title": "长消息查看器",
-      "description": "打开后，超过阈值的 IM 回复会被上传到本地 paste 存储，IM 消息变成一个可点击的短链。关闭则消息会被 IM 平台截断。",
+      "description": "仅对 IM 渠道生效（微信 / 飞书 / 钉钉 / Telegram 等）。打开后，超过阈值的 IM 回复会变成可点击短链；浏览器、App、Mac 壳始终全文展示，不受此开关影响。关闭则长回复由 IM 平台自行截断。",
       "envKey": "AGIM_VIEWER_ENABLED"
     },
     "a2aNotify": {
@@ -353,10 +353,10 @@
     },
     "viewer": {
       "title": "Viewer（长消息短链）",
-      "subtitle": "超过字符 / 行数阈值的回复会被上传到本地 paste 存储，IM 消息变成一条 `/v/<id>` 短链。",
+      "subtitle": "仅对 IM 渠道生效。超过字符 / 行数阈值的 IM 回复会变成 `/v/<id>` 短链；浏览器、App、Mac 壳始终全文展示，不受此开关影响。",
       "on": "已启用",
       "off": "未启用",
-      "enableLabel": "启用长消息 Viewer",
+      "enableLabel": "启用长消息 Viewer（仅 IM）",
       "publicUrl": "公开基础 URL",
       "publicUrlHint": "反代 / 隧道暴露给外网的地址。用于拼接 `/v/<id>` 短链。",
       "remotePasteUrl": "远端 paste URL",

@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import {
   resolveViewerMode, getViewerConfig, getEffectiveRemotePasteUrl,
   DEFAULT_REMOTE_PASTE_URL,
+  isViewerApplicablePlatform, isViewerEnabledForPlatform,
 } from './viewer-config.js'
 
 const KEYS = [
@@ -18,6 +19,32 @@ const KEYS = [
 function reset() {
   for (const k of KEYS) delete process.env[k]
 }
+
+describe('isViewerApplicablePlatform / isViewerEnabledForPlatform', () => {
+  beforeEach(reset)
+
+  it('applies to IM messengers, not web/tui/memory jobs', () => {
+    expect(isViewerApplicablePlatform('wechat')).toBe(true)
+    expect(isViewerApplicablePlatform('wechat-ilink')).toBe(true)
+    expect(isViewerApplicablePlatform('telegram')).toBe(true)
+    expect(isViewerApplicablePlatform('feishu')).toBe(true)
+    expect(isViewerApplicablePlatform('dingtalk')).toBe(true)
+    expect(isViewerApplicablePlatform('discord')).toBe(true)
+    expect(isViewerApplicablePlatform('email')).toBe(true)
+    expect(isViewerApplicablePlatform('web')).toBe(false)
+    expect(isViewerApplicablePlatform('tui')).toBe(false)
+    expect(isViewerApplicablePlatform('memory-distill')).toBe(false)
+    expect(isViewerApplicablePlatform('')).toBe(false)
+  })
+
+  it('requires both env ON and an IM platform', () => {
+    process.env.AGIM_VIEWER_ENABLED = '1'
+    expect(isViewerEnabledForPlatform('wechat')).toBe(true)
+    expect(isViewerEnabledForPlatform('web')).toBe(false)
+    process.env.AGIM_VIEWER_ENABLED = '0'
+    expect(isViewerEnabledForPlatform('wechat')).toBe(false)
+  })
+})
 
 describe('resolveViewerMode — picker preference order', () => {
   beforeEach(reset)

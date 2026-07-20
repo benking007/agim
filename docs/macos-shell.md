@@ -17,6 +17,26 @@ cd apps/macos
 open Agim.xcodeproj
 ```
 
+## 构建为独立应用（装进「应用程序」）
+
+在你的 Mac 上：
+
+```bash
+cd apps/macos
+./scripts/generate-xcodeproj.sh
+./scripts/build-app.sh --install
+```
+
+会生成 Release 版 `Agim.app`，并复制到 `/Applications/Agim.app`（无写权限时用 `~/Applications`）。之后可从启动台 / Spotlight 打开。
+
+仅构建不安装：`./scripts/build-app.sh` → 产物在 `apps/macos/dist/Agim.app`。
+
+也可用 Xcode：**Product → Archive → Distribute App → Copy App**，再拖进「应用程序」。
+
+> 说明：这里的「应用程序」是系统文件夹 `/Applications`，不是 Mac App Store。上架商店需额外签名与审核，当前工程面向自用 / 侧载。
+
+首次打开若被拦截：在 Finder 里对 `Agim.app` **右键 → 打开**，或在「隐私与安全性」里允许。有 Apple Developer 账号时可在 Xcode Signing 填 Team，并用 Developer ID + 公证后再分发。
+
 ## 配对与加载
 
 1. 在 Web 控制台 **Settings → Mobile** 生成 QR / 登录链接  

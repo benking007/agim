@@ -16,7 +16,54 @@ cd apps/macos
 open Agim.xcodeproj
 ```
 
-Set your Apple Development Team in Xcode Signing if needed, then Run (⌘R).
+Set your Apple Development Team in Xcode **Signing & Capabilities** if needed, then Run (⌘R).
+
+## Build a standalone app (install into Applications)
+
+Goal: get a normal `Agim.app` you can keep in **应用程序 / Applications** (Launchpad / Spotlight), not “run only from Xcode”.
+
+### One-liner (recommended)
+
+On your Mac:
+
+```bash
+cd apps/macos
+./scripts/generate-xcodeproj.sh
+./scripts/build-app.sh --install
+```
+
+- Builds **Release** → `apps/macos/dist/Agim.app`
+- Copies into `/Applications/Agim.app` (falls back to `~/Applications` if needed)
+- Clears quarantine attrs for a quieter first launch
+
+Then open from Launchpad / Spotlight, or:
+
+```bash
+open /Applications/Agim.app
+```
+
+Build only (no install):
+
+```bash
+./scripts/build-app.sh
+```
+
+### Via Xcode UI
+
+1. Open `Agim.xcodeproj`, select scheme **Agim**, destination **My Mac**
+2. Product → **Archive**
+3. Organizer → **Distribute App** → **Copy App** (or Developer ID if you have a paid Apple Developer account)
+4. Drag the exported `Agim.app` into **应用程序**
+
+### Signing / Gatekeeper notes
+
+| Situation | What happens |
+|-----------|----------------|
+| Personal Team / ad-hoc local build | App works on **your** Mac; first open may need right-click → Open |
+| Apple Developer Program + **Developer ID** + notarize | Freely share `.app` / `.dmg` with others |
+| Mac App Store | Needs App Store Connect, review, different certs — not set up yet |
+
+This repo’s shell is for **self-host / sideload** (same pairing as iOS). App Store listing is a separate product track.
 
 ## Flow
 

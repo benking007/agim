@@ -117,7 +117,7 @@ export function buildSystemPrompt(
     '  - When uncertain, call mcp__agim__ask_user(question, choices[]) instead of free-form back-and-forth.',
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
     '  - For file/list/search/fetch requests, use native tools first; reserve call_agent for work that genuinely needs another CLI agent.',
-    '  - Closure rule: after a tool chain, write a short Chinese summary before stopping.',
+    '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — tables, lists, findings, next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」; put the complete answer in that last message (you may still call tools earlier in the turn).',
     '',
     'Verification subagent:',
     '  - After a substantive result, use call_agent with a fresh verifier when a second pass is valuable.',

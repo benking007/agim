@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Agim agent: deliver **mid-turn assistant prose** co-occurring with tool calls (e.g. full report + `todo_write`) instead of only the last short closure (“盘点完成”). `composeDeliveredAssistantText` merges substantive mid-turn text when the final hop is empty/short; Closure prompt now requires the full conclusion in the last no-tool hop.
 - Portal composer height tightened (`p-1` / `h-7`); keyboard ↑↓/Enter for `/` and `@` menus; Backspace at caret 0 deletes the trailing mention chip; pet perch raised so only feet tuck under the input.
 - Web chat (`/` / `/m/chat`): tool accordion, run timeline, and “接收中” survive tab switches and page refresh. Server keeps an ActiveRun snapshot, retargets live chunks to the reconnected socket, and replays `active-run` after `history`.
 - Web chat persists each turn's activity onto the assistant session message, so refresh restores **every** accordion (“已完成 · Xs”), not only the latest in-memory ActiveRun.

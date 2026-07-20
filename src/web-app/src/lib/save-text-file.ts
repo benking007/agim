@@ -26,6 +26,8 @@ declare global {
     webkit?: {
       messageHandlers?: {
         agimSaveFile?: { postMessage: (msg: AgimSavePayload) => void }
+        /** OS share sheet (iOS / macOS shells). Payload: title/text/filename/content. */
+        agimShare?: { postMessage: (msg: Record<string, unknown>) => void }
       }
     }
     showSaveFilePicker?: (options?: {

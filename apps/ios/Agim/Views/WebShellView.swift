@@ -49,10 +49,11 @@ struct WebViewRepresentable: UIViewRepresentable {
             WKUserScript(source: cjkCss, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
 
-        // Portal “另存为 Markdown” → Files / document picker (see save-text-file.ts).
+        // Portal bridges: save-as Markdown + OS share sheet.
         let bridge = WeakScriptMessageHandler(context.coordinator)
-        context.coordinator.saveBridge = bridge
+        context.coordinator.scriptBridge = bridge
         config.userContentController.add(bridge, name: "agimSaveFile")
+        config.userContentController.add(bridge, name: "agimShare")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -75,14 +76,16 @@ struct WebViewRepresentable: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "agimSaveFile")
-        coordinator.saveBridge = nil
+        let ucc = uiView.configuration.userContentController
+        ucc.removeScriptMessageHandler(forName: "agimSaveFile")
+        ucc.removeScriptMessageHandler(forName: "agimShare")
+        coordinator.scriptBridge = nil
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var credentials: HostCredentials
         weak var webView: WKWebView?
-        var saveBridge: WeakScriptMessageHandler?
+        var scriptBridge: WeakScriptMessageHandler?
 
         init(credentials: HostCredentials) {
             self.credentials = credentials
@@ -135,26 +138,73 @@ struct WebViewRepresentable: UIViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard message.name == "agimSaveFile" else { return }
-            guard let body = message.body as? [String: Any],
-                  let content = body["content"] as? String
+            switch message.name {
+            case "agimSaveFile":
+                handleSaveFile(message.body)
+            case "agimShare":
+                handleShare(message.body)
+            default:
+                break
+            }
+        }
+
+        private func handleSaveFile(_ body: Any) {
+            guard let dict = body as? [String: Any],
+                  let content = dict["content"] as? String
             else { return }
-            var filename = (body["filename"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            var filename = (dict["filename"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? "agim-reply.md"
             if filename.isEmpty { filename = "agim-reply.md" }
             if !filename.lowercased().hasSuffix(".md") { filename += ".md" }
 
             do {
-                let dir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("agim-exports", isDirectory: true)
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let url = dir.appendingPathComponent(filename)
-                try content.write(to: url, atomically: true, encoding: .utf8)
+                let url = try writeTempMarkdown(filename: filename, content: content)
                 presentExport(url: url)
             } catch {
-                // Best-effort: no web toast channel from native here.
                 NSLog("agimSaveFile failed: %@", error.localizedDescription)
             }
+        }
+
+        private func handleShare(_ body: Any) {
+            guard let dict = body as? [String: Any] else { return }
+            let text = (dict["text"] as? String)
+                ?? (dict["content"] as? String)
+                ?? ""
+            guard !text.isEmpty else { return }
+
+            var items: [Any] = [text]
+            if let content = dict["content"] as? String, !content.isEmpty {
+                var filename = (dict["filename"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ?? "agim-reply.md"
+                if filename.isEmpty { filename = "agim-reply.md" }
+                if !filename.lowercased().hasSuffix(".md") { filename += ".md" }
+                if let url = try? writeTempMarkdown(filename: filename, content: content) {
+                    items.append(url)
+                }
+            }
+
+            guard let presenter = topViewController() else { return }
+            let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            if let pop = activity.popoverPresentationController {
+                pop.sourceView = webView
+                pop.sourceRect = CGRect(
+                    x: (webView?.bounds.midX ?? 0) - 1,
+                    y: (webView?.bounds.maxY ?? 0) - 48,
+                    width: 2,
+                    height: 2
+                )
+                pop.permittedArrowDirections = [.down]
+            }
+            presenter.present(activity, animated: true)
+        }
+
+        private func writeTempMarkdown(filename: String, content: String) throws -> URL {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("agim-exports", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(filename)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            return url
         }
 
         private func presentExport(url: URL) {

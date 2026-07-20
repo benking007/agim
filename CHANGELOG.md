@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Portal assistant actions: **Save as Markdown** (next to copy) — Chromium `showSaveFilePicker`, download fallback, and native Save/Files pickers via `webkit.messageHandlers.agimSaveFile` on macOS / iOS shells.
+- Portal assistant actions: **Share** via OS share sheet (`navigator.share` / clipboard fallback; native `webkit.messageHandlers.agimShare` → `NSSharingServicePicker` / `UIActivityViewController`) so WeChat / DingTalk / QQ appear when installed — no OpenSDK.
 - macOS desktop shell (`apps/macos`): native SwiftUI + WKWebView wrapper for `/m/chat`, same Mobile login bridge as iOS; paste pairing URL or host+token; menu Reload / Unpair. See `docs/macos-shell.md`.
 - macOS shell: `WKUIDelegate.runOpenPanelWith` so Portal 拍照 / 照片 / 文件 open `NSOpenPanel` (was a silent no-op).
 - Portal (`/m/chat`): Ctrl+Enter / ⌘+Enter sends the composer (Enter alone stays newline); slash/@ menus ignore modified Enter so send still works.

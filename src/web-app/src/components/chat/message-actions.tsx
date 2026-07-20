@@ -1,13 +1,14 @@
 /**
- * MessageActions — good / bad / copy / save-as-markdown under an assistant reply.
+ * MessageActions — good / bad / copy / save / share under an assistant reply.
  */
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, FileDown, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, FileDown, Share2, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { markdownFilenameFromContent, saveTextAsFile } from '@/lib/save-text-file'
+import { shareContent } from '@/lib/share-content'
 
 export interface MessageActionsProps {
   content: string
@@ -19,6 +20,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [vote, setVote] = useState<'up' | 'down' | null>(null)
 
   if (!content.trim()) return null
@@ -46,11 +48,31 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       if (result === 'download') {
         toast.success(t('chat.saveMarkdownStarted'))
       }
-      // native / picker: the OS dialog is enough feedback.
     } catch {
       toast.error(t('chat.saveMarkdownFailed'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function onShare(): Promise<void> {
+    if (sharing) return
+    setSharing(true)
+    try {
+      const result = await shareContent({
+        title: 'Agim',
+        text: content,
+        filename: markdownFilenameFromContent(content),
+      })
+      if (result === 'cancelled') return
+      if (result === 'copied') {
+        toast.success(t('chat.shareCopied'))
+      }
+      // native / web: the OS sheet is enough feedback.
+    } catch {
+      toast.error(t('chat.shareFailed'))
+    } finally {
+      setSharing(false)
     }
   }
 
@@ -102,6 +124,16 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         onClick={() => void onSaveMarkdown()}
       >
         <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
+      </button>
+      <button
+        type="button"
+        className={btn}
+        aria-label={t('chat.share')}
+        title={t('chat.share')}
+        disabled={sharing}
+        onClick={() => void onShare()}
+      >
+        <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
       </button>
     </div>
   )

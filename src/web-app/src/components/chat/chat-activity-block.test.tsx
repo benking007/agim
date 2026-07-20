@@ -129,7 +129,7 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
     expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
     // Collapsed: agent appears in the title, not as an expanded step row.
-    expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /-> claude-code/ })).toBeInTheDocument()
     expect(screen.queryByText(/^running$|^运行中$/)).not.toBeInTheDocument()
   })
 
@@ -157,7 +157,7 @@ describe('ChatActivityBlock', () => {
     })}
     />)
     expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /-> claude-code/ })).toBeInTheDocument()
   })
 
   it('shows completed badge for finished agent steps', async () => {
@@ -174,7 +174,7 @@ describe('ChatActivityBlock', () => {
     })}
     />)
     await user.click(screen.getByRole('button', { name: /Worked|已完成/ }))
-    expect(screen.getByText(/→ codex/)).toBeInTheDocument()
+    expect(screen.getByText(/-> codex/)).toBeInTheDocument()
     const badges = screen.getAllByText(/^completed$|^已完成$/)
     expect(badges.length).toBeGreaterThanOrEqual(1)
   })

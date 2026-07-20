@@ -79,7 +79,8 @@ function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JS
 }
 
 function stepLabel(step: ChatActivityStep): string {
-  if (step.kind === 'agent') return `→ ${step.label}`
+  // ASCII arrow — avoids tofu when Agim CJK incorrectly claims U+2192.
+  if (step.kind === 'agent') return `-> ${step.label}`
   return step.label
 }
 
@@ -128,9 +129,10 @@ export function PortalRunStatus({
       parts.push(t('chat.activityStepCount', { count: counts.total, defaultValue: '{{count}} steps' }))
     }
     if (duration) parts.push(duration)
-    doneSummary = parts.join(' · ')
+    // ASCII separators: older iOS WebViews may tofu U+00B7 before App rebuild.
+    doneSummary = parts.join(' | ')
   } else if (duration) {
-    doneSummary = `${t('chat.activityWorked', { defaultValue: 'Worked' })} · ${duration}`
+    doneSummary = `${t('chat.activityWorked', { defaultValue: 'Worked' })} | ${duration}`
   }
 
   const canExpandWhileRunning = running && hasSteps
@@ -184,7 +186,7 @@ export function PortalRunStatus({
             : liveStep
               ? t('chat.activityRunningStep', {
                   step: stepLabel(liveStep),
-                  defaultValue: 'Running · {{step}}',
+                  defaultValue: 'Running | {{step}}',
                 })
               : null}
         </p>
@@ -269,7 +271,7 @@ export function PortalRunStatus({
                   'agim-mono mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md px-2 py-1 text-[11px] leading-snug',
                   dark ? 'bg-zinc-900 text-zinc-500' : 'bg-zinc-100 text-zinc-500',
                 )}>
-                  {step.preview.length > 280 ? `${step.preview.slice(0, 280)}…` : step.preview}
+                  {step.preview.length > 280 ? `${step.preview.slice(0, 280)}...` : step.preview}
                 </pre>
               )}
             </div>

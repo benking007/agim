@@ -222,7 +222,7 @@ export function PortalPet({
       return
     }
     window.setTimeout(() => {
-      setBubble(pickPhrase(t('chat.portal.pet.tap', { returnObjects: true }), '♪'))
+      setBubble(pickPhrase(t('chat.portal.pet.tap', { returnObjects: true }), '!'))
     }, 0)
     window.setTimeout(() => setMood(busy ? 'busy' : 'idle'), 900)
   }
@@ -231,14 +231,14 @@ export function PortalPet({
     if (busy || open) return
     const id = window.setInterval(() => {
       if (document.hidden) return
-      setBubble(pickPhrase(t('chat.portal.pet.idle', { returnObjects: true }), '♪'))
+      setBubble(pickPhrase(t('chat.portal.pet.idle', { returnObjects: true }), '~'))
     }, 22_000)
     return () => window.clearInterval(id)
   }, [busy, open, t])
 
   useEffect(() => {
     if (!busy || open) return
-    setBubble(pickPhrase(t('chat.portal.pet.running', { returnObjects: true }), '…'))
+    setBubble(pickPhrase(t('chat.portal.pet.running', { returnObjects: true }), '...'))
   }, [busy, open, t])
 
   const grid = mood === 'busy' ? BUSY : mood === 'happy' ? HAPPY : IDLE

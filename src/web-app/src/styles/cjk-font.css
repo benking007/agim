@@ -5,6 +5,10 @@
  * working Han fallback, so Chinese paints as .notdef tofu (□ / [?]) even
  * though the UTF-8 strings are fine. Shipping a SC webfont first makes CJK
  * independent of system PingFang.
+ *
+ * unicode-range must stay CJK-only (see lib/cjk-unicode-range.ts + iOS
+ * WebShellView). If Agim CJK claims emoji code points without glyphs,
+ * WKWebView paints 📋⭐ as [?].
  */
 @font-face {
   font-family: 'Agim CJK';

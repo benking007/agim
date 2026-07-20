@@ -360,13 +360,13 @@ function AutoAllowCountdown({ graceSeconds }: { graceSeconds: number }): JSX.Ele
  *  Badge variant. */
 function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Element {
   const { t } = useTranslation()
-  const by = outcome.byUserDisplay ? ` · ${outcome.byUserDisplay}` : ''
+  const by = outcome.byUserDisplay ? ` | ${outcome.byUserDisplay}` : ''
   switch (outcome.decision) {
     case 'allowed':
       return (
         <div className="mt-3">
           <Badge variant="success">
-            {t('chat.outcome.allowed', { defaultValue: '✅ Allowed' })}{by}
+            {t('chat.outcome.allowed', { defaultValue: 'Allowed' })}{by}
           </Badge>
         </div>
       )
@@ -375,7 +375,7 @@ function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Elemen
         <div className="mt-3">
           <Badge variant="success">
             {t('chat.outcome.allowedPinned', {
-              defaultValue: '✅ Allowed + auto-allow further',
+              defaultValue: 'Allowed + auto-allow further',
             })}{by}
           </Badge>
         </div>
@@ -384,7 +384,7 @@ function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Elemen
       return (
         <div className="mt-3">
           <Badge variant="danger">
-            {t('chat.outcome.denied', { defaultValue: '❌ Denied' })}{by}
+            {t('chat.outcome.denied', { defaultValue: 'Denied' })}{by}
           </Badge>
         </div>
       )
@@ -393,7 +393,7 @@ function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Elemen
         <div className="mt-3">
           <Badge variant="danger">
             {t('chat.outcome.deniedRevoked', {
-              defaultValue: '❌ Denied (auto-allow revoked)',
+              defaultValue: 'Denied (auto-allow revoked)',
             })}{by}
           </Badge>
         </div>
@@ -402,7 +402,7 @@ function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Elemen
       return (
         <div className="mt-3">
           <Badge variant="outline">
-            {t('chat.outcome.expired', { defaultValue: '⏱ Timed out' })}{by}
+            {t('chat.outcome.expired', { defaultValue: 'Timed out' })}{by}
           </Badge>
         </div>
       )

@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 import { openChatWs, type WsStatus } from '@/lib/api/ws'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChatIncoming, ChoiceCardPrompt } from '@/types/ws'
 import i18n from '@/i18n'
+import { sanitizeDisplayText } from '@/lib/sanitize-display-text'
 
 /** v1.2.115 — how long the resolved card lingers in the dock before
  *  auto-dismiss. Long enough to read the ✅/❌ flip, short enough to
@@ -1193,7 +1194,8 @@ export function useChat(): UseChat {
         // that can't render cards (or for "receipt" lines after a
         // card resolves). v1.2.115: surface as a toast — no longer
         // injected into the chat stream — and ignore the dispatch.
-        toast.info(msg.text)
+        // Sanitize emoji / middot so older iOS Agim CJK faces don't tofu.
+        toast.info(sanitizeDisplayText(msg.text))
         return
       case 'metrics':
         // Dashboards (PR-N) consume these; the chat surface ignores.
@@ -1314,7 +1316,7 @@ export function useChat(): UseChat {
     dispatch({
       kind: 'CHOICE_EDIT',
       messageId,
-      finalText: i18n.t('chat.askResolved', { ns: 'common', defaultValue: '✅ 已回答' }),
+      finalText: i18n.t('chat.askResolved', { ns: 'common', defaultValue: '已回答' }),
     })
     window.setTimeout(() => {
       dispatch({ kind: 'CHOICE_DISMISS', messageId })

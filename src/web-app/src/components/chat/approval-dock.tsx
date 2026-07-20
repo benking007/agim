@@ -232,7 +232,7 @@ function AutoAllowCountdown({ graceSeconds }: { graceSeconds: number }): JSX.Ele
 
 function OutcomeBadge({ outcome }: { outcome: ApprovalCardOutcome }): JSX.Element {
   const { t } = useTranslation()
-  const by = outcome.byUserDisplay ? ` · ${outcome.byUserDisplay}` : ''
+  const by = outcome.byUserDisplay ? ` | ${outcome.byUserDisplay}` : ''
   switch (outcome.decision) {
     case 'allowed':
       return <Badge variant="success">{t('chat.outcome.allowed', { defaultValue: 'Allowed' })}{by}</Badge>

@@ -1,12 +1,17 @@
 /**
- * Agent Portal — mobile chat surface matching the ChatGPT Mobile design
- * prototype (docs/design/chatgpt_mobile_design_prototype.tsx) at visual parity.
+ * Agent Portal — chat surface for `/m/chat` (also used by iOS/macOS shells).
  *
- * Transport: existing useChat() WebSocket — not the prototype's Gemini mock.
+ * Layout:
+ *   - below lg: single column + overlay drawer (hamburger)
+ *   - lg+: Cursor-like shell — persistent left rail + centered chat column
+ *     (max 750px) so side gutters stay free for future panels.
+ *
+ * Transport: existing useChat() WebSocket.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { LucideIcon } from 'lucide-react'
 import {
   ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
   Mic, Moon, Plus, Search, Sparkles, Square, Sun, User, X,
@@ -22,7 +27,7 @@ import { MarkdownView } from '@/components/chat/markdown-view'
 import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
-import { agentVisual, displayAgentName } from './agent-visuals'
+import { agentVisual, displayAgentName, type AgentVisual } from './agent-visuals'
 import {
   AttachmentStrip,
   PortalComposerPlus,
@@ -230,6 +235,16 @@ export function AgentPortal(): JSX.Element {
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Persist the left rail on large screens (Cursor-like); drawer only below lg.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const sync = (): void => {
+      if (mq.matches) setSidebarOpen(false)
+    }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -653,23 +668,51 @@ export function AgentPortal(): JSX.Element {
 
   const dark = theme === 'dark'
   const composerMenuOpen = plusMenuOpen || slashOpen || atOpen
+  const sidePanelProps = {
+    dark,
+    agentId,
+    visual,
+    AgentIcon,
+    activeTab,
+    status: state.status,
+    lang: prefs.lang,
+    onClose: () => setSidebarOpen(false),
+    onChat: () => { setActiveTab('chat'); setSidebarOpen(false) },
+    onExplore: () => { setActiveTab('explore'); setSidebarOpen(false) },
+    onNew: () => { newConversation(); setSidebarOpen(false); setActiveTab('chat') },
+    onToggleLang: toggleLang,
+  } as const
+
   return (
     <div
       style={viewportStyle}
       className={cn(
         // Height/top come from visualViewport so iOS keyboard pan cannot
         // shove the header off-screen (sticky alone is not enough).
-        'flex flex-col overflow-hidden font-sans selection:bg-teal-500/30',
+        // lg+: Cursor-like row — left rail + main column.
+        'flex flex-col overflow-hidden font-sans selection:bg-teal-500/30 lg:flex-row',
         dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
       )}
     >
-      {/* Main surface — fully blurred while the sidebar is open */}
+      {/* Desktop rail — always visible ≥ lg */}
+      <aside
+        className={cn(
+          'hidden h-full w-64 shrink-0 flex-col justify-between border-r p-5 lg:flex',
+          dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
+        )}
+        aria-label={t('chat.portal.brand')}
+      >
+        <PortalSidePanel {...sidePanelProps} showClose={false} />
+      </aside>
+
+      {/* Main surface — blurred only while the mobile drawer is open */}
       <div
         className={cn(
-          'flex min-h-0 flex-1 flex-col transition-[filter,opacity] duration-300',
-          sidebarOpen && 'pointer-events-none select-none blur-[6px] brightness-75',
+          'relative flex min-h-0 min-w-0 flex-1 flex-col transition-[filter,opacity] duration-300',
+          // Blur/pointer lock is mobile-drawer only; lg rail never covers main.
+          sidebarOpen && 'max-lg:pointer-events-none max-lg:select-none max-lg:blur-[6px] max-lg:brightness-75',
         )}
-        aria-hidden={sidebarOpen || undefined}
+        aria-hidden={(sidebarOpen ? true : undefined)}
       >
       <header className={cn(
         // shrink-0 + portal VV frame = always visible at top of the
@@ -680,7 +723,11 @@ export function AgentPortal(): JSX.Element {
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
-          className={cn('rounded-lg p-1.5 transition', dark ? 'hover:bg-zinc-900' : 'hover:bg-zinc-100')}
+          className={cn(
+            'rounded-lg p-1.5 transition lg:invisible lg:pointer-events-none',
+            dark ? 'hover:bg-zinc-900' : 'hover:bg-zinc-100',
+          )}
+          aria-label={t('chat.portal.brand')}
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -767,9 +814,10 @@ export function AgentPortal(): JSX.Element {
         <div className={cn(
           // pt-0 so sticky user chips sit flush under the header (no py gap when pinned).
           // pb leaves room for composer + perched pet.
-          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
+          'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
+          <div className="mx-auto flex w-full max-w-[750px] flex-col space-y-4">
           {chatMessages.length === 0 && (
             <div className="flex animate-in fade-in flex-col items-center space-y-4 py-12 text-center duration-500">
               <div className={cn(
@@ -908,15 +956,17 @@ export function AgentPortal(): JSX.Element {
             </div>
           )}
           <div ref={messagesEndRef} />
+          </div>
         </div>
       )}
 
       {/* Explore */}
       {activeTab === 'explore' && (
         <div className={cn(
-          'min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
+          'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 pb-8 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-100',
         )}>
+          <div className="mx-auto w-full max-w-[750px] space-y-6">
           <div className="space-y-2">
             <div className="flex items-start justify-between gap-3">
               <h2 className={cn('text-lg font-black tracking-tight', dark ? 'text-white' : 'text-zinc-800')}>{t('chat.portal.exploreTitle')}</h2>
@@ -1050,6 +1100,7 @@ export function AgentPortal(): JSX.Element {
               <p className="mt-0.5 text-[10px] text-zinc-400">{t('chat.portal.ideaBody')}</p>
             </div>
           </div>
+          </div>
         </div>
       )}
 
@@ -1061,6 +1112,7 @@ export function AgentPortal(): JSX.Element {
           composerMenuOpen ? 'z-50' : 'z-20',
           dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
         )}>
+          <div className="mx-auto w-full max-w-[750px]">
           <ApprovalDock
             flush
             approvals={state.pendingApprovals}
@@ -1201,13 +1253,14 @@ export function AgentPortal(): JSX.Element {
               </div>
             </form>
           </div>
+          </div>
         </div>
       )}
       </div>
 
-      {/* Sidebar sheet over the blurred main surface */}
+      {/* Mobile drawer — lg+ uses the persistent rail instead */}
       {sidebarOpen && (
-        <div className="absolute inset-0 z-40">
+        <div className="absolute inset-0 z-40 lg:hidden">
           <button
             type="button"
             className={cn(
@@ -1221,96 +1274,7 @@ export function AgentPortal(): JSX.Element {
             'absolute inset-y-0 left-0 z-10 flex h-full w-[min(20rem,78%)] animate-in slide-in-from-left flex-col justify-between border-r p-6 shadow-2xl duration-300',
             dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
           )}>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold text-teal-500">
-                  <Sparkles className="h-5 w-5" />
-                  <span className="text-sm">{t('chat.portal.brand')}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
-                <div className={cn(
-                  'flex items-center gap-3 rounded-xl border p-3',
-                  dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
-                )}>
-                  <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
-                    <AgentIcon className="h-4 w-4" />
-                  </div>
-                  <div className="truncate">
-                    <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
-                      {displayAgentName(agentId)}
-                    </h4>
-                    <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
-                  </div>
-                </div>
-              </div>
-
-              <nav className="space-y-1">
-                <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
-                <SideNavButton
-                  active={activeTab === 'chat'}
-                  dark={dark}
-                  icon={<MessageSquare className="h-4 w-4" />}
-                  label={t('chat.portal.chat')}
-                  onClick={() => { setActiveTab('chat'); setSidebarOpen(false) }}
-                />
-                <SideNavButton
-                  active={activeTab === 'explore'}
-                  dark={dark}
-                  icon={<Compass className="h-4 w-4" />}
-                  label={t('chat.portal.explore')}
-                  onClick={() => { setActiveTab('explore'); setSidebarOpen(false) }}
-                />
-                <SideNavButton
-                  active={false}
-                  dark={dark}
-                  icon={<Plus className="h-4 w-4" />}
-                  label={t('chat.portal.newConversation')}
-                  onClick={() => { newConversation(); setSidebarOpen(false); setActiveTab('chat') }}
-                />
-              </nav>
-            </div>
-
-            <div className="space-y-3">
-              <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
-                <button
-                  type="button"
-                  onClick={toggleLang}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-                    dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
-                  )}
-                  aria-label={t('chat.portal.language')}
-                >
-                  <Languages className="h-3.5 w-3.5" />
-                  {prefs.lang === 'zh' ? t('lang.zh') : t('lang.en')}
-                </button>
-              </div>
-              <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-                <div className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full',
-                  dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
-                )}>
-                  <User className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
-                    {state.status === 'open' ? t('chat.portal.connected') : state.status}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <PortalSidePanel {...sidePanelProps} showClose />
           </div>
         </div>
       )}
@@ -1319,6 +1283,124 @@ export function AgentPortal(): JSX.Element {
         <VoiceOverlay theme={theme} agentId={agentId} onClose={() => setShowVoiceOverlay(false)} />
       )}
     </div>
+  )
+}
+
+function PortalSidePanel(props: {
+  dark: boolean
+  agentId: string
+  visual: AgentVisual
+  AgentIcon: LucideIcon
+  activeTab: Tab
+  status: string
+  lang: Lang
+  showClose: boolean
+  onClose: () => void
+  onChat: () => void
+  onExplore: () => void
+  onNew: () => void
+  onToggleLang: () => void
+}): JSX.Element {
+  const { t } = useTranslation()
+  const {
+    dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
+    onClose, onChat, onExplore, onNew, onToggleLang,
+  } = props
+  return (
+    <>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-teal-500">
+            <Sparkles className="h-5 w-5" />
+            <span className="text-sm">{t('chat.portal.brand')}</span>
+          </div>
+          {showClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
+          <div className={cn(
+            'flex items-center gap-3 rounded-xl border p-3',
+            dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
+          )}>
+            <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
+              <AgentIcon className="h-4 w-4" />
+            </div>
+            <div className="truncate">
+              <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
+                {displayAgentName(agentId)}
+              </h4>
+              <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
+            </div>
+          </div>
+        </div>
+
+        <nav className="space-y-1">
+          <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
+          <SideNavButton
+            active={activeTab === 'chat'}
+            dark={dark}
+            icon={<MessageSquare className="h-4 w-4" />}
+            label={t('chat.portal.chat')}
+            onClick={onChat}
+          />
+          <SideNavButton
+            active={activeTab === 'explore'}
+            dark={dark}
+            icon={<Compass className="h-4 w-4" />}
+            label={t('chat.portal.explore')}
+            onClick={onExplore}
+          />
+          <SideNavButton
+            active={false}
+            dark={dark}
+            icon={<Plus className="h-4 w-4" />}
+            label={t('chat.portal.newConversation')}
+            onClick={onNew}
+          />
+        </nav>
+      </div>
+
+      <div className="space-y-3">
+        <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
+          <button
+            type="button"
+            onClick={onToggleLang}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+              dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
+            )}
+            aria-label={t('chat.portal.language')}
+          >
+            <Languages className="h-3.5 w-3.5" />
+            {lang === 'zh' ? t('lang.zh') : t('lang.en')}
+          </button>
+        </div>
+        <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
+          <div className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-full',
+            dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
+          )}>
+            <User className="h-4 w-4" />
+          </div>
+          <div>
+            <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
+              {status === 'open' ? t('chat.portal.connected') : status}
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 

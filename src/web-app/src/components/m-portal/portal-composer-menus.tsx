@@ -47,6 +47,14 @@ import {
 const SKILL_PREVIEW = 3
 const CMD_PREVIEW = 5
 
+/**
+ * True while a CJK/other IME is composing (underlined provisional text).
+ * Menu shortcuts must not steal Enter / arrows from the IME candidate bar.
+ */
+export function isImeComposingKey(e: KeyboardEvent): boolean {
+  return e.isComposing || e.keyCode === 229
+}
+
 function slashCmdLabel(
   t: (key: string, opts?: { defaultValue?: string }) => string,
   cmd: PortalSlashCommand,
@@ -388,6 +396,8 @@ export function PortalSlashPopup({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
+      // Let IME confirm/cancel first; do not commit the highlighted row.
+      if (isImeComposingKey(e)) return
       if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
@@ -635,6 +645,8 @@ export function PortalAtPopup({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
+      // Let IME confirm/cancel first; do not commit the highlighted row.
+      if (isImeComposingKey(e)) return
       if (e.key === 'Escape') {
         e.preventDefault()
         if (modeRef.current === 'browse') {

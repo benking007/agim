@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 /// Native macOS shell: WKWebView loads Agim `/m/chat` (Agent Portal WebUI).
@@ -46,6 +47,11 @@ struct WebViewRepresentable: NSViewRepresentable {
             WKUserScript(source: cjkCss, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
 
+        // Portal “另存为 Markdown” → NSSavePanel (see save-text-file.ts).
+        let bridge = WeakScriptMessageHandler(context.coordinator)
+        context.coordinator.saveBridge = bridge
+        config.userContentController.add(bridge, name: "agimSaveFile")
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -63,10 +69,16 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "agimSaveFile")
+        coordinator.saveBridge = nil
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var credentials: HostCredentials
         var lastReloadNonce: Int = 0
         weak var webView: WKWebView?
+        var saveBridge: WeakScriptMessageHandler?
 
         init(credentials: HostCredentials) {
             self.credentials = credentials
@@ -127,10 +139,58 @@ struct WebViewRepresentable: NSViewRepresentable {
             panel.canChooseFiles = true
             panel.canChooseDirectories = parameters.allowsDirectories
             panel.allowsMultipleSelection = parameters.allowsMultipleSelection
-            // WebKit does not expose HTML accept= filters here; allow all files.
             panel.begin { result in
                 completionHandler(result == .OK ? panel.urls : nil)
             }
         }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "agimSaveFile" else { return }
+            guard let body = message.body as? [String: Any],
+                  let content = body["content"] as? String
+            else { return }
+            var filename = (body["filename"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? "agim-reply.md"
+            if filename.isEmpty { filename = "agim-reply.md" }
+            if !filename.lowercased().hasSuffix(".md") { filename += ".md" }
+
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.nameFieldStringValue = filename
+            if let md = UTType(filenameExtension: "md") {
+                panel.allowedContentTypes = [md, .plainText]
+            } else {
+                panel.allowedContentTypes = [.plainText]
+            }
+
+            panel.begin { result in
+                guard result == .OK, let url = panel.url else { return }
+                do {
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                } catch {
+                    NSAlert(error: error).runModal()
+                }
+            }
+        }
+    }
+}
+
+/// Breaks the WKUserContentController ↔ Coordinator retain cycle.
+final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var target: (WKScriptMessageHandler & NSObjectProtocol)?
+
+    init(_ target: WKScriptMessageHandler & NSObjectProtocol) {
+        self.target = target
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        target?.userContentController(userContentController, didReceive: message)
     }
 }

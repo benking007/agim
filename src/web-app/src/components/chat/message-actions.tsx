@@ -1,12 +1,13 @@
 /**
- * MessageActions — good / bad / copy affordances under an assistant reply.
+ * MessageActions — good / bad / copy / save-as-markdown under an assistant reply.
  */
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, FileDown, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { markdownFilenameFromContent, saveTextAsFile } from '@/lib/save-text-file'
 
 export interface MessageActionsProps {
   content: string
@@ -17,6 +18,7 @@ export interface MessageActionsProps {
 export function MessageActions({ content, dark, className }: MessageActionsProps): JSX.Element | null {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [vote, setVote] = useState<'up' | 'down' | null>(null)
 
   if (!content.trim()) return null
@@ -28,6 +30,27 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
       toast.error(t('chat.copyFailed'))
+    }
+  }
+
+  async function onSaveMarkdown(): Promise<void> {
+    if (saving) return
+    setSaving(true)
+    try {
+      const result = await saveTextAsFile({
+        filename: markdownFilenameFromContent(content),
+        content,
+        mime: 'text/markdown;charset=utf-8',
+      })
+      if (result === 'cancelled') return
+      if (result === 'download') {
+        toast.success(t('chat.saveMarkdownStarted'))
+      }
+      // native / picker: the OS dialog is enough feedback.
+    } catch {
+      toast.error(t('chat.saveMarkdownFailed'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -46,7 +69,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       <button
         type="button"
         className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
-        aria-label="Good"
+        aria-label={t('chat.portal.feedbackGood')}
         title={t('chat.portal.feedbackGood')}
         onClick={() => onVote('up')}
       >
@@ -55,7 +78,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       <button
         type="button"
         className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
-        aria-label="Bad"
+        aria-label={t('chat.portal.feedbackBad')}
         title={t('chat.portal.feedbackBad')}
         onClick={() => onVote('down')}
       >
@@ -64,11 +87,21 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       <button
         type="button"
         className={btn}
-        aria-label="Copy"
+        aria-label={t('chat.copy')}
         title={t('chat.copy')}
         onClick={() => void onCopy()}
       >
         {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+      </button>
+      <button
+        type="button"
+        className={btn}
+        aria-label={t('chat.saveMarkdown')}
+        title={t('chat.saveMarkdown')}
+        disabled={saving}
+        onClick={() => void onSaveMarkdown()}
+      >
+        <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
       </button>
     </div>
   )

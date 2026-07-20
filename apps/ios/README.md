@@ -26,6 +26,9 @@ open Agim.xcodeproj
 
 Menu (⋯): refresh WebView / logout.
 
+Save-as Markdown from Portal message actions uses `webkit.messageHandlers.agimSaveFile`
+→ iOS Files export picker (`UIDocumentPickerViewController`).
+
 ## Layout
 
 ```

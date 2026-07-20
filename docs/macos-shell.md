@@ -59,6 +59,19 @@ macOS `WKWebView` **默认禁用** `<input type="file">`。壳必须实现
 `WKUIDelegate.webView(_:runOpenPanelWith:…)` 并用 `NSOpenPanel` 回传选中路径，
 否则加号菜单里三项会「点了没反应」。见 `Agim/Views/WebShellView.swift`。
 
+## 另存为 Markdown
+
+助手气泡操作栏「另存为」通过 `webkit.messageHandlers.agimSaveFile` 调原生：
+
+| 端 | 行为 |
+|----|------|
+| 浏览器 Chromium | `showSaveFilePicker` |
+| 浏览器其他 | `<a download>` |
+| macOS 壳 | `NSSavePanel` |
+| iOS 壳 | `UIDocumentPickerViewController`（导出到「文件」） |
+
+Web 实现：`src/web-app/src/lib/save-text-file.ts`。
+
 ## 与 iOS 的差异
 
 | | iOS | macOS |

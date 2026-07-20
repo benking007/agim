@@ -403,7 +403,7 @@ export function PortalSlashPopup({
         e.preventDefault()
         if (items.length === 0) return
         onActiveIndexChange((prev) => (prev - 1 + items.length) % items.length)
-      } else if (e.key === 'Enter' && !e.shiftKey) {
+      } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         const item = items[activeIndexRef.current]
         if (!item) return
         e.preventDefault()
@@ -659,7 +659,7 @@ export function PortalAtPopup({
         e.preventDefault()
         if (count === 0) return
         onActiveIndexChange((prev) => (prev - 1 + count) % count)
-      } else if (e.key === 'Enter' && !e.shiftKey) {
+      } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault()
         e.stopPropagation()
         const idx = activeIndexRef.current

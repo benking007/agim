@@ -59,6 +59,31 @@ macOS `WKWebView` **默认禁用** `<input type="file">`。壳必须实现
 `WKUIDelegate.webView(_:runOpenPanelWith:…)` 并用 `NSOpenPanel` 回传选中路径，
 否则加号菜单里三项会「点了没反应」。见 `Agim/Views/WebShellView.swift`。
 
+## 另存为 Markdown
+
+助手气泡操作栏「另存为」通过 `webkit.messageHandlers.agimSaveFile` 调原生：
+
+| 端 | 行为 |
+|----|------|
+| 浏览器 Chromium | `showSaveFilePicker` |
+| 浏览器其他 | `<a download>` |
+| macOS 壳 | `NSSavePanel` |
+| iOS 壳 | `UIDocumentPickerViewController`（导出到「文件」） |
+
+Web 实现：`src/web-app/src/lib/save-text-file.ts`。
+
+## 系统分享（微信 / 钉钉 / QQ 等）
+
+助手气泡「分享」走系统面板，**不内置**各 IM 的 OpenSDK；已安装的微信/钉钉/QQ 等会出现在系统目标列表里。
+
+| 端 | Bridge | 行为 |
+|----|--------|------|
+| 浏览器（HTTPS / localhost） | — | `navigator.share`（支持时附带 `.md` 文件）；否则复制到剪贴板 |
+| macOS 壳 | `agimShare` | `NSSharingServicePicker`（文本 + 临时 `.md`） |
+| iOS 壳 | `agimShare` | `UIActivityViewController`（文本 + 临时 `.md`） |
+
+Web 实现：`src/web-app/src/lib/share-content.ts`。长文在系统面板内会截断展示；完整正文尽量作为附件一并分享。
+
 ## 与 iOS 的差异
 
 | | iOS | macOS |

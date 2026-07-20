@@ -1,8 +1,8 @@
 /**
  * Save plain text as a local file with a Save-As experience where possible.
  *
- * Priority:
- * 1. Native Agim shells (iOS / macOS WKWebView) via `webkit.messageHandlers.agimSaveFile`
+ * Portal UI only exposes Save in the browser (`!isAgimNativeShell`). Priority:
+ * 1. Native Agim shells (iOS / macOS WKWebView) via `webkit.messageHandlers.agimSaveFile` (unused by UI)
  * 2. File System Access API (`showSaveFilePicker`) — Chromium desktop “Save As”
  * 3. Anchor `download` fallback (Safari / Firefox / locked-down contexts)
  */

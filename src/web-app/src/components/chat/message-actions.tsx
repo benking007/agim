@@ -1,5 +1,8 @@
 /**
- * MessageActions — good / bad / copy / save / share under an assistant reply.
+ * MessageActions — good / bad / copy + platform export under an assistant reply.
+ *
+ * Browser: Save as Markdown (Web Share is weak / clipboard-only → hide Share).
+ * iOS / macOS shells: Share via OS sheet (Save opens/preview awkwardly → hide Save).
  */
 
 import { useState } from 'react'
@@ -7,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Check, Copy, FileDown, Share2, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { isAgimNativeShell } from '@/lib/agim-shell'
 import { markdownFilenameFromContent, saveTextAsFile } from '@/lib/save-text-file'
 import { shareContent } from '@/lib/share-content'
 
@@ -22,6 +26,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
   const [saving, setSaving] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [vote, setVote] = useState<'up' | 'down' | null>(null)
+  const nativeShell = isAgimNativeShell()
 
   if (!content.trim()) return null
 
@@ -68,7 +73,7 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       if (result === 'copied') {
         toast.success(t('chat.shareCopied'))
       }
-      // native / web: the OS sheet is enough feedback.
+      // native: the OS sheet is enough feedback.
     } catch {
       toast.error(t('chat.shareFailed'))
     } finally {
@@ -115,26 +120,30 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       >
         {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
       </button>
-      <button
-        type="button"
-        className={btn}
-        aria-label={t('chat.saveMarkdown')}
-        title={t('chat.saveMarkdown')}
-        disabled={saving}
-        onClick={() => void onSaveMarkdown()}
-      >
-        <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
-      </button>
-      <button
-        type="button"
-        className={btn}
-        aria-label={t('chat.share')}
-        title={t('chat.share')}
-        disabled={sharing}
-        onClick={() => void onShare()}
-      >
-        <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
-      </button>
+      {!nativeShell && (
+        <button
+          type="button"
+          className={btn}
+          aria-label={t('chat.saveMarkdown')}
+          title={t('chat.saveMarkdown')}
+          disabled={saving}
+          onClick={() => void onSaveMarkdown()}
+        >
+          <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
+        </button>
+      )}
+      {nativeShell && (
+        <button
+          type="button"
+          className={btn}
+          aria-label={t('chat.share')}
+          title={t('chat.share')}
+          disabled={sharing}
+          onClick={() => void onShare()}
+        >
+          <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
+        </button>
+      )}
     </div>
   )
 }

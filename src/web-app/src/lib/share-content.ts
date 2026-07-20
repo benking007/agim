@@ -1,8 +1,9 @@
 /**
  * Share assistant content via OS share sheet (Phase 1).
  *
- * Priority:
- * 1. Native Agim shells — `webkit.messageHandlers.agimShare`
+ * Portal UI only exposes Share inside Agim native shells (`isAgimNativeShell`).
+ * Priority when called:
+ * 1. Native — `webkit.messageHandlers.agimShare`
  * 2. Web Share API (`navigator.share`) when available
  * 3. Clipboard copy fallback
  *

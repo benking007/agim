@@ -34,6 +34,7 @@ agim go
 
 - 对话：`/`
 - 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区引用等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
+- 原生壳：iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos)（均包装 `/m/chat`，见 [`docs/macos-shell.md`](docs/macos-shell.md)）
 - 任务：`/tasks`
 - 设置：`/settings`
 

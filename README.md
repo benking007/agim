@@ -35,6 +35,7 @@ Default Web console: `http://localhost:3000`
 
 - Chat: `/`
 - Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs — see [`docs/portal-composer.md`](docs/portal-composer.md))
+- Native shells: iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos) (both wrap `/m/chat`; see [`docs/macos-shell.md`](docs/macos-shell.md))
 - Tasks: `/tasks`
 - Settings: `/settings`
 

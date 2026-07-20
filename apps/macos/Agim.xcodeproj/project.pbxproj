@@ -1,0 +1,371 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		84D1952F22B4A615CB40D6CE /* AgimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E174E900C3B780137397F9CA /* AgimApp.swift */; };
+		744EBA94C367E396424FCE3E /* HostCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D21B09B465104787320B40 /* HostCredentials.swift */; };
+		AADCF34815332463D9650932 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */; };
+		1EAFBDA176D0C1875ACC7282 /* PairingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B218A379254332CD7014D8 /* PairingParser.swift */; };
+		2117D91FBBEC7A706D43CB61 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */; };
+		035158678EB6CE3E349405DC /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C8292754A79140B5B34FE1 /* RootView.swift */; };
+		DFE77130F1A221F8EDBD1BCD /* WebShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91659C57FC6E8265615DBAD /* WebShellView.swift */; };
+		1E1C83100F4FA20552975BAA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44F7ACA3D8428CE2C120AB32 /* Assets.xcassets */; };
+		98FDB2A86DC709E63D03D77A /* PairingParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		39616712E109A3EA5F13B9EA /* Agim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agim.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		82842B40ACFE25CD12404E07 /* AgimTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E174E900C3B780137397F9CA /* AgimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgimApp.swift"; sourceTree = "<group>"; };
+		F9D21B09B465104787320B40 /* HostCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/HostCredentials.swift"; sourceTree = "<group>"; };
+		EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/KeychainStore.swift"; sourceTree = "<group>"; };
+		02B218A379254332CD7014D8 /* PairingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PairingParser.swift"; sourceTree = "<group>"; };
+		D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/PairingView.swift"; sourceTree = "<group>"; };
+		A4C8292754A79140B5B34FE1 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/RootView.swift"; sourceTree = "<group>"; };
+		F91659C57FC6E8265615DBAD /* WebShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/WebShellView.swift"; sourceTree = "<group>"; };
+		72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PairingParserTests.swift"; sourceTree = "<group>"; };
+		44F7ACA3D8428CE2C120AB32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
+		25EEE36A2240E5CD54F67CF8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7B4C11879D3F371D8F68AB9D /* Agim.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Agim.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D46DEC55449BE50F9EC8F901 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		77825D41B0036B444D8488EF = {
+			isa = PBXGroup;
+			children = (
+				FDE2B2118EA30DEE1D3A7EB0 /* Agim */,
+				28914D7911B4C2307C3FD3FE /* AgimTests */,
+				3EB3FBCBDEA891006E4030D0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		3EB3FBCBDEA891006E4030D0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				39616712E109A3EA5F13B9EA /* Agim.app */,
+				82842B40ACFE25CD12404E07 /* AgimTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FDE2B2118EA30DEE1D3A7EB0 /* Agim */ = {
+			isa = PBXGroup;
+			children = (
+				E174E900C3B780137397F9CA /* AgimApp.swift */,
+				F9D21B09B465104787320B40 /* HostCredentials.swift */,
+				EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */,
+				02B218A379254332CD7014D8 /* PairingParser.swift */,
+				D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */,
+				A4C8292754A79140B5B34FE1 /* RootView.swift */,
+				F91659C57FC6E8265615DBAD /* WebShellView.swift */,
+				44F7ACA3D8428CE2C120AB32 /* Assets.xcassets */,
+				25EEE36A2240E5CD54F67CF8 /* Info.plist */,
+				7B4C11879D3F371D8F68AB9D /* Agim.entitlements */,
+			);
+			path = Agim;
+			sourceTree = "<group>";
+		};
+		28914D7911B4C2307C3FD3FE /* AgimTests */ = {
+			isa = PBXGroup;
+			children = (
+				72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */,
+			);
+			path = AgimTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5E879910402ED405FDCE1814 /* Agim */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2DFAF582B999222ED8A15EE0 /* Build configuration list for PBXNativeTarget "Agim" */;
+			buildPhases = (
+				B8A1CA2F80BC2434E95FD7A0 /* Sources */,
+				D46DEC55449BE50F9EC8F901 /* Frameworks */,
+				28C000C7300EA03E0D109545 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Agim;
+			productName = Agim;
+			productReference = 39616712E109A3EA5F13B9EA /* Agim.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4FBFEF68ADAB44DA3AE0E2E8 /* AgimTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 169E5849BD4FF630772B4917 /* Build configuration list for PBXNativeTarget "AgimTests" */;
+			buildPhases = (
+				BBDEDCB2D421C9BB15953264 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CB2EF33ABBE5EC64283C53DC /* PBXTargetDependency */,
+			);
+			name = AgimTests;
+			productName = AgimTests;
+			productReference = 82842B40ACFE25CD12404E07 /* AgimTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		CB2EF33ABBE5EC64283C53DC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5E879910402ED405FDCE1814 /* Agim */;
+			targetProxy = 79CEE9A6AF95AEA1508F140A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		79CEE9A6AF95AEA1508F140A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6EDE9330100A836F31373BC7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5E879910402ED405FDCE1814;
+			remoteInfo = Agim;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXProject section */
+		6EDE9330100A836F31373BC7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					5E879910402ED405FDCE1814 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					4FBFEF68ADAB44DA3AE0E2E8 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 5E879910402ED405FDCE1814;
+					};
+				};
+			};
+			buildConfigurationList = 9D56B951D2B3E6ADC548239F /* Build configuration list for PBXProject "Agim" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 77825D41B0036B444D8488EF;
+			productRefGroup = 3EB3FBCBDEA891006E4030D0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5E879910402ED405FDCE1814 /* Agim */,
+				4FBFEF68ADAB44DA3AE0E2E8 /* AgimTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		28C000C7300EA03E0D109545 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1E1C83100F4FA20552975BAA /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B8A1CA2F80BC2434E95FD7A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84D1952F22B4A615CB40D6CE /* AgimApp.swift in Sources */,
+				744EBA94C367E396424FCE3E /* HostCredentials.swift in Sources */,
+				AADCF34815332463D9650932 /* KeychainStore.swift in Sources */,
+				1EAFBDA176D0C1875ACC7282 /* PairingParser.swift in Sources */,
+				2117D91FBBEC7A706D43CB61 /* PairingView.swift in Sources */,
+				035158678EB6CE3E349405DC /* RootView.swift in Sources */,
+				DFE77130F1A221F8EDBD1BCD /* WebShellView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BBDEDCB2D421C9BB15953264 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				98FDB2A86DC709E63D03D77A /* PairingParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AC4CFDF3B9391708B854D506 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_DYNAMIC_NO_PIC = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E984A8F2FC6AEC41FEB6BCC3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A4414712E7C97B8DE6F43E1B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Agim/Agim.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Agim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.mac;
+				PRODUCT_NAME = Agim;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		108678DE673602B17B74C49C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Agim/Agim.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Agim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.mac;
+				PRODUCT_NAME = Agim;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		78369C8D41CF1A6CB24C2B3A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.mac.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agim.app/Contents/MacOS/Agim";
+			};
+			name = Debug;
+		};
+		1D327CC24AFF3845A33C8036 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = host.iclaw.agim.mac.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agim.app/Contents/MacOS/Agim";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9D56B951D2B3E6ADC548239F /* Build configuration list for PBXProject "Agim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AC4CFDF3B9391708B854D506 /* Debug */,
+				E984A8F2FC6AEC41FEB6BCC3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2DFAF582B999222ED8A15EE0 /* Build configuration list for PBXNativeTarget "Agim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A4414712E7C97B8DE6F43E1B /* Debug */,
+				108678DE673602B17B74C49C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		169E5849BD4FF630772B4917 /* Build configuration list for PBXNativeTarget "AgimTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				78369C8D41CF1A6CB24C2B3A /* Debug */,
+				1D327CC24AFF3845A33C8036 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 6EDE9330100A836F31373BC7 /* Project object */;
+}

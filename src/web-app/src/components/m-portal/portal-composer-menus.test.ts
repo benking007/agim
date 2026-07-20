@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   detectAtTrigger,
   detectSlashTrigger,
+  isImeComposingKey,
 } from '@/components/m-portal/portal-composer-menus'
 import {
   chipsFromValue,
@@ -14,6 +15,14 @@ import {
   workspaceFileMarker,
   workspaceMarker,
 } from '@/components/m-portal/portal-slash-commands'
+
+describe('isImeComposingKey', () => {
+  it('is true while composing or keyCode 229', () => {
+    expect(isImeComposingKey({ isComposing: true, keyCode: 13 } as KeyboardEvent)).toBe(true)
+    expect(isImeComposingKey({ isComposing: false, keyCode: 229 } as KeyboardEvent)).toBe(true)
+    expect(isImeComposingKey({ isComposing: false, keyCode: 13 } as KeyboardEvent)).toBe(false)
+  })
+})
 
 describe('detectSlashTrigger', () => {
   it('opens on bare slash', () => {

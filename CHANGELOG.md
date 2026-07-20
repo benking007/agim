@@ -6,11 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-<<<<<<< HEAD
 - Portal assistant export actions are **platform-split**: browser shows **Save as Markdown** only; iOS / macOS shells show **Share** (OS sheet) only — avoids a useless Share in browsers and an awkward Save/open flow in shells.
-=======
 - `AGIM_VIEWER_ENABLED` is **IM-only**: WeChat / Feishu / DingTalk / Telegram / Discord / Email honour the switch; browser, Portal (`/m/chat` including iOS/macOS shells), and TUI always stay full inline markdown. See `docs/viewer-modes.md`.
->>>>>>> e5d58fbe (fix(viewer): honour AGIM_VIEWER_ENABLED for IM channels only)
 
 ### Added
 
@@ -32,6 +29,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Portal `/` and `@` menus: ignore Enter / ↑↓ / Escape while an IME composition is active (`isComposing` / keyCode 229), so confirming Chinese/Japanese candidates no longer accidentally picks the highlighted skill/command.
 - Agim agent: deliver **mid-turn assistant prose** co-occurring with tool calls (e.g. full report + `todo_write`) instead of only the last short closure (“盘点完成”). `composeDeliveredAssistantText` merges substantive mid-turn text when the final hop is empty/short; Closure prompt now requires the full conclusion in the last no-tool hop.
 - Portal composer height tightened (`p-1` / `h-7`); keyboard ↑↓/Enter for `/` and `@` menus; Backspace at caret 0 deletes the trailing mention chip; pet perch raised so only feet tuck under the input.
 - Web chat (`/` / `/m/chat`): tool accordion, run timeline, and “接收中” survive tab switches and page refresh. Server keeps an ActiveRun snapshot, retargets live chunks to the reconnected socket, and replays `active-run` after `history`.

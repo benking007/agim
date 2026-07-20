@@ -3,6 +3,8 @@
 Phase 1 pivot: **WKWebView shell** loads the Agent Portal at `/m/chat`
 (design: `docs/design/chatgpt_mobile_design_prototype.tsx`).
 
+macOS twin (same login bridge): [`apps/macos`](../macos) · [`docs/macos-shell.md`](../../docs/macos-shell.md).
+
 ## Requirements
 
 - macOS + Xcode 16+ (iOS 17)

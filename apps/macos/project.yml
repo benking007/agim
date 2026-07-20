@@ -1,0 +1,64 @@
+name: Agim
+options:
+  bundleIdPrefix: host.iclaw
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Agim:
+    type: application
+    platform: macOS
+    sources:
+      - path: Agim
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: host.iclaw.agim.mac
+        PRODUCT_NAME: Agim
+        INFOPLIST_FILE: Agim/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: Agim/Agim.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        COMBINE_HIDPI_IMAGES: YES
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: Agim/Info.plist
+      properties:
+        CFBundleDisplayName: Agim
+        LSMinimumSystemVersion: "14.0"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+          NSAllowsLocalNetworking: true
+  AgimTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: AgimTests
+    dependencies:
+      - target: Agim
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: host.iclaw.agim.mac.tests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Agim.app/Contents/MacOS/Agim"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  Agim:
+    build:
+      targets:
+        Agim: all
+        AgimTests: [test]
+    test:
+      targets:
+        - AgimTests
+    run:
+      config: Debug

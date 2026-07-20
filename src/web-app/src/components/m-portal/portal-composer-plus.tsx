@@ -80,6 +80,9 @@ export function PortalComposerPlus({
 }: PortalComposerPlusProps): JSX.Element {
   const { t } = useTranslation()
   const menuId = useId()
+  const cameraInputId = useId()
+  const photosInputId = useId()
+  const filesInputId = useId()
   const [open, setOpen] = useState(false)
   const cameraRef = useRef<HTMLInputElement>(null)
   const photosRef = useRef<HTMLInputElement>(null)
@@ -299,58 +302,54 @@ export function PortalComposerPlus({
             <span>{t('chat.portal.menu.skills')}</span>
           </button>
           <div className={cn('my-1 border-t', dark ? 'border-zinc-800' : 'border-zinc-100')} />
-          <button
-            type="button"
-            role="menuitem"
-            className={itemCls}
-            onClick={() => cameraRef.current?.click()}
-          >
+          {/*
+            Labels point at always-mounted inputs below (outside this portal).
+            Avoid button→input.click() + display:none — flaky in WKWebView.
+            Keep inputs mounted so closing the menu cannot abort the picker.
+          */}
+          <label htmlFor={cameraInputId} className={cn(itemCls, 'cursor-pointer')}>
             <Camera className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.camera')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemCls}
-            onClick={() => photosRef.current?.click()}
-          >
+          </label>
+          <label htmlFor={photosInputId} className={cn(itemCls, 'cursor-pointer')}>
             <ImageIcon className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.photos')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemCls}
-            onClick={() => filesRef.current?.click()}
-          >
+          </label>
+          <label htmlFor={filesInputId} className={cn(itemCls, 'cursor-pointer')}>
             <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.files')}</span>
-          </button>
+          </label>
         </div>,
         document.body,
       )}
 
       <input
+        id={cameraInputId}
         ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
         onChange={(e) => onPick(e, true)}
       />
       <input
+        id={photosInputId}
         ref={photosRef}
         type="file"
         accept="image/*"
         multiple
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
         onChange={(e) => onPick(e, true)}
       />
       <input
+        id={filesInputId}
         ref={filesRef}
         type="file"
         multiple
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
         onChange={(e) => onPick(e, false)}
       />
     </div>

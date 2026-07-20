@@ -602,6 +602,17 @@ export function AgentPortal(): JSX.Element {
   }
 
   function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    const ne = e.nativeEvent as { isComposing?: boolean }
+    if (ne.isComposing || e.keyCode === 229) return
+
+    // Ctrl+Enter (Win/Linux) / ⌘+Enter (macOS) sends — Enter alone stays newline.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      void onSend()
+      return
+    }
+
     if (!slashOpen && !atOpen) return
     // Capture-phase popup listeners move highlight / commit selection;
     // block caret motion and accidental newlines here.
@@ -615,7 +626,7 @@ export function AgentPortal(): JSX.Element {
       setAtOpen(false)
       return
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
     }
   }

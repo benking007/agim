@@ -29,6 +29,8 @@
 
 键盘：↑↓ 高亮，Enter 确认，Esc 关闭。过滤查询变化时重置高亮；同一查询下不会被 keyup 冲掉。
 
+发送：单独 Enter 换行；**Ctrl+Enter**（Windows/Linux）或 **⌘+Enter**（macOS）发送当前内容（含附件）。`/` `@` 菜单打开时，裸 Enter 仍用于选中项，修饰键+Enter 照常发送。
+
 技能列表优先 `GET /api/agim-skills`（已认证可读）；失败时回退 `GET /api/skills`。
 
 ### `@` — Workspace 与文件

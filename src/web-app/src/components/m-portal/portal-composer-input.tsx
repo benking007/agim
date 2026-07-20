@@ -226,9 +226,10 @@ export function PortalComposerInput({
           }
           reportCaret()
         }}
-        // Prevent form submit on Enter — newline only; send via button.
+        // Bare Enter = newline (stop legacy keypress submit). Ctrl/⌘+Enter
+        // is handled in onKeyDown → send.
         onKeyPress={(e) => {
-          if (e.key === 'Enter') e.stopPropagation()
+          if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) e.stopPropagation()
         }}
         className={cn(
           'min-h-7 min-w-[6rem] flex-1 resize-none bg-transparent py-0 text-md leading-7 focus:outline-none disabled:opacity-60',

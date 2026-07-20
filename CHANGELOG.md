@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Portal assistant export actions are **platform-split**: browser shows **Save as Markdown** only; iOS / macOS shells show **Share** (OS sheet) only — avoids a useless Share in browsers and an awkward Save/open flow in shells.
+
 ### Added
 
 - Portal assistant actions: **Save as Markdown** (next to copy) — Chromium `showSaveFilePicker`, download fallback, and native Save/Files pickers via `webkit.messageHandlers.agimSaveFile` on macOS / iOS shells.

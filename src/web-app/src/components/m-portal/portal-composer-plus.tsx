@@ -307,15 +307,15 @@ export function PortalComposerPlus({
             Avoid button→input.click() + display:none — flaky in WKWebView.
             Keep inputs mounted so closing the menu cannot abort the picker.
           */}
-          <label htmlFor={cameraInputId} role="menuitem" className={cn(itemCls, 'cursor-pointer')}>
+          <label htmlFor={cameraInputId} className={cn(itemCls, 'cursor-pointer')}>
             <Camera className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.camera')}</span>
           </label>
-          <label htmlFor={photosInputId} role="menuitem" className={cn(itemCls, 'cursor-pointer')}>
+          <label htmlFor={photosInputId} className={cn(itemCls, 'cursor-pointer')}>
             <ImageIcon className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.photos')}</span>
           </label>
-          <label htmlFor={filesInputId} role="menuitem" className={cn(itemCls, 'cursor-pointer')}>
+          <label htmlFor={filesInputId} className={cn(itemCls, 'cursor-pointer')}>
             <FolderOpen className="h-3.5 w-3.5 text-zinc-400" />
             <span>{t('chat.portal.menu.files')}</span>
           </label>

@@ -14,8 +14,11 @@
 //   - opts.onUsage  → surfaced from the returned AssistantMessage.usage
 //   - compaction    → before each turn, summarize old history when the session
 //                     exceeds the model window (pi never auto-compacts)
-//   - yields        → final assistant text (buffered; token streaming is a
-//                     follow-up — pi exposes an event stream we can wire later)
+//   - yields        → delivered assistant text (buffered; token streaming is a
+//                     follow-up — pi exposes an event stream we can wire later).
+//                     Mid-turn text that co-occurs with tool calls is merged in
+//                     when the last hop is only a short closure (see
+//                     composeDeliveredAssistantText).
 
 import {
   AgentHarness,
@@ -267,6 +270,69 @@ function classifyToolActivityKind(toolName: string): 'tool' | 'skill' | 'agent' 
 function isCallAgentTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
   return n === 'call_agent' || n.endsWith('__call_agent')
+}
+
+/**
+ * Min length for mid-turn assistant text to count as a user-facing body.
+ * Shorter phrases ("OK", "稍等") stay out of the delivery merge.
+ */
+const SUBSTANTIVE_MIDTURN_MIN = 80
+/**
+ * Final replies at or below this length are treated as possible short
+ * closures ("盘点完成。") that must not replace a longer mid-turn body.
+ */
+const SHORT_CLOSURE_MAX = 200
+
+function extractAssistantTextBlocks(
+  content: ReadonlyArray<{ type?: string; text?: string }> | undefined,
+): string {
+  return (content ?? [])
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
+    .map((c) => c.text)
+    .join('')
+}
+
+function uniqueNonEmpty(texts: readonly string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of texts) {
+    const t = raw.trim()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
+}
+
+/**
+ * Build the user-facing reply for one harness turn.
+ *
+ * Models often emit the full report in a mid-turn assistant message that also
+ * carries tool calls (e.g. todo_write), then end with a short "盘点完成".
+ * `harness.prompt()`'s result only contains that last hop — so without this
+ * merge the conversation stream loses the body. See composeDeliveredAssistantText
+ * tests / CHANGELOG.
+ */
+export function composeDeliveredAssistantText(
+  midTurnTexts: readonly string[],
+  finalText: string,
+): string {
+  const finals = finalText.trim()
+  const mids = uniqueNonEmpty(midTurnTexts).filter((t) => t.length >= SUBSTANTIVE_MIDTURN_MIN)
+  const novelMids = mids.filter((m) => !finals.includes(m))
+  if (novelMids.length === 0) return finals
+
+  const midJoined = novelMids.join('\n\n')
+  if (!finals) return midJoined
+
+  // Short closing after a long mid-turn body → keep the body + closing.
+  if (finals.length <= SHORT_CLOSURE_MAX) {
+    if (midJoined.includes(finals)) return midJoined
+    return `${midJoined}\n\n${finals}`
+  }
+
+  // Long final already — prefer it (avoid duplicating a rewritten report).
+  return finals
 }
 
 function composeEmptyTurnRecap(toolRuns: readonly NativeToolRun[], availableToolNames: readonly string[]): string {
@@ -710,6 +776,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
+    /** Substantive assistant text from hops that also emitted tool calls. */
+    const midTurnTexts: string[] = []
     const mergeProviderUsage = (usage: {
       promptTokens?: number
       completionTokens?: number
@@ -973,7 +1041,15 @@ export class NativeAgentAdapter implements AgentAdapter {
         usageOutput += event.message.usage.output
         usageCost += event.message.usage.cost?.total ?? 0
       }
-      const batchCalls = (event.message.content ?? []).filter((c) => c.type === 'toolCall').length
+      const content = event.message.content ?? []
+      const batchCalls = content.filter((c) => c.type === 'toolCall').length
+      // Capture user-facing prose that co-occurs with tool calls. The final
+      // harness result only exposes the last assistant hop — without this,
+      // a long report + todo_write followed by "盘点完成" loses the report.
+      if (batchCalls > 0) {
+        const mid = extractAssistantTextBlocks(content).trim()
+        if (mid) midTurnTexts.push(mid)
+      }
       if (batchCalls === 0) return
       if (declaredToolCalls + batchCalls > maxToolCalls) {
         stopReason = 'max_tool_calls'
@@ -1160,10 +1236,10 @@ export class NativeAgentAdapter implements AgentAdapter {
     // Defensive: pi always returns a content array, but guard against a
     // malformed/empty shape so a provider hiccup degrades to a friendly notice
     // instead of throwing out of the turn.
-    const text = (result.content ?? [])
-      .filter((c): c is { type: 'text'; text: string } => c.type === 'text' && typeof c.text === 'string')
-      .map((c) => c.text)
-      .join('')
+    const finalHopText = extractAssistantTextBlocks(result.content)
+    // Merge mid-turn bodies (text + toolCall hops) before deciding emptiness —
+    // otherwise a short/empty last hop drops a long report written earlier.
+    const text = composeDeliveredAssistantText(midTurnTexts, finalHopText)
     const hasText = text.trim().length > 0
 
     // Provider-level failure / abort. pi surfaces these as an assistant message
@@ -1193,7 +1269,7 @@ export class NativeAgentAdapter implements AgentAdapter {
                   ? offTrackDetail.split(' || redirect: ').slice(1).join(' || redirect: ')
                   : undefined,
               )
-            : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
+              : `（已达最大迭代步数 ${maxIter}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_ITER 后重试）`
         return
       }
       if (providerFailed || providerAborted) {
@@ -1211,7 +1287,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     // Non-empty answer. Flag narrated-but-not-emitted tool calls so we don't
-    // ship a lie as a successful turn.
+    // ship a lie as a successful turn. Use the last hop alone — mid-turn
+    // prose + tools is legitimate, not a hallucination.
     if (
       !stopReason
       && !providerFailed
@@ -1222,7 +1299,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       && isHallucinationDetectorOn()
     ) {
       const det = detectHallucinatedToolCall({
-        text,
+        text: finalHopText,
         toolNames: tools.map((t) => t.name),
         emittedToolCallCount: 0,
       })

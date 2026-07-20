@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
-import { type NativeModelBinding, NativeAgentAdapter } from './index.js'
+import { composeDeliveredAssistantText, type NativeModelBinding, NativeAgentAdapter } from './index.js'
 
 const regs: Array<{ unregister(): void }> = []
 afterEach(() => {
@@ -34,6 +34,32 @@ async function collect(gen: AsyncGenerator<string>): Promise<string> {
   for await (const c of gen) out += c
   return out
 }
+
+describe('composeDeliveredAssistantText', () => {
+  it('keeps a long mid-turn body when the last hop is only a short closure', () => {
+    const body = `${'盘点条目：发现 A、B、C。'.repeat(10)}详细说明略。`
+    const out = composeDeliveredAssistantText([body], '盘点完成。有任何需要深挖的方向随时说。')
+    expect(out).toContain('盘点条目')
+    expect(out).toContain('盘点完成')
+  })
+
+  it('rescues mid-turn body when the last hop is empty', () => {
+    const body = '完整报告正文：'.padEnd(120, 'x')
+    expect(composeDeliveredAssistantText([body], '')).toBe(body)
+  })
+
+  it('does not prepend mid-turn text when the final hop is already long', () => {
+    const draft = '草稿：'.padEnd(100, 'a')
+    const finals = '终稿完整报告：'.padEnd(250, 'b')
+    expect(composeDeliveredAssistantText([draft], finals)).toBe(finals)
+  })
+
+  it('ignores tiny mid-turn fillers', () => {
+    expect(composeDeliveredAssistantText(['稍等'], '最终结论很长'.padEnd(50, '。'))).toBe(
+      '最终结论很长'.padEnd(50, '。'),
+    )
+  })
+})
 
 describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   it('yields final assistant text', async () => {
@@ -1113,6 +1139,70 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const out = await collect(adapter.sendPrompt('tool-success', '修复 bug 并运行测试'))
     expect(out).toBe('测试通过，已完成。')
     expect(out).not.toContain('Status:')
+  })
+
+  it('delivers mid-turn report text when the last hop is only a short closure', async () => {
+    const reg = faux()
+    const report = [
+      '## 盘点结果',
+      '',
+      '- 模块 A：正常',
+      '- 模块 B：有风险',
+      '- 模块 C：待跟进',
+      '',
+      '建议下一步：先处理模块 B。',
+      '补充细节：'.padEnd(120, '详'),
+    ].join('\n')
+    const todo = fauxToolCall('agim_todo_write', { items: [{ id: '1', status: 'done' }] }, { id: 'todo1' })
+    reg.setResponses([
+      fauxAssistantMessage(
+        [{ type: 'text', text: report }, todo] as never,
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage('盘点完成。有任何需要深挖的方向随时说。'),
+    ])
+    const tool: ToolDef = {
+      name: 'agim_todo_write',
+      description: 'todo',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    const dispatch: ToolDispatcher = async () => ({ text: 'ok', isError: false })
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-midturn-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const out = await collect(adapter.sendPrompt('midturn-report', '请盘点并更新 todo'))
+    expect(out).toContain('盘点结果')
+    expect(out).toContain('模块 B：有风险')
+    expect(out).toContain('盘点完成')
+  })
+
+  it('rescues mid-turn report when the last hop is empty after tools', async () => {
+    const reg = faux()
+    const report = `完整盘点正文：${'条目。'.repeat(40)}`
+    const todo = fauxToolCall('agim_todo_write', { items: [] }, { id: 'todo2' })
+    reg.setResponses([
+      fauxAssistantMessage(
+        [{ type: 'text', text: report }, todo] as never,
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage(''),
+    ])
+    const tool: ToolDef = {
+      name: 'agim_todo_write',
+      description: 'todo',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    const dispatch: ToolDispatcher = async () => ({ text: 'ok', isError: false })
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-midturn-empty-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const out = await collect(adapter.sendPrompt('midturn-empty', '盘点'))
+    expect(out).toContain('完整盘点正文')
+    expect(out).not.toContain('没有生成收尾文字')
   })
 
   it('does not append tool-failure diagnostics when tools fail but the model still returns text', async () => {

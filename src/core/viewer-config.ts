@@ -29,8 +29,49 @@ export type ViewerTunnelMode = 'off' | 'quick'
  */
 export type ViewerMode = 'remote' | 'local' | 'tunnel' | 'none'
 
+/**
+ * Surfaces that already render full markdown (browser console, Portal
+ * `/m/chat` inside iOS/macOS shells, local TUI). Viewer truncate-link
+ * never applies here — `AGIM_VIEWER_ENABLED` is ignored for these.
+ */
+const NON_IM_VIEWER_PLATFORMS = new Set([
+  'web',
+  'tui',
+])
+
+/**
+ * Whether long-reply viewer routing may apply to this delivery platform.
+ *
+ * IM messengers (WeChat / Feishu / DingTalk / Telegram / Discord / Email / …)
+ * return true. Browser, Mac/iOS Portal shells (`platform=web`), and the local
+ * TUI return false — they show full markdown inline.
+ */
+export function isViewerApplicablePlatform(platform: string): boolean {
+  const p = (platform || '').toLowerCase().trim()
+  if (!p) return false
+  if (NON_IM_VIEWER_PLATFORMS.has(p)) return false
+  // Internal background jobs are not IM delivery surfaces.
+  if (p.startsWith('memory-')) return false
+  return true
+}
+
+/**
+ * Effective viewer switch for a delivery: env master ON **and** the
+ * platform is an IM channel. Non-IM surfaces always get inline full text.
+ */
+export function isViewerEnabledForPlatform(
+  platform: string,
+  cfg: ViewerConfig = getViewerConfig(),
+): boolean {
+  return cfg.enabled && isViewerApplicablePlatform(platform)
+}
+
 export interface ViewerConfig {
-  /** Master switch. When false, all replies are sent inline regardless of length. */
+  /**
+   * Master switch for IM long-reply viewer routing.
+   * Only takes effect for IM platforms (`isViewerApplicablePlatform`);
+   * browser / app / mac / TUI ignore this flag and always stay inline.
+   */
   enabled: boolean
   /**
    * Public-facing base URL of THIS host's agim web console. Used to build the

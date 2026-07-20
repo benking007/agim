@@ -28,7 +28,7 @@ import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
-import { getViewerConfig } from './viewer-config.js'
+import { getViewerConfig, isViewerEnabledForPlatform } from './viewer-config.js'
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
@@ -695,12 +695,14 @@ export async function callAgentWithHistory(
   // history clean (already addMessage'd above) so context isn't duplicated
   // turn-after-turn. Empty when no pending OR no userId (non-IM call).
   const reminderContext = buildReminderContextSnippet(ctx.platform, ctx.userId ?? '')
-  // v1.2 — prepend a small IM-render hint when the viewer is enabled so the
-  // agent knows to wrap long answers in <im-summary>/<full-md>. Falls back
-  // gracefully (sink truncates and links) if the agent ignores the hint.
+  // v1.2 — prepend a small IM-render hint when the viewer is enabled for
+  // this IM platform so the agent knows to wrap long answers in
+  // <im-summary>/<full-md>. Browser / Portal shells / TUI never get the
+  // hint (AGIM_VIEWER_ENABLED is IM-only). Falls back gracefully (sink
+  // truncates and links) if the agent ignores the hint.
   const viewerCfg = getViewerConfig()
   const viewerHint = buildViewerHintSnippet({
-    viewerEnabled: viewerCfg.enabled && ctx.platform !== 'web',
+    viewerEnabled: isViewerEnabledForPlatform(ctx.platform, viewerCfg),
     thresholds: viewerCfg.thresholds,
   })
   // v1.5 — long-term memory persona block. Tiny header (~150-300 tokens)

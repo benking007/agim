@@ -5,6 +5,22 @@
 > three transport modes to produce that link. Pick whichever matches
 > your deployment.
 
+## IM-only scope
+
+`AGIM_VIEWER_ENABLED` **only affects IM messenger deliveries** (WeChat /
+Feishu / DingTalk / Telegram / Discord / Email / …).
+
+| Surface | Viewer switch |
+|---------|----------------|
+| WeChat / Feishu / DingTalk / Telegram / Discord / Email | Honours `AGIM_VIEWER_ENABLED` |
+| Browser console (`/`) | Ignored — always full inline markdown |
+| Portal `/m/chat` (including iOS / macOS shells) | Ignored — always full inline markdown |
+| Local TUI | Ignored — always full inline |
+
+Those non-IM surfaces already render markdown well; truncating them into
+📎 links would only hide content. The env flag still exists as the
+master switch for **IM** long-reply routing.
+
 ## Why this matters
 
 WeChat / Telegram / Feishu / DingTalk all render rich markdown poorly

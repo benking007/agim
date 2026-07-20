@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+<<<<<<< HEAD
 - Portal assistant export actions are **platform-split**: browser shows **Save as Markdown** only; iOS / macOS shells show **Share** (OS sheet) only — avoids a useless Share in browsers and an awkward Save/open flow in shells.
+=======
+- `AGIM_VIEWER_ENABLED` is **IM-only**: WeChat / Feishu / DingTalk / Telegram / Discord / Email honour the switch; browser, Portal (`/m/chat` including iOS/macOS shells), and TUI always stay full inline markdown. See `docs/viewer-modes.md`.
+>>>>>>> e5d58fbe (fix(viewer): honour AGIM_VIEWER_ENABLED for IM channels only)
 
 ### Added
 

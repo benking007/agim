@@ -143,9 +143,9 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 默认种子已经带上：
 
 - **IM 回复硬规范**（禁表格、长代码落盘、纯 URL、禁用 emoji …）
-- **任务超时与 bgjob**：估时 >10 分钟强制
-  `/root/.claude/scripts/bgjob start <slug> -- <cmd...>`（先写脚本再启动；
-  禁止 `nohup … &` / bare `bgjob`）
+- **任务超时与 bgjob**：估时 >10 分钟强制走 Agim 自带 wrapper
+  `~/.agim/scripts/bgjob start <slug> -- <cmd...>`（`agim start` 会从包装安装；
+  先写脚本再启动；禁止 `nohup … &` / bare `bgjob`）。任务数据在 `~/.agim/bgjobs/`。
 - **长期记忆约定**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
 
 其中 IM / bgjob 段落包在 `<!-- agim:im-ops:start -->` … `end` 标记里：每次

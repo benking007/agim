@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""agim bgjob — detach long-running commands outside an IM / agent turn.
+
+Installed to ~/.agim/scripts/bgjob on `agim start`. Job data lives in
+~/.agim/bgjobs/ (override with $AGIM_BGJOBS or $AGIM_HOME).
+
+Usage:
+  bgjob start <slug> -- <cmd...>
+  bgjob status <slug|id>
+  bgjob tail <slug|id> [--lines N]
+  bgjob list [--running]
+  bgjob kill <slug|id>
+
+Layout (compatible with agim's bgjob-reader):
+  <root>/index.json
+  <root>/<id>/meta.json
+  <root>/<id>/log.txt
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import random
+import signal
+import string
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+
+def _home() -> Path:
+    override = os.environ.get("AGIM_HOME")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".agim"
+
+
+def _root() -> Path:
+    override = os.environ.get("AGIM_BGJOBS")
+    if override:
+        return Path(override).expanduser()
+    return _home() / "bgjobs"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _slugify(name: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in name.strip())
+    cleaned = cleaned.strip("-_") or "job"
+    return cleaned[:48]
+
+
+def _rand4() -> str:
+    return "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(4))
+
+
+def _read_json(path: Path, default: Any) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _load_index(root: Path) -> Dict[str, Any]:
+    data = _read_json(root / "index.json", {"jobs": []})
+    if not isinstance(data, dict):
+        data = {"jobs": []}
+    jobs = data.get("jobs")
+    if not isinstance(jobs, list):
+        data["jobs"] = []
+    return data
+
+
+def _save_index(root: Path, data: Dict[str, Any]) -> None:
+    _write_json(root / "index.json", data)
+
+
+def _pid_alive(pid: Optional[int]) -> bool:
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _refresh_status(meta: Dict[str, Any]) -> Dict[str, Any]:
+    status = str(meta.get("status") or "")
+    pid = meta.get("pid")
+    if status == "running" and not _pid_alive(pid if isinstance(pid, int) else None):
+        meta["status"] = "failed" if meta.get("exit_code") not in (0, None) else "completed"
+        if meta.get("ended_at") is None:
+            meta["ended_at"] = _now()
+        if meta.get("exit_code") is None:
+            meta["exit_code"] = -1
+    return meta
+
+
+def _find_job(root: Path, key: str) -> Optional[Path]:
+    direct = root / key
+    if (direct / "meta.json").is_file():
+        return direct
+    # Match by trailing slug / name / id substring (newest first via index).
+    index = _load_index(root)
+    candidates: List[str] = []
+    for entry in reversed(index.get("jobs") or []):
+        if not isinstance(entry, dict):
+            continue
+        jid = str(entry.get("id") or "")
+        name = str(entry.get("name") or "")
+        if key == jid or key == name or jid.endswith("-" + key) or key in jid:
+            candidates.append(jid)
+    for jid in candidates:
+        path = root / jid
+        if (path / "meta.json").is_file():
+            return path
+    # Directory scan fallback.
+    if root.is_dir():
+        matches = sorted(
+            [p for p in root.iterdir() if p.is_dir() and (p / "meta.json").is_file()
+             and (p.name == key or p.name.endswith("-" + key) or key in p.name)],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if matches:
+            return matches[0]
+    return None
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    if not args.cmd:
+        print("usage: bgjob start <slug> -- <cmd...>", file=sys.stderr)
+        return 2
+    root = _root()
+    root.mkdir(parents=True, exist_ok=True)
+    slug = _slugify(args.slug)
+    job_id = f"{datetime.now().strftime('%Y%m%d')}-{slug}-{_rand4()}"
+    job_dir = root / job_id
+    job_dir.mkdir(parents=True, exist_ok=False)
+    log_path = job_dir / "log.txt"
+    meta_path = job_dir / "meta.json"
+    workdir = os.getcwd()
+    cmd = list(args.cmd)
+
+    meta: Dict[str, Any] = {
+        "id": job_id,
+        "name": slug,
+        "cmd": cmd,
+        "workdir": workdir,
+        "status": "starting",
+        "pid": None,
+        "started_at": _now(),
+        "ended_at": None,
+        "exit_code": None,
+        "log": str(log_path),
+        "out_dir": str(job_dir),
+        "restart_generation": 0,
+    }
+    _write_json(meta_path, meta)
+
+    index = _load_index(root)
+    index["jobs"].append({"id": job_id, "name": slug, "started_at": meta["started_at"]})
+    _save_index(root, index)
+
+    # Detached supervisor: runs the command in a new session, appends to log,
+    # then rewrites meta with final status. Survives the parent agim_exec turn.
+    supervisor = r'''
+import json, os, subprocess, sys, time
+from datetime import datetime, timezone
+from pathlib import Path
+
+meta_path = Path(sys.argv[1])
+log_path = Path(sys.argv[2])
+workdir = sys.argv[3]
+cmd = json.loads(sys.argv[4])
+
+def now():
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+def write_meta(**patch):
+    data = json.loads(meta_path.read_text(encoding="utf-8"))
+    data.update(patch)
+    tmp = meta_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(meta_path)
+
+log_path.parent.mkdir(parents=True, exist_ok=True)
+with open(log_path, "a", encoding="utf-8", errors="replace") as log:
+    log.write(f"[bgjob] start {now()} cwd={workdir} cmd={cmd!r}\n")
+    log.flush()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=workdir,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except Exception as exc:
+        write_meta(status="failed", ended_at=now(), exit_code=127, pid=None)
+        log.write(f"[bgjob] spawn failed: {exc}\n")
+        sys.exit(127)
+    write_meta(status="running", pid=proc.pid)
+    code = proc.wait()
+    write_meta(
+        status="completed" if code == 0 else "failed",
+        ended_at=now(),
+        exit_code=code,
+    )
+    log.write(f"[bgjob] exit {code} at {now()}\n")
+'''
+    # Spawn supervisor detached from this process too.
+    log_f = open(log_path, "a", encoding="utf-8", errors="replace")
+    try:
+        child = subprocess.Popen(
+            [sys.executable, "-c", supervisor, str(meta_path), str(log_path), workdir, json.dumps(cmd)],
+            cwd=workdir,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        log_f.close()
+
+    # Brief wait so meta flips to running (or failed) before we return.
+    for _ in range(20):
+        time.sleep(0.05)
+        meta = _read_json(meta_path, meta)
+        if meta.get("status") in ("running", "failed", "completed"):
+            break
+    if meta.get("status") == "starting":
+        meta["status"] = "running"
+        meta["pid"] = child.pid
+        _write_json(meta_path, meta)
+
+    print(json.dumps({
+        "ok": True,
+        "id": job_id,
+        "name": slug,
+        "status": meta.get("status"),
+        "pid": meta.get("pid"),
+        "log": str(log_path),
+        "out_dir": str(job_dir),
+        "root": str(root),
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    root = _root()
+    job = _find_job(root, args.key)
+    if not job:
+        print(f"job not found: {args.key}", file=sys.stderr)
+        return 1
+    meta = _refresh_status(_read_json(job / "meta.json", {}))
+    _write_json(job / "meta.json", meta)
+    print(json.dumps(meta, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_tail(args: argparse.Namespace) -> int:
+    root = _root()
+    job = _find_job(root, args.key)
+    if not job:
+        print(f"job not found: {args.key}", file=sys.stderr)
+        return 1
+    log_path = job / "log.txt"
+    if not log_path.is_file():
+        print("(no log yet)")
+        return 0
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    n = max(1, int(args.lines))
+    sys.stdout.write("\n".join(lines[-n:]) + ("\n" if lines else ""))
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    root = _root()
+    if not root.is_dir():
+        print("[]")
+        return 0
+    rows: List[Dict[str, Any]] = []
+    index = _load_index(root)
+    ids: List[str] = []
+    for entry in index.get("jobs") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            ids.append(str(entry["id"]))
+    if not ids:
+        ids = [p.name for p in root.iterdir() if p.is_dir() and (p / "meta.json").is_file()]
+    for jid in ids:
+        meta_path = root / jid / "meta.json"
+        if not meta_path.is_file():
+            continue
+        meta = _refresh_status(_read_json(meta_path, {}))
+        _write_json(meta_path, meta)
+        if args.running and meta.get("status") != "running":
+            continue
+        rows.append({
+            "id": meta.get("id", jid),
+            "name": meta.get("name"),
+            "status": meta.get("status"),
+            "pid": meta.get("pid"),
+            "started_at": meta.get("started_at"),
+            "ended_at": meta.get("ended_at"),
+            "exit_code": meta.get("exit_code"),
+        })
+    rows.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_kill(args: argparse.Namespace) -> int:
+    root = _root()
+    job = _find_job(root, args.key)
+    if not job:
+        print(f"job not found: {args.key}", file=sys.stderr)
+        return 1
+    meta = _read_json(job / "meta.json", {})
+    pid = meta.get("pid")
+    if not isinstance(pid, int) or not _pid_alive(pid):
+        meta = _refresh_status(meta)
+        _write_json(job / "meta.json", meta)
+        print(json.dumps(meta, ensure_ascii=False, indent=2))
+        return 0
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    time.sleep(0.2)
+    if _pid_alive(pid):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    meta["status"] = "killed"
+    meta["ended_at"] = _now()
+    meta["exit_code"] = meta.get("exit_code") if meta.get("exit_code") is not None else -15
+    _write_json(job / "meta.json", meta)
+    print(json.dumps(meta, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(prog="bgjob", description="agim background job wrapper")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_start = sub.add_parser("start", help="start a detached job")
+    p_start.add_argument("slug")
+    p_start.add_argument("cmd", nargs=argparse.REMAINDER)
+    p_start.set_defaults(func=cmd_start)
+
+    p_status = sub.add_parser("status", help="show job meta.json")
+    p_status.add_argument("key")
+    p_status.set_defaults(func=cmd_status)
+
+    p_tail = sub.add_parser("tail", help="tail job log")
+    p_tail.add_argument("key")
+    p_tail.add_argument("--lines", default="80")
+    p_tail.set_defaults(func=cmd_tail)
+
+    p_list = sub.add_parser("list", help="list jobs")
+    p_list.add_argument("--running", action="store_true")
+    p_list.set_defaults(func=cmd_list)
+
+    p_kill = sub.add_parser("kill", help="terminate a running job")
+    p_kill.add_argument("key")
+    p_kill.set_defaults(func=cmd_kill)
+
+    args = parser.parse_args(argv)
+    # argparse keeps leading '--' in REMAINDER; drop it.
+    if getattr(args, "cmd", None) is not None:
+        cmd = list(args.cmd)
+        if cmd and cmd[0] == "--":
+            cmd = cmd[1:]
+        args.cmd = cmd
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

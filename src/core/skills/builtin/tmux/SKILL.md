@@ -1,6 +1,6 @@
 ---
 name: tmux
-description: Remote-control tmux sessions when you need an interactive TTY (REPLs, ncurses tools, ssh sessions with prompts). For long-running NON-interactive work prefer bgjob (`/root/.claude/scripts/bgjob`). Use only when the workflow genuinely needs keystrokes + screen scraping.
+description: Remote-control tmux sessions when you need an interactive TTY (REPLs, ncurses tools, ssh sessions with prompts). For long-running NON-interactive work prefer bgjob (`~/.agim/scripts/bgjob`). Use only when the workflow genuinely needs keystrokes + screen scraping.
 always: false
 metadata:
   agim:
@@ -18,7 +18,7 @@ Use tmux **only** when you need an interactive TTY:
 - ssh sessions that prompt for input
 - Long-running CLIs whose output you'll scrape progressively
 
-For everything else — long compiles, deploys, log tails — prefer agim's bgjob (`/root/.claude/scripts/bgjob start <name> -- <cmd>`). bgjob handles cgroup escape, has `tail`/`status`, persists across restarts.
+For everything else — long compiles, deploys, log tails — prefer agim's bgjob (`~/.agim/scripts/bgjob start <name> -- <cmd>`). bgjob handles cgroup escape, has `tail`/`status`, persists across restarts.
 
 ## Quickstart (isolated socket)
 

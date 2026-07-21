@@ -22,7 +22,8 @@
 import { join } from 'node:path'
 import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
-import { AGIM_WORKSPACES } from './agim-paths.js'
+import { AGIM_HOME, AGIM_WORKSPACES } from './agim-paths.js'
+import { agimBgjobScript, agimBgjobsDir } from './bgjob-install.js'
 
 /** Root for all per-agent IM workspaces. Kept stable so memory persists.
  *  Honors the `AGIM_WORKSPACES_ROOT` env override; otherwise resolves via
@@ -97,22 +98,21 @@ export function buildAgimImOpsBlock(): string {
 
 ### 如何启动 bgjob
 
-用 \`agim_exec\` 调用**绝对路径** wrapper（bare \`bgjob\` 不行；也不要用 \`nohup … &\`——会随父 shell 一起死）：
+用 \`agim_exec\` 调用**绝对路径** wrapper（\`agim start\` 会安装到 \`${agimBgjobScript()}\`；bare \`bgjob\` 不行；也不要用 \`nohup … &\`——会随父 shell 一起死）：
 
 \`\`\`text
-/root/.claude/scripts/bgjob start <slug> -- <cmd...>
+${agimBgjobScript()} start <slug> -- <cmd...>
 \`\`\`
-
-备用路径（同样受 sandbox carve-out）：\`/root/.config/opencode/scripts/bgjob\`。
 
 跟进：
 
 \`\`\`text
-/root/.claude/scripts/bgjob status <slug>
-/root/.claude/scripts/bgjob tail <slug>
+${agimBgjobScript()} status <slug>
+${agimBgjobScript()} tail <slug>
+${agimBgjobScript()} list --running
 \`\`\`
 
-数据目录：\`~/.claude/bgjobs/\`（Web 控制台 Tasks → Background 也可看）。
+数据目录：\`${agimBgjobsDir()}\`（Web 控制台 Tasks → Background 也可看）。
 脚本本身先用 \`agim_write_file\` 写好再 \`bgjob start\`；启动成功后立刻把 slug + 日志路径回给用户，然后结束本轮同步回合。
 
 \`long_task\` / \`/goal\` 是跨回合目标跟踪，**不是**后台进程；长跑批处理 / 训练 / 大批量抓取请用 bgjob。
@@ -140,8 +140,9 @@ export function buildAgimImOpsBlock(): string {
 |---|---|
 | 本工作区 | \`~/.agim-workspaces/agim/\` |
 | 角色书 | 本目录 \`AGENTS.md\`（可另加 \`AGENTS.local.md\` 覆盖） |
-| bgjob wrapper | \`/root/.claude/scripts/bgjob\` |
-| bgjob 数据 | \`~/.claude/bgjobs/\` |
+| Agim 状态目录 | \`${AGIM_HOME}\` |
+| bgjob wrapper | \`${agimBgjobScript()}\` |
+| bgjob 数据 | \`${agimBgjobsDir()}\` |
 | 真正的代码仓库 | \`/root/workspace/...\`（**当前 cwd 不是代码仓库**）|
 ${AGIM_IM_OPS_END}`
 }
@@ -405,8 +406,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
 - IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
-- bgjob 数据目录：~/.codex/bgjobs/（与 claude / opencode 隔离）
-  使用方式：\`/root/.codex/scripts/bgjob start <name> -- <cmd...>\`
+- bgjob：\`~/.agim/scripts/bgjob start <name> -- <cmd...>\`（\`agim start\` 安装；数据 \`~/.agim/bgjobs/\`）
 - AGENTS.md 与 opencode 同名但工作区分离 —— codex 只读本目录的 AGENTS.md，
   不会读 ~/.agim-workspaces/opencode/AGENTS.md
 `

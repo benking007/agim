@@ -13,6 +13,7 @@ import {
   AGIM_IM_OPS_START,
   AGIM_IM_OPS_END,
 } from './agent-cwd.js'
+import { agimBgjobScript } from './bgjob-install.js'
 
 const FULL_IM_OPTS = { threadId: 'thread-A', platform: 'feishu', channelId: 'chan-1', userId: 'u1' }
 const NO_IM_OPTS = { model: 'sonnet' }
@@ -163,7 +164,7 @@ describe('bootstrapAgentWorkspaces', () => {
     const agimGuide = await readFile(join(tmpRoot, 'agim', 'AGENTS.md'), 'utf8')
     expect(agimGuide).toContain('Agim Agent')
     expect(agimGuide).toContain(AGIM_IM_OPS_START)
-    expect(agimGuide).toContain('/root/.claude/scripts/bgjob start')
+    expect(agimGuide).toContain(`${agimBgjobScript()} start`)
     expect(agimGuide).toContain('强制 bgjob')
     expect(agimGuide).toContain(AGIM_MEMORY_LINK_START)
     expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
@@ -194,7 +195,7 @@ describe('bootstrapAgentWorkspaces', () => {
     const content = await readFile(join(dir, 'AGENTS.md'), 'utf8')
     expect(content).toContain('你是月魁')
     expect(content).toContain(AGIM_IM_OPS_START)
-    expect(content).toContain('/root/.claude/scripts/bgjob start')
+    expect(content).toContain(`${agimBgjobScript()} start`)
     expect(content.match(/agim:im-ops:start/g)?.length).toBe(1)
   })
 

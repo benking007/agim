@@ -359,11 +359,12 @@ describe('buildSystemPrompt — verification-subagent SOP (T5)', () => {
 
 describe('buildSystemPrompt — IM / bgjob SOP', () => {
   const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
-  it('includes IM reply shape and bgjob long-task guidance', () => {
+  it('includes IM reply shape and bgjob long-task guidance', async () => {
+    const { agimBgjobScript } = await import('../../../core/bgjob-install.js')
     const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
     expect(prompt).toContain('IM reply shape')
     expect(prompt).toContain('Long-task / bgjob')
-    expect(prompt).toContain('/root/.claude/scripts/bgjob start')
+    expect(prompt).toContain(`${agimBgjobScript()} start`)
     expect(prompt).toMatch(/>10m MUST use bgjob/)
   })
 })

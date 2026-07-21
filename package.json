@@ -11,6 +11,7 @@
   "files": [
     "dist",
     "bin/agim_rpc.py",
+    "bin/bgjob",
     "README.md",
     "README.zh-CN.md",
     "CHANGELOG.md",

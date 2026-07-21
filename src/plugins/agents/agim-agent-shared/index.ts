@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync as fsExistsSync, readFileSync as fsReadFileSync, statSync as fsStatSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path'
 import { approvalBus } from '../../../core/approval-bus.js'
+import { agimBgjobScript } from '../../../core/bgjob-install.js'
 import { type LlmProvider, getAnyProvider, getProvider } from '../../../core/llm/index.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import {
@@ -128,11 +129,12 @@ export function buildSystemPrompt(
     '  - Estimate first. <5m sync; 5–10m sync with mid-checkpoint files every 1–2 minutes;',
     '    >10m MUST use bgjob. Unclear ETA → probe 3–5 minutes, then re-choose.',
     '  - For >10m estimates: show plan + ETA and get confirmation before starting.',
-    '  - Start via agim_exec with an absolute wrapper only:',
-    '      /root/.claude/scripts/bgjob start <slug> -- <cmd...>',
-    '    (alt: /root/.config/opencode/scripts/bgjob). Bare `bgjob` and `nohup … &` are forbidden.',
+    '  - Start via agim_exec with the Agim-installed absolute wrapper only:',
+    `      ${agimBgjobScript()} start <slug> -- <cmd...>`,
+    '    Bare `bgjob` and `nohup … &` are forbidden.',
     '  - Write the worker script first (agim_write_file), then start; reply with slug + log path and end the sync turn.',
-    '  - Follow up: bgjob status / tail. long_task//goal tracks objectives across turns — it is NOT a background process.',
+    '  - Follow up: status / tail / list --running on the same absolute wrapper.',
+    '  - long_task//goal tracks objectives across turns — it is NOT a background process.',
     '',
     'Verification subagent:',
     '  - After a substantive result, use call_agent with a fresh verifier when a second pass is valuable.',

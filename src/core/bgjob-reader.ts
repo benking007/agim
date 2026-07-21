@@ -1,6 +1,6 @@
-// bgjob-reader — read-only view into the bgjob directories used by Claude Code
-// and opencode. Format documented in /root/.claude/CLAUDE.md and the wrapper at
-// /root/.config/opencode/scripts/bgjob.
+// bgjob-reader — read-only view into bgjob directories.
+// Default root is ~/.agim/bgjobs (shipped wrapper). Legacy Claude / opencode /
+// Codex roots remain visible so mixed installs keep working.
 //
 // Layout per root:
 //   <root>/
@@ -11,12 +11,13 @@
 // We read these files directly (no Python wrapper subprocess). The wrapper is
 // the source of truth for writes; we are strictly the read side.
 //
-// Multiple roots are supported (claude / opencode are isolated by design).
 // Configurable via env AGIM_BGJOB_ROOTS — comma-separated absolute paths.
 
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, isAbsolute, resolve, basename } from 'node:path'
+import { AGIM_HOME } from './agim-paths.js'
+import { agimBgjobsDir } from './bgjob-install.js'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'bgjob-reader' })
@@ -54,6 +55,7 @@ export interface BgjobDetail extends BgjobSummary {
 }
 
 const DEFAULT_ROOTS: BgjobRoot[] = [
+  { id: 'agim',     path: agimBgjobsDir(AGIM_HOME),                         label: 'Agim' },
   { id: 'claude',   path: join(homedir(), '.claude', 'bgjobs'),             label: 'Claude Code' },
   { id: 'opencode', path: join(homedir(), '.config', 'opencode', 'bgjobs'), label: 'opencode' },
   { id: 'codex',    path: join(homedir(), '.codex', 'bgjobs'),              label: 'Codex' },

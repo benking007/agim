@@ -43,6 +43,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
+import { bgjobAllowedPaths } from '../bgjob-install.js'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
@@ -298,14 +299,11 @@ export function buildExecEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  *     controlled shim of the same name in PATH must not inherit the
  *     bypass.
  *
- * Matched paths (absolute only):
- *   - /root/.claude/scripts/bgjob       (Claude Code wrapper)
- *   - /root/.config/opencode/scripts/bgjob  (opencode wrapper; same script)
+ * Matched paths (absolute only, resolved at call time):
+ *   - ~/.agim/scripts/bgjob                 (shipped default)
+ *   - ~/.claude/scripts/bgjob               (legacy Claude Code)
+ *   - ~/.config/opencode/scripts/bgjob      (legacy opencode)
  */
-const BGJOB_PATHS = [
-  '/root/.claude/scripts/bgjob',
-  '/root/.config/opencode/scripts/bgjob',
-]
 
 /** Shell metacharacters that could chain additional commands. We
  *  reject the whole bypass if any are present in the command, even
@@ -318,7 +316,7 @@ export function isBgjobInvocation(cmd: string): boolean {
   // tack on extra payload. Includes subshell `( ... )`, backticks,
   // `$( ... )` substitution, redirection, and obvious chaining.
   if (SHELL_CHAIN_META.test(trimmed)) return false
-  for (const path of BGJOB_PATHS) {
+  for (const path of bgjobAllowedPaths()) {
     // Path must be at the START of the (trimmed) command, followed
     // by whitespace or EOL. No leading args / env-var assignments /
     // sudo are allowed before the bgjob path.

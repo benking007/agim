@@ -131,7 +131,7 @@ def client(timeout: float = 30.0) -> AgimRpcClient:
         raise RuntimeError(
             "AGIM_RPC_SOCKET not set — agim_rpc only works inside a "
             "bgjob spawned by agim's native_exec. Re-run via the bgjob "
-            "wrapper, e.g. /root/.claude/scripts/bgjob start ..."
+            "wrapper, e.g. ~/.agim/scripts/bgjob start ..."
         )
     if not token:
         raise RuntimeError("AGIM_RPC_TOKEN not set — agim parent did not mint a token")

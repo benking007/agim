@@ -112,6 +112,47 @@ describe('handleLlmApi — add backend', () => {
     expect(body.backends[0].secret.source).toBe('file')
   })
 
+  it('persists custom advanced fields (thinking / context / headers)', async () => {
+    const add = {
+      name: 'proxy-1',
+      provider: 'openai-compat',
+      baseUrl: 'https://llm.internal/v1',
+      model: 'proxy-model',
+      apiKey: 'sk-proxy',
+      temperature: 0.2,
+      maxTokens: 8192,
+      contextWindow: 200000,
+      thinkingFormat: 'deepseek',
+      maxTokensField: 'max_completion_tokens',
+      extraHeaders: 'X-Tenant: acme\napi-key: sk-extra',
+    }
+    const res1 = makeRes()
+    await handleLlmApi(makeReq('POST', add), res1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res1.statusCode).toBe(201)
+
+    const disk = JSON.parse(readFileSync(join(TMP, 'config.json'), 'utf8')) as {
+      llmBackends: Array<Record<string, unknown>>
+    }
+    expect(disk.llmBackends[0]).toMatchObject({
+      name: 'proxy-1',
+      temperature: 0.2,
+      maxTokens: 8192,
+      contextWindow: 200000,
+      thinkingFormat: 'deepseek',
+      maxTokensField: 'max_completion_tokens',
+      extraHeaders: { 'X-Tenant': 'acme', 'api-key': 'sk-extra' },
+    })
+
+    const res2 = makeRes()
+    await handleLlmApi(makeReq('GET'), res2 as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    const body = JSON.parse(res2.body) as { backends: Array<Record<string, unknown>> }
+    expect(body.backends[0]).toMatchObject({
+      thinkingFormat: 'deepseek',
+      contextWindow: 200000,
+      extraHeaders: { 'X-Tenant': 'acme', 'api-key': 'sk-extra' },
+    })
+  })
+
   it('refreshes in-process LLM registry immediately after save', async () => {
     const add = { name: 'runtime-ok', provider: 'openai-compat',
       baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-live' }

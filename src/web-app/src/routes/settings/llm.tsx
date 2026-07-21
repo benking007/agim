@@ -53,6 +53,8 @@ import {
 import {
   useLlmList, useLlmAddBackend, useLlmQuickEnable, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
   type LlmBackendRow,
+  type LlmMaxTokensField,
+  type LlmThinkingFormat,
 } from '@/hooks/use-llm-admin'
 import { useConfig, useUpdateConfig } from '@/hooks/use-settings'
 import {
@@ -304,11 +306,15 @@ function QuickAgentSetupCard({
   }
 
   useEffect(() => {
-    if (presetKey !== 'custom' && installedPresets.has(presetKey)) {
-      applyPreset(firstAvailablePreset(installedPresets))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installedPresets, presetKey])
+    if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
+    const next = firstAvailablePreset(installedPresets)
+    if (next === presetKey) return
+    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    setPresetKey(next)
+    setBaseUrl(p.baseUrl)
+    setModel(p.model)
+    setName(suggestLlmBackendName(p.baseName, existingNames))
+  }, [installedPresets, presetKey, existingNames])
 
   async function enableExistingBackend(backendName: string): Promise<void> {
     try {
@@ -607,15 +613,16 @@ function groupBackends(
     if (list) list.push(b)
     else map.set(key, [b])
   }
-  return [...map.entries()].map(([key, backends]) => {
-    const head = backends[0]!
-    return {
+  return [...map.entries()].flatMap(([key, backends]) => {
+    const head = backends[0]
+    if (!head) return []
+    return [{
       key,
       title: titleFor(head, key),
       provider: head.provider,
       baseUrl: head.baseUrl ?? '',
       backends,
-    }
+    }]
   })
 }
 
@@ -905,6 +912,26 @@ function RolesCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): J
 
 /* ─────────────── Add backend form ─────────────── */
 
+type ThinkingFormatChoice = 'auto' | LlmThinkingFormat
+type MaxTokensFieldChoice = 'auto' | LlmMaxTokensField
+type CompatTemplate = 'none' | 'deepseek' | 'openai-effort' | 'mimo'
+
+function parseOptionalPositiveInt(raw: string): number | undefined {
+  const t = raw.trim()
+  if (!t) return undefined
+  const n = Number(t)
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  return Math.floor(n)
+}
+
+function parseOptionalTemperature(raw: string): number | undefined {
+  const t = raw.trim()
+  if (!t) return undefined
+  const n = Number(t)
+  if (!Number.isFinite(n) || n < 0 || n > 2) return undefined
+  return n
+}
+
 function AddBackendCard(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const addBackend = useLlmAddBackend()
@@ -921,6 +948,15 @@ function AddBackendCard(): JSX.Element {
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [provider, setProvider] = useState<'openai-compat' | 'anthropic'>('openai-compat')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [compatTemplate, setCompatTemplate] = useState<CompatTemplate>('none')
+  const [temperature, setTemperature] = useState('')
+  const [maxTokens, setMaxTokens] = useState('')
+  const [contextWindow, setContextWindow] = useState('')
+  const [thinkingFormat, setThinkingFormat] = useState<ThinkingFormatChoice>('auto')
+  const [maxTokensField, setMaxTokensField] = useState<MaxTokensFieldChoice>('auto')
+  const [extraHeaders, setExtraHeaders] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const isCustom = presetKey === 'custom'
   const selected = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
@@ -932,10 +968,78 @@ function AddBackendCard(): JSX.Element {
     toast.error(message)
   }
 
+  function resetAdvanced(): void {
+    setCompatTemplate('none')
+    setTemperature('')
+    setMaxTokens('')
+    setContextWindow('')
+    setThinkingFormat('auto')
+    setMaxTokensField('auto')
+    setExtraHeaders('')
+    setProvider('openai-compat')
+    setAdvancedOpen(false)
+  }
+
+  function applyCompatTemplate(next: CompatTemplate): void {
+    setCompatTemplate(next)
+    if (next === 'none') {
+      setThinkingFormat('auto')
+      setMaxTokensField('auto')
+      setContextWindow('')
+      return
+    }
+    if (next === 'deepseek') {
+      setThinkingFormat('deepseek')
+      setMaxTokensField('auto')
+      setContextWindow('128000')
+      return
+    }
+    if (next === 'openai-effort') {
+      setThinkingFormat('openai')
+      setMaxTokensField('max_completion_tokens')
+      setContextWindow('1000000')
+      return
+    }
+    // mimo-like
+    setThinkingFormat('deepseek')
+    setMaxTokensField('max_completion_tokens')
+    setContextWindow('1000000')
+  }
+
   function onPickPreset(next: LlmPresetKey): void {
     if (next !== 'custom' && installedPresets.has(next)) return
     setPresetKey(next)
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    if (next === 'custom') {
+      setBaseUrl('')
+      setModel('')
+      setName(p.baseName)
+      resetAdvanced()
+    } else {
+      setBaseUrl(p.baseUrl)
+      setModel(p.model)
+      setName('')
+      resetAdvanced()
+    }
+  }
+
+  // If the selected built-in is already installed (or becomes so), jump to
+  // the next available option so the form never submits a duplicate.
+  useEffect(() => {
+    if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
+    const next = firstAvailablePreset(installedPresets)
+    if (next === presetKey) return
+    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    setPresetKey(next)
+    setCompatTemplate('none')
+    setTemperature('')
+    setMaxTokens('')
+    setContextWindow('')
+    setThinkingFormat('auto')
+    setMaxTokensField('auto')
+    setExtraHeaders('')
+    setProvider('openai-compat')
+    setAdvancedOpen(false)
     if (next === 'custom') {
       setBaseUrl('')
       setModel('')
@@ -945,15 +1049,6 @@ function AddBackendCard(): JSX.Element {
       setModel(p.model)
       setName('')
     }
-  }
-
-  // If the selected built-in is already installed (or becomes so), jump to
-  // the next available option so the form never submits a duplicate.
-  useEffect(() => {
-    if (presetKey !== 'custom' && installedPresets.has(presetKey)) {
-      onPickPreset(firstAvailablePreset(installedPresets))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to install set / key
   }, [installedPresets, presetKey])
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
@@ -971,12 +1066,30 @@ function AddBackendCard(): JSX.Element {
           return
         }
         if (!model.trim()) { fail(t('llm.modelRequired')); return }
+        const temp = parseOptionalTemperature(temperature)
+        if (temperature.trim() && temp === undefined) {
+          fail(t('llm.temperatureInvalid')); return
+        }
+        const maxTok = parseOptionalPositiveInt(maxTokens)
+        if (maxTokens.trim() && maxTok === undefined) {
+          fail(t('llm.maxTokensInvalid')); return
+        }
+        const ctx = parseOptionalPositiveInt(contextWindow)
+        if (contextWindow.trim() && (ctx === undefined || ctx < 4096)) {
+          fail(t('llm.contextWindowInvalid')); return
+        }
         await addBackend.mutateAsync({
           name: name.trim(),
-          provider: selected.provider,
+          provider,
           baseUrl: baseUrl.trim(),
           model: model.trim(),
           apiKey: apiKey.trim(),
+          ...(temp !== undefined ? { temperature: temp } : {}),
+          ...(maxTok !== undefined ? { maxTokens: maxTok } : {}),
+          ...(ctx !== undefined ? { contextWindow: ctx } : {}),
+          ...(thinkingFormat !== 'auto' ? { thinkingFormat } : {}),
+          ...(maxTokensField !== 'auto' ? { maxTokensField } : {}),
+          ...(extraHeaders.trim() ? { extraHeaders: extraHeaders.trim() } : {}),
         })
         toast.success(t('llm.addedWithKey', { name: name.trim() }))
       } else {
@@ -998,6 +1111,7 @@ function AddBackendCard(): JSX.Element {
       }
       setFormError(null)
       setApiKey('')
+      if (isCustom) resetAdvanced()
       void listQuery.refetch()
     } catch (err) {
       fail((err as Error)?.message ?? String(err))
@@ -1076,6 +1190,123 @@ function AddBackendCard(): JSX.Element {
                 className="font-mono text-xs"
               />
             </div>
+            <div>
+              <Label className="text-xs font-medium">{t('llm.provider')}</Label>
+              <Select
+                value={provider}
+                onValueChange={(v) => setProvider(v as 'openai-compat' | 'anthropic')}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai-compat">{t('llm.providerOpenaiCompat')}</SelectItem>
+                  <SelectItem value="anthropic">{t('llm.providerAnthropic')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="sm:col-span-2">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md border border-border bg-surface-2/40 px-3 py-2 text-left text-xs font-medium text-text"
+                aria-expanded={advancedOpen}
+                onClick={() => setAdvancedOpen((v) => !v)}
+              >
+                {advancedOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <span>{t('llm.customAdvancedTitle')}</span>
+                <span className="font-normal text-text-dim">{t('llm.customAdvancedHint')}</span>
+              </button>
+            </div>
+
+            {advancedOpen && (
+              <>
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-medium">{t('llm.compatTemplate')}</Label>
+                  <Select
+                    value={compatTemplate}
+                    onValueChange={(v) => applyCompatTemplate(v as CompatTemplate)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('llm.compatTemplates.none')}</SelectItem>
+                      <SelectItem value="deepseek">{t('llm.compatTemplates.deepseek')}</SelectItem>
+                      <SelectItem value="openai-effort">{t('llm.compatTemplates.openaiEffort')}</SelectItem>
+                      <SelectItem value="mimo">{t('llm.compatTemplates.mimo')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-text-dim">{t('llm.compatTemplateHint')}</p>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.temperature')}</Label>
+                  <Input
+                    value={temperature}
+                    onChange={(e) => setTemperature(e.target.value)}
+                    placeholder={t('llm.temperaturePlaceholder')}
+                    className="font-mono text-xs"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.maxTokens')}</Label>
+                  <Input
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(e.target.value)}
+                    placeholder={t('llm.maxTokensPlaceholder')}
+                    className="font-mono text-xs"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.contextWindow')}</Label>
+                  <Input
+                    value={contextWindow}
+                    onChange={(e) => setContextWindow(e.target.value)}
+                    placeholder={t('llm.contextWindowPlaceholder')}
+                    className="font-mono text-xs"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.thinkingFormat')}</Label>
+                  <Select
+                    value={thinkingFormat}
+                    onValueChange={(v) => setThinkingFormat(v as ThinkingFormatChoice)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t('llm.thinkingFormats.auto')}</SelectItem>
+                      <SelectItem value="off">{t('llm.thinkingFormats.off')}</SelectItem>
+                      <SelectItem value="deepseek">{t('llm.thinkingFormats.deepseek')}</SelectItem>
+                      <SelectItem value="openai">{t('llm.thinkingFormats.openai')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.maxTokensField')}</Label>
+                  <Select
+                    value={maxTokensField}
+                    onValueChange={(v) => setMaxTokensField(v as MaxTokensFieldChoice)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t('llm.maxTokensFields.auto')}</SelectItem>
+                      <SelectItem value="max_tokens">{t('llm.maxTokensFields.maxTokens')}</SelectItem>
+                      <SelectItem value="max_completion_tokens">{t('llm.maxTokensFields.maxCompletionTokens')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-medium">{t('llm.extraHeaders')}</Label>
+                  <textarea
+                    value={extraHeaders}
+                    onChange={(e) => setExtraHeaders(e.target.value)}
+                    placeholder={t('llm.extraHeadersPlaceholder')}
+                    className="min-h-[72px] w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-xs text-text outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    spellCheck={false}
+                  />
+                  <p className="mt-1 text-[11px] text-text-dim">{t('llm.extraHeadersHint')}</p>
+                </div>
+              </>
+            )}
           </div>
         )}
 

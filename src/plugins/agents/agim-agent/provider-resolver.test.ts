@@ -115,6 +115,33 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.input).toContain('text')
   })
 
+  it('honors explicit thinkingFormat / contextWindow on custom backends', () => {
+    const on = bindingToPiModel({
+      name: 'proxy-think',
+      providerType: 'openai-compat',
+      model: 'my-proxy-model',
+      baseUrl: 'https://llm.internal/v1',
+      thinkingFormat: 'deepseek',
+      contextWindow: 200_000,
+      maxTokens: 16_384,
+      maxTokensField: 'max_completion_tokens',
+    })!
+    expect(on.model.reasoning).toBe(true)
+    expect(on.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(on.model.compat?.maxTokensField).toBe('max_completion_tokens')
+    expect(on.model.contextWindow).toBe(200_000)
+    expect(on.model.maxTokens).toBe(16_384)
+
+    const off = bindingToPiModel({
+      name: 'proxy-off',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+      thinkingFormat: 'off',
+    })!
+    expect(off.model.reasoning).toBe(false)
+  })
+
   it('maps an anthropic backend to anthropic-messages', () => {
     const binding = bindingToPiModel({
       name: 'claude',

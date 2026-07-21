@@ -83,9 +83,15 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 | `provider` | 是 | `openai-compat` 或 `anthropic` |
 | `baseUrl` | 建议 | API 基地址 |
 | `model` | 是 | 默认模型 ID |
-| `temperature` | 否 | 默认 0.2~0.3 |
+| `temperature` | 否 | 默认 0.2~0.3（OpenAICompat 探测/辅助路径使用） |
 | `maxTokens` | 否 | 输出 token 上限 |
+| `contextWindow` | 否 | Agim Agent 上下文窗口；未设时走厂商启发式或保守 32k |
+| `thinkingFormat` | 否 | `off` / `deepseek` / `openai`；自定义网关显式声明思考协议 |
+| `maxTokensField` | 否 | `max_tokens` / `max_completion_tokens` |
+| `extraHeaders` | 否 | 额外 HTTP Header（勿覆盖 Authorization） |
 | `enabled` | 否 | 软开关，默认启用 |
+
+> Web「添加 API → 自定义」默认只填身份字段；折叠 **高级参数** 可配置上表可选项，也可一键套用 DeepSeek / Kimi K3 / MiMo 兼容模板。
 
 ## 5. 推荐 provider 示例
 

@@ -155,7 +155,7 @@ function mockLlmFetch(opts: {
     }
     const del = u.match(/^\/api\/llm\/backends\/([^/?]+)$/)
     if (del && method === 'DELETE') {
-      const name = decodeURIComponent(del[1]!)
+      const name = decodeURIComponent(del[1] ?? '')
       const idx = backends.findIndex((b) => b.name === name)
       let removedRoles = 0
       if (idx >= 0) {
@@ -355,14 +355,17 @@ describe('/settings/llm quick setup', () => {
     expect(await screen.findByRole('heading', { name: 'Add API' })).toBeInTheDocument()
     const form = screen.getByRole('heading', { name: 'Add API' }).closest('section')
     expect(form).toBeTruthy()
-    const presetTrigger = form!.querySelector('[role="combobox"]') as HTMLElement
+    const presetTrigger = requireValue(
+      form?.querySelector('[role="combobox"]') as HTMLElement | null,
+      'preset combobox',
+    )
     fireEvent.click(presetTrigger)
     const options = await screen.findAllByRole('option')
     const byLabel = Object.fromEntries(options.map((o) => [o.textContent?.trim() ?? '', o]))
-    expect(byLabel['MiMo (already added)']).toBeTruthy()
+    const mimoOpt = requireValue(byLabel['MiMo (already added)'], 'MiMo already-added option')
     expect(
-      byLabel['MiMo (already added)']!.getAttribute('aria-disabled') === 'true'
-      || byLabel['MiMo (already added)']!.hasAttribute('data-disabled'),
+      mimoOpt.getAttribute('aria-disabled') === 'true'
+      || mimoOpt.hasAttribute('data-disabled'),
     ).toBe(true)
     expect(byLabel.DeepSeek?.getAttribute('aria-disabled')).not.toBe('true')
     expect(byLabel.Custom?.getAttribute('aria-disabled')).not.toBe('true')
@@ -406,6 +409,34 @@ describe('/settings/llm quick setup', () => {
         '/api/llm/backends/deepseek-v4-pro',
       ])
     })
+  })
+
+  it('exposes a collapsed Advanced parameters section for Custom presets', async () => {
+    mockLlmFetch()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
+    // Quick-enable form also has a preset select — open advanced via Add API after enabling is heavy.
+    // Exercise Add API path with an empty backend list by expanding advanced settings.
+    fireEvent.click(screen.getByRole('button', { name: /show advanced settings/i }))
+    expect(await screen.findByRole('heading', { name: 'Add API' })).toBeInTheDocument()
+    const form = requireValue(
+      screen.getByRole('heading', { name: 'Add API' }).closest('section'),
+      'Add API section',
+    )
+    Element.prototype.scrollIntoView = vi.fn()
+    fireEvent.click(requireValue(
+      form.querySelector('[role="combobox"]') as HTMLElement | null,
+      'preset combobox',
+    ))
+    fireEvent.click(await screen.findByRole('option', { name: /^Custom$/i }))
+    expect(await screen.findByRole('button', { name: /Advanced parameters/i })).toBeInTheDocument()
+    expect(screen.queryByText('Compat template')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Advanced parameters/i }))
+    expect(await screen.findByText('Compat template')).toBeInTheDocument()
+    expect(screen.getByText('Thinking format')).toBeInTheDocument()
+    expect(screen.getByText('Context window')).toBeInTheDocument()
+    expect(screen.getByText('Extra HTTP headers')).toBeInTheDocument()
   })
 
   it('opens a details dialog when the quick probe fails', async () => {

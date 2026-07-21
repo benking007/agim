@@ -150,72 +150,110 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     || isGlmModel(b.model)
   const glm52 = zhipu && isGlm52Model(b.model)
   const mimo = isMimoBaseUrl(baseUrl) || isMimoModel(b.model)
-  // Prefer catalog reasoning; DeepSeek / Kimi / GLM / MiMo endpoints always
-  // support thinking mode even when the model id is not yet in pi-ai's table.
-  const reasoning = catalogModel?.reasoning === true || deepseek || kimi || zhipu || mimo
+  // Explicit thinkingFormat on the backend wins over URL/model heuristics
+  // (custom OpenAI-compat gateways that clone DeepSeek/Kimi wire shapes).
+  const thinkingOverride = b.thinkingFormat
+  const heuristicReasoning = catalogModel?.reasoning === true || deepseek || kimi || zhipu || mimo
+  const reasoning = thinkingOverride === 'off'
+    ? false
+    : thinkingOverride === 'deepseek' || thinkingOverride === 'openai'
+      ? true
+      : heuristicReasoning
   const vendorContext = resolveVendorContextWindow(b.model)
   const vendorMaxTokens = resolveVendorMaxTokens(b.model)
   // Vendor maps win when we recognize the endpoint/model — pi catalog may
   // only carry partial compat (e.g. glm-5.2 → maxTokensField only).
-  const vendorThinkingLevelMap = deepseek
-    ? { ...DEEPSEEK_THINKING_LEVEL_MAP }
-    : kimiK3
-      ? { ...KIMI_K3_THINKING_LEVEL_MAP }
-      : kimiK2 || kimi
-        ? { ...KIMI_K2_THINKING_LEVEL_MAP }
-        : glm52
-          ? { ...GLM52_THINKING_LEVEL_MAP }
-          : zhipu
-            ? { ...GLM_THINKING_LEVEL_MAP }
-            : mimo
-              ? { ...MIMO_THINKING_LEVEL_MAP }
-              : undefined
+  const overrideThinkingLevelMap = thinkingOverride === 'openai'
+    ? { ...KIMI_K3_THINKING_LEVEL_MAP }
+    : thinkingOverride === 'deepseek'
+      ? { ...DEEPSEEK_THINKING_LEVEL_MAP }
+      : undefined
+  const heuristicThinkingLevelMap = thinkingOverride
+    ? undefined
+    : deepseek
+      ? { ...DEEPSEEK_THINKING_LEVEL_MAP }
+      : kimiK3
+        ? { ...KIMI_K3_THINKING_LEVEL_MAP }
+        : kimiK2 || kimi
+          ? { ...KIMI_K2_THINKING_LEVEL_MAP }
+          : glm52
+            ? { ...GLM52_THINKING_LEVEL_MAP }
+            : zhipu
+              ? { ...GLM_THINKING_LEVEL_MAP }
+              : mimo
+                ? { ...MIMO_THINKING_LEVEL_MAP }
+                : undefined
+  const vendorThinkingLevelMap = overrideThinkingLevelMap ?? heuristicThinkingLevelMap
   const thinkingLevelMap = vendorThinkingLevelMap
     ?? (catalogModel?.thinkingLevelMap
       ? { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) }
       : undefined)
-  const vendorCompat = deepseek
+  const overrideCompat = thinkingOverride === 'deepseek'
     ? {
         thinkingFormat: 'deepseek' as const,
+        supportsDeveloperRole: false,
         requiresReasoningContentOnAssistantMessages: true,
+        ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
       }
-    : kimiK3
+    : thinkingOverride === 'openai'
       ? {
           thinkingFormat: 'openai' as const,
           supportsReasoningEffort: true,
           supportsDeveloperRole: false,
           requiresReasoningContentOnAssistantMessages: true,
-          maxTokensField: 'max_completion_tokens' as const,
+          maxTokensField: (b.maxTokensField ?? 'max_completion_tokens') as 'max_completion_tokens',
         }
-      : kimiK2 || kimi
+      : undefined
+  const heuristicCompat = thinkingOverride
+    ? undefined
+    : deepseek
+      ? {
+          thinkingFormat: 'deepseek' as const,
+          requiresReasoningContentOnAssistantMessages: true,
+        }
+      : kimiK3
         ? {
-            thinkingFormat: 'deepseek' as const,
+            thinkingFormat: 'openai' as const,
+            supportsReasoningEffort: true,
             supportsDeveloperRole: false,
             requiresReasoningContentOnAssistantMessages: true,
+            maxTokensField: 'max_completion_tokens' as const,
           }
-        : zhipu
+        : kimiK2 || kimi
           ? {
-              // GLM OpenAI-compat: thinking.type (+ reasoning_effort on 5.2+).
               thinkingFormat: 'deepseek' as const,
-              supportsReasoningEffort: glm52,
               supportsDeveloperRole: false,
               requiresReasoningContentOnAssistantMessages: true,
             }
-          : mimo
+          : zhipu
             ? {
-                // MiMo OpenAI-compat: thinking.type only; max_completion_tokens.
+                // GLM OpenAI-compat: thinking.type (+ reasoning_effort on 5.2+).
                 thinkingFormat: 'deepseek' as const,
+                supportsReasoningEffort: glm52,
                 supportsDeveloperRole: false,
                 requiresReasoningContentOnAssistantMessages: true,
-                maxTokensField: 'max_completion_tokens' as const,
               }
-            : undefined
+            : mimo
+              ? {
+                  // MiMo OpenAI-compat: thinking.type only; max_completion_tokens.
+                  thinkingFormat: 'deepseek' as const,
+                  supportsDeveloperRole: false,
+                  requiresReasoningContentOnAssistantMessages: true,
+                  maxTokensField: 'max_completion_tokens' as const,
+                }
+              : undefined
+  const vendorCompat = overrideCompat ?? heuristicCompat
   const catalogCompat = catalogModel?.compat
     ? { ...(catalogModel.compat as Record<string, unknown>) }
     : undefined
-  const compat = vendorCompat
+  let compat = vendorCompat
     ? { ...(catalogCompat ?? {}), ...vendorCompat }
     : catalogCompat
+  // Allow custom backends to override only the token field without picking a
+  // full thinking format (e.g. max_completion_tokens on a non-thinking proxy).
+  if (b.maxTokensField && thinkingOverride !== 'off') {
+    compat = { ...(compat ?? {}), maxTokensField: b.maxTokensField }
+  }
   const model = {
     id: b.model,
     name: b.model,
@@ -229,9 +267,11 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
       ? [...catalogModel.input]
       : (kimi || zhipu || mimo ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    // Uncatalogued / private endpoints must not inherit a 128k assumption —
-    // that delays compaction until the provider already overflows.
-    contextWindow: catalogModel?.contextWindow ?? vendorContext ?? unknownContextWindow,
+    // Explicit contextWindow wins; else catalog / vendor / conservative default.
+    contextWindow: b.contextWindow
+      ?? catalogModel?.contextWindow
+      ?? vendorContext
+      ?? unknownContextWindow,
     maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? vendorMaxTokens ?? 8192,
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(compat ? { compat } : {}),

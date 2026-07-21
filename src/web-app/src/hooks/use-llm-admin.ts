@@ -14,6 +14,9 @@ import { client } from '@/lib/api/client'
 
 // ─── LLM types (mirror the backend wire shapes) ──────────────────
 
+export type LlmThinkingFormat = 'off' | 'deepseek' | 'openai'
+export type LlmMaxTokensField = 'max_tokens' | 'max_completion_tokens'
+
 export interface LlmBackendRow {
   name: string
   provider: 'openai-compat' | 'anthropic'
@@ -21,6 +24,12 @@ export interface LlmBackendRow {
   model: string
   /** Preset key when created via quick-enable (deepseek / …). */
   label?: string
+  temperature?: number
+  maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat
+  maxTokensField?: LlmMaxTokensField
+  extraHeaders?: Record<string, string>
   secret: { source: 'env' | 'file' | 'vendor' | 'none'; envKey: string }
 }
 
@@ -35,6 +44,13 @@ export interface LlmAddBody {
   baseUrl: string
   model: string
   apiKey: string
+  temperature?: number
+  maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat | 'auto'
+  maxTokensField?: LlmMaxTokensField | 'auto'
+  /** Object or `Header: value` lines (server accepts both). */
+  extraHeaders?: Record<string, string> | string
 }
 
 export interface LlmQuickEnableBody {

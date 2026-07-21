@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Agim Agent stuck-loop guards prefer **soft-steer** over an immediate hard stop: identical tool failures get one ephemeral “change approach” nudge (then hard-stop only if ignored). Semantic stuck-loop also requires recent failures (≥2 of last 3), so successful multi-tool debugging of the same URL/path is no longer treated as a dead loop.
+
 ### Fixed
 
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.

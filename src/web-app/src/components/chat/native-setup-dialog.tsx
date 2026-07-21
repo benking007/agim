@@ -166,7 +166,9 @@ export function NativeSetupDialog({
                       ? t('chat.nativeSetupKimiHint')
                       : presetKey === 'zhipu'
                         ? t('chat.nativeSetupZhipuHint')
-                        : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
+                        : presetKey === 'mimo'
+                          ? t('chat.nativeSetupMimoHint')
+                          : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
                 </p>
               )}
             </div>

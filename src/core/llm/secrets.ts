@@ -101,6 +101,8 @@ const VENDOR_RULES: VendorRule[] = [
   { match: 'bigmodel.cn',                 envNames: ['ZHIPUAI_API_KEY', 'ZAI_API_KEY', 'GLM_API_KEY'] },
   { match: 'api.z.ai',                    envNames: ['ZAI_API_KEY', 'ZHIPUAI_API_KEY', 'GLM_API_KEY'] },
   { match: 'zhipuai',                     envNames: ['ZHIPUAI_API_KEY', 'ZAI_API_KEY'] },
+  { match: 'xiaomimimo.com',              envNames: ['MIMO_API_KEY', 'XIAOMI_MIMO_API_KEY'] },
+  { match: 'mimo.mi.com',                 envNames: ['MIMO_API_KEY', 'XIAOMI_MIMO_API_KEY'] },
   { match: 'minimaxi',                    envNames: ['MINIMAX_API_KEY'] },
   { match: 'baichuan-ai',                 envNames: ['BAICHUAN_API_KEY'] },
   { match: 'mistral.ai',                  envNames: ['MISTRAL_API_KEY'] },

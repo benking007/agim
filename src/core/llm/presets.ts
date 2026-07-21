@@ -7,8 +7,7 @@ export type LlmPresetKey =
   | 'deepseek'
   | 'moonshot'
   | 'zhipu'
-  | 'openai'
-  | 'anthropic'
+  | 'mimo'
   | 'custom'
 
 export interface LlmPresetDef {
@@ -84,23 +83,19 @@ export const LLM_PRESETS: readonly LlmPresetDef[] = [
     defaultThinking: 'high',
   },
   {
-    key: 'openai',
-    label: 'OpenAI',
+    key: 'mimo',
+    // Brand label (Web i18n: 小米 MiMo / MiMo). Distinct from the MiMo Code CLI agent.
+    label: 'MiMo',
     provider: 'openai-compat',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    baseName: 'openai-agim',
-    apiKeyDoc: 'platform.openai.com → API keys',
-  },
-  {
-    key: 'anthropic',
-    label: 'Anthropic (native)',
-    // No trailing /v1 — Anthropic provider appends `/v1/messages`.
-    provider: 'anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    model: 'claude-3-5-sonnet-20241022',
-    baseName: 'anthropic-agim',
-    apiKeyDoc: 'console.anthropic.com → API Keys',
+    // Pay-as-you-go OpenAI-compat (mimo.mi.com docs). Token Plan uses a different host.
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro',
+    cheapModel: 'mimo-v2.5',
+    models: ['mimo-v2.5-pro', 'mimo-v2.5'],
+    baseName: 'mimo-agim',
+    apiKeyDoc: 'platform.xiaomimimo.com → API Keys',
+    // Deep thinking defaults on for V2.5; toggle via thinking.type (no effort field).
+    defaultThinking: 'high',
   },
   {
     key: 'custom',
@@ -225,8 +220,27 @@ export function isGlmModel(model: string | undefined | null): boolean {
 }
 
 /**
+ * Detect Xiaomi MiMo API hosts (pay-as-you-go + Token Plan CN/intl).
+ * See https://mimo.mi.com/docs/zh-CN/quick-start/faq/api-integration
+ */
+export function isMimoBaseUrl(baseUrl: string | undefined | null): boolean {
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host.includes('xiaomimimo.com') || host.includes('mimo.mi.com')
+  } catch {
+    return /xiaomimimo\.com|mimo\.mi\.com/i.test(baseUrl)
+  }
+}
+
+/** Current MiMo chat models (`mimo-v2.5` / `mimo-v2.5-pro` / UltraSpeed…). */
+export function isMimoModel(model: string | undefined | null): boolean {
+  return /^mimo-v/i.test((model ?? '').trim())
+}
+
+/**
  * Default /think fallback for a backend URL (and optional model id).
- * DeepSeek / Kimi / GLM default to their preset's `defaultThinking`.
+ * DeepSeek / Kimi / GLM / MiMo default to their preset's `defaultThinking`.
  */
 export function resolveDefaultThinking(
   baseUrl: string | undefined | null,
@@ -241,13 +255,16 @@ export function resolveDefaultThinking(
   if (isZhipuBaseUrl(baseUrl) || isGlmModel(model)) {
     return getLlmPreset('zhipu')?.defaultThinking ?? 'high'
   }
+  if (isMimoBaseUrl(baseUrl) || isMimoModel(model)) {
+    return getLlmPreset('mimo')?.defaultThinking ?? 'high'
+  }
   return 'off'
 }
 
 /**
  * Map agim session.variant (/think) → pi-ai ThinkingLevel.
- * DeepSeek / Kimi / GLM map xhigh→max; unsupported mid levels stay as-is
- * for providers that accept them (Kimi K3 / GLM-5.2 support low/high/max).
+ * DeepSeek / Kimi / GLM / MiMo map xhigh→max; unsupported mid levels stay
+ * as-is for providers that accept them (Kimi K3 / GLM-5.2 support low/high/max).
  */
 export function mapVariantToThinkingLevel(
   variant: string | undefined | null,

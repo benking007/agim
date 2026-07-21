@@ -7,6 +7,8 @@ import {
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
+  isMimoBaseUrl,
+  isMimoModel,
   isZhipuBaseUrl,
   mapVariantToThinkingLevel,
   presetBackendStem,
@@ -69,6 +71,29 @@ describe('llm presets', () => {
     expect(isZhipuBaseUrl('https://api.z.ai/api/paas/v4')).toBe(true)
     expect(isGlm52Model('glm-5.2')).toBe(true)
     expect(resolveDefaultThinking('https://open.bigmodel.cn/api/paas/v4', 'glm-5.2')).toBe('high')
+  })
+
+  it('ships a built-in MiMo preset (v2.5-pro + v2.5) with thinking defaults', () => {
+    const mimo = getLlmPreset('mimo')!
+    expect(mimo.label).toBe('MiMo')
+    expect(mimo.model).toBe('mimo-v2.5-pro')
+    expect(mimo.cheapModel).toBe('mimo-v2.5')
+    expect(presetModels(mimo)).toEqual(['mimo-v2.5-pro', 'mimo-v2.5'])
+    expect(mimo.baseUrl).toBe('https://api.xiaomimimo.com/v1')
+    expect(mimo.defaultThinking).toBe('high')
+    expect(presetBackendStem(mimo.baseName, 'mimo-v2.5-pro', 0)).toBe('mimo-v2.5-pro')
+    expect(presetBackendStem(mimo.baseName, 'mimo-v2.5', 1)).toBe('mimo-v2.5')
+    expect(isMimoBaseUrl('https://api.xiaomimimo.com/v1')).toBe(true)
+    expect(isMimoBaseUrl('https://token-plan-cn.xiaomimimo.com/v1')).toBe(true)
+    expect(isMimoBaseUrl('https://api.openai.com/v1')).toBe(false)
+    expect(isMimoModel('mimo-v2.5-pro')).toBe(true)
+    expect(isMimoModel('mimo-v2.5')).toBe(true)
+    expect(resolveDefaultThinking('https://api.xiaomimimo.com/v1', 'mimo-v2.5-pro')).toBe('high')
+  })
+
+  it('does not ship OpenAI / Anthropic as built-in presets', () => {
+    expect(getLlmPreset('openai')).toBeUndefined()
+    expect(getLlmPreset('anthropic')).toBeUndefined()
   })
 
   it('maps /think variants onto pi thinking levels', () => {

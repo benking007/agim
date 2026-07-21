@@ -15,6 +15,7 @@ import {
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
+  isMimoBaseUrl,
   isZhipuBaseUrl,
 } from './presets.js'
 
@@ -84,11 +85,15 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
   if (wantsJson) {
     providerOptions.response_format = { type: 'json_object' }
   }
-  // DeepSeek / Kimi K2.x / Zhipu OpenAICompat path defaults thinking off
-  // (see openai-compat-provider). K3 always thinks — prefer low effort.
+  // DeepSeek / Kimi K2.x / Zhipu / MiMo OpenAICompat path defaults thinking
+  // off (see openai-compat-provider). K3 always thinks — prefer low effort.
   const binding = getBackendBindingByName(provider.name)
   const modelId = input.model || binding?.model
-  if (isDeepSeekBaseUrl(binding?.baseUrl) || isZhipuBaseUrl(binding?.baseUrl)) {
+  if (
+    isDeepSeekBaseUrl(binding?.baseUrl)
+    || isZhipuBaseUrl(binding?.baseUrl)
+    || isMimoBaseUrl(binding?.baseUrl)
+  ) {
     providerOptions.thinking = { type: 'disabled' }
   } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK2Model(modelId)) {
     providerOptions.thinking = { type: 'disabled' }

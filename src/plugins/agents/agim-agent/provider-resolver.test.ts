@@ -97,6 +97,24 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.contextWindow).toBe(200_000)
   })
 
+  it('enables MiMo V2.5 thinking via thinking.type + max_completion_tokens', () => {
+    const binding = bindingToPiModel({
+      name: 'mimo-v2.5-pro',
+      providerType: 'openai-compat',
+      model: 'mimo-v2.5-pro',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(binding.model.compat?.supportsReasoningEffort).toBeFalsy()
+    expect(binding.model.compat?.maxTokensField).toBe('max_completion_tokens')
+    expect(binding.model.compat?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    // Catalog may report 1048576 (1Mi); vendor fallback is 1_000_000.
+    expect(binding.model.contextWindow).toBeGreaterThanOrEqual(1_000_000)
+    expect(binding.model.input).toContain('text')
+  })
+
   it('maps an anthropic backend to anthropic-messages', () => {
     const binding = bindingToPiModel({
       name: 'claude',

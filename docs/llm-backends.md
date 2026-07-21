@@ -91,14 +91,14 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 
 | 平台 | provider | baseUrl 示例 |
 |---|---|---|
-| OpenAI | openai-compat | `https://api.openai.com/v1` |
 | DeepSeek（推荐默认） | openai-compat | `https://api.deepseek.com`（模型：`deepseek-v4-pro` / `deepseek-v4-flash`） |
 | Kimi（Moonshot） | openai-compat | `https://api.moonshot.cn/v1`（模型：`kimi-k3` / `kimi-k2.6`；国际站 `https://api.moonshot.ai/v1`；思考：`reasoning_effort` / `thinking.type`） |
 | 智谱 GLM | openai-compat | `https://open.bigmodel.cn/api/paas/v4`（模型：`glm-5.2` / `glm-4.7-flash`；思考：`thinking.type` + `reasoning_effort`；见 docs.bigmodel.cn） |
+| 小米 MiMo | openai-compat | `https://api.xiaomimimo.com/v1`（模型：`mimo-v2.5-pro` / `mimo-v2.5`；思考：`thinking.type`；见 mimo.mi.com） |
 | Qwen 兼容网关 | openai-compat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | Ollama | openai-compat | `http://localhost:11434/v1` |
 | vLLM | openai-compat | `http://localhost:8000/v1` |
-| Anthropic | anthropic | `https://api.anthropic.com` |
+| 自定义 OpenAI / Anthropic 兼容 | openai-compat / anthropic | 用「自定义」预设填入 `baseUrl`（例如 `https://api.openai.com/v1` 或 `https://api.anthropic.com`） |
 
 ## 6. 角色绑定（可选）
 

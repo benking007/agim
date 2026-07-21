@@ -6,7 +6,7 @@
  * offline form defaults (DeepSeek is the Agim Agent recommended preset).
  */
 
-export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'openai' | 'anthropic' | 'custom'
+export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'mimo' | 'custom'
 
 export interface LlmPresetDef {
   key: LlmPresetKey
@@ -51,18 +51,14 @@ export const LLM_PRESETS: LlmPresetDef[] = [
     defaultThinking: 'high',
   },
   {
-    key: 'openai',
+    key: 'mimo',
     provider: 'openai-compat',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    baseName: 'openai-agim',
-  },
-  {
-    key: 'anthropic',
-    provider: 'anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    model: 'claude-3-5-sonnet-20241022',
-    baseName: 'anthropic-agim',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro',
+    cheapModel: 'mimo-v2.5',
+    models: ['mimo-v2.5-pro', 'mimo-v2.5'],
+    baseName: 'mimo-agim',
+    defaultThinking: 'high',
   },
   {
     key: 'custom',

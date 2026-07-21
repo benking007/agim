@@ -304,6 +304,7 @@
     "nativeSetupDeepseekHint": "Create a key at platform.deepseek.com and paste it here.",
     "nativeSetupKimiHint": "Create a key at platform.kimi.com and paste it here (international: platform.kimi.ai / api.moonshot.ai).",
     "nativeSetupZhipuHint": "Create a key at open.bigmodel.cn and paste it here (see docs.bigmodel.cn).",
+    "nativeSetupMimoHint": "Create a key at platform.xiaomimimo.com and paste it here (see mimo.mi.com docs).",
     "nativeSetupDialogSave": "Enable",
     "nativeSetupDialogCancel": "Later",
     "nativeSetupDialogAdvanced": "Advanced",

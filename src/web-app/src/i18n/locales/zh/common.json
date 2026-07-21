@@ -304,6 +304,7 @@
     "nativeSetupDeepseekHint": "在 platform.deepseek.com 创建 API Key 后粘贴到这里即可。",
     "nativeSetupKimiHint": "在 platform.kimi.com 创建 API Key 后粘贴到这里即可（国际站可用 platform.kimi.ai / api.moonshot.ai）。",
     "nativeSetupZhipuHint": "在 open.bigmodel.cn 创建 API Key 后粘贴到这里即可（详见 docs.bigmodel.cn）。",
+    "nativeSetupMimoHint": "在 platform.xiaomimimo.com 创建 API Key 后粘贴到这里即可（详见 mimo.mi.com 文档）。",
     "nativeSetupDialogSave": "一键启用",
     "nativeSetupDialogCancel": "稍后再配",
     "nativeSetupDialogAdvanced": "高级选项",

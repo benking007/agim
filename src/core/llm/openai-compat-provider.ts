@@ -42,6 +42,7 @@ import {
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
+  isMimoBaseUrl,
   isZhipuBaseUrl,
 } from './presets.js'
 import { statSync as fsStatSync, readFileSync as fsReadFileSync } from 'node:fs'
@@ -301,9 +302,9 @@ export class OpenAICompatProvider extends LlmProvider {
       const tc = serializeToolChoice(opts.toolChoice)
       if (tc !== undefined) body.tool_choice = tc
     }
-    // DeepSeek / Kimi K2.x / Zhipu GLM defaults for the OpenAICompat path
-    // (ping / introspection / evaluator): thinking OFF unless the caller
-    // opts in. Agim Agent (pi) owns the interactive thinking-mode path.
+    // DeepSeek / Kimi K2.x / Zhipu GLM / MiMo defaults for the OpenAICompat
+    // path (ping / introspection / evaluator): thinking OFF unless the
+    // caller opts in. Agim Agent (pi) owns the interactive thinking-mode path.
     // Kimi K3 always thinks (reasoning_effort) — never send thinking.type.
     if (
       isDeepSeekBaseUrl(this.baseUrl)
@@ -320,6 +321,12 @@ export class OpenAICompatProvider extends LlmProvider {
     }
     if (
       isZhipuBaseUrl(this.baseUrl)
+      && opts.providerOptions.thinking === undefined
+    ) {
+      body.thinking = { type: 'disabled' }
+    }
+    if (
+      isMimoBaseUrl(this.baseUrl)
       && opts.providerOptions.thinking === undefined
     ) {
       body.thinking = { type: 'disabled' }

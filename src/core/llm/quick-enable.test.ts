@@ -93,6 +93,28 @@ describe('quickEnableLlmPreset', () => {
     expect(describeSecretSource('glm-5.2').source).not.toBe('none')
   })
 
+  it('writes MiMo backends (v2.5-pro + v2.5) + roles from an API key', async () => {
+    const result = await quickEnableLlmPreset({
+      preset: 'mimo',
+      apiKey: 'sk-test-mimo',
+    })
+    expect(result.preset).toBe('mimo')
+    expect(result.name).toBe('mimo-v2.5-pro')
+    expect(result.model).toBe('mimo-v2.5-pro')
+    expect(result.backends?.map((b) => b.model)).toEqual(['mimo-v2.5-pro', 'mimo-v2.5'])
+    expect(result.backends?.map((b) => b.name)).toEqual(['mimo-v2.5-pro', 'mimo-v2.5'])
+    expect(result.roles['native-chat']).toBe('mimo-v2.5-pro')
+    expect(result.roles.cheap).toBe('mimo-v2.5')
+
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ name: string; model: string; baseUrl: string; label?: string }>
+    }
+    expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.xiaomimimo.com/v1')
+    expect(cfg.llmBackends?.every((b) => b.label === 'mimo')).toBe(true)
+    expect(describeSecretSource('mimo-v2.5-pro').source).not.toBe('none')
+    expect(describeSecretSource('mimo-v2.5').source).not.toBe('none')
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

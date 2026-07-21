@@ -233,6 +233,12 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(glm?.model).toBe('glm-5.2')
     expect(glm?.cheapModel).toBe('glm-4.7-flash')
     expect(glm?.models).toEqual(['glm-5.2', 'glm-4.7-flash'])
+    const mimo = body.presets.find((p) => p.key === 'mimo')
+    expect(mimo?.model).toBe('mimo-v2.5-pro')
+    expect(mimo?.cheapModel).toBe('mimo-v2.5')
+    expect(mimo?.models).toEqual(['mimo-v2.5-pro', 'mimo-v2.5'])
+    expect(body.presets.some((p) => p.key === 'openai')).toBe(false)
+    expect(body.presets.some((p) => p.key === 'anthropic')).toBe(false)
   })
 
   it('POST /api/llm/quick-enable creates DeepSeek backend and roles', async () => {

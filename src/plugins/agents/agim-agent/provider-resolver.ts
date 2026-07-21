@@ -27,6 +27,8 @@ import {
   isKimiK2Model,
   isKimiK3Model,
   isKimiModel,
+  isMimoBaseUrl,
+  isMimoModel,
   isZhipuBaseUrl,
 } from '../../../core/llm/presets.js'
 import type { NativeModelBinding } from './index.js'
@@ -96,6 +98,18 @@ const GLM_THINKING_LEVEL_MAP = {
   xhigh: 'max',
 } as const
 
+/**
+ * Xiaomi MiMo V2.5: `thinking: { type: enabled|disabled }` only
+ * (no reasoning_effort). Defaults thinking on for Pro / base.
+ */
+const MIMO_THINKING_LEVEL_MAP = {
+  minimal: null,
+  low: null,
+  medium: null,
+  high: 'high',
+  xhigh: 'max',
+} as const
+
 function resolveVendorContextWindow(modelId: string): number | undefined {
   if (isKimiK3Model(modelId)) return 1_000_000
   if (/^kimi-k2\./i.test(modelId)) return 256_000
@@ -103,6 +117,7 @@ function resolveVendorContextWindow(modelId: string): number | undefined {
   if (isGlm52Model(modelId) || /^glm-5\b/i.test(modelId)) return 1_000_000
   if (/^glm-4\.7/i.test(modelId)) return 200_000
   if (isGlmModel(modelId)) return 128_000
+  if (isMimoModel(modelId)) return 1_000_000
   return undefined
 }
 
@@ -112,6 +127,7 @@ function resolveVendorMaxTokens(modelId: string): number | undefined {
   if (isGlm52Model(modelId)) return 128_000
   if (/^glm-4\.7/i.test(modelId)) return 65_536
   if (isGlmModel(modelId)) return 16_384
+  if (isMimoModel(modelId)) return 128_000
   return undefined
 }
 
@@ -133,9 +149,10 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     || catalogModel?.provider === 'zhipu'
     || isGlmModel(b.model)
   const glm52 = zhipu && isGlm52Model(b.model)
-  // Prefer catalog reasoning; DeepSeek / Kimi / GLM endpoints always support
-  // thinking mode even when the model id is not yet in pi-ai's table.
-  const reasoning = catalogModel?.reasoning === true || deepseek || kimi || zhipu
+  const mimo = isMimoBaseUrl(baseUrl) || isMimoModel(b.model)
+  // Prefer catalog reasoning; DeepSeek / Kimi / GLM / MiMo endpoints always
+  // support thinking mode even when the model id is not yet in pi-ai's table.
+  const reasoning = catalogModel?.reasoning === true || deepseek || kimi || zhipu || mimo
   const vendorContext = resolveVendorContextWindow(b.model)
   const vendorMaxTokens = resolveVendorMaxTokens(b.model)
   // Vendor maps win when we recognize the endpoint/model — pi catalog may
@@ -150,7 +167,9 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
           ? { ...GLM52_THINKING_LEVEL_MAP }
           : zhipu
             ? { ...GLM_THINKING_LEVEL_MAP }
-            : undefined
+            : mimo
+              ? { ...MIMO_THINKING_LEVEL_MAP }
+              : undefined
   const thinkingLevelMap = vendorThinkingLevelMap
     ?? (catalogModel?.thinkingLevelMap
       ? { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) }
@@ -182,7 +201,15 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
               supportsDeveloperRole: false,
               requiresReasoningContentOnAssistantMessages: true,
             }
-          : undefined
+          : mimo
+            ? {
+                // MiMo OpenAI-compat: thinking.type only; max_completion_tokens.
+                thinkingFormat: 'deepseek' as const,
+                supportsDeveloperRole: false,
+                requiresReasoningContentOnAssistantMessages: true,
+                maxTokensField: 'max_completion_tokens' as const,
+              }
+            : undefined
   const catalogCompat = catalogModel?.compat
     ? { ...(catalogModel.compat as Record<string, unknown>) }
     : undefined
@@ -200,7 +227,7 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     reasoning,
     input: (catalogModel?.input?.length
       ? [...catalogModel.input]
-      : (kimi || zhipu ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
+      : (kimi || zhipu || mimo ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Uncatalogued / private endpoints must not inherit a 128k assumption —
     // that delays compaction until the provider already overflows.

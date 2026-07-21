@@ -826,8 +826,7 @@
       "deepseek": "DeepSeek",
       "moonshot": "Kimi",
       "zhipu": "智谱 GLM",
-      "openai": "OpenAI",
-      "anthropic": "Anthropic",
+      "mimo": "小米 MiMo",
       "custom": "自定义"
     }
   },

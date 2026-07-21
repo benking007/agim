@@ -302,6 +302,7 @@
     "nativeSetupDialogReason": "Most recent error",
     "nativeSetupDialogRoleOptional": "Binds native-chat / cheap / evaluator and sets Agim as the default agent.",
     "nativeSetupDeepseekHint": "Create a key at platform.deepseek.com and paste it here.",
+    "nativeSetupKimiHint": "Create a key at platform.kimi.com and paste it here (international: platform.kimi.ai / api.moonshot.ai).",
     "nativeSetupDialogSave": "Enable",
     "nativeSetupDialogCancel": "Later",
     "nativeSetupDialogAdvanced": "Advanced",

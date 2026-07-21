@@ -34,8 +34,11 @@ export const LLM_PRESETS: LlmPresetDef[] = [
     key: 'moonshot',
     provider: 'openai-compat',
     baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-    baseName: 'moonshot-agim',
+    model: 'kimi-k3',
+    cheapModel: 'kimi-k2.6',
+    models: ['kimi-k3', 'kimi-k2.6'],
+    baseName: 'kimi-agim',
+    defaultThinking: 'high',
   },
   {
     key: 'zhipu',

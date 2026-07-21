@@ -256,8 +256,8 @@ async function addAction(): Promise<number> {
     const existing = (cfgForNames.llmBackends ?? []).map((b) => b.name)
     const uniqueDefault = suggestSharedBackendName(defaultName, existing)
     const name = (await ask(rl, `Backend name [${uniqueDefault}]: `)).trim() || uniqueDefault
-    if (!/^[a-z0-9][a-z0-9-]*$/i.test(name)) {
-      return cancel('name must match [A-Za-z0-9][A-Za-z0-9-]*')
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
+      return cancel('name must match [A-Za-z0-9][A-Za-z0-9._-]*')
     }
 
     const modelDefault = preset.modelHint

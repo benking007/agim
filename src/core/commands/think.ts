@@ -14,7 +14,7 @@ export async function handleThinkCommand(args: string, ctx: RouteContext): Promi
   if (!level) {
     const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
     const cur = session?.variant || 'auto'
-    return `💭 当前思考深度: \`${cur}\`\n\n/think high | max | low | minimal | off | auto\n（DeepSeek：auto/空默认 high；max → reasoning_effort=max）`
+    return `💭 当前思考深度: \`${cur}\`\n\n/think high | max | low | minimal | off | auto\n（DeepSeek / Kimi：auto/空默认 high；max → reasoning_effort=max；Kimi 另支持 low）`
   }
 
   // Ensure a session exists so the patch is always durable.
@@ -26,7 +26,7 @@ export async function handleThinkCommand(args: string, ctx: RouteContext): Promi
   }
   if (level === 'auto') {
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { variant: '' })
-    return '✅ 思考深度: auto（DeepSeek 默认 high）。'
+    return '✅ 思考深度: auto（DeepSeek / Kimi 默认 high）。'
   }
   if (level === 'xhigh') {
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { variant: 'max' })

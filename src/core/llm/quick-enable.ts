@@ -115,8 +115,8 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
     const name = i === 0 && input.name?.trim()
       ? input.name.trim()
       : suggestLlmBackendName(stem, usedNames)
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
-      throw new QuickEnableError('validation', 'name must match [A-Za-z0-9][A-Za-z0-9-]*')
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+      throw new QuickEnableError('validation', 'name must match [A-Za-z0-9][A-Za-z0-9._-]*')
     }
     if (usedNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
       throw new QuickEnableError('conflict', `backend "${name}" already exists`)

@@ -824,7 +824,7 @@
     "agimAgentRuntimeHint": "下方参数控制 Agim Agent 的行为；上方 API 决定它使用哪个模型。",
     "presets": {
       "deepseek": "DeepSeek",
-      "moonshot": "Moonshot Kimi",
+      "moonshot": "Kimi",
       "zhipu": "智谱 GLM",
       "openai": "OpenAI",
       "anthropic": "Anthropic",

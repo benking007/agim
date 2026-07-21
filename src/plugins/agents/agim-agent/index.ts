@@ -46,8 +46,7 @@ import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
 import { resolveCriticMode, runGoalCritic } from '../../../core/llm/goal-critic.js'
 import {
-  DEFAULT_LLM_PRESET,
-  isDeepSeekBaseUrl,
+  resolveDefaultThinking,
   mapVariantToThinkingLevel,
 } from '../../../core/llm/presets.js'
 import {
@@ -732,13 +731,16 @@ export class NativeAgentAdapter implements AgentAdapter {
       : []
 
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
-    // Map /think (session.variant) → pi thinkingLevel. DeepSeek defaults to
-    // high when variant is auto/empty so thinking mode is on out of the box.
-    const thinkingFallback =
-      isDeepSeekBaseUrl(binding.model.baseUrl) || binding.model.reasoning
-        ? (DEFAULT_LLM_PRESET.defaultThinking ?? 'high')
-        : 'off'
-    const thinkingLevel = mapVariantToThinkingLevel(effectiveOpts?.variant, thinkingFallback)
+    // Map /think (session.variant) → pi thinkingLevel. DeepSeek / Kimi
+    // default to their preset thinking level when variant is auto/empty.
+    const thinkingFallback = resolveDefaultThinking(
+      binding.model.baseUrl,
+      binding.model.id,
+    )
+    const thinkingLevel = mapVariantToThinkingLevel(
+      effectiveOpts?.variant,
+      thinkingFallback === 'off' && binding.model.reasoning ? 'high' : thinkingFallback,
+    )
     const harness = new AgentHarness({
       env,
       session,

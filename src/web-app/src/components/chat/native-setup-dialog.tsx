@@ -162,7 +162,9 @@ export function NativeSetupDialog({
                 <p className="mt-1 text-xs text-text-dim">
                   {presetKey === 'deepseek'
                     ? t('chat.nativeSetupDeepseekHint')
-                    : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
+                    : presetKey === 'moonshot'
+                      ? t('chat.nativeSetupKimiHint')
+                      : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
                 </p>
               )}
             </div>

@@ -38,6 +38,36 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
   })
 
+  it('enables Kimi K3 thinking via reasoning_effort (openai format)', () => {
+    const binding = bindingToPiModel({
+      name: 'kimi-k3',
+      providerType: 'openai-compat',
+      model: 'kimi-k3',
+      baseUrl: 'https://api.moonshot.cn/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('openai')
+    expect(binding.model.compat?.supportsReasoningEffort).toBe(true)
+    expect(binding.model.compat?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(binding.model.thinkingLevelMap?.low).toBe('low')
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.model.contextWindow).toBe(1_000_000)
+  })
+
+  it('enables Kimi K2.6 thinking via deepseek-style thinking.type', () => {
+    const binding = bindingToPiModel({
+      name: 'kimi-k2.6',
+      providerType: 'openai-compat',
+      model: 'kimi-k2.6',
+      baseUrl: 'https://api.moonshot.ai/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    // Catalog may supply 262144; uncatalogued fallback is 256k.
+    expect(binding.model.contextWindow).toBeGreaterThanOrEqual(256_000)
+  })
+
   it('maps an anthropic backend to anthropic-messages', () => {
     const binding = bindingToPiModel({
       name: 'claude',

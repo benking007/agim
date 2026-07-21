@@ -104,20 +104,22 @@ export async function handleLlmApi(
   if (p === '/api/llm/roles' && m === 'PUT') {
     await handlePutRoles(req, res); return true
   }
-  const rmBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9-]+)$/)
+  // Backend names may include `.` / `_` (e.g. kimi-k2.6) — keep in sync with
+  // config-schema `safeNamePattern`.
+  const rmBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9._-]+)$/)
   if (rmBackend && m === 'DELETE') {
-    await handleRemoveBackend(res, rmBackend[1]); return true
+    await handleRemoveBackend(res, decodeURIComponent(rmBackend[1])); return true
   }
-  const setSecret = p.match(/^\/api\/llm\/secrets\/([A-Za-z0-9-]+)$/)
+  const setSecret = p.match(/^\/api\/llm\/secrets\/([A-Za-z0-9._%-]+)$/)
   if (setSecret && m === 'POST') {
-    await handleSetSecret(req, res, setSecret[1]); return true
+    await handleSetSecret(req, res, decodeURIComponent(setSecret[1])); return true
   }
   if (setSecret && m === 'DELETE') {
-    await handleRemoveSecret(res, setSecret[1]); return true
+    await handleRemoveSecret(res, decodeURIComponent(setSecret[1])); return true
   }
-  const pingBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9-]+)\/ping$/)
+  const pingBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9._-]+)\/ping$/)
   if (pingBackend && m === 'POST') {
-    await handlePing(res, pingBackend[1]); return true
+    await handlePing(res, decodeURIComponent(pingBackend[1])); return true
   }
   return false
 }
@@ -227,8 +229,8 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
   const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : ''
   const model = typeof body.model === 'string' ? body.model.trim() : ''
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
-  if (!name || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
-    send(res, 400, { error: 'name is required and must match [A-Za-z0-9][A-Za-z0-9-]*' })
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    send(res, 400, { error: 'name is required and must match [A-Za-z0-9][A-Za-z0-9._-]*' })
     return
   }
   if (provider !== 'openai-compat' && provider !== 'anthropic') {

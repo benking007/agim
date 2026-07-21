@@ -19,7 +19,13 @@ import {
   type LlmBackendBinding,
   type LlmRole,
 } from '../../../core/llm/registry.js'
-import { isDeepSeekBaseUrl } from '../../../core/llm/presets.js'
+import {
+  isDeepSeekBaseUrl,
+  isKimiBaseUrl,
+  isKimiK2Model,
+  isKimiK3Model,
+  isKimiModel,
+} from '../../../core/llm/presets.js'
 import type { NativeModelBinding } from './index.js'
 import { findCatalogModel } from '../../../core/llm/model-catalog.js'
 
@@ -45,6 +51,42 @@ const DEEPSEEK_THINKING_LEVEL_MAP = {
   xhigh: 'max',
 } as const
 
+/** Kimi K3: always-on thinking via top-level `reasoning_effort`. */
+const KIMI_K3_THINKING_LEVEL_MAP = {
+  minimal: null,
+  low: 'low',
+  medium: null,
+  high: 'high',
+  xhigh: 'max',
+} as const
+
+/**
+ * Kimi K2.x: `thinking: { type }` (deepseek-style). Effort maps onto
+ * enabled/disabled — mid levels are treated as enabled.
+ */
+const KIMI_K2_THINKING_LEVEL_MAP = {
+  minimal: null,
+  low: null,
+  medium: null,
+  high: 'high',
+  xhigh: 'max',
+} as const
+
+function resolveKimiContextWindow(modelId: string): number | undefined {
+  if (isKimiK3Model(modelId)) return 1_000_000
+  if (/^kimi-k2\.7/i.test(modelId)) return 256_000
+  if (/^kimi-k2\.6/i.test(modelId)) return 256_000
+  if (/^kimi-k2\.5/i.test(modelId)) return 256_000
+  if (isKimiModel(modelId)) return 256_000
+  return undefined
+}
+
+function resolveKimiMaxTokens(modelId: string): number | undefined {
+  if (isKimiK3Model(modelId)) return 131_072
+  if (isKimiK2Model(modelId)) return 32_768
+  return undefined
+}
+
 export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | null {
   const api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
@@ -54,31 +96,42 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
   const deepseek = isDeepSeekBaseUrl(baseUrl)
     || catalogModel?.provider === 'deepseek'
     || /^deepseek/i.test(b.model)
-  // Prefer catalog reasoning; DeepSeek endpoints always support thinking mode
-  // even when the model id is not yet in pi-ai's table.
-  const reasoning = catalogModel?.reasoning === true || deepseek
+  const kimi = isKimiBaseUrl(baseUrl)
+    || catalogModel?.provider === 'moonshot'
+    || isKimiModel(b.model)
+  const kimiK3 = kimi && isKimiK3Model(b.model)
+  const kimiK2 = kimi && isKimiK2Model(b.model)
+  // Prefer catalog reasoning; DeepSeek / Kimi endpoints always support
+  // thinking mode even when the model id is not yet in pi-ai's table.
+  const reasoning = catalogModel?.reasoning === true || deepseek || kimi
+  const kimiContext = resolveKimiContextWindow(b.model)
+  const kimiMaxTokens = resolveKimiMaxTokens(b.model)
   const model = {
     id: b.model,
     name: b.model,
     api,
     // Keep agim backend name as provider id (auth / cost grouping), but copy
-    // DeepSeek compat fields so pi-ai emits thinking + reasoning_content.
+    // vendor compat fields so pi-ai emits thinking + reasoning_content.
     provider: b.name,
     baseUrl,
     reasoning,
     input: (catalogModel?.input?.length
       ? [...catalogModel.input]
-      : ['text']) as ('text' | 'image')[],
+      : (kimi ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Uncatalogued / private endpoints must not inherit a 128k assumption —
     // that delays compaction until the provider already overflows.
-    contextWindow: catalogModel?.contextWindow ?? unknownContextWindow,
-    maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? 8192,
+    contextWindow: catalogModel?.contextWindow ?? kimiContext ?? unknownContextWindow,
+    maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? kimiMaxTokens ?? 8192,
     ...(catalogModel?.thinkingLevelMap
       ? { thinkingLevelMap: { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) } }
       : deepseek
         ? { thinkingLevelMap: { ...DEEPSEEK_THINKING_LEVEL_MAP } }
-        : {}),
+        : kimiK3
+          ? { thinkingLevelMap: { ...KIMI_K3_THINKING_LEVEL_MAP } }
+          : kimiK2 || kimi
+            ? { thinkingLevelMap: { ...KIMI_K2_THINKING_LEVEL_MAP } }
+            : {}),
     ...(catalogModel?.compat
       ? { compat: { ...(catalogModel.compat as Record<string, unknown>) } }
       : deepseek
@@ -88,7 +141,28 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
               requiresReasoningContentOnAssistantMessages: true,
             },
           }
-        : {}),
+        : kimiK3
+          ? {
+              // K3: top-level reasoning_effort (openai format) + preserve
+              // reasoning_content across tool turns.
+              compat: {
+                thinkingFormat: 'openai' as const,
+                supportsReasoningEffort: true,
+                supportsDeveloperRole: false,
+                requiresReasoningContentOnAssistantMessages: true,
+                maxTokensField: 'max_completion_tokens' as const,
+              },
+            }
+          : kimiK2 || kimi
+            ? {
+                // K2.x: thinking: { type } (+ reasoning_effort when mapped).
+                compat: {
+                  thinkingFormat: 'deepseek' as const,
+                  supportsDeveloperRole: false,
+                  requiresReasoningContentOnAssistantMessages: true,
+                },
+              }
+            : {}),
   } as Model<string>
   return {
     model,

@@ -46,6 +46,32 @@ describe('quickEnableLlmPreset', () => {
     expect(existsSync(join(TMP, 'llm-secrets.json'))).toBe(true)
   })
 
+  it('writes Kimi backends (k3 + k2.6) + roles from an API key', async () => {
+    const result = await quickEnableLlmPreset({
+      preset: 'moonshot',
+      apiKey: 'sk-test-kimi',
+    })
+    expect(result.preset).toBe('moonshot')
+    expect(result.name).toBe('kimi-k3')
+    expect(result.model).toBe('kimi-k3')
+    expect(result.backends?.map((b) => b.model)).toEqual(['kimi-k3', 'kimi-k2.6'])
+    expect(result.backends?.map((b) => b.name)).toEqual(['kimi-k3', 'kimi-k2.6'])
+    expect(result.roles['native-chat']).toBe('kimi-k3')
+    expect(result.roles.cheap).toBe('kimi-k2.6')
+    expect(result.roles.evaluator).toBe('kimi-k2.6')
+
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ name: string; model: string; baseUrl: string; label?: string }>
+      llmRoles?: Record<string, string>
+    }
+    expect(cfg.llmBackends?.map((b) => b.model)).toEqual(['kimi-k3', 'kimi-k2.6'])
+    expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.moonshot.cn/v1')
+    expect(cfg.llmBackends?.every((b) => b.label === 'moonshot')).toBe(true)
+    expect(cfg.llmRoles?.['native-chat']).toBe('kimi-k3')
+    expect(describeSecretSource('kimi-k3').source).not.toBe('none')
+    expect(describeSecretSource('kimi-k2.6').source).not.toBe('none')
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

@@ -824,7 +824,7 @@
     "agimAgentRuntimeHint": "Behavior controls below apply to Agim Agent. Model APIs above decide which models it uses.",
     "presets": {
       "deepseek": "DeepSeek",
-      "moonshot": "Moonshot Kimi",
+      "moonshot": "Kimi",
       "zhipu": "Zhipu GLM",
       "openai": "OpenAI",
       "anthropic": "Anthropic",

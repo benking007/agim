@@ -54,12 +54,19 @@ export const LLM_PRESETS: readonly LlmPresetDef[] = [
   },
   {
     key: 'moonshot',
-    label: 'Moonshot Kimi',
+    // Brand label shown in CLI / grouping (Web i18n: "Kimi").
+    label: 'Kimi',
     provider: 'openai-compat',
+    // China OpenAI-compatible base (platform.kimi.com). International keys
+    // use https://api.moonshot.ai/v1 — operators can override in Custom.
     baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-    baseName: 'moonshot-agim',
-    apiKeyDoc: 'platform.moonshot.cn → API Keys',
+    model: 'kimi-k3',
+    cheapModel: 'kimi-k2.6',
+    models: ['kimi-k3', 'kimi-k2.6'],
+    baseName: 'kimi-agim',
+    apiKeyDoc: 'platform.kimi.com → API Keys',
+    // K3 always thinks; high matches Agim composer default (effort high/max).
+    defaultThinking: 'high',
   },
   {
     key: 'zhipu',
@@ -122,7 +129,11 @@ export function presetModels(preset: LlmPresetDef): string[] {
  * operators already know (e.g. `deepseek-v4-pro`).
  */
 export function presetBackendStem(baseName: string, model: string, _index: number): string {
-  const safe = model.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '')
+  // Keep dots so ids like `kimi-k2.6` stay identical to the vendor model string.
+  const safe = model.trim().toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/\.-|-\./g, '-')
+    .replace(/^-|-$/g, '')
   if (safe && /^[a-z0-9]/.test(safe)) return safe
   return baseName
 }
@@ -148,8 +159,60 @@ export function isDeepSeekBaseUrl(baseUrl: string | undefined | null): boolean {
 }
 
 /**
+ * Detect Kimi / Moonshot endpoints (China `moonshot.cn` + international
+ * `moonshot.ai`, plus hostnames that keep "kimi").
+ */
+export function isKimiBaseUrl(baseUrl: string | undefined | null): boolean {
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host.includes('moonshot.cn')
+      || host.includes('moonshot.ai')
+      || host.includes('kimi.com')
+      || host.includes('kimi.ai')
+  } catch {
+    return /moonshot\.(cn|ai)|kimi\.(com|ai)/i.test(baseUrl)
+  }
+}
+
+/** Kimi K3 family — always-on thinking via top-level `reasoning_effort`. */
+export function isKimiK3Model(model: string | undefined | null): boolean {
+  return /^kimi-k3\b/i.test((model ?? '').trim())
+}
+
+/**
+ * Kimi K2.x family — `thinking: { type: enabled|disabled }` (+ optional keep).
+ * Includes `kimi-k2.5` / `kimi-k2.6` / `kimi-k2.7-code` (+ highspeed).
+ */
+export function isKimiK2Model(model: string | undefined | null): boolean {
+  return /^kimi-k2(\.|-)/i.test((model ?? '').trim())
+}
+
+export function isKimiModel(model: string | undefined | null): boolean {
+  return isKimiK3Model(model) || isKimiK2Model(model) || /^kimi-/i.test((model ?? '').trim())
+}
+
+/**
+ * Default /think fallback for a backend URL (and optional model id).
+ * DeepSeek + Kimi default to their preset's `defaultThinking` (usually high).
+ */
+export function resolveDefaultThinking(
+  baseUrl: string | undefined | null,
+  model?: string | undefined | null,
+): 'off' | 'high' | 'max' {
+  if (isDeepSeekBaseUrl(baseUrl) || /^deepseek/i.test(model ?? '')) {
+    return getLlmPreset('deepseek')?.defaultThinking ?? 'high'
+  }
+  if (isKimiBaseUrl(baseUrl) || isKimiModel(model)) {
+    return getLlmPreset('moonshot')?.defaultThinking ?? 'high'
+  }
+  return 'off'
+}
+
+/**
  * Map agim session.variant (/think) → pi-ai ThinkingLevel.
- * DeepSeek catalog maps xhigh→max; low/minimal/medium are clamped to high.
+ * DeepSeek / Kimi map xhigh→max; unsupported mid levels stay as-is for
+ * providers that accept them (Kimi K3 supports low/high/max).
  */
 export function mapVariantToThinkingLevel(
   variant: string | undefined | null,

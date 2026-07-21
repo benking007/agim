@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-export type ThinkEffort = 'high' | 'max'
+export type ThinkEffort = 'low' | 'high' | 'max'
 
 export interface ContextBreakdownItem {
   key: string
@@ -58,7 +58,8 @@ function normalizeVariant(raw: string): { on: boolean; effort: ThinkEffort } {
   const v = (raw || 'auto').trim().toLowerCase()
   if (v === 'off' || v === 'none') return { on: false, effort: 'high' }
   if (v === 'max' || v === 'xhigh') return { on: true, effort: 'max' }
-  // auto / high / low / minimal / medium → on with high (DeepSeek clamps)
+  if (v === 'low') return { on: true, effort: 'low' }
+  // auto / high / minimal / medium → on with high (DeepSeek clamps mid levels)
   return { on: true, effort: 'high' }
 }
 
@@ -258,6 +259,7 @@ export function ComposerStatusBar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-[7rem]">
+                <DropdownMenuItem onSelect={() => setEffort('low')}>low</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setEffort('high')}>high</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setEffort('max')}>max</DropdownMenuItem>
               </DropdownMenuContent>
@@ -350,6 +352,8 @@ export function estimateTokensFromText(text: string): number {
 
 export function estimateContextWindow(model: string | undefined): number {
   const m = (model || '').toLowerCase()
+  if (m.includes('kimi-k3')) return 1_000_000
+  if (m.includes('kimi-k2')) return 256_000
   if (m.includes('deepseek-v4')) return 128_000
   if (m.includes('claude') || m.includes('gpt-4') || m.includes('gpt-5')) return 128_000
   return 32_000

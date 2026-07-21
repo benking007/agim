@@ -218,10 +218,17 @@ describe('handleLlmApi — presets + quick-enable', () => {
     const handled = await handleLlmApi(makeReq('GET'), res as unknown as import('node:http').ServerResponse, url('/api/llm/presets'))
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(200)
-    const body = JSON.parse(res.body) as { defaultPreset: string; presets: Array<{ key: string; model: string }> }
+    const body = JSON.parse(res.body) as {
+      defaultPreset: string
+      presets: Array<{ key: string; model: string; cheapModel?: string; models?: string[] }>
+    }
     expect(body.defaultPreset).toBe('deepseek')
     expect(body.presets[0]?.key).toBe('deepseek')
     expect(body.presets[0]?.model).toBe('deepseek-v4-pro')
+    const kimi = body.presets.find((p) => p.key === 'moonshot')
+    expect(kimi?.model).toBe('kimi-k3')
+    expect(kimi?.cheapModel).toBe('kimi-k2.6')
+    expect(kimi?.models).toEqual(['kimi-k3', 'kimi-k2.6'])
   })
 
   it('POST /api/llm/quick-enable creates DeepSeek backend and roles', async () => {

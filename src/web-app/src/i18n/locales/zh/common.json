@@ -302,6 +302,7 @@
     "nativeSetupDialogReason": "最近一次错误信息",
     "nativeSetupDialogRoleOptional": "将自动绑定 native-chat / cheap / evaluator，并设为默认 Agent。",
     "nativeSetupDeepseekHint": "在 platform.deepseek.com 创建 API Key 后粘贴到这里即可。",
+    "nativeSetupKimiHint": "在 platform.kimi.com 创建 API Key 后粘贴到这里即可（国际站可用 platform.kimi.ai / api.moonshot.ai）。",
     "nativeSetupDialogSave": "一键启用",
     "nativeSetupDialogCancel": "稍后再配",
     "nativeSetupDialogAdvanced": "高级选项",

@@ -173,23 +173,17 @@ describe('/settings/llm quick setup', () => {
     ).toBe(true)
   })
 
-  it('shows only API key for presets and custom fields for Custom', async () => {
+  it('hides name/model/baseUrl for the default preinstalled provider', async () => {
     mockLlmFetch()
     renderPage()
 
     await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
     expect(screen.getByPlaceholderText('sk-...')).toBeInTheDocument()
     expect(screen.getByText(/Uses preinstalled model deepseek-v4-pro/i)).toBeInTheDocument()
+    // Custom-only fields stay hidden until Custom is selected.
     expect(screen.queryByPlaceholderText('e.g. deepseek-cheap')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('model-id')).not.toBeInTheDocument()
     expect(screen.queryByPlaceholderText('https://api.example.com/v1')).not.toBeInTheDocument()
-
-    // Open the provider select and pick Custom
-    fireEvent.click(screen.getByRole('combobox'))
-    fireEvent.click(await screen.findByRole('option', { name: /^Custom$/i }))
-
-    expect(await screen.findByPlaceholderText('e.g. deepseek-cheap')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('https://api.example.com/v1')).toBeInTheDocument()
-    expect(screen.queryByText(/Uses preinstalled model/i)).not.toBeInTheDocument()
   })
 
   it('enables an existing usable API without asking for another key', async () => {

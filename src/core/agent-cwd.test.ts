@@ -12,8 +12,8 @@ import {
   AGIM_MEMORY_LINK_START,
   AGIM_IM_OPS_START,
   AGIM_IM_OPS_END,
+  AGIM_BGJOB_WRAPPER_EXPR,
 } from './agent-cwd.js'
-import { agimBgjobScript } from './bgjob-install.js'
 
 const FULL_IM_OPTS = { threadId: 'thread-A', platform: 'feishu', channelId: 'chan-1', userId: 'u1' }
 const NO_IM_OPTS = { model: 'sonnet' }
@@ -164,13 +164,25 @@ describe('bootstrapAgentWorkspaces', () => {
     const agimGuide = await readFile(join(tmpRoot, 'agim', 'AGENTS.md'), 'utf8')
     expect(agimGuide).toContain('Agim Agent')
     expect(agimGuide).toContain(AGIM_IM_OPS_START)
-    expect(agimGuide).toContain(`${agimBgjobScript()} start`)
+    expect(agimGuide).toContain(`${AGIM_BGJOB_WRAPPER_EXPR} start`)
+    expect(agimGuide).not.toMatch(/\/home\/[^/\s]+\/\.agim/)
     expect(agimGuide).toContain('强制 bgjob')
     expect(agimGuide).toContain(AGIM_MEMORY_LINK_START)
-    expect(await readFile(join(tmpRoot, 'claude-code', 'CLAUDE.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
-    expect(await readFile(join(tmpRoot, 'opencode', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
-    expect(await readFile(join(tmpRoot, 'mimo', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
-    expect(await readFile(join(tmpRoot, 'copilot', 'AGENTS.md'), 'utf8')).toContain(AGIM_MEMORY_LINK_START)
+    // IM/bgjob baseline is shared across all agent workspaces.
+    for (const [agent, file] of [
+      ['claude-code', 'CLAUDE.md'],
+      ['opencode', 'AGENTS.md'],
+      ['codex', 'AGENTS.md'],
+      ['mimo', 'AGENTS.md'],
+      ['copilot', 'AGENTS.md'],
+    ] as const) {
+      const body = await readFile(join(tmpRoot, agent, file), 'utf8')
+      expect(body).toContain(AGIM_MEMORY_LINK_START)
+      expect(body).toContain(AGIM_IM_OPS_START)
+      expect(body).toContain(AGIM_BGJOB_WRAPPER_EXPR)
+      expect(body).toContain('强制 bgjob')
+      expect(body).not.toMatch(/\/home\/[^/\s]+\/\.agim/)
+    }
   })
 
   it('safe to run twice and preserves user edits while adding the memory link once', async () => {
@@ -195,13 +207,13 @@ describe('bootstrapAgentWorkspaces', () => {
     const content = await readFile(join(dir, 'AGENTS.md'), 'utf8')
     expect(content).toContain('你是月魁')
     expect(content).toContain(AGIM_IM_OPS_START)
-    expect(content).toContain(`${agimBgjobScript()} start`)
+    expect(content).toContain(`${AGIM_BGJOB_WRAPPER_EXPR} start`)
     expect(content.match(/agim:im-ops:start/g)?.length).toBe(1)
   })
 
-  it('refreshes an existing managed IM/bgjob block on bootstrap', async () => {
+  it('refreshes an existing managed IM/bgjob block on bootstrap for every agent', async () => {
     await bootstrapAgentWorkspaces()
-    const path = join(tmpRoot, 'agim', 'AGENTS.md')
+    const path = join(tmpRoot, 'claude-code', 'CLAUDE.md')
     const stale = [
       '# keep me',
       '',
@@ -219,6 +231,7 @@ describe('bootstrapAgentWorkspaces', () => {
     expect(content).toContain('## footer')
     expect(content).toContain('## IM 回复硬规范')
     expect(content).toContain('强制 bgjob')
+    expect(content).toContain('~/.agim-workspaces/claude-code/')
     expect(content).not.toContain('old bgjob advice')
     expect(content.match(/agim:im-ops:start/g)?.length).toBe(1)
   })

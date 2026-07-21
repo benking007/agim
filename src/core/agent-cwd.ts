@@ -22,8 +22,14 @@
 import { join } from 'node:path'
 import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
-import { AGIM_HOME, AGIM_WORKSPACES } from './agim-paths.js'
-import { agimBgjobScript, agimBgjobsDir } from './bgjob-install.js'
+import { AGIM_WORKSPACES } from './agim-paths.js'
+
+/** Portable bgjob wrapper expression for role books / prompts.
+ *  Shell expands this to an absolute path on any user home (Linux / macOS).
+ *  Do NOT bake host-specific `/home/<user>/...` into AGENTS.md. */
+export const AGIM_BGJOB_WRAPPER_EXPR = '"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"'
+export const AGIM_BGJOBS_DIR_EXPR = '${AGIM_HOME:-$HOME/.agim}/bgjobs'
+export const AGIM_HOME_EXPR = '${AGIM_HOME:-$HOME/.agim}'
 
 /** Root for all per-agent IM workspaces. Kept stable so memory persists.
  *  Honors the `AGIM_WORKSPACES_ROOT` env override; otherwise resolves via
@@ -59,17 +65,33 @@ const AGIM_MEMORY_LINK_BLOCK = `${AGIM_MEMORY_LINK_START}
 - 如果它与本轮用户消息或更高优先级指令冲突，以当前消息和更高优先级指令为准。
 ${AGIM_MEMORY_LINK_END}`
 
-/** Managed IM / bgjob SOP block for the default Agim Agent AGENTS.md.
- *  Upserted on every bootstrap so existing installs pick up revisions
- *  without wiping operator persona edits outside the markers. */
+/** Managed IM / bgjob SOP — baseline for EVERY IM agent workspace
+ *  (Agim / Claude / opencode / Codex / …). Upserted on bootstrap into
+ *  each agent's CLAUDE.md / AGENTS.md; operator edits outside the markers
+ *  are preserved. Paths are portable shell expressions, never host-absolute. */
 export const AGIM_IM_OPS_START = '<!-- agim:im-ops:start -->'
 export const AGIM_IM_OPS_END = '<!-- agim:im-ops:end -->'
 
-export function buildAgimImOpsBlock(): string {
+function normalizeAgentId(agentName: string): string {
+  return (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
+}
+
+export function buildAgimImOpsBlock(agentName = 'agim'): string {
+  const id = normalizeAgentId(agentName)
+  const roleFile = roleFileForAgent(id === 'agim' ? 'agim' : agentName)
+  const isAgim = id === 'agim'
+  const invokeHow = isAgim
+    ? '用 `agim_exec` 调用（**必须**让 shell 展开为绝对路径；bare `bgjob` / `nohup … &` 禁止）'
+    : '用本 agent 的 shell / Bash 工具调用（**必须**让 shell 展开为绝对路径；bare `bgjob` / `nohup … &` 禁止）'
+  const writeHow = isAgim
+    ? '脚本本身先用 `agim_write_file` 写好再 start'
+    : '脚本本身先写入文件再 start'
+
   return `${AGIM_IM_OPS_START}
 ## IM 回复硬规范
 
 回复对象是聊天界面（微信 / 飞书 / Telegram / Discord / Web Portal），不是终端。
+本段为 **所有 IM agent 的共用基线**（含 bgjob）；标记外可写本 agent 专属人设。
 
 | 维度 | 规范 |
 |---|---|
@@ -98,22 +120,23 @@ export function buildAgimImOpsBlock(): string {
 
 ### 如何启动 bgjob
 
-用 \`agim_exec\` 调用**绝对路径** wrapper（\`agim start\` 会安装到 \`${agimBgjobScript()}\`；bare \`bgjob\` 不行；也不要用 \`nohup … &\`——会随父 shell 一起死）：
+\`agim start\` 会把 wrapper 安装到 \`~/.agim/scripts/bgjob\`（可用 \`AGIM_HOME\` 覆盖根目录）。
+${invokeHow}。路径写成可移植表达式（Linux / macOS / 任意用户家目录均可；**不要**写死 \`/home/某用户/...\`）：
 
-\`\`\`text
-${agimBgjobScript()} start <slug> -- <cmd...>
+\`\`\`bash
+${AGIM_BGJOB_WRAPPER_EXPR} start <slug> -- <cmd...>
 \`\`\`
 
 跟进：
 
-\`\`\`text
-${agimBgjobScript()} status <slug>
-${agimBgjobScript()} tail <slug>
-${agimBgjobScript()} list --running
+\`\`\`bash
+${AGIM_BGJOB_WRAPPER_EXPR} status <slug>
+${AGIM_BGJOB_WRAPPER_EXPR} tail <slug>
+${AGIM_BGJOB_WRAPPER_EXPR} list --running
 \`\`\`
 
-数据目录：\`${agimBgjobsDir()}\`（**各 agent 共用**；Web 控制台 Tasks → Background + Portal 小精灵「进行中」可跟踪）。
-脚本本身先用 \`agim_write_file\` 写好再 \`bgjob start\`；启动成功后立刻把完整 job id + 日志路径回给用户，然后结束本轮同步回合。任务退出后 Agim 会自动往原对话推送结果（可选 \`AGIM_BGJOB_AUTOSUMMARY=on\` 附日志摘要）。
+数据目录：\`${AGIM_BGJOBS_DIR_EXPR}\`（**各 agent 共用**；Web 控制台 Tasks → Background + Portal 小精灵「进行中」可跟踪）。
+${writeHow}；启动成功后立刻把完整 job id + 日志路径回给用户，然后结束本轮同步回合。任务退出后 Agim 会自动往原对话推送结果（可选 \`AGIM_BGJOB_AUTOSUMMARY=on\` 附日志摘要）。
 
 \`long_task\` / \`/goal\` 是跨回合目标跟踪，**不是**后台进程；长跑批处理 / 训练 / 大批量抓取请用 bgjob。
 
@@ -121,11 +144,11 @@ ${agimBgjobScript()} list --running
 
 | 类型 | 位置 | 何时用 |
 |---|---|---|
-| 工作区记忆 | 本目录 \`MEMORY.md\` | 跨会话沉淀的偏好 / 事实（框架会注入） |
+| 工作区记忆 | 本目录 \`MEMORY.md\` | 跨会话沉淀的偏好 / 事实 |
 | 项目档案 | 本目录 \`PROJECTS/<slug>.md\` | 单个长期主题的状态档（目标 / 进度 / 关键决定 / 待办） |
 | session 摘要（可选） | 本目录 \`SESSIONS/YYYY-MM-DD-<topic>.md\` | 重要会话沉淀 |
 
-与其他 agent 工作区（\`~/.agim-workspaces/claude-code/\` 等）互不读取。
+与其他 agent 工作区（\`~/.agim-workspaces/*/\`）互不读取。
 
 ## IM 通道已知限制
 
@@ -138,12 +161,12 @@ ${agimBgjobScript()} list --running
 
 | 项 | 路径 |
 |---|---|
-| 本工作区 | \`~/.agim-workspaces/agim/\` |
-| 角色书 | 本目录 \`AGENTS.md\`（可另加 \`AGENTS.local.md\` 覆盖） |
-| Agim 状态目录 | \`${AGIM_HOME}\` |
-| bgjob wrapper | \`${agimBgjobScript()}\` |
-| bgjob 数据 | \`${agimBgjobsDir()}\` |
-| 真正的代码仓库 | \`/root/workspace/...\`（**当前 cwd 不是代码仓库**）|
+| 本工作区 | \`~/.agim-workspaces/${id}/\` |
+| 角色书 | 本目录 \`${roleFile}\`（可另加 \`${roleFile.replace('.md', '.local.md')}\` 覆盖） |
+| Agim 状态目录 | \`${AGIM_HOME_EXPR}\` |
+| bgjob wrapper | \`${AGIM_BGJOB_WRAPPER_EXPR}\` |
+| bgjob 数据 | \`${AGIM_BGJOBS_DIR_EXPR}\` |
+| 代码仓库 | 用户实际项目路径（**当前 IM cwd 通常不是代码仓库**）|
 ${AGIM_IM_OPS_END}`
 }
 
@@ -155,21 +178,18 @@ function appendSeparator(raw: string): string {
 }
 
 /**
- * Upsert the managed IM / bgjob SOP into Agim Agent's AGENTS.md.
+ * Upsert the managed IM / bgjob SOP into an agent's role file
+ * (AGENTS.md / CLAUDE.md). Applies to **all** IM agent workspaces.
  * Replaces an existing marked block in place; otherwise appends.
- * No-op for other agents.
  */
 export async function ensureAgimImOpsGuide(
   agentName: string,
   filename = roleFileForAgent(agentName),
 ): Promise<string | null> {
-  const id = (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
-  if (id !== 'agim') return null
-
   const explicit = process.env[envKeyFor(agentName)]
   const dir = explicit || defaultAgentCwd(agentName)
   const guidePath = join(dir, filename)
-  const block = buildAgimImOpsBlock()
+  const block = buildAgimImOpsBlock(agentName)
 
   let raw = ''
   try {
@@ -657,7 +677,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 - 回复一律用中文短句，禁用 emoji
 - 不知道就直说，不要编造
 
-${buildAgimImOpsBlock()}
+${buildAgimImOpsBlock('agim')}
 
 ## 你怎么动手（工具与边界）
 

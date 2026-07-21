@@ -143,15 +143,16 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 默认种子已经带上：
 
 - **IM 回复硬规范**（禁表格、长代码落盘、纯 URL、禁用 emoji …）
-- **任务超时与 bgjob**：估时 >10 分钟强制走 Agim 自带 wrapper
-  `~/.agim/scripts/bgjob start <slug> -- <cmd...>`（`agim start` 会从包装安装；
-  先写脚本再启动；禁止 `nohup … &` / bare `bgjob`）。各 agent 的任务数据**统一**落在
-  `~/.agim/bgjobs/`（Web 控制台 Tasks → Background 一处可管）。
+- **任务超时与 bgjob**：估时 >10 分钟强制
+  `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob" start <slug> -- <cmd...>`
+  （可移植表达式，勿写死 `/home/某用户/...`；禁止 `nohup … &` / bare `bgjob`）。
+  数据统一在 `${AGIM_HOME:-$HOME/.agim}/bgjobs/`。
 - **长期记忆约定**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
 
-其中 IM / bgjob 段落包在 `<!-- agim:im-ops:start -->` … `end` 标记里：每次
-`agim start` bootstrap 会**就地刷新**这段托管内容，不会抹掉标记外的个人设。
-框架 system prompt 里还有一份精简 bgjob / IM 兜底，防止有人删掉整段角色书。
+其中 IM / bgjob 段落包在 `<!-- agim:im-ops:start -->` … `end` 标记里：这是
+**所有 IM agent**（Agim / Claude / opencode / Codex / …）的共用基线。每次
+`agim start` bootstrap 会就地刷新各工作区角色书里的这段，不抹掉标记外人设。
+框架 system prompt 另有精简兜底。
 
 ---
 

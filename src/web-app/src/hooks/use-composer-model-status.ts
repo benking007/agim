@@ -19,9 +19,13 @@ export function useComposerModelStatus(agent: string, messages: ChatMessage[]) {
   const llm = useLlmList()
 
   const isAgim = agent === 'agim' || agent === 'native'
-  const usable = (llm.data?.backends ?? []).filter((b) => b.secret.source !== 'none')
+  const backends = llm.data?.backends ?? []
+  const usable = backends.filter((b) => b.secret.source !== 'none')
   const nativeRole = llm.data?.roles?.['native-chat']
-  const active = usable.find((b) => b.name === nativeRole) ?? usable[0]
+  const active = usable.find((b) => b.name === nativeRole)
+    ?? usable[0]
+    ?? backends.find((b) => b.name === nativeRole)
+    ?? backends[0]
 
   const modelLabel = isAgim
     ? (active?.model
@@ -30,7 +34,7 @@ export function useComposerModelStatus(agent: string, messages: ChatMessage[]) {
       ? displayAgentName(agent)
       : t('chat.statusBar.noAgent', { defaultValue: 'No agent' }))
 
-  const modelMissing = isAgim && !active
+  const modelMissing = isAgim && (!active || active.secret.source === 'none')
 
   const contextUsed = useMemo(
     () => messages.reduce((n, m) => n + estimateTokensFromText(m.content || ''), 0),

@@ -70,7 +70,7 @@ function formatWebAgentUnavailableMessage(agentName: string): string {
   if ((agentName === 'native' || agentName === 'agim')) {
     return [
       'Agim Agent is not configured yet.',
-      '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
+      '请粘贴 DeepSeek API Key 一键启用（也可切换其他厂商），或到 /settings/llm 配置。',
     ].join(' ')
   }
   return formatAgentNotAvailableError(agentName)

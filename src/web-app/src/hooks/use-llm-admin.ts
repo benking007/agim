@@ -35,6 +35,26 @@ export interface LlmAddBody {
   apiKey: string
 }
 
+export interface LlmQuickEnableBody {
+  apiKey: string
+  preset?: string
+  name?: string
+  model?: string
+  baseUrl?: string
+  bindCheapRoles?: boolean
+  setDefaultAgent?: boolean
+}
+
+export interface LlmQuickEnableResult {
+  name: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  model: string
+  roles: Record<string, string>
+  defaultAgent: string
+  preset: string
+}
+
 export interface LlmPingResponse {
   name: string
   ok: boolean
@@ -61,6 +81,14 @@ export function useLlmAddBackend() {
   const qc = useQueryClient()
   return useMutation<{ name: string; secretStored: boolean }, Error, LlmAddBody>({
     mutationFn: (body) => client.post('/api/llm/backends', { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
+  })
+}
+
+export function useLlmQuickEnable() {
+  const qc = useQueryClient()
+  return useMutation<LlmQuickEnableResult, Error, LlmQuickEnableBody>({
+    mutationFn: (body) => client.post('/api/llm/quick-enable', { body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
   })
 }

@@ -28,11 +28,11 @@ beforeEach(() => {
 })
 
 describe('setup-llm — internal helpers', () => {
-  it('suggestBackendName trims punctuation from the preset label', () => {
+  it('suggestBackendName uses DeepSeek preset baseName', () => {
     const sample = _internal.PROVIDER_PRESETS[0]
     const name = _internal.suggestBackendName(sample.provider, sample)
-    expect(name).toMatch(/^[a-z0-9-]+$/)
-    expect(name.length).toBeGreaterThan(0)
+    expect(name).toBe('deepseek-agim')
+    expect(sample.modelHint).toBe('deepseek-v4-pro')
   })
 
   it('envSuffix uppercases + replaces non-alnum with underscore', () => {

@@ -16,8 +16,11 @@ export function isNativeSetupError(message: string): boolean {
     || m.includes('not available')
     || m.includes('no llm backend')
     || m.includes('llmroles.native-chat')
+    || m.includes('api key')
     || raw.includes('/settings/llm')
+    || raw.includes('setup llm quick')
     || raw.includes('未配置')
     || raw.includes('大模型')
+    || raw.includes('一键启用')
   )
 }

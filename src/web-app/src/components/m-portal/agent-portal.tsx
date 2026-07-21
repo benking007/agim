@@ -19,6 +19,8 @@ import {
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
+import { isNativeSetupError } from '@/components/chat/error-hints'
+import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
@@ -230,11 +232,13 @@ export function AgentPortal(): JSX.Element {
     prefs.setLang(next)
   }
 
-  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
+  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation, clearError } = useChat()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
+  const [nativeSetupReason, setNativeSetupReason] = useState('')
   // Persist the left rail on large screens (Cursor-like); drawer only below lg.
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
@@ -245,6 +249,18 @@ export function AgentPortal(): JSX.Element {
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
   }, [])
+
+  // Agim Agent missing LLM → same one-click DeepSeek dialog as desktop `/`.
+  useEffect(() => {
+    if (!state.error) return
+    if (isNativeSetupError(state.error)) {
+      setNativeSetupReason(state.error)
+      setNativeSetupDialogOpen(true)
+    } else {
+      toast.error(state.error)
+    }
+    clearError()
+  }, [state.error, clearError])
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -694,6 +710,12 @@ export function AgentPortal(): JSX.Element {
         dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
       )}
     >
+      <NativeSetupDialog
+        open={nativeSetupDialogOpen}
+        reason={nativeSetupReason}
+        onOpenChange={setNativeSetupDialogOpen}
+        onConfigured={() => switchAgent('agim')}
+      />
       {/* Desktop rail — always visible ≥ lg */}
       <aside
         className={cn(

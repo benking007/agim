@@ -84,6 +84,42 @@ function mockLlmFetch(opts: {
       })
       return jsonResponse({ name: body.name, secretStored: true }, 201)
     }
+    if (u === '/api/llm/quick-enable' && method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        name?: string
+        model?: string
+        baseUrl?: string
+        apiKey?: string
+        preset?: string
+      }
+      const name = body.name?.trim() || 'deepseek-agim'
+      const model = body.model?.trim() || 'deepseek-v4-pro'
+      const baseUrl = body.baseUrl?.trim() || 'https://api.deepseek.com'
+      backends.push({
+        name,
+        provider: 'openai-compat',
+        baseUrl,
+        model,
+        secret: { source: 'file', envKey: `AGIM_LLM_SECRET_${name.toUpperCase()}` },
+      })
+      Object.assign(roles, {
+        'native-chat': name,
+        cheap: name,
+        evaluator: name,
+      })
+      config.defaultAgent = 'agim'
+      if (!Array.isArray(config.agents)) config.agents = []
+      if (!(config.agents as string[]).includes('agim')) (config.agents as string[]).push('agim')
+      return jsonResponse({
+        name,
+        provider: 'openai-compat',
+        baseUrl,
+        model,
+        roles: { ...roles },
+        defaultAgent: 'agim',
+        preset: body.preset || 'deepseek',
+      }, 201)
+    }
     if (u === '/api/llm/roles' && method === 'PUT') {
       Object.assign(roles, JSON.parse(String(init.body)))
       return jsonResponse({ roles })
@@ -120,32 +156,18 @@ describe('/settings/llm quick setup', () => {
     await waitFor(() => expect(screen.getByText('Agim Agent is ready')).toBeInTheDocument())
     expect(screen.getByText('Currently using deepseek-agim. Open Web chat to test it.')).toBeInTheDocument()
 
-    const addCall = fetchSpy.mock.calls.find(
-      (c) => String(c[0]) === '/api/llm/backends' && (c[1] as RequestInit | undefined)?.method === 'POST',
+    const quickCall = fetchSpy.mock.calls.find(
+      (c) => String(c[0]) === '/api/llm/quick-enable' && (c[1] as RequestInit | undefined)?.method === 'POST',
     )
-    expect(addCall).toBeDefined()
-    const addRequest = requireValue(addCall?.[1] as RequestInit | undefined, 'LLM backend request')
-    expect(JSON.parse(String(addRequest.body))).toMatchObject({
+    expect(quickCall).toBeDefined()
+    const quickRequest = requireValue(quickCall?.[1] as RequestInit | undefined, 'quick-enable request')
+    expect(JSON.parse(String(quickRequest.body))).toMatchObject({
       name: 'deepseek-agim',
-      provider: 'openai-compat',
-      baseUrl: 'https://api.deepseek.com/v1',
-      model: 'deepseek-chat',
+      preset: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
       apiKey: 'sk-test',
     })
-    expect(
-      fetchSpy.mock.calls.some(
-        (c) => String(c[0]) === '/api/llm/roles'
-          && (c[1] as RequestInit | undefined)?.method === 'PUT'
-          && JSON.parse(String((c[1] as RequestInit).body))['native-chat'] === 'deepseek-agim',
-      ),
-    ).toBe(true)
-    expect(
-      fetchSpy.mock.calls.some(
-        (c) => String(c[0]) === '/api/config'
-          && (c[1] as RequestInit | undefined)?.method === 'PUT'
-          && JSON.parse(String((c[1] as RequestInit).body)).defaultAgent === 'agim',
-      ),
-    ).toBe(true)
     expect(
       fetchSpy.mock.calls.some(
         (c) => String(c[0]) === '/api/llm/backends/deepseek-agim/ping'

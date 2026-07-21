@@ -206,6 +206,40 @@ describe('handleLlmApi — secrets', () => {
   })
 })
 
+describe('handleLlmApi — presets + quick-enable', () => {
+  beforeEach(() => {
+    rmSync(TMP, { recursive: true, force: true })
+    mkdirSync(TMP, { recursive: true })
+    _resetRegistry()
+  })
+
+  it('GET /api/llm/presets returns DeepSeek as default', async () => {
+    const res = makeRes()
+    const handled = await handleLlmApi(makeReq('GET'), res as unknown as import('node:http').ServerResponse, url('/api/llm/presets'))
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as { defaultPreset: string; presets: Array<{ key: string; model: string }> }
+    expect(body.defaultPreset).toBe('deepseek')
+    expect(body.presets[0]?.key).toBe('deepseek')
+    expect(body.presets[0]?.model).toBe('deepseek-v4-pro')
+  })
+
+  it('POST /api/llm/quick-enable creates DeepSeek backend and roles', async () => {
+    const res = makeRes()
+    const handled = await handleLlmApi(
+      makeReq('POST', { apiKey: 'sk-quick-1' }),
+      res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/quick-enable'),
+    )
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body) as { model: string; roles: Record<string, string>; defaultAgent: string }
+    expect(body.model).toBe('deepseek-v4-pro')
+    expect(body.roles['native-chat']).toBeTruthy()
+    expect(body.defaultAgent).toBe('agim')
+  })
+})
+
 describe('handleLlmApi — non-matching URL returns false', () => {
   it('GET /api/llmx is not handled', async () => {
     const res = makeRes()

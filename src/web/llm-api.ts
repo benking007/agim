@@ -6,6 +6,9 @@
 // Endpoints exposed:
 //
 //   GET    /api/llm                      → { backends, roles, status }
+//   GET    /api/llm/presets              → curated vendor presets (DeepSeek default)
+//   POST   /api/llm/quick-enable         body { apiKey, preset?, model?, baseUrl?, name? }
+//                                        → 201 Created (backend + roles + defaultAgent)
 //   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
@@ -26,6 +29,8 @@ import {
 } from '../core/llm/secrets.js'
 import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
+import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
+import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
 
 interface RawBackend {
   name: string
@@ -85,6 +90,12 @@ export async function handleLlmApi(
   if (p === '/api/llm' && m === 'GET') {
     await handleList(res); return true
   }
+  if (p === '/api/llm/presets' && m === 'GET') {
+    handlePresets(res); return true
+  }
+  if (p === '/api/llm/quick-enable' && m === 'POST') {
+    await handleQuickEnable(req, res); return true
+  }
   if (p === '/api/llm/backends' && m === 'POST') {
     await handleAddBackend(req, res); return true
   }
@@ -110,6 +121,62 @@ export async function handleLlmApi(
 }
 
 // ─── handlers ───────────────────────────────────────────────────────
+
+function handlePresets(res: ServerResponse): void {
+  send(res, 200, {
+    defaultPreset: DEFAULT_LLM_PRESET.key,
+    presets: LLM_PRESETS.map((p) => ({
+      key: p.key,
+      label: p.label,
+      provider: p.provider,
+      baseUrl: p.baseUrl,
+      model: p.model,
+      cheapModel: p.cheapModel,
+      baseName: p.baseName,
+      apiKeyDoc: p.apiKeyDoc,
+      defaultThinking: p.defaultThinking,
+    })),
+  })
+}
+
+async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody<{
+    preset?: unknown
+    apiKey?: unknown
+    name?: unknown
+    model?: unknown
+    baseUrl?: unknown
+    bindCheapRoles?: unknown
+    setDefaultAgent?: unknown
+  }>(req)
+  if (!body || typeof body !== 'object') {
+    send(res, 400, { error: 'request body must be a JSON object' })
+    return
+  }
+  if (typeof body.apiKey !== 'string' || !body.apiKey.trim()) {
+    send(res, 400, { error: 'apiKey is required (non-empty string)' })
+    return
+  }
+  try {
+    const result = await quickEnableLlmPreset({
+      preset: typeof body.preset === 'string' ? body.preset : undefined,
+      apiKey: body.apiKey,
+      name: typeof body.name === 'string' ? body.name : undefined,
+      model: typeof body.model === 'string' ? body.model : undefined,
+      baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+      bindCheapRoles: body.bindCheapRoles !== false,
+      setDefaultAgent: body.setDefaultAgent !== false,
+    })
+    send(res, 201, result)
+  } catch (err) {
+    if (err instanceof QuickEnableError) {
+      const status = err.code === 'conflict' ? 409 : 400
+      send(res, status, { error: err.message })
+      return
+    }
+    throw err
+  }
+}
 
 async function handleList(res: ServerResponse): Promise<void> {
   const cfg = await readConfig()

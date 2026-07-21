@@ -108,22 +108,25 @@ describe('OpenAICompatProvider', () => {
     expect(seenUrl).toBe('https://api.openai.com/v1/chat/completions')
   })
 
-  it('honours custom baseUrl (DeepSeek-style)', async () => {
+  it('honours custom baseUrl (DeepSeek-style) and defaults thinking off', async () => {
     let seenUrl = ''
-    globalThis.fetch = (async (url: string) => {
-      seenUrl = url
+    let seenBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seenUrl = String(url)
+      seenBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       return makeJsonResponse({
         choices: [{ message: { content: '' }, finish_reason: 'stop' }],
       })
     }) as unknown as typeof fetch
     const p = new OpenAICompatProvider({
       name: 'deepseek',
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       apiKey: 'k',
-      baseUrl: 'https://api.deepseek.com/v1',
+      baseUrl: 'https://api.deepseek.com',
     })
     await p.chat([{ role: 'user', content: 'x' }])
-    expect(seenUrl).toBe('https://api.deepseek.com/v1/chat/completions')
+    expect(seenUrl).toBe('https://api.deepseek.com/chat/completions')
+    expect(seenBody.thinking).toEqual({ type: 'disabled' })
   })
 
   it('merges extraHeaders into request', async () => {

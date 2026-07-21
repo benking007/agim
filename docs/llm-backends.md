@@ -28,20 +28,25 @@
 {
   "llmBackends": [
     {
-      "name": "deepseek-main",
+      "name": "deepseek-agim",
       "provider": "openai-compat",
-      "baseUrl": "https://api.deepseek.com/v1",
-      "model": "deepseek-chat",
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "label": "deepseek",
       "temperature": 0.2,
       "maxTokens": 2048
     }
   ],
   "llmRoles": {
-    "cheap": "deepseek-main",
-    "evaluator": "deepseek-main"
-  }
+    "native-chat": "deepseek-agim",
+    "cheap": "deepseek-agim",
+    "evaluator": "deepseek-agim"
+  },
+  "defaultAgent": "agim"
 }
 ```
+
+> **Recommended first-run:** `agim setup llm quick`（默认 DeepSeek / `deepseek-v4-pro`，粘贴 API Key 一键启用）。Web `/settings/llm`、桌面聊天与 `/m/chat` 在 Agim 未配置时也会引导同一流程；可切换其他厂商预设。
 
 ### 3.2 密钥文件（推荐）
 
@@ -87,7 +92,7 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 | 平台 | provider | baseUrl 示例 |
 |---|---|---|
 | OpenAI | openai-compat | `https://api.openai.com/v1` |
-| DeepSeek | openai-compat | `https://api.deepseek.com/v1` |
+| DeepSeek（推荐默认） | openai-compat | `https://api.deepseek.com`（模型：`deepseek-v4-pro` / `deepseek-v4-flash`） |
 | Moonshot/Kimi | openai-compat | `https://api.moonshot.cn/v1` |
 | Qwen 兼容网关 | openai-compat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | Ollama | openai-compat | `http://localhost:11434/v1` |

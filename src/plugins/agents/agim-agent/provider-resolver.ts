@@ -19,6 +19,7 @@ import {
   type LlmBackendBinding,
   type LlmRole,
 } from '../../../core/llm/registry.js'
+import { isDeepSeekBaseUrl } from '../../../core/llm/presets.js'
 import type { NativeModelBinding } from './index.js'
 import { findCatalogModel } from '../../../core/llm/model-catalog.js'
 
@@ -34,18 +35,37 @@ const DEFAULT_BASE_URL: Record<string, string> = {
   'anthropic-messages': 'https://api.anthropic.com',
 }
 
+/** DeepSeek catalog maps effort levels; keep a local fallback when the
+ *  model id is custom but the baseUrl is still DeepSeek. */
+const DEEPSEEK_THINKING_LEVEL_MAP = {
+  minimal: null,
+  low: null,
+  medium: null,
+  high: 'high',
+  xhigh: 'max',
+} as const
+
 export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | null {
   const api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
   const catalogModel = findCatalogModel(b.providerType, b.model)
   const unknownContextWindow = resolveUnknownContextWindow()
+  const baseUrl = b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1'
+  const deepseek = isDeepSeekBaseUrl(baseUrl)
+    || catalogModel?.provider === 'deepseek'
+    || /^deepseek/i.test(b.model)
+  // Prefer catalog reasoning; DeepSeek endpoints always support thinking mode
+  // even when the model id is not yet in pi-ai's table.
+  const reasoning = catalogModel?.reasoning === true || deepseek
   const model = {
     id: b.model,
     name: b.model,
     api,
+    // Keep agim backend name as provider id (auth / cost grouping), but copy
+    // DeepSeek compat fields so pi-ai emits thinking + reasoning_content.
     provider: b.name,
-    baseUrl: b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1',
-    reasoning: catalogModel?.reasoning === true,
+    baseUrl,
+    reasoning,
     input: (catalogModel?.input?.length
       ? [...catalogModel.input]
       : ['text']) as ('text' | 'image')[],
@@ -54,6 +74,21 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     // that delays compaction until the provider already overflows.
     contextWindow: catalogModel?.contextWindow ?? unknownContextWindow,
     maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? 8192,
+    ...(catalogModel?.thinkingLevelMap
+      ? { thinkingLevelMap: { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) } }
+      : deepseek
+        ? { thinkingLevelMap: { ...DEEPSEEK_THINKING_LEVEL_MAP } }
+        : {}),
+    ...(catalogModel?.compat
+      ? { compat: { ...(catalogModel.compat as Record<string, unknown>) } }
+      : deepseek
+        ? {
+            compat: {
+              thinkingFormat: 'deepseek' as const,
+              requiresReasoningContentOnAssistantMessages: true,
+            },
+          }
+        : {}),
   } as Model<string>
   return {
     model,

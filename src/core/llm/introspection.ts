@@ -8,8 +8,9 @@
 // every introspection caller stays a 1-line change.
 
 import { logger as rootLogger } from '../logger.js'
-import { getProvider, type LlmRole } from './registry.js'
+import { getBackendBindingByName, getProvider, type LlmRole } from './registry.js'
 import { LlmProviderError, type LlmMessage, type LlmUsage } from './provider-base.js'
+import { isDeepSeekBaseUrl } from './presets.js'
 
 const log = rootLogger.child({ component: 'llm-introspection' })
 
@@ -32,6 +33,8 @@ export interface IntrospectionInput {
   temperature?: number
   /** Per-call model override; falls back to the provider's default. */
   model?: string
+  /** Ask the provider for JSON Output when supported (DeepSeek / OpenAI). */
+  jsonMode?: boolean
 }
 
 export interface IntrospectionResult {
@@ -66,6 +69,21 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
 
   const messages: LlmMessage[] = [{ role: 'user', content: input.prompt }]
   const startedAt = Date.now()
+  // Heuristic: evaluator / JSON-shaped prompts benefit from response_format.
+  const wantsJson = input.jsonMode === true
+    || input.role === 'evaluator'
+    || /\bjson\b/i.test(input.prompt)
+    || (input.system ? /\bjson\b/i.test(input.system) : false)
+  const providerOptions: Record<string, unknown> = {}
+  if (wantsJson) {
+    providerOptions.response_format = { type: 'json_object' }
+  }
+  // DeepSeek OpenAICompat path defaults thinking off (see openai-compat-provider);
+  // keep that for cheap introspection even if callers pass nothing.
+  const binding = getBackendBindingByName(provider.name)
+  if (isDeepSeekBaseUrl(binding?.baseUrl)) {
+    providerOptions.thinking = { type: 'disabled' }
+  }
   try {
     const result = await provider.chat(messages, {
       system: input.system,
@@ -73,6 +91,7 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
       signal: input.signal,
       temperature: input.temperature,
       model: input.model,
+      providerOptions,
     })
     return {
       text: result.text,

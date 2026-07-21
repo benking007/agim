@@ -11,16 +11,31 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     const b: LlmBackendBinding = {
       name: 'deepseek',
       providerType: 'openai-compat',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
       apiKey: 'sk-xxx',
       extraHeaders: { 'x-foo': 'bar' },
     }
     const binding = bindingToPiModel(b)!
     expect(binding.model.api).toBe('openai-completions')
-    expect(binding.model.baseUrl).toBe('https://api.deepseek.com/v1')
-    expect(binding.model.id).toBe('deepseek-chat')
+    expect(binding.model.baseUrl).toBe('https://api.deepseek.com')
+    expect(binding.model.id).toBe('deepseek-v4-pro')
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.costKnown).toBe(true)
     expect(await binding.getApiKeyAndHeaders()).toEqual({ apiKey: 'sk-xxx', headers: { 'x-foo': 'bar' } })
+  })
+
+  it('enables DeepSeek thinking compat even for uncatalogued model ids on deepseek.com', () => {
+    const binding = bindingToPiModel({
+      name: 'ds-custom',
+      providerType: 'openai-compat',
+      model: 'deepseek-custom-agent',
+      baseUrl: 'https://api.deepseek.com',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
   })
 
   it('maps an anthropic backend to anthropic-messages', () => {

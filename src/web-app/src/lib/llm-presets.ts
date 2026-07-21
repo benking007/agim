@@ -1,3 +1,11 @@
+/**
+ * Web mirror of `src/core/llm/presets.ts`.
+ *
+ * Keep keys / defaults aligned with the backend — Web can also fetch
+ * `/api/llm/presets` at runtime; these constants power first paint and
+ * offline form defaults (DeepSeek is the Agim Agent recommended preset).
+ */
+
 export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'openai' | 'anthropic' | 'custom'
 
 export interface LlmPresetDef {
@@ -5,16 +13,20 @@ export interface LlmPresetDef {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  cheapModel?: string
   baseName: string
+  defaultThinking?: 'off' | 'high' | 'max'
 }
 
 export const LLM_PRESETS: LlmPresetDef[] = [
   {
     key: 'deepseek',
     provider: 'openai-compat',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-v4-pro',
+    cheapModel: 'deepseek-v4-flash',
     baseName: 'deepseek-agim',
+    defaultThinking: 'high',
   },
   {
     key: 'moonshot',

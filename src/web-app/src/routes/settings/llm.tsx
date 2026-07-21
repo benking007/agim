@@ -51,7 +51,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
-  useLlmList, useLlmAddBackend, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
+  useLlmList, useLlmAddBackend, useLlmQuickEnable, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
 } from '@/hooks/use-llm-admin'
 import { useConfig, useUpdateConfig } from '@/hooks/use-settings'
 import {
@@ -226,6 +226,7 @@ function QuickAgentSetupCard({
   const cfgQuery = useConfig()
   const updateConfig = useUpdateConfig()
   const addBackend = useLlmAddBackend()
+  const quickEnable = useLlmQuickEnable()
   const putRoles = useLlmPutRoles()
   const ping = useLlmPing()
   const existingNames = useMemo(
@@ -239,10 +240,6 @@ function QuickAgentSetupCard({
   const alreadyReady = Boolean(activeBackend && nativeRole && defaultIsNative)
 
   const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
-  const preset = useMemo(
-    () => LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET,
-    [presetKey],
-  )
   const [name, setName] = useState(() => suggestLlmBackendName(DEFAULT_LLM_PRESET.baseName, existingNames))
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
   const [model, setModel] = useState(DEFAULT_LLM_PRESET.model)
@@ -251,7 +248,7 @@ function QuickAgentSetupCard({
   const [probeError, setProbeError] = useState<ProbeErrorState | null>(null)
   const [phase, setPhase] = useState<'idle' | 'saving' | 'testing'>('idle')
 
-  const busy = phase !== 'idle' || addBackend.isPending || putRoles.isPending || updateConfig.isPending || ping.isPending
+  const busy = phase !== 'idle' || addBackend.isPending || quickEnable.isPending || putRoles.isPending || updateConfig.isPending || ping.isPending
 
   function applyPreset(next: LlmPresetKey): void {
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
@@ -285,21 +282,19 @@ function QuickAgentSetupCard({
     setSetupResult(null)
     try {
       setPhase('saving')
-      await addBackend.mutateAsync({
+      const enabled = await quickEnable.mutateAsync({
+        preset: presetKey,
         name: backendName,
-        provider: preset.provider,
         baseUrl: endpoint,
         model: modelId,
         apiKey: apiKey.trim(),
       })
-      await putRoles.mutateAsync({ 'native-chat': backendName })
-      await updateConfig.mutateAsync({ defaultAgent: 'agim' })
       await cfgQuery.refetch()
       onRefresh()
 
       setPhase('testing')
       try {
-        const probe = await ping.mutateAsync(backendName)
+        const probe = await ping.mutateAsync(enabled.name)
         if (probe.ok) {
           const message = t('llm.quick.testOk', { ms: probe.durationMs ?? 0 })
           setSetupResult({ tone: 'success', message })
@@ -307,12 +302,12 @@ function QuickAgentSetupCard({
         } else {
           const message = probe.error || t('llm.quick.testFailed')
           setSetupResult({ tone: 'warning', message })
-          setProbeError({ backend: backendName, message })
+          setProbeError({ backend: enabled.name, message })
         }
       } catch (err) {
         const message = (err as Error)?.message ?? String(err)
         setSetupResult({ tone: 'warning', message })
-        setProbeError({ backend: backendName, message })
+        setProbeError({ backend: enabled.name, message })
       }
       setApiKey('')
     } catch (err) {

@@ -209,7 +209,7 @@ async function handleList(res: ServerResponse): Promise<void> {
       ...(b.thinkingFormat !== undefined ? { thinkingFormat: b.thinkingFormat } : {}),
       ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
       ...(b.extraHeaders && Object.keys(b.extraHeaders).length > 0
-        ? { extraHeaders: b.extraHeaders }
+        ? { extraHeaders: redactExtraHeaders(b.extraHeaders) }
         : {}),
       secret: {
         source: src.source,
@@ -236,10 +236,22 @@ function parseOptionalNumber(value: unknown, field: string, min: number, max: nu
   return n
 }
 
+/** Header names whose values must never round-trip to the SPA. */
+const SENSITIVE_HEADER_RE = /^(authorization|api-key|x-api-key|x-auth-token|proxy-authorization)$/i
+
+/** List API: keep header keys, mask secret-bearing values. */
+export function redactExtraHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) {
+    out[k] = SENSITIVE_HEADER_RE.test(k) ? '***' : v
+  }
+  return out
+}
+
 function parseExtraHeaders(value: unknown): Record<string, string> | undefined | { error: string } {
   if (value === undefined || value === null || value === '') return undefined
+  const out: Record<string, string> = {}
   if (typeof value === 'string') {
-    const out: Record<string, string> = {}
     for (const line of value.split(/\r?\n/)) {
       const trimmed = line.trim()
       if (!trimmed) continue
@@ -248,16 +260,22 @@ function parseExtraHeaders(value: unknown): Record<string, string> | undefined |
       const key = trimmed.slice(0, idx).trim()
       const val = trimmed.slice(idx + 1).trim()
       if (!key) return { error: 'extraHeaders lines must look like "Header-Name: value"' }
+      // Authorization is owned by the secrets layer — reject overrides.
+      if (/^authorization$/i.test(key)) {
+        return { error: 'extraHeaders must not include Authorization (use apiKey / llm-secrets)' }
+      }
       out[key] = val
     }
     return Object.keys(out).length > 0 ? out : undefined
   }
   if (typeof value === 'object' && !Array.isArray(value)) {
-    const out: Record<string, string> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (typeof v !== 'string') return { error: 'extraHeaders values must be strings' }
       const key = k.trim()
       if (!key) continue
+      if (/^authorization$/i.test(key)) {
+        return { error: 'extraHeaders must not include Authorization (use apiKey / llm-secrets)' }
+      }
       out[key] = v
     }
     return Object.keys(out).length > 0 ? out : undefined
@@ -364,7 +382,7 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     const update = await updateConfigObject((current) => {
       const cfg = current as RawConfig
       const existing = cfg.llmBackends ?? []
-      if (existing.some((b) => b.name === name)) {
+      if (existing.some((b) => b.name.toLowerCase() === name.toLowerCase())) {
         throw new LlmConfigError(409, `backend "${name}" already exists`)
       }
       const config = { ...cfg, llmBackends: [...existing, next] }

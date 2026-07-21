@@ -74,6 +74,30 @@ describe('OpenAICompatProvider', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('emits max_completion_tokens when configured', async () => {
+    const fetchSpy = mock(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as Record<string, unknown>
+      expect(body.max_completion_tokens).toBe(128)
+      expect(body.max_tokens).toBeUndefined()
+      return makeJsonResponse({
+        model: 'mimo-v2.5',
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      })
+    })
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'mimo',
+      model: 'mimo-v2.5',
+      apiKey: 'sk',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
+      defaultMaxTokens: 128,
+      maxTokensField: 'max_completion_tokens',
+    })
+    await p.chat([{ role: 'user', content: 'hi' }])
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('omits temperature when neither call nor backend config set it', async () => {
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string) as Record<string, unknown>

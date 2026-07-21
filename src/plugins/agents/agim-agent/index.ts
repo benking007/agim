@@ -731,14 +731,15 @@ export class NativeAgentAdapter implements AgentAdapter {
       : []
 
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
-    // Map /think (session.variant) → pi thinkingLevel. DeepSeek / Kimi
-    // default to their preset thinking level when variant is auto/empty.
-    const thinkingFallback = resolveDefaultThinking(
-      binding.model.baseUrl,
-      binding.model.id,
-    )
+    // Map /think (session.variant) → pi thinkingLevel.
+    // Honor model.reasoning (set false by thinkingFormat:'off') before URL
+    // heuristics — otherwise DeepSeek/Kimi hosts force high even when off.
+    const thinkingFallback = binding.model.reasoning
+      ? resolveDefaultThinking(binding.model.baseUrl, binding.model.id)
+      : 'off'
     const thinkingLevel = mapVariantToThinkingLevel(
       effectiveOpts?.variant,
+      // Catalog/heuristic reasoning with no vendor preset → prefer high over off.
       thinkingFallback === 'off' && binding.model.reasoning ? 'high' : thinkingFallback,
     )
     const harness = new AgentHarness({

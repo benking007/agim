@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   DEFAULT_LLM_PRESET,
+  builtinPresetKeyForBaseUrl,
   getLlmPreset,
   isDeepSeekBaseUrl,
   isGlm52Model,
@@ -44,6 +45,14 @@ describe('llm presets', () => {
     expect(isDeepSeekBaseUrl('https://api.deepseek.com')).toBe(true)
     expect(isDeepSeekBaseUrl('https://api.deepseek.com/v1')).toBe(true)
     expect(isDeepSeekBaseUrl('https://api.openai.com/v1')).toBe(false)
+  })
+
+  it('maps vendor host families onto built-in preset keys', () => {
+    expect(builtinPresetKeyForBaseUrl('https://api.deepseek.com')).toBe('deepseek')
+    expect(builtinPresetKeyForBaseUrl('https://api.moonshot.ai/v1')).toBe('moonshot')
+    expect(builtinPresetKeyForBaseUrl('https://api.z.ai/api/paas/v4')).toBe('zhipu')
+    expect(builtinPresetKeyForBaseUrl('https://token-plan-cn.xiaomimimo.com/v1')).toBe('mimo')
+    expect(builtinPresetKeyForBaseUrl('https://api.openai.com/v1')).toBeNull()
   })
 
   it('detects Kimi / Moonshot base URLs and model families', () => {

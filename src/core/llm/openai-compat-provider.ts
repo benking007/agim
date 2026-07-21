@@ -71,6 +71,12 @@ export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'pr
    *  individual deployments may want "deepseek" / "kimi" / "qwen" so the
    *  cost dashboard groups correctly. */
   providerLabel?: string
+  /**
+   * Which max-tokens field to emit. Some OpenAI-compat gateways (Kimi K3,
+   * MiMo, custom proxies) only accept `max_completion_tokens`.
+   * Default: `max_tokens`.
+   */
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
   /** Operator opt-in: this provider's configured model understands the
    *  OpenAI vision content shape ({type:'image_url'} blocks). When true,
    *  `LlmMessage.media` is encoded into the request; otherwise media is
@@ -147,6 +153,7 @@ export class OpenAICompatProvider extends LlmProvider {
   private readonly extraHeaders: Record<string, string>
   private readonly retryOnTransient: number
   private readonly vision: boolean
+  private readonly maxTokensField: 'max_tokens' | 'max_completion_tokens'
 
   constructor(cfg: OpenAICompatProviderConfig) {
     super({
@@ -156,6 +163,9 @@ export class OpenAICompatProvider extends LlmProvider {
     this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
     this.extraHeaders = cfg.extraHeaders || {}
     this.retryOnTransient = Math.max(0, Math.min(10, cfg.retryOnTransient ?? resolveDefaultRetry()))
+    this.maxTokensField = cfg.maxTokensField === 'max_completion_tokens'
+      ? 'max_completion_tokens'
+      : 'max_tokens'
     if (typeof cfg.vision === 'boolean') {
       this.vision = cfg.vision
     } else {
@@ -293,7 +303,7 @@ export class OpenAICompatProvider extends LlmProvider {
     const body: Record<string, unknown> = {
       model: opts.model,
       messages: messages.map((m) => serializeMessage(m, { vision: this.vision })),
-      max_tokens: opts.maxTokens,
+      [this.maxTokensField]: opts.maxTokens,
     }
     if (opts.temperature !== undefined) body.temperature = opts.temperature
     if (stream) body.stream = true

@@ -140,6 +140,7 @@ describe('handleLlmApi — add backend', () => {
       contextWindow: 200000,
       thinkingFormat: 'deepseek',
       maxTokensField: 'max_completion_tokens',
+      // Disk keeps the raw value; list API redacts secret-bearing headers.
       extraHeaders: { 'X-Tenant': 'acme', 'api-key': 'sk-extra' },
     })
 
@@ -149,8 +150,23 @@ describe('handleLlmApi — add backend', () => {
     expect(body.backends[0]).toMatchObject({
       thinkingFormat: 'deepseek',
       contextWindow: 200000,
-      extraHeaders: { 'X-Tenant': 'acme', 'api-key': 'sk-extra' },
+      extraHeaders: { 'X-Tenant': 'acme', 'api-key': '***' },
     })
+  })
+
+  it('rejects Authorization in extraHeaders', async () => {
+    const add = {
+      name: 'proxy-auth',
+      provider: 'openai-compat',
+      baseUrl: 'https://llm.internal/v1',
+      model: 'm',
+      apiKey: 'sk',
+      extraHeaders: { Authorization: 'Bearer leaked' },
+    }
+    const res = makeRes()
+    await handleLlmApi(makeReq('POST', add), res as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).error).toMatch(/Authorization/i)
   })
 
   it('round-trips thinkingFormat off on GET /api/llm', async () => {

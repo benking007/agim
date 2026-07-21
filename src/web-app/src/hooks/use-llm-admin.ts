@@ -30,7 +30,12 @@ export interface LlmBackendRow {
   thinkingFormat?: LlmThinkingFormat
   maxTokensField?: LlmMaxTokensField
   extraHeaders?: Record<string, string>
-  secret: { source: 'env' | 'file' | 'vendor' | 'none'; envKey: string }
+  secret: {
+    source: 'env' | 'file' | 'vendor' | 'none'
+    envKey: string
+    vendorEnvName?: string
+    vendorCandidates?: string[]
+  }
 }
 
 export interface LlmListResponse {

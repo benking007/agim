@@ -126,6 +126,29 @@ describe('quickEnableLlmPreset', () => {
     })
   })
 
+  it('rejects quick-enable when the same hostname exists without label', async () => {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(join(TMP, 'config.json'), JSON.stringify({
+      messengers: [],
+      agents: ['agim'],
+      llmBackends: [
+        {
+          name: 'hand-ds',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+        },
+      ],
+    }), 'utf8')
+    await expect(
+      quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-host' }),
+    ).rejects.toMatchObject({
+      name: 'QuickEnableError',
+      code: 'conflict',
+      message: expect.stringMatching(/already configured/i),
+    })
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

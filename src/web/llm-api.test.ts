@@ -153,6 +153,25 @@ describe('handleLlmApi — add backend', () => {
     })
   })
 
+  it('round-trips thinkingFormat off on GET /api/llm', async () => {
+    const add = {
+      name: 'proxy-off',
+      provider: 'openai-compat',
+      baseUrl: 'https://llm.internal/v1',
+      model: 'proxy-model',
+      apiKey: 'sk-off',
+      thinkingFormat: 'off',
+    }
+    const res1 = makeRes()
+    await handleLlmApi(makeReq('POST', add), res1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res1.statusCode).toBe(201)
+
+    const res2 = makeRes()
+    await handleLlmApi(makeReq('GET'), res2 as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    const body = JSON.parse(res2.body) as { backends: Array<Record<string, unknown>> }
+    expect(body.backends[0]?.thinkingFormat).toBe('off')
+  })
+
   it('refreshes in-process LLM registry immediately after save', async () => {
     const add = { name: 'runtime-ok', provider: 'openai-compat',
       baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-live' }
@@ -300,7 +319,8 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(body.model).toBe('deepseek-v4-pro')
     expect(body.backends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
     expect(body.roles['native-chat']).toBeTruthy()
-    expect(body.roles.cheap).toBe(body.backends?.[1]?.name)
+    expect(body.backends?.[1]?.name).toBeTruthy()
+    expect(body.roles.cheap).toBe(body.backends![1]!.name)
     expect(body.defaultAgent).toBe('agim')
   })
 })

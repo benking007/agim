@@ -184,10 +184,13 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
                 ? { ...MIMO_THINKING_LEVEL_MAP }
                 : undefined
   const vendorThinkingLevelMap = overrideThinkingLevelMap ?? heuristicThinkingLevelMap
-  const thinkingLevelMap = vendorThinkingLevelMap
-    ?? (catalogModel?.thinkingLevelMap
-      ? { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) }
-      : undefined)
+  // Explicit 'off' must also suppress catalog thinkingLevelMap (e.g. deepseek-v4-pro).
+  const thinkingLevelMap = thinkingOverride === 'off'
+    ? undefined
+    : vendorThinkingLevelMap
+      ?? (catalogModel?.thinkingLevelMap
+        ? { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) }
+        : undefined)
   const overrideCompat = thinkingOverride === 'deepseek'
     ? {
         thinkingFormat: 'deepseek' as const,
@@ -246,12 +249,14 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
   const catalogCompat = catalogModel?.compat
     ? { ...(catalogModel.compat as Record<string, unknown>) }
     : undefined
-  let compat = vendorCompat
-    ? { ...(catalogCompat ?? {}), ...vendorCompat }
-    : catalogCompat
-  // Allow custom backends to override only the token field without picking a
-  // full thinking format (e.g. max_completion_tokens on a non-thinking proxy).
-  if (b.maxTokensField && thinkingOverride !== 'off') {
+  // 'off' clears catalog/vendor thinking compat entirely; token-field may still apply.
+  let compat: Record<string, unknown> | undefined = thinkingOverride === 'off'
+    ? undefined
+    : vendorCompat
+      ? { ...(catalogCompat ?? {}), ...vendorCompat }
+      : catalogCompat
+  // Allow custom backends to override only the token field (including when thinking is off).
+  if (b.maxTokensField) {
     compat = { ...(compat ?? {}), maxTokensField: b.maxTokensField }
   }
   const model = {

@@ -104,12 +104,25 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
 
   const current = (await readConfigObject()) as RawConfig
   const existingBackends = current.llmBackends ?? []
-  // Built-in presets are one-shot: once a vendor label is present, refuse
-  // a second quick-enable (operators must delete the group first).
+  // Built-in presets are one-shot: match label (quick-enable writes preset key)
+  // or the same API hostname (hand-added custom without label). Operators must
+  // delete the group before re-adding — mirrors Web installedBuiltinPresetKeys.
   if (!isCustom) {
-    const already = existingBackends.some(
-      (b) => (b.label ?? '').trim().toLowerCase() === preset.key,
-    )
+    let presetHost: string | null = null
+    try {
+      presetHost = new URL(preset.baseUrl).hostname.toLowerCase()
+    } catch {
+      presetHost = null
+    }
+    const already = existingBackends.some((b) => {
+      if ((b.label ?? '').trim().toLowerCase() === preset.key) return true
+      if (!presetHost || !b.baseUrl) return false
+      try {
+        return new URL(b.baseUrl).hostname.toLowerCase() === presetHost
+      } catch {
+        return false
+      }
+    })
     if (already) {
       throw new QuickEnableError(
         'conflict',

@@ -48,8 +48,10 @@ describe('setup-llm — internal helpers', () => {
     expect(keys.has('zhipu')).toBe(true)
     expect(keys.has('mimo')).toBe(true)
     expect(keys.has('custom')).toBe(true)
-    expect(keys.has('openai')).toBe(false)
-    expect(keys.has('anthropic')).toBe(false)
+    // openai / anthropic are no longer curated preset keys (use Custom).
+    const keyNames = new Set<string>([...keys])
+    expect(keyNames.has('openai')).toBe(false)
+    expect(keyNames.has('anthropic')).toBe(false)
     const providers = new Set(_internal.PROVIDER_PRESETS.map((p) => p.provider))
     expect(providers.has('openai-compat')).toBe(true)
   })

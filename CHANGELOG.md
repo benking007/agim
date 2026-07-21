@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Built-in LLM presets for Agim Agent: DeepSeek (default), Kimi (Moonshot), Zhipu GLM, Xiaomi MiMo — one API key registers primary + cheap models; OpenAI/Anthropic removed from curated presets (use Custom).
+- Custom backend advanced params: `thinkingFormat` (`off` / `deepseek` / `openai`), `contextWindow`, `maxTokensField`, `extraHeaders`, plus Web compat templates (DeepSeek / Kimi K3 / MiMo).
+- Settings LLM page: brand-grouped backends (collapsed by default), group-level delete, duplicate built-in preset blocked (label or hostname), composer thinking toggle + effort.
+
 ### Changed
 
+- Quick-enable backend names equal model IDs (dots allowed, e.g. `kimi-k2.6`); `label` stores preset key for grouping.
 - Portal `/m/chat` wide layout: Cursor-like shell — persistent left rail at `lg+`, chat + composer capped at **750px** and centered (side gutters reserved for future panels). Mobile keeps the hamburger drawer.
 - Portal assistant export actions are **platform-split**: browser shows **Save as Markdown** only; iOS / macOS shells show **Share** (OS sheet) only — avoids a useless Share in browsers and an awkward Save/open flow in shells.
 - `AGIM_VIEWER_ENABLED` is **IM-only**: WeChat / Feishu / DingTalk / Telegram / Discord / Email honour the switch; browser, Portal (`/m/chat` including iOS/macOS shells), and TUI always stay full inline markdown. See `docs/viewer-modes.md`.

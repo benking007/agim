@@ -205,7 +205,8 @@ async function handleList(res: ServerResponse): Promise<void> {
       ...(typeof b.temperature === 'number' ? { temperature: b.temperature } : {}),
       ...(typeof b.maxTokens === 'number' ? { maxTokens: b.maxTokens } : {}),
       ...(typeof b.contextWindow === 'number' ? { contextWindow: b.contextWindow } : {}),
-      ...(b.thinkingFormat ? { thinkingFormat: b.thinkingFormat } : {}),
+      // Include 'off' (falsy string) so the SPA can round-trip an explicit disable.
+      ...(b.thinkingFormat !== undefined ? { thinkingFormat: b.thinkingFormat } : {}),
       ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
       ...(b.extraHeaders && Object.keys(b.extraHeaders).length > 0
         ? { extraHeaders: b.extraHeaders }

@@ -6,6 +6,13 @@ import type { LlmBackendBinding } from '../../../core/llm/registry.js'
 import { lookupModelMeta } from '../../../core/llm/model-catalog.js'
 import { bindingToPiModel } from './provider-resolver.js'
 
+/** pi-ai Model.compat is a narrow/empty type in some builds — read as a bag. */
+function compatOf(model: { compat?: unknown }): Record<string, unknown> | undefined {
+  return model.compat && typeof model.compat === 'object'
+    ? model.compat as Record<string, unknown>
+    : undefined
+}
+
 describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
   it('maps an openai-compat backend (deepseek) to openai-completions with its baseUrl', async () => {
     const b: LlmBackendBinding = {
@@ -34,7 +41,7 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://api.deepseek.com',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
   })
 
@@ -46,9 +53,9 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://api.moonshot.cn/v1',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('openai')
-    expect(binding.model.compat?.supportsReasoningEffort).toBe(true)
-    expect(binding.model.compat?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('openai')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
+    expect(compatOf(binding.model)?.requiresReasoningContentOnAssistantMessages).toBe(true)
     expect(binding.model.thinkingLevelMap?.low).toBe('low')
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
     expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
@@ -63,7 +70,7 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://api.moonshot.ai/v1',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
     // Catalog may supply 262144; uncatalogued fallback is 256k.
     expect(binding.model.contextWindow).toBeGreaterThanOrEqual(256_000)
   })
@@ -76,8 +83,8 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
-    expect(binding.model.compat?.supportsReasoningEffort).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
     expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
     expect(binding.model.thinkingLevelMap?.low).toBe('high')
@@ -92,8 +99,8 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
-    expect(binding.model.compat?.supportsReasoningEffort).toBe(false)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(false)
     expect(binding.model.contextWindow).toBe(200_000)
   })
 
@@ -105,10 +112,10 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       baseUrl: 'https://api.xiaomimimo.com/v1',
     })!
     expect(binding.model.reasoning).toBe(true)
-    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
-    expect(binding.model.compat?.supportsReasoningEffort).toBeFalsy()
-    expect(binding.model.compat?.maxTokensField).toBe('max_completion_tokens')
-    expect(binding.model.compat?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBeFalsy()
+    expect(compatOf(binding.model)?.maxTokensField).toBe('max_completion_tokens')
+    expect(compatOf(binding.model)?.requiresReasoningContentOnAssistantMessages).toBe(true)
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
     // Catalog may report 1048576 (1Mi); vendor fallback is 1_000_000.
     expect(binding.model.contextWindow).toBeGreaterThanOrEqual(1_000_000)
@@ -127,8 +134,8 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       maxTokensField: 'max_completion_tokens',
     })!
     expect(on.model.reasoning).toBe(true)
-    expect(on.model.compat?.thinkingFormat).toBe('deepseek')
-    expect(on.model.compat?.maxTokensField).toBe('max_completion_tokens')
+    expect(compatOf(on.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(on.model)?.maxTokensField).toBe('max_completion_tokens')
     expect(on.model.contextWindow).toBe(200_000)
     expect(on.model.maxTokens).toBe(16_384)
 
@@ -138,8 +145,12 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       model: 'deepseek-v4-pro',
       baseUrl: 'https://api.deepseek.com',
       thinkingFormat: 'off',
+      maxTokensField: 'max_completion_tokens',
     })!
     expect(off.model.reasoning).toBe(false)
+    expect(off.model.thinkingLevelMap).toBeUndefined()
+    expect(compatOf(off.model)?.thinkingFormat).toBeUndefined()
+    expect(compatOf(off.model)?.maxTokensField).toBe('max_completion_tokens')
   })
 
   it('maps an anthropic backend to anthropic-messages', () => {

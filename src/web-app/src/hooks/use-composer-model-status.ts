@@ -12,6 +12,7 @@ import {
 } from '@/components/chat/composer-status-bar'
 import { useLlmList } from '@/hooks/use-llm-admin'
 import type { ChatMessage } from '@/hooks/use-chat'
+import { displayAgentName } from '@/components/m-portal/agent-visuals'
 
 export function useComposerModelStatus(agent: string, messages: ChatMessage[]) {
   const { t } = useTranslation()
@@ -25,7 +26,9 @@ export function useComposerModelStatus(agent: string, messages: ChatMessage[]) {
   const modelLabel = isAgim
     ? (active?.model
       || t('chat.statusBar.noModel', { defaultValue: 'Configure model' }))
-    : (agent || t('chat.statusBar.noAgent', { defaultValue: 'No agent' }))
+    : (agent
+      ? displayAgentName(agent)
+      : t('chat.statusBar.noAgent', { defaultValue: 'No agent' }))
 
   const modelMissing = isAgim && !active
 

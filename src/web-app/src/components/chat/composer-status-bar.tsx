@@ -79,19 +79,20 @@ function ContextRing({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex h-6 w-6 items-center justify-center rounded-full transition-colors',
-        dark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-100',
+        'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
+        dark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-200/80',
       )}
       aria-label="Context usage"
+      title={`${Math.round(pct * 100)}%`}
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" className="block">
+      <svg width="18" height="18" viewBox="0 0 16 16" className="block">
         <circle
           cx="8"
           cy="8"
           r={r}
           fill="none"
-          stroke={dark ? '#3f3f46' : '#e4e4e7'}
-          strokeWidth="2"
+          stroke={dark ? '#52525b' : '#d4d4d8'}
+          strokeWidth="2.25"
         />
         <circle
           cx="8"
@@ -99,7 +100,7 @@ function ContextRing({
           r={r}
           fill="none"
           stroke={stroke}
-          strokeWidth="2"
+          strokeWidth="2.25"
           strokeDasharray={`${dash} ${c - dash}`}
           strokeLinecap="round"
           transform="rotate(-90 8 8)"
@@ -164,17 +165,17 @@ export function ComposerStatusBar({
   }
 
   const chip = cn(
-    'inline-flex h-6 max-w-[10rem] items-center gap-0.5 rounded-md px-1.5 text-[11px] font-medium transition-colors',
+    'inline-flex h-7 max-w-[11rem] items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors',
     'disabled:opacity-40',
     dark
-      ? 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-      : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800',
+      ? 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+      : 'text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900',
   )
 
   return (
     <div
       className={cn(
-        'relative flex items-center gap-1 px-1 pt-1.5',
+        'relative flex items-center gap-1.5 px-1.5 pt-2',
         className,
       )}
     >

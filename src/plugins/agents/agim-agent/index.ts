@@ -46,6 +46,10 @@ import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
 import { resolveCriticMode, runGoalCritic } from '../../../core/llm/goal-critic.js'
 import {
+  resolveDefaultThinking,
+  mapVariantToThinkingLevel,
+} from '../../../core/llm/presets.js'
+import {
   isSemanticStuckLoop,
   resolveSemanticStuckLoopOn,
 } from '../../../core/llm/agent-loop.js'
@@ -640,7 +644,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
     if (!binding) {
       opts?.onOutcome?.({ status: 'error', providerFailure: false, error: 'no configured model backend' })
-      yield '⚠️ Agim Agent：未配置可用的大模型 API（请在 /settings/llm 添加 API + API Key；角色绑定可选）'
+      yield '⚠️ Agim Agent：未配置可用的大模型 API。粘贴 DeepSeek API Key 一键启用（Web `/` · `/m/chat` · `/settings/llm`，或 CLI `agim setup llm quick`）；也可切换其他厂商。'
       return
     }
 
@@ -727,12 +731,23 @@ export class NativeAgentAdapter implements AgentAdapter {
       : []
 
     const systemPrompt = this.deps.resolveSystemPrompt?.(effectiveOpts, sessionId)
+    // Map /think (session.variant) → pi thinkingLevel. DeepSeek / Kimi
+    // default to their preset thinking level when variant is auto/empty.
+    const thinkingFallback = resolveDefaultThinking(
+      binding.model.baseUrl,
+      binding.model.id,
+    )
+    const thinkingLevel = mapVariantToThinkingLevel(
+      effectiveOpts?.variant,
+      thinkingFallback === 'off' && binding.model.reasoning ? 'high' : thinkingFallback,
+    )
     const harness = new AgentHarness({
       env,
       session,
       model: binding.model,
       getApiKeyAndHeaders: binding.getApiKeyAndHeaders,
       tools,
+      thinkingLevel,
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
@@ -1391,7 +1406,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     if (choices.length === 0) {
-      return '⚠️ 当前没有可用的大模型 API。请先到 /settings/llm 添加 API 和 API Key。'
+      return '⚠️ 当前没有可用的大模型 API。请先 `agim setup llm quick`（默认 DeepSeek）或到 /settings/llm 配置。'
     }
 
     const lines = [`📋 Agim Agent 可用模型后端 (${choices.length})`, '']

@@ -24,6 +24,13 @@ import { createInterface } from 'node:readline'
 import { configSchema } from '../core/config-schema.js'
 import { CONFIG_FILE, readConfigObject, updateConfigObject } from '../core/config-store.js'
 import { saveSecret, removeSecret, listConfiguredBackends, describeSecretSource } from '../core/llm/secrets.js'
+import {
+  DEFAULT_LLM_PRESET,
+  LLM_PRESETS,
+  presetBackendStem,
+  suggestLlmBackendName as suggestSharedBackendName,
+} from '../core/llm/presets.js'
+import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
 
 /** All roles we currently inject into. New roles can be invented
  *  ad-hoc (the schema allows any string), but the wizard surfaces the
@@ -32,42 +39,15 @@ const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
 
 class SetupLlmConfigError extends Error {}
 
-/** Curated provider quick-picks. Operators can still type
- *  "openai-compat" or "anthropic" manually for anything else. */
-const PROVIDER_PRESETS: Array<{
-  label: string
-  provider: 'openai-compat' | 'anthropic'
-  baseUrl: string
-  modelHint: string
-  apiKeyDoc: string
-}> = [
-  { label: 'DeepSeek (cheap+fast, recommended for cheap role)',
-    provider: 'openai-compat', baseUrl: 'https://api.deepseek.com/v1',
-    modelHint: 'deepseek-chat',
-    apiKeyDoc: 'platform.deepseek.com → API Keys' },
-  { label: 'Moonshot Kimi',
-    provider: 'openai-compat', baseUrl: 'https://api.moonshot.cn/v1',
-    modelHint: 'moonshot-v1-8k',
-    apiKeyDoc: 'platform.moonshot.cn → API Keys' },
-  { label: 'Zhipu GLM',
-    provider: 'openai-compat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    modelHint: 'glm-4-air',
-    apiKeyDoc: 'open.bigmodel.cn' },
-  { label: 'OpenAI',
-    provider: 'openai-compat', baseUrl: 'https://api.openai.com/v1',
-    modelHint: 'gpt-4o-mini',
-    apiKeyDoc: 'platform.openai.com → API keys' },
-  { label: 'Anthropic (native)',
-    // NB: no trailing /v1 — the Anthropic provider appends `/v1/messages`
-    // itself, so a `…/v1` base URL would 404 with `/v1/v1/messages`.
-    provider: 'anthropic', baseUrl: 'https://api.anthropic.com',
-    modelHint: 'claude-3-5-sonnet-20241022',
-    apiKeyDoc: 'console.anthropic.com → API Keys' },
-  { label: 'Custom / other openai-compatible',
-    provider: 'openai-compat', baseUrl: '',
-    modelHint: '',
-    apiKeyDoc: '' },
-]
+/** Curated provider quick-picks — shared with Web via core/llm/presets. */
+const PROVIDER_PRESETS = LLM_PRESETS.map((p) => ({
+  key: p.key,
+  label: p.label,
+  provider: p.provider,
+  baseUrl: p.baseUrl,
+  modelHint: p.model,
+  apiKeyDoc: p.apiKeyDoc ?? '',
+}))
 
 interface RawLlmBackend {
   name: string
@@ -94,6 +74,7 @@ export async function runSetupLlm(argv: string[]): Promise<number> {
   try {
     if (sub === '' || sub === 'help' || sub === '-h' || sub === '--help') return showHelp()
     if (sub === 'list' || sub === 'ls') return await listAction()
+    if (sub === 'quick' || sub === 'enable') return await quickAction(argv.slice(1))
     if (sub === 'add')                  return await addAction()
     if (sub === 'remove' || sub === 'rm') return await removeAction(argv[1])
     if (sub === 'role' || sub === 'roles') return await roleAction()
@@ -115,6 +96,8 @@ agim setup llm — manage native LLM backends interactively.
 
 Subcommands:
   list                  show configured backends and role bindings
+  quick [--preset <k>]  one-shot: paste API key → enable Agim Agent
+                        (default preset: DeepSeek / deepseek-v4-pro)
   add                   add a new backend (provider preset → name → model → API key → role binding)
   remove [<name>]       remove a backend (also clears the API key)
   role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)
@@ -124,12 +107,100 @@ Subcommands:
                         default backend for unrouted IM traffic
 
 Notes:
+  · Default Agim Agent preset is DeepSeek (deepseek-v4-pro). Other vendors
+    are selectable via \`quick --preset <key>\` or \`add\`.
   · Backends live in ~/.agim/config.json under "llmBackends".
   · Role bindings live in the same file under "llmRoles".
   · API keys live in ~/.agim/llm-secrets.json (0600). The env var
     AGIM_LLM_SECRET_<UPPER_NAME> overrides what's on disk.
 `)
   return error ? 1 : 0
+}
+
+/** `agim setup llm quick` — paste key, enable DeepSeek (or other preset). */
+async function quickAction(argv: string[]): Promise<number> {
+  let presetKey: string = DEFAULT_LLM_PRESET.key
+  let apiKeyArg = ''
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i]
+    if (a === '--preset' || a === '-p') {
+      presetKey = (argv[++i] || '').trim() || presetKey
+      continue
+    }
+    if (a === '--api-key' || a === '-k') {
+      apiKeyArg = (argv[++i] || '').trim()
+      continue
+    }
+    if (!a.startsWith('-') && !apiKeyArg) {
+      apiKeyArg = a.trim()
+    }
+  }
+
+  const rl = readline()
+  try {
+    process.stdout.write('\n── agim setup llm quick ──\n')
+    process.stdout.write(`Default preset: ${DEFAULT_LLM_PRESET.label} (${DEFAULT_LLM_PRESET.model})\n`)
+    process.stdout.write('Available presets:\n')
+    PROVIDER_PRESETS.forEach((p, i) => {
+      const mark = p.key === presetKey ? ' ← selected' : ''
+      process.stdout.write(`  ${i + 1}. ${p.label} [${p.key}]${mark}\n`)
+    })
+    const choice = (await ask(rl, `Preset [Enter=${presetKey} / 1-${PROVIDER_PRESETS.length} / key]: `)).trim()
+    if (choice) {
+      const asIdx = parseInt(choice, 10) - 1
+      if (Number.isFinite(asIdx) && asIdx >= 0 && asIdx < PROVIDER_PRESETS.length) {
+        presetKey = PROVIDER_PRESETS[asIdx].key
+      } else if (PROVIDER_PRESETS.some((p) => p.key === choice)) {
+        presetKey = choice as typeof presetKey
+      } else {
+        return cancel(`unknown preset: ${choice}`)
+      }
+    }
+    const preset = PROVIDER_PRESETS.find((p) => p.key === presetKey) ?? PROVIDER_PRESETS[0]
+    if (preset.apiKeyDoc) {
+      process.stdout.write(`(API key: get one at ${preset.apiKeyDoc})\n`)
+    }
+    let apiKey = apiKeyArg
+    if (!apiKey) {
+      apiKey = (await ask(rl, 'Paste API key: ', { silent: true })).trim()
+    }
+    if (!apiKey) return cancel('API key is required')
+
+    let baseUrl = preset.baseUrl
+    let model = preset.modelHint
+    if (!baseUrl) {
+      baseUrl = (await ask(rl, 'Base URL (e.g. https://api.example.com/v1): ')).trim()
+      if (!baseUrl) return cancel('empty base URL')
+    }
+    if (!model) {
+      model = (await ask(rl, 'Model: ')).trim()
+      if (!model) return cancel('empty model')
+    }
+
+    const result = await quickEnableLlmPreset({
+      preset: preset.key,
+      apiKey,
+      baseUrl,
+      model,
+    })
+    process.stdout.write(
+      `\n✅ Agim Agent enabled\n`
+      + `   backend: ${result.name}\n`
+      + `   model:   ${result.model}\n`
+      + `   baseUrl: ${result.baseUrl}\n`
+      + `   roles:   native-chat / cheap / evaluator → ${result.name}\n`
+      + `   defaultAgent: ${result.defaultAgent}\n`,
+    )
+    return 0
+  } catch (err) {
+    if (err instanceof QuickEnableError) {
+      process.stderr.write(`❌ ${err.message}\n`)
+      return 1
+    }
+    throw err
+  } finally {
+    rl.close()
+  }
 }
 
 // ─── subcommands ────────────────────────────────────────────────────
@@ -181,9 +252,12 @@ async function addAction(): Promise<number> {
     }
 
     const defaultName = suggestBackendName(provider, preset)
-    const name = (await ask(rl, `Backend name [${defaultName}]: `)).trim() || defaultName
-    if (!/^[a-z0-9][a-z0-9-]*$/i.test(name)) {
-      return cancel('name must match [A-Za-z0-9][A-Za-z0-9-]*')
+    const cfgForNames = await readConfig()
+    const existing = (cfgForNames.llmBackends ?? []).map((b) => b.name)
+    const uniqueDefault = suggestSharedBackendName(defaultName, existing)
+    const name = (await ask(rl, `Backend name [${uniqueDefault}]: `)).trim() || uniqueDefault
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
+      return cancel('name must match [A-Za-z0-9][A-Za-z0-9._-]*')
     }
 
     const modelDefault = preset.modelHint
@@ -502,10 +576,17 @@ async function reportConfigWrite(): Promise<void> {
   } catch { /* ignore */ }
 }
 
-function suggestBackendName(provider: string, preset: { label: string }): string {
-  // "DeepSeek (cheap+fast, recommended for cheap role)" → "deepseek"
-  const head = preset.label.split(/[\s(]/)[0]?.toLowerCase() ?? provider
-  return head.replace(/[^a-z0-9-]/g, '')
+function suggestBackendName(
+  provider: string,
+  preset: { key?: string; label: string; modelHint?: string },
+): string {
+  const fromKey = preset.key && preset.key !== 'custom'
+    ? `${preset.key}-agim`
+    : undefined
+  const fallback = fromKey
+    ?? ((preset.label.split(/[\s(]/)[0]?.toLowerCase() ?? provider).replace(/[^a-z0-9-]/g, '') || 'agim-api')
+  // Prefer the model id so CLI / Web show the same string operators know.
+  return presetBackendStem(fallback, preset.modelHint ?? '', 0)
 }
 
 function envSuffix(name: string): string {

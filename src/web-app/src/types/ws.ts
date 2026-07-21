@@ -35,8 +35,19 @@ export type ChatOutgoing =
 /** Server → Client */
 export type ChatIncoming =
   | { type: 'init'; agents: string[]; defaultAgent: string; clientId: string }
-  | { type: 'history'; messages: HistoryMessage[]; agent: string; planMode?: boolean }
+  | {
+      type: 'history'
+      messages: HistoryMessage[]
+      agent: string
+      planMode?: boolean
+      thinkVariant?: string
+      sessionModel?: string
+    }
   | { type: 'plan-mode'; enabled: boolean }
+  /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
+  | { type: 'think-mode'; variant: string }
+  /** Session `/model` backend override (empty = role default). */
+  | { type: 'session-model'; model: string }
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
   | { type: 'chunk'; text: string; runId?: string }

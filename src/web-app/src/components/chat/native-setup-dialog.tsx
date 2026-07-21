@@ -2,7 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { useLlmAddBackend, useLlmList } from '@/hooks/use-llm-admin'
+import { useLlmList, useLlmQuickEnable } from '@/hooks/use-llm-admin'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -42,7 +42,7 @@ export function NativeSetupDialog({
   onConfigured,
 }: NativeSetupDialogProps): JSX.Element {
   const { t } = useTranslation(['common', 'settings'])
-  const addBackend = useLlmAddBackend()
+  const quickEnable = useLlmQuickEnable()
   const llmList = useLlmList()
 
   const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
@@ -55,10 +55,11 @@ export function NativeSetupDialog({
     [llmList.data],
   )
 
-  const [name, setName] = useState(() => suggestLlmBackendName('deepseek-agim', []))
+  const [name, setName] = useState(() => suggestLlmBackendName(DEFAULT_LLM_PRESET.baseName, []))
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
   const [model, setModel] = useState(preset.model)
   const [apiKey, setApiKey] = useState('')
+  const isCustom = presetKey === 'custom'
 
   function applyPreset(next: LlmPresetKey): void {
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
@@ -70,24 +71,36 @@ export function NativeSetupDialog({
 
   async function onSubmit(e: FormEvent): Promise<void> {
     e.preventDefault()
-    if (!name.trim()) { toast.error(t('llm.nameRequired', { ns: 'settings' })); return }
-    if (!baseUrl.trim()) { toast.error(t('llm.baseUrlRequired', { ns: 'settings' })); return }
-    if (!/^https?:\/\//i.test(baseUrl.trim())) {
-      toast.error(t('llm.baseUrlRequired', { ns: 'settings' }))
-      return
-    }
-    if (!model.trim()) { toast.error(t('llm.modelRequired', { ns: 'settings' })); return }
     if (!apiKey.trim()) {
       toast.error(t('chat.nativeSetupApiKeyRequired'))
       return
     }
+    if (isCustom) {
+      if (!name.trim()) {
+        toast.error(t('llm.nameRequired', { ns: 'settings' }))
+        return
+      }
+      if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
+        toast.error(t('llm.baseUrlRequired', { ns: 'settings' }))
+        return
+      }
+      if (!model.trim()) {
+        toast.error(t('llm.modelRequired', { ns: 'settings' }))
+        return
+      }
+    }
     try {
-      await addBackend.mutateAsync({
-        name: name.trim(),
-        provider: preset.provider,
-        baseUrl: baseUrl.trim(),
-        model: model.trim(),
+      await quickEnable.mutateAsync({
+        preset: presetKey,
         apiKey: apiKey.trim(),
+        // Presets fill name/model/baseUrl server-side; custom supplies them.
+        ...(isCustom
+          ? {
+              name: name.trim(),
+              model: model.trim(),
+              baseUrl: baseUrl.trim(),
+            }
+          : {}),
       })
       toast.success(t('chat.nativeSetupSaved'))
       setApiKey('')
@@ -100,7 +113,7 @@ export function NativeSetupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {t('chat.nativeSetupDialogTitle')}
@@ -120,7 +133,7 @@ export function NativeSetupDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-3">
             <div>
               <Label className="text-xs font-medium">{t('llm.preset', { ns: 'settings' })}</Label>
               <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
@@ -135,33 +148,6 @@ export function NativeSetupDialog({
               </Select>
             </div>
             <div>
-              <Label className="text-xs font-medium">{t('llm.name', { ns: 'settings' })}</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('llm.namePlaceholder', { ns: 'settings' })}
-                className="font-mono text-xs"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label className="text-xs font-medium">{t('llm.baseUrl', { ns: 'settings' })}</Label>
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={t('llm.baseUrlPlaceholder', { ns: 'settings' })}
-                className="font-mono text-xs"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-medium">{t('llm.model', { ns: 'settings' })}</Label>
-              <Input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={t('llm.modelPlaceholder', { ns: 'settings' })}
-                className="font-mono text-xs"
-              />
-            </div>
-            <div>
               <Label className="text-xs font-medium">{t('llm.apiKey', { ns: 'settings' })}</Label>
               <Input
                 type="password"
@@ -170,26 +156,61 @@ export function NativeSetupDialog({
                 placeholder={t('llm.apiKeyPlaceholder', { ns: 'settings' })}
                 className="font-mono text-xs"
                 autoComplete="off"
+                autoFocus
               />
+              {!isCustom && preset.model && (
+                <p className="mt-1 text-xs text-text-dim">
+                  {presetKey === 'deepseek'
+                    ? t('chat.nativeSetupDeepseekHint')
+                    : presetKey === 'moonshot'
+                      ? t('chat.nativeSetupKimiHint')
+                      : presetKey === 'zhipu'
+                        ? t('chat.nativeSetupZhipuHint')
+                        : presetKey === 'mimo'
+                          ? t('chat.nativeSetupMimoHint')
+                          : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
+                </p>
+              )}
             </div>
+
+            {isCustom && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.name', { ns: 'settings' })}</Label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t('llm.namePlaceholder', { ns: 'settings' })}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.model', { ns: 'settings' })}</Label>
+                  <Input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={t('llm.modelPlaceholder', { ns: 'settings' })}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-medium">{t('llm.baseUrl', { ns: 'settings' })}</Label>
+                  <Input
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder={t('llm.baseUrlPlaceholder', { ns: 'settings' })}
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
-          <p className="text-xs text-text-dim">
-            {t('chat.nativeSetupDialogRoleOptional')}
-          </p>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => window.location.assign('/settings/llm')}
-            >
-              {t('chat.nativeSetupDialogAdvanced')}
-            </Button>
+          <DialogFooter className="flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('chat.nativeSetupDialogCancel')}
             </Button>
-            <Button type="submit" disabled={addBackend.isPending}>
+            <Button type="submit" disabled={quickEnable.isPending}>
               {t('chat.nativeSetupDialogSave')}
             </Button>
           </DialogFooter>

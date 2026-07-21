@@ -19,6 +19,11 @@ import {
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
+import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
+import { isNativeSetupError } from '@/components/chat/error-hints'
+import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
+import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
+import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
@@ -230,11 +235,29 @@ export function AgentPortal(): JSX.Element {
     prefs.setLang(next)
   }
 
-  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation } = useChat()
+  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation, clearError } = useChat()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
+  const [nativeSetupReason, setNativeSetupReason] = useState('')
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
+  const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
+  const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
+  const thinkVariant = optimisticThink ?? state.thinkVariant
+  const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
+  const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
+  // Clear optimistic overrides when the server session catches up (render-time sync).
+  if (state.thinkVariant !== thinkBaseline) {
+    setThinkBaseline(state.thinkVariant)
+    setOptimisticThink(null)
+  }
+  if (state.sessionModel !== modelBaseline) {
+    setModelBaseline(state.sessionModel)
+    setOptimisticModel(null)
+  }
   // Persist the left rail on large screens (Cursor-like); drawer only below lg.
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
@@ -245,6 +268,18 @@ export function AgentPortal(): JSX.Element {
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
   }, [])
+
+  // Agim Agent missing LLM → same one-click DeepSeek dialog as desktop `/`.
+  useEffect(() => {
+    if (!state.error) return
+    if (isNativeSetupError(state.error)) {
+      setNativeSetupReason(state.error)
+      setNativeSetupDialogOpen(true)
+    } else {
+      toast.error(state.error)
+    }
+    clearError()
+  }, [state.error, clearError])
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -694,6 +729,16 @@ export function AgentPortal(): JSX.Element {
         dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
       )}
     >
+      <LlmSettingsDialog
+        open={llmSettingsOpen}
+        onOpenChange={setLlmSettingsOpen}
+      />
+      <NativeSetupDialog
+        open={nativeSetupDialogOpen}
+        reason={nativeSetupReason}
+        onOpenChange={setNativeSetupDialogOpen}
+        onConfigured={() => switchAgent('agim')}
+      />
       {/* Desktop rail — always visible ≥ lg */}
       <aside
         className={cn(
@@ -1252,6 +1297,44 @@ export function AgentPortal(): JSX.Element {
                 )}
               </div>
             </form>
+            <ComposerStatusBar
+              dark={dark}
+              modelLabel={
+                optimisticModel
+                  ? (modelStatus.modelOptions.find((o) => o.backendName === optimisticModel)?.model
+                    ?? modelStatus.modelLabel)
+                  : modelStatus.modelLabel
+              }
+              modelMissing={modelStatus.modelMissing}
+              modelOptions={modelStatus.modelOptions}
+              activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
+              thinkVariant={thinkVariant}
+              showThinking={modelStatus.showThinking}
+              contextUsed={modelStatus.contextUsed}
+              contextWindow={modelStatus.contextWindow}
+              breakdown={modelStatus.breakdown}
+              disabled={state.status !== 'open'}
+              onConfigureModel={() => setLlmSettingsOpen(true)}
+              onSelectModel={(backendName) => {
+                if (state.status !== 'open') {
+                  toast.error('Not connected')
+                  return
+                }
+                setOptimisticModel(backendName)
+                send(`/model ${backendName}`)
+              }}
+              onSendCommand={(cmd) => {
+                if (state.status !== 'open') {
+                  toast.error('Not connected')
+                  return
+                }
+                if (cmd.startsWith('/think')) {
+                  const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
+                  setOptimisticThink(level)
+                }
+                send(cmd)
+              }}
+            />
           </div>
           </div>
         </div>

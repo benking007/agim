@@ -28,20 +28,32 @@
 {
   "llmBackends": [
     {
-      "name": "deepseek-main",
+      "name": "deepseek-v4-pro",
       "provider": "openai-compat",
-      "baseUrl": "https://api.deepseek.com/v1",
-      "model": "deepseek-chat",
-      "temperature": 0.2,
-      "maxTokens": 2048
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "label": "deepseek"
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "provider": "openai-compat",
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-v4-flash",
+      "label": "deepseek"
     }
   ],
   "llmRoles": {
-    "cheap": "deepseek-main",
-    "evaluator": "deepseek-main"
-  }
+    "native-chat": "deepseek-v4-pro",
+    "cheap": "deepseek-v4-flash",
+    "evaluator": "deepseek-v4-flash"
+  },
+  "defaultAgent": "agim"
 }
 ```
+
+> **Recommended first-run:** `agim setup llm quick`（默认 DeepSeek / `deepseek-v4-pro`，粘贴 API Key 一键启用双模型）。Web `/settings/llm`、桌面聊天与 `/m/chat` 在 Agim 未配置时也会引导同一流程；可切换其他厂商预设。
+>
+> 一键启用后：backend **name = model ID**（可含 `.`，如 `kimi-k2.6`）；`label` 写入预设 key（如 `deepseek`）供分组与去重。
 
 ### 3.2 密钥文件（推荐）
 
@@ -51,7 +63,8 @@
 {
   "version": 1,
   "keys": {
-    "deepseek-main": "sk-xxxx"
+    "deepseek-v4-pro": "sk-xxxx",
+    "deepseek-v4-flash": "sk-xxxx"
   }
 }
 ```
@@ -62,10 +75,10 @@
 
 格式：`AGIM_LLM_SECRET_<BACKEND_NAME_UPPER>`
 
-例如 backend `deepseek-main`：
+例如 backend `deepseek-v4-pro`：
 
 ```bash
-export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
+export AGIM_LLM_SECRET_DEEPSEEK_V4_PRO=sk-xxxx
 ```
 
 环境变量优先级高于密钥文件。
@@ -74,25 +87,58 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 
 | 字段 | 是否必需 | 说明 |
 |---|---|---|
-| `name` | 是 | backend 唯一标识 |
+| `name` | 是 | backend 唯一标识（一键启用时通常等于 `model`） |
 | `provider` | 是 | `openai-compat` 或 `anthropic` |
 | `baseUrl` | 建议 | API 基地址 |
 | `model` | 是 | 默认模型 ID |
-| `temperature` | 否 | 默认 0.2~0.3 |
+| `label` | 否 | 预设分组键（`deepseek` / `moonshot` / `zhipu` / `mimo`）；自定义项不写 |
+| `temperature` | 否 | 默认 0.2~0.3（OpenAICompat 探测/辅助路径使用） |
 | `maxTokens` | 否 | 输出 token 上限 |
+| `contextWindow` | 否 | Agim Agent 上下文窗口；未设时走厂商启发式或保守 32k |
+| `thinkingFormat` | 否 | `off` / `deepseek` / `openai`；自定义网关显式声明思考协议（见 §4.1） |
+| `maxTokensField` | 否 | `max_tokens` / `max_completion_tokens` |
+| `extraHeaders` | 否 | 额外 HTTP Header（勿覆盖 Authorization） |
 | `enabled` | 否 | 软开关，默认启用 |
 
-## 5. 推荐 provider 示例
+> Web「添加 API → 自定义」默认只填身份字段；折叠 **高级参数** 可配置上表可选项，也可一键套用 DeepSeek / Kimi K3 / MiMo 兼容模板。
+
+### 4.1 `thinkingFormat` 语义
+
+| 值 | 行为 |
+|---|---|
+| （未设） | 按 `baseUrl` / 模型 ID / catalog 启发式启用思考（DeepSeek / Kimi / GLM / MiMo） |
+| `deepseek` | 强制 `thinking.type` + `reasoning_content` 兼容（GLM / MiMo / Kimi K2 等） |
+| `openai` | 强制 `reasoning_effort` 兼容（如 Kimi K3） |
+| `off` | 关闭思考：`reasoning=false`，并清除 catalog/厂商的 thinking compat 与 level map；仍可单独设置 `maxTokensField` |
+
+`GET /api/llm` 会原样返回 `off`（勿用 truthy 判断丢弃）。
+
+## 5. 内置预设（一键启用）
+
+| key | 品牌 | 主模型 / 廉价模型 | baseUrl | 思考协议 |
+|---|---|---|---|---|
+| `deepseek`（默认） | DeepSeek | `deepseek-v4-pro` / `deepseek-v4-flash` | `https://api.deepseek.com` | deepseek |
+| `moonshot` | Kimi | `kimi-k3` / `kimi-k2.6` | `https://api.moonshot.cn/v1`（国际站可改 `api.moonshot.ai`） | K3: openai；K2: deepseek |
+| `zhipu` | 智谱 GLM | `glm-5.2` / `glm-4.7-flash` | `https://open.bigmodel.cn/api/paas/v4` | deepseek（5.2 带 effort） |
+| `mimo` | 小米 MiMo | `mimo-v2.5-pro` / `mimo-v2.5` | `https://api.xiaomimimo.com/v1` | deepseek |
+| `custom` | 自定义 | 自填 | 自填 | 高级参数中显式声明 |
+
+OpenAI / Anthropic **不再**作为内置预设；用 `custom` 填入兼容 `baseUrl` 即可。
+
+### 5.1 去重与删除
+
+- 每个内置预设只允许添加一次（匹配 `label` **或** 相同 API hostname）。
+- Web 下拉对已添加预设显示「（已添加）」并禁用；二次 `quick-enable` / `POST /api/llm/quick-enable` 返回 conflict。
+- 设置页按品牌分组；删除为**组级**（一次移除该 `label` 下全部 backend + 角色绑定），不是单行删除。
+
+### 5.2 其他兼容网关示例
 
 | 平台 | provider | baseUrl 示例 |
 |---|---|---|
-| OpenAI | openai-compat | `https://api.openai.com/v1` |
-| DeepSeek | openai-compat | `https://api.deepseek.com/v1` |
-| Moonshot/Kimi | openai-compat | `https://api.moonshot.cn/v1` |
 | Qwen 兼容网关 | openai-compat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | Ollama | openai-compat | `http://localhost:11434/v1` |
 | vLLM | openai-compat | `http://localhost:8000/v1` |
-| Anthropic | anthropic | `https://api.anthropic.com` |
+| 自定义 OpenAI / Anthropic 兼容 | openai-compat / anthropic | 例如 `https://api.openai.com/v1` 或 `https://api.anthropic.com` |
 
 ## 6. 角色绑定（可选）
 
@@ -101,6 +147,8 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 - `cheap`：低成本任务（摘要、分类、日常推理）
 - `evaluator`：通知评估等判定任务
 - `native-chat`：指定聊天主角色（可选）
+
+一键启用时：`native-chat` → 主模型，`cheap` / `evaluator` → 廉价模型（若有）。
 
 即使不配置这些角色，只要有可用 backend，Agim Agent（`agim`）仍可运行。
 
@@ -111,7 +159,8 @@ agim config
 # → 选择 "Agim Agent 大模型 API"
 
 agim setup llm
-agim setup llm native-enable   # 历史子命令名；效果是启用 Agim Agent + 绑定角色
+agim setup llm quick          # 一键启用（默认 DeepSeek）
+agim setup llm native-enable  # 历史子命令名；效果是启用 Agim Agent + 绑定角色
 agim diag llm
 ```
 
@@ -122,6 +171,8 @@ agim diag llm
 1. 先尝试角色绑定对应 backend（如果有）。
 2. 若角色无可用项，自动回退到任意已配置且可用 backend。
 3. 若仍无可用 backend，返回配置引导错误。
+
+Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 pi-ai（`reasoning_effort` 或 `thinking.type`）。
 
 ## 9. 排障
 
@@ -146,12 +197,16 @@ agim diag llm
 角色不是硬依赖。
 只要 backend 有一个可用，Agim Agent 依然可跑；修复角色绑定用于优化而非解阻塞。
 
+### 9.4 预设显示「已添加」但仍想重配
+
+先在设置页删除该品牌组，再重新一键启用（会写入新的密钥与角色绑定）。
+
 ## 10. 最小上线建议
 
-1. 先配一个稳定 backend（例如 `deepseek-main`）
+1. 先一键启用 DeepSeek（或任选内置预设）
 2. 验证 Agim Agent（Web 对话或 `/agim`）能跑通
-3. 再逐步添加 `cheap/evaluator` 角色绑定
-4. 最后增加第二 backend 做冗余
+3. 需要时再在 Composer 切换模型 / 调整思考强度
+4. 自定义网关用「高级参数」声明思考协议与 context
 
 ## 11. 相关文档
 

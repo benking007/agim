@@ -28,11 +28,11 @@ beforeEach(() => {
 })
 
 describe('setup-llm — internal helpers', () => {
-  it('suggestBackendName trims punctuation from the preset label', () => {
+  it('suggestBackendName uses DeepSeek model id', () => {
     const sample = _internal.PROVIDER_PRESETS[0]
     const name = _internal.suggestBackendName(sample.provider, sample)
-    expect(name).toMatch(/^[a-z0-9-]+$/)
-    expect(name.length).toBeGreaterThan(0)
+    expect(name).toBe('deepseek-v4-pro')
+    expect(sample.modelHint).toBe('deepseek-v4-pro')
   })
 
   it('envSuffix uppercases + replaces non-alnum with underscore', () => {
@@ -41,10 +41,19 @@ describe('setup-llm — internal helpers', () => {
     expect(_internal.envSuffix('UPPER-Case')).toBe('UPPER_CASE')
   })
 
-  it('PROVIDER_PRESETS includes openai-compat AND anthropic entries', () => {
+  it('PROVIDER_PRESETS covers curated openai-compat vendors + custom', () => {
+    const keys = new Set(_internal.PROVIDER_PRESETS.map((p) => p.key))
+    expect(keys.has('deepseek')).toBe(true)
+    expect(keys.has('moonshot')).toBe(true)
+    expect(keys.has('zhipu')).toBe(true)
+    expect(keys.has('mimo')).toBe(true)
+    expect(keys.has('custom')).toBe(true)
+    // openai / anthropic are no longer curated preset keys (use Custom).
+    const keyNames = new Set<string>([...keys])
+    expect(keyNames.has('openai')).toBe(false)
+    expect(keyNames.has('anthropic')).toBe(false)
     const providers = new Set(_internal.PROVIDER_PRESETS.map((p) => p.provider))
     expect(providers.has('openai-compat')).toBe(true)
-    expect(providers.has('anthropic')).toBe(true)
   })
 
   it('KNOWN_ROLES covers cheap / evaluator / native-chat', () => {

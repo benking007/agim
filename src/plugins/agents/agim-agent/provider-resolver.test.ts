@@ -6,21 +6,151 @@ import type { LlmBackendBinding } from '../../../core/llm/registry.js'
 import { lookupModelMeta } from '../../../core/llm/model-catalog.js'
 import { bindingToPiModel } from './provider-resolver.js'
 
+/** pi-ai Model.compat is a narrow/empty type in some builds — read as a bag. */
+function compatOf(model: { compat?: unknown }): Record<string, unknown> | undefined {
+  return model.compat && typeof model.compat === 'object'
+    ? model.compat as Record<string, unknown>
+    : undefined
+}
+
 describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
   it('maps an openai-compat backend (deepseek) to openai-completions with its baseUrl', async () => {
     const b: LlmBackendBinding = {
       name: 'deepseek',
       providerType: 'openai-compat',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
       apiKey: 'sk-xxx',
       extraHeaders: { 'x-foo': 'bar' },
     }
     const binding = bindingToPiModel(b)!
     expect(binding.model.api).toBe('openai-completions')
-    expect(binding.model.baseUrl).toBe('https://api.deepseek.com/v1')
-    expect(binding.model.id).toBe('deepseek-chat')
+    expect(binding.model.baseUrl).toBe('https://api.deepseek.com')
+    expect(binding.model.id).toBe('deepseek-v4-pro')
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.costKnown).toBe(true)
     expect(await binding.getApiKeyAndHeaders()).toEqual({ apiKey: 'sk-xxx', headers: { 'x-foo': 'bar' } })
+  })
+
+  it('enables DeepSeek thinking compat even for uncatalogued model ids on deepseek.com', () => {
+    const binding = bindingToPiModel({
+      name: 'ds-custom',
+      providerType: 'openai-compat',
+      model: 'deepseek-custom-agent',
+      baseUrl: 'https://api.deepseek.com',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+  })
+
+  it('enables Kimi K3 thinking via reasoning_effort (openai format)', () => {
+    const binding = bindingToPiModel({
+      name: 'kimi-k3',
+      providerType: 'openai-compat',
+      model: 'kimi-k3',
+      baseUrl: 'https://api.moonshot.cn/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('openai')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
+    expect(compatOf(binding.model)?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(binding.model.thinkingLevelMap?.low).toBe('low')
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.model.contextWindow).toBe(1_000_000)
+  })
+
+  it('enables Kimi K2.6 thinking via deepseek-style thinking.type', () => {
+    const binding = bindingToPiModel({
+      name: 'kimi-k2.6',
+      providerType: 'openai-compat',
+      model: 'kimi-k2.6',
+      baseUrl: 'https://api.moonshot.ai/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    // Catalog may supply 262144; uncatalogued fallback is 256k.
+    expect(binding.model.contextWindow).toBeGreaterThanOrEqual(256_000)
+  })
+
+  it('enables GLM-5.2 thinking via thinking.type + reasoning_effort', () => {
+    const binding = bindingToPiModel({
+      name: 'glm-5.2',
+      providerType: 'openai-compat',
+      model: 'glm-5.2',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.model.thinkingLevelMap?.low).toBe('high')
+    expect(binding.model.contextWindow).toBe(1_000_000)
+  })
+
+  it('enables GLM-4.7-flash thinking without reasoning_effort', () => {
+    const binding = bindingToPiModel({
+      name: 'glm-4.7-flash',
+      providerType: 'openai-compat',
+      model: 'glm-4.7-flash',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(false)
+    expect(binding.model.contextWindow).toBe(200_000)
+  })
+
+  it('enables MiMo V2.5 thinking via thinking.type + max_completion_tokens', () => {
+    const binding = bindingToPiModel({
+      name: 'mimo-v2.5-pro',
+      providerType: 'openai-compat',
+      model: 'mimo-v2.5-pro',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBeFalsy()
+    expect(compatOf(binding.model)?.maxTokensField).toBe('max_completion_tokens')
+    expect(compatOf(binding.model)?.requiresReasoningContentOnAssistantMessages).toBe(true)
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    // Catalog may report 1048576 (1Mi); vendor fallback is 1_000_000.
+    expect(binding.model.contextWindow).toBeGreaterThanOrEqual(1_000_000)
+    expect(binding.model.input).toContain('text')
+  })
+
+  it('honors explicit thinkingFormat / contextWindow on custom backends', () => {
+    const on = bindingToPiModel({
+      name: 'proxy-think',
+      providerType: 'openai-compat',
+      model: 'my-proxy-model',
+      baseUrl: 'https://llm.internal/v1',
+      thinkingFormat: 'deepseek',
+      contextWindow: 200_000,
+      maxTokens: 16_384,
+      maxTokensField: 'max_completion_tokens',
+    })!
+    expect(on.model.reasoning).toBe(true)
+    expect(compatOf(on.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(on.model)?.maxTokensField).toBe('max_completion_tokens')
+    expect(on.model.contextWindow).toBe(200_000)
+    expect(on.model.maxTokens).toBe(16_384)
+
+    const off = bindingToPiModel({
+      name: 'proxy-off',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+      thinkingFormat: 'off',
+      maxTokensField: 'max_completion_tokens',
+    })!
+    expect(off.model.reasoning).toBe(false)
+    expect(off.model.thinkingLevelMap).toBeUndefined()
+    expect(compatOf(off.model)?.thinkingFormat).toBeUndefined()
+    expect(compatOf(off.model)?.maxTokensField).toBe('max_completion_tokens')
   })
 
   it('maps an anthropic backend to anthropic-messages', () => {

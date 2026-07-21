@@ -8,8 +8,16 @@
 // every introspection caller stays a 1-line change.
 
 import { logger as rootLogger } from '../logger.js'
-import { getProvider, type LlmRole } from './registry.js'
+import { getBackendBindingByName, getProvider, type LlmRole } from './registry.js'
 import { LlmProviderError, type LlmMessage, type LlmUsage } from './provider-base.js'
+import {
+  isDeepSeekBaseUrl,
+  isKimiBaseUrl,
+  isKimiK2Model,
+  isKimiK3Model,
+  isMimoBaseUrl,
+  isZhipuBaseUrl,
+} from './presets.js'
 
 const log = rootLogger.child({ component: 'llm-introspection' })
 
@@ -32,6 +40,8 @@ export interface IntrospectionInput {
   temperature?: number
   /** Per-call model override; falls back to the provider's default. */
   model?: string
+  /** Ask the provider for JSON Output when supported (DeepSeek / OpenAI). */
+  jsonMode?: boolean
 }
 
 export interface IntrospectionResult {
@@ -66,6 +76,30 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
 
   const messages: LlmMessage[] = [{ role: 'user', content: input.prompt }]
   const startedAt = Date.now()
+  // Heuristic: evaluator / JSON-shaped prompts benefit from response_format.
+  const wantsJson = input.jsonMode === true
+    || input.role === 'evaluator'
+    || /\bjson\b/i.test(input.prompt)
+    || (input.system ? /\bjson\b/i.test(input.system) : false)
+  const providerOptions: Record<string, unknown> = {}
+  if (wantsJson) {
+    providerOptions.response_format = { type: 'json_object' }
+  }
+  // DeepSeek / Kimi K2.x / Zhipu / MiMo OpenAICompat path defaults thinking
+  // off (see openai-compat-provider). K3 always thinks — prefer low effort.
+  const binding = getBackendBindingByName(provider.name)
+  const modelId = input.model || binding?.model
+  if (
+    isDeepSeekBaseUrl(binding?.baseUrl)
+    || isZhipuBaseUrl(binding?.baseUrl)
+    || isMimoBaseUrl(binding?.baseUrl)
+  ) {
+    providerOptions.thinking = { type: 'disabled' }
+  } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK2Model(modelId)) {
+    providerOptions.thinking = { type: 'disabled' }
+  } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK3Model(modelId)) {
+    providerOptions.reasoning_effort = 'low'
+  }
   try {
     const result = await provider.chat(messages, {
       system: input.system,
@@ -73,6 +107,7 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
       signal: input.signal,
       temperature: input.temperature,
       model: input.model,
+      providerOptions,
     })
     return {
       text: result.text,

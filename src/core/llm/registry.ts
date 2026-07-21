@@ -38,6 +38,9 @@ export type LlmRole = 'cheap' | 'evaluator' | 'native-chat' | 'distill' | string
  *  client (e.g. Agim Agent feeds this to pi-ai). Mirrors the same
  *  resolution loadFromConfig already does for the built-in providers, so the
  *  vendor-env key fallback and per-backend settings stay single-sourced. */
+export type LlmThinkingFormat = 'off' | 'deepseek' | 'openai'
+export type LlmMaxTokensField = 'max_tokens' | 'max_completion_tokens'
+
 export interface LlmBackendBinding {
   name: string
   providerType: string
@@ -47,6 +50,9 @@ export interface LlmBackendBinding {
   extraHeaders?: Record<string, string>
   temperature?: number
   maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat
+  maxTokensField?: LlmMaxTokensField
 }
 
 interface RegistryState {
@@ -123,6 +129,9 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
       extraHeaders: cfg.extraHeaders,
       temperature: cfg.temperature,
       maxTokens: cfg.maxTokens,
+      contextWindow: cfg.contextWindow,
+      thinkingFormat: cfg.thinkingFormat,
+      maxTokensField: cfg.maxTokensField,
     })
   }
 
@@ -234,6 +243,9 @@ interface BackendConfig {
   extraHeaders?: Record<string, string>
   temperature?: number
   maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat
+  maxTokensField?: LlmMaxTokensField
   retryOnTransient?: number
   enabled?: boolean
 }

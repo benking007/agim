@@ -6,6 +6,9 @@
 // Endpoints exposed:
 //
 //   GET    /api/llm                      → { backends, roles, status }
+//   GET    /api/llm/presets              → curated vendor presets (DeepSeek default)
+//   POST   /api/llm/quick-enable         body { apiKey, preset?, model?, baseUrl?, name? }
+//                                        → 201 Created (backend + roles + defaultAgent)
 //   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
@@ -26,12 +29,22 @@ import {
 } from '../core/llm/secrets.js'
 import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
+import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
+import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
 
 interface RawBackend {
   name: string
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  /** Preset key (deepseek / …) when created via quick-enable. */
+  label?: string
+  temperature?: number
+  maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: 'off' | 'deepseek' | 'openai'
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
+  extraHeaders?: Record<string, string>
   apiKeyEnv?: string
   costPer1kIn?: number
   costPer1kOut?: number
@@ -85,31 +98,96 @@ export async function handleLlmApi(
   if (p === '/api/llm' && m === 'GET') {
     await handleList(res); return true
   }
+  if (p === '/api/llm/presets' && m === 'GET') {
+    handlePresets(res); return true
+  }
+  if (p === '/api/llm/quick-enable' && m === 'POST') {
+    await handleQuickEnable(req, res); return true
+  }
   if (p === '/api/llm/backends' && m === 'POST') {
     await handleAddBackend(req, res); return true
   }
   if (p === '/api/llm/roles' && m === 'PUT') {
     await handlePutRoles(req, res); return true
   }
-  const rmBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9-]+)$/)
+  // Backend names may include `.` / `_` (e.g. kimi-k2.6) — keep in sync with
+  // config-schema `safeNamePattern`.
+  const rmBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9._-]+)$/)
   if (rmBackend && m === 'DELETE') {
-    await handleRemoveBackend(res, rmBackend[1]); return true
+    await handleRemoveBackend(res, decodeURIComponent(rmBackend[1])); return true
   }
-  const setSecret = p.match(/^\/api\/llm\/secrets\/([A-Za-z0-9-]+)$/)
+  const setSecret = p.match(/^\/api\/llm\/secrets\/([A-Za-z0-9._%-]+)$/)
   if (setSecret && m === 'POST') {
-    await handleSetSecret(req, res, setSecret[1]); return true
+    await handleSetSecret(req, res, decodeURIComponent(setSecret[1])); return true
   }
   if (setSecret && m === 'DELETE') {
-    await handleRemoveSecret(res, setSecret[1]); return true
+    await handleRemoveSecret(res, decodeURIComponent(setSecret[1])); return true
   }
-  const pingBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9-]+)\/ping$/)
+  const pingBackend = p.match(/^\/api\/llm\/backends\/([A-Za-z0-9._-]+)\/ping$/)
   if (pingBackend && m === 'POST') {
-    await handlePing(res, pingBackend[1]); return true
+    await handlePing(res, decodeURIComponent(pingBackend[1])); return true
   }
   return false
 }
 
 // ─── handlers ───────────────────────────────────────────────────────
+
+function handlePresets(res: ServerResponse): void {
+  send(res, 200, {
+    defaultPreset: DEFAULT_LLM_PRESET.key,
+    presets: LLM_PRESETS.map((p) => ({
+      key: p.key,
+      label: p.label,
+      provider: p.provider,
+      baseUrl: p.baseUrl,
+      model: p.model,
+      cheapModel: p.cheapModel,
+      models: p.models ?? [p.model, p.cheapModel].filter(Boolean),
+      baseName: p.baseName,
+      apiKeyDoc: p.apiKeyDoc,
+      defaultThinking: p.defaultThinking,
+    })),
+  })
+}
+
+async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody<{
+    preset?: unknown
+    apiKey?: unknown
+    name?: unknown
+    model?: unknown
+    baseUrl?: unknown
+    bindCheapRoles?: unknown
+    setDefaultAgent?: unknown
+  }>(req)
+  if (!body || typeof body !== 'object') {
+    send(res, 400, { error: 'request body must be a JSON object' })
+    return
+  }
+  if (typeof body.apiKey !== 'string' || !body.apiKey.trim()) {
+    send(res, 400, { error: 'apiKey is required (non-empty string)' })
+    return
+  }
+  try {
+    const result = await quickEnableLlmPreset({
+      preset: typeof body.preset === 'string' ? body.preset : undefined,
+      apiKey: body.apiKey,
+      name: typeof body.name === 'string' ? body.name : undefined,
+      model: typeof body.model === 'string' ? body.model : undefined,
+      baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+      bindCheapRoles: body.bindCheapRoles !== false,
+      setDefaultAgent: body.setDefaultAgent !== false,
+    })
+    send(res, 201, result)
+  } catch (err) {
+    if (err instanceof QuickEnableError) {
+      const status = err.code === 'conflict' ? 409 : 400
+      send(res, status, { error: err.message })
+      return
+    }
+    throw err
+  }
+}
 
 async function handleList(res: ServerResponse): Promise<void> {
   const cfg = await readConfig()
@@ -123,6 +201,16 @@ async function handleList(res: ServerResponse): Promise<void> {
       provider: b.provider,
       baseUrl: b.baseUrl,
       model: b.model,
+      ...(b.label ? { label: b.label } : {}),
+      ...(typeof b.temperature === 'number' ? { temperature: b.temperature } : {}),
+      ...(typeof b.maxTokens === 'number' ? { maxTokens: b.maxTokens } : {}),
+      ...(typeof b.contextWindow === 'number' ? { contextWindow: b.contextWindow } : {}),
+      // Include 'off' (falsy string) so the SPA can round-trip an explicit disable.
+      ...(b.thinkingFormat !== undefined ? { thinkingFormat: b.thinkingFormat } : {}),
+      ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
+      ...(b.extraHeaders && Object.keys(b.extraHeaders).length > 0
+        ? { extraHeaders: b.extraHeaders }
+        : {}),
       secret: {
         source: src.source,
         envKey: src.envKey,
@@ -139,6 +227,44 @@ async function handleList(res: ServerResponse): Promise<void> {
   })
 }
 
+function parseOptionalNumber(value: unknown, field: string, min: number, max: number): number | undefined | { error: string } {
+  if (value === undefined || value === null || value === '') return undefined
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n) || n < min || n > max) {
+    return { error: `${field} must be a number between ${min} and ${max}` }
+  }
+  return n
+}
+
+function parseExtraHeaders(value: unknown): Record<string, string> | undefined | { error: string } {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value === 'string') {
+    const out: Record<string, string> = {}
+    for (const line of value.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const idx = trimmed.indexOf(':')
+      if (idx <= 0) return { error: 'extraHeaders lines must look like "Header-Name: value"' }
+      const key = trimmed.slice(0, idx).trim()
+      const val = trimmed.slice(idx + 1).trim()
+      if (!key) return { error: 'extraHeaders lines must look like "Header-Name: value"' }
+      out[key] = val
+    }
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v !== 'string') return { error: 'extraHeaders values must be strings' }
+      const key = k.trim()
+      if (!key) continue
+      out[key] = v
+    }
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+  return { error: 'extraHeaders must be an object or Header: value lines' }
+}
+
 async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJsonBody<{
     name?: unknown
@@ -146,6 +272,12 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     baseUrl?: unknown
     model?: unknown
     apiKey?: unknown
+    temperature?: unknown
+    maxTokens?: unknown
+    contextWindow?: unknown
+    thinkingFormat?: unknown
+    maxTokensField?: unknown
+    extraHeaders?: unknown
   }>(req)
   if (!body || typeof body !== 'object') {
     send(res, 400, { error: 'request body must be a JSON object' })
@@ -156,8 +288,8 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
   const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : ''
   const model = typeof body.model === 'string' ? body.model.trim() : ''
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
-  if (!name || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
-    send(res, 400, { error: 'name is required and must match [A-Za-z0-9][A-Za-z0-9-]*' })
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    send(res, 400, { error: 'name is required and must match [A-Za-z0-9][A-Za-z0-9._-]*' })
     return
   }
   if (provider !== 'openai-compat' && provider !== 'anthropic') {
@@ -176,7 +308,57 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'apiKey is required (non-empty string)' })
     return
   }
-  const next: RawBackend = { name, provider, baseUrl, model }
+  const temperature = parseOptionalNumber(body.temperature, 'temperature', 0, 2)
+  if (typeof temperature === 'object' && temperature !== null && 'error' in temperature) {
+    send(res, 400, { error: temperature.error })
+    return
+  }
+  const maxTokens = parseOptionalNumber(body.maxTokens, 'maxTokens', 1, 2_000_000)
+  if (typeof maxTokens === 'object' && maxTokens !== null && 'error' in maxTokens) {
+    send(res, 400, { error: maxTokens.error })
+    return
+  }
+  const contextWindow = parseOptionalNumber(body.contextWindow, 'contextWindow', 4_096, 2_000_000)
+  if (typeof contextWindow === 'object' && contextWindow !== null && 'error' in contextWindow) {
+    send(res, 400, { error: contextWindow.error })
+    return
+  }
+  const thinkingFormat = body.thinkingFormat === undefined || body.thinkingFormat === '' || body.thinkingFormat === 'auto'
+    ? undefined
+    : body.thinkingFormat
+  if (thinkingFormat !== undefined
+    && thinkingFormat !== 'off'
+    && thinkingFormat !== 'deepseek'
+    && thinkingFormat !== 'openai') {
+    send(res, 400, { error: 'thinkingFormat must be off, deepseek, or openai' })
+    return
+  }
+  const maxTokensField = body.maxTokensField === undefined || body.maxTokensField === '' || body.maxTokensField === 'auto'
+    ? undefined
+    : body.maxTokensField
+  if (maxTokensField !== undefined
+    && maxTokensField !== 'max_tokens'
+    && maxTokensField !== 'max_completion_tokens') {
+    send(res, 400, { error: 'maxTokensField must be max_tokens or max_completion_tokens' })
+    return
+  }
+  const extraHeaders = parseExtraHeaders(body.extraHeaders)
+  if (typeof extraHeaders === 'object' && extraHeaders !== null && 'error' in extraHeaders) {
+    send(res, 400, { error: extraHeaders.error })
+    return
+  }
+  const next: RawBackend = {
+    name,
+    provider,
+    baseUrl,
+    model,
+    ...(typeof temperature === 'number' ? { temperature } : {}),
+    ...(typeof maxTokens === 'number' ? { maxTokens } : {}),
+    ...(typeof contextWindow === 'number' ? { contextWindow } : {}),
+    ...(thinkingFormat !== undefined ? { thinkingFormat } : {}),
+    ...(maxTokensField !== undefined ? { maxTokensField } : {}),
+    ...(extraHeaders && typeof extraHeaders === 'object' ? { extraHeaders } : {}),
+  }
   let savedConfig: RawConfig
   try {
     const update = await updateConfigObject((current) => {

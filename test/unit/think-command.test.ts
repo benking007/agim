@@ -35,11 +35,19 @@ describe('/think', () => {
     expect(session?.variant).toBe('high')
   })
 
-  it('off / none / auto clear the variant', async () => {
+  it('off / none persist explicit off; auto clears to empty', async () => {
     const ctx = makeCtx('think-off')
     await handleThinkCommand('high', ctx)
     await handleThinkCommand('off', ctx)
-    const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
+    let session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
+    expect(session?.variant).toBe('off')
+
+    await handleThinkCommand('none', ctx)
+    session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
+    expect(session?.variant).toBe('off')
+
+    await handleThinkCommand('auto', ctx)
+    session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
     expect(session?.variant).toBeFalsy()
   })
 

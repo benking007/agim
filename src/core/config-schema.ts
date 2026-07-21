@@ -135,6 +135,24 @@ const llmBackendSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   /** Default max output tokens (provider default 1024). */
   maxTokens: z.number().int().positive().optional(),
+  /**
+   * Context window (input+output budget) for Agim Agent compaction.
+   * When unset, vendor heuristics / pi catalog / a conservative 32k default apply.
+   */
+  contextWindow: z.number().int().min(4_096).max(2_000_000).optional(),
+  /**
+   * Explicit thinking wire format for custom / unknown OpenAI-compat gateways.
+   * - omit / auto: detect from baseUrl + model (DeepSeek / Kimi / GLM / MiMo)
+   * - off: never enable reasoning
+   * - deepseek: `thinking: { type }` + reasoning_content
+   * - openai: top-level `reasoning_effort` + reasoning_content
+   */
+  thinkingFormat: z.enum(['off', 'deepseek', 'openai']).optional(),
+  /**
+   * Which JSON field carries the output token cap. Some gateways
+   * (Kimi K3 / MiMo) want `max_completion_tokens` instead of `max_tokens`.
+   */
+  maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
   /** Number of retries on transient (429 / 5xx). Provider default 1. */
   retryOnTransient: z.number().int().min(0).max(5).optional(),
   /** Soft kill-switch — set false to keep the row around but make

@@ -37,14 +37,22 @@ import {
   type ToolChoice,
   type ToolDef,
 } from './provider-base.js'
+import {
+  isDeepSeekBaseUrl,
+  isKimiBaseUrl,
+  isKimiK2Model,
+  isKimiK3Model,
+  isMimoBaseUrl,
+  isZhipuBaseUrl,
+} from './presets.js'
 import { statSync as fsStatSync, readFileSync as fsReadFileSync } from 'node:fs'
 
 export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'providerType'> {
   /** Full base URL up to (but not including) `/chat/completions`. Each
    *  vendor publishes its own; we default to OpenAI's. Examples:
    *    - OpenAI:       https://api.openai.com/v1
-   *    - DeepSeek:     https://api.deepseek.com/v1
-   *    - Moonshot:     https://api.moonshot.cn/v1
+   *    - DeepSeek:     https://api.deepseek.com
+   *    - Kimi/Moonshot: https://api.moonshot.cn/v1 (intl: api.moonshot.ai/v1)
    *    - Qwen compat:  https://dashscope.aliyuncs.com/compatible-mode/v1
    *    - Ollama:       http://localhost:11434/v1
    *    - vLLM:         http://localhost:8000/v1
@@ -294,11 +302,54 @@ export class OpenAICompatProvider extends LlmProvider {
       const tc = serializeToolChoice(opts.toolChoice)
       if (tc !== undefined) body.tool_choice = tc
     }
+    // DeepSeek / Kimi K2.x / Zhipu GLM / MiMo defaults for the OpenAICompat
+    // path (ping / introspection / evaluator): thinking OFF unless the
+    // caller opts in. Agim Agent (pi) owns the interactive thinking-mode path.
+    // Kimi K3 always thinks (reasoning_effort) — never send thinking.type.
+    if (
+      isDeepSeekBaseUrl(this.baseUrl)
+      && opts.providerOptions.thinking === undefined
+    ) {
+      body.thinking = { type: 'disabled' }
+    }
+    if (
+      isKimiBaseUrl(this.baseUrl)
+      && isKimiK2Model(opts.model)
+      && opts.providerOptions.thinking === undefined
+    ) {
+      body.thinking = { type: 'disabled' }
+    }
+    if (
+      isZhipuBaseUrl(this.baseUrl)
+      && opts.providerOptions.thinking === undefined
+    ) {
+      body.thinking = { type: 'disabled' }
+    }
+    if (
+      isMimoBaseUrl(this.baseUrl)
+      && opts.providerOptions.thinking === undefined
+    ) {
+      body.thinking = { type: 'disabled' }
+    }
     // providerOptions lets callers pass through e.g. {top_p: 0.9} or
     // DeepSeek's {response_format: {type:'json_object'}} without
     // requiring a release of this file every time a vendor adds a knob.
     for (const [k, v] of Object.entries(opts.providerOptions)) {
       if (v !== undefined) body[k] = v
+    }
+    // Thinking mode ignores sampling knobs — drop them so configs don't
+    // silently mislead operators (DeepSeek accepts but no-ops them).
+    // Kimi K3 fixes temperature/top_p/penalties server-side — omit them.
+    const thinking = body.thinking as { type?: string } | undefined
+    if (
+      thinking?.type === 'enabled'
+      || isKimiK3Model(opts.model)
+      || (isKimiBaseUrl(this.baseUrl) && isKimiK3Model(opts.model))
+    ) {
+      delete body.temperature
+      delete body.top_p
+      delete body.presence_penalty
+      delete body.frequency_penalty
     }
     return body
   }

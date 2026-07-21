@@ -14,11 +14,22 @@ import { client } from '@/lib/api/client'
 
 // ─── LLM types (mirror the backend wire shapes) ──────────────────
 
+export type LlmThinkingFormat = 'off' | 'deepseek' | 'openai'
+export type LlmMaxTokensField = 'max_tokens' | 'max_completion_tokens'
+
 export interface LlmBackendRow {
   name: string
   provider: 'openai-compat' | 'anthropic'
   baseUrl?: string
   model: string
+  /** Preset key when created via quick-enable (deepseek / …). */
+  label?: string
+  temperature?: number
+  maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat
+  maxTokensField?: LlmMaxTokensField
+  extraHeaders?: Record<string, string>
   secret: { source: 'env' | 'file' | 'vendor' | 'none'; envKey: string }
 }
 
@@ -33,6 +44,34 @@ export interface LlmAddBody {
   baseUrl: string
   model: string
   apiKey: string
+  temperature?: number
+  maxTokens?: number
+  contextWindow?: number
+  thinkingFormat?: LlmThinkingFormat | 'auto'
+  maxTokensField?: LlmMaxTokensField | 'auto'
+  /** Object or `Header: value` lines (server accepts both). */
+  extraHeaders?: Record<string, string> | string
+}
+
+export interface LlmQuickEnableBody {
+  apiKey: string
+  preset?: string
+  name?: string
+  model?: string
+  baseUrl?: string
+  bindCheapRoles?: boolean
+  setDefaultAgent?: boolean
+}
+
+export interface LlmQuickEnableResult {
+  name: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  model: string
+  backends?: Array<{ name: string; model: string }>
+  roles: Record<string, string>
+  defaultAgent: string
+  preset: string
 }
 
 export interface LlmPingResponse {
@@ -61,6 +100,14 @@ export function useLlmAddBackend() {
   const qc = useQueryClient()
   return useMutation<{ name: string; secretStored: boolean }, Error, LlmAddBody>({
     mutationFn: (body) => client.post('/api/llm/backends', { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
+  })
+}
+
+export function useLlmQuickEnable() {
+  const qc = useQueryClient()
+  return useMutation<LlmQuickEnableResult, Error, LlmQuickEnableBody>({
+    mutationFn: (body) => client.post('/api/llm/quick-enable', { body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
   })
 }

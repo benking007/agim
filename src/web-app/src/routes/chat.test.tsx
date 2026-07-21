@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ChatRoute from './chat'
 import type { ChatMessage, ChatState, UseChat } from '@/hooks/use-chat'
 import '@/i18n'
@@ -62,12 +63,17 @@ function renderChat(
     clearError: vi.fn(),
   }
   mocks.useChat.mockReturnValue(hook)
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
-      <Routes>
-        <Route path="/" element={<ChatRoute />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
+        <Routes>
+          <Route path="/" element={<ChatRoute />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -78,6 +84,11 @@ describe('/chat first-use runway', () => {
       cb(0)
       return 1
     })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      backends: [],
+      roles: {},
+      presets: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
   })
 
   it('renders the first-use runway when the chat is empty and connected', () => {

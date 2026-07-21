@@ -70,7 +70,7 @@ function formatWebAgentUnavailableMessage(agentName: string): string {
   if ((agentName === 'native' || agentName === 'agim')) {
     return [
       'Agim Agent is not configured yet.',
-      '请先到 /settings/llm 配置一个可用的大模型 API（角色绑定可选），再重试。',
+      '请粘贴 DeepSeek API Key 一键启用（也可切换其他厂商），或到 /settings/llm 配置。',
     ].join(' ')
   }
   return formatAgentNotAvailableError(agentName)
@@ -5680,6 +5680,14 @@ async function handleClientMessage(
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'plan-mode', enabled: !!sess?.planMode })
           }
+          if (parsed.type === 'think') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'think-mode', variant: sess?.variant || 'auto' })
+          }
+          if (parsed.type === 'model') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'session-model', model: sess?.model || '' })
+          }
           emit({
             type: 'usage',
             runId,
@@ -5930,6 +5938,8 @@ async function sendSessionHistory(
       messages: history.messages,
       agent: history.session.agent,
       planMode: !!history.session.planMode,
+      thinkVariant: history.session.variant || 'auto',
+      sessionModel: history.session.model || '',
     })
   }
   const { getActiveRun } = await import('./active-runs.js')

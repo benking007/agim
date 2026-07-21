@@ -35,12 +35,15 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
+import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
+import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { Topbar } from '@/components/shell/topbar'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
@@ -60,7 +63,23 @@ export default function ChatRoute(): JSX.Element {
   const [input, setInput] = useState('')
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
+  const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
+  const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
+  const thinkVariant = optimisticThink ?? state.thinkVariant
+  const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
+  const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
   const [searchParams] = useSearchParams()
+  // Clear optimistic overrides when the server session catches up (render-time sync).
+  if (state.thinkVariant !== thinkBaseline) {
+    setThinkBaseline(state.thinkVariant)
+    setOptimisticThink(null)
+  }
+  if (state.sessionModel !== modelBaseline) {
+    setModelBaseline(state.sessionModel)
+    setOptimisticModel(null)
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const keyboardInset = useKeyboardInset()
@@ -149,6 +168,10 @@ export default function ChatRoute(): JSX.Element {
         <AgentPicker agents={state.agents} value={state.agent} onChange={switchAgent} />
       </Topbar>
 
+      <LlmSettingsDialog
+        open={llmSettingsOpen}
+        onOpenChange={setLlmSettingsOpen}
+      />
       <NativeSetupDialog
         open={nativeSetupDialogOpen}
         reason={nativeSetupReason}
@@ -230,11 +253,52 @@ export default function ChatRoute(): JSX.Element {
         placeholder={t('chat.inputPlaceholder', {
           defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
         })}
-        footer={state.currentReplyId ? (
-          <Badge variant="info">
-            {t('chat.streaming', { defaultValue: '… streaming' })}
-          </Badge>
-        ) : null}
+        footer={(
+          <div className="space-y-1.5">
+            {state.currentReplyId ? (
+              <Badge variant="info">
+                {t('chat.streaming', { defaultValue: '… streaming' })}
+              </Badge>
+            ) : null}
+            <ComposerStatusBar
+              modelLabel={
+                optimisticModel
+                  ? (modelStatus.modelOptions.find((o) => o.backendName === optimisticModel)?.model
+                    ?? modelStatus.modelLabel)
+                  : modelStatus.modelLabel
+              }
+              modelMissing={modelStatus.modelMissing}
+              modelOptions={modelStatus.modelOptions}
+              activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
+              thinkVariant={thinkVariant}
+              showThinking={modelStatus.showThinking}
+              contextUsed={modelStatus.contextUsed}
+              contextWindow={modelStatus.contextWindow}
+              breakdown={modelStatus.breakdown}
+              disabled={state.status !== 'open'}
+              onConfigureModel={() => setLlmSettingsOpen(true)}
+              onSelectModel={(backendName) => {
+                if (state.status !== 'open') {
+                  toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))
+                  return
+                }
+                setOptimisticModel(backendName)
+                send(`/model ${backendName}`)
+              }}
+              onSendCommand={(cmd) => {
+                if (state.status !== 'open') {
+                  toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))
+                  return
+                }
+                if (cmd.startsWith('/think')) {
+                  const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
+                  setOptimisticThink(level)
+                }
+                send(cmd)
+              }}
+            />
+          </div>
+        )}
       />
     </div>
   )

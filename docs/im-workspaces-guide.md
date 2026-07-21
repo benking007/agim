@@ -26,10 +26,15 @@
 │   ├── AGENTS.md          ← IM 入口的 opencode 角色定义
 │   ├── PROJECT.md         ← （建议）你写的长期项目档案
 │   └── memory/
-└── codex/
-    ├── AGENTS.md          ← IM 入口的 Codex 角色定义（与 opencode 同名但目录隔离）
-    ├── PROJECT.md         ← （建议）你写的长期项目档案
-    └── memory/            ← 手写笔记目录（codex 无 auto-memory）
+├── codex/
+│   ├── AGENTS.md          ← IM 入口的 Codex 角色定义（与 opencode 同名但目录隔离）
+│   ├── PROJECT.md         ← （建议）你写的长期项目档案
+│   └── memory/            ← 手写笔记目录（codex 无 auto-memory）
+└── agim/
+    ├── AGENTS.md          ← Agim Agent 角色书（含 IM 规范 + bgjob SOP 托管段）
+    ├── AGENTS.local.md    ← （可选）个人覆盖，拼在 AGENTS.md 之后
+    ├── MEMORY.md          ← 工作区长期记忆（框架会注入）
+    └── PROJECTS/          ← （建议）长期主题档案
 ```
 
 **隔离边界（项目级隔离，用户级共享）**：
@@ -120,6 +125,32 @@ codex 启动时读取即可：
 ```markdown
 启动时先读 ./memory/*.md 与 ./PROJECT.md 了解长期上下文。
 ```
+
+---
+
+## 三·C、给 IM 入口的 Agim Agent 写"角色书"
+
+```bash
+vim ~/.agim-workspaces/agim/AGENTS.md
+# 个人覆盖（拼在 AGENTS.md 之后，最后胜出）：
+vim ~/.agim-workspaces/agim/AGENTS.local.md
+```
+
+Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
+`AGENTS.md` + `AGENTS.local.md` **整段注入 system prompt 顶部**，改完下一轮即生效，
+无需重启。也可用 `AGIM_NATIVE_AGENT_ROLE_FILE=/path` 钉到别的文件。
+
+默认种子已经带上：
+
+- **IM 回复硬规范**（禁表格、长代码落盘、纯 URL、禁用 emoji …）
+- **任务超时与 bgjob**：估时 >10 分钟强制
+  `/root/.claude/scripts/bgjob start <slug> -- <cmd...>`（先写脚本再启动；
+  禁止 `nohup … &` / bare `bgjob`）
+- **长期记忆约定**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
+
+其中 IM / bgjob 段落包在 `<!-- agim:im-ops:start -->` … `end` 标记里：每次
+`agim start` bootstrap 会**就地刷新**这段托管内容，不会抹掉标记外的个人设。
+框架 system prompt 里还有一份精简 bgjob / IM 兜底，防止有人删掉整段角色书。
 
 ---
 

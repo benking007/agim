@@ -357,6 +357,17 @@ describe('buildSystemPrompt — verification-subagent SOP (T5)', () => {
   })
 })
 
+describe('buildSystemPrompt — IM / bgjob SOP', () => {
+  const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
+  it('includes IM reply shape and bgjob long-task guidance', () => {
+    const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
+    expect(prompt).toContain('IM reply shape')
+    expect(prompt).toContain('Long-task / bgjob')
+    expect(prompt).toContain('/root/.claude/scripts/bgjob start')
+    expect(prompt).toMatch(/>10m MUST use bgjob/)
+  })
+})
+
 describe('describeNativeAgent — banner', () => {
   it('reports NOT CONFIGURED when no backend', () => {
     loadFromConfig({})

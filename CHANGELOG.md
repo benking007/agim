@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` now ships IM reply norms + **bgjob long-task SOP** (>10 min → `/root/.claude/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block is upserted on bootstrap so existing installs refresh without wiping persona edits. Framework system prompt carries a condensed copy as a safety net. See `docs/im-workspaces-guide.md`.
+
 ### Fixed
 
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.
